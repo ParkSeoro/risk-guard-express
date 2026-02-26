@@ -1,9 +1,10 @@
 import { 
   LayoutDashboard, FolderKanban, ShieldAlert, Database, 
-  FileCheck, HardHat, ChevronLeft
+  FileCheck, HardHat, ChevronLeft, LogOut, User
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
@@ -22,7 +23,7 @@ const mainItems = [
 export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed";
-  const location = useLocation();
+  const { profile, signOut } = useAuth();
 
   return (
     <Sidebar collapsible="icon">
@@ -42,20 +43,13 @@ export function AppSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-muted text-[10px] uppercase tracking-widest">
-            메뉴
-          </SidebarGroupLabel>
+          <SidebarGroupLabel className="text-sidebar-muted text-[10px] uppercase tracking-widest">메뉴</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {mainItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
-                    <NavLink
-                      to={item.url}
-                      end={item.url === "/"}
-                      className="hover:bg-sidebar-accent/80 rounded-md transition-colors"
-                      activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold"
-                    >
+                    <NavLink to={item.url} end={item.url === "/"} className="hover:bg-sidebar-accent/80 rounded-md transition-colors" activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold">
                       <item.icon className="mr-2 h-4 w-4 shrink-0" />
                       {!collapsed && <span>{item.title}</span>}
                     </NavLink>
@@ -67,15 +61,23 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={toggleSidebar}
-          className="w-full justify-center text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent"
-        >
-          <ChevronLeft className={`h-4 w-4 transition-transform ${collapsed ? 'rotate-180' : ''}`} />
-        </Button>
+      <SidebarFooter className="border-t border-sidebar-border p-2 space-y-1">
+        {!collapsed && profile && (
+          <div className="flex items-center gap-2 px-2 py-1 text-xs text-sidebar-foreground">
+            <User className="h-3.5 w-3.5" />
+            <span className="truncate">{profile.display_name}</span>
+          </div>
+        )}
+        <div className="flex gap-1">
+          <Button variant="ghost" size="sm" onClick={toggleSidebar} className="flex-1 justify-center text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent">
+            <ChevronLeft className={`h-4 w-4 transition-transform ${collapsed ? 'rotate-180' : ''}`} />
+          </Button>
+          {!collapsed && (
+            <Button variant="ghost" size="sm" onClick={signOut} className="text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent">
+              <LogOut className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </SidebarFooter>
     </Sidebar>
   );

@@ -138,3 +138,36 @@
     scrollbar-color: hsl(var(--border)) transparent;
   }
 }
+
+/* Print styles */
+@media print {
+  body { background: white !important; }
+  .print\\:hidden { display: none !important; }
+  .print\\:block { display: block !important; }
+  .print\\:space-y-2 > * + * { margin-top: 0.5rem; }
+  
+  .data-table th {
+    background: #1e293b !important;
+    color: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  .data-table thead {
+    display: table-header-group;
+  }
+  
+  .data-table tr {
+    page-break-inside: avoid;
+  }
+  
+  .risk-high, .risk-medium, .risk-low {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  @page {
+    size: landscape;
+    margin: 10mm;
+  }
+}

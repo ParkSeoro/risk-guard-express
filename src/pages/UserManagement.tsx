@@ -76,10 +76,21 @@ const UserManagement = () => {
 
   const handleRoleChange = async (userId: string, newRole: string) => {
     setSaving(userId);
+    const user = users.find(u => u.user_id === userId);
+    // Prevent removing last master (client-side guard)
+    if (user?.roles.includes('master') && newRole !== 'master') {
+      const masterCount = users.filter(u => u.roles.includes('master')).length;
+      if (masterCount <= 1) {
+        toast({ title: '마지막 마스터는 변경할 수 없습니다.', description: '최소 1명의 마스터가 필요합니다.', variant: 'destructive' });
+        setSaving(null);
+        return;
+      }
+    }
     // Delete existing roles for this user
     const { error: delError } = await supabase.from('user_roles').delete().eq('user_id', userId);
     if (delError) {
-      toast({ title: '역할 삭제 실패', description: delError.message, variant: 'destructive' });
+      const msg = delError.message.includes('last master') ? '마지막 마스터 역할은 삭제할 수 없습니다.' : delError.message;
+      toast({ title: '역할 삭제 실패', description: msg, variant: 'destructive' });
       setSaving(null);
       return;
     }

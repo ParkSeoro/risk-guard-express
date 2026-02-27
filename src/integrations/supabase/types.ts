@@ -485,6 +485,51 @@ export type Database = {
           },
         ]
       }
+      notification_preferences: {
+        Row: {
+          business_hours_only: boolean
+          channel_email: boolean
+          channel_kakao: boolean
+          channel_sms: boolean
+          created_at: string
+          event_approval_request: boolean
+          event_approval_result: boolean
+          event_return_request: boolean
+          event_validation_complete: boolean
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          business_hours_only?: boolean
+          channel_email?: boolean
+          channel_kakao?: boolean
+          channel_sms?: boolean
+          created_at?: string
+          event_approval_request?: boolean
+          event_approval_result?: boolean
+          event_return_request?: boolean
+          event_validation_complete?: boolean
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          business_hours_only?: boolean
+          channel_email?: boolean
+          channel_kakao?: boolean
+          channel_sms?: boolean
+          created_at?: string
+          event_approval_request?: boolean
+          event_approval_result?: boolean
+          event_return_request?: boolean
+          event_validation_complete?: boolean
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           created_at: string

@@ -16,7 +16,8 @@ import { calculateRiskGrade, getGradeClassName, GRADES, type RiskGrade } from "@
 import { generateRiskItems } from "@/lib/riskAutoGen";
 import { exportToXLSX, exportToPDF, printRiskAssessment } from "@/lib/exportUtils";
 import { validateRiskItems, type ValidationReport } from "@/lib/validationEngine";
-import type { Database } from "@/integrations/supabase/types";
+import type { Database } from '@/integrations/supabase/types';
+import IMESafeInput from '@/components/IMESafeInput';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
 
@@ -285,41 +286,7 @@ const RiskAssessment = () => {
     );
   };
 
-  // IME-safe input: prevents focus loss and premature commit during Korean composition
-  const IMESafeInput = useCallback(({ defaultValue, onCommit, className, autoFocus, ...rest }: {
-    defaultValue: string;
-    onCommit: (value: string) => void;
-    className?: string;
-    autoFocus?: boolean;
-  } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'defaultValue'>) => {
-    const ref = useRef<HTMLInputElement>(null);
-    const composingRef = useRef(false);
-
-    useEffect(() => {
-      if (autoFocus && ref.current) ref.current.focus();
-    }, []);
-
-    return (
-      <Input
-        ref={ref}
-        defaultValue={defaultValue}
-        className={className}
-        onCompositionStart={() => { composingRef.current = true; }}
-        onCompositionEnd={() => { composingRef.current = false; }}
-        onBlur={(e) => {
-          if (!composingRef.current) {
-            onCommit(e.target.value);
-          }
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.nativeEvent.isComposing && !composingRef.current) {
-            onCommit((e.target as HTMLInputElement).value);
-          }
-        }}
-        {...rest}
-      />
-    );
-  }, []);
+  // IMESafeInput is now imported from @/components/IMESafeInput
 
   const GradeSelect = ({ item, field }: { item: RiskItemRow; field: string }) => {
     const isEditing = editingCell?.id === item.id && editingCell?.field === field;

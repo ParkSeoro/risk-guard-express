@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, ShieldCheck, Send,
   Lock, Users, XCircle, AlertTriangle, CheckCircle2, Upload, RotateCcw, FileWarning, RefreshCw,
+  Edit3, Archive,
 } from 'lucide-react';
 import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
 import { generateRiskItems } from '@/lib/riskAutoGen';
@@ -27,12 +28,24 @@ import * as XLSX from 'xlsx';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
 
-const EDITABLE_STATUSES = ['작성중', '검토대기', '반려', '보완중', '검증대기', '검증완료'];
+// All statuses where editing is allowed (everything except 승인완료 and 폐기)
+const EDITABLE_STATUSES = ['작성중', '제출됨', '검증중', '검증대기', '검토대기', '보완요청', '보완중', '반려', '검증완료', '결재진행'];
+
+const STATUS_FLOW = {
+  '작성중': { label: '작성중 (Draft)', color: 'bg-muted text-muted-foreground' },
+  '제출됨': { label: '제출됨 (Submitted)', color: 'bg-primary/10 text-primary' },
+  '검증중': { label: '검증중 (Validating)', color: 'bg-warning/10 text-warning' },
+  '보완요청': { label: '보완요청 (Returned)', color: 'bg-warning/10 text-warning' },
+  '검증완료': { label: '검증완료 (Validated)', color: 'bg-accent/10 text-accent' },
+  '결재진행': { label: '결재진행 (InApproval)', color: 'bg-primary/10 text-primary' },
+  '승인완료': { label: '승인완료 (Approved)', color: 'bg-success/10 text-success' },
+  '폐기': { label: '폐기 (Archived)', color: 'bg-muted text-muted-foreground' },
+};
 
 const AssessmentRunDetail = () => {
   const { runId } = useParams();
   const navigate = useNavigate();
-  const { user, profile, isAdmin } = useAuth();
+  const { user, profile, isAdmin, roles } = useAuth();
   const { log } = useAuditLog();
   const { toast } = useToast();
 
@@ -76,6 +89,15 @@ const AssessmentRunDetail = () => {
   const [excelIssues, setExcelIssues] = useState<ValidationIssue[]>([]);
   const [excelStep, setExcelStep] = useState<'upload' | 'map' | 'result'>('upload');
 
+  // Force edit (approved run)
+  const [showForceEdit, setShowForceEdit] = useState(false);
+  const [forceEditReason, setForceEditReason] = useState('');
+  // Archive dialog
+  const [showArchive, setShowArchive] = useState(false);
+  const [archiveReason, setArchiveReason] = useState('');
+  // Revision dialog
+  const [showRevision, setShowRevision] = useState(false);
+
   const fetchAll = useCallback(async () => {
     if (!runId) return;
     setLoading(true);
@@ -98,8 +120,13 @@ const AssessmentRunDetail = () => {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const isLocked = run?.status === '승인완료';
+  const isApproved = run?.status === '승인완료';
+  const isArchived = run?.status === '폐기';
+  const isMasterOrCreator = isAdmin() || (user && run?.created_by === user.id);
+  // Normal edit: any editable status
   const canEdit = run && EDITABLE_STATUSES.includes(run.status);
+  // Force edit for approved runs (master/creator only)
+  const canForceEdit = isApproved && isMasterOrCreator;
 
   const filteredItems = useMemo(() => {
     return items.filter(item => {
@@ -122,7 +149,7 @@ const AssessmentRunDetail = () => {
 
   // Cell edit
   const handleCellEdit = async (id: string, field: string, value: any) => {
-    if (!canEdit) { toast({ title: '현재 상태에서는 수정할 수 없습니다.', variant: 'destructive' }); return; }
+    if (!canEdit && !canForceEdit) { toast({ title: '현재 상태에서는 수정할 수 없습니다.', variant: 'destructive' }); return; }
     const updateData: Record<string, any> = { [field]: value };
     if (field === 'likelihood_grade' || field === 'severity_grade') {
       const item = items.find(i => i.id === id);
@@ -147,7 +174,7 @@ const AssessmentRunDetail = () => {
   };
 
   const handleAddNew = async () => {
-    if (!run || !user || !canEdit) return;
+    if (!run || !user || (!canEdit && !canForceEdit)) return;
     const { data } = await supabase.from('risk_items').insert([{
       project_id: run.project_id, run_id: runId, process: '신규공정', created_by: user.id, sort_order: items.length,
       likelihood_grade: '중', severity_grade: '중', risk_grade: '중',
@@ -157,13 +184,13 @@ const AssessmentRunDetail = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!canEdit) return;
+    if (!canEdit && !canForceEdit) return;
     await supabase.from('risk_items').delete().eq('id', id);
     setItems(prev => prev.filter(i => i.id !== id));
   };
 
   const handleDuplicate = async (item: RiskItemRow) => {
-    if (!user || !canEdit) return;
+    if (!user || (!canEdit && !canForceEdit)) return;
     const { id, risk, improved_risk, created_at, updated_at, ...rest } = item;
     const { data } = await supabase.from('risk_items').insert([{ ...rest, status: '미착수', created_by: user.id, sort_order: items.length }]).select().single();
     if (data) setItems(prev => [...prev, data]);
@@ -197,29 +224,32 @@ const AssessmentRunDetail = () => {
   const handleValidate = async () => {
     if (!run || !user) return;
     try {
+      await supabase.from('assessment_runs').update({ status: '검증중' }).eq('id', runId);
+      setRun((prev: any) => ({ ...prev, status: '검증중' }));
       const report = await validateRiskItems(items, run.project_id);
       setValidationReport(report);
       setShowValidation(true);
       setValidationTab('summary');
       await saveValidationResults(report, run.project_id, user.id, runId);
+      const newStatus = report.verdict === '부적정' ? '보완요청' : '검증완료';
       await supabase.from('assessment_runs').update({
-        status: '검증완료', validation_score: report.score, validation_verdict: report.verdict,
+        status: newStatus, validation_score: report.score, validation_verdict: report.verdict,
       }).eq('id', runId);
-      setRun((prev: any) => ({ ...prev, status: '검증완료', validation_score: report.score, validation_verdict: report.verdict }));
+      setRun((prev: any) => ({ ...prev, status: newStatus, validation_score: report.score, validation_verdict: report.verdict }));
       toast({ title: `검증 완료: ${report.verdict} (${report.score}점)` });
       log('검증실행', 'assessment_run', runId!, run.project_id, { score: report.score, verdict: report.verdict });
     } catch { toast({ title: '검증 실패', variant: 'destructive' }); }
   };
 
-  // Submit for validation
-  const handleSubmitForValidation = async () => {
-    await supabase.from('assessment_runs').update({ status: '검증대기' }).eq('id', runId);
-    setRun((prev: any) => ({ ...prev, status: '검증대기' }));
-    toast({ title: '검증대기 상태로 전환되었습니다.' });
-    log('검증제출', 'assessment_run', runId!, run?.project_id);
+  // Submit for validation (Draft → Submitted)
+  const handleSubmit = async () => {
+    await supabase.from('assessment_runs').update({ status: '제출됨' }).eq('id', runId);
+    setRun((prev: any) => ({ ...prev, status: '제출됨' }));
+    toast({ title: '제출됨 상태로 전환되었습니다.' });
+    log('제출', 'assessment_run', runId!, run?.project_id);
   };
 
-  // Submit for approval
+  // Submit for approval (Validated → InApproval)
   const handleSubmitForApproval = async () => {
     if (!run || !user || !profile) return;
     if (items.length === 0) {
@@ -294,29 +324,99 @@ const AssessmentRunDetail = () => {
         await supabase.from('assessment_runs').update({ status: '승인완료' }).eq('id', runId);
         await supabase.from('risk_items').update({ is_locked: true }).eq('run_id', runId);
         setRun((prev: any) => ({ ...prev, status: '승인완료' }));
+        // Notify author
+        const authorStep = (allAp || []).find((a: any) => a.step === '작성');
+        if (authorStep?.approver_id) {
+          await supabase.from('notifications').insert([{
+            user_id: authorStep.approver_id, title: '결재 최종 승인',
+            message: `[${run.type}] ${run.period_label} 회차가 최종 승인되었습니다.`,
+            type: 'approval_approved', related_id: runId, related_type: 'assessment_run', project_id: run.project_id,
+          }]);
+        }
         toast({ title: '최종 승인 완료! 해당 회차가 잠금되었습니다.' });
       } else {
         toast({ title: `${ap.step} 단계가 승인되었습니다.` });
       }
     } else {
-      // 반려 → 보완중으로 돌려서 수정 가능하게
-      await supabase.from('assessment_runs').update({ status: '보완중' }).eq('id', runId);
-      setRun((prev: any) => ({ ...prev, status: '보완중' }));
+      await supabase.from('assessment_runs').update({ status: '보완요청' }).eq('id', runId);
+      setRun((prev: any) => ({ ...prev, status: '보완요청' }));
+      // Notify author
+      const authorStep = (await supabase.from('approvals').select('*').eq('run_id', runId).eq('step', '작성')).data?.[0];
+      if (authorStep?.approver_id) {
+        await supabase.from('notifications').insert([{
+          user_id: authorStep.approver_id, title: '결재 반려',
+          message: `[${run.type}] ${run.period_label} 반려됨. 사유: ${comment || '(없음)'}`,
+          type: 'approval_rejected', related_id: runId, related_type: 'assessment_run', project_id: run.project_id,
+        }]);
+      }
       toast({ title: '반려되었습니다. 보완 후 재제출하세요.', variant: 'destructive' });
     }
     log(action, 'assessment_run', runId!, run.project_id);
     fetchAll();
   };
 
-  // Resubmit (after rejection)
+  // Resubmit (after rejection/supplement request → back to Draft)
   const handleResubmit = async () => {
     if (!run) return;
-    // Delete old approvals and resubmit
     await supabase.from('approvals').delete().eq('run_id', runId);
     await supabase.from('assessment_runs').update({ status: '작성중' }).eq('id', runId);
     setRun((prev: any) => ({ ...prev, status: '작성중' }));
     toast({ title: '작성중 상태로 전환되었습니다. 수정 후 재검증/재상신하세요.' });
     log('재제출', 'assessment_run', runId!, run.project_id);
+  };
+
+  // Force edit on approved run (creates audit log)
+  const handleForceEditConfirm = async () => {
+    if (!forceEditReason.trim()) { toast({ title: '수정 사유를 입력해주세요.', variant: 'destructive' }); return; }
+    // Unlock items
+    await supabase.from('risk_items').update({ is_locked: false }).eq('run_id', runId);
+    // Set status back to 작성중 with flag
+    await supabase.from('assessment_runs').update({ status: '작성중' }).eq('id', runId);
+    setRun((prev: any) => ({ ...prev, status: '작성중' }));
+    // Log
+    log('승인후강제수정', 'assessment_run', runId!, run?.project_id, { reason: forceEditReason });
+    toast({ title: '승인완료 회차가 수정 모드로 전환되었습니다. 재결재가 필요합니다.' });
+    setShowForceEdit(false); setForceEditReason('');
+    fetchAll();
+  };
+
+  // Create revision (clone approved run)
+  const handleCreateRevision = async () => {
+    if (!run || !user) return;
+    // Create new run as clone
+    const { data: newRun } = await supabase.from('assessment_runs').insert([{
+      project_id: run.project_id, type: run.type, period_label: `${run.period_label} (개정)`,
+      target_processes: run.target_processes, target_contractors: run.target_contractors,
+      notes: `${run.period_label} 개정본`, status: '작성중', created_by: user.id,
+    }]).select().single();
+    if (!newRun) { toast({ title: '개정 회차 생성 실패', variant: 'destructive' }); return; }
+    // Clone items
+    const cloneItems = items.map((item, i) => {
+      const { id, risk, improved_risk, created_at, updated_at, ...rest } = item;
+      return { ...rest, run_id: newRun.id, is_locked: false, status: '초안', created_by: user.id, sort_order: i };
+    });
+    if (cloneItems.length > 0) await supabase.from('risk_items').insert(cloneItems);
+    // Clone participants
+    if (participants.length > 0) {
+      const cloneParts = participants.map(p => ({
+        run_id: newRun.id, role: p.role, user_name: p.user_name, company: p.company,
+      }));
+      await supabase.from('assessment_run_participants').insert(cloneParts);
+    }
+    log('개정회차생성', 'assessment_run', newRun.id, run.project_id, { source_run_id: runId });
+    toast({ title: '개정 회차가 생성되었습니다.' });
+    setShowRevision(false);
+    navigate(`/assessment-run/${newRun.id}`);
+  };
+
+  // Archive (soft delete)
+  const handleArchive = async () => {
+    if (!archiveReason.trim()) { toast({ title: '삭제 사유를 입력해주세요.', variant: 'destructive' }); return; }
+    await supabase.from('assessment_runs').update({ status: '폐기' }).eq('id', runId);
+    setRun((prev: any) => ({ ...prev, status: '폐기' }));
+    log('회차폐기', 'assessment_run', runId!, run?.project_id, { reason: archiveReason });
+    toast({ title: '회차가 폐기되었습니다.' });
+    setShowArchive(false); setArchiveReason('');
   };
 
   // Participants
@@ -395,7 +495,6 @@ const AssessmentRunDetail = () => {
         const headers = Object.keys(json[0]);
         setExcelHeaders(headers);
         setExcelData(json);
-        // Auto-map known columns
         const autoMap: Record<string, string> = {};
         const knownMappings: Record<string, string[]> = {
           process: ['공정', 'Process', '공종'],
@@ -422,7 +521,6 @@ const AssessmentRunDetail = () => {
   };
 
   const handleExcelValidate = () => {
-    // Map columns and validate
     const mapped = excelData.map(row => {
       const mapped: Record<string, string> = {};
       for (const [field, col] of Object.entries(excelColumnMap)) {
@@ -444,23 +542,15 @@ const AssessmentRunDetail = () => {
       const sg = get('severity_grade') || '중';
       return {
         project_id: run.project_id, run_id: runId,
-        process: get('process') || '미분류',
-        sub_task: get('sub_task'),
-        hazard: get('hazard'),
-        hazard_situation: get('hazard_situation'),
-        existing_measure: get('existing_measure'),
+        process: get('process') || '미분류', sub_task: get('sub_task'), hazard: get('hazard'),
+        hazard_situation: get('hazard_situation'), existing_measure: get('existing_measure'),
         improvement_measure: get('improvement_measure'),
         likelihood_grade: ['상', '중', '하'].includes(lg) ? lg : '중',
         severity_grade: ['상', '중', '하'].includes(sg) ? sg : '중',
-        risk_grade: calculateRiskGrade(
-          (['상', '중', '하'].includes(lg) ? lg : '중') as '상' | '중' | '하',
-          (['상', '중', '하'].includes(sg) ? sg : '중') as '상' | '중' | '하'
-        ),
+        risk_grade: calculateRiskGrade((['상', '중', '하'].includes(lg) ? lg : '중') as '상' | '중' | '하', (['상', '중', '하'].includes(sg) ? sg : '중') as '상' | '중' | '하'),
         improved_likelihood_grade: '하', improved_severity_grade: '하', improved_risk_grade: '하',
         legal_basis: get('legal_basis') ? get('legal_basis').split(',').map(s => s.trim()) : [],
-        status: '초안',
-        created_by: user.id,
-        sort_order: items.length + i,
+        status: '초안', created_by: user.id, sort_order: items.length + i,
       };
     });
     const { data } = await supabase.from('risk_items').insert(inserts).select();
@@ -469,15 +559,14 @@ const AssessmentRunDetail = () => {
       toast({ title: `${data.length}건 반영 완료` });
       log('엑셀반영', 'assessment_run', runId!, run.project_id, { count: data.length });
     }
-    setShowExcelUpload(false);
-    setExcelStep('upload');
-    setExcelData([]);
+    setShowExcelUpload(false); setExcelStep('upload'); setExcelData([]);
   };
 
   // Components
   const GradeSelect = ({ item, field }: { item: RiskItemRow; field: string }) => {
     const isEditing = editingCell?.id === item.id && editingCell?.field === field;
     const value = (item as any)[field] || '중';
+    const editable = canEdit || canForceEdit;
     if (isEditing) {
       return (
         <Select defaultValue={value} onValueChange={(v) => handleCellEdit(item.id, field, v)}>
@@ -488,14 +577,14 @@ const AssessmentRunDetail = () => {
     }
     return (
       <span className={`cursor-pointer inline-flex items-center justify-center w-8 h-6 rounded text-[11px] font-bold ${getGradeClassName(value)}`}
-        onClick={() => canEdit && setEditingCell({ id: item.id, field })}>{value}</span>
+        onClick={() => editable && setEditingCell({ id: item.id, field })}>{value}</span>
     );
   };
 
   const EditableCell = ({ item, field }: { item: RiskItemRow; field: string }) => {
     const isEditing = editingCell?.id === item.id && editingCell?.field === field;
     const value = (item as any)[field];
-    // Highlight validation issues
+    const editable = canEdit || canForceEdit;
     const itemIssues = validationReport?.itemVerdicts?.[item.id]?.issues?.filter(iss => iss.field === field) || [];
     const hasIssue = itemIssues.length > 0;
 
@@ -513,8 +602,8 @@ const AssessmentRunDetail = () => {
       return <IMESafeInput defaultValue={value as string || ''} className="h-7 text-xs min-w-[100px]" autoFocus onCommit={(val) => handleCellEdit(item.id, field, val)} />;
     }
     return (
-      <span className={`${canEdit ? 'cursor-pointer hover:bg-accent/20' : ''} px-1 py-0.5 rounded transition-colors block min-h-[1.5em] ${hasIssue ? 'ring-1 ring-destructive/50 bg-destructive/5' : ''}`}
-        onClick={() => canEdit && setEditingCell({ id: item.id, field })}
+      <span className={`${editable ? 'cursor-pointer hover:bg-accent/20' : ''} px-1 py-0.5 rounded transition-colors block min-h-[1.5em] ${hasIssue ? 'ring-1 ring-destructive/50 bg-destructive/5' : ''}`}
+        onClick={() => editable && setEditingCell({ id: item.id, field })}
         title={hasIssue ? itemIssues.map(i => i.message).join('; ') : undefined}>
         {String(value || '—')}
       </span>
@@ -524,11 +613,13 @@ const AssessmentRunDetail = () => {
   if (loading) return <div className="py-12 text-center text-muted-foreground">로딩 중...</div>;
   if (!run) return <div className="py-12 text-center text-muted-foreground">회차를 찾을 수 없습니다.</div>;
 
-  const canSubmitValidation = run.status === '작성중' && items.length > 0;
-  const canValidate = ['검증대기', '작성중', '보완중'].includes(run.status) && isAdmin();
+  // CTA conditions
+  const canSubmitForValidation = run.status === '작성중' && items.length > 0;
+  const canValidate = ['제출됨', '작성중', '보완요청', '보완중', '검증대기'].includes(run.status) && isAdmin();
   const canSubmitApproval = run.status === '검증완료' && run.validation_verdict !== '부적정' && items.length > 0;
-  const canCancelApproval = run.status === '결재진행' && isAdmin();
-  const canResubmit = run.status === '보완중' || run.status === '반려';
+  const canCancelApproval = run.status === '결재진행' && (isAdmin() || (user && run.created_by === user.id));
+  const canResubmit = ['보완요청', '보완중', '반려'].includes(run.status);
+  const statusInfo = STATUS_FLOW[run.status as keyof typeof STATUS_FLOW] || { label: run.status, color: '' };
 
   return (
     <div className="space-y-4 animate-fade-in print:space-y-2">
@@ -539,13 +630,8 @@ const AssessmentRunDetail = () => {
             <Button variant="ghost" size="sm" onClick={() => navigate('/risk-assessment')}>← 목록</Button>
             <Badge variant="outline" className="text-[10px]">{run.type}</Badge>
             <h1 className="text-xl font-bold">{run.period_label || '(기간 미지정)'}</h1>
-            <Badge variant="outline" className={`text-[10px] ${
-              run.status === '승인완료' ? 'bg-success/10 text-success' :
-              run.status === '결재진행' ? 'bg-primary/10 text-primary' :
-              run.status === '보완중' ? 'bg-warning/10 text-warning' :
-              run.status === '검증완료' ? 'bg-accent/10 text-accent' : ''
-            }`}>
-              {run.status} {isLocked && <Lock className="h-3 w-3 ml-1 inline" />}
+            <Badge variant="outline" className={`text-[10px] ${statusInfo.color}`}>
+              {run.status} {isApproved && <Lock className="h-3 w-3 ml-1 inline" />}
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
@@ -562,7 +648,8 @@ const AssessmentRunDetail = () => {
 
       {/* Action Buttons */}
       <div className="flex items-center gap-2 print:hidden flex-wrap">
-        {canEdit && (
+        {/* Draft actions */}
+        {(canEdit || canForceEdit) && (
           <>
             <Button size="sm" className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => setShowAutoGen(true)}>
               <Wand2 className="h-3.5 w-3.5" /> 공종 자동작성
@@ -575,9 +662,9 @@ const AssessmentRunDetail = () => {
             </Button>
           </>
         )}
-        {canSubmitValidation && (
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={handleSubmitForValidation}>
-            <Send className="h-3.5 w-3.5" /> 검증 제출
+        {canSubmitForValidation && (
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={handleSubmit}>
+            <Send className="h-3.5 w-3.5" /> 제출
           </Button>
         )}
         {canValidate && (
@@ -600,7 +687,7 @@ const AssessmentRunDetail = () => {
             <RefreshCw className="h-3.5 w-3.5" /> 재제출 (작성중 전환)
           </Button>
         )}
-        {run.status === '결재진행' && isAdmin() && (
+        {run.status === '결재진행' && (isAdmin() || (user && participants.some(p => ['검토자','승인자'].includes(p.role) && p.user_name === profile?.display_name))) && (
           <div className="flex gap-1">
             <Button size="sm" variant="outline" className="gap-1 text-success" onClick={() => handleFinalApproval('승인')}>
               <CheckCircle2 className="h-3.5 w-3.5" /> 승인
@@ -609,6 +696,20 @@ const AssessmentRunDetail = () => {
               <XCircle className="h-3.5 w-3.5" /> 반려
             </Button>
           </div>
+        )}
+        {/* Approved run actions */}
+        {isApproved && isMasterOrCreator && (
+          <>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowRevision(true)}>
+              <Copy className="h-3.5 w-3.5" /> 개정 회차 생성
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1.5 text-warning" onClick={() => setShowForceEdit(true)}>
+              <Edit3 className="h-3.5 w-3.5" /> 강제 수정
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1.5 text-destructive" onClick={() => setShowArchive(true)}>
+              <Archive className="h-3.5 w-3.5" /> 폐기
+            </Button>
+          </>
         )}
         {validationReport && (
           <Button size="sm" variant="ghost" className="gap-1.5" onClick={() => setShowValidation(true)}>
@@ -624,14 +725,35 @@ const AssessmentRunDetail = () => {
         <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportXLSX}><Download className="h-3.5 w-3.5" /> XLSX</Button>
       </div>
 
-      {/* Rejection/Supplement notice */}
-      {(run.status === '보완중' || run.status === '반려') && (
+      {/* Status notices */}
+      {['보완요청', '보완중', '반려'].includes(run.status) && (
         <Card className="border-warning print:hidden">
           <CardContent className="py-3">
             <div className="flex items-center gap-2 text-sm text-warning">
               <AlertTriangle className="h-4 w-4" />
               <span className="font-medium">보완 필요:</span>
-              <span>반려된 회차입니다. 지적사항을 수정한 후 재검증/재상신하세요.</span>
+              <span>지적사항을 수정한 후 재제출 → 재검증 → 재상신하세요.</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {isApproved && (
+        <Card className="border-success print:hidden">
+          <CardContent className="py-3">
+            <div className="flex items-center gap-2 text-sm text-success">
+              <Lock className="h-4 w-4" />
+              <span className="font-medium">승인완료:</span>
+              <span>이 회차는 최종 승인되어 잠금 상태입니다. {isMasterOrCreator && '작성자/마스터는 강제수정 또는 개정 회차를 생성할 수 있습니다.'}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {isArchived && (
+        <Card className="border-muted print:hidden">
+          <CardContent className="py-3">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Archive className="h-4 w-4" />
+              <span>이 회차는 폐기되었습니다.</span>
             </div>
           </CardContent>
         </Card>
@@ -675,7 +797,7 @@ const AssessmentRunDetail = () => {
                   <th className="text-center w-16">상태</th>
                   <th>PPE</th><th>법적근거</th><th>부서</th><th>담당</th>
                   {validationReport && <th className="w-16 text-center">판정</th>}
-                  {canEdit && <th className="w-16 text-center print:hidden">작업</th>}
+                  {(canEdit || canForceEdit) && <th className="w-16 text-center print:hidden">작업</th>}
                 </tr>
               </thead>
               <tbody>
@@ -714,7 +836,7 @@ const AssessmentRunDetail = () => {
                           )}
                         </td>
                       )}
-                      {canEdit && (
+                      {(canEdit || canForceEdit) && (
                         <td className="text-center print:hidden">
                           <div className="flex items-center gap-0.5 justify-center">
                             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDuplicate(item)}><Copy className="h-3 w-3" /></Button>
@@ -771,7 +893,6 @@ const AssessmentRunDetail = () => {
           <DialogHeader><DialogTitle>검증 결과 · {run.period_label}</DialogTitle></DialogHeader>
           {validationReport && (
             <div className="space-y-4">
-              {/* Summary */}
               <div className="grid grid-cols-4 gap-3 text-center">
                 <div className="p-3 bg-muted rounded-lg">
                   <p className="text-2xl font-bold">{validationReport.score}</p>
@@ -866,7 +987,7 @@ const AssessmentRunDetail = () => {
                 <Button variant="outline" className="flex-1 gap-1.5" onClick={handleExportValidationPDF}>
                   <FileText className="h-3.5 w-3.5" /> 검증 리포트 PDF 다운로드
                 </Button>
-                {canEdit && validationReport.verdict !== '적정' && (
+                {(canEdit || canForceEdit) && validationReport.verdict !== '적정' && (
                   <Button variant="outline" className="flex-1 gap-1.5" onClick={() => { setShowValidation(false); }}>
                     수정하러 가기
                   </Button>
@@ -973,6 +1094,54 @@ const AssessmentRunDetail = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Force Edit Dialog (Approved Run) */}
+      <Dialog open={showForceEdit} onOpenChange={setShowForceEdit}>
+        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>승인완료 회차 강제 수정</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-destructive">⚠ 승인완료 회차를 직접 수정하면 재결재가 필요합니다. 감사 로그에 수정 이력이 기록됩니다.</p>
+            <div className="space-y-1">
+              <Label>수정 사유 (필수)</Label>
+              <Textarea value={forceEditReason} onChange={e => setForceEditReason(e.target.value)} placeholder="수정 사유를 입력하세요..." rows={3} />
+            </div>
+            <Button onClick={handleForceEditConfirm} variant="destructive" className="w-full" disabled={!forceEditReason.trim()}>
+              강제 수정 시작
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Revision Dialog */}
+      <Dialog open={showRevision} onOpenChange={setShowRevision}>
+        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>개정 회차 생성</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">현재 승인완료 회차를 복제하여 새 개정본을 생성합니다. 원본은 유지됩니다.</p>
+            <p className="text-sm">원본: <strong>[{run.type}] {run.period_label}</strong> ({items.length}건)</p>
+            <Button onClick={handleCreateRevision} className="w-full gap-1.5">
+              <Copy className="h-3.5 w-3.5" /> 개정 회차 생성
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Archive Dialog */}
+      <Dialog open={showArchive} onOpenChange={setShowArchive}>
+        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>회차 폐기 (소프트 삭제)</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-destructive">⚠ 폐기된 회차는 목록에서 비활성 표시됩니다. 감사 로그에 기록됩니다.</p>
+            <div className="space-y-1">
+              <Label>삭제 사유 (필수)</Label>
+              <Textarea value={archiveReason} onChange={e => setArchiveReason(e.target.value)} placeholder="삭제 사유를 입력하세요..." rows={3} />
+            </div>
+            <Button onClick={handleArchive} variant="destructive" className="w-full" disabled={!archiveReason.trim()}>
+              폐기 확인
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Excel Upload Dialog */}
       <Dialog open={showExcelUpload} onOpenChange={setShowExcelUpload}>
         <DialogContent className="max-w-2xl" onPointerDownOutside={(e) => e.preventDefault()}>
@@ -988,14 +1157,10 @@ const AssessmentRunDetail = () => {
               <p className="text-sm text-muted-foreground">{excelData.length}행 파싱 완료. 컬럼을 매핑하세요.</p>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { key: 'process', label: '공정' },
-                  { key: 'sub_task', label: '세부작업' },
-                  { key: 'hazard', label: '위험요인' },
-                  { key: 'hazard_situation', label: '위험발생상황' },
-                  { key: 'existing_measure', label: '기존대책' },
-                  { key: 'improvement_measure', label: '개선대책' },
-                  { key: 'likelihood_grade', label: '가능성' },
-                  { key: 'severity_grade', label: '중대성' },
+                  { key: 'process', label: '공정' }, { key: 'sub_task', label: '세부작업' },
+                  { key: 'hazard', label: '위험요인' }, { key: 'hazard_situation', label: '위험발생상황' },
+                  { key: 'existing_measure', label: '기존대책' }, { key: 'improvement_measure', label: '개선대책' },
+                  { key: 'likelihood_grade', label: '가능성' }, { key: 'severity_grade', label: '중대성' },
                   { key: 'legal_basis', label: '법적근거' },
                 ].map(({ key, label }) => (
                   <div key={key} className="flex items-center gap-2">

@@ -17,12 +17,16 @@ import { format } from 'date-fns';
 const typeLabels: Record<string, string> = { '최초': '최초', '정기': '정기', '수시': '수시', '상시': '상시' };
 const statusColors: Record<string, string> = {
   '작성중': 'bg-muted text-muted-foreground',
+  '제출됨': 'bg-primary/10 text-primary border-primary/30',
+  '검증중': 'bg-warning/10 text-warning border-warning/30',
   '검증대기': 'bg-warning/10 text-warning border-warning/30',
+  '보완요청': 'bg-warning/10 text-warning border-warning/30',
+  '보완중': 'bg-warning/10 text-warning border-warning/30',
   '검증완료': 'bg-accent/10 text-accent border-accent/30',
   '결재진행': 'bg-primary/10 text-primary border-primary/30',
   '승인완료': 'bg-success/10 text-success border-success/30',
-  '보완중': 'bg-warning/10 text-warning border-warning/30',
   '반려': 'bg-destructive/10 text-destructive border-destructive/30',
+  '폐기': 'bg-muted text-muted-foreground',
 };
 
 const AssessmentRuns = () => {
@@ -159,11 +163,14 @@ const AssessmentRuns = () => {
               <SelectContent>
                 <SelectItem value="all">상태 전체</SelectItem>
                 <SelectItem value="작성중">작성중</SelectItem>
-                <SelectItem value="검증대기">검증대기</SelectItem>
+                <SelectItem value="제출됨">제출됨</SelectItem>
+                <SelectItem value="검증중">검증중</SelectItem>
+                <SelectItem value="보완요청">보완요청</SelectItem>
                 <SelectItem value="검증완료">검증완료</SelectItem>
                 <SelectItem value="결재진행">결재진행</SelectItem>
                 <SelectItem value="승인완료">승인완료</SelectItem>
                 <SelectItem value="보완중">보완중</SelectItem>
+                <SelectItem value="폐기">폐기</SelectItem>
               </SelectContent>
             </Select>
             <div className="flex-1 relative">

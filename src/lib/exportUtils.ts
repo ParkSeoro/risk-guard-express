@@ -110,7 +110,7 @@ export function exportToXLSX(items: RiskRow[], project: ProjectInfo, masterData?
     item.department, item.assignee, item.note || '',
   ]);
 
-  const title = runInfo ? `위험성평가표 [${runInfo.type}] ${runInfo.period_label}` : `위험성평가표 - ${project.name}`;
+  const title = runInfo ? `디아이지에어가스 위험성평가 [${runInfo.type}] ${runInfo.period_label}` : `디아이지에어가스 위험성평가 - ${project.name}`;
 
   const wsData = [
     [title],
@@ -170,18 +170,20 @@ export function exportToPDF(
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
     const title = runInfo
-      ? `Risk Assessment [${runInfo.type}] ${runInfo.period_label}`
-      : `Risk Assessment - ${project.name}`;
+      ? `디아이지에어가스 위험성평가 [${runInfo.type}] ${runInfo.period_label}`
+      : `디아이지에어가스 위험성평가 - ${project.name}`;
 
     // Cover page
-    doc.setFontSize(16);
-    doc.text(title, 14, 15);
+    doc.setFontSize(18);
+    doc.text('디아이지에어가스 위험성평가 시스템', 14, 15);
+    doc.setFontSize(12);
+    doc.text(title, 14, 24);
     doc.setFontSize(10);
-    doc.text(`Project: ${project.name}`, 14, 23);
-    doc.text(`Site: ${project.site_name}`, 14, 28);
-    doc.text(`Client: ${project.client} / Contractor: ${project.contractor}`, 14, 33);
-    doc.text(`Period: ${project.period_start || ''} ~ ${project.period_end || ''}`, 14, 38);
-    doc.text(`Date: ${new Date().toISOString().slice(0, 10)}`, 14, 43);
+    doc.text(`Project: ${project.name}`, 14, 32);
+    doc.text(`Site: ${project.site_name}`, 14, 37);
+    doc.text(`Client: ${project.client} / Contractor: ${project.contractor}`, 14, 42);
+    doc.text(`Period: ${project.period_start || ''} ~ ${project.period_end || ''}`, 14, 47);
+    doc.text(`Date: ${new Date().toISOString().slice(0, 10)}`, 14, 52);
 
     // Signature boxes at top-right
     const sigParticipants = participants || [];
@@ -216,7 +218,7 @@ export function exportToPDF(
       ]);
 
       autoTable(doc, {
-        startY: 48,
+        startY: 56,
         head: [['No', 'Process', 'Sub Task', 'Hazard', 'L', 'S', 'R', "L'", "S'", "R'", 'Status', 'Dept', 'Assignee']],
         body: tableData,
         styles: { fontSize: 7, cellPadding: 1.5 },

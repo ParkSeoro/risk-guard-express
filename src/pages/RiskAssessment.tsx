@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAuditLog } from "@/hooks/useAuditLog";
@@ -11,16 +11,18 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2 } from "lucide-react";
+import { Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, Upload, ShieldCheck, Undo2 } from "lucide-react";
 import { calculateRiskGrade, getGradeClassName, GRADES, type RiskGrade } from "@/lib/riskGrade";
 import { generateRiskItems } from "@/lib/riskAutoGen";
 import { exportToXLSX, exportToPDF, printRiskAssessment } from "@/lib/exportUtils";
+import { validateRiskItems, type ValidationReport } from "@/lib/validationEngine";
 import type { Database } from "@/integrations/supabase/types";
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
 
 const RiskAssessment = () => {
   const { projectId: paramProjectId } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { log } = useAuditLog();
   const { toast } = useToast();
@@ -38,6 +40,8 @@ const RiskAssessment = () => {
   const [autoGenTags, setAutoGenTags] = useState<string[]>([]);
   const [autoGenLoading, setAutoGenLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
+  const [showValidation, setShowValidation] = useState(false);
 
   useEffect(() => {
     supabase.from('projects').select('id, name, site_name, client, contractor, period_start, period_end').then(({ data }) => {
@@ -217,6 +221,37 @@ const RiskAssessment = () => {
     setAutoGenLoading(false);
   };
 
+  const handleValidate = async () => {
+    if (!selectedProjectId || !user) return;
+    try {
+      const report = await validateRiskItems(items, selectedProjectId);
+      setValidationReport(report);
+      setShowValidation(true);
+      toast({ title: `검증 완료: ${report.verdict} (${report.score}점)` });
+    } catch {
+      toast({ title: '검증 실패', variant: 'destructive' });
+    }
+  };
+
+  const handleBatchUndo = async () => {
+    // Find latest batch
+    const { data: batches } = await supabase.from('generated_batches')
+      .select('id, total_items, created_at')
+      .eq('project_id', selectedProjectId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (!batches || batches.length === 0) {
+      toast({ title: '되돌릴 배치가 없습니다.', variant: 'destructive' });
+      return;
+    }
+    const batch = batches[0];
+    await supabase.from('risk_items').delete().eq('batch_id', batch.id);
+    await supabase.from('generated_batches').delete().eq('id', batch.id);
+    setItems(prev => prev.filter(i => i.batch_id !== batch.id));
+    toast({ title: `배치 ${batch.total_items}건이 삭제되었습니다.` });
+    log('배치삭제', 'generated_batch', batch.id, selectedProjectId);
+  };
+
   const handleExportXLSX = async () => {
     if (!currentProject) return;
     const { data: ppe } = await supabase.from('master_ppe').select('name');
@@ -351,12 +386,21 @@ const RiskAssessment = () => {
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2 print:hidden">
+      <div className="flex items-center gap-2 print:hidden flex-wrap">
         <Button size="sm" className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => setShowAutoGen(true)}>
           <Wand2 className="h-3.5 w-3.5" /> 공종 자동작성
         </Button>
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => selectedProjectId && navigate(`/schedule-upload/${selectedProjectId}`)}>
+          <Upload className="h-3.5 w-3.5" /> 스케줄 업로드
+        </Button>
         <Button size="sm" variant="outline" className="gap-1.5" onClick={handleAddNew}>
           <Plus className="h-3.5 w-3.5" /> 행 추가
+        </Button>
+        <Button size="sm" variant="outline" className="gap-1.5" onClick={handleValidate} disabled={items.length === 0}>
+          <ShieldCheck className="h-3.5 w-3.5" /> 검증
+        </Button>
+        <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" onClick={handleBatchUndo}>
+          <Undo2 className="h-3.5 w-3.5" /> 배치 되돌리기
         </Button>
         <div className="flex-1" />
         <Button variant="outline" size="sm" className="gap-1.5" onClick={printRiskAssessment}>
@@ -517,6 +561,7 @@ const RiskAssessment = () => {
                   <SelectItem value="50">50개</SelectItem>
                   <SelectItem value="100">100개</SelectItem>
                   <SelectItem value="150">150개</SelectItem>
+                  <SelectItem value="300">300개</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -525,6 +570,44 @@ const RiskAssessment = () => {
               {autoGenLoading ? '생성 중...' : `${autoGenTargetCount}개 자동 생성`}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Validation Report Dialog */}
+      <Dialog open={showValidation} onOpenChange={setShowValidation}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>검증 결과</DialogTitle></DialogHeader>
+          {validationReport && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="p-3 bg-muted rounded-lg">
+                  <p className="text-2xl font-bold">{validationReport.score}</p>
+                  <p className="text-xs text-muted-foreground">점수</p>
+                </div>
+                <div className={`p-3 rounded-lg ${validationReport.verdict === '적정' ? 'bg-success/10' : validationReport.verdict === '조건부 적정' ? 'bg-warning/10' : 'bg-destructive/10'}`}>
+                  <p className="text-lg font-bold">{validationReport.verdict}</p>
+                  <p className="text-xs text-muted-foreground">판정</p>
+                </div>
+                <div className="p-3 bg-muted rounded-lg">
+                  <p className="text-2xl font-bold">{validationReport.totalIssues}</p>
+                  <p className="text-xs text-muted-foreground">지적사항</p>
+                </div>
+              </div>
+              <div className="max-h-60 overflow-y-auto space-y-1">
+                {validationReport.issues.slice(0, 20).map((issue, i) => {
+                  const item = items.find(it => it.id === issue.riskItemId);
+                  return (
+                    <div key={i} className={`text-xs p-2 rounded ${issue.severity === 'error' ? 'bg-destructive/5 text-destructive' : 'bg-warning/5'}`}>
+                      <span className="font-medium">{item?.process} – {item?.sub_task || ''}</span>: {issue.message}
+                    </div>
+                  );
+                })}
+                {validationReport.issues.length === 0 && (
+                  <p className="text-center text-success py-4 font-medium">✅ 검출된 문제가 없습니다.</p>
+                )}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

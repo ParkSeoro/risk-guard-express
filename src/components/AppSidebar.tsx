@@ -1,9 +1,9 @@
 import { 
   LayoutDashboard, FolderKanban, ShieldAlert, Database, 
-  FileCheck, HardHat, ChevronLeft, LogOut, User
+  FileCheck, HardHat, ChevronLeft, LogOut, User,
+  ShieldCheck, History, ClipboardList, Upload
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
@@ -16,14 +16,20 @@ const mainItems = [
   { title: "대시보드", url: "/", icon: LayoutDashboard },
   { title: "프로젝트", url: "/projects", icon: FolderKanban },
   { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
-  { title: "기준정보", url: "/master-data", icon: Database },
+  { title: "적정성 검증", url: "/verification", icon: ShieldCheck },
   { title: "결재함", url: "/approvals", icon: FileCheck },
+  { title: "TBM 기록", url: "/tbm", icon: ClipboardList },
+];
+
+const adminItems = [
+  { title: "기준정보", url: "/master-data", icon: Database },
+  { title: "감사 로그", url: "/audit-logs", icon: History },
 ];
 
 export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed";
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, isAdmin } = useAuth();
 
   return (
     <Sidebar collapsible="icon">
@@ -50,6 +56,24 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
                     <NavLink to={item.url} end={item.url === "/"} className="hover:bg-sidebar-accent/80 rounded-md transition-colors" activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold">
+                      <item.icon className="mr-2 h-4 w-4 shrink-0" />
+                      {!collapsed && <span>{item.title}</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel className="text-sidebar-muted text-[10px] uppercase tracking-widest">관리</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {adminItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild>
+                    <NavLink to={item.url} className="hover:bg-sidebar-accent/80 rounded-md transition-colors" activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold">
                       <item.icon className="mr-2 h-4 w-4 shrink-0" />
                       {!collapsed && <span>{item.title}</span>}
                     </NavLink>

@@ -21,8 +21,22 @@ Deno.serve(async (req) => {
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    // Create a user-scoped client to validate JWT and enforce RLS
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+
+    // Validate the JWT token
+    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Invalid token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const { runId, type } = await req.json();
     if (!runId) {
@@ -32,18 +46,21 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch run data
-    const { data: run } = await supabase
+    // Use user-scoped client to verify access (RLS enforces project membership)
+    const { data: run, error: runError } = await userClient
       .from("assessment_runs")
       .select("*")
       .eq("id", runId)
       .single();
-    if (!run) {
-      return new Response(JSON.stringify({ error: "Run not found" }), {
+    if (runError || !run) {
+      return new Response(JSON.stringify({ error: "Not found or access denied" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Now use service client for remaining data fetching (user access already verified)
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const { data: project } = await supabase
       .from("projects")

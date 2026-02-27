@@ -3,11 +3,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAuditLog } from "@/hooks/useAuditLog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle2, Clock, XCircle, FileCheck } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { CheckCircle2, Clock, XCircle, FileCheck, MessageSquare } from "lucide-react";
 
 const Approvals = () => {
   const { user, profile, isAdmin } = useAuth();
@@ -17,6 +18,8 @@ const Approvals = () => {
   const [selectedProject, setSelectedProject] = useState('');
   const [approvals, setApprovals] = useState<any[]>([]);
   const [runs, setRuns] = useState<any[]>([]);
+  const [rejectComment, setRejectComment] = useState('');
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.from('projects').select('id, name').then(({ data }) => {
@@ -24,18 +27,19 @@ const Approvals = () => {
     });
   }, []);
 
-  useEffect(() => {
+  const fetchData = async () => {
     if (!selectedProject) return;
-    Promise.all([
+    const [a, r] = await Promise.all([
       supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false }),
       supabase.from('assessment_runs').select('*').eq('project_id', selectedProject),
-    ]).then(([a, r]) => {
-      setApprovals(a.data || []);
-      setRuns(r.data || []);
-    });
-  }, [selectedProject]);
+    ]);
+    setApprovals(a.data || []);
+    setRuns(r.data || []);
+  };
 
-  // Group by run_id
+  useEffect(() => { fetchData(); }, [selectedProject]);
+
+  // Group by run_id (회차 단위)
   const grouped = approvals.reduce((acc, ap) => {
     const key = ap.run_id || 'general';
     if (!acc[key]) acc[key] = [];
@@ -43,13 +47,12 @@ const Approvals = () => {
     return acc;
   }, {} as Record<string, any[]>);
 
-  const handleApprovalAction = async (approvalId: string, action: '승인' | '반려') => {
+  const handleApprovalAction = async (approvalId: string, action: '승인' | '반려', comment?: string) => {
     if (!user || !profile) return;
     await supabase.from('approvals').update({
-      status: action, approver_id: user.id, approver_name: profile.display_name,
+      status: action, approver_id: user.id, approver_name: profile.display_name, comment: comment || '',
     }).eq('id', approvalId);
 
-    // Check if all steps for this run are approved
     const ap = approvals.find(a => a.id === approvalId);
     if (action === '승인' && ap?.run_id) {
       const { data: allAp } = await supabase.from('approvals').select('*').eq('run_id', ap.run_id);
@@ -62,15 +65,16 @@ const Approvals = () => {
         toast({ title: `${ap.step} 단계가 승인되었습니다.` });
       }
     } else if (action === '반려' && ap?.run_id) {
-      await supabase.from('assessment_runs').update({ status: '작성중' }).eq('id', ap.run_id);
-      toast({ title: '반려되었습니다.', variant: 'destructive' });
+      await supabase.from('assessment_runs').update({ status: '보완중' }).eq('id', ap.run_id);
+      toast({ title: '반려되었습니다. 보완 후 재제출이 필요합니다.', variant: 'destructive' });
     } else {
       toast({ title: `${action} 처리되었습니다.` });
     }
 
     log(action, 'approval', approvalId, selectedProject);
-    const { data } = await supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false });
-    setApprovals(data || []);
+    setRejectingId(null);
+    setRejectComment('');
+    fetchData();
   };
 
   return (
@@ -123,13 +127,25 @@ const Approvals = () => {
                         {step.status === '대기' && isAdmin() && (
                           <div className="flex gap-1">
                             <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => handleApprovalAction(step.id, '승인')}>승인</Button>
-                            <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-destructive" onClick={() => handleApprovalAction(step.id, '반려')}>반려</Button>
+                            <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-destructive" onClick={() => setRejectingId(step.id)}>반려</Button>
                           </div>
                         )}
                         {i < (steps as any[]).length - 1 && <div className="h-px w-6 bg-border" />}
                       </div>
                     ))}
                   </div>
+                  {/* Reject comment input */}
+                  {rejectingId && (steps as any[]).some(s => s.id === rejectingId) && (
+                    <div className="mt-3 flex items-end gap-2">
+                      <div className="flex-1">
+                        <Textarea placeholder="반려 사유를 입력하세요..." value={rejectComment} onChange={e => setRejectComment(e.target.value)} rows={2} className="text-xs" />
+                      </div>
+                      <Button size="sm" variant="destructive" className="h-8 gap-1" onClick={() => handleApprovalAction(rejectingId, '반려', rejectComment)}>
+                        <MessageSquare className="h-3 w-3" /> 반려 확인
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8" onClick={() => { setRejectingId(null); setRejectComment(''); }}>취소</Button>
+                    </div>
+                  )}
                   {(steps as any[]).some((s: any) => s.comment) && (
                     <p className="text-xs text-muted-foreground mt-2">
                       코멘트: {(steps as any[]).filter((s: any) => s.comment).map((s: any) => `${s.approver_name}: "${s.comment}"`).join(' | ')}

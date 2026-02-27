@@ -1,20 +1,19 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAuditLog } from '@/hooks/useAuditLog';
 import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Users, ShieldCheck, Search, UserCheck, UserX, Shield } from 'lucide-react';
+import { Users, Search, UserCheck, UserX, Shield } from 'lucide-react';
+import IMESafeInput from '@/components/IMESafeInput';
 
 const roleLabels: Record<string, string> = {
-  master: '마스터',
-  project_admin: '프로젝트 관리자',
-  safety_manager: '안전관리자',
-  contractor: '협력사 담당자',
-  viewer: '열람자',
+  master: '마스터', project_admin: '프로젝트 관리자', safety_manager: '안전관리자',
+  contractor: '협력사 담당자', viewer: '열람자',
 };
 
 const statusLabels: Record<string, { label: string; color: string }> = {
@@ -37,11 +36,13 @@ interface UserWithRole {
 
 const UserManagement = () => {
   const { hasRole } = useAuth();
+  const { log } = useAuditLog();
   const { toast } = useToast();
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
 
   const isMaster = hasRole('master');
 
@@ -49,7 +50,6 @@ const UserManagement = () => {
     setLoading(true);
     const { data: profiles } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
     const { data: allRoles } = await supabase.from('user_roles').select('user_id, role');
-    
     const enriched: UserWithRole[] = (profiles || []).map((p: any) => ({
       ...p,
       account_status: p.account_status || 'active',
@@ -62,19 +62,50 @@ const UserManagement = () => {
   useEffect(() => { fetchUsers(); }, []);
 
   const handleStatusChange = async (userId: string, status: string) => {
-    await supabase.from('profiles').update({ account_status: status } as any).eq('user_id', userId);
-    toast({ title: `사용자 상태가 '${statusLabels[status]?.label}'(으)로 변경되었습니다.` });
+    setSaving(userId);
+    const { error } = await supabase.from('profiles').update({ account_status: status }).eq('user_id', userId);
+    if (error) {
+      toast({ title: '상태 변경 실패', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: `사용자 상태가 '${statusLabels[status]?.label}'(으)로 변경되었습니다.` });
+      log('사용자상태변경', 'profile', userId, undefined, { status });
+    }
+    setSaving(null);
     fetchUsers();
   };
 
-  const handleRoleChange = async (userId: string, role: string, currentRoles: string[]) => {
-    // Remove existing roles and set new one
-    await supabase.from('user_roles').delete().eq('user_id', userId);
-    if (role) {
-      await supabase.from('user_roles').insert([{ user_id: userId, role: role as any }]);
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    setSaving(userId);
+    // Delete existing roles for this user
+    const { error: delError } = await supabase.from('user_roles').delete().eq('user_id', userId);
+    if (delError) {
+      toast({ title: '역할 삭제 실패', description: delError.message, variant: 'destructive' });
+      setSaving(null);
+      return;
     }
-    toast({ title: `역할이 '${roleLabels[role] || role}'(으)로 변경되었습니다.` });
+    if (newRole) {
+      const { error: insError } = await supabase.from('user_roles').insert([{ user_id: userId, role: newRole as any }]);
+      if (insError) {
+        toast({ title: '역할 변경 실패', description: insError.message, variant: 'destructive' });
+        setSaving(null);
+        return;
+      }
+    }
+    toast({ title: `역할이 '${roleLabels[newRole] || newRole}'(으)로 변경되었습니다.` });
+    log('역할변경', 'user_role', userId, undefined, { role: newRole });
+    setSaving(null);
     fetchUsers();
+  };
+
+  const handleCompanyChange = async (userId: string, company: string) => {
+    const { error } = await supabase.from('profiles').update({ company }).eq('user_id', userId);
+    if (error) {
+      toast({ title: '소속 변경 실패', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: '소속이 변경되었습니다.' });
+      log('소속변경', 'profile', userId, undefined, { company });
+      fetchUsers();
+    }
   };
 
   const filtered = users.filter(u => {
@@ -102,14 +133,11 @@ const UserManagement = () => {
           <h1 className="text-2xl font-bold flex items-center gap-2"><Users className="h-6 w-6" /> 사용자 관리</h1>
           <p className="text-sm text-muted-foreground mt-1">신규가입 승인, 역할 부여, 계정 활성화/비활성화 (마스터 전용)</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="gap-1">
-            <Shield className="h-3 w-3" /> 승인대기 {users.filter(u => u.account_status === 'pending').length}명
-          </Badge>
-        </div>
+        <Badge variant="outline" className="gap-1">
+          <Shield className="h-3 w-3" /> 승인대기 {users.filter(u => u.account_status === 'pending').length}명
+        </Badge>
       </div>
 
-      {/* Filters */}
       <Card>
         <CardContent className="py-3">
           <div className="flex items-center gap-3">
@@ -131,7 +159,6 @@ const UserManagement = () => {
         </CardContent>
       </Card>
 
-      {/* User List */}
       <Card>
         <CardContent className="p-0">
           <table className="w-full data-table text-sm">
@@ -154,7 +181,14 @@ const UserManagement = () => {
               ) : filtered.map(u => (
                 <tr key={u.id}>
                   <td className="font-medium">{u.display_name}</td>
-                  <td>{u.company || '—'}</td>
+                  <td>
+                    <IMESafeInput
+                      defaultValue={u.company || ''}
+                      className="h-7 text-xs w-32"
+                      onCommit={(val) => handleCompanyChange(u.user_id, val)}
+                      placeholder="소속 입력"
+                    />
+                  </td>
                   <td>{u.position || '—'}</td>
                   <td className="text-muted-foreground">{u.phone || '—'}</td>
                   <td className="text-center">
@@ -163,7 +197,7 @@ const UserManagement = () => {
                     </Badge>
                   </td>
                   <td className="text-center">
-                    <Select value={u.roles[0] || 'viewer'} onValueChange={v => handleRoleChange(u.user_id, v, u.roles)}>
+                    <Select value={u.roles[0] || 'viewer'} onValueChange={v => handleRoleChange(u.user_id, v)}>
                       <SelectTrigger className="h-7 w-28 text-xs mx-auto"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {Object.entries(roleLabels).map(([k, v]) => (
@@ -175,17 +209,20 @@ const UserManagement = () => {
                   <td className="text-center">
                     <div className="flex items-center gap-1 justify-center">
                       {u.account_status === 'pending' && (
-                        <Button size="sm" variant="outline" className="h-6 text-xs gap-1 text-success" onClick={() => handleStatusChange(u.user_id, 'active')}>
+                        <Button size="sm" variant="outline" className="h-6 text-xs gap-1 text-success" disabled={saving === u.user_id}
+                          onClick={() => handleStatusChange(u.user_id, 'active')}>
                           <UserCheck className="h-3 w-3" /> 승인
                         </Button>
                       )}
                       {u.account_status === 'active' && (
-                        <Button size="sm" variant="outline" className="h-6 text-xs gap-1 text-destructive" onClick={() => handleStatusChange(u.user_id, 'inactive')}>
+                        <Button size="sm" variant="outline" className="h-6 text-xs gap-1 text-destructive" disabled={saving === u.user_id}
+                          onClick={() => handleStatusChange(u.user_id, 'inactive')}>
                           <UserX className="h-3 w-3" /> 비활성화
                         </Button>
                       )}
                       {u.account_status === 'inactive' && (
-                        <Button size="sm" variant="outline" className="h-6 text-xs gap-1" onClick={() => handleStatusChange(u.user_id, 'active')}>
+                        <Button size="sm" variant="outline" className="h-6 text-xs gap-1" disabled={saving === u.user_id}
+                          onClick={() => handleStatusChange(u.user_id, 'active')}>
                           <UserCheck className="h-3 w-3" /> 활성화
                         </Button>
                       )}

@@ -12,10 +12,12 @@ import AssessmentRunDetail from "./pages/AssessmentRunDetail";
 import MasterData from "./pages/MasterData";
 import Approvals from "./pages/Approvals";
 import Verification from "./pages/Verification";
+import VerificationCenter from "./pages/VerificationCenter";
 import ScheduleUpload from "./pages/ScheduleUpload";
 import AuditLogs from "./pages/AuditLogs";
 import TBM from "./pages/TBM";
 import UserManagement from "./pages/UserManagement";
+import PermissionTest from "./pages/PermissionTest";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
@@ -27,7 +29,6 @@ function ProtectedRoutes() {
   if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">로딩 중...</div>;
   if (!user) return <Navigate to="/auth" replace />;
 
-  // Check account status - pending users see a waiting screen
   if (profile && (profile as any).account_status === 'pending') {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
@@ -67,11 +68,13 @@ function ProtectedRoutes() {
         <Route path="/assessment-run/:runId" element={<AssessmentRunDetail />} />
         <Route path="/schedule-upload/:projectId" element={<ScheduleUpload />} />
         <Route path="/verification" element={<Verification />} />
+        <Route path="/verification-center" element={<VerificationCenter />} />
         <Route path="/master-data" element={<MasterData />} />
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/audit-logs" element={<AuditLogs />} />
         <Route path="/tbm" element={<TBM />} />
         <Route path="/user-management" element={<UserManagement />} />
+        <Route path="/permission-test" element={<PermissionTest />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

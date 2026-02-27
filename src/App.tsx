@@ -10,6 +10,10 @@ import Projects from "./pages/Projects";
 import RiskAssessment from "./pages/RiskAssessment";
 import MasterData from "./pages/MasterData";
 import Approvals from "./pages/Approvals";
+import Verification from "./pages/Verification";
+import ScheduleUpload from "./pages/ScheduleUpload";
+import AuditLogs from "./pages/AuditLogs";
+import TBM from "./pages/TBM";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
@@ -28,8 +32,12 @@ function ProtectedRoutes() {
         <Route path="/projects" element={<Projects />} />
         <Route path="/risk-assessment" element={<RiskAssessment />} />
         <Route path="/risk-assessment/:projectId" element={<RiskAssessment />} />
+        <Route path="/schedule-upload/:projectId" element={<ScheduleUpload />} />
+        <Route path="/verification" element={<Verification />} />
         <Route path="/master-data" element={<MasterData />} />
         <Route path="/approvals" element={<Approvals />} />
+        <Route path="/audit-logs" element={<AuditLogs />} />
+        <Route path="/tbm" element={<TBM />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

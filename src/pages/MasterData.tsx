@@ -10,7 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Pencil, Trash2, AlertTriangle } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Plus, Pencil, Trash2, AlertTriangle, Save } from "lucide-react";
+import { GRADES, type RiskGrade, calculateRiskGrade, getGradeClassName, setMatrixConfig, getMatrixConfig } from "@/lib/riskGrade";
 
 const MasterData = () => {
   const { isAdmin } = useAuth();
@@ -20,24 +22,35 @@ const MasterData = () => {
   const [legalRefs, setLegalRefs] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [assignees, setAssignees] = useState<any[]>([]);
+  const [validationRules, setValidationRules] = useState<any[]>([]);
 
-  // Dialog states
+  // Matrix settings
+  const [matrix, setMatrix] = useState<Record<string, RiskGrade>>({});
+  const [matrixColors, setMatrixColors] = useState<Record<RiskGrade, string>>({ '상': '#ef4444', '중': '#eab308', '하': '#22c55e' });
+
   const [editDialog, setEditDialog] = useState<{ type: string; item?: any } | null>(null);
   const [form, setForm] = useState<Record<string, any>>({});
 
   const fetchAll = async () => {
-    const [p, pp, lr, d, a] = await Promise.all([
+    const [p, pp, lr, d, a, vr] = await Promise.all([
       supabase.from('master_processes').select('*').order('name'),
       supabase.from('master_ppe').select('*').order('name'),
       supabase.from('legal_references').select('*').order('law_name'),
       supabase.from('master_departments').select('*').order('name'),
       supabase.from('master_assignees').select('*, master_departments(name)').order('name'),
+      supabase.from('validation_rules').select('*').order('rule_name'),
     ]);
     setProcesses(p.data || []);
     setPpe(pp.data || []);
     setLegalRefs(lr.data || []);
     setDepartments(d.data || []);
     setAssignees(a.data || []);
+    setValidationRules(vr.data || []);
+
+    // Load matrix config
+    const config = getMatrixConfig();
+    setMatrix({ ...config.matrix });
+    setMatrixColors({ ...config.colors });
   };
 
   useEffect(() => { fetchAll(); }, []);
@@ -47,17 +60,11 @@ const MasterData = () => {
     const { type, item } = editDialog;
 
     if (type === 'process') {
-      if (item) {
-        await supabase.from('master_processes').update({ name: form.name, category: form.category }).eq('id', item.id);
-      } else {
-        await supabase.from('master_processes').insert([{ name: form.name, category: form.category }]);
-      }
+      if (item) await supabase.from('master_processes').update({ name: form.name, category: form.category }).eq('id', item.id);
+      else await supabase.from('master_processes').insert([{ name: form.name, category: form.category }]);
     } else if (type === 'ppe') {
-      if (item) {
-        await supabase.from('master_ppe').update({ name: form.name, icon: form.icon }).eq('id', item.id);
-      } else {
-        await supabase.from('master_ppe').insert([{ name: form.name, icon: form.icon }]);
-      }
+      if (item) await supabase.from('master_ppe').update({ name: form.name, icon: form.icon }).eq('id', item.id);
+      else await supabase.from('master_ppe').insert([{ name: form.name, icon: form.icon }]);
     } else if (type === 'legal') {
       const data = {
         law_name: form.law_name, article: form.article, description: form.description,
@@ -65,24 +72,19 @@ const MasterData = () => {
         process_mappings: (form.process_mappings || '').split(',').map((s: string) => s.trim()).filter(Boolean),
         link: form.link, needs_review: form.needs_review || false,
       };
-      if (item) {
-        await supabase.from('legal_references').update(data).eq('id', item.id);
-      } else {
-        await supabase.from('legal_references').insert([data]);
-      }
+      if (item) await supabase.from('legal_references').update(data).eq('id', item.id);
+      else await supabase.from('legal_references').insert([data]);
     } else if (type === 'department') {
-      if (item) {
-        await supabase.from('master_departments').update({ name: form.name }).eq('id', item.id);
-      } else {
-        await supabase.from('master_departments').insert([{ name: form.name }]);
-      }
+      if (item) await supabase.from('master_departments').update({ name: form.name }).eq('id', item.id);
+      else await supabase.from('master_departments').insert([{ name: form.name }]);
     } else if (type === 'assignee') {
       const data = { name: form.name, position: form.position, phone: form.phone, department_id: form.department_id };
-      if (item) {
-        await supabase.from('master_assignees').update(data).eq('id', item.id);
-      } else {
-        await supabase.from('master_assignees').insert([data]);
-      }
+      if (item) await supabase.from('master_assignees').update(data).eq('id', item.id);
+      else await supabase.from('master_assignees').insert([data]);
+    } else if (type === 'rule') {
+      const data = { rule_name: form.rule_name, rule_type: form.rule_type, description: form.description, severity: form.severity, weight: Number(form.weight) || 1, is_active: form.is_active !== false };
+      if (item) await supabase.from('validation_rules').update(data).eq('id', item.id);
+      else await supabase.from('validation_rules').insert([data]);
     }
 
     toast({ title: item ? '수정되었습니다.' : '추가되었습니다.' });
@@ -91,8 +93,8 @@ const MasterData = () => {
   };
 
   const handleDelete = async (type: string, id: string) => {
-    const table = type === 'process' ? 'master_processes' : type === 'ppe' ? 'master_ppe' : type === 'legal' ? 'legal_references' : type === 'department' ? 'master_departments' : 'master_assignees';
-    await supabase.from(table).delete().eq('id', id);
+    const tableMap: Record<string, string> = { process: 'master_processes', ppe: 'master_ppe', legal: 'legal_references', department: 'master_departments', assignee: 'master_assignees', rule: 'validation_rules' };
+    await supabase.from(tableMap[type] as any).delete().eq('id', id);
     toast({ title: '삭제되었습니다.' });
     fetchAll();
   };
@@ -106,20 +108,87 @@ const MasterData = () => {
     setEditDialog({ type, item });
   };
 
+  const handleSaveMatrix = () => {
+    setMatrixConfig({ matrix, colors: matrixColors, labels: getMatrixConfig().labels });
+    toast({ title: '위험도 매트릭스가 저장되었습니다.' });
+  };
+
   const admin = isAdmin();
 
   return (
     <div className="space-y-4 animate-fade-in">
-      <div><h1 className="text-2xl font-bold">기준정보 관리</h1><p className="text-sm text-muted-foreground mt-1">마스터 데이터 및 법적근거</p></div>
+      <div><h1 className="text-2xl font-bold">기준정보 관리</h1><p className="text-sm text-muted-foreground mt-1">마스터 데이터, 법적근거, 위험도 매트릭스, 검증 규칙</p></div>
 
-      <Tabs defaultValue="processes">
-        <TabsList>
+      <Tabs defaultValue="matrix">
+        <TabsList className="flex-wrap">
+          <TabsTrigger value="matrix">위험도 매트릭스</TabsTrigger>
           <TabsTrigger value="processes">공정 목록</TabsTrigger>
           <TabsTrigger value="ppe">PPE 목록</TabsTrigger>
           <TabsTrigger value="legal">법적근거</TabsTrigger>
           <TabsTrigger value="departments">부서·담당자</TabsTrigger>
+          <TabsTrigger value="rules">검증 규칙</TabsTrigger>
         </TabsList>
 
+        {/* Matrix Settings */}
+        <TabsContent value="matrix">
+          <Card>
+            <CardHeader><CardTitle className="text-base">3x3 위험도 매트릭스 설정</CardTitle></CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">가능성(행) × 중대성(열) 조합별 위험도 등급을 설정합니다.</p>
+              <div className="overflow-x-auto">
+                <table className="border-collapse">
+                  <thead>
+                    <tr>
+                      <th className="p-2 text-xs text-muted-foreground">가능성 ↓ / 중대성 →</th>
+                      {GRADES.map(g => <th key={g} className="p-2 text-center font-bold text-sm">{g}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {GRADES.map(likelihood => (
+                      <tr key={likelihood}>
+                        <td className="p-2 font-bold text-sm">{likelihood}</td>
+                        {GRADES.map(severity => {
+                          const key = `${likelihood}_${severity}`;
+                          const value = matrix[key] || calculateRiskGrade(likelihood, severity);
+                          return (
+                            <td key={key} className="p-1">
+                              <Select value={value} onValueChange={v => setMatrix(prev => ({ ...prev, [key]: v as RiskGrade }))}>
+                                <SelectTrigger className={`h-10 w-20 text-center font-bold ${getGradeClassName(value)}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {GRADES.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <span className="text-sm font-medium">색상:</span>
+                {GRADES.map(g => (
+                  <div key={g} className="flex items-center gap-1.5">
+                    <input type="color" value={matrixColors[g]} onChange={e => setMatrixColors(prev => ({ ...prev, [g]: e.target.value }))} className="w-8 h-8 rounded border cursor-pointer" />
+                    <span className="text-xs">{g}</span>
+                  </div>
+                ))}
+              </div>
+
+              {admin && (
+                <Button onClick={handleSaveMatrix} className="gap-1.5">
+                  <Save className="h-3.5 w-3.5" /> 매트릭스 저장
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Processes */}
         <TabsContent value="processes">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -146,6 +215,7 @@ const MasterData = () => {
           </Card>
         </TabsContent>
 
+        {/* PPE */}
         <TabsContent value="ppe">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -172,6 +242,7 @@ const MasterData = () => {
           </Card>
         </TabsContent>
 
+        {/* Legal */}
         <TabsContent value="legal">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -203,6 +274,7 @@ const MasterData = () => {
           </Card>
         </TabsContent>
 
+        {/* Departments */}
         <TabsContent value="departments">
           <div className="grid grid-cols-2 gap-4">
             <Card>
@@ -254,6 +326,38 @@ const MasterData = () => {
             </Card>
           </div>
         </TabsContent>
+
+        {/* Validation Rules */}
+        <TabsContent value="rules">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-base">검증 규칙 관리</CardTitle>
+              {admin && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit('rule')}><Plus className="h-3.5 w-3.5" /> 추가</Button>}
+            </CardHeader>
+            <CardContent className="p-0">
+              <table className="w-full data-table text-sm">
+                <thead><tr><th>규칙명</th><th>유형</th><th>설명</th><th>심각도</th><th>가중치</th><th>활성</th>{admin && <th className="w-20 text-center">작업</th>}</tr></thead>
+                <tbody>
+                  {validationRules.map(r => (
+                    <tr key={r.id}>
+                      <td className="font-medium">{r.rule_name}</td>
+                      <td><Badge variant="secondary" className="text-[10px]">{r.rule_type}</Badge></td>
+                      <td className="text-xs max-w-[200px]">{r.description}</td>
+                      <td><Badge variant={r.severity === 'error' ? 'destructive' : 'outline'} className="text-[10px]">{r.severity}</Badge></td>
+                      <td className="text-center">{r.weight}</td>
+                      <td className="text-center">{r.is_active ? '✅' : '❌'}</td>
+                      {admin && <td className="text-center">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit('rule', r)}><Pencil className="h-3 w-3" /></Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete('rule', r.id)}><Trash2 className="h-3 w-3" /></Button>
+                      </td>}
+                    </tr>
+                  ))}
+                  {validationRules.length === 0 && <tr><td colSpan={7} className="text-center py-6 text-muted-foreground">검증 규칙이 없습니다</td></tr>}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* Edit/Add Dialog */}
@@ -303,6 +407,43 @@ const MasterData = () => {
                     <option value="">선택</option>
                     {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
+                </div>
+              </>
+            )}
+            {editDialog?.type === 'rule' && (
+              <>
+                <div className="space-y-1"><Label>규칙명</Label><Input value={form.rule_name || ''} onChange={e => setForm(p => ({ ...p, rule_name: e.target.value }))} /></div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label>유형</Label>
+                    <Select value={form.rule_type || ''} onValueChange={v => setForm(p => ({ ...p, rule_type: v }))}>
+                      <SelectTrigger><SelectValue placeholder="선택" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="missing_field">필수항목 누락</SelectItem>
+                        <SelectItem value="underestimation">과소평가</SelectItem>
+                        <SelectItem value="insufficient_improvement">개선 미흡</SelectItem>
+                        <SelectItem value="missing_legal">법적근거 누락</SelectItem>
+                        <SelectItem value="incomplete_completion">완료 미비</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>심각도</Label>
+                    <Select value={form.severity || 'warning'} onValueChange={v => setForm(p => ({ ...p, severity: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="error">오류</SelectItem>
+                        <SelectItem value="warning">경고</SelectItem>
+                        <SelectItem value="info">정보</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-1"><Label>설명</Label><Input value={form.description || ''} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></div>
+                <div className="space-y-1"><Label>가중치</Label><Input type="number" value={form.weight || 1} onChange={e => setForm(p => ({ ...p, weight: e.target.value }))} /></div>
+                <div className="flex items-center gap-2">
+                  <Checkbox checked={form.is_active !== false} onCheckedChange={v => setForm(p => ({ ...p, is_active: v }))} />
+                  <Label>활성화</Label>
                 </div>
               </>
             )}

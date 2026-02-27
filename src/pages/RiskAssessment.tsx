@@ -33,6 +33,8 @@ const RiskAssessment = () => {
   const [editingCell, setEditingCell] = useState<{ id: string; field: string } | null>(null);
   const [showAutoGen, setShowAutoGen] = useState(false);
   const [autoGenProcess, setAutoGenProcess] = useState('');
+  const [autoGenTargetCount, setAutoGenTargetCount] = useState(50);
+  const [autoGenTags, setAutoGenTags] = useState<string[]>([]);
   const [autoGenLoading, setAutoGenLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -141,7 +143,12 @@ const RiskAssessment = () => {
     if (!autoGenProcess || !selectedProjectId || !user) return;
     setAutoGenLoading(true);
     try {
-      const generated = await generateRiskItems(autoGenProcess);
+      const generated = await generateRiskItems({
+        processName: autoGenProcess,
+        tags: autoGenTags,
+        targetCount: autoGenTargetCount,
+        deduplicate: true,
+      });
       if (generated.length === 0) {
         toast({ title: '해당 공종에 대한 템플릿이 없습니다.', variant: 'destructive' });
         setAutoGenLoading(false);
@@ -159,7 +166,7 @@ const RiskAssessment = () => {
         severity: g.severity,
         improved_frequency: g.improved_frequency,
         improved_severity: g.improved_severity,
-        status: '미착수',
+        status: '초안',
         ppe: g.ppe,
         legal_basis: g.legal_basis,
         department: g.department,
@@ -175,6 +182,7 @@ const RiskAssessment = () => {
       }
       setShowAutoGen(false);
       setAutoGenProcess('');
+      setAutoGenTags([]);
     } catch (err) {
       toast({ title: '자동 생성 실패', variant: 'destructive' });
     }
@@ -404,18 +412,42 @@ const RiskAssessment = () => {
 
       {/* Auto Generate Dialog */}
       <Dialog open={showAutoGen} onOpenChange={setShowAutoGen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>공종명으로 위험성평가 자동작성</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">공종명(또는 공정명)을 입력하면 미리 등록된 템플릿에서 해당 공종에 맞는 위험성평가 항목(세부작업, 위험요인, 대책, PPE, 법적근거 등)이 자동 생성됩니다.</p>
+            <p className="text-sm text-muted-foreground">공종명을 입력하면 표준 라이브러리(240+항목)에서 관련 위험성평가 항목을 자동 생성합니다.</p>
             <div className="space-y-1.5">
               <Label>공종명 입력</Label>
               <Input value={autoGenProcess} onChange={e => setAutoGenProcess(e.target.value)}
-                placeholder="예: 배관설치, 용접작업, 고소작업, 6000t Tank 설치..." />
+                placeholder="예: 배관, 용접, 비계, 굴착, 철골, 콘크리트, 전기, 도장, 밀폐공간..." />
             </div>
-            <p className="text-xs text-muted-foreground">사용 가능한 공종: 배관설치, 용접작업, 고소작업, 중장비 운반, 전기배선, 도장작업, 6000t Tank 설치, Cooling Tower 설치, 굴착작업, 철골조립</p>
+            <div className="space-y-1.5">
+              <Label>환경/장비 태그 (선택)</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {['고소','야간','밀폐','화기','양중','굴착','전기','분진','소음','고온','해상','화학'].map(tag => (
+                  <Badge key={tag} variant={autoGenTags.includes(tag) ? 'default' : 'outline'}
+                    className="cursor-pointer text-[11px]"
+                    onClick={() => setAutoGenTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}>
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>생성 개수</Label>
+              <Select value={String(autoGenTargetCount)} onValueChange={v => setAutoGenTargetCount(Number(v))}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="30">30개</SelectItem>
+                  <SelectItem value="50">50개</SelectItem>
+                  <SelectItem value="100">100개</SelectItem>
+                  <SelectItem value="150">150개</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-xs text-muted-foreground">18개 대분류 · 240+ 표준항목: 토공, 기초, 철골, 비계, 마감, 설비, 전기, 소방, 기계, 밀폐공간, 크레인, 중량물, 도로, 해상, 철거, 화기, 화학, 환경</p>
             <Button onClick={handleAutoGenerate} disabled={!autoGenProcess || autoGenLoading} className="w-full">
-              {autoGenLoading ? '생성 중...' : '자동 생성'}
+              {autoGenLoading ? '생성 중...' : `${autoGenTargetCount}개 자동 생성`}
             </Button>
           </div>
         </DialogContent>

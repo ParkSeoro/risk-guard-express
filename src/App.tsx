@@ -15,7 +15,7 @@ import Verification from "./pages/Verification";
 import VerificationCenter from "./pages/VerificationCenter";
 import ScheduleUpload from "./pages/ScheduleUpload";
 import AuditLogs from "./pages/AuditLogs";
-import TBM from "./pages/TBM";
+// TBM feature removed
 import UserManagement from "./pages/UserManagement";
 import PermissionTest from "./pages/PermissionTest";
 import Auth from "./pages/Auth";
@@ -72,7 +72,7 @@ function ProtectedRoutes() {
         <Route path="/master-data" element={<MasterData />} />
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/audit-logs" element={<AuditLogs />} />
-        <Route path="/tbm" element={<TBM />} />
+        {/* TBM removed */}
         <Route path="/user-management" element={<UserManagement />} />
         <Route path="/permission-test" element={<PermissionTest />} />
         <Route path="*" element={<NotFound />} />

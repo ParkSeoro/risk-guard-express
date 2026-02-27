@@ -76,7 +76,8 @@ const Auth = () => {
           <CardTitle className="text-xl">
             {mode === 'login' ? '로그인' : mode === 'signup' ? '회원가입' : '비밀번호 재설정'}
           </CardTitle>
-          <p className="text-sm text-muted-foreground">위험성평가 관리 시스템</p>
+          <p className="text-sm font-semibold text-foreground">디아이지에어가스</p>
+          <p className="text-xs text-muted-foreground">위험성평가 시스템</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleForgot} className="space-y-4">

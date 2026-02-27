@@ -216,7 +216,7 @@ const VerificationCenter = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><ShieldCheck className="h-6 w-6" /> 검증센터</h1>
-          <p className="text-sm text-muted-foreground mt-1">누락 검증(커버리지) + 협력사 엑셀 업로드 검증</p>
+          <p className="text-sm text-muted-foreground mt-1">누락 검증(커버리지) + 무관/오분류 탐지 + 협력사 엑셀 업로드 검증</p>
         </div>
         <div className="flex items-center gap-2">
           <Select value={selectedProject} onValueChange={setSelectedProject}>
@@ -250,7 +250,8 @@ const VerificationCenter = () => {
 
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList className="w-full">
-              <TabsTrigger value="coverage" className="flex-1 gap-1"><SearchIcon className="h-3.5 w-3.5" /> 누락 검증 (커버리지)</TabsTrigger>
+              <TabsTrigger value="coverage" className="flex-1 gap-1"><SearchIcon className="h-3.5 w-3.5" /> 누락 검증</TabsTrigger>
+              <TabsTrigger value="quality" className="flex-1 gap-1"><ShieldCheck className="h-3.5 w-3.5" /> 품질/무관 검증</TabsTrigger>
               <TabsTrigger value="excel" className="flex-1 gap-1"><Upload className="h-3.5 w-3.5" /> 엑셀 업로드 검증</TabsTrigger>
             </TabsList>
 
@@ -345,6 +346,77 @@ const VerificationCenter = () => {
                     <Card><CardContent className="py-8 text-center text-success"><CheckCircle2 className="h-8 w-8 mx-auto mb-2" /> 모든 검증 통과</CardContent></Card>
                   )}
                 </>
+              )}
+            </TabsContent>
+
+            {/* Quality / Irrelevance Tab */}
+            <TabsContent value="quality" className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Button size="sm" className="gap-1.5" onClick={handleCoverageCheck} disabled={coverageLoading || items.length === 0}>
+                  <ShieldCheck className="h-3.5 w-3.5" /> {coverageLoading ? '검증 중...' : '품질/무관 검증 실행'}
+                </Button>
+              </div>
+              {coverageReport ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <Card><CardContent className="pt-4">
+                      <p className="text-2xl font-bold">{coverageReport.score}</p>
+                      <p className="text-xs text-muted-foreground">품질 점수</p>
+                    </CardContent></Card>
+                    <Card><CardContent className={`pt-4 rounded-lg ${verdictColor(coverageReport.verdict)}`}>
+                      <p className="text-lg font-bold">{coverageReport.verdict}</p>
+                      <p className="text-xs">종합 판정</p>
+                    </CardContent></Card>
+                    <Card><CardContent className="pt-4">
+                      <p className="text-2xl font-bold text-warning">{coverageReport.warnings}</p>
+                      <p className="text-xs text-muted-foreground">경고 (과소/무관)</p>
+                    </CardContent></Card>
+                  </div>
+                  {coverageReport.issues.filter(i => i.ruleType === 'underestimation').length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-2"><CardTitle className="text-sm">과소평가 의심 항목</CardTitle></CardHeader>
+                      <CardContent className="max-h-48 overflow-y-auto space-y-1">
+                        {coverageReport.issues.filter(i => i.ruleType === 'underestimation').map((iss, i) => {
+                          const item = items.find(it => it.id === iss.riskItemId);
+                          return (
+                            <div key={i} className="text-xs p-2 rounded bg-warning/5 flex items-start gap-2">
+                              <AlertTriangle className="h-3.5 w-3.5 text-warning mt-0.5 shrink-0" />
+                              <div>
+                                <span className="font-medium">{item?.process} – {item?.sub_task || ''}</span>
+                                <p className="text-muted-foreground">{iss.message}</p>
+                                {iss.recommendation && <p className="text-muted-foreground italic text-[10px]">→ {iss.recommendation}</p>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </CardContent>
+                    </Card>
+                  )}
+                  {coverageReport.issues.filter(i => i.ruleType === 'insufficient_improvement').length > 0 && (
+                    <Card>
+                      <CardHeader className="pb-2"><CardTitle className="text-sm">개선 부족 항목 (위험도 상 잔존)</CardTitle></CardHeader>
+                      <CardContent className="max-h-48 overflow-y-auto space-y-1">
+                        {coverageReport.issues.filter(i => i.ruleType === 'insufficient_improvement').map((iss, i) => {
+                          const item = items.find(it => it.id === iss.riskItemId);
+                          return (
+                            <div key={i} className="text-xs p-2 rounded bg-destructive/5 flex items-start gap-2">
+                              <XCircle className="h-3.5 w-3.5 text-destructive mt-0.5 shrink-0" />
+                              <div>
+                                <span className="font-medium">{item?.process} – {item?.sub_task || ''}</span>
+                                <p className="text-muted-foreground">{iss.message}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </CardContent>
+                    </Card>
+                  )}
+                  {coverageReport.issues.length === 0 && (
+                    <Card><CardContent className="py-8 text-center text-success"><CheckCircle2 className="h-8 w-8 mx-auto mb-2" /> 품질 검증 통과</CardContent></Card>
+                  )}
+                </div>
+              ) : (
+                <Card><CardContent className="py-12 text-center text-muted-foreground">회차를 선택하고 '품질/무관 검증 실행'을 클릭하세요.</CardContent></Card>
               )}
             </TabsContent>
 

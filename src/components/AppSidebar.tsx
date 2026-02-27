@@ -1,7 +1,7 @@
 import { 
   LayoutDashboard, FolderKanban, ShieldAlert, Database, 
   FileCheck, HardHat, ChevronLeft, LogOut, User,
-  ShieldCheck, History, ClipboardList, Users, Shield, SearchCheck
+  ShieldCheck, History, Users, Shield, SearchCheck
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -19,7 +19,6 @@ const mainItems = [
   { title: "검증센터", url: "/verification-center", icon: SearchCheck },
   { title: "적정성 검증", url: "/verification", icon: ShieldCheck },
   { title: "결재함", url: "/approvals", icon: FileCheck },
-  { title: "TBM 기록", url: "/tbm", icon: ClipboardList },
 ];
 
 const adminItems = [
@@ -43,8 +42,8 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="text-sm font-bold text-sidebar-foreground">위험성평가</span>
-              <span className="text-[10px] text-sidebar-muted">Risk Assessment System</span>
+              <span className="text-sm font-bold text-sidebar-foreground">디아이지에어가스</span>
+              <span className="text-[10px] text-sidebar-muted">위험성평가 시스템</span>
             </div>
           )}
         </div>

@@ -1154,6 +1154,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      ensure_master_allowlist: {
+        Args: { _user_id: string }
+        Returns: undefined
+      }
       get_project_role: {
         Args: { _project_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]

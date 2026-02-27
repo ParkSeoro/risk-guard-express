@@ -57,13 +57,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const syncMasterAllowlist = async (userId: string) => {
+    try {
+      await supabase.rpc('ensure_master_allowlist', { _user_id: userId });
+    } catch (e) {
+      // non-critical – allowlist enforced server-side anyway
+    }
+  };
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          setTimeout(() => {
+          setTimeout(async () => {
+            await syncMasterAllowlist(session.user.id);
             fetchProfile(session.user.id);
             fetchRoles(session.user.id);
           }, 0);
@@ -75,10 +84,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
+        await syncMasterAllowlist(session.user.id);
         fetchProfile(session.user.id);
         fetchRoles(session.user.id);
       }

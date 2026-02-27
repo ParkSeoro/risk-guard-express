@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
 import { generateRiskItems } from '@/lib/riskAutoGen';
-import { exportToXLSX, exportToPDF, printRiskAssessment } from '@/lib/exportUtils';
+import { exportToXLSX, exportToPDF, exportToPDFServer, printRiskAssessment } from '@/lib/exportUtils';
 import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue } from '@/lib/validationEngine';
 import type { Database } from '@/integrations/supabase/types';
 import IMESafeInput from '@/components/IMESafeInput';
@@ -220,23 +220,39 @@ const AssessmentRunDetail = () => {
     setAutoGenLoading(false);
   };
 
-  // Validation
+  // Validation (supports re-validation)
   const handleValidate = async () => {
     if (!run || !user) return;
     try {
       await supabase.from('assessment_runs').update({ status: '검증중' }).eq('id', runId);
       setRun((prev: any) => ({ ...prev, status: '검증중' }));
-      const report = await validateRiskItems(items, run.project_id);
+      
+      // Re-fetch items to get latest data
+      const { data: freshItems } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+      const currentItems = freshItems || items;
+      if (freshItems) setItems(freshItems);
+
+      const report = await validateRiskItems(currentItems, run.project_id);
       setValidationReport(report);
       setShowValidation(true);
       setValidationTab('summary');
       await saveValidationResults(report, run.project_id, user.id, runId);
-      const newStatus = report.verdict === '부적정' ? '보완요청' : '검증완료';
+
+      // Status transition based on verdict
+      let newStatus: string;
+      if (report.verdict === '적정') {
+        newStatus = '검증완료';
+      } else if (report.verdict === '조건부 적정') {
+        newStatus = '검증완료'; // 조건부도 결재 가능
+      } else {
+        newStatus = '보완요청'; // 부적정 → 보완요청
+      }
+
       await supabase.from('assessment_runs').update({
         status: newStatus, validation_score: report.score, validation_verdict: report.verdict,
       }).eq('id', runId);
       setRun((prev: any) => ({ ...prev, status: newStatus, validation_score: report.score, validation_verdict: report.verdict }));
-      toast({ title: `검증 완료: ${report.verdict} (${report.score}점)` });
+      toast({ title: `검증 완료: ${report.verdict} (${report.score}점)${newStatus === '검증완료' ? ' → 결재 상신 가능' : ' → 보완 필요'}` });
       log('검증실행', 'assessment_run', runId!, run.project_id, { score: report.score, verdict: report.verdict });
     } catch { toast({ title: '검증 실패', variant: 'destructive' }); }
   };
@@ -355,14 +371,76 @@ const AssessmentRunDetail = () => {
     fetchAll();
   };
 
-  // Resubmit (after rejection/supplement request → back to Draft)
+  // Resubmit (after rejection/supplement request → back to Submitted for revalidation)
   const handleResubmit = async () => {
     if (!run) return;
     await supabase.from('approvals').delete().eq('run_id', runId);
-    await supabase.from('assessment_runs').update({ status: '작성중' }).eq('id', runId);
-    setRun((prev: any) => ({ ...prev, status: '작성중' }));
-    toast({ title: '작성중 상태로 전환되었습니다. 수정 후 재검증/재상신하세요.' });
+    await supabase.from('assessment_runs').update({ status: '제출됨' }).eq('id', runId);
+    setRun((prev: any) => ({ ...prev, status: '제출됨' }));
+    toast({ title: '재제출 완료. 재검증을 실행하세요.' });
     log('재제출', 'assessment_run', runId!, run.project_id);
+  };
+
+  // Auto-remediation: apply suggested fixes from validation issues
+  const handleAutoRemediate = async () => {
+    if (!validationReport || !run || !user) return;
+    let fixCount = 0;
+    const fixes: string[] = [];
+
+    for (const item of items) {
+      const verdict = validationReport.itemVerdicts[item.id];
+      if (!verdict || verdict.verdict === '적정') continue;
+
+      const updates: Record<string, any> = {};
+
+      for (const issue of verdict.issues) {
+        if (issue.ruleType === 'missing_field' && issue.field) {
+          // Auto-fill empty required fields with placeholder
+          const val = (item as any)[issue.field];
+          if (!val || (typeof val === 'string' && val.trim() === '')) {
+            if (issue.field === 'existing_measure') {
+              updates.existing_measure = '안전교육 실시, 작업 전 안전점검';
+              fixes.push(`#${item.process}: 기존대책 자동입력`);
+            } else if (issue.field === 'improvement_measure') {
+              updates.improvement_measure = '작업절차서 수립 및 안전장비 보강';
+              fixes.push(`#${item.process}: 개선대책 자동입력`);
+            }
+          }
+        }
+        if (issue.ruleType === 'insufficient_improvement') {
+          // Lower improved grades if still '상'
+          if (item.improved_risk_grade === '상') {
+            updates.improved_likelihood_grade = '중';
+            updates.improved_severity_grade = '중';
+            updates.improved_risk_grade = calculateRiskGrade('중', '중');
+            fixes.push(`#${item.process}: 개선후 등급 하향`);
+          }
+        }
+        if (issue.ruleType === 'missing_legal') {
+          if (!item.legal_basis || item.legal_basis.length === 0) {
+            updates.legal_basis = ['산업안전보건법 제36조'];
+            fixes.push(`#${item.process}: 법적근거 자동추가`);
+          }
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await supabase.from('risk_items').update(updates).eq('id', item.id);
+        fixCount++;
+      }
+    }
+
+    // Reload items
+    const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+    if (refreshed) setItems(refreshed);
+
+    log('자동보완', 'assessment_run', runId!, run.project_id, { fixCount, fixes });
+    toast({ title: `${fixCount}건 자동 보완 완료. 확인 후 재검증하세요.` });
+
+    // Auto re-validate after remediation
+    if (fixCount > 0) {
+      setTimeout(() => handleValidate(), 500);
+    }
   };
 
   // Force edit on approved run (creates audit log)
@@ -451,23 +529,38 @@ const AssessmentRunDetail = () => {
     client: project?.client || '', contractor: project?.contractor || '',
   });
 
-  const handleExportPDF = () => {
-    if (!project || !run) return;
+  const handleExportPDF = async () => {
+    if (!run) return;
     try {
-      exportToPDF(buildRiskRows(), buildProjectInfo(), null, participants, { type: run.type, period_label: run.period_label });
+      await exportToPDFServer(runId!, 'assessment');
       log('PDF다운로드', 'assessment_run', runId!, run.project_id);
-    } catch (err) {
-      toast({ title: 'PDF 다운로드 실패', description: String(err), variant: 'destructive' });
+      toast({ title: 'PDF가 생성되었습니다. 인쇄 대화상자에서 PDF로 저장하세요.' });
+    } catch {
+      // Fallback to client-side
+      if (!project) return;
+      try {
+        exportToPDF(buildRiskRows(), buildProjectInfo(), null, participants, { type: run.type, period_label: run.period_label });
+        log('PDF다운로드(클라이언트)', 'assessment_run', runId!, run.project_id);
+      } catch (err) {
+        toast({ title: 'PDF 다운로드 실패', description: String(err), variant: 'destructive' });
+      }
     }
   };
 
-  const handleExportValidationPDF = () => {
-    if (!project || !run || !validationReport) return;
+  const handleExportValidationPDF = async () => {
+    if (!run) return;
     try {
-      exportToPDF(buildRiskRows(), buildProjectInfo(), null, participants, { type: run.type, period_label: run.period_label }, validationReport);
+      await exportToPDFServer(runId!, 'validation');
       log('검증PDF다운로드', 'assessment_run', runId!, run.project_id);
-    } catch (err) {
-      toast({ title: '검증 리포트 PDF 다운로드 실패', description: String(err), variant: 'destructive' });
+      toast({ title: '검증 리포트 PDF가 생성되었습니다.' });
+    } catch {
+      if (!project || !validationReport) return;
+      try {
+        exportToPDF(buildRiskRows(), buildProjectInfo(), null, participants, { type: run.type, period_label: run.period_label }, validationReport);
+        log('검증PDF다운로드(클라이언트)', 'assessment_run', runId!, run.project_id);
+      } catch (err) {
+        toast({ title: '검증 리포트 PDF 다운로드 실패', description: String(err), variant: 'destructive' });
+      }
     }
   };
 
@@ -615,10 +708,11 @@ const AssessmentRunDetail = () => {
 
   // CTA conditions
   const canSubmitForValidation = run.status === '작성중' && items.length > 0;
-  const canValidate = ['제출됨', '작성중', '보완요청', '보완중', '검증대기'].includes(run.status) && isAdmin();
+  const canValidate = ['제출됨', '작성중', '보완요청', '보완중', '검증대기', '반려'].includes(run.status) && isAdmin();
   const canSubmitApproval = run.status === '검증완료' && run.validation_verdict !== '부적정' && items.length > 0;
   const canCancelApproval = run.status === '결재진행' && (isAdmin() || (user && run.created_by === user.id));
   const canResubmit = ['보완요청', '보완중', '반려'].includes(run.status);
+  const canAutoRemediate = validationReport && validationReport.verdict !== '적정' && (canEdit || canForceEdit);
   const statusInfo = STATUS_FLOW[run.status as keyof typeof STATUS_FLOW] || { label: run.status, color: '' };
 
   return (
@@ -684,7 +778,12 @@ const AssessmentRunDetail = () => {
         )}
         {canResubmit && (
           <Button size="sm" variant="outline" className="gap-1.5" onClick={handleResubmit}>
-            <RefreshCw className="h-3.5 w-3.5" /> 재제출 (작성중 전환)
+            <RefreshCw className="h-3.5 w-3.5" /> 재제출
+          </Button>
+        )}
+        {canAutoRemediate && (
+          <Button size="sm" variant="outline" className="gap-1.5 text-accent" onClick={handleAutoRemediate}>
+            <Wand2 className="h-3.5 w-3.5" /> 자동 보완
           </Button>
         )}
         {run.status === '결재진행' && (isAdmin() || (user && participants.some(p => ['검토자','승인자'].includes(p.role) && p.user_name === profile?.display_name))) && (

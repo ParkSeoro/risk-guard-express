@@ -173,18 +173,18 @@ const Projects = () => {
     if (showMembers) openMembers(showMembers);
   };
 
-  const ProjectForm = ({ onSubmit, submitLabel }: { onSubmit: () => void; submitLabel: string }) => (
+  const projectFormFields = (onSubmit: () => void, submitLabel: string) => (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1"><Label>프로젝트명</Label><Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} required /></div>
-        <div className="space-y-1"><Label>현장명</Label><Input value={form.site_name} onChange={e => setForm(p => ({ ...p, site_name: e.target.value }))} /></div>
+        <div className="space-y-1"><Label>프로젝트명</Label><Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} onCompositionStart={() => {}} onCompositionEnd={() => {}} required /></div>
+        <div className="space-y-1"><Label>현장명</Label><Input value={form.site_name} onChange={e => setForm(p => ({ ...p, site_name: e.target.value }))} onCompositionStart={() => {}} onCompositionEnd={() => {}} /></div>
         <div className="space-y-1"><Label>시작일</Label><Input type="date" value={form.period_start} onChange={e => setForm(p => ({ ...p, period_start: e.target.value }))} /></div>
         <div className="space-y-1"><Label>종료일</Label><Input type="date" value={form.period_end} onChange={e => setForm(p => ({ ...p, period_end: e.target.value }))} /></div>
-        <div className="space-y-1"><Label>발주사</Label><Input value={form.client} onChange={e => setForm(p => ({ ...p, client: e.target.value }))} /></div>
-        <div className="space-y-1"><Label>시공사</Label><Input value={form.contractor} onChange={e => setForm(p => ({ ...p, contractor: e.target.value }))} /></div>
+        <div className="space-y-1"><Label>발주사</Label><Input value={form.client} onChange={e => setForm(p => ({ ...p, client: e.target.value }))} onCompositionStart={() => {}} onCompositionEnd={() => {}} /></div>
+        <div className="space-y-1"><Label>시공사</Label><Input value={form.contractor} onChange={e => setForm(p => ({ ...p, contractor: e.target.value }))} onCompositionStart={() => {}} onCompositionEnd={() => {}} /></div>
       </div>
-      <div className="space-y-1"><Label>협력사 (쉼표 구분)</Label><Input value={form.subcontractors} onChange={e => setForm(p => ({ ...p, subcontractors: e.target.value }))} placeholder="(주)대한배관, (주)우리용접" /></div>
-      <div className="space-y-1"><Label>공종 태그 (쉼표 구분)</Label><Input value={form.tags} onChange={e => setForm(p => ({ ...p, tags: e.target.value }))} placeholder="6000t Tank, Cooling Tower, 배관" /></div>
+      <div className="space-y-1"><Label>협력사 (쉼표 구분)</Label><Input value={form.subcontractors} onChange={e => setForm(p => ({ ...p, subcontractors: e.target.value }))} onCompositionStart={() => {}} onCompositionEnd={() => {}} placeholder="(주)대한배관, (주)우리용접" /></div>
+      <div className="space-y-1"><Label>공종 태그 (쉼표 구분)</Label><Input value={form.tags} onChange={e => setForm(p => ({ ...p, tags: e.target.value }))} onCompositionStart={() => {}} onCompositionEnd={() => {}} placeholder="6000t Tank, Cooling Tower, 배관" /></div>
       <div className="space-y-1">
         <Label>상태</Label>
         <Select value={form.status} onValueChange={v => setForm(p => ({ ...p, status: v }))}>
@@ -283,7 +283,7 @@ const Projects = () => {
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>프로젝트 생성</DialogTitle></DialogHeader>
-          <ProjectForm onSubmit={handleCreate} submitLabel="생성" />
+          {projectFormFields(handleCreate, "생성")}
         </DialogContent>
       </Dialog>
 
@@ -291,7 +291,7 @@ const Projects = () => {
       <Dialog open={!!editProject} onOpenChange={() => setEditProject(null)}>
         <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>프로젝트 수정</DialogTitle></DialogHeader>
-          <ProjectForm onSubmit={handleUpdate} submitLabel="저장" />
+          {projectFormFields(handleUpdate, "저장")}
         </DialogContent>
       </Dialog>
 

@@ -27,7 +27,7 @@ import * as XLSX from 'xlsx';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
 
-const EDITABLE_STATUSES = ['작성중', '검토대기', '반려', '보완중', '검증대기'];
+const EDITABLE_STATUSES = ['작성중', '검토대기', '반려', '보완중', '검증대기', '검증완료'];
 
 const AssessmentRunDetail = () => {
   const { runId } = useParams();
@@ -60,6 +60,9 @@ const AssessmentRunDetail = () => {
   // Participants dialog
   const [showParticipants, setShowParticipants] = useState(false);
   const [newParticipant, setNewParticipant] = useState({ role: '작성자', user_name: '', company: '' });
+  const [userDirectory, setUserDirectory] = useState<{ user_id: string; display_name: string; company: string; position: string }[]>([]);
+  const [participantSearch, setParticipantSearch] = useState('');
+  const [showUserSuggestions, setShowUserSuggestions] = useState(false);
 
   // Approval
   const [showApproval, setShowApproval] = useState(false);
@@ -76,10 +79,11 @@ const AssessmentRunDetail = () => {
   const fetchAll = useCallback(async () => {
     if (!runId) return;
     setLoading(true);
-    const [runRes, itemsRes, partRes] = await Promise.all([
+    const [runRes, itemsRes, partRes, profilesRes] = await Promise.all([
       supabase.from('assessment_runs').select('*').eq('id', runId).single(),
       supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order'),
       supabase.from('assessment_run_participants').select('*').eq('run_id', runId).order('created_at'),
+      supabase.from('profiles').select('user_id, display_name, company, position'),
     ]);
     if (runRes.data) {
       setRun(runRes.data);
@@ -88,6 +92,7 @@ const AssessmentRunDetail = () => {
     }
     setItems(itemsRes.data || []);
     setParticipants(partRes.data || []);
+    setUserDirectory((profilesRes.data || []) as any);
     setLoading(false);
   }, [runId]);
 
@@ -235,6 +240,25 @@ const AssessmentRunDetail = () => {
     }));
     await supabase.from('approvals').insert(inserts);
     await supabase.from('assessment_runs').update({ status: '결재진행' }).eq('id', runId);
+
+    // Send notifications to participants with reviewer/approver roles
+    const reviewers = participants.filter(p => p.role === '검토자' || p.role === '승인자');
+    const notifInserts = reviewers.map(p => {
+      const matchedUser = userDirectory.find(u => u.display_name === p.user_name);
+      return matchedUser ? {
+        user_id: matchedUser.user_id,
+        title: '결재 요청',
+        message: `[${run.type}] ${run.period_label} 회차에 대한 결재가 상신되었습니다.`,
+        type: 'approval_request',
+        related_id: runId,
+        related_type: 'assessment_run',
+        project_id: run.project_id,
+      } : null;
+    }).filter(Boolean);
+    if (notifInserts.length > 0) {
+      await supabase.from('notifications').insert(notifInserts as any);
+    }
+
     setRun((prev: any) => ({ ...prev, status: '결재진행' }));
     setShowApproval(false); setApprovalComment('');
     toast({ title: '결재가 상신되었습니다.' });
@@ -298,8 +322,11 @@ const AssessmentRunDetail = () => {
   // Participants
   const handleAddParticipant = async () => {
     if (!runId) return;
-    await supabase.from('assessment_run_participants').insert([{ run_id: runId, ...newParticipant }]);
+    const name = newParticipant.user_name || participantSearch;
+    if (!name) return;
+    await supabase.from('assessment_run_participants').insert([{ run_id: runId, role: newParticipant.role, user_name: name, company: newParticipant.company }]);
     setNewParticipant({ role: '작성자', user_name: '', company: '' });
+    setParticipantSearch('');
     const { data } = await supabase.from('assessment_run_participants').select('*').eq('run_id', runId);
     setParticipants(data || []);
   };
@@ -862,6 +889,9 @@ const AssessmentRunDetail = () => {
                   <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDeleteParticipant(p.id)}><Trash2 className="h-3 w-3" /></Button>
                 </div>
               ))}
+              {participants.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-2">참여자를 추가하세요. 작성자는 로그인 사용자로 자동 설정됩니다.</p>
+              )}
             </div>
             <div className="border-t pt-3 space-y-2">
               <div className="grid grid-cols-3 gap-2">
@@ -871,10 +901,56 @@ const AssessmentRunDetail = () => {
                     {['작성자','검토자','승인자','협력사 담당자','안전관리자'].map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <Input className="text-xs" placeholder="성명" value={newParticipant.user_name} onChange={e => setNewParticipant(p => ({ ...p, user_name: e.target.value }))} />
-                <Input className="text-xs" placeholder="소속" value={newParticipant.company} onChange={e => setNewParticipant(p => ({ ...p, company: e.target.value }))} />
+                <div className="relative col-span-2">
+                  <Input
+                    className="text-xs"
+                    placeholder="이름 검색 (자동완성)..."
+                    value={participantSearch}
+                    onChange={e => {
+                      setParticipantSearch(e.target.value);
+                      setShowUserSuggestions(true);
+                    }}
+                    onFocus={() => setShowUserSuggestions(true)}
+                  />
+                  {showUserSuggestions && participantSearch.length > 0 && (
+                    <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                      {userDirectory
+                        .filter(u => u.display_name.toLowerCase().includes(participantSearch.toLowerCase()))
+                        .slice(0, 8)
+                        .map(u => (
+                          <div
+                            key={u.user_id}
+                            className="px-3 py-2 text-xs cursor-pointer hover:bg-accent/20 flex items-center justify-between"
+                            onClick={() => {
+                              setNewParticipant(p => ({ ...p, user_name: u.display_name, company: u.company || '' }));
+                              setParticipantSearch(u.display_name);
+                              setShowUserSuggestions(false);
+                            }}
+                          >
+                            <span className="font-medium">{u.display_name}</span>
+                            <span className="text-muted-foreground">{u.company || ''} {u.position ? `· ${u.position}` : ''}</span>
+                          </div>
+                        ))}
+                      {userDirectory.filter(u => u.display_name.toLowerCase().includes(participantSearch.toLowerCase())).length === 0 && (
+                        <div className="px-3 py-2 text-xs text-muted-foreground">결과 없음 – 직접 입력 후 추가하세요</div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-              <Button size="sm" onClick={handleAddParticipant} disabled={!newParticipant.user_name} className="w-full">추가</Button>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="flex-1" onClick={() => {
+                  if (!profile) return;
+                  setNewParticipant({ role: '작성자', user_name: profile.display_name, company: profile.company || '' });
+                  setParticipantSearch(profile.display_name);
+                }}>현재 사용자 자동입력</Button>
+                <Button size="sm" className="flex-1" onClick={() => {
+                  const name = newParticipant.user_name || participantSearch;
+                  if (!name) return;
+                  handleAddParticipant();
+                  setParticipantSearch('');
+                }} disabled={!newParticipant.user_name && !participantSearch}>추가</Button>
+              </div>
             </div>
           </div>
         </DialogContent>

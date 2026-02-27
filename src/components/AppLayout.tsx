@@ -1,8 +1,9 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
-import { Bell, User, LogOut } from "lucide-react";
+import { User, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { NotificationBell } from "@/components/NotificationBell";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { profile, signOut, roles } = useAuth();
@@ -31,6 +32,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   <p className="text-muted-foreground">{roleLabel}</p>
                 </div>
               </div>
+              <NotificationBell />
               <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={signOut}>
                 <LogOut className="h-4 w-4" />
               </Button>

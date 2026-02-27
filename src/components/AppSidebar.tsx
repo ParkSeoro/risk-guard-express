@@ -1,7 +1,7 @@
 import { 
   LayoutDashboard, FolderKanban, ShieldAlert, Database, 
   FileCheck, HardHat, ChevronLeft, LogOut, User,
-  ShieldCheck, History, ClipboardList, Users
+  ShieldCheck, History, ClipboardList, Users, Shield, SearchCheck
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -16,6 +16,7 @@ const mainItems = [
   { title: "대시보드", url: "/", icon: LayoutDashboard },
   { title: "프로젝트", url: "/projects", icon: FolderKanban },
   { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
+  { title: "검증센터", url: "/verification-center", icon: SearchCheck },
   { title: "적정성 검증", url: "/verification", icon: ShieldCheck },
   { title: "결재함", url: "/approvals", icon: FileCheck },
   { title: "TBM 기록", url: "/tbm", icon: ClipboardList },
@@ -25,6 +26,7 @@ const adminItems = [
   { title: "사용자 관리", url: "/user-management", icon: Users },
   { title: "기준정보", url: "/master-data", icon: Database },
   { title: "감사 로그", url: "/audit-logs", icon: History },
+  { title: "권한 점검", url: "/permission-test", icon: Shield },
 ];
 
 export function AppSidebar() {

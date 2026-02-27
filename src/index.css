@@ -139,22 +139,40 @@
   }
 }
 
-/* Print styles */
+/* Print styles - A4 enforced */
 @media print {
-  body { background: white !important; }
-  .print\\:hidden { display: none !important; }
-  .print\\:block { display: block !important; }
-  .print\\:space-y-2 > * + * { margin-top: 0.5rem; }
+  body {
+    background: white !important;
+    font-size: 9pt !important;
+    line-height: 1.3 !important;
+  }
+  
+  .print\:hidden { display: none !important; }
+  .print\:block { display: block !important; }
+  .print\:space-y-2 > * + * { margin-top: 0.5rem; }
   
   .data-table th {
     background: #1e293b !important;
     color: white !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    font-size: 8pt !important;
+    padding: 3px 4px !important;
+  }
+  
+  .data-table td {
+    font-size: 8pt !important;
+    padding: 2px 4px !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
   }
   
   .data-table thead {
     display: table-header-group;
+  }
+  
+  .data-table tbody {
+    display: table-row-group;
   }
   
   .data-table tr {
@@ -166,8 +184,27 @@
     print-color-adjust: exact;
   }
   
+  /* Force A4 landscape */
   @page {
-    size: landscape;
-    margin: 10mm;
+    size: A4 landscape;
+    margin: 12mm;
+  }
+  
+  /* Ensure tables don't overflow */
+  table {
+    table-layout: fixed !important;
+    width: 100% !important;
+  }
+  
+  /* Hide non-essential UI */
+  nav, aside, footer, .sidebar,
+  button, [role="dialog"], [role="navigation"] {
+    display: none !important;
+  }
+  
+  main, [role="main"] {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
   }
 }

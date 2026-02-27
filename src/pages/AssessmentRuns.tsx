@@ -21,6 +21,8 @@ const statusColors: Record<string, string> = {
   '검증완료': 'bg-accent/10 text-accent border-accent/30',
   '결재진행': 'bg-primary/10 text-primary border-primary/30',
   '승인완료': 'bg-success/10 text-success border-success/30',
+  '보완중': 'bg-warning/10 text-warning border-warning/30',
+  '반려': 'bg-destructive/10 text-destructive border-destructive/30',
 };
 
 const AssessmentRuns = () => {
@@ -161,6 +163,7 @@ const AssessmentRuns = () => {
                 <SelectItem value="검증완료">검증완료</SelectItem>
                 <SelectItem value="결재진행">결재진행</SelectItem>
                 <SelectItem value="승인완료">승인완료</SelectItem>
+                <SelectItem value="보완중">보완중</SelectItem>
               </SelectContent>
             </Select>
             <div className="flex-1 relative">

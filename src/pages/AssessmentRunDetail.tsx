@@ -288,38 +288,77 @@ const AssessmentRunDetail = () => {
     if (run.validation_verdict === '부적정') {
       toast({ title: '부적정 판정 시 결재 상신이 불가합니다. 보완 후 재검증하세요.', variant: 'destructive' }); return;
     }
-    const steps = ['작성', '검토', '승인'];
-    const inserts = steps.map((step, i) => ({
-      project_id: run.project_id, run_id: runId,
-      step, status: i === 0 ? '승인' : '대기',
-      approver_id: i === 0 ? user.id : null, approver_name: i === 0 ? profile.display_name : '',
-      comment: i === 0 ? approvalComment : '',
-    }));
+
+    // Resolve participants to user_ids for approval routing
+    const reviewerParticipants = participants.filter(p => p.role === '검토자');
+    const approverParticipants = participants.filter(p => p.role === '승인자');
+
+    if (reviewerParticipants.length === 0 || approverParticipants.length === 0) {
+      toast({ title: '검토자와 승인자를 모두 지정해야 결재 상신이 가능합니다.', description: '참여자 관리에서 검토자/승인자를 추가하세요.', variant: 'destructive' });
+      setShowParticipants(true);
+      return;
+    }
+
+    // Resolve participant names to user_ids from directory
+    const resolveUserId = (name: string) => {
+      const match = userDirectory.find(u => u.display_name === name);
+      return match?.user_id || null;
+    };
+
+    const firstReviewer = reviewerParticipants[0];
+    const firstApprover = approverParticipants[0];
+    const reviewerId = resolveUserId(firstReviewer.user_name);
+    const approverId = resolveUserId(firstApprover.user_name);
+
+    // Create approval steps: 작성(auto-approved) → 검토 → 승인
+    const inserts = [
+      {
+        project_id: run.project_id, run_id: runId, step: '작성', status: '승인',
+        approver_id: user.id, approver_name: profile.display_name,
+        comment: approvalComment,
+      },
+      {
+        project_id: run.project_id, run_id: runId, step: '검토', status: '대기',
+        approver_id: reviewerId, approver_name: firstReviewer.user_name || '',
+        comment: '',
+      },
+      {
+        project_id: run.project_id, run_id: runId, step: '승인', status: '대기',
+        approver_id: approverId, approver_name: firstApprover.user_name || '',
+        comment: '',
+      },
+    ];
     await supabase.from('approvals').insert(inserts);
     await supabase.from('assessment_runs').update({ status: '결재진행' }).eq('id', runId);
 
-    // Send notifications to participants with reviewer/approver roles
-    const reviewers = participants.filter(p => p.role === '검토자' || p.role === '승인자');
-    const notifInserts = reviewers.map(p => {
-      const matchedUser = userDirectory.find(u => u.display_name === p.user_name);
-      return matchedUser ? {
-        user_id: matchedUser.user_id,
-        title: '결재 요청',
-        message: `[${run.type}] ${run.period_label} 회차에 대한 결재가 상신되었습니다.`,
-        type: 'approval_request',
-        related_id: runId,
-        related_type: 'assessment_run',
-        project_id: run.project_id,
-      } : null;
-    }).filter(Boolean);
-    if (notifInserts.length > 0) {
-      await supabase.from('notifications').insert(notifInserts as any);
+    // Send notifications to reviewer and approver
+    const notifTargets = [
+      { userId: reviewerId, name: firstReviewer.user_name, step: '검토' },
+      { userId: approverId, name: firstApprover.user_name, step: '승인' },
+    ].filter(t => t.userId);
+
+    if (notifTargets.length > 0) {
+      const projectName = project?.name || '';
+      await supabase.from('notifications').insert(
+        notifTargets.map(t => ({
+          user_id: t.userId!,
+          title: '결재 요청',
+          message: `[${projectName}] [${run.type}] ${run.period_label} 회차의 ${t.step} 결재가 요청되었습니다. 요청자: ${profile.display_name}`,
+          type: 'approval_request',
+          related_id: runId,
+          related_type: 'assessment_run',
+          project_id: run.project_id,
+        }))
+      );
     }
 
     setRun((prev: any) => ({ ...prev, status: '결재진행' }));
     setShowApproval(false); setApprovalComment('');
     toast({ title: '결재가 상신되었습니다.' });
-    log('결재상신', 'assessment_run', runId!, run.project_id);
+    log('결재상신', 'assessment_run', runId!, run.project_id, {
+      reviewer: firstReviewer.user_name,
+      approver: firstApprover.user_name,
+    });
   };
 
   // Cancel approval
@@ -710,7 +749,8 @@ const AssessmentRunDetail = () => {
   // CTA conditions
   const canSubmitForValidation = run.status === '작성중' && items.length > 0;
   const canValidate = ['제출됨', '작성중', '보완요청', '보완중', '검증대기', '반려'].includes(run.status) && isAdmin();
-  const canSubmitApproval = run.status === '검증완료' && run.validation_verdict !== '부적정' && items.length > 0;
+  const hasReviewerAndApprover = participants.some(p => p.role === '검토자') && participants.some(p => p.role === '승인자');
+  const canSubmitApproval = run.status === '검증완료' && run.validation_verdict !== '부적정' && items.length > 0 && hasReviewerAndApprover;
   const canCancelApproval = run.status === '결재진행' && (isAdmin() || (user && run.created_by === user.id));
   const canResubmit = ['보완요청', '보완중', '반려'].includes(run.status);
   const canAutoRemediate = validationReport && validationReport.verdict !== '적정' && (canEdit || canForceEdit);
@@ -767,10 +807,17 @@ const AssessmentRunDetail = () => {
             <ShieldCheck className="h-3.5 w-3.5" /> {validationReport ? '재검증' : '검증 실행'}
           </Button>
         )}
-        {canSubmitApproval && (
-          <Button size="sm" className="gap-1.5" onClick={() => setShowApproval(true)}>
-            <Send className="h-3.5 w-3.5" /> 결재 상신
-          </Button>
+        {run.status === '검증완료' && items.length > 0 && run.validation_verdict !== '부적정' && (
+          hasReviewerAndApprover ? (
+            <Button size="sm" className="gap-1.5" onClick={() => setShowApproval(true)}>
+              <Send className="h-3.5 w-3.5" /> 결재 상신
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowParticipants(true)}
+              title="검토자/승인자를 지정해야 결재 상신이 가능합니다">
+              <Send className="h-3.5 w-3.5 text-muted-foreground" /> 결재 상신 (결재자 미지정)
+            </Button>
+          )
         )}
         {canCancelApproval && (
           <Button size="sm" variant="outline" className="gap-1.5 text-destructive" onClick={handleCancelApproval}>
@@ -1193,6 +1240,26 @@ const AssessmentRunDetail = () => {
                 검증 결과: {run.validation_verdict} ({run.validation_score}점)
               </div>
             )}
+            {/* Approval routing info */}
+            <div className="space-y-1.5 p-3 bg-muted/50 rounded-md text-xs">
+              <p className="font-medium text-sm">결재 라인</p>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-[10px]">작성</Badge>
+                <span>{profile?.display_name} (자동 승인)</span>
+              </div>
+              {participants.filter(p => p.role === '검토자').map(p => (
+                <div key={p.id} className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px]">검토</Badge>
+                  <span>{p.user_name} {p.company && `(${p.company})`}</span>
+                </div>
+              ))}
+              {participants.filter(p => p.role === '승인자').map(p => (
+                <div key={p.id} className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px]">승인</Badge>
+                  <span>{p.user_name} {p.company && `(${p.company})`}</span>
+                </div>
+              ))}
+            </div>
             <div className="space-y-1"><Label>코멘트 (선택)</Label><Textarea value={approvalComment} onChange={e => setApprovalComment(e.target.value)} placeholder="결재 메모..." /></div>
             <Button onClick={handleSubmitForApproval} className="w-full gap-1.5"><Send className="h-3.5 w-3.5" /> 결재 상신</Button>
           </div>

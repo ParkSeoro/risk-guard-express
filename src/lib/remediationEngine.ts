@@ -531,3 +531,98 @@ export function buildRemediationSummaryText(actions: RemediationAction[]): strin
   }
   return lines.join('\n');
 }
+
+// ========== Full Auto-Remediation + Revalidation Engine ==========
+
+import { validateRiskItems, saveValidationResults } from './validationEngine';
+
+export interface AutoRemediationResult {
+  appliedCount: number;
+  newItemCount: number;
+  summary: string[];
+  revalidationReport: import('./validationEngine').ValidationReport;
+  statusTransitioned: boolean;
+  newStatus: string;
+  modifiedItemIds: string[];
+}
+
+/**
+ * Executes the full auto-remediation → revalidation → status transition pipeline.
+ * Returns the result including whether the run was transitioned to 검증완료.
+ */
+export async function executeAutoRemediation(
+  items: any[],
+  validationReport: import('./validationEngine').ValidationReport,
+  runId: string,
+  projectId: string,
+  userId: string,
+): Promise<AutoRemediationResult> {
+  // 1. Generate actions
+  const actions = await generateRemediationActions(items, validationReport, projectId);
+
+  // 2. Auto-select all non-user-confirm actions (the "forced set" for auto-적정)
+  const autoActions = actions.filter(a => !a.requiresUserConfirm);
+
+  // 3. Collect modified item IDs for tagging
+  const modifiedItemIds: string[] = [];
+  for (const a of autoActions) {
+    modifiedItemIds.push(...a.targetRiskItemIds);
+  }
+
+  // 4. Apply
+  const { appliedCount, newItemCount, summary } = await applyRemediationActions(
+    autoActions, items, runId, projectId, userId
+  );
+
+  // 5. Tag modified items with '자동보완' in note field
+  const uniqueModifiedIds = [...new Set(modifiedItemIds)];
+  for (const itemId of uniqueModifiedIds) {
+    const item = items.find(i => i.id === itemId);
+    const currentNote = item?.note || '';
+    if (!currentNote.includes('[자동보완]')) {
+      await supabase.from('risk_items').update({
+        note: currentNote ? `${currentNote} [자동보완]` : '[자동보완]',
+      }).eq('id', itemId);
+    }
+  }
+
+  // 6. Re-fetch items after patches
+  const { data: freshItems } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+  const currentItems = freshItems || items;
+
+  // 7. Revalidate
+  const revalidationReport = await validateRiskItems(currentItems, projectId);
+  await saveValidationResults(revalidationReport, projectId, userId, runId);
+
+  // 8. Determine status transition
+  let newStatus: string;
+  let statusTransitioned = false;
+
+  if (revalidationReport.verdict === '적정') {
+    newStatus = '검증완료';
+    statusTransitioned = true;
+  } else if (revalidationReport.verdict === '조건부 적정') {
+    newStatus = '검증완료';
+    statusTransitioned = true;
+  } else {
+    newStatus = '보완요청';
+    statusTransitioned = false;
+  }
+
+  // 9. Update assessment run
+  await supabase.from('assessment_runs').update({
+    status: newStatus,
+    validation_score: revalidationReport.score,
+    validation_verdict: revalidationReport.verdict,
+  }).eq('id', runId);
+
+  return {
+    appliedCount,
+    newItemCount,
+    summary,
+    revalidationReport,
+    statusTransitioned,
+    newStatus,
+    modifiedItemIds: uniqueModifiedIds,
+  };
+}

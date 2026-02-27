@@ -104,7 +104,7 @@ export async function exportToPDFServer(runId: string, type: 'assessment' | 'val
       try { printWindow.print(); } catch { /* ignore */ }
     }, 2000);
   } catch (err) {
-    console.error('Server PDF generation failed, falling back to client:', err);
+    if (import.meta.env.DEV) console.error('Server PDF generation failed:', err);
     throw err;
   }
 }
@@ -259,8 +259,8 @@ export async function exportToPDF(
 
     safePDFDownload(doc, fileName);
   } catch (err) {
-    console.error('PDF generation failed:', err);
-    alert(`PDF 생성에 실패했습니다.\n원인: ${err instanceof Error ? err.message : String(err)}\n\n재시도해주세요.`);
+    if (import.meta.env.DEV) console.error('PDF generation failed:', err);
+    alert('PDF 생성에 실패했습니다. 재시도해주세요.');
   }
 }
 
@@ -279,12 +279,12 @@ function safePDFDownload(doc: any, fileName: string) {
       URL.revokeObjectURL(url);
     }, 1000);
   } catch (primaryErr) {
-    console.warn('Primary PDF download failed:', primaryErr);
+    if (import.meta.env.DEV) console.warn('Primary PDF download failed:', primaryErr);
     try {
       doc.save(fileName);
     } catch (fallbackErr) {
-      console.error('All PDF download methods failed:', fallbackErr);
-      alert(`PDF 다운로드에 실패했습니다.`);
+      if (import.meta.env.DEV) console.error('All PDF download methods failed:', fallbackErr);
+      alert('PDF 다운로드에 실패했습니다.');
     }
   }
 }

@@ -1,4 +1,5 @@
 import type { Project, RiskItem, MasterProcess, MasterPPE, MasterLegalBasis, MasterDepartment, MasterAssignee, ApprovalStep } from '@/types';
+import { numericToGrade, riskNumberToGrade } from '@/lib/riskGrade';
 
 export const masterProcesses: MasterProcess[] = [
   { id: 'p1', name: '배관설치', category: '기계' },
@@ -65,73 +66,27 @@ export const sampleProject: Project = {
   status: '진행중',
 };
 
+function makeRiskItem(base: Omit<RiskItem, 'likelihoodGrade' | 'severityGrade' | 'riskGrade' | 'improvedLikelihoodGrade' | 'improvedSeverityGrade' | 'improvedRiskGrade'>): RiskItem {
+  return {
+    ...base,
+    likelihoodGrade: numericToGrade(base.frequency, 'frequency'),
+    severityGrade: numericToGrade(base.severity, 'severity'),
+    riskGrade: riskNumberToGrade(base.risk),
+    improvedLikelihoodGrade: numericToGrade(base.improvedFrequency, 'frequency'),
+    improvedSeverityGrade: numericToGrade(base.improvedSeverity, 'severity'),
+    improvedRiskGrade: riskNumberToGrade(base.improvedRisk),
+  };
+}
+
 export const sampleRiskItems: RiskItem[] = [
-  {
-    id: 'r1', projectId: 'proj1', process: '배관설치', subTask: '대구경 배관 운반 및 거치',
-    hazard: '중량물 낙하', hazardSituation: '크레인 인양 중 와이어 파단으로 배관 낙하',
-    existingMeasure: '작업반경 출입통제, 신호수 배치', improvementMeasure: '와이어로프 일일 점검표 도입, 인양경로 사전 시뮬레이션',
-    frequency: 3, severity: 5, risk: 15, improvedFrequency: 2, improvedSeverity: 5, improvedRisk: 10,
-    status: '진행', ppe: ['안전모', '안전화', '안전조끼'], legalBasis: ['산업안전보건법 제38조'],
-    department: '기계팀', assignee: '박기계', note: '3월 중 개선 완료 예정', attachments: [],
-  },
-  {
-    id: 'r2', projectId: 'proj1', process: '용접작업', subTask: '배관 맞대기 용접',
-    hazard: '화재·폭발', hazardSituation: '용접 불꽃이 인근 가연물에 착화',
-    existingMeasure: '소화기 비치, 용접작업 허가제', improvementMeasure: '화기감시자 상시 배치, 불꽃 비산방지 덮개 설치',
-    frequency: 4, severity: 5, risk: 20, improvedFrequency: 2, improvedSeverity: 5, improvedRisk: 10,
-    status: '미착수', ppe: ['용접면', '안전장갑', '안전화'], legalBasis: ['산업안전보건기준규칙 제302조'],
-    department: '기계팀', assignee: '박기계', note: '', attachments: [],
-  },
-  {
-    id: 'r3', projectId: 'proj1', process: '고소작업', subTask: 'Tank 외벽 비계 설치',
-    hazard: '추락', hazardSituation: '비계 설치 중 안전대 미체결 상태에서 추락',
-    existingMeasure: '안전대 착용 의무화, 안전난간 설치', improvementMeasure: '수직구명줄 추가 설치, 추락방지망 보강',
-    frequency: 3, severity: 5, risk: 15, improvedFrequency: 1, improvedSeverity: 5, improvedRisk: 5,
-    status: '완료', ppe: ['안전모', '안전대(하네스)', '안전화'], legalBasis: ['산업안전보건기준규칙 제42조'],
-    department: '안전환경팀', assignee: '김안전', note: '2월 완료', attachments: [],
-  },
-  {
-    id: 'r4', projectId: 'proj1', process: '중장비 운반', subTask: '25톤 크레인 이동',
-    hazard: '접촉·충돌', hazardSituation: '작업장 내 크레인 이동 시 보행자 충돌',
-    existingMeasure: '유도자 배치, 이동경로 안내', improvementMeasure: '이동경로 분리 펜스 설치, 경광등 부착',
-    frequency: 3, severity: 4, risk: 12, improvedFrequency: 2, improvedSeverity: 4, improvedRisk: 8,
-    status: '진행', ppe: ['안전모', '안전조끼'], legalBasis: ['산업안전보건기준규칙 제171조'],
-    department: '공무팀', assignee: '이현장', note: '', attachments: [],
-  },
-  {
-    id: 'r5', projectId: 'proj1', process: '전기배선', subTask: '고압케이블 포설',
-    hazard: '감전', hazardSituation: '활선 근접 작업 시 감전',
-    existingMeasure: '정전작업 원칙, 절연장갑 착용', improvementMeasure: '활선접근경보기 도입, 작업 전 전압 측정 의무화',
-    frequency: 2, severity: 5, risk: 10, improvedFrequency: 1, improvedSeverity: 5, improvedRisk: 5,
-    status: '미착수', ppe: ['안전모', '안전장갑', '보안경'], legalBasis: ['산업안전보건법 제38조'],
-    department: '전기팀', assignee: '최전기', note: '', attachments: [],
-  },
-  {
-    id: 'r6', projectId: 'proj1', process: '도장작업', subTask: '탱크 내부 방식 도장',
-    hazard: '유기용제 중독', hazardSituation: '밀폐공간 내 유기용제 증기 흡입',
-    existingMeasure: '환기장치 가동, 방독마스크 착용', improvementMeasure: '산소농도 연속측정기 설치, 밀폐공간 출입허가제 강화',
-    frequency: 3, severity: 4, risk: 12, improvedFrequency: 1, improvedSeverity: 4, improvedRisk: 4,
-    status: '미착수', ppe: ['방독마스크', '보안경', '안전장갑'], legalBasis: ['산업안전보건법 제39조', '화학물질관리법 제24조'],
-    department: '안전환경팀', assignee: '한보건', note: '', attachments: [],
-  },
-  {
-    id: 'r7', projectId: 'proj1', process: '6000t Tank 설치', subTask: 'Tank 바닥판 용접',
-    hazard: '화재·폭발', hazardSituation: 'Tank 내부 용접 시 잔류가스 폭발',
-    existingMeasure: '가스농도 측정 후 작업', improvementMeasure: '실시간 가스감지기 설치, 비상대피 훈련 실시',
-    frequency: 2, severity: 5, risk: 10, improvedFrequency: 1, improvedSeverity: 5, improvedRisk: 5,
-    status: '진행', ppe: ['안전모', '용접면', '방독마스크', '안전대(하네스)'],
-    legalBasis: ['산업안전보건기준규칙 제302조', '산업안전보건법 제38조'],
-    department: '기계팀', assignee: '박기계', note: '가스감지기 발주 완료', attachments: [],
-  },
-  {
-    id: 'r8', projectId: 'proj1', process: 'Cooling Tower 설치', subTask: '구조물 양중 작업',
-    hazard: '중량물 낙하', hazardSituation: '양중 중 접합부 이탈로 구조물 낙하',
-    existingMeasure: '양중계획서 작성, 작업반경 통제', improvementMeasure: '볼트 체결 토크 관리표 도입, 양중 시뮬레이션',
-    frequency: 2, severity: 5, risk: 10, improvedFrequency: 1, improvedSeverity: 5, improvedRisk: 5,
-    status: '미착수', ppe: ['안전모', '안전화', '안전대(하네스)'],
-    legalBasis: ['산업안전보건법 제38조'],
-    department: '기계팀', assignee: '박기계', note: '', attachments: [],
-  },
+  makeRiskItem({ id: 'r1', projectId: 'proj1', process: '배관설치', subTask: '대구경 배관 운반 및 거치', hazard: '중량물 낙하', hazardSituation: '크레인 인양 중 와이어 파단으로 배관 낙하', existingMeasure: '작업반경 출입통제, 신호수 배치', improvementMeasure: '와이어로프 일일 점검표 도입, 인양경로 사전 시뮬레이션', frequency: 3, severity: 5, risk: 15, improvedFrequency: 2, improvedSeverity: 5, improvedRisk: 10, status: '진행', ppe: ['안전모', '안전화', '안전조끼'], legalBasis: ['산업안전보건법 제38조'], department: '기계팀', assignee: '박기계', note: '3월 중 개선 완료 예정', attachments: [] }),
+  makeRiskItem({ id: 'r2', projectId: 'proj1', process: '용접작업', subTask: '배관 맞대기 용접', hazard: '화재·폭발', hazardSituation: '용접 불꽃이 인근 가연물에 착화', existingMeasure: '소화기 비치, 용접작업 허가제', improvementMeasure: '화기감시자 상시 배치, 불꽃 비산방지 덮개 설치', frequency: 4, severity: 5, risk: 20, improvedFrequency: 2, improvedSeverity: 5, improvedRisk: 10, status: '미착수', ppe: ['용접면', '안전장갑', '안전화'], legalBasis: ['산업안전보건기준규칙 제302조'], department: '기계팀', assignee: '박기계', note: '', attachments: [] }),
+  makeRiskItem({ id: 'r3', projectId: 'proj1', process: '고소작업', subTask: 'Tank 외벽 비계 설치', hazard: '추락', hazardSituation: '비계 설치 중 안전대 미체결 상태에서 추락', existingMeasure: '안전대 착용 의무화, 안전난간 설치', improvementMeasure: '수직구명줄 추가 설치, 추락방지망 보강', frequency: 3, severity: 5, risk: 15, improvedFrequency: 1, improvedSeverity: 5, improvedRisk: 5, status: '완료', ppe: ['안전모', '안전대(하네스)', '안전화'], legalBasis: ['산업안전보건기준규칙 제42조'], department: '안전환경팀', assignee: '김안전', note: '2월 완료', attachments: [] }),
+  makeRiskItem({ id: 'r4', projectId: 'proj1', process: '중장비 운반', subTask: '25톤 크레인 이동', hazard: '접촉·충돌', hazardSituation: '작업장 내 크레인 이동 시 보행자 충돌', existingMeasure: '유도자 배치, 이동경로 안내', improvementMeasure: '이동경로 분리 펜스 설치, 경광등 부착', frequency: 3, severity: 4, risk: 12, improvedFrequency: 2, improvedSeverity: 4, improvedRisk: 8, status: '진행', ppe: ['안전모', '안전조끼'], legalBasis: ['산업안전보건기준규칙 제171조'], department: '공무팀', assignee: '이현장', note: '', attachments: [] }),
+  makeRiskItem({ id: 'r5', projectId: 'proj1', process: '전기배선', subTask: '고압케이블 포설', hazard: '감전', hazardSituation: '활선 근접 작업 시 감전', existingMeasure: '정전작업 원칙, 절연장갑 착용', improvementMeasure: '활선접근경보기 도입, 작업 전 전압 측정 의무화', frequency: 2, severity: 5, risk: 10, improvedFrequency: 1, improvedSeverity: 5, improvedRisk: 5, status: '미착수', ppe: ['안전모', '안전장갑', '보안경'], legalBasis: ['산업안전보건법 제38조'], department: '전기팀', assignee: '최전기', note: '', attachments: [] }),
+  makeRiskItem({ id: 'r6', projectId: 'proj1', process: '도장작업', subTask: '탱크 내부 방식 도장', hazard: '유기용제 중독', hazardSituation: '밀폐공간 내 유기용제 증기 흡입', existingMeasure: '환기장치 가동, 방독마스크 착용', improvementMeasure: '산소농도 연속측정기 설치, 밀폐공간 출입허가제 강화', frequency: 3, severity: 4, risk: 12, improvedFrequency: 1, improvedSeverity: 4, improvedRisk: 4, status: '미착수', ppe: ['방독마스크', '보안경', '안전장갑'], legalBasis: ['산업안전보건법 제39조', '화학물질관리법 제24조'], department: '안전환경팀', assignee: '한보건', note: '', attachments: [] }),
+  makeRiskItem({ id: 'r7', projectId: 'proj1', process: '6000t Tank 설치', subTask: 'Tank 바닥판 용접', hazard: '화재·폭발', hazardSituation: 'Tank 내부 용접 시 잔류가스 폭발', existingMeasure: '가스농도 측정 후 작업', improvementMeasure: '실시간 가스감지기 설치, 비상대피 훈련 실시', frequency: 2, severity: 5, risk: 10, improvedFrequency: 1, improvedSeverity: 5, improvedRisk: 5, status: '진행', ppe: ['안전모', '용접면', '방독마스크', '안전대(하네스)'], legalBasis: ['산업안전보건기준규칙 제302조', '산업안전보건법 제38조'], department: '기계팀', assignee: '박기계', note: '가스감지기 발주 완료', attachments: [] }),
+  makeRiskItem({ id: 'r8', projectId: 'proj1', process: 'Cooling Tower 설치', subTask: '구조물 양중 작업', hazard: '중량물 낙하', hazardSituation: '양중 중 접합부 이탈로 구조물 낙하', existingMeasure: '양중계획서 작성, 작업반경 통제', improvementMeasure: '볼트 체결 토크 관리표 도입, 양중 시뮬레이션', frequency: 2, severity: 5, risk: 10, improvedFrequency: 1, improvedSeverity: 5, improvedRisk: 5, status: '미착수', ppe: ['안전모', '안전화', '안전대(하네스)'], legalBasis: ['산업안전보건법 제38조'], department: '기계팀', assignee: '박기계', note: '', attachments: [] }),
 ];
 
 export const sampleApprovals: ApprovalStep[] = [

@@ -11,8 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Download, Upload, Filter, Search, Copy, Trash2, Printer, FileText, Wand2 } from "lucide-react";
-import { getRiskClassName } from "@/types";
+import { Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2 } from "lucide-react";
+import { calculateRiskGrade, getGradeClassName, GRADES, type RiskGrade } from "@/lib/riskGrade";
 import { generateRiskItems } from "@/lib/riskAutoGen";
 import { exportToXLSX, exportToPDF, printRiskAssessment } from "@/lib/exportUtils";
 import type { Database } from "@/integrations/supabase/types";
@@ -29,6 +29,7 @@ const RiskAssessment = () => {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [filterProcess, setFilterProcess] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterRiskGrade, setFilterRiskGrade] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [editingCell, setEditingCell] = useState<{ id: string; field: string } | null>(null);
   const [showAutoGen, setShowAutoGen] = useState(false);
@@ -38,7 +39,6 @@ const RiskAssessment = () => {
   const [autoGenLoading, setAutoGenLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Load projects
   useEffect(() => {
     supabase.from('projects').select('id, name, site_name, client, contractor, period_start, period_end').then(({ data }) => {
       if (data) {
@@ -49,7 +49,6 @@ const RiskAssessment = () => {
     });
   }, [paramProjectId]);
 
-  // Load risk items for selected project
   useEffect(() => {
     if (!selectedProjectId) { setLoading(false); return; }
     setLoading(true);
@@ -70,6 +69,7 @@ const RiskAssessment = () => {
     return items.filter(item => {
       if (filterProcess !== 'all' && item.process !== filterProcess) return false;
       if (filterStatus !== 'all' && item.status !== filterStatus) return false;
+      if (filterRiskGrade !== 'all' && (item as any).risk_grade !== filterRiskGrade) return false;
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
         return (item.hazard || '').toLowerCase().includes(term) ||
@@ -79,13 +79,30 @@ const RiskAssessment = () => {
       }
       return true;
     });
-  }, [items, filterProcess, filterStatus, searchTerm]);
+  }, [items, filterProcess, filterStatus, filterRiskGrade, searchTerm]);
 
   const uniqueProcesses = [...new Set(items.map(i => i.process))];
 
   const handleCellEdit = async (id: string, field: string, value: any) => {
-    // For generated columns, we need to update the source columns
     const updateData: Record<string, any> = { [field]: value };
+
+    // Auto-compute risk_grade when likelihood or severity grade changes
+    if (field === 'likelihood_grade' || field === 'severity_grade') {
+      const item = items.find(i => i.id === id);
+      if (item) {
+        const lg = field === 'likelihood_grade' ? value : (item as any).likelihood_grade || '중';
+        const sg = field === 'severity_grade' ? value : (item as any).severity_grade || '중';
+        updateData.risk_grade = calculateRiskGrade(lg, sg);
+      }
+    }
+    if (field === 'improved_likelihood_grade' || field === 'improved_severity_grade') {
+      const item = items.find(i => i.id === id);
+      if (item) {
+        const lg = field === 'improved_likelihood_grade' ? value : (item as any).improved_likelihood_grade || '하';
+        const sg = field === 'improved_severity_grade' ? value : (item as any).improved_severity_grade || '하';
+        updateData.improved_risk_grade = calculateRiskGrade(lg, sg);
+      }
+    }
 
     const { error } = await supabase.from('risk_items').update(updateData).eq('id', id);
     if (error) {
@@ -93,7 +110,6 @@ const RiskAssessment = () => {
       return;
     }
 
-    // Re-fetch to get computed columns
     const { data: updated } = await supabase.from('risk_items').select('*').eq('id', id).single();
     if (updated) {
       setItems(prev => prev.map(item => item.id === id ? updated : item));
@@ -109,6 +125,12 @@ const RiskAssessment = () => {
       process: uniqueProcesses[0] || '신규공정',
       created_by: user.id,
       sort_order: items.length,
+      likelihood_grade: '중',
+      severity_grade: '중',
+      risk_grade: '중',
+      improved_likelihood_grade: '하',
+      improved_severity_grade: '하',
+      improved_risk_grade: '하',
     }]).select().single();
     if (data) {
       setItems(prev => [...prev, data]);
@@ -120,7 +142,7 @@ const RiskAssessment = () => {
   const handleDuplicate = async (item: RiskItemRow) => {
     if (!user) return;
     const { id, risk, improved_risk, created_at, updated_at, ...rest } = item;
-    const { data, error } = await supabase.from('risk_items').insert([{
+    const { data } = await supabase.from('risk_items').insert([{
       ...rest,
       status: '미착수',
       created_by: user.id,
@@ -166,6 +188,12 @@ const RiskAssessment = () => {
         severity: g.severity,
         improved_frequency: g.improved_frequency,
         improved_severity: g.improved_severity,
+        likelihood_grade: g.likelihood_grade,
+        severity_grade: g.severity_grade,
+        risk_grade: g.risk_grade,
+        improved_likelihood_grade: g.improved_likelihood_grade,
+        improved_severity_grade: g.improved_severity_grade,
+        improved_risk_grade: g.improved_risk_grade,
         status: '초안',
         ppe: g.ppe,
         legal_basis: g.legal_basis,
@@ -194,7 +222,13 @@ const RiskAssessment = () => {
     const { data: ppe } = await supabase.from('master_ppe').select('name');
     const { data: legalRefs } = await supabase.from('legal_references').select('law_name, article, description');
     exportToXLSX(
-      items.map(i => ({ ...i, sub_task: i.sub_task || '', hazard: i.hazard || '', hazard_situation: i.hazard_situation || '', existing_measure: i.existing_measure || '', improvement_measure: i.improvement_measure || '', risk: i.risk || 0, improved_risk: i.improved_risk || 0, ppe: i.ppe || [], legal_basis: i.legal_basis || [], department: i.department || '', assignee: i.assignee || '', note: i.note || '' })),
+      items.map(i => ({
+        ...i, sub_task: i.sub_task || '', hazard: i.hazard || '', hazard_situation: i.hazard_situation || '',
+        existing_measure: i.existing_measure || '', improvement_measure: i.improvement_measure || '',
+        likelihood_grade: (i as any).likelihood_grade || '중', severity_grade: (i as any).severity_grade || '중', risk_grade: (i as any).risk_grade || '중',
+        improved_likelihood_grade: (i as any).improved_likelihood_grade || '하', improved_severity_grade: (i as any).improved_severity_grade || '하', improved_risk_grade: (i as any).improved_risk_grade || '하',
+        ppe: i.ppe || [], legal_basis: i.legal_basis || [], department: i.department || '', assignee: i.assignee || '', note: i.note || '',
+      })),
       { ...currentProject, period_start: currentProject.period_start || '', period_end: currentProject.period_end || '', client: currentProject.client || '', contractor: currentProject.contractor || '' },
       { ppe, legalRefs }
     );
@@ -204,11 +238,48 @@ const RiskAssessment = () => {
     if (!currentProject) return;
     const { data: approvals } = await supabase.from('approvals').select('*').eq('project_id', selectedProjectId);
     exportToPDF(
-      items.map(i => ({ ...i, sub_task: i.sub_task || '', hazard: i.hazard || '', hazard_situation: i.hazard_situation || '', existing_measure: i.existing_measure || '', improvement_measure: i.improvement_measure || '', risk: i.risk || 0, improved_risk: i.improved_risk || 0, ppe: i.ppe || [], legal_basis: i.legal_basis || [], department: i.department || '', assignee: i.assignee || '', note: i.note || '' })),
+      items.map(i => ({
+        ...i, sub_task: i.sub_task || '', hazard: i.hazard || '', hazard_situation: i.hazard_situation || '',
+        existing_measure: i.existing_measure || '', improvement_measure: i.improvement_measure || '',
+        likelihood_grade: (i as any).likelihood_grade || '중', severity_grade: (i as any).severity_grade || '중', risk_grade: (i as any).risk_grade || '중',
+        improved_likelihood_grade: (i as any).improved_likelihood_grade || '하', improved_severity_grade: (i as any).improved_severity_grade || '하', improved_risk_grade: (i as any).improved_risk_grade || '하',
+        ppe: i.ppe || [], legal_basis: i.legal_basis || [], department: i.department || '', assignee: i.assignee || '', note: i.note || '',
+      })),
       { ...currentProject, period_start: currentProject.period_start || '', period_end: currentProject.period_end || '', client: currentProject.client || '', contractor: currentProject.contractor || '' },
       approvals
     );
   };
+
+  const GradeSelect = ({ item, field }: { item: RiskItemRow; field: string }) => {
+    const isEditing = editingCell?.id === item.id && editingCell?.field === field;
+    const value = (item as any)[field] || '중';
+
+    if (isEditing) {
+      return (
+        <Select defaultValue={value} onValueChange={(v) => handleCellEdit(item.id, field, v)}>
+          <SelectTrigger className="h-7 text-xs w-14"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {GRADES.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      );
+    }
+
+    return (
+      <span
+        className={`cursor-pointer inline-flex items-center justify-center w-8 h-6 rounded text-[11px] font-bold ${getGradeClassName(value)}`}
+        onClick={() => setEditingCell({ id: item.id, field })}
+      >
+        {value}
+      </span>
+    );
+  };
+
+  const RiskGradeBadge = ({ grade }: { grade: string }) => (
+    <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-[11px] font-bold ${getGradeClassName(grade)}`}>
+      {grade}
+    </span>
+  );
 
   const EditableCell = ({ item, field, type = 'text' }: { item: RiskItemRow; field: string; type?: string }) => {
     const isEditing = editingCell?.id === item.id && editingCell?.field === field;
@@ -220,20 +291,18 @@ const RiskAssessment = () => {
           <Select defaultValue={value as string} onValueChange={(v) => handleCellEdit(item.id, field, v)}>
             <SelectTrigger className="h-7 text-xs w-20"><SelectValue /></SelectTrigger>
             <SelectContent>
+              <SelectItem value="초안">초안</SelectItem>
+              <SelectItem value="제출">제출</SelectItem>
+              <SelectItem value="검토대기">검토대기</SelectItem>
+              <SelectItem value="반려">반려</SelectItem>
+              <SelectItem value="보완중">보완중</SelectItem>
+              <SelectItem value="승인">승인</SelectItem>
+              <SelectItem value="폐기">폐기</SelectItem>
               <SelectItem value="미착수">미착수</SelectItem>
               <SelectItem value="진행">진행</SelectItem>
               <SelectItem value="완료">완료</SelectItem>
             </SelectContent>
           </Select>
-        );
-      }
-      if (type === 'number') {
-        return (
-          <Input type="number" min={1} max={5} defaultValue={value as number}
-            className="h-7 w-12 text-xs text-center" autoFocus
-            onBlur={(e) => handleCellEdit(item.id, field, Number(e.target.value))}
-            onKeyDown={(e) => e.key === 'Enter' && handleCellEdit(item.id, field, Number((e.target as HTMLInputElement).value))}
-          />
         );
       }
       return (
@@ -269,7 +338,7 @@ const RiskAssessment = () => {
       <div className="flex items-center justify-between print:hidden">
         <div>
           <h1 className="text-2xl font-bold">위험성평가</h1>
-          <p className="text-sm text-muted-foreground mt-1">인라인 편집: 셀 클릭 → 수정 → Enter/외부 클릭으로 저장</p>
+          <p className="text-sm text-muted-foreground mt-1">상/중/하 3단계 등급 기법 · 셀 클릭으로 인라인 편집</p>
         </div>
         <div className="flex items-center gap-2">
           <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
@@ -326,9 +395,23 @@ const RiskAssessment = () => {
               <SelectTrigger className="h-8 w-28 text-xs"><SelectValue placeholder="상태 전체" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">상태 전체</SelectItem>
+                <SelectItem value="초안">초안</SelectItem>
+                <SelectItem value="제출">제출</SelectItem>
+                <SelectItem value="검토대기">검토대기</SelectItem>
+                <SelectItem value="반려">반려</SelectItem>
+                <SelectItem value="승인">승인</SelectItem>
                 <SelectItem value="미착수">미착수</SelectItem>
                 <SelectItem value="진행">진행</SelectItem>
                 <SelectItem value="완료">완료</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filterRiskGrade} onValueChange={setFilterRiskGrade}>
+              <SelectTrigger className="h-8 w-28 text-xs"><SelectValue placeholder="위험도 전체" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">위험도 전체</SelectItem>
+                <SelectItem value="상">상 (고위험)</SelectItem>
+                <SelectItem value="중">중</SelectItem>
+                <SelectItem value="하">하 (저위험)</SelectItem>
               </SelectContent>
             </Select>
             <div className="flex-1 relative">
@@ -351,8 +434,8 @@ const RiskAssessment = () => {
                   <th className="w-8 text-center">#</th>
                   <th>공정</th><th>세부작업</th><th>위험요인</th><th>위험발생상황</th>
                   <th>기존대책</th><th>개선대책</th>
-                  <th className="text-center w-10">F</th><th className="text-center w-10">S</th><th className="text-center w-12">R</th>
-                  <th className="text-center w-10">F'</th><th className="text-center w-10">S'</th><th className="text-center w-12">R'</th>
+                  <th className="text-center w-12">가능성</th><th className="text-center w-12">중대성</th><th className="text-center w-12">위험도</th>
+                  <th className="text-center w-12">가능성'</th><th className="text-center w-12">중대성'</th><th className="text-center w-12">위험도'</th>
                   <th className="text-center w-16">상태</th>
                   <th>PPE</th><th>법적근거</th>
                   <th>책임부서</th><th>담당자</th>
@@ -373,20 +456,12 @@ const RiskAssessment = () => {
                     <td className="editable max-w-[200px]"><EditableCell item={item} field="hazard_situation" /></td>
                     <td className="editable max-w-[180px]"><EditableCell item={item} field="existing_measure" /></td>
                     <td className="editable max-w-[180px]"><EditableCell item={item} field="improvement_measure" /></td>
-                    <td className="text-center editable"><EditableCell item={item} field="frequency" type="number" /></td>
-                    <td className="text-center editable"><EditableCell item={item} field="severity" type="number" /></td>
-                    <td className="text-center">
-                      <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-[11px] font-bold ${getRiskClassName(item.risk || 0)}`}>
-                        {item.risk || 0}
-                      </span>
-                    </td>
-                    <td className="text-center editable"><EditableCell item={item} field="improved_frequency" type="number" /></td>
-                    <td className="text-center editable"><EditableCell item={item} field="improved_severity" type="number" /></td>
-                    <td className="text-center">
-                      <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-[11px] font-bold ${getRiskClassName(item.improved_risk || 0)}`}>
-                        {item.improved_risk || 0}
-                      </span>
-                    </td>
+                    <td className="text-center editable"><GradeSelect item={item} field="likelihood_grade" /></td>
+                    <td className="text-center editable"><GradeSelect item={item} field="severity_grade" /></td>
+                    <td className="text-center"><RiskGradeBadge grade={(item as any).risk_grade || '중'} /></td>
+                    <td className="text-center editable"><GradeSelect item={item} field="improved_likelihood_grade" /></td>
+                    <td className="text-center editable"><GradeSelect item={item} field="improved_severity_grade" /></td>
+                    <td className="text-center"><RiskGradeBadge grade={(item as any).improved_risk_grade || '하'} /></td>
                     <td className="text-center editable"><EditableCell item={item} field="status" /></td>
                     <td className="text-xs max-w-[120px] truncate">{(item.ppe || []).join(', ') || '—'}</td>
                     <td className="text-xs max-w-[150px] truncate">{(item.legal_basis || []).join(', ') || '—'}</td>
@@ -415,7 +490,7 @@ const RiskAssessment = () => {
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>공종명으로 위험성평가 자동작성</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">공종명을 입력하면 표준 라이브러리(240+항목)에서 관련 위험성평가 항목을 자동 생성합니다.</p>
+            <p className="text-sm text-muted-foreground">공종명을 입력하면 표준 라이브러리에서 관련 위험성평가 항목을 자동 생성합니다. (상/중/하 등급 자동 산출)</p>
             <div className="space-y-1.5">
               <Label>공종명 입력</Label>
               <Input value={autoGenProcess} onChange={e => setAutoGenProcess(e.target.value)}
@@ -445,7 +520,7 @@ const RiskAssessment = () => {
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-xs text-muted-foreground">18개 대분류 · 240+ 표준항목: 토공, 기초, 철골, 비계, 마감, 설비, 전기, 소방, 기계, 밀폐공간, 크레인, 중량물, 도로, 해상, 철거, 화기, 화학, 환경</p>
+            <p className="text-xs text-muted-foreground">18개 대분류 · 240+ 표준항목 (상/중/하 3단계 등급 자동 산출)</p>
             <Button onClick={handleAutoGenerate} disabled={!autoGenProcess || autoGenLoading} className="w-full">
               {autoGenLoading ? '생성 중...' : `${autoGenTargetCount}개 자동 생성`}
             </Button>

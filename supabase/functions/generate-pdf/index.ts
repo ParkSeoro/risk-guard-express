@@ -286,9 +286,9 @@ thead { display: table-header-group; }
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("PDF generation error:", error);
+    // Don't expose internal error details to clients
     return new Response(
-      JSON.stringify({ error: String(error) }),
+      JSON.stringify({ error: "PDF generation failed" }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

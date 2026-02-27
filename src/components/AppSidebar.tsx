@@ -14,11 +14,10 @@ import { Button } from "@/components/ui/button";
 
 const mainItems = [
   { title: "대시보드", url: "/", icon: LayoutDashboard },
-  { title: "프로젝트", url: "/projects", icon: FolderKanban },
   { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
   { title: "검증센터", url: "/verification-center", icon: SearchCheck },
-  { title: "적정성 검증", url: "/verification", icon: ShieldCheck },
   { title: "결재함", url: "/approvals", icon: FileCheck },
+  { title: "프로젝트", url: "/projects", icon: FolderKanban },
 ];
 
 const adminItems = [

@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
-import { Plus, ShieldAlert, Calendar, Filter, Search, RotateCcw } from 'lucide-react';
+import { Plus, ShieldAlert, Calendar, Filter, Search, ClipboardList } from 'lucide-react';
 import { format } from 'date-fns';
 import RunCardActions from '@/components/assessment-runs/RunCardActions';
 import EditRunDialog from '@/components/assessment-runs/EditRunDialog';
@@ -21,19 +21,43 @@ import DeleteRunDialog from '@/components/assessment-runs/DeleteRunDialog';
 import CloneRunDialog from '@/components/assessment-runs/CloneRunDialog';
 
 const typeLabels: Record<string, string> = { '최초': '최초', '정기': '정기', '수시': '수시', '상시': '상시' };
-const statusColors: Record<string, string> = {
-  '작성중': 'bg-muted text-muted-foreground',
-  '제출됨': 'bg-primary/10 text-primary border-primary/30',
-  '검증중': 'bg-warning/10 text-warning border-warning/30',
-  '검증대기': 'bg-warning/10 text-warning border-warning/30',
-  '보완요청': 'bg-warning/10 text-warning border-warning/30',
-  '보완중': 'bg-warning/10 text-warning border-warning/30',
-  '검증완료': 'bg-accent/10 text-accent border-accent/30',
-  '결재진행': 'bg-primary/10 text-primary border-primary/30',
-  '승인완료': 'bg-success/10 text-success border-success/30',
-  '반려': 'bg-destructive/10 text-destructive border-destructive/30',
-  '폐기': 'bg-muted text-muted-foreground',
+
+const statusConfig: Record<string, { bg: string; text: string }> = {
+  '작성중': { bg: 'bg-muted', text: 'text-muted-foreground' },
+  '제출됨': { bg: 'bg-primary/10', text: 'text-primary' },
+  '검증중': { bg: 'bg-warning/10', text: 'text-warning' },
+  '검증대기': { bg: 'bg-warning/10', text: 'text-warning' },
+  '보완요청': { bg: 'bg-destructive/10', text: 'text-destructive' },
+  '보완중': { bg: 'bg-warning/10', text: 'text-warning' },
+  '검증완료': { bg: 'bg-accent/10', text: 'text-accent' },
+  '결재진행': { bg: 'bg-primary/10', text: 'text-primary' },
+  '승인완료': { bg: 'bg-success/10', text: 'text-success' },
+  '반려': { bg: 'bg-destructive/10', text: 'text-destructive' },
+  '폐기': { bg: 'bg-muted', text: 'text-muted-foreground' },
 };
+
+function StatusBadge({ status }: { status: string }) {
+  const cfg = statusConfig[status] || { bg: 'bg-muted', text: 'text-muted-foreground' };
+  return (
+    <Badge variant="outline" className={`text-[10px] font-semibold border-0 ${cfg.bg} ${cfg.text}`}>
+      {status}
+    </Badge>
+  );
+}
+
+function VerdictBadge({ verdict, score }: { verdict: string | null; score: number | null }) {
+  if (!verdict) return null;
+  const cfg = verdict === '적정'
+    ? { bg: 'bg-success/10', text: 'text-success' }
+    : verdict === '조건부 적정'
+    ? { bg: 'bg-warning/10', text: 'text-warning' }
+    : { bg: 'bg-destructive/10', text: 'text-destructive' };
+  return (
+    <Badge variant="outline" className={`text-[10px] font-medium border-0 ${cfg.bg} ${cfg.text}`}>
+      검증: {verdict}{score != null ? ` (${score}점)` : ''}
+    </Badge>
+  );
+}
 
 const AssessmentRuns = () => {
   const navigate = useNavigate();
@@ -52,16 +76,11 @@ const AssessmentRuns = () => {
   const [search, setSearch] = useState('');
   const [showDeleted, setShowDeleted] = useState(false);
   const [form, setForm] = useState({
-    type: '정기',
-    period_label: '',
-    target_processes: '',
-    target_contractors: '',
-    notes: '',
+    type: '정기', period_label: '', target_processes: '', target_contractors: '', notes: '',
   });
 
   const [runStats, setRunStats] = useState<Record<string, { total: number; high: number; med: number; low: number }>>({});
 
-  // Dialog states
   const [editRun, setEditRun] = useState<any>(null);
   const [deleteRun, setDeleteRun] = useState<any>(null);
   const [cloneRun, setCloneRun] = useState<any>(null);
@@ -137,14 +156,11 @@ const AssessmentRuns = () => {
       toast({ title: '복구 실패', description: error.message, variant: 'destructive' });
       return;
     }
-    await log('restore_run', 'assessment_run', run.id, run.project_id, {
-      period_label: run.period_label,
-    });
+    await log('restore_run', 'assessment_run', run.id, run.project_id, { period_label: run.period_label });
     toast({ title: '회차가 복구되었습니다.' });
     fetchRuns();
   };
 
-  // Permission helpers
   const canEditRun = (run: any) => {
     if (isMaster) return true;
     if (run.created_by === user?.id) return true;
@@ -159,12 +175,8 @@ const AssessmentRuns = () => {
   };
 
   const filtered = runs.filter(r => {
-    // Soft-delete filter
-    if (showDeleted) {
-      if (!r.is_deleted) return false;
-    } else {
-      if (r.is_deleted) return false;
-    }
+    if (showDeleted) { if (!r.is_deleted) return false; }
+    else { if (r.is_deleted) return false; }
     if (filterType !== 'all' && r.type !== filterType) return false;
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search) {
@@ -174,16 +186,25 @@ const AssessmentRuns = () => {
     return true;
   });
 
+  // Approval status helper
+  const getApprovalLabel = (run: any) => {
+    if (run.status === '승인완료') return { label: '승인완료', className: 'bg-success/10 text-success' };
+    if (run.status === '결재진행') return { label: '결재중', className: 'bg-primary/10 text-primary' };
+    return { label: '미상신', className: 'bg-muted text-muted-foreground' };
+  };
+
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><ShieldAlert className="h-6 w-6" /> 위험성평가</h1>
-          <p className="text-sm text-muted-foreground mt-1">평가 회차(최초/정기/수시/상시) 목록 · 회차 단위로 작성/검증/결재</p>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <ShieldAlert className="h-6 w-6" /> 위험성평가
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">평가 회차 목록 · 회차 단위로 작성/검증/결재</p>
         </div>
         <div className="flex items-center gap-2">
           <Select value={selectedProject} onValueChange={setSelectedProject}>
-            <SelectTrigger className="h-8 w-60 text-xs"><SelectValue placeholder="프로젝트" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-60 text-xs"><SelectValue placeholder="프로젝트" /></SelectTrigger>
             <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
           </Select>
           <Button size="sm" className="gap-1.5" onClick={() => setShowCreate(true)}>
@@ -201,25 +222,14 @@ const AssessmentRuns = () => {
               <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">종류 전체</SelectItem>
-                <SelectItem value="최초">최초</SelectItem>
-                <SelectItem value="정기">정기</SelectItem>
-                <SelectItem value="수시">수시</SelectItem>
-                <SelectItem value="상시">상시</SelectItem>
+                {Object.keys(typeLabels).map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
               <SelectTrigger className="h-8 w-28 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">상태 전체</SelectItem>
-                <SelectItem value="작성중">작성중</SelectItem>
-                <SelectItem value="제출됨">제출됨</SelectItem>
-                <SelectItem value="검증중">검증중</SelectItem>
-                <SelectItem value="보완요청">보완요청</SelectItem>
-                <SelectItem value="검증완료">검증완료</SelectItem>
-                <SelectItem value="결재진행">결재진행</SelectItem>
-                <SelectItem value="승인완료">승인완료</SelectItem>
-                <SelectItem value="보완중">보완중</SelectItem>
-                <SelectItem value="폐기">폐기</SelectItem>
+                {Object.keys(statusConfig).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
               </SelectContent>
             </Select>
             <div className="flex-1 relative">
@@ -232,56 +242,99 @@ const AssessmentRuns = () => {
                 <label htmlFor="show-deleted" className="text-xs text-muted-foreground cursor-pointer">삭제됨</label>
               </div>
             )}
-            <span className="text-xs text-muted-foreground">{filtered.length}건</span>
+            <span className="text-xs text-muted-foreground font-medium">{filtered.length}건</span>
           </div>
         </CardContent>
       </Card>
 
       {/* Run List */}
       {loading ? (
-        <Card><CardContent className="py-12 text-center text-muted-foreground">로딩 중...</CardContent></Card>
+        <Card><CardContent className="py-12 text-center text-muted-foreground text-sm">로딩 중...</CardContent></Card>
       ) : filtered.length === 0 ? (
-        <Card><CardContent className="py-12 text-center text-muted-foreground">
-          {showDeleted ? '삭제된 회차가 없습니다.' : '평가 회차가 없습니다. \'회차 생성\'을 눌러 시작하세요.'}
-        </CardContent></Card>
+        <Card>
+          <CardContent className="py-16 text-center space-y-4">
+            <div className="h-14 w-14 rounded-2xl bg-muted flex items-center justify-center mx-auto">
+              <ClipboardList className="h-7 w-7 text-muted-foreground" />
+            </div>
+            <div>
+              <h3 className="font-semibold">
+                {showDeleted ? '삭제된 회차가 없습니다' : '평가 회차가 없습니다'}
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                {!showDeleted && "'회차 생성'을 눌러 평가를 시작하세요."}
+              </p>
+            </div>
+            {!showDeleted && (
+              <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" /> 회차 생성
+              </Button>
+            )}
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-3">
           {filtered.map(run => {
             const stats = runStats[run.id] || { total: 0, high: 0, med: 0, low: 0 };
+            const approval = getApprovalLabel(run);
             return (
               <Card
                 key={run.id}
-                className={`hover:shadow-md transition-shadow cursor-pointer ${run.is_deleted ? 'opacity-60 border-dashed' : ''}`}
+                className={`group hover:shadow-md transition-all cursor-pointer ${run.is_deleted ? 'opacity-60 border-dashed' : ''}`}
                 onClick={() => !run.is_deleted && navigate(`/assessment-run/${run.id}`)}
               >
-                <CardContent className="pt-5">
-                  <div className="flex items-start justify-between">
+                <CardContent className="py-4">
+                  <div className="flex items-start justify-between gap-4">
                     <div className="space-y-2 flex-1 min-w-0">
+                      {/* Row 1: Type + Name + Status */}
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Badge variant="outline" className="text-[10px]">{typeLabels[run.type] || run.type}</Badge>
-                        <h3 className="font-semibold">{run.period_label || '(기간 미지정)'}</h3>
-                        <Badge variant="outline" className={`text-[10px] ${statusColors[run.status] || ''}`}>
-                          {run.status}
+                        <Badge variant="outline" className="text-[10px] font-medium">
+                          {typeLabels[run.type] || run.type}
                         </Badge>
+                        <h3 className="font-semibold text-sm">
+                          {run.period_label || '(기간 미지정)'}
+                        </h3>
+                        <StatusBadge status={run.status} />
                         {run.is_deleted && (
                           <Badge variant="destructive" className="text-[10px]">삭제됨</Badge>
                         )}
                       </div>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-                        <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{format(new Date(run.created_at), 'yyyy-MM-dd')}</span>
-                        <span>항목 {stats.total}건</span>
-                        {stats.high > 0 && <span className="text-destructive font-medium">상 {stats.high}</span>}
-                        {stats.med > 0 && <span className="text-warning font-medium">중 {stats.med}</span>}
-                        {stats.low > 0 && <span className="text-success font-medium">하 {stats.low}</span>}
-                        {run.validation_verdict && (
-                          <Badge variant="outline" className="text-[10px]">검증: {run.validation_verdict} ({run.validation_score}점)</Badge>
+
+                      {/* Row 2: Stats */}
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {format(new Date(run.created_at), 'yyyy-MM-dd')}
+                        </span>
+                        <span className="font-medium">항목 {stats.total}건</span>
+                        {stats.total > 0 && (
+                          <span className="flex items-center gap-1.5">
+                            <span className="inline-flex items-center gap-0.5">
+                              <span className="h-2 w-2 rounded-full bg-destructive" />
+                              <span className="text-destructive font-semibold">{stats.high}</span>
+                            </span>
+                            <span className="inline-flex items-center gap-0.5">
+                              <span className="h-2 w-2 rounded-full bg-warning" />
+                              <span className="text-warning font-semibold">{stats.med}</span>
+                            </span>
+                            <span className="inline-flex items-center gap-0.5">
+                              <span className="h-2 w-2 rounded-full bg-success" />
+                              <span className="text-success font-semibold">{stats.low}</span>
+                            </span>
+                          </span>
                         )}
+                        <VerdictBadge verdict={run.validation_verdict} score={run.validation_score} />
+                        <Badge variant="outline" className={`text-[10px] font-medium border-0 ${approval.className}`}>
+                          {approval.label}
+                        </Badge>
                       </div>
-                      {run.notes && <p className="text-xs text-muted-foreground truncate">{run.notes}</p>}
+
+                      {/* Row 3: Notes */}
+                      {run.notes && <p className="text-xs text-muted-foreground truncate max-w-lg">{run.notes}</p>}
                       {run.is_deleted && run.deleted_reason && (
                         <p className="text-xs text-destructive">삭제 사유: {run.deleted_reason}</p>
                       )}
                     </div>
+
                     <RunCardActions
                       run={run}
                       canEdit={!run.is_deleted && canEditRun(run)}
@@ -307,9 +360,9 @@ const AssessmentRuns = () => {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>종류 *</Label>
+                <Label className="text-xs">종류 *</Label>
                 <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="최초">최초평가</SelectItem>
                     <SelectItem value="정기">정기평가</SelectItem>
@@ -319,20 +372,20 @@ const AssessmentRuns = () => {
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>적용기간 *</Label>
-                <Input value={form.period_label} onChange={e => setForm(p => ({ ...p, period_label: e.target.value }))} placeholder="예: 2026년 3월 1주차" />
+                <Label className="text-xs">적용기간 *</Label>
+                <Input className="h-9" value={form.period_label} onChange={e => setForm(p => ({ ...p, period_label: e.target.value }))} placeholder="예: 2026년 3월 1주차" />
               </div>
             </div>
             <div className="space-y-1">
-              <Label>대상 공정 (쉼표 구분)</Label>
-              <Input value={form.target_processes} onChange={e => setForm(p => ({ ...p, target_processes: e.target.value }))} placeholder="배관, 철골, 용접" />
+              <Label className="text-xs">대상 공정 (쉼표 구분)</Label>
+              <Input className="h-9" value={form.target_processes} onChange={e => setForm(p => ({ ...p, target_processes: e.target.value }))} placeholder="배관, 철골, 용접" />
             </div>
             <div className="space-y-1">
-              <Label>대상 협력사 (쉼표 구분)</Label>
-              <Input value={form.target_contractors} onChange={e => setForm(p => ({ ...p, target_contractors: e.target.value }))} placeholder="(주)대한배관, (주)우리용접" />
+              <Label className="text-xs">대상 협력사 (쉼표 구분)</Label>
+              <Input className="h-9" value={form.target_contractors} onChange={e => setForm(p => ({ ...p, target_contractors: e.target.value }))} placeholder="(주)대한배관, (주)우리용접" />
             </div>
             <div className="space-y-1">
-              <Label>비고</Label>
+              <Label className="text-xs">비고</Label>
               <Textarea value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="특이사항, 메모..." rows={2} />
             </div>
             <Button onClick={handleCreate} disabled={!form.period_label} className="w-full">회차 생성</Button>
@@ -340,25 +393,9 @@ const AssessmentRuns = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Edit / Delete / Clone Dialogs */}
-      <EditRunDialog
-        open={!!editRun}
-        onOpenChange={(open) => !open && setEditRun(null)}
-        run={editRun}
-        onSaved={fetchRuns}
-      />
-      <DeleteRunDialog
-        open={!!deleteRun}
-        onOpenChange={(open) => !open && setDeleteRun(null)}
-        run={deleteRun}
-        onDeleted={fetchRuns}
-      />
-      <CloneRunDialog
-        open={!!cloneRun}
-        onOpenChange={(open) => !open && setCloneRun(null)}
-        run={cloneRun}
-        onCloned={fetchRuns}
-      />
+      <EditRunDialog open={!!editRun} onOpenChange={(open) => !open && setEditRun(null)} run={editRun} onSaved={fetchRuns} />
+      <DeleteRunDialog open={!!deleteRun} onOpenChange={(open) => !open && setDeleteRun(null)} run={deleteRun} onDeleted={fetchRuns} />
+      <CloneRunDialog open={!!cloneRun} onOpenChange={(open) => !open && setCloneRun(null)} run={cloneRun} onCloned={fetchRuns} />
     </div>
   );
 };

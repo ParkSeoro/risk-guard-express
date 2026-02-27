@@ -83,6 +83,13 @@ function ProtectedRoutes() {
   );
 }
 
+function AuthRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (user) return <Navigate to="/" replace />;
+  return <Auth />;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -100,12 +107,5 @@ const App = () => (
     </TooltipProvider>
   </QueryClientProvider>
 );
-
-function AuthRoute() {
-  const { user, loading } = useAuth();
-  if (loading) return null;
-  if (user) return <Navigate to="/" replace />;
-  return <Auth />;
-}
 
 export default App;

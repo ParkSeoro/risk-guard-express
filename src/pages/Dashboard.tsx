@@ -1,190 +1,511 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getGradeClassName, getGradeSortOrder } from "@/lib/riskGrade";
-import { AlertTriangle, CheckCircle2, Clock, ShieldAlert, BarChart3 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
+import { Button } from "@/components/ui/button";
+import { getGradeClassName } from "@/lib/riskGrade";
+import {
+  AlertTriangle, CheckCircle2, ShieldAlert, BarChart3, FileCheck,
+  ClipboardList, ShieldCheck, Clock, Plus, ArrowRight
+} from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Cell, PieChart, Pie
+} from "recharts";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+interface DashboardData {
+  // KPI 1: 회차 현황
+  totalRuns: number;
+  runsByStatus: Record<string, number>;
+  // KPI 2: 위험성평가 항목
+  totalItems: number;
+  preGradeDist: { high: number; med: number; low: number };
+  postGradeDist: { high: number; med: number; low: number };
+  residualHigh: number;
+  // KPI 3: 이행 현황
+  itemsByStatus: Record<string, number>;
+  // KPI 4: 검증 품질
+  validationIssues: number;
+  validationConditional: number;
+  // KPI 5: 결재 현황
+  inApprovalRuns: number;
+  approvedRuns: number;
+  // Charts
+  processData: { name: string; high: number; med: number; low: number }[];
+  topRisks: any[];
+}
+
+const EMPTY: DashboardData = {
+  totalRuns: 0, runsByStatus: {}, totalItems: 0,
+  preGradeDist: { high: 0, med: 0, low: 0 },
+  postGradeDist: { high: 0, med: 0, low: 0 },
+  residualHigh: 0, itemsByStatus: {},
+  validationIssues: 0, validationConditional: 0,
+  inApprovalRuns: 0, approvedRuns: 0,
+  processData: [], topRisks: [],
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  '작성중': '작성중', '제출됨': '제출됨', '검증중': '검증중', '보완요청': '보완요청',
+  '보완중': '보완중', '검증완료': '검증완료', '결재진행': '결재진행', '승인완료': '승인완료',
+};
+
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState<{ id: string; name: string; site_name: string }[]>([]);
-  const [selectedProject, setSelectedProject] = useState('');
-  const [items, setItems] = useState<any[]>([]);
+  const [selectedProject, setSelectedProject] = useState("");
+  const [data, setData] = useState<DashboardData>(EMPTY);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from('projects').select('id, name, site_name').then(({ data }) => {
+    supabase.from("projects").select("id, name, site_name").then(({ data }) => {
       if (data && data.length > 0) {
         setProjects(data);
         setSelectedProject(data[0].id);
+      } else {
+        setLoading(false);
       }
     });
   }, []);
 
-  useEffect(() => {
+  const fetchDashboard = useCallback(async () => {
     if (!selectedProject) return;
-    supabase.from('risk_items').select('*').eq('project_id', selectedProject).then(({ data }) => setItems(data || []));
+    setLoading(true);
+
+    // Fetch runs (excluding deleted)
+    const { data: runs } = await supabase
+      .from("assessment_runs")
+      .select("id, status, validation_verdict, validation_score")
+      .eq("project_id", selectedProject)
+      .eq("is_deleted", false);
+
+    const activeRuns = runs || [];
+    const runIds = activeRuns.map((r) => r.id);
+
+    // Fetch risk items for these runs
+    let items: any[] = [];
+    if (runIds.length > 0) {
+      const { data: riskItems } = await supabase
+        .from("risk_items")
+        .select("id, process, sub_task, hazard, risk_grade, improved_risk_grade, status, department")
+        .in("run_id", runIds);
+      items = riskItems || [];
+    }
+
+    // Also fetch items with no run (project-level)
+    const { data: projectItems } = await supabase
+      .from("risk_items")
+      .select("id, process, sub_task, hazard, risk_grade, improved_risk_grade, status, department")
+      .eq("project_id", selectedProject)
+      .is("run_id", null);
+    items = [...items, ...(projectItems || [])];
+
+    // Fetch validation results
+    let valIssues = 0;
+    if (runIds.length > 0) {
+      const { count } = await supabase
+        .from("validation_results")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", selectedProject)
+        .eq("status", "fail")
+        .in("run_id", runIds);
+      valIssues = count || 0;
+    }
+
+    // KPI 1: Run status counts
+    const runsByStatus: Record<string, number> = {};
+    activeRuns.forEach((r) => {
+      runsByStatus[r.status] = (runsByStatus[r.status] || 0) + 1;
+    });
+
+    // KPI 2: Grade distribution
+    const preGradeDist = { high: 0, med: 0, low: 0 };
+    const postGradeDist = { high: 0, med: 0, low: 0 };
+    let residualHigh = 0;
+    const itemsByStatus: Record<string, number> = {};
+
+    // Chart: process data
+    const processMap: Record<string, { high: number; med: number; low: number }> = {};
+
+    items.forEach((item) => {
+      // Pre grade
+      if (item.risk_grade === "상") preGradeDist.high++;
+      else if (item.risk_grade === "중") preGradeDist.med++;
+      else preGradeDist.low++;
+
+      // Post grade
+      if (item.improved_risk_grade === "상") { postGradeDist.high++; residualHigh++; }
+      else if (item.improved_risk_grade === "중") postGradeDist.med++;
+      else postGradeDist.low++;
+
+      // Status
+      itemsByStatus[item.status] = (itemsByStatus[item.status] || 0) + 1;
+
+      // Process chart
+      if (!processMap[item.process]) processMap[item.process] = { high: 0, med: 0, low: 0 };
+      if (item.risk_grade === "상") processMap[item.process].high++;
+      else if (item.risk_grade === "중") processMap[item.process].med++;
+      else processMap[item.process].low++;
+    });
+
+    const processData = Object.entries(processMap)
+      .map(([name, d]) => ({ name, ...d }))
+      .sort((a, b) => b.high - a.high || b.med - a.med)
+      .slice(0, 10);
+
+    // Top risks
+    const topRisks = [...items]
+      .filter((i) => i.risk_grade === "상" || i.risk_grade === "중")
+      .sort((a, b) => {
+        const order: Record<string, number> = { "상": 3, "중": 2, "하": 1 };
+        return (order[b.risk_grade] || 0) - (order[a.risk_grade] || 0);
+      })
+      .slice(0, 5);
+
+    // KPI 4/5
+    const validationConditional = activeRuns.filter((r) => r.validation_verdict === "조건부 적정").length;
+    const inApprovalRuns = runsByStatus["결재진행"] || 0;
+    const approvedRuns = runsByStatus["승인완료"] || 0;
+
+    setData({
+      totalRuns: activeRuns.length,
+      runsByStatus,
+      totalItems: items.length,
+      preGradeDist,
+      postGradeDist,
+      residualHigh,
+      itemsByStatus,
+      validationIssues: valIssues,
+      validationConditional,
+      inApprovalRuns,
+      approvedRuns,
+      processData,
+      topRisks,
+    });
+    setLoading(false);
   }, [selectedProject]);
 
-  const currentProject = projects.find(p => p.id === selectedProject);
+  useEffect(() => {
+    fetchDashboard();
+  }, [fetchDashboard]);
 
-  // Grade-based stats
-  const highRiskCount = items.filter(i => i.risk_grade === '상').length;
-  const medRiskCount = items.filter(i => i.risk_grade === '중').length;
-  const lowRiskCount = items.filter(i => i.risk_grade === '하').length;
-  const improvedHighCount = items.filter(i => i.improved_risk_grade === '상').length;
-  const completedCount = items.filter(i => i.status === '완료').length;
-  const inProgressCount = items.filter(i => i.status === '진행').length;
-  const notStartedCount = items.filter(i => ['미착수', '초안'].includes(i.status)).length;
-
-  // Risk grade distribution by process
-  const processData = Object.entries(
-    items.reduce((acc, item) => {
-      if (!acc[item.process]) acc[item.process] = { high: 0, med: 0, low: 0 };
-      if (item.risk_grade === '상') acc[item.process].high++;
-      else if (item.risk_grade === '중') acc[item.process].med++;
-      else acc[item.process].low++;
-      return acc;
-    }, {} as Record<string, { high: number; med: number; low: number }>)
-  ).map(([name, d]) => ({
-    name,
-    ...(d as { high: number; med: number; low: number }),
-  })).sort((a, b) => b.high - a.high || b.med - a.med);
-
-  const statusData = [
-    { name: '미착수/초안', value: notStartedCount, color: 'hsl(0, 72%, 51%)' },
-    { name: '진행', value: inProgressCount, color: 'hsl(45, 93%, 47%)' },
-    { name: '완료', value: completedCount, color: 'hsl(145, 63%, 42%)' },
-  ];
+  const currentProject = projects.find((p) => p.id === selectedProject);
+  const completedCount = data.itemsByStatus["완료"] || 0;
+  const completionRate = data.totalItems > 0 ? Math.round((completedCount / data.totalItems) * 100) : 0;
 
   const riskDistData = [
-    { name: '상', value: highRiskCount, color: 'hsl(0, 72%, 51%)' },
-    { name: '중', value: medRiskCount, color: 'hsl(45, 93%, 47%)' },
-    { name: '하', value: lowRiskCount, color: 'hsl(145, 63%, 42%)' },
+    { name: "상", value: data.preGradeDist.high, color: "hsl(var(--risk-high))" },
+    { name: "중", value: data.preGradeDist.med, color: "hsl(var(--risk-medium))" },
+    { name: "하", value: data.preGradeDist.low, color: "hsl(var(--risk-low))" },
   ];
 
-  const topRisks = [...items]
-    .sort((a, b) => getGradeSortOrder(b.risk_grade) - getGradeSortOrder(a.risk_grade))
-    .slice(0, 5);
+  const statusData = [
+    { name: "미착수", value: (data.itemsByStatus["미착수"] || 0) + (data.itemsByStatus["초안"] || 0), color: "hsl(var(--muted-foreground))" },
+    { name: "진행", value: data.itemsByStatus["진행"] || 0, color: "hsl(var(--warning))" },
+    { name: "완료", value: completedCount, color: "hsl(var(--success))" },
+  ];
+
+  const isEmpty = data.totalRuns === 0 && data.totalItems === 0;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <p className="text-sm text-muted-foreground">데이터 로딩 중...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">대시보드</h1>
-          <p className="text-sm text-muted-foreground mt-1">{currentProject?.site_name || '프로젝트를 선택하세요'}</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {currentProject ? `${currentProject.site_name} · ${currentProject.name}` : "프로젝트를 선택하세요"}
+          </p>
         </div>
         <Select value={selectedProject} onValueChange={setSelectedProject}>
-          <SelectTrigger className="w-60 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
+          <SelectTrigger className="w-60 text-xs h-9">
+            <SelectValue placeholder="프로젝트 선택" />
+          </SelectTrigger>
           <SelectContent>
-            {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+            {projects.map((p) => (
+              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
-        <Card><CardContent className="pt-5">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs text-muted-foreground font-medium">총 평가항목</p><p className="text-3xl font-bold mt-1">{items.length}</p></div>
-            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center"><ShieldAlert className="h-5 w-5 text-primary" /></div>
-          </div>
-        </CardContent></Card>
-        <Card><CardContent className="pt-5">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs text-muted-foreground font-medium">위험도 '상'</p><p className="text-3xl font-bold mt-1 text-destructive">{highRiskCount}</p></div>
-            <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center"><AlertTriangle className="h-5 w-5 text-destructive" /></div>
-          </div>
-        </CardContent></Card>
-        <Card><CardContent className="pt-5">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs text-muted-foreground font-medium">개선 완료율</p><p className="text-3xl font-bold mt-1 text-success">{items.length > 0 ? Math.round(completedCount / items.length * 100) : 0}%</p></div>
-            <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'hsl(145 63% 42% / 0.1)' }}><CheckCircle2 className="h-5 w-5 text-success" /></div>
-          </div>
-        </CardContent></Card>
-        <Card><CardContent className="pt-5">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs text-muted-foreground font-medium">개선후 '상' 잔존</p><p className="text-3xl font-bold mt-1 text-destructive">{improvedHighCount}</p></div>
-            <div className="h-10 w-10 rounded-lg bg-accent/10 flex items-center justify-center"><BarChart3 className="h-5 w-5 text-accent" /></div>
-          </div>
-        </CardContent></Card>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="col-span-2">
-          <CardHeader className="pb-2"><CardTitle className="text-base">공정별 위험도 분포 (상/중/하)</CardTitle></CardHeader>
-          <CardContent>
-            {processData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={processData} layout="vertical" margin={{ left: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} />
-                  <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))', fontSize: 12 }} />
-                  <Bar dataKey="high" name="상" stackId="a" fill="hsl(0, 72%, 51%)" barSize={20} />
-                  <Bar dataKey="med" name="중" stackId="a" fill="hsl(45, 93%, 47%)" barSize={20} />
-                  <Bar dataKey="low" name="하" stackId="a" fill="hsl(145, 63%, 42%)" barSize={20} radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : <p className="text-center text-muted-foreground py-16">데이터가 없습니다</p>}
+      {isEmpty ? (
+        /* Empty state */
+        <Card>
+          <CardContent className="py-16 text-center space-y-4">
+            <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mx-auto">
+              <ClipboardList className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-lg">데이터가 없습니다</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                평가 회차를 생성하고 위험성평가를 시작하세요.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-3">
+              <Button size="sm" onClick={() => navigate("/risk-assessment")} className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" /> 회차 생성
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => navigate("/schedule-upload/" + selectedProject)} className="gap-1.5">
+                공정표 업로드
+              </Button>
+            </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">위험도 등급 분포</CardTitle></CardHeader>
-          <CardContent className="flex flex-col items-center">
-            {items.length > 0 ? (
-              <>
-                <ResponsiveContainer width="100%" height={180}>
-                  <PieChart>
-                    <Pie data={riskDistData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" stroke="hsl(var(--card))" strokeWidth={3}>
-                      {riskDistData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                    </Pie>
-                    <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))', fontSize: 12 }} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex gap-4 text-xs mt-2">
-                  {riskDistData.map(s => (
-                    <div key={s.name} className="flex items-center gap-1.5">
-                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-                      <span className="text-muted-foreground">{s.name}</span>
-                      <span className="font-semibold">{s.value}</span>
-                    </div>
+      ) : (
+        <>
+          {/* KPI Cards Row 1: Core Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KpiCard
+              label="총 회차"
+              value={data.totalRuns}
+              icon={<ClipboardList className="h-5 w-5 text-primary" />}
+              iconBg="bg-primary/10"
+              sub={
+                <div className="flex gap-2 text-[10px] mt-1 flex-wrap">
+                  {Object.entries(data.runsByStatus).slice(0, 3).map(([s, c]) => (
+                    <span key={s} className="text-muted-foreground">{s} {c}</span>
                   ))}
                 </div>
-              </>
-            ) : <p className="text-center text-muted-foreground py-16">데이터가 없습니다</p>}
-          </CardContent>
-        </Card>
-      </div>
+              }
+            />
+            <KpiCard
+              label="총 평가항목"
+              value={data.totalItems}
+              icon={<ShieldAlert className="h-5 w-5 text-primary" />}
+              iconBg="bg-primary/10"
+              sub={
+                <div className="flex gap-2 text-[10px] mt-1">
+                  <span className="text-destructive font-medium">상 {data.preGradeDist.high}</span>
+                  <span className="text-warning font-medium">중 {data.preGradeDist.med}</span>
+                  <span className="text-success font-medium">하 {data.preGradeDist.low}</span>
+                </div>
+              }
+            />
+            <KpiCard
+              label="개선 완료율"
+              value={`${completionRate}%`}
+              icon={<CheckCircle2 className="h-5 w-5 text-success" />}
+              iconBg="bg-success/10"
+              sub={<span className="text-[10px] text-muted-foreground mt-1">{completedCount}/{data.totalItems} 완료</span>}
+            />
+            <KpiCard
+              label="개선후 '상' 잔존"
+              value={data.residualHigh}
+              valueColor={data.residualHigh > 0 ? "text-destructive" : "text-foreground"}
+              icon={<AlertTriangle className="h-5 w-5 text-destructive" />}
+              iconBg="bg-destructive/10"
+            />
+          </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-destructive" /> 고위험 항목 Top 5
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {topRisks.length > 0 ? (
-            <table className="w-full data-table">
-              <thead><tr><th>공정</th><th>세부작업</th><th>위험요인</th><th className="text-center">위험도</th><th className="text-center">개선후</th><th className="text-center">이행상태</th><th>책임부서</th></tr></thead>
-              <tbody>
-                {topRisks.map(item => (
-                  <tr key={item.id}>
-                    <td className="font-medium">{item.process}</td>
-                    <td>{item.sub_task}</td>
-                    <td>{item.hazard}</td>
-                    <td className="text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${getGradeClassName(item.risk_grade || '중')}`}>{item.risk_grade || '중'}</span></td>
-                    <td className="text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${getGradeClassName(item.improved_risk_grade || '하')}`}>{item.improved_risk_grade || '하'}</span></td>
-                    <td className="text-center"><Badge variant={item.status === '완료' ? 'default' : 'outline'} className={`text-[10px] ${item.status === '완료' ? 'bg-success text-success-foreground' : ''}`}>{item.status}</Badge></td>
-                    <td>{item.department}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : <p className="text-center text-muted-foreground py-8">데이터가 없습니다</p>}
-        </CardContent>
-      </Card>
+          {/* KPI Cards Row 2: Verification & Approval */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KpiCard
+              label="부적정 건수"
+              value={data.validationIssues}
+              valueColor={data.validationIssues > 0 ? "text-destructive" : "text-foreground"}
+              icon={<ShieldCheck className="h-5 w-5 text-warning" />}
+              iconBg="bg-warning/10"
+              sub={<span className="text-[10px] text-muted-foreground mt-1">조건부 {data.validationConditional}건</span>}
+            />
+            <KpiCard
+              label="결재 진행"
+              value={data.inApprovalRuns}
+              icon={<FileCheck className="h-5 w-5 text-primary" />}
+              iconBg="bg-primary/10"
+            />
+            <KpiCard
+              label="승인 완료"
+              value={data.approvedRuns}
+              icon={<CheckCircle2 className="h-5 w-5 text-success" />}
+              iconBg="bg-success/10"
+            />
+            <KpiCard
+              label="미착수 항목"
+              value={(data.itemsByStatus["미착수"] || 0) + (data.itemsByStatus["초안"] || 0)}
+              icon={<Clock className="h-5 w-5 text-muted-foreground" />}
+              iconBg="bg-muted"
+              sub={<span className="text-[10px] text-muted-foreground mt-1">진행 {data.itemsByStatus["진행"] || 0}건</span>}
+            />
+          </div>
+
+          {/* Charts */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <Card className="lg:col-span-2">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">공정별 위험도 분포</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {data.processData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={data.processData} layout="vertical" margin={{ left: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis type="number" tick={{ fontSize: 11 }} />
+                      <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} />
+                      <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid hsl(var(--border))", fontSize: 12 }} />
+                      <Bar dataKey="high" name="상" stackId="a" fill="hsl(var(--risk-high))" barSize={20} />
+                      <Bar dataKey="med" name="중" stackId="a" fill="hsl(var(--risk-medium))" barSize={20} />
+                      <Bar dataKey="low" name="하" stackId="a" fill="hsl(var(--risk-low))" barSize={20} radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <EmptyChart message="공정 데이터가 없습니다" />
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">위험도 등급 분포</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col items-center">
+                {data.totalItems > 0 ? (
+                  <>
+                    <ResponsiveContainer width="100%" height={180}>
+                      <PieChart>
+                        <Pie
+                          data={riskDistData}
+                          cx="50%" cy="50%"
+                          innerRadius={45} outerRadius={70}
+                          dataKey="value"
+                          stroke="hsl(var(--card))"
+                          strokeWidth={3}
+                        >
+                          {riskDistData.map((entry, i) => (
+                            <Cell key={i} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid hsl(var(--border))", fontSize: 12 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="flex gap-4 text-xs mt-2">
+                      {riskDistData.map((s) => (
+                        <div key={s.name} className="flex items-center gap-1.5">
+                          <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
+                          <span className="text-muted-foreground">{s.name}</span>
+                          <span className="font-semibold">{s.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <EmptyChart message="데이터가 없습니다" />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Top Risk Items */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-destructive" /> 고위험 항목 Top 5
+                </CardTitle>
+                <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={() => navigate("/risk-assessment")}>
+                  전체 보기 <ArrowRight className="h-3 w-3" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {data.topRisks.length > 0 ? (
+                <table className="w-full data-table">
+                  <thead>
+                    <tr>
+                      <th>공정</th>
+                      <th>세부작업</th>
+                      <th>위험요인</th>
+                      <th className="text-center">위험도</th>
+                      <th className="text-center">개선후</th>
+                      <th className="text-center">이행상태</th>
+                      <th>책임부서</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.topRisks.map((item) => (
+                      <tr key={item.id}>
+                        <td className="font-medium">{item.process}</td>
+                        <td>{item.sub_task}</td>
+                        <td>{item.hazard}</td>
+                        <td className="text-center">
+                          <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${getGradeClassName(item.risk_grade || "중")}`}>
+                            {item.risk_grade || "중"}
+                          </span>
+                        </td>
+                        <td className="text-center">
+                          <span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${getGradeClassName(item.improved_risk_grade || "하")}`}>
+                            {item.improved_risk_grade || "하"}
+                          </span>
+                        </td>
+                        <td className="text-center">
+                          <Badge
+                            variant={item.status === "완료" ? "default" : "outline"}
+                            className={`text-[10px] ${item.status === "완료" ? "bg-success text-success-foreground" : ""}`}
+                          >
+                            {item.status}
+                          </Badge>
+                        </td>
+                        <td>{item.department}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <EmptyChart message="고위험 항목이 없습니다" />
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 };
+
+// Sub-components
+function KpiCard({
+  label, value, icon, iconBg, sub, valueColor,
+}: {
+  label: string;
+  value: number | string;
+  icon: React.ReactNode;
+  iconBg: string;
+  sub?: React.ReactNode;
+  valueColor?: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="pt-5 pb-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground font-medium">{label}</p>
+            <p className={`text-2xl font-bold mt-1 ${valueColor || "text-foreground"}`}>{value}</p>
+            {sub}
+          </div>
+          <div className={`h-10 w-10 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}>
+            {icon}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EmptyChart({ message }: { message: string }) {
+  return (
+    <div className="flex items-center justify-center py-16">
+      <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
+  );
+}
 
 export default Dashboard;

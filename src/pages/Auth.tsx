@@ -28,8 +28,8 @@ const Auth = () => {
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < 6) {
-      toast({ title: '비밀번호는 6자 이상이어야 합니다.', variant: 'destructive' });
+    if (password.length < 8) {
+      toast({ title: '비밀번호는 8자 이상이어야 합니다.', variant: 'destructive' });
       return;
     }
     setLoading(true);
@@ -99,7 +99,7 @@ const Auth = () => {
             {mode !== 'forgot' && (
               <div className="space-y-1.5">
                 <Label>비밀번호</Label>
-                <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••" required minLength={6} />
+                <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required minLength={8} />
               </div>
             )}
             <Button type="submit" className="w-full" disabled={loading}>

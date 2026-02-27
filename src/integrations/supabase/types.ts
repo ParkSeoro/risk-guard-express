@@ -115,6 +115,101 @@ export type Database = {
           },
         ]
       }
+      comments: {
+        Row: {
+          content: string
+          created_at: string | null
+          id: string
+          mentions: string[] | null
+          project_id: string
+          risk_item_id: string | null
+          updated_at: string | null
+          user_id: string | null
+          user_name: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string | null
+          id?: string
+          mentions?: string[] | null
+          project_id: string
+          risk_item_id?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+          user_name?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          id?: string
+          mentions?: string[] | null
+          project_id?: string
+          risk_item_id?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+          user_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comments_risk_item_id_fkey"
+            columns: ["risk_item_id"]
+            isOneToOne: false
+            referencedRelation: "risk_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      generated_batches: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          id: string
+          options: Json | null
+          project_id: string
+          risk_distribution: Json | null
+          source_id: string | null
+          source_type: string
+          total_items: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          options?: Json | null
+          project_id: string
+          risk_distribution?: Json | null
+          source_id?: string | null
+          source_type: string
+          total_items?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          options?: Json | null
+          project_id?: string
+          risk_distribution?: Json | null
+          source_id?: string | null
+          source_type?: string
+          total_items?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generated_batches_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       legal_references: {
         Row: {
           article: string
@@ -390,9 +485,48 @@ export type Database = {
         }
         Relationships: []
       }
+      risk_item_versions: {
+        Row: {
+          change_reason: string | null
+          changed_at: string | null
+          changed_by: string | null
+          data: Json
+          id: string
+          risk_item_id: string
+          version_number: number
+        }
+        Insert: {
+          change_reason?: string | null
+          changed_at?: string | null
+          changed_by?: string | null
+          data: Json
+          id?: string
+          risk_item_id: string
+          version_number: number
+        }
+        Update: {
+          change_reason?: string | null
+          changed_at?: string | null
+          changed_by?: string | null
+          data?: Json
+          id?: string
+          risk_item_id?: string
+          version_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "risk_item_versions_risk_item_id_fkey"
+            columns: ["risk_item_id"]
+            isOneToOne: false
+            referencedRelation: "risk_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       risk_items: {
         Row: {
           assignee: string | null
+          batch_id: string | null
           created_at: string
           created_by: string | null
           department: string | null
@@ -405,6 +539,7 @@ export type Database = {
           improved_risk: number | null
           improved_severity: number
           improvement_measure: string | null
+          is_locked: boolean | null
           legal_basis: string[] | null
           note: string | null
           ppe: string[] | null
@@ -415,10 +550,14 @@ export type Database = {
           sort_order: number | null
           status: string
           sub_task: string | null
+          submitted_at: string | null
+          submitted_by: string | null
           updated_at: string
+          version_number: number | null
         }
         Insert: {
           assignee?: string | null
+          batch_id?: string | null
           created_at?: string
           created_by?: string | null
           department?: string | null
@@ -431,6 +570,7 @@ export type Database = {
           improved_risk?: number | null
           improved_severity?: number
           improvement_measure?: string | null
+          is_locked?: boolean | null
           legal_basis?: string[] | null
           note?: string | null
           ppe?: string[] | null
@@ -441,10 +581,14 @@ export type Database = {
           sort_order?: number | null
           status?: string
           sub_task?: string | null
+          submitted_at?: string | null
+          submitted_by?: string | null
           updated_at?: string
+          version_number?: number | null
         }
         Update: {
           assignee?: string | null
+          batch_id?: string | null
           created_at?: string
           created_by?: string | null
           department?: string | null
@@ -457,6 +601,7 @@ export type Database = {
           improved_risk?: number | null
           improved_severity?: number
           improvement_measure?: string | null
+          is_locked?: boolean | null
           legal_basis?: string[] | null
           note?: string | null
           ppe?: string[] | null
@@ -467,7 +612,10 @@ export type Database = {
           sort_order?: number | null
           status?: string
           sub_task?: string | null
+          submitted_at?: string | null
+          submitted_by?: string | null
           updated_at?: string
+          version_number?: number | null
         }
         Relationships: [
           {
@@ -536,6 +684,149 @@ export type Database = {
         }
         Relationships: []
       }
+      schedule_uploads: {
+        Row: {
+          column_mapping: Json | null
+          created_at: string | null
+          file_name: string
+          file_path: string
+          id: string
+          parsed_rows: Json | null
+          project_id: string
+          status: string | null
+          total_generated: number | null
+          uploaded_by: string | null
+        }
+        Insert: {
+          column_mapping?: Json | null
+          created_at?: string | null
+          file_name: string
+          file_path?: string
+          id?: string
+          parsed_rows?: Json | null
+          project_id: string
+          status?: string | null
+          total_generated?: number | null
+          uploaded_by?: string | null
+        }
+        Update: {
+          column_mapping?: Json | null
+          created_at?: string | null
+          file_name?: string
+          file_path?: string
+          id?: string
+          parsed_rows?: Json | null
+          project_id?: string
+          status?: string | null
+          total_generated?: number | null
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_uploads_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scoring_config: {
+        Row: {
+          config_key: string
+          config_value: Json
+          description: string | null
+          id: string
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          config_key: string
+          config_value?: Json
+          description?: string | null
+          id?: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          config_key?: string
+          config_value?: Json
+          description?: string | null
+          id?: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      standard_risk_library: {
+        Row: {
+          category_large: string
+          category_medium: string
+          category_small: string
+          created_at: string | null
+          default_frequency: number | null
+          default_severity: number | null
+          equipment: string[] | null
+          existing_measure: string | null
+          hazard: string
+          hazard_situation: string
+          id: string
+          improvement_measure: string | null
+          is_active: boolean | null
+          keywords: string[] | null
+          legal_refs: string[] | null
+          recommended_ppe: string[] | null
+          sub_task: string
+          synonyms: string[] | null
+          tags: string[] | null
+          updated_at: string | null
+        }
+        Insert: {
+          category_large: string
+          category_medium?: string
+          category_small?: string
+          created_at?: string | null
+          default_frequency?: number | null
+          default_severity?: number | null
+          equipment?: string[] | null
+          existing_measure?: string | null
+          hazard: string
+          hazard_situation: string
+          id?: string
+          improvement_measure?: string | null
+          is_active?: boolean | null
+          keywords?: string[] | null
+          legal_refs?: string[] | null
+          recommended_ppe?: string[] | null
+          sub_task: string
+          synonyms?: string[] | null
+          tags?: string[] | null
+          updated_at?: string | null
+        }
+        Update: {
+          category_large?: string
+          category_medium?: string
+          category_small?: string
+          created_at?: string | null
+          default_frequency?: number | null
+          default_severity?: number | null
+          equipment?: string[] | null
+          existing_measure?: string | null
+          hazard?: string
+          hazard_situation?: string
+          id?: string
+          improvement_measure?: string | null
+          is_active?: boolean | null
+          keywords?: string[] | null
+          legal_refs?: string[] | null
+          recommended_ppe?: string[] | null
+          sub_task?: string
+          synonyms?: string[] | null
+          tags?: string[] | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
@@ -551,6 +842,100 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      validation_results: {
+        Row: {
+          batch_id: string | null
+          created_at: string | null
+          id: string
+          message: string | null
+          project_id: string
+          risk_item_id: string | null
+          rule_id: string | null
+          status: string
+          validated_by: string | null
+        }
+        Insert: {
+          batch_id?: string | null
+          created_at?: string | null
+          id?: string
+          message?: string | null
+          project_id: string
+          risk_item_id?: string | null
+          rule_id?: string | null
+          status?: string
+          validated_by?: string | null
+        }
+        Update: {
+          batch_id?: string | null
+          created_at?: string | null
+          id?: string
+          message?: string | null
+          project_id?: string
+          risk_item_id?: string | null
+          rule_id?: string | null
+          status?: string
+          validated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "validation_results_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "validation_results_risk_item_id_fkey"
+            columns: ["risk_item_id"]
+            isOneToOne: false
+            referencedRelation: "risk_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "validation_results_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "validation_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      validation_rules: {
+        Row: {
+          check_config: Json | null
+          created_at: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          rule_name: string
+          rule_type: string
+          severity: string | null
+          weight: number | null
+        }
+        Insert: {
+          check_config?: Json | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          rule_name: string
+          rule_type: string
+          severity?: string | null
+          weight?: number | null
+        }
+        Update: {
+          check_config?: Json | null
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          rule_name?: string
+          rule_type?: string
+          severity?: string | null
+          weight?: number | null
         }
         Relationships: []
       }

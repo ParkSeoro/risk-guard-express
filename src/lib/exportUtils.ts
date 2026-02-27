@@ -1,13 +1,6 @@
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
-
-declare module 'jspdf' {
-  interface jsPDF {
-    autoTable: (options: any) => jsPDF;
-    lastAutoTable: { finalY: number };
-  }
-}
+import autoTable from 'jspdf-autotable';
 
 interface RiskRow {
   process: string;
@@ -77,7 +70,6 @@ function buildSignatureRows(participants: Participant[]): string[][] {
 // ========== Safe PDF Download ==========
 function safePDFDownload(doc: jsPDF, fileName: string) {
   try {
-    // Primary method: direct blob download via anchor
     const blob = doc.output('blob');
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -86,7 +78,6 @@ function safePDFDownload(doc: jsPDF, fileName: string) {
     a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
-    // Cleanup after a delay
     setTimeout(() => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
@@ -144,7 +135,6 @@ export function exportToXLSX(items: RiskRow[], project: ProjectInfo, masterData?
     { wch: 25 }, { wch: 10 }, { wch: 8 }, { wch: 15 },
   ];
 
-  // A4 print settings
   ws['!pageSetup'] = { paperSize: 9, orientation: 'landscape', fitToWidth: 1, fitToHeight: 0 };
   ws['!margins'] = { left: 0.5, right: 0.5, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 };
 
@@ -167,7 +157,7 @@ export function exportToXLSX(items: RiskRow[], project: ProjectInfo, masterData?
   XLSX.writeFile(wb, fileName);
 }
 
-// ========== PDF Export ==========
+// ========== PDF Export (using autoTable as function, not method) ==========
 export function exportToPDF(
   items: RiskRow[],
   project: ProjectInfo,
@@ -217,49 +207,51 @@ export function exportToPDF(
       '하': [187, 247, 208],
     };
 
-    const tableData = items.map((item, i) => [
-      i + 1, item.process, item.sub_task, item.hazard,
-      item.likelihood_grade || '중', item.severity_grade || '중', item.risk_grade || '중',
-      item.improved_likelihood_grade || '하', item.improved_severity_grade || '하', item.improved_risk_grade || '하',
-      item.status, item.department, item.assignee,
-    ]);
+    if (items.length > 0) {
+      const tableData = items.map((item, i) => [
+        i + 1, item.process, item.sub_task, item.hazard,
+        item.likelihood_grade || '중', item.severity_grade || '중', item.risk_grade || '중',
+        item.improved_likelihood_grade || '하', item.improved_severity_grade || '하', item.improved_risk_grade || '하',
+        item.status, item.department, item.assignee,
+      ]);
 
-    doc.autoTable({
-      startY: 48,
-      head: [['No', 'Process', 'Sub Task', 'Hazard', 'L', 'S', 'R', "L'", "S'", "R'", 'Status', 'Dept', 'Assignee']],
-      body: tableData,
-      styles: { fontSize: 7, cellPadding: 1.5 },
-      headStyles: { fillColor: [30, 41, 59] },
-      columnStyles: {
-        0: { cellWidth: 8 },
-        4: { cellWidth: 10 }, 5: { cellWidth: 10 }, 6: { cellWidth: 10 },
-        7: { cellWidth: 10 }, 8: { cellWidth: 10 }, 9: { cellWidth: 10 },
-      },
-      didParseCell: (data: any) => {
-        if (data.section === 'body') {
-          const colIdx = data.column.index;
-          if (colIdx === 6 || colIdx === 9) {
-            const grade = String(data.cell.raw);
-            if (gradeColorMap[grade]) {
-              data.cell.styles.fillColor = gradeColorMap[grade];
+      autoTable(doc, {
+        startY: 48,
+        head: [['No', 'Process', 'Sub Task', 'Hazard', 'L', 'S', 'R', "L'", "S'", "R'", 'Status', 'Dept', 'Assignee']],
+        body: tableData,
+        styles: { fontSize: 7, cellPadding: 1.5 },
+        headStyles: { fillColor: [30, 41, 59] },
+        columnStyles: {
+          0: { cellWidth: 8 },
+          4: { cellWidth: 10 }, 5: { cellWidth: 10 }, 6: { cellWidth: 10 },
+          7: { cellWidth: 10 }, 8: { cellWidth: 10 }, 9: { cellWidth: 10 },
+        },
+        didParseCell: (data: any) => {
+          if (data.section === 'body') {
+            const colIdx = data.column.index;
+            if (colIdx === 6 || colIdx === 9) {
+              const grade = String(data.cell.raw);
+              if (gradeColorMap[grade]) {
+                data.cell.styles.fillColor = gradeColorMap[grade];
+              }
             }
           }
-        }
-      },
-    });
-
-    // Signature section at bottom
-    const finalY = doc.lastAutoTable?.finalY || 180;
-    if (sigParticipants.length > 0 && finalY < 170) {
-      doc.setFontSize(9);
-      doc.text('Signatures', 14, finalY + 8);
-      doc.autoTable({
-        startY: finalY + 12,
-        head: [['Role', 'Name', 'Company', 'Date']],
-        body: sigParticipants.map(p => [p.role, p.user_name, p.company || '', p.signed_at ? new Date(p.signed_at).toLocaleDateString() : '']),
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [100, 116, 139] },
+        },
       });
+
+      // Signature section at bottom
+      const finalY = (doc as any).lastAutoTable?.finalY || 180;
+      if (sigParticipants.length > 0 && finalY < 170) {
+        doc.setFontSize(9);
+        doc.text('Signatures', 14, finalY + 8);
+        autoTable(doc, {
+          startY: finalY + 12,
+          head: [['Role', 'Name', 'Company', 'Date']],
+          body: sigParticipants.map(p => [p.role, p.user_name, p.company || '', p.signed_at ? new Date(p.signed_at).toLocaleDateString() : '']),
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [100, 116, 139] },
+        });
+      }
     }
 
     // Validation report page
@@ -273,7 +265,7 @@ export function exportToPDF(
       doc.text(`Issues: ${validationReport.totalIssues} (Errors: ${validationReport.errors}, Warnings: ${validationReport.warnings})`, 14, 33);
 
       if (validationReport.issues && validationReport.issues.length > 0) {
-        doc.autoTable({
+        autoTable(doc, {
           startY: 40,
           head: [['#', 'Severity', 'Rule', 'Message', 'Recommendation']],
           body: validationReport.issues.slice(0, 50).map((issue: any, i: number) => [
@@ -286,11 +278,11 @@ export function exportToPDF(
 
       // Coverage gaps
       if (validationReport.coverageGaps && validationReport.coverageGaps.length > 0) {
-        const gapY = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 10 : 100;
+        const gapY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 10 : 100;
         if (gapY > 170) doc.addPage('a4', 'landscape');
         doc.setFontSize(10);
         doc.text('Coverage Gaps (Missing Risk Assessments)', 14, gapY > 170 ? 15 : gapY);
-        doc.autoTable({
+        autoTable(doc, {
           startY: (gapY > 170 ? 20 : gapY + 5),
           head: [['Process', 'Sub Task', 'Hazard', 'Severity', 'Note']],
           body: validationReport.coverageGaps.slice(0, 30).map((g: any) => [
@@ -310,7 +302,7 @@ export function exportToPDF(
     safePDFDownload(doc, fileName);
   } catch (err) {
     console.error('PDF generation failed:', err);
-    alert(`PDF 생성에 실패했습니다.\n원인: ${err instanceof Error ? err.message : String(err)}\n\n브라우저 팝업 차단을 해제하고 다시 시도해주세요.`);
+    alert(`PDF 생성에 실패했습니다.\n원인: ${err instanceof Error ? err.message : String(err)}\n\n재시도해주세요.`);
   }
 }
 

@@ -21,6 +21,10 @@ import PermissionTest from "./pages/PermissionTest";
 import Profile from "./pages/Profile";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
+import Settings from "./pages/Settings";
+import SettingsAccount from "./pages/SettingsAccount";
+import SettingsPermissions from "./pages/SettingsPermissions";
+import SettingsNotifications from "./pages/SettingsNotifications";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -77,6 +81,10 @@ function ProtectedRoutes() {
         <Route path="/user-management" element={<UserManagement />} />
         <Route path="/permission-test" element={<PermissionTest />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/settings/account" element={<SettingsAccount />} />
+        <Route path="/settings/permissions" element={<SettingsPermissions />} />
+        <Route path="/settings/notifications" element={<SettingsNotifications />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

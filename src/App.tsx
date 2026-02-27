@@ -18,6 +18,7 @@ import AuditLogs from "./pages/AuditLogs";
 // TBM feature removed
 import UserManagement from "./pages/UserManagement";
 import PermissionTest from "./pages/PermissionTest";
+import Profile from "./pages/Profile";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
@@ -75,6 +76,7 @@ function ProtectedRoutes() {
         {/* TBM removed */}
         <Route path="/user-management" element={<UserManagement />} />
         <Route path="/permission-test" element={<PermissionTest />} />
+        <Route path="/profile" element={<Profile />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

@@ -1,6 +1,5 @@
 import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { supabase } from '@/integrations/supabase/client';
 
 interface RiskRow {
   process: string;
@@ -67,98 +66,51 @@ function buildSignatureRows(participants: Participant[]): string[][] {
   return rows;
 }
 
-// ========== Safe PDF Download ==========
-function safePDFDownload(doc: jsPDF, fileName: string) {
+// ========== Server-based PDF Download (Korean font safe) ==========
+export async function exportToPDFServer(runId: string, type: 'assessment' | 'validation' = 'assessment') {
   try {
-    const blob = doc.output('blob');
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 1000);
-  } catch (primaryErr) {
-    console.warn('Primary PDF download failed, trying fallback:', primaryErr);
-    try {
-      doc.save(fileName);
-    } catch (fallbackErr) {
-      console.error('All PDF download methods failed:', fallbackErr);
-      alert(`PDF 다운로드에 실패했습니다.\n원인: ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}\n\n브라우저 팝업 차단을 해제하고 다시 시도해주세요.`);
+    const { data, error } = await supabase.functions.invoke('generate-pdf', {
+      body: { runId, type },
+    });
+    if (error) throw error;
+    if (!data?.html) throw new Error('No HTML returned from server');
+
+    // Open print window with the HTML
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) {
+      // Fallback: download as HTML file
+      const blob = new Blob([data.html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.fileName || `위험성평가_${new Date().toISOString().slice(0, 10)}.html`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+      return;
     }
+
+    printWindow.document.write(data.html);
+    printWindow.document.close();
+
+    // Wait for fonts to load then trigger print (which can save as PDF)
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.print();
+      }, 500);
+    };
+    // Also set a fallback timeout
+    setTimeout(() => {
+      try { printWindow.print(); } catch { /* ignore */ }
+    }, 2000);
+  } catch (err) {
+    console.error('Server PDF generation failed, falling back to client:', err);
+    throw err;
   }
 }
 
-// ========== XLSX Export ==========
-export function exportToXLSX(items: RiskRow[], project: ProjectInfo, masterData?: any, participants?: Participant[], runInfo?: RunInfo) {
-  const wb = XLSX.utils.book_new();
-
-  const headers = ['No', '공정', '세부작업', '위험요인', '위험발생상황', '기존대책', '개선대책',
-    '가능성', '중대성', '위험도', '개선후 가능성', '개선후 중대성', '개선후 위험도',
-    '이행상태', 'PPE', '법적근거', '책임부서', '담당자', '비고'];
-
-  const rows = items.map((item, i) => [
-    i + 1, item.process, item.sub_task, item.hazard, item.hazard_situation,
-    item.existing_measure, item.improvement_measure,
-    item.likelihood_grade || '중', item.severity_grade || '중', item.risk_grade || '중',
-    item.improved_likelihood_grade || '하', item.improved_severity_grade || '하', item.improved_risk_grade || '하',
-    item.status, (item.ppe || []).join(', '), (item.legal_basis || []).join(', '),
-    item.department, item.assignee, item.note || '',
-  ]);
-
-  const title = runInfo ? `디아이지에어가스 위험성평가 [${runInfo.type}] ${runInfo.period_label}` : `디아이지에어가스 위험성평가 - ${project.name}`;
-
-  const wsData = [
-    [title],
-    [`현장명: ${project.site_name}`, '', '', `발주사: ${project.client}`, '', '', `시공사: ${project.contractor}`],
-    [`기간: ${project.period_start || ''} ~ ${project.period_end || ''}`],
-    [],
-    headers,
-    ...rows,
-    [], [],
-  ];
-
-  const sigRows = buildSignatureRows(participants || []);
-  wsData.push(['서명란']);
-  sigRows.forEach(r => wsData.push(r));
-
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-
-  ws['!cols'] = [
-    { wch: 4 }, { wch: 12 }, { wch: 20 }, { wch: 15 }, { wch: 25 },
-    { wch: 25 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
-    { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 20 },
-    { wch: 25 }, { wch: 10 }, { wch: 8 }, { wch: 15 },
-  ];
-
-  ws['!pageSetup'] = { paperSize: 9, orientation: 'landscape', fitToWidth: 1, fitToHeight: 0 };
-  ws['!margins'] = { left: 0.5, right: 0.5, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 };
-
-  XLSX.utils.book_append_sheet(wb, ws, '위험성평가');
-
-  if (masterData) {
-    const masterWs = XLSX.utils.aoa_to_sheet([
-      ['기준정보'], [],
-      ['PPE 목록'],
-      ...(masterData.ppe || []).map((p: any) => [p.name]),
-      [], ['법적근거'], ['법령명', '조문', '설명'],
-      ...(masterData.legalRefs || []).map((l: any) => [l.law_name, l.article, l.description]),
-    ]);
-    XLSX.utils.book_append_sheet(wb, masterWs, '기준정보');
-  }
-
-  const fileName = runInfo
-    ? `위험성평가_${runInfo.type}_${runInfo.period_label}_${new Date().toISOString().slice(0, 10)}.xlsx`
-    : `위험성평가_${project.name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-  XLSX.writeFile(wb, fileName);
-}
-
-// ========== PDF Export (using autoTable as function, not method) ==========
-export function exportToPDF(
+// ========== Client-side PDF (fallback, uses jsPDF) ==========
+export async function exportToPDF(
   items: RiskRow[],
   project: ProjectInfo,
   approvalInfo?: any,
@@ -167,6 +119,12 @@ export function exportToPDF(
   validationReport?: any
 ) {
   try {
+    // Dynamic import to avoid bundle issues
+    const jsPDFModule = await import('jspdf');
+    const autoTableModule = await import('jspdf-autotable');
+    const jsPDF = jsPDFModule.default;
+    const autoTable = autoTableModule.default;
+
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
     const title = runInfo
@@ -185,7 +143,7 @@ export function exportToPDF(
     doc.text(`Period: ${project.period_start || ''} ~ ${project.period_end || ''}`, 14, 47);
     doc.text(`Date: ${new Date().toISOString().slice(0, 10)}`, 14, 52);
 
-    // Signature boxes at top-right
+    // Signature boxes
     const sigParticipants = participants || [];
     if (sigParticipants.length > 0) {
       const startX = 180;
@@ -241,7 +199,6 @@ export function exportToPDF(
         },
       });
 
-      // Signature section at bottom
       const finalY = (doc as any).lastAutoTable?.finalY || 180;
       if (sigParticipants.length > 0 && finalY < 170) {
         doc.setFontSize(9);
@@ -278,12 +235,11 @@ export function exportToPDF(
         });
       }
 
-      // Coverage gaps
       if (validationReport.coverageGaps && validationReport.coverageGaps.length > 0) {
         const gapY = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 10 : 100;
         if (gapY > 170) doc.addPage('a4', 'landscape');
         doc.setFontSize(10);
-        doc.text('Coverage Gaps (Missing Risk Assessments)', 14, gapY > 170 ? 15 : gapY);
+        doc.text('Coverage Gaps', 14, gapY > 170 ? 15 : gapY);
         autoTable(doc, {
           startY: (gapY > 170 ? 20 : gapY + 5),
           head: [['Process', 'Sub Task', 'Hazard', 'Severity', 'Note']],
@@ -306,6 +262,93 @@ export function exportToPDF(
     console.error('PDF generation failed:', err);
     alert(`PDF 생성에 실패했습니다.\n원인: ${err instanceof Error ? err.message : String(err)}\n\n재시도해주세요.`);
   }
+}
+
+function safePDFDownload(doc: any, fileName: string) {
+  try {
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  } catch (primaryErr) {
+    console.warn('Primary PDF download failed:', primaryErr);
+    try {
+      doc.save(fileName);
+    } catch (fallbackErr) {
+      console.error('All PDF download methods failed:', fallbackErr);
+      alert(`PDF 다운로드에 실패했습니다.`);
+    }
+  }
+}
+
+// ========== XLSX Export ==========
+export function exportToXLSX(items: RiskRow[], project: ProjectInfo, masterData?: any, participants?: Participant[], runInfo?: RunInfo) {
+  const wb = XLSX.utils.book_new();
+
+  const headers = ['No', '공정', '세부작업', '위험요인', '위험발생상황', '기존대책', '개선대책',
+    '가능성', '중대성', '위험도', '개선후 가능성', '개선후 중대성', '개선후 위험도',
+    '이행상태', 'PPE', '법적근거', '책임부서', '담당자', '비고'];
+
+  const rows = items.map((item, i) => [
+    i + 1, item.process, item.sub_task, item.hazard, item.hazard_situation,
+    item.existing_measure, item.improvement_measure,
+    item.likelihood_grade || '중', item.severity_grade || '중', item.risk_grade || '중',
+    item.improved_likelihood_grade || '하', item.improved_severity_grade || '하', item.improved_risk_grade || '하',
+    item.status, (item.ppe || []).join(', '), (item.legal_basis || []).join(', '),
+    item.department, item.assignee, item.note || '',
+  ]);
+
+  const title = runInfo ? `디아이지에어가스 위험성평가 [${runInfo.type}] ${runInfo.period_label}` : `디아이지에어가스 위험성평가 - ${project.name}`;
+
+  const wsData = [
+    [title],
+    [`현장명: ${project.site_name}`, '', '', `발주사: ${project.client}`, '', '', `시공사: ${project.contractor}`],
+    [`기간: ${project.period_start || ''} ~ ${project.period_end || ''}`],
+    [],
+    headers,
+    ...rows,
+    [], [],
+  ];
+
+  const sigRows = buildSignatureRows(participants || []);
+  wsData.push(['서명란']);
+  sigRows.forEach(r => wsData.push(r));
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols'] = [
+    { wch: 4 }, { wch: 12 }, { wch: 20 }, { wch: 15 }, { wch: 25 },
+    { wch: 25 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
+    { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 20 },
+    { wch: 25 }, { wch: 10 }, { wch: 8 }, { wch: 15 },
+  ];
+  ws['!pageSetup'] = { paperSize: 9, orientation: 'landscape', fitToWidth: 1, fitToHeight: 0 };
+  ws['!margins'] = { left: 0.5, right: 0.5, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 };
+
+  XLSX.utils.book_append_sheet(wb, ws, '위험성평가');
+
+  if (masterData) {
+    const masterWs = XLSX.utils.aoa_to_sheet([
+      ['기준정보'], [],
+      ['PPE 목록'],
+      ...(masterData.ppe || []).map((p: any) => [p.name]),
+      [], ['법적근거'], ['법령명', '조문', '설명'],
+      ...(masterData.legalRefs || []).map((l: any) => [l.law_name, l.article, l.description]),
+    ]);
+    XLSX.utils.book_append_sheet(wb, masterWs, '기준정보');
+  }
+
+  const fileName = runInfo
+    ? `위험성평가_${runInfo.type}_${runInfo.period_label}_${new Date().toISOString().slice(0, 10)}.xlsx`
+    : `위험성평가_${project.name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  XLSX.writeFile(wb, fileName);
 }
 
 // ========== Print ==========

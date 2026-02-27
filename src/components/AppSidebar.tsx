@@ -89,10 +89,10 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border p-2 space-y-1">
         {!collapsed && profile && (
-          <div className="flex items-center gap-2 px-2 py-1 text-xs text-sidebar-foreground">
+          <NavLink to="/profile" className="flex items-center gap-2 px-2 py-1 text-xs text-sidebar-foreground hover:bg-sidebar-accent rounded-md" activeClassName="bg-sidebar-accent font-semibold">
             <User className="h-3.5 w-3.5" />
             <span className="truncate">{profile.display_name}</span>
-          </div>
+          </NavLink>
         )}
         <div className="flex gap-1">
           <Button variant="ghost" size="sm" onClick={toggleSidebar} className="flex-1 justify-center text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent">

@@ -281,7 +281,7 @@ const Projects = () => {
 
       {/* Create Dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>프로젝트 생성</DialogTitle></DialogHeader>
           <ProjectForm onSubmit={handleCreate} submitLabel="생성" />
         </DialogContent>
@@ -289,7 +289,7 @@ const Projects = () => {
 
       {/* Edit Dialog */}
       <Dialog open={!!editProject} onOpenChange={() => setEditProject(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>프로젝트 수정</DialogTitle></DialogHeader>
           <ProjectForm onSubmit={handleUpdate} submitLabel="저장" />
         </DialogContent>

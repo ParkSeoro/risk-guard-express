@@ -362,7 +362,7 @@ const MasterData = () => {
 
       {/* Edit/Add Dialog */}
       <Dialog open={!!editDialog} onOpenChange={() => setEditDialog(null)}>
-        <DialogContent>
+        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>{editDialog?.item ? '수정' : '추가'}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             {editDialog?.type === 'process' && (

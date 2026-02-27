@@ -23,6 +23,7 @@ export type Database = {
           id: string
           project_id: string
           risk_item_id: string | null
+          run_id: string | null
           status: string
           step: string
           updated_at: string
@@ -36,6 +37,7 @@ export type Database = {
           id?: string
           project_id: string
           risk_item_id?: string | null
+          run_id?: string | null
           status?: string
           step: string
           updated_at?: string
@@ -49,6 +51,7 @@ export type Database = {
           id?: string
           project_id?: string
           risk_item_id?: string | null
+          run_id?: string | null
           status?: string
           step?: string
           updated_at?: string
@@ -67,6 +70,107 @@ export type Database = {
             columns: ["risk_item_id"]
             isOneToOne: false
             referencedRelation: "risk_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "approvals_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assessment_run_participants: {
+        Row: {
+          company: string | null
+          created_at: string
+          id: string
+          role: string
+          run_id: string
+          signed_at: string | null
+          user_name: string | null
+        }
+        Insert: {
+          company?: string | null
+          created_at?: string
+          id?: string
+          role?: string
+          run_id: string
+          signed_at?: string | null
+          user_name?: string | null
+        }
+        Update: {
+          company?: string | null
+          created_at?: string
+          id?: string
+          role?: string
+          run_id?: string
+          signed_at?: string | null
+          user_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_run_participants_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assessment_runs: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          period_label: string
+          project_id: string
+          status: string
+          target_contractors: string[] | null
+          target_processes: string[] | null
+          type: string
+          updated_at: string
+          validation_score: number | null
+          validation_verdict: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          period_label?: string
+          project_id: string
+          status?: string
+          target_contractors?: string[] | null
+          target_processes?: string[] | null
+          type?: string
+          updated_at?: string
+          validation_score?: number | null
+          validation_verdict?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          period_label?: string
+          project_id?: string
+          status?: string
+          target_contractors?: string[] | null
+          target_processes?: string[] | null
+          type?: string
+          updated_at?: string
+          validation_score?: number | null
+          validation_verdict?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_runs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -371,6 +475,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          account_status: string
           company: string | null
           created_at: string
           display_name: string
@@ -381,6 +486,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          account_status?: string
           company?: string | null
           created_at?: string
           display_name?: string
@@ -391,6 +497,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          account_status?: string
           company?: string | null
           created_at?: string
           display_name?: string
@@ -551,6 +658,7 @@ export type Database = {
           project_id: string
           risk: number | null
           risk_grade: string
+          run_id: string | null
           severity: number
           severity_grade: string
           sort_order: number | null
@@ -588,6 +696,7 @@ export type Database = {
           project_id: string
           risk?: number | null
           risk_grade?: string
+          run_id?: string | null
           severity?: number
           severity_grade?: string
           sort_order?: number | null
@@ -625,6 +734,7 @@ export type Database = {
           project_id?: string
           risk?: number | null
           risk_grade?: string
+          run_id?: string | null
           severity?: number
           severity_grade?: string
           sort_order?: number | null
@@ -641,6 +751,13 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "risk_items_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_runs"
             referencedColumns: ["id"]
           },
         ]
@@ -890,6 +1007,7 @@ export type Database = {
           project_id: string
           risk_item_id: string | null
           rule_id: string | null
+          run_id: string | null
           status: string
           validated_by: string | null
         }
@@ -901,6 +1019,7 @@ export type Database = {
           project_id: string
           risk_item_id?: string | null
           rule_id?: string | null
+          run_id?: string | null
           status?: string
           validated_by?: string | null
         }
@@ -912,6 +1031,7 @@ export type Database = {
           project_id?: string
           risk_item_id?: string | null
           rule_id?: string | null
+          run_id?: string | null
           status?: string
           validated_by?: string | null
         }
@@ -935,6 +1055,13 @@ export type Database = {
             columns: ["rule_id"]
             isOneToOne: false
             referencedRelation: "validation_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "validation_results_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_runs"
             referencedColumns: ["id"]
           },
         ]

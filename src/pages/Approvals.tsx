@@ -6,31 +6,21 @@ import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { CheckCircle2, Clock, XCircle, Send, FileCheck } from "lucide-react";
+import { CheckCircle2, Clock, XCircle, FileCheck } from "lucide-react";
 
 const Approvals = () => {
-  const { user, profile } = useAuth();
+  const { user, profile, isAdmin } = useAuth();
   const { toast } = useToast();
   const { log } = useAuditLog();
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [selectedProject, setSelectedProject] = useState('');
   const [approvals, setApprovals] = useState<any[]>([]);
-  const [riskItems, setRiskItems] = useState<any[]>([]);
-  const [showSubmit, setShowSubmit] = useState(false);
-  const [selectedRiskItems, setSelectedRiskItems] = useState<string[]>([]);
-  const [comment, setComment] = useState('');
+  const [runs, setRuns] = useState<any[]>([]);
 
   useEffect(() => {
     supabase.from('projects').select('id, name').then(({ data }) => {
-      if (data && data.length > 0) {
-        setProjects(data);
-        setSelectedProject(data[0].id);
-      }
+      if (data && data.length > 0) { setProjects(data); setSelectedProject(data[0].id); }
     });
   }, []);
 
@@ -38,68 +28,46 @@ const Approvals = () => {
     if (!selectedProject) return;
     Promise.all([
       supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false }),
-      supabase.from('risk_items').select('id, process, sub_task, hazard, risk, improved_risk, status').eq('project_id', selectedProject),
+      supabase.from('assessment_runs').select('*').eq('project_id', selectedProject),
     ]).then(([a, r]) => {
       setApprovals(a.data || []);
-      setRiskItems(r.data || []);
+      setRuns(r.data || []);
     });
   }, [selectedProject]);
 
-  // Group approvals by risk_item_id
+  // Group by run_id
   const grouped = approvals.reduce((acc, ap) => {
-    const key = ap.risk_item_id || 'general';
+    const key = ap.run_id || 'general';
     if (!acc[key]) acc[key] = [];
     acc[key].push(ap);
     return acc;
   }, {} as Record<string, any[]>);
 
-  const handleSubmitForApproval = async () => {
-    if (!user || !profile || !selectedProject) return;
-    const inserts = selectedRiskItems.map(riId => ({
-      project_id: selectedProject,
-      risk_item_id: riId,
-      step: '작성',
-      status: '승인',
-      approver_id: user.id,
-      approver_name: profile.display_name,
-      comment: comment || '',
-    }));
-    // Also create review and approval steps as pending
-    const reviewInserts = selectedRiskItems.map(riId => ({
-      project_id: selectedProject,
-      risk_item_id: riId,
-      step: '검토',
-      status: '대기',
-      approver_name: '',
-    }));
-    const approvalInserts = selectedRiskItems.map(riId => ({
-      project_id: selectedProject,
-      risk_item_id: riId,
-      step: '승인',
-      status: '대기',
-      approver_name: '',
-    }));
-
-    await supabase.from('approvals').insert([...inserts, ...reviewInserts, ...approvalInserts]);
-    toast({ title: `${selectedRiskItems.length}건이 결재 상신되었습니다.` });
-    log('결재상신', 'approvals', selectedProject, selectedProject, { count: selectedRiskItems.length });
-    setShowSubmit(false);
-    setSelectedRiskItems([]);
-    setComment('');
-    // Refresh
-    const { data } = await supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false });
-    setApprovals(data || []);
-  };
-
-  const handleApprovalAction = async (approvalId: string, action: '승인' | '반려', approvalComment: string = '') => {
+  const handleApprovalAction = async (approvalId: string, action: '승인' | '반려') => {
     if (!user || !profile) return;
     await supabase.from('approvals').update({
-      status: action,
-      approver_id: user.id,
-      approver_name: profile.display_name,
-      comment: approvalComment,
+      status: action, approver_id: user.id, approver_name: profile.display_name,
     }).eq('id', approvalId);
-    toast({ title: `${action} 처리되었습니다.` });
+
+    // Check if all steps for this run are approved
+    const ap = approvals.find(a => a.id === approvalId);
+    if (action === '승인' && ap?.run_id) {
+      const { data: allAp } = await supabase.from('approvals').select('*').eq('run_id', ap.run_id);
+      const allApproved = (allAp || []).every((a: any) => a.status === '승인' || a.id === approvalId);
+      if (allApproved) {
+        await supabase.from('assessment_runs').update({ status: '승인완료' }).eq('id', ap.run_id);
+        await supabase.from('risk_items').update({ is_locked: true }).eq('run_id', ap.run_id);
+        toast({ title: '최종 승인 완료! 해당 회차가 잠금되었습니다.' });
+      } else {
+        toast({ title: `${ap.step} 단계가 승인되었습니다.` });
+      }
+    } else if (action === '반려' && ap?.run_id) {
+      await supabase.from('assessment_runs').update({ status: '작성중' }).eq('id', ap.run_id);
+      toast({ title: '반려되었습니다.', variant: 'destructive' });
+    } else {
+      toast({ title: `${action} 처리되었습니다.` });
+    }
+
     log(action, 'approval', approvalId, selectedProject);
     const { data } = await supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false });
     setApprovals(data || []);
@@ -108,31 +76,31 @@ const Approvals = () => {
   return (
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold">결재함</h1><p className="text-sm text-muted-foreground mt-1">작성 → 검토 → 승인 워크플로우</p></div>
-        <div className="flex items-center gap-2">
-          <Select value={selectedProject} onValueChange={setSelectedProject}>
-            <SelectTrigger className="w-60 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
-            <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-          </Select>
-          <Button size="sm" className="gap-1.5" onClick={() => setShowSubmit(true)}>
-            <Send className="h-3.5 w-3.5" /> 결재 상신
-          </Button>
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><FileCheck className="h-6 w-6" /> 결재함</h1>
+          <p className="text-sm text-muted-foreground mt-1">회차 단위 결재: 작성 → 검토 → 승인</p>
         </div>
+        <Select value={selectedProject} onValueChange={setSelectedProject}>
+          <SelectTrigger className="w-60 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
+          <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+        </Select>
       </div>
 
       {Object.keys(grouped).length === 0 ? (
-        <Card><CardContent className="py-12 text-center text-muted-foreground">결재 내역이 없습니다.</CardContent></Card>
+        <Card><CardContent className="py-12 text-center text-muted-foreground">결재 내역이 없습니다. 위험성평가 회차에서 결재 상신하세요.</CardContent></Card>
       ) : (
         <div className="space-y-3">
-          {Object.entries(grouped).map(([riskId, steps]) => {
-            const riskItem = riskItems.find(r => r.id === riskId);
+          {Object.entries(grouped).map(([runId, steps]) => {
+            const run = runs.find((r: any) => r.id === runId);
             return (
-              <Card key={riskId}>
+              <Card key={runId}>
                 <CardContent className="pt-5">
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h3 className="font-semibold">{riskItem ? `${riskItem.process} – ${riskItem.sub_task}` : '일반'}</h3>
-                      {riskItem && <p className="text-xs text-muted-foreground">{riskItem.hazard}</p>}
+                      <h3 className="font-semibold">
+                        {run ? `[${run.type}] ${run.period_label}` : '일반'}
+                      </h3>
+                      {run && <p className="text-xs text-muted-foreground">상태: {run.status}</p>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -152,7 +120,7 @@ const Approvals = () => {
                           <span>{step.step}</span>
                           <span className="opacity-70">({step.approver_name || '미지정'})</span>
                         </div>
-                        {step.status === '대기' && (
+                        {step.status === '대기' && isAdmin() && (
                           <div className="flex gap-1">
                             <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => handleApprovalAction(step.id, '승인')}>승인</Button>
                             <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-destructive" onClick={() => handleApprovalAction(step.id, '반려')}>반려</Button>
@@ -163,7 +131,7 @@ const Approvals = () => {
                     ))}
                   </div>
                   {(steps as any[]).some((s: any) => s.comment) && (
-                    <p className="text-xs text-muted-foreground mt-2 ml-1">
+                    <p className="text-xs text-muted-foreground mt-2">
                       코멘트: {(steps as any[]).filter((s: any) => s.comment).map((s: any) => `${s.approver_name}: "${s.comment}"`).join(' | ')}
                     </p>
                   )}
@@ -173,32 +141,6 @@ const Approvals = () => {
           })}
         </div>
       )}
-
-      {/* Submit for Approval Dialog */}
-      <Dialog open={showSubmit} onOpenChange={setShowSubmit}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>결재 상신</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">위험성평가 항목을 선택하여 결재를 상신합니다.</p>
-            <div className="max-h-60 overflow-y-auto space-y-1">
-              {riskItems.filter(ri => !Object.keys(grouped).includes(ri.id)).map(ri => (
-                <label key={ri.id} className="flex items-center gap-2 p-2 hover:bg-muted/50 rounded cursor-pointer text-sm">
-                  <input type="checkbox" checked={selectedRiskItems.includes(ri.id)}
-                    onChange={e => setSelectedRiskItems(prev => e.target.checked ? [...prev, ri.id] : prev.filter(x => x !== ri.id))} />
-                  <span className="font-medium">{ri.process}</span> – <span>{ri.sub_task || ri.hazard}</span>
-                </label>
-              ))}
-            </div>
-            <div className="space-y-1">
-              <Label>코멘트 (선택)</Label>
-              <Textarea value={comment} onChange={e => setComment(e.target.value)} placeholder="결재 관련 메모..." />
-            </div>
-            <Button onClick={handleSubmitForApproval} disabled={selectedRiskItems.length === 0} className="w-full">
-              {selectedRiskItems.length}건 결재 상신
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

@@ -22,8 +22,10 @@ import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
 import { generateRiskItems } from '@/lib/riskAutoGen';
 import { exportToXLSX, exportToPDF, exportToPDFServer, printRiskAssessment } from '@/lib/exportUtils';
 import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue } from '@/lib/validationEngine';
+import { generateRemediationActions, applyRemediationActions, buildRemediationSummaryText, type RemediationAction } from '@/lib/remediationEngine';
 import type { Database } from '@/integrations/supabase/types';
 import IMESafeInput from '@/components/IMESafeInput';
+import { Checkbox } from '@/components/ui/checkbox';
 import * as XLSX from 'xlsx';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
@@ -97,6 +99,12 @@ const AssessmentRunDetail = () => {
   const [archiveReason, setArchiveReason] = useState('');
   // Revision dialog
   const [showRevision, setShowRevision] = useState(false);
+  // Remediation panel
+  const [showRemediation, setShowRemediation] = useState(false);
+  const [remediationActions, setRemediationActions] = useState<RemediationAction[]>([]);
+  const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(new Set());
+  const [remediationLoading, setRemediationLoading] = useState(false);
+  const [applyAndRevalidate, setApplyAndRevalidate] = useState(true);
 
   const fetchAll = useCallback(async () => {
     if (!runId) return;
@@ -381,66 +389,56 @@ const AssessmentRunDetail = () => {
     log('재제출', 'assessment_run', runId!, run.project_id);
   };
 
-  // Auto-remediation: apply suggested fixes from validation issues
-  const handleAutoRemediate = async () => {
-    if (!validationReport || !run || !user) return;
-    let fixCount = 0;
-    const fixes: string[] = [];
-
-    for (const item of items) {
-      const verdict = validationReport.itemVerdicts[item.id];
-      if (!verdict || verdict.verdict === '적정') continue;
-
-      const updates: Record<string, any> = {};
-
-      for (const issue of verdict.issues) {
-        if (issue.ruleType === 'missing_field' && issue.field) {
-          // Auto-fill empty required fields with placeholder
-          const val = (item as any)[issue.field];
-          if (!val || (typeof val === 'string' && val.trim() === '')) {
-            if (issue.field === 'existing_measure') {
-              updates.existing_measure = '안전교육 실시, 작업 전 안전점검';
-              fixes.push(`#${item.process}: 기존대책 자동입력`);
-            } else if (issue.field === 'improvement_measure') {
-              updates.improvement_measure = '작업절차서 수립 및 안전장비 보강';
-              fixes.push(`#${item.process}: 개선대책 자동입력`);
-            }
-          }
-        }
-        if (issue.ruleType === 'insufficient_improvement') {
-          // Lower improved grades if still '상'
-          if (item.improved_risk_grade === '상') {
-            updates.improved_likelihood_grade = '중';
-            updates.improved_severity_grade = '중';
-            updates.improved_risk_grade = calculateRiskGrade('중', '중');
-            fixes.push(`#${item.process}: 개선후 등급 하향`);
-          }
-        }
-        if (issue.ruleType === 'missing_legal') {
-          if (!item.legal_basis || item.legal_basis.length === 0) {
-            updates.legal_basis = ['산업안전보건법 제36조'];
-            fixes.push(`#${item.process}: 법적근거 자동추가`);
-          }
-        }
-      }
-
-      if (Object.keys(updates).length > 0) {
-        await supabase.from('risk_items').update(updates).eq('id', item.id);
-        fixCount++;
-      }
+  // Auto-remediation: generate action suggestions
+  const handleGenerateRemediation = async () => {
+    if (!validationReport || !run) return;
+    setRemediationLoading(true);
+    try {
+      const actions = await generateRemediationActions(items, validationReport, run.project_id);
+      setRemediationActions(actions);
+      // Auto-select non-user-confirm actions
+      setSelectedActionIds(new Set(actions.filter(a => !a.requiresUserConfirm).map(a => a.id)));
+      setShowRemediation(true);
+    } catch (err) {
+      toast({ title: '보완 제안 생성 실패', description: String(err), variant: 'destructive' });
     }
+    setRemediationLoading(false);
+  };
 
-    // Reload items
-    const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
-    if (refreshed) setItems(refreshed);
+  // Apply selected remediation actions
+  const handleApplyRemediation = async () => {
+    if (!run || !user) return;
+    const selected = remediationActions.filter(a => selectedActionIds.has(a.id));
+    if (selected.length === 0) { toast({ title: '적용할 액션을 선택하세요.', variant: 'destructive' }); return; }
+    setRemediationLoading(true);
+    try {
+      const { appliedCount, newItemCount, summary } = await applyRemediationActions(
+        selected, items, runId!, run.project_id, user.id
+      );
 
-    log('자동보완', 'assessment_run', runId!, run.project_id, { fixCount, fixes });
-    toast({ title: `${fixCount}건 자동 보완 완료. 확인 후 재검증하세요.` });
+      // Build summary text for audit
+      const summaryText = buildRemediationSummaryText(selected);
 
-    // Auto re-validate after remediation
-    if (fixCount > 0) {
-      setTimeout(() => handleValidate(), 500);
+      // Log
+      log('자동보완적용', 'assessment_run', runId!, run.project_id, {
+        appliedCount, newItemCount, actions: selected.map(a => a.actionType), summary,
+      });
+
+      // Reload items
+      const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+      if (refreshed) setItems(refreshed);
+
+      toast({ title: `${appliedCount}건 보완 적용 완료${newItemCount > 0 ? ` (신규 ${newItemCount}건 추가)` : ''}` });
+      setShowRemediation(false);
+
+      // Auto re-validate if option is on
+      if (applyAndRevalidate) {
+        setTimeout(() => handleValidate(), 500);
+      }
+    } catch (err) {
+      toast({ title: '보완 적용 실패', description: String(err), variant: 'destructive' });
     }
+    setRemediationLoading(false);
   };
 
   // Force edit on approved run (creates audit log)
@@ -782,8 +780,8 @@ const AssessmentRunDetail = () => {
           </Button>
         )}
         {canAutoRemediate && (
-          <Button size="sm" variant="outline" className="gap-1.5 text-accent" onClick={handleAutoRemediate}>
-            <Wand2 className="h-3.5 w-3.5" /> 자동 보완
+          <Button size="sm" variant="outline" className="gap-1.5 text-accent" onClick={handleGenerateRemediation} disabled={remediationLoading}>
+            <Wand2 className="h-3.5 w-3.5" /> {remediationLoading ? '분석 중...' : '자동 보완 제안'}
           </Button>
         )}
         {run.status === '결재진행' && (isAdmin() || (user && participants.some(p => ['검토자','승인자'].includes(p.role) && p.user_name === profile?.display_name))) && (
@@ -1087,9 +1085,14 @@ const AssessmentRunDetail = () => {
                   <FileText className="h-3.5 w-3.5" /> 검증 리포트 PDF 다운로드
                 </Button>
                 {(canEdit || canForceEdit) && validationReport.verdict !== '적정' && (
-                  <Button variant="outline" className="flex-1 gap-1.5" onClick={() => { setShowValidation(false); }}>
-                    수정하러 가기
-                  </Button>
+                  <>
+                    <Button variant="outline" className="flex-1 gap-1.5 text-accent" onClick={() => { setShowValidation(false); handleGenerateRemediation(); }} disabled={remediationLoading}>
+                      <Wand2 className="h-3.5 w-3.5" /> {remediationLoading ? '분석 중...' : '자동 보완 제안'}
+                    </Button>
+                    <Button variant="outline" className="flex-1 gap-1.5" onClick={() => { setShowValidation(false); }}>
+                      수정하러 가기
+                    </Button>
+                  </>
                 )}
               </div>
             </div>
@@ -1309,6 +1312,148 @@ const AssessmentRunDetail = () => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+      {/* Remediation Panel Dialog */}
+      <Dialog open={showRemediation} onOpenChange={setShowRemediation}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Wand2 className="h-5 w-5 text-accent" /> 자동 보완 제안 · {remediationActions.length}건
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Summary */}
+            <div className="grid grid-cols-4 gap-3 text-center text-xs">
+              <div className="p-2 bg-muted rounded">
+                <p className="text-lg font-bold">{remediationActions.length}</p>
+                <p className="text-muted-foreground">전체 액션</p>
+              </div>
+              <div className="p-2 bg-accent/10 rounded">
+                <p className="text-lg font-bold">{selectedActionIds.size}</p>
+                <p className="text-muted-foreground">선택됨</p>
+              </div>
+              <div className="p-2 bg-muted rounded">
+                <p className="text-lg font-bold">{remediationActions.filter(a => a.requiresUserConfirm).length}</p>
+                <p className="text-muted-foreground">수동 확인 필요</p>
+              </div>
+              <div className="p-2 bg-muted rounded">
+                <p className="text-lg font-bold">{remediationActions.filter(a => a.confidence === 'high').length}</p>
+                <p className="text-muted-foreground">높은 신뢰도</p>
+              </div>
+            </div>
+
+            {/* Select all / deselect */}
+            <div className="flex items-center gap-3 text-xs">
+              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set(remediationActions.map(a => a.id)))}>전체 선택</Button>
+              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set())}>전체 해제</Button>
+              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set(remediationActions.filter(a => !a.requiresUserConfirm).map(a => a.id)))}>자동 적용 가능만</Button>
+              <div className="flex-1" />
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <Checkbox checked={applyAndRevalidate} onCheckedChange={(c) => setApplyAndRevalidate(!!c)} />
+                <span>적용 후 즉시 재검증</span>
+              </label>
+            </div>
+
+            {/* Action List by Category */}
+            {(() => {
+              const byCategory = new Map<string, RemediationAction[]>();
+              for (const a of remediationActions) {
+                if (!byCategory.has(a.category)) byCategory.set(a.category, []);
+                byCategory.get(a.category)!.push(a);
+              }
+              return [...byCategory.entries()].map(([cat, acts]) => (
+                <div key={cat} className="space-y-1">
+                  <h4 className="text-xs font-bold text-muted-foreground px-1">{cat}</h4>
+                  {acts.map(action => {
+                    const isSelected = selectedActionIds.has(action.id);
+                    const targetItems = action.targetRiskItemIds.map(tid => items.find(i => i.id === tid)).filter(Boolean);
+                    return (
+                      <div key={action.id}
+                        className={`text-xs p-3 rounded border cursor-pointer transition-colors ${
+                          isSelected ? 'border-accent/50 bg-accent/5' : 'border-border hover:bg-muted/50'
+                        } ${action.requiresUserConfirm ? 'border-l-2 border-l-warning' : ''}`}
+                        onClick={() => {
+                          setSelectedActionIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(action.id)) next.delete(action.id);
+                            else next.add(action.id);
+                            return next;
+                          });
+                        }}
+                      >
+                        <div className="flex items-start gap-2">
+                          <Checkbox checked={isSelected} className="mt-0.5" />
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{action.label}</span>
+                              <Badge variant="outline" className={`text-[9px] ${
+                                action.confidence === 'high' ? 'text-success' : action.confidence === 'medium' ? 'text-warning' : 'text-muted-foreground'
+                              }`}>{action.confidence === 'high' ? '높음' : action.confidence === 'medium' ? '보통' : '낮음'}</Badge>
+                              {action.requiresUserConfirm && <Badge variant="outline" className="text-[9px] text-warning">수동확인</Badge>}
+                            </div>
+                            <p className="text-muted-foreground">{action.description}</p>
+                            <p className="text-muted-foreground italic text-[10px]">사유: {action.rationale}</p>
+                            <p className="text-accent text-[10px]">→ 예상 효과: {action.expectedEffect}</p>
+                            
+                            {/* Patch preview */}
+                            {Object.keys(action.patch).length > 0 && (
+                              <details className="mt-1">
+                                <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground">변경 내용 미리보기</summary>
+                                <div className="mt-1 p-2 bg-muted/50 rounded text-[10px] space-y-0.5">
+                                  {Object.entries(action.patch).map(([field, val]) => (
+                                    <div key={field}>
+                                      <span className="font-medium">{field}:</span>{' '}
+                                      <span className="text-accent">{Array.isArray(val) ? val.join(', ') : String(val).slice(0, 100)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            )}
+
+                            {/* New items preview */}
+                            {action.newItems && action.newItems.length > 0 && (
+                              <details className="mt-1">
+                                <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground">추가될 항목 ({action.newItems.length}건)</summary>
+                                <div className="mt-1 p-2 bg-muted/50 rounded text-[10px] space-y-0.5 max-h-32 overflow-y-auto">
+                                  {action.newItems.map((ni, idx) => (
+                                    <div key={idx}>#{idx + 1} {ni.process} – {ni.sub_task} – {ni.hazard}</div>
+                                  ))}
+                                </div>
+                              </details>
+                            )}
+
+                            {/* Target items */}
+                            {targetItems.length > 0 && targetItems.length <= 3 && (
+                              <div className="text-[10px] text-muted-foreground">
+                                대상: {targetItems.map((ti: any) => `${ti.process}/${ti.sub_task || ''}`).join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ));
+            })()}
+
+            {remediationActions.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-success" />
+                <p>추가 보완 제안이 없습니다.</p>
+              </div>
+            )}
+
+            {/* Apply Button */}
+            <div className="flex gap-2 pt-2 border-t">
+              <Button variant="outline" className="flex-1" onClick={() => setShowRemediation(false)}>닫기</Button>
+              <Button className="flex-1 gap-1.5" onClick={handleApplyRemediation} disabled={selectedActionIds.size === 0 || remediationLoading}>
+                <Wand2 className="h-3.5 w-3.5" />
+                {remediationLoading ? '적용 중...' : `선택한 ${selectedActionIds.size}건 보완 적용${applyAndRevalidate ? ' + 재검증' : ''}`}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -23,7 +23,7 @@ import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
 import { generateRiskItems } from '@/lib/riskAutoGen';
 import { exportToXLSX, exportToPDF, exportToPDFServer, printRiskAssessment } from '@/lib/exportUtils';
 import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue } from '@/lib/validationEngine';
-import { generateRemediationActions, applyRemediationActions, buildRemediationSummaryText, type RemediationAction } from '@/lib/remediationEngine';
+import { generateRemediationActions, applyRemediationActions, buildRemediationSummaryText, executeAutoRemediation, type RemediationAction } from '@/lib/remediationEngine';
 import type { Database } from '@/integrations/supabase/types';
 import IMESafeInput from '@/components/IMESafeInput';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -106,6 +106,7 @@ const AssessmentRunDetail = () => {
   const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(new Set());
   const [remediationLoading, setRemediationLoading] = useState(false);
   const [applyAndRevalidate, setApplyAndRevalidate] = useState(true);
+  const [autoRemediationLoading, setAutoRemediationLoading] = useState(false);
 
   const fetchAll = useCallback(async () => {
     if (!runId) return;
@@ -483,6 +484,58 @@ const AssessmentRunDetail = () => {
     setRemediationLoading(false);
   };
 
+  // Full auto-remediation: analyze → apply all auto actions → revalidate → transition status
+  const handleAutoRemediation = async () => {
+    if (!run || !user || !validationReport) return;
+    setAutoRemediationLoading(true);
+    try {
+      const result = await executeAutoRemediation(
+        items, validationReport, runId!, run.project_id, user.id
+      );
+
+      // Refresh items
+      const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+      if (refreshed) setItems(refreshed);
+
+      // Update local state
+      setValidationReport(result.revalidationReport);
+      setRun((prev: any) => ({
+        ...prev,
+        status: result.newStatus,
+        validation_score: result.revalidationReport.score,
+        validation_verdict: result.revalidationReport.verdict,
+      }));
+
+      // Audit log
+      log('자동적정전환실행', 'assessment_run', runId!, run.project_id, {
+        appliedCount: result.appliedCount,
+        newItemCount: result.newItemCount,
+        modifiedItemIds: result.modifiedItemIds,
+        verdict: result.revalidationReport.verdict,
+        score: result.revalidationReport.score,
+        statusTransitioned: result.statusTransitioned,
+        summary: result.summary,
+      });
+
+      if (result.statusTransitioned) {
+        toast({
+          title: `✅ 자동 보완 완료 → ${result.revalidationReport.verdict} (${result.revalidationReport.score}점)`,
+          description: `${result.appliedCount}건 보완 적용. 결재 상신이 가능합니다.`,
+        });
+      } else {
+        toast({
+          title: `⚠ 자동 보완 후에도 부적정 (${result.revalidationReport.score}점)`,
+          description: `${result.appliedCount}건 적용했으나 ${result.revalidationReport.errors}건의 오류가 남아있습니다. 수동 보완이 필요합니다.`,
+          variant: 'destructive',
+        });
+        setShowValidation(true);
+      }
+    } catch (err) {
+      toast({ title: '자동 보완 실행 실패', description: String(err), variant: 'destructive' });
+    }
+    setAutoRemediationLoading(false);
+  };
+
   // Force edit on approved run (creates audit log)
   const handleForceEditConfirm = async () => {
     if (!forceEditReason.trim()) { toast({ title: '수정 사유를 입력해주세요.', variant: 'destructive' }); return; }
@@ -830,9 +883,14 @@ const AssessmentRunDetail = () => {
           </Button>
         )}
         {canAutoRemediate && (
-          <Button size="sm" variant="outline" className="gap-1.5 text-accent" onClick={handleGenerateRemediation} disabled={remediationLoading}>
-            <Wand2 className="h-3.5 w-3.5" /> {remediationLoading ? '분석 중...' : '자동 보완 제안'}
-          </Button>
+          <>
+            <Button size="sm" className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={handleAutoRemediation} disabled={autoRemediationLoading}>
+              <Wand2 className="h-3.5 w-3.5" /> {autoRemediationLoading ? '자동 보완 중...' : '자동 보완 실행'}
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1.5 text-accent" onClick={handleGenerateRemediation} disabled={remediationLoading}>
+              <Wand2 className="h-3.5 w-3.5" /> {remediationLoading ? '분석 중...' : '보완 항목 선택'}
+            </Button>
+          </>
         )}
         {run.status === '결재진행' && (isAdmin() || (user && participants.some(p => ['검토자','승인자'].includes(p.role) && p.user_name === profile?.display_name))) && (
           <div className="flex gap-1">
@@ -968,7 +1026,12 @@ const AssessmentRunDetail = () => {
                       <td className="text-center editable"><GradeSelect item={item} field="improved_severity_grade" /></td>
                       <td className="text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded text-[11px] font-bold ${getGradeClassName(item.improved_risk_grade || '하')}`}>{item.improved_risk_grade || '하'}</span></td>
                       <td className="text-center editable"><EditableCell item={item} field="status" /></td>
-                      <td className="text-xs max-w-[120px] truncate">{(item.ppe || []).join(', ') || '—'}</td>
+                      <td className="text-xs max-w-[120px] truncate">
+                        {(item.ppe || []).join(', ') || '—'}
+                        {item.note?.includes('[자동보완]') && (
+                          <Badge variant="outline" className="text-[8px] ml-1 bg-accent/10 text-accent border-accent/30">자동보완</Badge>
+                        )}
+                      </td>
                       <td className="text-xs max-w-[150px] truncate">{(item.legal_basis || []).join(', ') || '—'}</td>
                       <td className="editable whitespace-nowrap"><EditableCell item={item} field="department" /></td>
                       <td className="whitespace-nowrap text-muted-foreground">{item.assignee || '—'}</td>
@@ -1136,8 +1199,11 @@ const AssessmentRunDetail = () => {
                 </Button>
                 {(canEdit || canForceEdit) && validationReport.verdict !== '적정' && (
                   <>
+                    <Button className="flex-1 gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => { setShowValidation(false); handleAutoRemediation(); }} disabled={autoRemediationLoading}>
+                      <Wand2 className="h-3.5 w-3.5" /> {autoRemediationLoading ? '보완 중...' : '자동 보완 실행'}
+                    </Button>
                     <Button variant="outline" className="flex-1 gap-1.5 text-accent" onClick={() => { setShowValidation(false); handleGenerateRemediation(); }} disabled={remediationLoading}>
-                      <Wand2 className="h-3.5 w-3.5" /> {remediationLoading ? '분석 중...' : '자동 보완 제안'}
+                      <Wand2 className="h-3.5 w-3.5" /> 보완 항목 선택
                     </Button>
                     <Button variant="outline" className="flex-1 gap-1.5" onClick={() => { setShowValidation(false); }}>
                       수정하러 가기

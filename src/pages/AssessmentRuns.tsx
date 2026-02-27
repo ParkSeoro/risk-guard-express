@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useAuditLog } from '@/hooks/useAuditLog';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -11,8 +12,13 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Plus, ShieldAlert, Calendar, Filter, Search } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Plus, ShieldAlert, Calendar, Filter, Search, RotateCcw } from 'lucide-react';
 import { format } from 'date-fns';
+import RunCardActions from '@/components/assessment-runs/RunCardActions';
+import EditRunDialog from '@/components/assessment-runs/EditRunDialog';
+import DeleteRunDialog from '@/components/assessment-runs/DeleteRunDialog';
+import CloneRunDialog from '@/components/assessment-runs/CloneRunDialog';
 
 const typeLabels: Record<string, string> = { '최초': '최초', '정기': '정기', '수시': '수시', '상시': '상시' };
 const statusColors: Record<string, string> = {
@@ -31,8 +37,11 @@ const statusColors: Record<string, string> = {
 
 const AssessmentRuns = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const { toast } = useToast();
+  const { log } = useAuditLog();
+  const isMaster = hasRole('master');
+
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [selectedProject, setSelectedProject] = useState('');
   const [runs, setRuns] = useState<any[]>([]);
@@ -41,6 +50,7 @@ const AssessmentRuns = () => {
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
+  const [showDeleted, setShowDeleted] = useState(false);
   const [form, setForm] = useState({
     type: '정기',
     period_label: '',
@@ -49,8 +59,12 @@ const AssessmentRuns = () => {
     notes: '',
   });
 
-  // Stats per run
   const [runStats, setRunStats] = useState<Record<string, { total: number; high: number; med: number; low: number }>>({});
+
+  // Dialog states
+  const [editRun, setEditRun] = useState<any>(null);
+  const [deleteRun, setDeleteRun] = useState<any>(null);
+  const [cloneRun, setCloneRun] = useState<any>(null);
 
   useEffect(() => {
     supabase.from('projects').select('id, name').then(({ data }) => {
@@ -70,7 +84,6 @@ const AssessmentRuns = () => {
       .order('created_at', { ascending: false });
     setRuns(data || []);
 
-    // Fetch stats for each run
     if (data && data.length > 0) {
       const runIds = data.map((r: any) => r.id);
       const { data: items } = await supabase.from('risk_items')
@@ -115,7 +128,43 @@ const AssessmentRuns = () => {
     if (data) navigate(`/assessment-run/${data.id}`);
   };
 
+  const handleRestore = async (run: any) => {
+    const { error } = await supabase
+      .from('assessment_runs')
+      .update({ is_deleted: false, deleted_at: null, deleted_reason: '', deleted_by: null })
+      .eq('id', run.id);
+    if (error) {
+      toast({ title: '복구 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
+    await log('restore_run', 'assessment_run', run.id, run.project_id, {
+      period_label: run.period_label,
+    });
+    toast({ title: '회차가 복구되었습니다.' });
+    fetchRuns();
+  };
+
+  // Permission helpers
+  const canEditRun = (run: any) => {
+    if (isMaster) return true;
+    if (run.created_by === user?.id) return true;
+    if (hasRole('project_admin') || hasRole('safety_manager')) return true;
+    return false;
+  };
+
+  const canDeleteRun = (run: any) => {
+    if (isMaster) return true;
+    if (run.created_by === user?.id) return true;
+    return false;
+  };
+
   const filtered = runs.filter(r => {
+    // Soft-delete filter
+    if (showDeleted) {
+      if (!r.is_deleted) return false;
+    } else {
+      if (r.is_deleted) return false;
+    }
     if (filterType !== 'all' && r.type !== filterType) return false;
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search) {
@@ -146,7 +195,7 @@ const AssessmentRuns = () => {
       {/* Filters */}
       <Card>
         <CardContent className="py-3">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <Filter className="h-3.5 w-3.5 text-muted-foreground" />
             <Select value={filterType} onValueChange={setFilterType}>
               <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
@@ -177,6 +226,12 @@ const AssessmentRuns = () => {
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input placeholder="기간, 메모 검색..." className="h-8 pl-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
+            {isMaster && (
+              <div className="flex items-center gap-1.5">
+                <Switch checked={showDeleted} onCheckedChange={setShowDeleted} id="show-deleted" />
+                <label htmlFor="show-deleted" className="text-xs text-muted-foreground cursor-pointer">삭제됨</label>
+              </div>
+            )}
             <span className="text-xs text-muted-foreground">{filtered.length}건</span>
           </div>
         </CardContent>
@@ -187,25 +242,32 @@ const AssessmentRuns = () => {
         <Card><CardContent className="py-12 text-center text-muted-foreground">로딩 중...</CardContent></Card>
       ) : filtered.length === 0 ? (
         <Card><CardContent className="py-12 text-center text-muted-foreground">
-          평가 회차가 없습니다. '회차 생성'을 눌러 시작하세요.
+          {showDeleted ? '삭제된 회차가 없습니다.' : '평가 회차가 없습니다. \'회차 생성\'을 눌러 시작하세요.'}
         </CardContent></Card>
       ) : (
         <div className="space-y-3">
           {filtered.map(run => {
             const stats = runStats[run.id] || { total: 0, high: 0, med: 0, low: 0 };
             return (
-              <Card key={run.id} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(`/assessment-run/${run.id}`)}>
+              <Card
+                key={run.id}
+                className={`hover:shadow-md transition-shadow cursor-pointer ${run.is_deleted ? 'opacity-60 border-dashed' : ''}`}
+                onClick={() => !run.is_deleted && navigate(`/assessment-run/${run.id}`)}
+              >
                 <CardContent className="pt-5">
                   <div className="flex items-start justify-between">
-                    <div className="space-y-2 flex-1">
-                      <div className="flex items-center gap-2">
+                    <div className="space-y-2 flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" className="text-[10px]">{typeLabels[run.type] || run.type}</Badge>
                         <h3 className="font-semibold">{run.period_label || '(기간 미지정)'}</h3>
                         <Badge variant="outline" className={`text-[10px] ${statusColors[run.status] || ''}`}>
                           {run.status}
                         </Badge>
+                        {run.is_deleted && (
+                          <Badge variant="destructive" className="text-[10px]">삭제됨</Badge>
+                        )}
                       </div>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
                         <span className="flex items-center gap-1"><Calendar className="h-3 w-3" />{format(new Date(run.created_at), 'yyyy-MM-dd')}</span>
                         <span>항목 {stats.total}건</span>
                         {stats.high > 0 && <span className="text-destructive font-medium">상 {stats.high}</span>}
@@ -215,8 +277,21 @@ const AssessmentRuns = () => {
                           <Badge variant="outline" className="text-[10px]">검증: {run.validation_verdict} ({run.validation_score}점)</Badge>
                         )}
                       </div>
-                      {run.notes && <p className="text-xs text-muted-foreground">{run.notes}</p>}
+                      {run.notes && <p className="text-xs text-muted-foreground truncate">{run.notes}</p>}
+                      {run.is_deleted && run.deleted_reason && (
+                        <p className="text-xs text-destructive">삭제 사유: {run.deleted_reason}</p>
+                      )}
                     </div>
+                    <RunCardActions
+                      run={run}
+                      canEdit={!run.is_deleted && canEditRun(run)}
+                      canDelete={!run.is_deleted && canDeleteRun(run)}
+                      canRestore={run.is_deleted && isMaster}
+                      onEdit={() => setEditRun(run)}
+                      onDelete={() => setDeleteRun(run)}
+                      onClone={() => setCloneRun(run)}
+                      onRestore={() => handleRestore(run)}
+                    />
                   </div>
                 </CardContent>
               </Card>
@@ -264,6 +339,26 @@ const AssessmentRuns = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Edit / Delete / Clone Dialogs */}
+      <EditRunDialog
+        open={!!editRun}
+        onOpenChange={(open) => !open && setEditRun(null)}
+        run={editRun}
+        onSaved={fetchRuns}
+      />
+      <DeleteRunDialog
+        open={!!deleteRun}
+        onOpenChange={(open) => !open && setDeleteRun(null)}
+        run={deleteRun}
+        onDeleted={fetchRuns}
+      />
+      <CloneRunDialog
+        open={!!cloneRun}
+        onOpenChange={(open) => !open && setCloneRun(null)}
+        run={cloneRun}
+        onCloned={fetchRuns}
+      />
     </div>
   );
 };

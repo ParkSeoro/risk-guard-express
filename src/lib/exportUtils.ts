@@ -74,6 +74,34 @@ function buildSignatureRows(participants: Participant[]): string[][] {
   return rows;
 }
 
+// ========== Safe PDF Download ==========
+function safePDFDownload(doc: jsPDF, fileName: string) {
+  try {
+    // Primary method: direct blob download via anchor
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    // Cleanup after a delay
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  } catch (primaryErr) {
+    console.warn('Primary PDF download failed, trying fallback:', primaryErr);
+    try {
+      doc.save(fileName);
+    } catch (fallbackErr) {
+      console.error('All PDF download methods failed:', fallbackErr);
+      alert(`PDF 다운로드에 실패했습니다.\n원인: ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}\n\n브라우저 팝업 차단을 해제하고 다시 시도해주세요.`);
+    }
+  }
+}
+
 // ========== XLSX Export ==========
 export function exportToXLSX(items: RiskRow[], project: ProjectInfo, masterData?: any, participants?: Participant[], runInfo?: RunInfo) {
   const wb = XLSX.utils.book_new();
@@ -100,11 +128,9 @@ export function exportToXLSX(items: RiskRow[], project: ProjectInfo, masterData?
     [],
     headers,
     ...rows,
-    [],
-    [],
+    [], [],
   ];
 
-  // Add signature section
   const sigRows = buildSignatureRows(participants || []);
   wsData.push(['서명란']);
   sigRows.forEach(r => wsData.push(r));
@@ -117,6 +143,10 @@ export function exportToXLSX(items: RiskRow[], project: ProjectInfo, masterData?
     { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 20 },
     { wch: 25 }, { wch: 10 }, { wch: 8 }, { wch: 15 },
   ];
+
+  // A4 print settings
+  ws['!pageSetup'] = { paperSize: 9, orientation: 'landscape', fitToWidth: 1, fitToHeight: 0 };
+  ws['!margins'] = { left: 0.5, right: 0.5, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 };
 
   XLSX.utils.book_append_sheet(wb, ws, '위험성평가');
 
@@ -153,7 +183,7 @@ export function exportToPDF(
       ? `Risk Assessment [${runInfo.type}] ${runInfo.period_label}`
       : `Risk Assessment - ${project.name}`;
 
-    // Cover page info
+    // Cover page
     doc.setFontSize(16);
     doc.text(title, 14, 15);
     doc.setFontSize(10);
@@ -232,9 +262,9 @@ export function exportToPDF(
       });
     }
 
-    // Validation report page (if provided)
+    // Validation report page
     if (validationReport) {
-      doc.addPage();
+      doc.addPage('a4', 'landscape');
       doc.setFontSize(14);
       doc.text('Validation Report', 14, 15);
       doc.setFontSize(10);
@@ -245,25 +275,42 @@ export function exportToPDF(
       if (validationReport.issues && validationReport.issues.length > 0) {
         doc.autoTable({
           startY: 40,
-          head: [['#', 'Severity', 'Rule', 'Message']],
+          head: [['#', 'Severity', 'Rule', 'Message', 'Recommendation']],
           body: validationReport.issues.slice(0, 50).map((issue: any, i: number) => [
-            i + 1, issue.severity, issue.ruleId || '', issue.message,
+            i + 1, issue.severity, issue.ruleType || '', issue.message, issue.recommendation || '',
           ]),
           styles: { fontSize: 7 },
           headStyles: { fillColor: [220, 38, 38] },
         });
       }
+
+      // Coverage gaps
+      if (validationReport.coverageGaps && validationReport.coverageGaps.length > 0) {
+        const gapY = doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 10 : 100;
+        if (gapY > 170) doc.addPage('a4', 'landscape');
+        doc.setFontSize(10);
+        doc.text('Coverage Gaps (Missing Risk Assessments)', 14, gapY > 170 ? 15 : gapY);
+        doc.autoTable({
+          startY: (gapY > 170 ? 20 : gapY + 5),
+          head: [['Process', 'Sub Task', 'Hazard', 'Severity', 'Note']],
+          body: validationReport.coverageGaps.slice(0, 30).map((g: any) => [
+            g.process, g.subTask, g.hazard, g.severity, g.message,
+          ]),
+          styles: { fontSize: 7 },
+          headStyles: { fillColor: [234, 88, 12] },
+        });
+      }
     }
 
-    // Force download as file
+    // Download
     const fileName = runInfo
       ? `위험성평가_${runInfo.type}_${runInfo.period_label}_${new Date().toISOString().slice(0, 10)}.pdf`
       : `RiskAssessment_${project.name}_${new Date().toISOString().slice(0, 10)}.pdf`;
 
-    doc.save(fileName);
+    safePDFDownload(doc, fileName);
   } catch (err) {
     console.error('PDF generation failed:', err);
-    alert(`PDF 생성에 실패했습니다.\n원인: ${err instanceof Error ? err.message : String(err)}\n\n다시 시도해주세요.`);
+    alert(`PDF 생성에 실패했습니다.\n원인: ${err instanceof Error ? err.message : String(err)}\n\n브라우저 팝업 차단을 해제하고 다시 시도해주세요.`);
   }
 }
 

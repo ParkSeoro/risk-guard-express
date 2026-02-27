@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -285,6 +285,42 @@ const RiskAssessment = () => {
     );
   };
 
+  // IME-safe input: prevents focus loss and premature commit during Korean composition
+  const IMESafeInput = useCallback(({ defaultValue, onCommit, className, autoFocus, ...rest }: {
+    defaultValue: string;
+    onCommit: (value: string) => void;
+    className?: string;
+    autoFocus?: boolean;
+  } & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'defaultValue'>) => {
+    const ref = useRef<HTMLInputElement>(null);
+    const composingRef = useRef(false);
+
+    useEffect(() => {
+      if (autoFocus && ref.current) ref.current.focus();
+    }, []);
+
+    return (
+      <Input
+        ref={ref}
+        defaultValue={defaultValue}
+        className={className}
+        onCompositionStart={() => { composingRef.current = true; }}
+        onCompositionEnd={() => { composingRef.current = false; }}
+        onBlur={(e) => {
+          if (!composingRef.current) {
+            onCommit(e.target.value);
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.nativeEvent.isComposing && !composingRef.current) {
+            onCommit((e.target as HTMLInputElement).value);
+          }
+        }}
+        {...rest}
+      />
+    );
+  }, []);
+
   const GradeSelect = ({ item, field }: { item: RiskItemRow; field: string }) => {
     const isEditing = editingCell?.id === item.id && editingCell?.field === field;
     const value = (item as any)[field] || '중';
@@ -341,9 +377,11 @@ const RiskAssessment = () => {
         );
       }
       return (
-        <Input defaultValue={value as string || ''} className="h-7 text-xs min-w-[100px]" autoFocus
-          onBlur={(e) => handleCellEdit(item.id, field, e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleCellEdit(item.id, field, (e.target as HTMLInputElement).value)}
+        <IMESafeInput
+          defaultValue={value as string || ''}
+          className="h-7 text-xs min-w-[100px]"
+          autoFocus
+          onCommit={(val) => handleCellEdit(item.id, field, val)}
         />
       );
     }
@@ -531,7 +569,7 @@ const RiskAssessment = () => {
 
       {/* Auto Generate Dialog */}
       <Dialog open={showAutoGen} onOpenChange={setShowAutoGen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>공종명으로 위험성평가 자동작성</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">공종명을 입력하면 표준 라이브러리에서 관련 위험성평가 항목을 자동 생성합니다. (상/중/하 등급 자동 산출)</p>

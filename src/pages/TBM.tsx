@@ -143,7 +143,7 @@ const TBM = () => {
       )}
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>TBM 기록 작성</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">

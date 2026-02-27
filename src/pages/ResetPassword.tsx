@@ -23,8 +23,8 @@ const ResetPassword = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < 6) {
-      toast({ title: '비밀번호는 6자 이상이어야 합니다.', variant: 'destructive' });
+    if (password.length < 8) {
+      toast({ title: '비밀번호는 8자 이상이어야 합니다.', variant: 'destructive' });
       return;
     }
     setLoading(true);
@@ -54,7 +54,7 @@ const ResetPassword = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <Label>새 비밀번호</Label>
-              <Input type="password" value={password} onChange={e => setPassword(e.target.value)} minLength={6} required />
+              <Input type="password" value={password} onChange={e => setPassword(e.target.value)} minLength={8} required />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? '처리 중...' : '비밀번호 변경'}

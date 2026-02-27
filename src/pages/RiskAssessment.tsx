@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { useToast } from "@/hooks/use-toast";
+import { validateRiskItemField } from '@/lib/inputValidation';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,7 +90,9 @@ const RiskAssessment = () => {
   const uniqueProcesses = [...new Set(items.map(i => i.process))];
 
   const handleCellEdit = async (id: string, field: string, value: any) => {
-    const updateData: Record<string, any> = { [field]: value };
+    const validation = validateRiskItemField(field, value);
+    if (!validation.success) { toast({ title: (validation as { success: false; error: string }).error, variant: 'destructive' }); return; }
+    const updateData: Record<string, any> = { [field]: validation.data };
 
     // Auto-compute risk_grade when likelihood or severity grade changes
     if (field === 'likelihood_grade' || field === 'severity_grade') {

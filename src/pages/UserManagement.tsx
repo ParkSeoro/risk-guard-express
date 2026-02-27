@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useToast } from '@/hooks/use-toast';
+import { companyUpdateSchema, roleChangeSchema, accountStatusSchema } from '@/lib/inputValidation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -62,8 +63,13 @@ const UserManagement = () => {
   useEffect(() => { fetchUsers(); }, []);
 
   const handleStatusChange = async (userId: string, status: string) => {
+    const parsed = accountStatusSchema.safeParse(status);
+    if (!parsed.success) {
+      toast({ title: '유효하지 않은 상태값입니다.', variant: 'destructive' });
+      return;
+    }
     setSaving(userId);
-    const { error } = await supabase.from('profiles').update({ account_status: status }).eq('user_id', userId);
+    const { error } = await supabase.from('profiles').update({ account_status: parsed.data }).eq('user_id', userId);
     if (error) {
       toast({ title: '상태 변경 실패', description: error.message, variant: 'destructive' });
     } else {
@@ -86,6 +92,13 @@ const UserManagement = () => {
         return;
       }
     }
+    // Validate role
+    const parsedRole = roleChangeSchema.safeParse(newRole);
+    if (!parsedRole.success) {
+      toast({ title: '유효하지 않은 역할입니다.', variant: 'destructive' });
+      setSaving(null);
+      return;
+    }
     // Delete existing roles for this user
     const { error: delError } = await supabase.from('user_roles').delete().eq('user_id', userId);
     if (delError) {
@@ -94,8 +107,8 @@ const UserManagement = () => {
       setSaving(null);
       return;
     }
-    if (newRole) {
-      const { error: insError } = await supabase.from('user_roles').insert([{ user_id: userId, role: newRole as any }]);
+    if (parsedRole.data) {
+      const { error: insError } = await supabase.from('user_roles').insert([{ user_id: userId, role: parsedRole.data }]);
       if (insError) {
         toast({ title: '역할 변경 실패', description: insError.message, variant: 'destructive' });
         setSaving(null);
@@ -109,7 +122,12 @@ const UserManagement = () => {
   };
 
   const handleCompanyChange = async (userId: string, company: string) => {
-    const { error } = await supabase.from('profiles').update({ company }).eq('user_id', userId);
+    const parsed = companyUpdateSchema.safeParse(company);
+    if (!parsed.success) {
+      toast({ title: parsed.error.errors[0]?.message || '유효하지 않은 소속입니다.', variant: 'destructive' });
+      return;
+    }
+    const { error } = await supabase.from('profiles').update({ company: parsed.data }).eq('user_id', userId);
     if (error) {
       toast({ title: '소속 변경 실패', description: error.message, variant: 'destructive' });
     } else {

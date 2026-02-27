@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useToast } from '@/hooks/use-toast';
+import { profileSchema } from '@/lib/inputValidation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,13 +35,14 @@ const Profile = () => {
 
   const handleSave = async () => {
     if (!user) return;
+    const parsed = profileSchema.safeParse(form);
+    if (!parsed.success) {
+      const firstError = parsed.error.errors[0]?.message || '입력값을 확인해주세요.';
+      toast({ title: firstError, variant: 'destructive' });
+      return;
+    }
     setSaving(true);
-    const { error } = await supabase.from('profiles').update({
-      display_name: form.display_name,
-      company: form.company,
-      phone: form.phone,
-      position: form.position,
-    }).eq('user_id', user.id);
+    const { error } = await supabase.from('profiles').update(parsed.data).eq('user_id', user.id);
 
     if (error) {
       toast({ title: '저장 실패', description: error.message, variant: 'destructive' });

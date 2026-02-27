@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getRiskLevel, getRiskClassName } from "@/types";
+import { getGradeClassName, getGradeSortOrder } from "@/lib/riskGrade";
 import { AlertTriangle, CheckCircle2, Clock, ShieldAlert, BarChart3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,34 +27,45 @@ const Dashboard = () => {
   }, [selectedProject]);
 
   const currentProject = projects.find(p => p.id === selectedProject);
-  const highRiskCount = items.filter(i => (i.risk || 0) >= 16).length;
-  const inProgressCount = items.filter(i => i.status === '진행').length;
-  const completedCount = items.filter(i => i.status === '완료').length;
-  const notStartedCount = items.filter(i => i.status === '미착수').length;
-  const avgRisk = items.length > 0 ? (items.reduce((s, i) => s + (i.risk || 0), 0) / items.length).toFixed(1) : '0';
 
+  // Grade-based stats
+  const highRiskCount = items.filter(i => i.risk_grade === '상').length;
+  const medRiskCount = items.filter(i => i.risk_grade === '중').length;
+  const lowRiskCount = items.filter(i => i.risk_grade === '하').length;
+  const improvedHighCount = items.filter(i => i.improved_risk_grade === '상').length;
+  const completedCount = items.filter(i => i.status === '완료').length;
+  const inProgressCount = items.filter(i => i.status === '진행').length;
+  const notStartedCount = items.filter(i => ['미착수', '초안'].includes(i.status)).length;
+
+  // Risk grade distribution by process
   const processData = Object.entries(
     items.reduce((acc, item) => {
-      if (!acc[item.process]) acc[item.process] = { total: 0, count: 0 };
-      acc[item.process].total += (item.risk || 0);
-      acc[item.process].count += 1;
+      if (!acc[item.process]) acc[item.process] = { high: 0, med: 0, low: 0 };
+      if (item.risk_grade === '상') acc[item.process].high++;
+      else if (item.risk_grade === '중') acc[item.process].med++;
+      else acc[item.process].low++;
       return acc;
-    }, {} as Record<string, { total: number; count: number }>)
-  ).map(([name, d]) => {
-    const data = d as { total: number; count: number };
-    return {
+    }, {} as Record<string, { high: number; med: number; low: number }>)
+  ).map(([name, d]) => ({
     name,
-    avg: Math.round(data.total / data.count * 10) / 10,
-    level: getRiskLevel(Math.round(data.total / data.count)),
-  };}).sort((a, b) => b.avg - a.avg);
+    ...(d as { high: number; med: number; low: number }),
+  })).sort((a, b) => b.high - a.high || b.med - a.med);
 
   const statusData = [
-    { name: '미착수', value: notStartedCount, color: 'hsl(0, 72%, 51%)' },
+    { name: '미착수/초안', value: notStartedCount, color: 'hsl(0, 72%, 51%)' },
     { name: '진행', value: inProgressCount, color: 'hsl(45, 93%, 47%)' },
     { name: '완료', value: completedCount, color: 'hsl(145, 63%, 42%)' },
   ];
 
-  const topRisks = [...items].sort((a, b) => (b.risk || 0) - (a.risk || 0)).slice(0, 5);
+  const riskDistData = [
+    { name: '상', value: highRiskCount, color: 'hsl(0, 72%, 51%)' },
+    { name: '중', value: medRiskCount, color: 'hsl(45, 93%, 47%)' },
+    { name: '하', value: lowRiskCount, color: 'hsl(145, 63%, 42%)' },
+  ];
+
+  const topRisks = [...items]
+    .sort((a, b) => getGradeSortOrder(b.risk_grade) - getGradeSortOrder(a.risk_grade))
+    .slice(0, 5);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -81,7 +91,7 @@ const Dashboard = () => {
         </CardContent></Card>
         <Card><CardContent className="pt-5">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-muted-foreground font-medium">고위험 항목</p><p className="text-3xl font-bold mt-1 text-destructive">{highRiskCount}</p></div>
+            <div><p className="text-xs text-muted-foreground font-medium">위험도 '상'</p><p className="text-3xl font-bold mt-1 text-destructive">{highRiskCount}</p></div>
             <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center"><AlertTriangle className="h-5 w-5 text-destructive" /></div>
           </div>
         </CardContent></Card>
@@ -93,7 +103,7 @@ const Dashboard = () => {
         </CardContent></Card>
         <Card><CardContent className="pt-5">
           <div className="flex items-center justify-between">
-            <div><p className="text-xs text-muted-foreground font-medium">평균 위험도</p><p className="text-3xl font-bold mt-1">{avgRisk}</p></div>
+            <div><p className="text-xs text-muted-foreground font-medium">개선후 '상' 잔존</p><p className="text-3xl font-bold mt-1 text-destructive">{improvedHighCount}</p></div>
             <div className="h-10 w-10 rounded-lg bg-accent/10 flex items-center justify-center"><BarChart3 className="h-5 w-5 text-accent" /></div>
           </div>
         </CardContent></Card>
@@ -101,40 +111,38 @@ const Dashboard = () => {
 
       <div className="grid grid-cols-3 gap-4">
         <Card className="col-span-2">
-          <CardHeader className="pb-2"><CardTitle className="text-base">공정별 평균 위험도</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">공정별 위험도 분포 (상/중/하)</CardTitle></CardHeader>
           <CardContent>
             {processData.length > 0 ? (
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={processData} layout="vertical" margin={{ left: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" domain={[0, 25]} tick={{ fontSize: 11 }} />
+                  <XAxis type="number" tick={{ fontSize: 11 }} />
                   <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={100} />
                   <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))', fontSize: 12 }} />
-                  <Bar dataKey="avg" radius={[0, 4, 4, 0]} barSize={20}>
-                    {processData.map((entry, i) => (
-                      <Cell key={i} fill={entry.level === 'high' ? 'hsl(0, 72%, 51%)' : entry.level === 'medium' ? 'hsl(45, 93%, 47%)' : 'hsl(145, 63%, 42%)'} />
-                    ))}
-                  </Bar>
+                  <Bar dataKey="high" name="상" stackId="a" fill="hsl(0, 72%, 51%)" barSize={20} />
+                  <Bar dataKey="med" name="중" stackId="a" fill="hsl(45, 93%, 47%)" barSize={20} />
+                  <Bar dataKey="low" name="하" stackId="a" fill="hsl(145, 63%, 42%)" barSize={20} radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : <p className="text-center text-muted-foreground py-16">데이터가 없습니다</p>}
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">이행상태 현황</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-base">위험도 등급 분포</CardTitle></CardHeader>
           <CardContent className="flex flex-col items-center">
             {items.length > 0 ? (
               <>
                 <ResponsiveContainer width="100%" height={180}>
                   <PieChart>
-                    <Pie data={statusData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" stroke="hsl(var(--card))" strokeWidth={3}>
-                      {statusData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    <Pie data={riskDistData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" stroke="hsl(var(--card))" strokeWidth={3}>
+                      {riskDistData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                     </Pie>
                     <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))', fontSize: 12 }} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="flex gap-4 text-xs mt-2">
-                  {statusData.map(s => (
+                  {riskDistData.map(s => (
                     <div key={s.name} className="flex items-center gap-1.5">
                       <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
                       <span className="text-muted-foreground">{s.name}</span>
@@ -157,15 +165,15 @@ const Dashboard = () => {
         <CardContent>
           {topRisks.length > 0 ? (
             <table className="w-full data-table">
-              <thead><tr><th>공정</th><th>세부작업</th><th>위험요인</th><th className="text-center">위험도(R)</th><th className="text-center">개선후(R')</th><th className="text-center">이행상태</th><th>책임부서</th></tr></thead>
+              <thead><tr><th>공정</th><th>세부작업</th><th>위험요인</th><th className="text-center">위험도</th><th className="text-center">개선후</th><th className="text-center">이행상태</th><th>책임부서</th></tr></thead>
               <tbody>
                 {topRisks.map(item => (
                   <tr key={item.id}>
                     <td className="font-medium">{item.process}</td>
                     <td>{item.sub_task}</td>
                     <td>{item.hazard}</td>
-                    <td className="text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${getRiskClassName(item.risk || 0)}`}>{item.risk || 0}</span></td>
-                    <td className="text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${getRiskClassName(item.improved_risk || 0)}`}>{item.improved_risk || 0}</span></td>
+                    <td className="text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${getGradeClassName(item.risk_grade || '중')}`}>{item.risk_grade || '중'}</span></td>
+                    <td className="text-center"><span className={`inline-flex items-center justify-center w-8 h-6 rounded text-xs font-bold ${getGradeClassName(item.improved_risk_grade || '하')}`}>{item.improved_risk_grade || '하'}</span></td>
                     <td className="text-center"><Badge variant={item.status === '완료' ? 'default' : 'outline'} className={`text-[10px] ${item.status === '완료' ? 'bg-success text-success-foreground' : ''}`}>{item.status}</Badge></td>
                     <td>{item.department}</td>
                   </tr>

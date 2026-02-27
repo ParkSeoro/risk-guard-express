@@ -536,17 +536,23 @@ export type Database = {
           hazard_situation: string | null
           id: string
           improved_frequency: number
+          improved_likelihood_grade: string
           improved_risk: number | null
+          improved_risk_grade: string
           improved_severity: number
+          improved_severity_grade: string
           improvement_measure: string | null
           is_locked: boolean | null
           legal_basis: string[] | null
+          likelihood_grade: string
           note: string | null
           ppe: string[] | null
           process: string
           project_id: string
           risk: number | null
+          risk_grade: string
           severity: number
+          severity_grade: string
           sort_order: number | null
           status: string
           sub_task: string | null
@@ -567,17 +573,23 @@ export type Database = {
           hazard_situation?: string | null
           id?: string
           improved_frequency?: number
+          improved_likelihood_grade?: string
           improved_risk?: number | null
+          improved_risk_grade?: string
           improved_severity?: number
+          improved_severity_grade?: string
           improvement_measure?: string | null
           is_locked?: boolean | null
           legal_basis?: string[] | null
+          likelihood_grade?: string
           note?: string | null
           ppe?: string[] | null
           process: string
           project_id: string
           risk?: number | null
+          risk_grade?: string
           severity?: number
+          severity_grade?: string
           sort_order?: number | null
           status?: string
           sub_task?: string | null
@@ -598,17 +610,23 @@ export type Database = {
           hazard_situation?: string | null
           id?: string
           improved_frequency?: number
+          improved_likelihood_grade?: string
           improved_risk?: number | null
+          improved_risk_grade?: string
           improved_severity?: number
+          improved_severity_grade?: string
           improvement_measure?: string | null
           is_locked?: boolean | null
           legal_basis?: string[] | null
+          likelihood_grade?: string
           note?: string | null
           ppe?: string[] | null
           process?: string
           project_id?: string
           risk?: number | null
+          risk_grade?: string
           severity?: number
+          severity_grade?: string
           sort_order?: number | null
           status?: string
           sub_task?: string | null
@@ -637,12 +655,16 @@ export type Database = {
           hazard_situation: string
           id: string
           improved_frequency: number
+          improved_likelihood_grade: string
           improved_severity: number
+          improved_severity_grade: string
           improvement_measure: string | null
           legal_keywords: string[] | null
+          likelihood_grade: string
           ppe: string[] | null
           process_keyword: string
           severity: number
+          severity_grade: string
           sub_task: string
           updated_at: string
         }
@@ -655,12 +677,16 @@ export type Database = {
           hazard_situation: string
           id?: string
           improved_frequency?: number
+          improved_likelihood_grade?: string
           improved_severity?: number
+          improved_severity_grade?: string
           improvement_measure?: string | null
           legal_keywords?: string[] | null
+          likelihood_grade?: string
           ppe?: string[] | null
           process_keyword: string
           severity?: number
+          severity_grade?: string
           sub_task: string
           updated_at?: string
         }
@@ -673,12 +699,16 @@ export type Database = {
           hazard_situation?: string
           id?: string
           improved_frequency?: number
+          improved_likelihood_grade?: string
           improved_severity?: number
+          improved_severity_grade?: string
           improvement_measure?: string | null
           legal_keywords?: string[] | null
+          likelihood_grade?: string
           ppe?: string[] | null
           process_keyword?: string
           severity?: number
+          severity_grade?: string
           sub_task?: string
           updated_at?: string
         }
@@ -765,7 +795,9 @@ export type Database = {
           category_small: string
           created_at: string | null
           default_frequency: number | null
+          default_likelihood_grade: string
           default_severity: number | null
+          default_severity_grade: string
           equipment: string[] | null
           existing_measure: string | null
           hazard: string
@@ -787,7 +819,9 @@ export type Database = {
           category_small?: string
           created_at?: string | null
           default_frequency?: number | null
+          default_likelihood_grade?: string
           default_severity?: number | null
+          default_severity_grade?: string
           equipment?: string[] | null
           existing_measure?: string | null
           hazard: string
@@ -809,7 +843,9 @@ export type Database = {
           category_small?: string
           created_at?: string | null
           default_frequency?: number | null
+          default_likelihood_grade?: string
           default_severity?: number | null
+          default_severity_grade?: string
           equipment?: string[] | null
           existing_measure?: string | null
           hazard?: string

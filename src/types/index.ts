@@ -21,12 +21,20 @@ export interface RiskItem {
   hazardSituation: string;
   existingMeasure: string;
   improvementMeasure: string;
+  // Legacy numeric fields
   frequency: number;
   severity: number;
   risk: number;
   improvedFrequency: number;
   improvedSeverity: number;
   improvedRisk: number;
+  // New grade fields
+  likelihoodGrade: '상' | '중' | '하';
+  severityGrade: '상' | '중' | '하';
+  riskGrade: '상' | '중' | '하';
+  improvedLikelihoodGrade: '상' | '중' | '하';
+  improvedSeverityGrade: '상' | '중' | '하';
+  improvedRiskGrade: '상' | '중' | '하';
   status: ImplementationStatus;
   ppe: string[];
   legalBasis: string[];
@@ -77,6 +85,7 @@ export interface ApprovalStep {
   timestamp: string;
 }
 
+// Legacy helpers (kept for backward compat)
 export function getRiskLevel(risk: number): 'high' | 'medium' | 'low' {
   if (risk >= 16) return 'high';
   if (risk >= 9) return 'medium';

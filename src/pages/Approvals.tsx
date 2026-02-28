@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAuditLog } from "@/hooks/useAuditLog";
+import { sendNotification } from "@/lib/notificationService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -93,7 +94,7 @@ const Approvals = () => {
         // Notify author
         const authorStep = (allAp || []).find((a: any) => a.step === '작성');
         if (authorStep?.approver_id) {
-          await supabase.from('notifications').insert([{
+          await sendNotification({
             user_id: authorStep.approver_id,
             title: '결재 최종 승인',
             message: `[${run?.type || ''}] ${run?.period_label || ''} 회차가 최종 승인되었습니다.`,
@@ -101,7 +102,7 @@ const Approvals = () => {
             related_id: ap.run_id,
             related_type: 'assessment_run',
             project_id: ap.project_id,
-          }]);
+          });
         }
         toast({ title: '최종 승인 완료! 해당 회차가 잠금되었습니다.' });
       } else {
@@ -115,7 +116,7 @@ const Approvals = () => {
         const nextPending = sortedPending[0];
         if (nextPending?.approver_id) {
           const run = runs.find(r => r.id === ap.run_id);
-          await supabase.from('notifications').insert([{
+          await sendNotification({
             user_id: nextPending.approver_id,
             title: '결재 요청',
             message: `[${run?.type || ''}] ${run?.period_label || ''} - ${ap.step} 단계 승인 완료. ${nextPending.step} 결재를 진행해주세요.`,
@@ -123,7 +124,7 @@ const Approvals = () => {
             related_id: ap.run_id,
             related_type: 'assessment_run',
             project_id: ap.project_id,
-          }]);
+          });
         }
         toast({ title: `${ap.step} 단계가 승인되었습니다.` });
       }
@@ -134,7 +135,7 @@ const Approvals = () => {
       const { data: authorData } = await supabase.from('approvals').select('*').eq('run_id', ap.run_id).eq('step', '작성').limit(1);
       const authorStep = authorData?.[0];
       if (authorStep?.approver_id) {
-        await supabase.from('notifications').insert([{
+        await sendNotification({
           user_id: authorStep.approver_id,
           title: '결재 반려',
           message: `[${run?.type || ''}] ${run?.period_label || ''} 반려됨. 사유: ${comment || '(없음)'}`,
@@ -142,7 +143,7 @@ const Approvals = () => {
           related_id: ap.run_id,
           related_type: 'assessment_run',
           project_id: ap.project_id,
-        }]);
+        });
       }
       toast({ title: '반려되었습니다. 보완 후 재제출이 필요합니다.', variant: 'destructive' });
     } else {

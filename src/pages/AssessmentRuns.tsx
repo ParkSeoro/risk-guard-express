@@ -207,9 +207,11 @@ const AssessmentRuns = () => {
             <SelectTrigger className="h-9 w-60 text-xs"><SelectValue placeholder="프로젝트" /></SelectTrigger>
             <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
           </Select>
-          <Button size="sm" className="gap-1.5" onClick={() => setShowCreate(true)}>
-            <Plus className="h-3.5 w-3.5" /> 회차 생성
-          </Button>
+          {(isMaster || hasRole('project_admin') || hasRole('safety_manager')) && (
+            <Button size="sm" className="gap-1.5" onClick={() => setShowCreate(true)}>
+              <Plus className="h-3.5 w-3.5" /> 회차 생성
+            </Button>
+          )}
         </div>
       </div>
 

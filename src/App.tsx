@@ -77,8 +77,8 @@ function ProtectedRoutes() {
         <Route path="/master-data" element={<MasterData />} />
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/audit-logs" element={<AuditLogs />} />
-        {/* TBM removed */}
-        <Route path="/user-management" element={<UserManagement />} />
+        {/* User management consolidated into settings */}
+        <Route path="/user-management" element={<Navigate to="/settings/permissions" replace />} />
         <Route path="/permission-test" element={<PermissionTest />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/settings" element={<Settings />} />

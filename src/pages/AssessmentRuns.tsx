@@ -78,6 +78,9 @@ const AssessmentRuns = () => {
   const [form, setForm] = useState({
     type: '정기', period_label: '', target_processes: '', target_contractors: '', notes: '',
   });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [runStats, setRunStats] = useState<Record<string, { total: number; high: number; med: number; low: number }>>({});
 
@@ -126,25 +129,57 @@ const AssessmentRuns = () => {
 
   const handleCreate = async () => {
     if (!user || !selectedProject) return;
-    const { data, error } = await supabase.from('assessment_runs').insert([{
-      project_id: selectedProject,
-      type: form.type,
-      period_label: form.period_label,
-      target_processes: form.target_processes.split(',').map(s => s.trim()).filter(Boolean),
-      target_contractors: form.target_contractors.split(',').map(s => s.trim()).filter(Boolean),
-      notes: form.notes,
-      status: '작성중',
-      created_by: user.id,
-    }]).select().single();
-    if (error) {
-      toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
+
+    // Field validation
+    const errors: Record<string, string> = {};
+    if (!form.type) errors.type = '종류를 선택해주세요.';
+    if (!form.period_label.trim()) errors.period_label = '적용기간을 입력해주세요.';
+    if (form.period_label.trim().length > 100) errors.period_label = '적용기간은 100자 이내로 입력해주세요.';
+    if (form.notes.length > 2000) errors.notes = '비고는 2000자 이내로 입력해주세요.';
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
-    toast({ title: '평가 회차가 생성되었습니다.' });
-    setShowCreate(false);
-    setForm({ type: '정기', period_label: '', target_processes: '', target_contractors: '', notes: '' });
-    fetchRuns();
-    if (data) navigate(`/assessment-run/${data.id}`);
+    setFieldErrors({});
+    setCreateError(null);
+    setCreating(true);
+
+    try {
+      const payload = {
+        project_id: selectedProject,
+        type: form.type,
+        period_label: form.period_label.trim(),
+        target_processes: form.target_processes.split(',').map(s => s.trim()).filter(Boolean),
+        target_contractors: form.target_contractors.split(',').map(s => s.trim()).filter(Boolean),
+        notes: form.notes.trim(),
+        status: '작성중',
+        created_by: user.id,
+      };
+
+      const { data, error } = await supabase.from('assessment_runs').insert([payload]).select().single();
+
+      if (error) {
+        // Distinguish permission errors
+        const msg = error.code === '42501' || error.message?.includes('row-level security')
+          ? '프로젝트 권한이 없습니다. 프로젝트에 초대가 필요합니다.'
+          : error.message || '알 수 없는 오류가 발생했습니다.';
+        setCreateError(msg);
+        if (import.meta.env.DEV) console.error('Run creation failed:', error);
+        return;
+      }
+
+      toast({ title: '회차가 생성되었습니다.' });
+      setShowCreate(false);
+      setForm({ type: '정기', period_label: '', target_processes: '', target_contractors: '', notes: '' });
+      setCreateError(null);
+      fetchRuns();
+      if (data) navigate(`/assessment-run/${data.id}`);
+    } catch (e: any) {
+      setCreateError(e?.message || '네트워크 오류가 발생했습니다.');
+      if (import.meta.env.DEV) console.error('Run creation exception:', e);
+    } finally {
+      setCreating(false);
+    }
   };
 
   const handleRestore = async (run: any) => {
@@ -355,10 +390,14 @@ const AssessmentRuns = () => {
         </div>
       )}
 
-      {/* Create Dialog */}
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+      <Dialog open={showCreate} onOpenChange={(open) => { setShowCreate(open); if (!open) { setCreateError(null); setFieldErrors({}); } }}>
         <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>평가 회차 생성</DialogTitle></DialogHeader>
+          {createError && (
+            <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+              {createError}
+            </div>
+          )}
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -372,10 +411,12 @@ const AssessmentRuns = () => {
                     <SelectItem value="상시">상시평가</SelectItem>
                   </SelectContent>
                 </Select>
+                {fieldErrors.type && <p className="text-xs text-destructive">{fieldErrors.type}</p>}
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">적용기간 *</Label>
                 <Input className="h-9" value={form.period_label} onChange={e => setForm(p => ({ ...p, period_label: e.target.value }))} placeholder="예: 2026년 3월 1주차" />
+                {fieldErrors.period_label && <p className="text-xs text-destructive">{fieldErrors.period_label}</p>}
               </div>
             </div>
             <div className="space-y-1">
@@ -389,8 +430,11 @@ const AssessmentRuns = () => {
             <div className="space-y-1">
               <Label className="text-xs">비고</Label>
               <Textarea value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="특이사항, 메모..." rows={2} />
+              {fieldErrors.notes && <p className="text-xs text-destructive">{fieldErrors.notes}</p>}
             </div>
-            <Button onClick={handleCreate} disabled={!form.period_label} className="w-full">회차 생성</Button>
+            <Button onClick={handleCreate} disabled={creating || !form.period_label.trim()} className="w-full">
+              {creating ? '생성 중...' : '회차 생성'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

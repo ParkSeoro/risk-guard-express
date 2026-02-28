@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -189,6 +189,13 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchDashboard();
+  }, [fetchDashboard]);
+
+  // Refetch on window focus to ensure fresh data after navigating back
+  useEffect(() => {
+    const handleFocus = () => { fetchDashboard(); };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, [fetchDashboard]);
 
   const currentProject = projects.find((p) => p.id === selectedProject);

@@ -1,7 +1,7 @@
 import { 
   LayoutDashboard, FolderKanban, ShieldAlert, Database, 
   FileCheck, HardHat, ChevronLeft, LogOut, User,
-  ShieldCheck, History, Users, Shield, SearchCheck, Settings
+  ShieldCheck, History, Shield, SearchCheck, Settings
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -21,7 +21,6 @@ const mainItems = [
 ];
 
 const adminItems = [
-  { title: "사용자 관리", url: "/user-management", icon: Users },
   { title: "기준정보", url: "/master-data", icon: Database },
   { title: "감사 로그", url: "/audit-logs", icon: History },
   { title: "권한 점검", url: "/permission-test", icon: Shield },

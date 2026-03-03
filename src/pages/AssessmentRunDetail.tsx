@@ -18,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, ShieldCheck, Send,
   Lock, Users, XCircle, AlertTriangle, CheckCircle2, Upload, RotateCcw, FileWarning, RefreshCw,
-  Edit3, Archive,
+  Edit3, Archive, Clock,
 } from 'lucide-react';
 import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
 import { generateRiskItems } from '@/lib/riskAutoGen';
@@ -84,6 +84,9 @@ const AssessmentRunDetail = () => {
   // Approval
   const [showApproval, setShowApproval] = useState(false);
   const [approvalComment, setApprovalComment] = useState('');
+  const [latestApprovals, setLatestApprovals] = useState<any[]>([]);
+  const [rejectCommentDialog, setRejectCommentDialog] = useState(false);
+  const [rejectComment, setRejectComment] = useState('');
 
   // Excel upload
   const [showExcelUpload, setShowExcelUpload] = useState(false);
@@ -183,10 +186,46 @@ const AssessmentRunDetail = () => {
     setItems(itemsRes.data || []);
     setParticipants(partRes.data || []);
     setUserDirectory((profilesRes.data || []) as any);
+
+    // Fetch latest approval records for SSOT
+    if (runId) {
+      const { data: approvalsData } = await supabase.from('approvals')
+        .select('*').eq('run_id', runId).order('approval_version', { ascending: false });
+      if (approvalsData && approvalsData.length > 0) {
+        const maxVersion = approvalsData[0].approval_version || 1;
+        const latestVersionApprovals = approvalsData.filter(a => (a.approval_version || 1) === maxVersion);
+        setLatestApprovals(latestVersionApprovals);
+        // Sync run status from approval records (SSOT)
+        const allApproved = latestVersionApprovals.filter(a => a.status !== '취소').every(a => a.status === '승인');
+        const anyRejected = latestVersionApprovals.some(a => a.status === '반려');
+        const anyPending = latestVersionApprovals.some(a => a.status === '대기');
+        if (runRes.data) {
+          let expectedStatus = runRes.data.status;
+          if (allApproved && latestVersionApprovals.filter(a => a.status !== '취소').length > 0) expectedStatus = '승인완료';
+          else if (anyRejected) expectedStatus = '보완중';
+          else if (anyPending) expectedStatus = '결재진행';
+          if (expectedStatus !== runRes.data.status) {
+            await supabase.from('assessment_runs').update({ status: expectedStatus }).eq('id', runId);
+            setRun((prev: any) => prev ? { ...prev, status: expectedStatus } : prev);
+          }
+        }
+      } else {
+        setLatestApprovals([]);
+      }
+    }
+
     setLoading(false);
   }, [runId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Auto-refresh to sync approval status changes from other pages
+  useEffect(() => {
+    if (!runId || !run) return;
+    if (!['결재진행'].includes(run?.status)) return;
+    const interval = setInterval(() => { fetchAll(); }, 15000);
+    return () => clearInterval(interval);
+  }, [runId, run?.status, fetchAll]);
 
   const isApproved = run?.status === '승인완료';
   const isArchived = run?.status === '폐기';
@@ -481,18 +520,33 @@ const AssessmentRunDetail = () => {
     log('상신취소', 'assessment_run', runId!, run.project_id);
   };
 
-  // Final approval actions
+  // Final approval actions — only allows the assigned approver for the current pending step
   const handleFinalApproval = async (action: '승인' | '반려', comment?: string) => {
     if (!run || !user || !profile) return;
-    // Get the latest version's pending approvals
+    // Get the latest version's pending approval assigned to current user
     const { data: latestVersionData } = await supabase.from('approvals')
       .select('approval_version').eq('run_id', runId).order('approval_version', { ascending: false }).limit(1);
     const currentVersion = latestVersionData?.[0]?.approval_version || 1;
     
-    const { data: pendingApprovals } = await supabase.from('approvals')
-      .select('*').eq('run_id', runId).eq('status', '대기').eq('approval_version', currentVersion).order('created_at').limit(1);
-    if (!pendingApprovals || pendingApprovals.length === 0) return;
-    const ap = pendingApprovals[0];
+    // Find the pending approval assigned to THIS user
+    const { data: myPendingApprovals } = await supabase.from('approvals')
+      .select('*').eq('run_id', runId).eq('status', '대기').eq('approval_version', currentVersion).eq('approver_id', user.id);
+    
+    // Fallback for admins: if no direct assignment, get the first pending step
+    let ap: any = null;
+    if (myPendingApprovals && myPendingApprovals.length > 0) {
+      ap = myPendingApprovals[0];
+    } else if (isAdmin()) {
+      const { data: anyPending } = await supabase.from('approvals')
+        .select('*').eq('run_id', runId).eq('status', '대기').eq('approval_version', currentVersion).order('created_at').limit(1);
+      ap = anyPending?.[0] || null;
+    }
+    
+    if (!ap) {
+      toast({ title: '처리할 결재 단계가 없습니다.', description: '이미 처리되었거나 권한이 없습니다.', variant: 'destructive' });
+      fetchAll();
+      return;
+    }
     await supabase.from('approvals').update({
       status: action, approver_id: user.id, approver_name: profile.display_name,
       comment: comment || '',
@@ -959,6 +1013,42 @@ const AssessmentRunDetail = () => {
         </div>
       </div>
 
+      {/* Approval Status Display (SSOT from approval records) */}
+      {latestApprovals.length > 0 && (
+        <div className="flex items-center gap-2 print:hidden flex-wrap">
+          <span className="text-xs text-muted-foreground font-medium">결재현황:</span>
+          {latestApprovals
+            .filter(a => a.status !== '취소')
+            .sort((a: any, b: any) => {
+              const order: Record<string, number> = { '작성': 0, '검토': 1, '승인': 2 };
+              return (order[a.step] || 0) - (order[b.step] || 0);
+            })
+            .map((a: any) => (
+              <Badge key={a.id} variant="outline" className={`text-[10px] gap-1 ${
+                a.status === '승인' ? 'bg-success/10 text-success border-success/30' :
+                a.status === '반려' ? 'bg-destructive/10 text-destructive border-destructive/30' :
+                a.status === '대기' ? 'bg-muted text-muted-foreground' :
+                'bg-muted/50 text-muted-foreground/50'
+              }`}>
+                {a.status === '승인' ? <CheckCircle2 className="h-3 w-3" /> :
+                 a.status === '반려' ? <XCircle className="h-3 w-3" /> :
+                 <Clock className="h-3 w-3" />}
+                {a.step}: {a.approver_name || '미지정'}
+                {a.status !== '대기' && ` (${a.status})`}
+              </Badge>
+            ))}
+          {latestApprovals[0]?.approval_version > 1 && (
+            <Badge variant="outline" className="text-[9px]">{latestApprovals[0].approval_version}차 상신</Badge>
+          )}
+          {/* Debug info for masters */}
+          {isAdmin() && (
+            <span className="text-[9px] text-muted-foreground/60 ml-auto">
+              v{latestApprovals[0]?.approval_version || 1} | {latestApprovals.filter(a => a.status === '대기').length}건 대기
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="flex items-center gap-2 print:hidden flex-wrap">
         {/* Draft actions */}
@@ -1017,12 +1107,15 @@ const AssessmentRunDetail = () => {
             </Button>
           </>
         )}
-        {run.status === '결재진행' && (isAdmin() || (user && participants.some(p => ['검토자','승인자'].includes(p.role) && p.user_name === profile?.display_name))) && (
+        {/* Approval action buttons — only show to assigned approvers or admins */}
+        {run.status === '결재진행' && (
+          isAdmin() || (user && latestApprovals.some(a => a.status === '대기' && a.approver_id === user.id))
+        ) && (
           <div className="flex gap-1">
             <Button size="sm" variant="outline" className="gap-1 text-success" onClick={() => handleFinalApproval('승인')}>
               <CheckCircle2 className="h-3.5 w-3.5" /> 승인
             </Button>
-            <Button size="sm" variant="outline" className="gap-1 text-destructive" onClick={() => handleFinalApproval('반려')}>
+            <Button size="sm" variant="outline" className="gap-1 text-destructive" onClick={() => setRejectCommentDialog(true)}>
               <XCircle className="h-3.5 w-3.5" /> 반려
             </Button>
           </div>
@@ -1508,7 +1601,28 @@ const AssessmentRunDetail = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Revision Dialog */}
+      {/* Reject Comment Dialog */}
+      <Dialog open={rejectCommentDialog} onOpenChange={setRejectCommentDialog}>
+        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>결재 반려</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">반려 사유를 입력하세요. 작성자에게 알림이 전송됩니다.</p>
+            <Textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} placeholder="반려 사유..." rows={3} />
+            <div className="flex gap-2">
+              <Button variant="ghost" className="flex-1" onClick={() => { setRejectCommentDialog(false); setRejectComment(''); }}>취소</Button>
+              <Button variant="destructive" className="flex-1 gap-1.5" onClick={() => {
+                handleFinalApproval('반려', rejectComment);
+                setRejectCommentDialog(false);
+                setRejectComment('');
+              }}>
+                <XCircle className="h-3.5 w-3.5" /> 반려 확인
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+
       <Dialog open={showRevision} onOpenChange={setShowRevision}>
         <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>개정 회차 생성</DialogTitle></DialogHeader>

@@ -699,61 +699,94 @@ const AssessmentRunDetail = () => {
   };
 
   // Batch apply department/assignee
+  const [batchApplyLoading, setBatchApplyLoading] = useState(false);
+
   const handleBatchApply = async () => {
     if (!run || !user) return;
-    let targetItems: RiskItemRow[];
-    if (batchScope === 'selected') {
-      targetItems = activeItems.filter(i => selectedRowIds.has(i.id));
-    } else if (batchScope === 'empty') {
-      targetItems = activeItems.filter(i => !(i as any).responsible_department_id && !(i as any).assignee_user_id);
-    } else {
-      targetItems = [...activeItems];
+    if (!batchApplyDept && !batchApplyAssignee) {
+      toast({ title: '책임부서 또는 담당자 중 하나 이상 선택하세요.', variant: 'destructive' });
+      return;
     }
-    if (targetItems.length === 0) { toast({ title: '적용 대상이 없습니다.', variant: 'destructive' }); return; }
+    if (batchApplyDept && !batchDeptId) {
+      toast({ title: '책임부서를 선택하세요.', variant: 'destructive' });
+      return;
+    }
 
-    let appliedCount = 0;
-    for (const item of targetItems) {
-      const updateData: Record<string, any> = {};
-      if (batchApplyDept && batchDeptId) {
-        const dept = departments.find(d => d.id === batchDeptId);
-        updateData.responsible_department_id = batchDeptId;
-        updateData.department = dept?.name || '';
+    setBatchApplyLoading(true);
+    try {
+      let targetItems: RiskItemRow[];
+      if (batchScope === 'selected') {
+        targetItems = activeItems.filter(i => selectedRowIds.has(i.id));
+      } else if (batchScope === 'empty') {
+        targetItems = activeItems.filter(i => !(i as any).responsible_department_id && !(i as any).assignee_user_id);
+      } else {
+        targetItems = [...activeItems];
       }
-      if (batchApplyAssignee && batchAssigneeUserId) {
-        // Skip items with manually set assignee unless override is on
-        if (!batchOverrideManual && (item as any).assignee_user_id && batchScope !== 'empty') {
-          // keep existing
-        } else {
-          const member = projectMembers.find(m => m.user_id === batchAssigneeUserId);
-          updateData.assignee_user_id = batchAssigneeUserId;
-          updateData.assignee = member?.display_name || '';
+      if (targetItems.length === 0) {
+        toast({ title: '적용 대상이 없습니다.', description: batchScope === 'selected' ? '체크박스로 행을 선택하세요.' : '이미 모든 항목이 채워져 있습니다.', variant: 'destructive' });
+        setBatchApplyLoading(false);
+        return;
+      }
+
+      let appliedCount = 0;
+      const batchUpdates: { id: string; data: Record<string, any> }[] = [];
+
+      for (const item of targetItems) {
+        const updateData: Record<string, any> = {};
+        if (batchApplyDept && batchDeptId) {
+          const dept = departments.find(d => d.id === batchDeptId);
+          updateData.responsible_department_id = batchDeptId;
+          updateData.department = dept?.name || '';
         }
-      } else if (batchApplyDept && batchDeptId && batchApplyAssignee && !batchAssigneeUserId) {
-        // Auto-fill from dept mapping
-        const mapping = deptAssignees.find(da => da.department_id === batchDeptId);
-        if (mapping?.default_user_id) {
+        if (batchApplyAssignee && batchAssigneeUserId) {
           if (!batchOverrideManual && (item as any).assignee_user_id && batchScope !== 'empty') {
             // keep existing
           } else {
-            const assigneeProfile = projectMembers.find(m => m.user_id === mapping.default_user_id);
-            if (assigneeProfile) {
-              updateData.assignee_user_id = mapping.default_user_id;
-              updateData.assignee = assigneeProfile.display_name;
+            const member = projectMembers.find(m => m.user_id === batchAssigneeUserId);
+            updateData.assignee_user_id = batchAssigneeUserId;
+            updateData.assignee = member?.display_name || '';
+          }
+        } else if (batchApplyDept && batchDeptId && batchApplyAssignee && !batchAssigneeUserId) {
+          const mapping = deptAssignees.find(da => da.department_id === batchDeptId);
+          if (mapping?.default_user_id) {
+            if (!batchOverrideManual && (item as any).assignee_user_id && batchScope !== 'empty') {
+              // keep existing
+            } else {
+              const assigneeProfile = projectMembers.find(m => m.user_id === mapping.default_user_id);
+              if (assigneeProfile) {
+                updateData.assignee_user_id = mapping.default_user_id;
+                updateData.assignee = assigneeProfile.display_name;
+              }
             }
           }
         }
+        if (Object.keys(updateData).length > 0) {
+          batchUpdates.push({ id: item.id, data: updateData });
+        }
       }
-      if (Object.keys(updateData).length > 0) {
-        await supabase.from('risk_items').update(updateData).eq('id', item.id);
+
+      // Execute all updates
+      for (const upd of batchUpdates) {
+        const { error } = await supabase.from('risk_items').update(upd.data).eq('id', upd.id);
+        if (error) {
+          toast({ title: '일괄 적용 실패', description: `항목 ID ${upd.id.slice(0,8)}... : ${error.message}`, variant: 'destructive' });
+          setBatchApplyLoading(false);
+          return;
+        }
         appliedCount++;
       }
+
+      // Refresh data
+      const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+      if (refreshed) setItems(refreshed);
+      setShowBatchApply(false);
+      setSelectedRowIds(new Set());
+      toast({ title: `${appliedCount}건에 일괄 적용 완료` });
+      log('일괄적용', 'assessment_run', runId!, run.project_id, { appliedCount, scope: batchScope });
+    } catch (err) {
+      toast({ title: '일괄 적용 중 오류 발생', description: String(err), variant: 'destructive' });
     }
-    const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
-    if (refreshed) setItems(refreshed);
-    setShowBatchApply(false);
-    setSelectedRowIds(new Set());
-    toast({ title: `${appliedCount}건에 일괄 적용 완료` });
-    log('일괄적용', 'assessment_run', runId!, run.project_id, { appliedCount, scope: batchScope });
+    setBatchApplyLoading(false);
   };
 
   // Edit run metadata
@@ -1014,17 +1047,43 @@ const AssessmentRunDetail = () => {
   if (loading) return <div className="py-12 text-center text-muted-foreground">로딩 중...</div>;
   if (!run) return <div className="py-12 text-center text-muted-foreground">회차를 찾을 수 없습니다.</div>;
 
-  // CTA conditions
-  const canSubmitForValidation = run.status === '작성중' && activeItems.length > 0;
-  const canValidate = ['제출됨', '작성중', '보완요청', '보완중', '검증대기', '반려'].includes(run.status) && isAdmin();
+  // ===== CTA conditions (strict state machine) =====
+  const isDraft = run.status === '작성중';
+  const isSubmitted = run.status === '제출됨';
+  const isReturned = ['보완요청', '보완중', '반려'].includes(run.status);
+  const isValidating = run.status === '검증중';
+  const isValidated = run.status === '검증완료';
+  const isInApproval = run.status === '결재진행';
+
   const hasReviewerAndApprover = participants.some(p => p.role === '검토자') && participants.some(p => p.role === '승인자');
-  const canSubmitApproval = ['검증완료', '보완요청', '보완중', '반려'].includes(run.status) && run.validation_verdict !== '부적정' && activeItems.length > 0 && hasReviewerAndApprover;
-  const canCancelApproval = run.status === '결재진행' && (isAdmin() || (user && run.created_by === user.id));
-  const canResubmit = ['보완요청', '보완중', '반려'].includes(run.status);
-  const canAutoRemediate = validationReport && validationReport.verdict !== '적정' && (canEdit || canForceEdit);
-  // Approval buttons: ONLY show to the assigned approver for current pending step
+
+  // Draft: 제출 가능
+  const canSubmitForValidation = isDraft && activeItems.length > 0;
+  // 검증 실행: 제출됨 or 보완중(재제출 후) 상태에서 관리자만
+  const canValidate = (isSubmitted || isReturned) && isAdmin();
+  // 재제출: 보완중/반려 상태에서만
+  const canResubmit = isReturned;
+  // 결재 상신: 검증완료 상태에서만 (부적정 제외)
+  const canSubmitApproval = isValidated && run.validation_verdict !== '부적정' && activeItems.length > 0 && hasReviewerAndApprover;
+  // 재상신: 보완중/반려인데 검증 결과가 적정/조건부일 때
+  const canResubmitApproval = isReturned && run.validation_verdict && run.validation_verdict !== '부적정' && activeItems.length > 0 && hasReviewerAndApprover;
+  // 상신 취소
+  const canCancelApproval = isInApproval && (isAdmin() || (user && run.created_by === user.id));
+  // 자동 보완: 검증 결과가 부적정/조건부이고 편집 가능할 때
+  const canAutoRemediate = validationReport && validationReport.verdict !== '적정' && (canEdit || canForceEdit) && !isInApproval && !isApproved;
+  // 결재자 승인/반려: ONLY assigned approver
   const isMyApprovalPending = user && latestApprovals.some(a => a.status === '대기' && a.approver_id === user.id);
   const statusInfo = STATUS_FLOW[run.status as keyof typeof STATUS_FLOW] || { label: run.status, color: '' };
+
+  // Status guide message
+  const statusGuide = isDraft ? '작성 완료 후 [제출]을 누르세요.'
+    : isSubmitted ? '검증자가 [검증 실행]을 진행합니다.'
+    : isReturned ? '수정 후 [재제출] → 검증자가 [재검증] 진행'
+    : isValidating ? '검증 진행 중입니다...'
+    : isValidated ? '검증 완료. [결재 상신]을 진행하세요.'
+    : isInApproval ? '결재 진행 중입니다.'
+    : isApproved ? '최종 승인 완료. 잠금 상태입니다.'
+    : '';
 
   // Default tags (hardcoded fallback + DB tags)
   const defaultEnvTags = ['고소','야간','밀폐','화기','양중','굴착','전기','분진','소음','고온','해상','화학'];
@@ -1101,9 +1160,9 @@ const AssessmentRunDetail = () => {
         </div>
       )}
 
-      {/* Action Buttons */}
+      {/* Action Buttons — strict state machine */}
       <div className="flex items-center gap-2 print:hidden flex-wrap">
-        {(canEdit || canForceEdit) && (
+        {(canEdit || canForceEdit) && !isInApproval && !isApproved && (
           <>
             <Button size="sm" className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => setShowAutoGen(true)}>
               <Wand2 className="h-3.5 w-3.5" /> 공종 자동작성
@@ -1129,24 +1188,14 @@ const AssessmentRunDetail = () => {
             <Send className="h-3.5 w-3.5" /> 제출
           </Button>
         )}
-        {canValidate && (
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={handleValidate}>
-            <ShieldCheck className="h-3.5 w-3.5" /> {validationReport ? '재검증' : '검증 실행'}
-          </Button>
-        )}
-        {canSubmitApproval && (
-          <Button size="sm" className="gap-1.5" onClick={() => setShowApproval(true)}>
-            <Send className="h-3.5 w-3.5" /> {['보완요청','보완중','반려'].includes(run.status) ? '재상신' : '결재 상신'}
-          </Button>
-        )}
-        {canCancelApproval && (
-          <Button size="sm" variant="outline" className="gap-1.5 text-destructive" onClick={handleCancelApproval}>
-            <RotateCcw className="h-3.5 w-3.5" /> 상신 취소
-          </Button>
-        )}
         {canResubmit && (
           <Button size="sm" variant="outline" className="gap-1.5" onClick={handleResubmit}>
             <RefreshCw className="h-3.5 w-3.5" /> 재제출
+          </Button>
+        )}
+        {canValidate && (
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={handleValidate}>
+            <ShieldCheck className="h-3.5 w-3.5" /> {validationReport ? '재검증' : '검증 실행'}
           </Button>
         )}
         {canAutoRemediate && (
@@ -1154,8 +1203,23 @@ const AssessmentRunDetail = () => {
             <Wand2 className="h-3.5 w-3.5" /> {remediationLoading ? '분석 중...' : '자동 보완'}
           </Button>
         )}
+        {canSubmitApproval && (
+          <Button size="sm" className="gap-1.5" onClick={() => setShowApproval(true)}>
+            <Send className="h-3.5 w-3.5" /> 결재 상신
+          </Button>
+        )}
+        {canResubmitApproval && (
+          <Button size="sm" className="gap-1.5" onClick={() => setShowApproval(true)}>
+            <Send className="h-3.5 w-3.5" /> 재상신
+          </Button>
+        )}
+        {canCancelApproval && (
+          <Button size="sm" variant="outline" className="gap-1.5 text-destructive" onClick={handleCancelApproval}>
+            <RotateCcw className="h-3.5 w-3.5" /> 상신 취소
+          </Button>
+        )}
         {/* Approval buttons — ONLY for assigned approver */}
-        {run.status === '결재진행' && isMyApprovalPending && (
+        {isInApproval && isMyApprovalPending && (
           <div className="flex gap-1">
             <Button size="sm" variant="outline" className="gap-1 text-success" onClick={() => handleFinalApproval('승인')}>
               <CheckCircle2 className="h-3.5 w-3.5" /> 승인
@@ -1193,6 +1257,12 @@ const AssessmentRunDetail = () => {
         <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportXLSX}><Download className="h-3.5 w-3.5" /> XLSX</Button>
       </div>
 
+      {/* Status guide */}
+      {statusGuide && (
+        <p className="text-xs text-muted-foreground print:hidden pl-1">
+          💡 {statusGuide}
+        </p>
+      )}
       {/* Remediation guide for first-time users */}
       {canAutoRemediate && (
         <p className="text-xs text-muted-foreground print:hidden pl-1">
@@ -1261,7 +1331,7 @@ const AssessmentRunDetail = () => {
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto scrollbar-thin">
-            <table className="w-full data-table text-xs">
+            <table className="data-table text-xs" style={{ minWidth: '1400px' }}>
               <thead>
                 <tr>
                   {(canEdit || canForceEdit) && (
@@ -1276,12 +1346,17 @@ const AssessmentRunDetail = () => {
                     </th>
                   )}
                   <th className="w-8 text-center">#</th>
-                  <th>공정</th><th>세부작업</th><th>위험요인</th><th>위험발생상황</th>
-                  <th>기존대책</th><th>개선대책</th>
+                  <th style={{ minWidth: '80px' }}>공정</th>
+                  <th style={{ minWidth: '100px' }}>세부작업</th>
+                  <th style={{ minWidth: '120px' }}>위험요인</th>
+                  <th style={{ minWidth: '140px' }}>위험발생상황</th>
+                  <th style={{ minWidth: '140px' }}>기존대책</th>
+                  <th style={{ minWidth: '140px' }}>개선대책</th>
                   <th className="text-center w-12">가능성</th><th className="text-center w-12">중대성</th><th className="text-center w-12">위험도</th>
                   <th className="text-center w-12">가능성'</th><th className="text-center w-12">중대성'</th><th className="text-center w-12">위험도'</th>
                   <th className="text-center w-16">상태</th>
-                  <th>PPE</th><th>법적근거</th><th className="w-24">책임부서</th><th className="w-24">담당자</th>
+                  <th style={{ minWidth: '80px' }}>PPE</th><th style={{ minWidth: '100px' }}>법적근거</th>
+                  <th className="w-24">책임부서</th><th className="w-24">담당자</th>
                   {validationReport && <th className="w-16 text-center">판정</th>}
                   {(canEdit || canForceEdit) && <th className="w-20 text-center print:hidden">작업</th>}
                 </tr>
@@ -2023,8 +2098,8 @@ const AssessmentRunDetail = () => {
               })()
             )}
 
-            <Button onClick={handleBatchApply} className="w-full gap-1.5" disabled={!batchApplyDept && !batchApplyAssignee}>
-              <Users className="h-3.5 w-3.5" /> 일괄 적용
+            <Button onClick={handleBatchApply} className="w-full gap-1.5" disabled={(!batchApplyDept && !batchApplyAssignee) || batchApplyLoading}>
+              <Users className="h-3.5 w-3.5" /> {batchApplyLoading ? '적용 중...' : '일괄 적용'}
             </Button>
           </div>
         </DialogContent>

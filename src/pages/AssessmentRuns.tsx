@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, ShieldAlert, Calendar, Filter, Search, ClipboardList } from 'lucide-react';
 import { format } from 'date-fns';
 import RunCardActions from '@/components/assessment-runs/RunCardActions';
@@ -76,8 +77,13 @@ const AssessmentRuns = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
   const [showDeleted, setShowDeleted] = useState(false);
+
+  // Companies for contractor selection
+  const [contractors, setContractors] = useState<{ id: string; name: string }[]>([]);
+  const [companyNameMap, setCompanyNameMap] = useState<Record<string, string>>({});
+
   const [form, setForm] = useState({
-    type: '정기', period_label: '', target_processes: '', target_contractors: '', notes: '',
+    type: '정기', period_label: '', target_processes: '', target_company_ids: [] as string[], notes: '',
   });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -98,7 +104,17 @@ const AssessmentRuns = () => {
     });
   }, []);
 
-  // Fetch user's project-level role
+  // Fetch contractors for selected project
+  const fetchContractors = async () => {
+    if (!selectedProject) { setContractors([]); return; }
+    const { data } = await supabase.from('companies').select('id, name').eq('project_id', selectedProject).eq('type', 'contractor').order('name');
+    setContractors(data || []);
+    // Build name map
+    const map: Record<string, string> = {};
+    (data || []).forEach(c => { map[c.id] = c.name; });
+    setCompanyNameMap(prev => ({ ...prev, ...map }));
+  };
+
   const fetchProjectRole = async () => {
     if (!user || !selectedProject) { setProjectRole(null); return; }
     if (isMaster) { setProjectRole('master'); return; }
@@ -141,12 +157,20 @@ const AssessmentRuns = () => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchProjectRole(); fetchRuns(); }, [selectedProject]);
+  useEffect(() => { fetchProjectRole(); fetchRuns(); fetchContractors(); }, [selectedProject]);
+
+  const toggleContractor = (id: string) => {
+    setForm(prev => ({
+      ...prev,
+      target_company_ids: prev.target_company_ids.includes(id)
+        ? prev.target_company_ids.filter(c => c !== id)
+        : [...prev.target_company_ids, id],
+    }));
+  };
 
   const handleCreate = async () => {
     if (!user || !selectedProject) return;
 
-    // Field validation
     const errors: Record<string, string> = {};
     if (!form.type) errors.type = '종류를 선택해주세요.';
     if (!form.period_label.trim()) errors.period_label = '적용기간을 입력해주세요.';
@@ -161,12 +185,16 @@ const AssessmentRuns = () => {
     setCreating(true);
 
     try {
+      // Build contractor names for legacy field from selected company ids
+      const contractorNames = form.target_company_ids.map(id => companyNameMap[id] || id);
+
       const payload = {
         project_id: selectedProject,
         type: form.type,
         period_label: form.period_label.trim(),
         target_processes: form.target_processes.split(',').map(s => s.trim()).filter(Boolean),
-        target_contractors: form.target_contractors.split(',').map(s => s.trim()).filter(Boolean),
+        target_contractors: contractorNames, // legacy compat
+        target_company_ids: form.target_company_ids, // new SSOT
         notes: form.notes.trim(),
         status: '작성중',
         created_by: user.id,
@@ -175,24 +203,21 @@ const AssessmentRuns = () => {
       const { data, error } = await supabase.from('assessment_runs').insert([payload]).select().single();
 
       if (error) {
-        // Distinguish permission errors
         const msg = error.code === '42501' || error.message?.includes('row-level security')
           ? '프로젝트 권한이 없습니다. 프로젝트에 초대가 필요합니다.'
           : error.message || '알 수 없는 오류가 발생했습니다.';
         setCreateError(msg);
-        if (import.meta.env.DEV) console.error('Run creation failed:', error);
         return;
       }
 
       toast({ title: '회차가 생성되었습니다.' });
       setShowCreate(false);
-      setForm({ type: '정기', period_label: '', target_processes: '', target_contractors: '', notes: '' });
+      setForm({ type: '정기', period_label: '', target_processes: '', target_company_ids: [], notes: '' });
       setCreateError(null);
       fetchRuns();
       if (data) navigate(`/assessment-run/${data.id}`);
     } catch (e: any) {
       setCreateError(e?.message || '네트워크 오류가 발생했습니다.');
-      if (import.meta.env.DEV) console.error('Run creation exception:', e);
     } finally {
       setCreating(false);
     }
@@ -237,7 +262,6 @@ const AssessmentRuns = () => {
     return true;
   });
 
-  // Approval status helper
   const getApprovalLabel = (run: any) => {
     if (run.status === '승인완료') return { label: '승인완료', className: 'bg-success/10 text-success' };
     if (run.status === '결재진행') return { label: '결재중', className: 'bg-primary/10 text-primary' };
@@ -317,7 +341,7 @@ const AssessmentRuns = () => {
                 {!showDeleted && "'회차 생성'을 눌러 평가를 시작하세요."}
               </p>
             </div>
-            {!showDeleted && (
+            {!showDeleted && canCreateRun && (
               <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5">
                 <Plus className="h-3.5 w-3.5" /> 회차 생성
               </Button>
@@ -338,7 +362,6 @@ const AssessmentRuns = () => {
                 <CardContent className="py-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-2 flex-1 min-w-0">
-                      {/* Row 1: Type + Name + Status */}
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" className="text-[10px] font-medium">
                           {typeLabels[run.type] || run.type}
@@ -352,7 +375,6 @@ const AssessmentRuns = () => {
                         )}
                       </div>
 
-                      {/* Row 2: Stats */}
                       <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                         <span className="flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
@@ -381,7 +403,6 @@ const AssessmentRuns = () => {
                         </Badge>
                       </div>
 
-                      {/* Row 3: Notes */}
                       {run.notes && <p className="text-xs text-muted-foreground truncate max-w-lg">{run.notes}</p>}
                       {run.is_deleted && run.deleted_reason && (
                         <p className="text-xs text-destructive">삭제 사유: {run.deleted_reason}</p>
@@ -440,8 +461,25 @@ const AssessmentRuns = () => {
               <Input className="h-9" value={form.target_processes} onChange={e => setForm(p => ({ ...p, target_processes: e.target.value }))} placeholder="배관, 철골, 용접" />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">대상 협력사 (쉼표 구분)</Label>
-              <Input className="h-9" value={form.target_contractors} onChange={e => setForm(p => ({ ...p, target_contractors: e.target.value }))} placeholder="(주)대한배관, (주)우리용접" />
+              <Label className="text-xs">대상 협력사 (등록 업체에서 선택)</Label>
+              {contractors.length > 0 ? (
+                <div className="border rounded-md p-2 max-h-32 overflow-y-auto space-y-1">
+                  {contractors.map(c => (
+                    <label key={c.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-muted/50 p-1 rounded">
+                      <Checkbox
+                        checked={form.target_company_ids.includes(c.id)}
+                        onCheckedChange={() => toggleContractor(c.id)}
+                      />
+                      {c.name}
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground py-2">등록된 협력사가 없습니다. 프로젝트 설정 &gt; 업체관리에서 먼저 등록하세요.</p>
+              )}
+              {form.target_company_ids.length > 0 && (
+                <p className="text-[10px] text-muted-foreground">{form.target_company_ids.length}개 선택됨</p>
+              )}
             </div>
             <div className="space-y-1">
               <Label className="text-xs">비고</Label>

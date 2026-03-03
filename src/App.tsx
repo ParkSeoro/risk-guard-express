@@ -5,8 +5,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { AppLayout } from "@/components/AppLayout";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import Dashboard from "./pages/Dashboard";
 import Projects from "./pages/Projects";
+import ProjectDetail from "./pages/ProjectDetail";
+import ProjectSelect from "./pages/ProjectSelect";
 import AssessmentRuns from "./pages/AssessmentRuns";
 import AssessmentRunDetail from "./pages/AssessmentRunDetail";
 import MasterData from "./pages/MasterData";
@@ -15,7 +19,6 @@ import Verification from "./pages/Verification";
 import VerificationCenter from "./pages/VerificationCenter";
 import ScheduleUpload from "./pages/ScheduleUpload";
 import AuditLogs from "./pages/AuditLogs";
-// TBM feature removed
 import UserManagement from "./pages/UserManagement";
 import PermissionTest from "./pages/PermissionTest";
 import Profile from "./pages/Profile";
@@ -30,7 +33,22 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 function ProtectedRoutes() {
-  const { user, loading, profile } = useAuth();
+  const { user, loading, profile, hasRole } = useAuth();
+  const isMaster = hasRole('master');
+  const [hasProject, setHasProject] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!user) { setHasProject(null); return; }
+    if (isMaster) { setHasProject(true); return; }
+    supabase
+      .from('project_members')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .then(({ count }) => {
+        setHasProject((count || 0) > 0);
+      });
+  }, [user, isMaster]);
+
   if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">로딩 중...</div>;
   if (!user) return <Navigate to="/auth" replace />;
 
@@ -63,11 +81,16 @@ function ProtectedRoutes() {
     );
   }
 
+  // Project membership gate: non-master users without any project membership
+  if (hasProject === null) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">로딩 중...</div>;
+  if (!hasProject && !isMaster) return <ProjectSelect />;
+
   return (
     <AppLayout>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/projects" element={<Projects />} />
+        <Route path="/project/:projectId" element={<ProjectDetail />} />
         <Route path="/risk-assessment" element={<AssessmentRuns />} />
         <Route path="/risk-assessment/:projectId" element={<AssessmentRuns />} />
         <Route path="/assessment-run/:runId" element={<AssessmentRunDetail />} />
@@ -77,7 +100,6 @@ function ProtectedRoutes() {
         <Route path="/master-data" element={<MasterData />} />
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/audit-logs" element={<AuditLogs />} />
-        {/* User management consolidated into settings */}
         <Route path="/user-management" element={<Navigate to="/settings/permissions" replace />} />
         <Route path="/permission-test" element={<PermissionTest />} />
         <Route path="/profile" element={<Profile />} />

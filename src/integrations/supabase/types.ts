@@ -282,6 +282,133 @@ export type Database = {
           },
         ]
       }
+      companies: {
+        Row: {
+          address: string | null
+          business_no: string | null
+          contact: string | null
+          created_at: string
+          id: string
+          name: string
+          period: string | null
+          project_id: string
+          scope: string | null
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          business_no?: string | null
+          contact?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          period?: string | null
+          project_id: string
+          scope?: string | null
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          business_no?: string | null
+          contact?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          period?: string | null
+          project_id?: string
+          scope?: string | null
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "companies_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_members: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          role_in_company: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          role_in_company?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          role_in_company?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      department_assignees: {
+        Row: {
+          backup_user_id: string | null
+          created_at: string
+          default_user_id: string | null
+          department_id: string
+          id: string
+          project_id: string
+          updated_at: string
+        }
+        Insert: {
+          backup_user_id?: string | null
+          created_at?: string
+          default_user_id?: string | null
+          department_id: string
+          id?: string
+          project_id: string
+          updated_at?: string
+        }
+        Update: {
+          backup_user_id?: string | null
+          created_at?: string
+          default_user_id?: string | null
+          department_id?: string
+          id?: string
+          project_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "department_assignees_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "master_departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "department_assignees_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       generated_batches: {
         Row: {
           created_at: string | null
@@ -612,6 +739,97 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      project_invites: {
+        Row: {
+          code: string
+          created_at: string
+          created_by: string | null
+          default_role: Database["public"]["Enums"]["app_role"]
+          expires_at: string | null
+          id: string
+          max_uses: number | null
+          project_id: string
+          use_count: number | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          created_by?: string | null
+          default_role?: Database["public"]["Enums"]["app_role"]
+          expires_at?: string | null
+          id?: string
+          max_uses?: number | null
+          project_id: string
+          use_count?: number | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          default_role?: Database["public"]["Enums"]["app_role"]
+          expires_at?: string | null
+          id?: string
+          max_uses?: number | null
+          project_id?: string
+          use_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_invites_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_join_requests: {
+        Row: {
+          company_name: string | null
+          created_at: string
+          id: string
+          project_id: string
+          requested_role: Database["public"]["Enums"]["app_role"]
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_name?: string | null
+          created_at?: string
+          id?: string
+          project_id: string
+          requested_role?: Database["public"]["Enums"]["app_role"]
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_name?: string | null
+          created_at?: string
+          id?: string
+          project_id?: string
+          requested_role?: Database["public"]["Enums"]["app_role"]
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_join_requests_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       project_members: {
         Row: {
@@ -1227,6 +1445,10 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      is_company_project_member: {
+        Args: { _company_id: string; _user_id: string }
+        Returns: boolean
+      }
       is_project_member: {
         Args: { _project_id: string; _user_id: string }
         Returns: boolean

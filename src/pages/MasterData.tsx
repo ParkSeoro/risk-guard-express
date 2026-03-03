@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import DepartmentAssigneeMapping from "@/components/DepartmentAssigneeMapping";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,6 +116,14 @@ const MasterData = () => {
 
   const admin = isAdmin();
 
+  // eslint-disable-next-line react/no-unstable-nested-components
+  const DeptMappingTab = () => {
+    const [dp, setDp] = useState<{id:string;name:string}[]>([]);
+    const [sp, setSp] = useState('');
+    useEffect(() => { supabase.from('projects').select('id, name').order('name').then(({data}) => { if (data?.length) { setDp(data); setSp(data[0].id); } }); }, []);
+    return (<div className="space-y-4"><Select value={sp} onValueChange={setSp}><SelectTrigger className="w-60 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger><SelectContent>{dp.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select>{sp && <DepartmentAssigneeMapping projectId={sp} />}</div>);
+  };
+
   return (
     <div className="space-y-4 animate-fade-in">
       <div><h1 className="text-2xl font-bold">기준정보 관리</h1><p className="text-sm text-muted-foreground mt-1">마스터 데이터, 법적근거, 위험도 매트릭스, 검증 규칙</p></div>
@@ -126,6 +135,7 @@ const MasterData = () => {
           <TabsTrigger value="ppe">PPE 목록</TabsTrigger>
           <TabsTrigger value="legal">법적근거</TabsTrigger>
           <TabsTrigger value="departments">부서·담당자</TabsTrigger>
+          <TabsTrigger value="dept-mapping">담당자 매핑</TabsTrigger>
           <TabsTrigger value="rules">검증 규칙</TabsTrigger>
         </TabsList>
 
@@ -325,6 +335,11 @@ const MasterData = () => {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* Department-Assignee Mapping - uses first available project */}
+        <TabsContent value="dept-mapping">
+          <DeptMappingTab />
         </TabsContent>
 
         {/* Validation Rules */}

@@ -16,6 +16,33 @@ interface NotificationPayload {
   project_id?: string;
 }
 
+async function sendEmailViaResend(to: string, subject: string, body: string, apiKey: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'notifications@lovable.app',
+        to: [to],
+        subject,
+        html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+          <h2 style="color:#1a1a2e;border-bottom:2px solid #e94560;padding-bottom:8px;">${subject}</h2>
+          <p style="color:#333;line-height:1.6;">${body.replace(/\n/g, '<br/>')}</p>
+          <hr style="margin-top:24px;border:none;border-top:1px solid #eee;"/>
+          <p style="color:#999;font-size:12px;">위험성평가 시스템 자동 발송</p>
+        </div>`,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      return { success: false, error: `Resend API ${res.status}: ${err}` };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -58,8 +85,7 @@ Deno.serve(async (req) => {
       .eq('user_id', user_id)
       .maybeSingle();
 
-    // Check if user has email channel enabled and event enabled
-    const emailEnabled = prefs?.channel_email !== false; // default true
+    const emailEnabled = prefs?.channel_email !== false;
     let eventEnabled = true;
     if (prefs) {
       if (type === 'approval_request' || type === 'approval') eventEnabled = prefs.event_approval_request !== false;
@@ -68,54 +94,54 @@ Deno.serve(async (req) => {
       else if (type === 'validation_complete') eventEnabled = prefs.event_validation_complete !== false;
     }
 
-    // Check business hours only
+    // Business hours check
     if (prefs?.business_hours_only) {
       const now = new Date();
       const kstHour = (now.getUTCHours() + 9) % 24;
       const kstDay = now.getUTCDay();
       if (kstDay === 0 || kstDay === 6 || kstHour < 9 || kstHour >= 18) {
-        // Outside business hours - skip email but notification is already created
         return new Response(JSON.stringify({ 
-          success: true, 
-          notification_id: notification.id,
-          email_sent: false,
-          reason: 'outside_business_hours'
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+          success: true, notification_id: notification.id,
+          email_sent: false, reason: 'outside_business_hours'
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
     }
 
     if (!emailEnabled || !eventEnabled) {
       return new Response(JSON.stringify({ 
-        success: true, 
-        notification_id: notification.id,
-        email_sent: false,
-        reason: 'user_preference_disabled'
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+        success: true, notification_id: notification.id,
+        email_sent: false, reason: 'user_preference_disabled'
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // 3. Get user email from auth
+    // 3. Get user email
     const { data: { user: authUser }, error: authError } = await supabase.auth.admin.getUserById(user_id);
     
     if (authError || !authUser?.email) {
       console.error('User email lookup error:', authError);
       return new Response(JSON.stringify({ 
-        success: true, 
-        notification_id: notification.id,
-        email_sent: false,
-        reason: 'no_email'
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+        success: true, notification_id: notification.id,
+        email_sent: false, reason: 'no_email'
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // 4. Log email attempt (actual email sending requires SMTP/provider setup)
-    // For now, log the email that would be sent
+    // 4. Attempt email sending via Resend
+    const resendKey = Deno.env.get('RESEND_API_KEY');
+    let emailSent = false;
+    let emailError = '';
+    const subject = `[위험성평가] ${title}`;
+
+    if (resendKey) {
+      const result = await sendEmailViaResend(authUser.email, subject, message || title, resendKey);
+      emailSent = result.success;
+      emailError = result.error || '';
+    } else {
+      emailError = 'RESEND_API_KEY not configured';
+    }
+
+    // 5. Log email attempt to audit_logs
     await supabase.from('audit_logs').insert([{
-      action: 'email_notification_queued',
+      action: emailSent ? 'email_notification_sent' : 'email_notification_failed',
       target_type: 'notification',
       target_id: notification.id,
       user_id: user_id,
@@ -123,24 +149,20 @@ Deno.serve(async (req) => {
       project_id: project_id || null,
       details: {
         to: authUser.email,
-        subject: `[위험성평가] ${title}`,
-        body: message,
+        subject,
         type,
-        email_sent: false,
-        reason: 'smtp_not_configured',
+        email_sent: emailSent,
+        error: emailError || null,
       },
     }]);
 
     return new Response(JSON.stringify({ 
       success: true, 
       notification_id: notification.id,
-      email_sent: false,
-      email_queued: true,
+      email_sent: emailSent,
       to: authUser.email,
-      reason: 'smtp_provider_not_configured'
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+      error: emailError || undefined,
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (err) {
     console.error('send-notification-email error:', err);

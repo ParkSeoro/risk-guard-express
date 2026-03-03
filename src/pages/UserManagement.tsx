@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Users, Search, UserCheck, UserX, Shield, Plus, Building2 } from 'lucide-react';
+import { Users, Search, UserCheck, UserX, Shield, Plus, Building2, AlertCircle } from 'lucide-react';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자', safety_manager: '안전관리자',
@@ -54,6 +54,8 @@ const UserManagement = () => {
   const [assignCompanyId, setAssignCompanyId] = useState('');
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [projectCompanies, setProjectCompanies] = useState<{ id: string; name: string; type: string }[]>([]);
+  const [assignError, setAssignError] = useState('');
+  const [assignSaving, setAssignSaving] = useState(false);
 
   const isMaster = hasRole('master');
 
@@ -76,8 +78,19 @@ const UserManagement = () => {
   };
 
   const fetchProjectCompanies = async (projectId: string) => {
-    const { data } = await supabase.from('companies').select('id, name, type').eq('project_id', projectId).order('name');
-    setProjectCompanies(data || []);
+    if (!projectId) { setProjectCompanies([]); return; }
+    try {
+      const { data, error } = await supabase.from('companies').select('id, name, type').eq('project_id', projectId).order('name');
+      if (error) {
+        console.warn('Failed to fetch companies:', error.message);
+        setProjectCompanies([]);
+      } else {
+        setProjectCompanies(data || []);
+      }
+    } catch (err) {
+      console.warn('Companies fetch error:', err);
+      setProjectCompanies([]);
+    }
   };
 
   useEffect(() => { fetchUsers(); fetchProjects(); }, []);
@@ -143,32 +156,49 @@ const UserManagement = () => {
     fetchUsers();
   };
 
-  const handleAssignMembership = async () => {
-    if (!assignUserId || !assignProjectId || !assignRole) {
-      toast({ title: '모든 필수 항목을 선택해주세요.', variant: 'destructive' });
-      return;
-    }
-    if (assignRole === 'contractor' && !assignCompanyId) {
-      toast({ title: '협력사 담당자는 소속 업체를 선택해야 합니다.', variant: 'destructive' });
-      return;
-    }
-    const { error } = await supabase.from('project_members').insert([{
-      project_id: assignProjectId,
-      user_id: assignUserId,
-      role: assignRole as any,
-      company_id: assignCompanyId || null,
-    }]);
-    if (error) {
-      toast({ title: '소속 부여 실패', description: error.message, variant: 'destructive' });
-      return;
-    }
-    toast({ title: '프로젝트 소속이 부여되었습니다.' });
-    log('프로젝트소속부여', 'project_member', assignUserId, assignProjectId, { role: assignRole });
-    setShowAssignDialog(false);
+  const resetAssignForm = () => {
     setAssignUserId('');
     setAssignProjectId('');
     setAssignRole('viewer');
     setAssignCompanyId('');
+    setAssignError('');
+  };
+
+  const handleAssignMembership = async () => {
+    setAssignError('');
+    if (!assignUserId || !assignProjectId || !assignRole) {
+      setAssignError('사용자, 프로젝트, 역할을 모두 선택해주세요.');
+      return;
+    }
+    if (assignRole === 'contractor' && !assignCompanyId) {
+      setAssignError('협력사 담당자는 소속 업체를 반드시 선택해야 합니다.');
+      return;
+    }
+    setAssignSaving(true);
+    try {
+      const { error } = await supabase.from('project_members').insert([{
+        project_id: assignProjectId,
+        user_id: assignUserId,
+        role: assignRole as any,
+        company_id: assignCompanyId || null,
+      }]);
+      if (error) {
+        if (error.message.includes('duplicate') || error.message.includes('unique')) {
+          setAssignError('이미 해당 프로젝트에 소속된 사용자입니다.');
+        } else {
+          setAssignError(`소속 부여 실패: ${error.message}`);
+        }
+        setAssignSaving(false);
+        return;
+      }
+      toast({ title: '프로젝트 소속이 부여되었습니다.' });
+      log('프로젝트소속부여', 'project_member', assignUserId, assignProjectId, { role: assignRole });
+      setShowAssignDialog(false);
+      resetAssignForm();
+    } catch (err) {
+      setAssignError(`오류가 발생했습니다: ${String(err)}`);
+    }
+    setAssignSaving(false);
   };
 
   const filtered = users.filter(u => {
@@ -197,7 +227,7 @@ const UserManagement = () => {
           <p className="text-sm text-muted-foreground mt-1">신규가입 승인, 역할 부여, 프로젝트 소속 지정 (마스터 전용)</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowAssignDialog(true)}>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => { resetAssignForm(); setShowAssignDialog(true); }}>
             <Plus className="h-3.5 w-3.5" /> 프로젝트 소속 부여
           </Button>
           <Badge variant="outline" className="gap-1">
@@ -296,14 +326,20 @@ const UserManagement = () => {
         </CardContent>
       </Card>
 
-      {/* Assign Membership Dialog */}
-      <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
+      {/* Assign Membership Dialog - Modal-based, no page navigation */}
+      <Dialog open={showAssignDialog} onOpenChange={(open) => { if (!open) resetAssignForm(); setShowAssignDialog(open); }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Building2 className="h-4 w-4" /> 프로젝트 소속 부여</DialogTitle></DialogHeader>
           <div className="space-y-3">
+            {assignError && (
+              <div className="flex items-center gap-2 p-2 rounded bg-destructive/10 text-destructive text-xs">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{assignError}</span>
+              </div>
+            )}
             <div className="space-y-1">
               <Label className="text-xs">사용자 *</Label>
-              <Select value={assignUserId} onValueChange={setAssignUserId}>
+              <Select value={assignUserId} onValueChange={(v) => { setAssignUserId(v); setAssignError(''); }}>
                 <SelectTrigger className="text-xs"><SelectValue placeholder="사용자 선택" /></SelectTrigger>
                 <SelectContent>
                   {users.filter(u => u.account_status === 'active').map(u => (
@@ -314,7 +350,7 @@ const UserManagement = () => {
             </div>
             <div className="space-y-1">
               <Label className="text-xs">프로젝트 *</Label>
-              <Select value={assignProjectId} onValueChange={setAssignProjectId}>
+              <Select value={assignProjectId} onValueChange={(v) => { setAssignProjectId(v); setAssignCompanyId(''); setAssignError(''); }}>
                 <SelectTrigger className="text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
                 <SelectContent>
                   {projects.map(p => (
@@ -325,7 +361,7 @@ const UserManagement = () => {
             </div>
             <div className="space-y-1">
               <Label className="text-xs">프로젝트 역할 *</Label>
-              <Select value={assignRole} onValueChange={setAssignRole}>
+              <Select value={assignRole} onValueChange={(v) => { setAssignRole(v); setAssignError(''); }}>
                 <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
@@ -338,10 +374,10 @@ const UserManagement = () => {
               <Label className="text-xs">소속 업체 {assignRole === 'contractor' ? '*' : '(선택)'}</Label>
               {assignProjectId ? (
                 projectCompanies.length > 0 ? (
-                  <Select value={assignCompanyId} onValueChange={setAssignCompanyId}>
+                  <Select value={assignCompanyId || '_none'} onValueChange={(v) => { setAssignCompanyId(v === '_none' ? '' : v); setAssignError(''); }}>
                     <SelectTrigger className="text-xs"><SelectValue placeholder="업체 선택" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">없음</SelectItem>
+                      <SelectItem value="_none">없음</SelectItem>
                       {projectCompanies.map(c => (
                         <SelectItem key={c.id} value={c.id}>{c.name} ({c.type})</SelectItem>
                       ))}
@@ -354,8 +390,8 @@ const UserManagement = () => {
                 <p className="text-xs text-muted-foreground py-2">프로젝트를 먼저 선택하세요.</p>
               )}
             </div>
-            <Button onClick={handleAssignMembership} className="w-full" disabled={!assignUserId || !assignProjectId || !assignRole}>
-              소속 부여
+            <Button onClick={handleAssignMembership} className="w-full" disabled={!assignUserId || !assignProjectId || !assignRole || assignSaving}>
+              {assignSaving ? '처리 중...' : '소속 부여'}
             </Button>
           </div>
         </DialogContent>

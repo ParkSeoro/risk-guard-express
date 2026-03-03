@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { getGradeClassName } from "@/lib/riskGrade";
 import {
   AlertTriangle, CheckCircle2, ShieldAlert, BarChart3, FileCheck,
-  ClipboardList, ShieldCheck, Clock, Plus, ArrowRight
+  ClipboardList, ShieldCheck, Clock, Plus, ArrowRight, RefreshCw
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -16,23 +16,17 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface DashboardData {
-  // KPI 1: 회차 현황
   totalRuns: number;
   runsByStatus: Record<string, number>;
-  // KPI 2: 위험성평가 항목
   totalItems: number;
   preGradeDist: { high: number; med: number; low: number };
   postGradeDist: { high: number; med: number; low: number };
   residualHigh: number;
-  // KPI 3: 이행 현황
   itemsByStatus: Record<string, number>;
-  // KPI 4: 검증 품질
   validationIssues: number;
   validationConditional: number;
-  // KPI 5: 결재 현황
   inApprovalRuns: number;
   approvedRuns: number;
-  // Charts
   processData: { name: string; high: number; med: number; low: number }[];
   topRisks: any[];
 }
@@ -45,11 +39,6 @@ const EMPTY: DashboardData = {
   validationIssues: 0, validationConditional: 0,
   inApprovalRuns: 0, approvedRuns: 0,
   processData: [], topRisks: [],
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  '작성중': '작성중', '제출됨': '제출됨', '검증중': '검증중', '보완요청': '보완요청',
-  '보완중': '보완중', '검증완료': '검증완료', '결재진행': '결재진행', '승인완료': '승인완료',
 };
 
 const Dashboard = () => {
@@ -74,35 +63,31 @@ const Dashboard = () => {
     if (!selectedProject) return;
     setLoading(true);
 
-    // Fetch runs (excluding deleted)
+    // Fetch runs (excluding soft-deleted AND archived)
     const { data: runs } = await supabase
       .from("assessment_runs")
       .select("id, status, validation_verdict, validation_score")
       .eq("project_id", selectedProject)
-      .eq("is_deleted", false);
+      .eq("is_deleted", false)
+      .neq("status", "폐기");
 
     const activeRuns = runs || [];
     const runIds = activeRuns.map((r) => r.id);
 
-    // Fetch risk items for these runs
+    // Fetch risk items ONLY from active runs (SSOT: no orphaned items)
     let items: any[] = [];
     if (runIds.length > 0) {
+      // Fetch in batches if needed (supabase .in() limit)
       const { data: riskItems } = await supabase
         .from("risk_items")
         .select("id, process, sub_task, hazard, risk_grade, improved_risk_grade, status, department")
         .in("run_id", runIds);
       items = riskItems || [];
     }
+    // NOTE: Removed project-level items (run_id=null) from dashboard aggregation
+    // Dashboard should only show items belonging to active assessment runs (SSOT)
 
-    // Also fetch items with no run (project-level)
-    const { data: projectItems } = await supabase
-      .from("risk_items")
-      .select("id, process, sub_task, hazard, risk_grade, improved_risk_grade, status, department")
-      .eq("project_id", selectedProject)
-      .is("run_id", null);
-    items = [...items, ...(projectItems || [])];
-
-    // Fetch validation results
+    // Fetch validation results only for active runs
     let valIssues = 0;
     if (runIds.length > 0) {
       const { count } = await supabase
@@ -125,25 +110,19 @@ const Dashboard = () => {
     const postGradeDist = { high: 0, med: 0, low: 0 };
     let residualHigh = 0;
     const itemsByStatus: Record<string, number> = {};
-
-    // Chart: process data
     const processMap: Record<string, { high: number; med: number; low: number }> = {};
 
     items.forEach((item) => {
-      // Pre grade
       if (item.risk_grade === "상") preGradeDist.high++;
       else if (item.risk_grade === "중") preGradeDist.med++;
       else preGradeDist.low++;
 
-      // Post grade
       if (item.improved_risk_grade === "상") { postGradeDist.high++; residualHigh++; }
       else if (item.improved_risk_grade === "중") postGradeDist.med++;
       else postGradeDist.low++;
 
-      // Status
       itemsByStatus[item.status] = (itemsByStatus[item.status] || 0) + 1;
 
-      // Process chart
       if (!processMap[item.process]) processMap[item.process] = { high: 0, med: 0, low: 0 };
       if (item.risk_grade === "상") processMap[item.process].high++;
       else if (item.risk_grade === "중") processMap[item.process].med++;
@@ -155,7 +134,6 @@ const Dashboard = () => {
       .sort((a, b) => b.high - a.high || b.med - a.med)
       .slice(0, 10);
 
-    // Top risks
     const topRisks = [...items]
       .filter((i) => i.risk_grade === "상" || i.risk_grade === "중")
       .sort((a, b) => {
@@ -164,7 +142,6 @@ const Dashboard = () => {
       })
       .slice(0, 5);
 
-    // KPI 4/5
     const validationConditional = activeRuns.filter((r) => r.validation_verdict === "조건부 적정").length;
     const inApprovalRuns = runsByStatus["결재진행"] || 0;
     const approvedRuns = runsByStatus["승인완료"] || 0;
@@ -191,12 +168,27 @@ const Dashboard = () => {
     fetchDashboard();
   }, [fetchDashboard]);
 
-  // Refetch on window focus to ensure fresh data after navigating back
+  // Refetch on window focus
   useEffect(() => {
     const handleFocus = () => { fetchDashboard(); };
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [fetchDashboard]);
+
+  // Listen for realtime changes on risk_items and assessment_runs for immediate refresh
+  useEffect(() => {
+    if (!selectedProject) return;
+    const channel = supabase
+      .channel(`dashboard-${selectedProject}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'risk_items' }, () => {
+        fetchDashboard();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'assessment_runs' }, () => {
+        fetchDashboard();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [selectedProject, fetchDashboard]);
 
   const currentProject = projects.find((p) => p.id === selectedProject);
   const completedCount = data.itemsByStatus["완료"] || 0;
@@ -234,20 +226,24 @@ const Dashboard = () => {
             {currentProject ? `${currentProject.site_name} · ${currentProject.name}` : "프로젝트를 선택하세요"}
           </p>
         </div>
-        <Select value={selectedProject} onValueChange={setSelectedProject}>
-          <SelectTrigger className="w-60 text-xs h-9">
-            <SelectValue placeholder="프로젝트 선택" />
-          </SelectTrigger>
-          <SelectContent>
-            {projects.map((p) => (
-              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => fetchDashboard()} title="새로고침">
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+          <Select value={selectedProject} onValueChange={setSelectedProject}>
+            <SelectTrigger className="w-60 text-xs h-9">
+              <SelectValue placeholder="프로젝트 선택" />
+            </SelectTrigger>
+            <SelectContent>
+              {projects.map((p) => (
+                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {isEmpty ? (
-        /* Empty state */
         <Card>
           <CardContent className="py-16 text-center space-y-4">
             <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mx-auto">
@@ -271,7 +267,7 @@ const Dashboard = () => {
         </Card>
       ) : (
         <>
-          {/* KPI Cards Row 1: Core Stats */}
+          {/* KPI Cards Row 1 */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <KpiCard
               label="총 회차"
@@ -315,7 +311,7 @@ const Dashboard = () => {
             />
           </div>
 
-          {/* KPI Cards Row 2: Verification & Approval */}
+          {/* KPI Cards Row 2 */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <KpiCard
               label="부적정 건수"

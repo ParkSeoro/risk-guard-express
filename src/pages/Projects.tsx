@@ -261,7 +261,7 @@ const Projects = () => {
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openMembers(project.id)}>
                       <Shield className="h-4 w-4" />
                     </Button>
-                    {isAdmin() && (
+                    {(isAdmin() || project.created_by === user?.id) && (
                       <>
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(project)}>
                           <Pencil className="h-4 w-4" />

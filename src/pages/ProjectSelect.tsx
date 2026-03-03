@@ -1,0 +1,287 @@
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { FolderKanban, KeyRound, Send, LogOut, Clock, CheckCircle2 } from 'lucide-react';
+
+const roleLabels: Record<string, string> = {
+  project_admin: '프로젝트 관리자',
+  safety_manager: '안전관리자',
+  contractor: '협력사 담당자',
+  viewer: '열람자',
+};
+
+const ProjectSelect = () => {
+  const { user, signOut, profile } = useAuth();
+  const { toast } = useToast();
+  const [projects, setProjects] = useState<any[]>([]);
+  const [inviteCode, setInviteCode] = useState('');
+  const [joiningCode, setJoiningCode] = useState(false);
+  const [requestRole, setRequestRole] = useState('viewer');
+  const [requestCompany, setRequestCompany] = useState('');
+  const [myRequests, setMyRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = async () => {
+    if (!user) return;
+    // Fetch all projects (authenticated users can see all now)
+    const { data: projectData } = await supabase
+      .from('projects')
+      .select('id, name, site_name, status')
+      .eq('status', '진행중')
+      .order('name');
+    setProjects(projectData || []);
+
+    // Fetch my join requests
+    const { data: requests } = await supabase
+      .from('project_join_requests')
+      .select('*, projects(name)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    setMyRequests(requests || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchData(); }, [user]);
+
+  const handleInviteCode = async () => {
+    if (!inviteCode.trim() || !user) return;
+    setJoiningCode(true);
+    try {
+      // Look up invite
+      const { data: invite, error: lookupErr } = await supabase
+        .from('project_invites')
+        .select('*')
+        .eq('code', inviteCode.trim())
+        .maybeSingle();
+
+      if (!invite || lookupErr) {
+        toast({ title: '유효하지 않은 초대코드입니다.', variant: 'destructive' });
+        return;
+      }
+
+      // Check expiry
+      if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
+        toast({ title: '만료된 초대코드입니다.', variant: 'destructive' });
+        return;
+      }
+
+      // Check max uses
+      if (invite.max_uses > 0 && invite.use_count >= invite.max_uses) {
+        toast({ title: '사용 횟수가 초과된 초대코드입니다.', variant: 'destructive' });
+        return;
+      }
+
+      // Add as project member
+      const { error: memberErr } = await supabase
+        .from('project_members')
+        .insert([{
+          project_id: invite.project_id,
+          user_id: user.id,
+          role: invite.default_role,
+          company: requestCompany || profile?.company || '',
+        }]);
+
+      if (memberErr) {
+        if (memberErr.message.includes('duplicate') || memberErr.message.includes('unique')) {
+          toast({ title: '이미 해당 프로젝트의 멤버입니다.' });
+        } else {
+          toast({ title: '가입 실패', description: memberErr.message, variant: 'destructive' });
+        }
+        return;
+      }
+
+      // Increment use count
+      await supabase
+        .from('project_invites')
+        .update({ use_count: invite.use_count + 1 })
+        .eq('id', invite.id);
+
+      toast({ title: '프로젝트에 가입되었습니다!' });
+      // Reload page to trigger gate re-check
+      window.location.reload();
+    } finally {
+      setJoiningCode(false);
+    }
+  };
+
+  const handleJoinRequest = async (projectId: string) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('project_join_requests')
+      .insert([{
+        project_id: projectId,
+        user_id: user.id,
+        requested_role: requestRole as any,
+        company_name: requestCompany || profile?.company || '',
+      }]);
+
+    if (error) {
+      if (error.message.includes('duplicate') || error.message.includes('unique')) {
+        toast({ title: '이미 가입 요청을 보냈습니다.', variant: 'destructive' });
+      } else {
+        toast({ title: '요청 실패', description: error.message, variant: 'destructive' });
+      }
+      return;
+    }
+
+    toast({ title: '가입 요청을 보냈습니다. 프로젝트 관리자의 승인을 기다려주세요.' });
+    fetchData();
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-sm text-muted-foreground">로딩 중...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-2xl space-y-6">
+        {/* Header */}
+        <div className="text-center space-y-2">
+          <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+            <FolderKanban className="h-7 w-7 text-primary" />
+          </div>
+          <h1 className="text-xl font-bold">프로젝트 선택</h1>
+          <p className="text-sm text-muted-foreground">
+            {profile?.display_name}님, 프로젝트에 소속되어야 시스템을 이용할 수 있습니다.
+          </p>
+        </div>
+
+        {/* Invite Code */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <KeyRound className="h-4 w-4" /> 초대코드로 가입
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-2">
+              <Input
+                placeholder="초대코드 입력"
+                value={inviteCode}
+                onChange={e => setInviteCode(e.target.value)}
+                className="flex-1"
+              />
+              <Button onClick={handleInviteCode} disabled={joiningCode || !inviteCode.trim()}>
+                {joiningCode ? '가입 중...' : '가입'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Join Request Config */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm">가입 정보 설정</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">희망 역할</Label>
+                <Select value={requestRole} onValueChange={setRequestRole}>
+                  <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(roleLabels).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">소속 회사</Label>
+                <Input
+                  value={requestCompany}
+                  onChange={e => setRequestCompany(e.target.value)}
+                  placeholder={profile?.company || '회사명'}
+                  className="text-xs"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Project List - Request to Join */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Send className="h-4 w-4" /> 프로젝트 가입 요청
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {projects.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">진행 중인 프로젝트가 없습니다.</p>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {projects.map(p => {
+                  const hasRequest = myRequests.some(r => r.project_id === p.id);
+                  return (
+                    <div key={p.id} className="flex items-center justify-between p-2.5 rounded-lg border hover:bg-muted/50 transition-colors">
+                      <div>
+                        <span className="text-sm font-medium">{p.name}</span>
+                        <span className="text-xs text-muted-foreground ml-2">{p.site_name}</span>
+                      </div>
+                      {hasRequest ? (
+                        <Badge variant="outline" className="text-[10px] gap-1"><Clock className="h-3 w-3" /> 요청됨</Badge>
+                      ) : (
+                        <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => handleJoinRequest(p.id)}>
+                          가입 요청
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* My Requests */}
+        {myRequests.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">내 가입 요청 현황</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {myRequests.map(r => (
+                  <div key={r.id} className="flex items-center justify-between p-2 rounded bg-muted/50 text-sm">
+                    <span>{(r as any).projects?.name || r.project_id}</span>
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] ${
+                        r.status === 'approved' ? 'bg-success/10 text-success' :
+                        r.status === 'rejected' ? 'bg-destructive/10 text-destructive' :
+                        'bg-warning/10 text-warning'
+                      }`}
+                    >
+                      {r.status === 'pending' ? '대기중' : r.status === 'approved' ? '승인됨' : '거절됨'}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Logout */}
+        <div className="text-center">
+          <Button variant="ghost" size="sm" className="text-muted-foreground gap-1.5" onClick={signOut}>
+            <LogOut className="h-3.5 w-3.5" /> 로그아웃
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ProjectSelect;

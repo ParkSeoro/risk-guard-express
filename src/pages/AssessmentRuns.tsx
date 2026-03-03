@@ -65,6 +65,7 @@ const AssessmentRuns = () => {
   const { toast } = useToast();
   const { log } = useAuditLog();
   const isMaster = hasRole('master');
+  const [projectRole, setProjectRole] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [selectedProject, setSelectedProject] = useState('');
@@ -97,6 +98,21 @@ const AssessmentRuns = () => {
     });
   }, []);
 
+  // Fetch user's project-level role
+  const fetchProjectRole = async () => {
+    if (!user || !selectedProject) { setProjectRole(null); return; }
+    if (isMaster) { setProjectRole('master'); return; }
+    const { data } = await supabase
+      .from('project_members')
+      .select('role')
+      .eq('project_id', selectedProject)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    setProjectRole(data?.role || null);
+  };
+
+  const canCreateRun = isMaster || projectRole === 'project_admin' || projectRole === 'safety_manager';
+
   const fetchRuns = async () => {
     if (!selectedProject) return;
     setLoading(true);
@@ -125,7 +141,7 @@ const AssessmentRuns = () => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchRuns(); }, [selectedProject]);
+  useEffect(() => { fetchProjectRole(); fetchRuns(); }, [selectedProject]);
 
   const handleCreate = async () => {
     if (!user || !selectedProject) return;
@@ -199,7 +215,7 @@ const AssessmentRuns = () => {
   const canEditRun = (run: any) => {
     if (isMaster) return true;
     if (run.created_by === user?.id) return true;
-    if (hasRole('project_admin') || hasRole('safety_manager')) return true;
+    if (projectRole === 'project_admin' || projectRole === 'safety_manager') return true;
     return false;
   };
 
@@ -242,7 +258,7 @@ const AssessmentRuns = () => {
             <SelectTrigger className="h-9 w-60 text-xs"><SelectValue placeholder="프로젝트" /></SelectTrigger>
             <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
           </Select>
-          {(isMaster || hasRole('project_admin') || hasRole('safety_manager')) && (
+          {canCreateRun && (
             <Button size="sm" className="gap-1.5" onClick={() => setShowCreate(true)}>
               <Plus className="h-3.5 w-3.5" /> 회차 생성
             </Button>

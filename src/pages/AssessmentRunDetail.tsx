@@ -129,6 +129,16 @@ const AssessmentRunDetail = () => {
   const [excludeDialogItem, setExcludeDialogItem] = useState<string | null>(null);
   const [excludeReason, setExcludeReason] = useState('');
 
+  // Batch apply
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [showBatchApply, setShowBatchApply] = useState(false);
+  const [batchDeptId, setBatchDeptId] = useState('');
+  const [batchAssigneeUserId, setBatchAssigneeUserId] = useState('');
+  const [batchScope, setBatchScope] = useState<'empty' | 'all' | 'selected'>('empty');
+  const [batchApplyDept, setBatchApplyDept] = useState(true);
+  const [batchApplyAssignee, setBatchApplyAssignee] = useState(true);
+  const [batchOverrideManual, setBatchOverrideManual] = useState(false);
+
   const fetchAll = useCallback(async () => {
     if (!runId) return;
     setLoading(true);
@@ -688,6 +698,64 @@ const AssessmentRunDetail = () => {
     setRemediationLoading(false);
   };
 
+  // Batch apply department/assignee
+  const handleBatchApply = async () => {
+    if (!run || !user) return;
+    let targetItems: RiskItemRow[];
+    if (batchScope === 'selected') {
+      targetItems = activeItems.filter(i => selectedRowIds.has(i.id));
+    } else if (batchScope === 'empty') {
+      targetItems = activeItems.filter(i => !(i as any).responsible_department_id && !(i as any).assignee_user_id);
+    } else {
+      targetItems = [...activeItems];
+    }
+    if (targetItems.length === 0) { toast({ title: '적용 대상이 없습니다.', variant: 'destructive' }); return; }
+
+    let appliedCount = 0;
+    for (const item of targetItems) {
+      const updateData: Record<string, any> = {};
+      if (batchApplyDept && batchDeptId) {
+        const dept = departments.find(d => d.id === batchDeptId);
+        updateData.responsible_department_id = batchDeptId;
+        updateData.department = dept?.name || '';
+      }
+      if (batchApplyAssignee && batchAssigneeUserId) {
+        // Skip items with manually set assignee unless override is on
+        if (!batchOverrideManual && (item as any).assignee_user_id && batchScope !== 'empty') {
+          // keep existing
+        } else {
+          const member = projectMembers.find(m => m.user_id === batchAssigneeUserId);
+          updateData.assignee_user_id = batchAssigneeUserId;
+          updateData.assignee = member?.display_name || '';
+        }
+      } else if (batchApplyDept && batchDeptId && batchApplyAssignee && !batchAssigneeUserId) {
+        // Auto-fill from dept mapping
+        const mapping = deptAssignees.find(da => da.department_id === batchDeptId);
+        if (mapping?.default_user_id) {
+          if (!batchOverrideManual && (item as any).assignee_user_id && batchScope !== 'empty') {
+            // keep existing
+          } else {
+            const assigneeProfile = projectMembers.find(m => m.user_id === mapping.default_user_id);
+            if (assigneeProfile) {
+              updateData.assignee_user_id = mapping.default_user_id;
+              updateData.assignee = assigneeProfile.display_name;
+            }
+          }
+        }
+      }
+      if (Object.keys(updateData).length > 0) {
+        await supabase.from('risk_items').update(updateData).eq('id', item.id);
+        appliedCount++;
+      }
+    }
+    const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+    if (refreshed) setItems(refreshed);
+    setShowBatchApply(false);
+    setSelectedRowIds(new Set());
+    toast({ title: `${appliedCount}건에 일괄 적용 완료` });
+    log('일괄적용', 'assessment_run', runId!, run.project_id, { appliedCount, scope: batchScope });
+  };
+
   // Edit run metadata
   const handleSaveMeta = async () => {
     if (!run) return;
@@ -1046,6 +1114,14 @@ const AssessmentRunDetail = () => {
             <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setShowExcelUpload(true); setExcelStep('upload'); }}>
               <Upload className="h-3.5 w-3.5" /> 엑셀 업로드
             </Button>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => {
+              setBatchDeptId(''); setBatchAssigneeUserId(''); setBatchScope(selectedRowIds.size > 0 ? 'selected' : 'empty');
+              setBatchApplyDept(true); setBatchApplyAssignee(true); setBatchOverrideManual(false);
+              setShowBatchApply(true);
+            }}>
+              <Users className="h-3.5 w-3.5" /> 책임부서/담당자 일괄 설정
+              {selectedRowIds.size > 0 && <Badge variant="secondary" className="ml-1 text-[9px] h-4 px-1">{selectedRowIds.size}건</Badge>}
+            </Button>
           </>
         )}
         {canSubmitForValidation && (
@@ -1188,6 +1264,17 @@ const AssessmentRunDetail = () => {
             <table className="w-full data-table text-xs">
               <thead>
                 <tr>
+                  {(canEdit || canForceEdit) && (
+                    <th className="w-8 text-center print:hidden">
+                      <Checkbox
+                        checked={filteredItems.length > 0 && filteredItems.every(i => selectedRowIds.has(i.id))}
+                        onCheckedChange={(checked) => {
+                          if (checked) setSelectedRowIds(new Set(filteredItems.map(i => i.id)));
+                          else setSelectedRowIds(new Set());
+                        }}
+                      />
+                    </th>
+                  )}
                   <th className="w-8 text-center">#</th>
                   <th>공정</th><th>세부작업</th><th>위험요인</th><th>위험발생상황</th>
                   <th>기존대책</th><th>개선대책</th>
@@ -1201,11 +1288,25 @@ const AssessmentRunDetail = () => {
               </thead>
               <tbody>
                 {filteredItems.length === 0 ? (
-                  <tr><td colSpan={20} className="text-center py-8 text-muted-foreground">항목이 없습니다.</td></tr>
+                  <tr><td colSpan={22} className="text-center py-8 text-muted-foreground">항목이 없습니다.</td></tr>
                 ) : filteredItems.map((item, idx) => {
                   const itemVerdict = validationReport?.itemVerdicts?.[item.id];
                   return (
-                    <tr key={item.id} className={itemVerdict?.verdict === '부적정' ? 'bg-destructive/5' : itemVerdict?.verdict === '조건부 적정' ? 'bg-warning/5' : ''}>
+                    <tr key={item.id} className={`${itemVerdict?.verdict === '부적정' ? 'bg-destructive/5' : itemVerdict?.verdict === '조건부 적정' ? 'bg-warning/5' : ''} ${selectedRowIds.has(item.id) ? 'bg-accent/10' : ''}`}>
+                      {(canEdit || canForceEdit) && (
+                        <td className="text-center print:hidden">
+                          <Checkbox
+                            checked={selectedRowIds.has(item.id)}
+                            onCheckedChange={(checked) => {
+                              setSelectedRowIds(prev => {
+                                const next = new Set(prev);
+                                if (checked) next.add(item.id); else next.delete(item.id);
+                                return next;
+                              });
+                            }}
+                          />
+                        </td>
+                      )}
                       <td className="text-center text-muted-foreground">{idx + 1}</td>
                       <td className="editable whitespace-nowrap"><EditableCell item={item} field="process" /></td>
                       <td className="editable"><EditableCell item={item} field="sub_task" /></td>
@@ -1835,6 +1936,96 @@ const AssessmentRunDetail = () => {
                 </div>
               </>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Batch Apply Department/Assignee Dialog */}
+      <Dialog open={showBatchApply} onOpenChange={setShowBatchApply}>
+        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>책임부서 / 담당자 일괄 설정</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>적용 범위</Label>
+              <Select value={batchScope} onValueChange={(v: 'empty' | 'all' | 'selected') => setBatchScope(v)}>
+                <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="empty">빈 칸만 채우기 (기본)</SelectItem>
+                  <SelectItem value="all">전체 항목 덮어쓰기</SelectItem>
+                  <SelectItem value="selected" disabled={selectedRowIds.size === 0}>선택한 행만 적용 ({selectedRowIds.size}건)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Checkbox checked={batchApplyDept} onCheckedChange={(c) => setBatchApplyDept(!!c)} />
+                <Label className="cursor-pointer">책임부서 일괄 적용</Label>
+              </div>
+              {batchApplyDept && (
+                <Select value={batchDeptId || '__none__'} onValueChange={v => {
+                  const deptId = v === '__none__' ? '' : v;
+                  setBatchDeptId(deptId);
+                  // Auto-fill assignee from dept mapping
+                  if (deptId && batchApplyAssignee && !batchAssigneeUserId) {
+                    const mapping = deptAssignees.find(da => da.department_id === deptId);
+                    if (mapping?.default_user_id) {
+                      setBatchAssigneeUserId(mapping.default_user_id);
+                    }
+                  }
+                }}>
+                  <SelectTrigger className="text-xs"><SelectValue placeholder="부서 선택" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">(선택 안 함)</SelectItem>
+                    {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Checkbox checked={batchApplyAssignee} onCheckedChange={(c) => setBatchApplyAssignee(!!c)} />
+                <Label className="cursor-pointer">담당자도 함께 일괄 적용</Label>
+              </div>
+              {batchApplyAssignee && (
+                <>
+                  <Select value={batchAssigneeUserId || '__none__'} onValueChange={v => setBatchAssigneeUserId(v === '__none__' ? '' : v)}>
+                    <SelectTrigger className="text-xs"><SelectValue placeholder="담당자 선택" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">(부서 기본 담당자 자동)</SelectItem>
+                      {projectMembers.map(m => (
+                        <SelectItem key={m.user_id} value={m.user_id}>
+                          {m.display_name}{m.company ? ` (${m.company})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {batchScope !== 'empty' && (
+                    <div className="flex items-center gap-2 pl-1">
+                      <Checkbox checked={batchOverrideManual} onCheckedChange={(c) => setBatchOverrideManual(!!c)} />
+                      <span className="text-xs text-muted-foreground">개별 지정된 담당자도 덮어쓰기</span>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {batchApplyDept && batchDeptId && batchApplyAssignee && !batchAssigneeUserId && (
+              (() => {
+                const mapping = deptAssignees.find(da => da.department_id === batchDeptId);
+                const assignee = mapping?.default_user_id ? projectMembers.find(m => m.user_id === mapping.default_user_id) : null;
+                return assignee ? (
+                  <p className="text-xs text-accent">→ 기본 담당자: {assignee.display_name}{assignee.company ? ` (${assignee.company})` : ''}</p>
+                ) : (
+                  <p className="text-xs text-destructive">⚠ 해당 부서에 기본 담당자 매핑이 없습니다.</p>
+                );
+              })()
+            )}
+
+            <Button onClick={handleBatchApply} className="w-full gap-1.5" disabled={!batchApplyDept && !batchApplyAssignee}>
+              <Users className="h-3.5 w-3.5" /> 일괄 적용
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

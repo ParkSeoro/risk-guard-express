@@ -132,6 +132,7 @@ export type Database = {
           period_label: string
           project_id: string
           status: string
+          target_company_ids: string[] | null
           target_contractors: string[] | null
           target_processes: string[] | null
           type: string
@@ -151,6 +152,7 @@ export type Database = {
           period_label?: string
           project_id: string
           status?: string
+          target_company_ids?: string[] | null
           target_contractors?: string[] | null
           target_processes?: string[] | null
           type?: string
@@ -170,6 +172,7 @@ export type Database = {
           period_label?: string
           project_id?: string
           status?: string
+          target_company_ids?: string[] | null
           target_contractors?: string[] | null
           target_processes?: string[] | null
           type?: string
@@ -834,6 +837,7 @@ export type Database = {
       project_members: {
         Row: {
           company: string | null
+          company_id: string | null
           created_at: string
           id: string
           project_id: string
@@ -842,6 +846,7 @@ export type Database = {
         }
         Insert: {
           company?: string | null
+          company_id?: string | null
           created_at?: string
           id?: string
           project_id: string
@@ -850,6 +855,7 @@ export type Database = {
         }
         Update: {
           company?: string | null
+          company_id?: string | null
           created_at?: string
           id?: string
           project_id?: string
@@ -857,6 +863,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "project_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "project_members_project_id_fkey"
             columns: ["project_id"]
@@ -872,6 +885,7 @@ export type Database = {
           contractor: string | null
           created_at: string
           created_by: string | null
+          gc_company_id: string | null
           id: string
           name: string
           period_end: string | null
@@ -887,6 +901,7 @@ export type Database = {
           contractor?: string | null
           created_at?: string
           created_by?: string | null
+          gc_company_id?: string | null
           id?: string
           name: string
           period_end?: string | null
@@ -902,6 +917,7 @@ export type Database = {
           contractor?: string | null
           created_at?: string
           created_by?: string | null
+          gc_company_id?: string | null
           id?: string
           name?: string
           period_end?: string | null
@@ -912,7 +928,15 @@ export type Database = {
           tags?: string[] | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "projects_gc_company_id_fkey"
+            columns: ["gc_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       risk_item_versions: {
         Row: {

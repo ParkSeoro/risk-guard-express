@@ -41,6 +41,7 @@ const ProjectDetail = () => {
   const [showAddMember, setShowAddMember] = useState(false);
   const [memberUserId, setMemberUserId] = useState('');
   const [memberRole, setMemberRole] = useState('viewer');
+  const [memberCompanyId, setMemberCompanyId] = useState('');
   const [showAddCompany, setShowAddCompany] = useState(false);
   const [companyForm, setCompanyForm] = useState({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '' });
   const [copiedCode, setCopiedCode] = useState('');
@@ -87,8 +88,13 @@ const ProjectDetail = () => {
 
   const handleAddMember = async () => {
     if (!projectId || !memberUserId) return;
+    if (memberRole === 'contractor' && !memberCompanyId) {
+      toast({ title: '협력사 담당자는 소속 업체를 선택해야 합니다.', variant: 'destructive' });
+      return;
+    }
     const { error } = await supabase.from('project_members').insert([{
       project_id: projectId, user_id: memberUserId, role: memberRole as any,
+      company_id: memberCompanyId || null,
     }]);
     if (error) {
       toast({ title: '추가 실패', description: error.message, variant: 'destructive' });
@@ -96,6 +102,7 @@ const ProjectDetail = () => {
       toast({ title: '멤버가 추가되었습니다.' });
       setShowAddMember(false);
       setMemberUserId('');
+      setMemberCompanyId('');
       fetchAll();
     }
   };
@@ -422,7 +429,23 @@ const ProjectDetail = () => {
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={handleAddMember} className="w-full" disabled={!memberUserId}>추가</Button>
+            <div className="space-y-1">
+              <Label className="text-xs">소속 업체 {memberRole === 'contractor' ? '*' : '(선택)'}</Label>
+              {companies.length > 0 ? (
+                <Select value={memberCompanyId} onValueChange={setMemberCompanyId}>
+                  <SelectTrigger className="text-xs"><SelectValue placeholder="업체 선택" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">없음</SelectItem>
+                    {companies.map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name} ({companyTypes[c.type] || c.type})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="text-xs text-muted-foreground">등록된 업체가 없습니다.</p>
+              )}
+            </div>
+            <Button onClick={handleAddMember} className="w-full" disabled={!memberUserId || (memberRole === 'contractor' && !memberCompanyId)}>추가</Button>
           </div>
         </DialogContent>
       </Dialog>

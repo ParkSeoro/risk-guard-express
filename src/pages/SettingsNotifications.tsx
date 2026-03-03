@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Bell, Save, Mail, MessageSquare, Smartphone } from 'lucide-react';
+import { ArrowLeft, Bell, Save, Mail, MessageSquare, Smartphone, Send, CheckCircle2, XCircle, Clock } from 'lucide-react';
 
 interface NotifPrefs {
   channel_email: boolean;
@@ -23,24 +23,42 @@ interface NotifPrefs {
 }
 
 const defaults: NotifPrefs = {
-  channel_email: true,
-  channel_sms: false,
-  channel_kakao: false,
-  event_approval_request: true,
-  event_approval_result: true,
-  event_return_request: true,
-  event_validation_complete: false,
+  channel_email: true, channel_sms: false, channel_kakao: false,
+  event_approval_request: true, event_approval_result: true,
+  event_return_request: true, event_validation_complete: false,
   business_hours_only: false,
 };
 
+interface EmailLogEntry {
+  id: string;
+  created_at: string;
+  action: string;
+  user_name: string;
+  details: {
+    to?: string;
+    subject?: string;
+    type?: string;
+    email_sent?: boolean;
+    error?: string;
+    reason?: string;
+  };
+}
+
 const SettingsNotifications = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const { toast } = useToast();
   const { log } = useAuditLog();
   const [prefs, setPrefs] = useState<NotifPrefs>(defaults);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const isMaster = hasRole('master');
+
+  // Email log state
+  const [emailLogs, setEmailLogs] = useState<EmailLogEntry[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [testSending, setTestSending] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -71,15 +89,12 @@ const SettingsNotifications = () => {
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
-
-    // Upsert
     const { error } = await supabase
       .from('notification_preferences' as any)
       .upsert(
         { user_id: user.id, ...prefs, updated_at: new Date().toISOString() } as any,
         { onConflict: 'user_id' }
       );
-
     if (error) {
       toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
     } else {
@@ -90,6 +105,42 @@ const SettingsNotifications = () => {
   };
 
   const toggle = (key: keyof NotifPrefs) => setPrefs(p => ({ ...p, [key]: !p[key] }));
+
+  const fetchEmailLogs = async () => {
+    setLogsLoading(true);
+    const { data } = await supabase
+      .from('audit_logs')
+      .select('id, created_at, action, user_name, details')
+      .or('action.eq.email_notification_sent,action.eq.email_notification_failed,action.eq.email_notification_queued')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    setEmailLogs((data || []) as any);
+    setLogsLoading(false);
+  };
+
+  const handleTestEmail = async () => {
+    if (!user) return;
+    setTestSending(true);
+    try {
+      const { error } = await supabase.functions.invoke('send-notification-email', {
+        body: {
+          user_id: user.id,
+          title: '테스트 이메일',
+          message: '이 메일은 알림 시스템 테스트입니다. 정상 수신되면 이메일 발송이 작동하고 있습니다.',
+          type: 'test',
+        },
+      });
+      if (error) {
+        toast({ title: '테스트 발송 실패', description: error.message, variant: 'destructive' });
+      } else {
+        toast({ title: '테스트 알림 전송됨', description: '인앱 알림이 생성되었습니다. 이메일 발송 결과는 로그를 확인하세요.' });
+        if (showLogs) fetchEmailLogs();
+      }
+    } catch (err) {
+      toast({ title: '테스트 발송 실패', description: String(err), variant: 'destructive' });
+    }
+    setTestSending(false);
+  };
 
   if (loading) {
     return <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">로딩 중...</div>;
@@ -189,6 +240,73 @@ const SettingsNotifications = () => {
       <Button onClick={handleSave} disabled={saving} className="w-full gap-1.5">
         <Save className="h-3.5 w-3.5" /> {saving ? '저장 중...' : '알림 설정 저장'}
       </Button>
+
+      {/* Debug Tools - Master Only */}
+      {isMaster && (
+        <>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Mail className="h-4 w-4" /> 이메일 발송 진단 (마스터 전용)
+              </CardTitle>
+              <CardDescription className="text-xs">테스트 메일 발송 및 발송 로그를 확인합니다.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={handleTestEmail} disabled={testSending}>
+                  <Send className="h-3 w-3" /> {testSending ? '발송 중...' : '테스트 메일 보내기'}
+                </Button>
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => { setShowLogs(!showLogs); if (!showLogs) fetchEmailLogs(); }}>
+                  <Clock className="h-3 w-3" /> {showLogs ? '로그 숨기기' : '발송 로그 보기'}
+                </Button>
+              </div>
+
+              {showLogs && (
+                <div className="space-y-2">
+                  {logsLoading ? (
+                    <p className="text-xs text-muted-foreground py-4 text-center">로그 로딩 중...</p>
+                  ) : emailLogs.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-4 text-center">발송 로그가 없습니다.</p>
+                  ) : (
+                    <div className="max-h-64 overflow-auto rounded border">
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr>
+                            <th className="text-left p-1.5">시간</th>
+                            <th className="text-left p-1.5">수신자</th>
+                            <th className="text-center p-1.5">결과</th>
+                            <th className="text-left p-1.5">유형</th>
+                            <th className="text-left p-1.5">사유</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {emailLogs.map(entry => {
+                            const d = entry.details || {} as any;
+                            const sent = d.email_sent === true;
+                            return (
+                              <tr key={entry.id} className="border-t">
+                                <td className="p-1.5 text-muted-foreground whitespace-nowrap">
+                                  {new Date(entry.created_at).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                </td>
+                                <td className="p-1.5">{d.to || '—'}</td>
+                                <td className="p-1.5 text-center">
+                                  {sent ? <CheckCircle2 className="h-3.5 w-3.5 text-success inline" /> : <XCircle className="h-3.5 w-3.5 text-destructive inline" />}
+                                </td>
+                                <td className="p-1.5">{d.type || '—'}</td>
+                                <td className="p-1.5 text-muted-foreground max-w-[200px] truncate">{d.error || d.reason || (sent ? '성공' : '—')}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 };

@@ -120,6 +120,9 @@
   }
   .data-table td {
     @apply px-3 py-2 text-sm border-b border-border;
+    white-space: normal;
+    word-break: keep-all;
+    overflow-wrap: break-word;
   }
   .data-table tr:hover td {
     @apply bg-muted/50;

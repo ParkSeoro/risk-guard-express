@@ -53,33 +53,61 @@ const Projects = () => {
 
   useEffect(() => { fetchProjects(); fetchCompanies(); }, []);
 
+  const [createLoading, setCreateLoading] = useState(false);
+
   const handleCreate = async () => {
-    if (!user) return;
-    const { data, error } = await supabase.from('projects').insert([{
-      name: form.name,
-      site_name: form.site_name,
-      period_start: form.period_start || null,
-      period_end: form.period_end || null,
-      client: form.client,
-      gc_company_id: form.gc_company_id || null,
-      tags: form.tags.split(',').map(s => s.trim()).filter(Boolean),
-      status: form.status,
-      created_by: user.id,
-    }]).select().single();
-    if (error) {
-      toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
+    if (!user) {
+      toast({ title: '로그인이 필요합니다.', variant: 'destructive' });
       return;
     }
-    if (data) {
-      await supabase.from('project_members').insert([{
-        project_id: data.id, user_id: user.id, role: 'project_admin' as any,
-      }]);
-      toast({ title: '프로젝트가 생성되었습니다.' });
-      log('생성', 'project', data.id);
-      setShowCreate(false);
-      resetForm();
-      fetchProjects();
+    if (!form.name.trim()) {
+      toast({ title: '프로젝트명을 입력하세요.', variant: 'destructive' });
+      return;
     }
+    setCreateLoading(true);
+    try {
+      const insertData: any = {
+        name: form.name.trim(),
+        site_name: form.site_name.trim(),
+        period_start: form.period_start || null,
+        period_end: form.period_end || null,
+        client: form.client.trim(),
+        tags: form.tags.split(',').map(s => s.trim()).filter(Boolean),
+        status: form.status,
+        created_by: user.id,
+      };
+      // Only include gc_company_id if a valid value is selected
+      if (form.gc_company_id && form.gc_company_id !== '') {
+        insertData.gc_company_id = form.gc_company_id;
+      }
+
+      const { data, error } = await supabase.from('projects').insert([insertData]).select().single();
+      if (error) {
+        console.error('Project creation error:', error);
+        toast({ title: '프로젝트 생성 실패', description: `${error.message} (${error.code || ''})`, variant: 'destructive' });
+        setCreateLoading(false);
+        return;
+      }
+      if (data) {
+        // Add creator as project_admin
+        const { error: memberError } = await supabase.from('project_members').insert([{
+          project_id: data.id, user_id: user.id, role: 'project_admin' as any,
+        }]);
+        if (memberError) {
+          console.error('Project member insert error:', memberError);
+          toast({ title: '프로젝트는 생성되었으나 멤버 등록 실패', description: memberError.message, variant: 'destructive' });
+        }
+        toast({ title: '프로젝트가 생성되었습니다.' });
+        log('생성', 'project', data.id);
+        setShowCreate(false);
+        resetForm();
+        // Navigate to project detail for onboarding
+        navigate(`/project/${data.id}`);
+      }
+    } catch (err) {
+      toast({ title: '프로젝트 생성 중 오류', description: String(err), variant: 'destructive' });
+    }
+    setCreateLoading(false);
   };
 
   const handleUpdate = async () => {
@@ -138,10 +166,10 @@ const Projects = () => {
         <div className="space-y-1"><Label>발주사</Label><Input value={form.client} onChange={e => setForm(p => ({ ...p, client: e.target.value }))} /></div>
         <div className="space-y-1">
           <Label>시공사 (등록 업체 선택)</Label>
-          <Select value={form.gc_company_id} onValueChange={v => setForm(p => ({ ...p, gc_company_id: v }))}>
+          <Select value={form.gc_company_id || '__none__'} onValueChange={v => setForm(p => ({ ...p, gc_company_id: v === '__none__' ? '' : v }))}>
             <SelectTrigger className="text-xs"><SelectValue placeholder="시공사 선택" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="">미지정</SelectItem>
+              <SelectItem value="__none__">미지정</SelectItem>
               {allGcCompanies.map(c => (
                 <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
               ))}
@@ -164,7 +192,9 @@ const Projects = () => {
           </SelectContent>
         </Select>
       </div>
-      <Button onClick={onSubmit} className="w-full" disabled={!form.name.trim()}>{submitLabel}</Button>
+      <Button onClick={onSubmit} className="w-full" disabled={!form.name.trim() || createLoading}>
+        {createLoading ? '처리 중...' : submitLabel}
+      </Button>
     </div>
   );
 

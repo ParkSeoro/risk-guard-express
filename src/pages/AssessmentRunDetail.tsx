@@ -15,10 +15,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 import {
   Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, ShieldCheck, Send,
   Lock, Users, XCircle, AlertTriangle, CheckCircle2, Upload, RotateCcw, FileWarning, RefreshCw,
-  Edit3, Archive, Clock,
+  Edit3, Archive, Clock, Pencil, Ban,
 } from 'lucide-react';
 import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
 import { generateRiskItems } from '@/lib/riskAutoGen';
@@ -64,10 +65,13 @@ const AssessmentRunDetail = () => {
 
   // Auto-gen
   const [showAutoGen, setShowAutoGen] = useState(false);
-  const [autoGenProcess, setAutoGenProcess] = useState('');
-  const [autoGenTargetCount, setAutoGenTargetCount] = useState(50);
+  const [autoGenProcesses, setAutoGenProcesses] = useState<string[]>([]);
+  const [autoGenProcessInput, setAutoGenProcessInput] = useState('');
+  const [autoGenTargetCount, setAutoGenTargetCount] = useState(20);
   const [autoGenTags, setAutoGenTags] = useState<string[]>([]);
   const [autoGenLoading, setAutoGenLoading] = useState(false);
+  const [autoGenConditionText, setAutoGenConditionText] = useState('');
+  const [environmentTags, setEnvironmentTags] = useState<{ id: string; name: string; category: string }[]>([]);
 
   // Validation
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
@@ -104,18 +108,26 @@ const AssessmentRunDetail = () => {
   const [archiveReason, setArchiveReason] = useState('');
   // Revision dialog
   const [showRevision, setShowRevision] = useState(false);
-  // Remediation panel
-  const [showRemediation, setShowRemediation] = useState(false);
+  // Remediation wizard (unified)
+  const [showRemediationWizard, setShowRemediationWizard] = useState(false);
   const [remediationActions, setRemediationActions] = useState<RemediationAction[]>([]);
   const [selectedActionIds, setSelectedActionIds] = useState<Set<string>>(new Set());
   const [remediationLoading, setRemediationLoading] = useState(false);
   const [applyAndRevalidate, setApplyAndRevalidate] = useState(true);
-  const [autoRemediationLoading, setAutoRemediationLoading] = useState(false);
+  const [remediationStep, setRemediationStep] = useState<1 | 2>(1);
 
   // Department & assignee data for dropdowns
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [deptAssignees, setDeptAssignees] = useState<{ department_id: string; default_user_id: string | null }[]>([]);
   const [projectMembers, setProjectMembers] = useState<{ user_id: string; display_name: string; company: string }[]>([]);
+
+  // Edit run metadata
+  const [showEditMeta, setShowEditMeta] = useState(false);
+  const [editMeta, setEditMeta] = useState({ period_label: '', type: '', notes: '' });
+
+  // Exclusion dialog
+  const [excludeDialogItem, setExcludeDialogItem] = useState<string | null>(null);
+  const [excludeReason, setExcludeReason] = useState('');
 
   const fetchAll = useCallback(async () => {
     if (!runId) return;
@@ -129,16 +141,17 @@ const AssessmentRunDetail = () => {
     if (runRes.data) {
       setRun(runRes.data);
       const projectId = runRes.data.project_id;
-      const [projRes, deptRes, deptAssigneeRes, membersRes] = await Promise.all([
+      const [projRes, deptRes, deptAssigneeRes, membersRes, envTagsRes] = await Promise.all([
         supabase.from('projects').select('*').eq('id', projectId).single(),
         supabase.from('master_departments').select('id, name').or(`project_id.eq.${projectId},project_id.is.null`),
         supabase.from('department_assignees').select('department_id, default_user_id').eq('project_id', projectId),
         supabase.from('project_members').select('user_id, company').eq('project_id', projectId),
+        supabase.from('environment_tags' as any).select('id, name, category').or(`project_id.eq.${projectId},project_id.is.null`).order('sort_order'),
       ]);
       setProject(projRes.data);
       setDepartments(deptRes.data || []);
       setDeptAssignees(deptAssigneeRes.data || []);
-      // Merge member info with profiles
+      setEnvironmentTags((envTagsRes.data || []) as any);
       const profiles = profilesRes.data || [];
       const membersList = (membersRes.data || []).map(m => {
         const prof = profiles.find((p: any) => p.user_id === m.user_id);
@@ -156,7 +169,6 @@ const AssessmentRunDetail = () => {
           .order('is_default', { ascending: false });
         
         if (templates && templates.length > 0) {
-          // Find matching template by type, or use default
           const matchingTemplate = (templates as any[]).find((t: any) => t.assessment_type === runRes.data.type) 
             || (templates as any[]).find((t: any) => t.is_default)
             || templates[0];
@@ -230,13 +242,15 @@ const AssessmentRunDetail = () => {
   const isApproved = run?.status === '승인완료';
   const isArchived = run?.status === '폐기';
   const isMasterOrCreator = isAdmin() || (user && run?.created_by === user.id);
-  // Normal edit: any editable status
   const canEdit = run && EDITABLE_STATUSES.includes(run.status);
-  // Force edit for approved runs (master/creator only)
   const canForceEdit = isApproved && isMasterOrCreator;
 
+  // Only non-excluded items for display
+  const activeItems = useMemo(() => items.filter(i => !(i as any).is_excluded), [items]);
+  const excludedItems = useMemo(() => items.filter(i => (i as any).is_excluded), [items]);
+
   const filteredItems = useMemo(() => {
-    return items.filter(item => {
+    return activeItems.filter(item => {
       if (filterRiskGrade !== 'all' && item.risk_grade !== filterRiskGrade) return false;
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
@@ -244,15 +258,16 @@ const AssessmentRunDetail = () => {
       }
       return true;
     });
-  }, [items, filterRiskGrade, searchTerm]);
+  }, [activeItems, filterRiskGrade, searchTerm]);
 
   const stats = useMemo(() => ({
-    total: items.length,
-    high: items.filter(i => i.risk_grade === '상').length,
-    med: items.filter(i => i.risk_grade === '중').length,
-    low: items.filter(i => i.risk_grade === '하').length,
-    highRemain: items.filter(i => i.improved_risk_grade === '상').length,
-  }), [items]);
+    total: activeItems.length,
+    high: activeItems.filter(i => i.risk_grade === '상').length,
+    med: activeItems.filter(i => i.risk_grade === '중').length,
+    low: activeItems.filter(i => i.risk_grade === '하').length,
+    highRemain: activeItems.filter(i => i.improved_risk_grade === '상').length,
+    excluded: excludedItems.length,
+  }), [activeItems, excludedItems]);
 
   // Cell edit
   const handleCellEdit = async (id: string, field: string, value: any) => {
@@ -290,7 +305,6 @@ const AssessmentRunDetail = () => {
       responsible_department_id: deptId,
       department: dept?.name || '',
     };
-    // Auto-fill assignee from DepartmentAssignees mapping
     const mapping = deptAssignees.find(da => da.department_id === deptId);
     if (mapping?.default_user_id) {
       const assigneeProfile = projectMembers.find(m => m.user_id === mapping.default_user_id);
@@ -344,14 +358,54 @@ const AssessmentRunDetail = () => {
     if (data) setItems(prev => [...prev, data]);
   };
 
-  // Auto-generate
+  // Exclude item (해당없음 처리)
+  const handleExcludeItem = async (itemId: string, reason: string) => {
+    if (!user) return;
+    await supabase.from('risk_items').update({
+      is_excluded: true,
+      excluded_reason: reason,
+      excluded_at: new Date().toISOString(),
+      excluded_by: user.id,
+    } as any).eq('id', itemId);
+    setItems(prev => prev.map(i => i.id === itemId ? { ...i, is_excluded: true, excluded_reason: reason } as any : i));
+    toast({ title: '해당없음 처리 완료', description: '검증 시 누락으로 잡히지 않습니다.' });
+    log('해당없음처리', 'risk_item', itemId, run?.project_id, { reason });
+    setExcludeDialogItem(null);
+    setExcludeReason('');
+  };
+
+  // Restore excluded item
+  const handleRestoreItem = async (itemId: string) => {
+    await supabase.from('risk_items').update({
+      is_excluded: false,
+      excluded_reason: '',
+      excluded_at: null,
+      excluded_by: null,
+    } as any).eq('id', itemId);
+    setItems(prev => prev.map(i => i.id === itemId ? { ...i, is_excluded: false, excluded_reason: '' } as any : i));
+    toast({ title: '제외 해제됨' });
+  };
+
+  // Auto-generate with multi-process support
   const handleAutoGenerate = async () => {
-    if (!autoGenProcess || !run || !user) return;
+    if (autoGenProcesses.length === 0 || !run || !user) return;
     setAutoGenLoading(true);
     try {
-      const generated = await generateRiskItems({ processName: autoGenProcess, tags: autoGenTags, targetCount: autoGenTargetCount, deduplicate: true });
-      if (generated.length === 0) { toast({ title: '해당 공종 템플릿 없음', variant: 'destructive' }); setAutoGenLoading(false); return; }
-      const inserts = generated.map((g, i) => ({
+      let allGenerated: any[] = [];
+      for (const proc of autoGenProcesses) {
+        const generated = await generateRiskItems({ processName: proc.trim(), tags: autoGenTags, targetCount: autoGenTargetCount, deduplicate: true });
+        allGenerated.push(...generated);
+      }
+      if (allGenerated.length === 0) { toast({ title: '해당 공종 템플릿 없음', variant: 'destructive' }); setAutoGenLoading(false); return; }
+      // Deduplicate across processes
+      const seen = new Set<string>();
+      allGenerated = allGenerated.filter(g => {
+        const key = `${g.sub_task}|${g.hazard}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      const inserts = allGenerated.map((g, i) => ({
         project_id: run.project_id, run_id: runId,
         process: g.process, sub_task: g.sub_task, hazard: g.hazard, hazard_situation: g.hazard_situation,
         existing_measure: g.existing_measure, improvement_measure: g.improvement_measure,
@@ -362,10 +416,22 @@ const AssessmentRunDetail = () => {
         created_by: user.id, sort_order: items.length + i,
       }));
       const { data } = await supabase.from('risk_items').insert(inserts).select();
-      if (data) { setItems(prev => [...prev, ...data]); toast({ title: `${data.length}건 자동 생성 완료` }); }
-      setShowAutoGen(false); setAutoGenProcess(''); setAutoGenTags([]);
+      if (data) { setItems(prev => [...prev, ...data]); toast({ title: `${data.length}건 자동 생성 완료 (${autoGenProcesses.length}개 공종)` }); }
+      setShowAutoGen(false); setAutoGenProcesses([]); setAutoGenProcessInput(''); setAutoGenTags([]);
     } catch { toast({ title: '자동 생성 실패', variant: 'destructive' }); }
     setAutoGenLoading(false);
+  };
+
+  // Add process tag
+  const handleAddProcessTag = () => {
+    const trimmed = autoGenProcessInput.trim();
+    if (!trimmed) return;
+    // Support comma-separated input
+    const newTags = trimmed.split(/[,，]/).map(s => s.trim()).filter(s => s && !autoGenProcesses.includes(s));
+    if (newTags.length > 0) {
+      setAutoGenProcesses(prev => [...prev, ...newTags]);
+    }
+    setAutoGenProcessInput('');
   };
 
   // Validation (supports re-validation)
@@ -375,9 +441,8 @@ const AssessmentRunDetail = () => {
       await supabase.from('assessment_runs').update({ status: '검증중' }).eq('id', runId);
       setRun((prev: any) => ({ ...prev, status: '검증중' }));
       
-      // Re-fetch items to get latest data
       const { data: freshItems } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
-      const currentItems = freshItems || items;
+      const currentItems = (freshItems || items).filter((i: any) => !i.is_excluded);
       if (freshItems) setItems(freshItems);
 
       const report = await validateRiskItems(currentItems, run.project_id);
@@ -386,14 +451,11 @@ const AssessmentRunDetail = () => {
       setValidationTab('summary');
       await saveValidationResults(report, run.project_id, user.id, runId);
 
-      // Status transition based on verdict
       let newStatus: string;
-      if (report.verdict === '적정') {
+      if (report.verdict === '적정' || report.verdict === '조건부 적정') {
         newStatus = '검증완료';
-      } else if (report.verdict === '조건부 적정') {
-        newStatus = '검증완료'; // 조건부도 결재 가능
       } else {
-        newStatus = '보완요청'; // 부적정 → 보완요청
+        newStatus = '보완요청';
       }
 
       await supabase.from('assessment_runs').update({
@@ -413,10 +475,10 @@ const AssessmentRunDetail = () => {
     log('제출', 'assessment_run', runId!, run?.project_id);
   };
 
-  // Submit for approval (Validated → InApproval) — also handles resubmission
+  // Submit for approval — also handles resubmission
   const handleSubmitForApproval = async () => {
     if (!run || !user || !profile) return;
-    if (items.length === 0) {
+    if (activeItems.length === 0) {
       toast({ title: '항목이 1건 이상 있어야 결재 상신이 가능합니다.', variant: 'destructive' }); return;
     }
     if (!['검증완료', '보완요청', '보완중', '반려'].includes(run.status)) {
@@ -426,17 +488,15 @@ const AssessmentRunDetail = () => {
       toast({ title: '부적정 판정 시 결재 상신이 불가합니다. 보완 후 재검증하세요.', variant: 'destructive' }); return;
     }
 
-    // Resolve participants to user_ids for approval routing
     const reviewerParticipants = participants.filter(p => p.role === '검토자');
     const approverParticipants = participants.filter(p => p.role === '승인자');
 
     if (reviewerParticipants.length === 0 || approverParticipants.length === 0) {
-      toast({ title: '검토자와 승인자를 모두 지정해야 결재 상신이 가능합니다.', description: '참여자 관리에서 검토자/승인자를 추가하세요.', variant: 'destructive' });
+      toast({ title: '검토자와 승인자를 모두 지정해야 결재 상신이 가능합니다.', variant: 'destructive' });
       setShowParticipants(true);
       return;
     }
 
-    // Resolve participant names to user_ids from directory
     const resolveUserId = (name: string) => {
       const match = userDirectory.find(u => u.display_name === name);
       return match?.user_id || null;
@@ -447,14 +507,11 @@ const AssessmentRunDetail = () => {
     const reviewerId = resolveUserId(firstReviewer.user_name);
     const approverId = resolveUserId(firstApprover.user_name);
 
-    // Determine approval version: check existing approvals for this run
     const { data: existingApprovals } = await supabase.from('approvals').select('approval_version').eq('run_id', runId).order('approval_version', { ascending: false }).limit(1);
     const nextVersion = ((existingApprovals?.[0]?.approval_version) || 0) + 1;
 
-    // Close any previous pending approvals (mark as '취소' instead of deleting)
     await supabase.from('approvals').update({ status: '취소' }).eq('run_id', runId).eq('status', '대기');
 
-    // Create new approval steps: 작성(auto-approved) → 검토 → 승인
     const inserts = [
       {
         project_id: run.project_id, run_id: runId, step: '작성', status: '승인',
@@ -475,7 +532,6 @@ const AssessmentRunDetail = () => {
     await supabase.from('approvals').insert(inserts);
     await supabase.from('assessment_runs').update({ status: '결재진행' }).eq('id', runId);
 
-    // Send notifications to reviewer and approver
     const isResubmission = nextVersion > 1;
     const notifTitle = isResubmission ? '재결재 요청' : '결재 요청';
     const notifTargets = [
@@ -483,36 +539,27 @@ const AssessmentRunDetail = () => {
       { userId: approverId, name: firstApprover.user_name, step: '승인' },
     ].filter(t => t.userId);
 
-    if (notifTargets.length > 0) {
-      const projectName = project?.name || '';
-      // Use sendNotification (via edge function → email) instead of direct DB insert
-      for (const t of notifTargets) {
-        await sendNotification({
-          user_id: t.userId!,
-          title: notifTitle,
-          message: `[${projectName}] [${run.type}] ${run.period_label} 회차의 ${t.step} 결재가 ${isResubmission ? '재' : ''}요청되었습니다. 요청자: ${profile.display_name}${isResubmission ? ` (${nextVersion}차 상신)` : ''}`,
-          type: 'approval_request',
-          related_id: runId,
-          related_type: 'assessment_run',
-          project_id: run.project_id,
-        });
-      }
+    for (const t of notifTargets) {
+      await sendNotification({
+        user_id: t.userId!,
+        title: notifTitle,
+        message: `[${project?.name || ''}] [${run.type}] ${run.period_label} 회차의 ${t.step} 결재가 ${isResubmission ? '재' : ''}요청되었습니다.`,
+        type: 'approval_request',
+        related_id: runId,
+        related_type: 'assessment_run',
+        project_id: run.project_id,
+      });
     }
 
     setRun((prev: any) => ({ ...prev, status: '결재진행' }));
     setShowApproval(false); setApprovalComment('');
     toast({ title: isResubmission ? `재상신 완료 (${nextVersion}차)` : '결재가 상신되었습니다.' });
-    log(isResubmission ? '재상신' : '결재상신', 'assessment_run', runId!, run.project_id, {
-      reviewer: firstReviewer.user_name,
-      approver: firstApprover.user_name,
-      version: nextVersion,
-    });
+    log(isResubmission ? '재상신' : '결재상신', 'assessment_run', runId!, run.project_id);
   };
 
   // Cancel approval
   const handleCancelApproval = async () => {
     if (!run || !user) return;
-    // Cancel pending approvals instead of deleting (preserve history)
     await supabase.from('approvals').update({ status: '취소' }).eq('run_id', runId).eq('status', '대기');
     await supabase.from('assessment_runs').update({ status: '검증완료' }).eq('id', runId);
     setRun((prev: any) => ({ ...prev, status: '검증완료' }));
@@ -520,31 +567,21 @@ const AssessmentRunDetail = () => {
     log('상신취소', 'assessment_run', runId!, run.project_id);
   };
 
-  // Final approval actions — only allows the assigned approver for the current pending step
+  // Final approval — ONLY assigned approver (no admin fallback in run detail, use Approval Inbox)
   const handleFinalApproval = async (action: '승인' | '반려', comment?: string) => {
     if (!run || !user || !profile) return;
-    // Get the latest version's pending approval assigned to current user
     const { data: latestVersionData } = await supabase.from('approvals')
       .select('approval_version').eq('run_id', runId).order('approval_version', { ascending: false }).limit(1);
     const currentVersion = latestVersionData?.[0]?.approval_version || 1;
     
-    // Find the pending approval assigned to THIS user
+    // ONLY allow the assigned approver
     const { data: myPendingApprovals } = await supabase.from('approvals')
       .select('*').eq('run_id', runId).eq('status', '대기').eq('approval_version', currentVersion).eq('approver_id', user.id);
     
-    // Fallback for admins: if no direct assignment, get the first pending step
-    let ap: any = null;
-    if (myPendingApprovals && myPendingApprovals.length > 0) {
-      ap = myPendingApprovals[0];
-    } else if (isAdmin()) {
-      const { data: anyPending } = await supabase.from('approvals')
-        .select('*').eq('run_id', runId).eq('status', '대기').eq('approval_version', currentVersion).order('created_at').limit(1);
-      ap = anyPending?.[0] || null;
-    }
+    const ap = myPendingApprovals?.[0] || null;
     
     if (!ap) {
-      toast({ title: '처리할 결재 단계가 없습니다.', description: '이미 처리되었거나 권한이 없습니다.', variant: 'destructive' });
-      fetchAll();
+      toast({ title: '결재 권한이 없습니다.', description: '해당 단계의 지정된 결재자만 승인/반려할 수 있습니다.', variant: 'destructive' });
       return;
     }
     await supabase.from('approvals').update({
@@ -559,17 +596,12 @@ const AssessmentRunDetail = () => {
         await supabase.from('assessment_runs').update({ status: '승인완료' }).eq('id', runId);
         await supabase.from('risk_items').update({ is_locked: true }).eq('run_id', runId);
         setRun((prev: any) => ({ ...prev, status: '승인완료' }));
-        // Notify author via edge function (sends email)
         const authorStep = (allAp || []).find((a: any) => a.step === '작성');
         if (authorStep?.approver_id) {
           await sendNotification({
-            user_id: authorStep.approver_id,
-            title: '결재 최종 승인',
+            user_id: authorStep.approver_id, title: '결재 최종 승인',
             message: `[${run.type}] ${run.period_label} 회차가 최종 승인되었습니다.`,
-            type: 'approval_approved',
-            related_id: runId,
-            related_type: 'assessment_run',
-            project_id: run.project_id,
+            type: 'approval_approved', related_id: runId, related_type: 'assessment_run', project_id: run.project_id,
           });
         }
         toast({ title: '최종 승인 완료! 해당 회차가 잠금되었습니다.' });
@@ -579,18 +611,13 @@ const AssessmentRunDetail = () => {
     } else {
       await supabase.from('assessment_runs').update({ status: '보완중' }).eq('id', runId);
       setRun((prev: any) => ({ ...prev, status: '보완중' }));
-      // Notify author via edge function (sends email)
       const { data: authorData } = await supabase.from('approvals').select('*').eq('run_id', runId).eq('step', '작성').eq('approval_version', currentVersion).limit(1);
       const authorStep = authorData?.[0];
       if (authorStep?.approver_id) {
         await sendNotification({
-          user_id: authorStep.approver_id,
-          title: '결재 반려',
+          user_id: authorStep.approver_id, title: '결재 반려',
           message: `[${run.type}] ${run.period_label} 반려됨. 사유: ${comment || '(없음)'}`,
-          type: 'approval_rejected',
-          related_id: runId,
-          related_type: 'assessment_run',
-          project_id: run.project_id,
+          type: 'approval_rejected', related_id: runId, related_type: 'assessment_run', project_id: run.project_id,
         });
       }
       toast({ title: '반려되었습니다. 보완 후 재제출하세요.', variant: 'destructive' });
@@ -599,11 +626,9 @@ const AssessmentRunDetail = () => {
     fetchAll();
   };
 
-  // Resubmit (after rejection/supplement request → back to Submitted for revalidation)
+  // Resubmit
   const handleResubmit = async () => {
     if (!run) return;
-    // Don't delete old approvals — they stay as history. New ones will be created on next 결재상신.
-    // Cancel any remaining pending approvals
     await supabase.from('approvals').update({ status: '취소' }).eq('run_id', runId).eq('status', '대기');
     await supabase.from('assessment_runs').update({ status: '제출됨' }).eq('id', runId);
     setRun((prev: any) => ({ ...prev, status: '제출됨' }));
@@ -611,162 +636,70 @@ const AssessmentRunDetail = () => {
     log('재제출', 'assessment_run', runId!, run.project_id);
   };
 
-  // Auto-remediation: generate action suggestions
-  const handleGenerateRemediation = async () => {
+  // Unified auto-remediation wizard: step 1 = generate & show, step 2 = apply
+  const handleOpenRemediationWizard = async () => {
     if (!validationReport || !run) return;
     setRemediationLoading(true);
+    setRemediationStep(1);
+    setShowRemediationWizard(true);
     try {
-      const actions = await generateRemediationActions(items, validationReport, run.project_id);
+      const nonExcludedItems = items.filter((i: any) => !i.is_excluded);
+      const actions = await generateRemediationActions(nonExcludedItems, validationReport, run.project_id);
       setRemediationActions(actions);
-      // Auto-select non-user-confirm actions
       setSelectedActionIds(new Set(actions.filter(a => !a.requiresUserConfirm).map(a => a.id)));
-      setShowRemediation(true);
     } catch (err) {
-      toast({ title: '보완 제안 생성 실패', description: String(err), variant: 'destructive' });
+      toast({ title: '보완 제안 생성 실패', variant: 'destructive' });
     }
     setRemediationLoading(false);
   };
 
-  // Apply selected remediation actions
   const handleApplyRemediation = async () => {
     if (!run || !user) return;
     const selected = remediationActions.filter(a => selectedActionIds.has(a.id));
     if (selected.length === 0) { toast({ title: '적용할 액션을 선택하세요.', variant: 'destructive' }); return; }
     setRemediationLoading(true);
     try {
-      const { appliedCount, newItemCount, summary } = await applyRemediationActions(
-        selected, items, runId!, run.project_id, user.id
+      const nonExcludedItems = items.filter((i: any) => !i.is_excluded);
+      const { appliedCount, newItemCount } = await applyRemediationActions(
+        selected, nonExcludedItems, runId!, run.project_id, user.id
       );
-
-      // Build summary text for audit
       const summaryText = buildRemediationSummaryText(selected);
-
-      // Log
-      log('자동보완적용', 'assessment_run', runId!, run.project_id, {
-        appliedCount, newItemCount, actions: selected.map(a => a.actionType), summary,
-      });
-
-      // Reload items
+      log('자동보완적용', 'assessment_run', runId!, run.project_id, { appliedCount, newItemCount });
       const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
       if (refreshed) setItems(refreshed);
+      toast({ title: `${appliedCount}건 보완 적용 완료${newItemCount > 0 ? ` (신규 ${newItemCount}건)` : ''}` });
 
-      toast({ title: `${appliedCount}건 보완 적용 완료${newItemCount > 0 ? ` (신규 ${newItemCount}건 추가)` : ''}` });
-      setShowRemediation(false);
-
-      // Auto re-validate if option is on
+      // Auto re-validate
       if (applyAndRevalidate) {
-        setTimeout(() => handleValidate(), 500);
+        const currentItems = (refreshed || items).filter((i: any) => !i.is_excluded);
+        const report = await validateRiskItems(currentItems, run.project_id);
+        setValidationReport(report);
+        await saveValidationResults(report, run.project_id, user.id, runId);
+        let newStatus = report.verdict === '부적정' ? '보완요청' : '검증완료';
+        await supabase.from('assessment_runs').update({ status: newStatus, validation_score: report.score, validation_verdict: report.verdict }).eq('id', runId);
+        setRun((prev: any) => ({ ...prev, status: newStatus, validation_score: report.score, validation_verdict: report.verdict }));
+        toast({ title: `재검증: ${report.verdict} (${report.score}점)` });
       }
+
+      setShowRemediationWizard(false);
     } catch (err) {
       toast({ title: '보완 적용 실패', description: String(err), variant: 'destructive' });
     }
     setRemediationLoading(false);
   };
 
-  // Full auto-remediation: analyze → apply all auto actions → revalidate → transition status
-  const handleAutoRemediation = async () => {
-    if (!run || !user || !validationReport) return;
-    setAutoRemediationLoading(true);
-    try {
-      const result = await executeAutoRemediation(
-        items, validationReport, runId!, run.project_id, user.id
-      );
-
-      // Refresh items
-      const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
-      if (refreshed) setItems(refreshed);
-
-      // Update local state
-      setValidationReport(result.revalidationReport);
-      setRun((prev: any) => ({
-        ...prev,
-        status: result.newStatus,
-        validation_score: result.revalidationReport.score,
-        validation_verdict: result.revalidationReport.verdict,
-      }));
-
-      // Audit log
-      log('자동적정전환실행', 'assessment_run', runId!, run.project_id, {
-        appliedCount: result.appliedCount,
-        newItemCount: result.newItemCount,
-        modifiedItemIds: result.modifiedItemIds,
-        verdict: result.revalidationReport.verdict,
-        score: result.revalidationReport.score,
-        statusTransitioned: result.statusTransitioned,
-        summary: result.summary,
-      });
-
-      if (result.statusTransitioned) {
-        toast({
-          title: `✅ 자동 보완 완료 → ${result.revalidationReport.verdict} (${result.revalidationReport.score}점)`,
-          description: `${result.appliedCount}건 보완 적용. 결재 상신이 가능합니다.`,
-        });
-      } else {
-        toast({
-          title: `⚠ 자동 보완 후에도 부적정 (${result.revalidationReport.score}점)`,
-          description: `${result.appliedCount}건 적용했으나 ${result.revalidationReport.errors}건의 오류가 남아있습니다. 수동 보완이 필요합니다.`,
-          variant: 'destructive',
-        });
-        setShowValidation(true);
-      }
-    } catch (err) {
-      toast({ title: '자동 보완 실행 실패', description: String(err), variant: 'destructive' });
-    }
-    setAutoRemediationLoading(false);
-  };
-
-  // Force edit on approved run (creates audit log)
-  const handleForceEditConfirm = async () => {
-    if (!forceEditReason.trim()) { toast({ title: '수정 사유를 입력해주세요.', variant: 'destructive' }); return; }
-    // Unlock items
-    await supabase.from('risk_items').update({ is_locked: false }).eq('run_id', runId);
-    // Set status back to 작성중 with flag
-    await supabase.from('assessment_runs').update({ status: '작성중' }).eq('id', runId);
-    setRun((prev: any) => ({ ...prev, status: '작성중' }));
-    // Log
-    log('승인후강제수정', 'assessment_run', runId!, run?.project_id, { reason: forceEditReason });
-    toast({ title: '승인완료 회차가 수정 모드로 전환되었습니다. 재결재가 필요합니다.' });
-    setShowForceEdit(false); setForceEditReason('');
-    fetchAll();
-  };
-
-  // Create revision (clone approved run)
-  const handleCreateRevision = async () => {
-    if (!run || !user) return;
-    // Create new run as clone
-    const { data: newRun } = await supabase.from('assessment_runs').insert([{
-      project_id: run.project_id, type: run.type, period_label: `${run.period_label} (개정)`,
-      target_processes: run.target_processes, target_contractors: run.target_contractors,
-      notes: `${run.period_label} 개정본`, status: '작성중', created_by: user.id,
-    }]).select().single();
-    if (!newRun) { toast({ title: '개정 회차 생성 실패', variant: 'destructive' }); return; }
-    // Clone items
-    const cloneItems = items.map((item, i) => {
-      const { id, risk, improved_risk, created_at, updated_at, ...rest } = item;
-      return { ...rest, run_id: newRun.id, is_locked: false, status: '초안', created_by: user.id, sort_order: i };
-    });
-    if (cloneItems.length > 0) await supabase.from('risk_items').insert(cloneItems);
-    // Clone participants
-    if (participants.length > 0) {
-      const cloneParts = participants.map(p => ({
-        run_id: newRun.id, role: p.role, user_name: p.user_name, company: p.company,
-      }));
-      await supabase.from('assessment_run_participants').insert(cloneParts);
-    }
-    log('개정회차생성', 'assessment_run', newRun.id, run.project_id, { source_run_id: runId });
-    toast({ title: '개정 회차가 생성되었습니다.' });
-    setShowRevision(false);
-    navigate(`/assessment-run/${newRun.id}`);
-  };
-
-  // Archive (soft delete)
-  const handleArchive = async () => {
-    if (!archiveReason.trim()) { toast({ title: '삭제 사유를 입력해주세요.', variant: 'destructive' }); return; }
-    await supabase.from('assessment_runs').update({ status: '폐기' }).eq('id', runId);
-    setRun((prev: any) => ({ ...prev, status: '폐기' }));
-    log('회차폐기', 'assessment_run', runId!, run?.project_id, { reason: archiveReason });
-    toast({ title: '회차가 폐기되었습니다.' });
-    setShowArchive(false); setArchiveReason('');
+  // Edit run metadata
+  const handleSaveMeta = async () => {
+    if (!run) return;
+    const updates: Record<string, any> = {};
+    if (editMeta.period_label) updates.period_label = editMeta.period_label;
+    if (editMeta.type) updates.type = editMeta.type;
+    if (editMeta.notes !== undefined) updates.notes = editMeta.notes;
+    await supabase.from('assessment_runs').update(updates).eq('id', runId);
+    setRun((prev: any) => ({ ...prev, ...updates }));
+    setShowEditMeta(false);
+    toast({ title: '회차 정보가 수정되었습니다.' });
+    log('회차정보수정', 'assessment_run', runId!, run.project_id, updates);
   };
 
   // Participants
@@ -774,11 +707,12 @@ const AssessmentRunDetail = () => {
     if (!runId) return;
     const name = newParticipant.user_name || participantSearch;
     if (!name) return;
-    await supabase.from('assessment_run_participants').insert([{ run_id: runId, role: newParticipant.role, user_name: name, company: newParticipant.company }]);
+    const { data } = await supabase.from('assessment_run_participants').insert([{
+      run_id: runId, role: newParticipant.role, user_name: name, company: newParticipant.company,
+    }]).select().single();
+    if (data) setParticipants(prev => [...prev, data]);
     setNewParticipant({ role: '작성자', user_name: '', company: '' });
     setParticipantSearch('');
-    const { data } = await supabase.from('assessment_run_participants').select('*').eq('run_id', runId);
-    setParticipants(data || []);
   };
 
   const handleDeleteParticipant = async (id: string) => {
@@ -786,8 +720,50 @@ const AssessmentRunDetail = () => {
     setParticipants(prev => prev.filter(p => p.id !== id));
   };
 
+  // Force edit / archive / revision handlers
+  const handleForceEditConfirm = async () => {
+    if (!run || !user) return;
+    await supabase.from('risk_items').update({ is_locked: false }).eq('run_id', runId);
+    await supabase.from('assessment_runs').update({ status: '보완중' }).eq('id', runId);
+    setRun((prev: any) => ({ ...prev, status: '보완중' }));
+    setShowForceEdit(false);
+    log('강제수정', 'assessment_run', runId!, run.project_id, { reason: forceEditReason });
+    toast({ title: '강제 수정 모드 활성화. 수정 후 재상신하세요.' });
+  };
+
+  const handleArchive = async () => {
+    if (!run || !user) return;
+    await supabase.from('assessment_runs').update({
+      status: '폐기', is_deleted: true, deleted_by: user.id, deleted_at: new Date().toISOString(), deleted_reason: archiveReason,
+    }).eq('id', runId);
+    setRun((prev: any) => ({ ...prev, status: '폐기' }));
+    setShowArchive(false);
+    log('폐기', 'assessment_run', runId!, run.project_id, { reason: archiveReason });
+    toast({ title: '회차가 폐기되었습니다.' });
+  };
+
+  const handleCreateRevision = async () => {
+    if (!run || !user) return;
+    const newPeriod = `${run.period_label} (개정)`;
+    const { data: newRun } = await supabase.from('assessment_runs').insert([{
+      project_id: run.project_id, type: run.type, period_label: newPeriod, status: '작성중',
+      created_by: user.id, notes: `원본: ${run.period_label}`,
+    }]).select().single();
+    if (!newRun) { toast({ title: '생성 실패', variant: 'destructive' }); return; }
+    const { data: srcItems } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+    if (srcItems && srcItems.length > 0) {
+      const copies = srcItems.map(({ id, created_at, updated_at, risk, improved_risk, is_locked, submitted_at, submitted_by, version_number, batch_id, ...rest }) => ({
+        ...rest, run_id: newRun.id, status: '미착수', is_locked: false, created_by: user.id,
+      }));
+      await supabase.from('risk_items').insert(copies);
+    }
+    setShowRevision(false);
+    toast({ title: '개정 회차 생성 완료' });
+    navigate(`/assessment-run/${newRun.id}`);
+  };
+
   // Export helpers
-  const buildRiskRows = () => items.map(i => ({
+  const buildRiskRows = () => activeItems.map(i => ({
     ...i, sub_task: i.sub_task || '', hazard: i.hazard || '', hazard_situation: i.hazard_situation || '',
     existing_measure: i.existing_measure || '', improvement_measure: i.improvement_measure || '',
     likelihood_grade: i.likelihood_grade || '중', severity_grade: i.severity_grade || '중', risk_grade: i.risk_grade || '중',
@@ -806,9 +782,7 @@ const AssessmentRunDetail = () => {
     try {
       await exportToPDFServer(runId!, 'assessment');
       log('PDF다운로드', 'assessment_run', runId!, run.project_id);
-      toast({ title: 'PDF가 생성되었습니다. 인쇄 대화상자에서 PDF로 저장하세요.' });
     } catch {
-      // Fallback to client-side
       if (!project) return;
       try {
         exportToPDF(buildRiskRows(), buildProjectInfo(), null, participants, { type: run.type, period_label: run.period_label });
@@ -823,15 +797,12 @@ const AssessmentRunDetail = () => {
     if (!run) return;
     try {
       await exportToPDFServer(runId!, 'validation');
-      log('검증PDF다운로드', 'assessment_run', runId!, run.project_id);
-      toast({ title: '검증 리포트 PDF가 생성되었습니다.' });
     } catch {
       if (!project || !validationReport) return;
       try {
         exportToPDF(buildRiskRows(), buildProjectInfo(), null, participants, { type: run.type, period_label: run.period_label }, validationReport);
-        log('검증PDF다운로드(클라이언트)', 'assessment_run', runId!, run.project_id);
       } catch (err) {
-        toast({ title: '검증 리포트 PDF 다운로드 실패', description: String(err), variant: 'destructive' });
+        toast({ title: '검증 리포트 PDF 다운로드 실패', variant: 'destructive' });
       }
     }
   };
@@ -840,9 +811,8 @@ const AssessmentRunDetail = () => {
     if (!project) return;
     try {
       exportToXLSX(buildRiskRows(), buildProjectInfo(), undefined, participants, { type: run?.type, period_label: run?.period_label });
-      log('XLSX다운로드', 'assessment_run', runId!, run?.project_id);
     } catch (err) {
-      toast({ title: 'XLSX 다운로드 실패', description: String(err), variant: 'destructive' });
+      toast({ title: 'XLSX 다운로드 실패', variant: 'destructive' });
     }
   };
 
@@ -896,7 +866,6 @@ const AssessmentRunDetail = () => {
     const issues = validateImportedItems(mapped);
     setExcelIssues(issues);
     setExcelStep('result');
-    log('엑셀검증', 'assessment_run', runId!, run?.project_id, { rows: excelData.length, issues: issues.length });
   };
 
   const handleExcelImport = async () => {
@@ -922,7 +891,6 @@ const AssessmentRunDetail = () => {
     if (data) {
       setItems(prev => [...prev, ...data]);
       toast({ title: `${data.length}건 반영 완료` });
-      log('엑셀반영', 'assessment_run', runId!, run.project_id, { count: data.length });
     }
     setShowExcelUpload(false); setExcelStep('upload'); setExcelData([]);
   };
@@ -979,14 +947,24 @@ const AssessmentRunDetail = () => {
   if (!run) return <div className="py-12 text-center text-muted-foreground">회차를 찾을 수 없습니다.</div>;
 
   // CTA conditions
-  const canSubmitForValidation = run.status === '작성중' && items.length > 0;
+  const canSubmitForValidation = run.status === '작성중' && activeItems.length > 0;
   const canValidate = ['제출됨', '작성중', '보완요청', '보완중', '검증대기', '반려'].includes(run.status) && isAdmin();
   const hasReviewerAndApprover = participants.some(p => p.role === '검토자') && participants.some(p => p.role === '승인자');
-  const canSubmitApproval = ['검증완료', '보완요청', '보완중', '반려'].includes(run.status) && run.validation_verdict !== '부적정' && items.length > 0 && hasReviewerAndApprover;
+  const canSubmitApproval = ['검증완료', '보완요청', '보완중', '반려'].includes(run.status) && run.validation_verdict !== '부적정' && activeItems.length > 0 && hasReviewerAndApprover;
   const canCancelApproval = run.status === '결재진행' && (isAdmin() || (user && run.created_by === user.id));
   const canResubmit = ['보완요청', '보완중', '반려'].includes(run.status);
   const canAutoRemediate = validationReport && validationReport.verdict !== '적정' && (canEdit || canForceEdit);
+  // Approval buttons: ONLY show to the assigned approver for current pending step
+  const isMyApprovalPending = user && latestApprovals.some(a => a.status === '대기' && a.approver_id === user.id);
   const statusInfo = STATUS_FLOW[run.status as keyof typeof STATUS_FLOW] || { label: run.status, color: '' };
+
+  // Default tags (hardcoded fallback + DB tags)
+  const defaultEnvTags = ['고소','야간','밀폐','화기','양중','굴착','전기','분진','소음','고온','해상','화학'];
+  const defaultEquipTags = ['크레인','지게차','고소작업대','굴삭기','용접기','그라인더','펌프카'];
+  const envTagNames = environmentTags.filter(t => t.category === 'environment').map(t => t.name);
+  const equipTagNames = environmentTags.filter(t => t.category === 'equipment').map(t => t.name);
+  const allEnvTags = envTagNames.length > 0 ? envTagNames : defaultEnvTags;
+  const allEquipTags = equipTagNames.length > 0 ? equipTagNames : defaultEquipTags;
 
   return (
     <div className="space-y-4 animate-fade-in print:space-y-2">
@@ -997,6 +975,12 @@ const AssessmentRunDetail = () => {
             <Button variant="ghost" size="sm" onClick={() => navigate('/risk-assessment')}>← 목록</Button>
             <Badge variant="outline" className="text-[10px]">{run.type}</Badge>
             <h1 className="text-xl font-bold">{run.period_label || '(기간 미지정)'}</h1>
+            {isMasterOrCreator && (
+              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
+                setEditMeta({ period_label: run.period_label || '', type: run.type || '', notes: run.notes || '' });
+                setShowEditMeta(true);
+              }}><Pencil className="h-3.5 w-3.5" /></Button>
+            )}
             <Badge variant="outline" className={`text-[10px] ${statusInfo.color}`}>
               {run.status} {isApproved && <Lock className="h-3 w-3 ml-1 inline" />}
             </Badge>
@@ -1004,6 +988,7 @@ const AssessmentRunDetail = () => {
           <p className="text-sm text-muted-foreground mt-1">
             항목 {stats.total}건 · 상 {stats.high} · 중 {stats.med} · 하 {stats.low}
             {stats.highRemain > 0 && <span className="text-destructive ml-2">· 개선후 상 잔존 {stats.highRemain}</span>}
+            {stats.excluded > 0 && <span className="text-muted-foreground ml-2">· 제외 {stats.excluded}</span>}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1013,7 +998,7 @@ const AssessmentRunDetail = () => {
         </div>
       </div>
 
-      {/* Approval Status Display (SSOT from approval records) */}
+      {/* Approval Status Display (SSOT) */}
       {latestApprovals.length > 0 && (
         <div className="flex items-center gap-2 print:hidden flex-wrap">
           <span className="text-xs text-muted-foreground font-medium">결재현황:</span>
@@ -1040,7 +1025,6 @@ const AssessmentRunDetail = () => {
           {latestApprovals[0]?.approval_version > 1 && (
             <Badge variant="outline" className="text-[9px]">{latestApprovals[0].approval_version}차 상신</Badge>
           )}
-          {/* Debug info for masters */}
           {isAdmin() && (
             <span className="text-[9px] text-muted-foreground/60 ml-auto">
               v{latestApprovals[0]?.approval_version || 1} | {latestApprovals.filter(a => a.status === '대기').length}건 대기
@@ -1051,7 +1035,6 @@ const AssessmentRunDetail = () => {
 
       {/* Action Buttons */}
       <div className="flex items-center gap-2 print:hidden flex-wrap">
-        {/* Draft actions */}
         {(canEdit || canForceEdit) && (
           <>
             <Button size="sm" className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => setShowAutoGen(true)}>
@@ -1076,16 +1059,9 @@ const AssessmentRunDetail = () => {
           </Button>
         )}
         {canSubmitApproval && (
-          hasReviewerAndApprover ? (
-            <Button size="sm" className="gap-1.5" onClick={() => setShowApproval(true)}>
-              <Send className="h-3.5 w-3.5" /> {['보완요청','보완중','반려'].includes(run.status) ? '재상신' : '결재 상신'}
-            </Button>
-          ) : (
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowParticipants(true)}
-              title="검토자/승인자를 지정해야 결재 상신이 가능합니다">
-              <Send className="h-3.5 w-3.5 text-muted-foreground" /> 결재 상신 (결재자 미지정)
-            </Button>
-          )
+          <Button size="sm" className="gap-1.5" onClick={() => setShowApproval(true)}>
+            <Send className="h-3.5 w-3.5" /> {['보완요청','보완중','반려'].includes(run.status) ? '재상신' : '결재 상신'}
+          </Button>
         )}
         {canCancelApproval && (
           <Button size="sm" variant="outline" className="gap-1.5 text-destructive" onClick={handleCancelApproval}>
@@ -1098,19 +1074,12 @@ const AssessmentRunDetail = () => {
           </Button>
         )}
         {canAutoRemediate && (
-          <>
-            <Button size="sm" className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={handleAutoRemediation} disabled={autoRemediationLoading}>
-              <Wand2 className="h-3.5 w-3.5" /> {autoRemediationLoading ? '자동 보완 중...' : '자동 보완 실행'}
-            </Button>
-            <Button size="sm" variant="outline" className="gap-1.5 text-accent" onClick={handleGenerateRemediation} disabled={remediationLoading}>
-              <Wand2 className="h-3.5 w-3.5" /> {remediationLoading ? '분석 중...' : '보완 항목 선택'}
-            </Button>
-          </>
+          <Button size="sm" className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={handleOpenRemediationWizard} disabled={remediationLoading}>
+            <Wand2 className="h-3.5 w-3.5" /> {remediationLoading ? '분석 중...' : '자동 보완'}
+          </Button>
         )}
-        {/* Approval action buttons — only show to assigned approvers or admins */}
-        {run.status === '결재진행' && (
-          isAdmin() || (user && latestApprovals.some(a => a.status === '대기' && a.approver_id === user.id))
-        ) && (
+        {/* Approval buttons — ONLY for assigned approver */}
+        {run.status === '결재진행' && isMyApprovalPending && (
           <div className="flex gap-1">
             <Button size="sm" variant="outline" className="gap-1 text-success" onClick={() => handleFinalApproval('승인')}>
               <CheckCircle2 className="h-3.5 w-3.5" /> 승인
@@ -1148,6 +1117,13 @@ const AssessmentRunDetail = () => {
         <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportXLSX}><Download className="h-3.5 w-3.5" /> XLSX</Button>
       </div>
 
+      {/* Remediation guide for first-time users */}
+      {canAutoRemediate && (
+        <p className="text-xs text-muted-foreground print:hidden pl-1">
+          💡 부적정이면 <strong>[자동 보완]</strong>을 누르면 보완→재검증까지 자동으로 진행됩니다.
+        </p>
+      )}
+
       {/* Status notices */}
       {['보완요청', '보완중', '반려'].includes(run.status) && (
         <Card className="border-warning print:hidden">
@@ -1166,7 +1142,7 @@ const AssessmentRunDetail = () => {
             <div className="flex items-center gap-2 text-sm text-success">
               <Lock className="h-4 w-4" />
               <span className="font-medium">승인완료:</span>
-              <span>이 회차는 최종 승인되어 잠금 상태입니다. {isMasterOrCreator && '작성자/마스터는 강제수정 또는 개정 회차를 생성할 수 있습니다.'}</span>
+              <span>이 회차는 최종 승인되어 잠금 상태입니다.</span>
             </div>
           </CardContent>
         </Card>
@@ -1220,7 +1196,7 @@ const AssessmentRunDetail = () => {
                   <th className="text-center w-16">상태</th>
                   <th>PPE</th><th>법적근거</th><th className="w-24">책임부서</th><th className="w-24">담당자</th>
                   {validationReport && <th className="w-16 text-center">판정</th>}
-                  {(canEdit || canForceEdit) && <th className="w-16 text-center print:hidden">작업</th>}
+                  {(canEdit || canForceEdit) && <th className="w-20 text-center print:hidden">작업</th>}
                 </tr>
               </thead>
               <tbody>
@@ -1302,6 +1278,7 @@ const AssessmentRunDetail = () => {
                         <td className="text-center print:hidden">
                           <div className="flex items-center gap-0.5 justify-center">
                             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDuplicate(item)}><Copy className="h-3 w-3" /></Button>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" title="해당없음 처리" onClick={() => { setExcludeDialogItem(item.id); setExcludeReason(''); }}><Ban className="h-3 w-3 text-muted-foreground" /></Button>
                             <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete(item.id)}><Trash2 className="h-3 w-3" /></Button>
                           </div>
                         </td>
@@ -1315,35 +1292,85 @@ const AssessmentRunDetail = () => {
         </CardContent>
       </Card>
 
+      {/* Excluded items section */}
+      {excludedItems.length > 0 && (
+        <Card className="print:hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-muted-foreground">제외(해당없음) 항목 ({excludedItems.length}건)</CardTitle>
+          </CardHeader>
+          <CardContent className="max-h-40 overflow-y-auto space-y-1">
+            {excludedItems.map((item: any) => (
+              <div key={item.id} className="flex items-center justify-between text-xs p-2 bg-muted/30 rounded">
+                <div>
+                  <span className="font-medium">{item.process} – {item.sub_task || ''}</span>
+                  <span className="text-muted-foreground ml-2">사유: {item.excluded_reason || '(미입력)'}</span>
+                </div>
+                {(canEdit || canForceEdit) && (
+                  <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => handleRestoreItem(item.id)}>제외 해제</Button>
+                )}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Auto Generate Dialog */}
       <Dialog open={showAutoGen} onOpenChange={setShowAutoGen}>
         <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>공종명으로 위험성평가 자동작성</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>공종명 입력</Label>
-              <Input value={autoGenProcess} onChange={e => setAutoGenProcess(e.target.value)} placeholder="예: 배관, 용접, 비계, 굴착..." />
+              <Label>공종명 입력 (다중 입력: 쉼표로 구분)</Label>
+              <div className="flex gap-2">
+                <Input value={autoGenProcessInput} onChange={e => setAutoGenProcessInput(e.target.value)}
+                  placeholder="예: 배관, 용접, 비계..."
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddProcessTag(); } }}
+                />
+                <Button size="sm" variant="outline" onClick={handleAddProcessTag}>추가</Button>
+              </div>
+              {autoGenProcesses.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {autoGenProcesses.map(p => (
+                    <Badge key={p} variant="default" className="cursor-pointer text-[11px] gap-1" onClick={() => setAutoGenProcesses(prev => prev.filter(x => x !== p))}>
+                      {p} ×
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="space-y-1.5">
-              <Label>환경/장비 태그 (선택)</Label>
+              <Label>환경 태그 (선택)</Label>
               <div className="flex flex-wrap gap-1.5">
-                {['고소','야간','밀폐','화기','양중','굴착','전기','분진','소음','고온','해상','화학'].map(tag => (
+                {allEnvTags.map(tag => (
                   <Badge key={tag} variant={autoGenTags.includes(tag) ? 'default' : 'outline'} className="cursor-pointer text-[11px]"
                     onClick={() => setAutoGenTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}>{tag}</Badge>
                 ))}
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>생성 개수</Label>
+              <Label>장비 태그 (선택)</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {allEquipTags.map(tag => (
+                  <Badge key={tag} variant={autoGenTags.includes(tag) ? 'default' : 'outline'} className="cursor-pointer text-[11px]"
+                    onClick={() => setAutoGenTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}>{tag}</Badge>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>현장 조건 (선택, 자유 텍스트)</Label>
+              <Input value={autoGenConditionText} onChange={e => setAutoGenConditionText(e.target.value)} placeholder="작업 위치, 특이사항, 동시작업 등..." />
+            </div>
+            <div className="space-y-1.5">
+              <Label>공종별 생성 개수</Label>
               <Select value={String(autoGenTargetCount)} onValueChange={v => setAutoGenTargetCount(Number(v))}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {[30, 50, 100, 150, 300].map(n => <SelectItem key={n} value={String(n)}>{n}개</SelectItem>)}
+                  {[10, 20, 30, 50, 100].map(n => <SelectItem key={n} value={String(n)}>{n}개</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={handleAutoGenerate} disabled={!autoGenProcess || autoGenLoading} className="w-full">
-              {autoGenLoading ? '생성 중...' : `${autoGenTargetCount}개 자동 생성`}
+            <Button onClick={handleAutoGenerate} disabled={autoGenProcesses.length === 0 || autoGenLoading} className="w-full">
+              {autoGenLoading ? '생성 중...' : `${autoGenProcesses.length}개 공종 × ${autoGenTargetCount}개 자동 생성`}
             </Button>
           </div>
         </DialogContent>
@@ -1377,12 +1404,12 @@ const AssessmentRunDetail = () => {
               <Tabs value={validationTab} onValueChange={setValidationTab}>
                 <TabsList className="w-full">
                   <TabsTrigger value="summary" className="flex-1">항목별 판정</TabsTrigger>
-                  <TabsTrigger value="issues" className="flex-1">지적사항 전체 ({validationReport.totalIssues})</TabsTrigger>
+                  <TabsTrigger value="issues" className="flex-1">지적사항 ({validationReport.totalIssues})</TabsTrigger>
                   <TabsTrigger value="coverage" className="flex-1">누락 검증 ({validationReport.coverageGaps.length})</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="summary" className="max-h-60 overflow-y-auto space-y-1">
-                  {items.map((item, idx) => {
+                  {activeItems.map((item, idx) => {
                     const v = validationReport.itemVerdicts[item.id];
                     if (!v || v.verdict === '적정') return null;
                     return (
@@ -1410,7 +1437,7 @@ const AssessmentRunDetail = () => {
 
                 <TabsContent value="issues" className="max-h-60 overflow-y-auto space-y-1">
                   {validationReport.issues.map((issue, i) => {
-                    const item = items.find(it => it.id === issue.riskItemId);
+                    const item = activeItems.find(it => it.id === issue.riskItemId);
                     return (
                       <div key={i} className={`text-xs p-2 rounded flex items-start gap-2 ${issue.severity === 'error' ? 'bg-destructive/5' : 'bg-warning/5'}`}>
                         {issue.severity === 'error' ? <XCircle className="h-3.5 w-3.5 text-destructive mt-0.5 shrink-0" /> : <AlertTriangle className="h-3.5 w-3.5 text-warning mt-0.5 shrink-0" />}
@@ -1422,7 +1449,6 @@ const AssessmentRunDetail = () => {
                       </div>
                     );
                   })}
-                  {validationReport.issues.length === 0 && <p className="text-center text-success py-4 font-medium">✅ 문제 없음</p>}
                 </TabsContent>
 
                 <TabsContent value="coverage" className="max-h-60 overflow-y-auto space-y-1">
@@ -1442,25 +1468,27 @@ const AssessmentRunDetail = () => {
                       </div>
                     ))
                   )}
+                  {excludedItems.length > 0 && (
+                    <div className="mt-3 border-t pt-2">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">의도적 제외 항목 ({excludedItems.length}건)</p>
+                      {excludedItems.map((item: any) => (
+                        <div key={item.id} className="text-[10px] p-1.5 rounded bg-muted/30 mb-0.5">
+                          {item.process} – {item.sub_task || ''}: <span className="italic">{item.excluded_reason || '(사유 미입력)'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </TabsContent>
               </Tabs>
 
               <div className="flex gap-2">
                 <Button variant="outline" className="flex-1 gap-1.5" onClick={handleExportValidationPDF}>
-                  <FileText className="h-3.5 w-3.5" /> 검증 리포트 PDF 다운로드
+                  <FileText className="h-3.5 w-3.5" /> 검증 리포트 PDF
                 </Button>
-                {(canEdit || canForceEdit) && validationReport.verdict !== '적정' && (
-                  <>
-                    <Button className="flex-1 gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => { setShowValidation(false); handleAutoRemediation(); }} disabled={autoRemediationLoading}>
-                      <Wand2 className="h-3.5 w-3.5" /> {autoRemediationLoading ? '보완 중...' : '자동 보완 실행'}
-                    </Button>
-                    <Button variant="outline" className="flex-1 gap-1.5 text-accent" onClick={() => { setShowValidation(false); handleGenerateRemediation(); }} disabled={remediationLoading}>
-                      <Wand2 className="h-3.5 w-3.5" /> 보완 항목 선택
-                    </Button>
-                    <Button variant="outline" className="flex-1 gap-1.5" onClick={() => { setShowValidation(false); }}>
-                      수정하러 가기
-                    </Button>
-                  </>
+                {canAutoRemediate && (
+                  <Button className="flex-1 gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => { setShowValidation(false); handleOpenRemediationWizard(); }} disabled={remediationLoading}>
+                    <Wand2 className="h-3.5 w-3.5" /> 자동 보완
+                  </Button>
                 )}
               </div>
             </div>
@@ -1481,7 +1509,7 @@ const AssessmentRunDetail = () => {
                 </div>
               ))}
               {participants.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-2">참여자를 추가하세요. 작성자는 로그인 사용자로 자동 설정됩니다.</p>
+                <p className="text-xs text-muted-foreground text-center py-2">참여자를 추가하세요.</p>
               )}
             </div>
             <div className="border-t pt-3 space-y-2">
@@ -1493,54 +1521,26 @@ const AssessmentRunDetail = () => {
                   </SelectContent>
                 </Select>
                 <div className="relative col-span-2">
-                  <Input
-                    className="text-xs"
-                    placeholder="이름 검색 (자동완성)..."
-                    value={participantSearch}
-                    onChange={e => {
-                      setParticipantSearch(e.target.value);
-                      setShowUserSuggestions(true);
-                    }}
+                  <Input className="text-xs" placeholder="이름 검색..." value={participantSearch}
+                    onChange={e => { setParticipantSearch(e.target.value); setShowUserSuggestions(true); }}
                     onFocus={() => setShowUserSuggestions(true)}
                   />
                   {showUserSuggestions && participantSearch.length > 0 && (
                     <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-popover border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                      {userDirectory
-                        .filter(u => u.display_name.toLowerCase().includes(participantSearch.toLowerCase()))
-                        .slice(0, 8)
-                        .map(u => (
-                          <div
-                            key={u.user_id}
-                            className="px-3 py-2 text-xs cursor-pointer hover:bg-accent/20 flex items-center justify-between"
-                            onClick={() => {
-                              setNewParticipant(p => ({ ...p, user_name: u.display_name, company: u.company || '' }));
-                              setParticipantSearch(u.display_name);
-                              setShowUserSuggestions(false);
-                            }}
-                          >
-                            <span className="font-medium">{u.display_name}</span>
-                            <span className="text-muted-foreground">{u.company || ''} {u.position ? `· ${u.position}` : ''}</span>
-                          </div>
-                        ))}
-                      {userDirectory.filter(u => u.display_name.toLowerCase().includes(participantSearch.toLowerCase())).length === 0 && (
-                        <div className="px-3 py-2 text-xs text-muted-foreground">결과 없음 – 직접 입력 후 추가하세요</div>
-                      )}
+                      {userDirectory.filter(u => u.display_name.toLowerCase().includes(participantSearch.toLowerCase())).slice(0, 8).map(u => (
+                        <div key={u.user_id} className="px-3 py-2 text-xs cursor-pointer hover:bg-accent/20 flex items-center justify-between"
+                          onClick={() => { setNewParticipant(p => ({ ...p, user_name: u.display_name, company: u.company || '' })); setParticipantSearch(u.display_name); setShowUserSuggestions(false); }}>
+                          <span className="font-medium">{u.display_name}</span>
+                          <span className="text-muted-foreground">{u.company || ''}</span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline" className="flex-1" onClick={() => {
-                  if (!profile) return;
-                  setNewParticipant({ role: '작성자', user_name: profile.display_name, company: profile.company || '' });
-                  setParticipantSearch(profile.display_name);
-                }}>현재 사용자 자동입력</Button>
-                <Button size="sm" className="flex-1" onClick={() => {
-                  const name = newParticipant.user_name || participantSearch;
-                  if (!name) return;
-                  handleAddParticipant();
-                  setParticipantSearch('');
-                }} disabled={!newParticipant.user_name && !participantSearch}>추가</Button>
+                <Button size="sm" variant="outline" className="flex-1" onClick={() => { if (!profile) return; setNewParticipant({ role: '작성자', user_name: profile.display_name, company: profile.company || '' }); setParticipantSearch(profile.display_name); }}>현재 사용자</Button>
+                <Button size="sm" className="flex-1" onClick={() => { const name = newParticipant.user_name || participantSearch; if (!name) return; handleAddParticipant(); setParticipantSearch(''); }} disabled={!newParticipant.user_name && !participantSearch}>추가</Button>
               </div>
             </div>
           </div>
@@ -1552,13 +1552,12 @@ const AssessmentRunDetail = () => {
         <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>결재 상신 · {run.period_label}</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">이 회차 전체({items.length}건)를 결재 상신합니다.</p>
+            <p className="text-sm text-muted-foreground">이 회차 전체({activeItems.length}건)를 결재 상신합니다.</p>
             {run.validation_verdict && (
               <div className={`p-2 rounded text-sm ${run.validation_verdict === '적정' ? 'bg-success/10' : 'bg-warning/10'}`}>
                 검증 결과: {run.validation_verdict} ({run.validation_score}점)
               </div>
             )}
-            {/* Approval routing info */}
             <div className="space-y-1.5 p-3 bg-muted/50 rounded-md text-xs">
               <p className="font-medium text-sm">결재 라인</p>
               <div className="flex items-center gap-2">
@@ -1568,13 +1567,13 @@ const AssessmentRunDetail = () => {
               {participants.filter(p => p.role === '검토자').map(p => (
                 <div key={p.id} className="flex items-center gap-2">
                   <Badge variant="outline" className="text-[10px]">검토</Badge>
-                  <span>{p.user_name} {p.company && `(${p.company})`}</span>
+                  <span>{p.user_name}</span>
                 </div>
               ))}
               {participants.filter(p => p.role === '승인자').map(p => (
                 <div key={p.id} className="flex items-center gap-2">
                   <Badge variant="outline" className="text-[10px]">승인</Badge>
-                  <span>{p.user_name} {p.company && `(${p.company})`}</span>
+                  <span>{p.user_name}</span>
                 </div>
               ))}
             </div>
@@ -1584,19 +1583,14 @@ const AssessmentRunDetail = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Force Edit Dialog (Approved Run) */}
+      {/* Force Edit Dialog */}
       <Dialog open={showForceEdit} onOpenChange={setShowForceEdit}>
         <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>승인완료 회차 강제 수정</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-destructive">⚠ 승인완료 회차를 직접 수정하면 재결재가 필요합니다. 감사 로그에 수정 이력이 기록됩니다.</p>
-            <div className="space-y-1">
-              <Label>수정 사유 (필수)</Label>
-              <Textarea value={forceEditReason} onChange={e => setForceEditReason(e.target.value)} placeholder="수정 사유를 입력하세요..." rows={3} />
-            </div>
-            <Button onClick={handleForceEditConfirm} variant="destructive" className="w-full" disabled={!forceEditReason.trim()}>
-              강제 수정 시작
-            </Button>
+            <p className="text-sm text-destructive">⚠ 승인완료 회차를 직접 수정하면 재결재가 필요합니다.</p>
+            <div className="space-y-1"><Label>수정 사유 (필수)</Label><Textarea value={forceEditReason} onChange={e => setForceEditReason(e.target.value)} placeholder="수정 사유를 입력하세요..." rows={3} /></div>
+            <Button onClick={handleForceEditConfirm} variant="destructive" className="w-full" disabled={!forceEditReason.trim()}>강제 수정 시작</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1606,15 +1600,11 @@ const AssessmentRunDetail = () => {
         <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>결재 반려</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">반려 사유를 입력하세요. 작성자에게 알림이 전송됩니다.</p>
+            <p className="text-sm text-muted-foreground">반려 사유를 입력하세요.</p>
             <Textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} placeholder="반려 사유..." rows={3} />
             <div className="flex gap-2">
               <Button variant="ghost" className="flex-1" onClick={() => { setRejectCommentDialog(false); setRejectComment(''); }}>취소</Button>
-              <Button variant="destructive" className="flex-1 gap-1.5" onClick={() => {
-                handleFinalApproval('반려', rejectComment);
-                setRejectCommentDialog(false);
-                setRejectComment('');
-              }}>
+              <Button variant="destructive" className="flex-1 gap-1.5" onClick={() => { handleFinalApproval('반려', rejectComment); setRejectCommentDialog(false); setRejectComment(''); }}>
                 <XCircle className="h-3.5 w-3.5" /> 반려 확인
               </Button>
             </div>
@@ -1622,16 +1612,51 @@ const AssessmentRunDetail = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Edit Run Metadata Dialog */}
+      <Dialog open={showEditMeta} onOpenChange={setShowEditMeta}>
+        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>회차 정보 수정</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1"><Label>회차명(적용기간)</Label><Input value={editMeta.period_label} onChange={e => setEditMeta(prev => ({ ...prev, period_label: e.target.value }))} /></div>
+            <div className="space-y-1">
+              <Label>종류</Label>
+              <Select value={editMeta.type} onValueChange={v => setEditMeta(prev => ({ ...prev, type: v }))}>
+                <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {['최초','정기','수시','상시'].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1"><Label>메모</Label><Textarea value={editMeta.notes} onChange={e => setEditMeta(prev => ({ ...prev, notes: e.target.value }))} rows={3} /></div>
+            <Button onClick={handleSaveMeta} className="w-full">저장</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
+      {/* Exclude Item Dialog */}
+      <Dialog open={!!excludeDialogItem} onOpenChange={() => { setExcludeDialogItem(null); setExcludeReason(''); }}>
+        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>해당없음 처리</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">이 항목을 '해당없음'으로 처리하면 검증 시 누락으로 잡히지 않습니다.</p>
+            <div className="space-y-1">
+              <Label>제외 사유 (필수)</Label>
+              <Textarea value={excludeReason} onChange={e => setExcludeReason(e.target.value)} placeholder="예: 해당 회차 범위에 미포함, 작업 미수행, 현장 조건상 없음..." rows={2} />
+            </div>
+            <Button onClick={() => excludeDialogItem && handleExcludeItem(excludeDialogItem, excludeReason)} className="w-full" disabled={!excludeReason.trim()}>
+              <Ban className="h-3.5 w-3.5 mr-1.5" /> 해당없음 처리
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Revision Dialog */}
       <Dialog open={showRevision} onOpenChange={setShowRevision}>
         <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>개정 회차 생성</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">현재 승인완료 회차를 복제하여 새 개정본을 생성합니다. 원본은 유지됩니다.</p>
-            <p className="text-sm">원본: <strong>[{run.type}] {run.period_label}</strong> ({items.length}건)</p>
-            <Button onClick={handleCreateRevision} className="w-full gap-1.5">
-              <Copy className="h-3.5 w-3.5" /> 개정 회차 생성
-            </Button>
+            <p className="text-sm text-muted-foreground">현재 승인완료 회차를 복제하여 새 개정본을 생성합니다.</p>
+            <Button onClick={handleCreateRevision} className="w-full gap-1.5"><Copy className="h-3.5 w-3.5" /> 개정 회차 생성</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1639,16 +1664,11 @@ const AssessmentRunDetail = () => {
       {/* Archive Dialog */}
       <Dialog open={showArchive} onOpenChange={setShowArchive}>
         <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
-          <DialogHeader><DialogTitle>회차 폐기 (소프트 삭제)</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>회차 폐기</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-destructive">⚠ 폐기된 회차는 목록에서 비활성 표시됩니다. 감사 로그에 기록됩니다.</p>
-            <div className="space-y-1">
-              <Label>삭제 사유 (필수)</Label>
-              <Textarea value={archiveReason} onChange={e => setArchiveReason(e.target.value)} placeholder="삭제 사유를 입력하세요..." rows={3} />
-            </div>
-            <Button onClick={handleArchive} variant="destructive" className="w-full" disabled={!archiveReason.trim()}>
-              폐기 확인
-            </Button>
+            <p className="text-sm text-destructive">⚠ 폐기된 회차는 목록에서 비활성 표시됩니다.</p>
+            <div className="space-y-1"><Label>삭제 사유 (필수)</Label><Textarea value={archiveReason} onChange={e => setArchiveReason(e.target.value)} placeholder="삭제 사유를 입력하세요..." rows={3} /></div>
+            <Button onClick={handleArchive} variant="destructive" className="w-full" disabled={!archiveReason.trim()}>폐기 확인</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1686,23 +1706,14 @@ const AssessmentRunDetail = () => {
                   </div>
                 ))}
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={handleExcelValidate}>검증만 수행</Button>
-                <Button className="flex-1" onClick={() => { handleExcelValidate(); }}>검증 후 반영 준비</Button>
-              </div>
+              <Button onClick={handleExcelValidate} className="w-full">검증 실행</Button>
             </div>
           )}
           {excelStep === 'result' && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 text-center">
-                <div className="p-3 bg-muted rounded-lg">
-                  <p className="text-xl font-bold">{excelData.length}</p>
-                  <p className="text-xs text-muted-foreground">총 행수</p>
-                </div>
-                <div className={`p-3 rounded-lg ${excelIssues.length === 0 ? 'bg-success/10' : 'bg-warning/10'}`}>
-                  <p className="text-xl font-bold">{excelIssues.length}</p>
-                  <p className="text-xs text-muted-foreground">지적사항</p>
-                </div>
+                <div className="p-3 bg-muted rounded-lg"><p className="text-xl font-bold">{excelData.length}</p><p className="text-xs text-muted-foreground">총 행수</p></div>
+                <div className={`p-3 rounded-lg ${excelIssues.length === 0 ? 'bg-success/10' : 'bg-warning/10'}`}><p className="text-xl font-bold">{excelIssues.length}</p><p className="text-xs text-muted-foreground">지적사항</p></div>
               </div>
               <div className="max-h-48 overflow-y-auto space-y-1">
                 {excelIssues.map((iss, i) => (
@@ -1714,154 +1725,116 @@ const AssessmentRunDetail = () => {
                 {excelIssues.length === 0 && <p className="text-center text-success py-3">✅ 문제 없음</p>}
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={() => setShowExcelUpload(false)}>닫기 (검증만)</Button>
-                <Button className="flex-1 gap-1.5" onClick={handleExcelImport}>
-                  <Upload className="h-3.5 w-3.5" /> 회차에 반영 ({excelData.length}건)
-                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => setShowExcelUpload(false)}>닫기</Button>
+                <Button className="flex-1 gap-1.5" onClick={handleExcelImport}><Upload className="h-3.5 w-3.5" /> 반영 ({excelData.length}건)</Button>
               </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
-      {/* Remediation Panel Dialog */}
-      <Dialog open={showRemediation} onOpenChange={setShowRemediation}>
+
+      {/* Unified Remediation Wizard */}
+      <Dialog open={showRemediationWizard} onOpenChange={setShowRemediationWizard}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Wand2 className="h-5 w-5 text-accent" /> 자동 보완 제안 · {remediationActions.length}건
+              <Wand2 className="h-5 w-5 text-accent" /> 자동 보완 · {remediationActions.length}건 제안
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Summary */}
-            <div className="grid grid-cols-4 gap-3 text-center text-xs">
-              <div className="p-2 bg-muted rounded">
-                <p className="text-lg font-bold">{remediationActions.length}</p>
-                <p className="text-muted-foreground">전체 액션</p>
-              </div>
-              <div className="p-2 bg-accent/10 rounded">
-                <p className="text-lg font-bold">{selectedActionIds.size}</p>
-                <p className="text-muted-foreground">선택됨</p>
-              </div>
-              <div className="p-2 bg-muted rounded">
-                <p className="text-lg font-bold">{remediationActions.filter(a => a.requiresUserConfirm).length}</p>
-                <p className="text-muted-foreground">수동 확인 필요</p>
-              </div>
-              <div className="p-2 bg-muted rounded">
-                <p className="text-lg font-bold">{remediationActions.filter(a => a.confidence === 'high').length}</p>
-                <p className="text-muted-foreground">높은 신뢰도</p>
-              </div>
-            </div>
-
-            {/* Select all / deselect */}
-            <div className="flex items-center gap-3 text-xs">
-              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set(remediationActions.map(a => a.id)))}>전체 선택</Button>
-              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set())}>전체 해제</Button>
-              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set(remediationActions.filter(a => !a.requiresUserConfirm).map(a => a.id)))}>자동 적용 가능만</Button>
-              <div className="flex-1" />
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <Checkbox checked={applyAndRevalidate} onCheckedChange={(c) => setApplyAndRevalidate(!!c)} />
-                <span>적용 후 즉시 재검증</span>
-              </label>
-            </div>
-
-            {/* Action List by Category */}
-            {(() => {
-              const byCategory = new Map<string, RemediationAction[]>();
-              for (const a of remediationActions) {
-                if (!byCategory.has(a.category)) byCategory.set(a.category, []);
-                byCategory.get(a.category)!.push(a);
-              }
-              return [...byCategory.entries()].map(([cat, acts]) => (
-                <div key={cat} className="space-y-1">
-                  <h4 className="text-xs font-bold text-muted-foreground px-1">{cat}</h4>
-                  {acts.map(action => {
-                    const isSelected = selectedActionIds.has(action.id);
-                    const targetItems = action.targetRiskItemIds.map(tid => items.find(i => i.id === tid)).filter(Boolean);
-                    return (
-                      <div key={action.id}
-                        className={`text-xs p-3 rounded border cursor-pointer transition-colors ${
-                          isSelected ? 'border-accent/50 bg-accent/5' : 'border-border hover:bg-muted/50'
-                        } ${action.requiresUserConfirm ? 'border-l-2 border-l-warning' : ''}`}
-                        onClick={() => {
-                          setSelectedActionIds(prev => {
-                            const next = new Set(prev);
-                            if (next.has(action.id)) next.delete(action.id);
-                            else next.add(action.id);
-                            return next;
-                          });
-                        }}
-                      >
-                        <div className="flex items-start gap-2">
-                          <Checkbox checked={isSelected} className="mt-0.5" />
-                          <div className="flex-1 space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{action.label}</span>
-                              <Badge variant="outline" className={`text-[9px] ${
-                                action.confidence === 'high' ? 'text-success' : action.confidence === 'medium' ? 'text-warning' : 'text-muted-foreground'
-                              }`}>{action.confidence === 'high' ? '높음' : action.confidence === 'medium' ? '보통' : '낮음'}</Badge>
-                              {action.requiresUserConfirm && <Badge variant="outline" className="text-[9px] text-warning">수동확인</Badge>}
-                            </div>
-                            <p className="text-muted-foreground">{action.description}</p>
-                            <p className="text-muted-foreground italic text-[10px]">사유: {action.rationale}</p>
-                            <p className="text-accent text-[10px]">→ 예상 효과: {action.expectedEffect}</p>
-                            
-                            {/* Patch preview */}
-                            {Object.keys(action.patch).length > 0 && (
-                              <details className="mt-1">
-                                <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground">변경 내용 미리보기</summary>
-                                <div className="mt-1 p-2 bg-muted/50 rounded text-[10px] space-y-0.5">
-                                  {Object.entries(action.patch).map(([field, val]) => (
-                                    <div key={field}>
-                                      <span className="font-medium">{field}:</span>{' '}
-                                      <span className="text-accent">{Array.isArray(val) ? val.join(', ') : String(val).slice(0, 100)}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </details>
-                            )}
-
-                            {/* New items preview */}
-                            {action.newItems && action.newItems.length > 0 && (
-                              <details className="mt-1">
-                                <summary className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground">추가될 항목 ({action.newItems.length}건)</summary>
-                                <div className="mt-1 p-2 bg-muted/50 rounded text-[10px] space-y-0.5 max-h-32 overflow-y-auto">
-                                  {action.newItems.map((ni, idx) => (
-                                    <div key={idx}>#{idx + 1} {ni.process} – {ni.sub_task} – {ni.hazard}</div>
-                                  ))}
-                                </div>
-                              </details>
-                            )}
-
-                            {/* Target items */}
-                            {targetItems.length > 0 && targetItems.length <= 3 && (
-                              <div className="text-[10px] text-muted-foreground">
-                                대상: {targetItems.map((ti: any) => `${ti.process}/${ti.sub_task || ''}`).join(', ')}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+            {remediationLoading ? (
+              <div className="text-center py-8 text-muted-foreground">보완 항목 분석 중...</div>
+            ) : (
+              <>
+                {/* Summary */}
+                <div className="grid grid-cols-4 gap-3 text-center text-xs">
+                  <div className="p-2 bg-muted rounded"><p className="text-lg font-bold">{remediationActions.length}</p><p className="text-muted-foreground">전체</p></div>
+                  <div className="p-2 bg-accent/10 rounded"><p className="text-lg font-bold">{selectedActionIds.size}</p><p className="text-muted-foreground">선택</p></div>
+                  <div className="p-2 bg-muted rounded"><p className="text-lg font-bold">{remediationActions.filter(a => a.requiresUserConfirm).length}</p><p className="text-muted-foreground">수동확인</p></div>
+                  <div className="p-2 bg-muted rounded"><p className="text-lg font-bold">{remediationActions.filter(a => a.confidence === 'high').length}</p><p className="text-muted-foreground">높은 신뢰</p></div>
                 </div>
-              ));
-            })()}
 
-            {remediationActions.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
-                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-success" />
-                <p>추가 보완 제안이 없습니다.</p>
-              </div>
+                <div className="flex items-center gap-3 text-xs">
+                  <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set(remediationActions.map(a => a.id)))}>전체 선택</Button>
+                  <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set())}>전체 해제</Button>
+                  <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set(remediationActions.filter(a => !a.requiresUserConfirm).map(a => a.id)))}>자동만</Button>
+                  <div className="flex-1" />
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <Checkbox checked={applyAndRevalidate} onCheckedChange={(c) => setApplyAndRevalidate(!!c)} />
+                    <span>적용 후 재검증</span>
+                  </label>
+                </div>
+
+                {/* Action list */}
+                {(() => {
+                  const byCategory = new Map<string, RemediationAction[]>();
+                  for (const a of remediationActions) {
+                    if (!byCategory.has(a.category)) byCategory.set(a.category, []);
+                    byCategory.get(a.category)!.push(a);
+                  }
+                  return [...byCategory.entries()].map(([cat, acts]) => (
+                    <div key={cat} className="space-y-1">
+                      <h4 className="text-xs font-bold text-muted-foreground px-1">{cat}</h4>
+                      {acts.map(action => {
+                        const isSelected = selectedActionIds.has(action.id);
+                        return (
+                          <div key={action.id} className={`text-xs p-3 rounded border cursor-pointer transition-colors ${isSelected ? 'border-accent/50 bg-accent/5' : 'border-border hover:bg-muted/50'} ${action.requiresUserConfirm ? 'border-l-2 border-l-warning' : ''}`}
+                            onClick={() => setSelectedActionIds(prev => { const next = new Set(prev); if (next.has(action.id)) next.delete(action.id); else next.add(action.id); return next; })}>
+                            <div className="flex items-start gap-2">
+                              <Checkbox checked={isSelected} className="mt-0.5" />
+                              <div className="flex-1 space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium">{action.label}</span>
+                                  <Badge variant="outline" className={`text-[9px] ${action.confidence === 'high' ? 'text-success' : action.confidence === 'medium' ? 'text-warning' : 'text-muted-foreground'}`}>
+                                    {action.confidence === 'high' ? '높음' : action.confidence === 'medium' ? '보통' : '낮음'}
+                                  </Badge>
+                                  {action.requiresUserConfirm && <Badge variant="outline" className="text-[9px] text-warning">수동확인</Badge>}
+                                </div>
+                                <p className="text-muted-foreground">{action.description}</p>
+                                <p className="text-accent text-[10px]">→ {action.expectedEffect}</p>
+                                {Object.keys(action.patch).length > 0 && (
+                                  <details className="mt-1">
+                                    <summary className="text-[10px] text-muted-foreground cursor-pointer">변경 미리보기</summary>
+                                    <div className="mt-1 p-2 bg-muted/50 rounded text-[10px] space-y-0.5">
+                                      {Object.entries(action.patch).map(([field, val]) => (
+                                        <div key={field}><span className="font-medium">{field}:</span> <span className="text-accent">{Array.isArray(val) ? val.join(', ') : String(val).slice(0, 100)}</span></div>
+                                      ))}
+                                    </div>
+                                  </details>
+                                )}
+                                {action.newItems && action.newItems.length > 0 && (
+                                  <details className="mt-1">
+                                    <summary className="text-[10px] text-muted-foreground cursor-pointer">추가 항목 ({action.newItems.length}건)</summary>
+                                    <div className="mt-1 p-2 bg-muted/50 rounded text-[10px] max-h-32 overflow-y-auto">
+                                      {action.newItems.map((ni, idx) => <div key={idx}>#{idx + 1} {ni.process} – {ni.sub_task} – {ni.hazard}</div>)}
+                                    </div>
+                                  </details>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ));
+                })()}
+
+                {remediationActions.length === 0 && (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-success" />
+                    <p>추가 보완 제안이 없습니다.</p>
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-2 border-t">
+                  <Button variant="outline" className="flex-1" onClick={() => setShowRemediationWizard(false)}>닫기</Button>
+                  <Button className="flex-1 gap-1.5" onClick={handleApplyRemediation} disabled={selectedActionIds.size === 0 || remediationLoading}>
+                    <Wand2 className="h-3.5 w-3.5" />
+                    {remediationLoading ? '적용 중...' : `${selectedActionIds.size}건 보완 적용${applyAndRevalidate ? ' + 재검증' : ''}`}
+                  </Button>
+                </div>
+              </>
             )}
-
-            {/* Apply Button */}
-            <div className="flex gap-2 pt-2 border-t">
-              <Button variant="outline" className="flex-1" onClick={() => setShowRemediation(false)}>닫기</Button>
-              <Button className="flex-1 gap-1.5" onClick={handleApplyRemediation} disabled={selectedActionIds.size === 0 || remediationLoading}>
-                <Wand2 className="h-3.5 w-3.5" />
-                {remediationLoading ? '적용 중...' : `선택한 ${selectedActionIds.size}건 보완 적용${applyAndRevalidate ? ' + 재검증' : ''}`}
-              </Button>
-            </div>
           </div>
         </DialogContent>
       </Dialog>

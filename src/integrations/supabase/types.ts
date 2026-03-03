@@ -459,6 +459,44 @@ export type Database = {
           },
         ]
       }
+      environment_tags: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          is_default: boolean | null
+          name: string
+          project_id: string | null
+          sort_order: number | null
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          id?: string
+          is_default?: boolean | null
+          name: string
+          project_id?: string | null
+          sort_order?: number | null
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          is_default?: boolean | null
+          name?: string
+          project_id?: string | null
+          sort_order?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "environment_tags_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       generated_batches: {
         Row: {
           created_at: string | null
@@ -1031,6 +1069,9 @@ export type Database = {
           created_at: string
           created_by: string | null
           department: string | null
+          excluded_at: string | null
+          excluded_by: string | null
+          excluded_reason: string | null
           existing_measure: string | null
           frequency: number
           hazard: string | null
@@ -1043,6 +1084,7 @@ export type Database = {
           improved_severity: number
           improved_severity_grade: string
           improvement_measure: string | null
+          is_excluded: boolean
           is_locked: boolean | null
           legal_basis: string[] | null
           likelihood_grade: string
@@ -1071,6 +1113,9 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           department?: string | null
+          excluded_at?: string | null
+          excluded_by?: string | null
+          excluded_reason?: string | null
           existing_measure?: string | null
           frequency?: number
           hazard?: string | null
@@ -1083,6 +1128,7 @@ export type Database = {
           improved_severity?: number
           improved_severity_grade?: string
           improvement_measure?: string | null
+          is_excluded?: boolean
           is_locked?: boolean | null
           legal_basis?: string[] | null
           likelihood_grade?: string
@@ -1111,6 +1157,9 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           department?: string | null
+          excluded_at?: string | null
+          excluded_by?: string | null
+          excluded_reason?: string | null
           existing_measure?: string | null
           frequency?: number
           hazard?: string | null
@@ -1123,6 +1172,7 @@ export type Database = {
           improved_severity?: number
           improved_severity_grade?: string
           improvement_measure?: string | null
+          is_excluded?: boolean
           is_locked?: boolean | null
           legal_basis?: string[] | null
           likelihood_grade?: string

@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { sendNotification } from "@/lib/notificationService";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -25,7 +25,7 @@ const Approvals = () => {
   const [runs, setRuns] = useState<any[]>([]);
   const [rejectComment, setRejectComment] = useState('');
   const [rejectingId, setRejectingId] = useState<string | null>(null);
-  const [tab, setTab] = useState('all');
+  const [tab, setTab] = useState('mine');
 
   useEffect(() => {
     supabase.from('projects').select('id, name, site_name, client, contractor, period_start, period_end').then(({ data }) => {
@@ -47,14 +47,12 @@ const Approvals = () => {
 
   // Group by run_id, only show the latest approval_version per run
   const grouped = (() => {
-    // First, find max version per run
     const maxVersionByRun: Record<string, number> = {};
     for (const ap of approvals) {
       const key = ap.run_id || 'general';
       const ver = ap.approval_version || 1;
       if (!maxVersionByRun[key] || ver > maxVersionByRun[key]) maxVersionByRun[key] = ver;
     }
-    // Then group only latest version (exclude cancelled approvals from display unless they're the only ones)
     return approvals.reduce((acc, ap) => {
       const key = ap.run_id || 'general';
       const ver = ap.approval_version || 1;
@@ -68,12 +66,12 @@ const Approvals = () => {
 
   // Filter tabs
   const getFilteredGrouped = () => {
-    if (tab === 'all') return grouped;
     if (tab === 'mine' && user) {
+      // Only show runs where I have a pending step assigned to me
       const filtered: Record<string, any[]> = {};
       for (const [runId, steps] of Object.entries(grouped)) {
-        const mySteps = (steps as any[]).filter(s => s.approver_id === user.id && s.status === '대기');
-        if (mySteps.length > 0) filtered[runId] = steps as any[];
+        const myPending = (steps as any[]).filter(s => s.approver_id === user.id && s.status === '대기');
+        if (myPending.length > 0) filtered[runId] = steps as any[];
       }
       return filtered;
     }
@@ -85,6 +83,7 @@ const Approvals = () => {
       }
       return filtered;
     }
+    // 'all' tab — read-only overview (admin only)
     return grouped;
   };
 
@@ -92,34 +91,38 @@ const Approvals = () => {
 
   const handleApprovalAction = async (approvalId: string, action: '승인' | '반려', comment?: string) => {
     if (!user || !profile) return;
+    
+    // Server-side RBAC: verify the approval is assigned to current user
+    const ap = approvals.find(a => a.id === approvalId);
+    if (!ap) { toast({ title: '결재 정보를 찾을 수 없습니다.', variant: 'destructive' }); return; }
+    if (ap.approver_id !== user.id) {
+      toast({ title: '결재 권한이 없습니다.', description: '해당 단계의 지정된 결재자만 승인/반려할 수 있습니다.', variant: 'destructive' });
+      return;
+    }
+
     await supabase.from('approvals').update({
       status: action, approver_id: user.id, approver_name: profile.display_name, comment: comment || '',
     }).eq('id', approvalId);
 
-    const ap = approvals.find(a => a.id === approvalId);
     if (action === '승인' && ap?.run_id) {
-      const { data: allAp } = await supabase.from('approvals').select('*').eq('run_id', ap.run_id);
-      const allApproved = (allAp || []).every((a: any) => a.status === '승인' || a.id === approvalId);
+      const { data: allAp } = await supabase.from('approvals').select('*')
+        .eq('run_id', ap.run_id).eq('approval_version', ap.approval_version || 1);
+      const allApproved = (allAp || []).filter((a: any) => a.status !== '취소').every((a: any) => a.status === '승인' || a.id === approvalId);
       if (allApproved) {
         await supabase.from('assessment_runs').update({ status: '승인완료' }).eq('id', ap.run_id);
         await supabase.from('risk_items').update({ is_locked: true }).eq('run_id', ap.run_id);
         const run = runs.find(r => r.id === ap.run_id);
-        // Notify author
         const authorStep = (allAp || []).find((a: any) => a.step === '작성');
         if (authorStep?.approver_id) {
           await sendNotification({
-            user_id: authorStep.approver_id,
-            title: '결재 최종 승인',
+            user_id: authorStep.approver_id, title: '결재 최종 승인',
             message: `[${run?.type || ''}] ${run?.period_label || ''} 회차가 최종 승인되었습니다.`,
-            type: 'approval_approved',
-            related_id: ap.run_id,
-            related_type: 'assessment_run',
-            project_id: ap.project_id,
+            type: 'approval_approved', related_id: ap.run_id, related_type: 'assessment_run', project_id: ap.project_id,
           });
         }
-        toast({ title: '최종 승인 완료! 해당 회차가 잠금되었습니다.' });
+        toast({ title: '최종 승인 완료!' });
       } else {
-        // Notify next pending approver
+        // Notify next pending
         const sortedPending = (allAp || [])
           .filter((a: any) => a.status === '대기' && a.id !== approvalId)
           .sort((a: any, b: any) => {
@@ -130,13 +133,9 @@ const Approvals = () => {
         if (nextPending?.approver_id) {
           const run = runs.find(r => r.id === ap.run_id);
           await sendNotification({
-            user_id: nextPending.approver_id,
-            title: '결재 요청',
-            message: `[${run?.type || ''}] ${run?.period_label || ''} - ${ap.step} 단계 승인 완료. ${nextPending.step} 결재를 진행해주세요.`,
-            type: 'approval_request',
-            related_id: ap.run_id,
-            related_type: 'assessment_run',
-            project_id: ap.project_id,
+            user_id: nextPending.approver_id, title: '결재 요청',
+            message: `[${run?.type || ''}] ${run?.period_label || ''} - ${ap.step} 승인 완료. ${nextPending.step} 결재를 진행해주세요.`,
+            type: 'approval_request', related_id: ap.run_id, related_type: 'assessment_run', project_id: ap.project_id,
           });
         }
         toast({ title: `${ap.step} 단계가 승인되었습니다.` });
@@ -144,21 +143,17 @@ const Approvals = () => {
     } else if (action === '반려' && ap?.run_id) {
       await supabase.from('assessment_runs').update({ status: '보완중' }).eq('id', ap.run_id);
       const run = runs.find(r => r.id === ap.run_id);
-      // Notify author
-      const { data: authorData } = await supabase.from('approvals').select('*').eq('run_id', ap.run_id).eq('step', '작성').limit(1);
+      const { data: authorData } = await supabase.from('approvals').select('*')
+        .eq('run_id', ap.run_id).eq('step', '작성').eq('approval_version', ap.approval_version || 1).limit(1);
       const authorStep = authorData?.[0];
       if (authorStep?.approver_id) {
         await sendNotification({
-          user_id: authorStep.approver_id,
-          title: '결재 반려',
+          user_id: authorStep.approver_id, title: '결재 반려',
           message: `[${run?.type || ''}] ${run?.period_label || ''} 반려됨. 사유: ${comment || '(없음)'}`,
-          type: 'approval_rejected',
-          related_id: ap.run_id,
-          related_type: 'assessment_run',
-          project_id: ap.project_id,
+          type: 'approval_rejected', related_id: ap.run_id, related_type: 'assessment_run', project_id: ap.project_id,
         });
       }
-      toast({ title: '반려되었습니다. 보완 후 재제출이 필요합니다.', variant: 'destructive' });
+      toast({ title: '반려되었습니다.', variant: 'destructive' });
     } else {
       toast({ title: `${action} 처리되었습니다.` });
     }
@@ -177,7 +172,7 @@ const Approvals = () => {
     try {
       const { data: items } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
       const { data: parts } = await supabase.from('assessment_run_participants').select('*').eq('run_id', runId);
-      const rows = (items || []).map(i => ({
+      const rows = (items || []).filter((i: any) => !i.is_excluded).map(i => ({
         ...i, sub_task: i.sub_task || '', hazard: i.hazard || '', hazard_situation: i.hazard_situation || '',
         existing_measure: i.existing_measure || '', improvement_measure: i.improvement_measure || '',
         likelihood_grade: i.likelihood_grade || '중', severity_grade: i.severity_grade || '중', risk_grade: i.risk_grade || '중',
@@ -205,35 +200,36 @@ const Approvals = () => {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="w-full">
-          <TabsTrigger value="all" className="flex-1">전체 결재 현황</TabsTrigger>
           <TabsTrigger value="mine" className="flex-1">내 결재 (대기)</TabsTrigger>
           <TabsTrigger value="submitted" className="flex-1">상신한 결재</TabsTrigger>
+          {isAdmin() && <TabsTrigger value="all" className="flex-1">전체 현황 (읽기전용)</TabsTrigger>}
         </TabsList>
 
         <TabsContent value={tab} className="space-y-3 mt-3">
           {Object.keys(filteredGrouped).length === 0 ? (
-            <Card><CardContent className="py-12 text-center text-muted-foreground">결재 내역이 없습니다. 위험성평가 회차에서 결재 상신하세요.</CardContent></Card>
+            <Card><CardContent className="py-12 text-center text-muted-foreground">
+              {tab === 'mine' ? '대기 중인 결재가 없습니다.' : '결재 내역이 없습니다.'}
+            </CardContent></Card>
           ) : (
             Object.entries(filteredGrouped).map(([runId, steps]) => {
               const run = runs.find((r: any) => r.id === runId);
+              const isAllTab = tab === 'all';
               return (
                 <Card key={runId}>
                   <CardContent className="pt-5">
                     <div className="flex items-center justify-between mb-4">
                       <div>
-                        <h3 className="font-semibold">
-                          {run ? `[${run.type}] ${run.period_label}` : '일반'}
-                        </h3>
+                        <h3 className="font-semibold">{run ? `[${run.type}] ${run.period_label}` : '일반'}</h3>
                         {run && <p className="text-xs text-muted-foreground">상태: {run.status}</p>}
                       </div>
                       <div className="flex items-center gap-2">
                         {run && (
                           <>
                             <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleDownloadRunPDF(runId)}>
-                              <FileText className="h-3 w-3" /> PDF 다운로드
+                              <FileText className="h-3 w-3" /> PDF
                             </Button>
                             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate(`/assessment-run/${runId}`)}>
-                              <ExternalLink className="h-3 w-3" /> 회차 상세
+                              <ExternalLink className="h-3 w-3" /> 상세
                             </Button>
                           </>
                         )}
@@ -256,7 +252,8 @@ const Approvals = () => {
                             <span>{step.step}</span>
                             <span className="opacity-70">({step.approver_name || '미지정'})</span>
                           </div>
-                          {step.status === '대기' && (isAdmin() || (user && step.approver_id === user.id)) && (
+                          {/* Only show action buttons to the ASSIGNED approver, not admins in 'all' tab */}
+                          {step.status === '대기' && !isAllTab && user && step.approver_id === user.id && (
                             <div className="flex gap-1">
                               <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => handleApprovalAction(step.id, '승인')}>승인</Button>
                               <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-destructive" onClick={() => setRejectingId(step.id)}>반려</Button>
@@ -266,14 +263,13 @@ const Approvals = () => {
                         </div>
                       ))}
                     </div>
-                    {/* Reject comment input */}
                     {rejectingId && (steps as any[]).some(s => s.id === rejectingId) && (
                       <div className="mt-3 flex items-end gap-2">
                         <div className="flex-1">
                           <Textarea placeholder="반려 사유를 입력하세요..." value={rejectComment} onChange={e => setRejectComment(e.target.value)} rows={2} className="text-xs" />
                         </div>
                         <Button size="sm" variant="destructive" className="h-8 gap-1" onClick={() => handleApprovalAction(rejectingId, '반려', rejectComment)}>
-                          <MessageSquare className="h-3 w-3" /> 반려 확인
+                          <MessageSquare className="h-3 w-3" /> 반려
                         </Button>
                         <Button size="sm" variant="ghost" className="h-8" onClick={() => { setRejectingId(null); setRejectComment(''); }}>취소</Button>
                       </div>

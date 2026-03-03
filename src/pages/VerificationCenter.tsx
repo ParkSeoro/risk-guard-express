@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuditLog } from '@/hooks/useAuditLog';
@@ -12,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import {
-  ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileText, Upload, Search as SearchIcon,
+  ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileText, Upload, Search as SearchIcon, Wand2
 } from 'lucide-react';
 import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue } from '@/lib/validationEngine';
 import { exportToPDF } from '@/lib/exportUtils';
@@ -78,7 +79,9 @@ const VerificationCenter = () => {
     }
     setCoverageLoading(true);
     try {
-      const report = await validateRiskItems(items, selectedProject);
+      // Exclude items marked as 'is_excluded' from validation check
+      const activeItems = items.filter((i: any) => !i.is_excluded);
+      const report = await validateRiskItems(activeItems, selectedProject);
       setCoverageReport(report);
       await saveValidationResults(report, selectedProject, user.id, selectedRun);
       log('누락검증', 'assessment_run', selectedRun, selectedProject, { score: report.score, gaps: report.coverageGaps.length });
@@ -92,7 +95,8 @@ const VerificationCenter = () => {
   const handleCoveragePDF = () => {
     if (!coverageReport || !projectData || !selectedRunData) return;
     try {
-      const rows = items.map(i => ({
+      const activeItems = items.filter((i: any) => !i.is_excluded);
+      const rows = activeItems.map(i => ({
         ...i, sub_task: i.sub_task || '', hazard: i.hazard || '', hazard_situation: i.hazard_situation || '',
         existing_measure: i.existing_measure || '', improvement_measure: i.improvement_measure || '',
         likelihood_grade: i.likelihood_grade || '중', severity_grade: i.severity_grade || '중', risk_grade: i.risk_grade || '중',
@@ -312,6 +316,21 @@ const VerificationCenter = () => {
                     </Card>
                   )}
 
+                  {/* Excluded Items */}
+                  {items.some((i: any) => i.is_excluded) && (
+                    <Card>
+                      <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">의도적 제외 항목</CardTitle></CardHeader>
+                      <CardContent className="max-h-40 overflow-y-auto space-y-1">
+                        {items.filter((i: any) => i.is_excluded).map((item, i) => (
+                          <div key={item.id} className="text-xs p-2 rounded bg-muted/30">
+                            <span className="font-medium">{item.process} - {item.sub_task || ''}</span>
+                            <span className="ml-2 text-muted-foreground">사유: {item.excluded_reason}</span>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+
                   {/* Item-level Issues */}
                   {coverageReport.issues.length > 0 && (
                     <Card>
@@ -341,171 +360,49 @@ const VerificationCenter = () => {
                       </CardContent>
                     </Card>
                   )}
-
-                  {coverageReport.issues.length === 0 && coverageReport.coverageGaps.length === 0 && (
-                    <Card><CardContent className="py-8 text-center text-success"><CheckCircle2 className="h-8 w-8 mx-auto mb-2" /> 모든 검증 통과</CardContent></Card>
-                  )}
                 </>
               )}
             </TabsContent>
 
-            {/* Quality / Irrelevance Tab */}
-            <TabsContent value="quality" className="space-y-4">
-              <div className="flex items-center gap-2">
-                <Button size="sm" className="gap-1.5" onClick={handleCoverageCheck} disabled={coverageLoading || items.length === 0}>
-                  <ShieldCheck className="h-3.5 w-3.5" /> {coverageLoading ? '검증 중...' : '품질/무관 검증 실행'}
-                </Button>
-              </div>
-              {coverageReport ? (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-3 gap-3 text-center">
-                    <Card><CardContent className="pt-4">
-                      <p className="text-2xl font-bold">{coverageReport.score}</p>
-                      <p className="text-xs text-muted-foreground">품질 점수</p>
-                    </CardContent></Card>
-                    <Card><CardContent className={`pt-4 rounded-lg ${verdictColor(coverageReport.verdict)}`}>
-                      <p className="text-lg font-bold">{coverageReport.verdict}</p>
-                      <p className="text-xs">종합 판정</p>
-                    </CardContent></Card>
-                    <Card><CardContent className="pt-4">
-                      <p className="text-2xl font-bold text-warning">{coverageReport.warnings}</p>
-                      <p className="text-xs text-muted-foreground">경고 (과소/무관)</p>
-                    </CardContent></Card>
-                  </div>
-                  {coverageReport.issues.filter(i => i.ruleType === 'underestimation').length > 0 && (
-                    <Card>
-                      <CardHeader className="pb-2"><CardTitle className="text-sm">과소평가 의심 항목</CardTitle></CardHeader>
-                      <CardContent className="max-h-48 overflow-y-auto space-y-1">
-                        {coverageReport.issues.filter(i => i.ruleType === 'underestimation').map((iss, i) => {
-                          const item = items.find(it => it.id === iss.riskItemId);
-                          return (
-                            <div key={i} className="text-xs p-2 rounded bg-warning/5 flex items-start gap-2">
-                              <AlertTriangle className="h-3.5 w-3.5 text-warning mt-0.5 shrink-0" />
-                              <div>
-                                <span className="font-medium">{item?.process} – {item?.sub_task || ''}</span>
-                                <p className="text-muted-foreground">{iss.message}</p>
-                                {iss.recommendation && <p className="text-muted-foreground italic text-[10px]">→ {iss.recommendation}</p>}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </CardContent>
-                    </Card>
-                  )}
-                  {coverageReport.issues.filter(i => i.ruleType === 'insufficient_improvement').length > 0 && (
-                    <Card>
-                      <CardHeader className="pb-2"><CardTitle className="text-sm">개선 부족 항목 (위험도 상 잔존)</CardTitle></CardHeader>
-                      <CardContent className="max-h-48 overflow-y-auto space-y-1">
-                        {coverageReport.issues.filter(i => i.ruleType === 'insufficient_improvement').map((iss, i) => {
-                          const item = items.find(it => it.id === iss.riskItemId);
-                          return (
-                            <div key={i} className="text-xs p-2 rounded bg-destructive/5 flex items-start gap-2">
-                              <XCircle className="h-3.5 w-3.5 text-destructive mt-0.5 shrink-0" />
-                              <div>
-                                <span className="font-medium">{item?.process} – {item?.sub_task || ''}</span>
-                                <p className="text-muted-foreground">{iss.message}</p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </CardContent>
-                    </Card>
-                  )}
-                  {coverageReport.issues.length === 0 && (
-                    <Card><CardContent className="py-8 text-center text-success"><CheckCircle2 className="h-8 w-8 mx-auto mb-2" /> 품질 검증 통과</CardContent></Card>
-                  )}
-                </div>
-              ) : (
-                <Card><CardContent className="py-12 text-center text-muted-foreground">회차를 선택하고 '품질/무관 검증 실행'을 클릭하세요.</CardContent></Card>
-              )}
+            <TabsContent value="quality" className="py-4 text-center text-muted-foreground">
+              <Wand2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p>자동 보완 기능은 회차 상세 페이지에서 사용할 수 있습니다.</p>
             </TabsContent>
 
-            {/* Excel Upload Tab */}
             <TabsContent value="excel" className="space-y-4">
-              {excelStep === 'upload' && (
-                <Card>
-                  <CardContent className="py-8 space-y-4">
-                    <p className="text-sm text-muted-foreground text-center">협력사가 제공한 위험성평가 엑셀(XLSX/CSV) 파일을 업로드하세요.</p>
-                    <Input type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelFile} className="max-w-md mx-auto" />
-                  </CardContent>
-                </Card>
-              )}
-              {excelStep === 'map' && (
-                <Card>
-                  <CardHeader><CardTitle className="text-sm">{excelData.length}행 파싱 완료 · 컬럼 매핑</CardTitle></CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        { key: 'process', label: '공정' }, { key: 'sub_task', label: '세부작업' },
-                        { key: 'hazard', label: '위험요인' }, { key: 'hazard_situation', label: '위험발생상황' },
-                        { key: 'existing_measure', label: '기존대책' }, { key: 'improvement_measure', label: '개선대책' },
-                        { key: 'likelihood_grade', label: '가능성' }, { key: 'severity_grade', label: '중대성' },
-                        { key: 'legal_basis', label: '법적근거' },
-                      ].map(({ key, label }) => (
-                        <div key={key} className="flex items-center gap-2">
-                          <span className="text-xs w-20 shrink-0">{label}</span>
-                          <Select value={excelColumnMap[key] || '__none__'} onValueChange={v => setExcelColumnMap(prev => ({ ...prev, [key]: v === '__none__' ? '' : v }))}>
-                            <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__">(없음)</SelectItem>
-                              {excelHeaders.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex gap-2">
-                      <Button variant="outline" className="flex-1" onClick={handleExcelValidate}>검증만 수행</Button>
-                      <Button className="flex-1" onClick={handleExcelValidate}>검증 실행</Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-              {excelStep === 'result' && (
-                <Card>
-                  <CardHeader><CardTitle className="text-sm">엑셀 검증 결과</CardTitle></CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-3 gap-3 text-center">
-                      <div className="p-3 bg-muted rounded-lg">
-                        <p className="text-xl font-bold">{excelData.length}</p>
-                        <p className="text-xs text-muted-foreground">총 행수</p>
-                      </div>
-                      <div className={`p-3 rounded-lg ${excelIssues.filter(i => i.severity === 'error').length > 0 ? 'bg-destructive/10' : excelIssues.length > 0 ? 'bg-warning/10' : 'bg-success/10'}`}>
-                        <p className="text-xl font-bold">{excelIssues.length}</p>
-                        <p className="text-xs text-muted-foreground">지적사항</p>
-                      </div>
-                      <div className="p-3 bg-muted rounded-lg">
-                        <p className="text-xl font-bold">{excelIssues.filter(i => i.severity === 'error').length}</p>
-                        <p className="text-xs text-muted-foreground">오류(필수)</p>
-                      </div>
+              <div className="space-y-4 max-w-xl mx-auto border p-4 rounded-lg bg-card">
+                <h3 className="font-semibold text-sm">협력사 엑셀 업로드 검증</h3>
+                {excelStep === 'upload' && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">협력사가 제공한 엑셀 파일을 업로드하여 형식을 검증합니다.</p>
+                    <Input type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelFile} />
+                  </div>
+                )}
+                {excelStep === 'map' && (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">{excelData.length}행 파싱됨. 컬럼 매핑 확인 후 검증하세요.</p>
+                    <Button onClick={handleExcelValidate} className="w-full">검증 실행</Button>
+                  </div>
+                )}
+                {excelStep === 'result' && (
+                  <div className="space-y-4">
+                    <div className="text-center">
+                      <p className={`text-lg font-bold ${excelIssues.length > 0 ? 'text-destructive' : 'text-success'}`}>
+                        {excelIssues.length > 0 ? `${excelIssues.length}건의 오류 발견` : '✅ 문제 없음'}
+                      </p>
                     </div>
                     <div className="max-h-48 overflow-y-auto space-y-1">
                       {excelIssues.map((iss, i) => (
-                        <div key={i} className={`text-xs p-2 rounded flex items-start gap-2 ${iss.severity === 'error' ? 'bg-destructive/5' : 'bg-warning/5'}`}>
-                          {iss.severity === 'error' ? <XCircle className="h-3 w-3 text-destructive mt-0.5 shrink-0" /> : <AlertTriangle className="h-3 w-3 text-warning mt-0.5 shrink-0" />}
-                          <div>
-                            <p>{iss.message}</p>
-                            {iss.recommendation && <p className="text-muted-foreground italic text-[10px]">→ {iss.recommendation}</p>}
-                          </div>
-                        </div>
+                        <div key={i} className="text-xs p-2 bg-destructive/5 text-destructive rounded">{iss.message}</div>
                       ))}
-                      {excelIssues.length === 0 && <p className="text-center text-success py-3">✅ 문제 없음</p>}
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExcelReportPDF}>
-                        <FileText className="h-3.5 w-3.5" /> 검증 리포트 PDF
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => { setExcelStep('upload'); setExcelData([]); setExcelIssues([]); }}>
-                        다시 업로드
-                      </Button>
-                      <div className="flex-1" />
-                      <Button size="sm" className="gap-1.5" onClick={handleExcelImport} disabled={!selectedRun}>
-                        <Upload className="h-3.5 w-3.5" /> 회차에 반영 ({excelData.length}건)
-                      </Button>
+                      <Button variant="outline" className="flex-1" onClick={() => setExcelStep('upload')}>다시하기</Button>
+                      <Button className="flex-1" onClick={handleExcelReportPDF}>리포트 출력</Button>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                  </div>
+                )}
+              </div>
             </TabsContent>
           </Tabs>
         </>

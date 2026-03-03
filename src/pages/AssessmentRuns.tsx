@@ -79,7 +79,7 @@ const AssessmentRuns = () => {
   const [showDeleted, setShowDeleted] = useState(false);
 
   // Companies for contractor selection
-  const [contractors, setContractors] = useState<{ id: string; name: string }[]>([]);
+  const [contractors, setContractors] = useState<{ id: string; name: string; type: string }[]>([]);
   const [companyNameMap, setCompanyNameMap] = useState<Record<string, string>>({});
 
   const [form, setForm] = useState({
@@ -104,14 +104,19 @@ const AssessmentRuns = () => {
     });
   }, []);
 
-  // Fetch contractors for selected project
+  // Fetch contractors for selected project (contractor + vendor types)
+  const [allProjectCompanies, setAllProjectCompanies] = useState<{ id: string; name: string; type: string }[]>([]);
   const fetchContractors = async () => {
-    if (!selectedProject) { setContractors([]); return; }
-    const { data } = await supabase.from('companies').select('id, name').eq('project_id', selectedProject).eq('type', 'contractor').order('name');
-    setContractors(data || []);
-    // Build name map
+    if (!selectedProject) { setContractors([]); setAllProjectCompanies([]); return; }
+    // Fetch all companies for the project to give better diagnostics
+    const { data: allData } = await supabase.from('companies').select('id, name, type').eq('project_id', selectedProject).order('name');
+    setAllProjectCompanies(allData || []);
+    // Filter to contractor-type companies (contractor, vendor)
+    const filtered = (allData || []).filter(c => c.type === 'contractor' || c.type === 'vendor');
+    setContractors(filtered);
+    // Build name map for all companies
     const map: Record<string, string> = {};
-    (data || []).forEach(c => { map[c.id] = c.name; });
+    (allData || []).forEach(c => { map[c.id] = c.name; });
     setCompanyNameMap(prev => ({ ...prev, ...map }));
   };
 
@@ -471,11 +476,20 @@ const AssessmentRuns = () => {
                         onCheckedChange={() => toggleContractor(c.id)}
                       />
                       {c.name}
+                      <Badge variant="outline" className="text-[9px] ml-auto">{c.type === 'vendor' ? '공급사' : '협력사'}</Badge>
                     </label>
                   ))}
                 </div>
               ) : (
-                <p className="text-xs text-muted-foreground py-2">등록된 협력사가 없습니다. 프로젝트 설정 &gt; 업체관리에서 먼저 등록하세요.</p>
+                <div className="text-xs text-muted-foreground py-2 space-y-1">
+                  {allProjectCompanies.length === 0 ? (
+                    <p>등록된 업체가 없습니다. 프로젝트 설정 &gt; 업체관리에서 먼저 등록하세요.</p>
+                  ) : allProjectCompanies.every(c => c.type === 'gc' || c.type === 'client') ? (
+                    <p>협력사(구분=협력사/공급사)로 등록된 업체가 없습니다. 업체관리에서 구분을 확인하세요.</p>
+                  ) : (
+                    <p>조건에 맞는 협력사가 없습니다. 업체관리에서 업체 상태를 확인하세요.</p>
+                  )}
+                </div>
               )}
               {form.target_company_ids.length > 0 && (
                 <p className="text-[10px] text-muted-foreground">{form.target_company_ids.length}개 선택됨</p>

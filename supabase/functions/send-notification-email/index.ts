@@ -22,7 +22,7 @@ async function sendEmailViaResend(to: string, subject: string, body: string, api
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: 'notifications@lovable.app',
+        from: Deno.env.get('EMAIL_FROM') || 'no-reply@dig-airgas.com',
         to: [to],
         subject,
         html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">

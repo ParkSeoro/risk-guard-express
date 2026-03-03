@@ -45,13 +45,26 @@ const Approvals = () => {
 
   useEffect(() => { fetchData(); }, [selectedProject]);
 
-  // Group by run_id
-  const grouped = approvals.reduce((acc, ap) => {
-    const key = ap.run_id || 'general';
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(ap);
-    return acc;
-  }, {} as Record<string, any[]>);
+  // Group by run_id, only show the latest approval_version per run
+  const grouped = (() => {
+    // First, find max version per run
+    const maxVersionByRun: Record<string, number> = {};
+    for (const ap of approvals) {
+      const key = ap.run_id || 'general';
+      const ver = ap.approval_version || 1;
+      if (!maxVersionByRun[key] || ver > maxVersionByRun[key]) maxVersionByRun[key] = ver;
+    }
+    // Then group only latest version (exclude cancelled approvals from display unless they're the only ones)
+    return approvals.reduce((acc, ap) => {
+      const key = ap.run_id || 'general';
+      const ver = ap.approval_version || 1;
+      if (ver === maxVersionByRun[key]) {
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(ap);
+      }
+      return acc;
+    }, {} as Record<string, any[]>);
+  })();
 
   // Filter tabs
   const getFilteredGrouped = () => {

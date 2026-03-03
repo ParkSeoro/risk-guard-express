@@ -12,8 +12,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
-  ArrowLeft, Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield
+  ArrowLeft, Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck
 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
@@ -46,6 +47,12 @@ const ProjectDetail = () => {
   const [companyForm, setCompanyForm] = useState({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '' });
   const [copiedCode, setCopiedCode] = useState('');
 
+  // Approval route templates
+  const [approvalTemplates, setApprovalTemplates] = useState<any[]>([]);
+  const [showAddTemplate, setShowAddTemplate] = useState(false);
+  const [templateForm, setTemplateForm] = useState({ name: '기본 결재라인', assessment_type: '정기', is_default: false, reviewers: '' as string, approvers: '' as string });
+  const [allProfiles, setAllProfiles] = useState<{ user_id: string; display_name: string; company: string; position: string }[]>([]);
+
   const canManage = isMaster || projectRole === 'project_admin';
 
   useEffect(() => {
@@ -56,21 +63,24 @@ const ProjectDetail = () => {
   const fetchAll = async () => {
     if (!projectId || !user) return;
 
-    const [projRes, membersRes, profilesRes, companiesRes, invitesRes, requestsRes] = await Promise.all([
+    const [projRes, membersRes, profilesRes, companiesRes, invitesRes, requestsRes, templatesRes] = await Promise.all([
       supabase.from('projects').select('*').eq('id', projectId).single(),
       supabase.from('project_members').select('*').eq('project_id', projectId),
-      supabase.from('profiles').select('user_id, display_name, company, phone'),
+      supabase.from('profiles').select('user_id, display_name, company, phone, position'),
       supabase.from('companies').select('*').eq('project_id', projectId).order('name'),
       supabase.from('project_invites').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_join_requests').select('*, profiles:user_id(display_name, company)').eq('project_id', projectId).eq('status', 'pending'),
+      supabase.from('approval_route_templates' as any).select('*').eq('project_id', projectId).order('created_at'),
     ]);
 
     setProject(projRes.data);
     setMembers(membersRes.data || []);
     setProfiles(profilesRes.data || []);
+    setAllProfiles((profilesRes.data || []) as any);
     setCompanies(companiesRes.data || []);
     setInvites(invitesRes.data || []);
     setJoinRequests(requestsRes.data || []);
+    setApprovalTemplates((templatesRes.data || []) as any);
 
     // Get user's role in this project
     if (isMaster) {
@@ -221,6 +231,7 @@ const ProjectDetail = () => {
         <TabsList>
           <TabsTrigger value="members" className="gap-1.5"><Users className="h-3.5 w-3.5" /> 멤버/권한</TabsTrigger>
           <TabsTrigger value="companies" className="gap-1.5"><Building2 className="h-3.5 w-3.5" /> 업체 관리</TabsTrigger>
+          <TabsTrigger value="approval-routes" className="gap-1.5"><FileCheck className="h-3.5 w-3.5" /> 결재라인</TabsTrigger>
           <TabsTrigger value="invites" className="gap-1.5"><KeyRound className="h-3.5 w-3.5" /> 초대</TabsTrigger>
         </TabsList>
 
@@ -336,6 +347,66 @@ const ProjectDetail = () => {
                       )}
                     </div>
                   ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Approval Routes Tab */}
+        <TabsContent value="approval-routes" className="space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm">결재라인 템플릿</CardTitle>
+              {canManage && (
+                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => {
+                  setTemplateForm({ name: '기본 결재라인', assessment_type: '정기', is_default: false, reviewers: '', approvers: '' });
+                  setShowAddTemplate(true);
+                }}>
+                  <Plus className="h-3.5 w-3.5" /> 결재라인 추가
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              {approvalTemplates.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">등록된 결재라인이 없습니다. 결재라인을 추가하면 회차 생성 시 자동으로 결재자가 채워집니다.</p>
+              ) : (
+                <div className="space-y-2">
+                  {approvalTemplates.map((t: any) => {
+                    const steps = Array.isArray(t.steps) ? t.steps : [];
+                    const reviewers = steps.filter((s: any) => s.role === '검토자');
+                    const approvers = steps.filter((s: any) => s.role === '승인자');
+                    return (
+                      <div key={t.id} className="p-3 rounded-lg border space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{t.name}</span>
+                            <Badge variant="outline" className="text-[10px]">{t.assessment_type}</Badge>
+                            {t.is_default && <Badge variant="secondary" className="text-[10px]">기본</Badge>}
+                          </div>
+                          {canManage && (
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={async () => {
+                              await supabase.from('approval_route_templates' as any).delete().eq('id', t.id);
+                              fetchAll();
+                              toast({ title: '결재라인이 삭제되었습니다.' });
+                            }}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                          <div>
+                            <span className="font-medium">검토자:</span>{' '}
+                            {reviewers.length > 0 ? reviewers.map((r: any) => r.name).join(', ') : '미지정'}
+                          </div>
+                          <div>
+                            <span className="font-medium">승인자:</span>{' '}
+                            {approvers.length > 0 ? approvers.map((a: any) => a.name).join(', ') : '미지정'}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -487,6 +558,90 @@ const ProjectDetail = () => {
               <Input value={companyForm.scope} onChange={e => setCompanyForm(p => ({ ...p, scope: e.target.value }))} />
             </div>
             <Button onClick={handleAddCompany} className="w-full" disabled={!companyForm.name.trim()}>등록</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Approval Route Template Dialog */}
+      <Dialog open={showAddTemplate} onOpenChange={setShowAddTemplate}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>결재라인 추가</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">템플릿명</Label>
+                <Input value={templateForm.name} onChange={e => setTemplateForm(p => ({ ...p, name: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">평가 유형</Label>
+                <Select value={templateForm.assessment_type} onValueChange={v => setTemplateForm(p => ({ ...p, assessment_type: v }))}>
+                  <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['정기', '수시', '최초', '상시'].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">검토자 (이름, 콤마로 구분)</Label>
+              <Textarea value={templateForm.reviewers} onChange={e => setTemplateForm(p => ({ ...p, reviewers: e.target.value }))} placeholder="홍길동, 김철수" rows={2} className="text-xs" />
+              {templateForm.reviewers && (
+                <div className="flex gap-1 flex-wrap mt-1">
+                  {templateForm.reviewers.split(',').map(n => n.trim()).filter(Boolean).map((n, i) => {
+                    const matched = allProfiles.find(p => p.display_name === n);
+                    return <Badge key={i} variant={matched ? 'secondary' : 'outline'} className="text-[10px]">{n}{matched ? ` (${matched.company || ''})` : ' ⚠ 미등록'}</Badge>;
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">승인자 (이름, 콤마로 구분)</Label>
+              <Textarea value={templateForm.approvers} onChange={e => setTemplateForm(p => ({ ...p, approvers: e.target.value }))} placeholder="박대리, 이과장" rows={2} className="text-xs" />
+              {templateForm.approvers && (
+                <div className="flex gap-1 flex-wrap mt-1">
+                  {templateForm.approvers.split(',').map(n => n.trim()).filter(Boolean).map((n, i) => {
+                    const matched = allProfiles.find(p => p.display_name === n);
+                    return <Badge key={i} variant={matched ? 'secondary' : 'outline'} className="text-[10px]">{n}{matched ? ` (${matched.company || ''})` : ' ⚠ 미등록'}</Badge>;
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="is_default" checked={templateForm.is_default} onChange={e => setTemplateForm(p => ({ ...p, is_default: e.target.checked }))} />
+              <Label htmlFor="is_default" className="text-xs">기본 결재라인으로 설정</Label>
+            </div>
+            <Button onClick={async () => {
+              if (!projectId || !user) return;
+              const reviewerNames = templateForm.reviewers.split(',').map(n => n.trim()).filter(Boolean);
+              const approverNames = templateForm.approvers.split(',').map(n => n.trim()).filter(Boolean);
+              if (reviewerNames.length === 0 || approverNames.length === 0) {
+                toast({ title: '검토자와 승인자를 각각 1명 이상 지정하세요.', variant: 'destructive' });
+                return;
+              }
+              const steps = [
+                ...reviewerNames.map(name => ({ role: '검토자', name, user_id: allProfiles.find(p => p.display_name === name)?.user_id || null })),
+                ...approverNames.map(name => ({ role: '승인자', name, user_id: allProfiles.find(p => p.display_name === name)?.user_id || null })),
+              ];
+              // If setting as default, unset other defaults for same type
+              if (templateForm.is_default) {
+                await supabase.from('approval_route_templates' as any).update({ is_default: false } as any).eq('project_id', projectId).eq('assessment_type', templateForm.assessment_type);
+              }
+              const { error } = await supabase.from('approval_route_templates' as any).insert([{
+                project_id: projectId,
+                name: templateForm.name,
+                assessment_type: templateForm.assessment_type,
+                is_default: templateForm.is_default,
+                steps,
+                created_by: user.id,
+              }] as any);
+              if (error) {
+                toast({ title: '추가 실패', description: error.message, variant: 'destructive' });
+              } else {
+                toast({ title: '결재라인이 추가되었습니다.' });
+                setShowAddTemplate(false);
+                fetchAll();
+              }
+            }} className="w-full" disabled={!templateForm.name.trim()}>등록</Button>
           </div>
         </DialogContent>
       </Dialog>

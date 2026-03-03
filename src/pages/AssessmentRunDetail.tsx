@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useToast } from '@/hooks/use-toast';
 import { validateRiskItemField } from '@/lib/inputValidation';
+import { sendNotification } from '@/lib/notificationService';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -121,6 +122,43 @@ const AssessmentRunDetail = () => {
       setRun(runRes.data);
       const { data: proj } = await supabase.from('projects').select('*').eq('id', runRes.data.project_id).single();
       setProject(proj);
+
+      // Auto-populate participants from approval route template if none exist
+      const currentParticipants = partRes.data || [];
+      if (currentParticipants.length === 0 && runRes.data.project_id) {
+        const { data: templates } = await supabase
+          .from('approval_route_templates' as any)
+          .select('*')
+          .eq('project_id', runRes.data.project_id)
+          .order('is_default', { ascending: false });
+        
+        if (templates && templates.length > 0) {
+          // Find matching template by type, or use default
+          const matchingTemplate = (templates as any[]).find((t: any) => t.assessment_type === runRes.data.type) 
+            || (templates as any[]).find((t: any) => t.is_default)
+            || templates[0];
+          
+          if (matchingTemplate) {
+            const steps = Array.isArray(matchingTemplate.steps) ? matchingTemplate.steps : [];
+            if (steps.length > 0) {
+              const participantInserts = steps.map((s: any) => ({
+                run_id: runId,
+                role: s.role,
+                user_name: s.name || '',
+                company: '',
+              }));
+              const { data: newParts } = await supabase.from('assessment_run_participants').insert(participantInserts).select();
+              if (newParts) {
+                setParticipants(newParts);
+                setItems(itemsRes.data || []);
+                setUserDirectory((profilesRes.data || []) as any);
+                setLoading(false);
+                return;
+              }
+            }
+          }
+        }
+      }
     }
     setItems(itemsRes.data || []);
     setParticipants(partRes.data || []);
@@ -277,13 +315,13 @@ const AssessmentRunDetail = () => {
     log('제출', 'assessment_run', runId!, run?.project_id);
   };
 
-  // Submit for approval (Validated → InApproval)
+  // Submit for approval (Validated → InApproval) — also handles resubmission
   const handleSubmitForApproval = async () => {
     if (!run || !user || !profile) return;
     if (items.length === 0) {
       toast({ title: '항목이 1건 이상 있어야 결재 상신이 가능합니다.', variant: 'destructive' }); return;
     }
-    if (run.status !== '검증완료') {
+    if (!['검증완료', '보완요청', '보완중', '반려'].includes(run.status)) {
       toast({ title: '검증 완료 후에만 결재 상신이 가능합니다.', variant: 'destructive' }); return;
     }
     if (run.validation_verdict === '부적정') {
@@ -311,28 +349,37 @@ const AssessmentRunDetail = () => {
     const reviewerId = resolveUserId(firstReviewer.user_name);
     const approverId = resolveUserId(firstApprover.user_name);
 
-    // Create approval steps: 작성(auto-approved) → 검토 → 승인
+    // Determine approval version: check existing approvals for this run
+    const { data: existingApprovals } = await supabase.from('approvals').select('approval_version').eq('run_id', runId).order('approval_version', { ascending: false }).limit(1);
+    const nextVersion = ((existingApprovals?.[0]?.approval_version) || 0) + 1;
+
+    // Close any previous pending approvals (mark as '취소' instead of deleting)
+    await supabase.from('approvals').update({ status: '취소' }).eq('run_id', runId).eq('status', '대기');
+
+    // Create new approval steps: 작성(auto-approved) → 검토 → 승인
     const inserts = [
       {
         project_id: run.project_id, run_id: runId, step: '작성', status: '승인',
         approver_id: user.id, approver_name: profile.display_name,
-        comment: approvalComment,
+        comment: approvalComment, approval_version: nextVersion,
       },
       {
         project_id: run.project_id, run_id: runId, step: '검토', status: '대기',
         approver_id: reviewerId, approver_name: firstReviewer.user_name || '',
-        comment: '',
+        comment: '', approval_version: nextVersion,
       },
       {
         project_id: run.project_id, run_id: runId, step: '승인', status: '대기',
         approver_id: approverId, approver_name: firstApprover.user_name || '',
-        comment: '',
+        comment: '', approval_version: nextVersion,
       },
     ];
     await supabase.from('approvals').insert(inserts);
     await supabase.from('assessment_runs').update({ status: '결재진행' }).eq('id', runId);
 
     // Send notifications to reviewer and approver
+    const isResubmission = nextVersion > 1;
+    const notifTitle = isResubmission ? '재결재 요청' : '결재 요청';
     const notifTargets = [
       { userId: reviewerId, name: firstReviewer.user_name, step: '검토' },
       { userId: approverId, name: firstApprover.user_name, step: '승인' },
@@ -340,32 +387,35 @@ const AssessmentRunDetail = () => {
 
     if (notifTargets.length > 0) {
       const projectName = project?.name || '';
-      await supabase.from('notifications').insert(
-        notifTargets.map(t => ({
+      // Use sendNotification (via edge function → email) instead of direct DB insert
+      for (const t of notifTargets) {
+        await sendNotification({
           user_id: t.userId!,
-          title: '결재 요청',
-          message: `[${projectName}] [${run.type}] ${run.period_label} 회차의 ${t.step} 결재가 요청되었습니다. 요청자: ${profile.display_name}`,
+          title: notifTitle,
+          message: `[${projectName}] [${run.type}] ${run.period_label} 회차의 ${t.step} 결재가 ${isResubmission ? '재' : ''}요청되었습니다. 요청자: ${profile.display_name}${isResubmission ? ` (${nextVersion}차 상신)` : ''}`,
           type: 'approval_request',
           related_id: runId,
           related_type: 'assessment_run',
           project_id: run.project_id,
-        }))
-      );
+        });
+      }
     }
 
     setRun((prev: any) => ({ ...prev, status: '결재진행' }));
     setShowApproval(false); setApprovalComment('');
-    toast({ title: '결재가 상신되었습니다.' });
-    log('결재상신', 'assessment_run', runId!, run.project_id, {
+    toast({ title: isResubmission ? `재상신 완료 (${nextVersion}차)` : '결재가 상신되었습니다.' });
+    log(isResubmission ? '재상신' : '결재상신', 'assessment_run', runId!, run.project_id, {
       reviewer: firstReviewer.user_name,
       approver: firstApprover.user_name,
+      version: nextVersion,
     });
   };
 
   // Cancel approval
   const handleCancelApproval = async () => {
     if (!run || !user) return;
-    await supabase.from('approvals').delete().eq('run_id', runId);
+    // Cancel pending approvals instead of deleting (preserve history)
+    await supabase.from('approvals').update({ status: '취소' }).eq('run_id', runId).eq('status', '대기');
     await supabase.from('assessment_runs').update({ status: '검증완료' }).eq('id', runId);
     setRun((prev: any) => ({ ...prev, status: '검증완료' }));
     toast({ title: '결재 상신이 취소되었습니다.' });
@@ -375,8 +425,13 @@ const AssessmentRunDetail = () => {
   // Final approval actions
   const handleFinalApproval = async (action: '승인' | '반려', comment?: string) => {
     if (!run || !user || !profile) return;
+    // Get the latest version's pending approvals
+    const { data: latestVersionData } = await supabase.from('approvals')
+      .select('approval_version').eq('run_id', runId).order('approval_version', { ascending: false }).limit(1);
+    const currentVersion = latestVersionData?.[0]?.approval_version || 1;
+    
     const { data: pendingApprovals } = await supabase.from('approvals')
-      .select('*').eq('run_id', runId).eq('status', '대기').order('created_at').limit(1);
+      .select('*').eq('run_id', runId).eq('status', '대기').eq('approval_version', currentVersion).order('created_at').limit(1);
     if (!pendingApprovals || pendingApprovals.length === 0) return;
     const ap = pendingApprovals[0];
     await supabase.from('approvals').update({
@@ -385,36 +440,45 @@ const AssessmentRunDetail = () => {
     }).eq('id', ap.id);
 
     if (action === '승인') {
-      const { data: allAp } = await supabase.from('approvals').select('*').eq('run_id', runId);
+      const { data: allAp } = await supabase.from('approvals').select('*').eq('run_id', runId).eq('approval_version', currentVersion);
       const allApproved = (allAp || []).every((a: any) => a.status === '승인');
       if (allApproved) {
         await supabase.from('assessment_runs').update({ status: '승인완료' }).eq('id', runId);
         await supabase.from('risk_items').update({ is_locked: true }).eq('run_id', runId);
         setRun((prev: any) => ({ ...prev, status: '승인완료' }));
-        // Notify author
+        // Notify author via edge function (sends email)
         const authorStep = (allAp || []).find((a: any) => a.step === '작성');
         if (authorStep?.approver_id) {
-          await supabase.from('notifications').insert([{
-            user_id: authorStep.approver_id, title: '결재 최종 승인',
+          await sendNotification({
+            user_id: authorStep.approver_id,
+            title: '결재 최종 승인',
             message: `[${run.type}] ${run.period_label} 회차가 최종 승인되었습니다.`,
-            type: 'approval_approved', related_id: runId, related_type: 'assessment_run', project_id: run.project_id,
-          }]);
+            type: 'approval_approved',
+            related_id: runId,
+            related_type: 'assessment_run',
+            project_id: run.project_id,
+          });
         }
         toast({ title: '최종 승인 완료! 해당 회차가 잠금되었습니다.' });
       } else {
         toast({ title: `${ap.step} 단계가 승인되었습니다.` });
       }
     } else {
-      await supabase.from('assessment_runs').update({ status: '보완요청' }).eq('id', runId);
-      setRun((prev: any) => ({ ...prev, status: '보완요청' }));
-      // Notify author
-      const authorStep = (await supabase.from('approvals').select('*').eq('run_id', runId).eq('step', '작성')).data?.[0];
+      await supabase.from('assessment_runs').update({ status: '보완중' }).eq('id', runId);
+      setRun((prev: any) => ({ ...prev, status: '보완중' }));
+      // Notify author via edge function (sends email)
+      const { data: authorData } = await supabase.from('approvals').select('*').eq('run_id', runId).eq('step', '작성').eq('approval_version', currentVersion).limit(1);
+      const authorStep = authorData?.[0];
       if (authorStep?.approver_id) {
-        await supabase.from('notifications').insert([{
-          user_id: authorStep.approver_id, title: '결재 반려',
+        await sendNotification({
+          user_id: authorStep.approver_id,
+          title: '결재 반려',
           message: `[${run.type}] ${run.period_label} 반려됨. 사유: ${comment || '(없음)'}`,
-          type: 'approval_rejected', related_id: runId, related_type: 'assessment_run', project_id: run.project_id,
-        }]);
+          type: 'approval_rejected',
+          related_id: runId,
+          related_type: 'assessment_run',
+          project_id: run.project_id,
+        });
       }
       toast({ title: '반려되었습니다. 보완 후 재제출하세요.', variant: 'destructive' });
     }
@@ -425,7 +489,9 @@ const AssessmentRunDetail = () => {
   // Resubmit (after rejection/supplement request → back to Submitted for revalidation)
   const handleResubmit = async () => {
     if (!run) return;
-    await supabase.from('approvals').delete().eq('run_id', runId);
+    // Don't delete old approvals — they stay as history. New ones will be created on next 결재상신.
+    // Cancel any remaining pending approvals
+    await supabase.from('approvals').update({ status: '취소' }).eq('run_id', runId).eq('status', '대기');
     await supabase.from('assessment_runs').update({ status: '제출됨' }).eq('id', runId);
     setRun((prev: any) => ({ ...prev, status: '제출됨' }));
     toast({ title: '재제출 완료. 재검증을 실행하세요.' });
@@ -803,7 +869,7 @@ const AssessmentRunDetail = () => {
   const canSubmitForValidation = run.status === '작성중' && items.length > 0;
   const canValidate = ['제출됨', '작성중', '보완요청', '보완중', '검증대기', '반려'].includes(run.status) && isAdmin();
   const hasReviewerAndApprover = participants.some(p => p.role === '검토자') && participants.some(p => p.role === '승인자');
-  const canSubmitApproval = run.status === '검증완료' && run.validation_verdict !== '부적정' && items.length > 0 && hasReviewerAndApprover;
+  const canSubmitApproval = ['검증완료', '보완요청', '보완중', '반려'].includes(run.status) && run.validation_verdict !== '부적정' && items.length > 0 && hasReviewerAndApprover;
   const canCancelApproval = run.status === '결재진행' && (isAdmin() || (user && run.created_by === user.id));
   const canResubmit = ['보완요청', '보완중', '반려'].includes(run.status);
   const canAutoRemediate = validationReport && validationReport.verdict !== '적정' && (canEdit || canForceEdit);
@@ -860,10 +926,10 @@ const AssessmentRunDetail = () => {
             <ShieldCheck className="h-3.5 w-3.5" /> {validationReport ? '재검증' : '검증 실행'}
           </Button>
         )}
-        {run.status === '검증완료' && items.length > 0 && run.validation_verdict !== '부적정' && (
+        {canSubmitApproval && (
           hasReviewerAndApprover ? (
             <Button size="sm" className="gap-1.5" onClick={() => setShowApproval(true)}>
-              <Send className="h-3.5 w-3.5" /> 결재 상신
+              <Send className="h-3.5 w-3.5" /> {['보완요청','보완중','반려'].includes(run.status) ? '재상신' : '결재 상신'}
             </Button>
           ) : (
             <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setShowParticipants(true)}

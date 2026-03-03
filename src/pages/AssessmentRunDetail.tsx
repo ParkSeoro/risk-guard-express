@@ -109,6 +109,11 @@ const AssessmentRunDetail = () => {
   const [applyAndRevalidate, setApplyAndRevalidate] = useState(true);
   const [autoRemediationLoading, setAutoRemediationLoading] = useState(false);
 
+  // Department & assignee data for dropdowns
+  const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
+  const [deptAssignees, setDeptAssignees] = useState<{ department_id: string; default_user_id: string | null }[]>([]);
+  const [projectMembers, setProjectMembers] = useState<{ user_id: string; display_name: string; company: string }[]>([]);
+
   const fetchAll = useCallback(async () => {
     if (!runId) return;
     setLoading(true);
@@ -120,8 +125,23 @@ const AssessmentRunDetail = () => {
     ]);
     if (runRes.data) {
       setRun(runRes.data);
-      const { data: proj } = await supabase.from('projects').select('*').eq('id', runRes.data.project_id).single();
-      setProject(proj);
+      const projectId = runRes.data.project_id;
+      const [projRes, deptRes, deptAssigneeRes, membersRes] = await Promise.all([
+        supabase.from('projects').select('*').eq('id', projectId).single(),
+        supabase.from('master_departments').select('id, name').or(`project_id.eq.${projectId},project_id.is.null`),
+        supabase.from('department_assignees').select('department_id, default_user_id').eq('project_id', projectId),
+        supabase.from('project_members').select('user_id, company').eq('project_id', projectId),
+      ]);
+      setProject(projRes.data);
+      setDepartments(deptRes.data || []);
+      setDeptAssignees(deptAssigneeRes.data || []);
+      // Merge member info with profiles
+      const profiles = profilesRes.data || [];
+      const membersList = (membersRes.data || []).map(m => {
+        const prof = profiles.find((p: any) => p.user_id === m.user_id);
+        return { user_id: m.user_id, display_name: prof?.display_name || '', company: m.company || prof?.company || '' };
+      });
+      setProjectMembers(membersList);
 
       // Auto-populate participants from approval route template if none exist
       const currentParticipants = partRes.data || [];
@@ -220,6 +240,45 @@ const AssessmentRunDetail = () => {
     await supabase.from('risk_items').update(updateData).eq('id', id);
     const { data: updated } = await supabase.from('risk_items').select('*').eq('id', id).single();
     if (updated) setItems(prev => prev.map(item => item.id === id ? updated : item));
+    setEditingCell(null);
+  };
+
+  // Department selection with auto-fill assignee
+  const handleDepartmentChange = async (itemId: string, deptId: string) => {
+    if (!canEdit && !canForceEdit) return;
+    const dept = departments.find(d => d.id === deptId);
+    const updateData: Record<string, any> = {
+      responsible_department_id: deptId,
+      department: dept?.name || '',
+    };
+    // Auto-fill assignee from DepartmentAssignees mapping
+    const mapping = deptAssignees.find(da => da.department_id === deptId);
+    if (mapping?.default_user_id) {
+      const assigneeProfile = projectMembers.find(m => m.user_id === mapping.default_user_id);
+      if (assigneeProfile) {
+        updateData.assignee_user_id = mapping.default_user_id;
+        updateData.assignee = assigneeProfile.display_name;
+      }
+    } else {
+      toast({ title: '해당 부서에 기본 담당자 매핑이 없습니다.', description: '기준정보 > 부서별 담당자에서 매핑을 설정하세요.', variant: 'destructive' });
+    }
+    await supabase.from('risk_items').update(updateData).eq('id', itemId);
+    const { data: updated } = await supabase.from('risk_items').select('*').eq('id', itemId).single();
+    if (updated) setItems(prev => prev.map(item => item.id === itemId ? updated : item));
+    setEditingCell(null);
+  };
+
+  // Assignee manual change
+  const handleAssigneeChange = async (itemId: string, userId: string) => {
+    if (!canEdit && !canForceEdit) return;
+    const member = projectMembers.find(m => m.user_id === userId);
+    const updateData: Record<string, any> = {
+      assignee_user_id: userId,
+      assignee: member?.display_name || '',
+    };
+    await supabase.from('risk_items').update(updateData).eq('id', itemId);
+    const { data: updated } = await supabase.from('risk_items').select('*').eq('id', itemId).single();
+    if (updated) setItems(prev => prev.map(item => item.id === itemId ? updated : item));
     setEditingCell(null);
   };
 
@@ -1066,7 +1125,7 @@ const AssessmentRunDetail = () => {
                   <th className="text-center w-12">가능성</th><th className="text-center w-12">중대성</th><th className="text-center w-12">위험도</th>
                   <th className="text-center w-12">가능성'</th><th className="text-center w-12">중대성'</th><th className="text-center w-12">위험도'</th>
                   <th className="text-center w-16">상태</th>
-                  <th>PPE</th><th>법적근거</th><th>부서</th><th>담당</th>
+                  <th>PPE</th><th>법적근거</th><th className="w-24">책임부서</th><th className="w-24">담당자</th>
                   {validationReport && <th className="w-16 text-center">판정</th>}
                   {(canEdit || canForceEdit) && <th className="w-16 text-center print:hidden">작업</th>}
                 </tr>
@@ -1099,8 +1158,42 @@ const AssessmentRunDetail = () => {
                         )}
                       </td>
                       <td className="text-xs max-w-[150px] truncate">{(item.legal_basis || []).join(', ') || '—'}</td>
-                      <td className="editable whitespace-nowrap"><EditableCell item={item} field="department" /></td>
-                      <td className="whitespace-nowrap text-muted-foreground">{item.assignee || '—'}</td>
+                      <td className="whitespace-nowrap">
+                        {(canEdit || canForceEdit) ? (
+                          <Select
+                            value={(item as any).responsible_department_id || '__none__'}
+                            onValueChange={(v) => v !== '__none__' && handleDepartmentChange(item.id, v)}
+                          >
+                            <SelectTrigger className="h-7 text-[11px] w-24"><SelectValue placeholder="선택" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">(미지정)</SelectItem>
+                              {departments.map(d => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs">{item.department || '—'}</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap">
+                        {(canEdit || canForceEdit) ? (
+                          <Select
+                            value={(item as any).assignee_user_id || '__none__'}
+                            onValueChange={(v) => v !== '__none__' && handleAssigneeChange(item.id, v)}
+                          >
+                            <SelectTrigger className="h-7 text-[11px] w-24"><SelectValue placeholder="선택" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">(미지정)</SelectItem>
+                              {projectMembers.map(m => (
+                                <SelectItem key={m.user_id} value={m.user_id}>
+                                  {m.display_name}{m.company ? ` (${m.company})` : ''}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">{item.assignee || '—'}</span>
+                        )}
+                      </td>
                       {validationReport && (
                         <td className="text-center">
                           {itemVerdict && (

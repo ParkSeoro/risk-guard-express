@@ -1026,6 +1026,7 @@ export type Database = {
       risk_items: {
         Row: {
           assignee: string | null
+          assignee_user_id: string | null
           batch_id: string | null
           created_at: string
           created_by: string | null
@@ -1049,6 +1050,7 @@ export type Database = {
           ppe: string[] | null
           process: string
           project_id: string
+          responsible_department_id: string | null
           risk: number | null
           risk_grade: string
           run_id: string | null
@@ -1064,6 +1066,7 @@ export type Database = {
         }
         Insert: {
           assignee?: string | null
+          assignee_user_id?: string | null
           batch_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -1087,6 +1090,7 @@ export type Database = {
           ppe?: string[] | null
           process: string
           project_id: string
+          responsible_department_id?: string | null
           risk?: number | null
           risk_grade?: string
           run_id?: string | null
@@ -1102,6 +1106,7 @@ export type Database = {
         }
         Update: {
           assignee?: string | null
+          assignee_user_id?: string | null
           batch_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -1125,6 +1130,7 @@ export type Database = {
           ppe?: string[] | null
           process?: string
           project_id?: string
+          responsible_department_id?: string | null
           risk?: number | null
           risk_grade?: string
           run_id?: string | null
@@ -1144,6 +1150,13 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "risk_items_responsible_department_id_fkey"
+            columns: ["responsible_department_id"]
+            isOneToOne: false
+            referencedRelation: "master_departments"
             referencedColumns: ["id"]
           },
           {

@@ -340,6 +340,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          parent_company_id: string | null
           period: string | null
           project_id: string
           scope: string | null
@@ -353,6 +354,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          parent_company_id?: string | null
           period?: string | null
           project_id: string
           scope?: string | null
@@ -366,6 +368,7 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          parent_company_id?: string | null
           period?: string | null
           project_id?: string
           scope?: string | null
@@ -373,6 +376,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "companies_parent_company_id_fkey"
+            columns: ["parent_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "companies_project_id_fkey"
             columns: ["project_id"]

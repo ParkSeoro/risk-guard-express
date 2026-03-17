@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, Upload, ShieldCheck, Undo2 } from "lucide-react";
+import { Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, Upload, ShieldCheck, Undo2, Ban, RotateCcw } from "lucide-react";
 import { calculateRiskGrade, getGradeClassName, GRADES, type RiskGrade } from "@/lib/riskGrade";
 import { generateRiskItems } from "@/lib/riskAutoGen";
 import { exportToXLSX, exportToPDF, printRiskAssessment } from "@/lib/exportUtils";
@@ -167,6 +167,36 @@ const RiskAssessment = () => {
     setItems(prev => prev.filter(i => i.id !== id));
     toast({ title: "행이 삭제되었습니다." });
     log('삭제', 'risk_item', id, selectedProjectId);
+  };
+
+  const handleExclude = async (id: string) => {
+    const { error } = await supabase.from('risk_items').update({
+      is_excluded: true,
+      excluded_at: new Date().toISOString(),
+      excluded_by: user?.id || null,
+      excluded_reason: '사용자 제외 처리',
+    }).eq('id', id);
+    if (!error) {
+      const { data: updated } = await supabase.from('risk_items').select('*').eq('id', id).single();
+      if (updated) setItems(prev => prev.map(i => i.id === id ? updated : i));
+      toast({ title: '항목이 제외 처리되었습니다.' });
+      log('제외', 'risk_item', id, selectedProjectId);
+    }
+  };
+
+  const handleRestore = async (id: string) => {
+    const { error } = await supabase.from('risk_items').update({
+      is_excluded: false,
+      excluded_at: null,
+      excluded_by: null,
+      excluded_reason: '',
+    }).eq('id', id);
+    if (!error) {
+      const { data: updated } = await supabase.from('risk_items').select('*').eq('id', id).single();
+      if (updated) setItems(prev => prev.map(i => i.id === id ? updated : i));
+      toast({ title: '항목이 복원되었습니다.' });
+      log('복원', 'risk_item', id, selectedProjectId);
+    }
   };
 
   const handleAutoGenerate = async () => {
@@ -499,9 +529,13 @@ const RiskAssessment = () => {
                   <tr><td colSpan={19} className="text-center py-8 text-muted-foreground">로딩 중...</td></tr>
                 ) : filteredItems.length === 0 ? (
                   <tr><td colSpan={19} className="text-center py-8 text-muted-foreground">데이터가 없습니다. '공종 자동작성' 또는 '행 추가'를 사용하세요.</td></tr>
-                ) : filteredItems.map((item, idx) => (
-                  <tr key={item.id}>
-                    <td className="text-center text-muted-foreground">{idx + 1}</td>
+                ) : filteredItems.map((item, idx) => {
+                  const isExcluded = !!(item as any).is_excluded;
+                  return (
+                  <tr key={item.id} className={isExcluded ? 'opacity-40 bg-muted/30' : ''}>
+                    <td className="text-center text-muted-foreground">
+                      {isExcluded ? <Badge variant="outline" className="text-[9px] px-1">제외</Badge> : idx + 1}
+                    </td>
                     <td className="editable whitespace-nowrap"><EditableCell item={item} field="process" /></td>
                     <td className="editable"><EditableCell item={item} field="sub_task" /></td>
                     <td className="editable"><EditableCell item={item} field="hazard" /></td>
@@ -521,6 +555,15 @@ const RiskAssessment = () => {
                     <td className="whitespace-nowrap text-muted-foreground">{item.assignee || '—'}</td>
                     <td className="text-center print:hidden">
                       <div className="flex items-center gap-0.5 justify-center">
+                        {isExcluded ? (
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-success" onClick={() => handleRestore(item.id)} title="복원">
+                            <RotateCcw className="h-3 w-3" />
+                          </Button>
+                        ) : (
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground" onClick={() => handleExclude(item.id)} title="제외">
+                            <Ban className="h-3 w-3" />
+                          </Button>
+                        )}
                         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDuplicate(item)}>
                           <Copy className="h-3 w-3" />
                         </Button>
@@ -530,7 +573,8 @@ const RiskAssessment = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

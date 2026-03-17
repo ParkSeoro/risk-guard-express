@@ -49,6 +49,7 @@ interface RiskItem {
   status: string;
   department?: string | null;
   assignee?: string | null;
+  is_excluded?: boolean;
 }
 
 const GRADE_ORDER: Record<string, number> = { '상': 3, '중': 2, '하': 1 };
@@ -76,6 +77,9 @@ export async function validateRiskItems(
   const issues: ValidationIssue[] = [];
   const itemVerdicts: Record<string, { verdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정'; issues: ValidationIssue[] }> = {};
 
+  // Filter out excluded items
+  const activeItems = items.filter(i => !i.is_excluded);
+
   const { data: library } = await supabase
     .from('standard_risk_library')
     .select('sub_task, hazard, default_likelihood_grade, default_severity_grade, category_large, category_medium')
@@ -87,7 +91,7 @@ export async function validateRiskItems(
   const ruleWeights: Record<string, number> = {};
   (rules || []).forEach(r => { ruleWeights[r.rule_type] = Number(r.weight) || 1; });
 
-  for (const item of items) {
+  for (const item of activeItems) {
     const itemIssues: ValidationIssue[] = [];
 
     // 1) Required fields
@@ -177,11 +181,11 @@ export async function validateRiskItems(
     issues.push(...itemIssues);
   }
 
-  // Coverage check
-  const coverageGaps = await checkCoverage(items, projectId, library || []);
+  // Coverage check (pass activeItems only)
+  const coverageGaps = await checkCoverage(activeItems, projectId, library || []);
 
-  // Calculate score
-  const totalItems = items.length;
+  // Calculate score (based on active items only)
+  const totalItems = activeItems.length;
   const errors = issues.filter(i => i.severity === 'error').length;
   const warnings = issues.filter(i => i.severity === 'warning').length;
   const coveragePenalty = coverageGaps.filter(g => g.severity === '상').length * 10 + coverageGaps.filter(g => g.severity === '중').length * 5;
@@ -191,9 +195,9 @@ export async function validateRiskItems(
 
   // 핵심 규칙: 위험도 '상' 자체는 부적정 기준이 아님
   // 부적정 = 개선대책 미기재 or 필수필드 누락
-  const hasNoImprovementItems = items.some(i => !i.improvement_measure || i.improvement_measure.trim().length < 5);
+  const hasNoImprovementItems = activeItems.some(i => !i.improvement_measure || i.improvement_measure.trim().length < 5);
   const hasMissingRequiredFields = issues.some(i => i.ruleType === 'missing_field' && i.severity === 'error');
-  const hasManagedItems = items.some(i => i.improved_risk_grade === '상' && i.improvement_measure && i.improvement_measure.trim().length >= 5);
+  const hasManagedItems = activeItems.some(i => i.improved_risk_grade === '상' && i.improvement_measure && i.improvement_measure.trim().length >= 5);
   
   let verdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정';
   if ((hasNoImprovementItems && errors > 0) || hasMissingRequiredFields || score < 60) {

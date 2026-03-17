@@ -127,6 +127,8 @@ export async function generateRemediationActions(
   report: ValidationReport,
   projectId: string,
 ): Promise<RemediationAction[]> {
+  // Filter out excluded items
+  const activeItems = items.filter((i: any) => !i.is_excluded);
   const actions: RemediationAction[] = [];
 
   // Fetch library and legal references for context
@@ -139,7 +141,7 @@ export async function generateRemediationActions(
   const legals = legalRefs || [];
 
   // ===== A. Missing Fields (ACTION 1) =====
-  for (const item of items) {
+  for (const item of activeItems) {
     const verdict = report.itemVerdicts[item.id];
     if (!verdict) continue;
     const missingFields = verdict.issues.filter(i => i.ruleType === 'missing_field');
@@ -182,7 +184,7 @@ export async function generateRemediationActions(
   }
 
   // ===== A. PPE (ACTION 2) =====
-  for (const item of items) {
+  for (const item of activeItems) {
     if (item.ppe && item.ppe.length >= 2) continue;
     const tags = detectProcessTags(item.process, item.sub_task);
     const recommendedPPE = new Set<string>(item.ppe || []);
@@ -205,7 +207,7 @@ export async function generateRemediationActions(
 
   // ===== B. Control Measures (ACTION 3) =====
   const vaguePatterns = ['주의', '안전수칙 준수', '조심', '유의', '확인'];
-  for (const item of items) {
+  for (const item of activeItems) {
     const measure = item.improvement_measure || '';
     if (!measure || measure.length >= 30) continue;
     const isVague = vaguePatterns.some(p => measure.includes(p)) || measure.length < 10;
@@ -227,7 +229,7 @@ export async function generateRemediationActions(
   }
 
   // ===== B. Verification Step (ACTION 4) =====
-  for (const item of items) {
+  for (const item of activeItems) {
     const measure = item.improvement_measure || '';
     if (measure.includes('점검') || measure.includes('확인') || measure.includes('체크리스트')) continue;
     if (!measure || measure.length < 5) continue;
@@ -245,7 +247,7 @@ export async function generateRemediationActions(
   }
 
   // ===== C. Legal References (ACTION 5) =====
-  for (const item of items) {
+  for (const item of activeItems) {
     const verdict = report.itemVerdicts[item.id];
     if (!verdict) continue;
     const legalIssue = verdict.issues.find(i => i.ruleType === 'missing_legal');
@@ -276,12 +278,12 @@ export async function generateRemediationActions(
   // ===== D. Irrelevant Items (ACTION 6) =====
   // Simple keyword mismatch detection
   const processGroups = new Map<string, Set<string>>();
-  for (const item of items) {
+  for (const item of activeItems) {
     const tags = detectProcessTags(item.process, item.sub_task);
     if (!processGroups.has(item.process)) processGroups.set(item.process, new Set());
     tags.forEach(t => processGroups.get(item.process)!.add(t));
   }
-  for (const item of items) {
+  for (const item of activeItems) {
     const processTags = processGroups.get(item.process);
     if (!processTags) continue;
     const hazardTags = detectProcessTags(item.hazard || '', item.sub_task);
@@ -302,7 +304,7 @@ export async function generateRemediationActions(
 
   // ===== D. Merge Duplicates (ACTION 7) =====
   const seen = new Map<string, string>();
-  for (const item of items) {
+  for (const item of activeItems) {
     const key = `${item.sub_task || ''}|||${item.hazard || ''}`;
     if (seen.has(key) && key !== '|||') {
       actions.push({
@@ -319,7 +321,7 @@ export async function generateRemediationActions(
   }
 
   // ===== E. Post-improvement Adjustment (ACTION 8) =====
-  for (const item of items) {
+  for (const item of activeItems) {
     if (item.improved_risk_grade !== '상') continue;
     const tags = detectProcessTags(item.process, item.sub_task);
     const ctrl = CONTROL_TEMPLATES[tags[0]] || DEFAULT_CONTROL;
@@ -343,7 +345,7 @@ export async function generateRemediationActions(
   }
 
   // ===== E. Underestimation (ACTION 9) =====
-  for (const item of items) {
+  for (const item of activeItems) {
     const verdict = report.itemVerdicts[item.id];
     if (!verdict) continue;
     const underIssue = verdict.issues.find(i => i.ruleType === 'underestimation');
@@ -361,7 +363,7 @@ export async function generateRemediationActions(
   }
 
   // ===== F. Evidence Required (ACTION 10) =====
-  for (const item of items) {
+  for (const item of activeItems) {
     if (item.status !== '완료') continue;
     // No attachment check - just flag
     const verdict = report.itemVerdicts[item.id];

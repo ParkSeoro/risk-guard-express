@@ -1161,7 +1161,8 @@ const AssessmentRunDetail = () => {
   const isValidated = run.status === '검증완료';
   const isInApproval = run.status === '결재진행';
 
-  const hasReviewerAndApprover = participants.some(p => p.role === '검토자') && participants.some(p => p.role === '승인자');
+  const hasReviewerAndApprover = (participants.some(p => p.role === '검토자') && participants.some(p => p.role === '승인자'))
+    || (projectMembers.some(m => m.position === 'safety_manager') && (projectMembers.some(m => m.role === 'project_admin' || m.role === 'master')));
 
   // Draft: 제출 가능
   const canSubmitForValidation = isDraft && activeItems.length > 0;

@@ -61,11 +61,15 @@ export type Database = {
       approvals: {
         Row: {
           approval_version: number | null
+          approved_at: string | null
           approver_id: string | null
           approver_name: string | null
           comment: string | null
+          company_id: string | null
+          company_name: string | null
           created_at: string
           id: string
+          position: string | null
           project_id: string
           risk_item_id: string | null
           run_id: string | null
@@ -76,11 +80,15 @@ export type Database = {
         }
         Insert: {
           approval_version?: number | null
+          approved_at?: string | null
           approver_id?: string | null
           approver_name?: string | null
           comment?: string | null
+          company_id?: string | null
+          company_name?: string | null
           created_at?: string
           id?: string
+          position?: string | null
           project_id: string
           risk_item_id?: string | null
           run_id?: string | null
@@ -91,11 +99,15 @@ export type Database = {
         }
         Update: {
           approval_version?: number | null
+          approved_at?: string | null
           approver_id?: string | null
           approver_name?: string | null
           comment?: string | null
+          company_id?: string | null
+          company_name?: string | null
           created_at?: string
           id?: string
+          position?: string | null
           project_id?: string
           risk_item_id?: string | null
           run_id?: string | null

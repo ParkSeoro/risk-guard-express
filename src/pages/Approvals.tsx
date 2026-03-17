@@ -104,7 +104,7 @@ const Approvals = () => {
     // Sequential approval enforcement: check all prior steps are approved
     if (ap.run_id) {
       const runApprovals = approvals.filter(a => a.run_id === ap.run_id && (a.approval_version || 1) === (ap.approval_version || 1) && a.status !== '취소');
-      const sorted = runApprovals.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      const sorted = runApprovals.sort((a, b) => (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99));
       const myIndex = sorted.findIndex(a => a.id === ap.id);
       const priorNotApproved = sorted.slice(0, myIndex).some(a => a.status !== '승인');
       if (priorNotApproved) {

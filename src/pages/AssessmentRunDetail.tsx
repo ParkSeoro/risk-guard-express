@@ -764,16 +764,15 @@ const AssessmentRunDetail = () => {
       if (refreshed) setItems(refreshed);
       toast({ title: `${appliedCount}건 보완 적용 완료${newItemCount > 0 ? ` (신규 ${newItemCount}건)` : ''}` });
 
-      // Auto re-validate
+      // Auto re-validate (참고용 — 상태 전환 없음)
       if (applyAndRevalidate) {
         const currentItems = (refreshed || items).filter((i: any) => !i.is_excluded);
         const report = await validateRiskItems(currentItems, run.project_id);
         setValidationReport(report);
         await saveValidationResults(report, run.project_id, user.id, runId);
-        let newStatus = report.verdict === '부적정' ? '보완요청' : '검증완료';
-        await supabase.from('assessment_runs').update({ status: newStatus, validation_score: report.score, validation_verdict: report.verdict }).eq('id', runId);
-        setRun((prev: any) => ({ ...prev, status: newStatus, validation_score: report.score, validation_verdict: report.verdict }));
-        toast({ title: `재검증: ${report.verdict} (${report.score}점)` });
+        await supabase.from('assessment_runs').update({ validation_score: report.score, validation_verdict: report.verdict }).eq('id', runId);
+        setRun((prev: any) => ({ ...prev, validation_score: report.score, validation_verdict: report.verdict }));
+        toast({ title: `재검증: ${report.verdict} (${report.score}점)`, description: '검증 결과는 참고용입니다.' });
       }
 
       setShowRemediationWizard(false);

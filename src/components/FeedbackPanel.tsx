@@ -291,7 +291,7 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
           <p className="text-xs text-muted-foreground">승인 완료된 회차만 피드백(조치관리)이 가능합니다.</p>
         )}
       </div>
-      <p className="text-[10px] text-muted-foreground">※ 위험도 '상' 항목만 피드백 등록 대상입니다.</p>
+      <p className="text-[10px] text-muted-foreground">※ 개선 후 위험도 '상'(관리대상) 항목만 피드백 등록 대상입니다.</p>
 
       {/* Feedback list */}
       {loading ? (

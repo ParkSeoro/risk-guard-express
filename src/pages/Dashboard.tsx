@@ -41,6 +41,8 @@ interface DashboardData {
   feedback: FeedbackKPI;
 }
 
+const EMPTY_FEEDBACK: FeedbackKPI = { total: 0, unresolved: 0, inProgress: 0, completed: 0, completionRate: 0, byContractor: [] };
+
 const EMPTY: DashboardData = {
   totalRuns: 0, runsByStatus: {}, totalItems: 0,
   preGradeDist: { high: 0, med: 0, low: 0 },
@@ -49,6 +51,7 @@ const EMPTY: DashboardData = {
   validationIssues: 0, validationConditional: 0,
   inApprovalRuns: 0, approvedRuns: 0,
   processData: [], topRisks: [],
+  feedback: EMPTY_FEEDBACK,
 };
 
 const Dashboard = () => {

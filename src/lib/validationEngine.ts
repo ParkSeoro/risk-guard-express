@@ -90,7 +90,7 @@ export async function validateRiskItems(
   const ruleWeights: Record<string, number> = {};
   (rules || []).forEach(r => { ruleWeights[r.rule_type] = Number(r.weight) || 1; });
 
-  for (const item of items) {
+  for (const item of activeItems) {
     const itemIssues: ValidationIssue[] = [];
 
     // 1) Required fields

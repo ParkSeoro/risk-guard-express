@@ -490,23 +490,49 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5"><Camera className="h-3.5 w-3.5" /> 조치 전 사진 <span className="text-destructive text-[10px]">*필수</span></Label>
-                <Input type="file" accept="image/*" multiple className="text-xs" onChange={e => setFormBeforeFiles(Array.from(e.target.files || []))} />
-                {formBeforeFiles.length > 0 && <p className="text-[10px] text-muted-foreground">{formBeforeFiles.length}개 파일 선택됨</p>}
+                <Input type="file" accept="image/*" multiple className="text-xs" onChange={e => handleFileChange(Array.from(e.target.files || []), setFormBeforeFiles, setFormBeforePreviews)} />
+                {formBeforePreviews.length > 0 && (
+                  <div className="flex gap-1 flex-wrap">
+                    {formBeforePreviews.map((url, i) => (
+                      <img key={i} src={url} alt={`before-preview-${i}`} className="w-14 h-14 rounded object-cover border" />
+                    ))}
+                  </div>
+                )}
                 {editingId && (() => {
                   const existing = feedbackList.find(f => f.id === editingId);
                   return existing?.before_image_urls?.length ? (
-                    <p className="text-[10px] text-success">기존 {existing.before_image_urls.length}개 사진 있음</p>
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] text-success">기존 {existing.before_image_urls.length}개 사진</p>
+                      <div className="flex gap-1">
+                        {existing.before_image_urls.map((url, i) => (
+                          <img key={i} src={url} alt="existing-before" className="w-10 h-10 rounded object-cover border" />
+                        ))}
+                      </div>
+                    </div>
                   ) : null;
                 })()}
               </div>
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> 조치 후 사진 {formStatus === '완료' && <span className="text-destructive text-[10px]">*필수</span>}</Label>
-                <Input type="file" accept="image/*" multiple className="text-xs" onChange={e => setFormAfterFiles(Array.from(e.target.files || []))} />
-                {formAfterFiles.length > 0 && <p className="text-[10px] text-muted-foreground">{formAfterFiles.length}개 파일 선택됨</p>}
+                <Input type="file" accept="image/*" multiple className="text-xs" onChange={e => handleFileChange(Array.from(e.target.files || []), setFormAfterFiles, setFormAfterPreviews)} />
+                {formAfterPreviews.length > 0 && (
+                  <div className="flex gap-1 flex-wrap">
+                    {formAfterPreviews.map((url, i) => (
+                      <img key={i} src={url} alt={`after-preview-${i}`} className="w-14 h-14 rounded object-cover border" />
+                    ))}
+                  </div>
+                )}
                 {editingId && (() => {
                   const existing = feedbackList.find(f => f.id === editingId);
                   return existing?.after_image_urls?.length ? (
-                    <p className="text-[10px] text-success">기존 {existing.after_image_urls.length}개 사진 있음</p>
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] text-success">기존 {existing.after_image_urls.length}개 사진</p>
+                      <div className="flex gap-1">
+                        {existing.after_image_urls.map((url, i) => (
+                          <img key={i} src={url} alt="existing-after" className="w-10 h-10 rounded object-cover border" />
+                        ))}
+                      </div>
+                    </div>
                   ) : null;
                 })()}
               </div>

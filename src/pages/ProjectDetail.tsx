@@ -43,6 +43,8 @@ const ProjectDetail = () => {
   const [companies, setCompanies] = useState<any[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
+  const [showCreateInvite, setShowCreateInvite] = useState(false);
+  const [inviteForm, setInviteForm] = useState({ role: 'contractor' as string, company_id: '' as string, max_uses: 50, expires_days: 7 });
   const [showAddMember, setShowAddMember] = useState(false);
   const [memberUserId, setMemberUserId] = useState('');
   const [memberRole, setMemberRole] = useState('viewer');
@@ -154,20 +156,26 @@ const ProjectDetail = () => {
     fetchAll();
   };
 
-  const handleCreateInvite = async (role: string) => {
+  const handleCreateInvite = async () => {
     if (!projectId || !user) return;
-    const code = Math.random().toString(36).substring(2, 10).toUpperCase();
-    const { error } = await supabase.from('project_invites').insert([{
+    const code = crypto.randomUUID().split('-')[0].toUpperCase();
+    const insertData: any = {
       project_id: projectId,
       code,
-      default_role: role as any,
+      default_role: inviteForm.role as any,
       created_by: user.id,
-      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      max_uses: 50,
-    }]);
+      expires_at: new Date(Date.now() + inviteForm.expires_days * 24 * 60 * 60 * 1000).toISOString(),
+      max_uses: inviteForm.max_uses,
+    };
+    if (inviteForm.company_id) {
+      insertData.company_id = inviteForm.company_id;
+    }
+    const { error } = await supabase.from('project_invites').insert([insertData]);
     if (error) toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
     else {
+      const link = `${window.location.origin}/auth?invite=${code}`;
       toast({ title: '초대코드가 생성되었습니다.', description: `코드: ${code}` });
+      setShowCreateInvite(false);
       fetchAll();
     }
   };
@@ -509,31 +517,44 @@ const ProjectDetail = () => {
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm">초대코드 관리</CardTitle>
               {canManage && (
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => handleCreateInvite('viewer')}>열람자 초대</Button>
-                  <Button size="sm" variant="outline" onClick={() => handleCreateInvite('contractor')}>협력사 초대</Button>
-                </div>
+                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowCreateInvite(true)}>
+                  <Plus className="h-3.5 w-3.5" /> 초대코드 생성
+                </Button>
               )}
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {invites.map((inv: any) => (
-                  <div key={inv.id} className="flex items-center justify-between p-2 rounded border bg-muted/20">
-                    <div className="text-sm">
-                      <span className="font-mono font-bold text-lg mr-2">{inv.code}</span>
-                      <Badge variant="outline" className="mr-2">{roleLabels[inv.default_role]}</Badge>
-                      <span className="text-xs text-muted-foreground">사용 {inv.use_count}/{inv.max_uses}</span>
+                {invites.map((inv: any) => {
+                  const linkedCompany = companies.find(c => c.id === (inv as any).company_id);
+                  const inviteLink = `${window.location.origin}/auth?invite=${inv.code}`;
+                  return (
+                    <div key={inv.id} className="p-3 rounded-lg border space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-bold text-base">{inv.code}</span>
+                          <Badge variant="outline" className="text-[10px]">{roleLabels[inv.default_role]}</Badge>
+                          {linkedCompany && <Badge variant="secondary" className="text-[10px]">{linkedCompany.name}</Badge>}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => {
+                            navigator.clipboard.writeText(inviteLink);
+                            setCopiedCode(inv.code);
+                            setTimeout(() => setCopiedCode(''), 2000);
+                            toast({ title: '초대 링크가 복사되었습니다.' });
+                          }}>
+                            {copiedCode === inv.code ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => handleDeleteInvite(inv.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        사용 {inv.use_count}/{inv.max_uses} · 만료: {inv.expires_at ? new Date(inv.expires_at).toLocaleDateString('ko-KR') : '없음'}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => copyToClipboard(inv.code)}>
-                        {copiedCode === inv.code ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => handleDeleteInvite(inv.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {invites.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">생성된 초대코드가 없습니다.</p>}
               </div>
             </CardContent>
@@ -635,6 +656,56 @@ const ProjectDetail = () => {
             <Input placeholder="연락처 (선택)" value={companyForm.contact} onChange={e => setCompanyForm({ ...companyForm, contact: e.target.value })} />
             <Input placeholder="공사범위 (선택)" value={companyForm.scope} onChange={e => setCompanyForm({ ...companyForm, scope: e.target.value })} />
             <Button onClick={handleAddCompany} className="w-full">등록</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Invite Dialog */}
+      <Dialog open={showCreateInvite} onOpenChange={setShowCreateInvite}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>초대코드 생성</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>권한</Label>
+              <Select value={inviteForm.role} onValueChange={v => setInviteForm({ ...inviteForm, role: v, company_id: '' })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>연결 업체 <span className="text-muted-foreground font-normal text-xs">(선택)</span></Label>
+              <Select value={inviteForm.company_id || '__none__'} onValueChange={v => setInviteForm({ ...inviteForm, company_id: v === '__none__' ? '' : v })}>
+                <SelectTrigger><SelectValue placeholder="업체 선택" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">(업체 연결 안 함)</SelectItem>
+                  {companies
+                    .filter(c => {
+                      if (inviteForm.role === 'contractor') return c.type === 'contractor';
+                      if (inviteForm.role === 'safety_manager' || inviteForm.role === 'project_admin') return c.type === 'gc';
+                      return true;
+                    })
+                    .map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name} ({companyTypes[c.type] || c.type})</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">가입 시 자동으로 해당 업체 소속으로 설정됩니다.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>최대 사용 횟수</Label>
+                <Input type="number" min={1} value={inviteForm.max_uses} onChange={e => setInviteForm({ ...inviteForm, max_uses: parseInt(e.target.value) || 1 })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>유효기간 (일)</Label>
+                <Input type="number" min={1} value={inviteForm.expires_days} onChange={e => setInviteForm({ ...inviteForm, expires_days: parseInt(e.target.value) || 7 })} />
+              </div>
+            </div>
+            <Button onClick={handleCreateInvite} className="w-full">초대코드 생성</Button>
           </div>
         </DialogContent>
       </Dialog>

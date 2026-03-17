@@ -308,16 +308,19 @@ const UserManagement = () => {
                 <th>직위</th>
                 <th>연락처</th>
                 <th className="text-center">상태</th>
-                <th className="text-center">역할</th>
+                <th className="text-center">전역 역할</th>
+                <th>프로젝트 소속</th>
                 <th className="text-center w-40">작업</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">로딩 중...</td></tr>
+                <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">로딩 중...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">사용자가 없습니다.</td></tr>
-              ) : filtered.map(u => (
+                <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">사용자가 없습니다.</td></tr>
+              ) : filtered.map(u => {
+                const memberships = userMemberships[u.user_id] || [];
+                return (
                 <tr key={u.id}>
                   <td className="font-medium">{u.display_name}</td>
                   <td className="text-muted-foreground">{u.company || '—'}</td>
@@ -337,6 +340,25 @@ const UserManagement = () => {
                         ))}
                       </SelectContent>
                     </Select>
+                  </td>
+                  <td>
+                    {memberships.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">소속 없음</span>
+                    ) : (
+                      <div className="space-y-1">
+                        {memberships.map((m: any) => {
+                          const proj = projects.find(p => p.id === m.project_id);
+                          return (
+                            <div key={m.id} className="flex items-center gap-1 text-[10px]">
+                              <Badge variant="secondary" className="text-[10px] shrink-0">{proj?.name || '프로젝트'}</Badge>
+                              <span className="text-muted-foreground">{roleLabels[m.role] || m.role}</span>
+                              {m.position && <span className="text-muted-foreground">/ {positionLabels[m.position] || m.position}</span>}
+                              {m.company && <span className="text-muted-foreground">({m.company})</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </td>
                   <td className="text-center">
                     <div className="flex items-center gap-1 justify-center">
@@ -361,7 +383,8 @@ const UserManagement = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </CardContent>

@@ -321,7 +321,7 @@ export async function generateRemediationActions(
   }
 
   // ===== E. Post-improvement Adjustment (ACTION 8) =====
-  for (const item of items) {
+  for (const item of activeItems) {
     if (item.improved_risk_grade !== '상') continue;
     const tags = detectProcessTags(item.process, item.sub_task);
     const ctrl = CONTROL_TEMPLATES[tags[0]] || DEFAULT_CONTROL;

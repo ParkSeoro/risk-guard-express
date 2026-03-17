@@ -1,0 +1,1 @@
+ALTER TABLE public.assessment_runs ADD COLUMN IF NOT EXISTS worker_participation_images text[] DEFAULT ARRAY[]::text[];

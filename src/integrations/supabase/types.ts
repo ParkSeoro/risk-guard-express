@@ -188,6 +188,7 @@ export type Database = {
           updated_at: string
           validation_score: number | null
           validation_verdict: string | null
+          worker_participation_images: string[] | null
         }
         Insert: {
           created_at?: string
@@ -210,6 +211,7 @@ export type Database = {
           updated_at?: string
           validation_score?: number | null
           validation_verdict?: string | null
+          worker_participation_images?: string[] | null
         }
         Update: {
           created_at?: string
@@ -232,6 +234,7 @@ export type Database = {
           updated_at?: string
           validation_score?: number | null
           validation_verdict?: string | null
+          worker_participation_images?: string[] | null
         }
         Relationships: [
           {

@@ -1523,6 +1523,18 @@ const AssessmentRunDetail = () => {
           </CardContent>
         </Card>
       )}
+        </TabsContent>
+        <TabsContent value="feedback" className="mt-4">
+          <FeedbackPanel
+            runId={runId!}
+            projectId={run.project_id}
+            isApproved={isApproved}
+            riskItems={activeItems.map(i => ({ id: i.id, process: i.process, sub_task: i.sub_task, hazard: i.hazard }))}
+            projectMembers={projectMembers}
+            previousFeedback={previousFeedback}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Auto Generate Dialog */}
       <Dialog open={showAutoGen} onOpenChange={setShowAutoGen}>

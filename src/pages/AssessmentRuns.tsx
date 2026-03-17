@@ -83,7 +83,7 @@ const AssessmentRuns = () => {
   const [companyNameMap, setCompanyNameMap] = useState<Record<string, string>>({});
 
   const [form, setForm] = useState({
-    type: '정기', period_label: '', target_processes: '', target_company_ids: [] as string[], notes: '',
+    type: '정기', period_label: '', start_date: '', end_date: '', target_processes: '', target_company_ids: [] as string[], notes: '',
   });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);

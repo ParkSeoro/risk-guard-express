@@ -184,7 +184,7 @@ export async function generateRemediationActions(
   }
 
   // ===== A. PPE (ACTION 2) =====
-  for (const item of items) {
+  for (const item of activeItems) {
     if (item.ppe && item.ppe.length >= 2) continue;
     const tags = detectProcessTags(item.process, item.sub_task);
     const recommendedPPE = new Set<string>(item.ppe || []);

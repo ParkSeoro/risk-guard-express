@@ -241,6 +241,28 @@ const AssessmentRunDetail = () => {
       }
     }
 
+    // Fetch previous run's unresolved feedback
+    if (runRes.data?.project_id) {
+      const { data: prevRuns } = await supabase
+        .from('assessment_runs')
+        .select('id')
+        .eq('project_id', runRes.data.project_id)
+        .eq('status', '승인완료')
+        .neq('id', runId!)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (prevRuns && prevRuns.length > 0) {
+        const { data: prevFb } = await supabase
+          .from('risk_item_feedback' as any)
+          .select('*')
+          .eq('assessment_run_id', prevRuns[0].id)
+          .in('status', ['미조치', '진행중']);
+        setPreviousFeedback((prevFb || []) as any);
+      } else {
+        setPreviousFeedback([]);
+      }
+    }
+
     setLoading(false);
   }, [runId]);
 

@@ -15,6 +15,15 @@ import {
 } from "recharts";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+interface FeedbackKPI {
+  total: number;
+  unresolved: number;
+  inProgress: number;
+  completed: number;
+  completionRate: number;
+  byContractor: { name: string; total: number; completed: number; rate: number }[];
+}
+
 interface DashboardData {
   totalRuns: number;
   runsByStatus: Record<string, number>;
@@ -29,7 +38,10 @@ interface DashboardData {
   approvedRuns: number;
   processData: { name: string; high: number; med: number; low: number }[];
   topRisks: any[];
+  feedback: FeedbackKPI;
 }
+
+const EMPTY_FEEDBACK: FeedbackKPI = { total: 0, unresolved: 0, inProgress: 0, completed: 0, completionRate: 0, byContractor: [] };
 
 const EMPTY: DashboardData = {
   totalRuns: 0, runsByStatus: {}, totalItems: 0,
@@ -39,6 +51,7 @@ const EMPTY: DashboardData = {
   validationIssues: 0, validationConditional: 0,
   inApprovalRuns: 0, approvedRuns: 0,
   processData: [], topRisks: [],
+  feedback: EMPTY_FEEDBACK,
 };
 
 const Dashboard = () => {
@@ -146,6 +159,53 @@ const Dashboard = () => {
     const inApprovalRuns = runsByStatus["결재진행"] || 0;
     const approvedRuns = runsByStatus["승인완료"] || 0;
 
+    // Feedback KPI
+    let feedbackKpi: FeedbackKPI = EMPTY_FEEDBACK;
+    const approvedRunIds = activeRuns.filter(r => r.status === '승인완료').map(r => r.id);
+    if (approvedRunIds.length > 0) {
+      const { data: fbData } = await supabase
+        .from("risk_item_feedback")
+        .select("id, status, risk_item_id, assessment_run_id")
+        .eq("project_id", selectedProject)
+        .in("assessment_run_id", approvedRunIds);
+      const fbItems = fbData || [];
+      const fbTotal = fbItems.length;
+      const fbCompleted = fbItems.filter(f => f.status === '완료').length;
+      const fbInProgress = fbItems.filter(f => f.status === '진행중').length;
+      const fbUnresolved = fbItems.filter(f => f.status === '미조치').length;
+
+      // By contractor: join with risk_items to get company info
+      const fbRiskItemIds = [...new Set(fbItems.map(f => f.risk_item_id).filter(Boolean))];
+      let byContractor: FeedbackKPI['byContractor'] = [];
+      if (fbRiskItemIds.length > 0) {
+        const { data: riData } = await supabase
+          .from("risk_items")
+          .select("id, department")
+          .in("id", fbRiskItemIds.slice(0, 200));
+        if (riData) {
+          const deptMap: Record<string, { total: number; completed: number }> = {};
+          fbItems.forEach(fb => {
+            const ri = riData.find(r => r.id === fb.risk_item_id);
+            const dept = ri?.department || '미지정';
+            if (!deptMap[dept]) deptMap[dept] = { total: 0, completed: 0 };
+            deptMap[dept].total++;
+            if (fb.status === '완료') deptMap[dept].completed++;
+          });
+          byContractor = Object.entries(deptMap).map(([name, v]) => ({
+            name, total: v.total, completed: v.completed,
+            rate: v.total > 0 ? Math.round((v.completed / v.total) * 100) : 0,
+          })).sort((a, b) => a.rate - b.rate);
+        }
+      }
+
+      feedbackKpi = {
+        total: fbTotal, unresolved: fbUnresolved, inProgress: fbInProgress,
+        completed: fbCompleted,
+        completionRate: fbTotal > 0 ? Math.round((fbCompleted / fbTotal) * 100) : 0,
+        byContractor,
+      };
+    }
+
     setData({
       totalRuns: activeRuns.length,
       runsByStatus,
@@ -160,6 +220,7 @@ const Dashboard = () => {
       approvedRuns,
       processData,
       topRisks,
+      feedback: feedbackKpi,
     });
     setLoading(false);
   }, [selectedProject]);
@@ -468,6 +529,76 @@ const Dashboard = () => {
               )}
             </CardContent>
           </Card>
+
+          {/* Feedback KPI Section */}
+          {data.feedback.total > 0 && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <KpiCard
+                  label="총 피드백"
+                  value={data.feedback.total}
+                  icon={<ClipboardList className="h-5 w-5 text-primary" />}
+                  iconBg="bg-primary/10"
+                />
+                <KpiCard
+                  label="미조치"
+                  value={data.feedback.unresolved}
+                  valueColor={data.feedback.unresolved > 0 ? "text-destructive" : "text-foreground"}
+                  icon={<AlertTriangle className="h-5 w-5 text-destructive" />}
+                  iconBg="bg-destructive/10"
+                />
+                <KpiCard
+                  label="진행중"
+                  value={data.feedback.inProgress}
+                  valueColor="text-warning"
+                  icon={<Clock className="h-5 w-5 text-warning" />}
+                  iconBg="bg-warning/10"
+                />
+                <KpiCard
+                  label="피드백 완료율"
+                  value={`${data.feedback.completionRate}%`}
+                  icon={<CheckCircle2 className="h-5 w-5 text-success" />}
+                  iconBg="bg-success/10"
+                  sub={<span className="text-[10px] text-muted-foreground mt-1">{data.feedback.completed}/{data.feedback.total} 완료</span>}
+                />
+              </div>
+
+              {data.feedback.byContractor.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <BarChart3 className="h-4 w-4 text-primary" /> 부서별 피드백 이행률
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {data.feedback.byContractor.map((c) => (
+                        <div key={c.name} className="flex items-center gap-3">
+                          <span className="text-xs font-medium w-24 truncate">{c.name}</span>
+                          <div className="flex-1 h-5 bg-muted rounded-full overflow-hidden relative">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                c.rate >= 80 ? 'bg-success' : c.rate >= 50 ? 'bg-warning' : 'bg-destructive'
+                              }`}
+                              style={{ width: `${c.rate}%` }}
+                            />
+                          </div>
+                          <span className={`text-xs font-bold w-12 text-right ${
+                            c.rate >= 80 ? 'text-success' : c.rate >= 50 ? 'text-warning' : 'text-destructive'
+                          }`}>
+                            {c.rate}%
+                          </span>
+                          <span className="text-[10px] text-muted-foreground w-16">
+                            {c.completed}/{c.total}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
         </>
       )}
     </div>

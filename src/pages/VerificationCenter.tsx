@@ -12,10 +12,11 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
-  ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileText, Upload, Search as SearchIcon, Wand2
+  ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileText, Upload, Search as SearchIcon, Wand2, EyeOff, Plus
 } from 'lucide-react';
-import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue } from '@/lib/validationEngine';
+import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue, type CoverageGap } from '@/lib/validationEngine';
 import { exportToPDF } from '@/lib/exportUtils';
 import { calculateRiskGrade } from '@/lib/riskGrade';
 import * as XLSX from 'xlsx';
@@ -35,6 +36,12 @@ const VerificationCenter = () => {
   // Coverage
   const [coverageReport, setCoverageReport] = useState<ValidationReport | null>(null);
   const [coverageLoading, setCoverageLoading] = useState(false);
+
+  // Recommendation UI (was auto-add, now selective)
+  const [selectedGapKeys, setSelectedGapKeys] = useState<Set<string>>(new Set());
+  const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(new Set());
+  const [addingGaps, setAddingGaps] = useState(false);
+  const [processFilter, setProcessFilter] = useState('all');
 
   // Excel upload
   const [excelData, setExcelData] = useState<Record<string, string>[]>([]);
@@ -63,13 +70,24 @@ const VerificationCenter = () => {
 
   useEffect(() => {
     if (!selectedRun) { setItems([]); return; }
-    supabase.from('risk_items').select('*').eq('run_id', selectedRun).order('sort_order').then(({ data }) => {
-      setItems(data || []);
+    Promise.all([
+      supabase.from('risk_items').select('*').eq('run_id', selectedRun).order('sort_order'),
+      supabase.from('dismissed_recommendations' as any).select('gap_key').eq('run_id', selectedRun),
+    ]).then(([itemsRes, dismissedRes]) => {
+      setItems(itemsRes.data || []);
+      const keys = new Set<string>();
+      ((dismissedRes.data || []) as any[]).forEach((d: any) => keys.add(d.gap_key));
+      setDismissedKeys(keys);
     });
   }, [selectedRun]);
 
   const selectedRunData = runs.find(r => r.id === selectedRun);
   const projectData = projects.find(p => p.id === selectedProject);
+
+  // Get unique processes from current items for filtering
+  const itemProcesses = [...new Set(items.map(i => i.process))].filter(Boolean);
+  const targetProcesses = selectedRunData?.target_processes || [];
+  const allProcesses = [...new Set([...itemProcesses, ...targetProcesses])];
 
   // Coverage verification
   const handleCoverageCheck = async () => {
@@ -78,8 +96,8 @@ const VerificationCenter = () => {
       return;
     }
     setCoverageLoading(true);
+    setSelectedGapKeys(new Set());
     try {
-      // Exclude items marked as 'is_excluded' from validation check
       const activeItems = items.filter((i: any) => !i.is_excluded);
       const report = await validateRiskItems(activeItems, selectedProject);
       setCoverageReport(report);
@@ -107,6 +125,95 @@ const VerificationCenter = () => {
       log('누락검증PDF', 'assessment_run', selectedRun, selectedProject);
     } catch (err) {
       toast({ title: 'PDF 다운로드 실패', description: String(err), variant: 'destructive' });
+    }
+  };
+
+  // Gap key helper
+  const gapKey = (gap: CoverageGap) => `${gap.process}|||${gap.subTask}|||${gap.hazard}`;
+
+  // Filter gaps: exclude dismissed, apply process filter
+  const visibleGaps = (coverageReport?.coverageGaps || []).filter(gap => {
+    const key = gapKey(gap);
+    if (dismissedKeys.has(key)) return false;
+    if (processFilter !== 'all' && gap.process !== processFilter) return false;
+    return true;
+  });
+
+  const dismissedGaps = (coverageReport?.coverageGaps || []).filter(gap => dismissedKeys.has(gapKey(gap)));
+
+  // Add selected gaps as risk items
+  const handleAddSelectedGaps = async () => {
+    if (!selectedRun || !user || selectedGapKeys.size === 0) return;
+    const run = runs.find(r => r.id === selectedRun);
+    if (!run) return;
+    setAddingGaps(true);
+    try {
+      // Fetch library for full data
+      const { data: library } = await supabase.from('standard_risk_library').select('*').eq('is_active', true);
+      const libItems = library || [];
+
+      const selectedGaps = visibleGaps.filter(g => selectedGapKeys.has(gapKey(g)));
+      const inserts = selectedGaps.map((gap, i) => {
+        const libMatch = libItems.find(l => l.sub_task === gap.subTask && l.hazard === gap.hazard);
+        const lg = libMatch?.default_likelihood_grade || '중';
+        const sg = libMatch?.default_severity_grade || '중';
+        return {
+          project_id: run.project_id,
+          run_id: selectedRun,
+          process: gap.process,
+          sub_task: gap.subTask,
+          hazard: gap.hazard,
+          hazard_situation: libMatch?.hazard_situation || '',
+          existing_measure: libMatch?.existing_measure || '',
+          improvement_measure: libMatch?.improvement_measure || '',
+          likelihood_grade: lg,
+          severity_grade: sg,
+          risk_grade: calculateRiskGrade(lg as any, sg as any),
+          improved_likelihood_grade: '하',
+          improved_severity_grade: '하',
+          improved_risk_grade: '하',
+          legal_basis: libMatch?.legal_refs || [],
+          ppe: libMatch?.recommended_ppe || [],
+          status: '초안',
+          note: '추천항목 추가',
+          created_by: user.id,
+          sort_order: items.length + i,
+        };
+      });
+
+      const { data } = await supabase.from('risk_items').insert(inserts).select();
+      if (data) {
+        setItems(prev => [...prev, ...data]);
+        toast({ title: `${data.length}건 추가 완료` });
+        log('추천항목추가', 'assessment_run', selectedRun, selectedProject, { count: data.length });
+      }
+      setSelectedGapKeys(new Set());
+    } catch (err) {
+      toast({ title: '추가 실패', description: String(err), variant: 'destructive' });
+    }
+    setAddingGaps(false);
+  };
+
+  // Dismiss (ignore) selected gaps
+  const handleDismissSelected = async () => {
+    if (!selectedRun || !user || selectedGapKeys.size === 0) return;
+    try {
+      const inserts = [...selectedGapKeys].map(key => ({
+        project_id: selectedProject,
+        run_id: selectedRun,
+        gap_key: key,
+        dismissed_by: user.id,
+      }));
+      await supabase.from('dismissed_recommendations' as any).insert(inserts);
+      setDismissedKeys(prev => {
+        const next = new Set(prev);
+        selectedGapKeys.forEach(k => next.add(k));
+        return next;
+      });
+      setSelectedGapKeys(new Set());
+      toast({ title: `${inserts.length}건 무시 처리 완료` });
+    } catch (err) {
+      toast({ title: '무시 처리 실패', variant: 'destructive' });
     }
   };
 
@@ -196,7 +303,6 @@ const VerificationCenter = () => {
   const handleExcelReportPDF = () => {
     if (!projectData || !selectedRunData) return;
     try {
-      // Generate a simple validation-only PDF
       const fakeReport: ValidationReport = {
         totalItems: excelData.length, totalIssues: excelIssues.length,
         errors: excelIssues.filter(i => i.severity === 'error').length,
@@ -295,23 +401,93 @@ const VerificationCenter = () => {
 
                   <Progress value={coverageReport.score} className="h-2" />
 
-                  {/* Coverage Gaps */}
+                  {/* Recommendation List (was auto-add, now selective) */}
                   {coverageReport.coverageGaps.length > 0 && (
                     <Card>
-                      <CardHeader className="pb-2"><CardTitle className="text-sm">누락된 위험성평가</CardTitle></CardHeader>
-                      <CardContent className="max-h-64 overflow-y-auto space-y-1">
-                        {coverageReport.coverageGaps.map((gap, i) => (
-                          <div key={i} className="text-xs p-2 rounded bg-warning/5 flex items-start gap-2">
-                            <AlertTriangle className="h-3.5 w-3.5 text-warning mt-0.5 shrink-0" />
-                            <div>
-                              <div className="flex items-center gap-1">
-                                <Badge variant="outline" className={`text-[9px] ${gap.severity === '상' ? 'text-destructive' : gap.severity === '중' ? 'text-warning' : 'text-muted-foreground'}`}>{gap.severity}</Badge>
-                                <span className="font-medium">{gap.process} – {gap.subTask}</span>
-                              </div>
-                              <p className="text-muted-foreground">{gap.message}</p>
-                            </div>
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-sm">추천 항목 (누락 위험성평가)</CardTitle>
+                          <div className="flex items-center gap-2">
+                            <Select value={processFilter} onValueChange={setProcessFilter}>
+                              <SelectTrigger className="h-7 w-36 text-[10px]"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">전체 공종</SelectItem>
+                                {allProcesses.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
                           </div>
-                        ))}
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        {/* Toolbar */}
+                        <div className="flex items-center gap-2 text-xs">
+                          <Button variant="ghost" size="sm" className="h-6 text-[10px]"
+                            onClick={() => setSelectedGapKeys(new Set(visibleGaps.map(g => gapKey(g))))}>
+                            전체 선택
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-6 text-[10px]"
+                            onClick={() => setSelectedGapKeys(new Set())}>
+                            전체 해제
+                          </Button>
+                          <div className="flex-1" />
+                          <span className="text-muted-foreground">{selectedGapKeys.size}건 선택</span>
+                        </div>
+
+                        {/* Gap list with checkboxes */}
+                        <div className="max-h-64 overflow-y-auto space-y-1">
+                          {visibleGaps.map((gap, i) => {
+                            const key = gapKey(gap);
+                            const isSelected = selectedGapKeys.has(key);
+                            return (
+                              <div key={i}
+                                className={`text-xs p-2 rounded border cursor-pointer transition-colors ${isSelected ? 'border-accent/50 bg-accent/5' : 'border-border hover:bg-muted/50'}`}
+                                onClick={() => setSelectedGapKeys(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(key)) next.delete(key); else next.add(key);
+                                  return next;
+                                })}>
+                                <div className="flex items-start gap-2">
+                                  <Checkbox checked={isSelected} className="mt-0.5" />
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-1">
+                                      <Badge variant="outline" className={`text-[9px] ${gap.severity === '상' ? 'text-destructive' : gap.severity === '중' ? 'text-warning' : 'text-muted-foreground'}`}>{gap.severity}</Badge>
+                                      <span className="font-medium">{gap.process}</span>
+                                      <span className="text-muted-foreground">– {gap.subTask}</span>
+                                    </div>
+                                    <p className="text-muted-foreground">{gap.hazard}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {visibleGaps.length === 0 && (
+                            <div className="text-center py-4 text-muted-foreground text-xs">
+                              {dismissedGaps.length > 0 ? '모든 추천이 무시 처리되었습니다.' : '누락 항목이 없습니다.'}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Action buttons */}
+                        {visibleGaps.length > 0 && (
+                          <div className="flex gap-2 pt-2 border-t">
+                            <Button size="sm" className="gap-1.5" onClick={handleAddSelectedGaps}
+                              disabled={selectedGapKeys.size === 0 || addingGaps}>
+                              <Plus className="h-3.5 w-3.5" />
+                              {addingGaps ? '추가 중...' : `선택 항목 추가 (${selectedGapKeys.size}건)`}
+                            </Button>
+                            <Button size="sm" variant="outline" className="gap-1.5" onClick={handleDismissSelected}
+                              disabled={selectedGapKeys.size === 0}>
+                              <EyeOff className="h-3.5 w-3.5" /> 무시하고 진행
+                            </Button>
+                          </div>
+                        )}
+
+                        {/* Dismissed count */}
+                        {dismissedGaps.length > 0 && (
+                          <p className="text-[10px] text-muted-foreground pt-1">
+                            무시된 추천: {dismissedGaps.length}건
+                          </p>
+                        )}
                       </CardContent>
                     </Card>
                   )}
@@ -321,7 +497,7 @@ const VerificationCenter = () => {
                     <Card>
                       <CardHeader className="pb-2"><CardTitle className="text-sm text-muted-foreground">의도적 제외 항목</CardTitle></CardHeader>
                       <CardContent className="max-h-40 overflow-y-auto space-y-1">
-                        {items.filter((i: any) => i.is_excluded).map((item, i) => (
+                        {items.filter((i: any) => i.is_excluded).map((item) => (
                           <div key={item.id} className="text-xs p-2 rounded bg-muted/30">
                             <span className="font-medium">{item.process} - {item.sub_task || ''}</span>
                             <span className="ml-2 text-muted-foreground">사유: {item.excluded_reason}</span>

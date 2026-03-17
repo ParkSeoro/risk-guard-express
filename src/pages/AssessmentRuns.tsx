@@ -461,9 +461,21 @@ const AssessmentRuns = () => {
                 {fieldErrors.type && <p className="text-xs text-destructive">{fieldErrors.type}</p>}
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">적용기간 *</Label>
+                <Label className="text-xs">회차명 *</Label>
                 <Input className="h-9" value={form.period_label} onChange={e => setForm(p => ({ ...p, period_label: e.target.value }))} placeholder="예: 2026년 3월 1주차" />
                 {fieldErrors.period_label && <p className="text-xs text-destructive">{fieldErrors.period_label}</p>}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">시작일 *</Label>
+                <Input type="date" className="h-9" value={form.start_date} onChange={e => setForm(p => ({ ...p, start_date: e.target.value }))} />
+                {fieldErrors.start_date && <p className="text-xs text-destructive">{fieldErrors.start_date}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">종료일 *</Label>
+                <Input type="date" className="h-9" value={form.end_date} onChange={e => setForm(p => ({ ...p, end_date: e.target.value }))} />
+                {fieldErrors.end_date && <p className="text-xs text-destructive">{fieldErrors.end_date}</p>}
               </div>
             </div>
             <div className="space-y-1">

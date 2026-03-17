@@ -478,6 +478,48 @@ export type Database = {
           },
         ]
       }
+      dismissed_recommendations: {
+        Row: {
+          created_at: string
+          dismissed_by: string | null
+          gap_key: string
+          id: string
+          project_id: string
+          run_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          dismissed_by?: string | null
+          gap_key: string
+          id?: string
+          project_id: string
+          run_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          dismissed_by?: string | null
+          gap_key?: string
+          id?: string
+          project_id?: string
+          run_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dismissed_recommendations_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dismissed_recommendations_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       environment_tags: {
         Row: {
           category: string

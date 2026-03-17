@@ -160,7 +160,7 @@ const AssessmentRunDetail = () => {
         supabase.from('projects').select('*').eq('id', projectId).single(),
         supabase.from('master_departments').select('id, name').or(`project_id.eq.${projectId},project_id.is.null`),
         supabase.from('department_assignees').select('department_id, default_user_id').eq('project_id', projectId),
-        supabase.from('project_members').select('user_id, company').eq('project_id', projectId),
+        supabase.from('project_members').select('user_id, company, position, company_id, role').eq('project_id', projectId),
         supabase.from('environment_tags' as any).select('id, name, category').or(`project_id.eq.${projectId},project_id.is.null`).order('sort_order'),
       ]);
       setProject(projRes.data);

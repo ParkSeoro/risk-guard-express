@@ -1220,6 +1220,43 @@ const AssessmentRunDetail = () => {
         </CardContent>
       </Card>
 
+      {/* Worker Participation Photos */}
+      <Card className="print:hidden">
+        <CardContent className="py-3">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold flex items-center gap-1.5">
+              <Camera className="h-3.5 w-3.5" /> 근로자 참여 사진
+              {(run.worker_participation_images || []).length > 0 && (
+                <Badge variant="secondary" className="text-[9px] h-4 px-1">{(run.worker_participation_images || []).length}건</Badge>
+              )}
+            </h3>
+            {(canEdit || canForceEdit || isApproved) && (
+              <label className="cursor-pointer">
+                <input type="file" accept="image/*" multiple className="hidden" onChange={handleWorkerPhotoUpload} disabled={workerPhotoUploading} />
+                <Button size="sm" variant="outline" className="gap-1.5 text-xs" asChild disabled={workerPhotoUploading}>
+                  <span><Upload className="h-3 w-3" /> {workerPhotoUploading ? '업로드 중...' : '사진 추가'}</span>
+                </Button>
+              </label>
+            )}
+          </div>
+          {(run.worker_participation_images || []).length > 0 ? (
+            <div className="flex gap-2 flex-wrap">
+              {(run.worker_participation_images || []).map((url: string, i: number) => (
+                <div key={i} className="relative group">
+                  <img src={url} alt={`참여사진${i + 1}`} className="w-20 h-20 rounded object-cover border cursor-pointer" onClick={() => window.open(url, '_blank')} />
+                  {(canEdit || canForceEdit) && (
+                    <button className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-4 h-4 text-[9px] hidden group-hover:flex items-center justify-center"
+                      onClick={() => handleRemoveWorkerPhoto(i)}>×</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[10px] text-muted-foreground">결재 상신 전 근로자 참여 사진을 업로드하세요.</p>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Header - action bar (print hidden) */}
       <div className="flex items-center justify-between print:hidden">
         <div>

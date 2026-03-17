@@ -534,18 +534,13 @@ const AssessmentRunDetail = () => {
       setValidationTab('summary');
       await saveValidationResults(report, run.project_id, user.id, runId);
 
-      let newStatus: string;
-      if (report.verdict === '적정' || report.verdict === '조건부 적정' || report.verdict === '적정(관리대상)') {
-        newStatus = '검증완료';
-      } else {
-        newStatus = '보완요청';
-      }
-
+      // 검증은 참고/경고 기능 — 상태 전환하지 않고 점수·판정만 저장
       await supabase.from('assessment_runs').update({
-        status: newStatus, validation_score: report.score, validation_verdict: report.verdict,
+        validation_score: report.score, validation_verdict: report.verdict,
       }).eq('id', runId);
-      setRun((prev: any) => ({ ...prev, status: newStatus, validation_score: report.score, validation_verdict: report.verdict }));
-      toast({ title: `검증 완료: ${report.verdict} (${report.score}점)${newStatus === '검증완료' ? ' → 결재 상신 가능' : ' → 보완 필요'}` });
+      setRun((prev: any) => ({ ...prev, validation_score: report.score, validation_verdict: report.verdict }));
+      const verdictLabel = report.verdict === '적정' ? '✅ 적정' : report.verdict === '조건부 적정' ? '⚠️ 조건부' : report.verdict === '적정(관리대상)' ? '⚠️ 적정(관리대상)' : '🚨 부적정';
+      toast({ title: `검증 결과: ${verdictLabel} (${report.score}점)`, description: '검증 결과는 참고용입니다. 결재 상신은 언제든 가능합니다.' });
       log('검증실행', 'assessment_run', runId!, run.project_id, { score: report.score, verdict: report.verdict });
     } catch { toast({ title: '검증 실패', variant: 'destructive' }); }
   };

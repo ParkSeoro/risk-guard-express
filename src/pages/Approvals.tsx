@@ -250,7 +250,7 @@ const Approvals = () => {
                       {(steps as any[]).sort((a, b) => {
                         // Sort by creation order (sequential)
                         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-                      }).map((step: any, i: number) => {
+                      }).map((step: any, i: number) => (
                         <div key={step.id} className="flex items-center gap-2">
                           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium ${
                             step.status === '승인' ? 'bg-success/10 text-success' :

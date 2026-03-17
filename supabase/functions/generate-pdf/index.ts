@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
         <td>${item.assignee || ""}</td>
       </tr>`).join("");
 
-    // Feedback section with photos
+    // Feedback section with photos — 2x2 grid (4 photos per page)
     let feedbackSection = "";
     if (feedbackWithImages.length > 0) {
       const fbRows = feedbackWithImages.map((fb: any, idx: number) => {
@@ -205,25 +205,26 @@ Deno.serve(async (req) => {
 
         let imagesHtml = "";
         if (fb.beforeBase64.length > 0 || (showAfter && fb.afterBase64.length > 0)) {
-          imagesHtml = `<tr><td colspan="5" style="padding:6pt;">
-            <table style="width:100%;border:none;"><tr>
-              <td style="border:none;width:50%;vertical-align:top;">
-                <div style="font-size:7pt;font-weight:600;margin-bottom:3pt;color:#475569;">▸ 조치 전 (Before)</div>
-                ${fb.beforeBase64.length > 0
-                  ? fb.beforeBase64.map((b64: string) => `<img src="${b64}" style="max-width:180pt;max-height:120pt;border:1px solid #cbd5e1;border-radius:3pt;margin-right:4pt;page-break-inside:avoid;" />`).join("")
-                  : '<span style="font-size:7pt;color:#94a3b8;">사진 없음</span>'}
-              </td>
-              ${showAfter ? `<td style="border:none;width:50%;vertical-align:top;">
-                <div style="font-size:7pt;font-weight:600;margin-bottom:3pt;color:#475569;">▸ 조치 후 (After)</div>
-                ${fb.afterBase64.length > 0
-                  ? fb.afterBase64.map((b64: string) => `<img src="${b64}" style="max-width:180pt;max-height:120pt;border:1px solid #cbd5e1;border-radius:3pt;margin-right:4pt;page-break-inside:avoid;" />`).join("")
-                  : '<span style="font-size:7pt;color:#94a3b8;">사진 없음</span>'}
-              </td>` : '<td style="border:none;width:50%;vertical-align:top;"><span style="font-size:7pt;color:#94a3b8;">미완료 – 조치 후 사진 미표시</span></td>'}
-            </tr></table>
+          const allPhotos: { label: string; src: string }[] = [];
+          fb.beforeBase64.forEach((b64: string) => allPhotos.push({ label: "조치 전", src: b64 }));
+          if (showAfter) fb.afterBase64.forEach((b64: string) => allPhotos.push({ label: "조치 후", src: b64 }));
+
+          // 2x2 grid
+          const photoGrid = allPhotos.map((p) =>
+            `<div style="width:48%;page-break-inside:avoid;margin-bottom:4pt;">
+              <div style="font-size:6pt;font-weight:600;color:#475569;margin-bottom:2pt;">▸ ${p.label}</div>
+              <img src="${p.src}" style="width:100%;max-height:140pt;object-fit:contain;border:1px solid #cbd5e1;border-radius:3pt;" />
+            </div>`
+          ).join("");
+
+          imagesHtml = `<tr><td colspan="5" style="padding:4pt;page-break-inside:avoid;">
+            <div style="display:flex;flex-wrap:wrap;gap:4pt;justify-content:flex-start;">
+              ${photoGrid}
+            </div>
           </td></tr>`;
         }
 
-        return `<tr>
+        return `<tr style="page-break-inside:avoid;">
             <td class="center">${idx + 1}</td>
             <td>${itemLabel}</td>
             <td>${fb.description || ""}</td>

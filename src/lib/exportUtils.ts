@@ -68,45 +68,55 @@ function buildSignatureRows(participants: Participant[]): string[][] {
 
 // ========== Server-based PDF Download (Korean font safe) ==========
 export async function exportToPDFServer(runId: string, type: 'assessment' | 'validation' = 'assessment') {
-  try {
-    const { data, error } = await supabase.functions.invoke('generate-pdf', {
-      body: { runId, type },
-    });
-    if (error) throw error;
-    if (!data?.html) throw new Error('No HTML returned from server');
+  const { data, error } = await supabase.functions.invoke('generate-pdf', {
+    body: { runId, type },
+  });
 
-    // Open print window with the HTML
-    const printWindow = window.open('', '_blank', 'width=1100,height=800');
-    if (!printWindow) {
-      // Fallback: download as HTML file
-      const blob = new Blob([data.html], { type: 'text/html;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = data.fileName || `위험성평가_${new Date().toISOString().slice(0, 10)}.html`;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
-      return;
-    }
-
-    printWindow.document.write(data.html);
-    printWindow.document.close();
-
-    // Wait for fonts to load then trigger print (which can save as PDF)
-    printWindow.onload = () => {
-      setTimeout(() => {
-        printWindow.print();
-      }, 500);
-    };
-    // Also set a fallback timeout
-    setTimeout(() => {
-      try { printWindow.print(); } catch { /* ignore */ }
-    }, 2000);
-  } catch (err) {
-    if (import.meta.env.DEV) console.error('Server PDF generation failed:', err);
-    throw err;
+  if (error) {
+    const errMsg = typeof error === 'object' && error.message ? error.message : String(error);
+    throw new Error(`PDF 생성 서버 오류: ${errMsg}`);
   }
+  if (!data?.html || data.html.length < 100) {
+    throw new Error('PDF 생성 실패: 유효한 HTML이 반환되지 않았습니다.');
+  }
+
+  // Open print window with the HTML
+  const printWindow = window.open('', '_blank', 'width=1100,height=800');
+  if (!printWindow) {
+    // Fallback: download as HTML file
+    const blob = new Blob([data.html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = data.fileName || `위험성평가_${new Date().toISOString().slice(0, 10)}.html`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+    return;
+  }
+
+  printWindow.document.write(data.html);
+  printWindow.document.close();
+
+  // Wait for fonts & images to load then trigger print (which can save as PDF)
+  printWindow.onload = () => {
+    // Wait for all images to load
+    const images = printWindow.document.querySelectorAll('img');
+    const imagePromises = Array.from(images).map(img => {
+      if (img.complete) return Promise.resolve();
+      return new Promise<void>((resolve) => {
+        img.onload = () => resolve();
+        img.onerror = () => resolve(); // Don't block on broken images
+      });
+    });
+    Promise.all(imagePromises).then(() => {
+      setTimeout(() => { printWindow.print(); }, 300);
+    });
+  };
+  // Fallback timeout
+  setTimeout(() => {
+    try { printWindow.print(); } catch { /* ignore */ }
+  }, 3000);
 }
 
 // ========== Client-side PDF (fallback, uses jsPDF) ==========

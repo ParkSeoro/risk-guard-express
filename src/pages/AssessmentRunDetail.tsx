@@ -1328,7 +1328,7 @@ const AssessmentRunDetail = () => {
           <Users className="h-3.5 w-3.5" /> 참여자
         </Button>
         <div className="flex-1" />
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={printRiskAssessment}><Printer className="h-3.5 w-3.5" /> 인쇄</Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={handlePrint}><Printer className="h-3.5 w-3.5" /> 인쇄</Button>
         <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportPDF}><FileText className="h-3.5 w-3.5" /> PDF</Button>
         <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportXLSX}><Download className="h-3.5 w-3.5" /> XLSX</Button>
       </div>

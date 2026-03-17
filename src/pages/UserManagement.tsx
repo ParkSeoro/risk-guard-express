@@ -454,6 +454,18 @@ const UserManagement = () => {
                 <p className="text-xs text-muted-foreground py-2">프로젝트를 먼저 선택하세요.</p>
               )}
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs">직책 (선택)</Label>
+              <Select value={assignPosition || '_none'} onValueChange={(v) => setAssignPosition(v === '_none' ? '' : v)}>
+                <SelectTrigger className="text-xs"><SelectValue placeholder="직책 선택" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">없음</SelectItem>
+                  {Object.entries(positionLabels).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button onClick={handleAssignMembership} className="w-full" disabled={!assignUserId || !assignProjectId || !assignRole || assignSaving}>
               {assignSaving ? '처리 중...' : '소속 부여'}
             </Button>

@@ -375,9 +375,10 @@ img { max-width: 100%; height: auto; }
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error) {
+  } catch (error: any) {
+    console.error("PDF generation error:", error);
     return new Response(
-      JSON.stringify({ error: "PDF generation failed" }),
+      JSON.stringify({ error: `PDF generation failed: ${error?.message || String(error)}` }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

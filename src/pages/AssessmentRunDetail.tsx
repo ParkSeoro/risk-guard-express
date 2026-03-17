@@ -1928,23 +1928,28 @@ const AssessmentRunDetail = () => {
               </div>
             )}
             <div className="space-y-1.5 p-3 bg-muted/50 rounded-md text-xs">
-              <p className="font-medium text-sm">결재 라인</p>
+              <p className="font-medium text-sm">결재 라인 (자동 생성)</p>
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-[10px]">작성</Badge>
+                <Badge variant="outline" className="text-[10px]">1. 작성</Badge>
                 <span>{profile?.display_name} (자동 승인)</span>
               </div>
-              {participants.filter(p => p.role === '검토자').map(p => (
-                <div key={p.id} className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[10px]">검토</Badge>
-                  <span>{p.user_name}</span>
-                </div>
-              ))}
-              {participants.filter(p => p.role === '승인자').map(p => (
-                <div key={p.id} className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[10px]">승인</Badge>
-                  <span>{p.user_name}</span>
-                </div>
-              ))}
+              {(() => {
+                const safetyMgr = projectMembers.find(m => m.position === 'safety_manager');
+                const siteMgr = projectMembers.find(m => m.position === 'site_manager');
+                const admin = projectMembers.find(m => m.role === 'project_admin' || m.role === 'master');
+                const steps: { label: string; name: string }[] = [];
+                if (safetyMgr) steps.push({ label: '2. 안전관리자 검토', name: safetyMgr.display_name });
+                else if (participants.some(p => p.role === '검토자')) steps.push({ label: '2. 검토', name: participants.find(p => p.role === '검토자')?.user_name || '' });
+                if (siteMgr) steps.push({ label: `${steps.length + 1}. 현장대리인 확인`, name: siteMgr.display_name });
+                if (admin) steps.push({ label: `${steps.length + 1}. 최종승인`, name: admin.display_name });
+                else if (participants.some(p => p.role === '승인자')) steps.push({ label: `${steps.length + 1}. 승인`, name: participants.find(p => p.role === '승인자')?.user_name || '' });
+                return steps.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-[10px]">{s.label}</Badge>
+                    <span>{s.name}</span>
+                  </div>
+                ));
+              })()}
             </div>
             <div className="space-y-1"><Label>코멘트 (선택)</Label><Textarea value={approvalComment} onChange={e => setApprovalComment(e.target.value)} placeholder="결재 메모..." /></div>
             <Button onClick={handleSubmitForApproval} className="w-full gap-1.5"><Send className="h-3.5 w-3.5" /> 결재 상신</Button>

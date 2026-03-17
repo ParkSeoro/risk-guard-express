@@ -1202,10 +1202,10 @@ const AssessmentRunDetail = () => {
   const canValidate = (isSubmitted || isReturned) && isAdmin();
   // 재제출: 보완중/반려 상태에서만
   const canResubmit = isReturned;
-  // 결재 상신: 검증완료 상태에서만 (부적정 제외)
-  const canSubmitApproval = isValidated && run.validation_verdict !== '부적정' && activeItems.length > 0 && hasReviewerAndApprover;
-  // 재상신: 보완중/반려인데 검증 결과가 적정/조건부일 때
-  const canResubmitApproval = isReturned && run.validation_verdict && run.validation_verdict !== '부적정' && activeItems.length > 0 && hasReviewerAndApprover;
+  // 결재 상신: 승인완료/폐기/결재진행 제외하고 항상 가능
+  const canSubmitApproval = !isInApproval && !isApproved && run.status !== '폐기' && activeItems.length > 0 && hasReviewerAndApprover;
+  // 재상신: 보완중/반려 상태에서도 가능
+  const canResubmitApproval = false; // canSubmitApproval로 통합
   // 상신 취소
   const canCancelApproval = isInApproval && (isAdmin() || (user && run.created_by === user.id));
   // 자동 보완: 검증 결과가 부적정/조건부이고 편집 가능할 때

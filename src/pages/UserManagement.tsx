@@ -348,11 +348,27 @@ const UserManagement = () => {
                       <div className="space-y-1">
                         {memberships.map((m: any) => {
                           const proj = projects.find(p => p.id === m.project_id);
+                          const posLabel = positionLabels[m.position] || m.position;
                           return (
-                            <div key={m.id} className="flex items-center gap-1 text-[10px]">
+                            <div key={m.id} className="flex items-center gap-1 text-[10px] flex-wrap">
                               <Badge variant="secondary" className="text-[10px] shrink-0">{proj?.name || '프로젝트'}</Badge>
-                              <span className="text-muted-foreground">{roleLabels[m.role] || m.role}</span>
-                              {m.position && <span className="text-muted-foreground">/ {positionLabels[m.position] || m.position}</span>}
+                              <Select value={m.role} onValueChange={(v) => handleUpdateMembership(m.id, 'role', v)}>
+                                <SelectTrigger className="h-5 w-20 text-[10px] border-dashed"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
+                                    <SelectItem key={k} value={k} className="text-[10px]">{v}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Select value={m.position || '_none'} onValueChange={(v) => handleUpdateMembership(m.id, 'position', v === '_none' ? '' : v)}>
+                                <SelectTrigger className="h-5 w-24 text-[10px] border-dashed"><SelectValue placeholder="직책" /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="_none" className="text-[10px]">직책 없음</SelectItem>
+                                  {Object.entries(positionLabels).map(([k, v]) => (
+                                    <SelectItem key={k} value={k} className="text-[10px]">{v}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                               {m.company && <span className="text-muted-foreground">({m.company})</span>}
                             </div>
                           );

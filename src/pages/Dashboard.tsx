@@ -15,6 +15,15 @@ import {
 } from "recharts";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
+interface FeedbackKPI {
+  total: number;
+  unresolved: number;
+  inProgress: number;
+  completed: number;
+  completionRate: number;
+  byContractor: { name: string; total: number; completed: number; rate: number }[];
+}
+
 interface DashboardData {
   totalRuns: number;
   runsByStatus: Record<string, number>;
@@ -29,6 +38,7 @@ interface DashboardData {
   approvedRuns: number;
   processData: { name: string; high: number; med: number; low: number }[];
   topRisks: any[];
+  feedback: FeedbackKPI;
 }
 
 const EMPTY: DashboardData = {

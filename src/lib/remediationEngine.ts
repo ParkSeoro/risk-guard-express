@@ -229,7 +229,7 @@ export async function generateRemediationActions(
   }
 
   // ===== B. Verification Step (ACTION 4) =====
-  for (const item of items) {
+  for (const item of activeItems) {
     const measure = item.improvement_measure || '';
     if (measure.includes('점검') || measure.includes('확인') || measure.includes('체크리스트')) continue;
     if (!measure || measure.length < 5) continue;

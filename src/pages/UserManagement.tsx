@@ -180,7 +180,26 @@ const UserManagement = () => {
     setAssignProjectId('');
     setAssignRole('viewer');
     setAssignCompanyId('');
+    setAssignPosition('');
     setAssignError('');
+  };
+
+  // Update existing project membership inline
+  const handleUpdateMembership = async (membershipId: string, field: string, value: string) => {
+    const updateData: Record<string, any> = { [field]: value };
+    // If changing company_id, also update company name
+    if (field === 'company_id') {
+      const company = projectCompanies.find(c => c.id === value);
+      updateData.company = company?.name || '';
+    }
+    const { error } = await supabase.from('project_members').update(updateData).eq('id', membershipId);
+    if (error) {
+      toast({ title: '멤버십 수정 실패', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: '프로젝트 멤버십이 업데이트되었습니다.' });
+      log('멤버십수정', 'project_member', membershipId, undefined, { field, value });
+      fetchUsers();
+    }
   };
 
   const handleAssignMembership = async () => {

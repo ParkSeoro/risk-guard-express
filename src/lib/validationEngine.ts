@@ -121,25 +121,19 @@ export async function validateRiskItems(
     }
 
     // 3) High risk improvement check (revised policy)
-    // If improved_risk_grade is still '상' but improvement_measure exists → 적정(관리대상), not 부적정
-    if (item.risk_grade === '상') {
+    // 절대 규칙: 개선대책이 있으면 → 적정. 위험도 '상' 자체는 부적정 기준이 아님.
+    const hasImprovement = item.improvement_measure && item.improvement_measure.trim().length >= 5;
+    
+    if (hasImprovement) {
+      // 개선대책이 있으면 → 무조건 적정 (개선 후 위험도 상이면 관리대상)
       if (item.improved_risk_grade === '상') {
-        if (!item.improvement_measure || item.improvement_measure.trim().length < 5) {
-          // No improvement at all → 부적정
-          itemIssues.push({ riskItemId: item.id, ruleType: 'insufficient_improvement', severity: 'error',
-            message: '위험도 상 항목에 구체적인 개선대책 필요', recommendation: '최소 5자 이상의 구체적 개선대책을 기재하세요.' });
-        } else {
-          // Has improvement but still '상' → 관리대상 (warning, not error)
-          itemIssues.push({ riskItemId: item.id, ruleType: 'managed_risk', severity: 'warning',
-            message: '개선 후에도 위험도 상 유지 → 관리대상 (피드백 필요)', recommendation: '지속적 관리 및 피드백 등록이 필요합니다.' });
-        }
+        itemIssues.push({ riskItemId: item.id, ruleType: 'managed_risk', severity: 'info',
+          message: '개선 후에도 위험도 상 유지 → 적정(관리대상)', recommendation: '지속적 관리 및 피드백 등록이 필요합니다.' });
       }
-      if (!item.improvement_measure || item.improvement_measure.trim().length < 5) {
-        if (item.improved_risk_grade !== '상') { // Only add if not already caught above
-          itemIssues.push({ riskItemId: item.id, ruleType: 'insufficient_improvement', severity: 'error',
-            message: '위험도 상 항목에 구체적인 개선대책 필요', recommendation: '최소 5자 이상의 구체적 개선대책을 기재하세요.' });
-        }
-      }
+    } else {
+      // 개선대책 없음 → 부적정
+      itemIssues.push({ riskItemId: item.id, ruleType: 'no_improvement', severity: 'error',
+        message: '개선대책 미기재', field: 'improvement_measure', recommendation: '구체적인 개선대책을 기재하세요.' });
     }
 
     // 4) Legal basis

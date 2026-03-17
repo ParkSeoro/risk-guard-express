@@ -553,6 +553,9 @@ const AssessmentRunDetail = () => {
     log('제출', 'assessment_run', runId!, run?.project_id);
   };
 
+  // Position-based step order for 4-step approval
+  const APPROVAL_STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };
+
   // Submit for approval — also handles resubmission
   const handleSubmitForApproval = async () => {
     if (!run || !user || !profile) return;
@@ -568,44 +571,51 @@ const AssessmentRunDetail = () => {
     const findMemberByPosition = (position: string) => projectMembers.find(m => m.position === position);
     const findMemberByRole = (...roles: string[]) => projectMembers.find(m => roles.includes(m.role));
 
+    // Get raw member data (without display_name suffix) for company lookup
+    const getMemberCompany = (userId: string) => {
+      const member = projectMembers.find(m => m.user_id === userId);
+      return { company: member?.company || '', position: member?.position || '' };
+    };
+
     const safetyManager = findMemberByPosition('safety_manager');
     const siteManager = findMemberByPosition('site_manager');
     const adminMember = findMemberByRole('project_admin', 'master');
 
-    // Also try to resolve from participants if members don't have positions set
+    // Fallback: use participants if positions aren't set on project members
     const resolveUserId = (name: string) => {
       const match = userDirectory.find(u => u.display_name === name);
       return match?.user_id || null;
     };
-
-    // Fallback: use participants if positions aren't set on project members
     const reviewerParticipants = participants.filter(p => p.role === '검토자');
     const approverParticipants = participants.filter(p => p.role === '승인자');
 
-    // Build approval steps
-    const approvalSteps: { step: string; userId: string | null; userName: string }[] = [
-      { step: '작성', userId: user.id, userName: profile.display_name },
+    // Build approval steps with position/company info
+    type ApprovalStepDef = { step: string; userId: string | null; userName: string; position: string; companyName: string };
+    const approvalSteps: ApprovalStepDef[] = [
+      { step: '작성', userId: user.id, userName: profile.display_name, position: 'supervisor', companyName: getMemberCompany(user.id).company },
     ];
 
     // Step 2: Safety Manager
     if (safetyManager) {
-      approvalSteps.push({ step: '안전관리자 검토', userId: safetyManager.user_id, userName: safetyManager.display_name });
+      approvalSteps.push({ step: '안전관리자 검토', userId: safetyManager.user_id, userName: safetyManager.display_name, position: 'safety_manager', companyName: safetyManager.company });
     } else if (reviewerParticipants.length > 0) {
       const r = reviewerParticipants[0];
-      approvalSteps.push({ step: '검토', userId: resolveUserId(r.user_name), userName: r.user_name || '' });
+      const rId = resolveUserId(r.user_name);
+      approvalSteps.push({ step: '안전관리자 검토', userId: rId, userName: r.user_name || '', position: 'safety_manager', companyName: r.company || '' });
     }
 
     // Step 3: Site Manager
     if (siteManager) {
-      approvalSteps.push({ step: '현장대리인 확인', userId: siteManager.user_id, userName: siteManager.display_name });
+      approvalSteps.push({ step: '현장대리인 확인', userId: siteManager.user_id, userName: siteManager.display_name, position: 'site_manager', companyName: siteManager.company });
     }
 
     // Step 4: Final approver (PROJECT_ADMIN or MASTER)
     if (adminMember) {
-      approvalSteps.push({ step: '최종승인', userId: adminMember.user_id, userName: adminMember.display_name });
+      approvalSteps.push({ step: '최종승인', userId: adminMember.user_id, userName: adminMember.display_name, position: 'project_admin', companyName: adminMember.company });
     } else if (approverParticipants.length > 0) {
       const a = approverParticipants[0];
-      approvalSteps.push({ step: '승인', userId: resolveUserId(a.user_name), userName: a.user_name || '' });
+      const aId = resolveUserId(a.user_name);
+      approvalSteps.push({ step: '최종승인', userId: aId, userName: a.user_name || '', position: 'project_admin', companyName: a.company || '' });
     }
 
     if (approvalSteps.length < 2) {
@@ -623,6 +633,8 @@ const AssessmentRunDetail = () => {
       status: i === 0 ? '승인' : '대기',
       approver_id: s.userId, approver_name: s.userName,
       comment: i === 0 ? approvalComment : '', approval_version: nextVersion,
+      position: s.position, company_name: s.companyName,
+      approved_at: i === 0 ? new Date().toISOString() : null,
     }));
     await supabase.from('approvals').insert(inserts);
     await supabase.from('assessment_runs').update({ status: '결재진행' }).eq('id', runId);

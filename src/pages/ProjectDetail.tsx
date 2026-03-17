@@ -590,12 +590,47 @@ const ProjectDetail = () => {
           <DialogHeader><DialogTitle>업체 등록</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <Input placeholder="업체명" value={companyForm.name} onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })} />
-            <Select value={companyForm.type} onValueChange={v => setCompanyForm({ ...companyForm, type: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {Object.entries(companyTypes).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <div className="space-y-1.5">
+              <Label className="text-xs">업체 구분</Label>
+              <Select value={companyForm.type} onValueChange={v => setCompanyForm({ ...companyForm, type: v, parent_company_id: '' })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(companyTypes).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Parent company selection - required for contractor */}
+            {(companyForm.type === 'contractor') && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">상위 시공사 {companyForm.type === 'contractor' && <span className="text-destructive">*필수</span>}</Label>
+                <Select value={companyForm.parent_company_id || '__none__'} onValueChange={v => setCompanyForm({ ...companyForm, parent_company_id: v === '__none__' ? '' : v })}>
+                  <SelectTrigger><SelectValue placeholder="상위 업체 선택" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">(선택 안 함)</SelectItem>
+                    {companies.filter(c => c.type === 'gc').map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name} (시공사)</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {companies.filter(c => c.type === 'gc').length === 0 && (
+                  <p className="text-[10px] text-warning">시공사가 없습니다. 먼저 시공사를 등록하세요.</p>
+                )}
+              </div>
+            )}
+            {companyForm.type === 'gc' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">상위 발주처 (선택)</Label>
+                <Select value={companyForm.parent_company_id || '__none__'} onValueChange={v => setCompanyForm({ ...companyForm, parent_company_id: v === '__none__' ? '' : v })}>
+                  <SelectTrigger><SelectValue placeholder="상위 업체 선택" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">(선택 안 함)</SelectItem>
+                    {companies.filter(c => c.type === 'client').map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name} (발주처)</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <Input placeholder="사업자등록번호 (선택)" value={companyForm.business_no} onChange={e => setCompanyForm({ ...companyForm, business_no: e.target.value })} />
             <Input placeholder="연락처 (선택)" value={companyForm.contact} onChange={e => setCompanyForm({ ...companyForm, contact: e.target.value })} />
             <Input placeholder="공사범위 (선택)" value={companyForm.scope} onChange={e => setCompanyForm({ ...companyForm, scope: e.target.value })} />

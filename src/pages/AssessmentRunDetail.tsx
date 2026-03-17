@@ -133,6 +133,10 @@ const AssessmentRunDetail = () => {
   // Batch apply
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [showBatchApply, setShowBatchApply] = useState(false);
+  
+  // Feedback / Active tab
+  const [activeMainTab, setActiveMainTab] = useState<'assessment' | 'feedback'>('assessment');
+  const [previousFeedback, setPreviousFeedback] = useState<any[]>([]);
   const [batchDeptId, setBatchDeptId] = useState('');
   const [batchAssigneeUserId, setBatchAssigneeUserId] = useState('');
   const [batchScope, setBatchScope] = useState<'empty' | 'all' | 'selected'>('empty');

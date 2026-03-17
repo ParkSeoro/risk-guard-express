@@ -180,8 +180,8 @@ export async function validateRiskItems(
     issues.push(...itemIssues);
   }
 
-  // Coverage check
-  const coverageGaps = await checkCoverage(items, projectId, library || []);
+  // Coverage check (pass activeItems only)
+  const coverageGaps = await checkCoverage(activeItems, projectId, library || []);
 
   // Calculate score
   const totalItems = items.length;

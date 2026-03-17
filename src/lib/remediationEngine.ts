@@ -304,7 +304,7 @@ export async function generateRemediationActions(
 
   // ===== D. Merge Duplicates (ACTION 7) =====
   const seen = new Map<string, string>();
-  for (const item of items) {
+  for (const item of activeItems) {
     const key = `${item.sub_task || ''}|||${item.hazard || ''}`;
     if (seen.has(key) && key !== '|||') {
       actions.push({

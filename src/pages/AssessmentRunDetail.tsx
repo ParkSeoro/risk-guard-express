@@ -749,8 +749,9 @@ const AssessmentRunDetail = () => {
     try {
       const nonExcludedItems = items.filter((i: any) => !i.is_excluded);
       const actions = await generateRemediationActions(nonExcludedItems, validationReport, run.project_id);
-      setRemediationActions(actions);
-      setSelectedActionIds(new Set(actions.filter(a => !a.requiresUserConfirm).map(a => a.id)));
+      const visibleActions = await filterDismissedCoverageRecommendations(actions);
+      setRemediationActions(visibleActions);
+      setSelectedActionIds(new Set(visibleActions.filter(a => !a.requiresUserConfirm).map(a => a.id)));
     } catch (err) {
       toast({ title: '보완 제안 생성 실패', variant: 'destructive' });
     }

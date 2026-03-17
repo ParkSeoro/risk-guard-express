@@ -169,6 +169,36 @@ const RiskAssessment = () => {
     log('삭제', 'risk_item', id, selectedProjectId);
   };
 
+  const handleExclude = async (id: string) => {
+    const { error } = await supabase.from('risk_items').update({
+      is_excluded: true,
+      excluded_at: new Date().toISOString(),
+      excluded_by: user?.id || null,
+      excluded_reason: '사용자 제외 처리',
+    }).eq('id', id);
+    if (!error) {
+      const { data: updated } = await supabase.from('risk_items').select('*').eq('id', id).single();
+      if (updated) setItems(prev => prev.map(i => i.id === id ? updated : i));
+      toast({ title: '항목이 제외 처리되었습니다.' });
+      log('제외', 'risk_item', id, selectedProjectId);
+    }
+  };
+
+  const handleRestore = async (id: string) => {
+    const { error } = await supabase.from('risk_items').update({
+      is_excluded: false,
+      excluded_at: null,
+      excluded_by: null,
+      excluded_reason: '',
+    }).eq('id', id);
+    if (!error) {
+      const { data: updated } = await supabase.from('risk_items').select('*').eq('id', id).single();
+      if (updated) setItems(prev => prev.map(i => i.id === id ? updated : i));
+      toast({ title: '항목이 복원되었습니다.' });
+      log('복원', 'risk_item', id, selectedProjectId);
+    }
+  };
+
   const handleAutoGenerate = async () => {
     if (!autoGenProcess || !selectedProjectId || !user) return;
     setAutoGenLoading(true);

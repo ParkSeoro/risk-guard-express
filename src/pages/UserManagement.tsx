@@ -52,10 +52,19 @@ const UserManagement = () => {
   const [assignProjectId, setAssignProjectId] = useState('');
   const [assignRole, setAssignRole] = useState('viewer');
   const [assignCompanyId, setAssignCompanyId] = useState('');
+  const [assignPosition, setAssignPosition] = useState('');
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [projectCompanies, setProjectCompanies] = useState<{ id: string; name: string; type: string }[]>([]);
   const [assignError, setAssignError] = useState('');
   const [assignSaving, setAssignSaving] = useState(false);
+  // Existing memberships for inline editing
+  const [userMemberships, setUserMemberships] = useState<Record<string, any[]>>({});
+
+  const positionLabels: Record<string, string> = {
+    site_manager: '현장대리인',
+    supervisor: '관리감독자',
+    safety_manager: '안전관리자',
+  };
 
   const isMaster = hasRole('master');
 

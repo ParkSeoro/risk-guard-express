@@ -490,7 +490,7 @@ const AssessmentRunDetail = () => {
       await saveValidationResults(report, run.project_id, user.id, runId);
 
       let newStatus: string;
-      if (report.verdict === '적정' || report.verdict === '조건부 적정') {
+      if (report.verdict === '적정' || report.verdict === '조건부 적정' || report.verdict === '적정(관리대상)') {
         newStatus = '검증완료';
       } else {
         newStatus = '보완요청';

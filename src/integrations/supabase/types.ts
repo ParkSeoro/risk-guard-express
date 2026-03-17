@@ -173,11 +173,13 @@ export type Database = {
           deleted_at: string | null
           deleted_by: string | null
           deleted_reason: string | null
+          end_date: string | null
           id: string
           is_deleted: boolean
           notes: string | null
           period_label: string
           project_id: string
+          start_date: string | null
           status: string
           target_company_ids: string[] | null
           target_contractors: string[] | null
@@ -193,11 +195,13 @@ export type Database = {
           deleted_at?: string | null
           deleted_by?: string | null
           deleted_reason?: string | null
+          end_date?: string | null
           id?: string
           is_deleted?: boolean
           notes?: string | null
           period_label?: string
           project_id: string
+          start_date?: string | null
           status?: string
           target_company_ids?: string[] | null
           target_contractors?: string[] | null
@@ -213,11 +217,13 @@ export type Database = {
           deleted_at?: string | null
           deleted_by?: string | null
           deleted_reason?: string | null
+          end_date?: string | null
           id?: string
           is_deleted?: boolean
           notes?: string | null
           period_label?: string
           project_id?: string
+          start_date?: string | null
           status?: string
           target_company_ids?: string[] | null
           target_contractors?: string[] | null
@@ -945,6 +951,7 @@ export type Database = {
           company_id: string | null
           created_at: string
           id: string
+          position: string | null
           project_id: string
           role: Database["public"]["Enums"]["app_role"]
           user_id: string
@@ -954,6 +961,7 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           id?: string
+          position?: string | null
           project_id: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id: string
@@ -963,6 +971,7 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           id?: string
+          position?: string | null
           project_id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string

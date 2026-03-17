@@ -56,6 +56,13 @@ interface FeedbackPanelProps {
 const FEEDBACK_TYPES = ['보완', '지적', '개선'] as const;
 const FEEDBACK_STATUSES = ['미조치', '진행중', '완료'] as const;
 
+// Allow both auto (improved_risk_grade === '상') and manual selection
+function getFeedbackTargetItems(riskItems: RiskItemBasic[], manualIds: Set<string>): RiskItemBasic[] {
+  return riskItems.filter(item => 
+    (item as any).improved_risk_grade === '상' || manualIds.has(item.id)
+  );
+}
+
 export default function FeedbackPanel({ runId, projectId, isApproved, riskItems, projectMembers, previousFeedback }: FeedbackPanelProps) {
   const { user, profile } = useAuth();
   const { toast } = useToast();

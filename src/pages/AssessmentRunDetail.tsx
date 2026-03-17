@@ -534,18 +534,13 @@ const AssessmentRunDetail = () => {
       setValidationTab('summary');
       await saveValidationResults(report, run.project_id, user.id, runId);
 
-      let newStatus: string;
-      if (report.verdict === '적정' || report.verdict === '조건부 적정' || report.verdict === '적정(관리대상)') {
-        newStatus = '검증완료';
-      } else {
-        newStatus = '보완요청';
-      }
-
+      // 검증은 참고/경고 기능 — 상태 전환하지 않고 점수·판정만 저장
       await supabase.from('assessment_runs').update({
-        status: newStatus, validation_score: report.score, validation_verdict: report.verdict,
+        validation_score: report.score, validation_verdict: report.verdict,
       }).eq('id', runId);
-      setRun((prev: any) => ({ ...prev, status: newStatus, validation_score: report.score, validation_verdict: report.verdict }));
-      toast({ title: `검증 완료: ${report.verdict} (${report.score}점)${newStatus === '검증완료' ? ' → 결재 상신 가능' : ' → 보완 필요'}` });
+      setRun((prev: any) => ({ ...prev, validation_score: report.score, validation_verdict: report.verdict }));
+      const verdictLabel = report.verdict === '적정' ? '✅ 적정' : report.verdict === '조건부 적정' ? '⚠️ 조건부' : report.verdict === '적정(관리대상)' ? '⚠️ 적정(관리대상)' : '🚨 부적정';
+      toast({ title: `검증 결과: ${verdictLabel} (${report.score}점)`, description: '검증 결과는 참고용입니다. 결재 상신은 언제든 가능합니다.' });
       log('검증실행', 'assessment_run', runId!, run.project_id, { score: report.score, verdict: report.verdict });
     } catch { toast({ title: '검증 실패', variant: 'destructive' }); }
   };
@@ -563,12 +558,6 @@ const AssessmentRunDetail = () => {
     if (!run || !user || !profile) return;
     if (activeItems.length === 0) {
       toast({ title: '항목이 1건 이상 있어야 결재 상신이 가능합니다.', variant: 'destructive' }); return;
-    }
-    if (!['검증완료', '보완요청', '보완중', '반려'].includes(run.status)) {
-      toast({ title: '검증 완료 후에만 결재 상신이 가능합니다.', variant: 'destructive' }); return;
-    }
-    if (run.validation_verdict === '부적정') {
-      toast({ title: '부적정 판정 시 결재 상신이 불가합니다. 보완 후 재검증하세요.', variant: 'destructive' }); return;
     }
 
     // Build 4-step approval line based on position:
@@ -751,7 +740,8 @@ const AssessmentRunDetail = () => {
       const actions = await generateRemediationActions(nonExcludedItems, validationReport, run.project_id);
       const visibleActions = await filterDismissedCoverageRecommendations(actions);
       setRemediationActions(visibleActions);
-      setSelectedActionIds(new Set(visibleActions.filter(a => !a.requiresUserConfirm).map(a => a.id)));
+      // 자동 선택 금지 — 사용자가 직접 선택만 허용
+      setSelectedActionIds(new Set());
     } catch (err) {
       toast({ title: '보완 제안 생성 실패', variant: 'destructive' });
     }
@@ -774,16 +764,15 @@ const AssessmentRunDetail = () => {
       if (refreshed) setItems(refreshed);
       toast({ title: `${appliedCount}건 보완 적용 완료${newItemCount > 0 ? ` (신규 ${newItemCount}건)` : ''}` });
 
-      // Auto re-validate
+      // Auto re-validate (참고용 — 상태 전환 없음)
       if (applyAndRevalidate) {
         const currentItems = (refreshed || items).filter((i: any) => !i.is_excluded);
         const report = await validateRiskItems(currentItems, run.project_id);
         setValidationReport(report);
         await saveValidationResults(report, run.project_id, user.id, runId);
-        let newStatus = report.verdict === '부적정' ? '보완요청' : '검증완료';
-        await supabase.from('assessment_runs').update({ status: newStatus, validation_score: report.score, validation_verdict: report.verdict }).eq('id', runId);
-        setRun((prev: any) => ({ ...prev, status: newStatus, validation_score: report.score, validation_verdict: report.verdict }));
-        toast({ title: `재검증: ${report.verdict} (${report.score}점)` });
+        await supabase.from('assessment_runs').update({ validation_score: report.score, validation_verdict: report.verdict }).eq('id', runId);
+        setRun((prev: any) => ({ ...prev, validation_score: report.score, validation_verdict: report.verdict }));
+        toast({ title: `재검증: ${report.verdict} (${report.score}점)`, description: '검증 결과는 참고용입니다.' });
       }
 
       setShowRemediationWizard(false);
@@ -1213,13 +1202,13 @@ const AssessmentRunDetail = () => {
   const canValidate = (isSubmitted || isReturned) && isAdmin();
   // 재제출: 보완중/반려 상태에서만
   const canResubmit = isReturned;
-  // 결재 상신: 검증완료 상태에서만 (부적정 제외)
-  const canSubmitApproval = isValidated && run.validation_verdict !== '부적정' && activeItems.length > 0 && hasReviewerAndApprover;
-  // 재상신: 보완중/반려인데 검증 결과가 적정/조건부일 때
-  const canResubmitApproval = isReturned && run.validation_verdict && run.validation_verdict !== '부적정' && activeItems.length > 0 && hasReviewerAndApprover;
+  // 결재 상신: 승인완료/폐기/결재진행 제외하고 항상 가능
+  const canSubmitApproval = !isInApproval && !isApproved && run.status !== '폐기' && activeItems.length > 0 && hasReviewerAndApprover;
+  // 재상신: 보완중/반려 상태에서도 가능
+  const canResubmitApproval = false; // canSubmitApproval로 통합
   // 상신 취소
   const canCancelApproval = isInApproval && (isAdmin() || (user && run.created_by === user.id));
-  // 자동 보완: 검증 결과가 부적정/조건부이고 편집 가능할 때
+  // 자동 보완: 검증 결과가 있고 적정이 아닐 때 (참고용)
   const canAutoRemediate = validationReport && validationReport.verdict !== '적정' && (canEdit || canForceEdit) && !isInApproval && !isApproved;
   // 결재자 승인/반려: ONLY assigned approver
   const isMyApprovalPending = user && latestApprovals.some(a => a.status === '대기' && a.approver_id === user.id);
@@ -1227,8 +1216,8 @@ const AssessmentRunDetail = () => {
 
   // Status guide message
   const statusGuide = isDraft ? '작성 완료 후 [제출]을 누르세요.'
-    : isSubmitted ? '검증자가 [검증 실행]을 진행합니다.'
-    : isReturned ? '수정 후 [재제출] → 검증자가 [재검증] 진행'
+    : isSubmitted ? '검증자가 [검증 실행]을 진행합니다. 결재 상신도 가능합니다.'
+    : isReturned ? '수정 후 [재제출] 또는 바로 [결재 상신]이 가능합니다.'
     : isValidating ? '검증 진행 중입니다...'
     : isValidated ? '검증 완료. [결재 상신]을 진행하세요.'
     : isInApproval ? '결재 진행 중입니다.'
@@ -1423,11 +1412,6 @@ const AssessmentRunDetail = () => {
         {canSubmitApproval && (
           <Button size="sm" className="gap-1.5" onClick={() => setShowApproval(true)}>
             <Send className="h-3.5 w-3.5" /> 결재 상신
-          </Button>
-        )}
-        {canResubmitApproval && (
-          <Button size="sm" className="gap-1.5" onClick={() => setShowApproval(true)}>
-            <Send className="h-3.5 w-3.5" /> 재상신
           </Button>
         )}
         {canCancelApproval && (
@@ -1965,9 +1949,24 @@ const AssessmentRunDetail = () => {
           <DialogHeader><DialogTitle>결재 상신 · {run.period_label}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">이 회차 전체({activeItems.length}건)를 결재 상신합니다.</p>
-            {run.validation_verdict && (
-              <div className={`p-2 rounded text-sm ${run.validation_verdict === '적정' ? 'bg-success/10' : 'bg-warning/10'}`}>
-                검증 결과: {run.validation_verdict} ({run.validation_score}점)
+            {run.validation_verdict && run.validation_verdict !== '적정' && (
+              <div className={`p-2 rounded text-sm flex items-start gap-2 ${run.validation_verdict === '부적정' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning'}`}>
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-medium">{run.validation_verdict === '부적정' ? '부적정 항목이 있습니다.' : `검증 결과: ${run.validation_verdict}`} ({run.validation_score}점)</p>
+                  <p className="text-xs mt-0.5 opacity-80">검증 결과는 참고용입니다. 그래도 진행하시겠습니까?</p>
+                </div>
+              </div>
+            )}
+            {run.validation_verdict === '적정' && (
+              <div className="p-2 rounded text-sm bg-success/10 text-success">
+                ✅ 검증 결과: 적정 ({run.validation_score}점)
+              </div>
+            )}
+            {!run.validation_verdict && (
+              <div className="p-2 rounded text-sm bg-muted text-muted-foreground flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <p>검증이 아직 실행되지 않았습니다. 검증 없이 결재를 진행합니다.</p>
               </div>
             )}
             <div className="space-y-1.5 p-3 bg-muted/50 rounded-md text-xs">
@@ -2249,20 +2248,17 @@ const AssessmentRunDetail = () => {
                       dismissedRecommendations: dismissedCount,
                     });
 
-                    // Auto re-validate after exclusion
+                    // Auto re-validate after exclusion (참고용 — 상태 전환 없음)
                     const currentItems = (refreshed || items).filter((i: any) => !i.is_excluded);
                     const reReport = await validateRiskItems(currentItems, run.project_id);
                     setValidationReport(reReport);
                     await saveValidationResults(reReport, run.project_id, user.id, runId);
-                    const newStatus = reReport.verdict === '부적정' ? '보완요청' : '검증완료';
                     await supabase.from('assessment_runs').update({
-                      status: newStatus,
                       validation_score: reReport.score,
                       validation_verdict: reReport.verdict,
                     }).eq('id', runId);
                     setRun((prev: any) => ({
                       ...prev,
-                      status: newStatus,
                       validation_score: reReport.score,
                       validation_verdict: reReport.verdict,
                     }));
@@ -2273,7 +2269,7 @@ const AssessmentRunDetail = () => {
                       setShowRemediationWizard(false);
                       toast({
                         title: `재검증: ${reReport.verdict} (${reReport.score}점)`,
-                        description: reReport.verdict !== '부적정' ? '결재 상신이 가능합니다.' : '보완이 필요합니다.',
+                        description: '검증 결과는 참고용입니다.',
                       });
                     }
                   }}>
@@ -2348,31 +2344,8 @@ const AssessmentRunDetail = () => {
                 )}
 
                 <div className="flex gap-2 pt-2 border-t">
-                  <Button variant="outline" className="flex-1" onClick={async () => {
+                  <Button variant="outline" className="flex-1" onClick={() => {
                     setShowRemediationWizard(false);
-                    // 보완 제안이 0건이면 닫기 시 자동 재검증 + 상태 전환
-                    if (remediationActions.length === 0 && run && user) {
-                      const currentItems = items.filter((i: any) => !i.is_excluded);
-                      const reReport = await validateRiskItems(currentItems, run.project_id);
-                      setValidationReport(reReport);
-                      await saveValidationResults(reReport, run.project_id, user.id, runId);
-                      const newStatus = reReport.verdict === '부적정' ? '보완요청' : '검증완료';
-                      await supabase.from('assessment_runs').update({
-                        status: newStatus,
-                        validation_score: reReport.score,
-                        validation_verdict: reReport.verdict,
-                      }).eq('id', runId);
-                      setRun((prev: any) => ({
-                        ...prev,
-                        status: newStatus,
-                        validation_score: reReport.score,
-                        validation_verdict: reReport.verdict,
-                      }));
-                      toast({
-                        title: `재검증: ${reReport.verdict} (${reReport.score}점)`,
-                        description: reReport.verdict !== '부적정' ? '결재 상신이 가능합니다.' : '보완이 필요합니다.',
-                      });
-                    }
                   }}>닫기</Button>
                   <Button className="flex-1 gap-1.5" onClick={handleApplyRemediation} disabled={selectedActionIds.size === 0 || remediationLoading}>
                     <Wand2 className="h-3.5 w-3.5" />

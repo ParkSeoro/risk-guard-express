@@ -345,7 +345,7 @@ export async function generateRemediationActions(
   }
 
   // ===== E. Underestimation (ACTION 9) =====
-  for (const item of items) {
+  for (const item of activeItems) {
     const verdict = report.itemVerdicts[item.id];
     if (!verdict) continue;
     const underIssue = verdict.issues.find(i => i.ruleType === 'underestimation');

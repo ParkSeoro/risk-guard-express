@@ -168,11 +168,13 @@ export async function validateRiskItems(
         message: '담당자 미지정', field: 'assignee', recommendation: '담당자를 지정하세요. 책임부서 선택 시 자동 채워집니다.' });
     }
 
-    // Per-item verdict
+    // Per-item verdict (revised: managed_risk → 적정(관리대상))
     const itemErrors = itemIssues.filter(i => i.severity === 'error').length;
     const itemWarnings = itemIssues.filter(i => i.severity === 'warning').length;
-    let itemVerdict: '적정' | '조건부 적정' | '부적정' = '적정';
+    const hasManagedRisk = itemIssues.some(i => i.ruleType === 'managed_risk');
+    let itemVerdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정' = '적정';
     if (itemErrors > 0) itemVerdict = '부적정';
+    else if (hasManagedRisk) itemVerdict = '적정(관리대상)';
     else if (itemWarnings > 0) itemVerdict = '조건부 적정';
     itemVerdicts[item.id] = { verdict: itemVerdict, issues: itemIssues };
 

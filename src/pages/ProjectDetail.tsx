@@ -43,6 +43,8 @@ const ProjectDetail = () => {
   const [companies, setCompanies] = useState<any[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
+  const [showCreateInvite, setShowCreateInvite] = useState(false);
+  const [inviteForm, setInviteForm] = useState({ role: 'contractor' as string, company_id: '' as string, max_uses: 50, expires_days: 7 });
   const [showAddMember, setShowAddMember] = useState(false);
   const [memberUserId, setMemberUserId] = useState('');
   const [memberRole, setMemberRole] = useState('viewer');

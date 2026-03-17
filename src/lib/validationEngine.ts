@@ -76,6 +76,9 @@ export async function validateRiskItems(
   const issues: ValidationIssue[] = [];
   const itemVerdicts: Record<string, { verdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정'; issues: ValidationIssue[] }> = {};
 
+  // Filter out excluded items
+  const activeItems = items.filter(i => !i.is_excluded);
+
   const { data: library } = await supabase
     .from('standard_risk_library')
     .select('sub_task, hazard, default_likelihood_grade, default_severity_grade, category_large, category_medium')

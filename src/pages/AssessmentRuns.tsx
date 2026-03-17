@@ -180,6 +180,9 @@ const AssessmentRuns = () => {
     if (!form.type) errors.type = '종류를 선택해주세요.';
     if (!form.period_label.trim()) errors.period_label = '적용기간을 입력해주세요.';
     if (form.period_label.trim().length > 100) errors.period_label = '적용기간은 100자 이내로 입력해주세요.';
+    if (!form.start_date) errors.start_date = '시작일을 선택해주세요.';
+    if (!form.end_date) errors.end_date = '종료일을 선택해주세요.';
+    if (form.start_date && form.end_date && form.start_date > form.end_date) errors.end_date = '종료일이 시작일보다 이전입니다.';
     if (form.notes.length > 2000) errors.notes = '비고는 2000자 이내로 입력해주세요.';
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);

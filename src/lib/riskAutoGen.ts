@@ -202,6 +202,7 @@ export async function generateRiskItems(options: GenerateOptions): Promise<Gener
   });
 
   return result;
+}
 
 export async function generateFromSchedule(
   processes: { processName: string; subTask?: string }[],

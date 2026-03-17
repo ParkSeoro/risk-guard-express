@@ -280,13 +280,19 @@ Deno.serve(async (req) => {
         </table>`;
     }
 
-    // Worker participation images
+    // Worker participation images — 2-column layout (2 per row)
     let workerImageSection = "";
     if (workerImages.length > 0) {
+      const wpGrid = workerImages.map((b64: string, idx: number) =>
+        `<div style="width:48%;page-break-inside:avoid;margin-bottom:6pt;">
+          <div style="font-size:7pt;color:#475569;margin-bottom:2pt;">사진 ${idx + 1}</div>
+          <img src="${b64}" style="width:100%;max-height:200pt;object-fit:contain;border:1px solid #cbd5e1;border-radius:3pt;" />
+        </div>`
+      ).join("");
       workerImageSection = `
         <div class="section-header" style="margin-top:10pt;">근로자 참여 사진</div>
         <div style="display:flex;flex-wrap:wrap;gap:8pt;padding:4pt 0;">
-          ${workerImages.map((b64: string) => `<img src="${b64}" style="max-width:200pt;max-height:150pt;border:1px solid #cbd5e1;border-radius:3pt;page-break-inside:avoid;" />`).join("")}
+          ${wpGrid}
         </div>`;
     }
 

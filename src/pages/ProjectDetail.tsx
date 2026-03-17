@@ -48,7 +48,7 @@ const ProjectDetail = () => {
   const [memberRole, setMemberRole] = useState('viewer');
   const [memberCompanyId, setMemberCompanyId] = useState('');
   const [showAddCompany, setShowAddCompany] = useState(false);
-  const [companyForm, setCompanyForm] = useState({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '' });
+  const [companyForm, setCompanyForm] = useState({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '' });
   const [copiedCode, setCopiedCode] = useState('');
 
   // Approval route templates

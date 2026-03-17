@@ -90,10 +90,10 @@ export const sampleRiskItems: RiskItem[] = [
 ];
 
 export const sampleApprovals: ApprovalStep[] = [
-  { id: 'ap1', riskItemId: 'r1', step: '작성', status: '승인', approver: '박기계', comment: '', timestamp: '2026-02-10 09:00' },
-  { id: 'ap2', riskItemId: 'r1', step: '검토', status: '승인', approver: '김안전', comment: '양호', timestamp: '2026-02-11 14:30' },
-  { id: 'ap3', riskItemId: 'r1', step: '승인', status: '대기', approver: '이현장', comment: '', timestamp: '' },
-  { id: 'ap4', riskItemId: 'r3', step: '작성', status: '승인', approver: '김안전', comment: '', timestamp: '2026-02-01 10:00' },
-  { id: 'ap5', riskItemId: 'r3', step: '검토', status: '승인', approver: '김안전', comment: '', timestamp: '2026-02-02 11:00' },
-  { id: 'ap6', riskItemId: 'r3', step: '승인', status: '승인', approver: '이현장', comment: '승인', timestamp: '2026-02-03 09:00' },
+  { id: 'ap1', riskItemId: 'r1', step: '작성', status: '승인', approver: '박기계', comment: '', timestamp: '2026-02-10 09:00', position: 'supervisor', companyName: '디아이지에어가스', approvedAt: '2026-02-10 09:00' },
+  { id: 'ap2', riskItemId: 'r1', step: '안전관리자 검토', status: '승인', approver: '김안전', comment: '양호', timestamp: '2026-02-11 14:30', position: 'safety_manager', companyName: '디아이지에어가스', approvedAt: '2026-02-11 14:30' },
+  { id: 'ap3', riskItemId: 'r1', step: '최종승인', status: '대기', approver: '이현장', comment: '', timestamp: '', position: 'project_admin', companyName: '디아이지에어가스', approvedAt: null },
+  { id: 'ap4', riskItemId: 'r3', step: '작성', status: '승인', approver: '김안전', comment: '', timestamp: '2026-02-01 10:00', position: 'supervisor', companyName: '디아이지에어가스', approvedAt: '2026-02-01 10:00' },
+  { id: 'ap5', riskItemId: 'r3', step: '안전관리자 검토', status: '승인', approver: '김안전', comment: '', timestamp: '2026-02-02 11:00', position: 'safety_manager', companyName: '디아이지에어가스', approvedAt: '2026-02-02 11:00' },
+  { id: 'ap6', riskItemId: 'r3', step: '최종승인', status: '승인', approver: '이현장', comment: '승인', timestamp: '2026-02-03 09:00', position: 'project_admin', companyName: '디아이지에어가스', approvedAt: '2026-02-03 09:00' },
 ];

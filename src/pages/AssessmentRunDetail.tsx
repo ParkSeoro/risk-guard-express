@@ -553,6 +553,9 @@ const AssessmentRunDetail = () => {
     log('제출', 'assessment_run', runId!, run?.project_id);
   };
 
+  // Position-based step order for 4-step approval
+  const APPROVAL_STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };
+
   // Submit for approval — also handles resubmission
   const handleSubmitForApproval = async () => {
     if (!run || !user || !profile) return;
@@ -568,44 +571,51 @@ const AssessmentRunDetail = () => {
     const findMemberByPosition = (position: string) => projectMembers.find(m => m.position === position);
     const findMemberByRole = (...roles: string[]) => projectMembers.find(m => roles.includes(m.role));
 
+    // Get raw member data (without display_name suffix) for company lookup
+    const getMemberCompany = (userId: string) => {
+      const member = projectMembers.find(m => m.user_id === userId);
+      return { company: member?.company || '', position: member?.position || '' };
+    };
+
     const safetyManager = findMemberByPosition('safety_manager');
     const siteManager = findMemberByPosition('site_manager');
     const adminMember = findMemberByRole('project_admin', 'master');
 
-    // Also try to resolve from participants if members don't have positions set
+    // Fallback: use participants if positions aren't set on project members
     const resolveUserId = (name: string) => {
       const match = userDirectory.find(u => u.display_name === name);
       return match?.user_id || null;
     };
-
-    // Fallback: use participants if positions aren't set on project members
     const reviewerParticipants = participants.filter(p => p.role === '검토자');
     const approverParticipants = participants.filter(p => p.role === '승인자');
 
-    // Build approval steps
-    const approvalSteps: { step: string; userId: string | null; userName: string }[] = [
-      { step: '작성', userId: user.id, userName: profile.display_name },
+    // Build approval steps with position/company info
+    type ApprovalStepDef = { step: string; userId: string | null; userName: string; position: string; companyName: string };
+    const approvalSteps: ApprovalStepDef[] = [
+      { step: '작성', userId: user.id, userName: profile.display_name, position: 'supervisor', companyName: getMemberCompany(user.id).company },
     ];
 
     // Step 2: Safety Manager
     if (safetyManager) {
-      approvalSteps.push({ step: '안전관리자 검토', userId: safetyManager.user_id, userName: safetyManager.display_name });
+      approvalSteps.push({ step: '안전관리자 검토', userId: safetyManager.user_id, userName: safetyManager.display_name, position: 'safety_manager', companyName: safetyManager.company });
     } else if (reviewerParticipants.length > 0) {
       const r = reviewerParticipants[0];
-      approvalSteps.push({ step: '검토', userId: resolveUserId(r.user_name), userName: r.user_name || '' });
+      const rId = resolveUserId(r.user_name);
+      approvalSteps.push({ step: '안전관리자 검토', userId: rId, userName: r.user_name || '', position: 'safety_manager', companyName: r.company || '' });
     }
 
     // Step 3: Site Manager
     if (siteManager) {
-      approvalSteps.push({ step: '현장대리인 확인', userId: siteManager.user_id, userName: siteManager.display_name });
+      approvalSteps.push({ step: '현장대리인 확인', userId: siteManager.user_id, userName: siteManager.display_name, position: 'site_manager', companyName: siteManager.company });
     }
 
     // Step 4: Final approver (PROJECT_ADMIN or MASTER)
     if (adminMember) {
-      approvalSteps.push({ step: '최종승인', userId: adminMember.user_id, userName: adminMember.display_name });
+      approvalSteps.push({ step: '최종승인', userId: adminMember.user_id, userName: adminMember.display_name, position: 'project_admin', companyName: adminMember.company });
     } else if (approverParticipants.length > 0) {
       const a = approverParticipants[0];
-      approvalSteps.push({ step: '승인', userId: resolveUserId(a.user_name), userName: a.user_name || '' });
+      const aId = resolveUserId(a.user_name);
+      approvalSteps.push({ step: '최종승인', userId: aId, userName: a.user_name || '', position: 'project_admin', companyName: a.company || '' });
     }
 
     if (approvalSteps.length < 2) {
@@ -623,6 +633,8 @@ const AssessmentRunDetail = () => {
       status: i === 0 ? '승인' : '대기',
       approver_id: s.userId, approver_name: s.userName,
       comment: i === 0 ? approvalComment : '', approval_version: nextVersion,
+      position: s.position, company_name: s.companyName,
+      approved_at: i === 0 ? new Date().toISOString() : null,
     }));
     await supabase.from('approvals').insert(inserts);
     await supabase.from('assessment_runs').update({ status: '결재진행' }).eq('id', runId);
@@ -680,6 +692,7 @@ const AssessmentRunDetail = () => {
     await supabase.from('approvals').update({
       status: action, approver_id: user.id, approver_name: profile.display_name,
       comment: comment || '',
+      approved_at: action === '승인' ? new Date().toISOString() : null,
     }).eq('id', ap.id);
 
     if (action === '승인') {
@@ -1333,35 +1346,71 @@ const AssessmentRunDetail = () => {
 
       {/* Approval Status Display (SSOT) */}
       {latestApprovals.length > 0 && (
-        <div className="flex items-center gap-2 print:hidden flex-wrap">
-          <span className="text-xs text-muted-foreground font-medium">결재현황:</span>
-          {latestApprovals
-            .filter(a => a.status !== '취소')
-            .sort((a: any, b: any) => {
-              const order: Record<string, number> = { '작성': 0, '검토': 1, '승인': 2 };
-              return (order[a.step] || 0) - (order[b.step] || 0);
-            })
-            .map((a: any) => (
-              <Badge key={a.id} variant="outline" className={`text-[10px] gap-1 ${
-                a.status === '승인' ? 'bg-success/10 text-success border-success/30' :
-                a.status === '반려' ? 'bg-destructive/10 text-destructive border-destructive/30' :
-                a.status === '대기' ? 'bg-muted text-muted-foreground' :
-                'bg-muted/50 text-muted-foreground/50'
-              }`}>
-                {a.status === '승인' ? <CheckCircle2 className="h-3 w-3" /> :
-                 a.status === '반려' ? <XCircle className="h-3 w-3" /> :
-                 <Clock className="h-3 w-3" />}
-                {a.step}: {a.approver_name || '미지정'}
-                {a.status !== '대기' && ` (${a.status})`}
-              </Badge>
-            ))}
-          {latestApprovals[0]?.approval_version > 1 && (
-            <Badge variant="outline" className="text-[9px]">{latestApprovals[0].approval_version}차 상신</Badge>
-          )}
-          {isAdmin() && (
-            <span className="text-[9px] text-muted-foreground/60 ml-auto">
-              v{latestApprovals[0]?.approval_version || 1} | {latestApprovals.filter(a => a.status === '대기').length}건 대기
-            </span>
+        <div className="space-y-2 print:hidden">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground font-medium">결재현황:</span>
+            {latestApprovals
+              .filter(a => a.status !== '취소')
+              .sort((a: any, b: any) => (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99))
+              .map((a: any) => (
+                <Badge key={a.id} variant="outline" className={`text-[10px] gap-1 ${
+                  a.status === '승인' ? 'bg-success/10 text-success border-success/30' :
+                  a.status === '반려' ? 'bg-destructive/10 text-destructive border-destructive/30' :
+                  a.status === '대기' ? 'bg-muted text-muted-foreground' :
+                  'bg-muted/50 text-muted-foreground/50'
+                }`}>
+                  {a.status === '승인' ? <CheckCircle2 className="h-3 w-3" /> :
+                   a.status === '반려' ? <XCircle className="h-3 w-3" /> :
+                   <Clock className="h-3 w-3" />}
+                  {a.step}: {a.approver_name || '미지정'}
+                  {a.company_name ? ` (${a.company_name})` : ''}
+                  {a.status !== '대기' && ` [${a.status}]`}
+                </Badge>
+              ))}
+            {latestApprovals[0]?.approval_version > 1 && (
+              <Badge variant="outline" className="text-[9px]">{latestApprovals[0].approval_version}차 상신</Badge>
+            )}
+          </div>
+          {/* Signature Table - 서명란 (auto-populated from approval data) */}
+          {latestApprovals.filter(a => a.status !== '취소').length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[10px] border-collapse">
+                <thead>
+                  <tr className="bg-muted/50">
+                    <th className="border px-2 py-1 text-left font-medium">구분</th>
+                    <th className="border px-2 py-1 text-left font-medium">성명</th>
+                    <th className="border px-2 py-1 text-left font-medium">소속</th>
+                    <th className="border px-2 py-1 text-left font-medium">직책</th>
+                    <th className="border px-2 py-1 text-left font-medium">서명/일자</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {latestApprovals
+                    .filter(a => a.status !== '취소')
+                    .sort((a: any, b: any) => (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99))
+                    .map((a: any) => {
+                      const positionLabel = a.position === 'supervisor' ? '관리감독자' :
+                        a.position === 'safety_manager' ? '안전관리자' :
+                        a.position === 'site_manager' ? '현장대리인' :
+                        a.position === 'project_admin' ? '프로젝트 관리자' : a.position || '';
+                      return (
+                        <tr key={a.id}>
+                          <td className="border px-2 py-1 font-medium">{a.step}</td>
+                          <td className="border px-2 py-1">{a.approver_name || '—'}</td>
+                          <td className="border px-2 py-1">{a.company_name || '—'}</td>
+                          <td className="border px-2 py-1">{positionLabel || '—'}</td>
+                          <td className="border px-2 py-1">
+                            {a.status === '승인' && a.approved_at
+                              ? new Date(a.approved_at).toLocaleDateString('ko-KR')
+                              : a.status === '반려' ? <span className="text-destructive">반려</span>
+                              : <span className="text-muted-foreground">대기</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -1970,28 +2019,53 @@ const AssessmentRunDetail = () => {
               </div>
             )}
             <div className="space-y-1.5 p-3 bg-muted/50 rounded-md text-xs">
-              <p className="font-medium text-sm">결재 라인 (자동 생성)</p>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-[10px]">1. 작성</Badge>
-                <span>{profile?.display_name} (자동 승인)</span>
-              </div>
-              {(() => {
-                const safetyMgr = projectMembers.find(m => m.position === 'safety_manager');
-                const siteMgr = projectMembers.find(m => m.position === 'site_manager');
-                const admin = projectMembers.find(m => m.role === 'project_admin' || m.role === 'master');
-                const steps: { label: string; name: string }[] = [];
-                if (safetyMgr) steps.push({ label: '2. 안전관리자 검토', name: safetyMgr.display_name });
-                else if (participants.some(p => p.role === '검토자')) steps.push({ label: '2. 검토', name: participants.find(p => p.role === '검토자')?.user_name || '' });
-                if (siteMgr) steps.push({ label: `${steps.length + 1}. 현장대리인 확인`, name: siteMgr.display_name });
-                if (admin) steps.push({ label: `${steps.length + 1}. 최종승인`, name: admin.display_name });
-                else if (participants.some(p => p.role === '승인자')) steps.push({ label: `${steps.length + 1}. 승인`, name: participants.find(p => p.role === '승인자')?.user_name || '' });
-                return steps.map((s, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-[10px]">{s.label}</Badge>
-                    <span>{s.name}</span>
-                  </div>
-                ));
-              })()}
+              <p className="font-medium text-sm">결재 라인 (직책 기반 자동 생성)</p>
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-muted">
+                    <th className="border px-2 py-1 text-left">순서</th>
+                    <th className="border px-2 py-1 text-left">구분</th>
+                    <th className="border px-2 py-1 text-left">성명</th>
+                    <th className="border px-2 py-1 text-left">직책</th>
+                    <th className="border px-2 py-1 text-left">소속</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="border px-2 py-1">1</td>
+                    <td className="border px-2 py-1">작성</td>
+                    <td className="border px-2 py-1">{profile?.display_name} <span className="text-muted-foreground">(자동승인)</span></td>
+                    <td className="border px-2 py-1">관리감독자</td>
+                    <td className="border px-2 py-1">{projectMembers.find(m => m.user_id === user?.id)?.company || ''}</td>
+                  </tr>
+                  {(() => {
+                    const safetyMgr = projectMembers.find(m => m.position === 'safety_manager');
+                    const siteMgr = projectMembers.find(m => m.position === 'site_manager');
+                    const admin = projectMembers.find(m => m.role === 'project_admin' || m.role === 'master');
+                    const rows: { step: string; name: string; pos: string; company: string }[] = [];
+                    if (safetyMgr) rows.push({ step: '안전관리자 검토', name: safetyMgr.display_name, pos: '안전관리자', company: safetyMgr.company });
+                    else if (participants.some(p => p.role === '검토자')) {
+                      const r = participants.find(p => p.role === '검토자');
+                      rows.push({ step: '안전관리자 검토', name: r?.user_name || '', pos: '안전관리자', company: r?.company || '' });
+                    }
+                    if (siteMgr) rows.push({ step: '현장대리인 확인', name: siteMgr.display_name, pos: '현장대리인', company: siteMgr.company });
+                    if (admin) rows.push({ step: '최종승인', name: admin.display_name, pos: '프로젝트 관리자', company: admin.company });
+                    else if (participants.some(p => p.role === '승인자')) {
+                      const a = participants.find(p => p.role === '승인자');
+                      rows.push({ step: '최종승인', name: a?.user_name || '', pos: '프로젝트 관리자', company: a?.company || '' });
+                    }
+                    return rows.map((r, i) => (
+                      <tr key={i}>
+                        <td className="border px-2 py-1">{i + 2}</td>
+                        <td className="border px-2 py-1">{r.step}</td>
+                        <td className="border px-2 py-1">{r.name}</td>
+                        <td className="border px-2 py-1">{r.pos}</td>
+                        <td className="border px-2 py-1">{r.company}</td>
+                      </tr>
+                    ));
+                  })()}
+                </tbody>
+              </table>
             </div>
             <div className="space-y-1"><Label>코멘트 (선택)</Label><Textarea value={approvalComment} onChange={e => setApprovalComment(e.target.value)} placeholder="결재 메모..." /></div>
             <Button onClick={handleSubmitForApproval} className="w-full gap-1.5"><Send className="h-3.5 w-3.5" /> 결재 상신</Button>

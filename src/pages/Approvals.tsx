@@ -14,6 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CheckCircle2, Clock, XCircle, FileCheck, MessageSquare, FileText, ExternalLink } from "lucide-react";
 import { exportToPDF } from "@/lib/exportUtils";
 
+const APPROVAL_STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };
+
 const Approvals = () => {
   const navigate = useNavigate();
   const { user, profile, isAdmin, hasRole } = useAuth();
@@ -102,7 +104,7 @@ const Approvals = () => {
     // Sequential approval enforcement: check all prior steps are approved
     if (ap.run_id) {
       const runApprovals = approvals.filter(a => a.run_id === ap.run_id && (a.approval_version || 1) === (ap.approval_version || 1) && a.status !== '취소');
-      const sorted = runApprovals.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      const sorted = runApprovals.sort((a, b) => (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99));
       const myIndex = sorted.findIndex(a => a.id === ap.id);
       const priorNotApproved = sorted.slice(0, myIndex).some(a => a.status !== '승인');
       if (priorNotApproved) {
@@ -113,6 +115,7 @@ const Approvals = () => {
 
     await supabase.from('approvals').update({
       status: action, approver_id: user.id, approver_name: profile.display_name, comment: comment || '',
+      approved_at: action === '승인' ? new Date().toISOString() : null,
     }).eq('id', approvalId);
 
     if (action === '승인' && ap?.run_id) {
@@ -137,8 +140,7 @@ const Approvals = () => {
         const sortedPending = (allAp || [])
           .filter((a: any) => a.status === '대기' && a.id !== approvalId)
           .sort((a: any, b: any) => {
-            const order: Record<string, number> = { '작성': 0, '검토': 1, '승인': 2 };
-            return (order[a.step] || 0) - (order[b.step] || 0);
+            return (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99);
           });
         const nextPending = sortedPending[0];
         if (nextPending?.approver_id) {
@@ -201,7 +203,7 @@ const Approvals = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><FileCheck className="h-6 w-6" /> 결재함</h1>
-          <p className="text-sm text-muted-foreground mt-1">회차 단위 순차 결재: 작성 → 안전관리자 검토 → 현장대리인 확인 → 최종승인</p>
+          <p className="text-sm text-muted-foreground mt-1">직책 기반 순차 결재: 작성(관리감독자) → 안전관리자 검토 → 현장대리인 확인 → 최종승인</p>
         </div>
         <Select value={selectedProject} onValueChange={setSelectedProject}>
           <SelectTrigger className="w-60 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
@@ -248,8 +250,7 @@ const Approvals = () => {
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       {(steps as any[]).sort((a, b) => {
-                        // Sort by creation order (sequential)
-                        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                        return (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99);
                       }).map((step: any, i: number) => (
                         <div key={step.id} className="flex items-center gap-2">
                           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium ${
@@ -261,7 +262,7 @@ const Approvals = () => {
                              step.status === '반려' ? <XCircle className="h-3.5 w-3.5" /> :
                              <Clock className="h-3.5 w-3.5" />}
                             <span>{step.step}</span>
-                            <span className="opacity-70">({step.approver_name || '미지정'})</span>
+                            <span className="opacity-70">({step.approver_name || '미지정'}{step.company_name ? ` · ${step.company_name}` : ''})</span>
                           </div>
                           {/* Only show action buttons to the ASSIGNED approver, not admins in 'all' tab */}
                           {step.status === '대기' && !isAllTab && user && step.approver_id === user.id && (

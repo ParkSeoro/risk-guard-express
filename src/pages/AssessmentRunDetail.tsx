@@ -29,6 +29,7 @@ import { generateRemediationActions, applyRemediationActions, buildRemediationSu
 import type { Database } from '@/integrations/supabase/types';
 import IMESafeInput from '@/components/IMESafeInput';
 import { Checkbox } from '@/components/ui/checkbox';
+import FeedbackPanel from '@/components/FeedbackPanel';
 import * as XLSX from 'xlsx';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];

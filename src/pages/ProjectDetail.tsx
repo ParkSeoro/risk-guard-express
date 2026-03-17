@@ -156,20 +156,26 @@ const ProjectDetail = () => {
     fetchAll();
   };
 
-  const handleCreateInvite = async (role: string) => {
+  const handleCreateInvite = async () => {
     if (!projectId || !user) return;
-    const code = Math.random().toString(36).substring(2, 10).toUpperCase();
-    const { error } = await supabase.from('project_invites').insert([{
+    const code = crypto.randomUUID().split('-')[0].toUpperCase();
+    const insertData: any = {
       project_id: projectId,
       code,
-      default_role: role as any,
+      default_role: inviteForm.role as any,
       created_by: user.id,
-      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      max_uses: 50,
-    }]);
+      expires_at: new Date(Date.now() + inviteForm.expires_days * 24 * 60 * 60 * 1000).toISOString(),
+      max_uses: inviteForm.max_uses,
+    };
+    if (inviteForm.company_id) {
+      insertData.company_id = inviteForm.company_id;
+    }
+    const { error } = await supabase.from('project_invites').insert([insertData]);
     if (error) toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
     else {
+      const link = `${window.location.origin}/auth?invite=${code}`;
       toast({ title: '초대코드가 생성되었습니다.', description: `코드: ${code}` });
+      setShowCreateInvite(false);
       fetchAll();
     }
   };

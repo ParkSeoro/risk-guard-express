@@ -1380,17 +1380,17 @@ const AssessmentRunDetail = () => {
                     </th>
                   )}
                   <th className="w-8 text-center">#</th>
-                  <th style={{ minWidth: '80px' }}>공정</th>
-                  <th style={{ minWidth: '100px' }}>세부작업</th>
-                  <th style={{ minWidth: '120px' }}>위험요인</th>
-                  <th style={{ minWidth: '140px' }}>위험발생상황</th>
-                  <th style={{ minWidth: '140px' }}>기존대책</th>
-                  <th style={{ minWidth: '140px' }}>개선대책</th>
-                  <th className="text-center w-12">가능성</th><th className="text-center w-12">중대성</th><th className="text-center w-12">위험도</th>
-                  <th className="text-center w-12">가능성'</th><th className="text-center w-12">중대성'</th><th className="text-center w-12">위험도'</th>
-                  <th className="text-center w-16">상태</th>
-                  <th style={{ minWidth: '80px' }}>PPE</th><th style={{ minWidth: '100px' }}>법적근거</th>
-                  <th className="w-24">책임부서</th><th className="w-24">담당자</th>
+                  <th style={{ minWidth: '90px' }}>공정</th>
+                  <th style={{ minWidth: '110px' }}>세부작업</th>
+                  <th style={{ minWidth: '130px' }}>위험요인</th>
+                  <th style={{ minWidth: '160px' }}>위험발생상황</th>
+                  <th style={{ minWidth: '160px' }}>기존대책</th>
+                  <th style={{ minWidth: '160px' }}>개선대책</th>
+                  <th className="text-center" style={{ minWidth: '48px' }}>가능성</th><th className="text-center" style={{ minWidth: '48px' }}>중대성</th><th className="text-center" style={{ minWidth: '48px' }}>위험도</th>
+                  <th className="text-center" style={{ minWidth: '48px' }}>가능성'</th><th className="text-center" style={{ minWidth: '48px' }}>중대성'</th><th className="text-center" style={{ minWidth: '48px' }}>위험도'</th>
+                  <th className="text-center" style={{ minWidth: '56px' }}>상태</th>
+                  <th style={{ minWidth: '90px' }}>PPE</th><th style={{ minWidth: '110px' }}>법적근거</th>
+                  <th style={{ minWidth: '100px' }}>책임부서</th><th style={{ minWidth: '100px' }}>담당자</th>
                   {validationReport && <th className="w-16 text-center">판정</th>}
                   {(canEdit || canForceEdit) && <th className="w-20 text-center print:hidden">작업</th>}
                 </tr>

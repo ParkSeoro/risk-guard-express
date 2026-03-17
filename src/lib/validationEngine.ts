@@ -24,7 +24,7 @@ export interface ValidationReport {
   errors: number;
   warnings: number;
   score: number;
-  verdict: '적정' | '조건부 적정' | '부적정';
+  verdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정';
   issues: ValidationIssue[];
   coverageGaps: CoverageGap[];
   itemVerdicts: Record<string, { verdict: '적정' | '조건부 적정' | '부적정'; issues: ValidationIssue[] }>;

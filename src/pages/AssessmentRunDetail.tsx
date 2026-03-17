@@ -168,9 +168,10 @@ const AssessmentRunDetail = () => {
       setDeptAssignees(deptAssigneeRes.data || []);
       setEnvironmentTags((envTagsRes.data || []) as any);
       const profiles = profilesRes.data || [];
-      const membersList = (membersRes.data || []).map(m => {
+      const membersList = (membersRes.data || []).map((m: any) => {
         const prof = profiles.find((p: any) => p.user_id === m.user_id);
-        return { user_id: m.user_id, display_name: prof?.display_name || '', company: m.company || prof?.company || '' };
+        const positionLabel = m.position ? ` / ${m.position === 'site_manager' ? '현장대리인' : m.position === 'supervisor' ? '관리감독자' : m.position === 'safety_manager' ? '안전관리자' : m.position}` : '';
+        return { user_id: m.user_id, display_name: `${prof?.display_name || ''}${positionLabel}`, company: m.company || prof?.company || '', position: m.position || '' };
       });
       setProjectMembers(membersList);
 

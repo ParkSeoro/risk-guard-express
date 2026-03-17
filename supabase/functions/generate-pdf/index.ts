@@ -412,7 +412,7 @@ img { max-width: 100%; height: auto; }
 
     return new Response(JSON.stringify({
       html, title,
-      fileName: \`위험성평가_\${run.type}_\${run.period_label}_\${today}.pdf\`
+      fileName: `위험성평가_${run.type}_${run.period_label}_${today}.pdf`
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

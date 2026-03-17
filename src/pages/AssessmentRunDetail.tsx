@@ -1949,9 +1949,24 @@ const AssessmentRunDetail = () => {
           <DialogHeader><DialogTitle>결재 상신 · {run.period_label}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">이 회차 전체({activeItems.length}건)를 결재 상신합니다.</p>
-            {run.validation_verdict && (
-              <div className={`p-2 rounded text-sm ${run.validation_verdict === '적정' ? 'bg-success/10' : 'bg-warning/10'}`}>
-                검증 결과: {run.validation_verdict} ({run.validation_score}점)
+            {run.validation_verdict && run.validation_verdict !== '적정' && (
+              <div className={`p-2 rounded text-sm flex items-start gap-2 ${run.validation_verdict === '부적정' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning'}`}>
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-medium">{run.validation_verdict === '부적정' ? '부적정 항목이 있습니다.' : `검증 결과: ${run.validation_verdict}`} ({run.validation_score}점)</p>
+                  <p className="text-xs mt-0.5 opacity-80">검증 결과는 참고용입니다. 그래도 진행하시겠습니까?</p>
+                </div>
+              </div>
+            )}
+            {run.validation_verdict === '적정' && (
+              <div className="p-2 rounded text-sm bg-success/10 text-success">
+                ✅ 검증 결과: 적정 ({run.validation_score}점)
+              </div>
+            )}
+            {!run.validation_verdict && (
+              <div className="p-2 rounded text-sm bg-muted text-muted-foreground flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <p>검증이 아직 실행되지 않았습니다. 검증 없이 결재를 진행합니다.</p>
               </div>
             )}
             <div className="space-y-1.5 p-3 bg-muted/50 rounded-md text-xs">

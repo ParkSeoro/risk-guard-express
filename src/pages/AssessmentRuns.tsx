@@ -388,7 +388,7 @@ const AssessmentRuns = () => {
                       <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                         <span className="flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
-                          {format(new Date(run.created_at), 'yyyy-MM-dd')}
+                          {run.start_date && run.end_date ? `${run.start_date} ~ ${run.end_date}` : format(new Date(run.created_at), 'yyyy-MM-dd')}
                         </span>
                         <span className="font-medium">항목 {stats.total}건</span>
                         {stats.total > 0 && (

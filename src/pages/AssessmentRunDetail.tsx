@@ -1559,7 +1559,7 @@ const AssessmentRunDetail = () => {
             runId={runId!}
             projectId={run.project_id}
             isApproved={isApproved}
-            riskItems={activeItems.map(i => ({ id: i.id, process: i.process, sub_task: i.sub_task, hazard: i.hazard }))}
+            riskItems={activeItems.map(i => ({ id: i.id, process: i.process, sub_task: i.sub_task, hazard: i.hazard, risk_grade: i.risk_grade }))}
             projectMembers={projectMembers}
             previousFeedback={previousFeedback}
           />

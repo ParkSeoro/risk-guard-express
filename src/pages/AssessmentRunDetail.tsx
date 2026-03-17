@@ -29,6 +29,7 @@ import { generateRemediationActions, applyRemediationActions, buildRemediationSu
 import type { Database } from '@/integrations/supabase/types';
 import IMESafeInput from '@/components/IMESafeInput';
 import { Checkbox } from '@/components/ui/checkbox';
+import FeedbackPanel from '@/components/FeedbackPanel';
 import * as XLSX from 'xlsx';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
@@ -132,6 +133,10 @@ const AssessmentRunDetail = () => {
   // Batch apply
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [showBatchApply, setShowBatchApply] = useState(false);
+  
+  // Feedback / Active tab
+  const [activeMainTab, setActiveMainTab] = useState<'assessment' | 'feedback'>('assessment');
+  const [previousFeedback, setPreviousFeedback] = useState<any[]>([]);
   const [batchDeptId, setBatchDeptId] = useState('');
   const [batchAssigneeUserId, setBatchAssigneeUserId] = useState('');
   const [batchScope, setBatchScope] = useState<'empty' | 'all' | 'selected'>('empty');
@@ -233,6 +238,28 @@ const AssessmentRunDetail = () => {
         }
       } else {
         setLatestApprovals([]);
+      }
+    }
+
+    // Fetch previous run's unresolved feedback
+    if (runRes.data?.project_id) {
+      const { data: prevRuns } = await supabase
+        .from('assessment_runs')
+        .select('id')
+        .eq('project_id', runRes.data.project_id)
+        .eq('status', '승인완료')
+        .neq('id', runId!)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (prevRuns && prevRuns.length > 0) {
+        const { data: prevFb } = await supabase
+          .from('risk_item_feedback' as any)
+          .select('*')
+          .eq('assessment_run_id', prevRuns[0].id)
+          .in('status', ['미조치', '진행중']);
+        setPreviousFeedback((prevFb || []) as any);
+      } else {
+        setPreviousFeedback([]);
       }
     }
 
@@ -1304,6 +1331,13 @@ const AssessmentRunDetail = () => {
         </Card>
       )}
 
+      {/* Main Tabs: Assessment | Feedback */}
+      <Tabs value={activeMainTab} onValueChange={(v) => setActiveMainTab(v as 'assessment' | 'feedback')} className="print:hidden">
+        <TabsList>
+          <TabsTrigger value="assessment">위험성평가</TabsTrigger>
+          <TabsTrigger value="feedback">피드백 관리</TabsTrigger>
+        </TabsList>
+        <TabsContent value="assessment" className="space-y-4 mt-4">
       {/* Filters */}
       <Card className="print:hidden">
         <CardContent className="py-3">
@@ -1489,6 +1523,18 @@ const AssessmentRunDetail = () => {
           </CardContent>
         </Card>
       )}
+        </TabsContent>
+        <TabsContent value="feedback" className="mt-4">
+          <FeedbackPanel
+            runId={runId!}
+            projectId={run.project_id}
+            isApproved={isApproved}
+            riskItems={activeItems.map(i => ({ id: i.id, process: i.process, sub_task: i.sub_task, hazard: i.hazard }))}
+            projectMembers={projectMembers}
+            previousFeedback={previousFeedback}
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Auto Generate Dialog */}
       <Dialog open={showAutoGen} onOpenChange={setShowAutoGen}>

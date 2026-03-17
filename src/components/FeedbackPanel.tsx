@@ -108,6 +108,14 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
       toast({ title: '조치내용을 입력하세요.', variant: 'destructive' });
       return;
     }
+    // Validate risk_grade is '상' when a specific item is selected
+    if (formRiskItemId) {
+      const selectedItem = riskItems.find(i => i.id === formRiskItemId);
+      if (selectedItem && selectedItem.risk_grade !== '상') {
+        toast({ title: "위험도 '상' 항목만 피드백 대상입니다.", variant: 'destructive' });
+        return;
+      }
+    }
     // Before photo is REQUIRED for new feedback
     if (!editingId && formBeforeFiles.length === 0) {
       toast({ title: '조치 전(Before) 사진은 필수입니다.', variant: 'destructive' });

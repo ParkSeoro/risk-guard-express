@@ -1023,6 +1023,79 @@ export type Database = {
           },
         ]
       }
+      risk_item_feedback: {
+        Row: {
+          after_image_urls: string[] | null
+          assessment_run_id: string
+          assignee_user_id: string | null
+          before_image_urls: string[] | null
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          description: string
+          feedback_type: string
+          id: string
+          project_id: string
+          risk_item_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          after_image_urls?: string[] | null
+          assessment_run_id: string
+          assignee_user_id?: string | null
+          before_image_urls?: string[] | null
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          feedback_type?: string
+          id?: string
+          project_id: string
+          risk_item_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          after_image_urls?: string[] | null
+          assessment_run_id?: string
+          assignee_user_id?: string | null
+          before_image_urls?: string[] | null
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string
+          feedback_type?: string
+          id?: string
+          project_id?: string
+          risk_item_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "risk_item_feedback_assessment_run_id_fkey"
+            columns: ["assessment_run_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "risk_item_feedback_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "risk_item_feedback_risk_item_id_fkey"
+            columns: ["risk_item_id"]
+            isOneToOne: false
+            referencedRelation: "risk_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       risk_item_versions: {
         Row: {
           change_reason: string | null

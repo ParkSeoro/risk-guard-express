@@ -411,7 +411,7 @@ const RiskAssessment = () => {
           <Undo2 className="h-3.5 w-3.5" /> 배치 되돌리기
         </Button>
         <div className="flex-1" />
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={printRiskAssessment}>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.print()}>
           <Printer className="h-3.5 w-3.5" /> 인쇄
         </Button>
         <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportPDF}>

@@ -52,23 +52,42 @@ const UserManagement = () => {
   const [assignProjectId, setAssignProjectId] = useState('');
   const [assignRole, setAssignRole] = useState('viewer');
   const [assignCompanyId, setAssignCompanyId] = useState('');
+  const [assignPosition, setAssignPosition] = useState('');
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [projectCompanies, setProjectCompanies] = useState<{ id: string; name: string; type: string }[]>([]);
   const [assignError, setAssignError] = useState('');
   const [assignSaving, setAssignSaving] = useState(false);
+  // Existing memberships for inline editing
+  const [userMemberships, setUserMemberships] = useState<Record<string, any[]>>({});
+
+  const positionLabels: Record<string, string> = {
+    site_manager: '현장대리인',
+    supervisor: '관리감독자',
+    safety_manager: '안전관리자',
+  };
 
   const isMaster = hasRole('master');
 
   const fetchUsers = async () => {
     setLoading(true);
-    const { data: profiles } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-    const { data: allRoles } = await supabase.from('user_roles').select('user_id, role');
+    const [{ data: profiles }, { data: allRoles }, { data: allMembers }] = await Promise.all([
+      supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+      supabase.from('user_roles').select('user_id, role'),
+      supabase.from('project_members').select('id, user_id, project_id, role, company_id, company, position'),
+    ]);
     const enriched: UserWithRole[] = (profiles || []).map((p: any) => ({
       ...p,
       account_status: p.account_status || 'active',
       roles: (allRoles || []).filter((r: any) => r.user_id === p.user_id).map((r: any) => r.role),
     }));
     setUsers(enriched);
+    // Build memberships lookup
+    const memberships: Record<string, any[]> = {};
+    (allMembers || []).forEach((m: any) => {
+      if (!memberships[m.user_id]) memberships[m.user_id] = [];
+      memberships[m.user_id].push(m);
+    });
+    setUserMemberships(memberships);
     setLoading(false);
   };
 
@@ -161,7 +180,26 @@ const UserManagement = () => {
     setAssignProjectId('');
     setAssignRole('viewer');
     setAssignCompanyId('');
+    setAssignPosition('');
     setAssignError('');
+  };
+
+  // Update existing project membership inline
+  const handleUpdateMembership = async (membershipId: string, field: string, value: string) => {
+    const updateData: Record<string, any> = { [field]: value };
+    // If changing company_id, also update company name
+    if (field === 'company_id') {
+      const company = projectCompanies.find(c => c.id === value);
+      updateData.company = company?.name || '';
+    }
+    const { error } = await supabase.from('project_members').update(updateData).eq('id', membershipId);
+    if (error) {
+      toast({ title: '멤버십 수정 실패', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: '프로젝트 멤버십이 업데이트되었습니다.' });
+      log('멤버십수정', 'project_member', membershipId, undefined, { field, value });
+      fetchUsers();
+    }
   };
 
   const handleAssignMembership = async () => {
@@ -176,11 +214,14 @@ const UserManagement = () => {
     }
     setAssignSaving(true);
     try {
+      const companyName = assignCompanyId ? projectCompanies.find(c => c.id === assignCompanyId)?.name || '' : '';
       const { error } = await supabase.from('project_members').insert([{
         project_id: assignProjectId,
         user_id: assignUserId,
         role: assignRole as any,
         company_id: assignCompanyId || null,
+        company: companyName,
+        position: assignPosition || '',
       }]);
       if (error) {
         if (error.message.includes('duplicate') || error.message.includes('unique')) {
@@ -192,7 +233,7 @@ const UserManagement = () => {
         return;
       }
       toast({ title: '프로젝트 소속이 부여되었습니다.' });
-      log('프로젝트소속부여', 'project_member', assignUserId, assignProjectId, { role: assignRole });
+      log('프로젝트소속부여', 'project_member', assignUserId, assignProjectId, { role: assignRole, position: assignPosition });
       setShowAssignDialog(false);
       resetAssignForm();
     } catch (err) {
@@ -267,16 +308,19 @@ const UserManagement = () => {
                 <th>직위</th>
                 <th>연락처</th>
                 <th className="text-center">상태</th>
-                <th className="text-center">역할</th>
+                <th className="text-center">전역 역할</th>
+                <th>프로젝트 소속</th>
                 <th className="text-center w-40">작업</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">로딩 중...</td></tr>
+                <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">로딩 중...</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">사용자가 없습니다.</td></tr>
-              ) : filtered.map(u => (
+                <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">사용자가 없습니다.</td></tr>
+              ) : filtered.map(u => {
+                const memberships = userMemberships[u.user_id] || [];
+                return (
                 <tr key={u.id}>
                   <td className="font-medium">{u.display_name}</td>
                   <td className="text-muted-foreground">{u.company || '—'}</td>
@@ -296,6 +340,25 @@ const UserManagement = () => {
                         ))}
                       </SelectContent>
                     </Select>
+                  </td>
+                  <td>
+                    {memberships.length === 0 ? (
+                      <span className="text-xs text-muted-foreground">소속 없음</span>
+                    ) : (
+                      <div className="space-y-1">
+                        {memberships.map((m: any) => {
+                          const proj = projects.find(p => p.id === m.project_id);
+                          return (
+                            <div key={m.id} className="flex items-center gap-1 text-[10px]">
+                              <Badge variant="secondary" className="text-[10px] shrink-0">{proj?.name || '프로젝트'}</Badge>
+                              <span className="text-muted-foreground">{roleLabels[m.role] || m.role}</span>
+                              {m.position && <span className="text-muted-foreground">/ {positionLabels[m.position] || m.position}</span>}
+                              {m.company && <span className="text-muted-foreground">({m.company})</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </td>
                   <td className="text-center">
                     <div className="flex items-center gap-1 justify-center">
@@ -320,7 +383,8 @@ const UserManagement = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </CardContent>
@@ -389,6 +453,18 @@ const UserManagement = () => {
               ) : (
                 <p className="text-xs text-muted-foreground py-2">프로젝트를 먼저 선택하세요.</p>
               )}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">직책 (선택)</Label>
+              <Select value={assignPosition || '_none'} onValueChange={(v) => setAssignPosition(v === '_none' ? '' : v)}>
+                <SelectTrigger className="text-xs"><SelectValue placeholder="직책 선택" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">없음</SelectItem>
+                  {Object.entries(positionLabels).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <Button onClick={handleAssignMembership} className="w-full" disabled={!assignUserId || !assignProjectId || !assignRole || assignSaving}>
               {assignSaving ? '처리 중...' : '소속 부여'}

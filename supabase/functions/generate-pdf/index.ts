@@ -145,28 +145,32 @@ Deno.serve(async (req) => {
         <td>${item.assignee || ""}</td>
       </tr>`).join("");
 
-    // Feedback section
+    // Feedback section - Before always shown, After only when status=완료
     let feedbackSection = "";
     if (feedbackWithImages.length > 0) {
       const fbRows = feedbackWithImages.map((fb: any, idx: number) => {
         const item = items.find((i: any) => i.id === fb.risk_item_id);
         const itemLabel = item ? `${item.process} – ${item.sub_task || ""}` : "(전체)";
         const statusColor = fb.status === "완료" ? "#16a34a" : fb.status === "진행중" ? "#d97706" : "#dc2626";
+        const showAfter = fb.status === "완료";
 
         let imagesHtml = "";
-        if (fb.beforeBase64.length > 0 || fb.afterBase64.length > 0) {
+        // Always show Before; show After only when 완료
+        if (fb.beforeBase64.length > 0 || (showAfter && fb.afterBase64.length > 0)) {
           imagesHtml = `<tr><td colspan="5" style="padding:6pt;">
             <table style="width:100%;border:none;"><tr>
               <td style="border:none;width:50%;vertical-align:top;">
                 <div style="font-size:7pt;font-weight:600;margin-bottom:3pt;color:#475569;">▸ 조치 전 (Before)</div>
-                ${fb.beforeBase64.map((b64: string) => `<img src="${b64}" style="max-width:180pt;max-height:120pt;border:1px solid #cbd5e1;border-radius:3pt;margin-right:4pt;" />`).join("")}
-                ${fb.beforeBase64.length === 0 ? '<span style="font-size:7pt;color:#94a3b8;">사진 없음</span>' : ''}
+                ${fb.beforeBase64.length > 0
+                  ? fb.beforeBase64.map((b64: string) => `<img src="${b64}" style="max-width:180pt;max-height:120pt;border:1px solid #cbd5e1;border-radius:3pt;margin-right:4pt;page-break-inside:avoid;" />`).join("")
+                  : '<span style="font-size:7pt;color:#94a3b8;">사진 없음</span>'}
               </td>
-              <td style="border:none;width:50%;vertical-align:top;">
+              ${showAfter ? `<td style="border:none;width:50%;vertical-align:top;">
                 <div style="font-size:7pt;font-weight:600;margin-bottom:3pt;color:#475569;">▸ 조치 후 (After)</div>
-                ${fb.afterBase64.map((b64: string) => `<img src="${b64}" style="max-width:180pt;max-height:120pt;border:1px solid #cbd5e1;border-radius:3pt;margin-right:4pt;" />`).join("")}
-                ${fb.afterBase64.length === 0 ? '<span style="font-size:7pt;color:#94a3b8;">사진 없음</span>' : ''}
-              </td>
+                ${fb.afterBase64.length > 0
+                  ? fb.afterBase64.map((b64: string) => `<img src="${b64}" style="max-width:180pt;max-height:120pt;border:1px solid #cbd5e1;border-radius:3pt;margin-right:4pt;page-break-inside:avoid;" />`).join("")
+                  : '<span style="font-size:7pt;color:#94a3b8;">사진 없음</span>'}
+              </td>` : '<td style="border:none;width:50%;vertical-align:top;"><span style="font-size:7pt;color:#94a3b8;">미완료 – 조치 후 사진 미표시</span></td>'}
             </tr></table>
           </td></tr>`;
         }
@@ -371,9 +375,10 @@ img { max-width: 100%; height: auto; }
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error) {
+  } catch (error: any) {
+    console.error("PDF generation error:", error);
     return new Response(
-      JSON.stringify({ error: "PDF generation failed" }),
+      JSON.stringify({ error: `PDF generation failed: ${error?.message || String(error)}` }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

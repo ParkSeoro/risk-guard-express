@@ -126,6 +126,40 @@ Deno.serve(async (req) => {
       `<tr><td class="sig-role">${s.role}</td><td>${s.name}</td><td>${s.company}</td><td class="sig-stamp">${s.date}</td></tr>`
     ).join("");
 
+    // Convert feedback images to base64
+    const feedbackWithImages = await Promise.all(
+      feedbackItems.map(async (fb: any) => {
+        const beforeImages: string[] = [];
+        const afterImages: string[] = [];
+        for (const url of (fb.before_image_urls || []).slice(0, 3)) {
+          const b64 = await imageUrlToBase64(url);
+          if (b64) beforeImages.push(b64);
+        }
+        if (fb.status === "완료") {
+          for (const url of (fb.after_image_urls || []).slice(0, 3)) {
+            const b64 = await imageUrlToBase64(url);
+            if (b64) afterImages.push(b64);
+          }
+        }
+        return { ...fb, beforeBase64: beforeImages, afterBase64: afterImages };
+      })
+    );
+
+    const gradeColor = (g: string) =>
+      g === "상" ? "#dc2626" : g === "중" ? "#d97706" : "#16a34a";
+    const gradeBg = (g: string) =>
+      g === "상" ? "#fecaca" : g === "중" ? "#fef08a" : "#bbf7d0";
+
+    const today = new Date().toISOString().slice(0, 10);
+    const runPeriod = run.start_date && run.end_date
+      ? `${run.start_date} ~ ${run.end_date}`
+      : `${project?.period_start || ""} ~ ${project?.period_end || ""}`;
+    const title = `위험성평가표 [${run.type}] ${run.period_label}`;
+
+    const highCount = items.filter((i: any) => i.risk_grade === "상").length;
+    const medCount = items.filter((i: any) => i.risk_grade === "중").length;
+    const lowCount = items.filter((i: any) => i.risk_grade === "하").length;
+
     // Risk items table
     const itemRows = items.map((item: any, i: number) => `
       <tr>

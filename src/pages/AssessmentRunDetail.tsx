@@ -19,7 +19,7 @@ import { Switch } from '@/components/ui/switch';
 import {
   Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, ShieldCheck, Send,
   Lock, Users, XCircle, AlertTriangle, CheckCircle2, Upload, RotateCcw, FileWarning, RefreshCw,
-  Edit3, Archive, Clock, Pencil, Ban,
+  Edit3, Archive, Clock, Pencil, Ban, Camera,
 } from 'lucide-react';
 import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
 import { generateRiskItems } from '@/lib/riskAutoGen';
@@ -143,6 +143,9 @@ const AssessmentRunDetail = () => {
   const [batchApplyDept, setBatchApplyDept] = useState(true);
   const [batchApplyAssignee, setBatchApplyAssignee] = useState(true);
   const [batchOverrideManual, setBatchOverrideManual] = useState(false);
+
+  // Worker participation photos
+  const [workerPhotoUploading, setWorkerPhotoUploading] = useState(false);
 
   const fetchAll = useCallback(async () => {
     if (!runId) return;
@@ -490,7 +493,7 @@ const AssessmentRunDetail = () => {
       await saveValidationResults(report, run.project_id, user.id, runId);
 
       let newStatus: string;
-      if (report.verdict === '적정' || report.verdict === '조건부 적정') {
+      if (report.verdict === '적정' || report.verdict === '조건부 적정' || report.verdict === '적정(관리대상)') {
         newStatus = '검증완료';
       } else {
         newStatus = '보완요청';
@@ -927,16 +930,14 @@ const AssessmentRunDetail = () => {
     }
   };
 
-  // Unified print: generate PDF then print from it
+  // Unified print: always generate PDF then print from it (never window.print())
   const handlePrint = async () => {
     if (!run) return;
     toast({ title: '인쇄용 PDF 생성 중...' });
     try {
       await exportToPDFServer(runId!, 'assessment');
-    } catch {
-      // Fallback to window.print if server PDF also fails
-      toast({ title: 'PDF 기반 인쇄 실패', description: '브라우저 인쇄로 대체합니다.', variant: 'destructive' });
-      window.print();
+    } catch (err) {
+      toast({ title: 'PDF 기반 인쇄 실패', description: String(err), variant: 'destructive' });
     }
   };
 
@@ -961,6 +962,44 @@ const AssessmentRunDetail = () => {
     } catch (err) {
       toast({ title: 'XLSX 다운로드 실패', variant: 'destructive' });
     }
+  };
+
+  // Worker participation photo upload
+  const handleWorkerPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !run) return;
+    setWorkerPhotoUploading(true);
+    try {
+      const urls: string[] = [];
+      for (const file of Array.from(files)) {
+        const ext = file.name.split('.').pop();
+        const path = `worker-photos/${run.project_id}/${runId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error } = await supabase.storage.from('attachments').upload(path, file);
+        if (!error) {
+          const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
+          urls.push(urlData.publicUrl);
+        }
+      }
+      if (urls.length > 0) {
+        const existing = run.worker_participation_images || [];
+        const updated = [...existing, ...urls];
+        await supabase.from('assessment_runs').update({ worker_participation_images: updated } as any).eq('id', runId);
+        setRun((prev: any) => ({ ...prev, worker_participation_images: updated }));
+        toast({ title: `근로자 참여 사진 ${urls.length}건 업로드 완료` });
+      }
+    } catch (err) {
+      toast({ title: '사진 업로드 실패', description: String(err), variant: 'destructive' });
+    }
+    setWorkerPhotoUploading(false);
+    e.target.value = '';
+  };
+
+  const handleRemoveWorkerPhoto = async (index: number) => {
+    if (!run) return;
+    const images = [...(run.worker_participation_images || [])];
+    images.splice(index, 1);
+    await supabase.from('assessment_runs').update({ worker_participation_images: images } as any).eq('id', runId);
+    setRun((prev: any) => ({ ...prev, worker_participation_images: images }));
   };
 
   // Excel upload
@@ -1177,6 +1216,43 @@ const AssessmentRunDetail = () => {
                 );
               })}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Worker Participation Photos */}
+      <Card className="print:hidden">
+        <CardContent className="py-3">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold flex items-center gap-1.5">
+              <Camera className="h-3.5 w-3.5" /> 근로자 참여 사진
+              {(run.worker_participation_images || []).length > 0 && (
+                <Badge variant="secondary" className="text-[9px] h-4 px-1">{(run.worker_participation_images || []).length}건</Badge>
+              )}
+            </h3>
+            {(canEdit || canForceEdit || isApproved) && (
+              <label className="cursor-pointer">
+                <input type="file" accept="image/*" multiple className="hidden" onChange={handleWorkerPhotoUpload} disabled={workerPhotoUploading} />
+                <Button size="sm" variant="outline" className="gap-1.5 text-xs" asChild disabled={workerPhotoUploading}>
+                  <span><Upload className="h-3 w-3" /> {workerPhotoUploading ? '업로드 중...' : '사진 추가'}</span>
+                </Button>
+              </label>
+            )}
+          </div>
+          {(run.worker_participation_images || []).length > 0 ? (
+            <div className="flex gap-2 flex-wrap">
+              {(run.worker_participation_images || []).map((url: string, i: number) => (
+                <div key={i} className="relative group">
+                  <img src={url} alt={`참여사진${i + 1}`} className="w-20 h-20 rounded object-cover border cursor-pointer" onClick={() => window.open(url, '_blank')} />
+                  {(canEdit || canForceEdit) && (
+                    <button className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full w-4 h-4 text-[9px] hidden group-hover:flex items-center justify-center"
+                      onClick={() => handleRemoveWorkerPhoto(i)}>×</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[10px] text-muted-foreground">결재 상신 전 근로자 참여 사진을 업로드하세요.</p>
           )}
         </CardContent>
       </Card>

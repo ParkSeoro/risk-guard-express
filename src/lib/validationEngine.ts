@@ -194,9 +194,9 @@ export async function validateRiskItems(
 
   // 핵심 규칙: 위험도 '상' 자체는 부적정 기준이 아님
   // 부적정 = 개선대책 미기재 or 필수필드 누락
-  const hasNoImprovementItems = items.some(i => !i.improvement_measure || i.improvement_measure.trim().length < 5);
+  const hasNoImprovementItems = activeItems.some(i => !i.improvement_measure || i.improvement_measure.trim().length < 5);
   const hasMissingRequiredFields = issues.some(i => i.ruleType === 'missing_field' && i.severity === 'error');
-  const hasManagedItems = items.some(i => i.improved_risk_grade === '상' && i.improvement_measure && i.improvement_measure.trim().length >= 5);
+  const hasManagedItems = activeItems.some(i => i.improved_risk_grade === '상' && i.improvement_measure && i.improvement_measure.trim().length >= 5);
   
   let verdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정';
   if ((hasNoImprovementItems && errors > 0) || hasMissingRequiredFields || score < 60) {

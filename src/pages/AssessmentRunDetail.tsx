@@ -1414,11 +1414,6 @@ const AssessmentRunDetail = () => {
             <Send className="h-3.5 w-3.5" /> 결재 상신
           </Button>
         )}
-        {canResubmitApproval && (
-          <Button size="sm" className="gap-1.5" onClick={() => setShowApproval(true)}>
-            <Send className="h-3.5 w-3.5" /> 재상신
-          </Button>
-        )}
         {canCancelApproval && (
           <Button size="sm" variant="outline" className="gap-1.5 text-destructive" onClick={handleCancelApproval}>
             <RotateCcw className="h-3.5 w-3.5" /> 상신 취소

@@ -92,12 +92,23 @@ const Approvals = () => {
   const handleApprovalAction = async (approvalId: string, action: '승인' | '반려', comment?: string) => {
     if (!user || !profile) return;
     
-    // Server-side RBAC: verify the approval is assigned to current user
     const ap = approvals.find(a => a.id === approvalId);
     if (!ap) { toast({ title: '결재 정보를 찾을 수 없습니다.', variant: 'destructive' }); return; }
     if (ap.approver_id !== user.id) {
       toast({ title: '결재 권한이 없습니다.', description: '해당 단계의 지정된 결재자만 승인/반려할 수 있습니다.', variant: 'destructive' });
       return;
+    }
+
+    // Sequential approval enforcement: check all prior steps are approved
+    if (ap.run_id) {
+      const runApprovals = approvals.filter(a => a.run_id === ap.run_id && (a.approval_version || 1) === (ap.approval_version || 1) && a.status !== '취소');
+      const sorted = runApprovals.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      const myIndex = sorted.findIndex(a => a.id === ap.id);
+      const priorNotApproved = sorted.slice(0, myIndex).some(a => a.status !== '승인');
+      if (priorNotApproved) {
+        toast({ title: '이전 단계 결재가 완료되지 않았습니다.', description: '순차 결재 방식으로, 앞 단계가 먼저 승인되어야 합니다.', variant: 'destructive' });
+        return;
+      }
     }
 
     await supabase.from('approvals').update({
@@ -190,7 +201,7 @@ const Approvals = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><FileCheck className="h-6 w-6" /> 결재함</h1>
-          <p className="text-sm text-muted-foreground mt-1">회차 단위 결재: 작성 → 검토 → 승인</p>
+          <p className="text-sm text-muted-foreground mt-1">회차 단위 순차 결재: 작성 → 안전관리자 검토 → 현장대리인 확인 → 최종승인</p>
         </div>
         <Select value={selectedProject} onValueChange={setSelectedProject}>
           <SelectTrigger className="w-60 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
@@ -237,8 +248,8 @@ const Approvals = () => {
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       {(steps as any[]).sort((a, b) => {
-                        const order = { '작성': 0, '검토': 1, '승인': 2 };
-                        return (order[a.step as keyof typeof order] || 0) - (order[b.step as keyof typeof order] || 0);
+                        // Sort by creation order (sequential)
+                        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
                       }).map((step: any, i: number) => (
                         <div key={step.id} className="flex items-center gap-2">
                           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium ${

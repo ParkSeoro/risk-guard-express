@@ -6,7 +6,7 @@ const MAX_MEDIUM_TEXT = 500;
 const MAX_LONG_TEXT = 2000;
 
 // Valid app roles
-const VALID_ROLES = ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer'] as const;
+const VALID_ROLES = ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer', 'user'] as const;
 
 // Valid grade values
 const VALID_GRADES = ['상', '중', '하'] as const;

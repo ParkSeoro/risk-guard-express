@@ -205,6 +205,14 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
     setFormAssignee('');
     setFormBeforeFiles([]);
     setFormAfterFiles([]);
+    setFormBeforePreviews([]);
+    setFormAfterPreviews([]);
+  };
+
+  const handleFileChange = (files: File[], setter: (f: File[]) => void, previewSetter: (p: string[]) => void) => {
+    setter(files);
+    const previews = files.map(f => URL.createObjectURL(f));
+    previewSetter(previews);
   };
 
   const openEdit = (fb: FeedbackItem) => {

@@ -2132,6 +2132,28 @@ const AssessmentRunDetail = () => {
                   <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set(remediationActions.map(a => a.id)))}>전체 선택</Button>
                   <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set())}>전체 해제</Button>
                   <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set(remediationActions.filter(a => !a.requiresUserConfirm).map(a => a.id)))}>자동만</Button>
+                  <Button variant="ghost" size="sm" className="text-xs h-7 text-destructive" onClick={async () => {
+                    // Exclude: mark selected action target items as excluded
+                    const selectedActions = remediationActions.filter(a => selectedActionIds.has(a.id));
+                    const targetIds = new Set<string>();
+                    selectedActions.forEach(a => a.targetRiskItemIds.forEach(id => targetIds.add(id)));
+                    if (targetIds.size === 0) { toast({ title: '제외할 대상 항목이 없습니다.', variant: 'destructive' }); return; }
+                    for (const itemId of targetIds) {
+                      await supabase.from('risk_items').update({
+                        is_excluded: true, excluded_at: new Date().toISOString(),
+                        excluded_by: user?.id || null, excluded_reason: '자동보완 제외 처리',
+                      }).eq('id', itemId);
+                    }
+                    const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+                    if (refreshed) setItems(refreshed);
+                    // Remove excluded actions from wizard
+                    setRemediationActions(prev => prev.filter(a => !selectedActionIds.has(a.id)));
+                    setSelectedActionIds(new Set());
+                    toast({ title: `${targetIds.size}건 항목이 제외 처리되었습니다.` });
+                    log('제외처리', 'risk_items', runId!, run!.project_id, { count: targetIds.size });
+                  }}>
+                    <Ban className="h-3 w-3 mr-1" /> 제외
+                  </Button>
                   <div className="flex-1" />
                   <label className="flex items-center gap-1.5 cursor-pointer">
                     <Checkbox checked={applyAndRevalidate} onCheckedChange={(c) => setApplyAndRevalidate(!!c)} />

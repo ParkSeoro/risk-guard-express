@@ -34,6 +34,7 @@ interface RiskItemBasic {
   sub_task: string | null;
   hazard: string | null;
   risk_grade?: string;
+  improved_risk_grade?: string;
 }
 
 interface ProjectMember {
@@ -108,11 +109,11 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
       toast({ title: '조치내용을 입력하세요.', variant: 'destructive' });
       return;
     }
-    // Validate risk_grade is '상' when a specific item is selected
+    // Validate: feedback only for items with improved_risk_grade === '상' (관리대상)
     if (formRiskItemId) {
       const selectedItem = riskItems.find(i => i.id === formRiskItemId);
-      if (selectedItem && selectedItem.risk_grade !== '상') {
-        toast({ title: "위험도 '상' 항목만 피드백 대상입니다.", variant: 'destructive' });
+      if (selectedItem && (selectedItem as any).improved_risk_grade !== '상') {
+        toast({ title: "개선 후 위험도 '상'(관리대상) 항목만 피드백 대상입니다.", variant: 'destructive' });
         return;
       }
     }
@@ -290,7 +291,7 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
           <p className="text-xs text-muted-foreground">승인 완료된 회차만 피드백(조치관리)이 가능합니다.</p>
         )}
       </div>
-      <p className="text-[10px] text-muted-foreground">※ 위험도 '상' 항목만 피드백 등록 대상입니다.</p>
+      <p className="text-[10px] text-muted-foreground">※ 개선 후 위험도 '상'(관리대상) 항목만 피드백 등록 대상입니다.</p>
 
       {/* Feedback list */}
       {loading ? (
@@ -362,18 +363,18 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>관련 위험성평가 항목 <span className="text-[10px] text-muted-foreground">(위험도 '상' 항목만 표시)</span></Label>
+              <Label>관련 위험성평가 항목 <span className="text-[10px] text-muted-foreground">(개선 후 위험도 '상' = 관리대상 항목만 표시)</span></Label>
               <Select value={formRiskItemId || '__none__'} onValueChange={v => setFormRiskItemId(v === '__none__' ? '' : v)}>
                 <SelectTrigger className="text-xs"><SelectValue placeholder="항목 선택 (선택사항)" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">(전체/일반)</SelectItem>
-                  {riskItems.filter(item => item.risk_grade === '상').map(item => (
+                  {riskItems.filter(item => (item as any).improved_risk_grade === '상').map(item => (
                     <SelectItem key={item.id} value={item.id} className="text-xs">
-                      {item.process} – {item.sub_task || ''} – {item.hazard || ''}
+                      {item.process} – {item.sub_task || ''} – {item.hazard || ''} [관리대상]
                     </SelectItem>
                   ))}
-                  {riskItems.filter(item => item.risk_grade === '상').length === 0 && (
-                    <div className="px-2 py-1.5 text-[10px] text-muted-foreground">위험도 '상' 항목이 없습니다.</div>
+                  {riskItems.filter(item => (item as any).improved_risk_grade === '상').length === 0 && (
+                    <div className="px-2 py-1.5 text-[10px] text-muted-foreground">개선 후 위험도 '상' 항목이 없습니다.</div>
                   )}
                 </SelectContent>
               </Select>

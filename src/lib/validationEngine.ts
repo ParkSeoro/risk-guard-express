@@ -24,10 +24,10 @@ export interface ValidationReport {
   errors: number;
   warnings: number;
   score: number;
-  verdict: '적정' | '조건부 적정' | '부적정';
+  verdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정';
   issues: ValidationIssue[];
   coverageGaps: CoverageGap[];
-  itemVerdicts: Record<string, { verdict: '적정' | '조건부 적정' | '부적정'; issues: ValidationIssue[] }>;
+  itemVerdicts: Record<string, { verdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정'; issues: ValidationIssue[] }>;
 }
 
 interface RiskItem {
@@ -74,7 +74,7 @@ export async function validateRiskItems(
   projectId: string
 ): Promise<ValidationReport> {
   const issues: ValidationIssue[] = [];
-  const itemVerdicts: Record<string, { verdict: '적정' | '조건부 적정' | '부적정'; issues: ValidationIssue[] }> = {};
+  const itemVerdicts: Record<string, { verdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정'; issues: ValidationIssue[] }> = {};
 
   const { data: library } = await supabase
     .from('standard_risk_library')
@@ -120,15 +120,25 @@ export async function validateRiskItems(
       }
     }
 
-    // 3) High risk improvement
+    // 3) High risk improvement check (revised policy)
+    // If improved_risk_grade is still '상' but improvement_measure exists → 적정(관리대상), not 부적정
     if (item.risk_grade === '상') {
       if (item.improved_risk_grade === '상') {
-        itemIssues.push({ riskItemId: item.id, ruleType: 'insufficient_improvement', severity: 'error',
-          message: '위험도 상 항목의 개선후 위험도가 여전히 상', recommendation: getRecommendation('insufficient_improvement') });
+        if (!item.improvement_measure || item.improvement_measure.trim().length < 5) {
+          // No improvement at all → 부적정
+          itemIssues.push({ riskItemId: item.id, ruleType: 'insufficient_improvement', severity: 'error',
+            message: '위험도 상 항목에 구체적인 개선대책 필요', recommendation: '최소 5자 이상의 구체적 개선대책을 기재하세요.' });
+        } else {
+          // Has improvement but still '상' → 관리대상 (warning, not error)
+          itemIssues.push({ riskItemId: item.id, ruleType: 'managed_risk', severity: 'warning',
+            message: '개선 후에도 위험도 상 유지 → 관리대상 (피드백 필요)', recommendation: '지속적 관리 및 피드백 등록이 필요합니다.' });
+        }
       }
       if (!item.improvement_measure || item.improvement_measure.trim().length < 5) {
-        itemIssues.push({ riskItemId: item.id, ruleType: 'insufficient_improvement', severity: 'error',
-          message: '위험도 상 항목에 구체적인 개선대책 필요', recommendation: '최소 5자 이상의 구체적 개선대책을 기재하세요.' });
+        if (item.improved_risk_grade !== '상') { // Only add if not already caught above
+          itemIssues.push({ riskItemId: item.id, ruleType: 'insufficient_improvement', severity: 'error',
+            message: '위험도 상 항목에 구체적인 개선대책 필요', recommendation: '최소 5자 이상의 구체적 개선대책을 기재하세요.' });
+        }
       }
     }
 
@@ -158,11 +168,13 @@ export async function validateRiskItems(
         message: '담당자 미지정', field: 'assignee', recommendation: '담당자를 지정하세요. 책임부서 선택 시 자동 채워집니다.' });
     }
 
-    // Per-item verdict
+    // Per-item verdict (revised: managed_risk → 적정(관리대상))
     const itemErrors = itemIssues.filter(i => i.severity === 'error').length;
     const itemWarnings = itemIssues.filter(i => i.severity === 'warning').length;
-    let itemVerdict: '적정' | '조건부 적정' | '부적정' = '적정';
+    const hasManagedRisk = itemIssues.some(i => i.ruleType === 'managed_risk');
+    let itemVerdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정' = '적정';
     if (itemErrors > 0) itemVerdict = '부적정';
+    else if (hasManagedRisk) itemVerdict = '적정(관리대상)';
     else if (itemWarnings > 0) itemVerdict = '조건부 적정';
     itemVerdicts[item.id] = { verdict: itemVerdict, issues: itemIssues };
 
@@ -181,10 +193,14 @@ export async function validateRiskItems(
   const maxScore = Math.max(totalItems * 10, 1);
   const score = Math.max(0, Math.round(((maxScore - weightedPenalty) / maxScore) * 100));
 
-  const hasUnresolvedHigh = items.some(i => i.risk_grade === '상' && i.improved_risk_grade === '상');
-  let verdict: '적정' | '조건부 적정' | '부적정';
+  // Revised: improved_risk_grade === '상' WITH improvement is NOT 부적정 anymore
+  const hasUnresolvedHigh = items.some(i => i.risk_grade === '상' && i.improved_risk_grade === '상' && (!i.improvement_measure || i.improvement_measure.trim().length < 5));
+  const hasManagedItems = items.some(i => i.improved_risk_grade === '상' && i.improvement_measure && i.improvement_measure.trim().length >= 5);
+  let verdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정';
   if (errors > 0 || score < 60 || hasUnresolvedHigh) {
     verdict = '부적정';
+  } else if (hasManagedItems) {
+    verdict = '적정(관리대상)';
   } else if (coverageGaps.length > 0 || warnings > totalItems * 0.2 || score < 80) {
     verdict = '조건부 적정';
   } else {

@@ -366,6 +366,47 @@ img { max-width: 100%; height: auto; }
 
   ${feedbackSection}
   ${validationSection}
+
+  <!-- Managed Risk Items (개선 후 위험도 상) -->
+  ${(() => {
+    const managedItems = items.filter((i: any) => i.improved_risk_grade === "상" && i.improvement_measure && i.improvement_measure.trim().length > 0);
+    if (managedItems.length === 0) return "";
+    const managedRows = managedItems.map((item: any, idx: number) => `
+      <tr>
+        <td class="center">${idx + 1}</td>
+        <td>${item.process || ""}</td>
+        <td>${item.sub_task || ""}</td>
+        <td>${item.hazard || ""}</td>
+        <td>${item.improvement_measure || ""}</td>
+        <td class="center grade" style="background:${gradeBg("상")};color:${gradeColor("상")};font-weight:bold">상</td>
+        <td>${item.department || ""}</td>
+        <td>${item.assignee || ""}</td>
+      </tr>`).join("");
+    return `
+      <div class="page-break"></div>
+      <div class="section-header">관리대상 항목 (개선 후 위험도 '상')</div>
+      <div class="summary-text">개선 대책이 수행되었으나 위험도가 '상'으로 유지되어 지속적 관리가 필요한 항목 (${managedItems.length}건)</div>
+      <table>
+        <thead><tr><th>No</th><th>공정</th><th>세부작업</th><th>위험요인</th><th>개선대책</th><th>위험도</th><th>부서</th><th>담당</th></tr></thead>
+        <tbody>${managedRows}</tbody>
+      </table>`;
+  })()}
+
+  <!-- Worker Participation Signature Page -->
+  <div class="page-break"></div>
+  <div class="section-header" style="text-align:center;border-left:none;font-size:14pt;padding:8pt;">근로자 참여 및 공유 서명</div>
+  <div class="summary-text" style="text-align:center;margin-bottom:10pt;">본 위험성평가 내용을 교육받고 숙지하였음을 확인합니다.</div>
+  <table>
+    <thead><tr><th style="width:5%">No</th><th style="width:15%">소속</th><th style="width:15%">성명</th><th style="width:20%">서명</th><th style="width:5%">No</th><th style="width:15%">소속</th><th style="width:15%">성명</th><th style="width:20%">서명</th></tr></thead>
+    <tbody>
+      ${Array.from({ length: 15 }, (_, i) => `
+        <tr>
+          <td class="center" style="height:28pt;">${i * 2 + 1}</td><td></td><td></td><td></td>
+          <td class="center" style="height:28pt;">${i * 2 + 2}</td><td></td><td></td><td></td>
+        </tr>`).join("")}
+    </tbody>
+  </table>
+  <div style="text-align:right;font-size:7pt;color:#94a3b8;margin-top:4pt;">출력일: ${today}</div>
 </body>
 </html>`;
 

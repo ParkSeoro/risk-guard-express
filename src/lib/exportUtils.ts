@@ -361,7 +361,8 @@ export function exportToXLSX(items: RiskRow[], project: ProjectInfo, masterData?
   XLSX.writeFile(wb, fileName);
 }
 
-// ========== Print ==========
+// ========== Print (deprecated — use exportToPDFServer + print) ==========
 export function printRiskAssessment() {
-  window.print();
+  // Never call window.print() directly — always go through PDF generation
+  console.warn('printRiskAssessment is deprecated. Use exportToPDFServer instead.');
 }

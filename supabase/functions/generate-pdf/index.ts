@@ -91,7 +91,6 @@ Deno.serve(async (req) => {
         creatorName = creatorProfile.display_name || "";
         creatorCompany = creatorProfile.company || "";
       }
-      // Get company from project_members
       const { data: creatorMember } = await supabase.from("project_members").select("company").eq("user_id", run.created_by).eq("project_id", run.project_id).single();
       if (creatorMember?.company) creatorCompany = creatorMember.company;
     }
@@ -100,17 +99,17 @@ Deno.serve(async (req) => {
     const latestVersion = approvals.length > 0 ? approvals[0].approval_version || 1 : 0;
     const latestApprovals = approvals.filter((a: any) => (a.approval_version || 1) === latestVersion);
     
-    const reviewerApproval = latestApprovals.find((a: any) => a.step === '검토자' && a.status === '승인');
-    const approverApproval = latestApprovals.find((a: any) => a.step === '승인자' && a.status === '승인');
+    const reviewerApproval = latestApprovals.find((a: any) => a.step === '검토자' && a.status === '승인')
+      || latestApprovals.find((a: any) => a.step === '검토' && a.status === '승인');
+    const approverApproval = latestApprovals.find((a: any) => a.step === '승인자' && a.status === '승인')
+      || latestApprovals.find((a: any) => a.step === '승인' && a.status === '승인');
 
-    // Signature rows: 작성자(auto), 검토자(from approvals), 승인자(from approvals)
     const sigRoles = [
       { role: "작성자", name: creatorName, company: creatorCompany, date: run.created_at ? new Date(run.created_at).toLocaleDateString("ko-KR") : "" },
       { role: "검토자", name: reviewerApproval?.approver_name || "", company: "", date: reviewerApproval?.updated_at ? new Date(reviewerApproval.updated_at).toLocaleDateString("ko-KR") : "" },
       { role: "승인자", name: approverApproval?.approver_name || "", company: "", date: approverApproval?.updated_at ? new Date(approverApproval.updated_at).toLocaleDateString("ko-KR") : "" },
     ];
 
-    // Fetch reviewer/approver company info from profiles if we have IDs
     for (const sig of sigRoles) {
       if (sig.role === "검토자" && reviewerApproval?.approver_id) {
         const { data: p } = await supabase.from("project_members").select("company").eq("user_id", reviewerApproval.approver_id).eq("project_id", run.project_id).single();
@@ -145,6 +144,13 @@ Deno.serve(async (req) => {
       })
     );
 
+    // Convert worker participation images to base64
+    const workerImages: string[] = [];
+    for (const url of (run.worker_participation_images || []).slice(0, 6)) {
+      const b64 = await imageUrlToBase64(url);
+      if (b64) workerImages.push(b64);
+    }
+
     const gradeColor = (g: string) =>
       g === "상" ? "#dc2626" : g === "중" ? "#d97706" : "#16a34a";
     const gradeBg = (g: string) =>
@@ -154,13 +160,12 @@ Deno.serve(async (req) => {
     const runPeriod = run.start_date && run.end_date
       ? `${run.start_date} ~ ${run.end_date}`
       : `${project?.period_start || ""} ~ ${project?.period_end || ""}`;
-    const title = `위험성평가표 [${run.type}] ${run.period_label}`;
 
     const highCount = items.filter((i: any) => i.risk_grade === "상").length;
     const medCount = items.filter((i: any) => i.risk_grade === "중").length;
     const lowCount = items.filter((i: any) => i.risk_grade === "하").length;
 
-    // Risk items table
+    // Risk items table — includes legal_basis column
     const itemRows = items.map((item: any, i: number) => `
       <tr>
         <td class="center">${i + 1}</td>
@@ -178,11 +183,12 @@ Deno.serve(async (req) => {
         <td class="center grade" style="background:${gradeBg(item.improved_risk_grade)};color:${gradeColor(item.improved_risk_grade)};font-weight:bold">${item.improved_risk_grade || "하"}</td>
         <td class="center">${item.status || ""}</td>
         <td>${(item.ppe || []).join(", ")}</td>
+        <td style="font-size:7pt;">${(item.legal_basis || []).join(", ")}</td>
         <td>${item.department || ""}</td>
         <td>${item.assignee || ""}</td>
       </tr>`).join("");
 
-    // Feedback section - Before always shown, After only when status=완료
+    // Feedback section with photos
     let feedbackSection = "";
     if (feedbackWithImages.length > 0) {
       const fbRows = feedbackWithImages.map((fb: any, idx: number) => {
@@ -192,7 +198,6 @@ Deno.serve(async (req) => {
         const showAfter = fb.status === "완료";
 
         let imagesHtml = "";
-        // Always show Before; show After only when 완료
         if (fb.beforeBase64.length > 0 || (showAfter && fb.afterBase64.length > 0)) {
           imagesHtml = `<tr><td colspan="5" style="padding:6pt;">
             <table style="width:100%;border:none;"><tr>
@@ -244,6 +249,40 @@ Deno.serve(async (req) => {
         <table><thead><tr><th>#</th><th>상태</th><th>메시지</th></tr></thead><tbody>${vRows}</tbody></table>`;
     }
 
+    // Managed risk items section
+    const managedItems = items.filter((i: any) => i.improved_risk_grade === "상" && i.improvement_measure && i.improvement_measure.trim().length > 0);
+    let managedSection = "";
+    if (managedItems.length > 0) {
+      const managedRows = managedItems.map((item: any, idx: number) => `
+        <tr>
+          <td class="center">${idx + 1}</td>
+          <td>${item.process || ""}</td>
+          <td>${item.sub_task || ""}</td>
+          <td>${item.hazard || ""}</td>
+          <td>${item.improvement_measure || ""}</td>
+          <td class="center grade" style="background:${gradeBg("상")};color:${gradeColor("상")};font-weight:bold">상</td>
+          <td>${item.department || ""}</td>
+          <td>${item.assignee || ""}</td>
+        </tr>`).join("");
+      managedSection = `
+        <div class="section-header" style="margin-top:14pt;">관리대상 항목 (개선 후 위험도 '상')</div>
+        <div class="summary-text">개선 대책이 수행되었으나 위험도가 '상'으로 유지되어 지속적 관리가 필요한 항목 (${managedItems.length}건)</div>
+        <table>
+          <thead><tr><th>No</th><th>공정</th><th>세부작업</th><th>위험요인</th><th>개선대책</th><th>위험도</th><th>부서</th><th>담당</th></tr></thead>
+          <tbody>${managedRows}</tbody>
+        </table>`;
+    }
+
+    // Worker participation images
+    let workerImageSection = "";
+    if (workerImages.length > 0) {
+      workerImageSection = `
+        <div class="section-header" style="margin-top:10pt;">근로자 참여 사진</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8pt;padding:4pt 0;">
+          ${workerImages.map((b64: string) => `<img src="${b64}" style="max-width:200pt;max-height:150pt;border:1px solid #cbd5e1;border-radius:3pt;page-break-inside:avoid;" />`).join("")}
+        </div>`;
+    }
+
     const html = `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -255,7 +294,6 @@ body { font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; font-size: 9pt;
 @page { size: A4 landscape; margin: 12mm 10mm; }
 .page-break { page-break-before: always; }
 
-/* Report header */
 .report-header {
   border: 2px solid #1e293b;
   margin-bottom: 10pt;
@@ -281,9 +319,7 @@ body { font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; font-size: 9pt;
   width: 100%;
   border-collapse: collapse;
 }
-.report-info-row {
-  display: table-row;
-}
+.report-info-row { display: table-row; }
 .report-info-label {
   display: table-cell;
   background: #f1f5f9;
@@ -318,12 +354,17 @@ body { font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; font-size: 9pt;
   padding-left: 4pt;
 }
 
-table { width: 100%; border-collapse: collapse; font-size: 8pt; margin-bottom: 10pt; }
-th, td { border: 1px solid #cbd5e1; padding: 3pt 5pt; text-align: left; vertical-align: top; word-break: break-all; }
-th { background: #1e293b; color: white; font-weight: 500; text-align: center; white-space: nowrap; }
+/* Container for wide table with scaling */
+.table-container {
+  width: 100%;
+  overflow-x: visible;
+}
+table { width: 100%; border-collapse: collapse; font-size: 7.5pt; margin-bottom: 10pt; table-layout: auto; }
+th, td { border: 1px solid #cbd5e1; padding: 2pt 4pt; text-align: left; vertical-align: top; word-break: break-all; }
+th { background: #1e293b; color: white; font-weight: 500; text-align: center; white-space: nowrap; font-size: 7pt; }
 .center { text-align: center; }
 .nowrap { white-space: nowrap; }
-.grade { font-weight: 600; text-align: center; min-width: 20pt; }
+.grade { font-weight: 600; text-align: center; min-width: 18pt; }
 
 .sig-table { width: auto; margin-top: 8pt; }
 .sig-table th { background: #475569; }
@@ -331,17 +372,9 @@ th { background: #1e293b; color: white; font-weight: 500; text-align: center; wh
 .sig-role { background: #f8fafc; font-weight: 500; }
 .sig-stamp { min-width: 80pt; }
 
-.risk-summary {
-  display: inline-flex;
-  gap: 8pt;
-  font-size: 9pt;
-  font-weight: 600;
-  margin-bottom: 6pt;
-}
-.risk-dot { display: inline-block; width: 8pt; height: 8pt; border-radius: 50%; margin-right: 2pt; vertical-align: middle; }
-
 thead { display: table-header-group; }
 img { max-width: 100%; height: auto; }
+tr { page-break-inside: avoid; }
 </style>
 </head>
 <body>
@@ -377,59 +410,38 @@ img { max-width: 100%; height: auto; }
     </div>
   </div>
 
-  <!-- Risk Assessment Table -->
-  <div class="section-header">위험성평가 항목</div>
-  <table>
-    <thead>
-      <tr>
-        <th>No</th><th>공정</th><th>세부작업</th><th>위험요인</th><th>위험발생상황</th>
-        <th>기존대책</th><th>개선대책</th>
-        <th>가능성</th><th>중대성</th><th>위험도</th>
-        <th>가능성'</th><th>중대성'</th><th>위험도'</th>
-        <th>상태</th><th>PPE</th><th>부서</th><th>담당</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${itemRows || '<tr><td colspan="17" class="center">항목 없음</td></tr>'}
-    </tbody>
-  </table>
-
-  <!-- Signature Section -->
+  <!-- Signature Section (top right area) -->
   <div class="section-header">서명란</div>
   <table class="sig-table">
     <thead><tr><th>구분</th><th>성명</th><th>소속</th><th>서명 / 일자</th></tr></thead>
     <tbody>${sigRows}</tbody>
   </table>
 
+  <!-- Risk Assessment Table -->
+  <div class="section-header">위험성평가 항목</div>
+  <div class="table-container">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:3%">No</th><th style="width:6%">공정</th><th style="width:7%">세부작업</th><th style="width:7%">위험요인</th><th style="width:8%">위험발생상황</th>
+        <th style="width:8%">기존대책</th><th style="width:8%">개선대책</th>
+        <th style="width:3%">가능성</th><th style="width:3%">중대성</th><th style="width:3%">위험도</th>
+        <th style="width:3%">가능성'</th><th style="width:3%">중대성'</th><th style="width:3%">위험도'</th>
+        <th style="width:4%">상태</th><th style="width:6%">PPE</th><th style="width:8%">법적근거</th><th style="width:5%">부서</th><th style="width:5%">담당</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemRows || '<tr><td colspan="18" class="center">항목 없음</td></tr>'}
+    </tbody>
+  </table>
+  </div>
+
+  ${managedSection}
+
   ${feedbackSection}
   ${validationSection}
 
-  <!-- Managed Risk Items (개선 후 위험도 상) -->
-  ${(() => {
-    const managedItems = items.filter((i: any) => i.improved_risk_grade === "상" && i.improvement_measure && i.improvement_measure.trim().length > 0);
-    if (managedItems.length === 0) return "";
-    const managedRows = managedItems.map((item: any, idx: number) => `
-      <tr>
-        <td class="center">${idx + 1}</td>
-        <td>${item.process || ""}</td>
-        <td>${item.sub_task || ""}</td>
-        <td>${item.hazard || ""}</td>
-        <td>${item.improvement_measure || ""}</td>
-        <td class="center grade" style="background:${gradeBg("상")};color:${gradeColor("상")};font-weight:bold">상</td>
-        <td>${item.department || ""}</td>
-        <td>${item.assignee || ""}</td>
-      </tr>`).join("");
-    return `
-      <div class="page-break"></div>
-      <div class="section-header">관리대상 항목 (개선 후 위험도 '상')</div>
-      <div class="summary-text">개선 대책이 수행되었으나 위험도가 '상'으로 유지되어 지속적 관리가 필요한 항목 (${managedItems.length}건)</div>
-      <table>
-        <thead><tr><th>No</th><th>공정</th><th>세부작업</th><th>위험요인</th><th>개선대책</th><th>위험도</th><th>부서</th><th>담당</th></tr></thead>
-        <tbody>${managedRows}</tbody>
-      </table>`;
-  })()}
-
-  <!-- Worker Participation Signature Page -->
+  <!-- Worker Participation Signature Page (always separate page) -->
   <div class="page-break"></div>
   <div class="section-header" style="text-align:center;border-left:none;font-size:14pt;padding:8pt;">근로자 참여 및 공유 서명</div>
   <div class="summary-text" style="text-align:center;margin-bottom:10pt;">본 위험성평가 내용을 교육받고 숙지하였음을 확인합니다.</div>
@@ -443,12 +455,15 @@ img { max-width: 100%; height: auto; }
         </tr>`).join("")}
     </tbody>
   </table>
+
+  ${workerImageSection}
+
   <div style="text-align:right;font-size:7pt;color:#94a3b8;margin-top:4pt;">출력일: ${today}</div>
 </body>
 </html>`;
 
     return new Response(JSON.stringify({
-      html, title,
+      html, title: `위험성평가표 [${run.type}] ${run.period_label}`,
       fileName: `위험성평가_${run.type}_${run.period_label}_${today}.pdf`
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

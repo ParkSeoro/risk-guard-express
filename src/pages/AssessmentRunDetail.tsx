@@ -927,16 +927,14 @@ const AssessmentRunDetail = () => {
     }
   };
 
-  // Unified print: generate PDF then print from it
+  // Unified print: always generate PDF then print from it (never window.print())
   const handlePrint = async () => {
     if (!run) return;
     toast({ title: '인쇄용 PDF 생성 중...' });
     try {
       await exportToPDFServer(runId!, 'assessment');
-    } catch {
-      // Fallback to window.print if server PDF also fails
-      toast({ title: 'PDF 기반 인쇄 실패', description: '브라우저 인쇄로 대체합니다.', variant: 'destructive' });
-      window.print();
+    } catch (err) {
+      toast({ title: 'PDF 기반 인쇄 실패', description: String(err), variant: 'destructive' });
     }
   };
 

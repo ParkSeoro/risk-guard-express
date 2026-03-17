@@ -193,10 +193,14 @@ export async function validateRiskItems(
   const maxScore = Math.max(totalItems * 10, 1);
   const score = Math.max(0, Math.round(((maxScore - weightedPenalty) / maxScore) * 100));
 
-  const hasUnresolvedHigh = items.some(i => i.risk_grade === '상' && i.improved_risk_grade === '상');
-  let verdict: '적정' | '조건부 적정' | '부적정';
+  // Revised: improved_risk_grade === '상' WITH improvement is NOT 부적정 anymore
+  const hasUnresolvedHigh = items.some(i => i.risk_grade === '상' && i.improved_risk_grade === '상' && (!i.improvement_measure || i.improvement_measure.trim().length < 5));
+  const hasManagedItems = items.some(i => i.improved_risk_grade === '상' && i.improvement_measure && i.improvement_measure.trim().length >= 5);
+  let verdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정';
   if (errors > 0 || score < 60 || hasUnresolvedHigh) {
     verdict = '부적정';
+  } else if (hasManagedItems) {
+    verdict = '적정(관리대상)';
   } else if (coverageGaps.length > 0 || warnings > totalItems * 0.2 || score < 80) {
     verdict = '조건부 적정';
   } else {

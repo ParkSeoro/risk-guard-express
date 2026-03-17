@@ -113,8 +113,18 @@ export async function generateRiskItems(options: GenerateOptions): Promise<Gener
 
   const { data: legalRefs } = await supabase.from('legal_references').select('*');
 
-  return selected.map(({ item }) => {
-    // Apply term corrections to generated text fields
+  // --- Risk grade distribution enforcement ---
+  // High-risk keywords: items matching these get '상'
+  const HIGH_RISK_KEYWORDS = ['추락', '감전', '질식', '밀폐', '화기', '폭발', '붕괴', '낙하', '고소', '화재', '중독', '협착', '끼임'];
+  const LOW_RISK_KEYWORDS = ['정리정돈', '청소', '보관', '표지', '안내', '기록', '점검표', '보고'];
+
+  const totalCount = selected.length;
+  const maxHigh = Math.ceil(totalCount * 0.30); // max 30% high
+  const minMed = Math.ceil(totalCount * 0.40);  // min 40% medium
+  let highCount = 0;
+  let consecutiveHighInProcess: Record<string, number> = {};
+
+  const result = selected.map(({ item }) => {
     const correctedItem = correctItemTerms(item, ['sub_task', 'hazard', 'hazard_situation', 'existing_measure', 'improvement_measure']);
     const libLegalRefs: string[] = item.legal_refs || [];
     const matchedLaws = (legalRefs || [])
@@ -127,15 +137,43 @@ export async function generateRiskItems(options: GenerateOptions): Promise<Gener
         )
       )
       .map(law => `${law.law_name} ${law.article}`);
-
     const allLegal = [...new Set([...libLegalRefs, ...matchedLaws])];
 
-    const lg: RiskGrade = (item as any).default_likelihood_grade || '중';
-    const sg: RiskGrade = (item as any).default_severity_grade || '중';
-    const rg = calculateRiskGrade(lg, sg);
+    // Determine risk grade with distribution control
+    let lg: RiskGrade = (item as any).default_likelihood_grade || '중';
+    let sg: RiskGrade = (item as any).default_severity_grade || '중';
+    let rg = calculateRiskGrade(lg, sg);
+
+    const itemText = `${item.sub_task || ''} ${item.hazard || ''} ${item.hazard_situation || ''}`.toLowerCase();
+    const isHighRiskContent = HIGH_RISK_KEYWORDS.some(kw => itemText.includes(kw));
+    const isLowRiskContent = LOW_RISK_KEYWORDS.some(kw => itemText.includes(kw));
+
+    // Force distribution: cap high-risk items
+    if (rg === '상') {
+      const procKey = correctedItem.sub_task || processName;
+      consecutiveHighInProcess[procKey] = (consecutiveHighInProcess[procKey] || 0) + 1;
+
+      // If exceeding max high count, or 2+ consecutive highs in same process, downgrade
+      if (!isHighRiskContent || highCount >= maxHigh || consecutiveHighInProcess[procKey] > 2) {
+        lg = '중';
+        rg = calculateRiskGrade(lg, sg);
+        consecutiveHighInProcess[procKey] = 0;
+      } else {
+        highCount++;
+      }
+    }
+
+    // Boost low-risk content items to '하'
+    if (isLowRiskContent && rg !== '하') {
+      lg = '하';
+      sg = '중';
+      rg = calculateRiskGrade(lg, sg);
+    }
+
     // Improved: drop likelihood by one level
     const improvedLg: RiskGrade = lg === '상' ? '중' : lg === '중' ? '하' : '하';
-    const improvedRg = calculateRiskGrade(improvedLg, sg);
+    const improvedSg: RiskGrade = sg;
+    const improvedRg = calculateRiskGrade(improvedLg, improvedSg);
 
     return {
       process: correctTerms(processName),
@@ -148,7 +186,7 @@ export async function generateRiskItems(options: GenerateOptions): Promise<Gener
       severity_grade: sg,
       risk_grade: rg,
       improved_likelihood_grade: improvedLg,
-      improved_severity_grade: sg,
+      improved_severity_grade: improvedSg,
       improved_risk_grade: improvedRg,
       frequency: item.default_frequency || 3,
       severity: item.default_severity || 3,
@@ -162,7 +200,8 @@ export async function generateRiskItems(options: GenerateOptions): Promise<Gener
       tags: item.tags || [],
     };
   });
-}
+
+  return result;
 
 export async function generateFromSchedule(
   processes: { processName: string; subTask?: string }[],

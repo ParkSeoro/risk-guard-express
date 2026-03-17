@@ -104,10 +104,16 @@ Deno.serve(async (req) => {
     const approverApproval = latestApprovals.find((a: any) => a.step === '승인자' && a.status === '승인')
       || latestApprovals.find((a: any) => a.step === '승인' && a.status === '승인');
 
+    const formatDateTime = (d: string | null | undefined) => {
+      if (!d) return "";
+      const dt = new Date(d);
+      return `${dt.toLocaleDateString("ko-KR")} ${dt.getHours().toString().padStart(2,'0')}:${dt.getMinutes().toString().padStart(2,'0')}`;
+    };
+
     const sigRoles = [
-      { role: "작성자", name: creatorName, company: creatorCompany, date: run.created_at ? new Date(run.created_at).toLocaleDateString("ko-KR") : "" },
-      { role: "검토자", name: reviewerApproval?.approver_name || "", company: "", date: reviewerApproval?.updated_at ? new Date(reviewerApproval.updated_at).toLocaleDateString("ko-KR") : "" },
-      { role: "승인자", name: approverApproval?.approver_name || "", company: "", date: approverApproval?.updated_at ? new Date(approverApproval.updated_at).toLocaleDateString("ko-KR") : "" },
+      { role: "작성자", name: creatorName, company: creatorCompany, date: formatDateTime(run.created_at) },
+      { role: "검토자", name: reviewerApproval?.approver_name || "", company: "", date: formatDateTime(reviewerApproval?.updated_at) },
+      { role: "승인자", name: approverApproval?.approver_name || "", company: "", date: formatDateTime(approverApproval?.updated_at) },
     ];
 
     for (const sig of sigRoles) {

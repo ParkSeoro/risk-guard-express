@@ -1208,7 +1208,7 @@ const AssessmentRunDetail = () => {
   const canResubmitApproval = false; // canSubmitApproval로 통합
   // 상신 취소
   const canCancelApproval = isInApproval && (isAdmin() || (user && run.created_by === user.id));
-  // 자동 보완: 검증 결과가 부적정/조건부이고 편집 가능할 때
+  // 자동 보완: 검증 결과가 있고 적정이 아닐 때 (참고용)
   const canAutoRemediate = validationReport && validationReport.verdict !== '적정' && (canEdit || canForceEdit) && !isInApproval && !isApproved;
   // 결재자 승인/반려: ONLY assigned approver
   const isMyApprovalPending = user && latestApprovals.some(a => a.status === '대기' && a.approver_id === user.id);

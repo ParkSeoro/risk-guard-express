@@ -138,12 +138,12 @@ export async function generateRiskItems(options: GenerateOptions): Promise<Gener
     const improvedRg = calculateRiskGrade(improvedLg, sg);
 
     return {
-      process: processName,
-      sub_task: item.sub_task,
-      hazard: item.hazard,
-      hazard_situation: item.hazard_situation,
-      existing_measure: item.existing_measure || '',
-      improvement_measure: item.improvement_measure || '',
+      process: correctTerms(processName),
+      sub_task: correctedItem.sub_task,
+      hazard: correctedItem.hazard,
+      hazard_situation: correctedItem.hazard_situation,
+      existing_measure: correctedItem.existing_measure || '',
+      improvement_measure: correctedItem.improvement_measure || '',
       likelihood_grade: lg,
       severity_grade: sg,
       risk_grade: rg,

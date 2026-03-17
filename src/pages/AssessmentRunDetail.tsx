@@ -529,62 +529,83 @@ const AssessmentRunDetail = () => {
       toast({ title: '부적정 판정 시 결재 상신이 불가합니다. 보완 후 재검증하세요.', variant: 'destructive' }); return;
     }
 
-    const reviewerParticipants = participants.filter(p => p.role === '검토자');
-    const approverParticipants = participants.filter(p => p.role === '승인자');
+    // Build 4-step approval line based on position:
+    // 1. 작성 (SUPERVISOR / current user)
+    // 2. 안전관리자 (SAFETY_MANAGER position)
+    // 3. 현장대리인 (SITE_MANAGER position)
+    // 4. 최종승인 (PROJECT_ADMIN or MASTER role)
+    const findMemberByPosition = (position: string) => projectMembers.find(m => m.position === position);
+    const findMemberByRole = (...roles: string[]) => projectMembers.find(m => roles.includes(m.role));
 
-    if (reviewerParticipants.length === 0 || approverParticipants.length === 0) {
-      toast({ title: '검토자와 승인자를 모두 지정해야 결재 상신이 가능합니다.', variant: 'destructive' });
-      setShowParticipants(true);
-      return;
-    }
+    const safetyManager = findMemberByPosition('safety_manager');
+    const siteManager = findMemberByPosition('site_manager');
+    const adminMember = findMemberByRole('project_admin', 'master');
 
+    // Also try to resolve from participants if members don't have positions set
     const resolveUserId = (name: string) => {
       const match = userDirectory.find(u => u.display_name === name);
       return match?.user_id || null;
     };
 
-    const firstReviewer = reviewerParticipants[0];
-    const firstApprover = approverParticipants[0];
-    const reviewerId = resolveUserId(firstReviewer.user_name);
-    const approverId = resolveUserId(firstApprover.user_name);
+    // Fallback: use participants if positions aren't set on project members
+    const reviewerParticipants = participants.filter(p => p.role === '검토자');
+    const approverParticipants = participants.filter(p => p.role === '승인자');
+
+    // Build approval steps
+    const approvalSteps: { step: string; userId: string | null; userName: string }[] = [
+      { step: '작성', userId: user.id, userName: profile.display_name },
+    ];
+
+    // Step 2: Safety Manager
+    if (safetyManager) {
+      approvalSteps.push({ step: '안전관리자 검토', userId: safetyManager.user_id, userName: safetyManager.display_name });
+    } else if (reviewerParticipants.length > 0) {
+      const r = reviewerParticipants[0];
+      approvalSteps.push({ step: '검토', userId: resolveUserId(r.user_name), userName: r.user_name || '' });
+    }
+
+    // Step 3: Site Manager
+    if (siteManager) {
+      approvalSteps.push({ step: '현장대리인 확인', userId: siteManager.user_id, userName: siteManager.display_name });
+    }
+
+    // Step 4: Final approver (PROJECT_ADMIN or MASTER)
+    if (adminMember) {
+      approvalSteps.push({ step: '최종승인', userId: adminMember.user_id, userName: adminMember.display_name });
+    } else if (approverParticipants.length > 0) {
+      const a = approverParticipants[0];
+      approvalSteps.push({ step: '승인', userId: resolveUserId(a.user_name), userName: a.user_name || '' });
+    }
+
+    if (approvalSteps.length < 2) {
+      toast({ title: '결재라인을 구성할 수 없습니다. 프로젝트 멤버에 직책(안전관리자, 현장대리인 등)을 지정하세요.', variant: 'destructive' });
+      return;
+    }
 
     const { data: existingApprovals } = await supabase.from('approvals').select('approval_version').eq('run_id', runId).order('approval_version', { ascending: false }).limit(1);
     const nextVersion = ((existingApprovals?.[0]?.approval_version) || 0) + 1;
 
     await supabase.from('approvals').update({ status: '취소' }).eq('run_id', runId).eq('status', '대기');
 
-    const inserts = [
-      {
-        project_id: run.project_id, run_id: runId, step: '작성', status: '승인',
-        approver_id: user.id, approver_name: profile.display_name,
-        comment: approvalComment, approval_version: nextVersion,
-      },
-      {
-        project_id: run.project_id, run_id: runId, step: '검토', status: '대기',
-        approver_id: reviewerId, approver_name: firstReviewer.user_name || '',
-        comment: '', approval_version: nextVersion,
-      },
-      {
-        project_id: run.project_id, run_id: runId, step: '승인', status: '대기',
-        approver_id: approverId, approver_name: firstApprover.user_name || '',
-        comment: '', approval_version: nextVersion,
-      },
-    ];
+    const inserts = approvalSteps.map((s, i) => ({
+      project_id: run.project_id, run_id: runId, step: s.step,
+      status: i === 0 ? '승인' : '대기',
+      approver_id: s.userId, approver_name: s.userName,
+      comment: i === 0 ? approvalComment : '', approval_version: nextVersion,
+    }));
     await supabase.from('approvals').insert(inserts);
     await supabase.from('assessment_runs').update({ status: '결재진행' }).eq('id', runId);
 
     const isResubmission = nextVersion > 1;
     const notifTitle = isResubmission ? '재결재 요청' : '결재 요청';
-    const notifTargets = [
-      { userId: reviewerId, name: firstReviewer.user_name, step: '검토' },
-      { userId: approverId, name: firstApprover.user_name, step: '승인' },
-    ].filter(t => t.userId);
-
-    for (const t of notifTargets) {
+    
+    // Notify first pending step only (sequential)
+    const firstPending = approvalSteps[1];
+    if (firstPending?.userId) {
       await sendNotification({
-        user_id: t.userId!,
+        user_id: firstPending.userId,
         title: notifTitle,
-        message: `[${project?.name || ''}] [${run.type}] ${run.period_label} 회차의 ${t.step} 결재가 ${isResubmission ? '재' : ''}요청되었습니다.`,
+        message: `[${project?.name || ''}] [${run.type}] ${run.period_label} 회차의 ${firstPending.step} 결재가 ${isResubmission ? '재' : ''}요청되었습니다.`,
         type: 'approval_request',
         related_id: runId,
         related_type: 'assessment_run',
@@ -594,8 +615,8 @@ const AssessmentRunDetail = () => {
 
     setRun((prev: any) => ({ ...prev, status: '결재진행' }));
     setShowApproval(false); setApprovalComment('');
-    toast({ title: isResubmission ? `재상신 완료 (${nextVersion}차)` : '결재가 상신되었습니다.' });
-    log(isResubmission ? '재상신' : '결재상신', 'assessment_run', runId!, run.project_id);
+    toast({ title: isResubmission ? `재상신 완료 (${nextVersion}차)` : `결재 상신 (${approvalSteps.length - 1}단계 순차 결재)` });
+    log(isResubmission ? '재상신' : '결재상신', 'assessment_run', runId!, run.project_id, { steps: approvalSteps.length });
   };
 
   // Cancel approval

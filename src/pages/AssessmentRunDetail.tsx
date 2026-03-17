@@ -1216,8 +1216,8 @@ const AssessmentRunDetail = () => {
 
   // Status guide message
   const statusGuide = isDraft ? '작성 완료 후 [제출]을 누르세요.'
-    : isSubmitted ? '검증자가 [검증 실행]을 진행합니다.'
-    : isReturned ? '수정 후 [재제출] → 검증자가 [재검증] 진행'
+    : isSubmitted ? '검증자가 [검증 실행]을 진행합니다. 결재 상신도 가능합니다.'
+    : isReturned ? '수정 후 [재제출] 또는 바로 [결재 상신]이 가능합니다.'
     : isValidating ? '검증 진행 중입니다...'
     : isValidated ? '검증 완료. [결재 상신]을 진행하세요.'
     : isInApproval ? '결재 진행 중입니다.'

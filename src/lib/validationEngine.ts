@@ -49,6 +49,7 @@ interface RiskItem {
   status: string;
   department?: string | null;
   assignee?: string | null;
+  is_excluded?: boolean;
 }
 
 const GRADE_ORDER: Record<string, number> = { '상': 3, '중': 2, '하': 1 };

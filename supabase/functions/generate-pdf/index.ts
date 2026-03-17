@@ -82,6 +82,18 @@ Deno.serve(async (req) => {
     const validationResults = (validationRes as any).data || [];
     const approvals = approvalsRes.data || [];
 
+    // Helper: resolve company name from project_members.company_id → companies.name
+    async function resolveCompanyName(userId: string, projectId: string): Promise<string> {
+      const { data: member } = await supabase.from("project_members").select("company_id, company").eq("user_id", userId).eq("project_id", projectId).single();
+      if (member?.company_id) {
+        const { data: comp } = await supabase.from("companies").select("name").eq("id", member.company_id).single();
+        if (comp?.name) return comp.name;
+      }
+      if (member?.company) return member.company;
+      const { data: prof } = await supabase.from("profiles").select("company").eq("user_id", userId).single();
+      return prof?.company || "";
+    }
+
     // Fetch creator profile for signature auto-fill
     let creatorName = "";
     let creatorCompany = "";
@@ -89,10 +101,8 @@ Deno.serve(async (req) => {
       const { data: creatorProfile } = await supabase.from("profiles").select("display_name, company").eq("user_id", run.created_by).single();
       if (creatorProfile) {
         creatorName = creatorProfile.display_name || "";
-        creatorCompany = creatorProfile.company || "";
       }
-      const { data: creatorMember } = await supabase.from("project_members").select("company").eq("user_id", run.created_by).eq("project_id", run.project_id).single();
-      if (creatorMember?.company) creatorCompany = creatorMember.company;
+      creatorCompany = await resolveCompanyName(run.created_by, run.project_id);
     }
 
     // Build auto-filled signature data from approvals
@@ -107,7 +117,13 @@ Deno.serve(async (req) => {
     const formatDateTime = (d: string | null | undefined) => {
       if (!d) return "";
       const dt = new Date(d);
-      return `${dt.toLocaleDateString("ko-KR")} ${dt.getHours().toString().padStart(2,'0')}:${dt.getMinutes().toString().padStart(2,'0')}`;
+      const kst = new Date(dt.getTime() + 9 * 60 * 60 * 1000);
+      const y = kst.getUTCFullYear();
+      const m = String(kst.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(kst.getUTCDate()).padStart(2, '0');
+      const h = String(kst.getUTCHours()).padStart(2, '0');
+      const min = String(kst.getUTCMinutes()).padStart(2, '0');
+      return `${y}-${m}-${day} ${h}:${min}`;
     };
 
     const sigRoles = [
@@ -116,15 +132,11 @@ Deno.serve(async (req) => {
       { role: "승인자", name: approverApproval?.approver_name || "", company: "", date: formatDateTime(approverApproval?.updated_at) },
     ];
 
-    for (const sig of sigRoles) {
-      if (sig.role === "검토자" && reviewerApproval?.approver_id) {
-        const { data: p } = await supabase.from("project_members").select("company").eq("user_id", reviewerApproval.approver_id).eq("project_id", run.project_id).single();
-        if (p?.company) sig.company = p.company;
-      }
-      if (sig.role === "승인자" && approverApproval?.approver_id) {
-        const { data: p } = await supabase.from("project_members").select("company").eq("user_id", approverApproval.approver_id).eq("project_id", run.project_id).single();
-        if (p?.company) sig.company = p.company;
-      }
+    if (reviewerApproval?.approver_id) {
+      sigRoles[1].company = await resolveCompanyName(reviewerApproval.approver_id, run.project_id);
+    }
+    if (approverApproval?.approver_id) {
+      sigRoles[2].company = await resolveCompanyName(approverApproval.approver_id, run.project_id);
     }
 
     const sigRows = sigRoles.map(s =>

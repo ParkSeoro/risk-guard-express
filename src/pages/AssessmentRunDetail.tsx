@@ -2248,20 +2248,17 @@ const AssessmentRunDetail = () => {
                       dismissedRecommendations: dismissedCount,
                     });
 
-                    // Auto re-validate after exclusion
+                    // Auto re-validate after exclusion (참고용 — 상태 전환 없음)
                     const currentItems = (refreshed || items).filter((i: any) => !i.is_excluded);
                     const reReport = await validateRiskItems(currentItems, run.project_id);
                     setValidationReport(reReport);
                     await saveValidationResults(reReport, run.project_id, user.id, runId);
-                    const newStatus = reReport.verdict === '부적정' ? '보완요청' : '검증완료';
                     await supabase.from('assessment_runs').update({
-                      status: newStatus,
                       validation_score: reReport.score,
                       validation_verdict: reReport.verdict,
                     }).eq('id', runId);
                     setRun((prev: any) => ({
                       ...prev,
-                      status: newStatus,
                       validation_score: reReport.score,
                       validation_verdict: reReport.verdict,
                     }));
@@ -2272,7 +2269,7 @@ const AssessmentRunDetail = () => {
                       setShowRemediationWizard(false);
                       toast({
                         title: `재검증: ${reReport.verdict} (${reReport.score}점)`,
-                        description: reReport.verdict !== '부적정' ? '결재 상신이 가능합니다.' : '보완이 필요합니다.',
+                        description: '검증 결과는 참고용입니다.',
                       });
                     }
                   }}>

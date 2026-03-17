@@ -659,6 +659,56 @@ const ProjectDetail = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Create Invite Dialog */}
+      <Dialog open={showCreateInvite} onOpenChange={setShowCreateInvite}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>초대코드 생성</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>권한</Label>
+              <Select value={inviteForm.role} onValueChange={v => setInviteForm({ ...inviteForm, role: v, company_id: '' })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>연결 업체 <span className="text-muted-foreground font-normal text-xs">(선택)</span></Label>
+              <Select value={inviteForm.company_id || '__none__'} onValueChange={v => setInviteForm({ ...inviteForm, company_id: v === '__none__' ? '' : v })}>
+                <SelectTrigger><SelectValue placeholder="업체 선택" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">(업체 연결 안 함)</SelectItem>
+                  {companies
+                    .filter(c => {
+                      if (inviteForm.role === 'contractor') return c.type === 'contractor';
+                      if (inviteForm.role === 'safety_manager' || inviteForm.role === 'project_admin') return c.type === 'gc';
+                      return true;
+                    })
+                    .map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name} ({companyTypes[c.type] || c.type})</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">가입 시 자동으로 해당 업체 소속으로 설정됩니다.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>최대 사용 횟수</Label>
+                <Input type="number" min={1} value={inviteForm.max_uses} onChange={e => setInviteForm({ ...inviteForm, max_uses: parseInt(e.target.value) || 1 })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>유효기간 (일)</Label>
+                <Input type="number" min={1} value={inviteForm.expires_days} onChange={e => setInviteForm({ ...inviteForm, expires_days: parseInt(e.target.value) || 7 })} />
+              </div>
+            </div>
+            <Button onClick={handleCreateInvite} className="w-full">초대코드 생성</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

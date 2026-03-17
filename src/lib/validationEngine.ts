@@ -121,25 +121,19 @@ export async function validateRiskItems(
     }
 
     // 3) High risk improvement check (revised policy)
-    // If improved_risk_grade is still '상' but improvement_measure exists → 적정(관리대상), not 부적정
-    if (item.risk_grade === '상') {
+    // 절대 규칙: 개선대책이 있으면 → 적정. 위험도 '상' 자체는 부적정 기준이 아님.
+    const hasImprovement = item.improvement_measure && item.improvement_measure.trim().length >= 5;
+    
+    if (hasImprovement) {
+      // 개선대책이 있으면 → 무조건 적정 (개선 후 위험도 상이면 관리대상)
       if (item.improved_risk_grade === '상') {
-        if (!item.improvement_measure || item.improvement_measure.trim().length < 5) {
-          // No improvement at all → 부적정
-          itemIssues.push({ riskItemId: item.id, ruleType: 'insufficient_improvement', severity: 'error',
-            message: '위험도 상 항목에 구체적인 개선대책 필요', recommendation: '최소 5자 이상의 구체적 개선대책을 기재하세요.' });
-        } else {
-          // Has improvement but still '상' → 관리대상 (warning, not error)
-          itemIssues.push({ riskItemId: item.id, ruleType: 'managed_risk', severity: 'warning',
-            message: '개선 후에도 위험도 상 유지 → 관리대상 (피드백 필요)', recommendation: '지속적 관리 및 피드백 등록이 필요합니다.' });
-        }
+        itemIssues.push({ riskItemId: item.id, ruleType: 'managed_risk', severity: 'info',
+          message: '개선 후에도 위험도 상 유지 → 적정(관리대상)', recommendation: '지속적 관리 및 피드백 등록이 필요합니다.' });
       }
-      if (!item.improvement_measure || item.improvement_measure.trim().length < 5) {
-        if (item.improved_risk_grade !== '상') { // Only add if not already caught above
-          itemIssues.push({ riskItemId: item.id, ruleType: 'insufficient_improvement', severity: 'error',
-            message: '위험도 상 항목에 구체적인 개선대책 필요', recommendation: '최소 5자 이상의 구체적 개선대책을 기재하세요.' });
-        }
-      }
+    } else {
+      // 개선대책 없음 → 부적정
+      itemIssues.push({ riskItemId: item.id, ruleType: 'no_improvement', severity: 'error',
+        message: '개선대책 미기재', field: 'improvement_measure', recommendation: '구체적인 개선대책을 기재하세요.' });
     }
 
     // 4) Legal basis
@@ -168,12 +162,14 @@ export async function validateRiskItems(
         message: '담당자 미지정', field: 'assignee', recommendation: '담당자를 지정하세요. 책임부서 선택 시 자동 채워집니다.' });
     }
 
-    // Per-item verdict (revised: managed_risk → 적정(관리대상))
-    const itemErrors = itemIssues.filter(i => i.severity === 'error').length;
-    const itemWarnings = itemIssues.filter(i => i.severity === 'warning').length;
+    // Per-item verdict
+    // 핵심: 개선대책 있으면 적정, 개선후 상이면 적정(관리대상), 개선대책 없으면 부적정
+    const hasNoImprovement = itemIssues.some(i => i.ruleType === 'no_improvement');
     const hasManagedRisk = itemIssues.some(i => i.ruleType === 'managed_risk');
+    const hasMissingFields = itemIssues.some(i => i.ruleType === 'missing_field' && i.severity === 'error');
+    const itemWarnings = itemIssues.filter(i => i.severity === 'warning').length;
     let itemVerdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정' = '적정';
-    if (itemErrors > 0) itemVerdict = '부적정';
+    if (hasNoImprovement || hasMissingFields) itemVerdict = '부적정';
     else if (hasManagedRisk) itemVerdict = '적정(관리대상)';
     else if (itemWarnings > 0) itemVerdict = '조건부 적정';
     itemVerdicts[item.id] = { verdict: itemVerdict, issues: itemIssues };
@@ -193,11 +189,14 @@ export async function validateRiskItems(
   const maxScore = Math.max(totalItems * 10, 1);
   const score = Math.max(0, Math.round(((maxScore - weightedPenalty) / maxScore) * 100));
 
-  // Revised: improved_risk_grade === '상' WITH improvement is NOT 부적정 anymore
-  const hasUnresolvedHigh = items.some(i => i.risk_grade === '상' && i.improved_risk_grade === '상' && (!i.improvement_measure || i.improvement_measure.trim().length < 5));
+  // 핵심 규칙: 위험도 '상' 자체는 부적정 기준이 아님
+  // 부적정 = 개선대책 미기재 or 필수필드 누락
+  const hasNoImprovementItems = items.some(i => !i.improvement_measure || i.improvement_measure.trim().length < 5);
+  const hasMissingRequiredFields = issues.some(i => i.ruleType === 'missing_field' && i.severity === 'error');
   const hasManagedItems = items.some(i => i.improved_risk_grade === '상' && i.improvement_measure && i.improvement_measure.trim().length >= 5);
+  
   let verdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정';
-  if (errors > 0 || score < 60 || hasUnresolvedHigh) {
+  if ((hasNoImprovementItems && errors > 0) || hasMissingRequiredFields || score < 60) {
     verdict = '부적정';
   } else if (hasManagedItems) {
     verdict = '적정(관리대상)';

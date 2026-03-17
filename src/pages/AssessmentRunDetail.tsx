@@ -1331,6 +1331,13 @@ const AssessmentRunDetail = () => {
         </Card>
       )}
 
+      {/* Main Tabs: Assessment | Feedback */}
+      <Tabs value={activeMainTab} onValueChange={(v) => setActiveMainTab(v as 'assessment' | 'feedback')} className="print:hidden">
+        <TabsList>
+          <TabsTrigger value="assessment">위험성평가</TabsTrigger>
+          <TabsTrigger value="feedback">피드백 관리</TabsTrigger>
+        </TabsList>
+        <TabsContent value="assessment" className="space-y-4 mt-4">
       {/* Filters */}
       <Card className="print:hidden">
         <CardContent className="py-3">

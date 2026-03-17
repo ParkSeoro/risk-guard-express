@@ -200,14 +200,32 @@ const ProjectDetail = () => {
 
   const handleAddCompany = async () => {
     if (!projectId) return;
-    const { error } = await supabase.from('companies').insert([{
-      project_id: projectId, ...companyForm,
-    }]);
+    // Enforce hierarchy: contractor must have a parent GC
+    if (companyForm.type === 'contractor' && !companyForm.parent_company_id) {
+      const gcCompanies = companies.filter(c => c.type === 'gc');
+      if (gcCompanies.length > 0) {
+        toast({ title: '협력사는 반드시 상위 시공사를 선택해야 합니다.', variant: 'destructive' });
+        return;
+      }
+    }
+    const insertData: any = {
+      project_id: projectId,
+      name: companyForm.name,
+      type: companyForm.type,
+      business_no: companyForm.business_no,
+      contact: companyForm.contact,
+      scope: companyForm.scope,
+      period: companyForm.period,
+    };
+    if (companyForm.parent_company_id) {
+      insertData.parent_company_id = companyForm.parent_company_id;
+    }
+    const { error } = await supabase.from('companies').insert([insertData]);
     if (error) toast({ title: '추가 실패', description: error.message, variant: 'destructive' });
     else {
       toast({ title: '업체가 등록되었습니다.' });
       setShowAddCompany(false);
-      setCompanyForm({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '' });
+      setCompanyForm({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '' });
       fetchAll();
     }
   };

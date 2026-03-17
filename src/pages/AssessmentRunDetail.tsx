@@ -964,6 +964,44 @@ const AssessmentRunDetail = () => {
     }
   };
 
+  // Worker participation photo upload
+  const handleWorkerPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !run) return;
+    setWorkerPhotoUploading(true);
+    try {
+      const urls: string[] = [];
+      for (const file of Array.from(files)) {
+        const ext = file.name.split('.').pop();
+        const path = `worker-photos/${run.project_id}/${runId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error } = await supabase.storage.from('attachments').upload(path, file);
+        if (!error) {
+          const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
+          urls.push(urlData.publicUrl);
+        }
+      }
+      if (urls.length > 0) {
+        const existing = run.worker_participation_images || [];
+        const updated = [...existing, ...urls];
+        await supabase.from('assessment_runs').update({ worker_participation_images: updated } as any).eq('id', runId);
+        setRun((prev: any) => ({ ...prev, worker_participation_images: updated }));
+        toast({ title: `근로자 참여 사진 ${urls.length}건 업로드 완료` });
+      }
+    } catch (err) {
+      toast({ title: '사진 업로드 실패', description: String(err), variant: 'destructive' });
+    }
+    setWorkerPhotoUploading(false);
+    e.target.value = '';
+  };
+
+  const handleRemoveWorkerPhoto = async (index: number) => {
+    if (!run) return;
+    const images = [...(run.worker_participation_images || [])];
+    images.splice(index, 1);
+    await supabase.from('assessment_runs').update({ worker_participation_images: images } as any).eq('id', runId);
+    setRun((prev: any) => ({ ...prev, worker_participation_images: images }));
+  };
+
   // Excel upload
   const handleExcelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

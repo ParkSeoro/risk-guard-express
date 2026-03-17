@@ -74,7 +74,7 @@ export async function validateRiskItems(
   projectId: string
 ): Promise<ValidationReport> {
   const issues: ValidationIssue[] = [];
-  const itemVerdicts: Record<string, { verdict: '적정' | '조건부 적정' | '부적정'; issues: ValidationIssue[] }> = {};
+  const itemVerdicts: Record<string, { verdict: '적정' | '적정(관리대상)' | '조건부 적정' | '부적정'; issues: ValidationIssue[] }> = {};
 
   const { data: library } = await supabase
     .from('standard_risk_library')

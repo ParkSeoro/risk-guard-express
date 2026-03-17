@@ -144,6 +144,9 @@ const AssessmentRunDetail = () => {
   const [batchApplyAssignee, setBatchApplyAssignee] = useState(true);
   const [batchOverrideManual, setBatchOverrideManual] = useState(false);
 
+  // Worker participation photos
+  const [workerPhotoUploading, setWorkerPhotoUploading] = useState(false);
+
   const fetchAll = useCallback(async () => {
     if (!runId) return;
     setLoading(true);

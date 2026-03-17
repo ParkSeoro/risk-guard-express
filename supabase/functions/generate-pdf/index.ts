@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const [projectRes, itemsRes, participantsRes, feedbackRes, validationRes] = await Promise.all([
+    const [projectRes, itemsRes, participantsRes, feedbackRes, validationRes, approvalsRes] = await Promise.all([
       supabase.from("projects").select("*").eq("id", run.project_id).single(),
       supabase.from("risk_items").select("*").eq("run_id", runId).order("sort_order"),
       supabase.from("assessment_run_participants").select("*").eq("run_id", runId),
@@ -72,6 +72,7 @@ Deno.serve(async (req) => {
       type === "validation"
         ? supabase.from("validation_results").select("*").eq("run_id", runId)
         : Promise.resolve({ data: [] }),
+      supabase.from("approvals").select("*").eq("run_id", runId).order("approval_version", { ascending: false }),
     ]);
 
     const project = projectRes.data;
@@ -79,49 +80,51 @@ Deno.serve(async (req) => {
     const participants = participantsRes.data || [];
     const feedbackItems = feedbackRes.data || [];
     const validationResults = (validationRes as any).data || [];
+    const approvals = approvalsRes.data || [];
 
-    // Convert feedback images to base64
-    const feedbackWithImages = await Promise.all(
-      feedbackItems.map(async (fb: any) => {
-        const beforeImages: string[] = [];
-        const afterImages: string[] = [];
-        for (const url of (fb.before_image_urls || []).slice(0, 3)) {
-          const b64 = await imageUrlToBase64(url);
-          if (b64) beforeImages.push(b64);
-        }
-        for (const url of (fb.after_image_urls || []).slice(0, 3)) {
-          const b64 = await imageUrlToBase64(url);
-          if (b64) afterImages.push(b64);
-        }
-        return { ...fb, beforeBase64: beforeImages, afterBase64: afterImages };
-      })
-    );
+    // Fetch creator profile for signature auto-fill
+    let creatorName = "";
+    let creatorCompany = "";
+    if (run.created_by) {
+      const { data: creatorProfile } = await supabase.from("profiles").select("display_name, company").eq("user_id", run.created_by).single();
+      if (creatorProfile) {
+        creatorName = creatorProfile.display_name || "";
+        creatorCompany = creatorProfile.company || "";
+      }
+      // Get company from project_members
+      const { data: creatorMember } = await supabase.from("project_members").select("company").eq("user_id", run.created_by).eq("project_id", run.project_id).single();
+      if (creatorMember?.company) creatorCompany = creatorMember.company;
+    }
 
-    const gradeColor = (g: string) =>
-      g === "상" ? "#dc2626" : g === "중" ? "#d97706" : "#16a34a";
-    const gradeBg = (g: string) =>
-      g === "상" ? "#fecaca" : g === "중" ? "#fef08a" : "#bbf7d0";
+    // Build auto-filled signature data from approvals
+    const latestVersion = approvals.length > 0 ? approvals[0].approval_version || 1 : 0;
+    const latestApprovals = approvals.filter((a: any) => (a.approval_version || 1) === latestVersion);
+    
+    const reviewerApproval = latestApprovals.find((a: any) => a.step === '검토자' && a.status === '승인');
+    const approverApproval = latestApprovals.find((a: any) => a.step === '승인자' && a.status === '승인');
 
-    const today = new Date().toISOString().slice(0, 10);
-    const runPeriod = run.start_date && run.end_date
-      ? `${run.start_date} ~ ${run.end_date}`
-      : `${project?.period_start || ""} ~ ${project?.period_end || ""}`;
-    const title = `위험성평가표 [${run.type}] ${run.period_label}`;
+    // Signature rows: 작성자(auto), 검토자(from approvals), 승인자(from approvals)
+    const sigRoles = [
+      { role: "작성자", name: creatorName, company: creatorCompany, date: run.created_at ? new Date(run.created_at).toLocaleDateString("ko-KR") : "" },
+      { role: "검토자", name: reviewerApproval?.approver_name || "", company: "", date: reviewerApproval?.updated_at ? new Date(reviewerApproval.updated_at).toLocaleDateString("ko-KR") : "" },
+      { role: "승인자", name: approverApproval?.approver_name || "", company: "", date: approverApproval?.updated_at ? new Date(approverApproval.updated_at).toLocaleDateString("ko-KR") : "" },
+    ];
 
-    // Stats
-    const highCount = items.filter((i: any) => i.risk_grade === "상").length;
-    const medCount = items.filter((i: any) => i.risk_grade === "중").length;
-    const lowCount = items.filter((i: any) => i.risk_grade === "하").length;
+    // Fetch reviewer/approver company info from profiles if we have IDs
+    for (const sig of sigRoles) {
+      if (sig.role === "검토자" && reviewerApproval?.approver_id) {
+        const { data: p } = await supabase.from("project_members").select("company").eq("user_id", reviewerApproval.approver_id).eq("project_id", run.project_id).single();
+        if (p?.company) sig.company = p.company;
+      }
+      if (sig.role === "승인자" && approverApproval?.approver_id) {
+        const { data: p } = await supabase.from("project_members").select("company").eq("user_id", approverApproval.approver_id).eq("project_id", run.project_id).single();
+        if (p?.company) sig.company = p.company;
+      }
+    }
 
-    // Signature rows
-    const roles = ["작성자", "검토자", "승인자", "안전관리자", "협력사 담당자"];
-    const sigRows = roles.map((role) => {
-      const people = participants.filter((p: any) => p.role === role);
-      if (people.length === 0) return `<tr><td class="sig-role">${role}</td><td></td><td></td><td class="sig-stamp"></td></tr>`;
-      return people.map((p: any) =>
-        `<tr><td class="sig-role">${role}</td><td>${p.user_name || ""}</td><td>${p.company || ""}</td><td class="sig-stamp">${p.signed_at ? new Date(p.signed_at).toLocaleDateString("ko-KR") : ""}</td></tr>`
-      ).join("");
-    }).join("");
+    const sigRows = sigRoles.map(s =>
+      `<tr><td class="sig-role">${s.role}</td><td>${s.name}</td><td>${s.company}</td><td class="sig-stamp">${s.date}</td></tr>`
+    ).join("");
 
     // Risk items table
     const itemRows = items.map((item: any, i: number) => `

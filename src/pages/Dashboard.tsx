@@ -159,6 +159,53 @@ const Dashboard = () => {
     const inApprovalRuns = runsByStatus["결재진행"] || 0;
     const approvedRuns = runsByStatus["승인완료"] || 0;
 
+    // Feedback KPI
+    let feedbackKpi: FeedbackKPI = EMPTY_FEEDBACK;
+    const approvedRunIds = activeRuns.filter(r => r.status === '승인완료').map(r => r.id);
+    if (approvedRunIds.length > 0) {
+      const { data: fbData } = await supabase
+        .from("risk_item_feedback")
+        .select("id, status, risk_item_id, assessment_run_id")
+        .eq("project_id", selectedProject)
+        .in("assessment_run_id", approvedRunIds);
+      const fbItems = fbData || [];
+      const fbTotal = fbItems.length;
+      const fbCompleted = fbItems.filter(f => f.status === '완료').length;
+      const fbInProgress = fbItems.filter(f => f.status === '진행중').length;
+      const fbUnresolved = fbItems.filter(f => f.status === '미조치').length;
+
+      // By contractor: join with risk_items to get company info
+      const fbRiskItemIds = [...new Set(fbItems.map(f => f.risk_item_id).filter(Boolean))];
+      let byContractor: FeedbackKPI['byContractor'] = [];
+      if (fbRiskItemIds.length > 0) {
+        const { data: riData } = await supabase
+          .from("risk_items")
+          .select("id, department")
+          .in("id", fbRiskItemIds.slice(0, 200));
+        if (riData) {
+          const deptMap: Record<string, { total: number; completed: number }> = {};
+          fbItems.forEach(fb => {
+            const ri = riData.find(r => r.id === fb.risk_item_id);
+            const dept = ri?.department || '미지정';
+            if (!deptMap[dept]) deptMap[dept] = { total: 0, completed: 0 };
+            deptMap[dept].total++;
+            if (fb.status === '완료') deptMap[dept].completed++;
+          });
+          byContractor = Object.entries(deptMap).map(([name, v]) => ({
+            name, total: v.total, completed: v.completed,
+            rate: v.total > 0 ? Math.round((v.completed / v.total) * 100) : 0,
+          })).sort((a, b) => a.rate - b.rate);
+        }
+      }
+
+      feedbackKpi = {
+        total: fbTotal, unresolved: fbUnresolved, inProgress: fbInProgress,
+        completed: fbCompleted,
+        completionRate: fbTotal > 0 ? Math.round((fbCompleted / fbTotal) * 100) : 0,
+        byContractor,
+      };
+    }
+
     setData({
       totalRuns: activeRuns.length,
       runsByStatus,
@@ -173,6 +220,7 @@ const Dashboard = () => {
       approvedRuns,
       processData,
       topRisks,
+      feedback: feedbackKpi,
     });
     setLoading(false);
   }, [selectedProject]);

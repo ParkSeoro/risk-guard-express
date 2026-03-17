@@ -140,8 +140,7 @@ const Approvals = () => {
         const sortedPending = (allAp || [])
           .filter((a: any) => a.status === '대기' && a.id !== approvalId)
           .sort((a: any, b: any) => {
-            const order: Record<string, number> = { '작성': 0, '검토': 1, '승인': 2 };
-            return (order[a.step] || 0) - (order[b.step] || 0);
+            return (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99);
           });
         const nextPending = sortedPending[0];
         if (nextPending?.approver_id) {

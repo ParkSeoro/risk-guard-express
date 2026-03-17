@@ -14,8 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Users, Search, UserCheck, UserX, Shield, Plus, Building2, AlertCircle } from 'lucide-react';
 
 const roleLabels: Record<string, string> = {
-  master: '마스터', project_admin: '프로젝트 관리자', safety_manager: '안전관리자',
-  contractor: '협력사 담당자', viewer: '열람자',
+  master: '마스터', project_admin: '프로젝트 관리자', user: '사용자',
+  safety_manager: '안전관리자 (레거시)', contractor: '협력사 (레거시)', viewer: '열람자',
 };
 
 const statusLabels: Record<string, { label: string; color: string }> = {

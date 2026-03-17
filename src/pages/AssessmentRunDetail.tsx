@@ -908,17 +908,35 @@ const AssessmentRunDetail = () => {
 
   const handleExportPDF = async () => {
     if (!run) return;
+    toast({ title: 'PDF 생성 중...', description: '잠시 기다려주세요.' });
     try {
       await exportToPDFServer(runId!, 'assessment');
       log('PDF다운로드', 'assessment_run', runId!, run.project_id);
-    } catch {
-      if (!project) return;
+    } catch (serverErr) {
+      console.error('Server PDF failed:', serverErr);
+      if (!project) {
+        toast({ title: 'PDF 생성 실패', description: `서버 오류: ${String(serverErr)}`, variant: 'destructive' });
+        return;
+      }
       try {
         exportToPDF(buildRiskRows(), buildProjectInfo(), null, participants, { type: run.type, period_label: run.period_label });
         log('PDF다운로드(클라이언트)', 'assessment_run', runId!, run.project_id);
       } catch (err) {
         toast({ title: 'PDF 다운로드 실패', description: String(err), variant: 'destructive' });
       }
+    }
+  };
+
+  // Unified print: generate PDF then print from it
+  const handlePrint = async () => {
+    if (!run) return;
+    toast({ title: '인쇄용 PDF 생성 중...' });
+    try {
+      await exportToPDFServer(runId!, 'assessment');
+    } catch {
+      // Fallback to window.print if server PDF also fails
+      toast({ title: 'PDF 기반 인쇄 실패', description: '브라우저 인쇄로 대체합니다.', variant: 'destructive' });
+      window.print();
     }
   };
 

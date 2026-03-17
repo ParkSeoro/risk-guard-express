@@ -283,7 +283,7 @@ export async function generateRemediationActions(
     if (!processGroups.has(item.process)) processGroups.set(item.process, new Set());
     tags.forEach(t => processGroups.get(item.process)!.add(t));
   }
-  for (const item of items) {
+  for (const item of activeItems) {
     const processTags = processGroups.get(item.process);
     if (!processTags) continue;
     const hazardTags = detectProcessTags(item.hazard || '', item.sub_task);

@@ -247,7 +247,7 @@ export async function generateRemediationActions(
   }
 
   // ===== C. Legal References (ACTION 5) =====
-  for (const item of items) {
+  for (const item of activeItems) {
     const verdict = report.itemVerdicts[item.id];
     if (!verdict) continue;
     const legalIssue = verdict.issues.find(i => i.ruleType === 'missing_legal');

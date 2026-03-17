@@ -1364,8 +1364,8 @@ const AssessmentRunDetail = () => {
       {/* Risk Table */}
       <Card>
         <CardContent className="p-0">
-          <div className="overflow-x-auto scrollbar-thin">
-            <table className="data-table text-xs" style={{ minWidth: '1400px' }}>
+          <div className="overflow-x-auto scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <table className="data-table text-xs" style={{ minWidth: '1600px', tableLayout: 'auto' }}>
               <thead>
                 <tr>
                   {(canEdit || canForceEdit) && (

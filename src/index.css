@@ -123,15 +123,18 @@
     white-space: normal;
     word-break: keep-all;
     overflow-wrap: break-word;
+    min-width: 40px;
   }
-  .data-table tr:hover td {
-    @apply bg-muted/50;
-  }
+  /* Text-heavy columns need wider minimum */
   .data-table td.editable {
     @apply cursor-pointer;
+    min-width: 80px;
   }
   .data-table td.editable:hover {
     @apply ring-1 ring-inset ring-accent/50;
+  }
+  .data-table tr:hover td {
+    @apply bg-muted/50;
   }
 }
 

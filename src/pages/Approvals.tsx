@@ -115,6 +115,7 @@ const Approvals = () => {
 
     await supabase.from('approvals').update({
       status: action, approver_id: user.id, approver_name: profile.display_name, comment: comment || '',
+      approved_at: action === '승인' ? new Date().toISOString() : null,
     }).eq('id', approvalId);
 
     if (action === '승인' && ap?.run_id) {

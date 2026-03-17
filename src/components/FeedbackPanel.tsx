@@ -70,6 +70,8 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
   const [feedbackList, setFeedbackList] = useState<FeedbackItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [manualFeedbackTargets, setManualFeedbackTargets] = useState<Set<string>>(new Set());
+  const [showTargetSelection, setShowTargetSelection] = useState(false);
 
   // Form state
   const [formRiskItemId, setFormRiskItemId] = useState('');
@@ -79,6 +81,8 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
   const [formAssignee, setFormAssignee] = useState('');
   const [formBeforeFiles, setFormBeforeFiles] = useState<File[]>([]);
   const [formAfterFiles, setFormAfterFiles] = useState<File[]>([]);
+  const [formBeforePreviews, setFormBeforePreviews] = useState<string[]>([]);
+  const [formAfterPreviews, setFormAfterPreviews] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   // Edit state

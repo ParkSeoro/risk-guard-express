@@ -22,7 +22,11 @@ const roleLabels: Record<string, string> = {
 };
 
 const companyTypes: Record<string, string> = {
-  client: '발주사', gc: '시공사(원청)', contractor: '협력사', vendor: '공급사',
+  client: '발주처', gc: '시공사', contractor: '협력사', vendor: '공급사',
+};
+
+const companyTypeOrder: Record<string, number> = {
+  client: 0, gc: 1, contractor: 2, vendor: 3,
 };
 
 const ProjectDetail = () => {

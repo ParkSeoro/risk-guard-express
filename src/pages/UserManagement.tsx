@@ -214,11 +214,14 @@ const UserManagement = () => {
     }
     setAssignSaving(true);
     try {
+      const companyName = assignCompanyId ? projectCompanies.find(c => c.id === assignCompanyId)?.name || '' : '';
       const { error } = await supabase.from('project_members').insert([{
         project_id: assignProjectId,
         user_id: assignUserId,
         role: assignRole as any,
         company_id: assignCompanyId || null,
+        company: companyName,
+        position: assignPosition || '',
       }]);
       if (error) {
         if (error.message.includes('duplicate') || error.message.includes('unique')) {
@@ -230,7 +233,7 @@ const UserManagement = () => {
         return;
       }
       toast({ title: '프로젝트 소속이 부여되었습니다.' });
-      log('프로젝트소속부여', 'project_member', assignUserId, assignProjectId, { role: assignRole });
+      log('프로젝트소속부여', 'project_member', assignUserId, assignProjectId, { role: assignRole, position: assignPosition });
       setShowAssignDialog(false);
       resetAssignForm();
     } catch (err) {

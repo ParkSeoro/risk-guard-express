@@ -363,11 +363,11 @@ const ProjectDetail = () => {
           </Card>
         </TabsContent>
 
-        {/* Companies Tab */}
+        {/* Companies Tab - Tree Structure */}
         <TabsContent value="companies" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm">업체 목록</CardTitle>
+              <CardTitle className="text-sm">업체 목록 (발주처 → 시공사 → 협력사)</CardTitle>
               {canManage && (
                 <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowAddCompany(true)}>
                   <Plus className="h-3.5 w-3.5" /> 업체 등록
@@ -378,28 +378,46 @@ const ProjectDetail = () => {
               {companies.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">등록된 업체가 없습니다.</p>
               ) : (
-                <div className="space-y-2">
-                  {companies.map(c => (
-                    <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{c.name}</span>
-                          <Badge variant="outline" className="text-[10px]">{companyTypes[c.type] || c.type}</Badge>
+                <div className="space-y-1">
+                  {/* Render tree: top-level (no parent) sorted by type */}
+                  {(() => {
+                    const topLevel = companies
+                      .filter(c => !c.parent_company_id)
+                      .sort((a, b) => (companyTypeOrder[a.type] || 99) - (companyTypeOrder[b.type] || 99));
+                    const getChildren = (parentId: string) =>
+                      companies.filter(c => c.parent_company_id === parentId)
+                        .sort((a, b) => (companyTypeOrder[a.type] || 99) - (companyTypeOrder[b.type] || 99));
+
+                    const renderCompany = (c: any, depth: number) => (
+                      <div key={c.id}>
+                        <div className={`flex items-center justify-between p-2.5 rounded-lg border ${depth === 0 ? '' : depth === 1 ? 'ml-6 border-l-2 border-l-primary/30' : 'ml-12 border-l-2 border-l-accent/30'}`}>
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              {depth > 0 && <span className="text-muted-foreground text-xs">└</span>}
+                              <span className="text-sm font-medium">{c.name}</span>
+                              <Badge variant="outline" className={`text-[10px] ${c.type === 'client' ? 'border-primary/50 text-primary' : c.type === 'gc' ? 'border-accent/50 text-accent' : ''}`}>
+                                {companyTypes[c.type] || c.type}
+                              </Badge>
+                            </div>
+                            {(c.scope || c.contact) && (
+                              <p className="text-xs text-muted-foreground">
+                                {c.scope && `공사범위: ${c.scope}`}
+                                {c.contact && ` · 연락처: ${c.contact}`}
+                              </p>
+                            )}
+                          </div>
+                          {canManage && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteCompany(c.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
-                        {(c.scope || c.contact) && (
-                          <p className="text-xs text-muted-foreground">
-                            {c.scope && `공사범위: ${c.scope}`}
-                            {c.contact && ` · 연락처: ${c.contact}`}
-                          </p>
-                        )}
+                        {getChildren(c.id).map(child => renderCompany(child, depth + 1))}
                       </div>
-                      {canManage && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteCompany(c.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
+                    );
+
+                    return topLevel.map(c => renderCompany(c, 0));
+                  })()}
                 </div>
               )}
             </CardContent>

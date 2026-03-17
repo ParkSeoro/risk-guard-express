@@ -1114,7 +1114,7 @@ const AssessmentRunDetail = () => {
 
   // Default tags (hardcoded fallback + DB tags)
   const defaultEnvTags = ['고소','야간','밀폐','화기','양중','굴착','전기','분진','소음','고온','해상','화학'];
-  const defaultEquipTags = ['크레인','지게차','고소작업대','굴삭기','용접기','그라인더','펌프카'];
+  const defaultEquipTags = ['크레인','지게차','고소작업대','굴착기','용접기','그라인더','펌프카'];
   const envTagNames = environmentTags.filter(t => t.category === 'environment').map(t => t.name);
   const equipTagNames = environmentTags.filter(t => t.category === 'equipment').map(t => t.name);
   const allEnvTags = envTagNames.length > 0 ? envTagNames : defaultEnvTags;
@@ -1122,33 +1122,63 @@ const AssessmentRunDetail = () => {
 
   return (
     <div className="space-y-4 animate-fade-in print:space-y-2">
-      {/* Header */}
+      {/* Company Form Header - 회사 양식 */}
+      <Card className="print:border-2 print:border-foreground">
+        <CardContent className="py-4 space-y-3">
+          <div className="text-center border-b pb-2 print:pb-3">
+            <h1 className="text-lg font-bold print:text-xl">디아이지에어가스 위험성평가표</h1>
+            <p className="text-sm text-muted-foreground">[{run.type}] {run.period_label || '(기간 미지정)'}</p>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1 text-xs">
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">프로젝트:</span><span>{project?.name || ''}</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">현장명:</span><span>{project?.site_name || ''}</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">발주처:</span><span>{project?.client || ''}</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">시공사:</span><span>{project?.contractor || ''}</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">기간:</span><span>{project?.period_start || ''} ~ {project?.period_end || ''}</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">항목 수:</span><span>{stats.total}건</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">상태:</span>
+              <Badge variant="outline" className={`text-[9px] ${statusInfo.color}`}>
+                {run.status} {isApproved && <Lock className="h-3 w-3 ml-0.5 inline" />}
+              </Badge>
+            </div>
+            {run.validation_score != null && (
+              <div className="flex gap-1"><span className="font-medium text-muted-foreground">검증:</span><span>{run.validation_verdict} ({run.validation_score}점)</span></div>
+            )}
+          </div>
+          {/* Participants summary */}
+          {participants.length > 0 && (
+            <div className="flex items-center gap-3 text-[10px] border-t pt-2 flex-wrap">
+              {['작성자','검토자','승인자','안전관리자','협력사 담당자'].map(role => {
+                const ps = participants.filter(p => p.role === role);
+                if (ps.length === 0) return null;
+                return (
+                  <span key={role} className="text-muted-foreground">
+                    <span className="font-medium">{role}:</span> {ps.map(p => p.user_name).join(', ')}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Header - action bar (print hidden) */}
       <div className="flex items-center justify-between print:hidden">
         <div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={() => navigate('/risk-assessment')}>← 목록</Button>
-            <Badge variant="outline" className="text-[10px]">{run.type}</Badge>
-            <h1 className="text-xl font-bold">{run.period_label || '(기간 미지정)'}</h1>
             {isMasterOrCreator && (
               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
                 setEditMeta({ period_label: run.period_label || '', type: run.type || '', notes: run.notes || '' });
                 setShowEditMeta(true);
               }}><Pencil className="h-3.5 w-3.5" /></Button>
             )}
-            <Badge variant="outline" className={`text-[10px] ${statusInfo.color}`}>
-              {run.status} {isApproved && <Lock className="h-3 w-3 ml-1 inline" />}
-            </Badge>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
-            항목 {stats.total}건 · 상 {stats.high} · 중 {stats.med} · 하 {stats.low}
+            상 {stats.high} · 중 {stats.med} · 하 {stats.low}
             {stats.highRemain > 0 && <span className="text-destructive ml-2">· 개선후 상 잔존 {stats.highRemain}</span>}
             {stats.excluded > 0 && <span className="text-muted-foreground ml-2">· 제외 {stats.excluded}</span>}
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {run.validation_score != null && (
-            <Badge variant="outline" className="gap-1">검증 {run.validation_verdict} ({run.validation_score}점)</Badge>
-          )}
         </div>
       </div>
 

@@ -22,7 +22,11 @@ const roleLabels: Record<string, string> = {
 };
 
 const companyTypes: Record<string, string> = {
-  client: '발주사', gc: '시공사(원청)', contractor: '협력사', vendor: '공급사',
+  client: '발주처', gc: '시공사', contractor: '협력사', vendor: '공급사',
+};
+
+const companyTypeOrder: Record<string, number> = {
+  client: 0, gc: 1, contractor: 2, vendor: 3,
 };
 
 const ProjectDetail = () => {
@@ -44,7 +48,7 @@ const ProjectDetail = () => {
   const [memberRole, setMemberRole] = useState('viewer');
   const [memberCompanyId, setMemberCompanyId] = useState('');
   const [showAddCompany, setShowAddCompany] = useState(false);
-  const [companyForm, setCompanyForm] = useState({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '' });
+  const [companyForm, setCompanyForm] = useState({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '' });
   const [copiedCode, setCopiedCode] = useState('');
 
   // Approval route templates
@@ -196,14 +200,32 @@ const ProjectDetail = () => {
 
   const handleAddCompany = async () => {
     if (!projectId) return;
-    const { error } = await supabase.from('companies').insert([{
-      project_id: projectId, ...companyForm,
-    }]);
+    // Enforce hierarchy: contractor must have a parent GC
+    if (companyForm.type === 'contractor' && !companyForm.parent_company_id) {
+      const gcCompanies = companies.filter(c => c.type === 'gc');
+      if (gcCompanies.length > 0) {
+        toast({ title: '협력사는 반드시 상위 시공사를 선택해야 합니다.', variant: 'destructive' });
+        return;
+      }
+    }
+    const insertData: any = {
+      project_id: projectId,
+      name: companyForm.name,
+      type: companyForm.type,
+      business_no: companyForm.business_no,
+      contact: companyForm.contact,
+      scope: companyForm.scope,
+      period: companyForm.period,
+    };
+    if (companyForm.parent_company_id) {
+      insertData.parent_company_id = companyForm.parent_company_id;
+    }
+    const { error } = await supabase.from('companies').insert([insertData]);
     if (error) toast({ title: '추가 실패', description: error.message, variant: 'destructive' });
     else {
       toast({ title: '업체가 등록되었습니다.' });
       setShowAddCompany(false);
-      setCompanyForm({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '' });
+      setCompanyForm({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '' });
       fetchAll();
     }
   };
@@ -341,11 +363,11 @@ const ProjectDetail = () => {
           </Card>
         </TabsContent>
 
-        {/* Companies Tab */}
+        {/* Companies Tab - Tree Structure */}
         <TabsContent value="companies" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm">업체 목록</CardTitle>
+              <CardTitle className="text-sm">업체 목록 (발주처 → 시공사 → 협력사)</CardTitle>
               {canManage && (
                 <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowAddCompany(true)}>
                   <Plus className="h-3.5 w-3.5" /> 업체 등록
@@ -356,28 +378,46 @@ const ProjectDetail = () => {
               {companies.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">등록된 업체가 없습니다.</p>
               ) : (
-                <div className="space-y-2">
-                  {companies.map(c => (
-                    <div key={c.id} className="flex items-center justify-between p-3 rounded-lg border">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{c.name}</span>
-                          <Badge variant="outline" className="text-[10px]">{companyTypes[c.type] || c.type}</Badge>
+                <div className="space-y-1">
+                  {/* Render tree: top-level (no parent) sorted by type */}
+                  {(() => {
+                    const topLevel = companies
+                      .filter(c => !c.parent_company_id)
+                      .sort((a, b) => (companyTypeOrder[a.type] || 99) - (companyTypeOrder[b.type] || 99));
+                    const getChildren = (parentId: string) =>
+                      companies.filter(c => c.parent_company_id === parentId)
+                        .sort((a, b) => (companyTypeOrder[a.type] || 99) - (companyTypeOrder[b.type] || 99));
+
+                    const renderCompany = (c: any, depth: number) => (
+                      <div key={c.id}>
+                        <div className={`flex items-center justify-between p-2.5 rounded-lg border ${depth === 0 ? '' : depth === 1 ? 'ml-6 border-l-2 border-l-primary/30' : 'ml-12 border-l-2 border-l-accent/30'}`}>
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              {depth > 0 && <span className="text-muted-foreground text-xs">└</span>}
+                              <span className="text-sm font-medium">{c.name}</span>
+                              <Badge variant="outline" className={`text-[10px] ${c.type === 'client' ? 'border-primary/50 text-primary' : c.type === 'gc' ? 'border-accent/50 text-accent' : ''}`}>
+                                {companyTypes[c.type] || c.type}
+                              </Badge>
+                            </div>
+                            {(c.scope || c.contact) && (
+                              <p className="text-xs text-muted-foreground">
+                                {c.scope && `공사범위: ${c.scope}`}
+                                {c.contact && ` · 연락처: ${c.contact}`}
+                              </p>
+                            )}
+                          </div>
+                          {canManage && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteCompany(c.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
-                        {(c.scope || c.contact) && (
-                          <p className="text-xs text-muted-foreground">
-                            {c.scope && `공사범위: ${c.scope}`}
-                            {c.contact && ` · 연락처: ${c.contact}`}
-                          </p>
-                        )}
+                        {getChildren(c.id).map(child => renderCompany(child, depth + 1))}
                       </div>
-                      {canManage && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteCompany(c.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                  ))}
+                    );
+
+                    return topLevel.map(c => renderCompany(c, 0));
+                  })()}
                 </div>
               )}
             </CardContent>
@@ -550,12 +590,47 @@ const ProjectDetail = () => {
           <DialogHeader><DialogTitle>업체 등록</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <Input placeholder="업체명" value={companyForm.name} onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })} />
-            <Select value={companyForm.type} onValueChange={v => setCompanyForm({ ...companyForm, type: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {Object.entries(companyTypes).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <div className="space-y-1.5">
+              <Label className="text-xs">업체 구분</Label>
+              <Select value={companyForm.type} onValueChange={v => setCompanyForm({ ...companyForm, type: v, parent_company_id: '' })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(companyTypes).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {/* Parent company selection - required for contractor */}
+            {(companyForm.type === 'contractor') && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">상위 시공사 {companyForm.type === 'contractor' && <span className="text-destructive">*필수</span>}</Label>
+                <Select value={companyForm.parent_company_id || '__none__'} onValueChange={v => setCompanyForm({ ...companyForm, parent_company_id: v === '__none__' ? '' : v })}>
+                  <SelectTrigger><SelectValue placeholder="상위 업체 선택" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">(선택 안 함)</SelectItem>
+                    {companies.filter(c => c.type === 'gc').map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name} (시공사)</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {companies.filter(c => c.type === 'gc').length === 0 && (
+                  <p className="text-[10px] text-warning">시공사가 없습니다. 먼저 시공사를 등록하세요.</p>
+                )}
+              </div>
+            )}
+            {companyForm.type === 'gc' && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">상위 발주처 (선택)</Label>
+                <Select value={companyForm.parent_company_id || '__none__'} onValueChange={v => setCompanyForm({ ...companyForm, parent_company_id: v === '__none__' ? '' : v })}>
+                  <SelectTrigger><SelectValue placeholder="상위 업체 선택" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">(선택 안 함)</SelectItem>
+                    {companies.filter(c => c.type === 'client').map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.name} (발주처)</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <Input placeholder="사업자등록번호 (선택)" value={companyForm.business_no} onChange={e => setCompanyForm({ ...companyForm, business_no: e.target.value })} />
             <Input placeholder="연락처 (선택)" value={companyForm.contact} onChange={e => setCompanyForm({ ...companyForm, contact: e.target.value })} />
             <Input placeholder="공사범위 (선택)" value={companyForm.scope} onChange={e => setCompanyForm({ ...companyForm, scope: e.target.value })} />

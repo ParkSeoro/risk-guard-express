@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { calculateRiskGrade, type RiskGrade } from './riskGrade';
+import { correctTerms, correctItemTerms, RISK_ITEM_TEXT_FIELDS } from './termCorrection';
 
 export interface GeneratedRiskItem {
   process: string;
@@ -113,6 +114,8 @@ export async function generateRiskItems(options: GenerateOptions): Promise<Gener
   const { data: legalRefs } = await supabase.from('legal_references').select('*');
 
   return selected.map(({ item }) => {
+    // Apply term corrections to generated text fields
+    const correctedItem = correctItemTerms(item, ['sub_task', 'hazard', 'hazard_situation', 'existing_measure', 'improvement_measure']);
     const libLegalRefs: string[] = item.legal_refs || [];
     const matchedLaws = (legalRefs || [])
       .filter(law =>
@@ -135,12 +138,12 @@ export async function generateRiskItems(options: GenerateOptions): Promise<Gener
     const improvedRg = calculateRiskGrade(improvedLg, sg);
 
     return {
-      process: processName,
-      sub_task: item.sub_task,
-      hazard: item.hazard,
-      hazard_situation: item.hazard_situation,
-      existing_measure: item.existing_measure || '',
-      improvement_measure: item.improvement_measure || '',
+      process: correctTerms(processName),
+      sub_task: correctedItem.sub_task,
+      hazard: correctedItem.hazard,
+      hazard_situation: correctedItem.hazard_situation,
+      existing_measure: correctedItem.existing_measure || '',
+      improvement_measure: correctedItem.improvement_measure || '',
       likelihood_grade: lg,
       severity_grade: sg,
       risk_grade: rg,

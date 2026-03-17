@@ -517,31 +517,44 @@ const ProjectDetail = () => {
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm">초대코드 관리</CardTitle>
               {canManage && (
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => handleCreateInvite('viewer')}>열람자 초대</Button>
-                  <Button size="sm" variant="outline" onClick={() => handleCreateInvite('contractor')}>협력사 초대</Button>
-                </div>
+                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowCreateInvite(true)}>
+                  <Plus className="h-3.5 w-3.5" /> 초대코드 생성
+                </Button>
               )}
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                {invites.map((inv: any) => (
-                  <div key={inv.id} className="flex items-center justify-between p-2 rounded border bg-muted/20">
-                    <div className="text-sm">
-                      <span className="font-mono font-bold text-lg mr-2">{inv.code}</span>
-                      <Badge variant="outline" className="mr-2">{roleLabels[inv.default_role]}</Badge>
-                      <span className="text-xs text-muted-foreground">사용 {inv.use_count}/{inv.max_uses}</span>
+                {invites.map((inv: any) => {
+                  const linkedCompany = companies.find(c => c.id === (inv as any).company_id);
+                  const inviteLink = `${window.location.origin}/auth?invite=${inv.code}`;
+                  return (
+                    <div key={inv.id} className="p-3 rounded-lg border space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-bold text-base">{inv.code}</span>
+                          <Badge variant="outline" className="text-[10px]">{roleLabels[inv.default_role]}</Badge>
+                          {linkedCompany && <Badge variant="secondary" className="text-[10px]">{linkedCompany.name}</Badge>}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => {
+                            navigator.clipboard.writeText(inviteLink);
+                            setCopiedCode(inv.code);
+                            setTimeout(() => setCopiedCode(''), 2000);
+                            toast({ title: '초대 링크가 복사되었습니다.' });
+                          }}>
+                            {copiedCode === inv.code ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => handleDeleteInvite(inv.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        사용 {inv.use_count}/{inv.max_uses} · 만료: {inv.expires_at ? new Date(inv.expires_at).toLocaleDateString('ko-KR') : '없음'}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => copyToClipboard(inv.code)}>
-                        {copiedCode === inv.code ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" onClick={() => handleDeleteInvite(inv.id)}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {invites.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">생성된 초대코드가 없습니다.</p>}
               </div>
             </CardContent>

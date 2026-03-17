@@ -183,8 +183,8 @@ export async function validateRiskItems(
   // Coverage check (pass activeItems only)
   const coverageGaps = await checkCoverage(activeItems, projectId, library || []);
 
-  // Calculate score
-  const totalItems = items.length;
+  // Calculate score (based on active items only)
+  const totalItems = activeItems.length;
   const errors = issues.filter(i => i.severity === 'error').length;
   const warnings = issues.filter(i => i.severity === 'warning').length;
   const coveragePenalty = coverageGaps.filter(g => g.severity === '상').length * 10 + coverageGaps.filter(g => g.severity === '중').length * 5;

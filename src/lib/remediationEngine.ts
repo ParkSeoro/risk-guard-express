@@ -278,7 +278,7 @@ export async function generateRemediationActions(
   // ===== D. Irrelevant Items (ACTION 6) =====
   // Simple keyword mismatch detection
   const processGroups = new Map<string, Set<string>>();
-  for (const item of items) {
+  for (const item of activeItems) {
     const tags = detectProcessTags(item.process, item.sub_task);
     if (!processGroups.has(item.process)) processGroups.set(item.process, new Set());
     tags.forEach(t => processGroups.get(item.process)!.add(t));

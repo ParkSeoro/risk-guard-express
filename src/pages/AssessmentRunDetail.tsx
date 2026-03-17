@@ -1346,35 +1346,71 @@ const AssessmentRunDetail = () => {
 
       {/* Approval Status Display (SSOT) */}
       {latestApprovals.length > 0 && (
-        <div className="flex items-center gap-2 print:hidden flex-wrap">
-          <span className="text-xs text-muted-foreground font-medium">결재현황:</span>
-          {latestApprovals
-            .filter(a => a.status !== '취소')
-            .sort((a: any, b: any) => {
-              const order: Record<string, number> = { '작성': 0, '검토': 1, '승인': 2 };
-              return (order[a.step] || 0) - (order[b.step] || 0);
-            })
-            .map((a: any) => (
-              <Badge key={a.id} variant="outline" className={`text-[10px] gap-1 ${
-                a.status === '승인' ? 'bg-success/10 text-success border-success/30' :
-                a.status === '반려' ? 'bg-destructive/10 text-destructive border-destructive/30' :
-                a.status === '대기' ? 'bg-muted text-muted-foreground' :
-                'bg-muted/50 text-muted-foreground/50'
-              }`}>
-                {a.status === '승인' ? <CheckCircle2 className="h-3 w-3" /> :
-                 a.status === '반려' ? <XCircle className="h-3 w-3" /> :
-                 <Clock className="h-3 w-3" />}
-                {a.step}: {a.approver_name || '미지정'}
-                {a.status !== '대기' && ` (${a.status})`}
-              </Badge>
-            ))}
-          {latestApprovals[0]?.approval_version > 1 && (
-            <Badge variant="outline" className="text-[9px]">{latestApprovals[0].approval_version}차 상신</Badge>
-          )}
-          {isAdmin() && (
-            <span className="text-[9px] text-muted-foreground/60 ml-auto">
-              v{latestApprovals[0]?.approval_version || 1} | {latestApprovals.filter(a => a.status === '대기').length}건 대기
-            </span>
+        <div className="space-y-2 print:hidden">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-muted-foreground font-medium">결재현황:</span>
+            {latestApprovals
+              .filter(a => a.status !== '취소')
+              .sort((a: any, b: any) => (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99))
+              .map((a: any) => (
+                <Badge key={a.id} variant="outline" className={`text-[10px] gap-1 ${
+                  a.status === '승인' ? 'bg-success/10 text-success border-success/30' :
+                  a.status === '반려' ? 'bg-destructive/10 text-destructive border-destructive/30' :
+                  a.status === '대기' ? 'bg-muted text-muted-foreground' :
+                  'bg-muted/50 text-muted-foreground/50'
+                }`}>
+                  {a.status === '승인' ? <CheckCircle2 className="h-3 w-3" /> :
+                   a.status === '반려' ? <XCircle className="h-3 w-3" /> :
+                   <Clock className="h-3 w-3" />}
+                  {a.step}: {a.approver_name || '미지정'}
+                  {a.company_name ? ` (${a.company_name})` : ''}
+                  {a.status !== '대기' && ` [${a.status}]`}
+                </Badge>
+              ))}
+            {latestApprovals[0]?.approval_version > 1 && (
+              <Badge variant="outline" className="text-[9px]">{latestApprovals[0].approval_version}차 상신</Badge>
+            )}
+          </div>
+          {/* Signature Table - 서명란 (auto-populated from approval data) */}
+          {latestApprovals.filter(a => a.status !== '취소').length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[10px] border-collapse">
+                <thead>
+                  <tr className="bg-muted/50">
+                    <th className="border px-2 py-1 text-left font-medium">구분</th>
+                    <th className="border px-2 py-1 text-left font-medium">성명</th>
+                    <th className="border px-2 py-1 text-left font-medium">소속</th>
+                    <th className="border px-2 py-1 text-left font-medium">직책</th>
+                    <th className="border px-2 py-1 text-left font-medium">서명/일자</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {latestApprovals
+                    .filter(a => a.status !== '취소')
+                    .sort((a: any, b: any) => (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99))
+                    .map((a: any) => {
+                      const positionLabel = a.position === 'supervisor' ? '관리감독자' :
+                        a.position === 'safety_manager' ? '안전관리자' :
+                        a.position === 'site_manager' ? '현장대리인' :
+                        a.position === 'project_admin' ? '프로젝트 관리자' : a.position || '';
+                      return (
+                        <tr key={a.id}>
+                          <td className="border px-2 py-1 font-medium">{a.step}</td>
+                          <td className="border px-2 py-1">{a.approver_name || '—'}</td>
+                          <td className="border px-2 py-1">{a.company_name || '—'}</td>
+                          <td className="border px-2 py-1">{positionLabel || '—'}</td>
+                          <td className="border px-2 py-1">
+                            {a.status === '승인' && a.approved_at
+                              ? new Date(a.approved_at).toLocaleDateString('ko-KR')
+                              : a.status === '반려' ? <span className="text-destructive">반려</span>
+                              : <span className="text-muted-foreground">대기</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

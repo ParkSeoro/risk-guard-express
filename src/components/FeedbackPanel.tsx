@@ -56,6 +56,13 @@ interface FeedbackPanelProps {
 const FEEDBACK_TYPES = ['보완', '지적', '개선'] as const;
 const FEEDBACK_STATUSES = ['미조치', '진행중', '완료'] as const;
 
+// Allow both auto (improved_risk_grade === '상') and manual selection
+function getFeedbackTargetItems(riskItems: RiskItemBasic[], manualIds: Set<string>): RiskItemBasic[] {
+  return riskItems.filter(item => 
+    (item as any).improved_risk_grade === '상' || manualIds.has(item.id)
+  );
+}
+
 export default function FeedbackPanel({ runId, projectId, isApproved, riskItems, projectMembers, previousFeedback }: FeedbackPanelProps) {
   const { user, profile } = useAuth();
   const { toast } = useToast();
@@ -63,6 +70,8 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
   const [feedbackList, setFeedbackList] = useState<FeedbackItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [manualFeedbackTargets, setManualFeedbackTargets] = useState<Set<string>>(new Set());
+  const [showTargetSelection, setShowTargetSelection] = useState(false);
 
   // Form state
   const [formRiskItemId, setFormRiskItemId] = useState('');
@@ -72,6 +81,8 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
   const [formAssignee, setFormAssignee] = useState('');
   const [formBeforeFiles, setFormBeforeFiles] = useState<File[]>([]);
   const [formAfterFiles, setFormAfterFiles] = useState<File[]>([]);
+  const [formBeforePreviews, setFormBeforePreviews] = useState<string[]>([]);
+  const [formAfterPreviews, setFormAfterPreviews] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   // Edit state
@@ -109,11 +120,11 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
       toast({ title: '조치내용을 입력하세요.', variant: 'destructive' });
       return;
     }
-    // Validate: feedback only for items with improved_risk_grade === '상' (관리대상)
+    // Validate: feedback only for items with improved_risk_grade === '상' (관리대상) OR manually selected
     if (formRiskItemId) {
       const selectedItem = riskItems.find(i => i.id === formRiskItemId);
-      if (selectedItem && (selectedItem as any).improved_risk_grade !== '상') {
-        toast({ title: "개선 후 위험도 '상'(관리대상) 항목만 피드백 대상입니다.", variant: 'destructive' });
+      if (selectedItem && (selectedItem as any).improved_risk_grade !== '상' && !manualFeedbackTargets.has(formRiskItemId)) {
+        toast({ title: "개선 후 위험도 '상'(관리대상) 또는 수동 선택 항목만 피드백 대상입니다.", variant: 'destructive' });
         return;
       }
     }
@@ -194,6 +205,14 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
     setFormAssignee('');
     setFormBeforeFiles([]);
     setFormAfterFiles([]);
+    setFormBeforePreviews([]);
+    setFormAfterPreviews([]);
+  };
+
+  const handleFileChange = (files: File[], setter: (f: File[]) => void, previewSetter: (p: string[]) => void) => {
+    setter(files);
+    const previews = files.map(f => URL.createObjectURL(f));
+    previewSetter(previews);
   };
 
   const openEdit = (fb: FeedbackItem) => {
@@ -283,15 +302,61 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold">피드백(조치관리) · {feedbackList.length}건</h3>
-        {isApproved ? (
-          <Button size="sm" className="gap-1.5" onClick={() => { resetForm(); setEditingId(null); setShowAdd(true); }}>
-            <Plus className="h-3.5 w-3.5" /> 피드백 등록
-          </Button>
-        ) : (
-          <p className="text-xs text-muted-foreground">승인 완료된 회차만 피드백(조치관리)이 가능합니다.</p>
-        )}
+        <div className="flex gap-2">
+          {isApproved && (
+            <>
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowTargetSelection(!showTargetSelection)}>
+                피드백 대상 선택
+              </Button>
+              <Button size="sm" className="gap-1.5" onClick={() => { resetForm(); setEditingId(null); setShowAdd(true); }}>
+                <Plus className="h-3.5 w-3.5" /> 피드백 등록
+              </Button>
+            </>
+          )}
+          {!isApproved && (
+            <p className="text-xs text-muted-foreground">승인 완료된 회차만 피드백(조치관리)이 가능합니다.</p>
+          )}
+        </div>
       </div>
-      <p className="text-[10px] text-muted-foreground">※ 개선 후 위험도 '상'(관리대상) 항목만 피드백 등록 대상입니다.</p>
+      <p className="text-[10px] text-muted-foreground">※ 개선 후 위험도 '상'(관리대상) 항목은 자동 선택됩니다. 추가 항목은 [피드백 대상 선택]에서 수동 지정할 수 있습니다.</p>
+
+      {/* Manual feedback target selection */}
+      {showTargetSelection && (
+        <Card className="border-accent">
+          <CardContent className="py-3 space-y-2">
+            <p className="text-xs font-medium">피드백 대상 항목 선택 (체크박스로 수동 지정)</p>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {riskItems.map(item => {
+                const isAuto = (item as any).improved_risk_grade === '상';
+                const isManual = manualFeedbackTargets.has(item.id);
+                return (
+                  <label key={item.id} className="flex items-center gap-2 text-xs p-1.5 rounded hover:bg-accent/10 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isAuto || isManual}
+                      disabled={isAuto}
+                      onChange={(e) => {
+                        setManualFeedbackTargets(prev => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(item.id);
+                          else next.delete(item.id);
+                          return next;
+                        });
+                      }}
+                      className="rounded"
+                    />
+                    <span className={isAuto ? 'text-destructive font-medium' : ''}>
+                      {item.process} – {item.sub_task || ''} – {item.hazard || ''}
+                    </span>
+                    {isAuto && <Badge variant="outline" className="text-[8px] text-destructive">자동(관리대상)</Badge>}
+                    {isManual && !isAuto && <Badge variant="outline" className="text-[8px] text-accent">수동선택</Badge>}
+                  </label>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Feedback list */}
       {loading ? (
@@ -363,18 +428,19 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label>관련 위험성평가 항목 <span className="text-[10px] text-muted-foreground">(개선 후 위험도 '상' = 관리대상 항목만 표시)</span></Label>
+              <Label>관련 위험성평가 항목 <span className="text-[10px] text-muted-foreground">(관리대상 + 수동선택 항목 표시)</span></Label>
               <Select value={formRiskItemId || '__none__'} onValueChange={v => setFormRiskItemId(v === '__none__' ? '' : v)}>
                 <SelectTrigger className="text-xs"><SelectValue placeholder="항목 선택 (선택사항)" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">(전체/일반)</SelectItem>
-                  {riskItems.filter(item => (item as any).improved_risk_grade === '상').map(item => (
+                  {getFeedbackTargetItems(riskItems, manualFeedbackTargets).map(item => (
                     <SelectItem key={item.id} value={item.id} className="text-xs">
-                      {item.process} – {item.sub_task || ''} – {item.hazard || ''} [관리대상]
+                      {item.process} – {item.sub_task || ''} – {item.hazard || ''} 
+                      {(item as any).improved_risk_grade === '상' ? ' [관리대상]' : ' [수동선택]'}
                     </SelectItem>
                   ))}
-                  {riskItems.filter(item => (item as any).improved_risk_grade === '상').length === 0 && (
-                    <div className="px-2 py-1.5 text-[10px] text-muted-foreground">개선 후 위험도 '상' 항목이 없습니다.</div>
+                  {getFeedbackTargetItems(riskItems, manualFeedbackTargets).length === 0 && (
+                    <div className="px-2 py-1.5 text-[10px] text-muted-foreground">피드백 대상 항목이 없습니다. [피드백 대상 선택]에서 수동 지정하세요.</div>
                   )}
                 </SelectContent>
               </Select>
@@ -424,23 +490,49 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5"><Camera className="h-3.5 w-3.5" /> 조치 전 사진 <span className="text-destructive text-[10px]">*필수</span></Label>
-                <Input type="file" accept="image/*" multiple className="text-xs" onChange={e => setFormBeforeFiles(Array.from(e.target.files || []))} />
-                {formBeforeFiles.length > 0 && <p className="text-[10px] text-muted-foreground">{formBeforeFiles.length}개 파일 선택됨</p>}
+                <Input type="file" accept="image/*" multiple className="text-xs" onChange={e => handleFileChange(Array.from(e.target.files || []), setFormBeforeFiles, setFormBeforePreviews)} />
+                {formBeforePreviews.length > 0 && (
+                  <div className="flex gap-1 flex-wrap">
+                    {formBeforePreviews.map((url, i) => (
+                      <img key={i} src={url} alt={`before-preview-${i}`} className="w-14 h-14 rounded object-cover border" />
+                    ))}
+                  </div>
+                )}
                 {editingId && (() => {
                   const existing = feedbackList.find(f => f.id === editingId);
                   return existing?.before_image_urls?.length ? (
-                    <p className="text-[10px] text-success">기존 {existing.before_image_urls.length}개 사진 있음</p>
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] text-success">기존 {existing.before_image_urls.length}개 사진</p>
+                      <div className="flex gap-1">
+                        {existing.before_image_urls.map((url, i) => (
+                          <img key={i} src={url} alt="existing-before" className="w-10 h-10 rounded object-cover border" />
+                        ))}
+                      </div>
+                    </div>
                   ) : null;
                 })()}
               </div>
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> 조치 후 사진 {formStatus === '완료' && <span className="text-destructive text-[10px]">*필수</span>}</Label>
-                <Input type="file" accept="image/*" multiple className="text-xs" onChange={e => setFormAfterFiles(Array.from(e.target.files || []))} />
-                {formAfterFiles.length > 0 && <p className="text-[10px] text-muted-foreground">{formAfterFiles.length}개 파일 선택됨</p>}
+                <Input type="file" accept="image/*" multiple className="text-xs" onChange={e => handleFileChange(Array.from(e.target.files || []), setFormAfterFiles, setFormAfterPreviews)} />
+                {formAfterPreviews.length > 0 && (
+                  <div className="flex gap-1 flex-wrap">
+                    {formAfterPreviews.map((url, i) => (
+                      <img key={i} src={url} alt={`after-preview-${i}`} className="w-14 h-14 rounded object-cover border" />
+                    ))}
+                  </div>
+                )}
                 {editingId && (() => {
                   const existing = feedbackList.find(f => f.id === editingId);
                   return existing?.after_image_urls?.length ? (
-                    <p className="text-[10px] text-success">기존 {existing.after_image_urls.length}개 사진 있음</p>
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] text-success">기존 {existing.after_image_urls.length}개 사진</p>
+                      <div className="flex gap-1">
+                        {existing.after_image_urls.map((url, i) => (
+                          <img key={i} src={url} alt="existing-after" className="w-10 h-10 rounded object-cover border" />
+                        ))}
+                      </div>
+                    </div>
                   ) : null;
                 })()}
               </div>

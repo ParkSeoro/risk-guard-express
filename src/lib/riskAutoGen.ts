@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { calculateRiskGrade, type RiskGrade } from './riskGrade';
+import { correctTerms, correctItemTerms, RISK_ITEM_TEXT_FIELDS } from './termCorrection';
 
 export interface GeneratedRiskItem {
   process: string;

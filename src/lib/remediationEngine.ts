@@ -127,6 +127,8 @@ export async function generateRemediationActions(
   report: ValidationReport,
   projectId: string,
 ): Promise<RemediationAction[]> {
+  // Filter out excluded items
+  const activeItems = items.filter((i: any) => !i.is_excluded);
   const actions: RemediationAction[] = [];
 
   // Fetch library and legal references for context

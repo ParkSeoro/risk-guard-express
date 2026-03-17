@@ -379,8 +379,9 @@ th { background: #1e293b; color: white; font-weight: 500; text-align: center; wh
 .sig-stamp { min-width: 80pt; }
 
 thead { display: table-header-group; }
-img { max-width: 100%; height: auto; }
+img { max-width: 100%; height: auto; display: inline-block; }
 tr { page-break-inside: avoid; }
+@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style>
 </head>
 <body>

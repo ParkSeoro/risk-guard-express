@@ -411,12 +411,12 @@ export async function generateRemediationActions(
     if (newItems.length > 0) {
       actions.push({
         id: uid(), actionType: 'ACTION_ADD_MISSING_RISK_ITEMS_FROM_LIBRARY',
-        label: `누락 항목 자동추가 (${newItems.length}건)`, category: 'G. 커버리지 보완',
-        description: `커버리지 검증에서 누락된 ${newItems.length}건의 위험성평가 항목을 라이브러리에서 추가`,
+        label: `누락 항목 추천 (${newItems.length}건)`, category: 'G. 커버리지 보완',
+        description: `커버리지 검증에서 누락된 ${newItems.length}건의 위험성평가 항목을 라이브러리에서 추천`,
         targetRiskItemIds: [], patch: {}, newItems,
-        rationale: '커버리지 검증 결과 필수 위험요인 누락',
-        confidence: 'high', requiresUserConfirm: false,
-        expectedEffect: `누락 ${newItems.length}건 보완`,
+        rationale: '커버리지 검증 결과 필수 위험요인 누락 – 사용자 선택 후 추가',
+        confidence: 'high', requiresUserConfirm: true,
+        expectedEffect: `누락 ${newItems.length}건 보완 (선택 항목만 추가)`,
       });
     }
   }

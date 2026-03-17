@@ -302,15 +302,61 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold">피드백(조치관리) · {feedbackList.length}건</h3>
-        {isApproved ? (
-          <Button size="sm" className="gap-1.5" onClick={() => { resetForm(); setEditingId(null); setShowAdd(true); }}>
-            <Plus className="h-3.5 w-3.5" /> 피드백 등록
-          </Button>
-        ) : (
-          <p className="text-xs text-muted-foreground">승인 완료된 회차만 피드백(조치관리)이 가능합니다.</p>
-        )}
+        <div className="flex gap-2">
+          {isApproved && (
+            <>
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowTargetSelection(!showTargetSelection)}>
+                피드백 대상 선택
+              </Button>
+              <Button size="sm" className="gap-1.5" onClick={() => { resetForm(); setEditingId(null); setShowAdd(true); }}>
+                <Plus className="h-3.5 w-3.5" /> 피드백 등록
+              </Button>
+            </>
+          )}
+          {!isApproved && (
+            <p className="text-xs text-muted-foreground">승인 완료된 회차만 피드백(조치관리)이 가능합니다.</p>
+          )}
+        </div>
       </div>
-      <p className="text-[10px] text-muted-foreground">※ 개선 후 위험도 '상'(관리대상) 항목만 피드백 등록 대상입니다.</p>
+      <p className="text-[10px] text-muted-foreground">※ 개선 후 위험도 '상'(관리대상) 항목은 자동 선택됩니다. 추가 항목은 [피드백 대상 선택]에서 수동 지정할 수 있습니다.</p>
+
+      {/* Manual feedback target selection */}
+      {showTargetSelection && (
+        <Card className="border-accent">
+          <CardContent className="py-3 space-y-2">
+            <p className="text-xs font-medium">피드백 대상 항목 선택 (체크박스로 수동 지정)</p>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {riskItems.map(item => {
+                const isAuto = (item as any).improved_risk_grade === '상';
+                const isManual = manualFeedbackTargets.has(item.id);
+                return (
+                  <label key={item.id} className="flex items-center gap-2 text-xs p-1.5 rounded hover:bg-accent/10 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isAuto || isManual}
+                      disabled={isAuto}
+                      onChange={(e) => {
+                        setManualFeedbackTargets(prev => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(item.id);
+                          else next.delete(item.id);
+                          return next;
+                        });
+                      }}
+                      className="rounded"
+                    />
+                    <span className={isAuto ? 'text-destructive font-medium' : ''}>
+                      {item.process} – {item.sub_task || ''} – {item.hazard || ''}
+                    </span>
+                    {isAuto && <Badge variant="outline" className="text-[8px] text-destructive">자동(관리대상)</Badge>}
+                    {isManual && !isAuto && <Badge variant="outline" className="text-[8px] text-accent">수동선택</Badge>}
+                  </label>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Feedback list */}
       {loading ? (

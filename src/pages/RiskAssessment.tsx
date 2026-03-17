@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, Upload, ShieldCheck, Undo2 } from "lucide-react";
+import { Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, Upload, ShieldCheck, Undo2, Ban, RotateCcw } from "lucide-react";
 import { calculateRiskGrade, getGradeClassName, GRADES, type RiskGrade } from "@/lib/riskGrade";
 import { generateRiskItems } from "@/lib/riskAutoGen";
 import { exportToXLSX, exportToPDF, printRiskAssessment } from "@/lib/exportUtils";

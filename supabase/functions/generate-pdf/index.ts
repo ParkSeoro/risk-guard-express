@@ -28,8 +28,7 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -44,34 +43,27 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) {
       return new Response(JSON.stringify({ error: "Invalid token" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const { runId, type } = await req.json();
     if (!runId) {
       return new Response(JSON.stringify({ error: "runId required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const { data: run, error: runError } = await userClient
-      .from("assessment_runs")
-      .select("*")
-      .eq("id", runId)
-      .single();
+      .from("assessment_runs").select("*").eq("id", runId).single();
     if (runError || !run) {
       return new Response(JSON.stringify({ error: "Not found or access denied" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Fetch all data in parallel
     const [projectRes, itemsRes, participantsRes, feedbackRes, validationRes] = await Promise.all([
       supabase.from("projects").select("*").eq("id", run.project_id).single(),
       supabase.from("risk_items").select("*").eq("run_id", runId).order("sort_order"),
@@ -111,23 +103,28 @@ Deno.serve(async (req) => {
       g === "상" ? "#fecaca" : g === "중" ? "#fef08a" : "#bbf7d0";
 
     const today = new Date().toISOString().slice(0, 10);
-    const title = `디아이지에어가스 위험성평가 [${run.type}] ${run.period_label}`;
+    const runPeriod = run.start_date && run.end_date
+      ? `${run.start_date} ~ ${run.end_date}`
+      : `${project?.period_start || ""} ~ ${project?.period_end || ""}`;
+    const title = `위험성평가표 [${run.type}] ${run.period_label}`;
 
-    // Signature table
-    const roles = ["작성자", "검토자", "승인자", "협력사 담당자", "안전관리자"];
-    const sigRows = roles
-      .map((role) => {
-        const people = participants.filter((p: any) => p.role === role);
-        if (people.length === 0) return `<tr><td>${role}</td><td></td><td></td><td></td></tr>`;
-        return people
-          .map((p: any) =>
-            `<tr><td>${role}</td><td>${p.user_name || ""}</td><td>${p.company || ""}</td><td>${p.signed_at ? new Date(p.signed_at).toLocaleDateString("ko-KR") : ""}</td></tr>`
-          ).join("");
-      }).join("");
+    // Stats
+    const highCount = items.filter((i: any) => i.risk_grade === "상").length;
+    const medCount = items.filter((i: any) => i.risk_grade === "중").length;
+    const lowCount = items.filter((i: any) => i.risk_grade === "하").length;
+
+    // Signature rows
+    const roles = ["작성자", "검토자", "승인자", "안전관리자", "협력사 담당자"];
+    const sigRows = roles.map((role) => {
+      const people = participants.filter((p: any) => p.role === role);
+      if (people.length === 0) return `<tr><td class="sig-role">${role}</td><td></td><td></td><td class="sig-stamp"></td></tr>`;
+      return people.map((p: any) =>
+        `<tr><td class="sig-role">${role}</td><td>${p.user_name || ""}</td><td>${p.company || ""}</td><td class="sig-stamp">${p.signed_at ? new Date(p.signed_at).toLocaleDateString("ko-KR") : ""}</td></tr>`
+      ).join("");
+    }).join("");
 
     // Risk items table
-    const itemRows = items
-      .map((item: any, i: number) => `
+    const itemRows = items.map((item: any, i: number) => `
       <tr>
         <td class="center">${i + 1}</td>
         <td class="nowrap">${item.process || ""}</td>
@@ -144,56 +141,49 @@ Deno.serve(async (req) => {
         <td class="center grade" style="background:${gradeBg(item.improved_risk_grade)};color:${gradeColor(item.improved_risk_grade)};font-weight:bold">${item.improved_risk_grade || "하"}</td>
         <td class="center">${item.status || ""}</td>
         <td>${(item.ppe || []).join(", ")}</td>
-        <td>${(item.legal_basis || []).join(", ")}</td>
         <td>${item.department || ""}</td>
         <td>${item.assignee || ""}</td>
       </tr>`).join("");
 
-    // Feedback section (only for 상 items that have feedback)
+    // Feedback section
     let feedbackSection = "";
     if (feedbackWithImages.length > 0) {
       const fbRows = feedbackWithImages.map((fb: any, idx: number) => {
         const item = items.find((i: any) => i.id === fb.risk_item_id);
-        const itemLabel = item ? `${item.process} – ${item.sub_task || ""} – ${item.hazard || ""}` : "(항목 미지정)";
+        const itemLabel = item ? `${item.process} – ${item.sub_task || ""}` : "(전체)";
+        const statusColor = fb.status === "완료" ? "#16a34a" : fb.status === "진행중" ? "#d97706" : "#dc2626";
 
         let imagesHtml = "";
         if (fb.beforeBase64.length > 0 || fb.afterBase64.length > 0) {
-          imagesHtml = `<tr><td colspan="5" style="padding:4pt;">
+          imagesHtml = `<tr><td colspan="5" style="padding:6pt;">
             <table style="width:100%;border:none;"><tr>
               <td style="border:none;width:50%;vertical-align:top;">
-                <div style="font-size:7pt;font-weight:600;margin-bottom:2pt;">조치 전 (Before)</div>
-                <div style="display:flex;gap:4pt;flex-wrap:wrap;">
-                  ${fb.beforeBase64.map((b64: string) => `<img src="${b64}" style="max-width:140pt;max-height:100pt;border:1px solid #cbd5e1;border-radius:3pt;" />`).join("")}
-                  ${fb.beforeBase64.length === 0 ? '<span style="font-size:7pt;color:#94a3b8;">사진 없음</span>' : ''}
-                </div>
+                <div style="font-size:7pt;font-weight:600;margin-bottom:3pt;color:#475569;">▸ 조치 전 (Before)</div>
+                ${fb.beforeBase64.map((b64: string) => `<img src="${b64}" style="max-width:180pt;max-height:120pt;border:1px solid #cbd5e1;border-radius:3pt;margin-right:4pt;" />`).join("")}
+                ${fb.beforeBase64.length === 0 ? '<span style="font-size:7pt;color:#94a3b8;">사진 없음</span>' : ''}
               </td>
               <td style="border:none;width:50%;vertical-align:top;">
-                <div style="font-size:7pt;font-weight:600;margin-bottom:2pt;">조치 후 (After)</div>
-                <div style="display:flex;gap:4pt;flex-wrap:wrap;">
-                  ${fb.afterBase64.map((b64: string) => `<img src="${b64}" style="max-width:140pt;max-height:100pt;border:1px solid #cbd5e1;border-radius:3pt;" />`).join("")}
-                  ${fb.afterBase64.length === 0 ? '<span style="font-size:7pt;color:#94a3b8;">사진 없음</span>' : ''}
-                </div>
+                <div style="font-size:7pt;font-weight:600;margin-bottom:3pt;color:#475569;">▸ 조치 후 (After)</div>
+                ${fb.afterBase64.map((b64: string) => `<img src="${b64}" style="max-width:180pt;max-height:120pt;border:1px solid #cbd5e1;border-radius:3pt;margin-right:4pt;" />`).join("")}
+                ${fb.afterBase64.length === 0 ? '<span style="font-size:7pt;color:#94a3b8;">사진 없음</span>' : ''}
               </td>
             </tr></table>
           </td></tr>`;
         }
 
-        const statusColor = fb.status === "완료" ? "#16a34a" : fb.status === "진행중" ? "#d97706" : "#dc2626";
-        return `
-          <tr>
+        return `<tr>
             <td class="center">${idx + 1}</td>
             <td>${itemLabel}</td>
             <td>${fb.description || ""}</td>
             <td class="center" style="color:${statusColor};font-weight:600;">${fb.status}</td>
             <td class="center">${fb.completed_at ? new Date(fb.completed_at).toLocaleDateString("ko-KR") : "-"}</td>
-          </tr>
-          ${imagesHtml}`;
+          </tr>${imagesHtml}`;
       }).join("");
 
       feedbackSection = `
         <div class="page-break"></div>
-        <h2>피드백(조치관리) 결과</h2>
-        <p style="font-size:8pt;color:#475569;margin-bottom:6pt;">총 ${feedbackWithImages.length}건 · 완료 ${feedbackWithImages.filter((f: any) => f.status === "완료").length}건</p>
+        <div class="section-header">피드백(조치관리) 결과</div>
+        <div class="summary-text">총 ${feedbackWithImages.length}건 · 완료 ${feedbackWithImages.filter((f: any) => f.status === "완료").length}건 · 미조치 ${feedbackWithImages.filter((f: any) => f.status === "미조치").length}건</div>
         <table>
           <thead><tr><th>No</th><th>관련 항목</th><th>조치 내용</th><th>상태</th><th>완료일</th></tr></thead>
           <tbody>${fbRows}</tbody>
@@ -203,13 +193,13 @@ Deno.serve(async (req) => {
     // Validation section
     let validationSection = "";
     if (type === "validation" && validationResults.length > 0) {
-      const vRows = validationResults
-        .map((vr: any, i: number) => `<tr><td class="center">${i + 1}</td><td>${vr.status}</td><td>${vr.message || ""}</td></tr>`)
-        .join("");
+      const vRows = validationResults.map((vr: any, i: number) =>
+        `<tr><td class="center">${i + 1}</td><td>${vr.status}</td><td>${vr.message || ""}</td></tr>`
+      ).join("");
       validationSection = `
         <div class="page-break"></div>
-        <h2>검증 결과 리포트</h2>
-        <p>검증 점수: ${run.validation_score ?? "-"} / 판정: ${run.validation_verdict ?? "-"}</p>
+        <div class="section-header">검증 결과 리포트</div>
+        <div class="summary-text">검증 점수: ${run.validation_score ?? "-"} / 판정: ${run.validation_verdict ?? "-"}</div>
         <table><thead><tr><th>#</th><th>상태</th><th>메시지</th></tr></thead><tbody>${vRows}</tbody></table>`;
     }
 
@@ -223,47 +213,131 @@ Deno.serve(async (req) => {
 body { font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; font-size: 9pt; color: #1e293b; line-height: 1.4; }
 @page { size: A4 landscape; margin: 12mm 10mm; }
 .page-break { page-break-before: always; }
-h1 { font-size: 16pt; margin-bottom: 4pt; }
-h2 { font-size: 12pt; margin: 12pt 0 6pt; }
-.meta { font-size: 9pt; color: #475569; margin-bottom: 8pt; }
-.meta span { margin-right: 16pt; }
-table { width: 100%; border-collapse: collapse; font-size: 8pt; margin-bottom: 12pt; }
+
+/* Report header */
+.report-header {
+  border: 2px solid #1e293b;
+  margin-bottom: 10pt;
+}
+.report-title {
+  background: #1e293b;
+  color: white;
+  text-align: center;
+  padding: 8pt 0;
+  font-size: 16pt;
+  font-weight: 700;
+  letter-spacing: 2pt;
+}
+.report-subtitle {
+  text-align: center;
+  padding: 4pt 0;
+  font-size: 11pt;
+  color: #475569;
+  border-bottom: 1px solid #e2e8f0;
+}
+.report-info {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+}
+.report-info-row {
+  display: table-row;
+}
+.report-info-label {
+  display: table-cell;
+  background: #f1f5f9;
+  font-weight: 600;
+  font-size: 8pt;
+  padding: 4pt 8pt;
+  border: 1px solid #e2e8f0;
+  width: 80pt;
+  white-space: nowrap;
+  color: #334155;
+}
+.report-info-value {
+  display: table-cell;
+  font-size: 8pt;
+  padding: 4pt 8pt;
+  border: 1px solid #e2e8f0;
+  color: #1e293b;
+}
+
+.section-header {
+  font-size: 11pt;
+  font-weight: 700;
+  margin: 10pt 0 4pt;
+  padding: 4pt 8pt;
+  background: #f1f5f9;
+  border-left: 4pt solid #1e293b;
+}
+.summary-text {
+  font-size: 8pt;
+  color: #475569;
+  margin-bottom: 6pt;
+  padding-left: 4pt;
+}
+
+table { width: 100%; border-collapse: collapse; font-size: 8pt; margin-bottom: 10pt; }
 th, td { border: 1px solid #cbd5e1; padding: 3pt 5pt; text-align: left; vertical-align: top; word-break: break-all; }
 th { background: #1e293b; color: white; font-weight: 500; text-align: center; white-space: nowrap; }
 .center { text-align: center; }
 .nowrap { white-space: nowrap; }
 .grade { font-weight: 600; text-align: center; min-width: 20pt; }
-.sig-table { width: auto; margin-top: 12pt; }
-.sig-table th { background: #64748b; }
+
+.sig-table { width: auto; margin-top: 8pt; }
+.sig-table th { background: #475569; }
 .sig-table td { min-width: 60pt; height: 24pt; }
-.cover { text-align: center; padding-top: 100pt; }
-.cover h1 { font-size: 22pt; margin-bottom: 8pt; }
-.cover .sub { font-size: 14pt; color: #475569; margin-bottom: 40pt; }
-.cover .info { font-size: 11pt; color: #334155; line-height: 1.8; }
+.sig-role { background: #f8fafc; font-weight: 500; }
+.sig-stamp { min-width: 80pt; }
+
+.risk-summary {
+  display: inline-flex;
+  gap: 8pt;
+  font-size: 9pt;
+  font-weight: 600;
+  margin-bottom: 6pt;
+}
+.risk-dot { display: inline-block; width: 8pt; height: 8pt; border-radius: 50%; margin-right: 2pt; vertical-align: middle; }
+
 thead { display: table-header-group; }
 img { max-width: 100%; height: auto; }
 </style>
 </head>
 <body>
-  <div class="cover">
-    <h1>디아이지에어가스 위험성평가 시스템</h1>
-    <div class="sub">${title}</div>
-    <div class="info">
-      프로젝트: ${project?.name || ""}<br>
-      현장명: ${project?.site_name || ""}<br>
-      발주사: ${project?.client || ""} / 시공사: ${project?.contractor || ""}<br>
-      기간: ${project?.period_start || ""} ~ ${project?.period_end || ""}<br>
-      출력일: ${today}
+  <!-- Report Header -->
+  <div class="report-header">
+    <div class="report-title">디아이지에어가스 위험성평가표</div>
+    <div class="report-subtitle">[${run.type}] ${run.period_label || ""}</div>
+    <div class="report-info">
+      <div class="report-info-row">
+        <div class="report-info-label">프로젝트명</div>
+        <div class="report-info-value">${project?.name || ""}</div>
+        <div class="report-info-label">현장명</div>
+        <div class="report-info-value">${project?.site_name || ""}</div>
+      </div>
+      <div class="report-info-row">
+        <div class="report-info-label">발주처</div>
+        <div class="report-info-value">${project?.client || ""}</div>
+        <div class="report-info-label">시공사</div>
+        <div class="report-info-value">${project?.contractor || ""}</div>
+      </div>
+      <div class="report-info-row">
+        <div class="report-info-label">적용기간</div>
+        <div class="report-info-value">${runPeriod}</div>
+        <div class="report-info-label">항목수</div>
+        <div class="report-info-value">${items.length}건 (상 ${highCount} / 중 ${medCount} / 하 ${lowCount})</div>
+      </div>
+      <div class="report-info-row">
+        <div class="report-info-label">검증결과</div>
+        <div class="report-info-value">${run.validation_verdict || "-"} ${run.validation_score != null ? `(${run.validation_score}점)` : ""}</div>
+        <div class="report-info-label">출력일</div>
+        <div class="report-info-value">${today}</div>
+      </div>
     </div>
   </div>
 
-  <div class="page-break"></div>
-
-  <h2>${title} - 위험성평가표</h2>
-  <div class="meta">
-    <span>항목 ${items.length}건</span>
-    <span>출력일: ${today}</span>
-  </div>
+  <!-- Risk Assessment Table -->
+  <div class="section-header">위험성평가 항목</div>
   <table>
     <thead>
       <tr>
@@ -271,17 +345,18 @@ img { max-width: 100%; height: auto; }
         <th>기존대책</th><th>개선대책</th>
         <th>가능성</th><th>중대성</th><th>위험도</th>
         <th>가능성'</th><th>중대성'</th><th>위험도'</th>
-        <th>상태</th><th>PPE</th><th>법적근거</th><th>부서</th><th>담당</th>
+        <th>상태</th><th>PPE</th><th>부서</th><th>담당</th>
       </tr>
     </thead>
     <tbody>
-      ${itemRows || '<tr><td colspan="18" class="center">항목 없음</td></tr>'}
+      ${itemRows || '<tr><td colspan="17" class="center">항목 없음</td></tr>'}
     </tbody>
   </table>
 
-  <h2>서명란</h2>
+  <!-- Signature Section -->
+  <div class="section-header">서명란</div>
   <table class="sig-table">
-    <thead><tr><th>구분</th><th>성명</th><th>소속</th><th>서명/일자</th></tr></thead>
+    <thead><tr><th>구분</th><th>성명</th><th>소속</th><th>서명 / 일자</th></tr></thead>
     <tbody>${sigRows}</tbody>
   </table>
 
@@ -290,7 +365,10 @@ img { max-width: 100%; height: auto; }
 </body>
 </html>`;
 
-    return new Response(JSON.stringify({ html, title, fileName: `위험성평가_${run.type}_${run.period_label}_${today}.pdf` }), {
+    return new Response(JSON.stringify({
+      html, title,
+      fileName: `위험성평가_${run.type}_${run.period_label}_${today}.pdf`
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {

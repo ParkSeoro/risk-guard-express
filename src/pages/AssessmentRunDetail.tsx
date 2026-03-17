@@ -559,12 +559,6 @@ const AssessmentRunDetail = () => {
     if (activeItems.length === 0) {
       toast({ title: '항목이 1건 이상 있어야 결재 상신이 가능합니다.', variant: 'destructive' }); return;
     }
-    if (!['검증완료', '보완요청', '보완중', '반려'].includes(run.status)) {
-      toast({ title: '검증 완료 후에만 결재 상신이 가능합니다.', variant: 'destructive' }); return;
-    }
-    if (run.validation_verdict === '부적정') {
-      toast({ title: '부적정 판정 시 결재 상신이 불가합니다. 보완 후 재검증하세요.', variant: 'destructive' }); return;
-    }
 
     // Build 4-step approval line based on position:
     // 1. 작성 (SUPERVISOR / current user)

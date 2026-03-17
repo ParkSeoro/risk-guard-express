@@ -363,7 +363,7 @@ export async function generateRemediationActions(
   }
 
   // ===== F. Evidence Required (ACTION 10) =====
-  for (const item of items) {
+  for (const item of activeItems) {
     if (item.status !== '완료') continue;
     // No attachment check - just flag
     const verdict = report.itemVerdicts[item.id];

@@ -2176,24 +2176,78 @@ const AssessmentRunDetail = () => {
                   <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set())}>전체 해제</Button>
                   <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set(remediationActions.filter(a => !a.requiresUserConfirm).map(a => a.id)))}>자동만</Button>
                   <Button variant="ghost" size="sm" className="text-xs h-7 text-destructive" onClick={async () => {
-                    // Exclude: mark selected action target items as excluded
+                    if (!run || !runId || !user) return;
+
                     const selectedActions = remediationActions.filter(a => selectedActionIds.has(a.id));
                     const targetIds = new Set<string>();
-                    selectedActions.forEach(a => a.targetRiskItemIds.forEach(id => targetIds.add(id)));
-                    if (targetIds.size === 0) { toast({ title: '제외할 대상 항목이 없습니다.', variant: 'destructive' }); return; }
-                    for (const itemId of targetIds) {
-                      await supabase.from('risk_items').update({
-                        is_excluded: true, excluded_at: new Date().toISOString(),
-                        excluded_by: user?.id || null, excluded_reason: '자동보완 제외 처리',
-                      }).eq('id', itemId);
+                    const recommendationKeys = new Set<string>();
+
+                    selectedActions.forEach((action) => {
+                      action.targetRiskItemIds.forEach((id) => targetIds.add(id));
+                      (action.newItems || []).forEach((ni) => recommendationKeys.add(recommendationKey(ni as any)));
+                    });
+
+                    if (targetIds.size === 0 && recommendationKeys.size === 0) {
+                      toast({ title: '제외할 대상 항목이 없습니다.', variant: 'destructive' });
+                      return;
                     }
-                    const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+
+                    if (targetIds.size > 0) {
+                      await supabase
+                        .from('risk_items')
+                        .update({
+                          is_excluded: true,
+                          excluded_at: new Date().toISOString(),
+                          excluded_by: user.id,
+                          excluded_reason: '자동보완 제외 처리',
+                        })
+                        .in('id', [...targetIds]);
+                    }
+
+                    let dismissedCount = 0;
+                    if (recommendationKeys.size > 0) {
+                      const keys = [...recommendationKeys];
+                      const { data: existingDismissed } = await supabase
+                        .from('dismissed_recommendations')
+                        .select('gap_key')
+                        .eq('run_id', runId)
+                        .in('gap_key', keys);
+
+                      const existing = new Set((existingDismissed || []).map((d) => d.gap_key));
+                      const inserts = keys
+                        .filter((key) => !existing.has(key))
+                        .map((gap_key) => ({
+                          project_id: run.project_id,
+                          run_id: runId,
+                          gap_key,
+                          dismissed_by: user.id,
+                        }));
+
+                      if (inserts.length > 0) {
+                        await supabase.from('dismissed_recommendations').insert(inserts);
+                      }
+
+                      dismissedCount = keys.length;
+                    }
+
+                    const { data: refreshed } = await supabase
+                      .from('risk_items')
+                      .select('*')
+                      .eq('run_id', runId)
+                      .order('sort_order');
                     if (refreshed) setItems(refreshed);
-                    // Remove excluded actions from wizard
-                    setRemediationActions(prev => prev.filter(a => !selectedActionIds.has(a.id)));
+
+                    setRemediationActions((prev) => prev.filter((a) => !selectedActionIds.has(a.id)));
                     setSelectedActionIds(new Set());
-                    toast({ title: `${targetIds.size}건 항목이 제외 처리되었습니다.` });
-                    log('제외처리', 'risk_items', runId!, run!.project_id, { count: targetIds.size });
+
+                    toast({
+                      title: `제외 처리 완료`,
+                      description: `항목 제외 ${targetIds.size}건 · 추천 무시 ${dismissedCount}건`,
+                    });
+                    log('제외처리', 'risk_items', runId, run.project_id, {
+                      excludedItems: targetIds.size,
+                      dismissedRecommendations: dismissedCount,
+                    });
                   }}>
                     <Ban className="h-3 w-3 mr-1" /> 제외
                   </Button>

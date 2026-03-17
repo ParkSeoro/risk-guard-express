@@ -147,6 +147,48 @@ const AssessmentRunDetail = () => {
   // Worker participation photos
   const [workerPhotoUploading, setWorkerPhotoUploading] = useState(false);
 
+  const recommendationKey = (item: { process?: string; sub_task?: string; hazard?: string }) =>
+    `${item.process || ''}|||${item.sub_task || ''}|||${item.hazard || ''}`;
+
+  const filterDismissedCoverageRecommendations = async (actions: RemediationAction[]) => {
+    if (!runId) return actions;
+
+    const { data: dismissed } = await supabase
+      .from('dismissed_recommendations')
+      .select('gap_key')
+      .eq('run_id', runId);
+
+    const dismissedKeys = new Set((dismissed || []).map((d) => d.gap_key));
+    if (dismissedKeys.size === 0) return actions;
+
+    const filtered = actions
+      .map((action) => {
+        if (action.actionType !== 'ACTION_ADD_MISSING_RISK_ITEMS_FROM_LIBRARY' || !action.newItems) {
+          return action;
+        }
+
+        const visibleNewItems = action.newItems.filter(
+          (ni) => !dismissedKeys.has(recommendationKey(ni as any))
+        );
+
+        if (visibleNewItems.length === 0) return null;
+
+        return {
+          ...action,
+          newItems: visibleNewItems,
+          label: `누락 항목 추천 (${visibleNewItems.length}건)`,
+          description: `커버리지 검증에서 누락된 ${visibleNewItems.length}건의 위험성평가 항목을 라이브러리에서 추천`,
+          expectedEffect: `누락 ${visibleNewItems.length}건 보완 (선택 항목만 추가)`,
+        };
+      })
+      .filter((a): a is RemediationAction => a !== null);
+
+    const hasActionable = filtered.some((a) => a.actionType !== 'ACTION_CREATE_REMEDIATION_SUMMARY');
+    if (hasActionable) return filtered;
+
+    return filtered.filter((a) => a.actionType !== 'ACTION_CREATE_REMEDIATION_SUMMARY');
+  };
+
   const fetchAll = useCallback(async () => {
     if (!runId) return;
     setLoading(true);

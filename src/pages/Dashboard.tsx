@@ -529,6 +529,76 @@ const Dashboard = () => {
               )}
             </CardContent>
           </Card>
+
+          {/* Feedback KPI Section */}
+          {data.feedback.total > 0 && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <KpiCard
+                  label="총 피드백"
+                  value={data.feedback.total}
+                  icon={<ClipboardList className="h-5 w-5 text-primary" />}
+                  iconBg="bg-primary/10"
+                />
+                <KpiCard
+                  label="미조치"
+                  value={data.feedback.unresolved}
+                  valueColor={data.feedback.unresolved > 0 ? "text-destructive" : "text-foreground"}
+                  icon={<AlertTriangle className="h-5 w-5 text-destructive" />}
+                  iconBg="bg-destructive/10"
+                />
+                <KpiCard
+                  label="진행중"
+                  value={data.feedback.inProgress}
+                  valueColor="text-warning"
+                  icon={<Clock className="h-5 w-5 text-warning" />}
+                  iconBg="bg-warning/10"
+                />
+                <KpiCard
+                  label="피드백 완료율"
+                  value={`${data.feedback.completionRate}%`}
+                  icon={<CheckCircle2 className="h-5 w-5 text-success" />}
+                  iconBg="bg-success/10"
+                  sub={<span className="text-[10px] text-muted-foreground mt-1">{data.feedback.completed}/{data.feedback.total} 완료</span>}
+                />
+              </div>
+
+              {data.feedback.byContractor.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                      <BarChart3 className="h-4 w-4 text-primary" /> 부서별 피드백 이행률
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {data.feedback.byContractor.map((c) => (
+                        <div key={c.name} className="flex items-center gap-3">
+                          <span className="text-xs font-medium w-24 truncate">{c.name}</span>
+                          <div className="flex-1 h-5 bg-muted rounded-full overflow-hidden relative">
+                            <div
+                              className={`h-full rounded-full transition-all ${
+                                c.rate >= 80 ? 'bg-success' : c.rate >= 50 ? 'bg-warning' : 'bg-destructive'
+                              }`}
+                              style={{ width: `${c.rate}%` }}
+                            />
+                          </div>
+                          <span className={`text-xs font-bold w-12 text-right ${
+                            c.rate >= 80 ? 'text-success' : c.rate >= 50 ? 'text-warning' : 'text-destructive'
+                          }`}>
+                            {c.rate}%
+                          </span>
+                          <span className="text-[10px] text-muted-foreground w-16">
+                            {c.completed}/{c.total}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
         </>
       )}
     </div>

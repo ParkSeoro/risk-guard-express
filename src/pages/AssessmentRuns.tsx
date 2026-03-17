@@ -200,6 +200,8 @@ const AssessmentRuns = () => {
         project_id: selectedProject,
         type: form.type,
         period_label: form.period_label.trim(),
+        start_date: form.start_date,
+        end_date: form.end_date,
         target_processes: form.target_processes.split(',').map(s => s.trim()).filter(Boolean),
         target_contractors: contractorNames, // legacy compat
         target_company_ids: form.target_company_ids, // new SSOT

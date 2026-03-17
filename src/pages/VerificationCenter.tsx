@@ -479,6 +479,31 @@ const VerificationCenter = () => {
                               disabled={selectedGapKeys.size === 0}>
                               <EyeOff className="h-3.5 w-3.5" /> 무시하고 진행
                             </Button>
+                            <Button size="sm" variant="ghost" className="gap-1.5 text-destructive" onClick={async () => {
+                              // Dismiss ALL visible gaps at once
+                              if (!selectedRun || !user || visibleGaps.length === 0) return;
+                              try {
+                                const allKeys = visibleGaps.map(g => gapKey(g));
+                                const inserts = allKeys.map(key => ({
+                                  project_id: selectedProject,
+                                  run_id: selectedRun,
+                                  gap_key: key,
+                                  dismissed_by: user.id,
+                                }));
+                                await supabase.from('dismissed_recommendations' as any).insert(inserts);
+                                setDismissedKeys(prev => {
+                                  const next = new Set(prev);
+                                  allKeys.forEach(k => next.add(k));
+                                  return next;
+                                });
+                                setSelectedGapKeys(new Set());
+                                toast({ title: `${allKeys.length}건 전체 무시 처리 완료` });
+                              } catch {
+                                toast({ title: '무시 처리 실패', variant: 'destructive' });
+                              }
+                            }}>
+                              <Ban className="h-3.5 w-3.5" /> 이번 추천 무시
+                            </Button>
                           </div>
                         )}
 

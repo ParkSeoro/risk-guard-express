@@ -71,6 +71,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
+          // Process invite code if stored in user metadata (post-email-verification)
+          const inviteCode = session.user.user_metadata?.invite_code;
+          if (inviteCode) {
+            try {
+              await supabase.rpc('process_invite_code', {
+                _user_id: session.user.id,
+                _invite_code: inviteCode,
+              });
+              // Clear invite_code from metadata after processing
+              await supabase.auth.updateUser({ data: { invite_code: null } });
+            } catch (e) {
+              // non-critical
+            }
+          }
           setTimeout(async () => {
             await syncMasterAllowlist(session.user.id);
             fetchProfile(session.user.id);

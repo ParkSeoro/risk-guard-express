@@ -207,7 +207,7 @@ export async function generateRemediationActions(
 
   // ===== B. Control Measures (ACTION 3) =====
   const vaguePatterns = ['주의', '안전수칙 준수', '조심', '유의', '확인'];
-  for (const item of items) {
+  for (const item of activeItems) {
     const measure = item.improvement_measure || '';
     if (!measure || measure.length >= 30) continue;
     const isVague = vaguePatterns.some(p => measure.includes(p)) || measure.length < 10;

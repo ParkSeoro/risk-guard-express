@@ -78,11 +78,14 @@ export interface MasterAssignee {
 export interface ApprovalStep {
   id: string;
   riskItemId: string;
-  step: '작성' | '검토' | '승인';
-  status: '대기' | '승인' | '반려';
+  step: '작성' | '안전관리자 검토' | '현장대리인 확인' | '최종승인';
+  status: '대기' | '승인' | '반려' | '취소';
   approver: string;
   comment: string;
   timestamp: string;
+  position: string;
+  companyName: string;
+  approvedAt: string | null;
 }
 
 // Legacy helpers (kept for backward compat)

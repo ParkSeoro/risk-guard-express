@@ -108,11 +108,11 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
       toast({ title: '조치내용을 입력하세요.', variant: 'destructive' });
       return;
     }
-    // Validate risk_grade is '상' when a specific item is selected
+    // Validate: feedback only for items with improved_risk_grade === '상' (관리대상)
     if (formRiskItemId) {
       const selectedItem = riskItems.find(i => i.id === formRiskItemId);
-      if (selectedItem && selectedItem.risk_grade !== '상') {
-        toast({ title: "위험도 '상' 항목만 피드백 대상입니다.", variant: 'destructive' });
+      if (selectedItem && (selectedItem as any).improved_risk_grade !== '상') {
+        toast({ title: "개선 후 위험도 '상'(관리대상) 항목만 피드백 대상입니다.", variant: 'destructive' });
         return;
       }
     }

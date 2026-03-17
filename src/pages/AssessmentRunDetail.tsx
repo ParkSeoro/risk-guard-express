@@ -160,7 +160,7 @@ const AssessmentRunDetail = () => {
         supabase.from('projects').select('*').eq('id', projectId).single(),
         supabase.from('master_departments').select('id, name').or(`project_id.eq.${projectId},project_id.is.null`),
         supabase.from('department_assignees').select('department_id, default_user_id').eq('project_id', projectId),
-        supabase.from('project_members').select('user_id, company').eq('project_id', projectId),
+        supabase.from('project_members').select('user_id, company, position, company_id, role').eq('project_id', projectId),
         supabase.from('environment_tags' as any).select('id, name, category').or(`project_id.eq.${projectId},project_id.is.null`).order('sort_order'),
       ]);
       setProject(projRes.data);
@@ -168,9 +168,10 @@ const AssessmentRunDetail = () => {
       setDeptAssignees(deptAssigneeRes.data || []);
       setEnvironmentTags((envTagsRes.data || []) as any);
       const profiles = profilesRes.data || [];
-      const membersList = (membersRes.data || []).map(m => {
+      const membersList = (membersRes.data || []).map((m: any) => {
         const prof = profiles.find((p: any) => p.user_id === m.user_id);
-        return { user_id: m.user_id, display_name: prof?.display_name || '', company: m.company || prof?.company || '' };
+        const positionLabel = m.position ? ` / ${m.position === 'site_manager' ? '현장대리인' : m.position === 'supervisor' ? '관리감독자' : m.position === 'safety_manager' ? '안전관리자' : m.position}` : '';
+        return { user_id: m.user_id, display_name: `${prof?.display_name || ''}${positionLabel}`, company: m.company || prof?.company || '', position: m.position || '' };
       });
       setProjectMembers(membersList);
 
@@ -1134,7 +1135,7 @@ const AssessmentRunDetail = () => {
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">현장명:</span><span>{project?.site_name || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">발주처:</span><span>{project?.client || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">시공사:</span><span>{project?.contractor || ''}</span></div>
-            <div className="flex gap-1"><span className="font-medium text-muted-foreground">기간:</span><span>{project?.period_start || ''} ~ {project?.period_end || ''}</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">기간:</span><span>{run.start_date || project?.period_start || ''} ~ {run.end_date || project?.period_end || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">항목 수:</span><span>{stats.total}건</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">상태:</span>
               <Badge variant="outline" className={`text-[9px] ${statusInfo.color}`}>

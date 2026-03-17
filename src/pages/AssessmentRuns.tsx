@@ -83,7 +83,7 @@ const AssessmentRuns = () => {
   const [companyNameMap, setCompanyNameMap] = useState<Record<string, string>>({});
 
   const [form, setForm] = useState({
-    type: '정기', period_label: '', target_processes: '', target_company_ids: [] as string[], notes: '',
+    type: '정기', period_label: '', start_date: '', end_date: '', target_processes: '', target_company_ids: [] as string[], notes: '',
   });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -180,6 +180,9 @@ const AssessmentRuns = () => {
     if (!form.type) errors.type = '종류를 선택해주세요.';
     if (!form.period_label.trim()) errors.period_label = '적용기간을 입력해주세요.';
     if (form.period_label.trim().length > 100) errors.period_label = '적용기간은 100자 이내로 입력해주세요.';
+    if (!form.start_date) errors.start_date = '시작일을 선택해주세요.';
+    if (!form.end_date) errors.end_date = '종료일을 선택해주세요.';
+    if (form.start_date && form.end_date && form.start_date > form.end_date) errors.end_date = '종료일이 시작일보다 이전입니다.';
     if (form.notes.length > 2000) errors.notes = '비고는 2000자 이내로 입력해주세요.';
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
@@ -197,6 +200,8 @@ const AssessmentRuns = () => {
         project_id: selectedProject,
         type: form.type,
         period_label: form.period_label.trim(),
+        start_date: form.start_date,
+        end_date: form.end_date,
         target_processes: form.target_processes.split(',').map(s => s.trim()).filter(Boolean),
         target_contractors: contractorNames, // legacy compat
         target_company_ids: form.target_company_ids, // new SSOT
@@ -217,7 +222,7 @@ const AssessmentRuns = () => {
 
       toast({ title: '회차가 생성되었습니다.' });
       setShowCreate(false);
-      setForm({ type: '정기', period_label: '', target_processes: '', target_company_ids: [], notes: '' });
+      setForm({ type: '정기', period_label: '', start_date: '', end_date: '', target_processes: '', target_company_ids: [], notes: '' });
       setCreateError(null);
       fetchRuns();
       if (data) navigate(`/assessment-run/${data.id}`);
@@ -383,7 +388,7 @@ const AssessmentRuns = () => {
                       <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
                         <span className="flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
-                          {format(new Date(run.created_at), 'yyyy-MM-dd')}
+                          {run.start_date && run.end_date ? `${run.start_date} ~ ${run.end_date}` : format(new Date(run.created_at), 'yyyy-MM-dd')}
                         </span>
                         <span className="font-medium">항목 {stats.total}건</span>
                         {stats.total > 0 && (
@@ -456,9 +461,21 @@ const AssessmentRuns = () => {
                 {fieldErrors.type && <p className="text-xs text-destructive">{fieldErrors.type}</p>}
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">적용기간 *</Label>
+                <Label className="text-xs">회차명 *</Label>
                 <Input className="h-9" value={form.period_label} onChange={e => setForm(p => ({ ...p, period_label: e.target.value }))} placeholder="예: 2026년 3월 1주차" />
                 {fieldErrors.period_label && <p className="text-xs text-destructive">{fieldErrors.period_label}</p>}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">시작일 *</Label>
+                <Input type="date" className="h-9" value={form.start_date} onChange={e => setForm(p => ({ ...p, start_date: e.target.value }))} />
+                {fieldErrors.start_date && <p className="text-xs text-destructive">{fieldErrors.start_date}</p>}
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">종료일 *</Label>
+                <Input type="date" className="h-9" value={form.end_date} onChange={e => setForm(p => ({ ...p, end_date: e.target.value }))} />
+                {fieldErrors.end_date && <p className="text-xs text-destructive">{fieldErrors.end_date}</p>}
               </div>
             </div>
             <div className="space-y-1">

@@ -222,7 +222,7 @@ const AssessmentRuns = () => {
 
       toast({ title: '회차가 생성되었습니다.' });
       setShowCreate(false);
-      setForm({ type: '정기', period_label: '', target_processes: '', target_company_ids: [], notes: '' });
+      setForm({ type: '정기', period_label: '', start_date: '', end_date: '', target_processes: '', target_company_ids: [], notes: '' });
       setCreateError(null);
       fetchRuns();
       if (data) navigate(`/assessment-run/${data.id}`);

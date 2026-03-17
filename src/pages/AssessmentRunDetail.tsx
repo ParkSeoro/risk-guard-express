@@ -2248,6 +2248,34 @@ const AssessmentRunDetail = () => {
                       excludedItems: targetIds.size,
                       dismissedRecommendations: dismissedCount,
                     });
+
+                    // Auto re-validate after exclusion
+                    const currentItems = (refreshed || items).filter((i: any) => !i.is_excluded);
+                    const reReport = await validateRiskItems(currentItems, run.project_id);
+                    setValidationReport(reReport);
+                    await saveValidationResults(reReport, run.project_id, user.id, runId);
+                    const newStatus = reReport.verdict === '부적정' ? '보완요청' : '검증완료';
+                    await supabase.from('assessment_runs').update({
+                      status: newStatus,
+                      validation_score: reReport.score,
+                      validation_verdict: reReport.verdict,
+                    }).eq('id', runId);
+                    setRun((prev: any) => ({
+                      ...prev,
+                      status: newStatus,
+                      validation_score: reReport.score,
+                      validation_verdict: reReport.verdict,
+                    }));
+
+                    // If no more actions remain, close wizard automatically
+                    const remaining = remediationActions.filter((a) => !selectedActionIds.has(a.id));
+                    if (remaining.length === 0 || remaining.every((a) => a.actionType === 'ACTION_CREATE_REMEDIATION_SUMMARY')) {
+                      setShowRemediationWizard(false);
+                      toast({
+                        title: `재검증: ${reReport.verdict} (${reReport.score}점)`,
+                        description: reReport.verdict !== '부적정' ? '결재 상신이 가능합니다.' : '보완이 필요합니다.',
+                      });
+                    }
                   }}>
                     <Ban className="h-3 w-3 mr-1" /> 제외
                   </Button>

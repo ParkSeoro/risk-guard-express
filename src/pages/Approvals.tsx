@@ -248,9 +248,9 @@ const Approvals = () => {
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       {(steps as any[]).sort((a, b) => {
-                        const order = { '작성': 0, '검토': 1, '승인': 2 };
-                        return (order[a.step as keyof typeof order] || 0) - (order[b.step as keyof typeof order] || 0);
-                      }).map((step: any, i: number) => (
+                        // Sort by creation order (sequential)
+                        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                      }).map((step: any, i: number) => {
                         <div key={step.id} className="flex items-center gap-2">
                           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium ${
                             step.status === '승인' ? 'bg-success/10 text-success' :

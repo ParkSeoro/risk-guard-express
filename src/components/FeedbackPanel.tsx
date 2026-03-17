@@ -107,6 +107,20 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
       toast({ title: '조치내용을 입력하세요.', variant: 'destructive' });
       return;
     }
+    // Before photo is REQUIRED for new feedback
+    if (!editingId && formBeforeFiles.length === 0) {
+      toast({ title: '조치 전(Before) 사진은 필수입니다.', variant: 'destructive' });
+      return;
+    }
+    // After photo is REQUIRED when status is 완료
+    if (formStatus === '완료' && formAfterFiles.length === 0) {
+      // Check if editing and already has after images
+      const existing = editingId ? feedbackList.find(f => f.id === editingId) : null;
+      if (!existing?.after_image_urls?.length) {
+        toast({ title: '완료 처리 시 조치 후(After) 사진이 필수입니다.', variant: 'destructive' });
+        return;
+      }
+    }
     setSaving(true);
     try {
       let beforeUrls: string[] = [];

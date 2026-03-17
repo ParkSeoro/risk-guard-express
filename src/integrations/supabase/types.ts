@@ -841,6 +841,7 @@ export type Database = {
       project_invites: {
         Row: {
           code: string
+          company_id: string | null
           created_at: string
           created_by: string | null
           default_role: Database["public"]["Enums"]["app_role"]
@@ -852,6 +853,7 @@ export type Database = {
         }
         Insert: {
           code: string
+          company_id?: string | null
           created_at?: string
           created_by?: string | null
           default_role?: Database["public"]["Enums"]["app_role"]
@@ -863,6 +865,7 @@ export type Database = {
         }
         Update: {
           code?: string
+          company_id?: string | null
           created_at?: string
           created_by?: string | null
           default_role?: Database["public"]["Enums"]["app_role"]
@@ -873,6 +876,13 @@ export type Database = {
           use_count?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "project_invites_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "project_invites_project_id_fkey"
             columns: ["project_id"]
@@ -1669,6 +1679,10 @@ export type Database = {
       is_project_member: {
         Args: { _project_id: string; _user_id: string }
         Returns: boolean
+      }
+      process_invite_code: {
+        Args: { _invite_code: string; _user_id: string }
+        Returns: Json
       }
     }
     Enums: {

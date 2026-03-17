@@ -2348,7 +2348,32 @@ const AssessmentRunDetail = () => {
                 )}
 
                 <div className="flex gap-2 pt-2 border-t">
-                  <Button variant="outline" className="flex-1" onClick={() => setShowRemediationWizard(false)}>닫기</Button>
+                  <Button variant="outline" className="flex-1" onClick={async () => {
+                    setShowRemediationWizard(false);
+                    // 보완 제안이 0건이면 닫기 시 자동 재검증 + 상태 전환
+                    if (remediationActions.length === 0 && run && user) {
+                      const currentItems = items.filter((i: any) => !i.is_excluded);
+                      const reReport = await validateRiskItems(currentItems, run.project_id);
+                      setValidationReport(reReport);
+                      await saveValidationResults(reReport, run.project_id, user.id, runId);
+                      const newStatus = reReport.verdict === '부적정' ? '보완요청' : '검증완료';
+                      await supabase.from('assessment_runs').update({
+                        status: newStatus,
+                        validation_score: reReport.score,
+                        validation_verdict: reReport.verdict,
+                      }).eq('id', runId);
+                      setRun((prev: any) => ({
+                        ...prev,
+                        status: newStatus,
+                        validation_score: reReport.score,
+                        validation_verdict: reReport.verdict,
+                      }));
+                      toast({
+                        title: `재검증: ${reReport.verdict} (${reReport.score}점)`,
+                        description: reReport.verdict !== '부적정' ? '결재 상신이 가능합니다.' : '보완이 필요합니다.',
+                      });
+                    }
+                  }}>닫기</Button>
                   <Button className="flex-1 gap-1.5" onClick={handleApplyRemediation} disabled={selectedActionIds.size === 0 || remediationLoading}>
                     <Wand2 className="h-3.5 w-3.5" />
                     {remediationLoading ? '적용 중...' : `${selectedActionIds.size}건 보완 적용${applyAndRevalidate ? ' + 재검증' : ''}`}

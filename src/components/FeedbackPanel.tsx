@@ -409,18 +409,34 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5"><Camera className="h-3.5 w-3.5" /> 조치 전 사진</Label>
+                <Label className="flex items-center gap-1.5"><Camera className="h-3.5 w-3.5" /> 조치 전 사진 <span className="text-destructive text-[10px]">*필수</span></Label>
                 <Input type="file" accept="image/*" multiple className="text-xs" onChange={e => setFormBeforeFiles(Array.from(e.target.files || []))} />
                 {formBeforeFiles.length > 0 && <p className="text-[10px] text-muted-foreground">{formBeforeFiles.length}개 파일 선택됨</p>}
+                {editingId && (() => {
+                  const existing = feedbackList.find(f => f.id === editingId);
+                  return existing?.before_image_urls?.length ? (
+                    <p className="text-[10px] text-success">기존 {existing.before_image_urls.length}개 사진 있음</p>
+                  ) : null;
+                })()}
               </div>
               <div className="space-y-1.5">
-                <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> 조치 후 사진</Label>
+                <Label className="flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> 조치 후 사진 {formStatus === '완료' && <span className="text-destructive text-[10px]">*필수</span>}</Label>
                 <Input type="file" accept="image/*" multiple className="text-xs" onChange={e => setFormAfterFiles(Array.from(e.target.files || []))} />
                 {formAfterFiles.length > 0 && <p className="text-[10px] text-muted-foreground">{formAfterFiles.length}개 파일 선택됨</p>}
+                {editingId && (() => {
+                  const existing = feedbackList.find(f => f.id === editingId);
+                  return existing?.after_image_urls?.length ? (
+                    <p className="text-[10px] text-success">기존 {existing.after_image_urls.length}개 사진 있음</p>
+                  ) : null;
+                })()}
               </div>
             </div>
 
-            <Button onClick={handleSave} className="w-full" disabled={saving}>
+            {!editingId && formBeforeFiles.length === 0 && (
+              <p className="text-[10px] text-destructive">⚠ 조치 전 사진을 첨부해야 저장할 수 있습니다.</p>
+            )}
+
+            <Button onClick={handleSave} className="w-full" disabled={saving || (!editingId && formBeforeFiles.length === 0)}>
               {saving ? '저장 중...' : editingId ? '수정' : '등록'}
             </Button>
           </div>

@@ -250,8 +250,7 @@ const Approvals = () => {
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       {(steps as any[]).sort((a, b) => {
-                        // Sort by creation order (sequential)
-                        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                        return (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99);
                       }).map((step: any, i: number) => (
                         <div key={step.id} className="flex items-center gap-2">
                           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium ${
@@ -263,7 +262,7 @@ const Approvals = () => {
                              step.status === '반려' ? <XCircle className="h-3.5 w-3.5" /> :
                              <Clock className="h-3.5 w-3.5" />}
                             <span>{step.step}</span>
-                            <span className="opacity-70">({step.approver_name || '미지정'})</span>
+                            <span className="opacity-70">({step.approver_name || '미지정'}{step.company_name ? ` · ${step.company_name}` : ''})</span>
                           </div>
                           {/* Only show action buttons to the ASSIGNED approver, not admins in 'all' tab */}
                           {step.status === '대기' && !isAllTab && user && step.approver_id === user.id && (

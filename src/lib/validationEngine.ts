@@ -120,15 +120,25 @@ export async function validateRiskItems(
       }
     }
 
-    // 3) High risk improvement
+    // 3) High risk improvement check (revised policy)
+    // If improved_risk_grade is still '상' but improvement_measure exists → 적정(관리대상), not 부적정
     if (item.risk_grade === '상') {
       if (item.improved_risk_grade === '상') {
-        itemIssues.push({ riskItemId: item.id, ruleType: 'insufficient_improvement', severity: 'error',
-          message: '위험도 상 항목의 개선후 위험도가 여전히 상', recommendation: getRecommendation('insufficient_improvement') });
+        if (!item.improvement_measure || item.improvement_measure.trim().length < 5) {
+          // No improvement at all → 부적정
+          itemIssues.push({ riskItemId: item.id, ruleType: 'insufficient_improvement', severity: 'error',
+            message: '위험도 상 항목에 구체적인 개선대책 필요', recommendation: '최소 5자 이상의 구체적 개선대책을 기재하세요.' });
+        } else {
+          // Has improvement but still '상' → 관리대상 (warning, not error)
+          itemIssues.push({ riskItemId: item.id, ruleType: 'managed_risk', severity: 'warning',
+            message: '개선 후에도 위험도 상 유지 → 관리대상 (피드백 필요)', recommendation: '지속적 관리 및 피드백 등록이 필요합니다.' });
+        }
       }
       if (!item.improvement_measure || item.improvement_measure.trim().length < 5) {
-        itemIssues.push({ riskItemId: item.id, ruleType: 'insufficient_improvement', severity: 'error',
-          message: '위험도 상 항목에 구체적인 개선대책 필요', recommendation: '최소 5자 이상의 구체적 개선대책을 기재하세요.' });
+        if (item.improved_risk_grade !== '상') { // Only add if not already caught above
+          itemIssues.push({ riskItemId: item.id, ruleType: 'insufficient_improvement', severity: 'error',
+            message: '위험도 상 항목에 구체적인 개선대책 필요', recommendation: '최소 5자 이상의 구체적 개선대책을 기재하세요.' });
+        }
       }
     }
 

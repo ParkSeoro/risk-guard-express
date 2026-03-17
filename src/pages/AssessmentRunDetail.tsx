@@ -147,6 +147,48 @@ const AssessmentRunDetail = () => {
   // Worker participation photos
   const [workerPhotoUploading, setWorkerPhotoUploading] = useState(false);
 
+  const recommendationKey = (item: { process?: string; sub_task?: string; hazard?: string }) =>
+    `${item.process || ''}|||${item.sub_task || ''}|||${item.hazard || ''}`;
+
+  const filterDismissedCoverageRecommendations = async (actions: RemediationAction[]) => {
+    if (!runId) return actions;
+
+    const { data: dismissed } = await supabase
+      .from('dismissed_recommendations')
+      .select('gap_key')
+      .eq('run_id', runId);
+
+    const dismissedKeys = new Set((dismissed || []).map((d) => d.gap_key));
+    if (dismissedKeys.size === 0) return actions;
+
+    const filtered = actions
+      .map((action) => {
+        if (action.actionType !== 'ACTION_ADD_MISSING_RISK_ITEMS_FROM_LIBRARY' || !action.newItems) {
+          return action;
+        }
+
+        const visibleNewItems = action.newItems.filter(
+          (ni) => !dismissedKeys.has(recommendationKey(ni as any))
+        );
+
+        if (visibleNewItems.length === 0) return null;
+
+        return {
+          ...action,
+          newItems: visibleNewItems,
+          label: `누락 항목 추천 (${visibleNewItems.length}건)`,
+          description: `커버리지 검증에서 누락된 ${visibleNewItems.length}건의 위험성평가 항목을 라이브러리에서 추천`,
+          expectedEffect: `누락 ${visibleNewItems.length}건 보완 (선택 항목만 추가)`,
+        };
+      })
+      .filter((a): a is RemediationAction => a !== null);
+
+    const hasActionable = filtered.some((a) => a.actionType !== 'ACTION_CREATE_REMEDIATION_SUMMARY');
+    if (hasActionable) return filtered;
+
+    return filtered.filter((a) => a.actionType !== 'ACTION_CREATE_REMEDIATION_SUMMARY');
+  };
+
   const fetchAll = useCallback(async () => {
     if (!runId) return;
     setLoading(true);
@@ -707,8 +749,9 @@ const AssessmentRunDetail = () => {
     try {
       const nonExcludedItems = items.filter((i: any) => !i.is_excluded);
       const actions = await generateRemediationActions(nonExcludedItems, validationReport, run.project_id);
-      setRemediationActions(actions);
-      setSelectedActionIds(new Set(actions.filter(a => !a.requiresUserConfirm).map(a => a.id)));
+      const visibleActions = await filterDismissedCoverageRecommendations(actions);
+      setRemediationActions(visibleActions);
+      setSelectedActionIds(new Set(visibleActions.filter(a => !a.requiresUserConfirm).map(a => a.id)));
     } catch (err) {
       toast({ title: '보완 제안 생성 실패', variant: 'destructive' });
     }
@@ -2133,24 +2176,78 @@ const AssessmentRunDetail = () => {
                   <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set())}>전체 해제</Button>
                   <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setSelectedActionIds(new Set(remediationActions.filter(a => !a.requiresUserConfirm).map(a => a.id)))}>자동만</Button>
                   <Button variant="ghost" size="sm" className="text-xs h-7 text-destructive" onClick={async () => {
-                    // Exclude: mark selected action target items as excluded
+                    if (!run || !runId || !user) return;
+
                     const selectedActions = remediationActions.filter(a => selectedActionIds.has(a.id));
                     const targetIds = new Set<string>();
-                    selectedActions.forEach(a => a.targetRiskItemIds.forEach(id => targetIds.add(id)));
-                    if (targetIds.size === 0) { toast({ title: '제외할 대상 항목이 없습니다.', variant: 'destructive' }); return; }
-                    for (const itemId of targetIds) {
-                      await supabase.from('risk_items').update({
-                        is_excluded: true, excluded_at: new Date().toISOString(),
-                        excluded_by: user?.id || null, excluded_reason: '자동보완 제외 처리',
-                      }).eq('id', itemId);
+                    const recommendationKeys = new Set<string>();
+
+                    selectedActions.forEach((action) => {
+                      action.targetRiskItemIds.forEach((id) => targetIds.add(id));
+                      (action.newItems || []).forEach((ni) => recommendationKeys.add(recommendationKey(ni as any)));
+                    });
+
+                    if (targetIds.size === 0 && recommendationKeys.size === 0) {
+                      toast({ title: '제외할 대상 항목이 없습니다.', variant: 'destructive' });
+                      return;
                     }
-                    const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+
+                    if (targetIds.size > 0) {
+                      await supabase
+                        .from('risk_items')
+                        .update({
+                          is_excluded: true,
+                          excluded_at: new Date().toISOString(),
+                          excluded_by: user.id,
+                          excluded_reason: '자동보완 제외 처리',
+                        })
+                        .in('id', [...targetIds]);
+                    }
+
+                    let dismissedCount = 0;
+                    if (recommendationKeys.size > 0) {
+                      const keys = [...recommendationKeys];
+                      const { data: existingDismissed } = await supabase
+                        .from('dismissed_recommendations')
+                        .select('gap_key')
+                        .eq('run_id', runId)
+                        .in('gap_key', keys);
+
+                      const existing = new Set((existingDismissed || []).map((d) => d.gap_key));
+                      const inserts = keys
+                        .filter((key) => !existing.has(key))
+                        .map((gap_key) => ({
+                          project_id: run.project_id,
+                          run_id: runId,
+                          gap_key,
+                          dismissed_by: user.id,
+                        }));
+
+                      if (inserts.length > 0) {
+                        await supabase.from('dismissed_recommendations').insert(inserts);
+                      }
+
+                      dismissedCount = keys.length;
+                    }
+
+                    const { data: refreshed } = await supabase
+                      .from('risk_items')
+                      .select('*')
+                      .eq('run_id', runId)
+                      .order('sort_order');
                     if (refreshed) setItems(refreshed);
-                    // Remove excluded actions from wizard
-                    setRemediationActions(prev => prev.filter(a => !selectedActionIds.has(a.id)));
+
+                    setRemediationActions((prev) => prev.filter((a) => !selectedActionIds.has(a.id)));
                     setSelectedActionIds(new Set());
-                    toast({ title: `${targetIds.size}건 항목이 제외 처리되었습니다.` });
-                    log('제외처리', 'risk_items', runId!, run!.project_id, { count: targetIds.size });
+
+                    toast({
+                      title: `제외 처리 완료`,
+                      description: `항목 제외 ${targetIds.size}건 · 추천 무시 ${dismissedCount}건`,
+                    });
+                    log('제외처리', 'risk_items', runId, run.project_id, {
+                      excludedItems: targetIds.size,
+                      dismissedRecommendations: dismissedCount,
+                    });
                   }}>
                     <Ban className="h-3 w-3 mr-1" /> 제외
                   </Button>

@@ -1114,7 +1114,7 @@ const AssessmentRunDetail = () => {
 
   // Default tags (hardcoded fallback + DB tags)
   const defaultEnvTags = ['고소','야간','밀폐','화기','양중','굴착','전기','분진','소음','고온','해상','화학'];
-  const defaultEquipTags = ['크레인','지게차','고소작업대','굴삭기','용접기','그라인더','펌프카'];
+  const defaultEquipTags = ['크레인','지게차','고소작업대','굴착기','용접기','그라인더','펌프카'];
   const envTagNames = environmentTags.filter(t => t.category === 'environment').map(t => t.name);
   const equipTagNames = environmentTags.filter(t => t.category === 'equipment').map(t => t.name);
   const allEnvTags = envTagNames.length > 0 ? envTagNames : defaultEnvTags;

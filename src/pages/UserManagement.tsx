@@ -70,14 +70,24 @@ const UserManagement = () => {
 
   const fetchUsers = async () => {
     setLoading(true);
-    const { data: profiles } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-    const { data: allRoles } = await supabase.from('user_roles').select('user_id, role');
+    const [{ data: profiles }, { data: allRoles }, { data: allMembers }] = await Promise.all([
+      supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+      supabase.from('user_roles').select('user_id, role'),
+      supabase.from('project_members').select('id, user_id, project_id, role, company_id, company, position'),
+    ]);
     const enriched: UserWithRole[] = (profiles || []).map((p: any) => ({
       ...p,
       account_status: p.account_status || 'active',
       roles: (allRoles || []).filter((r: any) => r.user_id === p.user_id).map((r: any) => r.role),
     }));
     setUsers(enriched);
+    // Build memberships lookup
+    const memberships: Record<string, any[]> = {};
+    (allMembers || []).forEach((m: any) => {
+      if (!memberships[m.user_id]) memberships[m.user_id] = [];
+      memberships[m.user_id].push(m);
+    });
+    setUserMemberships(memberships);
     setLoading(false);
   };
 

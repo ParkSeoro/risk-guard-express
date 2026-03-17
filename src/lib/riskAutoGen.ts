@@ -114,6 +114,8 @@ export async function generateRiskItems(options: GenerateOptions): Promise<Gener
   const { data: legalRefs } = await supabase.from('legal_references').select('*');
 
   return selected.map(({ item }) => {
+    // Apply term corrections to generated text fields
+    const correctedItem = correctItemTerms(item, ['sub_task', 'hazard', 'hazard_situation', 'existing_measure', 'improvement_measure']);
     const libLegalRefs: string[] = item.legal_refs || [];
     const matchedLaws = (legalRefs || [])
       .filter(law =>

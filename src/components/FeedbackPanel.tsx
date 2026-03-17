@@ -34,6 +34,7 @@ interface RiskItemBasic {
   sub_task: string | null;
   hazard: string | null;
   risk_grade?: string;
+  improved_risk_grade?: string;
 }
 
 interface ProjectMember {

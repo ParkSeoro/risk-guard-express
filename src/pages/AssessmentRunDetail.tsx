@@ -740,7 +740,8 @@ const AssessmentRunDetail = () => {
       const actions = await generateRemediationActions(nonExcludedItems, validationReport, run.project_id);
       const visibleActions = await filterDismissedCoverageRecommendations(actions);
       setRemediationActions(visibleActions);
-      setSelectedActionIds(new Set(visibleActions.filter(a => !a.requiresUserConfirm).map(a => a.id)));
+      // 자동 선택 금지 — 사용자가 직접 선택만 허용
+      setSelectedActionIds(new Set());
     } catch (err) {
       toast({ title: '보완 제안 생성 실패', variant: 'destructive' });
     }

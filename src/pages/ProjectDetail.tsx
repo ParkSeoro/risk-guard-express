@@ -808,6 +808,89 @@ const ProjectDetail = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Add/Edit Approval Template Dialog */}
+      <Dialog open={showAddTemplate} onOpenChange={(open) => { setShowAddTemplate(open); if (!open) setEditingTemplateId(null); }}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{editingTemplateId ? '결재라인 수정' : '결재라인 추가'}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>결재라인 이름</Label>
+              <Input value={templateForm.name} onChange={e => setTemplateForm(prev => ({ ...prev, name: e.target.value }))} placeholder="예: 기본 결재라인" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>평가 유형</Label>
+                <Select value={templateForm.assessment_type} onValueChange={v => setTemplateForm(prev => ({ ...prev, assessment_type: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="정기">정기</SelectItem>
+                    <SelectItem value="수시">수시</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-end gap-2 pb-0.5">
+                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <input type="checkbox" checked={templateForm.is_default} onChange={e => setTemplateForm(prev => ({ ...prev, is_default: e.target.checked }))} className="rounded" />
+                  기본값으로 설정
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>결재 단계</Label>
+                <Button size="sm" variant="outline" className="gap-1 text-xs h-7" onClick={addTemplateStep}>
+                  <Plus className="h-3 w-3" /> 단계 추가
+                </Button>
+              </div>
+              {templateForm.steps.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-4">단계를 추가해주세요.</p>
+              )}
+              {templateForm.steps.map((step, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-2 rounded border bg-muted/30">
+                  <span className="text-xs font-medium w-6 text-center">{idx + 1}</span>
+                  <Select value={step.step_label} onValueChange={v => updateTemplateStep(idx, 'step_label', v)}>
+                    <SelectTrigger className="h-7 text-xs flex-1"><SelectValue placeholder="구분 선택" /></SelectTrigger>
+                    <SelectContent>
+                      {STEP_LABEL_OPTIONS.map(o => (
+                        <SelectItem key={o.label} value={o.label}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={step.user_id || '__none__'} onValueChange={v => updateTemplateStep(idx, 'user_id', v === '__none__' ? '' : v)}>
+                    <SelectTrigger className="h-7 text-xs flex-1">
+                      <SelectValue placeholder="결재자 선택">{step.user_name || '(미지정)'}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">(미지정)</SelectItem>
+                      {members.map(m => {
+                        const profile = allProfiles.find(p => p.user_id === m.user_id);
+                        const name = profile?.display_name || m.user_id.slice(0, 8);
+                        return (
+                          <SelectItem key={m.user_id} value={m.user_id}>
+                            {name} {m.company ? `(${m.company})` : ''}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  <Badge variant="outline" className="text-[10px] whitespace-nowrap">
+                    {POSITION_LABELS[step.position] || step.position || '미지정'}
+                  </Badge>
+                  <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive shrink-0" onClick={() => removeTemplateStep(idx)}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <Button onClick={handleSaveTemplate} className="w-full">
+              {editingTemplateId ? '수정' : '추가'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

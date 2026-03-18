@@ -824,8 +824,10 @@ const ProjectDetail = () => {
                 <Select value={templateForm.assessment_type} onValueChange={v => setTemplateForm(prev => ({ ...prev, assessment_type: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="정기">정기</SelectItem>
-                    <SelectItem value="수시">수시</SelectItem>
+                    <SelectItem value="최초">최초평가</SelectItem>
+                    <SelectItem value="정기">정기평가</SelectItem>
+                    <SelectItem value="수시">수시평가</SelectItem>
+                    <SelectItem value="상시">상시평가</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

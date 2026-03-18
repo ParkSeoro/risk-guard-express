@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
 import { generateRiskItems } from '@/lib/riskAutoGen';
+import { generateRiskItemsHybrid, type AIGenerateOptions } from '@/lib/riskAutoGenAI';
 import { exportToXLSX, exportToPDF, exportToPDFServer, printRiskAssessment } from '@/lib/exportUtils';
 import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue } from '@/lib/validationEngine';
 import { generateRemediationActions, applyRemediationActions, buildRemediationSummaryText, executeAutoRemediation, type RemediationAction } from '@/lib/remediationEngine';

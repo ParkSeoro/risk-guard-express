@@ -457,17 +457,22 @@ const VerificationCenter = () => {
                                   if (next.has(key)) next.delete(key); else next.add(key);
                                   return next;
                                 })}>
-                                <div className="flex items-start gap-2">
-                                  <Checkbox checked={isSelected} className="mt-0.5" />
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-1">
-                                      <Badge variant="outline" className={`text-[9px] ${gap.severity === '상' ? 'text-destructive' : gap.severity === '중' ? 'text-warning' : 'text-muted-foreground'}`}>{gap.severity}</Badge>
-                                      <span className="font-medium">{gap.process}</span>
-                                      <span className="text-muted-foreground">– {gap.subTask}</span>
+                                  <div className="flex items-start gap-2">
+                                    <Checkbox checked={isSelected} className="mt-0.5" />
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        <Badge variant="outline" className={`text-[9px] ${
+                                          gap.recommendLevel === '필수' ? 'bg-destructive/10 text-destructive border-destructive/30' :
+                                          gap.recommendLevel === '권장' ? 'bg-warning/10 text-warning border-warning/30' :
+                                          'bg-muted text-muted-foreground'
+                                        }`}>{gap.recommendLevel}</Badge>
+                                        <Badge variant="outline" className={`text-[9px] ${gap.severity === '상' ? 'text-destructive' : gap.severity === '중' ? 'text-warning' : 'text-muted-foreground'}`}>{gap.severity}</Badge>
+                                        <span className="font-medium">{gap.process}</span>
+                                        <span className="text-muted-foreground">– {gap.subTask}</span>
+                                      </div>
+                                      <p className="text-muted-foreground">{gap.hazard}</p>
                                     </div>
-                                    <p className="text-muted-foreground">{gap.hazard}</p>
                                   </div>
-                                </div>
                               </div>
                             );
                           })}

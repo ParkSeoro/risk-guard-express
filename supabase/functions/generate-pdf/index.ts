@@ -19,6 +19,25 @@ async function imageUrlToBase64(url: string): Promise<string | null> {
   }
 }
 
+function formatKST(d: string | null | undefined): string {
+  if (!d) return "";
+  const dt = new Date(d);
+  const kst = new Date(dt.getTime() + 9 * 60 * 60 * 1000);
+  const y = kst.getUTCFullYear();
+  const m = String(kst.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(kst.getUTCDate()).padStart(2, '0');
+  const h = String(kst.getUTCHours()).padStart(2, '0');
+  const min = String(kst.getUTCMinutes()).padStart(2, '0');
+  return `${y}-${m}-${day} ${h}:${min}`;
+}
+
+const POSITION_LABELS: Record<string, string> = {
+  supervisor: '관리감독자',
+  safety_manager: '안전관리자',
+  site_manager: '현장대리인',
+  project_admin: '프로젝트 관리자',
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -82,7 +101,16 @@ Deno.serve(async (req) => {
     const validationResults = (validationRes as any).data || [];
     const approvals = approvalsRes.data || [];
 
-    // Helper: resolve company name from project_members.company_id → companies.name
+    // ===== SIGNATURE: Build from Approvals (SSOT) =====
+    const STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };
+    
+    const latestVersion = approvals.length > 0 ? approvals[0].approval_version || 1 : 0;
+    const latestApprovals = approvals.filter((a: any) => (a.approval_version || 1) === latestVersion && a.status !== '취소');
+
+    // Sort by step order
+    latestApprovals.sort((a: any, b: any) => (STEP_ORDER[a.step] ?? 99) - (STEP_ORDER[b.step] ?? 99));
+
+    // Resolve company names for each approval step
     async function resolveCompanyName(userId: string, projectId: string): Promise<string> {
       const { data: member } = await supabase.from("project_members").select("company_id, company").eq("user_id", userId).eq("project_id", projectId).single();
       if (member?.company_id) {
@@ -94,77 +122,64 @@ Deno.serve(async (req) => {
       return prof?.company || "";
     }
 
-    // Fetch creator profile for signature auto-fill
-    let creatorName = "";
-    let creatorCompany = "";
-    if (run.created_by) {
-      const { data: creatorProfile } = await supabase.from("profiles").select("display_name, company").eq("user_id", run.created_by).single();
-      if (creatorProfile) {
-        creatorName = creatorProfile.display_name || "";
+    // Build signature rows from approval data
+    const sigRows: string[] = [];
+    if (latestApprovals.length > 0) {
+      for (const ap of latestApprovals) {
+        let companyName = ap.company_name || '';
+        if (!companyName && ap.approver_id) {
+          companyName = await resolveCompanyName(ap.approver_id, run.project_id);
+        }
+        const posLabel = POSITION_LABELS[ap.position] || ap.position || '';
+        const dateStr = ap.status === '승인' && ap.approved_at ? formatKST(ap.approved_at) : (ap.status === '반려' ? '반려' : '대기');
+        sigRows.push(`<tr>
+          <td class="sig-role">${ap.step || ''}</td>
+          <td>${ap.approver_name || ''}</td>
+          <td>${companyName}</td>
+          <td>${posLabel}</td>
+          <td class="sig-stamp">${dateStr}</td>
+        </tr>`);
       }
-      creatorCompany = await resolveCompanyName(run.created_by, run.project_id);
+    } else {
+      // Fallback: show creator if no approvals
+      let creatorName = "";
+      let creatorCompany = "";
+      if (run.created_by) {
+        const { data: creatorProfile } = await supabase.from("profiles").select("display_name, company").eq("user_id", run.created_by).single();
+        if (creatorProfile) {
+          creatorName = creatorProfile.display_name || "";
+        }
+        creatorCompany = await resolveCompanyName(run.created_by, run.project_id);
+      }
+      sigRows.push(`<tr><td class="sig-role">작성</td><td>${creatorName}</td><td>${creatorCompany}</td><td></td><td class="sig-stamp">${formatKST(run.created_at)}</td></tr>`);
+      sigRows.push(`<tr><td class="sig-role">검토</td><td></td><td></td><td></td><td class="sig-stamp"></td></tr>`);
+      sigRows.push(`<tr><td class="sig-role">승인</td><td></td><td></td><td></td><td class="sig-stamp"></td></tr>`);
     }
 
-    // Build auto-filled signature data from approvals
-    const latestVersion = approvals.length > 0 ? approvals[0].approval_version || 1 : 0;
-    const latestApprovals = approvals.filter((a: any) => (a.approval_version || 1) === latestVersion);
-    
-    const reviewerApproval = latestApprovals.find((a: any) => a.step === '검토자' && a.status === '승인')
-      || latestApprovals.find((a: any) => a.step === '검토' && a.status === '승인');
-    const approverApproval = latestApprovals.find((a: any) => a.step === '승인자' && a.status === '승인')
-      || latestApprovals.find((a: any) => a.step === '승인' && a.status === '승인');
+    const sigRowsHtml = sigRows.join("");
 
-    const formatDateTime = (d: string | null | undefined) => {
-      if (!d) return "";
-      const dt = new Date(d);
-      const kst = new Date(dt.getTime() + 9 * 60 * 60 * 1000);
-      const y = kst.getUTCFullYear();
-      const m = String(kst.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(kst.getUTCDate()).padStart(2, '0');
-      const h = String(kst.getUTCHours()).padStart(2, '0');
-      const min = String(kst.getUTCMinutes()).padStart(2, '0');
-      return `${y}-${m}-${day} ${h}:${min}`;
-    };
-
-    const sigRoles = [
-      { role: "작성자", name: creatorName, company: creatorCompany, date: formatDateTime(run.created_at) },
-      { role: "검토자", name: reviewerApproval?.approver_name || "", company: "", date: formatDateTime(reviewerApproval?.updated_at) },
-      { role: "승인자", name: approverApproval?.approver_name || "", company: "", date: formatDateTime(approverApproval?.updated_at) },
-    ];
-
-    if (reviewerApproval?.approver_id) {
-      sigRoles[1].company = await resolveCompanyName(reviewerApproval.approver_id, run.project_id);
-    }
-    if (approverApproval?.approver_id) {
-      sigRoles[2].company = await resolveCompanyName(approverApproval.approver_id, run.project_id);
-    }
-
-    const sigRows = sigRoles.map(s =>
-      `<tr><td class="sig-role">${s.role}</td><td>${s.name}</td><td>${s.company}</td><td class="sig-stamp">${s.date}</td></tr>`
-    ).join("");
-
-    // Convert feedback images to base64
+    // ===== FEEDBACK IMAGES: No slicing, show ALL before AND after =====
     const feedbackWithImages = await Promise.all(
       feedbackItems.map(async (fb: any) => {
         const beforeImages: string[] = [];
         const afterImages: string[] = [];
-        for (const url of (fb.before_image_urls || []).slice(0, 3)) {
+        // No .slice() — process ALL images
+        for (const url of (fb.before_image_urls || [])) {
           const b64 = await imageUrlToBase64(url);
           if (b64) beforeImages.push(b64);
         }
-        if (fb.status === "완료") {
-          for (const url of (fb.after_image_urls || []).slice(0, 3)) {
-            const b64 = await imageUrlToBase64(url);
-            if (b64) afterImages.push(b64);
-          }
+        // Always process after images (not just when status=완료)
+        for (const url of (fb.after_image_urls || [])) {
+          const b64 = await imageUrlToBase64(url);
+          if (b64) afterImages.push(b64);
         }
         return { ...fb, beforeBase64: beforeImages, afterBase64: afterImages };
       })
     );
 
-    // Convert worker participation images to base64
+    // ===== WORKER IMAGES: No slicing — process ALL =====
     const workerImages: string[] = [];
-    for (const url of (run.worker_participation_images || []).slice(0, 6)) {
+    for (const url of (run.worker_participation_images || [])) {
       const b64 = await imageUrlToBase64(url);
       if (b64) workerImages.push(b64);
     }
@@ -174,7 +189,7 @@ Deno.serve(async (req) => {
     const gradeBg = (g: string) =>
       g === "상" ? "#fecaca" : g === "중" ? "#fef08a" : "#bbf7d0";
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = formatKST(new Date().toISOString()).slice(0, 10);
     const runPeriod = run.start_date && run.end_date
       ? `${run.start_date} ~ ${run.end_date}`
       : `${project?.period_start || ""} ~ ${project?.period_end || ""}`;
@@ -183,7 +198,7 @@ Deno.serve(async (req) => {
     const medCount = items.filter((i: any) => i.risk_grade === "중").length;
     const lowCount = items.filter((i: any) => i.risk_grade === "하").length;
 
-    // Risk items table — includes legal_basis column
+    // Risk items table
     const itemRows = items.map((item: any, i: number) => `
       <tr>
         <td class="center">${i + 1}</td>
@@ -206,22 +221,20 @@ Deno.serve(async (req) => {
         <td>${item.assignee || ""}</td>
       </tr>`).join("");
 
-    // Feedback section with photos — 2x2 grid (4 photos per page)
+    // Feedback section with ALL photos (before AND after)
     let feedbackSection = "";
     if (feedbackWithImages.length > 0) {
       const fbRows = feedbackWithImages.map((fb: any, idx: number) => {
         const item = items.find((i: any) => i.id === fb.risk_item_id);
         const itemLabel = item ? `${item.process} – ${item.sub_task || ""}` : "(전체)";
         const statusColor = fb.status === "완료" ? "#16a34a" : fb.status === "진행중" ? "#d97706" : "#dc2626";
-        const showAfter = fb.status === "완료";
 
         let imagesHtml = "";
-        if (fb.beforeBase64.length > 0 || (showAfter && fb.afterBase64.length > 0)) {
+        if (fb.beforeBase64.length > 0 || fb.afterBase64.length > 0) {
           const allPhotos: { label: string; src: string }[] = [];
           fb.beforeBase64.forEach((b64: string) => allPhotos.push({ label: "조치 전", src: b64 }));
-          if (showAfter) fb.afterBase64.forEach((b64: string) => allPhotos.push({ label: "조치 후", src: b64 }));
+          fb.afterBase64.forEach((b64: string) => allPhotos.push({ label: "조치 후", src: b64 }));
 
-          // 2x2 grid
           const photoGrid = allPhotos.map((p) =>
             `<div style="width:48%;page-break-inside:avoid;margin-bottom:4pt;">
               <div style="font-size:6pt;font-weight:600;color:#475569;margin-bottom:2pt;">▸ ${p.label}</div>
@@ -241,7 +254,7 @@ Deno.serve(async (req) => {
             <td>${itemLabel}</td>
             <td>${fb.description || ""}</td>
             <td class="center" style="color:${statusColor};font-weight:600;">${fb.status}</td>
-            <td class="center">${fb.completed_at ? new Date(fb.completed_at).toLocaleDateString("ko-KR") : "-"}</td>
+            <td class="center">${fb.completed_at ? formatKST(fb.completed_at) : "-"}</td>
           </tr>${imagesHtml}`;
       }).join("");
 
@@ -292,7 +305,7 @@ Deno.serve(async (req) => {
         </table>`;
     }
 
-    // Worker participation images — 2-column layout (2 per row)
+    // Worker participation images — ALL images, 2-column layout
     let workerImageSection = "";
     if (workerImages.length > 0) {
       const wpGrid = workerImages.map((b64: string, idx: number) =>
@@ -379,7 +392,6 @@ body { font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; font-size: 9pt;
   padding-left: 4pt;
 }
 
-/* Container for wide table with scaling */
 .table-container {
   width: 100%;
   overflow-x: visible;
@@ -436,11 +448,11 @@ tr { page-break-inside: avoid; }
     </div>
   </div>
 
-  <!-- Signature Section (top right area) -->
+  <!-- Signature Section — from Approvals (SSOT) -->
   <div class="section-header">서명란</div>
   <table class="sig-table">
-    <thead><tr><th>구분</th><th>성명</th><th>소속</th><th>서명 / 일자</th></tr></thead>
-    <tbody>${sigRows}</tbody>
+    <thead><tr><th>구분</th><th>성명</th><th>소속</th><th>직책</th><th>서명 / 일자</th></tr></thead>
+    <tbody>${sigRowsHtml}</tbody>
   </table>
 
   <!-- Risk Assessment Table -->

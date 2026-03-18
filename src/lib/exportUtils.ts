@@ -66,8 +66,8 @@ function buildSignatureRows(participants: Participant[]): string[][] {
   return rows;
 }
 
-// ========== Server-based PDF Download (Korean font safe) ==========
-export async function exportToPDFServer(runId: string, type: 'assessment' | 'validation' = 'assessment') {
+// ========== Server-based PDF: mode = 'print' | 'download' ==========
+export async function exportToPDFServer(runId: string, type: 'assessment' | 'validation' = 'assessment', mode: 'print' | 'download' = 'print') {
   const { data, error } = await supabase.functions.invoke('generate-pdf', {
     body: { runId, type },
   });
@@ -80,7 +80,20 @@ export async function exportToPDFServer(runId: string, type: 'assessment' | 'val
     throw new Error('PDF 생성 실패: 유효한 HTML이 반환되지 않았습니다.');
   }
 
-  // Open print window with the HTML
+  if (mode === 'download') {
+    // Download as HTML file (user can open in browser and print to PDF)
+    const blob = new Blob([data.html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = data.fileName || `위험성평가_${new Date().toISOString().slice(0, 10)}.html`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+    return;
+  }
+
+  // mode === 'print': open print window
   const printWindow = window.open('', '_blank', 'width=1100,height=800');
   if (!printWindow) {
     // Fallback: download as HTML file
@@ -98,25 +111,30 @@ export async function exportToPDFServer(runId: string, type: 'assessment' | 'val
   printWindow.document.write(data.html);
   printWindow.document.close();
 
-  // Wait for fonts & images to load then trigger print (which can save as PDF)
+  // Use a flag to prevent double print
+  let printed = false;
+  const doPrint = () => {
+    if (printed) return;
+    printed = true;
+    printWindow.print();
+  };
+
+  // Wait for fonts & images to load then trigger print
   printWindow.onload = () => {
-    // Wait for all images to load
     const images = printWindow.document.querySelectorAll('img');
     const imagePromises = Array.from(images).map(img => {
       if (img.complete) return Promise.resolve();
       return new Promise<void>((resolve) => {
         img.onload = () => resolve();
-        img.onerror = () => resolve(); // Don't block on broken images
+        img.onerror = () => resolve();
       });
     });
     Promise.all(imagePromises).then(() => {
-      setTimeout(() => { printWindow.print(); }, 300);
+      setTimeout(doPrint, 300);
     });
   };
-  // Fallback timeout
-  setTimeout(() => {
-    try { printWindow.print(); } catch { /* ignore */ }
-  }, 3000);
+  // Fallback timeout (only fires if onload didn't)
+  setTimeout(doPrint, 4000);
 }
 
 // ========== Client-side PDF (fallback, uses jsPDF) ==========

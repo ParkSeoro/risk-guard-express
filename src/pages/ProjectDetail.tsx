@@ -248,10 +248,96 @@ const ProjectDetail = () => {
     fetchAll();
   };
 
-  // Approval templates logic (skipped for brevity - using existing state)
-  const handleAddTemplate = async () => {
-    // Implementation not shown but would go here
+  const STEP_LABEL_OPTIONS = [
+    { label: '작성', position: 'supervisor' },
+    { label: '안전관리자 검토', position: 'safety_manager' },
+    { label: '현장대리인 확인', position: 'site_manager' },
+    { label: '최종승인', position: 'project_admin' },
+  ];
+
+  const POSITION_LABELS: Record<string, string> = {
+    supervisor: '관리감독자', safety_manager: '안전관리자',
+    site_manager: '현장대리인', project_admin: '프로젝트 관리자',
+  };
+
+  const openNewTemplate = () => {
+    setEditingTemplateId(null);
+    setTemplateForm({ name: '기본 결재라인', assessment_type: '정기', is_default: false, steps: [] });
+    setShowAddTemplate(true);
+  };
+
+  const openEditTemplate = (t: any) => {
+    setEditingTemplateId(t.id);
+    const steps = (Array.isArray(t.steps) ? t.steps : []).map((s: any, i: number) => ({
+      step_order: i, step_label: s.step_label || s.role || '', position: s.position || '',
+      user_id: s.user_id || '', user_name: s.user_name || s.name || '', company_name: s.company_name || '',
+    }));
+    setTemplateForm({ name: t.name, assessment_type: t.assessment_type, is_default: t.is_default, steps });
+    setShowAddTemplate(true);
+  };
+
+  const addTemplateStep = () => {
+    setTemplateForm(prev => ({
+      ...prev,
+      steps: [...prev.steps, { step_order: prev.steps.length, step_label: '', position: '', user_id: '', user_name: '', company_name: '' }],
+    }));
+  };
+
+  const removeTemplateStep = (idx: number) => {
+    setTemplateForm(prev => ({ ...prev, steps: prev.steps.filter((_, i) => i !== idx) }));
+  };
+
+  const updateTemplateStep = (idx: number, field: string, value: string) => {
+    setTemplateForm(prev => {
+      const steps = [...prev.steps];
+      steps[idx] = { ...steps[idx], [field]: value };
+      if (field === 'step_label') {
+        const opt = STEP_LABEL_OPTIONS.find(o => o.label === value);
+        if (opt) steps[idx].position = opt.position;
+      }
+      if (field === 'user_id' && value) {
+        const member = members.find(m => m.user_id === value);
+        const profile = allProfiles.find(p => p.user_id === value);
+        steps[idx].user_name = profile?.display_name || '';
+        steps[idx].company_name = member?.company || profile?.company || '';
+      }
+      return { ...prev, steps };
+    });
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!projectId || !user) return;
+    if (!templateForm.name.trim()) {
+      toast({ title: '결재라인 이름을 입력해주세요.', variant: 'destructive' });
+      return;
+    }
+    const payload = {
+      project_id: projectId,
+      name: templateForm.name,
+      assessment_type: templateForm.assessment_type,
+      is_default: templateForm.is_default,
+      steps: templateForm.steps.map((s, i) => ({ ...s, step_order: i })),
+      created_by: user.id,
+    };
+
+    if (editingTemplateId) {
+      const { error } = await supabase.from('approval_route_templates').update(payload as any).eq('id', editingTemplateId);
+      if (error) { toast({ title: '수정 실패', description: error.message, variant: 'destructive' }); return; }
+      toast({ title: '결재라인이 수정되었습니다.' });
+    } else {
+      const { error } = await supabase.from('approval_route_templates').insert([payload] as any);
+      if (error) { toast({ title: '추가 실패', description: error.message, variant: 'destructive' }); return; }
+      toast({ title: '결재라인이 추가되었습니다.' });
+    }
     setShowAddTemplate(false);
+    setEditingTemplateId(null);
+    fetchAll();
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    await supabase.from('approval_route_templates').delete().eq('id', id);
+    toast({ title: '결재라인이 삭제되었습니다.' });
+    fetchAll();
   };
 
   // Tag Management

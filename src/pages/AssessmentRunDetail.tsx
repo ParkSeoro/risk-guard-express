@@ -1960,9 +1960,9 @@ const AssessmentRunDetail = () => {
 
       {/* Approval Dialog */}
       <Dialog open={showApproval} onOpenChange={setShowApproval}>
-        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogContent className="max-w-2xl" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>결재 상신 · {run.period_label}</DialogTitle></DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[70vh] overflow-y-auto">
             <p className="text-sm text-muted-foreground">이 회차 전체({activeItems.length}건)를 결재 상신합니다.</p>
             {run.validation_verdict && run.validation_verdict !== '적정' && (
               <div className={`p-2 rounded text-sm flex items-start gap-2 ${run.validation_verdict === '부적정' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning'}`}>
@@ -1984,86 +1984,15 @@ const AssessmentRunDetail = () => {
                 <p>검증이 아직 실행되지 않았습니다. 검증 없이 결재를 진행합니다.</p>
               </div>
             )}
-            <div className="space-y-1.5 p-3 bg-muted/50 rounded-md text-xs">
-              <p className="font-medium text-sm">결재 라인 (직책 기반 자동 생성)</p>
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="bg-muted">
-                    <th className="border px-2 py-1 text-left">순서</th>
-                    <th className="border px-2 py-1 text-left">구분</th>
-                    <th className="border px-2 py-1 text-left">성명</th>
-                    <th className="border px-2 py-1 text-left">직책</th>
-                    <th className="border px-2 py-1 text-left">소속</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="border px-2 py-1">1</td>
-                    <td className="border px-2 py-1">작성</td>
-                    <td className="border px-2 py-1">{profile?.display_name} <span className="text-muted-foreground">(자동승인)</span></td>
-                    <td className="border px-2 py-1">관리감독자</td>
-                    <td className="border px-2 py-1">{projectMembers.find(m => m.user_id === user?.id)?.company || ''}</td>
-                  </tr>
-                  {(() => {
-                    const safetyMgr = projectMembers.find(m => m.position === 'safety_manager');
-                    const siteMgr = projectMembers.find(m => m.position === 'site_manager');
-                    const admin = projectMembers.find(m => m.role === 'project_admin' || m.role === 'master');
-                    const rows: { step: string; name: string; pos: string; company: string }[] = [];
-                    if (safetyMgr) rows.push({ step: '안전관리자 검토', name: safetyMgr.display_name, pos: '안전관리자', company: safetyMgr.company });
-                    else if (participants.some(p => p.role === '검토자')) {
-                      const r = participants.find(p => p.role === '검토자');
-                      rows.push({ step: '안전관리자 검토', name: r?.user_name || '', pos: '안전관리자', company: r?.company || '' });
-                    }
-                    if (siteMgr) rows.push({ step: '현장대리인 확인', name: siteMgr.display_name, pos: '현장대리인', company: siteMgr.company });
-                    if (admin) rows.push({ step: '최종승인', name: admin.display_name, pos: '프로젝트 관리자', company: admin.company });
-                    else if (participants.some(p => p.role === '승인자')) {
-                      const a = participants.find(p => p.role === '승인자');
-                      rows.push({ step: '최종승인', name: a?.user_name || '', pos: '프로젝트 관리자', company: a?.company || '' });
-                    }
-                    return rows.map((r, i) => (
-                      <tr key={i}>
-                        <td className="border px-2 py-1">{i + 2}</td>
-                        <td className="border px-2 py-1">{r.step}</td>
-                        <td className="border px-2 py-1">{r.name}</td>
-                        <td className="border px-2 py-1">{r.pos}</td>
-                        <td className="border px-2 py-1">{r.company}</td>
-                      </tr>
-                    ));
-                  })()}
-                </tbody>
-              </table>
-            </div>
+            {/* Approval Line Manager — inline */}
+            <ApprovalLineManager
+              projectId={run.project_id}
+              projectMembers={projectMembers.map(m => ({ ...m, company_id: null }))}
+              companies={projectCompanies}
+              onLinesChanged={setApprovalLines}
+            />
             <div className="space-y-1"><Label>코멘트 (선택)</Label><Textarea value={approvalComment} onChange={e => setApprovalComment(e.target.value)} placeholder="결재 메모..." /></div>
             <Button onClick={handleSubmitForApproval} className="w-full gap-1.5"><Send className="h-3.5 w-3.5" /> 결재 상신</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Force Edit Dialog */}
-      <Dialog open={showForceEdit} onOpenChange={setShowForceEdit}>
-        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
-          <DialogHeader><DialogTitle>승인완료 회차 강제 수정</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-destructive">⚠ 승인완료 회차를 직접 수정하면 재결재가 필요합니다.</p>
-            <div className="space-y-1"><Label>수정 사유 (필수)</Label><Textarea value={forceEditReason} onChange={e => setForceEditReason(e.target.value)} placeholder="수정 사유를 입력하세요..." rows={3} /></div>
-            <Button onClick={handleForceEditConfirm} variant="destructive" className="w-full" disabled={!forceEditReason.trim()}>강제 수정 시작</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Reject Comment Dialog */}
-      <Dialog open={rejectCommentDialog} onOpenChange={setRejectCommentDialog}>
-        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
-          <DialogHeader><DialogTitle>결재 반려</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">반려 사유를 입력하세요.</p>
-            <Textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} placeholder="반려 사유..." rows={3} />
-            <div className="flex gap-2">
-              <Button variant="ghost" className="flex-1" onClick={() => { setRejectCommentDialog(false); setRejectComment(''); }}>취소</Button>
-              <Button variant="destructive" className="flex-1 gap-1.5" onClick={() => { handleFinalApproval('반려', rejectComment); setRejectCommentDialog(false); setRejectComment(''); }}>
-                <XCircle className="h-3.5 w-3.5" /> 반려 확인
-              </Button>
-            </div>
           </div>
         </DialogContent>
       </Dialog>

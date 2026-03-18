@@ -189,6 +189,14 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
       const updated = [...prev];
       updated[index] = { ...updated[index], [field]: value };
 
+      // When step_label changes, auto-fill position
+      if (field === 'step_label' && value) {
+        const template = STEP_TEMPLATES.find(t => t.step_label === value);
+        if (template) {
+          updated[index].position = template.position;
+        }
+      }
+
       // When user_id changes, auto-fill user_name and company
       if (field === 'user_id' && value) {
         const member = projectMembers.find(m => m.user_id === value);

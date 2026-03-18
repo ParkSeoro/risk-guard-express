@@ -10,11 +10,14 @@ export interface ValidationIssue {
   recommendation?: string;
 }
 
+export type RecommendLevel = '필수' | '권장' | '참고';
+
 export interface CoverageGap {
   process: string;
   subTask: string;
   hazard: string;
   severity: '상' | '중' | '하';
+  recommendLevel: RecommendLevel;
   message: string;
 }
 

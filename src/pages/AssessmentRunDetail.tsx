@@ -123,7 +123,7 @@ const AssessmentRunDetail = () => {
   // Department & assignee data for dropdowns
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [deptAssignees, setDeptAssignees] = useState<{ department_id: string; default_user_id: string | null }[]>([]);
-  const [projectMembers, setProjectMembers] = useState<{ user_id: string; display_name: string; company: string; position: string; role: string }[]>([]);
+  const [projectMembers, setProjectMembers] = useState<{ user_id: string; display_name: string; company: string; company_id: string | null; position: string; role: string }[]>([]);
 
   // Edit run metadata
   const [showEditMeta, setShowEditMeta] = useState(false);

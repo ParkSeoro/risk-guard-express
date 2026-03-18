@@ -204,12 +204,13 @@ const AssessmentRunDetail = () => {
     if (runRes.data) {
       setRun(runRes.data);
       const projectId = runRes.data.project_id;
-      const [projRes, deptRes, deptAssigneeRes, membersRes, envTagsRes] = await Promise.all([
+      const [projRes, deptRes, deptAssigneeRes, membersRes, envTagsRes, companiesRes] = await Promise.all([
         supabase.from('projects').select('*').eq('id', projectId).single(),
         supabase.from('master_departments').select('id, name').or(`project_id.eq.${projectId},project_id.is.null`),
         supabase.from('department_assignees').select('department_id, default_user_id').eq('project_id', projectId),
         supabase.from('project_members').select('user_id, company, position, company_id, role').eq('project_id', projectId),
         supabase.from('environment_tags' as any).select('id, name, category').or(`project_id.eq.${projectId},project_id.is.null`).order('sort_order'),
+        supabase.from('companies').select('id, name, type').eq('project_id', projectId),
       ]);
       setProject(projRes.data);
       setDepartments(deptRes.data || []);

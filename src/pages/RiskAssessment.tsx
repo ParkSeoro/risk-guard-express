@@ -42,6 +42,10 @@ const RiskAssessment = () => {
   const [autoGenTargetCount, setAutoGenTargetCount] = useState(50);
   const [autoGenTags, setAutoGenTags] = useState<string[]>([]);
   const [autoGenLoading, setAutoGenLoading] = useState(false);
+  const [autoGenWorkLocation, setAutoGenWorkLocation] = useState('');
+  const [autoGenWorkEnv, setAutoGenWorkEnv] = useState<string[]>([]);
+  const [autoGenEquipment, setAutoGenEquipment] = useState('');
+  const [autoGenUseAI, setAutoGenUseAI] = useState(true);
   const [loading, setLoading] = useState(true);
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
   const [showValidation, setShowValidation] = useState(false);

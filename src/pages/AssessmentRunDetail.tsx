@@ -943,10 +943,11 @@ const AssessmentRunDetail = () => {
 
   const handleExportPDF = async () => {
     if (!run) return;
-    toast({ title: 'PDF 생성 중...', description: '잠시 기다려주세요.' });
+    toast({ title: 'PDF 파일 생성 중...', description: '잠시 기다려주세요.' });
     try {
-      await exportToPDFServer(runId!, 'assessment');
+      await exportToPDFServer(runId!, 'assessment', 'download');
       log('PDF다운로드', 'assessment_run', runId!, run.project_id);
+      toast({ title: 'PDF 파일이 다운로드되었습니다.', description: '브라우저에서 열어 인쇄 > PDF로 저장하세요.' });
     } catch (serverErr) {
       console.error('Server PDF failed:', serverErr);
       if (!project) {
@@ -962,21 +963,21 @@ const AssessmentRunDetail = () => {
     }
   };
 
-  // Unified print: always generate PDF then print from it (never window.print())
+  // Print: open server HTML in new window and trigger print dialog ONCE
   const handlePrint = async () => {
     if (!run) return;
-    toast({ title: '인쇄용 PDF 생성 중...' });
+    toast({ title: '인쇄용 문서 생성 중...' });
     try {
-      await exportToPDFServer(runId!, 'assessment');
+      await exportToPDFServer(runId!, 'assessment', 'print');
     } catch (err) {
-      toast({ title: 'PDF 기반 인쇄 실패', description: String(err), variant: 'destructive' });
+      toast({ title: '인쇄 실패', description: String(err), variant: 'destructive' });
     }
   };
 
   const handleExportValidationPDF = async () => {
     if (!run) return;
     try {
-      await exportToPDFServer(runId!, 'validation');
+      await exportToPDFServer(runId!, 'validation', 'print');
     } catch {
       if (!project || !validationReport) return;
       try {
@@ -987,10 +988,27 @@ const AssessmentRunDetail = () => {
     }
   };
 
-  const handleExportXLSX = () => {
+  const POSITION_LABELS_EXPORT: Record<string, string> = {
+    supervisor: '관리감독자', safety_manager: '안전관리자',
+    site_manager: '현장대리인', project_admin: '프로젝트 관리자',
+  };
+
+  const handleExportXLSX = async () => {
     if (!project) return;
     try {
-      exportToXLSX(buildRiskRows(), buildProjectInfo(), undefined, participants, { type: run?.type, period_label: run?.period_label });
+      // Build approval rows from latestApprovals (SSOT) to match PDF
+      const approvalRows = latestApprovals
+        .filter(a => a.status !== '취소')
+        .sort((a: any, b: any) => (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99))
+        .map(a => ({
+          step: a.step || '',
+          approver_name: a.approver_name || '',
+          company_name: a.company_name || '',
+          position_label: POSITION_LABELS_EXPORT[a.position] || a.position || '',
+          status: a.status,
+          approved_at: a.approved_at,
+        }));
+      await exportToXLSX(buildRiskRows(), buildProjectInfo(), undefined, participants, { type: run?.type, period_label: run?.period_label }, approvalRows);
     } catch (err) {
       toast({ title: 'XLSX 다운로드 실패', variant: 'destructive' });
     }

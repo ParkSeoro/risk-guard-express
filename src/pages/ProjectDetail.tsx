@@ -262,7 +262,17 @@ const ProjectDetail = () => {
 
   const openNewTemplate = () => {
     setEditingTemplateId(null);
-    setTemplateForm({ name: '기본 결재라인', assessment_type: '정기', is_default: false, steps: [] });
+    const myProfile = allProfiles.find(p => p.user_id === user?.id);
+    const myMember = members.find(m => m.user_id === user?.id);
+    const authorStep = {
+      step_order: 0,
+      step_label: '작성',
+      position: 'supervisor',
+      user_id: user?.id || '',
+      user_name: myProfile?.display_name || '',
+      company_name: myMember?.company || myProfile?.company || '',
+    };
+    setTemplateForm({ name: '기본 결재라인', assessment_type: '정기', is_default: false, steps: [authorStep] });
     setShowAddTemplate(true);
   };
 

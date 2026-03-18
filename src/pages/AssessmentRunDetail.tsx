@@ -123,7 +123,7 @@ const AssessmentRunDetail = () => {
   // Department & assignee data for dropdowns
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [deptAssignees, setDeptAssignees] = useState<{ department_id: string; default_user_id: string | null }[]>([]);
-  const [projectMembers, setProjectMembers] = useState<{ user_id: string; display_name: string; company: string; position: string; role: string }[]>([]);
+  const [projectMembers, setProjectMembers] = useState<{ user_id: string; display_name: string; company: string; company_id: string | null; position: string; role: string }[]>([]);
 
   // Edit run metadata
   const [showEditMeta, setShowEditMeta] = useState(false);
@@ -221,7 +221,7 @@ const AssessmentRunDetail = () => {
       const membersList = (membersRes.data || []).map((m: any) => {
         const prof = profiles.find((p: any) => p.user_id === m.user_id);
         const positionLabel = m.position ? ` / ${m.position === 'site_manager' ? '현장대리인' : m.position === 'supervisor' ? '관리감독자' : m.position === 'safety_manager' ? '안전관리자' : m.position}` : '';
-        return { user_id: m.user_id, display_name: `${prof?.display_name || ''}${positionLabel}`, company: m.company || prof?.company || '', position: m.position || '', role: m.role || 'viewer' };
+        return { user_id: m.user_id, display_name: `${prof?.display_name || ''}${positionLabel}`, company: m.company || prof?.company || '', company_id: m.company_id || null, position: m.position || '', role: m.role || 'viewer' };
       });
       setProjectMembers(membersList);
 
@@ -1367,7 +1367,7 @@ const AssessmentRunDetail = () => {
                           <td className="border px-2 py-1">{positionLabel || '—'}</td>
                           <td className="border px-2 py-1">
                             {a.status === '승인' && a.approved_at
-                              ? new Date(a.approved_at).toLocaleDateString('ko-KR')
+                              ? new Date(a.approved_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
                               : a.status === '반려' ? <span className="text-destructive">반려</span>
                               : <span className="text-muted-foreground">대기</span>}
                           </td>
@@ -1987,7 +1987,7 @@ const AssessmentRunDetail = () => {
             {/* Approval Line Manager — inline */}
             <ApprovalLineManager
               projectId={run.project_id}
-              projectMembers={projectMembers.map(m => ({ ...m, company_id: null }))}
+              projectMembers={projectMembers}
               companies={projectCompanies}
               onLinesChanged={setApprovalLines}
             />

@@ -610,15 +610,57 @@ const RiskAssessment = () => {
 
       {/* Auto Generate Dialog */}
       <Dialog open={showAutoGen} onOpenChange={setShowAutoGen}>
-        <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>공종명으로 위험성평가 자동작성</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">공종명을 입력하면 표준 라이브러리에서 관련 위험성평가 항목을 자동 생성합니다. (상/중/하 등급 자동 산출)</p>
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-accent/10 border border-accent/20">
+              <Switch checked={autoGenUseAI} onCheckedChange={setAutoGenUseAI} />
+              <Label className="text-xs font-medium">
+                {autoGenUseAI ? '🤖 AI 하이브리드 모드 (라이브러리 + AI)' : '📚 라이브러리 전용 모드'}
+              </Label>
+            </div>
             <div className="space-y-1.5">
               <Label>공종명 입력</Label>
               <Input value={autoGenProcess} onChange={e => setAutoGenProcess(e.target.value)}
                 placeholder="예: 배관, 용접, 비계, 굴착, 철골, 콘크리트, 전기, 도장, 밀폐공간..." />
             </div>
+
+            {autoGenUseAI && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>작업위치</Label>
+                  <Select value={autoGenWorkLocation} onValueChange={setAutoGenWorkLocation}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택 (미선택 시 일반)" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="고소">고소작업</SelectItem>
+                      <SelectItem value="지상">지상작업</SelectItem>
+                      <SelectItem value="밀폐">밀폐공간</SelectItem>
+                      <SelectItem value="지하">지하작업</SelectItem>
+                      <SelectItem value="해상">해상작업</SelectItem>
+                      <SelectItem value="기타">기타</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>작업환경 (복수 선택 가능)</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['협소', '야간', '습기', '고온', '저온', '분진', '소음', '진동', '유해물질'].map(env => (
+                      <Badge key={env} variant={autoGenWorkEnv.includes(env) ? 'default' : 'outline'}
+                        className="cursor-pointer text-[11px]"
+                        onClick={() => setAutoGenWorkEnv(prev => prev.includes(env) ? prev.filter(e => e !== env) : [...prev, env])}>
+                        {env}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>장비 (선택)</Label>
+                  <Input value={autoGenEquipment} onChange={e => setAutoGenEquipment(e.target.value)}
+                    placeholder="예: 크레인, 굴착기, 용접기..." />
+                </div>
+              </>
+            )}
+
             <div className="space-y-1.5">
               <Label>환경/장비 태그 (선택)</Label>
               <div className="flex flex-wrap gap-1.5">
@@ -636,17 +678,19 @@ const RiskAssessment = () => {
               <Select value={String(autoGenTargetCount)} onValueChange={v => setAutoGenTargetCount(Number(v))}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="10">10개</SelectItem>
+                  <SelectItem value="20">20개</SelectItem>
                   <SelectItem value="30">30개</SelectItem>
                   <SelectItem value="50">50개</SelectItem>
                   <SelectItem value="100">100개</SelectItem>
-                  <SelectItem value="150">150개</SelectItem>
-                  <SelectItem value="300">300개</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-xs text-muted-foreground">18개 대분류 · 240+ 표준항목 (상/중/하 3단계 등급 자동 산출)</p>
+            {autoGenUseAI && (
+              <p className="text-xs text-muted-foreground">🤖 라이브러리에 항목이 부족하면 AI가 자동으로 생성합니다. 결과는 캐시되어 재사용됩니다.</p>
+            )}
             <Button onClick={handleAutoGenerate} disabled={!autoGenProcess || autoGenLoading} className="w-full">
-              {autoGenLoading ? '생성 중...' : `${autoGenTargetCount}개 자동 생성`}
+              {autoGenLoading ? '생성 중... (AI 사용 시 30초~1분 소요)' : `${autoGenTargetCount}개 자동 생성`}
             </Button>
           </div>
         </DialogContent>

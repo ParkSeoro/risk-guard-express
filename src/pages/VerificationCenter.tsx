@@ -42,6 +42,7 @@ const VerificationCenter = () => {
   const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(new Set());
   const [addingGaps, setAddingGaps] = useState(false);
   const [processFilter, setProcessFilter] = useState('all');
+  const [levelFilter, setLevelFilter] = useState<'all' | RecommendLevel>('all');
 
   // Excel upload
   const [excelData, setExcelData] = useState<Record<string, string>[]>([]);

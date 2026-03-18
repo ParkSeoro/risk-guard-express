@@ -30,6 +30,7 @@ import type { Database } from '@/integrations/supabase/types';
 import IMESafeInput from '@/components/IMESafeInput';
 import { Checkbox } from '@/components/ui/checkbox';
 import FeedbackPanel from '@/components/FeedbackPanel';
+import ApprovalLineManager, { type ApprovalLine } from '@/components/ApprovalLineManager';
 import * as XLSX from 'xlsx';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
@@ -92,6 +93,8 @@ const AssessmentRunDetail = () => {
   const [latestApprovals, setLatestApprovals] = useState<any[]>([]);
   const [rejectCommentDialog, setRejectCommentDialog] = useState(false);
   const [rejectComment, setRejectComment] = useState('');
+  const [approvalLines, setApprovalLines] = useState<ApprovalLine[]>([]);
+  const [projectCompanies, setProjectCompanies] = useState<{ id: string; name: string; type: string }[]>([]);
 
   // Excel upload
   const [showExcelUpload, setShowExcelUpload] = useState(false);
@@ -201,17 +204,19 @@ const AssessmentRunDetail = () => {
     if (runRes.data) {
       setRun(runRes.data);
       const projectId = runRes.data.project_id;
-      const [projRes, deptRes, deptAssigneeRes, membersRes, envTagsRes] = await Promise.all([
+      const [projRes, deptRes, deptAssigneeRes, membersRes, envTagsRes, companiesRes] = await Promise.all([
         supabase.from('projects').select('*').eq('id', projectId).single(),
         supabase.from('master_departments').select('id, name').or(`project_id.eq.${projectId},project_id.is.null`),
         supabase.from('department_assignees').select('department_id, default_user_id').eq('project_id', projectId),
         supabase.from('project_members').select('user_id, company, position, company_id, role').eq('project_id', projectId),
         supabase.from('environment_tags' as any).select('id, name, category').or(`project_id.eq.${projectId},project_id.is.null`).order('sort_order'),
+        supabase.from('companies').select('id, name, type').eq('project_id', projectId),
       ]);
       setProject(projRes.data);
       setDepartments(deptRes.data || []);
       setDeptAssignees(deptAssigneeRes.data || []);
       setEnvironmentTags((envTagsRes.data || []) as any);
+      setProjectCompanies((companiesRes.data || []) as any);
       const profiles = profilesRes.data || [];
       const membersList = (membersRes.data || []).map((m: any) => {
         const prof = profiles.find((p: any) => p.user_id === m.user_id);
@@ -556,70 +561,31 @@ const AssessmentRunDetail = () => {
   // Position-based step order for 4-step approval
   const APPROVAL_STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };
 
-  // Submit for approval — also handles resubmission
+  // Submit for approval — uses approval_lines as single source
   const handleSubmitForApproval = async () => {
     if (!run || !user || !profile) return;
     if (activeItems.length === 0) {
       toast({ title: '항목이 1건 이상 있어야 결재 상신이 가능합니다.', variant: 'destructive' }); return;
     }
 
-    // Build 4-step approval line based on position:
-    // 1. 작성 (SUPERVISOR / current user)
-    // 2. 안전관리자 (SAFETY_MANAGER position)
-    // 3. 현장대리인 (SITE_MANAGER position)
-    // 4. 최종승인 (PROJECT_ADMIN or MASTER role)
-    const findMemberByPosition = (position: string) => projectMembers.find(m => m.position === position);
-    const findMemberByRole = (...roles: string[]) => projectMembers.find(m => roles.includes(m.role));
+    // Fetch latest approval_lines from DB
+    const { data: savedLines } = await supabase
+      .from('approval_lines')
+      .select('*')
+      .eq('project_id', run.project_id)
+      .order('step_order');
 
-    // Get raw member data (without display_name suffix) for company lookup
-    const getMemberCompany = (userId: string) => {
-      const member = projectMembers.find(m => m.user_id === userId);
-      return { company: member?.company || '', position: member?.position || '' };
-    };
+    const linesToUse = (savedLines && savedLines.length > 0) ? savedLines : approvalLines;
 
-    const safetyManager = findMemberByPosition('safety_manager');
-    const siteManager = findMemberByPosition('site_manager');
-    const adminMember = findMemberByRole('project_admin', 'master');
-
-    // Fallback: use participants if positions aren't set on project members
-    const resolveUserId = (name: string) => {
-      const match = userDirectory.find(u => u.display_name === name);
-      return match?.user_id || null;
-    };
-    const reviewerParticipants = participants.filter(p => p.role === '검토자');
-    const approverParticipants = participants.filter(p => p.role === '승인자');
-
-    // Build approval steps with position/company info
-    type ApprovalStepDef = { step: string; userId: string | null; userName: string; position: string; companyName: string };
-    const approvalSteps: ApprovalStepDef[] = [
-      { step: '작성', userId: user.id, userName: profile.display_name, position: 'supervisor', companyName: getMemberCompany(user.id).company },
-    ];
-
-    // Step 2: Safety Manager
-    if (safetyManager) {
-      approvalSteps.push({ step: '안전관리자 검토', userId: safetyManager.user_id, userName: safetyManager.display_name, position: 'safety_manager', companyName: safetyManager.company });
-    } else if (reviewerParticipants.length > 0) {
-      const r = reviewerParticipants[0];
-      const rId = resolveUserId(r.user_name);
-      approvalSteps.push({ step: '안전관리자 검토', userId: rId, userName: r.user_name || '', position: 'safety_manager', companyName: r.company || '' });
+    if (!linesToUse || linesToUse.length < 2) {
+      toast({ title: '결재라인이 설정되지 않았습니다.', description: '결재라인 설정에서 [자동 생성] 후 [저장]을 먼저 해주세요.', variant: 'destructive' });
+      return;
     }
 
-    // Step 3: Site Manager
-    if (siteManager) {
-      approvalSteps.push({ step: '현장대리인 확인', userId: siteManager.user_id, userName: siteManager.display_name, position: 'site_manager', companyName: siteManager.company });
-    }
-
-    // Step 4: Final approver (PROJECT_ADMIN or MASTER)
-    if (adminMember) {
-      approvalSteps.push({ step: '최종승인', userId: adminMember.user_id, userName: adminMember.display_name, position: 'project_admin', companyName: adminMember.company });
-    } else if (approverParticipants.length > 0) {
-      const a = approverParticipants[0];
-      const aId = resolveUserId(a.user_name);
-      approvalSteps.push({ step: '최종승인', userId: aId, userName: a.user_name || '', position: 'project_admin', companyName: a.company || '' });
-    }
-
-    if (approvalSteps.length < 2) {
-      toast({ title: '결재라인을 구성할 수 없습니다. 프로젝트 멤버에 직책(안전관리자, 현장대리인 등)을 지정하세요.', variant: 'destructive' });
+    // Validate all steps have user_id
+    const missingUser = linesToUse.filter(l => !l.user_id);
+    if (missingUser.length > 0) {
+      toast({ title: '결재자가 미지정된 단계가 있습니다.', description: `${missingUser.map(l => l.step_label).join(', ')} 단계에 결재자를 지정해주세요.`, variant: 'destructive' });
       return;
     }
 
@@ -628,12 +594,12 @@ const AssessmentRunDetail = () => {
 
     await supabase.from('approvals').update({ status: '취소' }).eq('run_id', runId).eq('status', '대기');
 
-    const inserts = approvalSteps.map((s, i) => ({
-      project_id: run.project_id, run_id: runId, step: s.step,
+    const inserts = linesToUse.map((line, i) => ({
+      project_id: run.project_id, run_id: runId, step: line.step_label,
       status: i === 0 ? '승인' : '대기',
-      approver_id: s.userId, approver_name: s.userName,
+      approver_id: line.user_id, approver_name: line.user_name || '',
       comment: i === 0 ? approvalComment : '', approval_version: nextVersion,
-      position: s.position, company_name: s.companyName,
+      position: line.position, company_name: line.company_name || '',
       approved_at: i === 0 ? new Date().toISOString() : null,
     }));
     await supabase.from('approvals').insert(inserts);
@@ -643,12 +609,12 @@ const AssessmentRunDetail = () => {
     const notifTitle = isResubmission ? '재결재 요청' : '결재 요청';
     
     // Notify first pending step only (sequential)
-    const firstPending = approvalSteps[1];
-    if (firstPending?.userId) {
+    const firstPending = linesToUse[1];
+    if (firstPending?.user_id) {
       await sendNotification({
-        user_id: firstPending.userId,
+        user_id: firstPending.user_id,
         title: notifTitle,
-        message: `[${project?.name || ''}] [${run.type}] ${run.period_label} 회차의 ${firstPending.step} 결재가 ${isResubmission ? '재' : ''}요청되었습니다.`,
+        message: `[${project?.name || ''}] [${run.type}] ${run.period_label} 회차의 ${firstPending.step_label} 결재가 ${isResubmission ? '재' : ''}요청되었습니다.`,
         type: 'approval_request',
         related_id: runId,
         related_type: 'assessment_run',
@@ -658,8 +624,8 @@ const AssessmentRunDetail = () => {
 
     setRun((prev: any) => ({ ...prev, status: '결재진행' }));
     setShowApproval(false); setApprovalComment('');
-    toast({ title: isResubmission ? `재상신 완료 (${nextVersion}차)` : `결재 상신 (${approvalSteps.length - 1}단계 순차 결재)` });
-    log(isResubmission ? '재상신' : '결재상신', 'assessment_run', runId!, run.project_id, { steps: approvalSteps.length });
+    toast({ title: isResubmission ? `재상신 완료 (${nextVersion}차)` : `결재 상신 (${linesToUse.length - 1}단계 순차 결재)` });
+    log(isResubmission ? '재상신' : '결재상신', 'assessment_run', runId!, run.project_id, { steps: linesToUse.length });
   };
 
   // Cancel approval
@@ -1206,8 +1172,8 @@ const AssessmentRunDetail = () => {
   const isValidated = run.status === '검증완료';
   const isInApproval = run.status === '결재진행';
 
-  const hasReviewerAndApprover = (participants.some(p => p.role === '검토자') && participants.some(p => p.role === '승인자'))
-    || (projectMembers.some(m => m.position === 'safety_manager') && (projectMembers.some(m => m.role === 'project_admin' || m.role === 'master')));
+  // approval_lines 기반 체크 — 라인이 있으면 결재 가능, 없어도 상신 다이얼로그에서 자동 생성 유도
+  const hasApprovalLine = approvalLines.length >= 2 || (projectMembers.some(m => m.position === 'safety_manager') || projectMembers.some(m => m.role === 'project_admin' || m.role === 'master'));
 
   // Draft: 제출 가능
   const canSubmitForValidation = isDraft && activeItems.length > 0;
@@ -1216,7 +1182,7 @@ const AssessmentRunDetail = () => {
   // 재제출: 보완중/반려 상태에서만
   const canResubmit = isReturned;
   // 결재 상신: 승인완료/폐기/결재진행 제외하고 항상 가능
-  const canSubmitApproval = !isInApproval && !isApproved && run.status !== '폐기' && activeItems.length > 0 && hasReviewerAndApprover;
+  const canSubmitApproval = !isInApproval && !isApproved && run.status !== '폐기' && activeItems.length > 0;
   // 재상신: 보완중/반려 상태에서도 가능
   const canResubmitApproval = false; // canSubmitApproval로 통합
   // 상신 취소
@@ -1994,9 +1960,9 @@ const AssessmentRunDetail = () => {
 
       {/* Approval Dialog */}
       <Dialog open={showApproval} onOpenChange={setShowApproval}>
-        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogContent className="max-w-2xl" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>결재 상신 · {run.period_label}</DialogTitle></DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[70vh] overflow-y-auto">
             <p className="text-sm text-muted-foreground">이 회차 전체({activeItems.length}건)를 결재 상신합니다.</p>
             {run.validation_verdict && run.validation_verdict !== '적정' && (
               <div className={`p-2 rounded text-sm flex items-start gap-2 ${run.validation_verdict === '부적정' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning'}`}>
@@ -2018,86 +1984,15 @@ const AssessmentRunDetail = () => {
                 <p>검증이 아직 실행되지 않았습니다. 검증 없이 결재를 진행합니다.</p>
               </div>
             )}
-            <div className="space-y-1.5 p-3 bg-muted/50 rounded-md text-xs">
-              <p className="font-medium text-sm">결재 라인 (직책 기반 자동 생성)</p>
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="bg-muted">
-                    <th className="border px-2 py-1 text-left">순서</th>
-                    <th className="border px-2 py-1 text-left">구분</th>
-                    <th className="border px-2 py-1 text-left">성명</th>
-                    <th className="border px-2 py-1 text-left">직책</th>
-                    <th className="border px-2 py-1 text-left">소속</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td className="border px-2 py-1">1</td>
-                    <td className="border px-2 py-1">작성</td>
-                    <td className="border px-2 py-1">{profile?.display_name} <span className="text-muted-foreground">(자동승인)</span></td>
-                    <td className="border px-2 py-1">관리감독자</td>
-                    <td className="border px-2 py-1">{projectMembers.find(m => m.user_id === user?.id)?.company || ''}</td>
-                  </tr>
-                  {(() => {
-                    const safetyMgr = projectMembers.find(m => m.position === 'safety_manager');
-                    const siteMgr = projectMembers.find(m => m.position === 'site_manager');
-                    const admin = projectMembers.find(m => m.role === 'project_admin' || m.role === 'master');
-                    const rows: { step: string; name: string; pos: string; company: string }[] = [];
-                    if (safetyMgr) rows.push({ step: '안전관리자 검토', name: safetyMgr.display_name, pos: '안전관리자', company: safetyMgr.company });
-                    else if (participants.some(p => p.role === '검토자')) {
-                      const r = participants.find(p => p.role === '검토자');
-                      rows.push({ step: '안전관리자 검토', name: r?.user_name || '', pos: '안전관리자', company: r?.company || '' });
-                    }
-                    if (siteMgr) rows.push({ step: '현장대리인 확인', name: siteMgr.display_name, pos: '현장대리인', company: siteMgr.company });
-                    if (admin) rows.push({ step: '최종승인', name: admin.display_name, pos: '프로젝트 관리자', company: admin.company });
-                    else if (participants.some(p => p.role === '승인자')) {
-                      const a = participants.find(p => p.role === '승인자');
-                      rows.push({ step: '최종승인', name: a?.user_name || '', pos: '프로젝트 관리자', company: a?.company || '' });
-                    }
-                    return rows.map((r, i) => (
-                      <tr key={i}>
-                        <td className="border px-2 py-1">{i + 2}</td>
-                        <td className="border px-2 py-1">{r.step}</td>
-                        <td className="border px-2 py-1">{r.name}</td>
-                        <td className="border px-2 py-1">{r.pos}</td>
-                        <td className="border px-2 py-1">{r.company}</td>
-                      </tr>
-                    ));
-                  })()}
-                </tbody>
-              </table>
-            </div>
+            {/* Approval Line Manager — inline */}
+            <ApprovalLineManager
+              projectId={run.project_id}
+              projectMembers={projectMembers.map(m => ({ ...m, company_id: null }))}
+              companies={projectCompanies}
+              onLinesChanged={setApprovalLines}
+            />
             <div className="space-y-1"><Label>코멘트 (선택)</Label><Textarea value={approvalComment} onChange={e => setApprovalComment(e.target.value)} placeholder="결재 메모..." /></div>
             <Button onClick={handleSubmitForApproval} className="w-full gap-1.5"><Send className="h-3.5 w-3.5" /> 결재 상신</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Force Edit Dialog */}
-      <Dialog open={showForceEdit} onOpenChange={setShowForceEdit}>
-        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
-          <DialogHeader><DialogTitle>승인완료 회차 강제 수정</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-destructive">⚠ 승인완료 회차를 직접 수정하면 재결재가 필요합니다.</p>
-            <div className="space-y-1"><Label>수정 사유 (필수)</Label><Textarea value={forceEditReason} onChange={e => setForceEditReason(e.target.value)} placeholder="수정 사유를 입력하세요..." rows={3} /></div>
-            <Button onClick={handleForceEditConfirm} variant="destructive" className="w-full" disabled={!forceEditReason.trim()}>강제 수정 시작</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Reject Comment Dialog */}
-      <Dialog open={rejectCommentDialog} onOpenChange={setRejectCommentDialog}>
-        <DialogContent onPointerDownOutside={(e) => e.preventDefault()}>
-          <DialogHeader><DialogTitle>결재 반려</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">반려 사유를 입력하세요.</p>
-            <Textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} placeholder="반려 사유..." rows={3} />
-            <div className="flex gap-2">
-              <Button variant="ghost" className="flex-1" onClick={() => { setRejectCommentDialog(false); setRejectComment(''); }}>취소</Button>
-              <Button variant="destructive" className="flex-1 gap-1.5" onClick={() => { handleFinalApproval('반려', rejectComment); setRejectCommentDialog(false); setRejectComment(''); }}>
-                <XCircle className="h-3.5 w-3.5" /> 반려 확인
-              </Button>
-            </div>
           </div>
         </DialogContent>
       </Dialog>

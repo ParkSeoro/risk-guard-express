@@ -566,10 +566,7 @@ const ProjectDetail = () => {
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm">결재라인 템플릿</CardTitle>
               {canManage && (
-                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => {
-                  setTemplateForm({ name: '기본 결재라인', assessment_type: '정기', is_default: false, reviewers: '', approvers: '' });
-                  setShowAddTemplate(true);
-                }}>
+                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={openNewTemplate}>
                   <Plus className="h-3.5 w-3.5" /> 결재라인 추가
                 </Button>
               )}

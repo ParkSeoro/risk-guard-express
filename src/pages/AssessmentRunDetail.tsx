@@ -216,6 +216,7 @@ const AssessmentRunDetail = () => {
       setDepartments(deptRes.data || []);
       setDeptAssignees(deptAssigneeRes.data || []);
       setEnvironmentTags((envTagsRes.data || []) as any);
+      setProjectCompanies((companiesRes.data || []) as any);
       const profiles = profilesRes.data || [];
       const membersList = (membersRes.data || []).map((m: any) => {
         const prof = profiles.find((p: any) => p.user_id === m.user_id);

@@ -14,6 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
+      approval_lines: {
+        Row: {
+          company_id: string | null
+          company_name: string | null
+          created_at: string
+          id: string
+          position: string
+          project_id: string
+          step_label: string
+          step_order: number
+          updated_at: string
+          user_id: string | null
+          user_name: string | null
+        }
+        Insert: {
+          company_id?: string | null
+          company_name?: string | null
+          created_at?: string
+          id?: string
+          position?: string
+          project_id: string
+          step_label?: string
+          step_order?: number
+          updated_at?: string
+          user_id?: string | null
+          user_name?: string | null
+        }
+        Update: {
+          company_id?: string | null
+          company_name?: string | null
+          created_at?: string
+          id?: string
+          position?: string
+          project_id?: string
+          step_label?: string
+          step_order?: number
+          updated_at?: string
+          user_id?: string | null
+          user_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "approval_lines_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "approval_lines_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       approval_route_templates: {
         Row: {
           assessment_type: string

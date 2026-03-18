@@ -74,6 +74,10 @@ const AssessmentRunDetail = () => {
   const [autoGenTags, setAutoGenTags] = useState<string[]>([]);
   const [autoGenLoading, setAutoGenLoading] = useState(false);
   const [autoGenConditionText, setAutoGenConditionText] = useState('');
+  const [autoGenWorkLocation, setAutoGenWorkLocation] = useState('');
+  const [autoGenWorkEnv, setAutoGenWorkEnv] = useState<string[]>([]);
+  const [autoGenEquipment, setAutoGenEquipment] = useState('');
+  const [autoGenUseAI, setAutoGenUseAI] = useState(true);
   const [environmentTags, setEnvironmentTags] = useState<{ id: string; name: string; category: string }[]>([]);
 
   // Validation

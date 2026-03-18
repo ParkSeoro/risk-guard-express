@@ -208,14 +208,32 @@ const RiskAssessment = () => {
     if (!autoGenProcess || !selectedProjectId || !user) return;
     setAutoGenLoading(true);
     try {
-      const generated = await generateRiskItems({
-        processName: autoGenProcess,
-        tags: autoGenTags,
-        targetCount: autoGenTargetCount,
-        deduplicate: true,
-      });
+      let generated: any[] = [];
+      let sourceLabel = '';
+      if (autoGenUseAI) {
+        const opts: AIGenerateOptions = {
+          processName: autoGenProcess,
+          equipment: autoGenEquipment,
+          workLocation: autoGenWorkLocation || undefined,
+          workEnvironment: autoGenWorkEnv.length > 0 ? autoGenWorkEnv : undefined,
+          tags: autoGenTags,
+          targetCount: autoGenTargetCount,
+          deduplicate: true,
+        };
+        const result = await generateRiskItemsHybrid(opts);
+        generated = result.items;
+        sourceLabel = result.source;
+      } else {
+        generated = await generateRiskItems({
+          processName: autoGenProcess,
+          tags: autoGenTags,
+          targetCount: autoGenTargetCount,
+          deduplicate: true,
+        });
+        sourceLabel = 'library';
+      }
       if (generated.length === 0) {
-        toast({ title: '해당 공종에 대한 템플릿이 없습니다.', variant: 'destructive' });
+        toast({ title: '해당 공종에 대한 항목을 생성할 수 없습니다.', variant: 'destructive' });
         setAutoGenLoading(false);
         return;
       }
@@ -246,16 +264,20 @@ const RiskAssessment = () => {
         sort_order: items.length + i,
       }));
       const { data, error } = await supabase.from('risk_items').insert(inserts).select();
+      const sourceMap: Record<string, string> = { library: '라이브러리', cache: '캐시', ai: 'AI', hybrid: '하이브리드' };
       if (data) {
         setItems(prev => [...prev, ...data]);
-        toast({ title: `${data.length}건의 위험성평가 항목이 자동 생성되었습니다.` });
-        log('자동생성', 'risk_items', autoGenProcess, selectedProjectId, { count: data.length });
+        toast({ title: `${data.length}건 자동 생성 완료 (${sourceMap[sourceLabel] || sourceLabel})` });
+        log('자동생성', 'risk_items', autoGenProcess, selectedProjectId, { count: data.length, source: sourceLabel });
       }
       setShowAutoGen(false);
       setAutoGenProcess('');
       setAutoGenTags([]);
-    } catch (err) {
-      toast({ title: '자동 생성 실패', variant: 'destructive' });
+      setAutoGenWorkLocation('');
+      setAutoGenWorkEnv([]);
+      setAutoGenEquipment('');
+    } catch (err: any) {
+      toast({ title: err?.message || '자동 생성 실패', variant: 'destructive' });
     }
     setAutoGenLoading(false);
   };

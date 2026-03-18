@@ -1987,7 +1987,7 @@ const AssessmentRunDetail = () => {
             {/* Approval Line Manager — inline */}
             <ApprovalLineManager
               projectId={run.project_id}
-              projectMembers={projectMembers.map(m => ({ ...m, company_id: null }))}
+              projectMembers={projectMembers}
               companies={projectCompanies}
               onLinesChanged={setApprovalLines}
             />

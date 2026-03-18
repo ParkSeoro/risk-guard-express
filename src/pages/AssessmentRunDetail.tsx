@@ -1172,8 +1172,8 @@ const AssessmentRunDetail = () => {
   const isValidated = run.status === '검증완료';
   const isInApproval = run.status === '결재진행';
 
-  const hasReviewerAndApprover = (participants.some(p => p.role === '검토자') && participants.some(p => p.role === '승인자'))
-    || (projectMembers.some(m => m.position === 'safety_manager') && (projectMembers.some(m => m.role === 'project_admin' || m.role === 'master')));
+  // approval_lines 기반 체크 — 라인이 있으면 결재 가능, 없어도 상신 다이얼로그에서 자동 생성 유도
+  const hasApprovalLine = approvalLines.length >= 2 || (projectMembers.some(m => m.position === 'safety_manager') || projectMembers.some(m => m.role === 'project_admin' || m.role === 'master'));
 
   // Draft: 제출 가능
   const canSubmitForValidation = isDraft && activeItems.length > 0;
@@ -1182,7 +1182,7 @@ const AssessmentRunDetail = () => {
   // 재제출: 보완중/반려 상태에서만
   const canResubmit = isReturned;
   // 결재 상신: 승인완료/폐기/결재진행 제외하고 항상 가능
-  const canSubmitApproval = !isInApproval && !isApproved && run.status !== '폐기' && activeItems.length > 0 && hasReviewerAndApprover;
+  const canSubmitApproval = !isInApproval && !isApproved && run.status !== '폐기' && activeItems.length > 0;
   // 재상신: 보완중/반려 상태에서도 가능
   const canResubmitApproval = false; // canSubmitApproval로 통합
   // 상신 취소

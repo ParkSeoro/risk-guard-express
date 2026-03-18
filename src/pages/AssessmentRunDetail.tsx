@@ -93,6 +93,8 @@ const AssessmentRunDetail = () => {
   const [latestApprovals, setLatestApprovals] = useState<any[]>([]);
   const [rejectCommentDialog, setRejectCommentDialog] = useState(false);
   const [rejectComment, setRejectComment] = useState('');
+  const [approvalLines, setApprovalLines] = useState<ApprovalLine[]>([]);
+  const [projectCompanies, setProjectCompanies] = useState<{ id: string; name: string; type: string }[]>([]);
 
   // Excel upload
   const [showExcelUpload, setShowExcelUpload] = useState(false);

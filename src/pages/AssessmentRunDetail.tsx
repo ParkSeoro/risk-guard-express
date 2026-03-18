@@ -221,7 +221,7 @@ const AssessmentRunDetail = () => {
       const membersList = (membersRes.data || []).map((m: any) => {
         const prof = profiles.find((p: any) => p.user_id === m.user_id);
         const positionLabel = m.position ? ` / ${m.position === 'site_manager' ? '현장대리인' : m.position === 'supervisor' ? '관리감독자' : m.position === 'safety_manager' ? '안전관리자' : m.position}` : '';
-        return { user_id: m.user_id, display_name: `${prof?.display_name || ''}${positionLabel}`, company: m.company || prof?.company || '', position: m.position || '', role: m.role || 'viewer' };
+        return { user_id: m.user_id, display_name: `${prof?.display_name || ''}${positionLabel}`, company: m.company || prof?.company || '', company_id: m.company_id || null, position: m.position || '', role: m.role || 'viewer' };
       });
       setProjectMembers(membersList);
 

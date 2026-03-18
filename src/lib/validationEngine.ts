@@ -10,11 +10,14 @@ export interface ValidationIssue {
   recommendation?: string;
 }
 
+export type RecommendLevel = '필수' | '권장' | '참고';
+
 export interface CoverageGap {
   process: string;
   subTask: string;
   hazard: string;
   severity: '상' | '중' | '하';
+  recommendLevel: RecommendLevel;
   message: string;
 }
 
@@ -213,6 +216,82 @@ export async function validateRiskItems(
   return { totalItems, totalIssues: issues.length, errors, warnings, score, verdict, issues, coverageGaps, itemVerdicts };
 }
 
+// Keywords for context-aware relevance scoring
+const LOCATION_KEYWORDS: Record<string, string[]> = {
+  '고소': ['고소', '상부', '옥상', '지붕', '사다리', '비계', '추락', '높이', 'scaff'],
+  '지상': ['지상', '바닥', '평지', '도로', '야적'],
+  '밀폐': ['밀폐', '맨홀', '탱크', '피트', '지하', '질식'],
+  '지하': ['지하', '터널', '구덩이'],
+};
+
+const EQUIPMENT_KEYWORDS: Record<string, string[]> = {
+  '크레인': ['크레인', '양중', '인양', '타워'],
+  '굴착기': ['굴착기', '백호', '포클레인', '굴삭기'],
+  '차량': ['차량', '트럭', '덤프', '운반'],
+  '용접기': ['용접', '절단', '화기', '가스절단'],
+  '리프트': ['리프트', '고소작업차', '호이스트', '곤돌라'],
+};
+
+const WORK_TYPE_KEYWORDS: Record<string, string[]> = {
+  '해체': ['해체', '철거', '분리'],
+  '설치': ['설치', '조립', '시공'],
+  '보수': ['보수', '수리', '점검', '정비'],
+  '운반': ['운반', '이동', '적재', '하역'],
+};
+
+function computeRelevanceScore(libItem: any, process: string): number {
+  let score = 0;
+  const processLower = process.toLowerCase();
+  const itemText = `${libItem.category_large || ''} ${libItem.category_medium || ''} ${libItem.category_small || ''} ${libItem.sub_task || ''} ${libItem.hazard || ''} ${libItem.hazard_situation || ''}`.toLowerCase();
+  const keywords: string[] = libItem.keywords || [];
+  const synonyms: string[] = libItem.synonyms || [];
+
+  // Direct process match (strongest signal)
+  if (itemText.includes(processLower) || processLower.includes((libItem.category_large || '').toLowerCase())) {
+    score += 20;
+  }
+
+  // Keyword/synonym match
+  for (const kw of [...keywords, ...synonyms]) {
+    if (kw && processLower.includes(kw.toLowerCase())) score += 5;
+  }
+
+  // Location context match
+  for (const [, kws] of Object.entries(LOCATION_KEYWORDS)) {
+    const processHas = kws.some(k => processLower.includes(k));
+    const itemHas = kws.some(k => itemText.includes(k));
+    if (processHas && itemHas) score += 8;
+    if (processHas && !itemHas) score -= 3; // penalize mismatch
+  }
+
+  // Equipment context match
+  for (const [, kws] of Object.entries(EQUIPMENT_KEYWORDS)) {
+    const processHas = kws.some(k => processLower.includes(k));
+    const itemHas = kws.some(k => itemText.includes(k));
+    if (processHas && itemHas) score += 6;
+  }
+
+  // Work type match
+  for (const [, kws] of Object.entries(WORK_TYPE_KEYWORDS)) {
+    const processHas = kws.some(k => processLower.includes(k));
+    const itemHas = kws.some(k => itemText.includes(k));
+    if (processHas && itemHas) score += 4;
+  }
+
+  // High severity items are more important
+  if (gradeVal(libItem.default_severity_grade) >= 3) score += 5;
+
+  return score;
+}
+
+function determineRecommendLevel(relevanceScore: number, severityGrade: string): RecommendLevel {
+  // High severity + high relevance = 필수
+  if (gradeVal(severityGrade) >= 3 && relevanceScore >= 15) return '필수';
+  if (relevanceScore >= 20) return '필수';
+  if (relevanceScore >= 10 || gradeVal(severityGrade) >= 2) return '권장';
+  return '참고';
+}
+
 async function checkCoverage(
   items: RiskItem[],
   projectId: string,
@@ -240,20 +319,37 @@ async function checkCoverage(
     const expectedItems = library.filter(l =>
       l.category_large?.includes(process) || l.category_medium?.includes(process) || l.sub_task?.includes(process)
     );
+
     for (const expected of expectedItems) {
       const key = `${expected.sub_task}|||${expected.hazard}`;
       if (!itemKeys.has(key)) {
         const sev = gradeVal(expected.default_severity_grade) >= 3 ? '상' : gradeVal(expected.default_severity_grade) >= 2 ? '중' : '하';
+        const relevance = computeRelevanceScore(expected, process);
+
+        // Skip very low relevance items (noise filtering)
+        if (relevance < 3) continue;
+
+        const recommendLevel = determineRecommendLevel(relevance, expected.default_severity_grade);
+
         gaps.push({
           process,
           subTask: expected.sub_task,
           hazard: expected.hazard,
           severity: sev as '상' | '중' | '하',
+          recommendLevel,
           message: `${process} 공정에서 "${expected.sub_task} - ${expected.hazard}" 위험성평가가 누락되었습니다.`,
         });
       }
     }
   }
+
+  // Sort: 필수 first, then 권장, then 참고; within each level by severity desc
+  const levelOrder: Record<RecommendLevel, number> = { '필수': 0, '권장': 1, '참고': 2 };
+  gaps.sort((a, b) => {
+    const lDiff = levelOrder[a.recommendLevel] - levelOrder[b.recommendLevel];
+    if (lDiff !== 0) return lDiff;
+    return gradeVal(b.severity) - gradeVal(a.severity);
+  });
 
   return gaps;
 }

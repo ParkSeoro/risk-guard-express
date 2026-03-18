@@ -16,7 +16,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import {
   ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileText, Upload, Search as SearchIcon, Wand2, EyeOff, Plus, Ban
 } from 'lucide-react';
-import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue, type CoverageGap } from '@/lib/validationEngine';
+import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue, type CoverageGap, type RecommendLevel } from '@/lib/validationEngine';
 import { exportToPDF } from '@/lib/exportUtils';
 import { calculateRiskGrade } from '@/lib/riskGrade';
 import * as XLSX from 'xlsx';
@@ -42,6 +42,7 @@ const VerificationCenter = () => {
   const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(new Set());
   const [addingGaps, setAddingGaps] = useState(false);
   const [processFilter, setProcessFilter] = useState('all');
+  const [levelFilter, setLevelFilter] = useState<'all' | RecommendLevel>('all');
 
   // Excel upload
   const [excelData, setExcelData] = useState<Record<string, string>[]>([]);
@@ -136,6 +137,7 @@ const VerificationCenter = () => {
     const key = gapKey(gap);
     if (dismissedKeys.has(key)) return false;
     if (processFilter !== 'all' && gap.process !== processFilter) return false;
+    if (levelFilter !== 'all' && gap.recommendLevel !== levelFilter) return false;
     return true;
   });
 
@@ -405,9 +407,18 @@ const VerificationCenter = () => {
                   {coverageReport.coverageGaps.length > 0 && (
                     <Card>
                       <CardHeader className="pb-2">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
                           <CardTitle className="text-sm">추천 항목 (누락 위험성평가)</CardTitle>
                           <div className="flex items-center gap-2">
+                            <Select value={levelFilter} onValueChange={(v) => setLevelFilter(v as any)}>
+                              <SelectTrigger className="h-7 w-24 text-[10px]"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">전체 레벨</SelectItem>
+                                <SelectItem value="필수">필수</SelectItem>
+                                <SelectItem value="권장">권장</SelectItem>
+                                <SelectItem value="참고">참고</SelectItem>
+                              </SelectContent>
+                            </Select>
                             <Select value={processFilter} onValueChange={setProcessFilter}>
                               <SelectTrigger className="h-7 w-36 text-[10px]"><SelectValue /></SelectTrigger>
                               <SelectContent>
@@ -420,10 +431,14 @@ const VerificationCenter = () => {
                       </CardHeader>
                       <CardContent className="space-y-2">
                         {/* Toolbar */}
-                        <div className="flex items-center gap-2 text-xs">
+                        <div className="flex items-center gap-2 text-xs flex-wrap">
                           <Button variant="ghost" size="sm" className="h-6 text-[10px]"
                             onClick={() => setSelectedGapKeys(new Set(visibleGaps.map(g => gapKey(g))))}>
                             전체 선택
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-6 text-[10px]"
+                            onClick={() => setSelectedGapKeys(new Set(visibleGaps.filter(g => g.recommendLevel === '필수').map(g => gapKey(g))))}>
+                            필수만 선택
                           </Button>
                           <Button variant="ghost" size="sm" className="h-6 text-[10px]"
                             onClick={() => setSelectedGapKeys(new Set())}>
@@ -446,17 +461,22 @@ const VerificationCenter = () => {
                                   if (next.has(key)) next.delete(key); else next.add(key);
                                   return next;
                                 })}>
-                                <div className="flex items-start gap-2">
-                                  <Checkbox checked={isSelected} className="mt-0.5" />
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-1">
-                                      <Badge variant="outline" className={`text-[9px] ${gap.severity === '상' ? 'text-destructive' : gap.severity === '중' ? 'text-warning' : 'text-muted-foreground'}`}>{gap.severity}</Badge>
-                                      <span className="font-medium">{gap.process}</span>
-                                      <span className="text-muted-foreground">– {gap.subTask}</span>
+                                  <div className="flex items-start gap-2">
+                                    <Checkbox checked={isSelected} className="mt-0.5" />
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        <Badge variant="outline" className={`text-[9px] ${
+                                          gap.recommendLevel === '필수' ? 'bg-destructive/10 text-destructive border-destructive/30' :
+                                          gap.recommendLevel === '권장' ? 'bg-warning/10 text-warning border-warning/30' :
+                                          'bg-muted text-muted-foreground'
+                                        }`}>{gap.recommendLevel}</Badge>
+                                        <Badge variant="outline" className={`text-[9px] ${gap.severity === '상' ? 'text-destructive' : gap.severity === '중' ? 'text-warning' : 'text-muted-foreground'}`}>{gap.severity}</Badge>
+                                        <span className="font-medium">{gap.process}</span>
+                                        <span className="text-muted-foreground">– {gap.subTask}</span>
+                                      </div>
+                                      <p className="text-muted-foreground">{gap.hazard}</p>
                                     </div>
-                                    <p className="text-muted-foreground">{gap.hazard}</p>
                                   </div>
-                                </div>
                               </div>
                             );
                           })}

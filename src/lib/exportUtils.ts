@@ -270,9 +270,9 @@ export async function exportToPDF(
         doc.text('Coverage Gaps', 14, gapY > 170 ? 15 : gapY);
         autoTable(doc, {
           startY: (gapY > 170 ? 20 : gapY + 5),
-          head: [['Process', 'Sub Task', 'Hazard', 'Severity', 'Note']],
+          head: [['Process', 'Sub Task', 'Hazard', 'Severity', 'Level', 'Note']],
           body: validationReport.coverageGaps.slice(0, 30).map((g: any) => [
-            g.process, g.subTask, g.hazard, g.severity, g.message,
+            g.process, g.subTask, g.hazard, g.severity, g.recommendLevel || '-', g.message,
           ]),
           styles: { fontSize: 7 },
           headStyles: { fillColor: [234, 88, 12] },

@@ -407,9 +407,18 @@ const VerificationCenter = () => {
                   {coverageReport.coverageGaps.length > 0 && (
                     <Card>
                       <CardHeader className="pb-2">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
                           <CardTitle className="text-sm">추천 항목 (누락 위험성평가)</CardTitle>
                           <div className="flex items-center gap-2">
+                            <Select value={levelFilter} onValueChange={(v) => setLevelFilter(v as any)}>
+                              <SelectTrigger className="h-7 w-24 text-[10px]"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">전체 레벨</SelectItem>
+                                <SelectItem value="필수">필수</SelectItem>
+                                <SelectItem value="권장">권장</SelectItem>
+                                <SelectItem value="참고">참고</SelectItem>
+                              </SelectContent>
+                            </Select>
                             <Select value={processFilter} onValueChange={setProcessFilter}>
                               <SelectTrigger className="h-7 w-36 text-[10px]"><SelectValue /></SelectTrigger>
                               <SelectContent>

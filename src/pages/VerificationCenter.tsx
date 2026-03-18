@@ -137,6 +137,7 @@ const VerificationCenter = () => {
     const key = gapKey(gap);
     if (dismissedKeys.has(key)) return false;
     if (processFilter !== 'all' && gap.process !== processFilter) return false;
+    if (levelFilter !== 'all' && gap.recommendLevel !== levelFilter) return false;
     return true;
   });
 

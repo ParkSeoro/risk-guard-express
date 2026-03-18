@@ -56,7 +56,11 @@ const ProjectDetail = () => {
   // Approval route templates
   const [approvalTemplates, setApprovalTemplates] = useState<any[]>([]);
   const [showAddTemplate, setShowAddTemplate] = useState(false);
-  const [templateForm, setTemplateForm] = useState({ name: '기본 결재라인', assessment_type: '정기', is_default: false, reviewers: '' as string, approvers: '' as string });
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [templateForm, setTemplateForm] = useState<{
+    name: string; assessment_type: string; is_default: boolean;
+    steps: { step_order: number; step_label: string; position: string; user_id: string; user_name: string; company_name: string }[];
+  }>({ name: '기본 결재라인', assessment_type: '정기', is_default: false, steps: [] });
   const [allProfiles, setAllProfiles] = useState<{ user_id: string; display_name: string; company: string; position: string }[]>([]);
 
   // Environment/Equipment Tags
@@ -244,10 +248,96 @@ const ProjectDetail = () => {
     fetchAll();
   };
 
-  // Approval templates logic (skipped for brevity - using existing state)
-  const handleAddTemplate = async () => {
-    // Implementation not shown but would go here
+  const STEP_LABEL_OPTIONS = [
+    { label: '작성', position: 'supervisor' },
+    { label: '안전관리자 검토', position: 'safety_manager' },
+    { label: '현장대리인 확인', position: 'site_manager' },
+    { label: '최종승인', position: 'project_admin' },
+  ];
+
+  const POSITION_LABELS: Record<string, string> = {
+    supervisor: '관리감독자', safety_manager: '안전관리자',
+    site_manager: '현장대리인', project_admin: '프로젝트 관리자',
+  };
+
+  const openNewTemplate = () => {
+    setEditingTemplateId(null);
+    setTemplateForm({ name: '기본 결재라인', assessment_type: '정기', is_default: false, steps: [] });
+    setShowAddTemplate(true);
+  };
+
+  const openEditTemplate = (t: any) => {
+    setEditingTemplateId(t.id);
+    const steps = (Array.isArray(t.steps) ? t.steps : []).map((s: any, i: number) => ({
+      step_order: i, step_label: s.step_label || s.role || '', position: s.position || '',
+      user_id: s.user_id || '', user_name: s.user_name || s.name || '', company_name: s.company_name || '',
+    }));
+    setTemplateForm({ name: t.name, assessment_type: t.assessment_type, is_default: t.is_default, steps });
+    setShowAddTemplate(true);
+  };
+
+  const addTemplateStep = () => {
+    setTemplateForm(prev => ({
+      ...prev,
+      steps: [...prev.steps, { step_order: prev.steps.length, step_label: '', position: '', user_id: '', user_name: '', company_name: '' }],
+    }));
+  };
+
+  const removeTemplateStep = (idx: number) => {
+    setTemplateForm(prev => ({ ...prev, steps: prev.steps.filter((_, i) => i !== idx) }));
+  };
+
+  const updateTemplateStep = (idx: number, field: string, value: string) => {
+    setTemplateForm(prev => {
+      const steps = [...prev.steps];
+      steps[idx] = { ...steps[idx], [field]: value };
+      if (field === 'step_label') {
+        const opt = STEP_LABEL_OPTIONS.find(o => o.label === value);
+        if (opt) steps[idx].position = opt.position;
+      }
+      if (field === 'user_id' && value) {
+        const member = members.find(m => m.user_id === value);
+        const profile = allProfiles.find(p => p.user_id === value);
+        steps[idx].user_name = profile?.display_name || '';
+        steps[idx].company_name = member?.company || profile?.company || '';
+      }
+      return { ...prev, steps };
+    });
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!projectId || !user) return;
+    if (!templateForm.name.trim()) {
+      toast({ title: '결재라인 이름을 입력해주세요.', variant: 'destructive' });
+      return;
+    }
+    const payload = {
+      project_id: projectId,
+      name: templateForm.name,
+      assessment_type: templateForm.assessment_type,
+      is_default: templateForm.is_default,
+      steps: templateForm.steps.map((s, i) => ({ ...s, step_order: i })),
+      created_by: user.id,
+    };
+
+    if (editingTemplateId) {
+      const { error } = await supabase.from('approval_route_templates').update(payload as any).eq('id', editingTemplateId);
+      if (error) { toast({ title: '수정 실패', description: error.message, variant: 'destructive' }); return; }
+      toast({ title: '결재라인이 수정되었습니다.' });
+    } else {
+      const { error } = await supabase.from('approval_route_templates').insert([payload] as any);
+      if (error) { toast({ title: '추가 실패', description: error.message, variant: 'destructive' }); return; }
+      toast({ title: '결재라인이 추가되었습니다.' });
+    }
     setShowAddTemplate(false);
+    setEditingTemplateId(null);
+    fetchAll();
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    await supabase.from('approval_route_templates').delete().eq('id', id);
+    toast({ title: '결재라인이 삭제되었습니다.' });
+    fetchAll();
   };
 
   // Tag Management
@@ -476,10 +566,7 @@ const ProjectDetail = () => {
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm">결재라인 템플릿</CardTitle>
               {canManage && (
-                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => {
-                  setTemplateForm({ name: '기본 결재라인', assessment_type: '정기', is_default: false, reviewers: '', approvers: '' });
-                  setShowAddTemplate(true);
-                }}>
+                <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={openNewTemplate}>
                   <Plus className="h-3.5 w-3.5" /> 결재라인 추가
                 </Button>
               )}
@@ -491,16 +578,28 @@ const ProjectDetail = () => {
                 <div className="space-y-2">
                   {approvalTemplates.map((t: any) => {
                     const steps = Array.isArray(t.steps) ? t.steps : [];
-                    const reviewers = steps.filter((s: any) => s.role === '검토자');
-                    const approvers = steps.filter((s: any) => s.role === '승인자');
                     return (
                       <div key={t.id} className="p-3 rounded-lg border space-y-2">
-                        <div className="flex justify-between">
+                        <div className="flex justify-between items-center">
                           <span className="font-semibold text-sm">{t.name} <Badge variant="outline" className="text-[10px] ml-1">{t.assessment_type}</Badge></span>
-                          {t.is_default && <Badge className="text-[10px]">기본값</Badge>}
+                          <div className="flex items-center gap-1">
+                            {t.is_default && <Badge className="text-[10px]">기본값</Badge>}
+                            {canManage && (
+                              <>
+                                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEditTemplate(t)}>
+                                  <Shield className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => handleDeleteTemplate(t.id)}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          검토: {reviewers.map((r: any) => r.name).join(', ') || '(없음)'} → 승인: {approvers.map((a: any) => a.name).join(', ') || '(없음)'}
+                          {steps.length === 0 ? '(단계 없음)' : steps.map((s: any, i: number) => (
+                            <span key={i}>{i > 0 && ' → '}{s.step_label || s.role}{s.user_name || s.name ? ` (${s.user_name || s.name})` : ''}</span>
+                          ))}
                         </div>
                       </div>
                     );
@@ -706,6 +805,89 @@ const ProjectDetail = () => {
               </div>
             </div>
             <Button onClick={handleCreateInvite} className="w-full">초대코드 생성</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Approval Template Dialog */}
+      <Dialog open={showAddTemplate} onOpenChange={(open) => { setShowAddTemplate(open); if (!open) setEditingTemplateId(null); }}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>{editingTemplateId ? '결재라인 수정' : '결재라인 추가'}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>결재라인 이름</Label>
+              <Input value={templateForm.name} onChange={e => setTemplateForm(prev => ({ ...prev, name: e.target.value }))} placeholder="예: 기본 결재라인" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>평가 유형</Label>
+                <Select value={templateForm.assessment_type} onValueChange={v => setTemplateForm(prev => ({ ...prev, assessment_type: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="정기">정기</SelectItem>
+                    <SelectItem value="수시">수시</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-end gap-2 pb-0.5">
+                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <input type="checkbox" checked={templateForm.is_default} onChange={e => setTemplateForm(prev => ({ ...prev, is_default: e.target.checked }))} className="rounded" />
+                  기본값으로 설정
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>결재 단계</Label>
+                <Button size="sm" variant="outline" className="gap-1 text-xs h-7" onClick={addTemplateStep}>
+                  <Plus className="h-3 w-3" /> 단계 추가
+                </Button>
+              </div>
+              {templateForm.steps.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-4">단계를 추가해주세요.</p>
+              )}
+              {templateForm.steps.map((step, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-2 rounded border bg-muted/30">
+                  <span className="text-xs font-medium w-6 text-center">{idx + 1}</span>
+                  <Select value={step.step_label} onValueChange={v => updateTemplateStep(idx, 'step_label', v)}>
+                    <SelectTrigger className="h-7 text-xs flex-1"><SelectValue placeholder="구분 선택" /></SelectTrigger>
+                    <SelectContent>
+                      {STEP_LABEL_OPTIONS.map(o => (
+                        <SelectItem key={o.label} value={o.label}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={step.user_id || '__none__'} onValueChange={v => updateTemplateStep(idx, 'user_id', v === '__none__' ? '' : v)}>
+                    <SelectTrigger className="h-7 text-xs flex-1">
+                      <SelectValue placeholder="결재자 선택">{step.user_name || '(미지정)'}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">(미지정)</SelectItem>
+                      {members.map(m => {
+                        const profile = allProfiles.find(p => p.user_id === m.user_id);
+                        const name = profile?.display_name || m.user_id.slice(0, 8);
+                        return (
+                          <SelectItem key={m.user_id} value={m.user_id}>
+                            {name} {m.company ? `(${m.company})` : ''}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  <Badge variant="outline" className="text-[10px] whitespace-nowrap">
+                    {POSITION_LABELS[step.position] || step.position || '미지정'}
+                  </Badge>
+                  <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive shrink-0" onClick={() => removeTemplateStep(idx)}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+
+            <Button onClick={handleSaveTemplate} className="w-full">
+              {editingTemplateId ? '수정' : '추가'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

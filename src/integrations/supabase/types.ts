@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_risk_cache: {
+        Row: {
+          cache_key: string
+          created_at: string
+          created_by: string | null
+          equipment: string | null
+          generated_items: Json
+          hit_count: number | null
+          id: string
+          process_name: string
+          updated_at: string
+          work_description: string | null
+          work_environment: string[] | null
+          work_location: string | null
+        }
+        Insert: {
+          cache_key: string
+          created_at?: string
+          created_by?: string | null
+          equipment?: string | null
+          generated_items?: Json
+          hit_count?: number | null
+          id?: string
+          process_name: string
+          updated_at?: string
+          work_description?: string | null
+          work_environment?: string[] | null
+          work_location?: string | null
+        }
+        Update: {
+          cache_key?: string
+          created_at?: string
+          created_by?: string | null
+          equipment?: string | null
+          generated_items?: Json
+          hit_count?: number | null
+          id?: string
+          process_name?: string
+          updated_at?: string
+          work_description?: string | null
+          work_environment?: string[] | null
+          work_location?: string | null
+        }
+        Relationships: []
+      }
       approval_lines: {
         Row: {
           company_id: string | null

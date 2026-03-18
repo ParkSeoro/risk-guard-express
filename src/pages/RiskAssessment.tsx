@@ -13,8 +13,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, Upload, ShieldCheck, Undo2, Ban, RotateCcw } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { calculateRiskGrade, getGradeClassName, GRADES, type RiskGrade } from "@/lib/riskGrade";
 import { generateRiskItems } from "@/lib/riskAutoGen";
+import { generateRiskItemsHybrid, type AIGenerateOptions } from "@/lib/riskAutoGenAI";
 import { exportToXLSX, exportToPDF, printRiskAssessment } from "@/lib/exportUtils";
 import { validateRiskItems, type ValidationReport } from "@/lib/validationEngine";
 import type { Database } from '@/integrations/supabase/types';
@@ -41,6 +43,10 @@ const RiskAssessment = () => {
   const [autoGenTargetCount, setAutoGenTargetCount] = useState(50);
   const [autoGenTags, setAutoGenTags] = useState<string[]>([]);
   const [autoGenLoading, setAutoGenLoading] = useState(false);
+  const [autoGenWorkLocation, setAutoGenWorkLocation] = useState('');
+  const [autoGenWorkEnv, setAutoGenWorkEnv] = useState<string[]>([]);
+  const [autoGenEquipment, setAutoGenEquipment] = useState('');
+  const [autoGenUseAI, setAutoGenUseAI] = useState(true);
   const [loading, setLoading] = useState(true);
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
   const [showValidation, setShowValidation] = useState(false);
@@ -203,14 +209,32 @@ const RiskAssessment = () => {
     if (!autoGenProcess || !selectedProjectId || !user) return;
     setAutoGenLoading(true);
     try {
-      const generated = await generateRiskItems({
-        processName: autoGenProcess,
-        tags: autoGenTags,
-        targetCount: autoGenTargetCount,
-        deduplicate: true,
-      });
+      let generated: any[] = [];
+      let sourceLabel = '';
+      if (autoGenUseAI) {
+        const opts: AIGenerateOptions = {
+          processName: autoGenProcess,
+          equipment: autoGenEquipment,
+          workLocation: autoGenWorkLocation || undefined,
+          workEnvironment: autoGenWorkEnv.length > 0 ? autoGenWorkEnv : undefined,
+          tags: autoGenTags,
+          targetCount: autoGenTargetCount,
+          deduplicate: true,
+        };
+        const result = await generateRiskItemsHybrid(opts);
+        generated = result.items;
+        sourceLabel = result.source;
+      } else {
+        generated = await generateRiskItems({
+          processName: autoGenProcess,
+          tags: autoGenTags,
+          targetCount: autoGenTargetCount,
+          deduplicate: true,
+        });
+        sourceLabel = 'library';
+      }
       if (generated.length === 0) {
-        toast({ title: '해당 공종에 대한 템플릿이 없습니다.', variant: 'destructive' });
+        toast({ title: '해당 공종에 대한 항목을 생성할 수 없습니다.', variant: 'destructive' });
         setAutoGenLoading(false);
         return;
       }
@@ -241,16 +265,20 @@ const RiskAssessment = () => {
         sort_order: items.length + i,
       }));
       const { data, error } = await supabase.from('risk_items').insert(inserts).select();
+      const sourceMap: Record<string, string> = { library: '라이브러리', cache: '캐시', ai: 'AI', hybrid: '하이브리드' };
       if (data) {
         setItems(prev => [...prev, ...data]);
-        toast({ title: `${data.length}건의 위험성평가 항목이 자동 생성되었습니다.` });
-        log('자동생성', 'risk_items', autoGenProcess, selectedProjectId, { count: data.length });
+        toast({ title: `${data.length}건 자동 생성 완료 (${sourceMap[sourceLabel] || sourceLabel})` });
+        log('자동생성', 'risk_items', autoGenProcess, selectedProjectId, { count: data.length, source: sourceLabel });
       }
       setShowAutoGen(false);
       setAutoGenProcess('');
       setAutoGenTags([]);
-    } catch (err) {
-      toast({ title: '자동 생성 실패', variant: 'destructive' });
+      setAutoGenWorkLocation('');
+      setAutoGenWorkEnv([]);
+      setAutoGenEquipment('');
+    } catch (err: any) {
+      toast({ title: err?.message || '자동 생성 실패', variant: 'destructive' });
     }
     setAutoGenLoading(false);
   };
@@ -583,15 +611,57 @@ const RiskAssessment = () => {
 
       {/* Auto Generate Dialog */}
       <Dialog open={showAutoGen} onOpenChange={setShowAutoGen}>
-        <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>공종명으로 위험성평가 자동작성</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">공종명을 입력하면 표준 라이브러리에서 관련 위험성평가 항목을 자동 생성합니다. (상/중/하 등급 자동 산출)</p>
+            <div className="flex items-center gap-2 p-2 rounded-lg bg-accent/10 border border-accent/20">
+              <Switch checked={autoGenUseAI} onCheckedChange={setAutoGenUseAI} />
+              <Label className="text-xs font-medium">
+                {autoGenUseAI ? '🤖 AI 하이브리드 모드 (라이브러리 + AI)' : '📚 라이브러리 전용 모드'}
+              </Label>
+            </div>
             <div className="space-y-1.5">
               <Label>공종명 입력</Label>
               <Input value={autoGenProcess} onChange={e => setAutoGenProcess(e.target.value)}
                 placeholder="예: 배관, 용접, 비계, 굴착, 철골, 콘크리트, 전기, 도장, 밀폐공간..." />
             </div>
+
+            {autoGenUseAI && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>작업위치</Label>
+                  <Select value={autoGenWorkLocation} onValueChange={setAutoGenWorkLocation}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택 (미선택 시 일반)" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="고소">고소작업</SelectItem>
+                      <SelectItem value="지상">지상작업</SelectItem>
+                      <SelectItem value="밀폐">밀폐공간</SelectItem>
+                      <SelectItem value="지하">지하작업</SelectItem>
+                      <SelectItem value="해상">해상작업</SelectItem>
+                      <SelectItem value="기타">기타</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>작업환경 (복수 선택 가능)</Label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['협소', '야간', '습기', '고온', '저온', '분진', '소음', '진동', '유해물질'].map(env => (
+                      <Badge key={env} variant={autoGenWorkEnv.includes(env) ? 'default' : 'outline'}
+                        className="cursor-pointer text-[11px]"
+                        onClick={() => setAutoGenWorkEnv(prev => prev.includes(env) ? prev.filter(e => e !== env) : [...prev, env])}>
+                        {env}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>장비 (선택)</Label>
+                  <Input value={autoGenEquipment} onChange={e => setAutoGenEquipment(e.target.value)}
+                    placeholder="예: 크레인, 굴착기, 용접기..." />
+                </div>
+              </>
+            )}
+
             <div className="space-y-1.5">
               <Label>환경/장비 태그 (선택)</Label>
               <div className="flex flex-wrap gap-1.5">
@@ -609,17 +679,19 @@ const RiskAssessment = () => {
               <Select value={String(autoGenTargetCount)} onValueChange={v => setAutoGenTargetCount(Number(v))}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="10">10개</SelectItem>
+                  <SelectItem value="20">20개</SelectItem>
                   <SelectItem value="30">30개</SelectItem>
                   <SelectItem value="50">50개</SelectItem>
                   <SelectItem value="100">100개</SelectItem>
-                  <SelectItem value="150">150개</SelectItem>
-                  <SelectItem value="300">300개</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-xs text-muted-foreground">18개 대분류 · 240+ 표준항목 (상/중/하 3단계 등급 자동 산출)</p>
+            {autoGenUseAI && (
+              <p className="text-xs text-muted-foreground">🤖 라이브러리에 항목이 부족하면 AI가 자동으로 생성합니다. 결과는 캐시되어 재사용됩니다.</p>
+            )}
             <Button onClick={handleAutoGenerate} disabled={!autoGenProcess || autoGenLoading} className="w-full">
-              {autoGenLoading ? '생성 중...' : `${autoGenTargetCount}개 자동 생성`}
+              {autoGenLoading ? '생성 중... (AI 사용 시 30초~1분 소요)' : `${autoGenTargetCount}개 자동 생성`}
             </Button>
           </div>
         </DialogContent>

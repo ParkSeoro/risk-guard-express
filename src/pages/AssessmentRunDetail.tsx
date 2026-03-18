@@ -479,17 +479,35 @@ const AssessmentRunDetail = () => {
     toast({ title: '제외 해제됨' });
   };
 
-  // Auto-generate with multi-process support
+  // Auto-generate with multi-process support (hybrid: library → cache → AI)
   const handleAutoGenerate = async () => {
     if (autoGenProcesses.length === 0 || !run || !user) return;
     setAutoGenLoading(true);
     try {
       let allGenerated: any[] = [];
+      let sourceLabel = '';
       for (const proc of autoGenProcesses) {
-        const generated = await generateRiskItems({ processName: proc.trim(), tags: autoGenTags, targetCount: autoGenTargetCount, deduplicate: true });
-        allGenerated.push(...generated);
+        if (autoGenUseAI) {
+          const opts: AIGenerateOptions = {
+            processName: proc.trim(),
+            equipment: autoGenEquipment,
+            workDescription: autoGenConditionText,
+            workLocation: autoGenWorkLocation || undefined,
+            workEnvironment: autoGenWorkEnv.length > 0 ? autoGenWorkEnv : undefined,
+            tags: autoGenTags,
+            targetCount: autoGenTargetCount,
+            deduplicate: true,
+          };
+          const result = await generateRiskItemsHybrid(opts);
+          allGenerated.push(...result.items);
+          sourceLabel = result.source;
+        } else {
+          const generated = await generateRiskItems({ processName: proc.trim(), tags: autoGenTags, targetCount: autoGenTargetCount, deduplicate: true });
+          allGenerated.push(...generated);
+          sourceLabel = 'library';
+        }
       }
-      if (allGenerated.length === 0) { toast({ title: '해당 공종 템플릿 없음', variant: 'destructive' }); setAutoGenLoading(false); return; }
+      if (allGenerated.length === 0) { toast({ title: '해당 공종에 대한 항목을 생성할 수 없습니다.', variant: 'destructive' }); setAutoGenLoading(false); return; }
       // Deduplicate across processes
       const seen = new Set<string>();
       allGenerated = allGenerated.filter(g => {
@@ -509,9 +527,11 @@ const AssessmentRunDetail = () => {
         created_by: user.id, sort_order: items.length + i,
       }));
       const { data } = await supabase.from('risk_items').insert(inserts).select();
-      if (data) { setItems(prev => [...prev, ...data]); toast({ title: `${data.length}건 자동 생성 완료 (${autoGenProcesses.length}개 공종)` }); }
+      const sourceMap: Record<string, string> = { library: '라이브러리', cache: '캐시', ai: 'AI', hybrid: '하이브리드' };
+      if (data) { setItems(prev => [...prev, ...data]); toast({ title: `${data.length}건 자동 생성 완료 (${sourceMap[sourceLabel] || sourceLabel})` }); }
       setShowAutoGen(false); setAutoGenProcesses([]); setAutoGenProcessInput(''); setAutoGenTags([]);
-    } catch { toast({ title: '자동 생성 실패', variant: 'destructive' }); }
+      setAutoGenWorkLocation(''); setAutoGenWorkEnv([]); setAutoGenEquipment(''); setAutoGenConditionText('');
+    } catch (err: any) { toast({ title: err?.message || '자동 생성 실패', variant: 'destructive' }); }
     setAutoGenLoading(false);
   };
 

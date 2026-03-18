@@ -9,12 +9,23 @@ const corsHeaders = {
 async function imageUrlToBase64(url: string): Promise<string | null> {
   try {
     const res = await fetch(url);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error(`Image fetch failed: ${res.status} ${url}`);
+      return null;
+    }
     const buf = await res.arrayBuffer();
     const ct = res.headers.get("content-type") || "image/jpeg";
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+    // Use chunked encoding to avoid stack overflow on large images
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode(...bytes.slice(i, i + chunkSize));
+    }
+    const b64 = btoa(binary);
     return `data:${ct};base64,${b64}`;
-  } catch {
+  } catch (err) {
+    console.error(`Image conversion error: ${err} ${url}`);
     return null;
   }
 }

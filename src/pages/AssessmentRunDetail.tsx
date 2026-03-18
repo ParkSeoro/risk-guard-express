@@ -1367,7 +1367,7 @@ const AssessmentRunDetail = () => {
                           <td className="border px-2 py-1">{positionLabel || '—'}</td>
                           <td className="border px-2 py-1">
                             {a.status === '승인' && a.approved_at
-                              ? new Date(a.approved_at).toLocaleDateString('ko-KR')
+                              ? new Date(a.approved_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
                               : a.status === '반려' ? <span className="text-destructive">반려</span>
                               : <span className="text-muted-foreground">대기</span>}
                           </td>

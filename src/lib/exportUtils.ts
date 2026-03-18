@@ -317,8 +317,8 @@ function safePDFDownload(doc: any, fileName: string) {
   }
 }
 
-// ========== XLSX Export ==========
-export function exportToXLSX(items: RiskRow[], project: ProjectInfo, masterData?: any, participants?: Participant[], runInfo?: RunInfo) {
+// ========== XLSX Export (matches PDF content) ==========
+export async function exportToXLSX(items: RiskRow[], project: ProjectInfo, masterData?: any, participants?: Participant[], runInfo?: RunInfo, approvals?: ApprovalRow[]) {
   const wb = XLSX.utils.book_new();
 
   const headers = ['No', '공정', '세부작업', '위험요인', '위험발생상황', '기존대책', '개선대책',
@@ -336,19 +336,36 @@ export function exportToXLSX(items: RiskRow[], project: ProjectInfo, masterData?
 
   const title = runInfo ? `디아이지에어가스 위험성평가 [${runInfo.type}] ${runInfo.period_label}` : `디아이지에어가스 위험성평가 - ${project.name}`;
 
-  const wsData = [
+  const wsData: any[][] = [
     [title],
     [`현장명: ${project.site_name}`, '', '', `발주사: ${project.client}`, '', '', `시공사: ${project.contractor}`],
     [`기간: ${project.period_start || ''} ~ ${project.period_end || ''}`],
     [],
-    headers,
-    ...rows,
-    [], [],
   ];
 
-  const sigRows = buildSignatureRows(participants || []);
-  wsData.push(['서명란']);
-  sigRows.forEach(r => wsData.push(r));
+  // Signature block from approvals (SSOT) — matches PDF
+  if (approvals && approvals.length > 0) {
+    wsData.push(['서명란']);
+    wsData.push(['구분', '성명', '소속', '직책', '서명/일자']);
+    approvals.forEach(a => {
+      const dateStr = a.status === '승인' && a.approved_at
+        ? formatKSTExcel(a.approved_at)
+        : (a.status === '반려' ? '반려' : '대기');
+      wsData.push([a.step, a.approver_name || '', a.company_name || '', a.position_label || '', dateStr]);
+    });
+    wsData.push([]);
+  } else if (participants && participants.length > 0) {
+    // Fallback to participants
+    const sigRows = buildSignatureRows(participants);
+    wsData.push(['서명란']);
+    sigRows.forEach(r => wsData.push(r));
+    wsData.push([]);
+  }
+
+  // Risk items
+  wsData.push(headers);
+  rows.forEach(r => wsData.push(r));
+  wsData.push([], []);
 
   const ws = XLSX.utils.aoa_to_sheet(wsData);
   ws['!cols'] = [
@@ -377,6 +394,20 @@ export function exportToXLSX(items: RiskRow[], project: ProjectInfo, masterData?
     ? `위험성평가_${runInfo.type}_${runInfo.period_label}_${new Date().toISOString().slice(0, 10)}.xlsx`
     : `위험성평가_${project.name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
   XLSX.writeFile(wb, fileName);
+}
+
+interface ApprovalRow {
+  step: string;
+  approver_name: string;
+  company_name: string;
+  position_label: string;
+  status: string;
+  approved_at: string | null;
+}
+
+function formatKSTExcel(d: string | null): string {
+  if (!d) return '';
+  return new Date(d).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
 // ========== Print (deprecated — use exportToPDFServer + print) ==========

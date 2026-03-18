@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, Upload, ShieldCheck, Undo2, Ban, RotateCcw } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { calculateRiskGrade, getGradeClassName, GRADES, type RiskGrade } from "@/lib/riskGrade";
 import { generateRiskItems } from "@/lib/riskAutoGen";
 import { generateRiskItemsHybrid, type AIGenerateOptions } from "@/lib/riskAutoGenAI";

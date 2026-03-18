@@ -431,10 +431,14 @@ const VerificationCenter = () => {
                       </CardHeader>
                       <CardContent className="space-y-2">
                         {/* Toolbar */}
-                        <div className="flex items-center gap-2 text-xs">
+                        <div className="flex items-center gap-2 text-xs flex-wrap">
                           <Button variant="ghost" size="sm" className="h-6 text-[10px]"
                             onClick={() => setSelectedGapKeys(new Set(visibleGaps.map(g => gapKey(g))))}>
                             전체 선택
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-6 text-[10px]"
+                            onClick={() => setSelectedGapKeys(new Set(visibleGaps.filter(g => g.recommendLevel === '필수').map(g => gapKey(g))))}>
+                            필수만 선택
                           </Button>
                           <Button variant="ghost" size="sm" className="h-6 text-[10px]"
                             onClick={() => setSelectedGapKeys(new Set())}>

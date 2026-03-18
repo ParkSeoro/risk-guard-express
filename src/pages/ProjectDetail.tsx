@@ -56,7 +56,11 @@ const ProjectDetail = () => {
   // Approval route templates
   const [approvalTemplates, setApprovalTemplates] = useState<any[]>([]);
   const [showAddTemplate, setShowAddTemplate] = useState(false);
-  const [templateForm, setTemplateForm] = useState({ name: '기본 결재라인', assessment_type: '정기', is_default: false, reviewers: '' as string, approvers: '' as string });
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [templateForm, setTemplateForm] = useState<{
+    name: string; assessment_type: string; is_default: boolean;
+    steps: { step_order: number; step_label: string; position: string; user_id: string; user_name: string; company_name: string }[];
+  }>({ name: '기본 결재라인', assessment_type: '정기', is_default: false, steps: [] });
   const [allProfiles, setAllProfiles] = useState<{ user_id: string; display_name: string; company: string; position: string }[]>([]);
 
   // Environment/Equipment Tags

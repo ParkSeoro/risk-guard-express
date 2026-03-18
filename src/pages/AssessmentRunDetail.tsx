@@ -561,70 +561,31 @@ const AssessmentRunDetail = () => {
   // Position-based step order for 4-step approval
   const APPROVAL_STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };
 
-  // Submit for approval — also handles resubmission
+  // Submit for approval — uses approval_lines as single source
   const handleSubmitForApproval = async () => {
     if (!run || !user || !profile) return;
     if (activeItems.length === 0) {
       toast({ title: '항목이 1건 이상 있어야 결재 상신이 가능합니다.', variant: 'destructive' }); return;
     }
 
-    // Build 4-step approval line based on position:
-    // 1. 작성 (SUPERVISOR / current user)
-    // 2. 안전관리자 (SAFETY_MANAGER position)
-    // 3. 현장대리인 (SITE_MANAGER position)
-    // 4. 최종승인 (PROJECT_ADMIN or MASTER role)
-    const findMemberByPosition = (position: string) => projectMembers.find(m => m.position === position);
-    const findMemberByRole = (...roles: string[]) => projectMembers.find(m => roles.includes(m.role));
+    // Fetch latest approval_lines from DB
+    const { data: savedLines } = await supabase
+      .from('approval_lines')
+      .select('*')
+      .eq('project_id', run.project_id)
+      .order('step_order');
 
-    // Get raw member data (without display_name suffix) for company lookup
-    const getMemberCompany = (userId: string) => {
-      const member = projectMembers.find(m => m.user_id === userId);
-      return { company: member?.company || '', position: member?.position || '' };
-    };
+    const linesToUse = (savedLines && savedLines.length > 0) ? savedLines : approvalLines;
 
-    const safetyManager = findMemberByPosition('safety_manager');
-    const siteManager = findMemberByPosition('site_manager');
-    const adminMember = findMemberByRole('project_admin', 'master');
-
-    // Fallback: use participants if positions aren't set on project members
-    const resolveUserId = (name: string) => {
-      const match = userDirectory.find(u => u.display_name === name);
-      return match?.user_id || null;
-    };
-    const reviewerParticipants = participants.filter(p => p.role === '검토자');
-    const approverParticipants = participants.filter(p => p.role === '승인자');
-
-    // Build approval steps with position/company info
-    type ApprovalStepDef = { step: string; userId: string | null; userName: string; position: string; companyName: string };
-    const approvalSteps: ApprovalStepDef[] = [
-      { step: '작성', userId: user.id, userName: profile.display_name, position: 'supervisor', companyName: getMemberCompany(user.id).company },
-    ];
-
-    // Step 2: Safety Manager
-    if (safetyManager) {
-      approvalSteps.push({ step: '안전관리자 검토', userId: safetyManager.user_id, userName: safetyManager.display_name, position: 'safety_manager', companyName: safetyManager.company });
-    } else if (reviewerParticipants.length > 0) {
-      const r = reviewerParticipants[0];
-      const rId = resolveUserId(r.user_name);
-      approvalSteps.push({ step: '안전관리자 검토', userId: rId, userName: r.user_name || '', position: 'safety_manager', companyName: r.company || '' });
+    if (!linesToUse || linesToUse.length < 2) {
+      toast({ title: '결재라인이 설정되지 않았습니다.', description: '결재라인 설정에서 [자동 생성] 후 [저장]을 먼저 해주세요.', variant: 'destructive' });
+      return;
     }
 
-    // Step 3: Site Manager
-    if (siteManager) {
-      approvalSteps.push({ step: '현장대리인 확인', userId: siteManager.user_id, userName: siteManager.display_name, position: 'site_manager', companyName: siteManager.company });
-    }
-
-    // Step 4: Final approver (PROJECT_ADMIN or MASTER)
-    if (adminMember) {
-      approvalSteps.push({ step: '최종승인', userId: adminMember.user_id, userName: adminMember.display_name, position: 'project_admin', companyName: adminMember.company });
-    } else if (approverParticipants.length > 0) {
-      const a = approverParticipants[0];
-      const aId = resolveUserId(a.user_name);
-      approvalSteps.push({ step: '최종승인', userId: aId, userName: a.user_name || '', position: 'project_admin', companyName: a.company || '' });
-    }
-
-    if (approvalSteps.length < 2) {
-      toast({ title: '결재라인을 구성할 수 없습니다. 프로젝트 멤버에 직책(안전관리자, 현장대리인 등)을 지정하세요.', variant: 'destructive' });
+    // Validate all steps have user_id
+    const missingUser = linesToUse.filter(l => !l.user_id);
+    if (missingUser.length > 0) {
+      toast({ title: '결재자가 미지정된 단계가 있습니다.', description: `${missingUser.map(l => l.step_label).join(', ')} 단계에 결재자를 지정해주세요.`, variant: 'destructive' });
       return;
     }
 
@@ -633,12 +594,12 @@ const AssessmentRunDetail = () => {
 
     await supabase.from('approvals').update({ status: '취소' }).eq('run_id', runId).eq('status', '대기');
 
-    const inserts = approvalSteps.map((s, i) => ({
-      project_id: run.project_id, run_id: runId, step: s.step,
+    const inserts = linesToUse.map((line, i) => ({
+      project_id: run.project_id, run_id: runId, step: line.step_label,
       status: i === 0 ? '승인' : '대기',
-      approver_id: s.userId, approver_name: s.userName,
+      approver_id: line.user_id, approver_name: line.user_name || '',
       comment: i === 0 ? approvalComment : '', approval_version: nextVersion,
-      position: s.position, company_name: s.companyName,
+      position: line.position, company_name: line.company_name || '',
       approved_at: i === 0 ? new Date().toISOString() : null,
     }));
     await supabase.from('approvals').insert(inserts);
@@ -648,12 +609,12 @@ const AssessmentRunDetail = () => {
     const notifTitle = isResubmission ? '재결재 요청' : '결재 요청';
     
     // Notify first pending step only (sequential)
-    const firstPending = approvalSteps[1];
-    if (firstPending?.userId) {
+    const firstPending = linesToUse[1];
+    if (firstPending?.user_id) {
       await sendNotification({
-        user_id: firstPending.userId,
+        user_id: firstPending.user_id,
         title: notifTitle,
-        message: `[${project?.name || ''}] [${run.type}] ${run.period_label} 회차의 ${firstPending.step} 결재가 ${isResubmission ? '재' : ''}요청되었습니다.`,
+        message: `[${project?.name || ''}] [${run.type}] ${run.period_label} 회차의 ${firstPending.step_label} 결재가 ${isResubmission ? '재' : ''}요청되었습니다.`,
         type: 'approval_request',
         related_id: runId,
         related_type: 'assessment_run',
@@ -663,8 +624,8 @@ const AssessmentRunDetail = () => {
 
     setRun((prev: any) => ({ ...prev, status: '결재진행' }));
     setShowApproval(false); setApprovalComment('');
-    toast({ title: isResubmission ? `재상신 완료 (${nextVersion}차)` : `결재 상신 (${approvalSteps.length - 1}단계 순차 결재)` });
-    log(isResubmission ? '재상신' : '결재상신', 'assessment_run', runId!, run.project_id, { steps: approvalSteps.length });
+    toast({ title: isResubmission ? `재상신 완료 (${nextVersion}차)` : `결재 상신 (${linesToUse.length - 1}단계 순차 결재)` });
+    log(isResubmission ? '재상신' : '결재상신', 'assessment_run', runId!, run.project_id, { steps: linesToUse.length });
   };
 
   // Cancel approval

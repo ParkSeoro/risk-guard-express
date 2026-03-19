@@ -487,7 +487,13 @@ const AssessmentRunDetail = () => {
       let allGenerated: any[] = [];
       let sourceLabel = '';
       for (const proc of autoGenProcesses) {
-        if (autoGenUseAI) {
+        // Always try library first, then fall back to AI if no results
+        const libraryGenerated = await generateRiskItems({ processName: proc.trim(), tags: autoGenTags, targetCount: autoGenTargetCount, deduplicate: true });
+        if (libraryGenerated.length > 0 && !autoGenUseAI) {
+          allGenerated.push(...libraryGenerated);
+          sourceLabel = 'library';
+        } else {
+          // Library empty or AI mode on → use hybrid (library + cache + AI)
           const opts: AIGenerateOptions = {
             processName: proc.trim(),
             equipment: autoGenEquipment,
@@ -501,10 +507,6 @@ const AssessmentRunDetail = () => {
           const result = await generateRiskItemsHybrid(opts);
           allGenerated.push(...result.items);
           sourceLabel = result.source;
-        } else {
-          const generated = await generateRiskItems({ processName: proc.trim(), tags: autoGenTags, targetCount: autoGenTargetCount, deduplicate: true });
-          allGenerated.push(...generated);
-          sourceLabel = 'library';
         }
       }
       if (allGenerated.length === 0) { toast({ title: '해당 공종에 대한 항목을 생성할 수 없습니다.', variant: 'destructive' }); setAutoGenLoading(false); return; }

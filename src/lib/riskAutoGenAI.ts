@@ -119,7 +119,7 @@ export async function generateRiskItemsHybrid(opts: AIGenerateOptions): Promise<
     deduplicate: opts.deduplicate ?? true,
   });
 
-  if (libraryItems.length >= Math.min(targetCount, 10)) {
+  if (libraryItems.length >= targetCount) {
     return { items: libraryItems.slice(0, targetCount), source: 'library' };
   }
 

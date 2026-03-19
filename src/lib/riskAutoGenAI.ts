@@ -118,8 +118,9 @@ export async function generateRiskItemsHybrid(opts: AIGenerateOptions): Promise<
     targetCount,
     deduplicate: opts.deduplicate ?? true,
   });
+  console.log(`[Hybrid] 라이브러리 결과: ${libraryItems.length}건`);
 
-  if (libraryItems.length >= targetCount) {
+  if (libraryItems.length > 3 && libraryItems.length >= targetCount) {
     return { items: libraryItems.slice(0, targetCount), source: 'library' };
   }
 

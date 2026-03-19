@@ -235,11 +235,12 @@ const RiskAssessment = () => {
           deduplicate: true,
         };
         const result = await generateRiskItemsHybrid(opts);
+        console.log(`AI 결과 수신 완료: ${result.items.length}건 (source: ${result.source})`);
         generated = result.items;
         sourceLabel = result.source;
       }
       if (generated.length === 0) {
-        toast({ title: '해당 공종에 대한 항목을 생성할 수 없습니다.', variant: 'destructive' });
+        toast({ title: 'AI 생성 실패 - 다시 시도해주세요.', description: '라이브러리와 AI 모두에서 결과를 생성하지 못했습니다.', variant: 'destructive' });
         setAutoGenLoading(false);
         return;
       }

@@ -211,18 +211,20 @@ const RiskAssessment = () => {
     try {
       let generated: any[] = [];
       let sourceLabel = '';
-      // Always try library first, then fall back to AI if no results
+      // Always try library first, then fall back to AI if results ≤ 3
       const libraryGenerated = await generateRiskItems({
         processName: autoGenProcess,
         tags: autoGenTags,
         targetCount: autoGenTargetCount,
         deduplicate: true,
       });
-      if (libraryGenerated.length > 0 && !autoGenUseAI) {
+      console.log(`[AutoGen] 라이브러리 검색 결과: ${libraryGenerated.length}건 (공종: ${autoGenProcess})`);
+      if (libraryGenerated.length > 3 && !autoGenUseAI) {
         generated = libraryGenerated;
         sourceLabel = 'library';
       } else {
-        // Library empty or AI mode on → use hybrid (library + cache + AI)
+        // Library insufficient (≤3) or AI mode on → force AI generation
+        console.log('AI 생성 실행됨');
         const opts: AIGenerateOptions = {
           processName: autoGenProcess,
           equipment: autoGenEquipment,

@@ -211,7 +211,18 @@ const RiskAssessment = () => {
     try {
       let generated: any[] = [];
       let sourceLabel = '';
-      if (autoGenUseAI) {
+      // Always try library first, then fall back to AI if no results
+      const libraryGenerated = await generateRiskItems({
+        processName: autoGenProcess,
+        tags: autoGenTags,
+        targetCount: autoGenTargetCount,
+        deduplicate: true,
+      });
+      if (libraryGenerated.length > 0 && !autoGenUseAI) {
+        generated = libraryGenerated;
+        sourceLabel = 'library';
+      } else {
+        // Library empty or AI mode on → use hybrid (library + cache + AI)
         const opts: AIGenerateOptions = {
           processName: autoGenProcess,
           equipment: autoGenEquipment,
@@ -224,14 +235,6 @@ const RiskAssessment = () => {
         const result = await generateRiskItemsHybrid(opts);
         generated = result.items;
         sourceLabel = result.source;
-      } else {
-        generated = await generateRiskItems({
-          processName: autoGenProcess,
-          tags: autoGenTags,
-          targetCount: autoGenTargetCount,
-          deduplicate: true,
-        });
-        sourceLabel = 'library';
       }
       if (generated.length === 0) {
         toast({ title: '해당 공종에 대한 항목을 생성할 수 없습니다.', variant: 'destructive' });

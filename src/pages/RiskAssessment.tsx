@@ -209,80 +209,44 @@ const RiskAssessment = () => {
     if (!autoGenProcess || !selectedProjectId || !user) return;
     setAutoGenLoading(true);
     try {
-      let generated: any[] = [];
-      let sourceLabel = '';
-      // Always try library first, then fall back to AI if results ≤ 3
-      const libraryGenerated = await generateRiskItems({
+      // AI-first: always call AI engine directly
+      console.log(`[AutoGen] AI 엔진 호출 시작 (공종: ${autoGenProcess}, 장비: ${autoGenEquipment})`);
+      const opts: AIGenerateOptions = {
         processName: autoGenProcess,
+        equipment: autoGenEquipment,
+        workLocation: autoGenWorkLocation || undefined,
+        workEnvironment: autoGenWorkEnv.length > 0 ? autoGenWorkEnv : undefined,
         tags: autoGenTags,
         targetCount: autoGenTargetCount,
         deduplicate: true,
-      });
-      console.log(`[AutoGen] 라이브러리 검색 결과: ${libraryGenerated.length}건 (공종: ${autoGenProcess})`);
-      if (libraryGenerated.length > 3 && !autoGenUseAI) {
-        generated = libraryGenerated;
-        sourceLabel = 'library';
-      } else {
-        // Library insufficient (≤3) or AI mode on → force AI generation
-        console.log('AI 생성 실행됨');
-        const opts: AIGenerateOptions = {
-          processName: autoGenProcess,
-          equipment: autoGenEquipment,
-          workLocation: autoGenWorkLocation || undefined,
-          workEnvironment: autoGenWorkEnv.length > 0 ? autoGenWorkEnv : undefined,
-          tags: autoGenTags,
-          targetCount: autoGenTargetCount,
-          deduplicate: true,
-        };
-        const result = await generateRiskItemsHybrid(opts);
-        console.log(`AI 결과 수신 완료: ${result.items.length}건 (source: ${result.source})`);
-        generated = result.items;
-        sourceLabel = result.source;
-      }
-      if (generated.length === 0) {
-        toast({ title: 'AI 생성 실패 - 다시 시도해주세요.', description: '라이브러리와 AI 모두에서 결과를 생성하지 못했습니다.', variant: 'destructive' });
+      };
+      const result = await generateRiskItemsHybrid(opts);
+      console.log(`[AutoGen] 결과 수신: ${result.items.length}건 (source: ${result.source})`);
+
+      if (result.items.length === 0) {
+        toast({ title: 'AI 생성 실패 - 다시 시도해주세요.', description: '결과를 생성하지 못했습니다. 공종명과 장비를 확인해주세요.', variant: 'destructive' });
         setAutoGenLoading(false);
         return;
       }
-      const inserts = generated.map((g, i) => ({
+      const inserts = result.items.map((g, i) => ({
         project_id: selectedProjectId,
-        process: g.process,
-        sub_task: g.sub_task,
-        hazard: g.hazard,
-        hazard_situation: g.hazard_situation,
-        existing_measure: g.existing_measure,
-        improvement_measure: g.improvement_measure,
-        frequency: g.frequency,
-        severity: g.severity,
-        improved_frequency: g.improved_frequency,
-        improved_severity: g.improved_severity,
-        likelihood_grade: g.likelihood_grade,
-        severity_grade: g.severity_grade,
-        risk_grade: g.risk_grade,
-        improved_likelihood_grade: g.improved_likelihood_grade,
-        improved_severity_grade: g.improved_severity_grade,
-        improved_risk_grade: g.improved_risk_grade,
-        status: '초안',
-        ppe: g.ppe,
-        legal_basis: g.legal_basis,
-        department: g.department,
-        assignee: g.assignee,
-        created_by: user.id,
-        sort_order: items.length + i,
+        process: g.process, sub_task: g.sub_task, hazard: g.hazard, hazard_situation: g.hazard_situation,
+        existing_measure: g.existing_measure, improvement_measure: g.improvement_measure,
+        frequency: g.frequency, severity: g.severity, improved_frequency: g.improved_frequency, improved_severity: g.improved_severity,
+        likelihood_grade: g.likelihood_grade, severity_grade: g.severity_grade, risk_grade: g.risk_grade,
+        improved_likelihood_grade: g.improved_likelihood_grade, improved_severity_grade: g.improved_severity_grade, improved_risk_grade: g.improved_risk_grade,
+        status: '초안', ppe: g.ppe, legal_basis: g.legal_basis, department: g.department, assignee: g.assignee,
+        created_by: user.id, sort_order: items.length + i,
       }));
       const { data, error } = await supabase.from('risk_items').insert(inserts).select();
       const sourceMap: Record<string, string> = { library: '라이브러리', cache: '캐시', ai: 'AI', hybrid: '하이브리드' };
       if (data) {
         setItems(prev => [...prev, ...data]);
-        toast({ title: `${data.length}건 자동 생성 완료 (${sourceMap[sourceLabel] || sourceLabel})` });
-        log('자동생성', 'risk_items', autoGenProcess, selectedProjectId, { count: data.length, source: sourceLabel });
+        toast({ title: `${data.length}건 자동 생성 완료 (${sourceMap[result.source] || result.source})` });
+        log('자동생성', 'risk_items', autoGenProcess, selectedProjectId, { count: data.length, source: result.source });
       }
       setShowAutoGen(false);
-      setAutoGenProcess('');
-      setAutoGenTags([]);
-      setAutoGenWorkLocation('');
-      setAutoGenWorkEnv([]);
-      setAutoGenEquipment('');
+      setAutoGenProcess(''); setAutoGenTags([]); setAutoGenWorkLocation(''); setAutoGenWorkEnv([]); setAutoGenEquipment('');
     } catch (err: any) {
       toast({ title: err?.message || '자동 생성 실패', variant: 'destructive' });
     }

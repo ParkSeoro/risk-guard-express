@@ -479,7 +479,7 @@ const AssessmentRunDetail = () => {
     toast({ title: '제외 해제됨' });
   };
 
-  // Auto-generate with multi-process support (hybrid: library → cache → AI)
+  // Auto-generate with multi-process support (AI-first engine)
   const handleAutoGenerate = async () => {
     if (autoGenProcesses.length === 0 || !run || !user) return;
     setAutoGenLoading(true);
@@ -487,32 +487,24 @@ const AssessmentRunDetail = () => {
       let allGenerated: any[] = [];
       let sourceLabel = '';
       for (const proc of autoGenProcesses) {
-        // Always try library first, then fall back to AI if results ≤ 3
-        const libraryGenerated = await generateRiskItems({ processName: proc.trim(), tags: autoGenTags, targetCount: autoGenTargetCount, deduplicate: true });
-        console.log(`[AutoGen] 라이브러리 검색 결과: ${libraryGenerated.length}건 (공종: ${proc.trim()})`);
-        if (libraryGenerated.length > 3 && !autoGenUseAI) {
-          allGenerated.push(...libraryGenerated);
-          sourceLabel = 'library';
-        } else {
-          // Library insufficient (≤3) or AI mode on → force AI generation
-          console.log('AI 생성 실행됨');
-          const opts: AIGenerateOptions = {
-            processName: proc.trim(),
-            equipment: autoGenEquipment,
-            workDescription: autoGenConditionText,
-            workLocation: autoGenWorkLocation || undefined,
-            workEnvironment: autoGenWorkEnv.length > 0 ? autoGenWorkEnv : undefined,
-            tags: autoGenTags,
-            targetCount: autoGenTargetCount,
-            deduplicate: true,
-          };
-          const result = await generateRiskItemsHybrid(opts);
-          console.log(`AI 결과 수신 완료: ${result.items.length}건 (source: ${result.source})`);
-          allGenerated.push(...result.items);
-          sourceLabel = result.source;
-        }
+        // AI-first: always call AI engine directly
+        console.log(`[AutoGen] AI 엔진 호출 시작 (공종: ${proc.trim()}, 장비: ${autoGenEquipment})`);
+        const opts: AIGenerateOptions = {
+          processName: proc.trim(),
+          equipment: autoGenEquipment,
+          workDescription: autoGenConditionText,
+          workLocation: autoGenWorkLocation || undefined,
+          workEnvironment: autoGenWorkEnv.length > 0 ? autoGenWorkEnv : undefined,
+          tags: autoGenTags,
+          targetCount: autoGenTargetCount,
+          deduplicate: true,
+        };
+        const result = await generateRiskItemsHybrid(opts);
+        console.log(`[AutoGen] 결과 수신: ${result.items.length}건 (source: ${result.source})`);
+        allGenerated.push(...result.items);
+        sourceLabel = result.source;
       }
-      if (allGenerated.length === 0) { toast({ title: 'AI 생성 실패 - 다시 시도해주세요.', description: '라이브러리와 AI 모두에서 결과를 생성하지 못했습니다.', variant: 'destructive' }); setAutoGenLoading(false); return; }
+      if (allGenerated.length === 0) { toast({ title: 'AI 생성 실패 - 다시 시도해주세요.', description: '결과를 생성하지 못했습니다. 공종명과 장비를 확인해주세요.', variant: 'destructive' }); setAutoGenLoading(false); return; }
       // Deduplicate across processes
       const seen = new Set<string>();
       allGenerated = allGenerated.filter(g => {

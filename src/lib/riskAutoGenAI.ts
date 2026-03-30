@@ -100,10 +100,10 @@ async function fetchFromAI(opts: AIGenerateOptions): Promise<GeneratedRiskItem[]
 }
 
 /**
- * Hybrid risk item generation:
- * 1. Try standard library first
- * 2. If insufficient, check AI cache
- * 3. If still insufficient, call AI
+ * AI-first risk item generation:
+ * 1. Check AI cache first (fast, no cost)
+ * 2. If cache miss, call AI directly
+ * 3. Library is only used as supplemental reference
  */
 export async function generateRiskItemsHybrid(opts: AIGenerateOptions): Promise<{
   items: GeneratedRiskItem[];
@@ -111,39 +111,42 @@ export async function generateRiskItemsHybrid(opts: AIGenerateOptions): Promise<
 }> {
   const targetCount = opts.targetCount || 30;
 
-  // Step 1: Try library
+  // Step 1: Check AI cache first (free, instant)
+  const cacheKey = buildCacheKey(opts);
+  const cachedItems = await fetchFromCache(cacheKey);
+
+  if (cachedItems && cachedItems.length > 3) {
+    console.log(`[AI Engine] 캐시 히트: ${cachedItems.length}건`);
+    return { items: cachedItems.slice(0, targetCount), source: 'cache' };
+  }
+
+  // Step 2: Call AI directly (primary path)
+  console.log('[AI Engine] AI 생성 실행됨');
+  try {
+    const aiItems = await fetchFromAI(opts);
+    console.log(`[AI Engine] AI 결과 수신 완료: ${aiItems.length}건`);
+
+    if (aiItems.length > 0) {
+      return { items: aiItems.slice(0, targetCount), source: 'ai' };
+    }
+  } catch (aiErr: any) {
+    console.error('[AI Engine] AI 호출 실패:', aiErr?.message);
+  }
+
+  // Step 3: Fallback to library only if AI fails
+  console.log('[AI Engine] AI 실패 → 라이브러리 폴백');
   const libraryItems = await generateRiskItems({
     processName: opts.processName,
     tags: opts.tags || [],
     targetCount,
     deduplicate: opts.deduplicate ?? true,
   });
-  console.log(`[Hybrid] 라이브러리 결과: ${libraryItems.length}건`);
 
-  if (libraryItems.length > 3 && libraryItems.length >= targetCount) {
+  if (libraryItems.length > 0) {
     return { items: libraryItems.slice(0, targetCount), source: 'library' };
   }
 
-  // Step 2: Check AI cache
-  const cacheKey = buildCacheKey(opts);
-  const cachedItems = await fetchFromCache(cacheKey);
-
-  if (cachedItems && cachedItems.length > 0) {
-    // Merge library + cache, deduplicate
-    const merged = deduplicateItems([...libraryItems, ...cachedItems]);
-    return { items: merged.slice(0, targetCount), source: libraryItems.length > 0 ? 'hybrid' : 'cache' };
-  }
-
-  // Step 3: Call AI
-  const aiItems = await fetchFromAI(opts);
-
-  if (aiItems.length > 0) {
-    const merged = deduplicateItems([...libraryItems, ...aiItems]);
-    return { items: merged.slice(0, targetCount), source: libraryItems.length > 0 ? 'hybrid' : 'ai' };
-  }
-
-  // Fallback: return whatever library had
-  return { items: libraryItems, source: 'library' };
+  return { items: [], source: 'ai' };
 }
 
 function deduplicateItems(items: GeneratedRiskItem[]): GeneratedRiskItem[] {

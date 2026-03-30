@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, Upload, ShieldCheck, Undo2, Ban, RotateCcw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { calculateRiskGrade, getGradeClassName, GRADES, type RiskGrade } from "@/lib/riskGrade";
-import { generateRiskItems } from "@/lib/riskAutoGen";
+import { generateRiskItemsHybrid, type AIGenerateOptions } from "@/lib/riskAutoGenAI";
 import { generateRiskItemsHybrid, type AIGenerateOptions } from "@/lib/riskAutoGenAI";
 import { exportToXLSX, exportToPDF, printRiskAssessment } from "@/lib/exportUtils";
 import { validateRiskItems, type ValidationReport } from "@/lib/validationEngine";

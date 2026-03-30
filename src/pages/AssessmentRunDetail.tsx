@@ -22,7 +22,7 @@ import {
   Edit3, Archive, Clock, Pencil, Ban, Camera,
 } from 'lucide-react';
 import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
-import { generateRiskItems } from '@/lib/riskAutoGen';
+import { generateRiskItemsHybrid, type AIGenerateOptions } from '@/lib/riskAutoGenAI';
 import { generateRiskItemsHybrid, type AIGenerateOptions } from '@/lib/riskAutoGenAI';
 import { exportToXLSX, exportToPDF, exportToPDFServer, printRiskAssessment } from '@/lib/exportUtils';
 import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue } from '@/lib/validationEngine';

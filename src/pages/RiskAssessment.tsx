@@ -16,7 +16,6 @@ import { Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2,
 import { Switch } from "@/components/ui/switch";
 import { calculateRiskGrade, getGradeClassName, GRADES, type RiskGrade } from "@/lib/riskGrade";
 import { generateRiskItemsHybrid, type AIGenerateOptions } from "@/lib/riskAutoGenAI";
-import { generateRiskItemsHybrid, type AIGenerateOptions } from "@/lib/riskAutoGenAI";
 import { exportToXLSX, exportToPDF, printRiskAssessment } from "@/lib/exportUtils";
 import { validateRiskItems, type ValidationReport } from "@/lib/validationEngine";
 import type { Database } from '@/integrations/supabase/types';

@@ -1865,11 +1865,9 @@ const AssessmentRunDetail = () => {
                 </SelectContent>
               </Select>
             </div>
-            {autoGenUseAI && (
-              <p className="text-xs text-muted-foreground">🤖 라이브러리에 항목이 부족하면 AI가 자동으로 생성합니다. 결과는 캐시되어 재사용됩니다.</p>
-            )}
+            <p className="text-xs text-muted-foreground">🤖 AI가 공종·장비·작업환경을 분석하여 전문 위험성평가를 자동 생성합니다. 결과는 캐시되어 재사용됩니다.</p>
             <Button onClick={handleAutoGenerate} disabled={autoGenProcesses.length === 0 || autoGenLoading} className="w-full">
-              {autoGenLoading ? '생성 중... (AI 사용 시 30초~1분 소요)' : `${autoGenProcesses.length}개 공종 × ${autoGenTargetCount}개 자동 생성`}
+              {autoGenLoading ? 'AI 생성 중... (30초~1분 소요)' : `AI 자동작성 ${autoGenProcesses.length}개 공종 × ${autoGenTargetCount}개 생성`}
             </Button>
           </div>
         </DialogContent>

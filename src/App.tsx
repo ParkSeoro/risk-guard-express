@@ -111,6 +111,10 @@ function ProtectedRoutes() {
         <Route path="/settings/account" element={<SettingsAccount />} />
         <Route path="/settings/permissions" element={<SettingsPermissions />} />
         <Route path="/settings/notifications" element={<SettingsNotifications />} />
+        <Route path="/work-plans" element={<WorkPlans />} />
+        <Route path="/work-plan/:planId" element={<WorkPlanDetail />} />
+        <Route path="/legal-duties" element={<LegalDuties />} />
+        <Route path="/todo" element={<TodoDashboard />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

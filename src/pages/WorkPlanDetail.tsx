@@ -340,6 +340,7 @@ const WorkPlanDetail = () => {
           {wpType?.hasRiggingPlan && (
             <TabsTrigger value="rigging" className="text-xs">리깅플랜</TabsTrigger>
           )}
+          <TabsTrigger value="equipment" className="text-xs gap-1"><Wrench className="h-3 w-3" />장비</TabsTrigger>
           <TabsTrigger value="attachments" className="text-xs">첨부자료</TabsTrigger>
         </TabsList>
 

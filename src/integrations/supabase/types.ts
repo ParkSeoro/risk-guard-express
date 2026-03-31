@@ -515,6 +515,60 @@ export type Database = {
           },
         ]
       }
+      company_construction_info: {
+        Row: {
+          company_id: string
+          construction_amount: number | null
+          construction_name: string
+          construction_period_end: string | null
+          construction_period_start: string | null
+          construction_type: string
+          created_at: string
+          id: string
+          project_id: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          construction_amount?: number | null
+          construction_name?: string
+          construction_period_end?: string | null
+          construction_period_start?: string | null
+          construction_type?: string
+          created_at?: string
+          id?: string
+          project_id: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          construction_amount?: number | null
+          construction_name?: string
+          construction_period_end?: string | null
+          construction_period_start?: string | null
+          construction_type?: string
+          created_at?: string
+          id?: string
+          project_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_construction_info_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_construction_info_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_members: {
         Row: {
           company_id: string
@@ -709,6 +763,63 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "generated_batches_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      legal_duties: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          description: string | null
+          duty_category: string
+          duty_name: string
+          frequency: string
+          id: string
+          is_active: boolean
+          legal_basis: string | null
+          project_id: string
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          description?: string | null
+          duty_category?: string
+          duty_name: string
+          frequency?: string
+          id?: string
+          is_active?: boolean
+          legal_basis?: string | null
+          project_id: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          description?: string | null
+          duty_category?: string
+          duty_name?: string
+          frequency?: string
+          id?: string
+          is_active?: boolean
+          legal_basis?: string | null
+          project_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legal_duties_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "legal_duties_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -1211,6 +1322,77 @@ export type Database = {
           },
         ]
       }
+      rigging_plans: {
+        Row: {
+          boom_length: number | null
+          calculated_utilization: number | null
+          crane_capacity: number | null
+          crane_model: string | null
+          created_at: string
+          ground_bearing_capacity: number | null
+          id: string
+          lifting_method: string | null
+          load_description: string | null
+          load_weight: number
+          notes: string | null
+          outrigger_setup: string | null
+          safety_factor: number | null
+          sling_capacity: number | null
+          sling_type: string | null
+          updated_at: string
+          work_plan_id: string
+          working_radius: number | null
+        }
+        Insert: {
+          boom_length?: number | null
+          calculated_utilization?: number | null
+          crane_capacity?: number | null
+          crane_model?: string | null
+          created_at?: string
+          ground_bearing_capacity?: number | null
+          id?: string
+          lifting_method?: string | null
+          load_description?: string | null
+          load_weight?: number
+          notes?: string | null
+          outrigger_setup?: string | null
+          safety_factor?: number | null
+          sling_capacity?: number | null
+          sling_type?: string | null
+          updated_at?: string
+          work_plan_id: string
+          working_radius?: number | null
+        }
+        Update: {
+          boom_length?: number | null
+          calculated_utilization?: number | null
+          crane_capacity?: number | null
+          crane_model?: string | null
+          created_at?: string
+          ground_bearing_capacity?: number | null
+          id?: string
+          lifting_method?: string | null
+          load_description?: string | null
+          load_weight?: number
+          notes?: string | null
+          outrigger_setup?: string | null
+          safety_factor?: number | null
+          sling_capacity?: number | null
+          sling_type?: string | null
+          updated_at?: string
+          work_plan_id?: string
+          working_radius?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rigging_plans_work_plan_id_fkey"
+            columns: ["work_plan_id"]
+            isOneToOne: false
+            referencedRelation: "work_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       risk_item_feedback: {
         Row: {
           after_image_urls: string[] | null
@@ -1697,6 +1879,69 @@ export type Database = {
         }
         Relationships: []
       }
+      todo_items: {
+        Row: {
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          description: string | null
+          due_date: string
+          frequency: string
+          id: string
+          legal_duty_id: string | null
+          project_id: string
+          status: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          description?: string | null
+          due_date: string
+          frequency?: string
+          id?: string
+          legal_duty_id?: string | null
+          project_id: string
+          status?: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          description?: string | null
+          due_date?: string
+          frequency?: string
+          id?: string
+          legal_duty_id?: string | null
+          project_id?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "todo_items_legal_duty_id_fkey"
+            columns: ["legal_duty_id"]
+            isOneToOne: false
+            referencedRelation: "legal_duties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "todo_items_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           id: string
@@ -1818,6 +2063,63 @@ export type Database = {
           weight?: number | null
         }
         Relationships: []
+      }
+      work_plans: {
+        Row: {
+          attachments: Json
+          company_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          project_id: string
+          sections: Json
+          status: string
+          title: string
+          updated_at: string
+          work_type: string
+        }
+        Insert: {
+          attachments?: Json
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          project_id: string
+          sections?: Json
+          status?: string
+          title?: string
+          updated_at?: string
+          work_type: string
+        }
+        Update: {
+          attachments?: Json
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          project_id?: string
+          sections?: Json
+          status?: string
+          title?: string
+          updated_at?: string
+          work_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_plans_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_plans_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getGradeClassName } from "@/lib/riskGrade";
 import {
   AlertTriangle, CheckCircle2, ShieldAlert, BarChart3, FileCheck,
-  ClipboardList, ShieldCheck, Clock, Plus, ArrowRight, RefreshCw
+  ClipboardList, ShieldCheck, Clock, Plus, ArrowRight, RefreshCw,
+  FileText, ListTodo
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -39,6 +41,12 @@ interface DashboardData {
   processData: { name: string; high: number; med: number; low: number }[];
   topRisks: any[];
   feedback: FeedbackKPI;
+  // New KPIs
+  workPlanCount: number;
+  workPlanByStatus: Record<string, number>;
+  todoTotal: number;
+  todoCompleted: number;
+  todoCompletionRate: number;
 }
 
 const EMPTY_FEEDBACK: FeedbackKPI = { total: 0, unresolved: 0, inProgress: 0, completed: 0, completionRate: 0, byContractor: [] };
@@ -52,25 +60,18 @@ const EMPTY: DashboardData = {
   inApprovalRuns: 0, approvedRuns: 0,
   processData: [], topRisks: [],
   feedback: EMPTY_FEEDBACK,
+  workPlanCount: 0, workPlanByStatus: {},
+  todoTotal: 0, todoCompleted: 0, todoCompletionRate: 0,
 };
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<{ id: string; name: string; site_name: string }[]>([]);
-  const [selectedProject, setSelectedProject] = useState("");
+  const {
+    projects, selectedProject, setSelectedProject,
+    userCompanyId, isMaster, isProjectAdmin, applyCompanyFilter, loading: accessLoading
+  } = useProjectAccess();
   const [data, setData] = useState<DashboardData>(EMPTY);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    supabase.from("projects").select("id, name, site_name").then(({ data }) => {
-      if (data && data.length > 0) {
-        setProjects(data);
-        setSelectedProject(data[0].id);
-      } else {
-        setLoading(false);
-      }
-    });
-  }, []);
 
   const fetchDashboard = useCallback(async () => {
     if (!selectedProject) return;
@@ -87,18 +88,15 @@ const Dashboard = () => {
     const activeRuns = runs || [];
     const runIds = activeRuns.map((r) => r.id);
 
-    // Fetch risk items ONLY from active runs (SSOT: no orphaned items)
+    // Fetch risk items ONLY from active runs
     let items: any[] = [];
     if (runIds.length > 0) {
-      // Fetch in batches if needed (supabase .in() limit)
       const { data: riskItems } = await supabase
         .from("risk_items")
         .select("id, process, sub_task, hazard, risk_grade, improved_risk_grade, status, department")
         .in("run_id", runIds);
       items = riskItems || [];
     }
-    // NOTE: Removed project-level items (run_id=null) from dashboard aggregation
-    // Dashboard should only show items belonging to active assessment runs (SSOT)
 
     // Fetch validation results only for active runs
     let valIssues = 0;
@@ -112,11 +110,24 @@ const Dashboard = () => {
       valIssues = count || 0;
     }
 
+    // Work Plans - with company filter
+    let wpQuery = supabase.from("work_plans").select("id, status").eq("project_id", selectedProject);
+    wpQuery = applyCompanyFilter(wpQuery);
+    const { data: wpData } = await wpQuery;
+    const workPlans = wpData || [];
+    const workPlanByStatus: Record<string, number> = {};
+    workPlans.forEach((wp: any) => { workPlanByStatus[wp.status] = (workPlanByStatus[wp.status] || 0) + 1; });
+
+    // Todo Items - with company filter
+    let todoQuery = supabase.from("todo_items").select("id, status").eq("project_id", selectedProject);
+    todoQuery = applyCompanyFilter(todoQuery);
+    const { data: todoData } = await todoQuery;
+    const todos = todoData || [];
+    const todoCompleted = todos.filter((t: any) => t.status === '완료').length;
+
     // KPI 1: Run status counts
     const runsByStatus: Record<string, number> = {};
-    activeRuns.forEach((r) => {
-      runsByStatus[r.status] = (runsByStatus[r.status] || 0) + 1;
-    });
+    activeRuns.forEach((r) => { runsByStatus[r.status] = (runsByStatus[r.status] || 0) + 1; });
 
     // KPI 2: Grade distribution
     const preGradeDist = { high: 0, med: 0, low: 0 };
@@ -174,7 +185,6 @@ const Dashboard = () => {
       const fbInProgress = fbItems.filter(f => f.status === '진행중').length;
       const fbUnresolved = fbItems.filter(f => f.status === '미조치').length;
 
-      // By contractor: join with risk_items to get company info
       const fbRiskItemIds = [...new Set(fbItems.map(f => f.risk_item_id).filter(Boolean))];
       let byContractor: FeedbackKPI['byContractor'] = [];
       if (fbRiskItemIds.length > 0) {
@@ -221,13 +231,16 @@ const Dashboard = () => {
       processData,
       topRisks,
       feedback: feedbackKpi,
+      workPlanCount: workPlans.length,
+      workPlanByStatus,
+      todoTotal: todos.length,
+      todoCompleted,
+      todoCompletionRate: todos.length > 0 ? Math.round((todoCompleted / todos.length) * 100) : 0,
     });
     setLoading(false);
-  }, [selectedProject]);
+  }, [selectedProject, userCompanyId, isMaster, isProjectAdmin]);
 
-  useEffect(() => {
-    fetchDashboard();
-  }, [fetchDashboard]);
+  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
 
   // Refetch on window focus
   useEffect(() => {
@@ -236,17 +249,14 @@ const Dashboard = () => {
     return () => window.removeEventListener('focus', handleFocus);
   }, [fetchDashboard]);
 
-  // Listen for realtime changes on risk_items and assessment_runs for immediate refresh
+  // Realtime
   useEffect(() => {
     if (!selectedProject) return;
     const channel = supabase
       .channel(`dashboard-${selectedProject}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'risk_items' }, () => {
-        fetchDashboard();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'assessment_runs' }, () => {
-        fetchDashboard();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'risk_items' }, () => fetchDashboard())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'assessment_runs' }, () => fetchDashboard())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'todo_items' }, () => fetchDashboard())
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [selectedProject, fetchDashboard]);
@@ -269,7 +279,7 @@ const Dashboard = () => {
 
   const isEmpty = data.totalRuns === 0 && data.totalItems === 0;
 
-  if (loading) {
+  if (loading || accessLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <p className="text-sm text-muted-foreground">데이터 로딩 중...</p>
@@ -357,6 +367,30 @@ const Dashboard = () => {
               }
             />
             <KpiCard
+              label="작업계획서"
+              value={data.workPlanCount}
+              icon={<FileText className="h-5 w-5 text-primary" />}
+              iconBg="bg-primary/10"
+              sub={
+                <div className="flex gap-2 text-[10px] mt-1 flex-wrap">
+                  {Object.entries(data.workPlanByStatus).slice(0, 3).map(([s, c]) => (
+                    <span key={s} className="text-muted-foreground">{s} {c}</span>
+                  ))}
+                </div>
+              }
+            />
+            <KpiCard
+              label="To-Do 완료율"
+              value={`${data.todoCompletionRate}%`}
+              icon={<ListTodo className="h-5 w-5 text-success" />}
+              iconBg="bg-success/10"
+              sub={<span className="text-[10px] text-muted-foreground mt-1">{data.todoCompleted}/{data.todoTotal} 완료</span>}
+            />
+          </div>
+
+          {/* KPI Cards Row 2 */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KpiCard
               label="개선 완료율"
               value={`${completionRate}%`}
               icon={<CheckCircle2 className="h-5 w-5 text-success" />}
@@ -370,18 +404,6 @@ const Dashboard = () => {
               icon={<AlertTriangle className="h-5 w-5 text-destructive" />}
               iconBg="bg-destructive/10"
             />
-          </div>
-
-          {/* KPI Cards Row 2 */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <KpiCard
-              label="부적정 건수"
-              value={data.validationIssues}
-              valueColor={data.validationIssues > 0 ? "text-destructive" : "text-foreground"}
-              icon={<ShieldCheck className="h-5 w-5 text-warning" />}
-              iconBg="bg-warning/10"
-              sub={<span className="text-[10px] text-muted-foreground mt-1">조건부 {data.validationConditional}건</span>}
-            />
             <KpiCard
               label="결재 진행"
               value={data.inApprovalRuns}
@@ -389,17 +411,12 @@ const Dashboard = () => {
               iconBg="bg-primary/10"
             />
             <KpiCard
-              label="승인 완료"
-              value={data.approvedRuns}
-              icon={<CheckCircle2 className="h-5 w-5 text-success" />}
-              iconBg="bg-success/10"
-            />
-            <KpiCard
-              label="미착수 항목"
-              value={(data.itemsByStatus["미착수"] || 0) + (data.itemsByStatus["초안"] || 0)}
-              icon={<Clock className="h-5 w-5 text-muted-foreground" />}
-              iconBg="bg-muted"
-              sub={<span className="text-[10px] text-muted-foreground mt-1">진행 {data.itemsByStatus["진행"] || 0}건</span>}
+              label="부적정 건수"
+              value={data.validationIssues}
+              valueColor={data.validationIssues > 0 ? "text-destructive" : "text-foreground"}
+              icon={<ShieldCheck className="h-5 w-5 text-warning" />}
+              iconBg="bg-warning/10"
+              sub={<span className="text-[10px] text-muted-foreground mt-1">조건부 {data.validationConditional}건</span>}
             />
           </div>
 

@@ -726,6 +726,63 @@ export type Database = {
           },
         ]
       }
+      equipment_master: {
+        Row: {
+          company_id: string | null
+          created_at: string | null
+          created_by: string | null
+          id: string
+          is_default: boolean | null
+          manufacturer: string | null
+          model_name: string | null
+          name: string
+          project_id: string
+          rated_capacity: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_default?: boolean | null
+          manufacturer?: string | null
+          model_name?: string | null
+          name: string
+          project_id: string
+          rated_capacity?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_default?: boolean | null
+          manufacturer?: string | null
+          model_name?: string | null
+          name?: string
+          project_id?: string
+          rated_capacity?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "equipment_master_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equipment_master_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       generated_batches: {
         Row: {
           created_at: string | null

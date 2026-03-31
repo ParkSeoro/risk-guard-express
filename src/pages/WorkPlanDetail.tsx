@@ -4,7 +4,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { WORK_PLAN_TYPES, COMMON_CRANES, calculateRigging } from '@/lib/workPlanTemplates';
+import { generateAttachments, type AttachmentItem } from '@/lib/attachmentTemplates';
 import StructuredSectionForm, { validateSection } from '@/components/work-plan/StructuredSectionForm';
+import AttachmentChecklist from '@/components/work-plan/AttachmentChecklist';
+import EquipmentManager from '@/components/equipment/EquipmentManager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Save, FileText, Upload, Calculator, CheckCircle2, AlertTriangle, Sparkles, Printer, Download, SendHorizontal, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, FileText, Upload, Calculator, CheckCircle2, AlertTriangle, Sparkles, Printer, Download, SendHorizontal, Loader2, Wrench } from 'lucide-react';
 
 const SLING_ANGLE_FACTORS: Record<string, number> = {
   '0': 1.0, '30': 1.16, '45': 1.41, '60': 2.0,
@@ -337,6 +340,7 @@ const WorkPlanDetail = () => {
           {wpType?.hasRiggingPlan && (
             <TabsTrigger value="rigging" className="text-xs">리깅플랜</TabsTrigger>
           )}
+          <TabsTrigger value="equipment" className="text-xs gap-1"><Wrench className="h-3 w-3" />장비</TabsTrigger>
           <TabsTrigger value="attachments" className="text-xs">첨부자료</TabsTrigger>
         </TabsList>
 
@@ -539,40 +543,41 @@ const WorkPlanDetail = () => {
           </TabsContent>
         )}
 
+        {/* Equipment Tab */}
+        <TabsContent value="equipment" className="space-y-3 mt-4">
+          {plan?.project_id && (
+            <EquipmentManager
+              projectId={plan.project_id}
+              companyId={plan.company_id}
+              selectable
+              onSelect={(eq) => {
+                if (rigging) {
+                  handleRiggingChange('crane_model', eq.name);
+                }
+              }}
+            />
+          )}
+        </TabsContent>
+
         {/* Attachments Tab */}
         <TabsContent value="attachments" className="space-y-3 mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">필수 첨부자료</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {attachments.map((att, idx) => (
-                <div key={att.id || idx} className="flex items-center gap-3 p-2 rounded border bg-muted/20">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{att.name}</p>
-                    {att.uploaded ? (
-                      <p className="text-[10px] text-green-600">✅ 업로드 완료</p>
-                    ) : (
-                      <p className="text-[10px] text-muted-foreground">미첨부</p>
-                    )}
-                  </div>
-                  <label>
-                    <input
-                      type="file"
-                      className="hidden"
-                      onChange={e => {
-                        const file = e.target.files?.[0];
-                        if (file) handleFileUpload(idx, file);
-                      }}
-                    />
-                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" asChild>
-                      <span><Upload className="h-3 w-3" /> {att.uploaded ? '재업로드' : '업로드'}</span>
-                    </Button>
-                  </label>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+          <AttachmentChecklist
+            workType={plan.work_type}
+            attachments={attachments.map((a: any, i: number) => ({
+              key: a.key || `att_${i}`,
+              uploaded: !!a.uploaded,
+              fileUrl: a.fileUrl,
+            }))}
+            onAttachmentsChange={(newAtts) => {
+              setAttachments(newAtts.map((a, i) => ({
+                ...a,
+                name: a.key,
+                id: `att_${i}`,
+              })));
+              setIsDirty(true);
+            }}
+            onUpload={(idx, file) => handleFileUpload(idx, file)}
+          />
         </TabsContent>
       </Tabs>
     </div>

@@ -139,6 +139,13 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
   };
 
   const handleSave = async () => {
+    // Validate: all lines must belong to same projectId
+    const invalidLines = lines.filter(l => l.user_id && !projectMembers.find(m => m.user_id === l.user_id));
+    if (invalidLines.length > 0) {
+      toast({ title: '결재자가 프로젝트 멤버가 아닙니다.', variant: 'destructive' });
+      return;
+    }
+
     // Delete existing and re-insert
     await supabase.from('approval_lines').delete().eq('project_id', projectId);
     if (lines.length > 0) {

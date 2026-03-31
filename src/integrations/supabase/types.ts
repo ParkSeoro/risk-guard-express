@@ -1881,6 +1881,7 @@ export type Database = {
       }
       todo_items: {
         Row: {
+          company_id: string | null
           completed_at: string | null
           completed_by: string | null
           created_at: string
@@ -1896,6 +1897,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          company_id?: string | null
           completed_at?: string | null
           completed_by?: string | null
           created_at?: string
@@ -1911,6 +1913,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          company_id?: string | null
           completed_at?: string | null
           completed_by?: string | null
           created_at?: string
@@ -1926,6 +1929,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "todo_items_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "todo_items_legal_duty_id_fkey"
             columns: ["legal_duty_id"]

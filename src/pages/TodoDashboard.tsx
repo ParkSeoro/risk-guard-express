@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProjectAccess } from '@/hooks/useProjectAccess';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,11 +25,9 @@ const CHART_COLORS = ['hsl(var(--primary))', 'hsl(var(--muted))'];
 const TodoDashboard = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [projects, setProjects] = useState<any[]>([]);
-  const [selectedProject, setSelectedProject] = useState('');
+  const access = useProjectAccess();
   const [todos, setTodos] = useState<any[]>([]);
   const [duties, setDuties] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [editTodo, setEditTodo] = useState<any>(null);
   const [editForm, setEditForm] = useState({ title: '', description: '', due_date: '' });
@@ -36,28 +35,33 @@ const TodoDashboard = () => {
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState({ title: '', description: '', due_date: format(new Date(), 'yyyy-MM-dd') });
 
-  useEffect(() => { loadProjects(); }, []);
-  useEffect(() => { if (selectedProject && user) { loadTodos(); loadDuties(); } }, [selectedProject, user]);
-
-  const loadProjects = async () => {
-    const { data } = await supabase.from('projects').select('id, name').order('created_at', { ascending: false });
-    if (data && data.length > 0) { setProjects(data); setSelectedProject(data[0].id); }
-    setLoading(false);
-  };
+  useEffect(() => {
+    if (access.selectedProject && user) { loadTodos(); loadDuties(); }
+  }, [access.selectedProject, user, access.userCompanyId]);
 
   const loadTodos = async () => {
     if (!user) return;
-    const { data } = await supabase.from('todo_items').select('*').eq('project_id', selectedProject).eq('user_id', user.id).order('due_date', { ascending: true });
+    let query = supabase.from('todo_items').select('*')
+      .eq('project_id', access.selectedProject)
+      .eq('user_id', user.id)
+      .order('due_date', { ascending: true });
+    
+    query = access.applyCompanyFilter(query);
+    const { data } = await query;
     setTodos(data || []);
   };
 
   const loadDuties = async () => {
-    const { data } = await supabase.from('legal_duties').select('*').eq('project_id', selectedProject).eq('is_active', true);
+    let query = supabase.from('legal_duties').select('*')
+      .eq('project_id', access.selectedProject)
+      .eq('is_active', true);
+    query = access.applyCompanyFilter(query);
+    const { data } = await query;
     setDuties(data || []);
   };
 
   const handleGenerateTodos = async () => {
-    if (!selectedProject || !user || duties.length === 0) {
+    if (!access.selectedProject || !user || duties.length === 0) {
       toast({ title: '먼저 법적업무를 생성해주세요.', variant: 'destructive' });
       return;
     }
@@ -73,9 +77,15 @@ const TodoDashboard = () => {
         const key = `${duty.duty_name}-${format(date, 'yyyy-MM-dd')}`;
         if (!existingTitles.has(key)) {
           newTodos.push({
-            project_id: selectedProject, user_id: user.id, legal_duty_id: duty.id,
-            title: duty.duty_name, description: duty.description || '',
-            due_date: format(date, 'yyyy-MM-dd'), frequency: duty.frequency, status: '미완료',
+            project_id: access.selectedProject,
+            company_id: access.userCompanyId,
+            user_id: user.id,
+            legal_duty_id: duty.id,
+            title: duty.duty_name,
+            description: duty.description || '',
+            due_date: format(date, 'yyyy-MM-dd'),
+            frequency: duty.frequency,
+            status: '미완료',
           });
         }
       }
@@ -138,11 +148,16 @@ const TodoDashboard = () => {
   };
 
   const handleAddTodo = async () => {
-    if (!addForm.title.trim() || !selectedProject || !user) return;
+    if (!addForm.title.trim() || !access.selectedProject || !user) return;
     const { error } = await supabase.from('todo_items').insert({
-      project_id: selectedProject, user_id: user.id,
-      title: addForm.title, description: addForm.description,
-      due_date: addForm.due_date, frequency: 'event', status: '미완료',
+      project_id: access.selectedProject,
+      company_id: access.userCompanyId,
+      user_id: user.id,
+      title: addForm.title,
+      description: addForm.description,
+      due_date: addForm.due_date,
+      frequency: 'event',
+      status: '미완료',
     });
     if (error) { toast({ title: '추가 실패', variant: 'destructive' }); return; }
     toast({ title: '할 일이 추가되었습니다.' });
@@ -174,7 +189,7 @@ const TodoDashboard = () => {
     { name: '이번 달', 완료: completedMonth, 미완료: monthTodos.length - completedMonth },
   ];
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
+  if (access.loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
 
   const TodoItem = ({ todo }: { todo: any }) => (
     <div className={`flex items-center gap-3 p-2.5 rounded-lg border ${todo.status === '완료' ? 'bg-muted/30 border-muted' : 'bg-background'}`}>
@@ -184,12 +199,16 @@ const TodoDashboard = () => {
         {todo.description && <p className="text-[10px] text-muted-foreground truncate">{todo.description}</p>}
       </div>
       <div className="text-[10px] text-muted-foreground shrink-0">{format(new Date(todo.due_date), 'MM/dd (EEE)', { locale: ko })}</div>
-      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => openEdit(todo)}>
-        <Pencil className="h-3 w-3" />
-      </Button>
-      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-destructive" onClick={() => setDeleteTarget(todo)}>
-        <Trash2 className="h-3 w-3" />
-      </Button>
+      {access.canEdit('todo') && (
+        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => openEdit(todo)}>
+          <Pencil className="h-3 w-3" />
+        </Button>
+      )}
+      {access.canDelete('todo') && (
+        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-destructive" onClick={() => setDeleteTarget(todo)}>
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      )}
     </div>
   );
 
@@ -201,13 +220,15 @@ const TodoDashboard = () => {
           <p className="text-xs text-muted-foreground mt-1">법적업무 기반 안전관리 체크리스트</p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={selectedProject} onValueChange={setSelectedProject}>
+          <Select value={access.selectedProject} onValueChange={access.setSelectedProject}>
             <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
-            <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+            <SelectContent>{access.projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
           </Select>
-          <Button size="sm" variant="outline" onClick={() => setAddOpen(true)} className="gap-1">
-            <Plus className="h-3.5 w-3.5" /> 직접 추가
-          </Button>
+          {access.canCreate('todo') && (
+            <Button size="sm" variant="outline" onClick={() => setAddOpen(true)} className="gap-1">
+              <Plus className="h-3.5 w-3.5" /> 직접 추가
+            </Button>
+          )}
           <Button size="sm" onClick={handleGenerateTodos} disabled={generating} className="gap-1">
             <RefreshCw className={`h-3.5 w-3.5 ${generating ? 'animate-spin' : ''}`} />
             {generating ? '생성 중...' : '할 일 생성'}
@@ -362,7 +383,9 @@ const TodoDashboard = () => {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>할 일 삭제</AlertDialogTitle>
-            <AlertDialogDescription>"{deleteTarget?.title}"을(를) 삭제하시겠습니까?</AlertDialogDescription>
+            <AlertDialogDescription>
+              "{deleteTarget?.title}"을(를) 삭제하시겠습니까?
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>취소</AlertDialogCancel>

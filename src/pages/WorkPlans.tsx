@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProjectAccess } from '@/hooks/useProjectAccess';
 import { useToast } from '@/hooks/use-toast';
 import { WORK_PLAN_TYPES } from '@/lib/workPlanTemplates';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -28,36 +29,45 @@ const WorkPlans = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
+  const access = useProjectAccess();
   const [plans, setPlans] = useState<any[]>([]);
-  const [projects, setProjects] = useState<any[]>([]);
-  const [selectedProject, setSelectedProject] = useState<string>('');
-  const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newPlan, setNewPlan] = useState({ workType: '', title: '' });
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [editTarget, setEditTarget] = useState<any>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [selectedCompany, setSelectedCompany] = useState('');
 
-  useEffect(() => { loadProjects(); }, []);
-  useEffect(() => { if (selectedProject) loadPlans(); }, [selectedProject]);
+  useEffect(() => {
+    if (access.selectedProject) {
+      loadPlans();
+      loadCompanies();
+    }
+  }, [access.selectedProject, access.userCompanyId]);
 
-  const loadProjects = async () => {
-    const { data } = await supabase.from('projects').select('id, name, site_name').order('created_at', { ascending: false });
-    if (data && data.length > 0) { setProjects(data); setSelectedProject(data[0].id); }
-    setLoading(false);
+  const loadCompanies = async () => {
+    if (!access.selectedProject) return;
+    const { data } = await supabase.from('companies').select('id, name, type').eq('project_id', access.selectedProject).order('name');
+    setCompanies(data || []);
   };
 
   const loadPlans = async () => {
-    const { data } = await supabase
+    let query = supabase
       .from('work_plans')
       .select('*')
-      .eq('project_id', selectedProject)
+      .eq('project_id', access.selectedProject)
       .order('created_at', { ascending: false });
+    
+    // Apply company filter for non-admin roles
+    query = access.applyCompanyFilter(query);
+    
+    const { data } = await query;
     setPlans(data || []);
   };
 
   const handleCreate = async () => {
-    if (!newPlan.workType || !selectedProject) return;
+    if (!newPlan.workType || !access.selectedProject) return;
     const wpType = WORK_PLAN_TYPES.find(t => t.id === newPlan.workType);
     if (!wpType) return;
 
@@ -69,8 +79,16 @@ const WorkPlans = () => {
       id: `att-${i}`, name, uploaded: false, fileUrl: '',
     }));
 
+    const companyId = access.userCompanyId || selectedCompany || null;
+
     const { data, error } = await supabase.from('work_plans').insert({
-      project_id: selectedProject, work_type: newPlan.workType, title, sections, attachments, created_by: user?.id,
+      project_id: access.selectedProject,
+      company_id: companyId,
+      work_type: newPlan.workType,
+      title,
+      sections,
+      attachments,
+      created_by: user?.id,
     }).select().single();
 
     if (error) {
@@ -79,6 +97,7 @@ const WorkPlans = () => {
       toast({ title: '작업계획서가 생성되었습니다.' });
       setDialogOpen(false);
       setNewPlan({ workType: '', title: '' });
+      setSelectedCompany('');
       if (data) navigate(`/work-plan/${data.id}`);
     }
   };
@@ -115,7 +134,7 @@ const WorkPlans = () => {
     }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
+  if (access.loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -127,39 +146,53 @@ const WorkPlans = () => {
           <p className="text-xs text-muted-foreground mt-1">산업안전보건법 기준 법정 작업계획서 관리</p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={selectedProject} onValueChange={setSelectedProject}>
+          <Select value={access.selectedProject} onValueChange={access.setSelectedProject}>
             <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
-            <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+            <SelectContent>{access.projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
           </Select>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="gap-1"><Plus className="h-3.5 w-3.5" /> 새 작업계획서</Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-lg">
-              <DialogHeader><DialogTitle>작업계획서 생성</DialogTitle></DialogHeader>
-              <div className="space-y-4 py-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">공종 선택 (법정 대상)</Label>
-                  <Select value={newPlan.workType} onValueChange={v => setNewPlan(p => ({ ...p, workType: v }))}>
-                    <SelectTrigger><SelectValue placeholder="공종을 선택하세요" /></SelectTrigger>
-                    <SelectContent>
-                      {WORK_PLAN_TYPES.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  {newPlan.workType && (
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      {WORK_PLAN_TYPES.find(t => t.id === newPlan.workType)?.legalBasis}
-                    </p>
+          {access.canCreate('work_plan') && (
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="gap-1"><Plus className="h-3.5 w-3.5" /> 새 작업계획서</Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg">
+                <DialogHeader><DialogTitle>작업계획서 생성</DialogTitle></DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">공종 선택 (법정 대상)</Label>
+                    <Select value={newPlan.workType} onValueChange={v => setNewPlan(p => ({ ...p, workType: v }))}>
+                      <SelectTrigger><SelectValue placeholder="공종을 선택하세요" /></SelectTrigger>
+                      <SelectContent>
+                        {WORK_PLAN_TYPES.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    {newPlan.workType && (
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        {WORK_PLAN_TYPES.find(t => t.id === newPlan.workType)?.legalBasis}
+                      </p>
+                    )}
+                  </div>
+                  {/* Company selector for admins */}
+                  {access.isProjectAdmin && companies.length > 0 && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">소속 업체</Label>
+                      <Select value={selectedCompany} onValueChange={setSelectedCompany}>
+                        <SelectTrigger><SelectValue placeholder="업체 선택 (선택사항)" /></SelectTrigger>
+                        <SelectContent>
+                          {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   )}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">제목 (선택)</Label>
+                    <Input value={newPlan.title} onChange={e => setNewPlan(p => ({ ...p, title: e.target.value }))} placeholder="미입력 시 자동 생성" className="h-9" />
+                  </div>
+                  <Button onClick={handleCreate} disabled={!newPlan.workType} className="w-full">생성</Button>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-medium">제목 (선택)</Label>
-                  <Input value={newPlan.title} onChange={e => setNewPlan(p => ({ ...p, title: e.target.value }))} placeholder="미입력 시 자동 생성" className="h-9" />
-                </div>
-                <Button onClick={handleCreate} disabled={!newPlan.workType} className="w-full">생성</Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </div>
 
@@ -175,6 +208,7 @@ const WorkPlans = () => {
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {plans.map(plan => {
             const wpType = WORK_PLAN_TYPES.find(t => t.id === plan.work_type);
+            const company = companies.find(c => c.id === plan.company_id);
             return (
               <Card key={plan.id} className="hover:border-primary/40 transition-colors">
                 <CardHeader className="pb-2">
@@ -200,19 +234,28 @@ const WorkPlans = () => {
                           <DropdownMenuItem onClick={() => navigate(`/work-plan/${plan.id}`)}>
                             <FileText className="h-3.5 w-3.5 mr-2" /> 열기
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => { setEditTarget(plan); setEditTitle(plan.title); }}>
-                            <Pencil className="h-3.5 w-3.5 mr-2" /> 제목 수정
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive" onClick={() => setDeleteTarget(plan)}>
-                            <Trash2 className="h-3.5 w-3.5 mr-2" /> 삭제
-                          </DropdownMenuItem>
+                          {access.canEdit('work_plan') && (
+                            <DropdownMenuItem onClick={() => { setEditTarget(plan); setEditTitle(plan.title); }}>
+                              <Pencil className="h-3.5 w-3.5 mr-2" /> 제목 수정
+                            </DropdownMenuItem>
+                          )}
+                          {access.canDelete('work_plan') && (
+                            <DropdownMenuItem className="text-destructive" onClick={() => setDeleteTarget(plan)}>
+                              <Trash2 className="h-3.5 w-3.5 mr-2" /> 삭제
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-2 cursor-pointer" onClick={() => navigate(`/work-plan/${plan.id}`)}>
-                  <div className="text-xs text-muted-foreground">{wpType?.name}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{wpType?.name}</span>
+                    {company && (
+                      <Badge variant="outline" className="text-[9px] h-4">{company.name}</Badge>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                     <span>{format(new Date(plan.created_at), 'yyyy.MM.dd', { locale: ko })}</span>
                     {wpType?.hasRiggingPlan && (

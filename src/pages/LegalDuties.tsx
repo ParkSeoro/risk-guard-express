@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProjectAccess } from '@/hooks/useProjectAccess';
 import { useToast } from '@/hooks/use-toast';
-import { LEGAL_DUTY_TEMPLATES, getDutiesForConstructionType, type LegalDutyTemplate } from '@/lib/legalDutyTemplates';
+import { LEGAL_DUTY_TEMPLATES, getDutiesForConstructionType } from '@/lib/legalDutyTemplates';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -39,41 +40,37 @@ const frequencyOptions = [
 const LegalDuties = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [projects, setProjects] = useState<any[]>([]);
-  const [selectedProject, setSelectedProject] = useState('');
+  const access = useProjectAccess();
   const [duties, setDuties] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editDuty, setEditDuty] = useState<any>(null);
   const [form, setForm] = useState({ duty_name: '', description: '', duty_category: 'daily', frequency: 'daily', legal_basis: '' });
 
-  useEffect(() => { loadProjects(); }, []);
-  useEffect(() => { if (selectedProject) loadDuties(); }, [selectedProject]);
-
-  const loadProjects = async () => {
-    const { data } = await supabase.from('projects').select('id, name').order('created_at', { ascending: false });
-    if (data && data.length > 0) { setProjects(data); setSelectedProject(data[0].id); }
-    setLoading(false);
-  };
+  useEffect(() => {
+    if (access.selectedProject) loadDuties();
+  }, [access.selectedProject, access.userCompanyId]);
 
   const loadDuties = async () => {
-    const { data } = await supabase
+    let query = supabase
       .from('legal_duties')
       .select('*')
-      .eq('project_id', selectedProject)
+      .eq('project_id', access.selectedProject)
       .order('duty_category', { ascending: true });
+    
+    query = access.applyCompanyFilter(query);
+    const { data } = await query;
     setDuties(data || []);
   };
 
   const handleAutoGenerate = async () => {
-    if (!selectedProject || !user) return;
+    if (!access.selectedProject || !user) return;
     setGenerating(true);
 
     const { data: constructionInfo } = await supabase
       .from('company_construction_info')
       .select('construction_type')
-      .eq('project_id', selectedProject);
+      .eq('project_id', access.selectedProject);
 
     const constructionType = constructionInfo?.[0]?.construction_type || '일반';
     const applicableDuties = getDutiesForConstructionType(constructionType);
@@ -88,7 +85,8 @@ const LegalDuties = () => {
     }
 
     const inserts = newDuties.map(d => ({
-      project_id: selectedProject,
+      project_id: access.selectedProject,
+      company_id: access.userCompanyId,
       duty_name: d.name,
       duty_category: d.category,
       legal_basis: d.legalBasis,
@@ -107,9 +105,7 @@ const LegalDuties = () => {
     setGenerating(false);
   };
 
-  const isSystemDuty = (duty: any) => {
-    return LEGAL_DUTY_TEMPLATES.some(t => t.name === duty.duty_name);
-  };
+  const isSystemDuty = (duty: any) => LEGAL_DUTY_TEMPLATES.some(t => t.name === duty.duty_name);
 
   const handleFrequencyChange = async (id: string, newFreq: string) => {
     await supabase.from('legal_duties').update({ frequency: newFreq }).eq('id', id);
@@ -122,16 +118,16 @@ const LegalDuties = () => {
     setDuties(prev => prev.map(d => d.id === id ? { ...d, is_active: !current } : d));
   };
 
-  // User custom duty CRUD
   const openAdd = () => {
     setForm({ duty_name: '', description: '', duty_category: 'daily', frequency: 'daily', legal_basis: '' });
     setAddOpen(true);
   };
 
   const handleAddSave = async () => {
-    if (!form.duty_name.trim() || !selectedProject) return;
+    if (!form.duty_name.trim() || !access.selectedProject) return;
     const { error } = await supabase.from('legal_duties').insert({
-      project_id: selectedProject,
+      project_id: access.selectedProject,
+      company_id: access.userCompanyId,
       duty_name: form.duty_name,
       description: form.description,
       duty_category: form.duty_category,
@@ -173,7 +169,7 @@ const LegalDuties = () => {
 
   const categories = ['daily', 'weekly', 'monthly', 'event'];
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
+  if (access.loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -185,22 +181,20 @@ const LegalDuties = () => {
           <p className="text-xs text-muted-foreground mt-1">산업안전보건법 + KOSHA 기준 안전관리자 법정 업무</p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={selectedProject} onValueChange={setSelectedProject}>
-            <SelectTrigger className="w-48 h-8 text-xs">
-              <SelectValue placeholder="프로젝트 선택" />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map(p => (
-                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-              ))}
-            </SelectContent>
+          <Select value={access.selectedProject} onValueChange={access.setSelectedProject}>
+            <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
+            <SelectContent>{access.projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
           </Select>
-          <Button size="sm" variant="outline" onClick={openAdd} className="gap-1">
-            <Plus className="h-3.5 w-3.5" /> 업무 추가
-          </Button>
-          <Button size="sm" onClick={handleAutoGenerate} disabled={generating} className="gap-1">
-            <Sparkles className="h-3.5 w-3.5" /> {generating ? '생성 중...' : '자동 생성'}
-          </Button>
+          {access.canCreate('legal_duty') && (
+            <Button size="sm" variant="outline" onClick={openAdd} className="gap-1">
+              <Plus className="h-3.5 w-3.5" /> 업무 추가
+            </Button>
+          )}
+          {access.canCreate('legal_duty') && (
+            <Button size="sm" onClick={handleAutoGenerate} disabled={generating} className="gap-1">
+              <Sparkles className="h-3.5 w-3.5" /> {generating ? '생성 중...' : '자동 생성'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -253,30 +247,30 @@ const LegalDuties = () => {
                           <p className="text-[10px] text-muted-foreground mt-0.5">📜 {duty.legal_basis}</p>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
-                          {/* Frequency selector - always editable */}
-                          <Select value={duty.frequency} onValueChange={v => handleFrequencyChange(duty.id, v)}>
-                            <SelectTrigger className="h-7 w-20 text-[10px]">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {frequencyOptions.map(f => (
-                                <SelectItem key={f.value} value={f.value} className="text-xs">{f.label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => toggleActive(duty.id, duty.is_active)}>
-                            {duty.is_active ? '비활성화' : '활성화'}
-                          </Button>
-                          {/* Custom duties can be edited/deleted */}
-                          {!isSys && (
-                            <>
-                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(duty)}>
-                                <Pencil className="h-3 w-3" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteDuty(duty.id)}>
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            </>
+                          {access.canEdit('legal_duty') && (
+                            <Select value={duty.frequency} onValueChange={v => handleFrequencyChange(duty.id, v)}>
+                              <SelectTrigger className="h-7 w-20 text-[10px]"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {frequencyOptions.map(f => (
+                                  <SelectItem key={f.value} value={f.value} className="text-xs">{f.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                          {access.canEdit('legal_duty') && (
+                            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => toggleActive(duty.id, duty.is_active)}>
+                              {duty.is_active ? '비활성화' : '활성화'}
+                            </Button>
+                          )}
+                          {!isSys && access.canEdit('legal_duty') && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(duty)}>
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                          )}
+                          {!isSys && access.canDelete('legal_duty') && (
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteDuty(duty.id)}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
                           )}
                         </div>
                       </div>
@@ -333,7 +327,7 @@ const LegalDuties = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Dialog (custom duties only) */}
+      {/* Edit Dialog */}
       <Dialog open={!!editDuty} onOpenChange={open => { if (!open) setEditDuty(null); }}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>업무 수정</DialogTitle></DialogHeader>

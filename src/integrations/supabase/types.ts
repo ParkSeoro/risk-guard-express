@@ -2160,6 +2160,15 @@ export type Database = {
         Args: { _project_id: string; _user_id: string }
         Returns: boolean
       }
+      list_joinable_projects: {
+        Args: never
+        Returns: {
+          id: string
+          name: string
+          site_name: string
+          status: string
+        }[]
+      }
       process_invite_code: {
         Args: { _invite_code: string; _user_id: string }
         Returns: Json

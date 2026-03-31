@@ -141,7 +141,7 @@ export function useProjectAccess(): ProjectAccess {
   const isContractor = userRole === 'contractor';
   const userCompanyId = isMaster ? null : (memberInfo?.company_id || null);
 
-  const applyCompanyFilter = <T extends { eq: (col: string, val: string) => T }>(query: T): T => {
+  const applyCompanyFilter = (query: any): any => {
     if (isMaster || isProjectAdmin) return query;
     if (userCompanyId) return query.eq('company_id', userCompanyId);
     return query;

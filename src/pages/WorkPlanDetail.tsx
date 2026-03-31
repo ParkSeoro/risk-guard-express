@@ -543,40 +543,41 @@ const WorkPlanDetail = () => {
           </TabsContent>
         )}
 
+        {/* Equipment Tab */}
+        <TabsContent value="equipment" className="space-y-3 mt-4">
+          {plan?.project_id && (
+            <EquipmentManager
+              projectId={plan.project_id}
+              companyId={plan.company_id}
+              selectable
+              onSelect={(eq) => {
+                if (rigging) {
+                  handleRiggingChange('crane_model', eq.name);
+                }
+              }}
+            />
+          )}
+        </TabsContent>
+
         {/* Attachments Tab */}
         <TabsContent value="attachments" className="space-y-3 mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">필수 첨부자료</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {attachments.map((att, idx) => (
-                <div key={att.id || idx} className="flex items-center gap-3 p-2 rounded border bg-muted/20">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{att.name}</p>
-                    {att.uploaded ? (
-                      <p className="text-[10px] text-green-600">✅ 업로드 완료</p>
-                    ) : (
-                      <p className="text-[10px] text-muted-foreground">미첨부</p>
-                    )}
-                  </div>
-                  <label>
-                    <input
-                      type="file"
-                      className="hidden"
-                      onChange={e => {
-                        const file = e.target.files?.[0];
-                        if (file) handleFileUpload(idx, file);
-                      }}
-                    />
-                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" asChild>
-                      <span><Upload className="h-3 w-3" /> {att.uploaded ? '재업로드' : '업로드'}</span>
-                    </Button>
-                  </label>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+          <AttachmentChecklist
+            workType={plan.work_type}
+            attachments={attachments.map((a: any, i: number) => ({
+              key: a.key || `att_${i}`,
+              uploaded: !!a.uploaded,
+              fileUrl: a.fileUrl,
+            }))}
+            onAttachmentsChange={(newAtts) => {
+              setAttachments(newAtts.map((a, i) => ({
+                ...a,
+                name: a.key,
+                id: `att_${i}`,
+              })));
+              setIsDirty(true);
+            }}
+            onUpload={(idx, file) => handleFileUpload(idx, file)}
+          />
         </TabsContent>
       </Tabs>
     </div>

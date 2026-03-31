@@ -3,15 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { WORK_PLAN_TYPES, type WorkPlanType } from '@/lib/workPlanTemplates';
+import { WORK_PLAN_TYPES } from '@/lib/workPlanTemplates';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, FileText, Clock, CheckCircle2, AlertTriangle, Trash2 } from 'lucide-react';
+import { Plus, FileText, Clock, CheckCircle2, AlertTriangle, Trash2, Pencil, MoreVertical } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 
@@ -32,21 +34,16 @@ const WorkPlans = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newPlan, setNewPlan] = useState({ workType: '', title: '' });
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [editTarget, setEditTarget] = useState<any>(null);
+  const [editTitle, setEditTitle] = useState('');
 
-  useEffect(() => {
-    loadProjects();
-  }, []);
-
-  useEffect(() => {
-    if (selectedProject) loadPlans();
-  }, [selectedProject]);
+  useEffect(() => { loadProjects(); }, []);
+  useEffect(() => { if (selectedProject) loadPlans(); }, [selectedProject]);
 
   const loadProjects = async () => {
     const { data } = await supabase.from('projects').select('id, name, site_name').order('created_at', { ascending: false });
-    if (data && data.length > 0) {
-      setProjects(data);
-      setSelectedProject(data[0].id);
-    }
+    if (data && data.length > 0) { setProjects(data); setSelectedProject(data[0].id); }
     setLoading(false);
   };
 
@@ -66,26 +63,14 @@ const WorkPlans = () => {
 
     const title = newPlan.title || `${wpType.name} 작업계획서`;
     const sections = wpType.templateSections.map(s => ({
-      key: s.key,
-      title: s.title,
-      type: s.type,
-      content: '',
-      placeholder: s.placeholder,
+      key: s.key, title: s.title, type: s.type, content: '', placeholder: s.placeholder,
     }));
     const attachments = wpType.requiredAttachments.map((name, i) => ({
-      id: `att-${i}`,
-      name,
-      uploaded: false,
-      fileUrl: '',
+      id: `att-${i}`, name, uploaded: false, fileUrl: '',
     }));
 
     const { data, error } = await supabase.from('work_plans').insert({
-      project_id: selectedProject,
-      work_type: newPlan.workType,
-      title,
-      sections,
-      attachments,
-      created_by: user?.id,
+      project_id: selectedProject, work_type: newPlan.workType, title, sections, attachments, created_by: user?.id,
     }).select().single();
 
     if (error) {
@@ -96,6 +81,30 @@ const WorkPlans = () => {
       setNewPlan({ workType: '', title: '' });
       if (data) navigate(`/work-plan/${data.id}`);
     }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    const { error } = await supabase.from('work_plans').delete().eq('id', deleteTarget.id);
+    if (error) {
+      toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: '삭제되었습니다.' });
+      setPlans(prev => prev.filter(p => p.id !== deleteTarget.id));
+    }
+    setDeleteTarget(null);
+  };
+
+  const handleEditTitle = async () => {
+    if (!editTarget || !editTitle.trim()) return;
+    const { error } = await supabase.from('work_plans').update({ title: editTitle }).eq('id', editTarget.id);
+    if (error) {
+      toast({ title: '수정 실패', variant: 'destructive' });
+    } else {
+      toast({ title: '제목이 수정되었습니다.' });
+      setPlans(prev => prev.map(p => p.id === editTarget.id ? { ...p, title: editTitle } : p));
+    }
+    setEditTarget(null);
   };
 
   const getStatusIcon = (status: string) => {
@@ -119,38 +128,22 @@ const WorkPlans = () => {
         </div>
         <div className="flex items-center gap-2">
           <Select value={selectedProject} onValueChange={setSelectedProject}>
-            <SelectTrigger className="w-48 h-8 text-xs">
-              <SelectValue placeholder="프로젝트 선택" />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map(p => (
-                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-              ))}
-            </SelectContent>
+            <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
+            <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
           </Select>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" className="gap-1">
-                <Plus className="h-3.5 w-3.5" /> 새 작업계획서
-              </Button>
+              <Button size="sm" className="gap-1"><Plus className="h-3.5 w-3.5" /> 새 작업계획서</Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle>작업계획서 생성</DialogTitle>
-              </DialogHeader>
+              <DialogHeader><DialogTitle>작업계획서 생성</DialogTitle></DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">공종 선택 (법정 대상)</Label>
                   <Select value={newPlan.workType} onValueChange={v => setNewPlan(p => ({ ...p, workType: v }))}>
                     <SelectTrigger><SelectValue placeholder="공종을 선택하세요" /></SelectTrigger>
                     <SelectContent>
-                      {WORK_PLAN_TYPES.map(t => (
-                        <SelectItem key={t.id} value={t.id}>
-                          <div className="flex flex-col">
-                            <span className="text-sm">{t.name}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
+                      {WORK_PLAN_TYPES.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   {newPlan.workType && (
@@ -161,16 +154,9 @@ const WorkPlans = () => {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">제목 (선택)</Label>
-                  <Input
-                    value={newPlan.title}
-                    onChange={e => setNewPlan(p => ({ ...p, title: e.target.value }))}
-                    placeholder="미입력 시 자동 생성"
-                    className="h-9"
-                  />
+                  <Input value={newPlan.title} onChange={e => setNewPlan(p => ({ ...p, title: e.target.value }))} placeholder="미입력 시 자동 생성" className="h-9" />
                 </div>
-                <Button onClick={handleCreate} disabled={!newPlan.workType} className="w-full">
-                  생성
-                </Button>
+                <Button onClick={handleCreate} disabled={!newPlan.workType} className="w-full">생성</Button>
               </div>
             </DialogContent>
           </Dialog>
@@ -190,21 +176,42 @@ const WorkPlans = () => {
           {plans.map(plan => {
             const wpType = WORK_PLAN_TYPES.find(t => t.id === plan.work_type);
             return (
-              <Card
-                key={plan.id}
-                className="cursor-pointer hover:border-primary/40 transition-colors"
-                onClick={() => navigate(`/work-plan/${plan.id}`)}
-              >
+              <Card key={plan.id} className="hover:border-primary/40 transition-colors">
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
-                    <CardTitle className="text-sm leading-tight">{plan.title}</CardTitle>
-                    <Badge className={`text-[10px] shrink-0 ${statusColors[plan.status] || ''}`}>
-                      {getStatusIcon(plan.status)}
-                      <span className="ml-1">{plan.status}</span>
-                    </Badge>
+                    <CardTitle
+                      className="text-sm leading-tight cursor-pointer hover:underline"
+                      onClick={() => navigate(`/work-plan/${plan.id}`)}
+                    >
+                      {plan.title}
+                    </CardTitle>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Badge className={`text-[10px] ${statusColors[plan.status] || ''}`}>
+                        {getStatusIcon(plan.status)}
+                        <span className="ml-1">{plan.status}</span>
+                      </Badge>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7">
+                            <MoreVertical className="h-3.5 w-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => navigate(`/work-plan/${plan.id}`)}>
+                            <FileText className="h-3.5 w-3.5 mr-2" /> 열기
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { setEditTarget(plan); setEditTitle(plan.title); }}>
+                            <Pencil className="h-3.5 w-3.5 mr-2" /> 제목 수정
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="text-destructive" onClick={() => setDeleteTarget(plan)}>
+                            <Trash2 className="h-3.5 w-3.5 mr-2" /> 삭제
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-2">
+                <CardContent className="space-y-2 cursor-pointer" onClick={() => navigate(`/work-plan/${plan.id}`)}>
                   <div className="text-xs text-muted-foreground">{wpType?.name}</div>
                   <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                     <span>{format(new Date(plan.created_at), 'yyyy.MM.dd', { locale: ko })}</span>
@@ -218,6 +225,36 @@ const WorkPlans = () => {
           })}
         </div>
       )}
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>작업계획서 삭제</AlertDialogTitle>
+            <AlertDialogDescription>
+              "{deleteTarget?.title}"을(를) 삭제하시겠습니까?<br />
+              <strong className="text-destructive">삭제 후 복구가 불가합니다.</strong>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">삭제</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Edit Title Dialog */}
+      <Dialog open={!!editTarget} onOpenChange={open => { if (!open) setEditTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>제목 수정</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <Input value={editTitle} onChange={e => setEditTitle(e.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button onClick={handleEditTitle} disabled={!editTitle.trim()}>저장</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

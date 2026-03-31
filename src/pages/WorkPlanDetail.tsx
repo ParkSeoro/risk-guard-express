@@ -4,7 +4,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { WORK_PLAN_TYPES, COMMON_CRANES, calculateRigging } from '@/lib/workPlanTemplates';
+import { generateAttachments, type AttachmentItem } from '@/lib/attachmentTemplates';
 import StructuredSectionForm, { validateSection } from '@/components/work-plan/StructuredSectionForm';
+import AttachmentChecklist from '@/components/work-plan/AttachmentChecklist';
+import EquipmentManager from '@/components/equipment/EquipmentManager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
-import { ArrowLeft, Save, FileText, Upload, Calculator, CheckCircle2, AlertTriangle, Sparkles, Printer, Download, SendHorizontal, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, FileText, Upload, Calculator, CheckCircle2, AlertTriangle, Sparkles, Printer, Download, SendHorizontal, Loader2, Wrench } from 'lucide-react';
 
 const SLING_ANGLE_FACTORS: Record<string, number> = {
   '0': 1.0, '30': 1.16, '45': 1.41, '60': 2.0,

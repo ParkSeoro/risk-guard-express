@@ -15,7 +15,7 @@ export interface ProjectAccess {
   isContractor: boolean;
   loading: boolean;
   /** Apply to supabase query builder for company-scoped filtering */
-  applyCompanyFilter: <T extends { eq: (col: string, val: string) => T }>(query: T) => T;
+  applyCompanyFilter: (query: any) => any;
   /** Permission checks */
   canCreate: (feature: FeatureKey) => boolean;
   canEdit: (feature: FeatureKey) => boolean;

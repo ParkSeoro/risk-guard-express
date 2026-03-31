@@ -28,6 +28,10 @@ import Settings from "./pages/Settings";
 import SettingsAccount from "./pages/SettingsAccount";
 import SettingsPermissions from "./pages/SettingsPermissions";
 import SettingsNotifications from "./pages/SettingsNotifications";
+import WorkPlans from "./pages/WorkPlans";
+import WorkPlanDetail from "./pages/WorkPlanDetail";
+import LegalDuties from "./pages/LegalDuties";
+import TodoDashboard from "./pages/TodoDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();

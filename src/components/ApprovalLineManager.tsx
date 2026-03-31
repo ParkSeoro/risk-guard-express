@@ -85,21 +85,20 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
   const autoGenerate = () => {
     if (!user) return;
     const currentMember = projectMembers.find(m => m.user_id === user.id);
+    const authorCompanyId = currentMember?.company_id || null;
     const newLines: ApprovalLine[] = [];
 
-    // Step 1: 작성자 (current user as supervisor)
+    // Step 1: 작성자 (current user)
     newLines.push({
       project_id: projectId, step_order: 0, step_label: '작성',
-      position: 'supervisor', company_id: currentMember?.company_id || null,
+      position: 'supervisor', company_id: authorCompanyId,
       user_id: user.id, user_name: currentMember?.display_name || '',
       company_name: currentMember?.company || '',
     });
 
-    // Step 2: 안전관리자 — same company as author
-    const authorCompanyId = currentMember?.company_id;
+    // Step 2: 안전관리자 — same company first, then any
     const safetyMgr = projectMembers.find(m =>
-      m.position === 'safety_manager' &&
-      (authorCompanyId ? m.company_id === authorCompanyId : true)
+      m.position === 'safety_manager' && (authorCompanyId ? m.company_id === authorCompanyId : true)
     ) || projectMembers.find(m => m.position === 'safety_manager');
     if (safetyMgr) {
       newLines.push({
@@ -110,10 +109,9 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
       });
     }
 
-    // Step 3: 현장대리인 — same company
+    // Step 3: 현장대리인 — same company first, then any
     const siteMgr = projectMembers.find(m =>
-      m.position === 'site_manager' &&
-      (authorCompanyId ? m.company_id === authorCompanyId : true)
+      m.position === 'site_manager' && (authorCompanyId ? m.company_id === authorCompanyId : true)
     ) || projectMembers.find(m => m.position === 'site_manager');
     if (siteMgr) {
       newLines.push({
@@ -124,7 +122,7 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
       });
     }
 
-    // Step 4: 최종승인 — 발주처 project_admin or master
+    // Step 4: 최종승인 — project_admin/master
     const adminMember = projectMembers.find(m => m.role === 'project_admin' || m.role === 'master');
     if (adminMember) {
       newLines.push({

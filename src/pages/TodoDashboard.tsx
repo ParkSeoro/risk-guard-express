@@ -2,19 +2,24 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ListTodo, RefreshCw, Trash2, Pencil } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { ListTodo, RefreshCw, Trash2, Pencil, Plus, PieChart } from 'lucide-react';
 import { format, isToday, isThisWeek, isThisMonth, startOfDay, endOfMonth } from 'date-fns';
 import { ko } from 'date-fns/locale';
+import { PieChart as RPieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
+
+const CHART_COLORS = ['hsl(var(--primary))', 'hsl(var(--muted))'];
 
 const TodoDashboard = () => {
   const { user } = useAuth();
@@ -27,6 +32,9 @@ const TodoDashboard = () => {
   const [generating, setGenerating] = useState(false);
   const [editTodo, setEditTodo] = useState<any>(null);
   const [editForm, setEditForm] = useState({ title: '', description: '', due_date: '' });
+  const [deleteTarget, setDeleteTarget] = useState<any>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState({ title: '', description: '', due_date: format(new Date(), 'yyyy-MM-dd') });
 
   useEffect(() => { loadProjects(); }, []);
   useEffect(() => { if (selectedProject && user) { loadTodos(); loadDuties(); } }, [selectedProject, user]);
@@ -106,10 +114,11 @@ const TodoDashboard = () => {
     setTodos(prev => prev.map(t => t.id === id ? { ...t, ...update } : t));
   };
 
-  const handleDelete = async (id: string) => {
-    const { error } = await supabase.from('todo_items').delete().eq('id', id);
-    if (error) { toast({ title: '삭제 실패', variant: 'destructive' }); return; }
-    setTodos(prev => prev.filter(t => t.id !== id));
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    await supabase.from('todo_items').delete().eq('id', deleteTarget.id);
+    setTodos(prev => prev.filter(t => t.id !== deleteTarget.id));
+    setDeleteTarget(null);
     toast({ title: '삭제되었습니다.' });
   };
 
@@ -120,21 +129,50 @@ const TodoDashboard = () => {
 
   const handleEditSave = async () => {
     if (!editTodo) return;
-    const { error } = await supabase.from('todo_items').update({
+    await supabase.from('todo_items').update({
       title: editForm.title, description: editForm.description, due_date: editForm.due_date,
     }).eq('id', editTodo.id);
-    if (error) { toast({ title: '수정 실패', variant: 'destructive' }); return; }
     setTodos(prev => prev.map(t => t.id === editTodo.id ? { ...t, ...editForm } : t));
     setEditTodo(null);
     toast({ title: '수정되었습니다.' });
   };
 
+  const handleAddTodo = async () => {
+    if (!addForm.title.trim() || !selectedProject || !user) return;
+    const { error } = await supabase.from('todo_items').insert({
+      project_id: selectedProject, user_id: user.id,
+      title: addForm.title, description: addForm.description,
+      due_date: addForm.due_date, frequency: 'event', status: '미완료',
+    });
+    if (error) { toast({ title: '추가 실패', variant: 'destructive' }); return; }
+    toast({ title: '할 일이 추가되었습니다.' });
+    setAddOpen(false);
+    setAddForm({ title: '', description: '', due_date: format(new Date(), 'yyyy-MM-dd') });
+    loadTodos();
+  };
+
   const todayTodos = useMemo(() => todos.filter(t => isToday(new Date(t.due_date))), [todos]);
   const weekTodos = useMemo(() => todos.filter(t => isThisWeek(new Date(t.due_date), { locale: ko })), [todos]);
   const monthTodos = useMemo(() => todos.filter(t => isThisMonth(new Date(t.due_date))), [todos]);
+
   const completedToday = todayTodos.filter(t => t.status === '완료').length;
   const completedWeek = weekTodos.filter(t => t.status === '완료').length;
   const completedMonth = monthTodos.filter(t => t.status === '완료').length;
+
+  const totalAll = todos.length;
+  const completedAll = todos.filter(t => t.status === '완료').length;
+  const completionRate = totalAll > 0 ? Math.round((completedAll / totalAll) * 100) : 0;
+
+  const pieData = [
+    { name: '완료', value: completedAll },
+    { name: '미완료', value: totalAll - completedAll },
+  ];
+
+  const barData = [
+    { name: '오늘', 완료: completedToday, 미완료: todayTodos.length - completedToday },
+    { name: '이번 주', 완료: completedWeek, 미완료: weekTodos.length - completedWeek },
+    { name: '이번 달', 완료: completedMonth, 미완료: monthTodos.length - completedMonth },
+  ];
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
 
@@ -149,7 +187,7 @@ const TodoDashboard = () => {
       <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => openEdit(todo)}>
         <Pencil className="h-3 w-3" />
       </Button>
-      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-destructive" onClick={() => handleDelete(todo.id)}>
+      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-destructive" onClick={() => setDeleteTarget(todo)}>
         <Trash2 className="h-3 w-3" />
       </Button>
     </div>
@@ -167,6 +205,9 @@ const TodoDashboard = () => {
             <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
             <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
           </Select>
+          <Button size="sm" variant="outline" onClick={() => setAddOpen(true)} className="gap-1">
+            <Plus className="h-3.5 w-3.5" /> 직접 추가
+          </Button>
           <Button size="sm" onClick={handleGenerateTodos} disabled={generating} className="gap-1">
             <RefreshCw className={`h-3.5 w-3.5 ${generating ? 'animate-spin' : ''}`} />
             {generating ? '생성 중...' : '할 일 생성'}
@@ -174,7 +215,7 @@ const TodoDashboard = () => {
         </div>
       </div>
 
-      {/* Summary */}
+      {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-3">
         {[{ label: '오늘', done: completedToday, total: todayTodos.length },
           { label: '이번 주', done: completedWeek, total: weekTodos.length },
@@ -183,13 +224,63 @@ const TodoDashboard = () => {
             <CardContent className="py-3 px-4 text-center">
               <p className="text-[10px] text-muted-foreground">{s.label}</p>
               <p className="text-2xl font-bold">{s.done}/{s.total}</p>
-              <div className="w-full h-1.5 rounded-full bg-muted mt-1">
-                <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${s.total ? (s.done / s.total) * 100 : 0}%` }} />
-              </div>
+              <Progress value={s.total ? (s.done / s.total) * 100 : 0} className="h-1.5 mt-1" />
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {s.total ? Math.round((s.done / s.total) * 100) : 0}%
+              </p>
             </CardContent>
           </Card>
         ))}
       </div>
+
+      {/* Charts */}
+      {totalAll > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <PieChart className="h-4 w-4" /> 전체 완료율
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="h-48 flex items-center justify-center">
+              <div className="relative w-40 h-40">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RPieChart>
+                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={60} dataKey="value" strokeWidth={0}>
+                      {pieData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i]} />)}
+                    </Pie>
+                  </RPieChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-xl font-bold">{completionRate}%</span>
+                </div>
+              </div>
+              <div className="ml-4 space-y-1 text-xs">
+                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: CHART_COLORS[0] }} /> 완료 ({completedAll})</div>
+                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-sm" style={{ background: CHART_COLORS[1] }} /> 미완료 ({totalAll - completedAll})</div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">기간별 현황</CardTitle>
+            </CardHeader>
+            <CardContent className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={barData}>
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <Tooltip />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="완료" fill={CHART_COLORS[0]} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="미완료" fill={CHART_COLORS[1]} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {todos.length === 0 ? (
         <Card>
@@ -218,6 +309,30 @@ const TodoDashboard = () => {
         </Tabs>
       )}
 
+      {/* Add Todo Dialog */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>할 일 추가</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs">제목 *</Label>
+              <Input value={addForm.title} onChange={e => setAddForm(p => ({ ...p, title: e.target.value }))} placeholder="할 일 입력" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">설명</Label>
+              <Textarea value={addForm.description} onChange={e => setAddForm(p => ({ ...p, description: e.target.value }))} rows={2} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">마감일</Label>
+              <Input type="date" value={addForm.due_date} onChange={e => setAddForm(p => ({ ...p, due_date: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleAddTodo} disabled={!addForm.title.trim()}>추가</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit Dialog */}
       <Dialog open={!!editTodo} onOpenChange={open => { if (!open) setEditTodo(null); }}>
         <DialogContent className="max-w-md">
@@ -235,10 +350,26 @@ const TodoDashboard = () => {
               <Label className="text-xs">마감일</Label>
               <Input type="date" value={editForm.due_date} onChange={e => setEditForm(p => ({ ...p, due_date: e.target.value }))} />
             </div>
-            <Button onClick={handleEditSave} className="w-full">저장</Button>
           </div>
+          <DialogFooter>
+            <Button onClick={handleEditSave}>저장</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>할 일 삭제</AlertDialogTitle>
+            <AlertDialogDescription>"{deleteTarget?.title}"을(를) 삭제하시겠습니까?</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">삭제</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

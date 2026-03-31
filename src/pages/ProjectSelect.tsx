@@ -30,12 +30,8 @@ const ProjectSelect = () => {
 
   const fetchData = async () => {
     if (!user) return;
-    // Fetch all projects (authenticated users can see all now)
-    const { data: projectData } = await supabase
-      .from('projects')
-      .select('id, name, site_name, status')
-      .eq('status', '진행중')
-      .order('name');
+    // Fetch joinable projects via RPC (returns minimal info, bypasses member-only RLS)
+    const { data: projectData } = await supabase.rpc('list_joinable_projects');
     setProjects(projectData || []);
 
     // Fetch my join requests

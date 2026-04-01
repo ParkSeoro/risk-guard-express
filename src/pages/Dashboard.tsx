@@ -61,7 +61,7 @@ const EMPTY: DashboardData = {
   inApprovalRuns: 0, approvedRuns: 0,
   processData: [], topRisks: [],
   feedback: EMPTY_FEEDBACK,
-  workPlanCount: 0, workPlanByStatus: {},
+  workPlanCount: 0, workPlanByStatus: {}, workPlanExpired: 0,
   todoTotal: 0, todoCompleted: 0, todoCompletionRate: 0,
 };
 

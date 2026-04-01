@@ -378,7 +378,7 @@ const WorkPlanDetail = () => {
         <Button size="sm" variant="outline" onClick={handlePdfDownload} disabled={saving} className="gap-1">
           <Download className="h-3.5 w-3.5" /> PDF
         </Button>
-        <Button size="sm" variant="outline" onClick={() => window.print()} className="gap-1">
+        <Button size="sm" variant="outline" onClick={handlePdfDownload} disabled={saving} className="gap-1">
           <Printer className="h-3.5 w-3.5" /> 인쇄
         </Button>
         {access.canCreate('work_plan') && (

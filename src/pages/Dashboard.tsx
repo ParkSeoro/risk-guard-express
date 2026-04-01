@@ -238,6 +238,7 @@ const Dashboard = () => {
       feedback: feedbackKpi,
       workPlanCount: workPlans.length,
       workPlanByStatus,
+      workPlanExpired,
       todoTotal: todos.length,
       todoCompleted,
       todoCompletionRate: todos.length > 0 ? Math.round((todoCompleted / todos.length) * 100) : 0,

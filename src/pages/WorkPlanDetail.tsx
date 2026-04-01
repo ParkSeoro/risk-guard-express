@@ -332,6 +332,9 @@ const WorkPlanDetail = () => {
         <Button size="sm" onClick={() => handleSave()} disabled={saving} className="gap-1">
           <Save className="h-3.5 w-3.5" /> {saving ? '저장 중...' : '저장'}
         </Button>
+        <Button size="sm" variant="outline" onClick={handlePdfDownload} disabled={saving} className="gap-1">
+          <Download className="h-3.5 w-3.5" /> PDF
+        </Button>
         <Button size="sm" variant="outline" onClick={() => window.print()} className="gap-1">
           <Printer className="h-3.5 w-3.5" /> 인쇄
         </Button>

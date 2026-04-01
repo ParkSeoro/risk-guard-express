@@ -2137,12 +2137,16 @@ export type Database = {
           company_id: string | null
           created_at: string
           created_by: string | null
+          end_date: string | null
           id: string
+          parent_id: string | null
           project_id: string
           sections: Json
+          start_date: string | null
           status: string
           title: string
           updated_at: string
+          version: number
           work_type: string
         }
         Insert: {
@@ -2150,12 +2154,16 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           created_by?: string | null
+          end_date?: string | null
           id?: string
+          parent_id?: string | null
           project_id: string
           sections?: Json
+          start_date?: string | null
           status?: string
           title?: string
           updated_at?: string
+          version?: number
           work_type: string
         }
         Update: {
@@ -2163,12 +2171,16 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           created_by?: string | null
+          end_date?: string | null
           id?: string
+          parent_id?: string | null
           project_id?: string
           sections?: Json
+          start_date?: string | null
           status?: string
           title?: string
           updated_at?: string
+          version?: number
           work_type?: string
         }
         Relationships: [
@@ -2177,6 +2189,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_plans_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "work_plans"
             referencedColumns: ["id"]
           },
           {

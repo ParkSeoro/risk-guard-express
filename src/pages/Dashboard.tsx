@@ -44,6 +44,7 @@ interface DashboardData {
   // New KPIs
   workPlanCount: number;
   workPlanByStatus: Record<string, number>;
+  workPlanExpired: number;
   todoTotal: number;
   todoCompleted: number;
   todoCompletionRate: number;
@@ -60,7 +61,7 @@ const EMPTY: DashboardData = {
   inApprovalRuns: 0, approvedRuns: 0,
   processData: [], topRisks: [],
   feedback: EMPTY_FEEDBACK,
-  workPlanCount: 0, workPlanByStatus: {},
+  workPlanCount: 0, workPlanByStatus: {}, workPlanExpired: 0,
   todoTotal: 0, todoCompleted: 0, todoCompletionRate: 0,
 };
 
@@ -111,12 +112,16 @@ const Dashboard = () => {
     }
 
     // Work Plans - with company filter
-    let wpQuery = supabase.from("work_plans").select("id, status").eq("project_id", selectedProject);
+    let wpQuery = supabase.from("work_plans").select("id, status, end_date").eq("project_id", selectedProject);
     wpQuery = applyCompanyFilter(wpQuery);
     const { data: wpData } = await wpQuery;
     const workPlans = wpData || [];
     const workPlanByStatus: Record<string, number> = {};
-    workPlans.forEach((wp: any) => { workPlanByStatus[wp.status] = (workPlanByStatus[wp.status] || 0) + 1; });
+    let workPlanExpired = 0;
+    workPlans.forEach((wp: any) => {
+      workPlanByStatus[wp.status] = (workPlanByStatus[wp.status] || 0) + 1;
+      if (wp.status === '만료' || (wp.end_date && new Date(wp.end_date) < new Date())) workPlanExpired++;
+    });
 
     // Todo Items - with company filter
     let todoQuery = supabase.from("todo_items").select("id, status").eq("project_id", selectedProject);
@@ -233,6 +238,7 @@ const Dashboard = () => {
       feedback: feedbackKpi,
       workPlanCount: workPlans.length,
       workPlanByStatus,
+      workPlanExpired,
       todoTotal: todos.length,
       todoCompleted,
       todoCompletionRate: todos.length > 0 ? Math.round((todoCompleted / todos.length) * 100) : 0,
@@ -376,6 +382,9 @@ const Dashboard = () => {
                   {Object.entries(data.workPlanByStatus).slice(0, 3).map(([s, c]) => (
                     <span key={s} className="text-muted-foreground">{s} {c}</span>
                   ))}
+                  {data.workPlanExpired > 0 && (
+                    <span className="text-destructive font-medium">만료 {data.workPlanExpired}</span>
+                  )}
                 </div>
               }
             />

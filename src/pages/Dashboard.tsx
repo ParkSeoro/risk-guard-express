@@ -44,6 +44,7 @@ interface DashboardData {
   // New KPIs
   workPlanCount: number;
   workPlanByStatus: Record<string, number>;
+  workPlanExpired: number;
   todoTotal: number;
   todoCompleted: number;
   todoCompletionRate: number;

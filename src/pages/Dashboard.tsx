@@ -112,12 +112,16 @@ const Dashboard = () => {
     }
 
     // Work Plans - with company filter
-    let wpQuery = supabase.from("work_plans").select("id, status").eq("project_id", selectedProject);
+    let wpQuery = supabase.from("work_plans").select("id, status, end_date").eq("project_id", selectedProject);
     wpQuery = applyCompanyFilter(wpQuery);
     const { data: wpData } = await wpQuery;
     const workPlans = wpData || [];
     const workPlanByStatus: Record<string, number> = {};
-    workPlans.forEach((wp: any) => { workPlanByStatus[wp.status] = (workPlanByStatus[wp.status] || 0) + 1; });
+    let workPlanExpired = 0;
+    workPlans.forEach((wp: any) => {
+      workPlanByStatus[wp.status] = (workPlanByStatus[wp.status] || 0) + 1;
+      if (wp.status === '만료' || (wp.end_date && new Date(wp.end_date) < new Date())) workPlanExpired++;
+    });
 
     // Todo Items - with company filter
     let todoQuery = supabase.from("todo_items").select("id, status").eq("project_id", selectedProject);

@@ -260,6 +260,28 @@ const WorkPlanDetail = () => {
     toast({ title: '결재 상신이 완료되었습니다.' });
   };
 
+  const handlePdfDownload = async () => {
+    if (!planId) return;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-workplan-pdf', {
+        body: { planId },
+      });
+      if (error) throw error;
+      if (data?.html) {
+        const blob = new Blob([data.html], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const w = window.open(url, '_blank');
+        if (w) {
+          w.onload = () => { setTimeout(() => w.print(), 500); };
+        }
+        toast({ title: 'PDF 미리보기가 열렸습니다.' });
+      }
+    } catch (err: any) {
+      toast({ title: 'PDF 생성 실패', description: err?.message, variant: 'destructive' });
+    } finally { setSaving(false); }
+  };
+
   const handleClone = async () => {
     if (!plan || !user) return;
     const { data, error } = await supabase.from('work_plans').insert({

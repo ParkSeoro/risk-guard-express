@@ -269,13 +269,34 @@ const WorkPlanDetail = () => {
       });
       if (error) throw error;
       if (data?.html) {
-        const blob = new Blob([data.html], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
-        const w = window.open(url, '_blank');
-        if (w) {
-          w.onload = () => { setTimeout(() => w.print(), 500); };
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        document.body.appendChild(iframe);
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (doc) {
+          doc.open();
+          doc.write(data.html);
+          doc.close();
+          iframe.onload = () => {
+            setTimeout(() => {
+              iframe.contentWindow?.print();
+              setTimeout(() => document.body.removeChild(iframe), 1000);
+            }, 500);
+          };
+          // For browsers that fire onload synchronously
+          if (doc.readyState === 'complete') {
+            setTimeout(() => {
+              iframe.contentWindow?.print();
+              setTimeout(() => document.body.removeChild(iframe), 1000);
+            }, 500);
+          }
         }
-        toast({ title: 'PDF 미리보기가 열렸습니다.' });
+        toast({ title: 'PDF 인쇄 대화상자가 열립니다. "PDF로 저장"을 선택하세요.' });
       }
     } catch (err: any) {
       toast({ title: 'PDF 생성 실패', description: err?.message, variant: 'destructive' });

@@ -382,6 +382,9 @@ const Dashboard = () => {
                   {Object.entries(data.workPlanByStatus).slice(0, 3).map(([s, c]) => (
                     <span key={s} className="text-muted-foreground">{s} {c}</span>
                   ))}
+                  {data.workPlanExpired > 0 && (
+                    <span className="text-destructive font-medium">만료 {data.workPlanExpired}</span>
+                  )}
                 </div>
               }
             />

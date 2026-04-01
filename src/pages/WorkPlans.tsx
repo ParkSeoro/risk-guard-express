@@ -13,15 +13,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, FileText, Clock, CheckCircle2, AlertTriangle, Trash2, Pencil, MoreVertical } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { format } from 'date-fns';
+import { Plus, FileText, Clock, CheckCircle2, AlertTriangle, Trash2, Pencil, MoreVertical, Copy, CalendarClock } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { format, isPast, parseISO } from 'date-fns';
 import { ko } from 'date-fns/locale';
 
 const statusColors: Record<string, string> = {
   '작성중': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
-  '검토중': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
-  '승인완료': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+  '결재중': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+  '완료': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+  '만료': 'bg-muted text-muted-foreground',
   '반려': 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
 };
 
@@ -32,12 +33,13 @@ const WorkPlans = () => {
   const access = useProjectAccess();
   const [plans, setPlans] = useState<any[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [newPlan, setNewPlan] = useState({ workType: '', title: '' });
+  const [newPlan, setNewPlan] = useState({ workType: '', title: '', startDate: '', endDate: '' });
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [editTarget, setEditTarget] = useState<any>(null);
   const [editTitle, setEditTitle] = useState('');
   const [companies, setCompanies] = useState<any[]>([]);
   const [selectedCompany, setSelectedCompany] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
     if (access.selectedProject) {
@@ -58,16 +60,29 @@ const WorkPlans = () => {
       .select('*')
       .eq('project_id', access.selectedProject)
       .order('created_at', { ascending: false });
-    
-    // Apply company filter for non-admin roles
+
     query = access.applyCompanyFilter(query);
-    
     const { data } = await query;
-    setPlans(data || []);
+    let items = data || [];
+
+    // Auto-expire past end_date items
+    const now = new Date();
+    const toExpire = items.filter(p => p.end_date && p.status === '완료' && isPast(parseISO(p.end_date)));
+    if (toExpire.length > 0) {
+      await Promise.all(toExpire.map(p =>
+        supabase.from('work_plans').update({ status: '만료' }).eq('id', p.id)
+      ));
+      items = items.map(p => toExpire.find(e => e.id === p.id) ? { ...p, status: '만료' } : p);
+    }
+
+    setPlans(items);
   };
 
   const handleCreate = async () => {
-    if (!newPlan.workType || !access.selectedProject) return;
+    if (!newPlan.workType || !access.selectedProject || !newPlan.startDate || !newPlan.endDate) {
+      toast({ title: '작업기간을 입력해주세요.', variant: 'destructive' });
+      return;
+    }
     const wpType = WORK_PLAN_TYPES.find(t => t.id === newPlan.workType);
     if (!wpType) return;
 
@@ -89,6 +104,9 @@ const WorkPlans = () => {
       sections,
       attachments,
       created_by: user?.id,
+      start_date: newPlan.startDate,
+      end_date: newPlan.endDate,
+      version: 1,
     }).select().single();
 
     if (error) {
@@ -96,9 +114,32 @@ const WorkPlans = () => {
     } else {
       toast({ title: '작업계획서가 생성되었습니다.' });
       setDialogOpen(false);
-      setNewPlan({ workType: '', title: '' });
+      setNewPlan({ workType: '', title: '', startDate: '', endDate: '' });
       setSelectedCompany('');
       if (data) navigate(`/work-plan/${data.id}`);
+    }
+  };
+
+  const handleClone = async (plan: any) => {
+    if (!user) return;
+    const { data, error } = await supabase.from('work_plans').insert({
+      project_id: plan.project_id,
+      company_id: plan.company_id,
+      work_type: plan.work_type,
+      title: `${plan.title} (v${(plan.version || 1) + 1})`,
+      sections: plan.sections,
+      attachments: plan.attachments,
+      created_by: user.id,
+      parent_id: plan.id,
+      version: (plan.version || 1) + 1,
+      status: '작성중',
+    }).select().single();
+
+    if (error) {
+      toast({ title: '복사 실패', description: error.message, variant: 'destructive' });
+    } else if (data) {
+      toast({ title: '새 회차가 생성되었습니다.' });
+      navigate(`/work-plan/${data.id}`);
     }
   };
 
@@ -128,11 +169,14 @@ const WorkPlans = () => {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case '승인완료': return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+      case '완료': return <CheckCircle2 className="h-4 w-4 text-green-500" />;
       case '반려': return <AlertTriangle className="h-4 w-4 text-red-500" />;
+      case '만료': return <CalendarClock className="h-4 w-4 text-muted-foreground" />;
       default: return <Clock className="h-4 w-4 text-yellow-500" />;
     }
   };
+
+  const filteredPlans = statusFilter === 'all' ? plans : plans.filter(p => p.status === statusFilter);
 
   if (access.loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
 
@@ -146,6 +190,16 @@ const WorkPlans = () => {
           <p className="text-xs text-muted-foreground mt-1">산업안전보건법 기준 법정 작업계획서 관리</p>
         </div>
         <div className="flex items-center gap-2">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-28 h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체</SelectItem>
+              <SelectItem value="작성중">작성중</SelectItem>
+              <SelectItem value="결재중">결재중</SelectItem>
+              <SelectItem value="완료">완료</SelectItem>
+              <SelectItem value="만료">만료</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={access.selectedProject} onValueChange={access.setSelectedProject}>
             <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
             <SelectContent>{access.projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
@@ -172,7 +226,16 @@ const WorkPlans = () => {
                       </p>
                     )}
                   </div>
-                  {/* Company selector for admins */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">작업 시작일 *</Label>
+                      <Input type="date" value={newPlan.startDate} onChange={e => setNewPlan(p => ({ ...p, startDate: e.target.value }))} className="h-9" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">작업 종료일 *</Label>
+                      <Input type="date" value={newPlan.endDate} onChange={e => setNewPlan(p => ({ ...p, endDate: e.target.value }))} className="h-9" />
+                    </div>
+                  </div>
                   {access.isProjectAdmin && companies.length > 0 && (
                     <div className="space-y-1.5">
                       <Label className="text-xs font-medium">소속 업체</Label>
@@ -188,7 +251,7 @@ const WorkPlans = () => {
                     <Label className="text-xs font-medium">제목 (선택)</Label>
                     <Input value={newPlan.title} onChange={e => setNewPlan(p => ({ ...p, title: e.target.value }))} placeholder="미입력 시 자동 생성" className="h-9" />
                   </div>
-                  <Button onClick={handleCreate} disabled={!newPlan.workType} className="w-full">생성</Button>
+                  <Button onClick={handleCreate} disabled={!newPlan.workType || !newPlan.startDate || !newPlan.endDate} className="w-full">생성</Button>
                 </div>
               </DialogContent>
             </Dialog>
@@ -196,7 +259,23 @@ const WorkPlans = () => {
         </div>
       </div>
 
-      {plans.length === 0 ? (
+      {/* Summary badges */}
+      <div className="flex gap-2 flex-wrap">
+        {['작성중', '결재중', '완료', '만료'].map(s => {
+          const count = plans.filter(p => p.status === s).length;
+          if (count === 0) return null;
+          return (
+            <Badge key={s} variant="outline" className="text-xs cursor-pointer" onClick={() => setStatusFilter(s)}>
+              {s} {count}
+            </Badge>
+          );
+        })}
+        <Badge variant="outline" className="text-xs cursor-pointer" onClick={() => setStatusFilter('all')}>
+          전체 {plans.length}
+        </Badge>
+      </div>
+
+      {filteredPlans.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
@@ -206,11 +285,12 @@ const WorkPlans = () => {
         </Card>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {plans.map(plan => {
+          {filteredPlans.map(plan => {
             const wpType = WORK_PLAN_TYPES.find(t => t.id === plan.work_type);
             const company = companies.find(c => c.id === plan.company_id);
+            const isExpired = plan.end_date && isPast(parseISO(plan.end_date));
             return (
-              <Card key={plan.id} className="hover:border-primary/40 transition-colors">
+              <Card key={plan.id} className={`hover:border-primary/40 transition-colors ${plan.status === '만료' ? 'opacity-60' : ''}`}>
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
                     <CardTitle
@@ -218,6 +298,7 @@ const WorkPlans = () => {
                       onClick={() => navigate(`/work-plan/${plan.id}`)}
                     >
                       {plan.title}
+                      {plan.version > 1 && <span className="text-muted-foreground ml-1">v{plan.version}</span>}
                     </CardTitle>
                     <div className="flex items-center gap-1 shrink-0">
                       <Badge className={`text-[10px] ${statusColors[plan.status] || ''}`}>
@@ -239,6 +320,12 @@ const WorkPlans = () => {
                               <Pencil className="h-3.5 w-3.5 mr-2" /> 제목 수정
                             </DropdownMenuItem>
                           )}
+                          {access.canCreate('work_plan') && (
+                            <DropdownMenuItem onClick={() => handleClone(plan)}>
+                              <Copy className="h-3.5 w-3.5 mr-2" /> 이 계획서로 새로 만들기
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
                           {access.canDelete('work_plan') && (
                             <DropdownMenuItem className="text-destructive" onClick={() => setDeleteTarget(plan)}>
                               <Trash2 className="h-3.5 w-3.5 mr-2" /> 삭제
@@ -257,7 +344,14 @@ const WorkPlans = () => {
                     )}
                   </div>
                   <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                    <span>{format(new Date(plan.created_at), 'yyyy.MM.dd', { locale: ko })}</span>
+                    {plan.start_date && plan.end_date ? (
+                      <span className={isExpired ? 'text-destructive font-medium' : ''}>
+                        {format(parseISO(plan.start_date), 'MM.dd')} ~ {format(parseISO(plan.end_date), 'MM.dd')}
+                        {isExpired && ' (만료)'}
+                      </span>
+                    ) : (
+                      <span>{format(new Date(plan.created_at), 'yyyy.MM.dd', { locale: ko })}</span>
+                    )}
                     {wpType?.hasRiggingPlan && (
                       <Badge variant="outline" className="text-[9px] h-4">리깅플랜</Badge>
                     )}

@@ -265,11 +265,8 @@ JSON 배열만 출력하고, 다른 텍스트는 절대 포함하지 마라.`;
 
     // Save to cache
     const cacheKey = `${process_name}|${equipText}|${descText}|${locationText}|${envText}`.toLowerCase().trim();
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
-    await supabase.from("ai_risk_cache").upsert({
+    await adminClient.from("ai_risk_cache").upsert({
       cache_key: cacheKey, process_name, equipment: equipText, work_description: descText,
       work_location: locationText, work_environment: work_environment || [],
       generated_items: deduped, hit_count: 0, updated_at: new Date().toISOString(),

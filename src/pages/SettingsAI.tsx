@@ -276,7 +276,7 @@ const SettingsAI = () => {
           </Card>
 
           {/* Info Card */}
-          <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20">
+          <Card className="border-border/50 bg-muted/30">
             <CardContent className="py-4 text-xs text-muted-foreground space-y-1">
               <p>• API Key가 없어도 기본 AI 엔진(Lovable AI)으로 동작합니다.</p>
               <p>• OpenAI API Key를 입력하면 해당 모델로 우선 호출합니다.</p>

@@ -59,6 +59,50 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_settings: {
+        Row: {
+          api_key_encrypted: string
+          api_key_hint: string
+          created_at: string
+          id: string
+          is_enabled: boolean
+          model: string
+          project_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          api_key_encrypted?: string
+          api_key_hint?: string
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          model?: string
+          project_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          api_key_encrypted?: string
+          api_key_hint?: string
+          created_at?: string
+          id?: string
+          is_enabled?: boolean
+          model?: string
+          project_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_settings_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: true
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       approval_lines: {
         Row: {
           company_id: string | null

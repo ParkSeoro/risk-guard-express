@@ -670,9 +670,28 @@ const RiskAssessment = () => {
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-xs text-muted-foreground">🤖 AI가 공종·장비·작업환경을 분석하여 전문 위험성평가를 자동 생성합니다. 결과는 캐시되어 재사용됩니다.</p>
+            <p className="text-xs text-muted-foreground">🤖 AI가 공종·장비·작업환경을 분석하여 전문 위험성평가를 자동 생성합니다. RAG 기반 유사 사례 참조 + 장비 자동 인식이 적용됩니다.</p>
+            {autoGenProgress && autoGenLoading && (
+              <div className="space-y-2 p-3 bg-muted/50 rounded-lg">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium">
+                    {autoGenProgress.phase === 'cache_check' && '📦 캐시 확인 중...'}
+                    {autoGenProgress.phase === 'generating' && `⚡ AI 생성 중 (${autoGenProgress.batchIndex + 1}/${autoGenProgress.totalBatches} 배치)`}
+                    {autoGenProgress.phase === 'fallback' && '📚 라이브러리 폴백 중...'}
+                    {autoGenProgress.phase === 'complete' && '✅ 완료'}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {autoGenProgress.itemsSoFar}/{autoGenProgress.totalTarget}건
+                  </span>
+                </div>
+                <Progress value={Math.round((autoGenProgress.itemsSoFar / autoGenProgress.totalTarget) * 100)} className="h-2" />
+                {autoGenProgress.normalizedEquipment && (
+                  <p className="text-[10px] text-muted-foreground">🔧 장비 인식: {autoGenProgress.normalizedEquipment}</p>
+                )}
+              </div>
+            )}
             <Button onClick={handleAutoGenerate} disabled={!autoGenProcess || autoGenLoading} className="w-full">
-              {autoGenLoading ? 'AI 생성 중... (30초~1분 소요)' : `AI 자동작성 ${autoGenTargetCount}개 생성`}
+              {autoGenLoading ? `AI 생성 중... ${autoGenProgress ? Math.round((autoGenProgress.itemsSoFar / autoGenProgress.totalTarget) * 100) + '%' : ''}` : `AI 자동작성 ${autoGenTargetCount}개 생성`}
             </Button>
           </div>
         </DialogContent>

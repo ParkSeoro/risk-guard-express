@@ -12,16 +12,16 @@ export interface AIGenerateOptions {
   tags?: string[];
   targetCount?: number;
   deduplicate?: boolean;
+  projectId?: string;
 }
 
-function buildCacheKey(opts: AIGenerateOptions): string {
-  const equip = opts.equipment || '없음';
-  const desc = opts.workDescription || opts.processName + ' 관련 작업';
-  const loc = opts.workLocation || '일반';
-  const env = (opts.workEnvironment && opts.workEnvironment.length > 0)
-    ? opts.workEnvironment.join(', ')
-    : '일반 작업 환경';
-  return `${opts.processName}|${equip}|${desc}|${loc}|${env}`.toLowerCase().trim();
+export interface AIGenerateProgress {
+  phase: 'cache_check' | 'generating' | 'fallback' | 'complete';
+  batchIndex: number;
+  totalBatches: number;
+  itemsSoFar: number;
+  totalTarget: number;
+  normalizedEquipment?: string;
 }
 
 function mapAIItemToGenerated(item: any, processName: string): GeneratedRiskItem {
@@ -58,103 +58,133 @@ function mapAIItemToGenerated(item: any, processName: string): GeneratedRiskItem
   };
 }
 
-async function fetchFromCache(cacheKey: string): Promise<GeneratedRiskItem[] | null> {
-  const { data } = await supabase
-    .from('ai_risk_cache')
-    .select('*')
-    .eq('cache_key', cacheKey)
-    .maybeSingle();
-
-  if (!data) return null;
-
-  // Increment hit count
-  await supabase
-    .from('ai_risk_cache')
-    .update({ hit_count: (data.hit_count || 0) + 1 } as any)
-    .eq('id', data.id);
-
-  const items = (data.generated_items as any[]) || [];
-  return items.map(item => mapAIItemToGenerated(item, data.process_name));
-}
-
-async function fetchFromAI(opts: AIGenerateOptions): Promise<GeneratedRiskItem[]> {
-  const { data, error } = await supabase.functions.invoke('generate-risk-ai', {
-    body: {
-      process_name: opts.processName,
-      equipment: opts.equipment || '',
-      work_description: opts.workDescription || '',
-      work_location: opts.workLocation || '일반',
-      work_environment: opts.workEnvironment || [],
-      target_count: opts.targetCount || 30,
-    },
-  });
-
-  if (error) throw new Error(error.message || 'AI 생성 실패');
-  
-  if (data?.error) {
-    throw new Error(data.error);
-  }
-
-  const items = data?.items || [];
-  return items.map((item: any) => mapAIItemToGenerated(item, opts.processName));
-}
+const BATCH_SIZE = 8;
 
 /**
- * AI-first risk item generation:
- * 1. Check AI cache first (fast, no cost)
- * 2. If cache miss, call AI directly
- * 3. Library is only used as supplemental reference
+ * AI-first risk item generation with progressive batch loading.
+ * Calls the edge function in batches and invokes onProgress for partial results.
  */
-export async function generateRiskItemsHybrid(opts: AIGenerateOptions): Promise<{
+export async function generateRiskItemsHybrid(
+  opts: AIGenerateOptions,
+  onProgress?: (progress: AIGenerateProgress, partialItems: GeneratedRiskItem[]) => void,
+): Promise<{
   items: GeneratedRiskItem[];
   source: 'library' | 'cache' | 'ai' | 'hybrid';
+  normalizedEquipment?: string;
 }> {
   const targetCount = opts.targetCount || 30;
+  const allItems: GeneratedRiskItem[] = [];
+  let normalizedEquipment: string | undefined;
 
-  // Step 1: Check AI cache first (free, instant)
-  const cacheKey = buildCacheKey(opts);
-  const cachedItems = await fetchFromCache(cacheKey);
+  // Report progress
+  const report = (phase: AIGenerateProgress['phase'], batchIndex: number, totalBatches: number) => {
+    onProgress?.({
+      phase,
+      batchIndex,
+      totalBatches,
+      itemsSoFar: allItems.length,
+      totalTarget: targetCount,
+      normalizedEquipment,
+    }, [...allItems]);
+  };
 
-  if (cachedItems && cachedItems.length > 3) {
-    console.log(`[AI Engine] 캐시 히트: ${cachedItems.length}건`);
-    return { items: cachedItems.slice(0, targetCount), source: 'cache' };
-  }
-
-  // Step 2: Call AI directly (primary path)
-  console.log('[AI Engine] AI 생성 실행됨');
   try {
-    const aiItems = await fetchFromAI(opts);
-    console.log(`[AI Engine] AI 결과 수신 완료: ${aiItems.length}건`);
+    // Step 1: First call (checks cache internally)
+    report('cache_check', 0, 1);
 
-    if (aiItems.length > 0) {
-      return { items: aiItems.slice(0, targetCount), source: 'ai' };
+    const { data: firstResult, error: firstError } = await supabase.functions.invoke('generate-risk-ai', {
+      body: {
+        process_name: opts.processName,
+        equipment: opts.equipment || '',
+        work_description: opts.workDescription || '',
+        work_location: opts.workLocation || '일반',
+        work_environment: opts.workEnvironment || [],
+        target_count: targetCount,
+        project_id: opts.projectId || '',
+        batch_size: BATCH_SIZE,
+        // No batch_index = cache check + first batch
+      },
+    });
+
+    if (firstError) throw new Error(firstError.message || 'AI 생성 실패');
+    if (firstResult?.error) throw new Error(firstResult.error);
+
+    normalizedEquipment = firstResult?.normalized_equipment;
+    const totalBatches = firstResult?.total_batches || 1;
+    const source = firstResult?.source || 'ai';
+
+    // Map first batch items
+    const firstItems = (firstResult?.items || []).map((item: any) => mapAIItemToGenerated(item, opts.processName));
+    allItems.push(...firstItems);
+
+    // If cache hit or single batch, we're done
+    if (source === 'cache' || firstResult?.is_complete) {
+      report('complete', 0, 1);
+      return { items: allItems.slice(0, targetCount), source, normalizedEquipment };
     }
-  } catch (aiErr: any) {
-    console.error('[AI Engine] AI 호출 실패:', aiErr?.message);
+
+    report('generating', 1, totalBatches);
+
+    // Step 2: Generate remaining batches
+    for (let batchIdx = 1; batchIdx < totalBatches && allItems.length < targetCount; batchIdx++) {
+      report('generating', batchIdx, totalBatches);
+
+      const { data: batchResult, error: batchError } = await supabase.functions.invoke('generate-risk-ai', {
+        body: {
+          process_name: opts.processName,
+          equipment: opts.equipment || '',
+          work_description: opts.workDescription || '',
+          work_location: opts.workLocation || '일반',
+          work_environment: opts.workEnvironment || [],
+          target_count: targetCount,
+          project_id: opts.projectId || '',
+          batch_index: batchIdx,
+          batch_size: BATCH_SIZE,
+        },
+      });
+
+      if (batchError || batchResult?.error) {
+        console.warn(`[AI Engine] Batch ${batchIdx} failed, stopping`);
+        break;
+      }
+
+      const batchItems = (batchResult?.items || []).map((item: any) => mapAIItemToGenerated(item, opts.processName));
+      
+      // Deduplicate against already collected items
+      const existingKeys = new Set(allItems.map(i => `${i.sub_task}|${i.hazard}`));
+      const newItems = batchItems.filter((i: GeneratedRiskItem) => {
+        const key = `${i.sub_task}|${i.hazard}`;
+        if (existingKeys.has(key)) return false;
+        existingKeys.add(key);
+        return true;
+      });
+
+      allItems.push(...newItems);
+
+      if (batchResult?.is_complete) break;
+    }
+
+    report('complete', totalBatches, totalBatches);
+    return { items: allItems.slice(0, targetCount), source: 'ai', normalizedEquipment };
+  } catch (err: any) {
+    console.error('[AI Engine] AI 호출 실패:', err?.message);
+
+    // Fallback to library
+    report('fallback', 0, 1);
+    console.log('[AI Engine] AI 실패 → 라이브러리 폴백');
+    const libraryItems = await generateRiskItems({
+      processName: opts.processName,
+      tags: opts.tags || [],
+      targetCount,
+      deduplicate: opts.deduplicate ?? true,
+    });
+
+    if (libraryItems.length > 0) {
+      report('complete', 1, 1);
+      return { items: libraryItems.slice(0, targetCount), source: 'library' };
+    }
+
+    report('complete', 1, 1);
+    return { items: [], source: 'ai' };
   }
-
-  // Step 3: Fallback to library only if AI fails
-  console.log('[AI Engine] AI 실패 → 라이브러리 폴백');
-  const libraryItems = await generateRiskItems({
-    processName: opts.processName,
-    tags: opts.tags || [],
-    targetCount,
-    deduplicate: opts.deduplicate ?? true,
-  });
-
-  if (libraryItems.length > 0) {
-    return { items: libraryItems.slice(0, targetCount), source: 'library' };
-  }
-
-  return { items: [], source: 'ai' };
-}
-
-function deduplicateItems(items: GeneratedRiskItem[]): GeneratedRiskItem[] {
-  const seen = new Set<string>();
-  return items.filter(item => {
-    const key = `${item.sub_task}|${item.hazard}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }

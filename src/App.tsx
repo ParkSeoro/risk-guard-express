@@ -28,6 +28,7 @@ import Settings from "./pages/Settings";
 import SettingsAccount from "./pages/SettingsAccount";
 import SettingsPermissions from "./pages/SettingsPermissions";
 import SettingsNotifications from "./pages/SettingsNotifications";
+import SettingsAI from "./pages/SettingsAI";
 import WorkPlans from "./pages/WorkPlans";
 import WorkPlanDetail from "./pages/WorkPlanDetail";
 import LegalDuties from "./pages/LegalDuties";
@@ -111,6 +112,7 @@ function ProtectedRoutes() {
         <Route path="/settings/account" element={<SettingsAccount />} />
         <Route path="/settings/permissions" element={<SettingsPermissions />} />
         <Route path="/settings/notifications" element={<SettingsNotifications />} />
+        <Route path="/settings/ai" element={<SettingsAI />} />
         <Route path="/work-plans" element={<WorkPlans />} />
         <Route path="/work-plan/:planId" element={<WorkPlanDetail />} />
         <Route path="/legal-duties" element={<LegalDuties />} />

@@ -13,10 +13,44 @@ serve(async (req) => {
 
   try {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const adminClient = createClient(supabaseUrl, supabaseKey);
+
+    // Check for user-configured AI settings
+    let useOpenAI = false;
+    let openaiKey = "";
+    let openaiModel = "gpt-4o";
 
     const body = await req.json();
-    const { mode, section_key, section_title, process_name, equipment, work_description, work_location, work_environment, target_count } = body;
+    const { mode, section_key, section_title, process_name, equipment, work_description, work_location, work_environment, target_count, project_id } = body;
+
+    if (project_id) {
+      const { data: aiSettings } = await adminClient
+        .from('ai_settings')
+        .select('*')
+        .eq('project_id', project_id)
+        .maybeSingle();
+
+      if (aiSettings && aiSettings.is_enabled && aiSettings.api_key_encrypted) {
+        useOpenAI = true;
+        openaiKey = aiSettings.api_key_encrypted;
+        openaiModel = aiSettings.model || 'gpt-4o';
+      }
+    }
+
+    // Determine API endpoint and key
+    const apiUrl = useOpenAI
+      ? "https://api.openai.com/v1/chat/completions"
+      : "https://ai.gateway.lovable.dev/v1/chat/completions";
+    const apiKey = useOpenAI ? openaiKey : LOVABLE_API_KEY;
+
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: "AI 설정이 필요합니다. 설정 > AI 설정에서 API Key를 입력하거나 시스템 관리자에게 문의하세요." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!process_name) {
       return new Response(JSON.stringify({ error: "공종명이 필요합니다." }), {
@@ -64,14 +98,14 @@ serve(async (req) => {
 
       console.log('[WorkPlan AI] Calling gateway for section:', section_key);
 
-      const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const response = await fetch(apiUrl, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
+          model: useOpenAI ? openaiModel : "google/gemini-2.5-flash",
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: prompt },
@@ -164,14 +198,14 @@ JSON 배열만 출력하고, 다른 텍스트는 절대 포함하지 마라.`;
   }
 ]`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-pro",
+        model: useOpenAI ? openaiModel : "google/gemini-2.5-pro",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -231,11 +265,8 @@ JSON 배열만 출력하고, 다른 텍스트는 절대 포함하지 마라.`;
 
     // Save to cache
     const cacheKey = `${process_name}|${equipText}|${descText}|${locationText}|${envText}`.toLowerCase().trim();
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
-    await supabase.from("ai_risk_cache").upsert({
+    await adminClient.from("ai_risk_cache").upsert({
       cache_key: cacheKey, process_name, equipment: equipText, work_description: descText,
       work_location: locationText, work_environment: work_environment || [],
       generated_items: deduped, hit_count: 0, updated_at: new Date().toISOString(),

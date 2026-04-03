@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { User, Shield, Bell, ChevronRight, Settings as SettingsIcon } from 'lucide-react';
+import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon } from 'lucide-react';
 
 const settingsCards = [
   {
@@ -19,6 +19,15 @@ const settingsCards = [
     description: '사용자 승인, 역할 부여, 접근 권한을 관리합니다.',
     icon: Shield,
     path: '/settings/permissions',
+    requiresAdmin: true,
+    badge: '마스터 전용',
+  },
+  {
+    id: 'ai',
+    title: 'AI 설정',
+    description: 'AI API Key, 모델 선택, AI 사용 여부를 설정합니다.',
+    icon: Bot,
+    path: '/settings/ai',
     requiresAdmin: true,
     badge: '마스터 전용',
   },

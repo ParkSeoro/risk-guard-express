@@ -1489,61 +1489,196 @@ export type Database = {
       rigging_plans: {
         Row: {
           boom_length: number | null
+          boom_rotation_factor: number | null
           calculated_utilization: number | null
           crane_capacity: number | null
           crane_model: string | null
           created_at: string
+          equipment_name: string | null
+          equipment_ok: string | null
+          equipment_working_load: number | null
           ground_bearing_capacity: number | null
+          ground_inspection_factor: number | null
+          hook_weight: number | null
+          hook_weight_min: number | null
           id: string
+          input_method: string | null
           lifting_method: string | null
           load_description: string | null
+          load_name_max: string | null
+          load_name_min: string | null
+          load_protrusion_factor: number | null
           load_weight: number
+          load_weight_min: number | null
           notes: string | null
+          outrigger_distance: number | null
           outrigger_setup: string | null
+          rated_capacity: number | null
           safety_factor: number | null
+          safety_factor_cargo: number | null
+          safety_factor_passenger: number | null
+          shackle_angle_deg: number | null
+          shackle_count: number | null
+          shackle_diameter_mm: number | null
+          shackle_ok: string | null
+          shackle_qty: number | null
+          shackle_safe_load: number | null
+          shackle_weight_min: number | null
+          shackle_weight_val: number | null
+          shackle_working_load: number | null
+          sling_angle_deg: number | null
           sling_capacity: number | null
+          sling_count: number | null
+          sling_method: string | null
+          sling_ok: string | null
+          sling_rigging_weight: number | null
+          sling_rigging_weight_min: number | null
+          sling_strand_count: number | null
           sling_type: string | null
+          sling_working_load: number | null
+          total_weight_max: number | null
+          total_weight_min: number | null
+          travel_load_factor: number | null
           updated_at: string
+          wind_speed_factor: number | null
+          wind_speed_grade: string | null
+          wire_breaking_load: number | null
+          wire_diameter_inch: number | null
+          wire_diameter_mm: number | null
+          wire_lift_count: number | null
+          wire_safe_load: number | null
+          wire_safety_coefficient: number | null
+          wire_terminal_method: string | null
           work_plan_id: string
           working_radius: number | null
         }
         Insert: {
           boom_length?: number | null
+          boom_rotation_factor?: number | null
           calculated_utilization?: number | null
           crane_capacity?: number | null
           crane_model?: string | null
           created_at?: string
+          equipment_name?: string | null
+          equipment_ok?: string | null
+          equipment_working_load?: number | null
           ground_bearing_capacity?: number | null
+          ground_inspection_factor?: number | null
+          hook_weight?: number | null
+          hook_weight_min?: number | null
           id?: string
+          input_method?: string | null
           lifting_method?: string | null
           load_description?: string | null
+          load_name_max?: string | null
+          load_name_min?: string | null
+          load_protrusion_factor?: number | null
           load_weight?: number
+          load_weight_min?: number | null
           notes?: string | null
+          outrigger_distance?: number | null
           outrigger_setup?: string | null
+          rated_capacity?: number | null
           safety_factor?: number | null
+          safety_factor_cargo?: number | null
+          safety_factor_passenger?: number | null
+          shackle_angle_deg?: number | null
+          shackle_count?: number | null
+          shackle_diameter_mm?: number | null
+          shackle_ok?: string | null
+          shackle_qty?: number | null
+          shackle_safe_load?: number | null
+          shackle_weight_min?: number | null
+          shackle_weight_val?: number | null
+          shackle_working_load?: number | null
+          sling_angle_deg?: number | null
           sling_capacity?: number | null
+          sling_count?: number | null
+          sling_method?: string | null
+          sling_ok?: string | null
+          sling_rigging_weight?: number | null
+          sling_rigging_weight_min?: number | null
+          sling_strand_count?: number | null
           sling_type?: string | null
+          sling_working_load?: number | null
+          total_weight_max?: number | null
+          total_weight_min?: number | null
+          travel_load_factor?: number | null
           updated_at?: string
+          wind_speed_factor?: number | null
+          wind_speed_grade?: string | null
+          wire_breaking_load?: number | null
+          wire_diameter_inch?: number | null
+          wire_diameter_mm?: number | null
+          wire_lift_count?: number | null
+          wire_safe_load?: number | null
+          wire_safety_coefficient?: number | null
+          wire_terminal_method?: string | null
           work_plan_id: string
           working_radius?: number | null
         }
         Update: {
           boom_length?: number | null
+          boom_rotation_factor?: number | null
           calculated_utilization?: number | null
           crane_capacity?: number | null
           crane_model?: string | null
           created_at?: string
+          equipment_name?: string | null
+          equipment_ok?: string | null
+          equipment_working_load?: number | null
           ground_bearing_capacity?: number | null
+          ground_inspection_factor?: number | null
+          hook_weight?: number | null
+          hook_weight_min?: number | null
           id?: string
+          input_method?: string | null
           lifting_method?: string | null
           load_description?: string | null
+          load_name_max?: string | null
+          load_name_min?: string | null
+          load_protrusion_factor?: number | null
           load_weight?: number
+          load_weight_min?: number | null
           notes?: string | null
+          outrigger_distance?: number | null
           outrigger_setup?: string | null
+          rated_capacity?: number | null
           safety_factor?: number | null
+          safety_factor_cargo?: number | null
+          safety_factor_passenger?: number | null
+          shackle_angle_deg?: number | null
+          shackle_count?: number | null
+          shackle_diameter_mm?: number | null
+          shackle_ok?: string | null
+          shackle_qty?: number | null
+          shackle_safe_load?: number | null
+          shackle_weight_min?: number | null
+          shackle_weight_val?: number | null
+          shackle_working_load?: number | null
+          sling_angle_deg?: number | null
           sling_capacity?: number | null
+          sling_count?: number | null
+          sling_method?: string | null
+          sling_ok?: string | null
+          sling_rigging_weight?: number | null
+          sling_rigging_weight_min?: number | null
+          sling_strand_count?: number | null
           sling_type?: string | null
+          sling_working_load?: number | null
+          total_weight_max?: number | null
+          total_weight_min?: number | null
+          travel_load_factor?: number | null
           updated_at?: string
+          wind_speed_factor?: number | null
+          wind_speed_grade?: string | null
+          wire_breaking_load?: number | null
+          wire_diameter_inch?: number | null
+          wire_diameter_mm?: number | null
+          wire_lift_count?: number | null
+          wire_safe_load?: number | null
+          wire_safety_coefficient?: number | null
+          wire_terminal_method?: string | null
           work_plan_id?: string
           working_radius?: number | null
         }

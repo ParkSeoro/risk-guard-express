@@ -48,9 +48,14 @@ interface DashboardData {
   todoTotal: number;
   todoCompleted: number;
   todoCompletionRate: number;
+  // Legal duty rates
+  legalDutyDaily: { total: number; done: number; rate: number };
+  legalDutyWeekly: { total: number; done: number; rate: number };
+  legalDutyMonthly: { total: number; done: number; rate: number };
 }
 
 const EMPTY_FEEDBACK: FeedbackKPI = { total: 0, unresolved: 0, inProgress: 0, completed: 0, completionRate: 0, byContractor: [] };
+const EMPTY_DUTY_RATE = { total: 0, done: 0, rate: 0 };
 
 const EMPTY: DashboardData = {
   totalRuns: 0, runsByStatus: {}, totalItems: 0,
@@ -63,6 +68,9 @@ const EMPTY: DashboardData = {
   feedback: EMPTY_FEEDBACK,
   workPlanCount: 0, workPlanByStatus: {}, workPlanExpired: 0,
   todoTotal: 0, todoCompleted: 0, todoCompletionRate: 0,
+  legalDutyDaily: EMPTY_DUTY_RATE,
+  legalDutyWeekly: EMPTY_DUTY_RATE,
+  legalDutyMonthly: EMPTY_DUTY_RATE,
 };
 
 const Dashboard = () => {

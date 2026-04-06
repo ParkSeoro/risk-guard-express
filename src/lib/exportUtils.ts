@@ -156,12 +156,12 @@ export async function exportToPDF(
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
     const title = runInfo
-      ? `디아이지에어가스 위험성평가 [${runInfo.type}] ${runInfo.period_label}`
-      : `디아이지에어가스 위험성평가 - ${project.name}`;
+      ? `위험성평가 [${runInfo.type}] ${runInfo.period_label}`
+      : `위험성평가 - ${project.name}`;
 
     // Cover page
     doc.setFontSize(18);
-    doc.text('디아이지에어가스 위험성평가 시스템', 14, 15);
+    doc.text('안전관리시스템 위험성평가', 14, 15);
     doc.setFontSize(12);
     doc.text(title, 14, 24);
     doc.setFontSize(10);

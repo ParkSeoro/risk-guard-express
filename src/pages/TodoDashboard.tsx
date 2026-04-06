@@ -25,7 +25,7 @@ const CHART_COLORS = ['hsl(var(--primary))', 'hsl(var(--muted))'];
 const TodoDashboard = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const access = useProjectAccess();
+  const access = useGlobalProjectAccess();
   const [todos, setTodos] = useState<any[]>([]);
   const [duties, setDuties] = useState<any[]>([]);
   const [generating, setGenerating] = useState(false);

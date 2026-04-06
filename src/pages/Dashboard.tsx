@@ -260,6 +260,9 @@ const Dashboard = () => {
       todoTotal: todos.length,
       todoCompleted,
       todoCompletionRate: todos.length > 0 ? Math.round((todoCompleted / todos.length) * 100) : 0,
+      legalDutyDaily,
+      legalDutyWeekly,
+      legalDutyMonthly,
     });
     setLoading(false);
   }, [selectedProject, userCompanyId, isMaster, isProjectAdmin]);

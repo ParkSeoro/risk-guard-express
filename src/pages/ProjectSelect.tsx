@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { FolderKanban, KeyRound, Send, LogOut, Clock, CheckCircle2 } from 'lucide-react';
+import { FolderKanban, KeyRound, Send, LogOut, Clock, Plus, Building2 } from 'lucide-react';
 
 const roleLabels: Record<string, string> = {
   project_admin: '프로젝트 관리자',
@@ -18,7 +18,7 @@ const roleLabels: Record<string, string> = {
 };
 
 const ProjectSelect = () => {
-  const { user, signOut, profile } = useAuth();
+  const { user, signOut, profile, hasRole } = useAuth();
   const { toast } = useToast();
   const [projects, setProjects] = useState<any[]>([]);
   const [inviteCode, setInviteCode] = useState('');
@@ -28,13 +28,20 @@ const ProjectSelect = () => {
   const [myRequests, setMyRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Project creation state
+  const canCreateProject = hasRole('master') || hasRole('project_admin');
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    name: '', site_name: '', period_start: '', period_end: '',
+    client: '', status: '진행중',
+  });
+
   const fetchData = async () => {
     if (!user) return;
-    // Fetch joinable projects via RPC (returns minimal info, bypasses member-only RLS)
     const { data: projectData } = await supabase.rpc('list_joinable_projects');
     setProjects(projectData || []);
 
-    // Fetch my join requests
     const { data: requests } = await supabase
       .from('project_join_requests')
       .select('*, projects(name)')
@@ -50,7 +57,6 @@ const ProjectSelect = () => {
     if (!inviteCode.trim() || !user) return;
     setJoiningCode(true);
     try {
-      // Look up invite
       const { data: invite, error: lookupErr } = await supabase
         .from('project_invites')
         .select('*')
@@ -61,20 +67,15 @@ const ProjectSelect = () => {
         toast({ title: '유효하지 않은 초대코드입니다.', variant: 'destructive' });
         return;
       }
-
-      // Check expiry
       if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
         toast({ title: '만료된 초대코드입니다.', variant: 'destructive' });
         return;
       }
-
-      // Check max uses
       if (invite.max_uses > 0 && invite.use_count >= invite.max_uses) {
         toast({ title: '사용 횟수가 초과된 초대코드입니다.', variant: 'destructive' });
         return;
       }
 
-      // Add as project member
       const { error: memberErr } = await supabase
         .from('project_members')
         .insert([{
@@ -93,14 +94,12 @@ const ProjectSelect = () => {
         return;
       }
 
-      // Increment use count
       await supabase
         .from('project_invites')
         .update({ use_count: invite.use_count + 1 })
         .eq('id', invite.id);
 
       toast({ title: '프로젝트에 가입되었습니다!' });
-      // Reload page to trigger gate re-check
       window.location.reload();
     } finally {
       setJoiningCode(false);
@@ -131,6 +130,52 @@ const ProjectSelect = () => {
     fetchData();
   };
 
+  const handleCreateProject = async () => {
+    if (!user || !createForm.name.trim()) {
+      toast({ title: '프로젝트명을 입력하세요.', variant: 'destructive' });
+      return;
+    }
+    setCreateLoading(true);
+    try {
+      const { data, error } = await supabase.from('projects').insert([{
+        name: createForm.name.trim(),
+        site_name: createForm.site_name.trim(),
+        period_start: createForm.period_start || null,
+        period_end: createForm.period_end || null,
+        client: createForm.client.trim(),
+        status: createForm.status,
+        created_by: user.id,
+      }]).select().single();
+
+      if (error) {
+        toast({ title: '프로젝트 생성 실패', description: error.message, variant: 'destructive' });
+        return;
+      }
+
+      if (data) {
+        // Auto-assign creator as project_admin
+        const { error: memberError } = await supabase.from('project_members').insert([{
+          project_id: data.id,
+          user_id: user.id,
+          role: 'project_admin' as any,
+          company: profile?.company || '',
+        }]);
+
+        if (memberError) {
+          toast({ title: '프로젝트 생성 완료, 멤버 등록 실패', description: memberError.message, variant: 'destructive' });
+        }
+
+        toast({ title: '프로젝트가 생성되었습니다. 시스템에 진입합니다.' });
+        // Reload to trigger gate re-check → will now pass and enter dashboard
+        window.location.reload();
+      }
+    } catch (err) {
+      toast({ title: '프로젝트 생성 중 오류', description: String(err), variant: 'destructive' });
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -152,6 +197,95 @@ const ProjectSelect = () => {
             {profile?.display_name}님, 프로젝트에 소속되어야 시스템을 이용할 수 있습니다.
           </p>
         </div>
+
+        {/* Project Creation - only for project_admin / master */}
+        {canCreateProject && (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Plus className="h-4 w-4 text-primary" /> 신규 프로젝트 생성
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                프로젝트가 없습니다. 먼저 프로젝트를 생성하세요.
+              </p>
+            </CardHeader>
+            <CardContent>
+              {!showCreateForm ? (
+                <Button onClick={() => setShowCreateForm(true)} className="w-full gap-2">
+                  <Building2 className="h-4 w-4" /> 프로젝트 생성
+                </Button>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">프로젝트명 *</Label>
+                      <Input
+                        value={createForm.name}
+                        onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))}
+                        placeholder="예: OO 건설 현장"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">현장명</Label>
+                      <Input
+                        value={createForm.site_name}
+                        onChange={e => setCreateForm(p => ({ ...p, site_name: e.target.value }))}
+                        placeholder="현장 위치"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">발주처 *</Label>
+                      <Input
+                        value={createForm.client}
+                        onChange={e => setCreateForm(p => ({ ...p, client: e.target.value }))}
+                        placeholder="발주사명"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">상태</Label>
+                      <Select value={createForm.status} onValueChange={v => setCreateForm(p => ({ ...p, status: v }))}>
+                        <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="진행중">진행중</SelectItem>
+                          <SelectItem value="완료">완료</SelectItem>
+                          <SelectItem value="보류">보류</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">공사 시작일 *</Label>
+                      <Input
+                        type="date"
+                        value={createForm.period_start}
+                        onChange={e => setCreateForm(p => ({ ...p, period_start: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">공사 종료일 *</Label>
+                      <Input
+                        type="date"
+                        value={createForm.period_end}
+                        onChange={e => setCreateForm(p => ({ ...p, period_end: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleCreateProject}
+                      disabled={!createForm.name.trim() || createLoading}
+                      className="flex-1"
+                    >
+                      {createLoading ? '생성 중...' : '프로젝트 생성'}
+                    </Button>
+                    <Button variant="outline" onClick={() => setShowCreateForm(false)}>
+                      취소
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Invite Code */}
         <Card>

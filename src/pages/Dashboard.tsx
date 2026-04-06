@@ -131,12 +131,22 @@ const Dashboard = () => {
       if (wp.status === '만료' || (wp.end_date && new Date(wp.end_date) < new Date())) workPlanExpired++;
     });
 
-    // Todo Items - with company filter
-    let todoQuery = supabase.from("todo_items").select("id, status").eq("project_id", selectedProject);
+     // Todo Items - with company filter
+    let todoQuery = supabase.from("todo_items").select("id, status, frequency").eq("project_id", selectedProject);
     todoQuery = applyCompanyFilter(todoQuery);
     const { data: todoData } = await todoQuery;
     const todos = todoData || [];
     const todoCompleted = todos.filter((t: any) => t.status === '완료').length;
+
+    // Legal Duty performance rates (based on todo_items by frequency)
+    const calcDutyRate = (freq: string) => {
+      const items = todos.filter((t: any) => t.frequency === freq);
+      const done = items.filter((t: any) => t.status === '완료').length;
+      return { total: items.length, done, rate: items.length > 0 ? Math.round((done / items.length) * 100) : 0 };
+    };
+    const legalDutyDaily = calcDutyRate('daily');
+    const legalDutyWeekly = calcDutyRate('weekly');
+    const legalDutyMonthly = calcDutyRate('monthly');
 
     // KPI 1: Run status counts
     const runsByStatus: Record<string, number> = {};

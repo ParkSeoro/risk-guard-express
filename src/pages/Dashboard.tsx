@@ -1,21 +1,21 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useGlobalProjectAccess } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { getGradeClassName } from "@/lib/riskGrade";
 import {
   AlertTriangle, CheckCircle2, ShieldAlert, BarChart3, FileCheck,
   ClipboardList, ShieldCheck, Clock, Plus, ArrowRight, RefreshCw,
-  FileText, ListTodo
+  FileText, ListTodo, Scale
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, PieChart, Pie
 } from "recharts";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface FeedbackKPI {
   total: number;

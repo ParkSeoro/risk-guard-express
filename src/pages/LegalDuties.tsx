@@ -181,10 +181,6 @@ const LegalDuties = () => {
           <p className="text-xs text-muted-foreground mt-1">산업안전보건법 + KOSHA 기준 안전관리자 법정 업무</p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={access.selectedProject} onValueChange={access.setSelectedProject}>
-            <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
-            <SelectContent>{access.projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-          </Select>
           {access.canCreate('legal_duty') && (
             <Button size="sm" variant="outline" onClick={openAdd} className="gap-1">
               <Plus className="h-3.5 w-3.5" /> 업무 추가

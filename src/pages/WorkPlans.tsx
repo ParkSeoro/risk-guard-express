@@ -199,10 +199,6 @@ const WorkPlans = () => {
               <SelectItem value="만료">만료</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={access.selectedProject} onValueChange={access.setSelectedProject}>
-            <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
-            <SelectContent>{access.projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-          </Select>
           {access.canCreate('work_plan') && (
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>

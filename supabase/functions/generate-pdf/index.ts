@@ -429,7 +429,7 @@ tr { page-break-inside: avoid; }
 <body>
   <!-- Report Header -->
   <div class="report-header">
-    <div class="report-title">디아이지에어가스 위험성평가표</div>
+    <div class="report-title">위험성평가표</div>
     <div class="report-subtitle">[${run.type}] ${run.period_label || ""}</div>
     <div class="report-info">
       <div class="report-info-row">

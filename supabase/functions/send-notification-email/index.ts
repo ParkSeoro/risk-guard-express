@@ -29,7 +29,7 @@ async function sendEmailViaResend(to: string, subject: string, body: string, api
           <h2 style="color:#1a1a2e;border-bottom:2px solid #e94560;padding-bottom:8px;">${subject}</h2>
           <p style="color:#333;line-height:1.6;">${body.replace(/\n/g, '<br/>')}</p>
           <hr style="margin-top:24px;border:none;border-top:1px solid #eee;"/>
-          <p style="color:#999;font-size:12px;">위험성평가 시스템 자동 발송</p>
+          <p style="color:#999;font-size:12px;">안전관리시스템 자동 발송</p>
         </div>`,
       }),
     });

@@ -334,7 +334,7 @@ export async function exportToXLSX(items: RiskRow[], project: ProjectInfo, maste
     item.department, item.assignee, item.note || '',
   ]);
 
-  const title = runInfo ? `디아이지에어가스 위험성평가 [${runInfo.type}] ${runInfo.period_label}` : `디아이지에어가스 위험성평가 - ${project.name}`;
+  const title = runInfo ? `위험성평가 [${runInfo.type}] ${runInfo.period_label}` : `위험성평가 - ${project.name}`;
 
   const wsData: any[][] = [
     [title],

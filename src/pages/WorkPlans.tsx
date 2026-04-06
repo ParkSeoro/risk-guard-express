@@ -29,7 +29,7 @@ const WorkPlans = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
-  const access = useProjectAccess();
+  const access = useGlobalProjectAccess();
   const [plans, setPlans] = useState<any[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newPlan, setNewPlan] = useState({ workType: '', title: '', startDate: '', endDate: '' });

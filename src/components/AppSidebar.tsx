@@ -45,8 +45,8 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="text-sm font-bold text-sidebar-foreground">디아이지에어가스</span>
-              <span className="text-[10px] text-sidebar-muted">위험성평가 시스템</span>
+              <span className="text-sm font-bold text-sidebar-foreground">안전관리시스템</span>
+              <span className="text-[10px] text-sidebar-muted">Safety Management System</span>
             </div>
           )}
         </div>

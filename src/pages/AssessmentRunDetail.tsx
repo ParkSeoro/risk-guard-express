@@ -1256,7 +1256,7 @@ const AssessmentRunDetail = () => {
       <Card className="print:border-2 print:border-foreground">
         <CardContent className="py-4 space-y-3">
           <div className="text-center border-b pb-2 print:pb-3">
-            <h1 className="text-lg font-bold print:text-xl">디아이지에어가스 위험성평가표</h1>
+            <h1 className="text-lg font-bold print:text-xl">위험성평가표</h1>
             <p className="text-sm text-muted-foreground">[{run.type}] {run.period_label || '(기간 미지정)'}</p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1 text-xs">

@@ -75,9 +75,16 @@ export function useProjectAccess(): ProjectAccess {
   const { user, hasRole } = useAuth();
   const isMaster = hasRole('master');
   const [projects, setProjects] = useState<{ id: string; name: string; site_name: string }[]>([]);
-  const [selectedProject, setSelectedProject] = useState('');
+  const [selectedProject, setSelectedProjectState] = useState(() => {
+    try { return localStorage.getItem('selectedProjectId') || ''; } catch { return ''; }
+  });
   const [memberInfo, setMemberInfo] = useState<{ role: ProjectRole; company_id: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const setSelectedProject = (id: string) => {
+    setSelectedProjectState(id);
+    try { localStorage.setItem('selectedProjectId', id); } catch {}
+  };
 
   useEffect(() => {
     loadProjects();

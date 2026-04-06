@@ -14,6 +14,69 @@ export type Database = {
   }
   public: {
     Tables: {
+      accident_cases: {
+        Row: {
+          accident_type: string
+          cause: string
+          created_at: string
+          description: string | null
+          equipment: string | null
+          fatality: boolean | null
+          id: string
+          injury_count: number | null
+          keywords: string[] | null
+          location_type: string | null
+          occurrence_date: string | null
+          prevention_measures: string[] | null
+          process_category: string
+          related_law: string | null
+          result: string
+          risk_factors: string[] | null
+          source: string | null
+          updated_at: string
+        }
+        Insert: {
+          accident_type?: string
+          cause?: string
+          created_at?: string
+          description?: string | null
+          equipment?: string | null
+          fatality?: boolean | null
+          id?: string
+          injury_count?: number | null
+          keywords?: string[] | null
+          location_type?: string | null
+          occurrence_date?: string | null
+          prevention_measures?: string[] | null
+          process_category?: string
+          related_law?: string | null
+          result?: string
+          risk_factors?: string[] | null
+          source?: string | null
+          updated_at?: string
+        }
+        Update: {
+          accident_type?: string
+          cause?: string
+          created_at?: string
+          description?: string | null
+          equipment?: string | null
+          fatality?: boolean | null
+          id?: string
+          injury_count?: number | null
+          keywords?: string[] | null
+          location_type?: string | null
+          occurrence_date?: string | null
+          prevention_measures?: string[] | null
+          process_category?: string
+          related_law?: string | null
+          result?: string
+          risk_factors?: string[] | null
+          source?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ai_risk_cache: {
         Row: {
           cache_key: string

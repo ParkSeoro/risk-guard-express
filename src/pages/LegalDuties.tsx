@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
 import { LEGAL_DUTY_TEMPLATES, getDutiesForConstructionType } from '@/lib/legalDutyTemplates';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,7 +40,7 @@ const frequencyOptions = [
 const LegalDuties = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const access = useProjectAccess();
+  const access = useGlobalProjectAccess();
   const [duties, setDuties] = useState<any[]>([]);
   const [generating, setGenerating] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -181,10 +181,6 @@ const LegalDuties = () => {
           <p className="text-xs text-muted-foreground mt-1">산업안전보건법 + KOSHA 기준 안전관리자 법정 업무</p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={access.selectedProject} onValueChange={access.setSelectedProject}>
-            <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
-            <SelectContent>{access.projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-          </Select>
           {access.canCreate('legal_duty') && (
             <Button size="sm" variant="outline" onClick={openAdd} className="gap-1">
               <Plus className="h-3.5 w-3.5" /> 업무 추가

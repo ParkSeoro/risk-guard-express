@@ -1,21 +1,21 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useGlobalProjectAccess } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { getGradeClassName } from "@/lib/riskGrade";
 import {
   AlertTriangle, CheckCircle2, ShieldAlert, BarChart3, FileCheck,
   ClipboardList, ShieldCheck, Clock, Plus, ArrowRight, RefreshCw,
-  FileText, ListTodo
+  FileText, ListTodo, Scale
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell, PieChart, Pie
 } from "recharts";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface FeedbackKPI {
   total: number;
@@ -48,9 +48,14 @@ interface DashboardData {
   todoTotal: number;
   todoCompleted: number;
   todoCompletionRate: number;
+  // Legal duty rates
+  legalDutyDaily: { total: number; done: number; rate: number };
+  legalDutyWeekly: { total: number; done: number; rate: number };
+  legalDutyMonthly: { total: number; done: number; rate: number };
 }
 
 const EMPTY_FEEDBACK: FeedbackKPI = { total: 0, unresolved: 0, inProgress: 0, completed: 0, completionRate: 0, byContractor: [] };
+const EMPTY_DUTY_RATE = { total: 0, done: 0, rate: 0 };
 
 const EMPTY: DashboardData = {
   totalRuns: 0, runsByStatus: {}, totalItems: 0,
@@ -63,6 +68,9 @@ const EMPTY: DashboardData = {
   feedback: EMPTY_FEEDBACK,
   workPlanCount: 0, workPlanByStatus: {}, workPlanExpired: 0,
   todoTotal: 0, todoCompleted: 0, todoCompletionRate: 0,
+  legalDutyDaily: EMPTY_DUTY_RATE,
+  legalDutyWeekly: EMPTY_DUTY_RATE,
+  legalDutyMonthly: EMPTY_DUTY_RATE,
 };
 
 const Dashboard = () => {
@@ -70,7 +78,7 @@ const Dashboard = () => {
   const {
     projects, selectedProject, setSelectedProject,
     userCompanyId, isMaster, isProjectAdmin, applyCompanyFilter, loading: accessLoading
-  } = useProjectAccess();
+  } = useGlobalProjectAccess();
   const [data, setData] = useState<DashboardData>(EMPTY);
   const [loading, setLoading] = useState(true);
 
@@ -123,12 +131,22 @@ const Dashboard = () => {
       if (wp.status === '만료' || (wp.end_date && new Date(wp.end_date) < new Date())) workPlanExpired++;
     });
 
-    // Todo Items - with company filter
-    let todoQuery = supabase.from("todo_items").select("id, status").eq("project_id", selectedProject);
+     // Todo Items - with company filter
+    let todoQuery = supabase.from("todo_items").select("id, status, frequency").eq("project_id", selectedProject);
     todoQuery = applyCompanyFilter(todoQuery);
     const { data: todoData } = await todoQuery;
     const todos = todoData || [];
     const todoCompleted = todos.filter((t: any) => t.status === '완료').length;
+
+    // Legal Duty performance rates (based on todo_items by frequency)
+    const calcDutyRate = (freq: string) => {
+      const items = todos.filter((t: any) => t.frequency === freq);
+      const done = items.filter((t: any) => t.status === '완료').length;
+      return { total: items.length, done, rate: items.length > 0 ? Math.round((done / items.length) * 100) : 0 };
+    };
+    const legalDutyDaily = calcDutyRate('daily');
+    const legalDutyWeekly = calcDutyRate('weekly');
+    const legalDutyMonthly = calcDutyRate('monthly');
 
     // KPI 1: Run status counts
     const runsByStatus: Record<string, number> = {};
@@ -242,6 +260,9 @@ const Dashboard = () => {
       todoTotal: todos.length,
       todoCompleted,
       todoCompletionRate: todos.length > 0 ? Math.round((todoCompleted / todos.length) * 100) : 0,
+      legalDutyDaily,
+      legalDutyWeekly,
+      legalDutyMonthly,
     });
     setLoading(false);
   }, [selectedProject, userCompanyId, isMaster, isProjectAdmin]);
@@ -307,16 +328,6 @@ const Dashboard = () => {
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => fetchDashboard()} title="새로고침">
             <RefreshCw className="h-4 w-4" />
           </Button>
-          <Select value={selectedProject} onValueChange={setSelectedProject}>
-            <SelectTrigger className="w-60 text-xs h-9">
-              <SelectValue placeholder="프로젝트 선택" />
-            </SelectTrigger>
-            <SelectContent>
-              {projects.map((p) => (
-                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
@@ -396,6 +407,31 @@ const Dashboard = () => {
               sub={<span className="text-[10px] text-muted-foreground mt-1">{data.todoCompleted}/{data.todoTotal} 완료</span>}
             />
           </div>
+
+          {/* Legal Duty Performance */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Scale className="h-4 w-4 text-primary" /> 법적업무 수행률
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { label: 'Daily', ...data.legalDutyDaily },
+                  { label: 'Weekly', ...data.legalDutyWeekly },
+                  { label: 'Monthly', ...data.legalDutyMonthly },
+                ].map(d => (
+                  <div key={d.label} className="text-center space-y-1">
+                    <p className="text-xs text-muted-foreground font-medium">{d.label}</p>
+                    <p className={`text-2xl font-bold ${d.rate >= 80 ? 'text-success' : d.rate >= 50 ? 'text-warning' : 'text-destructive'}`}>{d.rate}%</p>
+                    <Progress value={d.rate} className="h-1.5" />
+                    <p className="text-[10px] text-muted-foreground">{d.done}/{d.total}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
 
           {/* KPI Cards Row 2 */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

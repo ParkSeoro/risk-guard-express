@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
 import { WORK_PLAN_TYPES, COMMON_CRANES, calculateRigging } from '@/lib/workPlanTemplates';
 import { generateAttachments, type AttachmentItem } from '@/lib/attachmentTemplates';
@@ -34,7 +34,7 @@ const WorkPlanDetail = () => {
   const { planId } = useParams<{ planId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const access = useProjectAccess();
+  const access = useGlobalProjectAccess();
   const { toast } = useToast();
   const [plan, setPlan] = useState<any>(null);
   const [sections, setSections] = useState<any[]>([]);

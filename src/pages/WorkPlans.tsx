@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
 import { WORK_PLAN_TYPES } from '@/lib/workPlanTemplates';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,7 +30,7 @@ const WorkPlans = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
-  const access = useProjectAccess();
+  const access = useGlobalProjectAccess();
   const [plans, setPlans] = useState<any[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newPlan, setNewPlan] = useState({ workType: '', title: '', startDate: '', endDate: '' });
@@ -199,10 +199,6 @@ const WorkPlans = () => {
               <SelectItem value="완료">완료</SelectItem>
               <SelectItem value="만료">만료</SelectItem>
             </SelectContent>
-          </Select>
-          <Select value={access.selectedProject} onValueChange={access.setSelectedProject}>
-            <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
-            <SelectContent>{access.projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
           </Select>
           {access.canCreate('work_plan') && (
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

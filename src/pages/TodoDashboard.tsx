@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,7 @@ const CHART_COLORS = ['hsl(var(--primary))', 'hsl(var(--muted))'];
 const TodoDashboard = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const access = useProjectAccess();
+  const access = useGlobalProjectAccess();
   const [todos, setTodos] = useState<any[]>([]);
   const [duties, setDuties] = useState<any[]>([]);
   const [generating, setGenerating] = useState(false);
@@ -220,10 +220,6 @@ const TodoDashboard = () => {
           <p className="text-xs text-muted-foreground mt-1">법적업무 기반 안전관리 체크리스트</p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={access.selectedProject} onValueChange={access.setSelectedProject}>
-            <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
-            <SelectContent>{access.projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-          </Select>
           {access.canCreate('todo') && (
             <Button size="sm" variant="outline" onClick={() => setAddOpen(true)} className="gap-1">
               <Plus className="h-3.5 w-3.5" /> 직접 추가

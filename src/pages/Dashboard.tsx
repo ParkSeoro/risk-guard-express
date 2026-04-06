@@ -408,6 +408,31 @@ const Dashboard = () => {
             />
           </div>
 
+          {/* Legal Duty Performance */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Scale className="h-4 w-4 text-primary" /> 법적업무 수행률
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { label: 'Daily', ...data.legalDutyDaily },
+                  { label: 'Weekly', ...data.legalDutyWeekly },
+                  { label: 'Monthly', ...data.legalDutyMonthly },
+                ].map(d => (
+                  <div key={d.label} className="text-center space-y-1">
+                    <p className="text-xs text-muted-foreground font-medium">{d.label}</p>
+                    <p className={`text-2xl font-bold ${d.rate >= 80 ? 'text-success' : d.rate >= 50 ? 'text-warning' : 'text-destructive'}`}>{d.rate}%</p>
+                    <Progress value={d.rate} className="h-1.5" />
+                    <p className="text-[10px] text-muted-foreground">{d.done}/{d.total}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
           {/* KPI Cards Row 2 */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <KpiCard

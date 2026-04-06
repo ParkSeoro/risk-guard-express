@@ -78,7 +78,7 @@ const Dashboard = () => {
   const {
     projects, selectedProject, setSelectedProject,
     userCompanyId, isMaster, isProjectAdmin, applyCompanyFilter, loading: accessLoading
-  } = useProjectAccess();
+  } = useGlobalProjectAccess();
   const [data, setData] = useState<DashboardData>(EMPTY);
   const [loading, setLoading] = useState(true);
 

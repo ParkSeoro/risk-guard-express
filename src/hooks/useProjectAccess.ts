@@ -105,10 +105,13 @@ export function useProjectAccess(): ProjectAccess {
       const { data } = await supabase.from('projects').select('id, name, site_name').order('created_at', { ascending: false });
       if (data && data.length > 0) {
         setProjects(data);
-        setSelectedProject(data[0].id);
+        const saved = localStorage.getItem('selectedProjectId');
+        const validSaved = saved && data.some(p => p.id === saved);
+        if (!selectedProject || !data.some(p => p.id === selectedProject)) {
+          setSelectedProject(validSaved ? saved! : data[0].id);
+        }
       }
     } else {
-      // Get projects the user is a member of
       const { data: members } = await supabase
         .from('project_members')
         .select('project_id, projects(id, name, site_name)')
@@ -119,7 +122,11 @@ export function useProjectAccess(): ProjectAccess {
           .map(m => (m as any).projects)
           .filter(Boolean);
         setProjects(projs);
-        if (projs.length > 0) setSelectedProject(projs[0].id);
+        const saved = localStorage.getItem('selectedProjectId');
+        const validSaved = saved && projs.some((p: any) => p.id === saved);
+        if (!selectedProject || !projs.some((p: any) => p.id === selectedProject)) {
+          setSelectedProject(validSaved ? saved! : projs[0].id);
+        }
       }
     }
     setLoading(false);

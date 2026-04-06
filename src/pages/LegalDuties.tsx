@@ -40,7 +40,7 @@ const frequencyOptions = [
 const LegalDuties = () => {
   const { user } = useAuth();
   const { toast } = useToast();
-  const access = useProjectAccess();
+  const access = useGlobalProjectAccess();
   const [duties, setDuties] = useState<any[]>([]);
   const [generating, setGenerating] = useState(false);
   const [addOpen, setAddOpen] = useState(false);

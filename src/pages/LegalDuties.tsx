@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
 import { LEGAL_DUTY_TEMPLATES, getDutiesForConstructionType } from '@/lib/legalDutyTemplates';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

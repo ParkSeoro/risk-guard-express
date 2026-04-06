@@ -254,6 +254,20 @@ const WorkPlanDetail = () => {
       toast({ title: '필수 입력 항목을 확인해주세요.', variant: 'destructive' });
       return;
     }
+    // 필수 첨부서류 미업로드 확인
+    const uploadedKeys = attachments.filter((a: any) => a.uploaded).map((a: any) => a.key);
+    const { getMissingRequiredAttachments } = await import('@/lib/attachmentTemplates');
+    const missing = getMissingRequiredAttachments(plan.work_type, uploadedKeys);
+    if (missing.length > 0) {
+      const names = missing.slice(0, 5).map(m => m.name).join(', ');
+      const more = missing.length > 5 ? ` 외 ${missing.length - 5}건` : '';
+      toast({ 
+        title: '필수 첨부서류 미첨부', 
+        description: `${names}${more}을(를) 첨부해주세요. 필수서류가 누락되면 결재 상신이 불가합니다.`,
+        variant: 'destructive' 
+      });
+      return;
+    }
     await handleSave();
     await supabase.from('work_plans').update({ status: '결재중' }).eq('id', planId);
     setPlan((prev: any) => ({ ...prev, status: '결재중' }));

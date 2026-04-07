@@ -7,21 +7,25 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Calculator, CheckCircle2, AlertTriangle, XCircle, Save, Lightbulb } from 'lucide-react';
+import { Calculator, CheckCircle2, AlertTriangle, XCircle, Save, Lightbulb, Truck } from 'lucide-react';
 import {
   calculateFullRigging,
   getWireBreakingLoad,
   getShackleSafeLoadByInch,
-  getSlingBeltRatedLoad,
+  getSlingBeltRatedLoadByWidth,
+  getRoundSlingRatedLoadByColor,
   getChainSlingLoad,
+  getWindFactorBySpeed,
+  lookupCraneCapacity,
   mmToInch,
   WIND_SPEED_FACTORS,
   TERMINAL_METHOD_EFFICIENCY,
   SLING_MATERIAL_OPTIONS,
-  SLING_BELT_BY_COLOR,
-  ROUND_SLING_OPTIONS,
+  SLING_BELT_BY_WIDTH,
+  ROUND_SLING_BY_COLOR,
   CHAIN_SLING_LOAD,
   SHACKLE_INCH_LOAD,
+  CRANE_PRESETS,
   type RiggingInput,
   type RiggingResult,
   type SlingMaterialType,
@@ -38,6 +42,8 @@ const numVal = (v: any) => Number(v) || 0;
 
 export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: RiggingPlanFormProps) {
   const [result, setResult] = useState<RiggingResult | null>(null);
+  const [windInputMode, setWindInputMode] = useState<'select' | 'custom'>('select');
+  const [customWindSpeed, setCustomWindSpeed] = useState('');
 
   const recalc = useCallback(() => {
     if (!rigging) return;
@@ -55,8 +61,9 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
       slingAngleDeg: numVal(rigging.sling_angle_deg) || 60,
       wireTerminalMethod: rigging.wire_terminal_method || '탐블(24mm 이하)',
       wireSafetyCoefficient: numVal(rigging.wire_safety_coefficient) || 5,
-      slingBeltColor: rigging.sling_belt_color || '',
+      slingBeltWidthMm: numVal(rigging.sling_belt_width_mm),
       slingBeltRatedLoad: numVal(rigging.sling_belt_rated_load),
+      roundSlingColor: rigging.sling_belt_color || '',
       roundSlingRatedLoad: numVal(rigging.round_sling_rated_load),
       chainDiameterMm: numVal(rigging.chain_diameter_mm),
       chainLegCount: numVal(rigging.chain_leg_count) || 4,
@@ -94,7 +101,6 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
     onChange('calculated_utilization', r.totalWeightMax > 0 && r.equipmentWorkingLoad > 0 ? (r.totalWeightMax / r.equipmentWorkingLoad) * 100 : 0);
   }, [rigging]);
 
-  // Recalc on any relevant field change
   useEffect(() => { recalc(); }, [
     rigging?.load_weight, rigging?.hook_weight, rigging?.shackle_weight_val, rigging?.sling_rigging_weight,
     rigging?.load_weight_min, rigging?.hook_weight_min, rigging?.shackle_weight_min, rigging?.sling_rigging_weight_min,
@@ -104,6 +110,7 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
     rigging?.load_protrusion_factor, rigging?.shackle_inch, rigging?.shackle_qty,
     rigging?.wire_terminal_method, rigging?.outrigger_distance,
     rigging?.sling_material_type, rigging?.sling_belt_color, rigging?.sling_belt_rated_load,
+    rigging?.sling_belt_width_mm,
     rigging?.round_sling_rated_load, rigging?.chain_diameter_mm, rigging?.chain_leg_count,
   ]);
 
@@ -116,11 +123,19 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
     }
   }, [rigging?.wire_diameter_mm]);
 
-  // Auto-set sling belt rated load on color change
+  // Auto-set sling belt rated load by width
   useEffect(() => {
-    if (rigging?.sling_belt_color && rigging?.sling_material_type === 'sling_belt') {
-      const rl = getSlingBeltRatedLoad(rigging.sling_belt_color);
+    if (rigging?.sling_belt_width_mm > 0 && rigging?.sling_material_type === 'sling_belt') {
+      const rl = getSlingBeltRatedLoadByWidth(numVal(rigging.sling_belt_width_mm));
       if (rl > 0) onChange('sling_belt_rated_load', rl);
+    }
+  }, [rigging?.sling_belt_width_mm]);
+
+  // Auto-set round sling rated load by color
+  useEffect(() => {
+    if (rigging?.sling_belt_color && rigging?.sling_material_type === 'round_sling') {
+      const rl = getRoundSlingRatedLoadByColor(rigging.sling_belt_color);
+      if (rl > 0) onChange('round_sling_rated_load', rl);
     }
   }, [rigging?.sling_belt_color]);
 
@@ -132,7 +147,7 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
     }
   }, [rigging?.chain_diameter_mm]);
 
-  // Auto-set shackle safe load on inch change
+  // Auto-set shackle safe load
   useEffect(() => {
     if (rigging?.shackle_inch) {
       const sl = getShackleSafeLoadByInch(rigging.shackle_inch);
@@ -141,6 +156,30 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
   }, [rigging?.shackle_inch]);
 
   const materialType = (rigging?.sling_material_type || 'wire_rope') as SlingMaterialType;
+
+  const handlePresetSelect = (presetId: string) => {
+    const preset = CRANE_PRESETS.find(p => p.id === presetId);
+    if (!preset) return;
+    onChange('equipment_name', preset.name);
+    onChange('crane_model', preset.name);
+    onChange('rated_capacity', preset.ratedCapacity);
+    onChange('boom_length', preset.defaultBoomLength);
+    onChange('working_radius', preset.defaultWorkingRadius);
+    const cap = lookupCraneCapacity(preset, preset.defaultBoomLength, preset.defaultWorkingRadius);
+    onChange('crane_capacity', cap);
+  };
+
+  // Auto-lookup crane capacity from preset when boom/radius changes
+  useEffect(() => {
+    const presetName = rigging?.equipment_name || rigging?.crane_model || '';
+    const preset = CRANE_PRESETS.find(p => p.name === presetName);
+    if (preset && rigging?.boom_length > 0 && rigging?.working_radius > 0) {
+      const cap = lookupCraneCapacity(preset, numVal(rigging.boom_length), numVal(rigging.working_radius));
+      if (cap !== numVal(rigging.crane_capacity)) {
+        onChange('crane_capacity', cap);
+      }
+    }
+  }, [rigging?.boom_length, rigging?.working_radius]);
 
   const field = (label: string, key: string, type: string = 'number', opts?: { unit?: string; disabled?: boolean; highlight?: boolean }) => (
     <div className="space-y-1">
@@ -198,10 +237,34 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
         </CardContent>
       </Card>
 
-      {/* 2. 양중기 제원 */}
+      {/* 2. 양중기 제원 + 프리셋 */}
       <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-sm">2. 양중기 제원</CardTitle></CardHeader>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm">2. 양중기 제원</CardTitle>
+          </div>
+        </CardHeader>
         <CardContent className="space-y-4">
+          {/* Preset selector */}
+          <div className="space-y-1">
+            <Label className="text-[11px] text-muted-foreground flex items-center gap-1">
+              <Truck className="h-3 w-3" /> 장비 프리셋 (빠른 선택)
+            </Label>
+            <div className="flex gap-2 flex-wrap">
+              {CRANE_PRESETS.map(p => (
+                <Button
+                  key={p.id}
+                  variant={rigging.equipment_name === p.name ? 'default' : 'outline'}
+                  size="sm"
+                  className="text-xs h-7"
+                  onClick={() => handlePresetSelect(p.id)}
+                >
+                  {p.name}
+                </Button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-3 gap-px bg-border rounded overflow-hidden">
             <div className="bg-card p-2">{field('장비 명', 'equipment_name', 'text')}</div>
             <div className="bg-card p-2">{field('정격하중', 'rated_capacity', 'number', { unit: 'ton' })}</div>
@@ -214,11 +277,10 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
         </CardContent>
       </Card>
 
-      {/* 3. 줄걸이 재료 선택 및 제원 */}
+      {/* 3. 줄걸이 재료 및 제원 */}
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">3. 줄걸이 재료 및 제원</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          {/* Material type selector */}
           <div className="space-y-1">
             <Label className="text-[11px] text-muted-foreground">줄걸이 재료 선택</Label>
             <Select value={materialType} onValueChange={v => onChange('sling_material_type', v)}>
@@ -232,7 +294,7 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            {/* 공통 줄걸이 설정 */}
+            {/* 공통 */}
             <div className="space-y-2">
               <h4 className="text-xs font-semibold text-muted-foreground">줄걸이 공통</h4>
               <div className="grid grid-cols-2 gap-2">
@@ -241,7 +303,7 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
               </div>
             </div>
 
-            {/* Material-specific inputs */}
+            {/* Material-specific */}
             <div className="space-y-2">
               <h4 className="text-xs font-semibold text-muted-foreground">
                 {SLING_MATERIAL_OPTIONS.find(o => o.value === materialType)?.label} 상세
@@ -273,15 +335,41 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
               {materialType === 'sling_belt' && (
                 <div className="space-y-2">
                   <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">폭 (mm) - 정격하중 자동</Label>
+                    <Select value={String(rigging.sling_belt_width_mm || '')} onValueChange={v => {
+                      const w = Number(v);
+                      onChange('sling_belt_width_mm', w);
+                      const rl = getSlingBeltRatedLoadByWidth(w);
+                      onChange('sling_belt_rated_load', rl);
+                    }}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="폭 선택" /></SelectTrigger>
+                      <SelectContent>
+                        {SLING_BELT_BY_WIDTH.map(s => (
+                          <SelectItem key={s.widthMm} value={String(s.widthMm)} className="text-xs">
+                            {s.widthMm}mm ({s.ratedLoad}톤)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {field('정격하중', 'sling_belt_rated_load', 'number', { unit: 'ton', disabled: true, highlight: true })}
+                  </div>
+                </div>
+              )}
+
+              {materialType === 'round_sling' && (
+                <div className="space-y-2">
+                  <div className="space-y-1">
                     <Label className="text-[11px] text-muted-foreground">색상 (정격하중 자동)</Label>
                     <Select value={rigging.sling_belt_color || ''} onValueChange={v => {
                       onChange('sling_belt_color', v);
-                      const rl = getSlingBeltRatedLoad(v);
-                      onChange('sling_belt_rated_load', rl);
+                      const rl = getRoundSlingRatedLoadByColor(v);
+                      onChange('round_sling_rated_load', rl);
                     }}>
                       <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="색상 선택" /></SelectTrigger>
                       <SelectContent>
-                        {SLING_BELT_BY_COLOR.map(s => (
+                        {ROUND_SLING_BY_COLOR.map(s => (
                           <SelectItem key={s.color} value={s.color} className="text-xs">
                             <span className="flex items-center gap-2">
                               <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: s.color === 'purple' ? '#9b59b6' : s.color === 'brown' ? '#8B4513' : s.color }} />
@@ -293,23 +381,8 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
                     </Select>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    {field('정격하중', 'sling_belt_rated_load', 'number', { unit: 'ton', disabled: true, highlight: true })}
-                    {field('폭', 'sling_belt_width_mm', 'number', { unit: 'mm' })}
+                    {field('정격하중', 'round_sling_rated_load', 'number', { unit: 'ton', disabled: true, highlight: true })}
                   </div>
-                </div>
-              )}
-
-              {materialType === 'round_sling' && (
-                <div className="space-y-1">
-                  <Label className="text-[11px] text-muted-foreground">정격하중 (톤)</Label>
-                  <Select value={String(rigging.round_sling_rated_load || '')} onValueChange={v => onChange('round_sling_rated_load', Number(v))}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="톤수 선택" /></SelectTrigger>
-                    <SelectContent>
-                      {ROUND_SLING_OPTIONS.map(t => (
-                        <SelectItem key={t} value={String(t)} className="text-xs">{t}톤</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 </div>
               )}
 
@@ -339,7 +412,7 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
 
           <Separator />
 
-          {/* 체결장구 - 샤클 (인치 기준) */}
+          {/* 샤클 */}
           <div>
             <h4 className="text-xs font-semibold text-muted-foreground mb-2">체결 장구 (샤클)</h4>
             <div className="grid grid-cols-3 gap-2">
@@ -395,7 +468,6 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
               </div>
             </div>
           </div>
-          {/* 장력 표시 */}
           {result && result.tensionPerLeg > 0 && (
             <div className="mt-3 p-2 rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
               <p className="text-xs font-semibold">1줄당 장력 (T): <span className="text-amber-700 dark:text-amber-400 text-sm">{result.tensionPerLeg.toFixed(2)} 톤</span></p>
@@ -422,18 +494,54 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
             <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">판정</div>
 
             <div className="bg-card p-2">
-              <Select value={rigging.wind_speed_grade || '0~5'} onValueChange={v => {
-                const wf = WIND_SPEED_FACTORS.find(w => w.range === v);
-                onChange('wind_speed_grade', v);
-                onChange('wind_speed_factor', wf?.factor ?? 1);
-              }}>
-                <SelectTrigger className="h-7 text-[10px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {WIND_SPEED_FACTORS.map(w => (
-                    <SelectItem key={w.range} value={w.range} className="text-xs">{w.range} m/s</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {windInputMode === 'select' ? (
+                <div className="space-y-1">
+                  <Select value={rigging.wind_speed_grade || '0~5'} onValueChange={v => {
+                    if (v === 'custom') {
+                      setWindInputMode('custom');
+                      return;
+                    }
+                    const wf = WIND_SPEED_FACTORS.find(w => w.range === v);
+                    onChange('wind_speed_grade', v);
+                    onChange('wind_speed_factor', wf?.factor ?? 1);
+                  }}>
+                    <SelectTrigger className="h-7 text-[10px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {WIND_SPEED_FACTORS.map(w => (
+                        <SelectItem key={w.range} value={w.range} className="text-xs">{w.range} m/s ({w.label})</SelectItem>
+                      ))}
+                      <SelectItem value="custom" className="text-xs font-medium">직접 입력</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1">
+                    <Input
+                      type="number"
+                      placeholder="m/s"
+                      value={customWindSpeed}
+                      onChange={e => {
+                        setCustomWindSpeed(e.target.value);
+                        const speed = Number(e.target.value) || 0;
+                        const factor = getWindFactorBySpeed(speed);
+                        onChange('wind_speed_factor', factor);
+                        onChange('wind_speed_grade', `${speed}m/s`);
+                      }}
+                      className="h-7 text-[10px] w-16"
+                    />
+                    <Button variant="ghost" size="sm" className="h-6 text-[9px] px-1" onClick={() => setWindInputMode('select')}>
+                      목록
+                    </Button>
+                  </div>
+                  {Number(customWindSpeed) > 10 && (
+                    <p className="text-[9px] text-red-500 font-medium">⚠️ 풍속 {customWindSpeed}m/s - 안전율 감소</p>
+                  )}
+                  {Number(customWindSpeed) >= 15 && (
+                    <p className="text-[9px] text-red-600 font-bold">🚫 작업 불가 풍속!</p>
+                  )}
+                </div>
+              )}
             </div>
             <div className="bg-card p-2">
               <Input type="number" value={rigging.boom_rotation_factor ?? 0.8} onChange={e => onChange('boom_rotation_factor', e.target.value)} className="h-7 text-[10px] text-center" step="0.1" />
@@ -552,7 +660,6 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
             </div>
             {result.messages.map((m, i) => <p key={i} className="text-xs mt-2">{m}</p>)}
 
-            {/* 추천 */}
             {result.recommendations.length > 0 && (
               <div className="mt-3 p-2 rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
                 <div className="flex items-center gap-1 mb-1">

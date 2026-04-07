@@ -170,7 +170,7 @@ const WorkPlanDetail = () => {
   const handleSaveRigging = async () => {
     if (!planId || !rigging) return;
     setSaving(true);
-    const payload = {
+    const payload: any = {
       work_plan_id: planId,
       load_weight: Number(rigging.load_weight) || 0,
       load_description: rigging.load_description || '',
@@ -183,9 +183,55 @@ const WorkPlanDetail = () => {
       sling_capacity: Number(rigging.sling_capacity) || 0,
       ground_bearing_capacity: Number(rigging.ground_bearing_capacity) || 0,
       outrigger_setup: rigging.outrigger_setup || '',
-      safety_factor: riggingCalc?.safetyFactor || 0,
-      calculated_utilization: riggingCalc?.utilization || 0,
+      safety_factor: Number(rigging.safety_factor) || 0,
+      calculated_utilization: Number(rigging.calculated_utilization) || 0,
       notes: rigging.notes || '',
+      // New KOSHA fields
+      equipment_name: rigging.equipment_name || '',
+      rated_capacity: Number(rigging.rated_capacity) || 0,
+      outrigger_distance: Number(rigging.outrigger_distance) || 0,
+      wire_diameter_mm: Number(rigging.wire_diameter_mm) || 0,
+      sling_count: Number(rigging.sling_count) || 2,
+      sling_method: rigging.sling_method || '',
+      sling_strand_count: Number(rigging.sling_strand_count) || 1,
+      sling_angle_deg: Number(rigging.sling_angle_deg) || 60,
+      wire_terminal_method: rigging.wire_terminal_method || '탐블(24mm 이하)',
+      wire_safety_coefficient: Number(rigging.wire_safety_coefficient) || 5,
+      wire_lift_count: Number(rigging.wire_lift_count) || 5,
+      wire_breaking_load: Number(rigging.wire_breaking_load) || 0,
+      wire_diameter_inch: Number(rigging.wire_diameter_inch) || 0,
+      wire_safe_load: Number(rigging.wire_safe_load) || 0,
+      shackle_diameter_mm: Number(rigging.shackle_diameter_mm) || 0,
+      shackle_safe_load: Number(rigging.shackle_safe_load) || 0,
+      shackle_angle_deg: Number(rigging.shackle_angle_deg) || 45,
+      shackle_count: Number(rigging.shackle_count) || 0.7,
+      shackle_qty: Number(rigging.shackle_qty) || 2,
+      load_name_max: rigging.load_name_max || '',
+      hook_weight: Number(rigging.hook_weight) || 0,
+      shackle_weight_val: Number(rigging.shackle_weight_val) || 0,
+      sling_rigging_weight: Number(rigging.sling_rigging_weight) || 0,
+      total_weight_max: Number(rigging.total_weight_max) || 0,
+      load_name_min: rigging.load_name_min || '',
+      load_weight_min: Number(rigging.load_weight_min) || 0,
+      hook_weight_min: Number(rigging.hook_weight_min) || 0,
+      shackle_weight_min: Number(rigging.shackle_weight_min) || 0,
+      sling_rigging_weight_min: Number(rigging.sling_rigging_weight_min) || 0,
+      total_weight_min: Number(rigging.total_weight_min) || 0,
+      wind_speed_grade: rigging.wind_speed_grade || '0~5',
+      wind_speed_factor: Number(rigging.wind_speed_factor) || 1,
+      boom_rotation_factor: Number(rigging.boom_rotation_factor) || 0.8,
+      ground_inspection_factor: Number(rigging.ground_inspection_factor) || 0.8,
+      load_protrusion_factor: Number(rigging.load_protrusion_factor) || 0.8,
+      travel_load_factor: Number(rigging.travel_load_factor) || 1,
+      equipment_working_load: Number(rigging.equipment_working_load) || 0,
+      equipment_ok: rigging.equipment_ok || '',
+      sling_working_load: Number(rigging.sling_working_load) || 0,
+      sling_ok: rigging.sling_ok || '',
+      shackle_working_load: Number(rigging.shackle_working_load) || 0,
+      shackle_ok: rigging.shackle_ok || '',
+      safety_factor_passenger: Number(rigging.safety_factor_passenger) || 10,
+      safety_factor_cargo: Number(rigging.safety_factor_cargo) || 5,
+      input_method: rigging.input_method || '자동계산',
     };
     if (rigging.id) {
       await supabase.from('rigging_plans').update(payload).eq('id', rigging.id);
@@ -197,10 +243,9 @@ const WorkPlanDetail = () => {
     setSaving(false);
   };
 
-  const handleRiggingChange = (field: string, value: string) => {
+  const handleRiggingChange = (field: string, value: any) => {
     const updated = { ...rigging, [field]: value };
     setRigging(updated);
-    recalcRigging(updated, slingAngle);
   };
 
   const handleSlingAngleChange = (angle: string) => {

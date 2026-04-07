@@ -4,7 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
-import { WORK_PLAN_TYPES, COMMON_CRANES, calculateRigging } from '@/lib/workPlanTemplates';
+import { WORK_PLAN_TYPES } from '@/lib/workPlanTemplates';
+import RiggingPlanForm from '@/components/rigging/RiggingPlanForm';
 import { generateAttachments, type AttachmentItem } from '@/lib/attachmentTemplates';
 import StructuredSectionForm, { validateSection } from '@/components/work-plan/StructuredSectionForm';
 import AttachmentChecklist from '@/components/work-plan/AttachmentChecklist';
@@ -28,6 +29,10 @@ import { format, parseISO } from 'date-fns';
 
 const SLING_ANGLE_FACTORS: Record<string, number> = {
   '0': 1.0, '30': 1.16, '45': 1.41, '60': 2.0,
+};
+// Legacy calculateRigging stub for recalcRigging compat
+const calculateRigging = (params: { loadWeight: number; workingRadius: number; craneModel: string }) => {
+  return { isValid: true, safetyFactor: 1, utilization: 0, requiredCapacity: params.loadWeight, availableCapacity: params.loadWeight * 2, message: '' };
 };
 
 const WorkPlanDetail = () => {
@@ -165,7 +170,7 @@ const WorkPlanDetail = () => {
   const handleSaveRigging = async () => {
     if (!planId || !rigging) return;
     setSaving(true);
-    const payload = {
+    const payload: any = {
       work_plan_id: planId,
       load_weight: Number(rigging.load_weight) || 0,
       load_description: rigging.load_description || '',
@@ -178,9 +183,55 @@ const WorkPlanDetail = () => {
       sling_capacity: Number(rigging.sling_capacity) || 0,
       ground_bearing_capacity: Number(rigging.ground_bearing_capacity) || 0,
       outrigger_setup: rigging.outrigger_setup || '',
-      safety_factor: riggingCalc?.safetyFactor || 0,
-      calculated_utilization: riggingCalc?.utilization || 0,
+      safety_factor: Number(rigging.safety_factor) || 0,
+      calculated_utilization: Number(rigging.calculated_utilization) || 0,
       notes: rigging.notes || '',
+      // New KOSHA fields
+      equipment_name: rigging.equipment_name || '',
+      rated_capacity: Number(rigging.rated_capacity) || 0,
+      outrigger_distance: Number(rigging.outrigger_distance) || 0,
+      wire_diameter_mm: Number(rigging.wire_diameter_mm) || 0,
+      sling_count: Number(rigging.sling_count) || 2,
+      sling_method: rigging.sling_method || '',
+      sling_strand_count: Number(rigging.sling_strand_count) || 1,
+      sling_angle_deg: Number(rigging.sling_angle_deg) || 60,
+      wire_terminal_method: rigging.wire_terminal_method || '탐블(24mm 이하)',
+      wire_safety_coefficient: Number(rigging.wire_safety_coefficient) || 5,
+      wire_lift_count: Number(rigging.wire_lift_count) || 5,
+      wire_breaking_load: Number(rigging.wire_breaking_load) || 0,
+      wire_diameter_inch: Number(rigging.wire_diameter_inch) || 0,
+      wire_safe_load: Number(rigging.wire_safe_load) || 0,
+      shackle_diameter_mm: Number(rigging.shackle_diameter_mm) || 0,
+      shackle_safe_load: Number(rigging.shackle_safe_load) || 0,
+      shackle_angle_deg: Number(rigging.shackle_angle_deg) || 45,
+      shackle_count: Number(rigging.shackle_count) || 0.7,
+      shackle_qty: Number(rigging.shackle_qty) || 2,
+      load_name_max: rigging.load_name_max || '',
+      hook_weight: Number(rigging.hook_weight) || 0,
+      shackle_weight_val: Number(rigging.shackle_weight_val) || 0,
+      sling_rigging_weight: Number(rigging.sling_rigging_weight) || 0,
+      total_weight_max: Number(rigging.total_weight_max) || 0,
+      load_name_min: rigging.load_name_min || '',
+      load_weight_min: Number(rigging.load_weight_min) || 0,
+      hook_weight_min: Number(rigging.hook_weight_min) || 0,
+      shackle_weight_min: Number(rigging.shackle_weight_min) || 0,
+      sling_rigging_weight_min: Number(rigging.sling_rigging_weight_min) || 0,
+      total_weight_min: Number(rigging.total_weight_min) || 0,
+      wind_speed_grade: rigging.wind_speed_grade || '0~5',
+      wind_speed_factor: Number(rigging.wind_speed_factor) || 1,
+      boom_rotation_factor: Number(rigging.boom_rotation_factor) || 0.8,
+      ground_inspection_factor: Number(rigging.ground_inspection_factor) || 0.8,
+      load_protrusion_factor: Number(rigging.load_protrusion_factor) || 0.8,
+      travel_load_factor: Number(rigging.travel_load_factor) || 1,
+      equipment_working_load: Number(rigging.equipment_working_load) || 0,
+      equipment_ok: rigging.equipment_ok || '',
+      sling_working_load: Number(rigging.sling_working_load) || 0,
+      sling_ok: rigging.sling_ok || '',
+      shackle_working_load: Number(rigging.shackle_working_load) || 0,
+      shackle_ok: rigging.shackle_ok || '',
+      safety_factor_passenger: Number(rigging.safety_factor_passenger) || 10,
+      safety_factor_cargo: Number(rigging.safety_factor_cargo) || 5,
+      input_method: rigging.input_method || '자동계산',
     };
     if (rigging.id) {
       await supabase.from('rigging_plans').update(payload).eq('id', rigging.id);
@@ -192,10 +243,9 @@ const WorkPlanDetail = () => {
     setSaving(false);
   };
 
-  const handleRiggingChange = (field: string, value: string) => {
+  const handleRiggingChange = (field: string, value: any) => {
     const updated = { ...rigging, [field]: value };
     setRigging(updated);
-    recalcRigging(updated, slingAngle);
   };
 
   const handleSlingAngleChange = (angle: string) => {
@@ -511,124 +561,12 @@ const WorkPlanDetail = () => {
         {/* Rigging Tab */}
         {wpType?.hasRiggingPlan && (
           <TabsContent value="rigging" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Calculator className="h-4 w-4" /> 리깅플랜 (양중계획)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">인양물 중량 (톤) *</Label>
-                    <Input type="number" value={rigging?.load_weight || ''} onChange={e => handleRiggingChange('load_weight', e.target.value)} className="h-9" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">인양물 설명</Label>
-                    <Input value={rigging?.load_description || ''} onChange={e => handleRiggingChange('load_description', e.target.value)} className="h-9" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">크레인 기종 *</Label>
-                    <Select value={rigging?.crane_model || ''} onValueChange={v => handleRiggingChange('crane_model', v)}>
-                      <SelectTrigger className="h-9"><SelectValue placeholder="선택" /></SelectTrigger>
-                      <SelectContent>
-                        {COMMON_CRANES.map(c => (
-                          <SelectItem key={c.model} value={c.model}>{c.model} (최대 {c.maxCapacity}t)</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">작업 반경 (m) *</Label>
-                    <Input type="number" value={rigging?.working_radius || ''} onChange={e => handleRiggingChange('working_radius', e.target.value)} className="h-9" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">붐 길이 (m)</Label>
-                    <Input type="number" value={rigging?.boom_length || ''} onChange={e => handleRiggingChange('boom_length', e.target.value)} className="h-9" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">인양 방식</Label>
-                    <Select value={rigging?.lifting_method || ''} onValueChange={v => handleRiggingChange('lifting_method', v)}>
-                      <SelectTrigger className="h-9"><SelectValue placeholder="선택" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="single">단일 인양</SelectItem>
-                        <SelectItem value="tandem">합동 인양 (2대)</SelectItem>
-                        <SelectItem value="tailing">테일링 인양</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">슬링 종류</Label>
-                    <Select value={rigging?.sling_type || ''} onValueChange={v => handleRiggingChange('sling_type', v)}>
-                      <SelectTrigger className="h-9"><SelectValue placeholder="선택" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="wire_rope">와이어로프</SelectItem>
-                        <SelectItem value="chain">체인 슬링</SelectItem>
-                        <SelectItem value="web">웨빙 슬링</SelectItem>
-                        <SelectItem value="round">라운드 슬링</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">줄걸이 각도 (°)</Label>
-                    <Select value={slingAngle} onValueChange={handleSlingAngleChange}>
-                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="0">0° (수직)</SelectItem>
-                        <SelectItem value="30">30° (계수 1.16)</SelectItem>
-                        <SelectItem value="45">45° (계수 1.41)</SelectItem>
-                        <SelectItem value="60">60° (계수 2.0) ⚠️</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">지반 지지력 (t/㎡)</Label>
-                    <Input type="number" value={rigging?.ground_bearing_capacity || ''} onChange={e => handleRiggingChange('ground_bearing_capacity', e.target.value)} className="h-9" />
-                  </div>
-                  <div className="col-span-2 space-y-1.5">
-                    <Label className="text-xs">아우트리거 설치</Label>
-                    <Input value={rigging?.outrigger_setup || ''} onChange={e => handleRiggingChange('outrigger_setup', e.target.value)} className="h-9" />
-                  </div>
-                </div>
-
-                {riggingCalc && (
-                  <>
-                    <Separator />
-                    <div className={`p-4 rounded-lg border-2 ${
-                      riggingCalc.warningLevel === 'danger' ? 'border-red-500 bg-red-50 dark:bg-red-950/30' :
-                      riggingCalc.warningLevel === 'warning' ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-950/30' :
-                      'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30'
-                    }`}>
-                      <div className="flex items-center gap-2 mb-3">
-                        {riggingCalc.warningLevel === 'danger' ? <AlertTriangle className="h-5 w-5 text-red-600 animate-pulse" /> :
-                         riggingCalc.warningLevel === 'warning' ? <AlertTriangle className="h-5 w-5 text-yellow-600" /> :
-                         <CheckCircle2 className="h-5 w-5 text-green-600" />}
-                        <span className="font-bold text-sm">{riggingCalc.message}</span>
-                      </div>
-                      <div className="grid grid-cols-5 gap-3 text-xs">
-                        <div><span className="text-muted-foreground">인양 하중</span><p className="font-bold">{riggingCalc.requiredCapacity?.toFixed(1)} t</p></div>
-                        <div><span className="text-muted-foreground">실효 하중</span><p className="font-bold">{riggingCalc.effectiveLoad?.toFixed(1)} t</p></div>
-                        <div><span className="text-muted-foreground">가용 정격하중</span><p className="font-bold">{riggingCalc.availableCapacity?.toFixed(1)} t</p></div>
-                        <div><span className="text-muted-foreground">가동률</span><p className="font-bold">{riggingCalc.utilization?.toFixed(1)}%</p></div>
-                        <div><span className="text-muted-foreground">안전율</span>
-                          <p className={`font-bold ${riggingCalc.safetyFactor < 1.0 ? 'text-red-600' : riggingCalc.safetyFactor < 1.25 ? 'text-yellow-600' : 'text-green-600'}`}>
-                            {riggingCalc.safetyFactor?.toFixed(2)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs">비고</Label>
-                  <Textarea value={rigging?.notes || ''} onChange={e => handleRiggingChange('notes', e.target.value)} rows={3} className="text-sm" />
-                </div>
-                <Button onClick={handleSaveRigging} disabled={saving} className="w-full gap-1">
-                  <Save className="h-3.5 w-3.5" /> 리깅플랜 저장
-                </Button>
-              </CardContent>
-            </Card>
+            <RiggingPlanForm
+              rigging={rigging || {}}
+              onChange={handleRiggingChange}
+              onSave={handleSaveRigging}
+              saving={saving}
+            />
           </TabsContent>
         )}
 

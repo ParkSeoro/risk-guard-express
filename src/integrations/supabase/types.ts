@@ -1491,6 +1491,9 @@ export type Database = {
           boom_length: number | null
           boom_rotation_factor: number | null
           calculated_utilization: number | null
+          chain_diameter_mm: number | null
+          chain_leg_count: number | null
+          chain_rated_load: number | null
           crane_capacity: number | null
           crane_model: string | null
           created_at: string
@@ -1514,12 +1517,14 @@ export type Database = {
           outrigger_distance: number | null
           outrigger_setup: string | null
           rated_capacity: number | null
+          round_sling_rated_load: number | null
           safety_factor: number | null
           safety_factor_cargo: number | null
           safety_factor_passenger: number | null
           shackle_angle_deg: number | null
           shackle_count: number | null
           shackle_diameter_mm: number | null
+          shackle_inch: string | null
           shackle_ok: string | null
           shackle_qty: number | null
           shackle_safe_load: number | null
@@ -1527,15 +1532,21 @@ export type Database = {
           shackle_weight_val: number | null
           shackle_working_load: number | null
           sling_angle_deg: number | null
+          sling_belt_color: string | null
+          sling_belt_rated_load: number | null
+          sling_belt_width_mm: number | null
           sling_capacity: number | null
           sling_count: number | null
+          sling_material_type: string | null
           sling_method: string | null
           sling_ok: string | null
           sling_rigging_weight: number | null
           sling_rigging_weight_min: number | null
+          sling_safe_load: number | null
           sling_strand_count: number | null
           sling_type: string | null
           sling_working_load: number | null
+          tension_per_leg: number | null
           total_weight_max: number | null
           total_weight_min: number | null
           travel_load_factor: number | null
@@ -1556,6 +1567,9 @@ export type Database = {
           boom_length?: number | null
           boom_rotation_factor?: number | null
           calculated_utilization?: number | null
+          chain_diameter_mm?: number | null
+          chain_leg_count?: number | null
+          chain_rated_load?: number | null
           crane_capacity?: number | null
           crane_model?: string | null
           created_at?: string
@@ -1579,12 +1593,14 @@ export type Database = {
           outrigger_distance?: number | null
           outrigger_setup?: string | null
           rated_capacity?: number | null
+          round_sling_rated_load?: number | null
           safety_factor?: number | null
           safety_factor_cargo?: number | null
           safety_factor_passenger?: number | null
           shackle_angle_deg?: number | null
           shackle_count?: number | null
           shackle_diameter_mm?: number | null
+          shackle_inch?: string | null
           shackle_ok?: string | null
           shackle_qty?: number | null
           shackle_safe_load?: number | null
@@ -1592,15 +1608,21 @@ export type Database = {
           shackle_weight_val?: number | null
           shackle_working_load?: number | null
           sling_angle_deg?: number | null
+          sling_belt_color?: string | null
+          sling_belt_rated_load?: number | null
+          sling_belt_width_mm?: number | null
           sling_capacity?: number | null
           sling_count?: number | null
+          sling_material_type?: string | null
           sling_method?: string | null
           sling_ok?: string | null
           sling_rigging_weight?: number | null
           sling_rigging_weight_min?: number | null
+          sling_safe_load?: number | null
           sling_strand_count?: number | null
           sling_type?: string | null
           sling_working_load?: number | null
+          tension_per_leg?: number | null
           total_weight_max?: number | null
           total_weight_min?: number | null
           travel_load_factor?: number | null
@@ -1621,6 +1643,9 @@ export type Database = {
           boom_length?: number | null
           boom_rotation_factor?: number | null
           calculated_utilization?: number | null
+          chain_diameter_mm?: number | null
+          chain_leg_count?: number | null
+          chain_rated_load?: number | null
           crane_capacity?: number | null
           crane_model?: string | null
           created_at?: string
@@ -1644,12 +1669,14 @@ export type Database = {
           outrigger_distance?: number | null
           outrigger_setup?: string | null
           rated_capacity?: number | null
+          round_sling_rated_load?: number | null
           safety_factor?: number | null
           safety_factor_cargo?: number | null
           safety_factor_passenger?: number | null
           shackle_angle_deg?: number | null
           shackle_count?: number | null
           shackle_diameter_mm?: number | null
+          shackle_inch?: string | null
           shackle_ok?: string | null
           shackle_qty?: number | null
           shackle_safe_load?: number | null
@@ -1657,15 +1684,21 @@ export type Database = {
           shackle_weight_val?: number | null
           shackle_working_load?: number | null
           sling_angle_deg?: number | null
+          sling_belt_color?: string | null
+          sling_belt_rated_load?: number | null
+          sling_belt_width_mm?: number | null
           sling_capacity?: number | null
           sling_count?: number | null
+          sling_material_type?: string | null
           sling_method?: string | null
           sling_ok?: string | null
           sling_rigging_weight?: number | null
           sling_rigging_weight_min?: number | null
+          sling_safe_load?: number | null
           sling_strand_count?: number | null
           sling_type?: string | null
           sling_working_load?: number | null
+          tension_per_leg?: number | null
           total_weight_max?: number | null
           total_weight_min?: number | null
           travel_load_factor?: number | null

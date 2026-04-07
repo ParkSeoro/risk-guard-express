@@ -186,7 +186,6 @@ const WorkPlanDetail = () => {
       safety_factor: Number(rigging.safety_factor) || 0,
       calculated_utilization: Number(rigging.calculated_utilization) || 0,
       notes: rigging.notes || '',
-      // New KOSHA fields
       equipment_name: rigging.equipment_name || '',
       rated_capacity: Number(rigging.rated_capacity) || 0,
       outrigger_distance: Number(rigging.outrigger_distance) || 0,
@@ -232,6 +231,18 @@ const WorkPlanDetail = () => {
       safety_factor_passenger: Number(rigging.safety_factor_passenger) || 10,
       safety_factor_cargo: Number(rigging.safety_factor_cargo) || 5,
       input_method: rigging.input_method || '자동계산',
+      // New material fields
+      sling_material_type: rigging.sling_material_type || 'wire_rope',
+      sling_belt_color: rigging.sling_belt_color || '',
+      sling_belt_width_mm: Number(rigging.sling_belt_width_mm) || 0,
+      sling_belt_rated_load: Number(rigging.sling_belt_rated_load) || 0,
+      round_sling_rated_load: Number(rigging.round_sling_rated_load) || 0,
+      chain_diameter_mm: Number(rigging.chain_diameter_mm) || 0,
+      chain_rated_load: Number(rigging.chain_rated_load) || 0,
+      chain_leg_count: Number(rigging.chain_leg_count) || 4,
+      shackle_inch: rigging.shackle_inch || '',
+      sling_safe_load: Number(rigging.sling_safe_load) || 0,
+      tension_per_leg: Number(rigging.tension_per_leg) || 0,
     };
     if (rigging.id) {
       await supabase.from('rigging_plans').update(payload).eq('id', rigging.id);

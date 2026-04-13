@@ -33,6 +33,7 @@ import WorkPlans from "./pages/WorkPlans";
 import WorkPlanDetail from "./pages/WorkPlanDetail";
 import LegalDuties from "./pages/LegalDuties";
 import TodoDashboard from "./pages/TodoDashboard";
+import AIAssistant from "./pages/AIAssistant";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -118,6 +119,7 @@ function ProtectedRoutes() {
         <Route path="/work-plan/:planId" element={<WorkPlanDetail />} />
         <Route path="/legal-duties" element={<LegalDuties />} />
         <Route path="/todo" element={<TodoDashboard />} />
+        <Route path="/ai-assistant" element={<AIAssistant />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

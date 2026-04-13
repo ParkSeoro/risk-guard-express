@@ -1,15 +1,16 @@
 import { useState, useCallback, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { Upload, FileSpreadsheet, ArrowRight, CheckCircle2, AlertTriangle, Sparkles } from 'lucide-react';
+import { Upload, FileSpreadsheet, ArrowRight, CheckCircle2, AlertTriangle, Sparkles, FileText } from 'lucide-react';
 import { parseScheduleFile, extractProcesses, type ParsedRow, type ColumnMapping } from '@/lib/scheduleParser';
 import { generateRiskItemsHybrid, type AIGenerateProgress } from '@/lib/riskAutoGenAI';
 import { generateFromSchedule, type GeneratedRiskItem } from '@/lib/riskAutoGen';
@@ -18,13 +19,10 @@ import { getGradeClassName } from '@/lib/riskGrade';
 type Step = 'upload' | 'mapping' | 'generating' | 'preview' | 'done';
 
 const ScheduleUpload = () => {
-  const { projectId: paramProjectId } = useParams();
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
-
-  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(paramProjectId || '');
+  const { selectedProject: selectedProjectId } = useGlobalProjectAccess();
 
   const [step, setStep] = useState<Step>('upload');
   const [file, setFile] = useState<File | null>(null);
@@ -41,18 +39,6 @@ const ScheduleUpload = () => {
   const [runs, setRuns] = useState<any[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string>('');
 
-  // Load projects if no param
-  useEffect(() => {
-    if (paramProjectId) { setSelectedProjectId(paramProjectId); return; }
-    supabase.from('projects').select('id, name').then(({ data }) => {
-      if (data && data.length > 0) {
-        setProjects(data);
-        const saved = localStorage.getItem('selectedProjectId');
-        const match = data.find(p => p.id === saved);
-        setSelectedProjectId(match ? match.id : data[0].id);
-      }
-    });
-  }, [paramProjectId]);
 
   const projectId = selectedProjectId;
 
@@ -206,18 +192,6 @@ const ScheduleUpload = () => {
         <p className="text-sm text-muted-foreground mt-1">공정표 파일을 업로드하여 AI 기반 위험성평가 항목을 자동 생성합니다</p>
       </div>
 
-      {/* Project selector (when no param) */}
-      {!paramProjectId && projects.length > 0 && (
-        <div className="flex items-center gap-3">
-          <Label className="text-sm font-medium whitespace-nowrap">프로젝트</Label>
-          <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-            <SelectTrigger className="h-9 w-72"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
-            <SelectContent>
-              {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
 
       {/* Progress steps */}
       <div className="flex items-center gap-2">
@@ -241,13 +215,13 @@ const ScheduleUpload = () => {
             <div className="text-center space-y-4">
               <FileSpreadsheet className="h-16 w-16 mx-auto text-muted-foreground" />
               <div>
-                <p className="text-lg font-medium">XLSX 또는 CSV 파일 업로드</p>
+                <p className="text-lg font-medium">XLSX, CSV 또는 PDF 파일 업로드</p>
                 <p className="text-sm text-muted-foreground mt-1">공정명, 세부작업, 기간, 협력사, 위치 컬럼을 포함하는 공정표 파일</p>
               </div>
               <label className="inline-flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground rounded-md cursor-pointer hover:bg-accent/90 transition-colors">
                 <Upload className="h-4 w-4" />
                 파일 선택
-                <input type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
+                <input type="file" className="hidden" accept=".xlsx,.xls,.csv,.pdf" onChange={handleFileUpload} />
               </label>
             </div>
           </CardContent>

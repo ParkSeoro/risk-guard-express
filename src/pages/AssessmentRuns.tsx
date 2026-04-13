@@ -14,7 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, ShieldAlert, Calendar, Filter, Search, ClipboardList } from 'lucide-react';
+import { Plus, ShieldAlert, Calendar, Filter, Search, ClipboardList, Upload } from 'lucide-react';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { format } from 'date-fns';
 import RunCardActions from '@/components/assessment-runs/RunCardActions';
 import EditRunDialog from '@/components/assessment-runs/EditRunDialog';
@@ -68,8 +69,7 @@ const AssessmentRuns = () => {
   const isMaster = hasRole('master');
   const [projectRole, setProjectRole] = useState<string | null>(null);
 
-  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
-  const [selectedProject, setSelectedProject] = useState('');
+  const { selectedProject } = useGlobalProjectAccess();
   const [runs, setRuns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -95,14 +95,6 @@ const AssessmentRuns = () => {
   const [deleteRun, setDeleteRun] = useState<any>(null);
   const [cloneRun, setCloneRun] = useState<any>(null);
 
-  useEffect(() => {
-    supabase.from('projects').select('id, name').then(({ data }) => {
-      if (data && data.length > 0) {
-        setProjects(data);
-        setSelectedProject(data[0].id);
-      }
-    });
-  }, []);
 
   // Fetch contractors for selected project (contractor + vendor types)
   const [allProjectCompanies, setAllProjectCompanies] = useState<{ id: string; name: string; type: string }[]>([]);
@@ -288,10 +280,9 @@ const AssessmentRuns = () => {
           <p className="text-sm text-muted-foreground mt-1">평가 회차 목록 · 회차 단위로 작성/검증/결재</p>
         </div>
         <div className="flex items-center gap-2">
-          <Select value={selectedProject} onValueChange={setSelectedProject}>
-            <SelectTrigger className="h-9 w-60 text-xs"><SelectValue placeholder="프로젝트" /></SelectTrigger>
-            <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-          </Select>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => navigate('/schedule-upload')}>
+            <Upload className="h-3.5 w-3.5" /> 예정공종표 업로드
+          </Button>
           {canCreateRun && (
             <Button size="sm" className="gap-1.5" onClick={() => setShowCreate(true)}>
               <Plus className="h-3.5 w-3.5" /> 회차 생성

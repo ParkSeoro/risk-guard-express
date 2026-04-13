@@ -130,9 +130,11 @@ Deno.serve(async (req) => {
     let emailSent = false;
     let emailError = '';
     const subject = `[위험성평가] ${title}`;
+    // Override recipient for Resend free tier (sends to account owner only)
+    const recipientEmail = Deno.env.get('EMAIL_OVERRIDE') || authUser.email;
 
     if (resendKey) {
-      const result = await sendEmailViaResend(authUser.email, subject, message || title, resendKey);
+      const result = await sendEmailViaResend(recipientEmail, subject, message || title, resendKey);
       emailSent = result.success;
       emailError = result.error || '';
     } else {

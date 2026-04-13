@@ -18,10 +18,13 @@ import { getGradeClassName } from '@/lib/riskGrade';
 type Step = 'upload' | 'mapping' | 'generating' | 'preview' | 'done';
 
 const ScheduleUpload = () => {
-  const { projectId } = useParams();
+  const { projectId: paramProjectId } = useParams();
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(paramProjectId || '');
 
   const [step, setStep] = useState<Step>('upload');
   const [file, setFile] = useState<File | null>(null);
@@ -37,6 +40,21 @@ const ScheduleUpload = () => {
   // Runs for this project
   const [runs, setRuns] = useState<any[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string>('');
+
+  // Load projects if no param
+  useEffect(() => {
+    if (paramProjectId) { setSelectedProjectId(paramProjectId); return; }
+    supabase.from('projects').select('id, name').then(({ data }) => {
+      if (data && data.length > 0) {
+        setProjects(data);
+        const saved = localStorage.getItem('selectedProjectId');
+        const match = data.find(p => p.id === saved);
+        setSelectedProjectId(match ? match.id : data[0].id);
+      }
+    });
+  }, [paramProjectId]);
+
+  const projectId = selectedProjectId;
 
   useEffect(() => {
     if (!projectId) return;
@@ -187,6 +205,19 @@ const ScheduleUpload = () => {
         <h1 className="text-2xl font-bold">예정공종표 업로드</h1>
         <p className="text-sm text-muted-foreground mt-1">공정표 파일을 업로드하여 AI 기반 위험성평가 항목을 자동 생성합니다</p>
       </div>
+
+      {/* Project selector (when no param) */}
+      {!paramProjectId && projects.length > 0 && (
+        <div className="flex items-center gap-3">
+          <Label className="text-sm font-medium whitespace-nowrap">프로젝트</Label>
+          <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+            <SelectTrigger className="h-9 w-72"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
+            <SelectContent>
+              {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {/* Progress steps */}
       <div className="flex items-center gap-2">

@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const [projectRes, itemsRes, participantsRes, feedbackRes, validationRes, approvalsRes] = await Promise.all([
+    const [projectRes, itemsRes, participantsRes, feedbackRes, validationRes, approvalsRes, companiesRes] = await Promise.all([
       supabase.from("projects").select("*").eq("id", run.project_id).single(),
       supabase.from("risk_items").select("*").eq("run_id", runId).order("sort_order"),
       supabase.from("assessment_run_participants").select("*").eq("run_id", runId),
@@ -103,6 +103,7 @@ Deno.serve(async (req) => {
         ? supabase.from("validation_results").select("*").eq("run_id", runId)
         : Promise.resolve({ data: [] }),
       supabase.from("approvals").select("*").eq("run_id", runId).order("approval_version", { ascending: false }),
+      supabase.from("companies").select("id, name, type").eq("project_id", run.project_id),
     ]);
 
     const project = projectRes.data;
@@ -111,6 +112,11 @@ Deno.serve(async (req) => {
     const feedbackItems = feedbackRes.data || [];
     const validationResults = (validationRes as any).data || [];
     const approvals = approvalsRes.data || [];
+    const projectCompanies = companiesRes.data || [];
+
+    // Derive client/contractor from companies table (SSOT), fallback to project text fields
+    const clientCompanyName = projectCompanies.find((c: any) => c.type === 'client')?.name || project?.client || '';
+    const gcCompanyNames = projectCompanies.filter((c: any) => c.type === 'gc').map((c: any) => c.name).join(', ') || project?.contractor || '';
 
     // ===== SIGNATURE: Build from Approvals (SSOT) =====
     const STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };
@@ -440,9 +446,9 @@ tr { page-break-inside: avoid; }
       </div>
       <div class="report-info-row">
         <div class="report-info-label">발주처</div>
-        <div class="report-info-value">${project?.client || ""}</div>
+        <div class="report-info-value">${clientCompanyName}</div>
         <div class="report-info-label">시공사</div>
-        <div class="report-info-value">${project?.contractor || ""}</div>
+        <div class="report-info-value">${gcCompanyNames}</div>
       </div>
       <div class="report-info-row">
         <div class="report-info-label">적용기간</div>

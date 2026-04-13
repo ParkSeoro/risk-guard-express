@@ -69,7 +69,7 @@ export function SafetyAssistant() {
       .select('id, role, content')
       .eq('conversation_id', convId)
       .order('created_at', { ascending: true });
-    if (data) setMessages(data);
+    if (data) setMessages(data.map(d => ({ id: d.id, role: d.role as 'user' | 'assistant', content: d.content })));
   }, []);
 
   useEffect(() => {

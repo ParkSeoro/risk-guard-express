@@ -99,6 +99,7 @@ function ProtectedRoutes() {
         <Route path="/risk-assessment" element={<AssessmentRuns />} />
         <Route path="/risk-assessment/:projectId" element={<AssessmentRuns />} />
         <Route path="/assessment-run/:runId" element={<AssessmentRunDetail />} />
+        <Route path="/schedule-upload" element={<ScheduleUpload />} />
         <Route path="/schedule-upload/:projectId" element={<ScheduleUpload />} />
         <Route path="/verification" element={<Verification />} />
         <Route path="/verification-center" element={<VerificationCenter />} />

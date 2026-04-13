@@ -18,10 +18,13 @@ import { getGradeClassName } from '@/lib/riskGrade';
 type Step = 'upload' | 'mapping' | 'generating' | 'preview' | 'done';
 
 const ScheduleUpload = () => {
-  const { projectId } = useParams();
+  const { projectId: paramProjectId } = useParams();
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(paramProjectId || '');
 
   const [step, setStep] = useState<Step>('upload');
   const [file, setFile] = useState<File | null>(null);
@@ -37,6 +40,21 @@ const ScheduleUpload = () => {
   // Runs for this project
   const [runs, setRuns] = useState<any[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string>('');
+
+  // Load projects if no param
+  useEffect(() => {
+    if (paramProjectId) { setSelectedProjectId(paramProjectId); return; }
+    supabase.from('projects').select('id, name').then(({ data }) => {
+      if (data && data.length > 0) {
+        setProjects(data);
+        const saved = localStorage.getItem('selectedProjectId');
+        const match = data.find(p => p.id === saved);
+        setSelectedProjectId(match ? match.id : data[0].id);
+      }
+    });
+  }, [paramProjectId]);
+
+  const projectId = selectedProjectId;
 
   useEffect(() => {
     if (!projectId) return;

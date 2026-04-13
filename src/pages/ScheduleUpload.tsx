@@ -206,6 +206,19 @@ const ScheduleUpload = () => {
         <p className="text-sm text-muted-foreground mt-1">공정표 파일을 업로드하여 AI 기반 위험성평가 항목을 자동 생성합니다</p>
       </div>
 
+      {/* Project selector (when no param) */}
+      {!paramProjectId && projects.length > 0 && (
+        <div className="flex items-center gap-3">
+          <Label className="text-sm font-medium whitespace-nowrap">프로젝트</Label>
+          <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+            <SelectTrigger className="h-9 w-72"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
+            <SelectContent>
+              {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {/* Progress steps */}
       <div className="flex items-center gap-2">
         {(['upload', 'mapping', 'generating', 'preview', 'done'] as Step[]).map((s, i) => (

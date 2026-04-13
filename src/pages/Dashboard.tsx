@@ -336,6 +336,7 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: KPIs (2 cols) */}
         <div className="lg:col-span-2 space-y-6">
+      {isEmpty ? (
         <Card>
           <CardContent className="py-16 text-center space-y-4">
             <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mx-auto">

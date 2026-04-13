@@ -959,7 +959,8 @@ const AssessmentRunDetail = () => {
   const buildProjectInfo = () => ({
     name: project?.name || '', site_name: project?.site_name || '',
     period_start: project?.period_start || '', period_end: project?.period_end || '',
-    client: project?.client || '', contractor: project?.contractor || '',
+    client: projectCompanies.find(c => c.type === 'client')?.name || '',
+    contractor: projectCompanies.filter(c => c.type === 'gc').map(c => c.name).join(', ') || '',
   });
 
   const handleExportPDF = async () => {

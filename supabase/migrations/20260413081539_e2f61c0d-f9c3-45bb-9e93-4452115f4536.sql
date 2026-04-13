@@ -1,0 +1,1 @@
+UPDATE public.notification_preferences SET channel_email = true, updated_at = now() WHERE user_id = '60cf7ecf-a7f5-4633-be19-c327638b4708'

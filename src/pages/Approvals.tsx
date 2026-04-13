@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { useToast } from "@/hooks/use-toast";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { sendNotification } from "@/lib/notificationService";
@@ -19,21 +20,14 @@ const APPROVAL_STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리
 const Approvals = () => {
   const navigate = useNavigate();
   const { user, profile, isAdmin, hasRole } = useAuth();
+  const { projects, selectedProject, setSelectedProject, isMaster, isProjectAdmin, userCompanyId } = useProjectAccess();
   const { toast } = useToast();
   const { log } = useAuditLog();
-  const [projects, setProjects] = useState<{ id: string; name: string; site_name: string; client: string; contractor: string; period_start: string; period_end: string }[]>([]);
-  const [selectedProject, setSelectedProject] = useState('');
   const [approvals, setApprovals] = useState<any[]>([]);
   const [runs, setRuns] = useState<any[]>([]);
   const [rejectComment, setRejectComment] = useState('');
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [tab, setTab] = useState('mine');
-
-  useEffect(() => {
-    supabase.from('projects').select('id, name, site_name, client, contractor, period_start, period_end').then(({ data }) => {
-      if (data && data.length > 0) { setProjects(data); setSelectedProject(data[0].id); }
-    });
-  }, []);
 
   const fetchData = async () => {
     if (!selectedProject) return;
@@ -41,11 +35,24 @@ const Approvals = () => {
       supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false }),
       supabase.from('assessment_runs').select('*').eq('project_id', selectedProject),
     ]);
-    setApprovals(a.data || []);
-    setRuns(r.data || []);
+    let approvalsData = a.data || [];
+    let runsData = r.data || [];
+    
+    // 업체 기반 필터링: 발주사/관리자가 아닌 경우 본인 회사 관련 결재만 표시
+    if (!isMaster && !isProjectAdmin && userCompanyId) {
+      approvalsData = approvalsData.filter((ap: any) => 
+        ap.approver_id === user?.id || ap.company_id === userCompanyId
+      );
+      runsData = runsData.filter((r: any) => 
+        !r.target_company_ids || r.target_company_ids.length === 0 || r.target_company_ids.includes(userCompanyId)
+      );
+    }
+    
+    setApprovals(approvalsData);
+    setRuns(runsData);
   };
 
-  useEffect(() => { fetchData(); }, [selectedProject]);
+  useEffect(() => { fetchData(); }, [selectedProject, userCompanyId]);
 
   // Group by run_id, only show the latest approval_version per run
   const grouped = (() => {
@@ -180,7 +187,8 @@ const Approvals = () => {
   const handleDownloadRunPDF = async (runId: string) => {
     const run = runs.find(r => r.id === runId);
     if (!run) return;
-    const proj = projects.find(p => p.id === run.project_id);
+    // Fetch full project info for PDF
+    const { data: proj } = await supabase.from('projects').select('*').eq('id', run.project_id).single();
     if (!proj) return;
     try {
       const { data: items } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');

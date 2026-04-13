@@ -187,7 +187,8 @@ const Approvals = () => {
   const handleDownloadRunPDF = async (runId: string) => {
     const run = runs.find(r => r.id === runId);
     if (!run) return;
-    const proj = projects.find(p => p.id === run.project_id);
+    // Fetch full project info for PDF
+    const { data: proj } = await supabase.from('projects').select('*').eq('id', run.project_id).single();
     if (!proj) return;
     try {
       const { data: items } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');

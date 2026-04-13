@@ -114,9 +114,9 @@ Deno.serve(async (req) => {
     const approvals = approvalsRes.data || [];
     const projectCompanies = companiesRes.data || [];
 
-    // Derive client/contractor from companies table (SSOT), fallback to project text fields
-    const clientCompanyName = projectCompanies.find((c: any) => c.type === 'client')?.name || project?.client || '';
-    const gcCompanyNames = projectCompanies.filter((c: any) => c.type === 'gc').map((c: any) => c.name).join(', ') || project?.contractor || '';
+    // Derive client/contractor from companies table (SSOT) — no fallback to legacy text fields
+    const clientCompanyName = projectCompanies.find((c: any) => c.type === 'client')?.name || '';
+    const gcCompanyNames = projectCompanies.filter((c: any) => c.type === 'gc').map((c: any) => c.name).join(', ') || '';
 
     // ===== SIGNATURE: Build from Approvals (SSOT) =====
     const STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };

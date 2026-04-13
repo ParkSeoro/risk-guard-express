@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,13 +8,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { Upload, FileSpreadsheet, ArrowRight, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { Upload, FileSpreadsheet, ArrowRight, CheckCircle2, AlertTriangle, Sparkles } from 'lucide-react';
 import { parseScheduleFile, extractProcesses, type ParsedRow, type ColumnMapping } from '@/lib/scheduleParser';
+import { generateRiskItemsHybrid, type AIGenerateProgress } from '@/lib/riskAutoGenAI';
 import { generateFromSchedule, type GeneratedRiskItem } from '@/lib/riskAutoGen';
 import { getGradeClassName } from '@/lib/riskGrade';
 
-type Step = 'upload' | 'mapping' | 'preview' | 'done';
+type Step = 'upload' | 'mapping' | 'generating' | 'preview' | 'done';
 
 const ScheduleUpload = () => {
   const { projectId } = useParams();
@@ -30,6 +31,23 @@ const ScheduleUpload = () => {
   const [targetCount, setTargetCount] = useState(100);
   const [preview, setPreview] = useState<GeneratedRiskItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [useAI, setUseAI] = useState(true);
+  const [aiProgress, setAiProgress] = useState<AIGenerateProgress | null>(null);
+
+  // Runs for this project
+  const [runs, setRuns] = useState<any[]>([]);
+  const [selectedRunId, setSelectedRunId] = useState<string>('');
+
+  useEffect(() => {
+    if (!projectId) return;
+    supabase.from('assessment_runs').select('id, period_label, type, status')
+      .eq('project_id', projectId).eq('is_deleted', false)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        setRuns(data || []);
+        if (data && data.length > 0) setSelectedRunId(data[0].id);
+      });
+  }, [projectId]);
 
   const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -40,7 +58,6 @@ const ScheduleUpload = () => {
       const { headers: h, rows: r } = await parseScheduleFile(f);
       setHeaders(h);
       setRows(r);
-      // Auto-detect processName column
       const processCol = h.find(col => /공정|공종|작업|process/i.test(col));
       const subTaskCol = h.find(col => /세부|sub.*task|상세/i.test(col));
       setMapping({
@@ -57,22 +74,58 @@ const ScheduleUpload = () => {
   const handleGeneratePreview = async () => {
     if (!mapping.processName) return;
     setLoading(true);
+    setStep('generating');
+
     try {
       const processes = extractProcesses(rows, mapping);
-      const generated = await generateFromSchedule(processes, targetCount);
+      let generated: GeneratedRiskItem[] = [];
+
+      if (useAI && processes.length > 0) {
+        // AI-first: generate per process using hybrid engine
+        const perProcess = Math.max(5, Math.ceil(targetCount / processes.length));
+        const allItems: GeneratedRiskItem[] = [];
+
+        for (const p of processes) {
+          try {
+            const result = await generateRiskItemsHybrid(
+              { processName: p.processName, targetCount: perProcess, projectId, deduplicate: true },
+              (progress) => setAiProgress(progress),
+            );
+            allItems.push(...result.items);
+          } catch {
+            // Fallback per-process
+          }
+        }
+
+        // Deduplicate
+        const seen = new Set<string>();
+        generated = allItems.filter(item => {
+          const key = `${item.sub_task}|${item.hazard}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        }).slice(0, targetCount);
+      }
+
+      // Fallback to library if AI produced nothing
+      if (generated.length === 0) {
+        generated = await generateFromSchedule(processes, targetCount);
+      }
+
       setPreview(generated);
       setStep('preview');
     } catch {
-      toast({ title: '생성 미리보기 실패', variant: 'destructive' });
+      toast({ title: '생성 실패', variant: 'destructive' });
+      setStep('mapping');
     }
     setLoading(false);
+    setAiProgress(null);
   };
 
   const handleConfirmGenerate = async () => {
     if (!projectId || !user || preview.length === 0) return;
     setLoading(true);
 
-    // Save batch
     const { data: batch } = await supabase.from('generated_batches').insert([{
       project_id: projectId,
       source_type: 'schedule',
@@ -88,6 +141,7 @@ const ScheduleUpload = () => {
 
     const inserts = preview.map((g, i) => ({
       project_id: projectId,
+      run_id: selectedRunId || null,
       process: g.process,
       sub_task: g.sub_task,
       hazard: g.hazard,
@@ -117,17 +171,6 @@ const ScheduleUpload = () => {
     const { data } = await supabase.from('risk_items').insert(inserts).select();
     if (data) {
       toast({ title: `${data.length}건의 위험성평가 항목이 생성되었습니다.` });
-      // Save schedule upload record
-      await supabase.from('schedule_uploads').insert([{
-        project_id: projectId,
-        file_name: file?.name || '',
-        file_path: '',
-        parsed_rows: rows.slice(0, 100) as any,
-        column_mapping: mapping as any,
-        total_generated: data.length,
-        status: 'completed',
-        uploaded_by: user.id,
-      }]);
     }
 
     setStep('done');
@@ -141,22 +184,22 @@ const ScheduleUpload = () => {
   return (
     <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
       <div>
-        <h1 className="text-2xl font-bold">마스터 스케줄 업로드</h1>
-        <p className="text-sm text-muted-foreground mt-1">공정표 파일을 업로드하여 위험성평가 항목을 자동 생성합니다</p>
+        <h1 className="text-2xl font-bold">예정공종표 업로드</h1>
+        <p className="text-sm text-muted-foreground mt-1">공정표 파일을 업로드하여 AI 기반 위험성평가 항목을 자동 생성합니다</p>
       </div>
 
       {/* Progress steps */}
       <div className="flex items-center gap-2">
-        {(['upload', 'mapping', 'preview', 'done'] as Step[]).map((s, i) => (
+        {(['upload', 'mapping', 'generating', 'preview', 'done'] as Step[]).map((s, i) => (
           <div key={s} className="flex items-center gap-2">
             <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${
               step === s ? 'bg-accent text-accent-foreground' :
-              (['upload', 'mapping', 'preview', 'done'].indexOf(step) > i ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground')
+              (['upload', 'mapping', 'generating', 'preview', 'done'].indexOf(step) > i ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground')
             }`}>
-              {['upload', 'mapping', 'preview', 'done'].indexOf(step) > i ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
-              {['파일 선택', '컬럼 매핑', '미리보기', '완료'][i]}
+              {['upload', 'mapping', 'generating', 'preview', 'done'].indexOf(step) > i ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
+              {['파일 선택', '컬럼 매핑', 'AI 생성', '미리보기', '완료'][i]}
             </div>
-            {i < 3 && <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />}
+            {i < 4 && <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />}
           </div>
         ))}
       </div>
@@ -226,17 +269,43 @@ const ScheduleUpload = () => {
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label>생성 목표 개수</Label>
-              <Select value={String(targetCount)} onValueChange={v => setTargetCount(Number(v))}>
-                <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="50">50개</SelectItem>
-                  <SelectItem value="100">100개</SelectItem>
-                  <SelectItem value="150">150개</SelectItem>
-                  <SelectItem value="300">300개</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>생성 목표 개수</Label>
+                <Select value={String(targetCount)} onValueChange={v => setTargetCount(Number(v))}>
+                  <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="50">50개</SelectItem>
+                    <SelectItem value="100">100개</SelectItem>
+                    <SelectItem value="150">150개</SelectItem>
+                    <SelectItem value="300">300개</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>대상 회차</Label>
+                <Select value={selectedRunId} onValueChange={setSelectedRunId}>
+                  <SelectTrigger><SelectValue placeholder="회차 선택 (선택사항)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">회차 미지정</SelectItem>
+                    {runs.map(r => (
+                      <SelectItem key={r.id} value={r.id}>[{r.type}] {r.period_label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* AI toggle */}
+            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+              <Sparkles className={`h-5 w-5 ${useAI ? 'text-accent' : 'text-muted-foreground'}`} />
+              <div className="flex-1">
+                <p className="text-sm font-medium">AI 기반 생성</p>
+                <p className="text-xs text-muted-foreground">산업안전보건법 기준 AI가 위험성평가를 자동 생성합니다</p>
+              </div>
+              <Button variant={useAI ? 'default' : 'outline'} size="sm" onClick={() => setUseAI(!useAI)}>
+                {useAI ? 'ON' : 'OFF'}
+              </Button>
             </div>
 
             {/* Preview data */}
@@ -254,9 +323,30 @@ const ScheduleUpload = () => {
               </div>
             </div>
 
-            <Button onClick={handleGeneratePreview} disabled={!mapping.processName || loading} className="w-full">
-              {loading ? '분석 중...' : '자동 생성 미리보기'}
+            <Button onClick={handleGeneratePreview} disabled={!mapping.processName || loading} className="w-full gap-2">
+              {useAI && <Sparkles className="h-4 w-4" />}
+              {loading ? '분석 중...' : useAI ? 'AI 자동 생성' : '라이브러리 기반 생성'}
             </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {step === 'generating' && (
+        <Card>
+          <CardContent className="py-12 text-center space-y-4">
+            <Sparkles className="h-12 w-12 mx-auto text-accent animate-pulse" />
+            <p className="text-lg font-medium">AI가 위험성평가를 생성하고 있습니다...</p>
+            {aiProgress && (
+              <div className="space-y-2 max-w-md mx-auto">
+                <Progress value={aiProgress.totalTarget > 0 ? (aiProgress.itemsSoFar / aiProgress.totalTarget) * 100 : 0} className="h-2" />
+                <p className="text-sm text-muted-foreground">
+                  {aiProgress.phase === 'cache_check' && '캐시 확인 중...'}
+                  {aiProgress.phase === 'generating' && `생성 중: ${aiProgress.itemsSoFar}/${aiProgress.totalTarget}건`}
+                  {aiProgress.phase === 'fallback' && '라이브러리 검색 중...'}
+                  {aiProgress.phase === 'complete' && '완료!'}
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -271,15 +361,15 @@ const ScheduleUpload = () => {
                   <p className="text-2xl font-bold">{preview.length}</p>
                   <p className="text-xs text-muted-foreground">총 생성 항목</p>
                 </div>
-                <div className="text-center p-3 rounded-lg" style={{ backgroundColor: 'hsl(0 72% 51% / 0.1)' }}>
+                <div className="text-center p-3 rounded-lg bg-destructive/10">
                   <p className="text-2xl font-bold text-destructive">{highCount}</p>
                   <p className="text-xs text-muted-foreground">위험도 상</p>
                 </div>
-                <div className="text-center p-3 rounded-lg" style={{ backgroundColor: 'hsl(45 93% 47% / 0.1)' }}>
-                  <p className="text-2xl font-bold" style={{ color: 'hsl(45, 93%, 37%)' }}>{medCount}</p>
+                <div className="text-center p-3 rounded-lg bg-warning/10">
+                  <p className="text-2xl font-bold text-warning">{medCount}</p>
                   <p className="text-xs text-muted-foreground">위험도 중</p>
                 </div>
-                <div className="text-center p-3 rounded-lg" style={{ backgroundColor: 'hsl(145 63% 42% / 0.1)' }}>
+                <div className="text-center p-3 rounded-lg bg-success/10">
                   <p className="text-2xl font-bold text-success">{lowCount}</p>
                   <p className="text-xs text-muted-foreground">위험도 하</p>
                 </div>
@@ -288,7 +378,14 @@ const ScheduleUpload = () => {
               {preview.length < targetCount && (
                 <div className="flex items-center gap-2 p-3 bg-warning/10 rounded-md mb-4">
                   <AlertTriangle className="h-4 w-4 text-warning" />
-                  <p className="text-xs">목표 {targetCount}개 중 {preview.length}개만 생성됨. 라이브러리에 해당 공종 항목이 부족할 수 있습니다.</p>
+                  <p className="text-xs">목표 {targetCount}개 중 {preview.length}개만 생성됨</p>
+                </div>
+              )}
+
+              {selectedRunId && selectedRunId !== '__none__' && (
+                <div className="flex items-center gap-2 p-2 bg-accent/10 rounded-md mb-4 text-xs">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-accent" />
+                  대상 회차: [{runs.find(r => r.id === selectedRunId)?.type}] {runs.find(r => r.id === selectedRunId)?.period_label}
                 </div>
               )}
 
@@ -327,7 +424,12 @@ const ScheduleUpload = () => {
           <CardContent className="py-12 text-center space-y-4">
             <CheckCircle2 className="h-16 w-16 mx-auto text-success" />
             <p className="text-lg font-medium">위험성평가 항목이 성공적으로 생성되었습니다!</p>
-            <Button onClick={() => navigate(`/risk-assessment/${projectId}`)}>위험성평가 보기</Button>
+            <div className="flex gap-3 justify-center">
+              <Button variant="outline" onClick={() => { setStep('upload'); setPreview([]); setFile(null); }}>
+                추가 업로드
+              </Button>
+              <Button onClick={() => navigate(`/risk-assessment/${projectId}`)}>위험성평가 보기</Button>
+            </div>
           </CardContent>
         </Card>
       )}

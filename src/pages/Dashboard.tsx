@@ -668,6 +668,13 @@ const Dashboard = () => {
           )}
         </>
       )}
+        </div>
+
+        {/* Right: AI Safety Assistant */}
+        <div className="lg:col-span-1">
+          <SafetyAssistant />
+        </div>
+      </div>
     </div>
   );
 };

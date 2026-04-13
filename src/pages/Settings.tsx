@@ -49,9 +49,7 @@ const Settings = () => {
     <div className="space-y-6 animate-fade-in max-w-3xl">
       <div>
         <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1">
-          <span>DIG AIRGAS</span>
-          <span>/</span>
-          <span>위험성평가 시스템</span>
+          <span>안전관리시스템</span>
         </div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <SettingsIcon className="h-6 w-6" /> 설정

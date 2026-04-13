@@ -80,7 +80,7 @@ export function SafetyAssistant() {
   };
 
   return (
-    <Card className={`flex flex-col ${expanded ? 'fixed inset-4 z-50 shadow-2xl' : 'h-[500px]'}`}>
+    <Card className={`flex flex-col ${expanded ? 'fixed inset-4 z-50 shadow-2xl' : 'h-full'}`}>
       <CardHeader className="pb-2 flex-row items-center justify-between">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
           <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center">

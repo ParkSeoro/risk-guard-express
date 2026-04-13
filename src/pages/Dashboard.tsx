@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { getGradeClassName } from "@/lib/riskGrade";
+import { SafetyAssistant } from "@/components/SafetyAssistant";
 import {
   AlertTriangle, CheckCircle2, ShieldAlert, BarChart3, FileCheck,
   ClipboardList, ShieldCheck, Clock, Plus, ArrowRight, RefreshCw,
@@ -331,7 +332,10 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {isEmpty ? (
+      {/* Main layout: KPIs + AI Assistant */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left: KPIs (2 cols) */}
+        <div className="lg:col-span-2 space-y-6">
         <Card>
           <CardContent className="py-16 text-center space-y-4">
             <div className="h-16 w-16 rounded-2xl bg-muted flex items-center justify-center mx-auto">

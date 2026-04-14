@@ -672,9 +672,6 @@ const Dashboard = () => {
     </div>
   );
 };
-    </div>
-  );
-};
 
 // Sub-components
 function KpiCard({

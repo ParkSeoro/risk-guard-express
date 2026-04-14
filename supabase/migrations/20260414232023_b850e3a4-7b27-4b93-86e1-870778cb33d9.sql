@@ -1,0 +1,1 @@
+ALTER TABLE public.weather_cache ADD CONSTRAINT weather_cache_project_type_unique UNIQUE (project_id, cache_type);

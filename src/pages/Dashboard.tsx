@@ -332,10 +332,10 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Main layout: KPIs + AI Assistant */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: KPIs (2 cols) */}
-        <div className="lg:col-span-2 space-y-6">
+      {/* Main layout */}
+      <div className="space-y-6">
+        {/* Weather Summary Card */}
+        <WeatherSummaryCard projectId={selectedProject} />
       {isEmpty ? (
         <Card>
           <CardContent className="py-16 text-center space-y-4">
@@ -668,13 +668,10 @@ const Dashboard = () => {
           )}
         </>
       )}
-        </div>
-
-        {/* Right: AI Safety Assistant */}
-        <div className="lg:col-span-1">
-          <SafetyAssistant />
-        </div>
       </div>
+    </div>
+  );
+};
     </div>
   );
 };

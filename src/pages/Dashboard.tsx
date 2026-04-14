@@ -710,4 +710,93 @@ function EmptyChart({ message }: { message: string }) {
   );
 }
 
+function WeatherSummaryCard({ projectId }: { projectId: string }) {
+  const navigate = useNavigate();
+  const [weather, setWeather] = useState<any>(null);
+  const [wLoading, setWLoading] = useState(true);
+
+  useEffect(() => {
+    if (!projectId) return;
+    const fetchWeather = async () => {
+      try {
+        const { data: project } = await supabase
+          .from("projects")
+          .select("site_lat, site_lng")
+          .eq("id", projectId)
+          .single();
+        const lat = (project as any)?.site_lat || 37.5665;
+        const lng = (project as any)?.site_lng || 126.978;
+        const { data } = await supabase.functions.invoke("fetch-weather", {
+          body: { project_id: projectId, lat, lng },
+        });
+        setWeather(data);
+      } catch {
+        // silent fail
+      } finally {
+        setWLoading(false);
+      }
+    };
+    fetchWeather();
+  }, [projectId]);
+
+  if (wLoading) {
+    return (
+      <Card>
+        <CardContent className="pt-5 pb-4">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 rounded-lg bg-muted animate-pulse" />
+            <div className="space-y-2 flex-1">
+              <div className="h-4 w-32 bg-muted animate-pulse rounded" />
+              <div className="h-3 w-48 bg-muted animate-pulse rounded" />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!weather?.current) return null;
+
+  const hasWarning = weather.alerts?.some((a: any) => a.level === "danger" || a.level === "warning");
+
+  return (
+    <Card className={`cursor-pointer transition-colors hover:bg-accent/30 ${hasWarning ? "border-warning/50" : ""}`} onClick={() => navigate("/site-weather")}>
+      <CardContent className="pt-5 pb-4">
+        <div className="flex items-center gap-4">
+          <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center">
+            {weather.current.main === "Rain" ? <CloudRain className="h-6 w-6 text-blue-400" /> :
+             weather.current.main === "Clear" ? <Sun className="h-6 w-6 text-amber-400" /> :
+             <Cloud className="h-6 w-6 text-slate-400" />}
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-bold">{weather.current.temp}°C</span>
+              <span className="text-sm text-muted-foreground">{weather.current.description}</span>
+              <span className="text-xs text-muted-foreground ml-auto">체감 {weather.current.feels_like}°C</span>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
+              <span className="flex items-center gap-1"><Wind className="h-3 w-3" />{weather.current.wind_speed}m/s</span>
+              <span className="flex items-center gap-1"><Thermometer className="h-3 w-3" />습도 {weather.current.humidity}%</span>
+              {weather.current.rain_1h > 0 && (
+                <span className="flex items-center gap-1 text-blue-500"><CloudRain className="h-3 w-3" />{weather.current.rain_1h}mm/h</span>
+              )}
+            </div>
+          </div>
+          {/* Alert badges */}
+          <div className="flex flex-col gap-1">
+            {weather.alerts?.filter((a: any) => a.level !== "safe").slice(0, 2).map((a: any, i: number) => (
+              <Badge key={i} variant={a.level === "danger" ? "destructive" : "outline"} className={`text-[10px] ${a.level === "warning" ? "bg-warning/20 text-warning border-warning" : ""}`}>
+                {a.title}
+              </Badge>
+            ))}
+            {!hasWarning && (
+              <Badge className="bg-success/20 text-success border-success text-[10px]" variant="outline">안전</Badge>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default Dashboard;

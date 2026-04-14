@@ -1500,6 +1500,9 @@ export type Database = {
           name: string
           period_end: string | null
           period_start: string | null
+          site_address: string | null
+          site_lat: number | null
+          site_lng: number | null
           site_name: string
           status: string
           subcontractors: string[] | null
@@ -1516,6 +1519,9 @@ export type Database = {
           name: string
           period_end?: string | null
           period_start?: string | null
+          site_address?: string | null
+          site_lat?: number | null
+          site_lng?: number | null
           site_name?: string
           status?: string
           subcontractors?: string[] | null
@@ -1532,6 +1538,9 @@ export type Database = {
           name?: string
           period_end?: string | null
           period_start?: string | null
+          site_address?: string | null
+          site_lat?: number | null
+          site_lng?: number | null
           site_name?: string
           status?: string
           subcontractors?: string[] | null
@@ -2467,6 +2476,41 @@ export type Database = {
           weight?: number | null
         }
         Relationships: []
+      }
+      weather_cache: {
+        Row: {
+          cache_type: string
+          created_at: string
+          data: Json
+          fetched_at: string
+          id: string
+          project_id: string
+        }
+        Insert: {
+          cache_type?: string
+          created_at?: string
+          data?: Json
+          fetched_at?: string
+          id?: string
+          project_id: string
+        }
+        Update: {
+          cache_type?: string
+          created_at?: string
+          data?: Json
+          fetched_at?: string
+          id?: string
+          project_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "weather_cache_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       work_plans: {
         Row: {

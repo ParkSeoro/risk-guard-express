@@ -2,7 +2,7 @@ import {
   LayoutDashboard, FolderKanban, ShieldAlert, Database, 
   FileCheck, HardHat, ChevronLeft, LogOut, User,
   ShieldCheck, History, Shield, SearchCheck, Settings,
-  FileText, Scale, ListTodo, Bot
+  FileText, Scale, ListTodo, Bot, CloudSun
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -21,6 +21,7 @@ const mainItems = [
   { title: "법적업무", url: "/legal-duties", icon: Scale },
   { title: "검증센터", url: "/verification-center", icon: SearchCheck },
   { title: "결재함", url: "/approvals", icon: FileCheck },
+  { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
   { title: "AI 어시스턴트", url: "/ai-assistant", icon: Bot },
   { title: "프로젝트", url: "/projects", icon: FolderKanban },
 ];

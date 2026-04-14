@@ -7,11 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { getGradeClassName } from "@/lib/riskGrade";
-import { SafetyAssistant } from "@/components/SafetyAssistant";
+
 import {
   AlertTriangle, CheckCircle2, ShieldAlert, BarChart3, FileCheck,
   ClipboardList, ShieldCheck, Clock, Plus, ArrowRight, RefreshCw,
-  FileText, ListTodo, Scale
+  FileText, ListTodo, Scale, Cloud, CloudRain, Wind, Thermometer, Sun
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,

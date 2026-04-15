@@ -31,7 +31,7 @@ const Projects = () => {
   const [companyNameMap, setCompanyNameMap] = useState<Record<string, string>>({});
 
   const [form, setForm] = useState({
-    name: '', site_name: '', period_start: '', period_end: '',
+    name: '', site_name: '', site_address: '', period_start: '', period_end: '',
     client: '', gc_company_id: '', tags: '', status: '진행중'
   });
 
@@ -69,6 +69,7 @@ const Projects = () => {
       const insertData: any = {
         name: form.name.trim(),
         site_name: form.site_name.trim(),
+        site_address: form.site_address.trim() || null,
         period_start: form.period_start || null,
         period_end: form.period_end || null,
         client: form.client.trim(),
@@ -76,6 +77,19 @@ const Projects = () => {
         status: form.status,
         created_by: user.id,
       };
+
+      // Geocode address to coordinates
+      if (form.site_address.trim()) {
+        try {
+          const { data: geoData } = await supabase.functions.invoke("fetch-weather", {
+            body: { project_id: '__geocode__', address: form.site_address.trim(), geocode_only: true },
+          });
+          if (geoData?.lat && geoData?.lng) {
+            insertData.site_lat = geoData.lat;
+            insertData.site_lng = geoData.lng;
+          }
+        } catch { /* geocoding is best-effort */ }
+      }
       // Only include gc_company_id if a valid value is selected
       if (form.gc_company_id && form.gc_company_id !== '') {
         insertData.gc_company_id = form.gc_company_id;
@@ -112,16 +126,32 @@ const Projects = () => {
 
   const handleUpdate = async () => {
     if (!editProject) return;
-    const { error } = await supabase.from('projects').update({
+    const updateData: any = {
       name: form.name,
       site_name: form.site_name,
+      site_address: form.site_address.trim() || null,
       period_start: form.period_start || null,
       period_end: form.period_end || null,
       client: form.client,
       gc_company_id: form.gc_company_id || null,
       tags: form.tags.split(',').map(s => s.trim()).filter(Boolean),
       status: form.status,
-    }).eq('id', editProject.id);
+    };
+
+    // Geocode address if changed
+    if (form.site_address.trim()) {
+      try {
+        const { data: geoData } = await supabase.functions.invoke("fetch-weather", {
+          body: { project_id: '__geocode__', address: form.site_address.trim(), geocode_only: true },
+        });
+        if (geoData?.lat && geoData?.lng) {
+          updateData.site_lat = geoData.lat;
+          updateData.site_lng = geoData.lng;
+        }
+      } catch { /* best-effort */ }
+    }
+
+    const { error } = await supabase.from('projects').update(updateData).eq('id', editProject.id);
     if (!error) {
       toast({ title: '프로젝트가 수정되었습니다.' });
       log('수정', 'project', editProject.id);
@@ -137,12 +167,14 @@ const Projects = () => {
     fetchProjects();
   };
 
-  const resetForm = () => setForm({ name: '', site_name: '', period_start: '', period_end: '', client: '', gc_company_id: '', tags: '', status: '진행중' });
+  const resetForm = () => setForm({ name: '', site_name: '', site_address: '', period_start: '', period_end: '', client: '', gc_company_id: '', tags: '', status: '진행중' });
 
   const openEdit = (p: ProjectRow) => {
     setEditProject(p);
     setForm({
-      name: p.name, site_name: p.site_name, period_start: p.period_start || '',
+      name: p.name, site_name: p.site_name,
+      site_address: (p as any).site_address || '',
+      period_start: p.period_start || '',
       period_end: p.period_end || '', client: p.client || '',
       gc_company_id: (p as any).gc_company_id || '',
       tags: (p.tags || []).join(', '), status: p.status,
@@ -161,6 +193,7 @@ const Projects = () => {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1"><Label>프로젝트명 *</Label><Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} required /></div>
         <div className="space-y-1"><Label>현장명</Label><Input value={form.site_name} onChange={e => setForm(p => ({ ...p, site_name: e.target.value }))} /></div>
+        <div className="col-span-2 space-y-1"><Label>현장주소 (날씨 자동 연동)</Label><Input value={form.site_address} onChange={e => setForm(p => ({ ...p, site_address: e.target.value }))} placeholder="예: 전라남도 여수시 화학단지로 123" /></div>
         <div className="space-y-1"><Label>시작일</Label><Input type="date" value={form.period_start} onChange={e => setForm(p => ({ ...p, period_start: e.target.value }))} /></div>
         <div className="space-y-1"><Label>종료일</Label><Input type="date" value={form.period_end} onChange={e => setForm(p => ({ ...p, period_end: e.target.value }))} /></div>
         <div className="space-y-1"><Label>발주사</Label><Input value={form.client} onChange={e => setForm(p => ({ ...p, client: e.target.value }))} /></div>

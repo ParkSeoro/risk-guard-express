@@ -35,7 +35,6 @@ function latLngToGrid(lat: number, lng: number) {
 
 function getKmaBaseDateTime() {
   const now = new Date();
-  // KMA issues forecasts at 0200,0500,0800,1100,1400,1700,2000,2300 (KST = UTC+9)
   const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   const hours = [23, 20, 17, 14, 11, 8, 5, 2];
   let baseDate = kst.toISOString().slice(0, 10).replace(/-/g, '');
@@ -43,13 +42,11 @@ function getKmaBaseDateTime() {
   const currentHour = kst.getUTCHours();
   const currentMin = kst.getUTCMinutes();
   for (const h of hours) {
-    // Data available ~10min after base time
     if (currentHour > h || (currentHour === h && currentMin >= 10)) {
       baseTime = String(h).padStart(2, '0') + '00';
       break;
     }
   }
-  // If no match, use previous day 2300
   if (baseTime === '0200' && currentHour < 2) {
     const yesterday = new Date(kst.getTime() - 24 * 60 * 60 * 1000);
     baseDate = yesterday.toISOString().slice(0, 10).replace(/-/g, '');
@@ -58,11 +55,44 @@ function getKmaBaseDateTime() {
   return { baseDate, baseTime };
 }
 
+async function geocodeAddress(address: string, owKey: string): Promise<{ lat: number; lng: number; city: string } | null> {
+  try {
+    const geoRes = await fetch(
+      `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(address)}&limit=1&appid=${owKey}`
+    );
+    const geoData = await geoRes.json();
+    if (geoData && geoData.length > 0) {
+      return {
+        lat: geoData[0].lat,
+        lng: geoData[0].lon,
+        city: geoData[0].local_names?.ko || geoData[0].name || "",
+      };
+    }
+  } catch (e) {
+    console.error("Geocoding error:", e);
+  }
+  return null;
+}
+
+async function reverseGeocode(lat: number, lng: number, owKey: string): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://api.openweathermap.org/geo/1.0/reverse?lat=${lat}&lon=${lng}&limit=1&appid=${owKey}`
+    );
+    const data = await res.json();
+    if (data && data.length > 0) {
+      return data[0].local_names?.ko || data[0].name || "";
+    }
+  } catch (e) {
+    console.error("Reverse geocoding error:", e);
+  }
+  return "";
+}
+
 async function fetchKmaWeather(lat: number, lng: number, apiKey: string) {
   const { nx, ny } = latLngToGrid(lat, lng);
   const { baseDate, baseTime } = getKmaBaseDateTime();
   
-  // API key should be used as-is (Encoding key from data.go.kr is already URL-encoded)
   const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${apiKey}&numOfRows=300&pageNo=1&dataType=JSON&base_date=${baseDate}&base_time=${baseTime}&nx=${nx}&ny=${ny}`;
   console.log(`KMA API call: base_date=${baseDate}, base_time=${baseTime}, nx=${nx}, ny=${ny}`);
   
@@ -89,7 +119,6 @@ async function fetchKmaWeather(lat: number, lng: number, apiKey: string) {
 }
 
 function parseKmaItems(items: any[]) {
-  // Group by fcstDate+fcstTime
   const timeMap: Record<string, Record<string, string>> = {};
   for (const item of items) {
     const key = `${item.fcstDate}_${item.fcstTime}`;
@@ -103,20 +132,16 @@ function parseKmaItems(items: any[]) {
 
   if (slots.length === 0) return null;
 
-  // First slot = current/nearest forecast
   const first = slots[0];
   const temp = parseFloat(first.TMP || first.T1H || '0');
   const windSpeed = parseFloat(first.WSD || '0');
   const humidity = parseInt(first.REH || '0');
-  const sky = parseInt(first.SKY || '1'); // 1=맑음, 3=구름많음, 4=흐림
-  const pty = parseInt(first.PTY || '0'); // 0=없음,1=비,2=비/눈,3=눈,4=소나기
+  const sky = parseInt(first.SKY || '1');
+  const pty = parseInt(first.PTY || '0');
   const rn1 = first.RN1 || first.PCP || '0';
   const sno = first.SNO || '0';
   const vec = parseFloat(first.VEC || '0');
-  const uuu = parseFloat(first.UUU || '0');
-  const vvv = parseFloat(first.VVV || '0');
 
-  // Map PTY to weather main
   let main = 'Clear';
   let description = '맑음';
   if (pty === 1 || pty === 5) { main = 'Rain'; description = '비'; }
@@ -125,14 +150,13 @@ function parseKmaItems(items: any[]) {
   else if (pty === 4) { main = 'Rain'; description = '소나기'; }
   else if (sky === 4) { main = 'Clouds'; description = '흐림'; }
   else if (sky === 3) { main = 'Clouds'; description = '구름많음'; }
-  else { main = 'Clear'; description = '맑음'; }
 
   const rain1h = rn1 === '강수없음' || rn1 === '0' ? 0 : parseFloat(rn1.replace('mm', '')) || 0;
   const snow1h = sno === '적설없음' || sno === '0' ? 0 : parseFloat(sno.replace('cm', '')) || 0;
 
   const current = {
     temp: Math.round(temp),
-    feels_like: Math.round(temp), // KMA doesn't provide feels_like directly
+    feels_like: Math.round(temp),
     humidity,
     wind_speed: windSpeed,
     wind_deg: vec,
@@ -151,7 +175,6 @@ function parseKmaItems(items: any[]) {
     sunset: 0,
   };
 
-  // Build hourly from slots
   const hourly = slots.slice(0, 16).map(s => {
     const sTemp = parseFloat(s.TMP || s.T1H || '0');
     const sPty = parseInt(s.PTY || '0');
@@ -163,7 +186,6 @@ function parseKmaItems(items: any[]) {
     const sSnow = sSno === '적설없음' || sSno === '0' ? 0 : parseFloat(sSno.replace('cm', '')) || 0;
     let sMain = 'Clear';
     if (sPty >= 1) sMain = sPty === 3 || sPty === 7 ? 'Snow' : 'Rain';
-    else if (sSky >= 4) sMain = 'Clouds';
     else if (sSky >= 3) sMain = 'Clouds';
 
     const dateStr = s.fcstDate;
@@ -171,22 +193,13 @@ function parseKmaItems(items: any[]) {
     const dt = new Date(`${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6,8)}T${timeStr.slice(0,2)}:${timeStr.slice(2,4)}:00+09:00`).getTime() / 1000;
 
     return {
-      dt,
-      temp: Math.round(sTemp),
-      feels_like: Math.round(sTemp),
-      humidity: parseInt(s.REH || '0'),
-      wind_speed: sWsd,
-      wind_gust: 0,
-      rain: sRain,
-      snow: sSnow,
-      description: '',
-      icon: sSky <= 2 ? '01d' : '04d',
-      main: sMain,
-      pop: parseFloat(s.POP || '0') / 100,
+      dt, temp: Math.round(sTemp), feels_like: Math.round(sTemp),
+      humidity: parseInt(s.REH || '0'), wind_speed: sWsd, wind_gust: 0,
+      rain: sRain, snow: sSnow, description: '', icon: sSky <= 2 ? '01d' : '04d',
+      main: sMain, pop: parseFloat(s.POP || '0') / 100,
     };
   });
 
-  // Aggregate daily
   const dailyMap: Record<string, any> = {};
   for (const s of slots) {
     const date = `${s.fcstDate.slice(0,4)}-${s.fcstDate.slice(4,6)}-${s.fcstDate.slice(6,8)}`;
@@ -207,14 +220,111 @@ function parseKmaItems(items: any[]) {
     d.pop_max = Math.max(d.pop_max, sPop);
   }
   const daily = Object.values(dailyMap).map((d: any) => ({
-    ...d,
-    temp_min: Math.round(d.temp_min),
-    temp_max: Math.round(d.temp_max),
-    rain_total: Math.round(d.rain_total * 10) / 10,
-    pop_max: Math.round(d.pop_max),
+    ...d, temp_min: Math.round(d.temp_min), temp_max: Math.round(d.temp_max),
+    rain_total: Math.round(d.rain_total * 10) / 10, pop_max: Math.round(d.pop_max),
   }));
 
   return { current, hourly, daily };
+}
+
+async function fetchOpenWeather(lat: number, lng: number, owKey: string) {
+  const currentUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${owKey}&units=metric&lang=kr`;
+  const currentRes = await fetch(currentUrl);
+  const currentData = await currentRes.json();
+
+  if (currentData.cod && currentData.cod !== 200) return null;
+
+  const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&appid=${owKey}&units=metric&lang=kr`;
+  const forecastRes = await fetch(forecastUrl);
+  const forecastData = await forecastRes.json();
+
+  const current = {
+    temp: Math.round(currentData.main?.temp ?? 0),
+    feels_like: Math.round(currentData.main?.feels_like ?? 0),
+    humidity: currentData.main?.humidity ?? 0,
+    wind_speed: currentData.wind?.speed ?? 0,
+    wind_deg: currentData.wind?.deg ?? 0,
+    wind_gust: currentData.wind?.gust ?? 0,
+    description: currentData.weather?.[0]?.description ?? "",
+    icon: currentData.weather?.[0]?.icon ?? "01d",
+    main: currentData.weather?.[0]?.main ?? "",
+    rain_1h: currentData.rain?.["1h"] ?? 0,
+    snow_1h: currentData.snow?.["1h"] ?? 0,
+    visibility: currentData.visibility ?? 10000,
+    clouds: currentData.clouds?.all ?? 0,
+    pressure: currentData.main?.pressure ?? 0,
+    dt: currentData.dt,
+    city: currentData.name ?? "",
+    sunrise: currentData.sys?.sunrise ?? 0,
+    sunset: currentData.sys?.sunset ?? 0,
+    lat, lng,
+  };
+
+  const hourly = (forecastData.list || []).slice(0, 16).map((item: any) => ({
+    dt: item.dt, temp: Math.round(item.main?.temp ?? 0),
+    feels_like: Math.round(item.main?.feels_like ?? 0),
+    humidity: item.main?.humidity ?? 0, wind_speed: item.wind?.speed ?? 0,
+    wind_gust: item.wind?.gust ?? 0, rain: item.rain?.["3h"] ?? 0,
+    snow: item.snow?.["3h"] ?? 0, description: item.weather?.[0]?.description ?? "",
+    icon: item.weather?.[0]?.icon ?? "01d", main: item.weather?.[0]?.main ?? "",
+    pop: item.pop ?? 0,
+  }));
+
+  const dailyMap: Record<string, any> = {};
+  (forecastData.list || []).forEach((item: any) => {
+    const date = new Date(item.dt * 1000).toISOString().split("T")[0];
+    if (!dailyMap[date]) {
+      dailyMap[date] = { date, temp_min: item.main.temp_min, temp_max: item.main.temp_max, wind_max: item.wind?.speed ?? 0, wind_gust_max: item.wind?.gust ?? 0, rain_total: 0, snow_total: 0, pop_max: 0, icon: item.weather?.[0]?.icon ?? "01d", main: item.weather?.[0]?.main ?? "", description: item.weather?.[0]?.description ?? "" };
+    }
+    const d = dailyMap[date];
+    d.temp_min = Math.min(d.temp_min, item.main.temp_min);
+    d.temp_max = Math.max(d.temp_max, item.main.temp_max);
+    d.wind_max = Math.max(d.wind_max, item.wind?.speed ?? 0);
+    d.wind_gust_max = Math.max(d.wind_gust_max, item.wind?.gust ?? 0);
+    d.rain_total += item.rain?.["3h"] ?? 0;
+    d.snow_total += item.snow?.["3h"] ?? 0;
+    d.pop_max = Math.max(d.pop_max, item.pop ?? 0);
+  });
+  const daily = Object.values(dailyMap).map((d: any) => ({
+    ...d, temp_min: Math.round(d.temp_min), temp_max: Math.round(d.temp_max),
+    rain_total: Math.round(d.rain_total * 10) / 10, snow_total: Math.round(d.snow_total * 10) / 10,
+    pop_max: Math.round(d.pop_max * 100),
+  }));
+
+  return { current, hourly, daily };
+}
+
+// Blend KMA (primary) with OpenWeather (secondary) - conservative approach
+function blendWeatherData(kma: any, ow: any) {
+  if (!kma) return ow;
+  if (!ow) return kma;
+
+  // Base: KMA data, enrich with OW
+  const blended = JSON.parse(JSON.stringify(kma));
+  
+  // Use OW for fields KMA doesn't provide
+  blended.current.pressure = ow.current.pressure || kma.current.pressure;
+  blended.current.sunrise = ow.current.sunrise || kma.current.sunrise;
+  blended.current.sunset = ow.current.sunset || kma.current.sunset;
+  blended.current.visibility = Math.min(kma.current.visibility, ow.current.visibility); // conservative
+  blended.current.feels_like = ow.current.feels_like || kma.current.feels_like;
+  blended.current.city = ow.current.city || kma.current.city;
+  
+  // Wind: use higher (more dangerous) value
+  blended.current.wind_speed = Math.max(kma.current.wind_speed, ow.current.wind_speed);
+  blended.current.wind_gust = Math.max(kma.current.wind_gust || 0, ow.current.wind_gust || 0);
+  
+  // Rain: use higher (more conservative)
+  blended.current.rain_1h = Math.max(kma.current.rain_1h, ow.current.rain_1h);
+  blended.current.snow_1h = Math.max(kma.current.snow_1h, ow.current.snow_1h);
+  
+  // Temperature: average for more accuracy
+  if (Math.abs(kma.current.temp - ow.current.temp) <= 3) {
+    blended.current.temp = Math.round((kma.current.temp + ow.current.temp) / 2);
+  }
+  // If big difference, trust KMA (local station data)
+  
+  return blended;
 }
 
 serve(async (req) => {
@@ -224,22 +334,33 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { project_id, lat, lng, address, source } = body;
+    const { project_id, lat, lng, address, source, geocode_only } = body;
 
-    if (!project_id) {
-      return new Response(JSON.stringify({ error: "Missing project_id" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const owKey = Deno.env.get("OPENWEATHER_API_KEY");
+    const kmaKey = Deno.env.get("KMA_API_KEY");
+
+    // Geocode-only mode (for project creation)
+    if (geocode_only && address && owKey) {
+      const geo = await geocodeAddress(address, owKey);
+      if (geo) {
+        return new Response(JSON.stringify(geo), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: "주소를 찾을 수 없습니다" }), {
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const kmaKey = Deno.env.get("KMA_API_KEY");
-    const owKey = Deno.env.get("OPENWEATHER_API_KEY");
-    
+    if (!project_id) {
+      return new Response(JSON.stringify({ error: "Missing project_id" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (!kmaKey && !owKey) {
       return new Response(JSON.stringify({ error: "날씨 API 키가 설정되지 않았습니다" }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
@@ -252,25 +373,14 @@ serve(async (req) => {
     let resolvedLng = lng;
     let resolvedCity = "";
 
-    // If address provided but no coordinates, geocode it using OpenWeather (free geocoding)
+    // Geocode address if needed
     if (address && (!resolvedLat || !resolvedLng) && owKey) {
-      try {
-        const geoRes = await fetch(
-          `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(address)}&limit=1&appid=${owKey}`
-        );
-        const geoData = await geoRes.json();
-        console.log("Geocoding result:", JSON.stringify(geoData));
-        if (geoData && geoData.length > 0) {
-          resolvedLat = geoData[0].lat;
-          resolvedLng = geoData[0].lon;
-          resolvedCity = geoData[0].local_names?.ko || geoData[0].name || "";
-          await supabase
-            .from("projects")
-            .update({ site_lat: resolvedLat, site_lng: resolvedLng })
-            .eq("id", project_id);
-        }
-      } catch (geoErr) {
-        console.error("Geocoding error:", geoErr);
+      const geo = await geocodeAddress(address, owKey);
+      if (geo) {
+        resolvedLat = geo.lat;
+        resolvedLng = geo.lng;
+        resolvedCity = geo.city;
+        await supabase.from("projects").update({ site_lat: resolvedLat, site_lng: resolvedLng }).eq("id", project_id);
       }
     }
 
@@ -281,8 +391,13 @@ serve(async (req) => {
       resolvedCity = "서울";
     }
 
+    // Reverse geocode to get real city name
+    if (!resolvedCity && owKey) {
+      resolvedCity = await reverseGeocode(resolvedLat, resolvedLng, owKey);
+    }
+
     // Check cache
-    const cacheType = (source === 'openweather') ? 'openweather' : 'kma';
+    const cacheType = 'blended';
     const { data: cached } = await supabase
       .from("weather_cache")
       .select("data, fetched_at")
@@ -295,177 +410,63 @@ serve(async (req) => {
     if (cached && cached.data && (cached.data as any)?.current?.temp !== undefined) {
       const age = Date.now() - new Date(cached.fetched_at).getTime();
       if (age < CACHE_DURATION_MS) {
-        console.log("Returning cached weather data, source:", cacheType);
+        console.log("Returning cached blended weather data");
         return new Response(JSON.stringify(cached.data), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }
 
-    let result: any = null;
+    // Fetch from both sources in parallel
+    const [kmaData, owData] = await Promise.all([
+      kmaKey ? fetchKmaWeather(resolvedLat, resolvedLng, kmaKey).catch(e => { console.error("KMA error:", e); return null; }) : null,
+      owKey ? fetchOpenWeather(resolvedLat, resolvedLng, owKey).catch(e => { console.error("OW error:", e); return null; }) : null,
+    ]);
 
-    // === Primary: KMA (날씨누리) ===
-    if (source !== 'openweather' && kmaKey) {
-      console.log("Fetching from KMA (기상청)...");
-      const kmaData = await fetchKmaWeather(resolvedLat, resolvedLng, kmaKey);
-      if (kmaData) {
-        // Enrich with OpenWeather data if available (pressure, sunrise/sunset, city name)
-        let owEnrich: any = null;
-        if (owKey) {
-          try {
-            const owUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${resolvedLat}&lon=${resolvedLng}&appid=${owKey}&units=metric&lang=kr`;
-            const owRes = await fetch(owUrl);
-            owEnrich = await owRes.json();
-          } catch (e) {
-            console.error("OpenWeather enrich error:", e);
-          }
-        }
-        
-        if (owEnrich && owEnrich.cod === 200) {
-          kmaData.current.pressure = owEnrich.main?.pressure || 0;
-          kmaData.current.sunrise = owEnrich.sys?.sunrise || 0;
-          kmaData.current.sunset = owEnrich.sys?.sunset || 0;
-          kmaData.current.city = owEnrich.name || resolvedCity;
-          kmaData.current.visibility = owEnrich.visibility || 10000;
-          kmaData.current.wind_gust = owEnrich.wind?.gust || 0;
-          kmaData.current.feels_like = Math.round(owEnrich.main?.feels_like || kmaData.current.temp);
-        } else {
-          kmaData.current.city = resolvedCity;
-        }
-        
-        const alerts = generateSafetyAlerts(kmaData.current, kmaData.hourly, kmaData.daily);
-        const typhoon = detectTyphoonRisk(kmaData.current, kmaData.hourly);
-        
-        result = {
-          ...kmaData,
-          alerts,
-          typhoon,
-          source: 'kma',
-          source_label: '기상청 (날씨누리)',
-          resolved_location: {
-            lat: resolvedLat,
-            lng: resolvedLng,
-            city: kmaData.current.city || resolvedCity,
-            address: address || '',
-          },
-          fetched_at: new Date().toISOString(),
-        };
-      }
+    console.log(`Data sources: KMA=${!!kmaData}, OW=${!!owData}`);
+
+    // Blend data (conservative approach)
+    const blended = blendWeatherData(kmaData, owData);
+    
+    if (!blended) {
+      return new Response(JSON.stringify({ error: "날씨 데이터를 가져올 수 없습니다" }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    // === Fallback or explicit OpenWeather ===
-    if (!result) {
-      if (!owKey) {
-        return new Response(JSON.stringify({ error: "OpenWeather API 키가 설정되지 않았습니다" }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      
-      console.log("Fetching from OpenWeather...");
-      const currentUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${resolvedLat}&lon=${resolvedLng}&appid=${owKey}&units=metric&lang=kr`;
-      const currentRes = await fetch(currentUrl);
-      const currentData = await currentRes.json();
+    // Set city name
+    blended.current.city = resolvedCity || blended.current.city || "";
+    blended.current.lat = resolvedLat;
+    blended.current.lng = resolvedLng;
 
-      if (currentData.cod && currentData.cod !== 200) {
-        return new Response(JSON.stringify({ error: `OpenWeather API error: ${currentData.message}` }), {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    // Determine source label
+    let sourceLabel = "OpenWeather";
+    let sourceKey = "openweather";
+    if (kmaData && owData) {
+      sourceLabel = "기상청 + OpenWeather (보정)";
+      sourceKey = "blended";
+    } else if (kmaData) {
+      sourceLabel = "기상청 (날씨누리)";
+      sourceKey = "kma";
+    }
 
-      const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${resolvedLat}&lon=${resolvedLng}&appid=${owKey}&units=metric&lang=kr`;
-      const forecastRes = await fetch(forecastUrl);
-      const forecastData = await forecastRes.json();
+    const alerts = generateSafetyAlerts(blended.current, blended.hourly, blended.daily);
+    const typhoon = detectTyphoonRisk(blended.current, blended.hourly);
 
-      const current = {
-        temp: Math.round(currentData.main?.temp ?? 0),
-        feels_like: Math.round(currentData.main?.feels_like ?? 0),
-        humidity: currentData.main?.humidity ?? 0,
-        wind_speed: currentData.wind?.speed ?? 0,
-        wind_deg: currentData.wind?.deg ?? 0,
-        wind_gust: currentData.wind?.gust ?? 0,
-        description: currentData.weather?.[0]?.description ?? "",
-        icon: currentData.weather?.[0]?.icon ?? "01d",
-        main: currentData.weather?.[0]?.main ?? "",
-        rain_1h: currentData.rain?.["1h"] ?? 0,
-        snow_1h: currentData.snow?.["1h"] ?? 0,
-        visibility: currentData.visibility ?? 10000,
-        clouds: currentData.clouds?.all ?? 0,
-        pressure: currentData.main?.pressure ?? 0,
-        dt: currentData.dt,
-        city: currentData.name ?? "",
-        sunrise: currentData.sys?.sunrise ?? 0,
-        sunset: currentData.sys?.sunset ?? 0,
+    const result = {
+      ...blended,
+      alerts,
+      typhoon,
+      source: sourceKey,
+      source_label: sourceLabel,
+      resolved_location: {
         lat: resolvedLat,
         lng: resolvedLng,
-      };
-
-      const hourly = (forecastData.list || []).slice(0, 16).map((item: any) => ({
-        dt: item.dt,
-        temp: Math.round(item.main?.temp ?? 0),
-        feels_like: Math.round(item.main?.feels_like ?? 0),
-        humidity: item.main?.humidity ?? 0,
-        wind_speed: item.wind?.speed ?? 0,
-        wind_gust: item.wind?.gust ?? 0,
-        rain: item.rain?.["3h"] ?? 0,
-        snow: item.snow?.["3h"] ?? 0,
-        description: item.weather?.[0]?.description ?? "",
-        icon: item.weather?.[0]?.icon ?? "01d",
-        main: item.weather?.[0]?.main ?? "",
-        pop: item.pop ?? 0,
-      }));
-
-      const dailyMap: Record<string, any> = {};
-      (forecastData.list || []).forEach((item: any) => {
-        const date = new Date(item.dt * 1000).toISOString().split("T")[0];
-        if (!dailyMap[date]) {
-          dailyMap[date] = { date, temp_min: item.main.temp_min, temp_max: item.main.temp_max, wind_max: item.wind?.speed ?? 0, wind_gust_max: item.wind?.gust ?? 0, rain_total: 0, snow_total: 0, pop_max: 0, icon: item.weather?.[0]?.icon ?? "01d", main: item.weather?.[0]?.main ?? "", description: item.weather?.[0]?.description ?? "" };
-        }
-        const d = dailyMap[date];
-        d.temp_min = Math.min(d.temp_min, item.main.temp_min);
-        d.temp_max = Math.max(d.temp_max, item.main.temp_max);
-        d.wind_max = Math.max(d.wind_max, item.wind?.speed ?? 0);
-        d.wind_gust_max = Math.max(d.wind_gust_max, item.wind?.gust ?? 0);
-        d.rain_total += item.rain?.["3h"] ?? 0;
-        d.snow_total += item.snow?.["3h"] ?? 0;
-        d.pop_max = Math.max(d.pop_max, item.pop ?? 0);
-      });
-      const daily = Object.values(dailyMap).map((d: any) => ({
-        ...d,
-        temp_min: Math.round(d.temp_min),
-        temp_max: Math.round(d.temp_max),
-        rain_total: Math.round(d.rain_total * 10) / 10,
-        snow_total: Math.round(d.snow_total * 10) / 10,
-        pop_max: Math.round(d.pop_max * 100),
-      }));
-
-      const alerts = generateSafetyAlerts(current, hourly, daily);
-      const typhoon = detectTyphoonRisk(current, hourly);
-
-      result = {
-        current,
-        hourly,
-        daily,
-        alerts,
-        typhoon,
-        source: 'openweather',
-        source_label: 'OpenWeather',
-        resolved_location: {
-          lat: resolvedLat,
-          lng: resolvedLng,
-          city: current.city || resolvedCity,
-          address: address || '',
-        },
-        fetched_at: new Date().toISOString(),
-      };
-    }
-
-    // Add lat/lng to current if not present
-    if (result.current && !result.current.lat) {
-      result.current.lat = resolvedLat;
-      result.current.lng = resolvedLng;
-    }
+        city: blended.current.city || resolvedCity,
+        address: address || '',
+      },
+      fetched_at: new Date().toISOString(),
+    };
 
     // Cache
     if (result.current.temp !== 0 || result.current.description !== "") {
@@ -483,8 +484,7 @@ serve(async (req) => {
   } catch (error) {
     console.error("Weather fetch error:", error);
     return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

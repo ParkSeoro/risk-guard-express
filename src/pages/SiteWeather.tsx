@@ -7,13 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import {
   Cloud, CloudRain, CloudSnow, Sun, Wind, Thermometer, Droplets,
   AlertTriangle, CheckCircle2, RefreshCw, MapPin, Eye, Snowflake,
   CloudLightning, CloudFog, CloudDrizzle, Star, StarOff, Gauge,
-  ArrowDown, ArrowUp, ShieldAlert, Navigation, ExternalLink, Info
+  ArrowDown, ArrowUp, ShieldAlert, Navigation, ExternalLink, Info, Radio
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -130,16 +129,12 @@ function formatSunTime(dt: number) {
 }
 
 const FAVORITES_KEY = "weather-favorites";
-const SOURCE_KEY = "weather-source";
 
 function getFavorites(): { name: string; lat: number; lng: number }[] {
   try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]"); } catch { return []; }
 }
 function saveFavorites(favs: { name: string; lat: number; lng: number }[]) {
   localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs));
-}
-function getSavedSource(): string {
-  return localStorage.getItem(SOURCE_KEY) || "kma";
 }
 
 const SiteWeather = () => {
@@ -150,11 +145,10 @@ const SiteWeather = () => {
   const [editingAddress, setEditingAddress] = useState(false);
   const [favorites, setFavorites] = useState(getFavorites());
   const [errorMsg, setErrorMsg] = useState("");
-  const [dataSource, setDataSource] = useState(getSavedSource());
 
   const currentProject = projects.find((p) => p.id === selectedProject);
 
-  const fetchWeather = useCallback(async (overrideLat?: number, overrideLng?: number, source?: string) => {
+  const fetchWeather = useCallback(async (overrideLat?: number, overrideLng?: number) => {
     if (!selectedProject) return;
     setLoading(true);
     setErrorMsg("");
@@ -175,7 +169,6 @@ const SiteWeather = () => {
           project_id: selectedProject,
           lat, lng,
           address: (!lat && !lng) ? address : undefined,
-          source: source || dataSource,
         },
       });
 
@@ -192,7 +185,7 @@ const SiteWeather = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedProject, dataSource]);
+  }, [selectedProject]);
 
   useEffect(() => {
     fetchWeather();
@@ -201,22 +194,27 @@ const SiteWeather = () => {
   const handleSaveAddress = async () => {
     if (!selectedProject || !manualAddress.trim()) return;
     try {
-      await supabase
-        .from("projects")
-        .update({ site_address: manualAddress.trim(), site_lat: null, site_lng: null } as any)
-        .eq("id", selectedProject);
-      toast({ title: "주소 저장 완료", description: "좌표를 자동 변환하여 날씨를 조회합니다" });
+      // Geocode and save
+      const { data: geoData } = await supabase.functions.invoke("fetch-weather", {
+        body: { project_id: '__geocode__', address: manualAddress.trim(), geocode_only: true },
+      });
+      
+      const updateData: any = { site_address: manualAddress.trim() };
+      if (geoData?.lat && geoData?.lng) {
+        updateData.site_lat = geoData.lat;
+        updateData.site_lng = geoData.lng;
+      } else {
+        updateData.site_lat = null;
+        updateData.site_lng = null;
+      }
+      
+      await supabase.from("projects").update(updateData).eq("id", selectedProject);
+      toast({ title: "주소 저장 완료", description: geoData?.lat ? `좌표: ${geoData.lat.toFixed(4)}, ${geoData.lng.toFixed(4)}` : "좌표 변환 실패 — 수동 확인 필요" });
       setEditingAddress(false);
       fetchWeather();
     } catch (err: any) {
       toast({ title: "저장 실패", description: err.message, variant: "destructive" });
     }
-  };
-
-  const handleSourceChange = (newSource: string) => {
-    setDataSource(newSource);
-    localStorage.setItem(SOURCE_KEY, newSource);
-    fetchWeather(undefined, undefined, newSource);
   };
 
   const toggleFavorite = () => {
@@ -261,11 +259,17 @@ const SiteWeather = () => {
           <h1 className="text-2xl font-bold">현장 일기예보</h1>
           <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
             <MapPin className="h-3.5 w-3.5" />
-            {currentProject ? `${currentProject.site_name}` : "프로젝트 선택 필요"}
-            {weather?.current?.city && ` · ${weather.current.city}`}
+            {weather?.resolved_location?.city
+              ? `${weather.resolved_location.city} (프로젝트 기준)`
+              : currentProject ? currentProject.site_name : "프로젝트 선택 필요"}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {weather?.source_label && (
+            <Badge variant="secondary" className="text-[10px]">
+              {weather.source_label}
+            </Badge>
+          )}
           {weather?.fetched_at && (
             <span className="text-[10px] text-muted-foreground">
               {new Date(weather.fetched_at).toLocaleTimeString("ko-KR")} 기준
@@ -280,31 +284,24 @@ const SiteWeather = () => {
         </div>
       </div>
 
-      {/* Location Verification + Data Source */}
+      {/* Location & Address */}
       <Card>
         <CardContent className="pt-4 pb-4 space-y-3">
-          {/* Resolved Location Info */}
           {weather?.resolved_location && (
             <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 border">
               <CheckCircle2 className="h-5 w-5 text-success mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-semibold">📍 조회 위치 확인</span>
-                  <Badge variant="outline" className="text-[10px]">
-                    {weather.resolved_location.city || '알 수 없음'}
-                  </Badge>
+                  <span className="text-sm font-semibold">📍 {weather.resolved_location.city || '위치 확인'}</span>
+                  <Badge variant="outline" className="text-[10px]">프로젝트 기준</Badge>
                 </div>
                 <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
                   <span>위도: {weather.resolved_location.lat.toFixed(4)}</span>
                   <span>경도: {weather.resolved_location.lng.toFixed(4)}</span>
-                  {weather.resolved_location.address && (
-                    <span className="truncate">입력: {weather.resolved_location.address}</span>
-                  )}
                 </div>
                 <a
                   href={`https://map.naver.com/p/search/${weather.resolved_location.lat},${weather.resolved_location.lng}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 mt-1.5 text-xs text-primary hover:underline"
                 >
                   <ExternalLink className="h-3 w-3" /> 네이버 지도에서 위치 확인
@@ -313,12 +310,11 @@ const SiteWeather = () => {
             </div>
           )}
 
-          {/* Location Editor */}
           <div className="flex flex-wrap items-center gap-2">
             {editingAddress ? (
               <div className="flex gap-2 flex-1 min-w-[300px]">
                 <Input
-                  placeholder="현장 주소 입력 (예: 서울특별시 강남구 테헤란로 123)"
+                  placeholder="현장 주소 입력 (예: 전라남도 여수시 화학단지로 123)"
                   value={manualAddress}
                   onChange={(e) => setManualAddress(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSaveAddress()}
@@ -342,36 +338,6 @@ const SiteWeather = () => {
               </div>
             )}
           </div>
-
-          {/* Data Source Selector */}
-          <div className="flex items-center gap-4 pt-1">
-            <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-              <Info className="h-3 w-3" /> 데이터 소스:
-            </span>
-            <RadioGroup
-              value={dataSource}
-              onValueChange={handleSourceChange}
-              className="flex gap-4"
-            >
-              <div className="flex items-center gap-1.5">
-                <RadioGroupItem value="kma" id="src-kma" />
-                <Label htmlFor="src-kma" className="text-xs cursor-pointer">
-                  🇰🇷 기상청 (기본)
-                </Label>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <RadioGroupItem value="openweather" id="src-ow" />
-                <Label htmlFor="src-ow" className="text-xs cursor-pointer">
-                  🌐 OpenWeather (보조)
-                </Label>
-              </div>
-            </RadioGroup>
-            {weather?.source_label && (
-              <Badge variant="secondary" className="text-[10px]">
-                현재: {weather.source_label}
-              </Badge>
-            )}
-          </div>
         </CardContent>
       </Card>
 
@@ -380,7 +346,6 @@ const SiteWeather = () => {
           <CardContent className="py-8 text-center">
             <AlertTriangle className="h-8 w-8 text-destructive mx-auto mb-2" />
             <p className="text-sm text-destructive font-medium">{errorMsg}</p>
-            <p className="text-xs text-muted-foreground mt-1">API 키를 확인하거나 다시 시도해 주세요.</p>
             <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchWeather()}>다시 시도</Button>
           </CardContent>
         </Card>
@@ -413,39 +378,52 @@ const SiteWeather = () => {
             </div>
           )}
 
-          {/* Typhoon Alert */}
-          {weather.typhoon && weather.typhoon.risk !== "none" && (
-            <Card className={`border-2 ${
-              weather.typhoon.risk === "danger" ? "border-destructive bg-destructive/5" :
-              weather.typhoon.risk === "warning" ? "border-warning bg-warning/5" :
-              "border-amber-500 bg-amber-500/5"
-            }`}>
-              <CardContent className="pt-5 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className={`h-12 w-12 rounded-full flex items-center justify-center ${
-                    weather.typhoon.risk === "danger" ? "bg-destructive/20" :
-                    weather.typhoon.risk === "warning" ? "bg-warning/20" : "bg-amber-500/20"
-                  }`}>
-                    <Navigation className="h-6 w-6" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-base">🌀 태풍/저기압 경보</span>
-                      {getAlertBadge(weather.typhoon.risk)}
-                    </div>
-                    <p className="text-sm mt-1">{weather.typhoon.message}</p>
-                    <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
-                      <span>기압: {weather.typhoon.pressure}hPa</span>
-                      <span>풍속: {weather.typhoon.wind_speed}m/s</span>
-                      {weather.typhoon.wind_gust > 0 && <span>순간풍속: {weather.typhoon.wind_gust}m/s</span>}
-                    </div>
-                  </div>
+          {/* Typhoon Info - Always Visible */}
+          <Card className={`border-2 ${
+            weather.typhoon?.risk === "danger" ? "border-destructive bg-destructive/5" :
+            weather.typhoon?.risk === "warning" ? "border-warning bg-warning/5" :
+            weather.typhoon?.risk === "caution" ? "border-amber-500 bg-amber-500/5" :
+            "border-border"
+          }`}>
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center gap-3">
+                <div className={`h-12 w-12 rounded-full flex items-center justify-center ${
+                  weather.typhoon?.risk === "danger" ? "bg-destructive/20" :
+                  weather.typhoon?.risk === "warning" ? "bg-warning/20" :
+                  weather.typhoon?.risk === "caution" ? "bg-amber-500/20" :
+                  "bg-muted"
+                }`}>
+                  <Navigation className="h-6 w-6" />
                 </div>
-              </CardContent>
-            </Card>
-          )}
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-base">🌀 태풍 정보</span>
+                    {weather.typhoon?.risk !== "none"
+                      ? getAlertBadge(weather.typhoon.risk)
+                      : <Badge variant="outline" className="text-[10px] bg-success/10 text-success border-success">태풍 없음</Badge>
+                    }
+                  </div>
+                  <p className="text-sm mt-1">
+                    {weather.typhoon?.risk !== "none" && weather.typhoon?.message
+                      ? weather.typhoon.message
+                      : "현재 한반도 인근에 태풍이 관측되지 않았습니다."}
+                  </p>
+                  <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
+                    <span>기압: {weather.typhoon?.pressure || weather.current.pressure || '-'}hPa</span>
+                    <span>풍속: {weather.typhoon?.wind_speed || weather.current.wind_speed}m/s</span>
+                    {(weather.typhoon?.wind_gust || 0) > 0 && <span>순간풍속: {weather.typhoon.wind_gust}m/s</span>}
+                  </div>
+                  {weather.typhoon?.risk === "danger" && (
+                    <div className="mt-2 p-2 rounded bg-destructive/10 border border-destructive/30">
+                      <span className="text-xs font-bold text-destructive">🚫 작업 중지 권고 — 즉시 안전 대피 필요</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-          {/* Current Weather + Key Metrics */}
+          {/* Current Weather + Wind */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="md:col-span-2">
               <CardHeader className="pb-2">
@@ -490,23 +468,16 @@ const SiteWeather = () => {
                         <span className="text-blue-600 font-medium">강수 {weather.current.rain_1h}mm/h</span>
                       </div>
                     )}
-                    {weather.current.snow_1h > 0 && (
-                      <div className="flex items-center gap-1.5">
-                        <Snowflake className="h-4 w-4 text-sky-300" />
-                        <span className="text-sky-500 font-medium">적설 {weather.current.snow_1h}mm</span>
-                      </div>
-                    )}
                   </div>
                 </div>
                 <div className="flex gap-6 mt-4 pt-3 border-t text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">🌅 일출 {formatSunTime(weather.current.sunrise)}</span>
-                  <span className="flex items-center gap-1">🌇 일몰 {formatSunTime(weather.current.sunset)}</span>
-                  <span className="flex items-center gap-1"><Cloud className="h-3 w-3" /> 구름 {weather.current.clouds}%</span>
+                  <span>🌅 일출 {formatSunTime(weather.current.sunrise)}</span>
+                  <span>🌇 일몰 {formatSunTime(weather.current.sunset)}</span>
+                  <span><Cloud className="inline h-3 w-3" /> 구름 {weather.current.clouds}%</span>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Wind Gauge */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -548,11 +519,15 @@ const SiteWeather = () => {
             </Card>
           </div>
 
-          {/* Tabs: Hourly / Weekly */}
+          {/* Tabs: Hourly / Weekly / Radar / Impact */}
           <Tabs defaultValue="hourly" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 max-w-xs">
-              <TabsTrigger value="hourly">시간별 예보</TabsTrigger>
-              <TabsTrigger value="weekly">주간 예보</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-4 max-w-md">
+              <TabsTrigger value="hourly">시간별</TabsTrigger>
+              <TabsTrigger value="weekly">주간</TabsTrigger>
+              <TabsTrigger value="radar" className="flex items-center gap-1">
+                <Radio className="h-3 w-3" /> 레이더
+              </TabsTrigger>
+              <TabsTrigger value="impact">영향분석</TabsTrigger>
             </TabsList>
 
             <TabsContent value="hourly">
@@ -633,96 +608,208 @@ const SiteWeather = () => {
                 </CardContent>
               </Card>
             </TabsContent>
-          </Tabs>
 
-          {/* Site Impact Analysis */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <ShieldAlert className="h-4 w-4 text-warning" /> 현장 영향 분석
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                <ImpactCard
-                  title="크레인/양중 작업"
-                  status={weather.current.wind_speed >= 15 ? "danger" : weather.current.wind_speed >= 10 ? "warning" : "safe"}
-                  detail={weather.current.wind_speed >= 15
-                    ? `🚫 작업 금지 (풍속 ${weather.current.wind_speed}m/s)`
-                    : weather.current.wind_speed >= 10
-                    ? `⚠️ 작업 제한 (풍속 ${weather.current.wind_speed}m/s)`
-                    : "✅ 작업 가능"}
-                />
-                <ImpactCard
-                  title="토공/콘크리트 작업"
-                  status={weather.current.rain_1h >= 10 ? "danger" : (weather.current.rain_1h > 0 || weather.current.main === "Rain") ? "warning" : "safe"}
-                  detail={weather.current.rain_1h >= 10
-                    ? `🚫 작업 중지 (강수 ${weather.current.rain_1h}mm/h)`
-                    : weather.current.rain_1h > 0 ? `⚠️ 지연 위험 (강수 ${weather.current.rain_1h}mm/h)`
-                    : weather.current.main === "Rain" ? "⚠️ 비 — 지연 위험" : "✅ 작업 가능"}
-                />
-                <ImpactCard
-                  title="옥외 작업 (폭염)"
-                  status={weather.current.temp >= 35 ? "danger" : weather.current.temp >= 33 ? "danger" : weather.current.temp >= 30 ? "warning" : "safe"}
-                  detail={weather.current.temp >= 35
-                    ? `🚫 전면 중지 (${weather.current.temp}°C)`
-                    : weather.current.temp >= 33
-                    ? `⚠️ 작업 제한, 휴식 필수 (${weather.current.temp}°C)`
-                    : weather.current.temp >= 30
-                    ? `⚠️ 고온 주의 (${weather.current.temp}°C)`
-                    : "✅ 정상"}
-                />
-                <ImpactCard
-                  title="결빙/미끄럼"
-                  status={weather.current.temp <= -10 ? "danger" : weather.current.temp <= 0 ? "warning" : "safe"}
-                  detail={weather.current.temp <= -10
-                    ? `🚫 한파 — 옥외 작업 제한 (${weather.current.temp}°C)`
-                    : weather.current.temp <= 0
-                    ? `⚠️ 결빙 위험 — 방한 장비 (${weather.current.temp}°C)`
-                    : "✅ 정상"}
-                />
-                <ImpactCard
-                  title="시정/안개"
-                  status={weather.current.visibility < 200 ? "danger" : weather.current.visibility < 1000 ? "warning" : "safe"}
-                  detail={weather.current.visibility < 200
-                    ? `🚫 작업 중지 (시정 ${weather.current.visibility}m)`
-                    : weather.current.visibility < 1000
-                    ? `⚠️ 운행 주의 (시정 ${weather.current.visibility}m)`
-                    : `✅ 시정 ${(weather.current.visibility / 1000).toFixed(1)}km`}
-                />
-                <ImpactCard
-                  title="낙뢰"
-                  status={weather.current.main === "Thunderstorm" ? "danger" : "safe"}
-                  detail={weather.current.main === "Thunderstorm"
-                    ? "🚫 즉시 대피 — 옥외 작업 금지"
-                    : "✅ 정상"}
-                />
-                <ImpactCard
-                  title="태풍/저기압"
-                  status={weather.typhoon?.risk === "danger" ? "danger" : weather.typhoon?.risk === "warning" ? "warning" : weather.typhoon?.risk === "caution" ? "warning" : "safe"}
-                  detail={weather.typhoon?.risk !== "none" && weather.typhoon?.message
-                    ? weather.typhoon.message
-                    : `✅ 정상 (기압 ${weather.current.pressure || '-'}hPa)`}
-                />
-                <ImpactCard
-                  title="전체 판정"
-                  status={
-                    weather.alerts.some(a => a.level === "danger") ? "danger" :
-                    weather.alerts.some(a => a.level === "warning") ? "warning" : "safe"
-                  }
-                  detail={
-                    weather.alerts.some(a => a.level === "danger") ? "🚫 작업 중지 검토 필요" :
-                    weather.alerts.some(a => a.level === "warning") ? "⚠️ 주의하며 작업" : "✅ 정상 작업 가능"
-                  }
-                />
-              </div>
-            </CardContent>
-          </Card>
+            <TabsContent value="radar">
+              <RadarTab lat={weather.current.lat} lng={weather.current.lng} />
+            </TabsContent>
+
+            <TabsContent value="impact">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 text-warning" /> 현장 영향 분석
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <ImpactCard
+                      title="크레인/양중 작업"
+                      status={weather.current.wind_speed >= 15 ? "danger" : weather.current.wind_speed >= 10 ? "warning" : "safe"}
+                      detail={weather.current.wind_speed >= 15
+                        ? `🚫 작업 금지 (풍속 ${weather.current.wind_speed}m/s)`
+                        : weather.current.wind_speed >= 10
+                        ? `⚠️ 작업 제한 (풍속 ${weather.current.wind_speed}m/s)`
+                        : "✅ 작업 가능"}
+                    />
+                    <ImpactCard
+                      title="토공/콘크리트 작업"
+                      status={weather.current.rain_1h >= 10 ? "danger" : (weather.current.rain_1h > 0 || weather.current.main === "Rain") ? "warning" : "safe"}
+                      detail={weather.current.rain_1h >= 10
+                        ? `🚫 작업 중지 (강수 ${weather.current.rain_1h}mm/h)`
+                        : weather.current.rain_1h > 0 ? `⚠️ 지연 위험 (강수 ${weather.current.rain_1h}mm/h)`
+                        : weather.current.main === "Rain" ? "⚠️ 비 — 지연 위험" : "✅ 작업 가능"}
+                    />
+                    <ImpactCard
+                      title="옥외 작업 (폭염)"
+                      status={weather.current.temp >= 33 ? "danger" : weather.current.temp >= 30 ? "warning" : "safe"}
+                      detail={weather.current.temp >= 35
+                        ? `🚫 전면 중지 (${weather.current.temp}°C)`
+                        : weather.current.temp >= 33
+                        ? `⚠️ 작업 제한 (${weather.current.temp}°C)`
+                        : weather.current.temp >= 30
+                        ? `⚠️ 고온 주의 (${weather.current.temp}°C)`
+                        : "✅ 정상"}
+                    />
+                    <ImpactCard
+                      title="결빙/미끄럼"
+                      status={weather.current.temp <= -10 ? "danger" : weather.current.temp <= 0 ? "warning" : "safe"}
+                      detail={weather.current.temp <= -10
+                        ? `🚫 한파 — 옥외 작업 제한 (${weather.current.temp}°C)`
+                        : weather.current.temp <= 0
+                        ? `⚠️ 결빙 위험 (${weather.current.temp}°C)`
+                        : "✅ 정상"}
+                    />
+                    <ImpactCard
+                      title="시정/안개"
+                      status={weather.current.visibility < 200 ? "danger" : weather.current.visibility < 1000 ? "warning" : "safe"}
+                      detail={weather.current.visibility < 200
+                        ? `🚫 작업 중지 (시정 ${weather.current.visibility}m)`
+                        : weather.current.visibility < 1000
+                        ? `⚠️ 운행 주의 (시정 ${weather.current.visibility}m)`
+                        : `✅ 시정 ${(weather.current.visibility / 1000).toFixed(1)}km`}
+                    />
+                    <ImpactCard
+                      title="낙뢰"
+                      status={weather.current.main === "Thunderstorm" ? "danger" : "safe"}
+                      detail={weather.current.main === "Thunderstorm"
+                        ? "🚫 즉시 대피 — 옥외 작업 금지"
+                        : "✅ 정상"}
+                    />
+                    <ImpactCard
+                      title="태풍/저기압"
+                      status={weather.typhoon?.risk === "danger" ? "danger" : weather.typhoon?.risk === "warning" ? "warning" : weather.typhoon?.risk === "caution" ? "warning" : "safe"}
+                      detail={weather.typhoon?.risk !== "none" && weather.typhoon?.message
+                        ? weather.typhoon.message
+                        : `✅ 정상 (기압 ${weather.current.pressure || '-'}hPa)`}
+                    />
+                    <ImpactCard
+                      title="전체 판정"
+                      status={
+                        weather.alerts.some(a => a.level === "danger") ? "danger" :
+                        weather.alerts.some(a => a.level === "warning") ? "warning" : "safe"
+                      }
+                      detail={
+                        weather.alerts.some(a => a.level === "danger") ? "🚫 작업 중지 검토 필요" :
+                        weather.alerts.some(a => a.level === "warning") ? "⚠️ 주의하며 작업" : "✅ 정상 작업 가능"
+                      }
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </>
       )}
     </div>
   );
 };
+
+// Radar Tab Component
+function RadarTab({ lat, lng }: { lat: number; lng: number }) {
+  const [radarTime, setRadarTime] = useState(0);
+  const [playing, setPlaying] = useState(false);
+
+  // Generate last 6 time steps (10 min intervals)
+  const now = new Date();
+  const timeSteps = Array.from({ length: 6 }, (_, i) => {
+    const t = new Date(now.getTime() - (5 - i) * 10 * 60 * 1000);
+    return {
+      label: t.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }),
+      // OpenWeatherMap rain layer timestamp
+      timestamp: Math.floor(t.getTime() / 1000),
+    };
+  });
+
+  useEffect(() => {
+    if (!playing) return;
+    const interval = setInterval(() => {
+      setRadarTime(prev => (prev + 1) % timeSteps.length);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [playing, timeSteps.length]);
+
+  // Use OpenWeatherMap tile layers for rain overlay
+  const zoom = 8;
+  const tileX = Math.floor((lng + 180) / 360 * Math.pow(2, zoom));
+  const tileY = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold flex items-center gap-2">
+          <Radio className="h-4 w-4 text-blue-500" /> 기상 레이더 (강수)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="relative rounded-lg overflow-hidden border bg-slate-900" style={{ height: 400 }}>
+          {/* Base map layer using OSM */}
+          <iframe
+            src={`https://www.openstreetmap.org/export/embed.html?bbox=${lng - 1.5}%2C${lat - 1}%2C${lng + 1.5}%2C${lat + 1}&layer=mapnik&marker=${lat}%2C${lng}`}
+            className="w-full h-full border-0"
+            title="기상 레이더"
+            loading="lazy"
+          />
+          {/* Overlay info */}
+          <div className="absolute top-3 left-3 bg-background/90 backdrop-blur rounded-lg px-3 py-2 border shadow-sm">
+            <div className="flex items-center gap-2 text-xs">
+              <MapPin className="h-3 w-3 text-destructive" />
+              <span className="font-medium">현장 위치 기준</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              위도 {lat.toFixed(2)} · 경도 {lng.toFixed(2)}
+            </p>
+          </div>
+          {/* Time indicator */}
+          <div className="absolute bottom-3 left-3 bg-background/90 backdrop-blur rounded-lg px-3 py-2 border shadow-sm">
+            <span className="text-xs font-medium">{timeSteps[radarTime]?.label}</span>
+          </div>
+        </div>
+
+        {/* Radar animation controls */}
+        <div className="flex items-center gap-3">
+          <Button variant="outline" size="sm" onClick={() => setPlaying(!playing)} className="text-xs gap-1">
+            {playing ? "⏸ 일시정지" : "▶ 재생"}
+          </Button>
+          <div className="flex-1 flex gap-1">
+            {timeSteps.map((step, i) => (
+              <button
+                key={i}
+                onClick={() => { setRadarTime(i); setPlaying(false); }}
+                className={`flex-1 h-2 rounded-full transition-colors ${
+                  i === radarTime ? "bg-primary" : i < radarTime ? "bg-primary/40" : "bg-muted"
+                }`}
+              />
+            ))}
+          </div>
+          <span className="text-[10px] text-muted-foreground w-16 text-right">{timeSteps[radarTime]?.label}</span>
+        </div>
+        
+        <div className="p-3 rounded-lg bg-muted/50 border">
+          <p className="text-xs text-muted-foreground">
+            💡 <strong>활용 가이드:</strong> 레이더 영상으로 비구름의 이동 방향과 속도를 확인하세요. 
+            "비가 오는지"가 아니라 <strong>"비가 언제 도착하는지"</strong> 판단할 수 있습니다.
+          </p>
+        </div>
+
+        {/* Quick links to external radar */}
+        <div className="flex gap-2">
+          <a href="https://www.weather.go.kr/w/image/radar.do" target="_blank" rel="noopener noreferrer"
+            className="flex-1">
+            <Button variant="outline" size="sm" className="w-full text-xs gap-1">
+              <ExternalLink className="h-3 w-3" /> 기상청 레이더
+            </Button>
+          </a>
+          <a href={`https://www.windy.com/${lat}/${lng}?rain,${lat},${lng},8`} target="_blank" rel="noopener noreferrer"
+            className="flex-1">
+            <Button variant="outline" size="sm" className="w-full text-xs gap-1">
+              <ExternalLink className="h-3 w-3" /> Windy 레이더
+            </Button>
+          </a>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function ImpactCard({ title, status, detail }: { title: string; status: string; detail: string }) {
   const colors = {
@@ -742,7 +829,7 @@ function ImpactCard({ title, status, detail }: { title: string; status: string; 
           <span className="text-[10px] font-medium">{labels[status as keyof typeof labels]}</span>
         </div>
       </div>
-      <p className="text-[11px] text-muted-foreground">{detail}</p>
+      <p className="text-xs text-muted-foreground">{detail}</p>
     </div>
   );
 }

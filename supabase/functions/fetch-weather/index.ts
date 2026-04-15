@@ -93,7 +93,7 @@ async function fetchKmaWeather(lat: number, lng: number, apiKey: string) {
   const { nx, ny } = latLngToGrid(lat, lng);
   const { baseDate, baseTime } = getKmaBaseDateTime();
   
-  const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${apiKey}&numOfRows=300&pageNo=1&dataType=JSON&base_date=${baseDate}&base_time=${baseTime}&nx=${nx}&ny=${ny}`;
+  const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${encodeURIComponent(apiKey)}&numOfRows=300&pageNo=1&dataType=JSON&base_date=${baseDate}&base_time=${baseTime}&nx=${nx}&ny=${ny}`;
   console.log(`KMA API call: base_date=${baseDate}, base_time=${baseTime}, nx=${nx}, ny=${ny}`);
   
   const res = await fetch(url);
@@ -294,39 +294,6 @@ async function fetchOpenWeather(lat: number, lng: number, owKey: string) {
   return { current, hourly, daily };
 }
 
-// Blend KMA (primary) with OpenWeather (secondary) - conservative approach
-function blendWeatherData(kma: any, ow: any) {
-  if (!kma) return ow;
-  if (!ow) return kma;
-
-  // Base: KMA data, enrich with OW
-  const blended = JSON.parse(JSON.stringify(kma));
-  
-  // Use OW for fields KMA doesn't provide
-  blended.current.pressure = ow.current.pressure || kma.current.pressure;
-  blended.current.sunrise = ow.current.sunrise || kma.current.sunrise;
-  blended.current.sunset = ow.current.sunset || kma.current.sunset;
-  blended.current.visibility = Math.min(kma.current.visibility, ow.current.visibility); // conservative
-  blended.current.feels_like = ow.current.feels_like || kma.current.feels_like;
-  blended.current.city = ow.current.city || kma.current.city;
-  
-  // Wind: use higher (more dangerous) value
-  blended.current.wind_speed = Math.max(kma.current.wind_speed, ow.current.wind_speed);
-  blended.current.wind_gust = Math.max(kma.current.wind_gust || 0, ow.current.wind_gust || 0);
-  
-  // Rain: use higher (more conservative)
-  blended.current.rain_1h = Math.max(kma.current.rain_1h, ow.current.rain_1h);
-  blended.current.snow_1h = Math.max(kma.current.snow_1h, ow.current.snow_1h);
-  
-  // Temperature: average for more accuracy
-  if (Math.abs(kma.current.temp - ow.current.temp) <= 3) {
-    blended.current.temp = Math.round((kma.current.temp + ow.current.temp) / 2);
-  }
-  // If big difference, trust KMA (local station data)
-  
-  return blended;
-}
-
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -396,13 +363,15 @@ serve(async (req) => {
       resolvedCity = await reverseGeocode(resolvedLat, resolvedLng, owKey);
     }
 
+    // Determine which source to fetch based on request
+    const requestedSource = source || "kma"; // KMA is default/primary
+
     // Check cache
-    const cacheType = 'blended';
     const { data: cached } = await supabase
       .from("weather_cache")
       .select("data, fetched_at")
       .eq("project_id", project_id)
-      .eq("cache_type", cacheType)
+      .eq("cache_type", requestedSource)
       .order("fetched_at", { ascending: false })
       .limit(1)
       .single();
@@ -410,51 +379,76 @@ serve(async (req) => {
     if (cached && cached.data && (cached.data as any)?.current?.temp !== undefined) {
       const age = Date.now() - new Date(cached.fetched_at).getTime();
       if (age < CACHE_DURATION_MS) {
-        console.log("Returning cached blended weather data");
+        console.log(`Returning cached ${requestedSource} weather data`);
         return new Response(JSON.stringify(cached.data), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
     }
 
-    // Fetch from both sources in parallel
-    const [kmaData, owData] = await Promise.all([
-      kmaKey ? fetchKmaWeather(resolvedLat, resolvedLng, kmaKey).catch(e => { console.error("KMA error:", e); return null; }) : null,
-      owKey ? fetchOpenWeather(resolvedLat, resolvedLng, owKey).catch(e => { console.error("OW error:", e); return null; }) : null,
-    ]);
+    let weatherData: any = null;
+    let sourceLabel = "";
+    let sourceKey = "";
 
-    console.log(`Data sources: KMA=${!!kmaData}, OW=${!!owData}`);
+    if (requestedSource === "openweather" && owKey) {
+      // Secondary source: OpenWeather only
+      weatherData = await fetchOpenWeather(resolvedLat, resolvedLng, owKey).catch(e => { console.error("OW error:", e); return null; });
+      sourceLabel = "OpenWeather (보조)";
+      sourceKey = "openweather";
+    } else {
+      // Primary source: KMA (기상청)
+      if (kmaKey) {
+        weatherData = await fetchKmaWeather(resolvedLat, resolvedLng, kmaKey).catch(e => { console.error("KMA error:", e); return null; });
+      }
+      
+      // If KMA fails, fallback to OpenWeather
+      if (!weatherData && owKey) {
+        console.log("KMA failed, falling back to OpenWeather");
+        weatherData = await fetchOpenWeather(resolvedLat, resolvedLng, owKey).catch(e => { console.error("OW error:", e); return null; });
+        sourceLabel = "OpenWeather (기상청 장애 시 대체)";
+        sourceKey = "openweather_fallback";
+      } else if (weatherData) {
+        sourceLabel = "기상청 (날씨누리)";
+        sourceKey = "kma";
 
-    // Blend data (conservative approach)
-    const blended = blendWeatherData(kmaData, owData);
-    
-    if (!blended) {
+        // Enrich KMA data with OW supplementary data (sunrise/sunset, pressure, feels_like)
+        if (owKey) {
+          try {
+            const owData = await fetchOpenWeather(resolvedLat, resolvedLng, owKey);
+            if (owData) {
+              weatherData.current.pressure = owData.current.pressure || weatherData.current.pressure;
+              weatherData.current.sunrise = owData.current.sunrise || weatherData.current.sunrise;
+              weatherData.current.sunset = owData.current.sunset || weatherData.current.sunset;
+              weatherData.current.feels_like = owData.current.feels_like || weatherData.current.feels_like;
+              weatherData.current.visibility = Math.min(weatherData.current.visibility, owData.current.visibility);
+              // Store OW city name if KMA doesn't have one
+              if (!weatherData.current.city && owData.current.city) {
+                weatherData.current.city = owData.current.city;
+              }
+            }
+          } catch (e) {
+            console.error("OW supplementary fetch error (non-critical):", e);
+          }
+        }
+      }
+    }
+
+    if (!weatherData) {
       return new Response(JSON.stringify({ error: "날씨 데이터를 가져올 수 없습니다" }), {
         status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Set city name
-    blended.current.city = resolvedCity || blended.current.city || "";
-    blended.current.lat = resolvedLat;
-    blended.current.lng = resolvedLng;
+    // Set city name and coordinates
+    weatherData.current.city = resolvedCity || weatherData.current.city || "";
+    weatherData.current.lat = resolvedLat;
+    weatherData.current.lng = resolvedLng;
 
-    // Determine source label
-    let sourceLabel = "OpenWeather";
-    let sourceKey = "openweather";
-    if (kmaData && owData) {
-      sourceLabel = "기상청 + OpenWeather (보정)";
-      sourceKey = "blended";
-    } else if (kmaData) {
-      sourceLabel = "기상청 (날씨누리)";
-      sourceKey = "kma";
-    }
-
-    const alerts = generateSafetyAlerts(blended.current, blended.hourly, blended.daily);
-    const typhoon = detectTyphoonRisk(blended.current, blended.hourly);
+    const alerts = generateSafetyAlerts(weatherData.current, weatherData.hourly, weatherData.daily);
+    const typhoon = detectTyphoonRisk(weatherData.current, weatherData.hourly);
 
     const result = {
-      ...blended,
+      ...weatherData,
       alerts,
       typhoon,
       source: sourceKey,
@@ -462,7 +456,7 @@ serve(async (req) => {
       resolved_location: {
         lat: resolvedLat,
         lng: resolvedLng,
-        city: blended.current.city || resolvedCity,
+        city: weatherData.current.city || resolvedCity,
         address: address || '',
       },
       fetched_at: new Date().toISOString(),
@@ -473,7 +467,7 @@ serve(async (req) => {
       await supabase
         .from("weather_cache")
         .upsert(
-          { project_id, cache_type: cacheType, data: result, fetched_at: new Date().toISOString() },
+          { project_id, cache_type: sourceKey, data: result, fetched_at: new Date().toISOString() },
           { onConflict: "project_id,cache_type" }
         );
     }

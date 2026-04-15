@@ -7,13 +7,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import {
   Cloud, CloudRain, CloudSnow, Sun, Wind, Thermometer, Droplets,
   AlertTriangle, CheckCircle2, RefreshCw, MapPin, Eye, Snowflake,
   CloudLightning, CloudFog, CloudDrizzle, Star, StarOff, Gauge,
-  ArrowDown, ArrowUp, ShieldAlert, Navigation
+  ArrowDown, ArrowUp, ShieldAlert, Navigation, ExternalLink, Info
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+
+interface ResolvedLocation {
+  lat: number;
+  lng: number;
+  city: string;
+  address: string;
+}
 
 interface WeatherData {
   current: {
@@ -36,6 +45,9 @@ interface WeatherData {
   }[];
   alerts: { level: string; title: string; description: string; icon: string; category: string }[];
   typhoon: { risk: string; message: string; pressure: number; wind_speed: number; wind_gust: number };
+  source: string;
+  source_label: string;
+  resolved_location?: ResolvedLocation;
   fetched_at: string;
 }
 
@@ -118,15 +130,16 @@ function formatSunTime(dt: number) {
 }
 
 const FAVORITES_KEY = "weather-favorites";
+const SOURCE_KEY = "weather-source";
 
 function getFavorites(): { name: string; lat: number; lng: number }[] {
-  try {
-    return JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]");
-  } catch { return []; }
+  try { return JSON.parse(localStorage.getItem(FAVORITES_KEY) || "[]"); } catch { return []; }
 }
-
 function saveFavorites(favs: { name: string; lat: number; lng: number }[]) {
   localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs));
+}
+function getSavedSource(): string {
+  return localStorage.getItem(SOURCE_KEY) || "kma";
 }
 
 const SiteWeather = () => {
@@ -137,10 +150,11 @@ const SiteWeather = () => {
   const [editingAddress, setEditingAddress] = useState(false);
   const [favorites, setFavorites] = useState(getFavorites());
   const [errorMsg, setErrorMsg] = useState("");
+  const [dataSource, setDataSource] = useState(getSavedSource());
 
   const currentProject = projects.find((p) => p.id === selectedProject);
 
-  const fetchWeather = useCallback(async (overrideLat?: number, overrideLng?: number) => {
+  const fetchWeather = useCallback(async (overrideLat?: number, overrideLng?: number, source?: string) => {
     if (!selectedProject) return;
     setLoading(true);
     setErrorMsg("");
@@ -157,7 +171,12 @@ const SiteWeather = () => {
       const address = (project as any)?.site_address || "";
 
       const { data, error } = await supabase.functions.invoke("fetch-weather", {
-        body: { project_id: selectedProject, lat, lng, address: (!lat && !lng) ? address : undefined },
+        body: {
+          project_id: selectedProject,
+          lat, lng,
+          address: (!lat && !lng) ? address : undefined,
+          source: source || dataSource,
+        },
       });
 
       if (error) throw error;
@@ -173,7 +192,7 @@ const SiteWeather = () => {
     } finally {
       setLoading(false);
     }
-  }, [selectedProject]);
+  }, [selectedProject, dataSource]);
 
   useEffect(() => {
     fetchWeather();
@@ -186,12 +205,18 @@ const SiteWeather = () => {
         .from("projects")
         .update({ site_address: manualAddress.trim(), site_lat: null, site_lng: null } as any)
         .eq("id", selectedProject);
-      toast({ title: "주소 저장 완료 — 좌표를 자동 변환합니다" });
+      toast({ title: "주소 저장 완료", description: "좌표를 자동 변환하여 날씨를 조회합니다" });
       setEditingAddress(false);
       fetchWeather();
     } catch (err: any) {
       toast({ title: "저장 실패", description: err.message, variant: "destructive" });
     }
+  };
+
+  const handleSourceChange = (newSource: string) => {
+    setDataSource(newSource);
+    localStorage.setItem(SOURCE_KEY, newSource);
+    fetchWeather(undefined, undefined, newSource);
   };
 
   const toggleFavorite = () => {
@@ -255,42 +280,107 @@ const SiteWeather = () => {
         </div>
       </div>
 
-      {/* Location Editor & Favorites */}
-      <div className="flex flex-wrap items-center gap-2">
-        {editingAddress ? (
-          <div className="flex gap-2 flex-1 min-w-[300px]">
-            <Input
-              placeholder="현장 주소 입력 (예: 서울특별시 강남구...)"
-              value={manualAddress}
-              onChange={(e) => setManualAddress(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSaveAddress()}
-            />
-            <Button size="sm" onClick={handleSaveAddress}>저장</Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditingAddress(false)}>취소</Button>
-          </div>
-        ) : (
-          <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => setEditingAddress(true)}>
-            <MapPin className="h-3 w-3 mr-1" /> 위치 변경
-          </Button>
-        )}
-        {favorites.length > 0 && !editingAddress && (
-          <div className="flex gap-1 flex-wrap">
-            {favorites.map(f => (
-              <Button key={f.name} variant="outline" size="sm" className="text-xs h-7 gap-1"
-                onClick={() => fetchWeather(f.lat, f.lng)}>
-                <Star className="h-3 w-3 text-amber-400 fill-amber-400" /> {f.name}
+      {/* Location Verification + Data Source */}
+      <Card>
+        <CardContent className="pt-4 pb-4 space-y-3">
+          {/* Resolved Location Info */}
+          {weather?.resolved_location && (
+            <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50 border">
+              <CheckCircle2 className="h-5 w-5 text-success mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-semibold">📍 조회 위치 확인</span>
+                  <Badge variant="outline" className="text-[10px]">
+                    {weather.resolved_location.city || '알 수 없음'}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
+                  <span>위도: {weather.resolved_location.lat.toFixed(4)}</span>
+                  <span>경도: {weather.resolved_location.lng.toFixed(4)}</span>
+                  {weather.resolved_location.address && (
+                    <span className="truncate">입력: {weather.resolved_location.address}</span>
+                  )}
+                </div>
+                <a
+                  href={`https://map.naver.com/p/search/${weather.resolved_location.lat},${weather.resolved_location.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 mt-1.5 text-xs text-primary hover:underline"
+                >
+                  <ExternalLink className="h-3 w-3" /> 네이버 지도에서 위치 확인
+                </a>
+              </div>
+            </div>
+          )}
+
+          {/* Location Editor */}
+          <div className="flex flex-wrap items-center gap-2">
+            {editingAddress ? (
+              <div className="flex gap-2 flex-1 min-w-[300px]">
+                <Input
+                  placeholder="현장 주소 입력 (예: 서울특별시 강남구 테헤란로 123)"
+                  value={manualAddress}
+                  onChange={(e) => setManualAddress(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSaveAddress()}
+                />
+                <Button size="sm" onClick={handleSaveAddress}>저장</Button>
+                <Button size="sm" variant="ghost" onClick={() => setEditingAddress(false)}>취소</Button>
+              </div>
+            ) : (
+              <Button variant="outline" size="sm" className="text-xs" onClick={() => setEditingAddress(true)}>
+                <MapPin className="h-3 w-3 mr-1" /> 위치 변경
               </Button>
-            ))}
+            )}
+            {favorites.length > 0 && !editingAddress && (
+              <div className="flex gap-1 flex-wrap">
+                {favorites.map(f => (
+                  <Button key={f.name} variant="outline" size="sm" className="text-xs h-7 gap-1"
+                    onClick={() => fetchWeather(f.lat, f.lng)}>
+                    <Star className="h-3 w-3 text-amber-400 fill-amber-400" /> {f.name}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+
+          {/* Data Source Selector */}
+          <div className="flex items-center gap-4 pt-1">
+            <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+              <Info className="h-3 w-3" /> 데이터 소스:
+            </span>
+            <RadioGroup
+              value={dataSource}
+              onValueChange={handleSourceChange}
+              className="flex gap-4"
+            >
+              <div className="flex items-center gap-1.5">
+                <RadioGroupItem value="kma" id="src-kma" />
+                <Label htmlFor="src-kma" className="text-xs cursor-pointer">
+                  🇰🇷 기상청 (기본)
+                </Label>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <RadioGroupItem value="openweather" id="src-ow" />
+                <Label htmlFor="src-ow" className="text-xs cursor-pointer">
+                  🌐 OpenWeather (보조)
+                </Label>
+              </div>
+            </RadioGroup>
+            {weather?.source_label && (
+              <Badge variant="secondary" className="text-[10px]">
+                현재: {weather.source_label}
+              </Badge>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {errorMsg && (
         <Card className="border-destructive">
           <CardContent className="py-8 text-center">
             <AlertTriangle className="h-8 w-8 text-destructive mx-auto mb-2" />
             <p className="text-sm text-destructive font-medium">{errorMsg}</p>
-            <p className="text-xs text-muted-foreground mt-1">OpenWeather API 키를 확인하거나 다시 시도해 주세요.</p>
+            <p className="text-xs text-muted-foreground mt-1">API 키를 확인하거나 다시 시도해 주세요.</p>
             <Button variant="outline" size="sm" className="mt-4" onClick={() => fetchWeather()}>다시 시도</Button>
           </CardContent>
         </Card>
@@ -309,10 +399,7 @@ const SiteWeather = () => {
           {weather.alerts.length > 0 && (
             <div className="space-y-2">
               {weather.alerts.map((alert, i) => (
-                <div
-                  key={i}
-                  className={`flex items-center gap-3 p-3 rounded-lg border ${getAlertColor(alert.level)}`}
-                >
+                <div key={i} className={`flex items-center gap-3 p-3 rounded-lg border ${getAlertColor(alert.level)}`}>
                   {getAlertIcon(alert.icon)}
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
@@ -326,7 +413,7 @@ const SiteWeather = () => {
             </div>
           )}
 
-          {/* Typhoon Alert (if risk detected) */}
+          {/* Typhoon Alert */}
           {weather.typhoon && weather.typhoon.risk !== "none" && (
             <Card className={`border-2 ${
               weather.typhoon.risk === "danger" ? "border-destructive bg-destructive/5" :
@@ -389,7 +476,7 @@ const SiteWeather = () => {
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Gauge className="h-4 w-4 text-muted-foreground" />
-                      <span>기압 {weather.current.pressure}hPa</span>
+                      <span>기압 {weather.current.pressure || '-'}hPa</span>
                     </div>
                     {weather.current.wind_gust > 0 && (
                       <div className="flex items-center gap-1.5">
@@ -411,7 +498,6 @@ const SiteWeather = () => {
                     )}
                   </div>
                 </div>
-                {/* Sunrise/Sunset */}
                 <div className="flex gap-6 mt-4 pt-3 border-t text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">🌅 일출 {formatSunTime(weather.current.sunrise)}</span>
                   <span className="flex items-center gap-1">🌇 일몰 {formatSunTime(weather.current.sunset)}</span>
@@ -485,15 +571,9 @@ const SiteWeather = () => {
                               {h.wind_speed.toFixed(1)}
                             </span>
                           </div>
-                          {h.rain > 0 && (
-                            <span className="text-[10px] text-blue-500 font-medium">{h.rain}mm</span>
-                          )}
-                          {h.snow > 0 && (
-                            <span className="text-[10px] text-sky-400 font-medium">❄{h.snow}mm</span>
-                          )}
-                          {h.pop > 0 && (
-                            <span className="text-[10px] text-blue-400">💧{Math.round(h.pop * 100)}%</span>
-                          )}
+                          {h.rain > 0 && <span className="text-[10px] text-blue-500 font-medium">{h.rain}mm</span>}
+                          {h.snow > 0 && <span className="text-[10px] text-sky-400 font-medium">❄{h.snow}mm</span>}
+                          {h.pop > 0 && <span className="text-[10px] text-blue-400">💧{Math.round(h.pop * 100)}%</span>}
                         </div>
                       ))}
                     </div>
@@ -622,7 +702,7 @@ const SiteWeather = () => {
                   status={weather.typhoon?.risk === "danger" ? "danger" : weather.typhoon?.risk === "warning" ? "warning" : weather.typhoon?.risk === "caution" ? "warning" : "safe"}
                   detail={weather.typhoon?.risk !== "none" && weather.typhoon?.message
                     ? weather.typhoon.message
-                    : `✅ 정상 (기압 ${weather.current.pressure}hPa)`}
+                    : `✅ 정상 (기압 ${weather.current.pressure || '-'}hPa)`}
                 />
                 <ImpactCard
                   title="전체 판정"
@@ -650,11 +730,7 @@ function ImpactCard({ title, status, detail }: { title: string; status: string; 
     warning: "border-warning/30 bg-warning/5",
     danger: "border-destructive/30 bg-destructive/5",
   };
-  const dotColors = {
-    safe: "bg-success",
-    warning: "bg-warning",
-    danger: "bg-destructive",
-  };
+  const dotColors = { safe: "bg-success", warning: "bg-warning", danger: "bg-destructive" };
   const labels = { safe: "안전", warning: "주의", danger: "위험" };
 
   return (

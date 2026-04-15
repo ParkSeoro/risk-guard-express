@@ -62,7 +62,8 @@ async function fetchKmaWeather(lat: number, lng: number, apiKey: string) {
   const { nx, ny } = latLngToGrid(lat, lng);
   const { baseDate, baseTime } = getKmaBaseDateTime();
   
-  const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${encodeURIComponent(apiKey)}&numOfRows=300&pageNo=1&dataType=JSON&base_date=${baseDate}&base_time=${baseTime}&nx=${nx}&ny=${ny}`;
+  // API key should be used as-is (Encoding key from data.go.kr is already URL-encoded)
+  const url = `https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=${apiKey}&numOfRows=300&pageNo=1&dataType=JSON&base_date=${baseDate}&base_time=${baseTime}&nx=${nx}&ny=${ny}`;
   console.log(`KMA API call: base_date=${baseDate}, base_time=${baseTime}, nx=${nx}, ny=${ny}`);
   
   const res = await fetch(url);

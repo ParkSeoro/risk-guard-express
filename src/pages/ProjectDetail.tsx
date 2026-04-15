@@ -12,9 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
-  ArrowLeft, Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck, Tag, X
+  ArrowLeft, Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck, Tag, X, Settings2
 } from 'lucide-react';
-import { Textarea } from '@/components/ui/textarea';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
@@ -52,6 +51,11 @@ const ProjectDetail = () => {
   const [showAddCompany, setShowAddCompany] = useState(false);
   const [companyForm, setCompanyForm] = useState({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '' });
   const [copiedCode, setCopiedCode] = useState('');
+  const [savingProject, setSavingProject] = useState(false);
+  const [projectForm, setProjectForm] = useState({
+    name: '', site_name: '', site_address: '', period_start: '', period_end: '',
+    client: '', gc_company_id: '', tags: '', status: '진행중',
+  });
 
   // Approval route templates
   const [approvalTemplates, setApprovalTemplates] = useState<any[]>([]);
@@ -74,6 +78,21 @@ const ProjectDetail = () => {
     if (!projectId || !user) return;
     fetchAll();
   }, [projectId, user]);
+
+  useEffect(() => {
+    if (!project) return;
+    setProjectForm({
+      name: project.name || '',
+      site_name: project.site_name || '',
+      site_address: project.site_address || '',
+      period_start: project.period_start || '',
+      period_end: project.period_end || '',
+      client: project.client || '',
+      gc_company_id: project.gc_company_id || '',
+      tags: Array.isArray(project.tags) ? project.tags.join(', ') : '',
+      status: project.status || '진행중',
+    });
+  }, [project]);
 
   const fetchAll = async () => {
     if (!projectId || !user) return;
@@ -111,6 +130,66 @@ const ProjectDetail = () => {
   const getProfileName = (userId: string) => {
     const p = profiles.find(pr => pr.user_id === userId);
     return p?.display_name || userId.slice(0, 8);
+  };
+
+  const handleUpdateProjectInfo = async () => {
+    if (!projectId || !canManage) return;
+    if (!projectForm.name.trim()) {
+      toast({ title: '프로젝트명을 입력해주세요.', variant: 'destructive' });
+      return;
+    }
+
+    setSavingProject(true);
+    let geocodeFailed = false;
+
+    try {
+      const updateData: any = {
+        name: projectForm.name.trim(),
+        site_name: projectForm.site_name.trim(),
+        site_address: projectForm.site_address.trim() || null,
+        period_start: projectForm.period_start || null,
+        period_end: projectForm.period_end || null,
+        client: projectForm.client.trim() || null,
+        gc_company_id: projectForm.gc_company_id || null,
+        tags: projectForm.tags.split(',').map(s => s.trim()).filter(Boolean),
+        status: projectForm.status,
+      };
+
+      if (projectForm.site_address.trim()) {
+        try {
+          const { data: geoData, error: geoError } = await supabase.functions.invoke('fetch-weather', {
+            body: { project_id: '__geocode__', address: projectForm.site_address.trim(), geocode_only: true },
+          });
+
+          if (geoError) throw geoError;
+
+          if (geoData?.lat && geoData?.lng) {
+            updateData.site_lat = geoData.lat;
+            updateData.site_lng = geoData.lng;
+          } else {
+            geocodeFailed = true;
+          }
+        } catch {
+          geocodeFailed = true;
+        }
+      } else {
+        updateData.site_lat = null;
+        updateData.site_lng = null;
+      }
+
+      const { error } = await supabase.from('projects').update(updateData).eq('id', projectId);
+      if (error) throw error;
+
+      toast({
+        title: '프로젝트 기본정보가 저장되었습니다.',
+        description: geocodeFailed ? '주소는 저장되었지만 좌표 변환에 실패했습니다. 주소를 다시 확인해주세요.' : undefined,
+      });
+      fetchAll();
+    } catch (error: any) {
+      toast({ title: '저장 실패', description: error.message || String(error), variant: 'destructive' });
+    } finally {
+      setSavingProject(false);
+    }
   };
 
   const handleAddMember = async () => {
@@ -389,12 +468,99 @@ const ProjectDetail = () => {
 
       <Tabs defaultValue="members">
         <TabsList>
+          <TabsTrigger value="basic-info" className="gap-1.5"><Settings2 className="h-3.5 w-3.5" /> 기본정보</TabsTrigger>
           <TabsTrigger value="members" className="gap-1.5"><Users className="h-3.5 w-3.5" /> 멤버/권한</TabsTrigger>
           <TabsTrigger value="companies" className="gap-1.5"><Building2 className="h-3.5 w-3.5" /> 업체 관리</TabsTrigger>
           <TabsTrigger value="approval-routes" className="gap-1.5"><FileCheck className="h-3.5 w-3.5" /> 결재라인</TabsTrigger>
           <TabsTrigger value="tags" className="gap-1.5"><Tag className="h-3.5 w-3.5" /> 태그 마스터</TabsTrigger>
           <TabsTrigger value="invites" className="gap-1.5"><KeyRound className="h-3.5 w-3.5" /> 초대</TabsTrigger>
         </TabsList>
+
+        {/* Basic Info Tab */}
+        <TabsContent value="basic-info" className="space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <div>
+                <CardTitle className="text-sm">프로젝트 기본정보</CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">프로젝트 생성 항목과 동일한 정보를 여기서 수정할 수 있습니다.</p>
+              </div>
+              {canManage && (
+                <Button size="sm" className="text-xs" onClick={handleUpdateProjectInfo} disabled={savingProject || !projectForm.name.trim()}>
+                  {savingProject ? '저장 중...' : '저장'}
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">현장주소를 저장하면 프로젝트 기준 날씨가 자동으로 연동됩니다.</p>
+                {typeof project.site_lat === 'number' && typeof project.site_lng === 'number' && (
+                  <p className="text-xs text-muted-foreground mt-1">저장된 좌표: {project.site_lat.toFixed(6)}, {project.site_lng.toFixed(6)}</p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>프로젝트명 *</Label>
+                  <Input value={projectForm.name} onChange={e => setProjectForm(prev => ({ ...prev, name: e.target.value }))} disabled={!canManage} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>현장명</Label>
+                  <Input value={projectForm.site_name} onChange={e => setProjectForm(prev => ({ ...prev, site_name: e.target.value }))} disabled={!canManage} />
+                </div>
+                <div className="space-y-1.5 md:col-span-2">
+                  <Label>현장주소 (날씨 자동 연동)</Label>
+                  <Input
+                    value={projectForm.site_address}
+                    onChange={e => setProjectForm(prev => ({ ...prev, site_address: e.target.value }))}
+                    placeholder="예: 전라남도 여수시 화학단지로 123"
+                    disabled={!canManage}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>시작일</Label>
+                  <Input type="date" value={projectForm.period_start} onChange={e => setProjectForm(prev => ({ ...prev, period_start: e.target.value }))} disabled={!canManage} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>종료일</Label>
+                  <Input type="date" value={projectForm.period_end} onChange={e => setProjectForm(prev => ({ ...prev, period_end: e.target.value }))} disabled={!canManage} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>발주사</Label>
+                  <Input value={projectForm.client} onChange={e => setProjectForm(prev => ({ ...prev, client: e.target.value }))} disabled={!canManage} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>시공사 (등록 업체 선택)</Label>
+                  <Select value={projectForm.gc_company_id || '__none__'} onValueChange={v => setProjectForm(prev => ({ ...prev, gc_company_id: v === '__none__' ? '' : v }))} disabled={!canManage}>
+                    <SelectTrigger><SelectValue placeholder="시공사 선택" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">미지정</SelectItem>
+                      {companies.filter(c => c.type === 'gc').map(c => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>공종 태그 (쉼표 구분)</Label>
+                <Input value={projectForm.tags} onChange={e => setProjectForm(prev => ({ ...prev, tags: e.target.value }))} placeholder="6000t Tank, Cooling Tower, 배관" disabled={!canManage} />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>상태</Label>
+                <Select value={projectForm.status} onValueChange={v => setProjectForm(prev => ({ ...prev, status: v }))} disabled={!canManage}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="진행중">진행중</SelectItem>
+                    <SelectItem value="완료">완료</SelectItem>
+                    <SelectItem value="보류">보류</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Members Tab */}
         <TabsContent value="members" className="space-y-4">

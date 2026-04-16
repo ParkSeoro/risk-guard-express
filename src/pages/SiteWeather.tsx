@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useGlobalProjectAccess } from "@/components/AppLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -147,6 +147,8 @@ const SiteWeather = () => {
   const [activeSource, setActiveSource] = useState<"kma" | "openweather">("kma");
   const [owWeather, setOwWeather] = useState<WeatherData | null>(null);
   const [owLoading, setOwLoading] = useState(false);
+  const [addressSuggestions, setAddressSuggestions] = useState<string[]>([]);
+  const [geocodeError, setGeocodeError] = useState("");
 
   const currentProject = projects.find((p) => p.id === selectedProject);
 
@@ -212,11 +214,21 @@ const SiteWeather = () => {
 
   const handleSaveAddress = async () => {
     if (!selectedProject || !manualAddress.trim()) return;
+    setGeocodeError("");
+    setAddressSuggestions([]);
     try {
       const { data: geoData } = await supabase.functions.invoke("fetch-weather", {
         body: { project_id: '__geocode__', address: manualAddress.trim(), geocode_only: true },
       });
       
+      if (geoData?.error) {
+        setGeocodeError(geoData.message || geoData.error);
+        if (geoData.suggestions) {
+          setAddressSuggestions(geoData.suggestions);
+        }
+        return;
+      }
+
       const updateData: any = { site_address: manualAddress.trim() };
       if (geoData?.lat && geoData?.lng) {
         updateData.site_lat = geoData.lat;
@@ -229,6 +241,8 @@ const SiteWeather = () => {
       await supabase.from("projects").update(updateData).eq("id", selectedProject);
       toast({ title: "주소 저장 완료", description: geoData?.lat ? `좌표: ${geoData.lat.toFixed(4)}, ${geoData.lng.toFixed(4)}` : "좌표 변환 실패 — 수동 확인 필요" });
       setEditingAddress(false);
+      setGeocodeError("");
+      setAddressSuggestions([]);
       fetchWeather();
     } catch (err: any) {
       toast({ title: "저장 실패", description: err.message, variant: "destructive" });
@@ -373,16 +387,37 @@ const SiteWeather = () => {
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            {editingAddress ? (
-              <div className="flex gap-2 flex-1 min-w-[300px]">
-                <Input
-                  placeholder="현장 주소 입력 (예: 전라남도 여수시 화학단지로 123)"
-                  value={manualAddress}
-                  onChange={(e) => setManualAddress(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSaveAddress()}
-                />
-                <Button size="sm" onClick={handleSaveAddress}>저장</Button>
-                <Button size="sm" variant="ghost" onClick={() => setEditingAddress(false)}>취소</Button>
+          {editingAddress ? (
+              <div className="space-y-2 flex-1 min-w-[300px]">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="현장 주소 입력 (예: 여수시, 평택시 고덕면)"
+                    value={manualAddress}
+                    onChange={(e) => setManualAddress(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveAddress()}
+                  />
+                  <Button size="sm" onClick={handleSaveAddress}>저장</Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setEditingAddress(false); setGeocodeError(""); setAddressSuggestions([]); }}>취소</Button>
+                </div>
+                {geocodeError && (
+                  <div className="p-2 rounded-lg bg-destructive/10 border border-destructive/30">
+                    <p className="text-xs text-destructive">{geocodeError}</p>
+                  </div>
+                )}
+                {addressSuggestions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="text-xs text-muted-foreground">추천:</span>
+                    {addressSuggestions.map((s) => (
+                      <Button key={s} variant="outline" size="sm" className="text-xs h-6 px-2"
+                        onClick={() => { setManualAddress(s); setAddressSuggestions([]); setGeocodeError(""); }}>
+                        {s}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[10px] text-muted-foreground">
+                  💡 주소 변환 실패 시 도시명만 입력하세요 (예: 여수, 울산, 평택)
+                </p>
               </div>
             ) : (
               <Button variant="outline" size="sm" className="text-xs" onClick={() => setEditingAddress(true)}>
@@ -766,71 +801,76 @@ const SiteWeather = () => {
   );
 };
 
-// KMA Radar Tab - Uses Korean Meteorological Administration radar images
+// KMA Radar Tab - Full-screen radar with animation controls (no iframe)
 function KmaRadarTab({ lat, lng }: { lat: number; lng: number }) {
-  const [radarTime, setRadarTime] = useState(5);
+  const [radarTime, setRadarTime] = useState(11);
   const [playing, setPlaying] = useState(false);
+  const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
+  const sliderRef = useRef<HTMLInputElement>(null);
 
-  // Generate time steps for KMA radar (10 min intervals, last 60 min)
-  const now = new Date();
-  const timeSteps = Array.from({ length: 6 }, (_, i) => {
-    const t = new Date(now.getTime() - (5 - i) * 10 * 60 * 1000);
-    // Round down to nearest 10 minutes
-    t.setMinutes(Math.floor(t.getMinutes() / 10) * 10, 0, 0);
-    // Convert to KST
-    const kst = new Date(t.getTime() + 9 * 60 * 60 * 1000);
-    const year = kst.getUTCFullYear();
-    const month = String(kst.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(kst.getUTCDate()).padStart(2, '0');
-    const hour = String(kst.getUTCHours()).padStart(2, '0');
-    const min = String(kst.getUTCMinutes()).padStart(2, '0');
-    return {
-      label: `${hour}:${min}`,
-      timestamp: `${year}${month}${day}${hour}${min}`,
-    };
-  });
+  // Generate 12 time steps (10 min intervals, last 2 hours)
+  const timeSteps = useMemo(() => {
+    const now = new Date();
+    return Array.from({ length: 12 }, (_, i) => {
+      const t = new Date(now.getTime() - (11 - i) * 10 * 60 * 1000);
+      t.setMinutes(Math.floor(t.getMinutes() / 10) * 10, 0, 0);
+      // Convert to KST
+      const kst = new Date(t.getTime() + 9 * 60 * 60 * 1000);
+      const year = kst.getUTCFullYear();
+      const month = String(kst.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(kst.getUTCDate()).padStart(2, '0');
+      const hour = String(kst.getUTCHours()).padStart(2, '0');
+      const min = String(kst.getUTCMinutes()).padStart(2, '0');
+      return {
+        label: `${hour}:${min}`,
+        timestamp: `${year}${month}${day}${hour}${min}`,
+      };
+    });
+  }, []);
 
   useEffect(() => {
     if (!playing) return;
     const interval = setInterval(() => {
       setRadarTime(prev => (prev + 1) % timeSteps.length);
-    }, 1200);
+    }, 800);
     return () => clearInterval(interval);
   }, [playing, timeSteps.length]);
 
   // KMA radar composite image URL
-  // Public radar images from weather.go.kr
   const radarImageUrl = `https://www.weather.go.kr/w/repositary/image/rdr/img/RDR_CMP_WRC_${timeSteps[radarTime]?.timestamp}.png`;
 
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <Radio className="h-4 w-4 text-blue-500" /> 기상청 레이더 (강수)
+          <Radio className="h-4 w-4 text-primary" /> 기상청 레이더 (강수)
           <Badge variant="outline" className="text-[9px]">🇰🇷 기상청 날씨누리</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="relative rounded-lg overflow-hidden border bg-slate-900" style={{ height: 450 }}>
-          {/* KMA Radar Image */}
+        {/* Full-width radar display */}
+        <div className="relative w-full rounded-lg overflow-hidden border bg-[#1a1a2e]" style={{ height: 'calc(min(70vh, 600px))' }}>
           <img
+            key={radarTime}
             src={radarImageUrl}
             alt={`기상청 레이더 ${timeSteps[radarTime]?.label}`}
-            className="w-full h-full object-contain bg-slate-900"
-            onError={(e) => {
-              // Fallback: try the KMA iframe embed
-              (e.target as HTMLImageElement).style.display = 'none';
-              const parent = (e.target as HTMLImageElement).parentElement;
-              if (parent && !parent.querySelector('iframe')) {
-                const iframe = document.createElement('iframe');
-                iframe.src = 'https://www.weather.go.kr/w/image/radar.do';
-                iframe.className = 'w-full h-full border-0';
-                iframe.title = '기상청 레이더';
-                parent.appendChild(iframe);
-              }
+            className="w-full h-full object-contain"
+            onError={() => {
+              setImageErrors(prev => new Set(prev).add(radarTime));
             }}
           />
-          {/* Overlay info */}
+
+          {imageErrors.has(radarTime) && (
+            <div className="absolute inset-0 flex items-center justify-center bg-muted/80">
+              <div className="text-center space-y-2">
+                <AlertTriangle className="h-8 w-8 text-muted-foreground mx-auto" />
+                <p className="text-sm text-muted-foreground">레이더 영상 로드 실패</p>
+                <p className="text-xs text-muted-foreground">시간: {timeSteps[radarTime]?.label}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Overlay: Site location info */}
           <div className="absolute top-3 left-3 bg-background/90 backdrop-blur rounded-lg px-3 py-2 border shadow-sm">
             <div className="flex items-center gap-2 text-xs">
               <MapPin className="h-3 w-3 text-destructive" />
@@ -840,34 +880,79 @@ function KmaRadarTab({ lat, lng }: { lat: number; lng: number }) {
               위도 {lat.toFixed(2)} · 경도 {lng.toFixed(2)}
             </p>
           </div>
+
           {/* Time indicator */}
           <div className="absolute bottom-3 left-3 bg-background/90 backdrop-blur rounded-lg px-3 py-2 border shadow-sm">
-            <span className="text-xs font-medium">KST {timeSteps[radarTime]?.label}</span>
+            <span className="text-xs font-bold">KST {timeSteps[radarTime]?.label}</span>
           </div>
+
           <div className="absolute top-3 right-3 bg-background/90 backdrop-blur rounded-lg px-2 py-1 border shadow-sm">
             <span className="text-[10px] font-medium">🇰🇷 기상청 합성 레이더</span>
           </div>
         </div>
 
-        {/* Radar animation controls */}
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" onClick={() => setPlaying(!playing)} className="text-xs gap-1">
-            {playing ? "⏸ 일시정지" : "▶ 재생"}
-          </Button>
-          <div className="flex-1 flex gap-1">
-            {timeSteps.map((step, i) => (
-              <button
-                key={i}
-                onClick={() => { setRadarTime(i); setPlaying(false); }}
-                className={`flex-1 h-2 rounded-full transition-colors ${
-                  i === radarTime ? "bg-primary" : i < radarTime ? "bg-primary/40" : "bg-muted"
-                }`}
+        {/* Time Slider */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline" size="sm"
+              onClick={() => setPlaying(!playing)}
+              className="text-xs gap-1 min-w-[90px]"
+            >
+              {playing ? "⏸ 일시정지" : "▶ 재생"}
+            </Button>
+            <Button
+              variant="ghost" size="sm"
+              onClick={() => { setRadarTime(0); setPlaying(false); }}
+              className="text-xs"
+            >
+              ⏮
+            </Button>
+            <Button
+              variant="ghost" size="sm"
+              onClick={() => { setRadarTime(prev => Math.max(0, prev - 1)); setPlaying(false); }}
+              className="text-xs"
+            >
+              ◀
+            </Button>
+            
+            {/* Slider for time control */}
+            <div className="flex-1">
+              <input
+                ref={sliderRef}
+                type="range"
+                min={0}
+                max={timeSteps.length - 1}
+                value={radarTime}
+                onChange={(e) => { setRadarTime(parseInt(e.target.value)); setPlaying(false); }}
+                className="w-full h-2 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
               />
+            </div>
+            
+            <Button
+              variant="ghost" size="sm"
+              onClick={() => { setRadarTime(prev => Math.min(timeSteps.length - 1, prev + 1)); setPlaying(false); }}
+              className="text-xs"
+            >
+              ▶
+            </Button>
+            <Button
+              variant="ghost" size="sm"
+              onClick={() => { setRadarTime(timeSteps.length - 1); setPlaying(false); }}
+              className="text-xs"
+            >
+              ⏭
+            </Button>
+          </div>
+          
+          {/* Time labels */}
+          <div className="flex justify-between px-1">
+            {timeSteps.filter((_, i) => i % 3 === 0 || i === timeSteps.length - 1).map((step, i) => (
+              <span key={i} className="text-[9px] text-muted-foreground">{step.label}</span>
             ))}
           </div>
-          <span className="text-[10px] text-muted-foreground w-16 text-right">{timeSteps[radarTime]?.label}</span>
         </div>
-        
+
         <div className="p-3 rounded-lg bg-muted/50 border">
           <p className="text-xs text-muted-foreground">
             💡 <strong>활용 가이드:</strong> 기상청 합성 레이더 영상으로 비구름의 이동 방향과 속도를 확인하세요. 
@@ -875,7 +960,7 @@ function KmaRadarTab({ lat, lng }: { lat: number; lng: number }) {
           </p>
         </div>
 
-        {/* Quick links to external radar services */}
+        {/* Quick links */}
         <div className="flex gap-2">
           <a href="https://www.weather.go.kr/w/image/radar.do" target="_blank" rel="noopener noreferrer" className="flex-1">
             <Button variant="outline" size="sm" className="w-full text-xs gap-1">

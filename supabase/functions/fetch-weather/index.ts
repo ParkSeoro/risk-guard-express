@@ -6,7 +6,41 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+const CACHE_DURATION_MS = 30 * 60 * 1000;
+
+// Korean address simplification for better geocoding
+function simplifyKoreanAddress(address: string): string[] {
+  const variants: string[] = [address.trim()];
+
+  // Remove province suffixes for better matching
+  let simplified = address.trim()
+    .replace(/특별자치시/g, '')
+    .replace(/특별자치도/g, '')
+    .replace(/특별시/g, '')
+    .replace(/광역시/g, '')
+    .replace(/전라남도|전라북도|경상남도|경상북도|충청남도|충청북도|강원특별자치도|강원도|제주특별자치도|제주도|경기도|세종/g, '')
+    .trim();
+
+  if (simplified && simplified !== address.trim()) {
+    variants.push(simplified);
+  }
+
+  // Extract city-level only (e.g. "여수시 화학단지로 123" -> "여수")
+  const cityMatch = simplified.match(/([가-힣]+[시군구])/);
+  if (cityMatch) {
+    const cityOnly = cityMatch[1].replace(/[시군구]$/, '');
+    variants.push(cityMatch[1]); // "여수시"
+    variants.push(cityOnly);     // "여수"
+  }
+
+  // Also try "시 + 동/면/읍" combo
+  const districtMatch = simplified.match(/([가-힣]+[시])\s*([가-힣]+[동면읍리])/);
+  if (districtMatch) {
+    variants.push(`${districtMatch[1]} ${districtMatch[2]}`);
+  }
+
+  return [...new Set(variants)];
+}
 
 // KMA grid conversion (WGS84 -> grid)
 function latLngToGrid(lat: number, lng: number) {
@@ -56,22 +90,86 @@ function getKmaBaseDateTime() {
 }
 
 async function geocodeAddress(address: string, owKey: string): Promise<{ lat: number; lng: number; city: string } | null> {
-  try {
-    const geoRes = await fetch(
-      `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(address)}&limit=1&appid=${owKey}`
-    );
-    const geoData = await geoRes.json();
-    if (geoData && geoData.length > 0) {
-      return {
-        lat: geoData[0].lat,
-        lng: geoData[0].lon,
-        city: geoData[0].local_names?.ko || geoData[0].name || "",
-      };
+  // Try multiple simplified variants of the address
+  const variants = simplifyKoreanAddress(address);
+  console.log(`Geocoding variants for "${address}":`, variants);
+
+  for (const variant of variants) {
+    try {
+      const geoRes = await fetch(
+        `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(variant)},KR&limit=3&appid=${owKey}`
+      );
+      const geoData = await geoRes.json();
+      if (geoData && geoData.length > 0) {
+        // Prefer Korean results
+        const krResult = geoData.find((r: any) => r.country === 'KR') || geoData[0];
+        console.log(`Geocode success with variant "${variant}":`, krResult.lat, krResult.lon);
+        return {
+          lat: krResult.lat,
+          lng: krResult.lon,
+          city: krResult.local_names?.ko || krResult.name || "",
+        };
+      }
+    } catch (e) {
+      console.error(`Geocoding error for "${variant}":`, e);
     }
-  } catch (e) {
-    console.error("Geocoding error:", e);
   }
+
+  // Last resort: try Nominatim (OpenStreetMap) as backup
+  for (const variant of variants.slice(0, 2)) {
+    try {
+      const nominatimRes = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(variant)}&countrycodes=kr&format=json&limit=1&accept-language=ko`,
+        { headers: { 'User-Agent': 'SafetyManagementSystem/1.0' } }
+      );
+      const nominatimData = await nominatimRes.json();
+      if (nominatimData && nominatimData.length > 0) {
+        console.log(`Nominatim geocode success for "${variant}"`);
+        return {
+          lat: parseFloat(nominatimData[0].lat),
+          lng: parseFloat(nominatimData[0].lon),
+          city: nominatimData[0].display_name?.split(',')[0] || "",
+        };
+      }
+    } catch (e) {
+      console.error(`Nominatim error for "${variant}":`, e);
+    }
+  }
+
   return null;
+}
+
+// Suggest similar addresses when geocoding fails
+function suggestAddresses(address: string): string[] {
+  const suggestions: string[] = [];
+  const cities = [
+    '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종',
+    '수원', '성남', '고양', '용인', '창원', '청주', '천안', '전주',
+    '포항', '제주', '여수', '순천', '목포', '평택', '김해', '구미',
+    '양산', '거제', '통영', '광양', '나주', '익산', '군산', '정읍',
+    '안산', '화성', '파주', '시흥', '김포', '광명', '하남', '이천',
+  ];
+
+  const input = address.replace(/[시군구도]/g, '').trim();
+  for (const city of cities) {
+    if (city.includes(input) || input.includes(city)) {
+      suggestions.push(`${city}시`);
+    }
+  }
+
+  if (suggestions.length === 0) {
+    // Fuzzy: find cities with common characters
+    for (const city of cities) {
+      for (const ch of input) {
+        if (city.includes(ch)) {
+          suggestions.push(`${city}시`);
+          break;
+        }
+      }
+    }
+  }
+
+  return suggestions.slice(0, 5);
 }
 
 async function reverseGeocode(lat: number, lng: number, owKey: string): Promise<string> {
@@ -306,7 +404,7 @@ serve(async (req) => {
     const owKey = Deno.env.get("OPENWEATHER_API_KEY");
     const kmaKey = Deno.env.get("KMA_API_KEY");
 
-    // Geocode-only mode (for project creation)
+    // Geocode-only mode (for project creation/edit)
     if (geocode_only && address && owKey) {
       const geo = await geocodeAddress(address, owKey);
       if (geo) {
@@ -314,7 +412,15 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({ error: "주소를 찾을 수 없습니다" }), {
+      // Return suggestions on failure
+      const suggestions = suggestAddresses(address);
+      return new Response(JSON.stringify({ 
+        error: "주소를 찾을 수 없습니다",
+        suggestions: suggestions.length > 0 ? suggestions : undefined,
+        message: suggestions.length > 0 
+          ? `"${address}" 검색 실패. 다음 주소를 시도해보세요: ${suggestions.join(', ')}`
+          : `"${address}" 검색 실패. 도시명만 입력해보세요 (예: 여수, 평택, 울산)`
+      }), {
         status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -364,7 +470,7 @@ serve(async (req) => {
     }
 
     // Determine which source to fetch based on request
-    const requestedSource = source || "kma"; // KMA is default/primary
+    const requestedSource = source || "kma";
 
     // Check cache
     const { data: cached } = await supabase
@@ -391,17 +497,14 @@ serve(async (req) => {
     let sourceKey = "";
 
     if (requestedSource === "openweather" && owKey) {
-      // Secondary source: OpenWeather only
       weatherData = await fetchOpenWeather(resolvedLat, resolvedLng, owKey).catch(e => { console.error("OW error:", e); return null; });
       sourceLabel = "OpenWeather (보조)";
       sourceKey = "openweather";
     } else {
-      // Primary source: KMA (기상청)
       if (kmaKey) {
         weatherData = await fetchKmaWeather(resolvedLat, resolvedLng, kmaKey).catch(e => { console.error("KMA error:", e); return null; });
       }
       
-      // If KMA fails, fallback to OpenWeather
       if (!weatherData && owKey) {
         console.log("KMA failed, falling back to OpenWeather");
         weatherData = await fetchOpenWeather(resolvedLat, resolvedLng, owKey).catch(e => { console.error("OW error:", e); return null; });
@@ -411,7 +514,6 @@ serve(async (req) => {
         sourceLabel = "기상청 (날씨누리)";
         sourceKey = "kma";
 
-        // Enrich KMA data with OW supplementary data (sunrise/sunset, pressure, feels_like)
         if (owKey) {
           try {
             const owData = await fetchOpenWeather(resolvedLat, resolvedLng, owKey);
@@ -421,7 +523,6 @@ serve(async (req) => {
               weatherData.current.sunset = owData.current.sunset || weatherData.current.sunset;
               weatherData.current.feels_like = owData.current.feels_like || weatherData.current.feels_like;
               weatherData.current.visibility = Math.min(weatherData.current.visibility, owData.current.visibility);
-              // Store OW city name if KMA doesn't have one
               if (!weatherData.current.city && owData.current.city) {
                 weatherData.current.city = owData.current.city;
               }
@@ -534,7 +635,6 @@ function generateSafetyAlerts(current: any, hourly: any[], daily: any[]) {
     alerts.push({ level: "warning", title: "저기압 주의", description: `기압 ${current.pressure}hPa`, icon: "typhoon", category: "pressure" });
   }
 
-  // Future conditions
   const futureSlice = hourly.slice(0, 4);
   if (futureSlice.length > 0) {
     const maxFutureWind = Math.max(...futureSlice.map((h: any) => h.wind_speed));

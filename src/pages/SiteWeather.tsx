@@ -147,6 +147,8 @@ const SiteWeather = () => {
   const [activeSource, setActiveSource] = useState<"kma" | "openweather">("kma");
   const [owWeather, setOwWeather] = useState<WeatherData | null>(null);
   const [owLoading, setOwLoading] = useState(false);
+  const [addressSuggestions, setAddressSuggestions] = useState<string[]>([]);
+  const [geocodeError, setGeocodeError] = useState("");
 
   const currentProject = projects.find((p) => p.id === selectedProject);
 
@@ -212,11 +214,21 @@ const SiteWeather = () => {
 
   const handleSaveAddress = async () => {
     if (!selectedProject || !manualAddress.trim()) return;
+    setGeocodeError("");
+    setAddressSuggestions([]);
     try {
       const { data: geoData } = await supabase.functions.invoke("fetch-weather", {
         body: { project_id: '__geocode__', address: manualAddress.trim(), geocode_only: true },
       });
       
+      if (geoData?.error) {
+        setGeocodeError(geoData.message || geoData.error);
+        if (geoData.suggestions) {
+          setAddressSuggestions(geoData.suggestions);
+        }
+        return;
+      }
+
       const updateData: any = { site_address: manualAddress.trim() };
       if (geoData?.lat && geoData?.lng) {
         updateData.site_lat = geoData.lat;
@@ -229,6 +241,8 @@ const SiteWeather = () => {
       await supabase.from("projects").update(updateData).eq("id", selectedProject);
       toast({ title: "주소 저장 완료", description: geoData?.lat ? `좌표: ${geoData.lat.toFixed(4)}, ${geoData.lng.toFixed(4)}` : "좌표 변환 실패 — 수동 확인 필요" });
       setEditingAddress(false);
+      setGeocodeError("");
+      setAddressSuggestions([]);
       fetchWeather();
     } catch (err: any) {
       toast({ title: "저장 실패", description: err.message, variant: "destructive" });
@@ -373,16 +387,37 @@ const SiteWeather = () => {
           )}
 
           <div className="flex flex-wrap items-center gap-2">
-            {editingAddress ? (
-              <div className="flex gap-2 flex-1 min-w-[300px]">
-                <Input
-                  placeholder="현장 주소 입력 (예: 전라남도 여수시 화학단지로 123)"
-                  value={manualAddress}
-                  onChange={(e) => setManualAddress(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSaveAddress()}
-                />
-                <Button size="sm" onClick={handleSaveAddress}>저장</Button>
-                <Button size="sm" variant="ghost" onClick={() => setEditingAddress(false)}>취소</Button>
+          {editingAddress ? (
+              <div className="space-y-2 flex-1 min-w-[300px]">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="현장 주소 입력 (예: 여수시, 평택시 고덕면)"
+                    value={manualAddress}
+                    onChange={(e) => setManualAddress(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSaveAddress()}
+                  />
+                  <Button size="sm" onClick={handleSaveAddress}>저장</Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setEditingAddress(false); setGeocodeError(""); setAddressSuggestions([]); }}>취소</Button>
+                </div>
+                {geocodeError && (
+                  <div className="p-2 rounded-lg bg-destructive/10 border border-destructive/30">
+                    <p className="text-xs text-destructive">{geocodeError}</p>
+                  </div>
+                )}
+                {addressSuggestions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="text-xs text-muted-foreground">추천:</span>
+                    {addressSuggestions.map((s) => (
+                      <Button key={s} variant="outline" size="sm" className="text-xs h-6 px-2"
+                        onClick={() => { setManualAddress(s); setAddressSuggestions([]); setGeocodeError(""); }}>
+                        {s}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[10px] text-muted-foreground">
+                  💡 주소 변환 실패 시 도시명만 입력하세요 (예: 여수, 울산, 평택)
+                </p>
               </div>
             ) : (
               <Button variant="outline" size="sm" className="text-xs" onClick={() => setEditingAddress(true)}>

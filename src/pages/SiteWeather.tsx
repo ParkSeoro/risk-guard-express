@@ -801,175 +801,111 @@ const SiteWeather = () => {
   );
 };
 
-// KMA Radar Tab - Full-screen radar with animation controls (no iframe)
+// Radar Tab - Windy.com interactive embed (zoom/pan/layers/time built-in)
 function KmaRadarTab({ lat, lng }: { lat: number; lng: number }) {
-  const [radarTime, setRadarTime] = useState(11);
-  const [playing, setPlaying] = useState(false);
-  const [imageErrors, setImageErrors] = useState<Set<number>>(new Set());
-  const sliderRef = useRef<HTMLInputElement>(null);
+  const [layer, setLayer] = useState<"radar" | "rain" | "wind" | "temp" | "clouds" | "pressure">("radar");
 
-  // Generate 12 time steps (10 min intervals, last 2 hours)
-  const timeSteps = useMemo(() => {
-    const now = new Date();
-    return Array.from({ length: 12 }, (_, i) => {
-      const t = new Date(now.getTime() - (11 - i) * 10 * 60 * 1000);
-      t.setMinutes(Math.floor(t.getMinutes() / 10) * 10, 0, 0);
-      // Convert to KST
-      const kst = new Date(t.getTime() + 9 * 60 * 60 * 1000);
-      const year = kst.getUTCFullYear();
-      const month = String(kst.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(kst.getUTCDate()).padStart(2, '0');
-      const hour = String(kst.getUTCHours()).padStart(2, '0');
-      const min = String(kst.getUTCMinutes()).padStart(2, '0');
-      return {
-        label: `${hour}:${min}`,
-        timestamp: `${year}${month}${day}${hour}${min}`,
-      };
+  // Windy embed URL - fully interactive (zoom, pan, time slider, layer switch)
+  // Docs: https://api.windy.com/embed2.0
+  const windyUrl = useMemo(() => {
+    const overlay = layer === "radar" ? "radar" : layer;
+    const params = new URLSearchParams({
+      lat: lat.toFixed(4),
+      lon: lng.toFixed(4),
+      detailLat: lat.toFixed(4),
+      detailLon: lng.toFixed(4),
+      zoom: "9",
+      level: "surface",
+      overlay,
+      product: "ecmwf",
+      menu: "",
+      message: "",
+      marker: "true",
+      calendar: "now",
+      pressure: "",
+      type: "map",
+      location: "coordinates",
+      detail: "",
+      metricWind: "default",
+      metricTemp: "default",
+      radarRange: "-1",
     });
-  }, []);
+    return `https://embed.windy.com/embed2.html?${params.toString()}`;
+  }, [lat, lng, layer]);
 
-  useEffect(() => {
-    if (!playing) return;
-    const interval = setInterval(() => {
-      setRadarTime(prev => (prev + 1) % timeSteps.length);
-    }, 800);
-    return () => clearInterval(interval);
-  }, [playing, timeSteps.length]);
-
-  // KMA radar composite image URL
-  const radarImageUrl = `https://www.weather.go.kr/w/repositary/image/rdr/img/RDR_CMP_WRC_${timeSteps[radarTime]?.timestamp}.png`;
+  const layers: { key: typeof layer; label: string; emoji: string }[] = [
+    { key: "radar", label: "레이더", emoji: "📡" },
+    { key: "rain", label: "강수", emoji: "🌧" },
+    { key: "wind", label: "바람", emoji: "💨" },
+    { key: "temp", label: "기온", emoji: "🌡" },
+    { key: "clouds", label: "구름", emoji: "☁️" },
+    { key: "pressure", label: "기압", emoji: "🧭" },
+  ];
 
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <Radio className="h-4 w-4 text-primary" /> 기상청 레이더 (강수)
-          <Badge variant="outline" className="text-[9px]">🇰🇷 기상청 날씨누리</Badge>
+          <Radio className="h-4 w-4 text-primary" /> 인터랙티브 기상 레이더
+          <Badge variant="outline" className="text-[9px]">Windy.com · ECMWF</Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {/* Full-width radar display */}
-        <div className="relative w-full rounded-lg overflow-hidden border bg-[#1a1a2e]" style={{ height: 'calc(min(70vh, 600px))' }}>
-          <img
-            key={radarTime}
-            src={radarImageUrl}
-            alt={`기상청 레이더 ${timeSteps[radarTime]?.label}`}
-            className="w-full h-full object-contain"
-            onError={() => {
-              setImageErrors(prev => new Set(prev).add(radarTime));
-            }}
+        {/* Layer switcher */}
+        <div className="flex flex-wrap gap-1.5">
+          {layers.map((l) => (
+            <Button
+              key={l.key}
+              variant={layer === l.key ? "default" : "outline"}
+              size="sm"
+              onClick={() => setLayer(l.key)}
+              className="text-xs h-7 gap-1"
+            >
+              <span>{l.emoji}</span> {l.label}
+            </Button>
+          ))}
+        </div>
+
+        {/* Full-width interactive radar */}
+        <div className="relative w-full rounded-lg overflow-hidden border bg-muted" style={{ height: 'calc(min(75vh, 680px))' }}>
+          <iframe
+            key={layer}
+            src={windyUrl}
+            title="Windy 인터랙티브 레이더"
+            className="w-full h-full border-0"
+            frameBorder={0}
+            allow="geolocation"
           />
 
-          {imageErrors.has(radarTime) && (
-            <div className="absolute inset-0 flex items-center justify-center bg-muted/80">
-              <div className="text-center space-y-2">
-                <AlertTriangle className="h-8 w-8 text-muted-foreground mx-auto" />
-                <p className="text-sm text-muted-foreground">레이더 영상 로드 실패</p>
-                <p className="text-xs text-muted-foreground">시간: {timeSteps[radarTime]?.label}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Overlay: Site location info */}
-          <div className="absolute top-3 left-3 bg-background/90 backdrop-blur rounded-lg px-3 py-2 border shadow-sm">
+          {/* Site location overlay */}
+          <div className="absolute top-3 left-3 bg-background/95 backdrop-blur rounded-lg px-3 py-2 border shadow-md pointer-events-none z-10">
             <div className="flex items-center gap-2 text-xs">
               <MapPin className="h-3 w-3 text-destructive" />
               <span className="font-medium">현장 위치</span>
             </div>
             <p className="text-[10px] text-muted-foreground mt-0.5">
-              위도 {lat.toFixed(2)} · 경도 {lng.toFixed(2)}
+              위도 {lat.toFixed(4)} · 경도 {lng.toFixed(4)}
             </p>
-          </div>
-
-          {/* Time indicator */}
-          <div className="absolute bottom-3 left-3 bg-background/90 backdrop-blur rounded-lg px-3 py-2 border shadow-sm">
-            <span className="text-xs font-bold">KST {timeSteps[radarTime]?.label}</span>
-          </div>
-
-          <div className="absolute top-3 right-3 bg-background/90 backdrop-blur rounded-lg px-2 py-1 border shadow-sm">
-            <span className="text-[10px] font-medium">🇰🇷 기상청 합성 레이더</span>
-          </div>
-        </div>
-
-        {/* Time Slider */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline" size="sm"
-              onClick={() => setPlaying(!playing)}
-              className="text-xs gap-1 min-w-[90px]"
-            >
-              {playing ? "⏸ 일시정지" : "▶ 재생"}
-            </Button>
-            <Button
-              variant="ghost" size="sm"
-              onClick={() => { setRadarTime(0); setPlaying(false); }}
-              className="text-xs"
-            >
-              ⏮
-            </Button>
-            <Button
-              variant="ghost" size="sm"
-              onClick={() => { setRadarTime(prev => Math.max(0, prev - 1)); setPlaying(false); }}
-              className="text-xs"
-            >
-              ◀
-            </Button>
-            
-            {/* Slider for time control */}
-            <div className="flex-1">
-              <input
-                ref={sliderRef}
-                type="range"
-                min={0}
-                max={timeSteps.length - 1}
-                value={radarTime}
-                onChange={(e) => { setRadarTime(parseInt(e.target.value)); setPlaying(false); }}
-                className="w-full h-2 bg-muted rounded-full appearance-none cursor-pointer accent-primary"
-              />
-            </div>
-            
-            <Button
-              variant="ghost" size="sm"
-              onClick={() => { setRadarTime(prev => Math.min(timeSteps.length - 1, prev + 1)); setPlaying(false); }}
-              className="text-xs"
-            >
-              ▶
-            </Button>
-            <Button
-              variant="ghost" size="sm"
-              onClick={() => { setRadarTime(timeSteps.length - 1); setPlaying(false); }}
-              className="text-xs"
-            >
-              ⏭
-            </Button>
-          </div>
-          
-          {/* Time labels */}
-          <div className="flex justify-between px-1">
-            {timeSteps.filter((_, i) => i % 3 === 0 || i === timeSteps.length - 1).map((step, i) => (
-              <span key={i} className="text-[9px] text-muted-foreground">{step.label}</span>
-            ))}
           </div>
         </div>
 
         <div className="p-3 rounded-lg bg-muted/50 border">
           <p className="text-xs text-muted-foreground">
-            💡 <strong>활용 가이드:</strong> 기상청 합성 레이더 영상으로 비구름의 이동 방향과 속도를 확인하세요. 
-            "비가 오는지"가 아니라 <strong>"비가 언제 도착하는지"</strong> 판단할 수 있습니다.
+            💡 <strong>사용법:</strong> 마우스 휠로 확대/축소, 드래그로 이동, 하단 시간 슬라이더로 예보 시점 변경, 좌측 메뉴에서 더 많은 레이어 선택. 
+            ECMWF(유럽중기예보센터) 모델 기반으로 예측 정확도가 높습니다.
           </p>
         </div>
 
         {/* Quick links */}
-        <div className="flex gap-2">
-          <a href="https://www.weather.go.kr/w/image/radar.do" target="_blank" rel="noopener noreferrer" className="flex-1">
+        <div className="grid grid-cols-2 gap-2">
+          <a href={`https://www.windy.com/${lat}/${lng}?radar,${lat},${lng},9`} target="_blank" rel="noopener noreferrer">
             <Button variant="outline" size="sm" className="w-full text-xs gap-1">
-              <ExternalLink className="h-3 w-3" /> 기상청 레이더 (전체)
+              <ExternalLink className="h-3 w-3" /> Windy 전체화면
             </Button>
           </a>
-          <a href={`https://www.windy.com/${lat}/${lng}?rain,${lat},${lng},8`} target="_blank" rel="noopener noreferrer" className="flex-1">
+          <a href="https://www.weather.go.kr/w/image/radar.do" target="_blank" rel="noopener noreferrer">
             <Button variant="outline" size="sm" className="w-full text-xs gap-1">
-              <ExternalLink className="h-3 w-3" /> Windy (보조)
+              <ExternalLink className="h-3 w-3" /> 기상청 공식 레이더
             </Button>
           </a>
         </div>

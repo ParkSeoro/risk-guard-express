@@ -63,6 +63,8 @@ const SafetyCost = () => {
   const [newReportMonth, setNewReportMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [reportEditOpen, setReportEditOpen] = useState(false);
   const [editingReport, setEditingReport] = useState({ id: '', report_month: '', title: '' });
+  const [itemEditOpen, setItemEditOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState({ id: '', usage_date: '', category_code: '', category_name: '', item_name: '', specification: '', quantity: '1', unit: '식', unit_price: '', amount: '', classification_status: 'review', ai_reason: '', legal_basis: '' });
 
   const selectedConstruction = constructions.find((c) => c.id === selectedConstructionId);
   const selectedReport = reports.find((r) => r.id === selectedReportId);
@@ -256,6 +258,63 @@ const SafetyCost = () => {
     await fetchAll();
   }
 
+  function openItemEditor(item: Item) {
+    setEditingItem({
+      id: item.id,
+      usage_date: item.usage_date || '',
+      category_code: item.category_code || '',
+      category_name: item.category_name || '',
+      item_name: item.item_name || '',
+      specification: item.specification || '',
+      quantity: String(item.quantity || 1),
+      unit: item.unit || '식',
+      unit_price: String(item.unit_price || ''),
+      amount: String(item.amount || ''),
+      classification_status: item.classification_status || 'review',
+      ai_reason: item.ai_reason || '',
+      legal_basis: item.legal_basis || '',
+    });
+    setItemEditOpen(true);
+  }
+
+  async function updateItem() {
+    if (!editingItem.id || !editingItem.item_name.trim()) { toast({ title: '품목명을 입력하세요.', variant: 'destructive' }); return; }
+    const before = items.find((it) => it.id === editingItem.id);
+    const selectedCategory = SAFETY_COST_CATEGORIES.find((c) => c.code === editingItem.category_code);
+    const amount = Number(editingItem.amount || 0);
+    const payload = {
+      usage_date: editingItem.usage_date || null,
+      category_code: editingItem.category_code,
+      category_name: selectedCategory?.name || editingItem.category_name || '검토 필요',
+      item_name: editingItem.item_name.trim(),
+      specification: editingItem.specification.trim(),
+      quantity: Number(editingItem.quantity || 1),
+      unit: editingItem.unit.trim() || '식',
+      unit_price: Number(editingItem.unit_price || amount || 0),
+      amount,
+      classification_status: editingItem.classification_status,
+      ai_reason: editingItem.ai_reason.trim() || '사용자가 AI 판독 결과를 직접 수정했습니다.',
+      legal_basis: editingItem.legal_basis.trim() || '건설업 산업안전보건관리비 계상 및 사용기준 확인 필요',
+    };
+    const { error } = await supabase.from('safety_cost_items' as any).update(payload).eq('id', editingItem.id);
+    if (error) { toast({ title: '항목 수정 실패', description: error.message, variant: 'destructive' }); return; }
+    await supabase.from('safety_cost_audit_logs' as any).insert({
+      project_id: before?.project_id || access.selectedProject,
+      company_id: before?.company_id || selectedConstruction?.company_id,
+      construction_id: before?.construction_id || selectedConstruction?.id,
+      report_id: before?.report_id || selectedReport?.id,
+      action: '산업안전보건관리비 항목 수동 수정',
+      target_type: 'safety_cost_item',
+      target_id: editingItem.id,
+      before_data: before || {},
+      after_data: payload,
+      user_id: user?.id,
+      user_name: profile?.display_name || '',
+    });
+    if (before?.report_id) await updateReportTotal(before.report_id);
+    setItemEditOpen(false); toast({ title: '항목이 수정되었습니다.' }); fetchAll();
+  }
+
   async function analyzeWithAI() {
     if (!aiText.trim()) { toast({ title: '거래명세서 텍스트를 입력하거나 파일을 업로드하세요.', variant: 'destructive' }); return; }
     setAiLoading(true);
@@ -433,7 +492,7 @@ const SafetyCost = () => {
 
         <Card><CardHeader className="pb-2"><div className="flex items-center justify-between"><CardTitle className="text-sm">월별 사용내역서</CardTitle><Dialog open={reportOpen} onOpenChange={setReportOpen}><DialogTrigger asChild><Button size="sm" variant="outline" disabled={!selectedConstruction}>월별 작성</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>월별 사용내역서 생성</DialogTitle></DialogHeader><Label>작성월</Label><Input type="month" value={newReportMonth} onChange={(e) => setNewReportMonth(e.target.value)} /><DialogFooter><Button onClick={createReport}>생성</Button></DialogFooter></DialogContent></Dialog></div></CardHeader><CardContent><div className="flex flex-wrap gap-2">{filteredReports.map((r) => <div key={r.id} className={`flex items-center rounded-md border ${r.id === selectedReportId ? 'border-primary bg-primary text-primary-foreground' : 'bg-card'}`}><button type="button" className="px-3 py-1.5 text-sm" onClick={() => setSelectedReportId(r.id)}>{String(r.report_month).slice(0, 7)} <Badge variant="secondary" className="ml-2">{getSafetyCostStatusLabel(r.status)}</Badge></button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => openReportEditor(r)} disabled={r.status === 'approved'} aria-label="월별 사용내역서 수정"><Pencil className="h-3.5 w-3.5" /></Button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => deleteReport(r)} disabled={r.status === 'approved'} aria-label="월별 사용내역서 삭제"><Trash2 className="h-3.5 w-3.5" /></Button></div>)}</div></CardContent></Card>
 
-        {selectedReport && <Tabs defaultValue="items"><TabsList><TabsTrigger value="items">사용 항목</TabsTrigger><TabsTrigger value="ai">AI 자동분석</TabsTrigger><TabsTrigger value="audit">자동검토</TabsTrigger><TabsTrigger value="output">출력/결재</TabsTrigger></TabsList><TabsContent value="items" className="space-y-3"><Card><CardContent className="p-0 overflow-auto"><Table><TableHeader><TableRow><TableHead>분류</TableHead><TableHead>품목</TableHead><TableHead>수량</TableHead><TableHead>단가</TableHead><TableHead>금액</TableHead><TableHead>판정</TableHead><TableHead>법적 근거</TableHead><TableHead>증빙</TableHead></TableRow></TableHeader><TableBody>{filteredItems.map((it) => <TableRow key={it.id}><TableCell className="text-xs">{it.category_name}</TableCell><TableCell><div className="font-medium text-sm">{it.item_name}</div><div className="text-[11px] text-muted-foreground">{it.ai_reason}</div></TableCell><TableCell>{it.quantity} {it.unit}</TableCell><TableCell>{formatKRW(it.unit_price)}</TableCell><TableCell className="font-semibold">{formatKRW(it.amount)}</TableCell><TableCell><Badge variant={statusVariant(it.classification_status) as any}>{statusLabel[it.classification_status] || it.classification_status}</Badge></TableCell><TableCell><Button size="sm" variant="ghost" className="gap-1" onClick={() => setLegalBasisItem(it)}><Eye className="h-3 w-3" /> 열람</Button></TableCell><TableCell><Label className="inline-flex items-center gap-1 cursor-pointer text-xs"><Paperclip className="h-3 w-3" /> {evidence.filter((e) => e.item_id === it.id).length}개<Input type="file" multiple className="hidden" onChange={(e) => handleItemEvidenceUpload(it, e.target.files)} /></Label></TableCell></TableRow>)}{filteredItems.length === 0 && <TableRow><TableCell colSpan={8} className="py-10 text-center text-muted-foreground">항목이 없습니다. AI 자동분석으로 거래명세서를 분석하세요.</TableCell></TableRow>}</TableBody></Table></CardContent></Card></TabsContent><TabsContent value="ai" className="space-y-3"><Card><CardHeader><CardTitle className="text-sm flex items-center gap-2"><Bot className="h-4 w-4" /> 대한민국 산업안전보건법 기준 AI 자동분석</CardTitle></CardHeader><CardContent className="space-y-3"><div className="flex gap-2"><Label className="inline-flex items-center gap-2"><Input type="file" accept=".xls,.xlsx,.csv,.txt,.pdf,image/*" onChange={(e) => e.target.files?.[0] && handleDocumentUpload(e.target.files[0])} /><Upload className="h-4 w-4" /></Label></div><Textarea rows={10} value={aiText} onChange={(e) => setAiText(e.target.value)} placeholder="거래명세서 텍스트를 붙여넣거나 엑셀/텍스트 파일을 업로드하세요." /><Button onClick={analyzeWithAI} disabled={aiLoading} className="gap-1"><Bot className="h-4 w-4" /> {aiLoading ? '분석 중...' : 'AI 자동분류 및 입력'}</Button><div className="grid gap-2 md:grid-cols-3">{SAFETY_COST_CATEGORIES.slice(0, 9).map((c) => <div key={c.code} className="rounded-md border bg-muted/30 p-2 text-xs"><b>{c.code}. {c.name}</b></div>)}</div></CardContent></Card></TabsContent><TabsContent value="audit" className="space-y-3"><Card><CardHeader><CardTitle className="text-sm flex items-center gap-2"><ClipboardCheck className="h-4 w-4" /> 산업안전보건관리비 자동검토</CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 md:grid-cols-4"><div><p className="text-xs text-muted-foreground">검토 결과</p><Badge variant={approvalReady ? 'default' : 'secondary'}>{approvalReady ? '상신 가능' : '보완 필요'}</Badge></div><div><p className="text-xs text-muted-foreground">검토 필요</p><p className="font-semibold">{compliance.reviewCount}건</p></div><div><p className="text-xs text-muted-foreground">사용 불가 경고</p><p className="font-semibold">{compliance.warningCount}건</p></div><div><p className="text-xs text-muted-foreground">증빙 누락</p><p className="font-semibold">{evidenceMissingCount}건</p></div></div><div className="rounded-md border bg-muted/30 p-3"><div className="flex items-center justify-between gap-2 mb-3"><p className="font-medium flex items-center gap-2"><ListChecks className="h-4 w-4" /> 감사대응 체크리스트</p><Button size="sm" variant="outline" onClick={requestMissingEvidence} disabled={requestingEvidence || evidenceMissingCount === 0} className="gap-1"><Send className="h-4 w-4" /> 증빙누락 자동요청</Button></div><div className="grid gap-2">{auditChecklist.map((item) => <div key={item.label} className="flex items-center justify-between gap-3 rounded-md border bg-card p-2 text-sm"><span className="flex items-center gap-2">{item.ok ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <AlertTriangle className="h-4 w-4 text-destructive" />}{item.label}</span><Badge variant={item.ok ? 'default' : 'secondary'}>{item.detail}</Badge></div>)}</div></div></CardContent></Card></TabsContent><TabsContent value="output" className="space-y-3"><Card><CardContent className="pt-6 flex flex-wrap gap-2"><Button variant="outline" onClick={exportExcel} className="gap-1"><FileSpreadsheet className="h-4 w-4" /> 엑셀 출력</Button><Button variant="outline" onClick={exportPDF} className="gap-1"><FileText className="h-4 w-4" /> PDF 출력</Button><Button onClick={submitApproval} disabled={!approvalReady} className="gap-1"><ShieldCheck className="h-4 w-4" /> 결재 상신</Button><Button variant="secondary" onClick={approveReport} disabled={selectedReport.status !== 'submitted'} className="gap-1"><CheckCircle2 className="h-4 w-4" /> 승인 처리</Button></CardContent></Card></TabsContent></Tabs>}
+        {selectedReport && <Tabs defaultValue="items"><TabsList><TabsTrigger value="items">사용 항목</TabsTrigger><TabsTrigger value="ai">AI 자동분석</TabsTrigger><TabsTrigger value="audit">자동검토</TabsTrigger><TabsTrigger value="output">출력/결재</TabsTrigger></TabsList><TabsContent value="items" className="space-y-3"><Card><CardContent className="p-0 overflow-auto"><Table><TableHeader><TableRow><TableHead>분류</TableHead><TableHead>품목</TableHead><TableHead>수량</TableHead><TableHead>단가</TableHead><TableHead>금액</TableHead><TableHead>판정</TableHead><TableHead>법적 근거</TableHead><TableHead>증빙</TableHead><TableHead>수정</TableHead></TableRow></TableHeader><TableBody>{filteredItems.map((it) => <TableRow key={it.id}><TableCell className="text-xs">{it.category_name}</TableCell><TableCell><div className="font-medium text-sm">{it.item_name}</div><div className="text-[11px] text-muted-foreground">{it.ai_reason}</div></TableCell><TableCell>{it.quantity} {it.unit}</TableCell><TableCell>{formatKRW(it.unit_price)}</TableCell><TableCell className="font-semibold">{formatKRW(it.amount)}</TableCell><TableCell><Badge variant={statusVariant(it.classification_status) as any}>{statusLabel[it.classification_status] || it.classification_status}</Badge></TableCell><TableCell><Button size="sm" variant="ghost" className="gap-1" onClick={() => setLegalBasisItem(it)}><Eye className="h-3 w-3" /> 열람</Button></TableCell><TableCell><Label className="inline-flex items-center gap-1 cursor-pointer text-xs"><Paperclip className="h-3 w-3" /> {evidence.filter((e) => e.item_id === it.id).length}개<Input type="file" multiple className="hidden" onChange={(e) => handleItemEvidenceUpload(it, e.target.files)} /></Label></TableCell><TableCell><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => openItemEditor(it)} aria-label="항목 수정"><Pencil className="h-3.5 w-3.5" /></Button></TableCell></TableRow>)}{filteredItems.length === 0 && <TableRow><TableCell colSpan={9} className="py-10 text-center text-muted-foreground">항목이 없습니다. AI 자동분석으로 거래명세서를 분석하세요.</TableCell></TableRow>}</TableBody></Table></CardContent></Card></TabsContent><TabsContent value="ai" className="space-y-3"><Card><CardHeader><CardTitle className="text-sm flex items-center gap-2"><Bot className="h-4 w-4" /> 대한민국 산업안전보건법 기준 AI 자동분석</CardTitle></CardHeader><CardContent className="space-y-3"><div className="flex gap-2"><Label className="inline-flex items-center gap-2"><Input type="file" accept=".xls,.xlsx,.csv,.txt,.pdf,image/*" onChange={(e) => e.target.files?.[0] && handleDocumentUpload(e.target.files[0])} /><Upload className="h-4 w-4" /></Label></div><Textarea rows={10} value={aiText} onChange={(e) => setAiText(e.target.value)} placeholder="거래명세서 텍스트를 붙여넣거나 엑셀/텍스트 파일을 업로드하세요." /><Button onClick={analyzeWithAI} disabled={aiLoading} className="gap-1"><Bot className="h-4 w-4" /> {aiLoading ? '분석 중...' : 'AI 자동분류 및 입력'}</Button><div className="grid gap-2 md:grid-cols-3">{SAFETY_COST_CATEGORIES.slice(0, 9).map((c) => <div key={c.code} className="rounded-md border bg-muted/30 p-2 text-xs"><b>{c.code}. {c.name}</b></div>)}</div></CardContent></Card></TabsContent><TabsContent value="audit" className="space-y-3"><Card><CardHeader><CardTitle className="text-sm flex items-center gap-2"><ClipboardCheck className="h-4 w-4" /> 산업안전보건관리비 자동검토</CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 md:grid-cols-4"><div><p className="text-xs text-muted-foreground">검토 결과</p><Badge variant={approvalReady ? 'default' : 'secondary'}>{approvalReady ? '상신 가능' : '보완 필요'}</Badge></div><div><p className="text-xs text-muted-foreground">검토 필요</p><p className="font-semibold">{compliance.reviewCount}건</p></div><div><p className="text-xs text-muted-foreground">사용 불가 경고</p><p className="font-semibold">{compliance.warningCount}건</p></div><div><p className="text-xs text-muted-foreground">증빙 누락</p><p className="font-semibold">{evidenceMissingCount}건</p></div></div><div className="rounded-md border bg-muted/30 p-3"><div className="flex items-center justify-between gap-2 mb-3"><p className="font-medium flex items-center gap-2"><ListChecks className="h-4 w-4" /> 감사대응 체크리스트</p><Button size="sm" variant="outline" onClick={requestMissingEvidence} disabled={requestingEvidence || evidenceMissingCount === 0} className="gap-1"><Send className="h-4 w-4" /> 증빙누락 자동요청</Button></div><div className="grid gap-2">{auditChecklist.map((item) => <div key={item.label} className="flex items-center justify-between gap-3 rounded-md border bg-card p-2 text-sm"><span className="flex items-center gap-2">{item.ok ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <AlertTriangle className="h-4 w-4 text-destructive" />}{item.label}</span><Badge variant={item.ok ? 'default' : 'secondary'}>{item.detail}</Badge></div>)}</div></div></CardContent></Card></TabsContent><TabsContent value="output" className="space-y-3"><Card><CardContent className="pt-6 flex flex-wrap gap-2"><Button variant="outline" onClick={exportExcel} className="gap-1"><FileSpreadsheet className="h-4 w-4" /> 엑셀 출력</Button><Button variant="outline" onClick={exportPDF} className="gap-1"><FileText className="h-4 w-4" /> PDF 출력</Button><Button onClick={submitApproval} disabled={!approvalReady} className="gap-1"><ShieldCheck className="h-4 w-4" /> 결재 상신</Button><Button variant="secondary" onClick={approveReport} disabled={selectedReport.status !== 'submitted'} className="gap-1"><CheckCircle2 className="h-4 w-4" /> 승인 처리</Button></CardContent></Card></TabsContent></Tabs>}
       </div>
     </div>
 
@@ -448,6 +507,25 @@ const SafetyCost = () => {
         <DialogHeader><DialogTitle>월별 사용내역서 수정</DialogTitle></DialogHeader>
         <div className="space-y-3"><div className="space-y-1"><Label>작성월</Label><Input type="month" value={editingReport.report_month} onChange={(e) => setEditingReport((p) => ({ ...p, report_month: e.target.value }))} /></div><div className="space-y-1"><Label>제목</Label><Input value={editingReport.title} onChange={(e) => setEditingReport((p) => ({ ...p, title: e.target.value }))} /></div></div>
         <DialogFooter><Button variant="outline" onClick={() => setReportEditOpen(false)}>취소</Button><Button onClick={updateReport}>저장</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={itemEditOpen} onOpenChange={setItemEditOpen}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>AI 판독 항목 수동 수정</DialogTitle></DialogHeader>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1"><Label>사용일</Label><Input type="date" value={editingItem.usage_date} onChange={(e) => setEditingItem((p) => ({ ...p, usage_date: e.target.value }))} /></div>
+          <div className="space-y-1"><Label>분류</Label><Select value={editingItem.category_code || 'review'} onValueChange={(v) => { const cat = SAFETY_COST_CATEGORIES.find((c) => c.code === v); setEditingItem((p) => ({ ...p, category_code: v === 'review' ? '' : v, category_name: cat?.name || '검토 필요' })); }}><SelectTrigger><SelectValue placeholder="분류 선택" /></SelectTrigger><SelectContent><SelectItem value="review">검토 필요</SelectItem>{SAFETY_COST_CATEGORIES.map((c) => <SelectItem key={c.code} value={c.code}>{c.code}. {c.name}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-1 md:col-span-2"><Label>품목명</Label><Input value={editingItem.item_name} onChange={(e) => setEditingItem((p) => ({ ...p, item_name: e.target.value }))} /></div>
+          <div className="space-y-1"><Label>규격</Label><Input value={editingItem.specification} onChange={(e) => setEditingItem((p) => ({ ...p, specification: e.target.value }))} /></div>
+          <div className="space-y-1"><Label>판정</Label><Select value={editingItem.classification_status} onValueChange={(v) => setEditingItem((p) => ({ ...p, classification_status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="usable">사용 가능</SelectItem><SelectItem value="warning">사용 불가</SelectItem><SelectItem value="review">검토 필요</SelectItem></SelectContent></Select></div>
+          <div className="space-y-1"><Label>수량</Label><Input type="number" value={editingItem.quantity} onChange={(e) => setEditingItem((p) => ({ ...p, quantity: e.target.value }))} /></div>
+          <div className="space-y-1"><Label>단위</Label><Input value={editingItem.unit} onChange={(e) => setEditingItem((p) => ({ ...p, unit: e.target.value }))} /></div>
+          <div className="space-y-1"><Label>단가</Label><Input type="number" value={editingItem.unit_price} onChange={(e) => setEditingItem((p) => ({ ...p, unit_price: e.target.value }))} /></div>
+          <div className="space-y-1"><Label>금액</Label><Input type="number" value={editingItem.amount} onChange={(e) => setEditingItem((p) => ({ ...p, amount: e.target.value }))} /></div>
+          <div className="space-y-1 md:col-span-2"><Label>판정 사유</Label><Textarea rows={3} value={editingItem.ai_reason} onChange={(e) => setEditingItem((p) => ({ ...p, ai_reason: e.target.value }))} /></div>
+          <div className="space-y-1 md:col-span-2"><Label>법적 근거</Label><Textarea rows={3} value={editingItem.legal_basis} onChange={(e) => setEditingItem((p) => ({ ...p, legal_basis: e.target.value }))} /></div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={() => setItemEditOpen(false)}>취소</Button><Button onClick={updateItem}>저장</Button></DialogFooter>
       </DialogContent>
     </Dialog>
     <Dialog open={constructionEditOpen} onOpenChange={setConstructionEditOpen}>

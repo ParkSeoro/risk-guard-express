@@ -47,6 +47,8 @@ const SafetyCost = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [requestingEvidence, setRequestingEvidence] = useState(false);
   const [newConstruction, setNewConstruction] = useState({ company_id: '', construction_name: '', construction_type: '', construction_amount: '', safety_cost_total: '', notes: '' });
+  const [constructionEditOpen, setConstructionEditOpen] = useState(false);
+  const [editingConstruction, setEditingConstruction] = useState({ id: '', company_id: '', construction_name: '', construction_type: '', construction_amount: '', safety_cost_total: '', notes: '' });
   const [newReportMonth, setNewReportMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [reportEditOpen, setReportEditOpen] = useState(false);
   const [editingReport, setEditingReport] = useState({ id: '', report_month: '', title: '' });
@@ -119,6 +121,49 @@ const SafetyCost = () => {
     if (error) { toast({ title: '공사 등록 실패', description: error.message, variant: 'destructive' }); return; }
     setConstructionOpen(false); setNewConstruction({ company_id: '', construction_name: '', construction_type: '', construction_amount: '', safety_cost_total: '', notes: '' });
     toast({ title: '산업안전보건관리비 공사가 등록되었습니다.' }); fetchAll();
+  }
+
+  function openConstructionEditor(construction: Construction) {
+    setEditingConstruction({
+      id: construction.id,
+      company_id: construction.company_id || '',
+      construction_name: construction.construction_name || '',
+      construction_type: construction.construction_type || '',
+      construction_amount: String(construction.construction_amount || ''),
+      safety_cost_total: String(construction.safety_cost_total || ''),
+      notes: construction.notes || '',
+    });
+    setConstructionEditOpen(true);
+  }
+
+  async function updateConstruction() {
+    if (!editingConstruction.id || !editingConstruction.company_id || !editingConstruction.construction_name.trim()) {
+      toast({ title: '공사명과 회사를 입력하세요.', variant: 'destructive' }); return;
+    }
+    const before = constructions.find((c) => c.id === editingConstruction.id);
+    const payload = {
+      company_id: editingConstruction.company_id,
+      construction_name: editingConstruction.construction_name.trim(),
+      construction_type: editingConstruction.construction_type.trim(),
+      construction_amount: Number(editingConstruction.construction_amount || 0),
+      safety_cost_total: Number(editingConstruction.safety_cost_total || 0),
+      notes: editingConstruction.notes.trim(),
+    };
+    const { error } = await supabase.from('safety_cost_constructions' as any).update(payload).eq('id', editingConstruction.id);
+    if (error) { toast({ title: '공사 정보 수정 실패', description: error.message, variant: 'destructive' }); return; }
+    await supabase.from('safety_cost_audit_logs' as any).insert({
+      project_id: before?.project_id || access.selectedProject,
+      company_id: payload.company_id,
+      construction_id: editingConstruction.id,
+      action: '산업안전보건관리비 공사 정보 수정',
+      target_type: 'safety_cost_construction',
+      target_id: editingConstruction.id,
+      before_data: before || {},
+      after_data: payload,
+      user_id: user?.id,
+      user_name: profile?.display_name || '',
+    });
+    setConstructionEditOpen(false); toast({ title: '공사 정보가 수정되었습니다.' }); fetchAll();
   }
 
   async function createReport() {
@@ -362,7 +407,7 @@ const SafetyCost = () => {
     </div>
 
     <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-      <div className="space-y-3">{constructions.map((c) => { const selected = c.id === selectedConstructionId; const constructionReports = reports.filter((r) => r.construction_id === c.id && r.status === 'approved'); const total = constructionReports.reduce((sum, r) => sum + Number(r.report_total || 0), 0); const rate = c.safety_cost_total ? Math.round((total / Number(c.safety_cost_total)) * 100) : 0; return <button key={c.id} onClick={() => setSelectedConstructionId(c.id)} className={`w-full text-left rounded-lg border p-3 transition-colors ${selected ? 'border-primary bg-primary/5' : 'bg-card hover:bg-muted/50'}`}><div className="font-medium text-sm">{c.construction_name}</div><div className="text-xs text-muted-foreground mt-1">{companies.find((co) => co.id === c.company_id)?.name || ''}</div><div className="mt-3 space-y-1"><div className="flex justify-between text-xs"><span>사용률</span><span>{rate}%</span></div><Progress value={Math.min(100, rate)} className="h-2" /></div><div className="grid grid-cols-2 gap-2 mt-3 text-xs"><span>총액 {formatKRW(c.safety_cost_total)}</span><span>잔여 {formatKRW(Number(c.safety_cost_total || 0) - total)}</span></div></button>; })}{constructions.length === 0 && <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">등록된 공사가 없습니다.</CardContent></Card>}</div>
+      <div className="space-y-3">{constructions.map((c) => { const selected = c.id === selectedConstructionId; const constructionReports = reports.filter((r) => r.construction_id === c.id && r.status === 'approved'); const total = constructionReports.reduce((sum, r) => sum + Number(r.report_total || 0), 0); const rate = c.safety_cost_total ? Math.round((total / Number(c.safety_cost_total)) * 100) : 0; return <div key={c.id} className={`rounded-lg border p-3 transition-colors ${selected ? 'border-primary bg-primary/5' : 'bg-card hover:bg-muted/50'}`}><button type="button" onClick={() => setSelectedConstructionId(c.id)} className="w-full text-left"><div className="flex items-start justify-between gap-2"><div><div className="font-medium text-sm">{c.construction_name}</div><div className="text-xs text-muted-foreground mt-1">{companies.find((co) => co.id === c.company_id)?.name || ''}</div></div><Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={(e) => { e.stopPropagation(); openConstructionEditor(c); }} aria-label="공사 정보 수정"><Pencil className="h-3.5 w-3.5" /></Button></div><div className="mt-3 space-y-1"><div className="flex justify-between text-xs"><span>사용률</span><span>{rate}%</span></div><Progress value={Math.min(100, rate)} className="h-2" /></div><div className="grid grid-cols-2 gap-2 mt-3 text-xs"><span>총액 {formatKRW(c.safety_cost_total)}</span><span>잔여 {formatKRW(Number(c.safety_cost_total || 0) - total)}</span></div></button></div>; })}{constructions.length === 0 && <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">등록된 공사가 없습니다.</CardContent></Card>}</div>
 
       <div className="space-y-4">
         {selectedConstruction && <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center justify-between"><span>{selectedConstruction.construction_name}</span>{usageRate < 50 && <Badge variant="secondary" className="gap-1"><AlertTriangle className="h-3 w-3" /> 저사용 경고</Badge>}</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-4"><div><p className="text-xs text-muted-foreground">공사금액</p><p className="font-semibold">{formatKRW(selectedConstruction.construction_amount)}</p></div><div><p className="text-xs text-muted-foreground">산업안전보건관리비 총액</p><p className="font-semibold">{formatKRW(selectedConstruction.safety_cost_total)}</p></div><div><p className="text-xs text-muted-foreground">승인 누계</p><p className="font-semibold">{formatKRW(approvedTotal)}</p></div><div><p className="text-xs text-muted-foreground">잔여 금액</p><p className="font-semibold">{formatKRW(Number(selectedConstruction.safety_cost_total || 0) - approvedTotal)}</p></div></CardContent></Card>}
@@ -384,6 +429,13 @@ const SafetyCost = () => {
         <DialogHeader><DialogTitle>월별 사용내역서 수정</DialogTitle></DialogHeader>
         <div className="space-y-3"><div className="space-y-1"><Label>작성월</Label><Input type="month" value={editingReport.report_month} onChange={(e) => setEditingReport((p) => ({ ...p, report_month: e.target.value }))} /></div><div className="space-y-1"><Label>제목</Label><Input value={editingReport.title} onChange={(e) => setEditingReport((p) => ({ ...p, title: e.target.value }))} /></div></div>
         <DialogFooter><Button variant="outline" onClick={() => setReportEditOpen(false)}>취소</Button><Button onClick={updateReport}>저장</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={constructionEditOpen} onOpenChange={setConstructionEditOpen}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>산업안전보건관리비 공사 정보 수정</DialogTitle></DialogHeader>
+        <div className="grid grid-cols-2 gap-3"><div className="col-span-2 space-y-1"><Label>회사</Label><Select value={editingConstruction.company_id} onValueChange={(v) => setEditingConstruction((p) => ({ ...p, company_id: v }))}><SelectTrigger><SelectValue placeholder="회사 선택" /></SelectTrigger><SelectContent>{scopedCompanies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div><div className="col-span-2 space-y-1"><Label>공사명</Label><Input value={editingConstruction.construction_name} onChange={(e) => setEditingConstruction((p) => ({ ...p, construction_name: e.target.value }))} /></div><div className="space-y-1"><Label>공사종류</Label><Input value={editingConstruction.construction_type} onChange={(e) => setEditingConstruction((p) => ({ ...p, construction_type: e.target.value }))} /></div><div className="space-y-1"><Label>공사금액</Label><Input type="number" value={editingConstruction.construction_amount} onChange={(e) => setEditingConstruction((p) => ({ ...p, construction_amount: e.target.value }))} /></div><div className="space-y-1"><Label>산업안전보건관리비 총액</Label><Input type="number" value={editingConstruction.safety_cost_total} onChange={(e) => setEditingConstruction((p) => ({ ...p, safety_cost_total: e.target.value }))} /></div><div className="space-y-1"><Label>비고</Label><Input value={editingConstruction.notes} onChange={(e) => setEditingConstruction((p) => ({ ...p, notes: e.target.value }))} /></div></div>
+        <DialogFooter><Button variant="outline" onClick={() => setConstructionEditOpen(false)}>취소</Button><Button onClick={updateConstruction}>저장</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   </div>;

@@ -63,7 +63,7 @@ const SafetyCost = () => {
   const [reportEditOpen, setReportEditOpen] = useState(false);
   const [editingReport, setEditingReport] = useState({ id: '', report_month: '', title: '' });
   const [itemEditOpen, setItemEditOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState({ id: '', usage_date: '', category_code: '', category_name: '', item_name: '', specification: '', quantity: '1', unit: '식', unit_price: '', amount: '', classification_status: 'review', ai_reason: '', legal_basis: '' });
+  const [editingItem, setEditingItem] = useState({ id: '', transaction_date: '', usage_date: '', category_code: '', category_name: '', item_name: '', specification: '', maker: '', quantity: '1', unit: '식', unit_price: '', supply_amount: '', vat_amount: '', amount: '', supplier_name: '', classification_status: 'review', ai_reason: '', legal_basis: '' });
 
   const selectedConstruction = constructions.find((c) => c.id === selectedConstructionId);
   const selectedReport = reports.find((r) => r.id === selectedReportId);
@@ -232,15 +232,20 @@ const SafetyCost = () => {
         construction_id: selectedConstruction.id,
         project_id: selectedConstruction.project_id,
         company_id: selectedConstruction.company_id,
-        usage_date: row.usage_date || null,
+        transaction_date: row.transaction_date || row.usage_date || null,
+        usage_date: row.usage_date || row.transaction_date || null,
         category_code: row.category_code || fallback.category_code,
         category_name: row.category_name || fallback.category_name,
         item_name: row.item_name || row['품목'] || row['사용 항목'] || '',
         specification: row.specification || row['규격'] || '',
+        maker: row.maker || row.manufacturer || row['메이커'] || row['제조사'] || '',
         quantity: Number(row.quantity || row['수량'] || 1),
         unit: row.unit || row['단위'] || '식',
         unit_price: Number(row.unit_price || row['단가'] || row.amount || row['금액'] || 0),
+        supply_amount: Number(row.supply_amount || row['공급가액'] || row.amount || row['금액'] || 0),
+        vat_amount: Number(row.vat_amount || row.vat || row['부가세'] || 0),
         amount: Number(row.amount || row['금액'] || 0),
+        supplier_name: row.supplier_name || row['공급자 상호'] || row['공급자'] || row['상호'] || '',
         classification_status: row.classification_status || fallback.classification_status,
         ai_confidence: row.ai_confidence || null,
         ai_reason: row.ai_reason || fallback.ai_reason,
@@ -260,15 +265,20 @@ const SafetyCost = () => {
   function openItemEditor(item: Item) {
     setEditingItem({
       id: item.id,
+      transaction_date: item.transaction_date || item.usage_date || '',
       usage_date: item.usage_date || '',
       category_code: item.category_code || '',
       category_name: item.category_name || '',
       item_name: item.item_name || '',
       specification: item.specification || '',
+      maker: item.maker || '',
       quantity: String(item.quantity || 1),
       unit: item.unit || '식',
       unit_price: String(item.unit_price || ''),
+      supply_amount: String(item.supply_amount || ''),
+      vat_amount: String(item.vat_amount || ''),
       amount: String(item.amount || ''),
+      supplier_name: item.supplier_name || '',
       classification_status: item.classification_status || 'review',
       ai_reason: item.ai_reason || '',
       legal_basis: item.legal_basis || '',

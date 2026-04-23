@@ -2480,6 +2480,7 @@ export type Database = {
           id: string
           item_name: string
           legal_basis: string
+          maker: string
           project_id: string
           quantity: number
           report_id: string
@@ -2487,10 +2488,14 @@ export type Database = {
           sort_order: number
           source_file_id: string | null
           specification: string
+          supplier_name: string
+          supply_amount: number
+          transaction_date: string | null
           unit: string
           unit_price: number
           updated_at: string
           usage_date: string | null
+          vat_amount: number
         }
         Insert: {
           ai_confidence?: number | null
@@ -2506,6 +2511,7 @@ export type Database = {
           id?: string
           item_name?: string
           legal_basis?: string
+          maker?: string
           project_id: string
           quantity?: number
           report_id: string
@@ -2513,10 +2519,14 @@ export type Database = {
           sort_order?: number
           source_file_id?: string | null
           specification?: string
+          supplier_name?: string
+          supply_amount?: number
+          transaction_date?: string | null
           unit?: string
           unit_price?: number
           updated_at?: string
           usage_date?: string | null
+          vat_amount?: number
         }
         Update: {
           ai_confidence?: number | null
@@ -2532,6 +2542,7 @@ export type Database = {
           id?: string
           item_name?: string
           legal_basis?: string
+          maker?: string
           project_id?: string
           quantity?: number
           report_id?: string
@@ -2539,10 +2550,14 @@ export type Database = {
           sort_order?: number
           source_file_id?: string | null
           specification?: string
+          supplier_name?: string
+          supply_amount?: number
+          transaction_date?: string | null
           unit?: string
           unit_price?: number
           updated_at?: string
           usage_date?: string | null
+          vat_amount?: number
         }
         Relationships: [
           {

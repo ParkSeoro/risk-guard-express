@@ -441,35 +441,43 @@ const SafetyCost = () => {
     toast({ title: '승인 완료', description: '승인된 금액만 사용 누계에 반영됩니다.' }); fetchAll();
   }
 
-  function exportExcel() {
+  async function exportExcel() {
     if (!selectedReport || !selectedConstruction) return;
-    const wb = XLSX.utils.book_new();
-    const summary = [
-      ['산업안전보건관리비 사용내역서 총괄'], ['공사명', selectedConstruction.construction_name], ['회사', companies.find((c) => c.id === selectedConstruction.company_id)?.name || ''], ['공사금액', selectedConstruction.construction_amount], ['계상된 산업안전보건관리비', selectedConstruction.safety_cost_total], ['승인 누계', approvedTotal], ['잔여 금액', Number(selectedConstruction.safety_cost_total || 0) - approvedTotal], ['사용률', `${usageRate}%`], ['작성월', selectedReport.report_month], ['상태', getSafetyCostStatusLabel(selectedReport.status)], [],
-      ['구분', 'No.', '월일', '사용 항목', '규격', '수량', '단위', '단가', '금액', '판정', '법적 근거', '증빙 수'],
-      ...filteredItems.map((it, idx) => [it.category_name, idx + 1, it.usage_date || '', it.item_name, it.specification, it.quantity, it.unit, it.unit_price, it.amount, statusLabel[it.classification_status] || it.classification_status, it.legal_basis, evidence.filter((e) => e.item_id === it.id).length]),
-      [], ['감사대응 체크리스트'], ...auditChecklist.map((it) => [it.label, it.ok ? '완료' : '보완 필요', it.detail]),
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), '산업안전보건관리비');
+    const res = await fetch('/templates/safety-cost-template.xlsx');
+    const wb = XLSX.read(await res.arrayBuffer(), { type: 'array', cellStyles: true });
+    const companyName = companies.find((c) => c.id === selectedConstruction.company_id)?.name || '';
+    const summary = wb.Sheets['1.총괄'];
+    if (summary) {
+      XLSX.utils.sheet_add_aoa(summary, [[companyName]], { origin: 'C3' });
+      XLSX.utils.sheet_add_aoa(summary, [[selectedConstruction.construction_name]], { origin: 'C5' });
+      XLSX.utils.sheet_add_aoa(summary, [[selectedConstruction.construction_amount]], { origin: 'C7' });
+      XLSX.utils.sheet_add_aoa(summary, [[selectedConstruction.safety_cost_total]], { origin: 'C8' });
+      XLSX.utils.sheet_add_aoa(summary, [[Number(selectedConstruction.safety_cost_total || 0) - approvedTotal]], { origin: 'C9' });
+      XLSX.utils.sheet_add_aoa(summary, [[approvedTotal]], { origin: 'F9' });
+      SAFETY_COST_CATEGORIES.forEach((cat, idx) => {
+        const total = filteredItems.filter((it) => it.category_code === cat.code || it.category_name === cat.name).reduce((sum, it) => sum + Number(it.amount || 0), 0);
+        XLSX.utils.sheet_add_aoa(summary, [[total, total]], { origin: `E${13 + idx}` });
+      });
+    }
+    const detail = wb.Sheets['2. 항목별'];
+    if (detail) {
+      const rows = filteredItems.map((it, idx) => [it.category_name, idx + 1, it.usage_date || '', it.item_name, it.quantity, it.unit, it.unit_price, it.amount, statusLabel[it.classification_status] || it.classification_status]);
+      XLSX.utils.sheet_add_aoa(detail, rows, { origin: 'A5' });
+    }
     XLSX.writeFile(wb, `산업안전보건관리비_${selectedConstruction.construction_name}_${selectedReport.report_month}.xlsx`);
   }
 
   function exportPDF() {
     if (!selectedReport || !selectedConstruction) return;
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    doc.setFontSize(16); doc.text('산업안전보건관리비 사용내역서', 14, 16);
-    doc.setFontSize(10); doc.text(`공사명: ${selectedConstruction.construction_name} / 작성월: ${selectedReport.report_month}`, 14, 24);
-    autoTable(doc, { startY: 30, head: [['구분', 'No.', '사용 항목', '수량', '단위', '단가', '금액', '판정', '법적 근거']], body: filteredItems.map((it, idx) => [it.category_name, idx + 1, it.item_name, it.quantity, it.unit, formatKRW(it.unit_price), formatKRW(it.amount), statusLabel[it.classification_status] || it.classification_status, it.legal_basis]), styles: { fontSize: 8 }, headStyles: { fillColor: [30, 41, 59] } });
-    let y = (doc as any).lastAutoTable.finalY + 10;
-    doc.text(`승인 누계: ${formatKRW(approvedTotal)} / 잔여 금액: ${formatKRW(Number(selectedConstruction.safety_cost_total || 0) - approvedTotal)} / 사용률: ${usageRate}%`, 14, y);
-    autoTable(doc, { startY: y + 6, head: [['감사대응 항목', '상태', '비고']], body: auditChecklist.map((it) => [it.label, it.ok ? '완료' : '보완 필요', it.detail]), styles: { fontSize: 8 } });
-    filteredItems.forEach((it) => {
-      const files = evidence.filter((e) => e.item_id === it.id);
-      if (!files.length) return;
-      doc.addPage(); doc.setFontSize(13); doc.text(`증빙: ${it.item_name}`, 14, 16);
-      doc.setFontSize(9); files.forEach((f, idx) => doc.text(`${idx + 1}. ${f.file_name}`, 16, 28 + idx * 7));
-    });
-    doc.save(`산업안전보건관리비_${selectedConstruction.construction_name}_${selectedReport.report_month}.pdf`);
+    const companyName = companies.find((c) => c.id === selectedConstruction.company_id)?.name || '';
+    const grouped = SAFETY_COST_CATEGORIES.map((cat) => ({ cat, rows: filteredItems.filter((it) => it.category_code === cat.code || it.category_name === cat.name) }));
+    const itemRows = grouped.flatMap(({ cat, rows }) => rows.length ? rows.map((it, idx) => `<tr><td>${escapeHtml(cat.name)}</td><td>${idx + 1}</td><td>${escapeHtml(it.usage_date || '')}</td><td>${escapeHtml(it.item_name)}</td><td>${escapeHtml(it.quantity)}</td><td>${escapeHtml(it.unit)}</td><td>${formatKRW(it.unit_price)}</td><td>${formatKRW(it.amount)}</td><td>${escapeHtml(statusLabel[it.classification_status] || it.classification_status)}</td></tr>`) : [`<tr class="section"><td colspan="9">${escapeHtml(cat.code)}. ${escapeHtml(cat.name)}</td></tr>`]).join('');
+    const checklistRows = auditChecklist.map((it) => `<tr><td>${escapeHtml(it.label)}</td><td>${it.ok ? '완료' : '보완 필요'}</td><td>${escapeHtml(it.detail)}</td></tr>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>산업안전보건관리비 사용내역서</title><style>@page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:'Malgun Gothic','Apple SD Gothic Neo',Arial,sans-serif;color:#111;margin:0}.page{page-break-after:always}h1{text-align:center;font-size:22px;letter-spacing:6px;margin:8px 0 28px}.title{text-align:left;font-weight:700;font-size:18px;margin:0 0 8px}table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:14px}th,td{border:1px solid #333;padding:6px 7px;font-size:11px;line-height:1.35;vertical-align:middle;word-break:keep-all}th{background:#eef2f7;font-weight:700}.meta td{height:30px}.section td{background:#f8fafc;font-weight:700}.notice{margin-top:20px;font-size:13px}.sign{text-align:right;margin-top:28px;font-size:14px}.no-print{position:fixed;right:18px;top:18px}@media print{.no-print{display:none}}</style></head><body><button class="no-print" onclick="window.print()">인쇄</button><section class="page"><h1>${escapeHtml(String(selectedReport.report_month).slice(0,7))} 산업안전보건관리비 사용내역서</h1><table class="meta"><tbody><tr><th>건설업체명</th><td>${escapeHtml(companyName)}</td><th>대표자</th><td></td></tr><tr><th>소재지</th><td colspan="3"></td></tr><tr><th>공사명</th><td colspan="3">${escapeHtml(selectedConstruction.construction_name)}</td></tr><tr><th>발주처</th><td></td><th>공사기간</th><td></td></tr><tr><th>계약금액</th><td>${formatKRW(selectedConstruction.construction_amount)}</td><th>공정율</th><td></td></tr><tr><th>계상된 안전관리비</th><td>${formatKRW(selectedConstruction.safety_cost_total)}</td><th>공사진척에 따른 사용기준금액</th><td></td></tr><tr><th>잔여금액</th><td>${formatKRW(Number(selectedConstruction.safety_cost_total || 0) - approvedTotal)}</td><th>누계집행율</th><td>${usageRate}%</td></tr></tbody></table><p class="title">1. 산업안전보건관리비 사용내역서 총괄</p><table><thead><tr><th>항목</th><th>전월</th><th>금월</th><th>누계</th><th>기준비율</th></tr></thead><tbody>${grouped.map(({ cat, rows }) => { const total = rows.reduce((sum, it) => sum + Number(it.amount || 0), 0); return `<tr><td>${escapeHtml(cat.code)}. ${escapeHtml(cat.name)}</td><td></td><td>${formatKRW(total)}</td><td>${formatKRW(total)}</td><td></td></tr>`; }).join('')}</tbody></table><p class="notice">｢건설업 산업안전보건관리비 계상 및 사용기준｣ 제10조제1항에 따라 위와 같이 사용내역서를 작성하였습니다.</p><p class="sign">작성자: ${escapeHtml(profile?.display_name || '')}</p></section><section class="page"><p class="title">2. 항목별 사용내역</p><table><thead><tr><th>구분</th><th>No.</th><th>월·일</th><th>사용 항목</th><th>수량</th><th>단위</th><th>단가</th><th>금액</th><th>판정</th></tr></thead><tbody>${itemRows}</tbody></table><p class="title">감사대응 체크리스트</p><table><thead><tr><th>항목</th><th>상태</th><th>비고</th></tr></thead><tbody>${checklistRows}</tbody></table></section><script>window.onload=()=>setTimeout(()=>window.print(),300)</script></body></html>`;
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+    if (!printWindow) { toast({ title: '인쇄 창을 열 수 없습니다.', variant: 'destructive' }); return; }
+    printWindow.document.write(html);
+    printWindow.document.close();
   }
 
   if (!access.selectedProject) return <div className="text-muted-foreground">프로젝트를 선택하세요.</div>;

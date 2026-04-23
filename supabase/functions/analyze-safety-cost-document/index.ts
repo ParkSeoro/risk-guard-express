@@ -20,6 +20,9 @@ const CATEGORY_GUIDE = `
 8. 본사 전담조직 근로자 임금 등
 9. 위험성평가 등에 따른 소요비용
 판단값은 usable(사용 가능), warning(사용 불가 경고), review(검토 필요) 중 하나만 사용한다.
+산업재해 예방 목적과 직접 관련성이 부족한 일반공구, 일반자재, 사무용품, 식대·회식·복리후생, 유류비, 일반 장비임대료, 청소·폐기물 처리비, 일반 노무비는 warning으로 분류한다.
+안전시설·보호구라도 수리·임대·운반·철거·혼합 세트처럼 비용 성격이 불명확하면 review로 분류하고 필요한 증빙을 ai_reason에 적는다.
+각 항목에는 반드시 법적 근거와 보수적 판단 사유를 포함한다.
 `;
 
 function jsonResponse(body: unknown, status = 200) {
@@ -64,7 +67,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ items: fallbackParse(text), warning: "AI 키가 없어 예비 추출만 수행했습니다." });
     }
 
-    const prompt = `거래명세서/세금계산서/엑셀에서 추출된 텍스트를 분석해 산업안전보건관리비 사용내역 항목을 JSON으로만 반환하세요.\n${CATEGORY_GUIDE}\n파일명: ${fileName || ""}\n텍스트:\n${text.slice(0, 50000)}\n\n반환 형식: {"items":[{"usage_date":"YYYY-MM-DD 또는 빈값","item_name":"품목","specification":"규격","quantity":숫자,"unit":"단위","unit_price":숫자,"amount":숫자,"category_code":"1~9 또는 빈값","category_name":"분류명","classification_status":"usable|warning|review","ai_confidence":0~1,"ai_reason":"판단 사유","legal_basis":"관련 기준"}]}`;
+    const prompt = `거래명세서/세금계산서/엑셀에서 추출된 텍스트를 분석해 산업안전보건관리비 사용내역 항목을 JSON으로만 반환하세요.\n${CATEGORY_GUIDE}\n파일명: ${fileName || ""}\n텍스트:\n${text.slice(0, 50000)}\n\n반환 형식: {"items":[{"usage_date":"YYYY-MM-DD 또는 빈값","item_name":"품목","specification":"규격","quantity":숫자,"unit":"단위","unit_price":숫자,"amount":숫자,"category_code":"1~9 또는 빈값","category_name":"분류명","classification_status":"usable|warning|review","ai_confidence":0~1,"ai_reason":"판단 사유와 필요한 증빙","legal_basis":"건설업 산업안전보건관리비 계상 및 사용기준의 관련 조항/별표"}],"summary":{"usable_total":숫자,"warning_total":숫자,"review_total":숫자,"audit_notes":["감사 대응 확인사항"]}}`;
 
     const aiRes = await fetch(AI_GATEWAY_URL, {
       method: "POST",

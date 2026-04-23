@@ -35,6 +35,7 @@ import LegalDuties from "./pages/LegalDuties";
 import TodoDashboard from "./pages/TodoDashboard";
 import AIAssistant from "./pages/AIAssistant";
 import SiteWeather from "./pages/SiteWeather";
+import SafetyCost from "./pages/SafetyCost";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -122,6 +123,7 @@ function ProtectedRoutes() {
         <Route path="/todo" element={<TodoDashboard />} />
         <Route path="/ai-assistant" element={<AIAssistant />} />
         <Route path="/site-weather" element={<SiteWeather />} />
+        <Route path="/safety-cost" element={<SafetyCost />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

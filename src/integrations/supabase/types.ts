@@ -2133,6 +2133,530 @@ export type Database = {
         }
         Relationships: []
       }
+      safety_cost_approval_steps: {
+        Row: {
+          approved_at: string | null
+          approver_id: string | null
+          approver_name: string
+          comment: string
+          company_id: string
+          company_name: string
+          construction_id: string
+          created_at: string
+          id: string
+          position: string
+          project_id: string
+          report_id: string
+          status: string
+          step_label: string
+          step_order: number
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approver_id?: string | null
+          approver_name?: string
+          comment?: string
+          company_id: string
+          company_name?: string
+          construction_id: string
+          created_at?: string
+          id?: string
+          position?: string
+          project_id: string
+          report_id: string
+          status?: string
+          step_label?: string
+          step_order?: number
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approver_id?: string | null
+          approver_name?: string
+          comment?: string
+          company_id?: string
+          company_name?: string
+          construction_id?: string
+          created_at?: string
+          id?: string
+          position?: string
+          project_id?: string
+          report_id?: string
+          status?: string
+          step_label?: string
+          step_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "safety_cost_approval_steps_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_approval_steps_construction_id_fkey"
+            columns: ["construction_id"]
+            isOneToOne: false
+            referencedRelation: "safety_cost_constructions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_approval_steps_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_approval_steps_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "safety_cost_monthly_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      safety_cost_audit_logs: {
+        Row: {
+          action: string
+          after_data: Json
+          before_data: Json
+          company_id: string | null
+          construction_id: string | null
+          created_at: string
+          id: string
+          item_id: string | null
+          project_id: string
+          reason: string
+          report_id: string | null
+          target_id: string | null
+          target_type: string
+          user_id: string | null
+          user_name: string
+        }
+        Insert: {
+          action: string
+          after_data?: Json
+          before_data?: Json
+          company_id?: string | null
+          construction_id?: string | null
+          created_at?: string
+          id?: string
+          item_id?: string | null
+          project_id: string
+          reason?: string
+          report_id?: string | null
+          target_id?: string | null
+          target_type?: string
+          user_id?: string | null
+          user_name?: string
+        }
+        Update: {
+          action?: string
+          after_data?: Json
+          before_data?: Json
+          company_id?: string | null
+          construction_id?: string | null
+          created_at?: string
+          id?: string
+          item_id?: string | null
+          project_id?: string
+          reason?: string
+          report_id?: string | null
+          target_id?: string | null
+          target_type?: string
+          user_id?: string | null
+          user_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "safety_cost_audit_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_audit_logs_construction_id_fkey"
+            columns: ["construction_id"]
+            isOneToOne: false
+            referencedRelation: "safety_cost_constructions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_audit_logs_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "safety_cost_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_audit_logs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_audit_logs_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "safety_cost_monthly_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      safety_cost_constructions: {
+        Row: {
+          basis_files: Json
+          company_id: string
+          construction_amount: number
+          construction_name: string
+          construction_type: string
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string
+          project_id: string
+          safety_cost_total: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          basis_files?: Json
+          company_id: string
+          construction_amount?: number
+          construction_name?: string
+          construction_type?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string
+          project_id: string
+          safety_cost_total?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          basis_files?: Json
+          company_id?: string
+          construction_amount?: number
+          construction_name?: string
+          construction_type?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string
+          project_id?: string
+          safety_cost_total?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "safety_cost_constructions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_constructions_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      safety_cost_evidence_files: {
+        Row: {
+          company_id: string
+          construction_id: string
+          created_at: string
+          evidence_kind: string
+          file_hash: string
+          file_name: string
+          file_path: string
+          file_size: number
+          file_url: string
+          id: string
+          item_id: string | null
+          mime_type: string
+          project_id: string
+          report_id: string | null
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          company_id: string
+          construction_id: string
+          created_at?: string
+          evidence_kind?: string
+          file_hash?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_url?: string
+          id?: string
+          item_id?: string | null
+          mime_type?: string
+          project_id: string
+          report_id?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          company_id?: string
+          construction_id?: string
+          created_at?: string
+          evidence_kind?: string
+          file_hash?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_url?: string
+          id?: string
+          item_id?: string | null
+          mime_type?: string
+          project_id?: string
+          report_id?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "safety_cost_evidence_files_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_evidence_files_construction_id_fkey"
+            columns: ["construction_id"]
+            isOneToOne: false
+            referencedRelation: "safety_cost_constructions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_evidence_files_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "safety_cost_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_evidence_files_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_evidence_files_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "safety_cost_monthly_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      safety_cost_items: {
+        Row: {
+          ai_confidence: number | null
+          ai_reason: string
+          amount: number
+          category_code: string
+          category_name: string
+          classification_status: string
+          company_id: string
+          construction_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          item_name: string
+          legal_basis: string
+          project_id: string
+          quantity: number
+          report_id: string
+          review_comment: string
+          sort_order: number
+          source_file_id: string | null
+          specification: string
+          unit: string
+          unit_price: number
+          updated_at: string
+          usage_date: string | null
+        }
+        Insert: {
+          ai_confidence?: number | null
+          ai_reason?: string
+          amount?: number
+          category_code?: string
+          category_name?: string
+          classification_status?: string
+          company_id: string
+          construction_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          item_name?: string
+          legal_basis?: string
+          project_id: string
+          quantity?: number
+          report_id: string
+          review_comment?: string
+          sort_order?: number
+          source_file_id?: string | null
+          specification?: string
+          unit?: string
+          unit_price?: number
+          updated_at?: string
+          usage_date?: string | null
+        }
+        Update: {
+          ai_confidence?: number | null
+          ai_reason?: string
+          amount?: number
+          category_code?: string
+          category_name?: string
+          classification_status?: string
+          company_id?: string
+          construction_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          item_name?: string
+          legal_basis?: string
+          project_id?: string
+          quantity?: number
+          report_id?: string
+          review_comment?: string
+          sort_order?: number
+          source_file_id?: string | null
+          specification?: string
+          unit?: string
+          unit_price?: number
+          updated_at?: string
+          usage_date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "safety_cost_items_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_items_construction_id_fkey"
+            columns: ["construction_id"]
+            isOneToOne: false
+            referencedRelation: "safety_cost_constructions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_items_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_items_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "safety_cost_monthly_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      safety_cost_monthly_reports: {
+        Row: {
+          approval_version: number
+          approved_at: string | null
+          approved_by: string | null
+          company_id: string
+          construction_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          project_id: string
+          rejected_reason: string
+          report_month: string
+          report_total: number
+          status: string
+          submitted_at: string | null
+          submitted_by: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          approval_version?: number
+          approved_at?: string | null
+          approved_by?: string | null
+          company_id: string
+          construction_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          project_id: string
+          rejected_reason?: string
+          report_month: string
+          report_total?: number
+          status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          approval_version?: number
+          approved_at?: string | null
+          approved_by?: string | null
+          company_id?: string
+          construction_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          project_id?: string
+          rejected_reason?: string
+          report_month?: string
+          report_total?: number
+          status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "safety_cost_monthly_reports_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_monthly_reports_construction_id_fkey"
+            columns: ["construction_id"]
+            isOneToOne: false
+            referencedRelation: "safety_cost_constructions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_monthly_reports_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       schedule_uploads: {
         Row: {
           column_mapping: Json | null
@@ -2593,6 +3117,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_access_safety_cost: {
+        Args: {
+          _company_id: string
+          _project_id: string
+          _user_id: string
+          _write?: boolean
+        }
+        Returns: boolean
+      }
       ensure_master_allowlist: {
         Args: { _user_id: string }
         Returns: undefined

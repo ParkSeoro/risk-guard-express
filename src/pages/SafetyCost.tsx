@@ -28,6 +28,11 @@ type Evidence = any;
 
 const statusVariant = (status: string) => status === 'usable' ? 'default' : status === 'warning' ? 'destructive' : 'secondary';
 const statusLabel: Record<string, string> = { usable: '사용 가능', warning: '사용 불가', review: '검토 필요' };
+const sanitizeStorageFileName = (fileName: string) => {
+  const extension = fileName.includes('.') ? `.${fileName.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'}` : '';
+  const baseName = fileName.replace(/\.[^.]+$/, '').normalize('NFKD').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+  return `${baseName || 'document'}${extension}`;
+};
 
 const SafetyCost = () => {
   const { user, profile } = useAuth();
@@ -270,7 +275,7 @@ const SafetyCost = () => {
       } else if (ext === 'csv' || ext === 'txt') {
         text = await file.text();
       }
-      const safeName = file.name.replace(/[^a-zA-Z0-9가-힣._-]/g, '_');
+      const safeName = sanitizeStorageFileName(file.name);
       const path = `safety-cost/${selectedReport.id}/documents/${Date.now()}_${safeName}`;
       const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { upsert: true, contentType: file.type || undefined });
       if (upErr) { toast({ title: '거래명세표 업로드 실패', description: upErr.message, variant: 'destructive' }); return; }
@@ -296,8 +301,8 @@ const SafetyCost = () => {
     if (!files || !selectedConstruction || !user) return;
     const rows = [];
     for (const file of Array.from(files)) {
-      const path = `safety-cost/${item.report_id}/items/${item.id}/${Date.now()}_${file.name}`;
-      const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: true });
+      const path = `safety-cost/${item.report_id}/items/${item.id}/${Date.now()}_${sanitizeStorageFileName(file.name)}`;
+      const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: true, contentType: file.type || 'application/octet-stream' });
       if (error) { toast({ title: '증빙 업로드 실패', description: error.message, variant: 'destructive' }); continue; }
       const { data } = supabase.storage.from('attachments').getPublicUrl(path);
       rows.push({ report_id: item.report_id, item_id: item.id, construction_id: item.construction_id, project_id: item.project_id, company_id: item.company_id, evidence_kind: file.type.startsWith('image/') ? 'site_photo' : 'transaction', file_name: file.name, file_path: path, file_url: data.publicUrl, mime_type: file.type, file_size: file.size, uploaded_by: user.id });

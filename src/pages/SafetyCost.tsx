@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { AlertTriangle, Bot, CheckCircle2, ClipboardCheck, Eye, FileSpreadsheet, FileText, ListChecks, Paperclip, Plus, Send, ShieldCheck, Upload } from 'lucide-react';
+import { AlertTriangle, Bot, CheckCircle2, ClipboardCheck, Eye, FileSpreadsheet, FileText, ListChecks, Paperclip, Pencil, Plus, Send, ShieldCheck, Trash2, Upload } from 'lucide-react';
 
 type Construction = any;
 type Report = any;
@@ -48,6 +48,8 @@ const SafetyCost = () => {
   const [requestingEvidence, setRequestingEvidence] = useState(false);
   const [newConstruction, setNewConstruction] = useState({ company_id: '', construction_name: '', construction_type: '', construction_amount: '', safety_cost_total: '', notes: '' });
   const [newReportMonth, setNewReportMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [reportEditOpen, setReportEditOpen] = useState(false);
+  const [editingReport, setEditingReport] = useState({ id: '', report_month: '', title: '' });
 
   const selectedConstruction = constructions.find((c) => c.id === selectedConstructionId);
   const selectedReport = reports.find((r) => r.id === selectedReportId);
@@ -133,8 +135,34 @@ const SafetyCost = () => {
     setReportOpen(false); setSelectedReportId((data as any).id); toast({ title: '월별 사용내역서가 생성되었습니다.' }); fetchAll();
   }
 
+  function openReportEditor(report: Report) {
+    setEditingReport({ id: report.id, report_month: String(report.report_month || '').slice(0, 7), title: report.title || '' });
+    setReportEditOpen(true);
+  }
+
+  async function updateReport() {
+    if (!editingReport.id || !editingReport.report_month) return;
+    const current = reports.find((r) => r.id === editingReport.id);
+    if (current?.status === 'approved') { toast({ title: '승인 완료된 내역서는 수정할 수 없습니다.', variant: 'destructive' }); return; }
+    const { error } = await supabase.from('safety_cost_monthly_reports' as any).update({
+      report_month: `${editingReport.report_month}-01`,
+      title: editingReport.title.trim() || `${editingReport.report_month} 산업안전보건관리비 사용내역서`,
+    }).eq('id', editingReport.id);
+    if (error) { toast({ title: '월별 사용내역서 수정 실패', description: error.message, variant: 'destructive' }); return; }
+    setReportEditOpen(false); toast({ title: '월별 사용내역서가 수정되었습니다.' }); fetchAll();
+  }
+
+  async function deleteReport(report: Report) {
+    if (report.status === 'approved') { toast({ title: '승인 완료된 내역서는 삭제할 수 없습니다.', variant: 'destructive' }); return; }
+    if (!window.confirm(`${String(report.report_month).slice(0, 7)} 월별 사용내역서를 삭제할까요? 항목과 증빙 연결도 함께 삭제됩니다.`)) return;
+    const { error } = await supabase.from('safety_cost_monthly_reports' as any).delete().eq('id', report.id);
+    if (error) { toast({ title: '월별 사용내역서 삭제 실패', description: error.message, variant: 'destructive' }); return; }
+    setSelectedReportId(''); toast({ title: '월별 사용내역서가 삭제되었습니다.' }); fetchAll();
+  }
+
   async function updateReportTotal(reportId: string) {
-    const total = items.filter((i) => i.report_id === reportId).reduce((sum, i) => sum + Number(i.amount || 0), 0);
+    const { data } = await supabase.from('safety_cost_items' as any).select('amount').eq('report_id', reportId);
+    const total = ((data || []) as any[]).reduce((sum, i) => sum + Number(i.amount || 0), 0);
     await supabase.from('safety_cost_monthly_reports' as any).update({ report_total: total }).eq('id', reportId);
   }
 
@@ -168,8 +196,8 @@ const SafetyCost = () => {
     const { error } = await supabase.from('safety_cost_items' as any).insert(inserts);
     if (error) { toast({ title: '항목 추가 실패', description: error.message, variant: 'destructive' }); return; }
     toast({ title: `${inserts.length}개 항목이 추가되었습니다.` });
+    await updateReportTotal(selectedReport.id);
     await fetchAll();
-    setTimeout(() => updateReportTotal(selectedReport.id), 200);
   }
 
   async function analyzeWithAI() {

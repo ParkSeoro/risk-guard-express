@@ -509,6 +509,25 @@ const SafetyCost = () => {
         <DialogFooter><Button variant="outline" onClick={() => setReportEditOpen(false)}>취소</Button><Button onClick={updateReport}>저장</Button></DialogFooter>
       </DialogContent>
     </Dialog>
+    <Dialog open={itemEditOpen} onOpenChange={setItemEditOpen}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>AI 판독 항목 수동 수정</DialogTitle></DialogHeader>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-1"><Label>사용일</Label><Input type="date" value={editingItem.usage_date} onChange={(e) => setEditingItem((p) => ({ ...p, usage_date: e.target.value }))} /></div>
+          <div className="space-y-1"><Label>분류</Label><Select value={editingItem.category_code || 'review'} onValueChange={(v) => { const cat = SAFETY_COST_CATEGORIES.find((c) => c.code === v); setEditingItem((p) => ({ ...p, category_code: v === 'review' ? '' : v, category_name: cat?.name || '검토 필요' })); }}><SelectTrigger><SelectValue placeholder="분류 선택" /></SelectTrigger><SelectContent><SelectItem value="review">검토 필요</SelectItem>{SAFETY_COST_CATEGORIES.map((c) => <SelectItem key={c.code} value={c.code}>{c.code}. {c.name}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-1 md:col-span-2"><Label>품목명</Label><Input value={editingItem.item_name} onChange={(e) => setEditingItem((p) => ({ ...p, item_name: e.target.value }))} /></div>
+          <div className="space-y-1"><Label>규격</Label><Input value={editingItem.specification} onChange={(e) => setEditingItem((p) => ({ ...p, specification: e.target.value }))} /></div>
+          <div className="space-y-1"><Label>판정</Label><Select value={editingItem.classification_status} onValueChange={(v) => setEditingItem((p) => ({ ...p, classification_status: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="usable">사용 가능</SelectItem><SelectItem value="warning">사용 불가</SelectItem><SelectItem value="review">검토 필요</SelectItem></SelectContent></Select></div>
+          <div className="space-y-1"><Label>수량</Label><Input type="number" value={editingItem.quantity} onChange={(e) => setEditingItem((p) => ({ ...p, quantity: e.target.value }))} /></div>
+          <div className="space-y-1"><Label>단위</Label><Input value={editingItem.unit} onChange={(e) => setEditingItem((p) => ({ ...p, unit: e.target.value }))} /></div>
+          <div className="space-y-1"><Label>단가</Label><Input type="number" value={editingItem.unit_price} onChange={(e) => setEditingItem((p) => ({ ...p, unit_price: e.target.value }))} /></div>
+          <div className="space-y-1"><Label>금액</Label><Input type="number" value={editingItem.amount} onChange={(e) => setEditingItem((p) => ({ ...p, amount: e.target.value }))} /></div>
+          <div className="space-y-1 md:col-span-2"><Label>판정 사유</Label><Textarea rows={3} value={editingItem.ai_reason} onChange={(e) => setEditingItem((p) => ({ ...p, ai_reason: e.target.value }))} /></div>
+          <div className="space-y-1 md:col-span-2"><Label>법적 근거</Label><Textarea rows={3} value={editingItem.legal_basis} onChange={(e) => setEditingItem((p) => ({ ...p, legal_basis: e.target.value }))} /></div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={() => setItemEditOpen(false)}>취소</Button><Button onClick={updateItem}>저장</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
     <Dialog open={constructionEditOpen} onOpenChange={setConstructionEditOpen}>
       <DialogContent>
         <DialogHeader><DialogTitle>산업안전보건관리비 공사 정보 수정</DialogTitle></DialogHeader>

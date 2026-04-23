@@ -1,0 +1,288 @@
+import { useEffect, useMemo, useState } from 'react';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
+import { useToast } from '@/hooks/use-toast';
+import { SAFETY_COST_CATEGORIES, classifySafetyCostItem, formatKRW, getSafetyCostStatusLabel } from '@/lib/safetyCost';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { AlertTriangle, Bot, CheckCircle2, FileSpreadsheet, FileText, Paperclip, Plus, ShieldCheck, Upload } from 'lucide-react';
+
+type Construction = any;
+type Report = any;
+type Item = any;
+type Evidence = any;
+
+const statusVariant = (status: string) => status === 'usable' ? 'default' : status === 'warning' ? 'destructive' : 'secondary';
+const statusLabel: Record<string, string> = { usable: '사용 가능', warning: '사용 불가', review: '검토 필요' };
+
+const SafetyCost = () => {
+  const { user, profile } = useAuth();
+  const access = useGlobalProjectAccess();
+  const { toast } = useToast();
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [constructions, setConstructions] = useState<Construction[]>([]);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
+  const [evidence, setEvidence] = useState<Evidence[]>([]);
+  const [selectedConstructionId, setSelectedConstructionId] = useState('');
+  const [selectedReportId, setSelectedReportId] = useState('');
+  const [constructionOpen, setConstructionOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [aiText, setAiText] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [newConstruction, setNewConstruction] = useState({ company_id: '', construction_name: '', construction_type: '', construction_amount: '', safety_cost_total: '', notes: '' });
+  const [newReportMonth, setNewReportMonth] = useState(() => new Date().toISOString().slice(0, 7));
+
+  const selectedConstruction = constructions.find((c) => c.id === selectedConstructionId);
+  const selectedReport = reports.find((r) => r.id === selectedReportId);
+  const approvedReports = reports.filter((r) => r.status === 'approved');
+  const approvedTotal = useMemo(() => approvedReports.reduce((sum, r) => sum + Number(r.report_total || 0), 0), [approvedReports]);
+  const usageRate = selectedConstruction?.safety_cost_total ? Math.min(100, Math.round((approvedTotal / Number(selectedConstruction.safety_cost_total)) * 100)) : 0;
+
+  useEffect(() => { if (access.selectedProject) fetchAll(); }, [access.selectedProject]);
+  useEffect(() => {
+    if (!selectedConstructionId && constructions.length) setSelectedConstructionId(constructions[0].id);
+  }, [constructions, selectedConstructionId]);
+  useEffect(() => {
+    const filtered = reports.filter((r) => r.construction_id === selectedConstructionId);
+    if (!filtered.some((r) => r.id === selectedReportId)) setSelectedReportId(filtered[0]?.id || '');
+  }, [reports, selectedConstructionId, selectedReportId]);
+
+  const scopedCompanies = useMemo(() => {
+    if (access.isMaster || access.isProjectAdmin) return companies;
+    return companies.filter((c) => c.id === access.userCompanyId);
+  }, [companies, access.isMaster, access.isProjectAdmin, access.userCompanyId]);
+
+  const filteredReports = reports.filter((r) => r.construction_id === selectedConstructionId);
+  const filteredItems = items.filter((i) => i.report_id === selectedReportId).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+
+  async function fetchAll() {
+    if (!access.selectedProject) return;
+    const [companyRes, constructionRes, reportRes, itemRes, evidenceRes] = await Promise.all([
+      supabase.from('companies').select('*').eq('project_id', access.selectedProject).order('name'),
+      supabase.from('safety_cost_constructions' as any).select('*').eq('project_id', access.selectedProject).order('created_at', { ascending: false }),
+      supabase.from('safety_cost_monthly_reports' as any).select('*').eq('project_id', access.selectedProject).order('report_month', { ascending: false }),
+      supabase.from('safety_cost_items' as any).select('*').eq('project_id', access.selectedProject).order('sort_order'),
+      supabase.from('safety_cost_evidence_files' as any).select('*').eq('project_id', access.selectedProject).order('created_at', { ascending: false }),
+    ]);
+    setCompanies(companyRes.data || []);
+    setConstructions((constructionRes.data || []) as any[]);
+    setReports((reportRes.data || []) as any[]);
+    setItems((itemRes.data || []) as any[]);
+    setEvidence((evidenceRes.data || []) as any[]);
+  }
+
+  async function createConstruction() {
+    if (!access.selectedProject || !user || !newConstruction.company_id || !newConstruction.construction_name.trim()) {
+      toast({ title: '공사명과 회사를 입력하세요.', variant: 'destructive' }); return;
+    }
+    const { error } = await supabase.from('safety_cost_constructions' as any).insert({
+      project_id: access.selectedProject,
+      company_id: newConstruction.company_id,
+      construction_name: newConstruction.construction_name.trim(),
+      construction_type: newConstruction.construction_type.trim(),
+      construction_amount: Number(newConstruction.construction_amount || 0),
+      safety_cost_total: Number(newConstruction.safety_cost_total || 0),
+      notes: newConstruction.notes.trim(),
+      created_by: user.id,
+    });
+    if (error) { toast({ title: '공사 등록 실패', description: error.message, variant: 'destructive' }); return; }
+    setConstructionOpen(false); setNewConstruction({ company_id: '', construction_name: '', construction_type: '', construction_amount: '', safety_cost_total: '', notes: '' });
+    toast({ title: '산업안전보건관리비 공사가 등록되었습니다.' }); fetchAll();
+  }
+
+  async function createReport() {
+    if (!selectedConstruction || !user) return;
+    const { data, error } = await supabase.from('safety_cost_monthly_reports' as any).insert({
+      construction_id: selectedConstruction.id,
+      project_id: selectedConstruction.project_id,
+      company_id: selectedConstruction.company_id,
+      report_month: `${newReportMonth}-01`,
+      title: `${newReportMonth} 산업안전보건관리비 사용내역서`,
+      created_by: user.id,
+    }).select().single();
+    if (error) { toast({ title: '월별 내역서 생성 실패', description: error.message, variant: 'destructive' }); return; }
+    setReportOpen(false); setSelectedReportId((data as any).id); toast({ title: '월별 사용내역서가 생성되었습니다.' }); fetchAll();
+  }
+
+  async function updateReportTotal(reportId: string) {
+    const total = items.filter((i) => i.report_id === reportId).reduce((sum, i) => sum + Number(i.amount || 0), 0);
+    await supabase.from('safety_cost_monthly_reports' as any).update({ report_total: total }).eq('id', reportId);
+  }
+
+  async function insertItems(rows: any[]) {
+    if (!selectedReport || !selectedConstruction || !user) return;
+    const inserts = rows.map((row, idx) => {
+      const fallback = classifySafetyCostItem(row.item_name || row['품목'] || row['사용 항목'] || '');
+      return {
+        report_id: selectedReport.id,
+        construction_id: selectedConstruction.id,
+        project_id: selectedConstruction.project_id,
+        company_id: selectedConstruction.company_id,
+        usage_date: row.usage_date || null,
+        category_code: row.category_code || fallback.category_code,
+        category_name: row.category_name || fallback.category_name,
+        item_name: row.item_name || row['품목'] || row['사용 항목'] || '',
+        specification: row.specification || row['규격'] || '',
+        quantity: Number(row.quantity || row['수량'] || 1),
+        unit: row.unit || row['단위'] || '식',
+        unit_price: Number(row.unit_price || row['단가'] || row.amount || row['금액'] || 0),
+        amount: Number(row.amount || row['금액'] || 0),
+        classification_status: row.classification_status || fallback.classification_status,
+        ai_confidence: row.ai_confidence || null,
+        ai_reason: row.ai_reason || fallback.ai_reason,
+        legal_basis: row.legal_basis || fallback.legal_basis,
+        sort_order: filteredItems.length + idx,
+        created_by: user.id,
+      };
+    }).filter((r) => r.item_name && r.amount > 0);
+    if (!inserts.length) { toast({ title: '추가할 항목이 없습니다.', variant: 'destructive' }); return; }
+    const { error } = await supabase.from('safety_cost_items' as any).insert(inserts);
+    if (error) { toast({ title: '항목 추가 실패', description: error.message, variant: 'destructive' }); return; }
+    toast({ title: `${inserts.length}개 항목이 추가되었습니다.` });
+    await fetchAll();
+    setTimeout(() => updateReportTotal(selectedReport.id), 200);
+  }
+
+  async function analyzeWithAI() {
+    if (!aiText.trim()) { toast({ title: '거래명세서 텍스트를 입력하거나 파일을 업로드하세요.', variant: 'destructive' }); return; }
+    setAiLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('analyze-safety-cost-document', { body: { text: aiText, fileName: 'manual-input' } });
+      if (error) throw error;
+      await insertItems(data?.items || []);
+      setAiText('');
+    } catch (e: any) {
+      toast({ title: 'AI 분석 실패', description: e.message || String(e), variant: 'destructive' });
+    } finally { setAiLoading(false); }
+  }
+
+  async function handleDocumentUpload(file: File) {
+    if (!selectedReport || !selectedConstruction || !user) return;
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    let text = '';
+    if (ext === 'xlsx' || ext === 'xls') {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      text = wb.SheetNames.map((name) => XLSX.utils.sheet_to_csv(wb.Sheets[name])).join('\n');
+    } else {
+      text = await file.text().catch(() => '');
+    }
+    const path = `safety-cost/${selectedReport.id}/documents/${Date.now()}_${file.name}`;
+    const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { upsert: true });
+    if (upErr) { toast({ title: '증빙 업로드 실패', description: upErr.message, variant: 'destructive' }); return; }
+    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
+    await supabase.from('safety_cost_evidence_files' as any).insert({
+      report_id: selectedReport.id, construction_id: selectedConstruction.id, project_id: selectedConstruction.project_id, company_id: selectedConstruction.company_id,
+      evidence_kind: 'transaction', file_name: file.name, file_path: path, file_url: urlData.publicUrl, mime_type: file.type, file_size: file.size, uploaded_by: user.id,
+    });
+    if (text.trim()) {
+      setAiText(text);
+      toast({ title: '거래명세서 업로드 완료', description: '추출된 텍스트를 확인 후 AI 자동분석을 실행하세요.' });
+    } else {
+      toast({ title: '업로드 완료', description: 'PDF/이미지는 OCR 서버 연동 전까지 텍스트 확인이 필요합니다.' });
+    }
+    fetchAll();
+  }
+
+  async function handleItemEvidenceUpload(item: Item, files: FileList | null) {
+    if (!files || !selectedConstruction || !user) return;
+    const rows = [];
+    for (const file of Array.from(files)) {
+      const path = `safety-cost/${item.report_id}/items/${item.id}/${Date.now()}_${file.name}`;
+      const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: true });
+      if (error) { toast({ title: '증빙 업로드 실패', description: error.message, variant: 'destructive' }); continue; }
+      const { data } = supabase.storage.from('attachments').getPublicUrl(path);
+      rows.push({ report_id: item.report_id, item_id: item.id, construction_id: item.construction_id, project_id: item.project_id, company_id: item.company_id, evidence_kind: file.type.startsWith('image/') ? 'site_photo' : 'transaction', file_name: file.name, file_path: path, file_url: data.publicUrl, mime_type: file.type, file_size: file.size, uploaded_by: user.id });
+    }
+    if (rows.length) await supabase.from('safety_cost_evidence_files' as any).insert(rows);
+    toast({ title: '항목별 증빙이 업로드되었습니다.' }); fetchAll();
+  }
+
+  async function submitApproval() {
+    if (!selectedReport || !selectedConstruction || !user || !profile) return;
+    const { data: lines } = await supabase.from('approval_lines').select('*').eq('project_id', selectedReport.project_id).order('step_order');
+    if (!lines?.length || lines.some((l: any) => !l.user_id)) { toast({ title: '프로젝트 결재라인을 먼저 설정하세요.', variant: 'destructive' }); return; }
+    const inserts = lines.map((line: any, idx: number) => ({ report_id: selectedReport.id, construction_id: selectedConstruction.id, project_id: selectedReport.project_id, company_id: selectedReport.company_id, step_order: idx, step_label: line.step_label, position: line.position, approver_id: line.user_id, approver_name: line.user_name || '', company_name: line.company_name || '', status: idx === 0 ? 'approved' : 'pending', approved_at: idx === 0 ? new Date().toISOString() : null }));
+    await supabase.from('safety_cost_approval_steps' as any).delete().eq('report_id', selectedReport.id);
+    const { error } = await supabase.from('safety_cost_approval_steps' as any).insert(inserts);
+    if (error) { toast({ title: '결재 상신 실패', description: error.message, variant: 'destructive' }); return; }
+    await supabase.from('safety_cost_monthly_reports' as any).update({ status: 'submitted', submitted_by: user.id, submitted_at: new Date().toISOString() }).eq('id', selectedReport.id);
+    toast({ title: '산업안전보건관리비 결재가 상신되었습니다.' }); fetchAll();
+  }
+
+  async function approveReport() {
+    if (!selectedReport || !user || !profile) return;
+    await supabase.from('safety_cost_monthly_reports' as any).update({ status: 'approved', approved_by: user.id, approved_at: new Date().toISOString() }).eq('id', selectedReport.id);
+    await supabase.from('safety_cost_approval_steps' as any).update({ status: 'approved', approver_name: profile.display_name, approved_at: new Date().toISOString() }).eq('report_id', selectedReport.id).eq('approver_id', user.id).eq('status', 'pending');
+    toast({ title: '승인 완료', description: '승인된 금액만 사용 누계에 반영됩니다.' }); fetchAll();
+  }
+
+  function exportExcel() {
+    if (!selectedReport || !selectedConstruction) return;
+    const wb = XLSX.utils.book_new();
+    const summary = [
+      ['산업안전보건관리비 사용내역서 총괄'], ['공사명', selectedConstruction.construction_name], ['회사', companies.find((c) => c.id === selectedConstruction.company_id)?.name || ''], ['공사금액', selectedConstruction.construction_amount], ['계상된 산업안전보건관리비', selectedConstruction.safety_cost_total], ['승인 누계', approvedTotal], ['잔여 금액', Number(selectedConstruction.safety_cost_total || 0) - approvedTotal], ['사용률', `${usageRate}%`], ['작성월', selectedReport.report_month], ['상태', getSafetyCostStatusLabel(selectedReport.status)], [],
+      ['구분', 'No.', '월일', '사용 항목', '규격', '수량', '단위', '단가', '금액', '판정', '법적 근거'],
+      ...filteredItems.map((it, idx) => [it.category_name, idx + 1, it.usage_date || '', it.item_name, it.specification, it.quantity, it.unit, it.unit_price, it.amount, statusLabel[it.classification_status] || it.classification_status, it.legal_basis]),
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), '산업안전보건관리비');
+    XLSX.writeFile(wb, `산업안전보건관리비_${selectedConstruction.construction_name}_${selectedReport.report_month}.xlsx`);
+  }
+
+  function exportPDF() {
+    if (!selectedReport || !selectedConstruction) return;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    doc.setFontSize(16); doc.text('산업안전보건관리비 사용내역서', 14, 16);
+    doc.setFontSize(10); doc.text(`공사명: ${selectedConstruction.construction_name} / 작성월: ${selectedReport.report_month}`, 14, 24);
+    autoTable(doc, { startY: 30, head: [['구분', 'No.', '사용 항목', '수량', '단위', '단가', '금액', '판정', '법적 근거']], body: filteredItems.map((it, idx) => [it.category_name, idx + 1, it.item_name, it.quantity, it.unit, formatKRW(it.unit_price), formatKRW(it.amount), statusLabel[it.classification_status] || it.classification_status, it.legal_basis]), styles: { fontSize: 8 }, headStyles: { fillColor: [30, 41, 59] } });
+    let y = (doc as any).lastAutoTable.finalY + 10;
+    doc.text(`승인 누계: ${formatKRW(approvedTotal)} / 잔여 금액: ${formatKRW(Number(selectedConstruction.safety_cost_total || 0) - approvedTotal)} / 사용률: ${usageRate}%`, 14, y);
+    filteredItems.forEach((it) => {
+      const files = evidence.filter((e) => e.item_id === it.id);
+      if (!files.length) return;
+      doc.addPage(); doc.setFontSize(13); doc.text(`증빙: ${it.item_name}`, 14, 16);
+      doc.setFontSize(9); files.forEach((f, idx) => doc.text(`${idx + 1}. ${f.file_name}`, 16, 28 + idx * 7));
+    });
+    doc.save(`산업안전보건관리비_${selectedConstruction.construction_name}_${selectedReport.report_month}.pdf`);
+  }
+
+  if (!access.selectedProject) return <div className="text-muted-foreground">프로젝트를 선택하세요.</div>;
+
+  return <div className="space-y-4 animate-fade-in">
+    <div className="flex items-center justify-between gap-3">
+      <div><h1 className="text-xl font-bold flex items-center gap-2"><ShieldCheck className="h-5 w-5" /> 산업안전보건관리비</h1><p className="text-xs text-muted-foreground mt-1">공사 단위 월별 작성 · AI 자동분류 · 증빙 · 결재 승인 후 누계 반영</p></div>
+      <div className="flex gap-2">
+        <a href="/templates/safety-cost-template.xls" download><Button variant="outline" size="sm" className="gap-1"><FileSpreadsheet className="h-4 w-4" /> 공식 양식</Button></a>
+        <Dialog open={constructionOpen} onOpenChange={setConstructionOpen}><DialogTrigger asChild><Button size="sm" className="gap-1"><Plus className="h-4 w-4" /> 공사 등록</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>산업안전보건관리비 공사 등록</DialogTitle></DialogHeader><div className="grid grid-cols-2 gap-3"><div className="col-span-2 space-y-1"><Label>회사</Label><Select value={newConstruction.company_id} onValueChange={(v) => setNewConstruction((p) => ({ ...p, company_id: v }))}><SelectTrigger><SelectValue placeholder="회사 선택" /></SelectTrigger><SelectContent>{scopedCompanies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div><div className="col-span-2 space-y-1"><Label>공사명</Label><Input value={newConstruction.construction_name} onChange={(e) => setNewConstruction((p) => ({ ...p, construction_name: e.target.value }))} /></div><div className="space-y-1"><Label>공사종류</Label><Input value={newConstruction.construction_type} onChange={(e) => setNewConstruction((p) => ({ ...p, construction_type: e.target.value }))} /></div><div className="space-y-1"><Label>공사금액</Label><Input type="number" value={newConstruction.construction_amount} onChange={(e) => setNewConstruction((p) => ({ ...p, construction_amount: e.target.value }))} /></div><div className="space-y-1"><Label>산업안전보건관리비 총액</Label><Input type="number" value={newConstruction.safety_cost_total} onChange={(e) => setNewConstruction((p) => ({ ...p, safety_cost_total: e.target.value }))} /></div><div className="space-y-1"><Label>비고</Label><Input value={newConstruction.notes} onChange={(e) => setNewConstruction((p) => ({ ...p, notes: e.target.value }))} /></div></div><DialogFooter><Button onClick={createConstruction}>등록</Button></DialogFooter></DialogContent></Dialog>
+      </div>
+    </div>
+
+    <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="space-y-3">{constructions.map((c) => { const selected = c.id === selectedConstructionId; const rate = c.safety_cost_total ? Math.round((approvedTotal / Number(c.safety_cost_total)) * 100) : 0; return <button key={c.id} onClick={() => setSelectedConstructionId(c.id)} className={`w-full text-left rounded-lg border p-3 transition-colors ${selected ? 'border-primary bg-primary/5' : 'bg-card hover:bg-muted/50'}`}><div className="font-medium text-sm">{c.construction_name}</div><div className="text-xs text-muted-foreground mt-1">{companies.find((co) => co.id === c.company_id)?.name || ''}</div><div className="mt-3 space-y-1"><div className="flex justify-between text-xs"><span>사용률</span><span>{rate}%</span></div><Progress value={Math.min(100, rate)} className="h-2" /></div><div className="grid grid-cols-2 gap-2 mt-3 text-xs"><span>총액 {formatKRW(c.safety_cost_total)}</span><span>잔여 {formatKRW(Number(c.safety_cost_total || 0) - approvedTotal)}</span></div></button>; })}{constructions.length === 0 && <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">등록된 공사가 없습니다.</CardContent></Card>}</div>
+
+      <div className="space-y-4">
+        {selectedConstruction && <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center justify-between"><span>{selectedConstruction.construction_name}</span>{usageRate < 50 && <Badge variant="secondary" className="gap-1"><AlertTriangle className="h-3 w-3" /> 저사용 경고</Badge>}</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-4"><div><p className="text-xs text-muted-foreground">공사금액</p><p className="font-semibold">{formatKRW(selectedConstruction.construction_amount)}</p></div><div><p className="text-xs text-muted-foreground">산업안전보건관리비 총액</p><p className="font-semibold">{formatKRW(selectedConstruction.safety_cost_total)}</p></div><div><p className="text-xs text-muted-foreground">승인 누계</p><p className="font-semibold">{formatKRW(approvedTotal)}</p></div><div><p className="text-xs text-muted-foreground">잔여 금액</p><p className="font-semibold">{formatKRW(Number(selectedConstruction.safety_cost_total || 0) - approvedTotal)}</p></div></CardContent></Card>}
+
+        <Card><CardHeader className="pb-2"><div className="flex items-center justify-between"><CardTitle className="text-sm">월별 사용내역서</CardTitle><Dialog open={reportOpen} onOpenChange={setReportOpen}><DialogTrigger asChild><Button size="sm" variant="outline" disabled={!selectedConstruction}>월별 작성</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>월별 사용내역서 생성</DialogTitle></DialogHeader><Label>작성월</Label><Input type="month" value={newReportMonth} onChange={(e) => setNewReportMonth(e.target.value)} /><DialogFooter><Button onClick={createReport}>생성</Button></DialogFooter></DialogContent></Dialog></div></CardHeader><CardContent><div className="flex flex-wrap gap-2">{filteredReports.map((r) => <Button key={r.id} size="sm" variant={r.id === selectedReportId ? 'default' : 'outline'} onClick={() => setSelectedReportId(r.id)}>{String(r.report_month).slice(0, 7)} <Badge variant="secondary" className="ml-2">{getSafetyCostStatusLabel(r.status)}</Badge></Button>)}</div></CardContent></Card>
+
+        {selectedReport && <Tabs defaultValue="items"><TabsList><TabsTrigger value="items">사용 항목</TabsTrigger><TabsTrigger value="ai">AI 자동분석</TabsTrigger><TabsTrigger value="output">출력/결재</TabsTrigger></TabsList><TabsContent value="items" className="space-y-3"><Card><CardContent className="p-0 overflow-auto"><Table><TableHeader><TableRow><TableHead>분류</TableHead><TableHead>품목</TableHead><TableHead>수량</TableHead><TableHead>단가</TableHead><TableHead>금액</TableHead><TableHead>판정</TableHead><TableHead>증빙</TableHead></TableRow></TableHeader><TableBody>{filteredItems.map((it) => <TableRow key={it.id}><TableCell className="text-xs">{it.category_name}</TableCell><TableCell><div className="font-medium text-sm">{it.item_name}</div><div className="text-[11px] text-muted-foreground">{it.ai_reason}</div></TableCell><TableCell>{it.quantity} {it.unit}</TableCell><TableCell>{formatKRW(it.unit_price)}</TableCell><TableCell className="font-semibold">{formatKRW(it.amount)}</TableCell><TableCell><Badge variant={statusVariant(it.classification_status) as any}>{statusLabel[it.classification_status] || it.classification_status}</Badge></TableCell><TableCell><Label className="inline-flex items-center gap-1 cursor-pointer text-xs"><Paperclip className="h-3 w-3" /> {evidence.filter((e) => e.item_id === it.id).length}개<Input type="file" multiple className="hidden" onChange={(e) => handleItemEvidenceUpload(it, e.target.files)} /></Label></TableCell></TableRow>)}{filteredItems.length === 0 && <TableRow><TableCell colSpan={7} className="py-10 text-center text-muted-foreground">항목이 없습니다. AI 자동분석으로 거래명세서를 분석하세요.</TableCell></TableRow>}</TableBody></Table></CardContent></Card></TabsContent><TabsContent value="ai" className="space-y-3"><Card><CardHeader><CardTitle className="text-sm flex items-center gap-2"><Bot className="h-4 w-4" /> 대한민국 산업안전보건법 기준 AI 자동분석</CardTitle></CardHeader><CardContent className="space-y-3"><div className="flex gap-2"><Label className="inline-flex items-center gap-2"><Input type="file" accept=".xls,.xlsx,.csv,.txt,.pdf,image/*" onChange={(e) => e.target.files?.[0] && handleDocumentUpload(e.target.files[0])} /><Upload className="h-4 w-4" /></Label></div><Textarea rows={10} value={aiText} onChange={(e) => setAiText(e.target.value)} placeholder="거래명세서 텍스트를 붙여넣거나 엑셀/텍스트 파일을 업로드하세요." /><Button onClick={analyzeWithAI} disabled={aiLoading} className="gap-1"><Bot className="h-4 w-4" /> {aiLoading ? '분석 중...' : 'AI 자동분류 및 입력'}</Button><div className="grid gap-2 md:grid-cols-3">{SAFETY_COST_CATEGORIES.slice(0, 9).map((c) => <div key={c.code} className="rounded-md border bg-muted/30 p-2 text-xs"><b>{c.code}. {c.name}</b></div>)}</div></CardContent></Card></TabsContent><TabsContent value="output" className="space-y-3"><Card><CardContent className="pt-6 flex flex-wrap gap-2"><Button variant="outline" onClick={exportExcel} className="gap-1"><FileSpreadsheet className="h-4 w-4" /> 엑셀 출력</Button><Button variant="outline" onClick={exportPDF} className="gap-1"><FileText className="h-4 w-4" /> PDF 출력</Button><Button onClick={submitApproval} disabled={selectedReport.status !== 'draft'} className="gap-1"><ShieldCheck className="h-4 w-4" /> 결재 상신</Button><Button variant="secondary" onClick={approveReport} disabled={selectedReport.status !== 'submitted'} className="gap-1"><CheckCircle2 className="h-4 w-4" /> 승인 처리</Button></CardContent></Card></TabsContent></Tabs>}
+      </div>
+    </div>
+  </div>;
+};
+
+export default SafetyCost;

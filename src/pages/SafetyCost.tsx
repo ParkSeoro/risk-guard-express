@@ -33,6 +33,12 @@ const sanitizeStorageFileName = (fileName: string) => {
   const baseName = fileName.replace(/\.[^.]+$/, '').normalize('NFKD').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
   return `${baseName || 'document'}${extension}`;
 };
+const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+  reader.onerror = () => reject(reader.error || new Error('파일을 읽을 수 없습니다.'));
+  reader.readAsDataURL(file);
+});
 
 const SafetyCost = () => {
   const { user, profile } = useAuth();
@@ -265,6 +271,7 @@ const SafetyCost = () => {
 
   async function handleDocumentUpload(file: File) {
     if (!selectedReport || !selectedConstruction || !user) return;
+    setAiLoading(true);
     try {
       const ext = file.name.split('.').pop()?.toLowerCase();
       let text = '';
@@ -285,16 +292,23 @@ const SafetyCost = () => {
         evidence_kind: 'transaction', file_name: file.name, file_path: path, file_url: urlData.publicUrl, mime_type: file.type || 'application/octet-stream', file_size: file.size, uploaded_by: user.id,
       });
       if (evidenceError) { toast({ title: '거래명세표 기록 실패', description: evidenceError.message, variant: 'destructive' }); return; }
-      if (text.trim()) {
-        setAiText(text);
-        toast({ title: '거래명세표 업로드 완료', description: '추출된 텍스트를 확인 후 AI 자동분석을 실행하세요.' });
-      } else {
-        toast({ title: '업로드 완료', description: 'PDF/이미지는 텍스트 추출이 제한되어 내용을 붙여넣은 뒤 AI 분석을 실행하세요.' });
-      }
+      const canAnalyzeFile = ext === 'pdf' || file.type.startsWith('image/');
+      const { data, error } = await supabase.functions.invoke('analyze-safety-cost-document', {
+        body: {
+          text,
+          fileName: file.name,
+          fileBase64: canAnalyzeFile ? await fileToBase64(file) : undefined,
+          mimeType: file.type || (ext === 'pdf' ? 'application/pdf' : 'application/octet-stream'),
+        },
+      });
+      if (error) throw error;
+      await insertItems(data?.items || []);
+      if (text.trim()) setAiText(text);
+      toast({ title: '거래명세표 자동분석 완료', description: `${data?.items?.length || 0}개 항목을 인식했습니다.` });
       fetchAll();
     } catch (e: any) {
-      toast({ title: '거래명세표 처리 실패', description: e.message || String(e), variant: 'destructive' });
-    }
+      toast({ title: '거래명세표 자동분석 실패', description: e.message || String(e), variant: 'destructive' });
+    } finally { setAiLoading(false); }
   }
 
   async function handleItemEvidenceUpload(item: Item, files: FileList | null) {

@@ -43,6 +43,11 @@ function fallbackParse(text: string) {
   return items;
 }
 
+function safeJsonParse(content: string) {
+  const cleaned = content.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
+  return JSON.parse(cleaned);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -58,35 +63,45 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return jsonResponse({ error: "Invalid token" }, 401);
 
-    const { text, fileName } = await req.json();
-    if (!text || typeof text !== "string" || text.length > 80000) {
-      return jsonResponse({ error: "분석할 텍스트가 없거나 너무 깁니다." }, 400);
+    const { text = "", fileName, fileBase64, mimeType } = await req.json();
+    const hasText = typeof text === "string" && text.trim().length > 0;
+    const hasFile = typeof fileBase64 === "string" && fileBase64.length > 0 && typeof mimeType === "string";
+    if ((!hasText && !hasFile) || (hasText && text.length > 80000) || (hasFile && fileBase64.length > 28000000)) {
+      return jsonResponse({ error: "분석할 텍스트 또는 PDF/이미지 파일이 없거나 너무 큽니다." }, 400);
     }
 
     if (!lovableKey) {
       return jsonResponse({ items: fallbackParse(text), warning: "AI 키가 없어 예비 추출만 수행했습니다." });
     }
 
-    const prompt = `거래명세서/세금계산서/엑셀에서 추출된 텍스트를 분석해 산업안전보건관리비 사용내역 항목을 JSON으로만 반환하세요.\n${CATEGORY_GUIDE}\n파일명: ${fileName || ""}\n텍스트:\n${text.slice(0, 50000)}\n\n반환 형식: {"items":[{"usage_date":"YYYY-MM-DD 또는 빈값","item_name":"품목","specification":"규격","quantity":숫자,"unit":"단위","unit_price":숫자,"amount":숫자,"category_code":"1~9 또는 빈값","category_name":"분류명","classification_status":"usable|warning|review","ai_confidence":0~1,"ai_reason":"판단 사유와 필요한 증빙","legal_basis":"건설업 산업안전보건관리비 계상 및 사용기준의 관련 조항/별표"}],"summary":{"usable_total":숫자,"warning_total":숫자,"review_total":숫자,"audit_notes":["감사 대응 확인사항"]}}`;
+    const prompt = `거래명세서/세금계산서/영수증/엑셀/PDF/이미지에서 한글·영문 OCR을 수행하고 산업안전보건관리비 사용내역 항목을 JSON으로만 반환하세요. 표의 각 행을 품목별로 분리하고, 공급가액/금액/합계 중 실제 사용금액을 amount로 넣으세요.\n${CATEGORY_GUIDE}\n파일명: ${fileName || ""}\n추출 텍스트가 있으면 보조자료로 사용:\n${String(text).slice(0, 50000)}\n\n반환 형식: {"items":[{"usage_date":"YYYY-MM-DD 또는 빈값","item_name":"품목","specification":"규격","quantity":숫자,"unit":"단위","unit_price":숫자,"amount":숫자,"category_code":"1~9 또는 빈값","category_name":"분류명","classification_status":"usable|warning|review","ai_confidence":0~1,"ai_reason":"OCR 근거, 판단 사유와 필요한 증빙","legal_basis":"건설업 산업안전보건관리비 계상 및 사용기준의 관련 조항/별표"}],"summary":{"usable_total":숫자,"warning_total":숫자,"review_total":숫자,"audit_notes":["감사 대응 확인사항"]}}`;
+    const userContent = hasFile
+      ? [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: `data:${mimeType};base64,${fileBase64}` } },
+        ]
+      : prompt;
 
     const aiRes = await fetch(AI_GATEWAY_URL, {
       method: "POST",
       headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-3-flash-preview",
         messages: [
-          { role: "system", content: "당신은 대한민국 산업안전보건법과 건설업 산업안전보건관리비 계상 및 사용기준 전문가입니다. 공식 기준에 근거해 보수적으로 분류하고 JSON만 반환합니다." },
-          { role: "user", content: prompt },
+          { role: "system", content: "당신은 대한민국 산업안전보건법과 건설업 산업안전보건관리비 계상 및 사용기준 전문가입니다. 문서 OCR과 표 구조 인식에 능숙하며 공식 기준에 근거해 보수적으로 분류하고 JSON만 반환합니다." },
+          { role: "user", content: userContent },
         ],
         response_format: { type: "json_object" },
       }),
     });
 
+    if (aiRes.status === 429) return jsonResponse({ error: "AI 사용량이 많아 잠시 후 다시 시도하세요." }, 429);
+    if (aiRes.status === 402) return jsonResponse({ error: "AI 크레딧이 부족합니다. Workspace Usage에서 충전 후 다시 시도하세요." }, 402);
     if (!aiRes.ok) return jsonResponse({ items: fallbackParse(text), warning: "AI 분석 실패로 예비 추출을 수행했습니다." });
     const aiJson = await aiRes.json();
     const content = aiJson.choices?.[0]?.message?.content || "{}";
-    const parsed = JSON.parse(content);
-    return jsonResponse({ items: Array.isArray(parsed.items) ? parsed.items : [] });
+    const parsed = safeJsonParse(content);
+    return jsonResponse({ items: Array.isArray(parsed.items) ? parsed.items : [], summary: parsed.summary || null });
   } catch (e) {
     return jsonResponse({ error: e instanceof Error ? e.message : String(e) }, 500);
   }

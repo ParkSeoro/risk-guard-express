@@ -314,6 +314,29 @@ const SafetyCost = () => {
     setItemEditOpen(false); toast({ title: '항목이 수정되었습니다.' }); fetchAll();
   }
 
+  async function deleteItem(item: Item) {
+    if (selectedReport?.status === 'approved') { toast({ title: '승인 완료된 내역서의 항목은 삭제할 수 없습니다.', variant: 'destructive' }); return; }
+    if (!window.confirm(`'${item.item_name}' 항목을 삭제할까요? 연결된 증빙 기록도 함께 정리됩니다.`)) return;
+    await supabase.from('safety_cost_evidence_files' as any).delete().eq('item_id', item.id);
+    const { error } = await supabase.from('safety_cost_items' as any).delete().eq('id', item.id);
+    if (error) { toast({ title: '항목 삭제 실패', description: error.message, variant: 'destructive' }); return; }
+    await supabase.from('safety_cost_audit_logs' as any).insert({
+      project_id: item.project_id || access.selectedProject,
+      company_id: item.company_id || selectedConstruction?.company_id,
+      construction_id: item.construction_id || selectedConstruction?.id,
+      report_id: item.report_id || selectedReport?.id,
+      action: '산업안전보건관리비 항목 삭제',
+      target_type: 'safety_cost_item',
+      target_id: item.id,
+      before_data: item,
+      after_data: {},
+      user_id: user?.id,
+      user_name: profile?.display_name || '',
+    });
+    if (item.report_id) await updateReportTotal(item.report_id);
+    toast({ title: '항목이 삭제되었습니다.' }); fetchAll();
+  }
+
   async function analyzeWithAI() {
     if (!aiText.trim()) { toast({ title: '거래명세서 텍스트를 입력하거나 파일을 업로드하세요.', variant: 'destructive' }); return; }
     setAiLoading(true);

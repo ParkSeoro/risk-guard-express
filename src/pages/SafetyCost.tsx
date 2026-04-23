@@ -215,30 +215,36 @@ const SafetyCost = () => {
 
   async function handleDocumentUpload(file: File) {
     if (!selectedReport || !selectedConstruction || !user) return;
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    let text = '';
-    if (ext === 'xlsx' || ext === 'xls') {
-      const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: 'array' });
-      text = wb.SheetNames.map((name) => XLSX.utils.sheet_to_csv(wb.Sheets[name])).join('\n');
-    } else {
-      text = await file.text().catch(() => '');
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      let text = '';
+      if (ext === 'xlsx' || ext === 'xls') {
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, { type: 'array' });
+        text = wb.SheetNames.map((name) => XLSX.utils.sheet_to_csv(wb.Sheets[name])).join('\n');
+      } else if (ext === 'csv' || ext === 'txt') {
+        text = await file.text();
+      }
+      const safeName = file.name.replace(/[^a-zA-Z0-9가-힣._-]/g, '_');
+      const path = `safety-cost/${selectedReport.id}/documents/${Date.now()}_${safeName}`;
+      const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { upsert: true, contentType: file.type || undefined });
+      if (upErr) { toast({ title: '거래명세표 업로드 실패', description: upErr.message, variant: 'destructive' }); return; }
+      const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
+      const { error: evidenceError } = await supabase.from('safety_cost_evidence_files' as any).insert({
+        report_id: selectedReport.id, construction_id: selectedConstruction.id, project_id: selectedConstruction.project_id, company_id: selectedConstruction.company_id,
+        evidence_kind: 'transaction', file_name: file.name, file_path: path, file_url: urlData.publicUrl, mime_type: file.type || 'application/octet-stream', file_size: file.size, uploaded_by: user.id,
+      });
+      if (evidenceError) { toast({ title: '거래명세표 기록 실패', description: evidenceError.message, variant: 'destructive' }); return; }
+      if (text.trim()) {
+        setAiText(text);
+        toast({ title: '거래명세표 업로드 완료', description: '추출된 텍스트를 확인 후 AI 자동분석을 실행하세요.' });
+      } else {
+        toast({ title: '업로드 완료', description: 'PDF/이미지는 텍스트 추출이 제한되어 내용을 붙여넣은 뒤 AI 분석을 실행하세요.' });
+      }
+      fetchAll();
+    } catch (e: any) {
+      toast({ title: '거래명세표 처리 실패', description: e.message || String(e), variant: 'destructive' });
     }
-    const path = `safety-cost/${selectedReport.id}/documents/${Date.now()}_${file.name}`;
-    const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { upsert: true });
-    if (upErr) { toast({ title: '증빙 업로드 실패', description: upErr.message, variant: 'destructive' }); return; }
-    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
-    await supabase.from('safety_cost_evidence_files' as any).insert({
-      report_id: selectedReport.id, construction_id: selectedConstruction.id, project_id: selectedConstruction.project_id, company_id: selectedConstruction.company_id,
-      evidence_kind: 'transaction', file_name: file.name, file_path: path, file_url: urlData.publicUrl, mime_type: file.type, file_size: file.size, uploaded_by: user.id,
-    });
-    if (text.trim()) {
-      setAiText(text);
-      toast({ title: '거래명세서 업로드 완료', description: '추출된 텍스트를 확인 후 AI 자동분석을 실행하세요.' });
-    } else {
-      toast({ title: '업로드 완료', description: 'PDF/이미지는 OCR 서버 연동 전까지 텍스트 확인이 필요합니다.' });
-    }
-    fetchAll();
   }
 
   async function handleItemEvidenceUpload(item: Item, files: FileList | null) {

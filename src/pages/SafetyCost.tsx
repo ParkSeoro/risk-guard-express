@@ -47,6 +47,8 @@ const SafetyCost = () => {
   const [aiLoading, setAiLoading] = useState(false);
   const [requestingEvidence, setRequestingEvidence] = useState(false);
   const [newConstruction, setNewConstruction] = useState({ company_id: '', construction_name: '', construction_type: '', construction_amount: '', safety_cost_total: '', notes: '' });
+  const [constructionEditOpen, setConstructionEditOpen] = useState(false);
+  const [editingConstruction, setEditingConstruction] = useState({ id: '', company_id: '', construction_name: '', construction_type: '', construction_amount: '', safety_cost_total: '', notes: '' });
   const [newReportMonth, setNewReportMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [reportEditOpen, setReportEditOpen] = useState(false);
   const [editingReport, setEditingReport] = useState({ id: '', report_month: '', title: '' });
@@ -119,6 +121,49 @@ const SafetyCost = () => {
     if (error) { toast({ title: '공사 등록 실패', description: error.message, variant: 'destructive' }); return; }
     setConstructionOpen(false); setNewConstruction({ company_id: '', construction_name: '', construction_type: '', construction_amount: '', safety_cost_total: '', notes: '' });
     toast({ title: '산업안전보건관리비 공사가 등록되었습니다.' }); fetchAll();
+  }
+
+  function openConstructionEditor(construction: Construction) {
+    setEditingConstruction({
+      id: construction.id,
+      company_id: construction.company_id || '',
+      construction_name: construction.construction_name || '',
+      construction_type: construction.construction_type || '',
+      construction_amount: String(construction.construction_amount || ''),
+      safety_cost_total: String(construction.safety_cost_total || ''),
+      notes: construction.notes || '',
+    });
+    setConstructionEditOpen(true);
+  }
+
+  async function updateConstruction() {
+    if (!editingConstruction.id || !editingConstruction.company_id || !editingConstruction.construction_name.trim()) {
+      toast({ title: '공사명과 회사를 입력하세요.', variant: 'destructive' }); return;
+    }
+    const before = constructions.find((c) => c.id === editingConstruction.id);
+    const payload = {
+      company_id: editingConstruction.company_id,
+      construction_name: editingConstruction.construction_name.trim(),
+      construction_type: editingConstruction.construction_type.trim(),
+      construction_amount: Number(editingConstruction.construction_amount || 0),
+      safety_cost_total: Number(editingConstruction.safety_cost_total || 0),
+      notes: editingConstruction.notes.trim(),
+    };
+    const { error } = await supabase.from('safety_cost_constructions' as any).update(payload).eq('id', editingConstruction.id);
+    if (error) { toast({ title: '공사 정보 수정 실패', description: error.message, variant: 'destructive' }); return; }
+    await supabase.from('safety_cost_audit_logs' as any).insert({
+      project_id: before?.project_id || access.selectedProject,
+      company_id: payload.company_id,
+      construction_id: editingConstruction.id,
+      action: '산업안전보건관리비 공사 정보 수정',
+      target_type: 'safety_cost_construction',
+      target_id: editingConstruction.id,
+      before_data: before || {},
+      after_data: payload,
+      user_id: user?.id,
+      user_name: profile?.display_name || '',
+    });
+    setConstructionEditOpen(false); toast({ title: '공사 정보가 수정되었습니다.' }); fetchAll();
   }
 
   async function createReport() {

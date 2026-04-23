@@ -38,7 +38,7 @@ function fallbackParse(text: string) {
     const amount = Number(amountMatch[1].replace(/,/g, ""));
     const name = line.replace(amountMatch[0], "").trim();
     if (!name || amount <= 0) continue;
-    items.push({ usage_date: "", item_name: name, specification: "", quantity: 1, unit: "식", unit_price: amount, amount, category_code: "", category_name: "검토 필요", classification_status: "review", ai_confidence: 0.3, ai_reason: "금액 패턴 기반 예비 추출입니다. 원본 증빙 확인이 필요합니다.", legal_basis: "건설업 산업안전보건관리비 계상 및 사용기준" });
+    items.push({ transaction_date: "", usage_date: "", item_name: name, specification: "", maker: "", quantity: 1, unit: "식", unit_price: amount, supply_amount: amount, vat_amount: 0, amount, supplier_name: "", category_code: "", category_name: "검토 필요", classification_status: "review", ai_confidence: 0.3, ai_reason: "금액 패턴 기반 예비 추출입니다. 거래날짜, 공급자 상호, 공급가액/부가세 등 원본 증빙 확인이 필요합니다.", legal_basis: "건설업 산업안전보건관리비 계상 및 사용기준" });
   }
   return items;
 }
@@ -74,7 +74,17 @@ Deno.serve(async (req) => {
       return jsonResponse({ items: fallbackParse(text), warning: "AI 키가 없어 예비 추출만 수행했습니다." });
     }
 
-    const prompt = `거래명세서/세금계산서/영수증/엑셀/PDF/이미지에서 한글·영문 OCR을 수행하고 산업안전보건관리비 사용내역 항목을 JSON으로만 반환하세요. 표의 각 행을 품목별로 분리하고, 공급가액/금액/합계 중 실제 사용금액을 amount로 넣으세요.\n${CATEGORY_GUIDE}\n파일명: ${fileName || ""}\n추출 텍스트가 있으면 보조자료로 사용:\n${String(text).slice(0, 50000)}\n\n반환 형식: {"items":[{"usage_date":"YYYY-MM-DD 또는 빈값","item_name":"품목","specification":"규격","quantity":숫자,"unit":"단위","unit_price":숫자,"amount":숫자,"category_code":"1~9 또는 빈값","category_name":"분류명","classification_status":"usable|warning|review","ai_confidence":0~1,"ai_reason":"OCR 근거, 판단 사유와 필요한 증빙","legal_basis":"건설업 산업안전보건관리비 계상 및 사용기준의 관련 조항/별표"}],"summary":{"usable_total":숫자,"warning_total":숫자,"review_total":숫자,"audit_notes":["감사 대응 확인사항"]}}`;
+    const prompt = `거래명세서/세금계산서/영수증/엑셀/PDF/이미지에서 한글·영문 OCR을 수행하고 산업안전보건관리비 사용내역 항목을 JSON으로만 반환하세요. 표의 각 행을 품목별로 분리하세요.
+반드시 추출해야 하는 정보: 거래날짜, 품명, 규격, 메이커/제조사, 수량, 단가, 공급가액, 부가세, 공급자 상호.
+거래날짜는 문서 상단의 거래일자/작성일자/공급일자/발행일자를 우선 사용하고, 행별 날짜가 있으면 행별 값을 사용하세요.
+공급자 상호는 공급자/매출처/상호/업체명/회사명 영역에서 찾고 모든 품목에 반복 입력하세요.
+amount는 공급가액 + 부가세가 확인되면 그 합계, 부가세가 없으면 공급가액 또는 총 금액을 넣으세요. 추정값이면 ai_reason에 추정 근거를 쓰세요.
+${CATEGORY_GUIDE}
+파일명: ${fileName || ""}
+추출 텍스트가 있으면 보조자료로 사용:
+${String(text).slice(0, 50000)}
+
+반환 형식: {"items":[{"transaction_date":"YYYY-MM-DD 또는 빈값","usage_date":"YYYY-MM-DD 또는 빈값(transaction_date와 동일 가능)","item_name":"품명","specification":"규격","maker":"메이커/제조사 또는 빈값","quantity":숫자,"unit":"단위","unit_price":숫자,"supply_amount":숫자,"vat_amount":숫자,"amount":숫자,"supplier_name":"공급자 상호 또는 빈값","category_code":"1~9 또는 빈값","category_name":"분류명","classification_status":"usable|warning|review","ai_confidence":0~1,"ai_reason":"OCR 근거, 판단 사유와 필요한 증빙","legal_basis":"건설업 산업안전보건관리비 계상 및 사용기준의 관련 조항/별표"}],"summary":{"supplier_name":"공급자 상호","transaction_date":"YYYY-MM-DD 또는 빈값","usable_total":숫자,"warning_total":숫자,"review_total":숫자,"audit_notes":["감사 대응 확인사항"]}}`;
     const userContent = hasFile
       ? [
           { type: "text", text: prompt },

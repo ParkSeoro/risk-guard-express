@@ -292,15 +292,20 @@ const SafetyCost = () => {
     const selectedCategory = SAFETY_COST_CATEGORIES.find((c) => c.code === editingItem.category_code);
     const amount = Number(editingItem.amount || 0);
     const payload = {
+      transaction_date: editingItem.transaction_date || editingItem.usage_date || null,
       usage_date: editingItem.usage_date || null,
       category_code: editingItem.category_code,
       category_name: selectedCategory?.name || editingItem.category_name || '검토 필요',
       item_name: editingItem.item_name.trim(),
       specification: editingItem.specification.trim(),
+      maker: editingItem.maker.trim(),
       quantity: Number(editingItem.quantity || 1),
       unit: editingItem.unit.trim() || '식',
       unit_price: Number(editingItem.unit_price || amount || 0),
+      supply_amount: Number(editingItem.supply_amount || amount || 0),
+      vat_amount: Number(editingItem.vat_amount || 0),
       amount,
+      supplier_name: editingItem.supplier_name.trim(),
       classification_status: editingItem.classification_status,
       ai_reason: editingItem.ai_reason.trim() || '사용자가 AI 판독 결과를 직접 수정했습니다.',
       legal_basis: editingItem.legal_basis.trim() || '건설업 산업안전보건관리비 계상 및 사용기준 확인 필요',
@@ -494,7 +499,7 @@ const SafetyCost = () => {
     }
     const detail = wb.Sheets['2. 항목별'];
     if (detail) {
-      const rows = filteredItems.map((it, idx) => [it.category_name, idx + 1, it.usage_date || '', it.item_name, it.quantity, it.unit, it.unit_price, it.amount, statusLabel[it.classification_status] || it.classification_status]);
+      const rows = filteredItems.map((it, idx) => [it.category_name, idx + 1, it.transaction_date || it.usage_date || '', it.item_name, it.specification || '', it.maker || '', it.quantity, it.unit, it.unit_price, it.supply_amount || it.amount, it.vat_amount || 0, it.amount, it.supplier_name || '', statusLabel[it.classification_status] || it.classification_status]);
       XLSX.utils.sheet_add_aoa(detail, rows, { origin: 'A5' });
     }
     XLSX.writeFile(wb, `산업안전보건관리비_${selectedConstruction.construction_name}_${selectedReport.report_month}.xlsx`);
@@ -504,7 +509,7 @@ const SafetyCost = () => {
     if (!selectedReport || !selectedConstruction) return;
     const companyName = companies.find((c) => c.id === selectedConstruction.company_id)?.name || '';
     const grouped = SAFETY_COST_CATEGORIES.map((cat) => ({ cat, rows: filteredItems.filter((it) => it.category_code === cat.code || it.category_name === cat.name) }));
-    const itemRows = grouped.flatMap(({ cat, rows }) => rows.length ? rows.map((it, idx) => `<tr><td>${escapeHtml(cat.name)}</td><td>${idx + 1}</td><td>${escapeHtml(it.usage_date || '')}</td><td>${escapeHtml(it.item_name)}</td><td>${escapeHtml(it.quantity)}</td><td>${escapeHtml(it.unit)}</td><td>${formatKRW(it.unit_price)}</td><td>${formatKRW(it.amount)}</td><td>${escapeHtml(statusLabel[it.classification_status] || it.classification_status)}</td></tr>`) : [`<tr class="section"><td colspan="9">${escapeHtml(cat.code)}. ${escapeHtml(cat.name)}</td></tr>`]).join('');
+    const itemRows = grouped.flatMap(({ cat, rows }) => rows.length ? rows.map((it, idx) => `<tr><td>${escapeHtml(cat.name)}</td><td>${idx + 1}</td><td>${escapeHtml(it.transaction_date || it.usage_date || '')}</td><td>${escapeHtml(it.supplier_name || '')}</td><td>${escapeHtml(it.item_name)}</td><td>${escapeHtml(it.specification || '')}</td><td>${escapeHtml(it.maker || '')}</td><td>${escapeHtml(it.quantity)}</td><td>${formatKRW(it.unit_price)}</td><td>${formatKRW(it.supply_amount || it.amount)}</td><td>${formatKRW(it.vat_amount || 0)}</td><td>${formatKRW(it.amount)}</td><td>${escapeHtml(statusLabel[it.classification_status] || it.classification_status)}</td></tr>`) : [`<tr class="section"><td colspan="13">${escapeHtml(cat.code)}. ${escapeHtml(cat.name)}</td></tr>`]).join('');
     const checklistRows = auditChecklist.map((it) => `<tr><td>${escapeHtml(it.label)}</td><td>${it.ok ? '완료' : '보완 필요'}</td><td>${escapeHtml(it.detail)}</td></tr>`).join('');
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>산업안전보건관리비 사용내역서</title><style>@page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{font-family:'Malgun Gothic','Apple SD Gothic Neo',Arial,sans-serif;color:#111;margin:0}.page{page-break-after:always}h1{text-align:center;font-size:22px;letter-spacing:6px;margin:8px 0 28px}.title{text-align:left;font-weight:700;font-size:18px;margin:0 0 8px}table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:14px}th,td{border:1px solid #333;padding:6px 7px;font-size:11px;line-height:1.35;vertical-align:middle;word-break:keep-all}th{background:#eef2f7;font-weight:700}.meta td{height:30px}.section td{background:#f8fafc;font-weight:700}.notice{margin-top:20px;font-size:13px}.sign{text-align:right;margin-top:28px;font-size:14px}.no-print{position:fixed;right:18px;top:18px}@media print{.no-print{display:none}}</style></head><body><button class="no-print" onclick="window.print()">인쇄</button><section class="page"><h1>${escapeHtml(String(selectedReport.report_month).slice(0,7))} 산업안전보건관리비 사용내역서</h1><table class="meta"><tbody><tr><th>건설업체명</th><td>${escapeHtml(companyName)}</td><th>대표자</th><td></td></tr><tr><th>소재지</th><td colspan="3"></td></tr><tr><th>공사명</th><td colspan="3">${escapeHtml(selectedConstruction.construction_name)}</td></tr><tr><th>발주처</th><td></td><th>공사기간</th><td></td></tr><tr><th>계약금액</th><td>${formatKRW(selectedConstruction.construction_amount)}</td><th>공정율</th><td></td></tr><tr><th>계상된 안전관리비</th><td>${formatKRW(selectedConstruction.safety_cost_total)}</td><th>공사진척에 따른 사용기준금액</th><td></td></tr><tr><th>잔여금액</th><td>${formatKRW(Number(selectedConstruction.safety_cost_total || 0) - approvedTotal)}</td><th>누계집행율</th><td>${usageRate}%</td></tr></tbody></table><p class="title">1. 산업안전보건관리비 사용내역서 총괄</p><table><thead><tr><th>항목</th><th>전월</th><th>금월</th><th>누계</th><th>기준비율</th></tr></thead><tbody>${grouped.map(({ cat, rows }) => { const total = rows.reduce((sum, it) => sum + Number(it.amount || 0), 0); return `<tr><td>${escapeHtml(cat.code)}. ${escapeHtml(cat.name)}</td><td></td><td>${formatKRW(total)}</td><td>${formatKRW(total)}</td><td></td></tr>`; }).join('')}</tbody></table><p class="notice">｢건설업 산업안전보건관리비 계상 및 사용기준｣ 제10조제1항에 따라 위와 같이 사용내역서를 작성하였습니다.</p><p class="sign">작성자: ${escapeHtml(profile?.display_name || '')}</p></section><section class="page"><p class="title">2. 항목별 사용내역</p><table><thead><tr><th>구분</th><th>No.</th><th>월·일</th><th>사용 항목</th><th>수량</th><th>단위</th><th>단가</th><th>금액</th><th>판정</th></tr></thead><tbody>${itemRows}</tbody></table><p class="title">감사대응 체크리스트</p><table><thead><tr><th>항목</th><th>상태</th><th>비고</th></tr></thead><tbody>${checklistRows}</tbody></table></section><script>window.onload=()=>setTimeout(()=>window.print(),300)</script></body></html>`;
     const printWindow = window.open('', '_blank', 'width=1200,height=800');

@@ -63,6 +63,8 @@ const SafetyCost = () => {
   const [newReportMonth, setNewReportMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [reportEditOpen, setReportEditOpen] = useState(false);
   const [editingReport, setEditingReport] = useState({ id: '', report_month: '', title: '' });
+  const [itemEditOpen, setItemEditOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState({ id: '', usage_date: '', category_code: '', category_name: '', item_name: '', specification: '', quantity: '1', unit: '식', unit_price: '', amount: '', classification_status: 'review', ai_reason: '', legal_basis: '' });
 
   const selectedConstruction = constructions.find((c) => c.id === selectedConstructionId);
   const selectedReport = reports.find((r) => r.id === selectedReportId);
@@ -254,6 +256,63 @@ const SafetyCost = () => {
     toast({ title: `${inserts.length}개 항목이 추가되었습니다.` });
     await updateReportTotal(selectedReport.id);
     await fetchAll();
+  }
+
+  function openItemEditor(item: Item) {
+    setEditingItem({
+      id: item.id,
+      usage_date: item.usage_date || '',
+      category_code: item.category_code || '',
+      category_name: item.category_name || '',
+      item_name: item.item_name || '',
+      specification: item.specification || '',
+      quantity: String(item.quantity || 1),
+      unit: item.unit || '식',
+      unit_price: String(item.unit_price || ''),
+      amount: String(item.amount || ''),
+      classification_status: item.classification_status || 'review',
+      ai_reason: item.ai_reason || '',
+      legal_basis: item.legal_basis || '',
+    });
+    setItemEditOpen(true);
+  }
+
+  async function updateItem() {
+    if (!editingItem.id || !editingItem.item_name.trim()) { toast({ title: '품목명을 입력하세요.', variant: 'destructive' }); return; }
+    const before = items.find((it) => it.id === editingItem.id);
+    const selectedCategory = SAFETY_COST_CATEGORIES.find((c) => c.code === editingItem.category_code);
+    const amount = Number(editingItem.amount || 0);
+    const payload = {
+      usage_date: editingItem.usage_date || null,
+      category_code: editingItem.category_code,
+      category_name: selectedCategory?.name || editingItem.category_name || '검토 필요',
+      item_name: editingItem.item_name.trim(),
+      specification: editingItem.specification.trim(),
+      quantity: Number(editingItem.quantity || 1),
+      unit: editingItem.unit.trim() || '식',
+      unit_price: Number(editingItem.unit_price || amount || 0),
+      amount,
+      classification_status: editingItem.classification_status,
+      ai_reason: editingItem.ai_reason.trim() || '사용자가 AI 판독 결과를 직접 수정했습니다.',
+      legal_basis: editingItem.legal_basis.trim() || '건설업 산업안전보건관리비 계상 및 사용기준 확인 필요',
+    };
+    const { error } = await supabase.from('safety_cost_items' as any).update(payload).eq('id', editingItem.id);
+    if (error) { toast({ title: '항목 수정 실패', description: error.message, variant: 'destructive' }); return; }
+    await supabase.from('safety_cost_audit_logs' as any).insert({
+      project_id: before?.project_id || access.selectedProject,
+      company_id: before?.company_id || selectedConstruction?.company_id,
+      construction_id: before?.construction_id || selectedConstruction?.id,
+      report_id: before?.report_id || selectedReport?.id,
+      action: '산업안전보건관리비 항목 수동 수정',
+      target_type: 'safety_cost_item',
+      target_id: editingItem.id,
+      before_data: before || {},
+      after_data: payload,
+      user_id: user?.id,
+      user_name: profile?.display_name || '',
+    });
+    if (before?.report_id) await updateReportTotal(before.report_id);
+    setItemEditOpen(false); toast({ title: '항목이 수정되었습니다.' }); fetchAll();
   }
 
   async function analyzeWithAI() {

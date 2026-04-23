@@ -6,7 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
-import { SAFETY_COST_CATEGORIES, classifySafetyCostItem, formatKRW, getSafetyCostStatusLabel } from '@/lib/safetyCost';
+import { SAFETY_COST_CATEGORIES, analyzeSafetyCostCompliance, classifySafetyCostItem, formatKRW, getSafetyCostStatusLabel } from '@/lib/safetyCost';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,7 +18,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { AlertTriangle, Bot, CheckCircle2, FileSpreadsheet, FileText, Paperclip, Plus, ShieldCheck, Upload } from 'lucide-react';
+import { AlertTriangle, Bot, CheckCircle2, ClipboardCheck, FileSpreadsheet, FileText, Paperclip, Plus, ShieldCheck, Upload } from 'lucide-react';
 
 type Construction = any;
 type Report = any;
@@ -68,6 +68,8 @@ const SafetyCost = () => {
 
   const filteredReports = reports.filter((r) => r.construction_id === selectedConstructionId);
   const filteredItems = items.filter((i) => i.report_id === selectedReportId).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const compliance = useMemo(() => analyzeSafetyCostCompliance(filteredItems, selectedConstruction?.safety_cost_total), [filteredItems, selectedConstruction?.safety_cost_total]);
+  const evidenceMissingCount = filteredItems.filter((it) => !evidence.some((e) => e.item_id === it.id)).length;
 
   async function fetchAll() {
     if (!access.selectedProject) return;

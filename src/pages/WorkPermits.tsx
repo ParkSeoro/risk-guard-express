@@ -35,14 +35,16 @@ export default function WorkPermits() {
   const [runs, setRuns] = useState<any[]>([]);
   const [tbms, setTbms] = useState<any[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState<any | null>(null);
   const [gateOpen, setGateOpen] = useState<any | null>(null);
   const [gateResult, setGateResult] = useState<any>(null);
 
-  const [form, setForm] = useState<any>({
+  const blankForm = {
     permit_date: new Date().toISOString().slice(0, 10),
     work_description: '', location: '',
     work_plan_id: '', assessment_run_id: '', tbm_session_id: '',
-  });
+  };
+  const [form, setForm] = useState<any>(blankForm);
 
   const load = async () => {
     if (!projectId) return;

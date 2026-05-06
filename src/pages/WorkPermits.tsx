@@ -123,12 +123,44 @@ export default function WorkPermits() {
     load();
   };
 
-  const approve = async (permit: any) => {
-    const gate = permit.gate_check_result;
-    if (!gate?.all_ok) return toast({ title: '게이트 체크를 먼저 통과해야 합니다.', variant: 'destructive' });
+  const submit = async (permit: any) => {
+    if (!permit.gate_check_result?.all_ok) {
+      return toast({ title: '게이트 체크 통과 후 상신할 수 있습니다.', variant: 'destructive' });
+    }
     await supabase.from('work_permits' as any).update({
-      status: '승인', approved_by: user?.id, approved_by_name: (user as any)?.user_metadata?.display_name || user?.email,
+      status: '검토대기',
+      submitted_by: user?.id,
+      submitted_by_name: userLabel(user),
+      submitted_at: new Date().toISOString(),
+    }).eq('id', permit.id);
+    toast({ title: '검토 요청이 상신되었습니다.' });
+    load();
+  };
+
+  const review = async (permit: any) => {
+    const comment = prompt('검토 의견 (선택)') || '';
+    await supabase.from('work_permits' as any).update({
+      status: '검토완료',
+      reviewed_by: user?.id,
+      reviewed_by_name: userLabel(user),
+      reviewed_at: new Date().toISOString(),
+      review_comment: comment,
+    }).eq('id', permit.id);
+    toast({ title: '검토 완료되었습니다.' });
+    load();
+  };
+
+  const approve = async (permit: any) => {
+    if (permit.status !== '검토완료') {
+      return toast({ title: '검토 완료 후 승인할 수 있습니다.', variant: 'destructive' });
+    }
+    const comment = prompt('승인 의견 (선택)') || '';
+    await supabase.from('work_permits' as any).update({
+      status: '승인',
+      approved_by: user?.id,
+      approved_by_name: userLabel(user),
       approved_at: new Date().toISOString(),
+      approval_comment: comment,
     }).eq('id', permit.id);
     toast({ title: '승인되었습니다.' });
     load();
@@ -138,6 +170,7 @@ export default function WorkPermits() {
     const reason = prompt('반려 사유를 입력하세요');
     if (!reason) return;
     await supabase.from('work_permits' as any).update({ status: '반려', rejection_reason: reason }).eq('id', permit.id);
+    toast({ title: '반려되었습니다.' });
     load();
   };
 

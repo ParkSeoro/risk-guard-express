@@ -1,91 +1,120 @@
-# 산업안전보건법 기반 통합 안전관리 체계 완성
+# 근로자 참여 기반 운영 시스템 구축 계획
 
-기존 시스템·권한·결재 구조를 유지하면서 6개 영역을 단계적으로 추가/개편합니다. 범위가 크므로 **Phase 단위로 나눠** 진행하며, 각 Phase 완료 후 동작 확인 후 다음으로 진행합니다.
-
----
-
-## Phase 1 — 사이드바 구조 개편 (즉시, UI만)
-`src/components/AppSidebar.tsx` 를 그룹형 메뉴로 재구성합니다. 라우트는 기존 유지, 신규 라우트(점검/사고/교육)는 placeholder 페이지로 먼저 등록.
-
-그룹:
-- **안전관리**: 위험성평가 / TBM 일지 / 작업계획서 / 작업허가서
-- **점검/교육**: 안전점검(신규) / 교육관리(신규) / TBM 일지
-- **사고/개선**: 사고관리(신규) / 아차사고(신규) / 개선조치(검증센터 매핑)
-- **비용/법적**: 산업안전보건관리비 / 법적업무
-- **운영**: 할 일 / 결재함 / 현장 적용 체크 / 감독 대응 / 현장 일기예보 / AI 어시스턴트
-- **시스템**: 프로젝트 / 기준정보 / 감사 로그 / 권한 점검 / 설정
-
-기능: 그룹 접기/펼치기(Collapsible), 권한 기반 필터(useProjectAccess), 최근 사용 메뉴(localStorage top 5).
+기존 안전관리시스템을 유지하면서 6개 모듈을 단계적으로 통합합니다. 산안법 기준을 반영하고, 기존 위험성평가/TBM/작업허가/안전점검 흐름과 연결합니다.
 
 ---
 
-## Phase 2 — 법적 안전점검 시스템 (핵심)
+## Phase 1 — 데이터베이스 스키마 (Migration)
 
-### DB (migration)
-- `safety_inspections` (project_id, company_id, type[`pre_work`|`during_work`|`weekly`|`monthly`|`special`|`patrol`], process_category, inspector_id, inspected_at, location, summary, status, created_by, is_deleted)
-- `safety_inspection_items` (inspection_id, checklist_code, label, legal_basis, result[`pass`|`fail`|`na`], note, photos jsonb)
-- `safety_inspection_actions` (inspection_id, item_id, issue, severity, assignee_id, due_date, status[`pending`|`in_progress`|`done`], evidence_photos jsonb, completed_at, completed_by)
-- RLS: 프로젝트 멤버 조회, 회사 격리, 작성자/Master 수정.
+새 테이블을 추가하고 기존 테이블에 컬럼을 보완합니다. 모두 RLS 적용.
 
-### 페이지: `src/pages/SafetyInspections.tsx`
-- 점검 유형 선택 → 공종 선택 → **체크리스트 자동 생성** (`src/lib/inspectionTemplates.ts` 신규: 공종×유형별 법적 필수 항목 매핑).
-- 항목별 결과/사진/비고 입력 (`attachments` 버킷 사용).
-- Fail 항목은 즉시 **조치 요청 자동 생성** → 담당자 지정.
-- 조치 화면: 상태 변경 시 **증빙 사진 필수 검증**.
-- 미조치 항목은 대시보드/할일/감독대응 모드에 자동 표시.
-- **PDF/인쇄**: A4, Malgun Gothic, 점검표 + 사진 그리드 + 조치 요약 (기존 `printTbmLog` 패턴 재사용).
+- **`safety_education_materials`** — AI 생성 교육자료 저장
+  - `run_id`(FK assessment_runs), `work_plan_id`(FK work_plans, nullable), `project_id`, `company_id`
+  - `title`, `work_overview`, `key_hazards`(jsonb), `accident_cases`(jsonb), `safety_measures`(jsonb), `prohibited_actions`(jsonb), `ppe_requirements`(jsonb), `tbm_summary`(text)
+  - `auto_generated`(bool), `generated_by`(uuid), `version_number`(int)
+- **`workers`** — 근로자 간편 계정 (auth.users와 별개)
+  - `name`, `phone`(unique key + project), `company_id`, `project_id`
+  - `qr_token`(unique), `education_confirmed_at`, `is_active`
+- **`work_permit_workers`** — 허가서-근로자 연동
+  - `work_permit_id`(FK), `worker_id`(FK), `notified_at`, `notification_status`
+- **`worker_entry_logs`** — 입퇴장 기록
+  - `worker_id`, `work_permit_id`, `project_id`, `entry_at`, `exit_at`
+  - `entry_signature_data`(text base64), `exit_signature_data`(text base64)
+  - `risk_assessment_confirmed`(bool), `education_confirmed`(bool), `tbm_confirmed`(bool)
+  - `no_accident_confirmed`(bool — 퇴장 시), `entry_method`(qr|button)
+- **`work_plans`** 컬럼 추가: `auto_education_enabled`(bool default true)
 
----
-
-## Phase 3 — 사고 / 아차사고 관리
-### DB
-- `safety_incidents` (project_id, company_id, type[`accident`|`near_miss`], occurred_at, location, description, cause_analysis, recurrence_prevention, severity, photos jsonb, linked_run_id, status, is_deleted)
-
-### 페이지: `src/pages/Incidents.tsx`
-- 사고/아차사고 분리 탭, 원인분석·재발방지 필드.
-- **연동**: 사고 등록 시 해당 공종 위험성평가에 "사고 이력 반영" 플래그 + 관련 점검 체크리스트 항목 강화(가중치).
-- 기존 `accident_cases` 자동 추천 로직과 연결 (`src/components/AccidentPrediction.tsx`).
+전부 RLS는 기존 패턴 활용: `is_project_member` + `can_access_safety_cost` 또는 회사 격리.
 
 ---
 
-## Phase 4 — 교육관리
-### DB
-- `safety_trainings` (project_id, title, type[`legal`|`special`|`tbm`|`new_worker`], training_date, duration_hours, trainer, materials jsonb, is_deleted)
-- `safety_training_attendances` (training_id, worker_name, worker_phone, company_id, signature_data, attended)
+## Phase 2 — 교육자료 AI 자동 생성
 
-### 페이지: `src/pages/Trainings.tsx`
-- 법정 교육 등록, 참석자 서명/기록.
-- **작업 통제 연동**: 작업허가서 실행 가능 조건에 `교육 이수` 추가 (Phase 6).
+**Edge Function**: `supabase/functions/generate-education-material/index.ts`
+- 입력: `run_id` 또는 `work_plan_id`
+- 위험성평가 항목 + 작업계획서 + 과거 사고사례(`accident_cases`) 조회
+- Lovable AI Gateway (`google/gemini-3-flash-preview`) 호출
+- Tool calling으로 구조화된 출력 (work_overview, key_hazards 배열, accident_cases 배열, safety_measures, prohibited_actions, ppe_requirements, tbm_summary)
+- `safety_education_materials` 테이블에 저장
+
+**프론트엔드**:
+- 신규 페이지 `src/pages/EducationMaterials.tsx` — 자료 목록/생성/수정
+- `src/components/education/MaterialEditor.tsx` — 섹션별 편집
+- **PDF 출력** (현장용): A4 세로, 맑은 고딕, 위험요인/사고사례/대책/금지사항/PPE
+- **PPT 출력** (관리자용): 클라이언트에서 `pptxgenjs`로 생성 (10페이지 표준 템플릿)
+- **TBM 요약**: TBM 작성 시 "교육자료 불러오기" 버튼으로 briefing_summary 자동 채움
+- 작업계획서 화면에 `auto_education_enabled` 토글
 
 ---
 
-## Phase 5 — 법적업무 자동 관리 강화
-기존 `LegalDuties` 확장:
-- Daily/Weekly/Monthly 구분 필터.
-- 오늘 할 일 자동 집계 → `TodoDashboard` 카드 추가.
-- TBM/점검/교육이 의무로 자동 생성되도록 트리거(클라이언트 자동 시드).
+## Phase 3 — 근로자 간편 계정
+
+- 작업허가서 화면에 **"근로자 등록 QR"** 버튼 → QR이 `/worker/register?project=...&permit=...` 링크
+- **신규 페이지** `src/pages/WorkerRegister.tsx` (공개, 비인증)
+  - 이름, 전화번호, 소속사 입력 → `workers` 업서트 (전화번호 unique)
+  - 등록 후 `qr_token` 발급, localStorage에 저장
+- **신규 페이지** `src/pages/WorkerPortal.tsx` (qr_token 기반)
+  - 위험성평가 열람 (read-only), 교육자료 확인, TBM 참여, 서명, 입퇴장
+  - 그 외 메뉴 노출 금지
+- DB 함수 `register_worker(_name, _phone, _project_id, _company_name)` SECURITY DEFINER
+
+---
+
+## Phase 4 — 작업허가서 + 근로자 연동
+
+- `WorkPermits.tsx`에 **"근로자 지정"** 다이얼로그 추가
+  - 프로젝트 등록 근로자 리스트에서 선택 → `work_permit_workers` 저장
+- 허가서 **승인 완료** 시:
+  - 트리거 또는 클라이언트에서 `notifications` 테이블 insert (worker_id 기반)
+  - SMS는 비용 이슈로 제외, 인앱 알림 + 등록 시 입력한 전화번호로 카톡 링크 안내(향후)
+
+---
+
+## Phase 5 — 입장/퇴장 시스템
+
+- **WorkerPortal**에 입장/퇴장 탭
+  - **입장**: 위험성평가 확인 체크 + 교육 확인 체크 + TBM 참여 확인(자동 조회) → 전자서명 → `worker_entry_logs` insert
+  - **퇴장**: 작업 종료 시간 + 무재해 확인 체크 + 전자서명 → 같은 row update
+- 조건 미충족(허가 미승인 / 교육 미확인 / TBM 미참여) 시 **"작업 불가"** 배지 + 입장 차단
+- 관리자 화면 `src/pages/WorkerAttendance.tsx` — 일자별 입퇴장 현황, CSV/PDF 출력
 
 ---
 
 ## Phase 6 — 작업 통제 게이트 확장
-`src/pages/WorkPermits.tsx` `exec_ok` 계산에 다음 추가:
-- 당일 안전점검(pre_work) 완료
-- 작업자 법정교육 이수 상태(회사/공종 단위)
 
-미충족 시 "작업 불가" 배지 + 사유 표시.
+`WorkPermits.tsx`의 `exec_ok` 계산에 다음 조건 추가:
+- 작업허가 승인 ✓
+- 당일 TBM 참여 ✓
+- 교육 확인 ✓ (`workers.education_confirmed_at`)
+- 입장 완료 ✓ (`worker_entry_logs.entry_at` 당일 존재)
 
----
-
-## 기술 메모
-- 모든 신규 테이블 RLS: `is_project_member` + `can_access_safety_cost` 패턴 재사용.
-- 사진 업로드: 기존 `attachments` 버킷, `project_id/feature/...` 경로.
-- PDF: 클라이언트 `window.print()` + Malgun Gothic 인라인 스타일 (기존 TBM 패턴).
-- IME: 모든 텍스트 입력은 `IMESafeInput` 사용.
-- Term: `산업안전보건관리비`, `굴착기` 등 `termCorrection` 적용.
+미충족 시 "작업 불가" 빨간 배지로 표시, 사유 툴팁 노출.
 
 ---
 
-## 진행 방식
-범위가 매우 크므로 **Phase 1(사이드바) → Phase 2(안전점검) 우선 구현** 후 작동 확인 받고 Phase 3~6 순차 진행합니다.
+## 사이드바/라우트
+- `AppSidebar.tsx` 점검/교육 그룹에 "교육자료", "근로자 관리", "입퇴장 현황" 추가
+- `App.tsx`에 `/education-materials`, `/worker-attendance`, 공개 라우트 `/worker/register`, `/worker/portal/:token` 등록
 
-진행해도 될까요? 또는 우선순위를 바꾸고 싶은 Phase가 있으면 알려주세요.
+---
+
+## 기술 메모 (Technical)
+- AI: Lovable AI Gateway, tool calling으로 JSON 강제
+- PPT: `pptxgenjs` (npm) 클라이언트 생성, 다운로드
+- PDF: 기존 `window.print()` + Malgun Gothic 인라인 스타일
+- 서명: 기존 signature pad 컴포넌트 재사용
+- IME: 모든 한글 입력은 `IMESafeInput`
+- 보안: 근로자 토큰은 unique uuid, RLS는 SECURITY DEFINER 함수로 우회 (workers 테이블은 본인 토큰만 조회 가능)
+- 회사 격리: 모든 새 테이블 `company_id` 필수, `can_access_safety_cost` 패턴 적용
+
+---
+
+## 작업 순서
+1. Phase 1 마이그레이션 (테이블 + RLS + 함수)
+2. Phase 2 교육자료 AI + UI + PDF/PPT
+3. Phase 3 근로자 등록 + Portal
+4. Phase 4 허가서 연동 + 알림
+5. Phase 5 입퇴장 + 서명
+6. Phase 6 게이트 확장 + 사이드바
+
+각 Phase 완료 후 사용자 확인 가능 상태로 빌드.

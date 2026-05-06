@@ -38,6 +38,8 @@ import SiteWeather from "./pages/SiteWeather";
 import SafetyCost from "./pages/SafetyCost";
 import WorkPermits from "./pages/WorkPermits";
 import TbmParticipate from "./pages/TbmParticipate";
+import InspectionMode from "./pages/InspectionMode";
+import SiteReadinessChecklist from "./pages/SiteReadinessChecklist";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -127,6 +129,8 @@ function ProtectedRoutes() {
         <Route path="/site-weather" element={<SiteWeather />} />
         <Route path="/safety-cost" element={<SafetyCost />} />
         <Route path="/work-permits" element={<WorkPermits />} />
+        <Route path="/inspection-mode" element={<InspectionMode />} />
+        <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

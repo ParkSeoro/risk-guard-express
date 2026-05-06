@@ -38,26 +38,34 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const [location, setLocation] = useState('');
   const [leader, setLeader] = useState('');
   const [summary, setSummary] = useState('');
+  const [companyId, setCompanyId] = useState('');
+  const [processCategory, setProcessCategory] = useState('');
+  const [companies, setCompanies] = useState<any[]>([]);
 
   const load = async () => {
     let q = supabase.from('tbm_sessions' as any).select('*').eq('project_id', projectId).order('created_at', { ascending: false });
     if (runId) q = q.eq('run_id', runId);
     const { data } = await q;
     setSessions((data as any) || []);
+    const { data: cs } = await supabase.from('companies').select('id, name, type').eq('project_id', projectId).order('name');
+    setCompanies(cs || []);
   };
 
   useEffect(() => { load(); }, [projectId, runId]);
 
   const create = async () => {
     if (!title.trim()) return toast({ title: '제목을 입력하세요.', variant: 'destructive' });
+    if (!companyId) return toast({ title: '회사(시공사/협력사)를 선택하세요. QR 매칭에 필수입니다.', variant: 'destructive' });
+    const cmpName = companies.find(c => c.id === companyId)?.name || '';
     const { error } = await supabase.from('tbm_sessions' as any).insert({
       project_id: projectId, run_id: runId || null,
       title, tbm_date: tbmDate, location, leader_name: leader,
       briefing_summary: summary, briefing_risks: defaultRisks as any,
+      company_id: companyId, company_name: cmpName, process_category: processCategory,
     });
     if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
     toast({ title: 'TBM이 생성되었습니다.' });
-    setShowCreate(false); setTitle(''); setLocation(''); setLeader(''); setSummary('');
+    setShowCreate(false); setTitle(''); setLocation(''); setLeader(''); setSummary(''); setCompanyId(''); setProcessCategory('');
     load();
   };
 
@@ -146,10 +154,21 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
               <div><Label>장소</Label><Input value={location} onChange={(e) => setLocation(e.target.value)} /></div>
             </div>
             <div><Label>주관자</Label><Input value={leader} onChange={(e) => setLeader(e.target.value)} /></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>회사 (시공사/협력사) *</Label>
+                <select className="w-full h-10 rounded-md border bg-background px-3 text-sm" value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
+                  <option value="">선택</option>
+                  {companies.map(c => <option key={c.id} value={c.id}>{c.name} ({c.type})</option>)}
+                </select>
+              </div>
+              <div><Label>공종</Label><Input value={processCategory} onChange={(e) => setProcessCategory(e.target.value)} placeholder="예: 철근콘크리트" /></div>
+            </div>
             <div><Label>브리핑 요약</Label><Textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={4} /></div>
             {defaultRisks.length > 0 && (
               <p className="text-xs text-muted-foreground">위험성평가에서 주요 위험 {defaultRisks.length}건이 자동 포함됩니다.</p>
             )}
+            <p className="text-xs text-warning">⚠ 회사 선택 필수: QR 스캔 시 해당 회사의 위험성평가만 매칭됩니다.</p>
             <Button onClick={create} className="w-full">생성</Button>
           </div>
         </DialogContent>

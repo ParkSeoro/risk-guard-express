@@ -19,6 +19,9 @@ type Briefing = {
   tbm_date: string;
   location: string;
   leader_name: string;
+  company_name?: string;
+  process_category?: string;
+  matched_run?: { id: string; period_label: string; status: string } | null;
 };
 
 export default function TbmParticipate() {
@@ -142,7 +145,18 @@ export default function TbmParticipate() {
               <span>📅 {briefing.tbm_date}</span>
               {briefing.location && <span>📍 {briefing.location}</span>}
               {briefing.leader_name && <span>👤 {briefing.leader_name}</span>}
+              {briefing.company_name && <span>🏢 {briefing.company_name}</span>}
+              {briefing.process_category && <span>🔧 {briefing.process_category}</span>}
             </div>
+            {briefing.matched_run ? (
+              <div className="mt-2 text-xs px-2 py-1 rounded bg-success/10 text-success inline-block">
+                ✅ 매칭된 위험성평가: {briefing.matched_run.period_label} ({briefing.matched_run.status})
+              </div>
+            ) : (
+              <div className="mt-2 text-xs px-2 py-1 rounded bg-warning/10 text-warning inline-block">
+                ⚠ 해당 회사의 적용기간 내 승인 위험성평가가 없습니다. 관리자에게 문의하세요.
+              </div>
+            )}
           </CardHeader>
           <CardContent className="space-y-4">
             {briefing.briefing_summary && (

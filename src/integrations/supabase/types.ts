@@ -3046,12 +3046,15 @@ export type Database = {
         Row: {
           briefing_risks: Json
           briefing_summary: string
+          company_id: string | null
+          company_name: string | null
           created_at: string
           created_by: string | null
           id: string
           is_active: boolean
           leader_name: string
           location: string
+          process_category: string | null
           project_id: string
           qr_token: string
           run_id: string | null
@@ -3063,12 +3066,15 @@ export type Database = {
         Insert: {
           briefing_risks?: Json
           briefing_summary?: string
+          company_id?: string | null
+          company_name?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
           is_active?: boolean
           leader_name?: string
           location?: string
+          process_category?: string | null
           project_id: string
           qr_token?: string
           run_id?: string | null
@@ -3080,12 +3086,15 @@ export type Database = {
         Update: {
           briefing_risks?: Json
           briefing_summary?: string
+          company_id?: string | null
+          company_name?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
           is_active?: boolean
           leader_name?: string
           location?: string
+          process_category?: string | null
           project_id?: string
           qr_token?: string
           run_id?: string | null

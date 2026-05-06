@@ -62,24 +62,53 @@ export default function WorkPermits() {
 
   useEffect(() => { load(); }, [projectId]);
 
-  const create = async () => {
+  const save = async () => {
     if (!projectId) return toast({ title: '프로젝트를 먼저 선택하세요.', variant: 'destructive' });
     if (!form.work_description.trim()) return toast({ title: '작업 내용을 입력하세요.', variant: 'destructive' });
-    const { error } = await supabase.from('work_permits' as any).insert({
-      project_id: projectId,
+    const payload: any = {
       permit_date: form.permit_date,
       work_description: form.work_description,
       location: form.location,
       work_plan_id: form.work_plan_id || null,
       assessment_run_id: form.assessment_run_id || null,
       tbm_session_id: form.tbm_session_id || null,
-      created_by: user?.id,
-      status: '작성중',
+    };
+    if (editing) {
+      const { error } = await supabase.from('work_permits' as any).update(payload).eq('id', editing.id);
+      if (error) return toast({ title: '수정 실패', description: error.message, variant: 'destructive' });
+      toast({ title: '작업허가서가 수정되었습니다.' });
+    } else {
+      const { error } = await supabase.from('work_permits' as any).insert({
+        ...payload, project_id: projectId, created_by: user?.id, status: '작성중',
+      });
+      if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
+      toast({ title: '작업허가서가 생성되었습니다.' });
+    }
+    setShowCreate(false); setEditing(null); setForm(blankForm);
+    load();
+  };
+
+  const openEdit = (p: any) => {
+    if (p.status === '승인') {
+      if (!confirm('승인된 허가서입니다. 수정하면 추적이 남습니다. 계속하시겠습니까?')) return;
+    }
+    setEditing(p);
+    setForm({
+      permit_date: p.permit_date || new Date().toISOString().slice(0, 10),
+      work_description: p.work_description || '',
+      location: p.location || '',
+      work_plan_id: p.work_plan_id || '',
+      assessment_run_id: p.assessment_run_id || '',
+      tbm_session_id: p.tbm_session_id || '',
     });
-    if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
-    toast({ title: '작업허가서가 생성되었습니다.' });
-    setShowCreate(false);
-    setForm({ permit_date: new Date().toISOString().slice(0, 10), work_description: '', location: '', work_plan_id: '', assessment_run_id: '', tbm_session_id: '' });
+  };
+
+  const remove = async (p: any) => {
+    const reason = prompt(`작업허가서를 삭제합니다. 사유를 입력하세요.\n[${p.work_description}]`);
+    if (!reason) return;
+    const { error } = await supabase.from('work_permits' as any).delete().eq('id', p.id);
+    if (error) return toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
+    toast({ title: '작업허가서가 삭제되었습니다.' });
     load();
   };
 

@@ -31,6 +31,7 @@ import IMESafeInput from '@/components/IMESafeInput';
 import { Checkbox } from '@/components/ui/checkbox';
 import FeedbackPanel from '@/components/FeedbackPanel';
 import ApprovalLineManager, { type ApprovalLine } from '@/components/ApprovalLineManager';
+import WorkerParticipationPanel from '@/components/assessment/WorkerParticipationPanel';
 import * as XLSX from 'xlsx';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
@@ -153,6 +154,28 @@ const AssessmentRunDetail = () => {
 
   // Worker participation photos
   const [workerPhotoUploading, setWorkerPhotoUploading] = useState(false);
+
+  // Worker opinion / health / accident counts (for approval gate)
+  const [participationCounts, setParticipationCounts] = useState({ opinions: 0, healths: 0, accidents: 0, unreviewedHealth: 0, unreviewedAi: 0 });
+  const refreshParticipation = useCallback(async () => {
+    if (!runId) return;
+    const [op, hz, ac, ai] = await Promise.all([
+      supabase.from('worker_opinions' as any).select('id', { count: 'exact', head: true }).eq('run_id', runId),
+      supabase.from('health_hazards' as any).select('id, is_user_reviewed').eq('run_id', runId),
+      supabase.from('assessment_accidents' as any).select('id', { count: 'exact', head: true }).eq('run_id', runId),
+      supabase.from('risk_items').select('id, is_user_reviewed, source_type').eq('run_id', runId).eq('source_type', 'ai_opinion'),
+    ]);
+    const healthRows = (hz.data as any[]) || [];
+    const aiRows = (ai.data as any[]) || [];
+    setParticipationCounts({
+      opinions: op.count || 0,
+      healths: healthRows.length,
+      accidents: ac.count || 0,
+      unreviewedHealth: healthRows.filter(r => !r.is_user_reviewed).length,
+      unreviewedAi: aiRows.filter((r: any) => !r.is_user_reviewed).length,
+    });
+  }, [runId]);
+  useEffect(() => { refreshParticipation(); }, [refreshParticipation]);
 
   const recommendationKey = (item: { process?: string; sub_task?: string; hazard?: string }) =>
     `${item.process || ''}|||${item.sub_task || ''}|||${item.hazard || ''}`;
@@ -587,6 +610,16 @@ const AssessmentRunDetail = () => {
     if (!run || !user || !profile) return;
     if (activeItems.length === 0) {
       toast({ title: '항목이 1건 이상 있어야 결재 상신이 가능합니다.', variant: 'destructive' }); return;
+    }
+    // 근로자 참여 / 보건 / AI 검토 게이트
+    if ((run.opinion_required ?? true) && participationCounts.opinions === 0) {
+      toast({ title: '근로자 의견이 없습니다.', description: '근로자 참여 탭에서 의견을 1건 이상 등록해야 결재 상신이 가능합니다.', variant: 'destructive' }); return;
+    }
+    if ((run.health_required ?? true) && participationCounts.healths === 0) {
+      toast({ title: '보건 항목이 없습니다.', description: '보건 유해요인을 1건 이상 등록해주세요.', variant: 'destructive' }); return;
+    }
+    if (participationCounts.unreviewedAi > 0 || participationCounts.unreviewedHealth > 0) {
+      toast({ title: 'AI 자동 생성 항목 검토가 필요합니다.', description: `미검토 ${participationCounts.unreviewedAi + participationCounts.unreviewedHealth}건을 검토해주세요.`, variant: 'destructive' }); return;
     }
 
     // Fetch latest approval_lines from DB
@@ -1292,6 +1325,17 @@ const AssessmentRunDetail = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Worker Opinion / Health / Accident Panel */}
+      <div className="print:hidden">
+        <WorkerParticipationPanel
+          runId={runId!}
+          projectId={run.project_id}
+          userId={user?.id}
+          canEdit={!!(canEdit || canForceEdit)}
+          onChanged={refreshParticipation}
+        />
+      </div>
 
       {/* Worker Participation Photos */}
       <Card className="print:hidden">

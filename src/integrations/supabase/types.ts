@@ -349,6 +349,63 @@ export type Database = {
           },
         ]
       }
+      assessment_accidents: {
+        Row: {
+          accident_type: string | null
+          cause: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          occurrence_date: string | null
+          photo_urls: string[] | null
+          prevention: string | null
+          process: string | null
+          project_id: string
+          reference_case_id: string | null
+          result: string | null
+          run_id: string
+          source_type: string
+          updated_at: string
+        }
+        Insert: {
+          accident_type?: string | null
+          cause?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          occurrence_date?: string | null
+          photo_urls?: string[] | null
+          prevention?: string | null
+          process?: string | null
+          project_id: string
+          reference_case_id?: string | null
+          result?: string | null
+          run_id: string
+          source_type?: string
+          updated_at?: string
+        }
+        Update: {
+          accident_type?: string | null
+          cause?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          occurrence_date?: string | null
+          photo_urls?: string[] | null
+          prevention?: string | null
+          process?: string | null
+          project_id?: string
+          reference_case_id?: string | null
+          result?: string | null
+          run_id?: string
+          source_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       assessment_run_participants: {
         Row: {
           company: string | null
@@ -395,9 +452,11 @@ export type Database = {
           deleted_by: string | null
           deleted_reason: string | null
           end_date: string | null
+          health_required: boolean
           id: string
           is_deleted: boolean
           notes: string | null
+          opinion_required: boolean
           period_label: string
           project_id: string
           start_date: string | null
@@ -405,6 +464,7 @@ export type Database = {
           target_company_ids: string[] | null
           target_contractors: string[] | null
           target_processes: string[] | null
+          tbm_images: string[] | null
           type: string
           updated_at: string
           validation_score: number | null
@@ -418,9 +478,11 @@ export type Database = {
           deleted_by?: string | null
           deleted_reason?: string | null
           end_date?: string | null
+          health_required?: boolean
           id?: string
           is_deleted?: boolean
           notes?: string | null
+          opinion_required?: boolean
           period_label?: string
           project_id: string
           start_date?: string | null
@@ -428,6 +490,7 @@ export type Database = {
           target_company_ids?: string[] | null
           target_contractors?: string[] | null
           target_processes?: string[] | null
+          tbm_images?: string[] | null
           type?: string
           updated_at?: string
           validation_score?: number | null
@@ -441,9 +504,11 @@ export type Database = {
           deleted_by?: string | null
           deleted_reason?: string | null
           end_date?: string | null
+          health_required?: boolean
           id?: string
           is_deleted?: boolean
           notes?: string | null
+          opinion_required?: boolean
           period_label?: string
           project_id?: string
           start_date?: string | null
@@ -451,6 +516,7 @@ export type Database = {
           target_company_ids?: string[] | null
           target_contractors?: string[] | null
           target_processes?: string[] | null
+          tbm_images?: string[] | null
           type?: string
           updated_at?: string
           validation_score?: number | null
@@ -995,6 +1061,57 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      health_hazards: {
+        Row: {
+          category: string
+          countermeasure: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          exposure_level: string | null
+          id: string
+          is_user_reviewed: boolean
+          legal_basis: string | null
+          process: string | null
+          project_id: string
+          run_id: string
+          source_type: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          countermeasure?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          exposure_level?: string | null
+          id?: string
+          is_user_reviewed?: boolean
+          legal_basis?: string | null
+          process?: string | null
+          project_id: string
+          run_id: string
+          source_type?: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          countermeasure?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          exposure_level?: string | null
+          id?: string
+          is_user_reviewed?: boolean
+          legal_basis?: string | null
+          process?: string | null
+          project_id?: string
+          run_id?: string
+          source_type?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       legal_duties: {
         Row: {
@@ -1932,6 +2049,8 @@ export type Database = {
           improvement_measure: string | null
           is_excluded: boolean
           is_locked: boolean | null
+          is_user_reviewed: boolean
+          item_category: string
           legal_basis: string[] | null
           likelihood_grade: string
           note: string | null
@@ -1945,6 +2064,8 @@ export type Database = {
           severity: number
           severity_grade: string
           sort_order: number | null
+          source_opinion_id: string | null
+          source_type: string
           status: string
           sub_task: string | null
           submitted_at: string | null
@@ -1976,6 +2097,8 @@ export type Database = {
           improvement_measure?: string | null
           is_excluded?: boolean
           is_locked?: boolean | null
+          is_user_reviewed?: boolean
+          item_category?: string
           legal_basis?: string[] | null
           likelihood_grade?: string
           note?: string | null
@@ -1989,6 +2112,8 @@ export type Database = {
           severity?: number
           severity_grade?: string
           sort_order?: number | null
+          source_opinion_id?: string | null
+          source_type?: string
           status?: string
           sub_task?: string | null
           submitted_at?: string | null
@@ -2020,6 +2145,8 @@ export type Database = {
           improvement_measure?: string | null
           is_excluded?: boolean
           is_locked?: boolean | null
+          is_user_reviewed?: boolean
+          item_category?: string
           legal_basis?: string[] | null
           likelihood_grade?: string
           note?: string | null
@@ -2033,6 +2160,8 @@ export type Database = {
           severity?: number
           severity_grade?: string
           sort_order?: number | null
+          source_opinion_id?: string | null
+          source_type?: string
           status?: string
           sub_task?: string | null
           submitted_at?: string | null
@@ -3126,6 +3255,57 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      worker_opinions: {
+        Row: {
+          analysis_result: Json | null
+          analysis_status: string
+          created_at: string
+          created_by: string | null
+          id: string
+          opinion_text: string
+          participated_at: string | null
+          project_id: string
+          run_id: string
+          signature_url: string | null
+          updated_at: string
+          worker_company: string
+          worker_name: string
+          worker_position: string
+        }
+        Insert: {
+          analysis_result?: Json | null
+          analysis_status?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          opinion_text?: string
+          participated_at?: string | null
+          project_id: string
+          run_id: string
+          signature_url?: string | null
+          updated_at?: string
+          worker_company?: string
+          worker_name?: string
+          worker_position?: string
+        }
+        Update: {
+          analysis_result?: Json | null
+          analysis_status?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          opinion_text?: string
+          participated_at?: string | null
+          project_id?: string
+          run_id?: string
+          signature_url?: string | null
+          updated_at?: string
+          worker_company?: string
+          worker_name?: string
+          worker_position?: string
+        }
+        Relationships: []
       }
     }
     Views: {

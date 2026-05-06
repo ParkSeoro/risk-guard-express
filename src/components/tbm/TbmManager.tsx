@@ -462,16 +462,28 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
       )}
 
       <Dialog open={showCreate || !!editing} onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditing(null); resetForm(); } }}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{editing ? 'TBM 수정' : 'TBM 생성'}</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div><Label>제목 *</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="2026-05-06 오전 TBM" /></div>
-            <div className="grid grid-cols-2 gap-2">
-              <div><Label>일자</Label><Input type="date" value={tbmDate} onChange={(e) => setTbmDate(e.target.value)} /></div>
-              <div><Label>장소</Label><Input value={location} onChange={(e) => setLocation(e.target.value)} /></div>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center justify-between gap-2">
+              <DialogTitle>{editing ? 'TBM 수정' : 'TBM 생성'}</DialogTitle>
+              <Button type="button" size="sm" variant="outline" onClick={openCopyDialog}>
+                <Copy className="h-3 w-3 mr-1" />이전 TBM 불러오기
+              </Button>
             </div>
-            <div><Label>주관자</Label><Input value={leader} onChange={(e) => setLeader(e.target.value)} /></div>
-            <div className="grid grid-cols-2 gap-2">
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* 기본 정보 */}
+            <section className="space-y-2 rounded-md border p-3">
+              <p className="text-xs font-semibold text-muted-foreground">① 기본 정보</p>
+              <div><Label>제목 *</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="2026-05-06 오전 TBM" /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>일자</Label><Input type="date" value={tbmDate} onChange={(e) => setTbmDate(e.target.value)} /></div>
+                <div><Label>장소</Label><Input value={location} onChange={(e) => setLocation(e.target.value)} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>주관자</Label><Input value={leader} onChange={(e) => setLeader(e.target.value)} /></div>
+                <div><Label>공종</Label><Input value={processCategory} onChange={(e) => setProcessCategory(e.target.value)} placeholder="예: 철근콘크리트" /></div>
+              </div>
               <div>
                 <Label>회사 (시공사/협력사) *</Label>
                 <select className="w-full h-10 rounded-md border bg-background px-3 text-sm" value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
@@ -479,15 +491,86 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
                   {companies.map(c => <option key={c.id} value={c.id}>{c.name} ({c.type})</option>)}
                 </select>
               </div>
-              <div><Label>공종</Label><Input value={processCategory} onChange={(e) => setProcessCategory(e.target.value)} placeholder="예: 철근콘크리트" /></div>
-            </div>
-            <div><Label>브리핑 요약</Label><Textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={4} /></div>
-            {!editing && defaultRisks.length > 0 && (
-              <p className="text-xs text-muted-foreground">위험성평가에서 주요 위험 {defaultRisks.length}건이 자동 포함됩니다.</p>
-            )}
+            </section>
+
+            {/* 작업내용 */}
+            <section className="space-y-2 rounded-md border p-3">
+              <p className="text-xs font-semibold text-muted-foreground">② 작업내용</p>
+              <div><Label>오늘 작업 내용</Label><Textarea value={workContent} onChange={(e) => setWorkContent(e.target.value)} rows={3} placeholder="예: 3F 슬래브 철근 배근 및 점검" /></div>
+              <div><Label>작업 순서</Label><Textarea value={workSteps} onChange={(e) => setWorkSteps(e.target.value)} rows={4} placeholder="1) 자재 반입&#10;2) 배근 위치 측량&#10;3) 철근 배근&#10;4) 결속 및 검측" /></div>
+            </section>
+
+            {/* 위험요인 / 안전대책 */}
+            <section className="space-y-2 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-muted-foreground">③ 위험요인 및 안전대책 (위험성평가 자동 연동)</p>
+                <Button type="button" size="sm" variant="ghost" onClick={addRisk}><Plus className="h-3 w-3 mr-1" />추가</Button>
+              </div>
+              {risksDraft.length === 0 ? (
+                <p className="text-xs text-muted-foreground">자동 불러올 위험요인이 없습니다. "추가"로 직접 입력하세요.</p>
+              ) : (
+                <div className="space-y-2">
+                  {risksDraft.map((r, i) => (
+                    <div key={i} className="grid grid-cols-12 gap-2 items-start">
+                      <div className="col-span-5"><Label className="text-[11px]">위험요인</Label><Textarea rows={2} value={r.hazard} onChange={(e) => updateRisk(i, 'hazard', e.target.value)} /></div>
+                      <div className="col-span-2"><Label className="text-[11px]">등급</Label><Input value={r.grade} onChange={(e) => updateRisk(i, 'grade', e.target.value)} placeholder="상/중/하" /></div>
+                      <div className="col-span-4"><Label className="text-[11px]">안전대책</Label><Textarea rows={2} value={r.measure} onChange={(e) => updateRisk(i, 'measure', e.target.value)} /></div>
+                      <div className="col-span-1 flex items-end h-full">
+                        <Button type="button" size="sm" variant="ghost" onClick={() => removeRisk(i)} title="삭제"><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* 주의/금지 */}
+            <section className="space-y-2 rounded-md border p-3">
+              <p className="text-xs font-semibold text-muted-foreground">④ 특별 주의사항 / 작업 금지사항</p>
+              <div><Label>특별 주의사항</Label><Textarea value={specialNotes} onChange={(e) => setSpecialNotes(e.target.value)} rows={3} placeholder="예: 강풍 시 고소작업 중지, 상하 동시작업 금지 등" /></div>
+              <div><Label>작업 금지사항</Label><Textarea value={prohibitedActions} onChange={(e) => setProhibitedActions(e.target.value)} rows={3} placeholder="예: 안전대 미체결 작업 금지, 무자격자 장비 운전 금지" /></div>
+            </section>
+
+            {/* 브리핑 */}
+            <section className="space-y-2 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-muted-foreground">⑤ TBM 브리핑 내용</p>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setSummary(BRIEFING_TEMPLATE)}>템플릿 불러오기</Button>
+              </div>
+              <Textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={8} placeholder={BRIEFING_TEMPLATE} />
+            </section>
+
             <p className="text-xs text-warning">⚠ 회사 선택 필수: QR 스캔 시 해당 회사의 위험성평가만 매칭됩니다.</p>
             <Button onClick={save} className="w-full">{editing ? '수정' : '생성'}</Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 이전 TBM 불러오기 */}
+      <Dialog open={showCopyDialog} onOpenChange={setShowCopyDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>이전 TBM 불러오기 {processCategory && `· ${processCategory}`}</DialogTitle></DialogHeader>
+          <p className="text-xs text-muted-foreground mb-2">
+            동일 공종의 최근 TBM이 우선 표시됩니다. 작업내용·위험요인·안전대책·브리핑만 복사되며, 근로자/서명/날짜는 복사되지 않습니다.
+          </p>
+          {copyCandidates.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">불러올 TBM이 없습니다.</p>
+          ) : (
+            <div className="space-y-2">
+              {copyCandidates.map((c: any) => (
+                <div key={c.id} className="flex items-start justify-between gap-2 border rounded-md p-2">
+                  <div className="min-w-0 text-sm">
+                    <p className="font-semibold truncate">{c.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {c.tbm_date} · {c.process_category || '-'} · {c.company_name || '-'}
+                    </p>
+                    {c.work_content && <p className="text-xs mt-1 line-clamp-2">{c.work_content}</p>}
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => applyCopyFrom(c)}>불러오기</Button>
+                </div>
+              ))}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

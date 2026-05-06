@@ -89,6 +89,8 @@ export default function TbmParticipate() {
       return;
     }
     setDone(true);
+    toast({ title: '참여가 완료되었습니다', description: '전자서명이 정상 등록되었습니다.' });
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
   };
 
   if (loading) {

@@ -65,6 +65,14 @@ const AuditLogs = () => {
         </div>
       </div>
 
+      <Card className="bg-muted/30 border-dashed">
+        <CardContent className="p-3 text-xs space-y-1">
+          <p className="font-semibold text-foreground">📋 감사 로그란?</p>
+          <p className="text-muted-foreground">산업안전보건법·중대재해처벌법 대응을 위한 <b>시스템 변경 이력 추적</b> 기능입니다. 위험성평가·작업허가서·결재·산업안전보건관리비 등 모든 핵심 데이터의 생성·수정·삭제·승인·반려 행위가 자동으로 기록됩니다.</p>
+          <p className="text-muted-foreground">기록 항목: <b>시간 / 사용자 / 동작(생성·수정·삭제·결재상신·승인·반려) / 대상 유형·ID / 상세(변경 전·후, 사유)</b>. 감독관 점검 및 사고 발생 시 책임 소재 추적의 법적 근거로 사용됩니다.</p>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardContent className="p-0">
           <table className="w-full data-table text-sm">

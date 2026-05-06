@@ -126,7 +126,22 @@ const MasterData = () => {
 
   return (
     <div className="space-y-4 animate-fade-in">
-      <div><h1 className="text-2xl font-bold">기준정보 관리</h1><p className="text-sm text-muted-foreground mt-1">마스터 데이터, 법적근거, 위험도 매트릭스, 검증 규칙</p></div>
+      <div><h1 className="text-2xl font-bold">기준정보 관리</h1><p className="text-sm text-muted-foreground mt-1">시스템 전체에서 공통으로 사용하는 마스터 데이터를 한 곳에서 관리합니다.</p></div>
+
+      <Card className="bg-muted/30 border-dashed">
+        <CardContent className="p-3 text-xs space-y-1">
+          <p className="font-semibold text-foreground">📚 기준정보란?</p>
+          <p className="text-muted-foreground">위험성평가, 작업계획서, 작업허가서, 결재 등 <b>모든 메뉴가 공통으로 참조하는 표준 데이터</b>입니다. 여기에서 한 번만 정의하면 시스템 전체에 즉시 반영됩니다.</p>
+          <ul className="text-muted-foreground list-disc pl-4 space-y-0.5">
+            <li><b>위험도 매트릭스</b>: 가능성×중대성 3×3 격자에 등급(상/중/하)과 색상을 지정 → 모든 위험성평가 자동 등급화</li>
+            <li><b>공정 목록</b>: 표준 공종(예: 철근콘크리트, 양중작업) → 위험성평가/TBM/작업허가서 드롭다운에 사용</li>
+            <li><b>PPE 목록</b>: 보호구(안전모, 안전화 등) → 위험성평가 항목별 필수 보호구 선택</li>
+            <li><b>법적근거</b>: 산업안전보건법·KOSHA 조항 → 위험성평가/작업허가서 자동 인용</li>
+            <li><b>부서·담당자 / 담당자 매핑</b>: 결재선·책임자 자동 배정에 사용</li>
+            <li><b>검증 규칙</b>: 위험성평가 누락·오류 자동 검증 기준</li>
+          </ul>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="matrix">
         <TabsList className="flex-wrap">

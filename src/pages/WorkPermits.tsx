@@ -116,12 +116,13 @@ export default function WorkPermits() {
     setGateOpen(permit);
     setGateResult(null);
 
+    // 결재 게이트: 위험성평가 + 작업계획서 (TBM은 실행 단계 조건이므로 제외)
     const checks: any = {
       assessment: { ok: false, msg: '위험성평가 미연결' },
       work_plan: { ok: false, msg: '작업계획서 미연결' },
-      tbm: { ok: false, msg: 'TBM 미연결' },
-      weather: { ok: true, msg: '확인됨' },
     };
+    // TBM은 실행 조건(별도 표시)
+    const exec: any = { tbm: { ok: false, msg: 'TBM 미실시 - 작업 실행 시 당일 TBM 필요' } };
 
     if (permit.assessment_run_id) {
       const { data } = await supabase.from('assessment_runs').select('status').eq('id', permit.assessment_run_id).single();
@@ -137,19 +138,27 @@ export default function WorkPermits() {
         : { ok: false, msg: `작업계획서 상태: ${st || '없음'}` };
     }
     if (permit.tbm_session_id) {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: tbm } = await supabase.from('tbm_sessions' as any).select('tbm_date').eq('id', permit.tbm_session_id).single();
+      const isSameDay = (tbm as any)?.tbm_date === today;
       const { count } = await supabase.from('tbm_participations' as any)
         .select('id', { count: 'exact', head: true }).eq('tbm_session_id', permit.tbm_session_id);
-      checks.tbm = (count || 0) > 0
-        ? { ok: true, msg: `TBM 참여 ${count}명` }
-        : { ok: false, msg: 'TBM 참여자 0명' };
+      if ((count || 0) > 0 && isSameDay) {
+        exec.tbm = { ok: true, msg: `당일 TBM 참여 ${count}명 - 작업 실행 가능` };
+      } else if ((count || 0) > 0) {
+        exec.tbm = { ok: false, msg: `TBM 참여 ${count}명 (당일 TBM 아님 - 당일 실시 필요)` };
+      } else {
+        exec.tbm = { ok: false, msg: 'TBM 참여자 0명 - 작업 실행 시 당일 TBM 필요' };
+      }
     }
 
-    const all_ok = Object.values(checks).every((c: any) => c.ok);
-    setGateResult({ checks, all_ok });
+    const all_ok = Object.values(checks).every((c: any) => c.ok); // 결재용
+    const exec_ok = exec.tbm.ok; // 실행용
+    setGateResult({ checks, exec, all_ok, exec_ok });
 
     await supabase.from('work_permits' as any).update({
-      gate_check_result: { checks, all_ok, checked_at: new Date().toISOString() },
-      weather_check_passed: checks.weather.ok,
+      gate_check_result: { checks, exec, all_ok, exec_ok, checked_at: new Date().toISOString() },
+      weather_check_passed: true,
     }).eq('id', permit.id);
     load();
   };

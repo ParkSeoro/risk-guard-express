@@ -3634,6 +3634,10 @@ export type Database = {
         Args: { _invite_code: string; _user_id: string }
         Returns: Json
       }
+      shares_project_with: {
+        Args: { _target: string; _viewer: string }
+        Returns: boolean
+      }
       submit_tbm_participation: {
         Args: {
           _briefing_confirmed: boolean

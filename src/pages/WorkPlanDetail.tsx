@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import {
   ArrowLeft, Save, FileText, Upload, Calculator, CheckCircle2, AlertTriangle,
   Sparkles, Printer, Download, SendHorizontal, Loader2, Wrench, Copy, Eye,
@@ -155,6 +156,7 @@ const WorkPlanDetail = () => {
       attachments,
       start_date: startDate || null,
       end_date: endDate || null,
+      auto_education_enabled: plan?.auto_education_enabled ?? true,
       updated_at: new Date().toISOString(),
     }).eq('id', planId);
 
@@ -464,6 +466,29 @@ const WorkPlanDetail = () => {
             <SendHorizontal className="h-3.5 w-3.5" /> 결재 상신
           </Button>
         )}
+      </div>
+
+      {/* AI Education Material Auto-Generation Toggle */}
+      <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <div>
+            <Label htmlFor="auto-edu-toggle" className="text-sm font-medium cursor-pointer">
+              교육자료 AI 자동 생성
+            </Label>
+            <p className="text-[11px] text-muted-foreground">
+              결재 승인 시 위험성평가 기반 안전교육 자료를 자동으로 생성합니다.
+            </p>
+          </div>
+        </div>
+        <Switch
+          id="auto-edu-toggle"
+          checked={plan?.auto_education_enabled ?? true}
+          onCheckedChange={(v) => {
+            setPlan((prev: any) => ({ ...prev, auto_education_enabled: v }));
+            setIsDirty(true);
+          }}
+        />
       </div>
 
       {/* Legal Basis */}

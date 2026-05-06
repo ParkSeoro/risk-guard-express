@@ -1113,6 +1113,48 @@ export type Database = {
         }
         Relationships: []
       }
+      inspection_responses: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          findings: Json
+          id: string
+          inspection_date: string
+          inspector_org: string
+          notes: string
+          pdf_url: string
+          project_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          findings?: Json
+          id?: string
+          inspection_date?: string
+          inspector_org?: string
+          notes?: string
+          pdf_url?: string
+          project_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          findings?: Json
+          id?: string
+          inspection_date?: string
+          inspector_org?: string
+          notes?: string
+          pdf_url?: string
+          project_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       legal_duties: {
         Row: {
           company_id: string | null
@@ -3290,63 +3332,93 @@ export type Database = {
           approved_by: string | null
           approved_by_name: string
           assessment_run_id: string | null
+          contractor_company: string
           created_at: string
           created_by: string | null
+          dig_company: string
+          extension_until: string | null
+          form_data: Json
           gate_check_result: Json
           id: string
           location: string
           permit_date: string
+          permit_type: string
+          personnel_count: number
           project_id: string
           rejection_reason: string
+          signatures: Json
           status: string
           tbm_session_id: string | null
           updated_at: string
           weather_check_passed: boolean
           weather_snapshot: Json
           work_description: string
+          work_end_at: string | null
+          work_name: string
           work_plan_id: string | null
+          work_start_at: string | null
         }
         Insert: {
           approved_at?: string | null
           approved_by?: string | null
           approved_by_name?: string
           assessment_run_id?: string | null
+          contractor_company?: string
           created_at?: string
           created_by?: string | null
+          dig_company?: string
+          extension_until?: string | null
+          form_data?: Json
           gate_check_result?: Json
           id?: string
           location?: string
           permit_date?: string
+          permit_type?: string
+          personnel_count?: number
           project_id: string
           rejection_reason?: string
+          signatures?: Json
           status?: string
           tbm_session_id?: string | null
           updated_at?: string
           weather_check_passed?: boolean
           weather_snapshot?: Json
           work_description?: string
+          work_end_at?: string | null
+          work_name?: string
           work_plan_id?: string | null
+          work_start_at?: string | null
         }
         Update: {
           approved_at?: string | null
           approved_by?: string | null
           approved_by_name?: string
           assessment_run_id?: string | null
+          contractor_company?: string
           created_at?: string
           created_by?: string | null
+          dig_company?: string
+          extension_until?: string | null
+          form_data?: Json
           gate_check_result?: Json
           id?: string
           location?: string
           permit_date?: string
+          permit_type?: string
+          personnel_count?: number
           project_id?: string
           rejection_reason?: string
+          signatures?: Json
           status?: string
           tbm_session_id?: string | null
           updated_at?: string
           weather_check_passed?: boolean
           weather_snapshot?: Json
           work_description?: string
+          work_end_at?: string | null
+          work_name?: string
           work_plan_id?: string | null
+          work_start_at?: string | null
         }
         Relationships: []
       }

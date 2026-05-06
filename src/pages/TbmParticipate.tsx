@@ -34,6 +34,8 @@ export default function TbmParticipate() {
   const [phone, setPhone] = useState('');
   const [company, setCompany] = useState('');
   const [confirmed, setConfirmed] = useState(false);
+  const [ppeChecked, setPpeChecked] = useState(false);
+  const [understoodChecked, setUnderstoodChecked] = useState(false);
 
   const sigRef = useRef<SignatureCanvas | null>(null);
 
@@ -56,6 +58,8 @@ export default function TbmParticipate() {
     if (!name.trim()) return toast({ title: '이름을 입력하세요.', variant: 'destructive' });
     if (!phone.trim() || phone.replace(/\D/g, '').length < 8) return toast({ title: '전화번호를 정확히 입력하세요.', variant: 'destructive' });
     if (!confirmed) return toast({ title: '브리핑 확인 체크가 필요합니다.', variant: 'destructive' });
+    if (!ppeChecked) return toast({ title: 'PPE(보호구) 착용 확인이 필요합니다.', variant: 'destructive' });
+    if (!understoodChecked) return toast({ title: '내용 이해 확인이 필요합니다.', variant: 'destructive' });
     if (!sigRef.current || sigRef.current.isEmpty()) return toast({ title: '전자서명이 필요합니다.', variant: 'destructive' });
 
     setSubmitting(true);
@@ -195,6 +199,24 @@ export default function TbmParticipate() {
               <span className="text-sm">
                 위 브리핑 내용과 위험요인·안전대책을 확인하였으며, 안전수칙을 준수하여 작업하겠습니다. *
               </span>
+            </label>
+          </CardContent>
+        </Card>
+
+        <Card className={ppeChecked ? 'border-success' : ''}>
+          <CardContent className="p-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <Checkbox checked={ppeChecked} onCheckedChange={(v) => setPpeChecked(!!v)} />
+              <span className="text-sm">안전모, 안전화, 보호구(PPE)를 모두 착용하였습니다. *</span>
+            </label>
+          </CardContent>
+        </Card>
+
+        <Card className={understoodChecked ? 'border-success' : ''}>
+          <CardContent className="p-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <Checkbox checked={understoodChecked} onCheckedChange={(v) => setUnderstoodChecked(!!v)} />
+              <span className="text-sm">브리핑 내용을 충분히 이해했으며 궁금한 사항은 작업 전 관리감독자에게 문의하겠습니다. *</span>
             </label>
           </CardContent>
         </Card>

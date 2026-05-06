@@ -19,6 +19,9 @@ type Briefing = {
   tbm_date: string;
   location: string;
   leader_name: string;
+  company_name?: string;
+  process_category?: string;
+  matched_run?: { id: string; period_label: string; status: string } | null;
 };
 
 export default function TbmParticipate() {

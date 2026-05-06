@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, QrCode, Printer, Users, Trash2, Power } from 'lucide-react';
+import { Plus, QrCode, Printer, Users, Trash2, Power, Pencil } from 'lucide-react';
 
 interface Props {
   projectId: string;
@@ -27,6 +27,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const { toast } = useToast();
   const [sessions, setSessions] = useState<TbmSession[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState<TbmSession | null>(null);
   const [qrSession, setQrSession] = useState<TbmSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [participants, setParticipants] = useState<any[]>([]);
@@ -53,19 +54,42 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
   useEffect(() => { load(); }, [projectId, runId]);
 
-  const create = async () => {
+  const resetForm = () => {
+    setTitle(''); setTbmDate(new Date().toISOString().slice(0, 10));
+    setLocation(''); setLeader(''); setSummary(''); setCompanyId(''); setProcessCategory('');
+  };
+
+  const openEdit = (s: any) => {
+    setEditing(s);
+    setTitle(s.title || ''); setTbmDate(s.tbm_date || ''); setLocation(s.location || '');
+    setLeader(s.leader_name || ''); setSummary(s.briefing_summary || '');
+    setCompanyId(s.company_id || ''); setProcessCategory(s.process_category || '');
+  };
+
+  const save = async () => {
     if (!title.trim()) return toast({ title: '제목을 입력하세요.', variant: 'destructive' });
-    if (!companyId) return toast({ title: '회사(시공사/협력사)를 선택하세요. QR 매칭에 필수입니다.', variant: 'destructive' });
+    if (!companyId) return toast({ title: '회사(시공사/협력사)를 선택하세요.', variant: 'destructive' });
     const cmpName = companies.find(c => c.id === companyId)?.name || '';
-    const { error } = await supabase.from('tbm_sessions' as any).insert({
-      project_id: projectId, run_id: runId || null,
+    const payload: any = {
       title, tbm_date: tbmDate, location, leader_name: leader,
-      briefing_summary: summary, briefing_risks: defaultRisks as any,
-      company_id: companyId, company_name: cmpName, process_category: processCategory,
-    });
-    if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
-    toast({ title: 'TBM이 생성되었습니다.' });
-    setShowCreate(false); setTitle(''); setLocation(''); setLeader(''); setSummary(''); setCompanyId(''); setProcessCategory('');
+      briefing_summary: summary, company_id: companyId, company_name: cmpName,
+      process_category: processCategory,
+    };
+    if (editing) {
+      const { error } = await supabase.from('tbm_sessions' as any).update(payload).eq('id', editing.id);
+      if (error) return toast({ title: '수정 실패', description: error.message, variant: 'destructive' });
+      toast({ title: 'TBM이 수정되었습니다.' });
+      setEditing(null);
+    } else {
+      const { error } = await supabase.from('tbm_sessions' as any).insert({
+        ...payload, project_id: projectId, run_id: runId || null,
+        briefing_risks: defaultRisks as any,
+      });
+      if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
+      toast({ title: 'TBM이 생성되었습니다.' });
+      setShowCreate(false);
+    }
+    resetForm();
     load();
   };
 
@@ -75,8 +99,11 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   };
 
   const remove = async (s: TbmSession) => {
-    if (!confirm('이 TBM을 삭제하시겠습니까?')) return;
-    await supabase.from('tbm_sessions' as any).delete().eq('id', s.id);
+    const reason = prompt(`이 TBM "${s.title}"을(를) 삭제합니다. 사유를 입력하세요.`);
+    if (!reason) return;
+    const { error } = await supabase.from('tbm_sessions' as any).delete().eq('id', s.id);
+    if (error) return toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
+    toast({ title: 'TBM이 삭제되었습니다.' });
     load();
   };
 
@@ -133,10 +160,11 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
                   <p className="text-xs text-muted-foreground">{s.tbm_date} · {s.location} · {s.leader_name}</p>
                 </div>
                 <div className="flex gap-1 shrink-0">
-                  <Button size="sm" variant="outline" onClick={() => openQr(s)}><QrCode className="h-3 w-3" /></Button>
-                  <Button size="sm" variant="outline" onClick={() => openParts(s)}><Users className="h-3 w-3" /></Button>
-                  <Button size="sm" variant="outline" onClick={() => toggleActive(s)}><Power className="h-3 w-3" /></Button>
-                  <Button size="sm" variant="outline" onClick={() => remove(s)}><Trash2 className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => openQr(s)} title="QR"><QrCode className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => openParts(s)} title="참여자"><Users className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => toggleActive(s)} title="활성/종료"><Power className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => openEdit(s)} title="수정"><Pencil className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => remove(s)} title="삭제"><Trash2 className="h-3 w-3 text-destructive" /></Button>
                 </div>
               </CardContent>
             </Card>
@@ -144,9 +172,9 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         </div>
       )}
 
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+      <Dialog open={showCreate || !!editing} onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditing(null); resetForm(); } }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>TBM 생성</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editing ? 'TBM 수정' : 'TBM 생성'}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div><Label>제목 *</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="2026-05-06 오전 TBM" /></div>
             <div className="grid grid-cols-2 gap-2">
@@ -165,11 +193,11 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
               <div><Label>공종</Label><Input value={processCategory} onChange={(e) => setProcessCategory(e.target.value)} placeholder="예: 철근콘크리트" /></div>
             </div>
             <div><Label>브리핑 요약</Label><Textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={4} /></div>
-            {defaultRisks.length > 0 && (
+            {!editing && defaultRisks.length > 0 && (
               <p className="text-xs text-muted-foreground">위험성평가에서 주요 위험 {defaultRisks.length}건이 자동 포함됩니다.</p>
             )}
             <p className="text-xs text-warning">⚠ 회사 선택 필수: QR 스캔 시 해당 회사의 위험성평가만 매칭됩니다.</p>
-            <Button onClick={create} className="w-full">생성</Button>
+            <Button onClick={save} className="w-full">{editing ? '수정' : '생성'}</Button>
           </div>
         </DialogContent>
       </Dialog>

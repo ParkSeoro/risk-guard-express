@@ -38,6 +38,7 @@ import SiteWeather from "./pages/SiteWeather";
 import SafetyCost from "./pages/SafetyCost";
 import WorkPermits from "./pages/WorkPermits";
 import TbmParticipate from "./pages/TbmParticipate";
+import TbmLogs from "./pages/TbmLogs";
 import InspectionMode from "./pages/InspectionMode";
 import SiteReadinessChecklist from "./pages/SiteReadinessChecklist";
 import NotFound from "./pages/NotFound";
@@ -129,6 +130,7 @@ function ProtectedRoutes() {
         <Route path="/site-weather" element={<SiteWeather />} />
         <Route path="/safety-cost" element={<SafetyCost />} />
         <Route path="/work-permits" element={<WorkPermits />} />
+        <Route path="/tbm-logs" element={<TbmLogs />} />
         <Route path="/inspection-mode" element={<InspectionMode />} />
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="*" element={<NotFound />} />

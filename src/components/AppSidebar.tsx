@@ -2,7 +2,7 @@ import {
   LayoutDashboard, FolderKanban, ShieldAlert, Database, 
   FileCheck, HardHat, ChevronLeft, LogOut, User,
   ShieldCheck, History, Shield, SearchCheck, Settings,
-  FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX
+  FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -19,6 +19,7 @@ const mainItems = [
   { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
   { title: "작업계획서", url: "/work-plans", icon: FileText },
   { title: "작업허가서", url: "/work-permits", icon: FileSignature },
+  { title: "TBM 일지", url: "/tbm-logs", icon: QrCode },
   { title: "법적업무", url: "/legal-duties", icon: Scale },
   { title: "산업안전보건관리비", url: "/safety-cost", icon: ReceiptText },
   { title: "검증센터", url: "/verification-center", icon: SearchCheck },

@@ -500,7 +500,7 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
                   {a.result && <p className="text-[11px]">결과: {a.result}</p>}
                   <p className="text-[11px]">예방: {a.prevention}</p>
                   {a.description && <p className="text-[10px] text-muted-foreground">{a.description}</p>}
-                  <Badge variant="outline" className="text-[9px] mt-1">{a.source_type === 'ai' ? '🤖 AI' : a.source_type === 'recommended' ? '📋 추천' : '✍️ 수동'}</Badge>
+                  <Badge variant="outline" className="text-[9px] mt-1">{a.source_type === 'ai' ? '🤖 AI' : a.source_type === 'auto' ? '⚡ 자동(고위험)' : a.source_type === 'recommended' ? '📋 추천' : '✍️ 수동'}</Badge>
                 </div>
                 {canEdit && <div className="flex gap-1">
                   <label className="cursor-pointer">

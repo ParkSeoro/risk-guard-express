@@ -400,7 +400,7 @@ export default function SafetyInspections() {
             </div>
             <div>
               <Label>점검 위치</Label>
-              <IMESafeInput value={form.location} onChange={(v) => setForm({ ...form, location: v })} placeholder="예: 1동 3층 A구역" />
+              <IMESafeInput defaultValue={form.location} onCommit={(v) => setForm({ ...form, location: v })} placeholder="예: 1동 3층 A구역" />
             </div>
             <div>
               <Label>점검자</Label>

@@ -27,6 +27,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const { toast } = useToast();
   const [sessions, setSessions] = useState<TbmSession[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState<TbmSession | null>(null);
   const [qrSession, setQrSession] = useState<TbmSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [participants, setParticipants] = useState<any[]>([]);

@@ -32,6 +32,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import FeedbackPanel from '@/components/FeedbackPanel';
 import ApprovalLineManager, { type ApprovalLine } from '@/components/ApprovalLineManager';
 import WorkerParticipationPanel from '@/components/assessment/WorkerParticipationPanel';
+import TbmManager from '@/components/tbm/TbmManager';
+import TbmPrintSection from '@/components/tbm/TbmPrintSection';
 import * as XLSX from 'xlsx';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
@@ -1336,6 +1338,16 @@ const AssessmentRunDetail = () => {
           onChanged={refreshParticipation}
         />
       </div>
+
+      {/* TBM QR Sessions */}
+      <Card className="print:hidden">
+        <CardContent className="py-4">
+          <TbmManager projectId={run.project_id} runId={runId!} />
+        </CardContent>
+      </Card>
+
+      {/* TBM signatures (print only) */}
+      <TbmPrintSection runId={runId!} />
 
       {/* Worker Participation Photos */}
       <Card className="print:hidden">

@@ -297,7 +297,7 @@ export default function WorkPermits() {
                 <SelectContent>{tbms.map((r) => <SelectItem key={r.id} value={r.id}>{r.title} ({r.tbm_date})</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <Button onClick={create} className="w-full">생성</Button>
+            <Button onClick={save} className="w-full">{editing ? '수정' : '생성'}</Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -160,10 +160,11 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
                   <p className="text-xs text-muted-foreground">{s.tbm_date} · {s.location} · {s.leader_name}</p>
                 </div>
                 <div className="flex gap-1 shrink-0">
-                  <Button size="sm" variant="outline" onClick={() => openQr(s)}><QrCode className="h-3 w-3" /></Button>
-                  <Button size="sm" variant="outline" onClick={() => openParts(s)}><Users className="h-3 w-3" /></Button>
-                  <Button size="sm" variant="outline" onClick={() => toggleActive(s)}><Power className="h-3 w-3" /></Button>
-                  <Button size="sm" variant="outline" onClick={() => remove(s)}><Trash2 className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => openQr(s)} title="QR"><QrCode className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => openParts(s)} title="참여자"><Users className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => toggleActive(s)} title="활성/종료"><Power className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => openEdit(s)} title="수정"><Pencil className="h-3 w-3" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => remove(s)} title="삭제"><Trash2 className="h-3 w-3 text-destructive" /></Button>
                 </div>
               </CardContent>
             </Card>

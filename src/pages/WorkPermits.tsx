@@ -116,12 +116,13 @@ export default function WorkPermits() {
     setGateOpen(permit);
     setGateResult(null);
 
+    // 결재 게이트: 위험성평가 + 작업계획서 (TBM은 실행 단계 조건이므로 제외)
     const checks: any = {
       assessment: { ok: false, msg: '위험성평가 미연결' },
       work_plan: { ok: false, msg: '작업계획서 미연결' },
-      tbm: { ok: false, msg: 'TBM 미연결' },
-      weather: { ok: true, msg: '확인됨' },
     };
+    // TBM은 실행 조건(별도 표시)
+    const exec: any = { tbm: { ok: false, msg: 'TBM 미실시 - 작업 실행 시 당일 TBM 필요' } };
 
     if (permit.assessment_run_id) {
       const { data } = await supabase.from('assessment_runs').select('status').eq('id', permit.assessment_run_id).single();
@@ -137,19 +138,27 @@ export default function WorkPermits() {
         : { ok: false, msg: `작업계획서 상태: ${st || '없음'}` };
     }
     if (permit.tbm_session_id) {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: tbm } = await supabase.from('tbm_sessions' as any).select('tbm_date').eq('id', permit.tbm_session_id).single();
+      const isSameDay = (tbm as any)?.tbm_date === today;
       const { count } = await supabase.from('tbm_participations' as any)
         .select('id', { count: 'exact', head: true }).eq('tbm_session_id', permit.tbm_session_id);
-      checks.tbm = (count || 0) > 0
-        ? { ok: true, msg: `TBM 참여 ${count}명` }
-        : { ok: false, msg: 'TBM 참여자 0명' };
+      if ((count || 0) > 0 && isSameDay) {
+        exec.tbm = { ok: true, msg: `당일 TBM 참여 ${count}명 - 작업 실행 가능` };
+      } else if ((count || 0) > 0) {
+        exec.tbm = { ok: false, msg: `TBM 참여 ${count}명 (당일 TBM 아님 - 당일 실시 필요)` };
+      } else {
+        exec.tbm = { ok: false, msg: 'TBM 참여자 0명 - 작업 실행 시 당일 TBM 필요' };
+      }
     }
 
-    const all_ok = Object.values(checks).every((c: any) => c.ok);
-    setGateResult({ checks, all_ok });
+    const all_ok = Object.values(checks).every((c: any) => c.ok); // 결재용
+    const exec_ok = exec.tbm.ok; // 실행용
+    setGateResult({ checks, exec, all_ok, exec_ok });
 
     await supabase.from('work_permits' as any).update({
-      gate_check_result: { checks, all_ok, checked_at: new Date().toISOString() },
-      weather_check_passed: checks.weather.ok,
+      gate_check_result: { checks, exec, all_ok, exec_ok, checked_at: new Date().toISOString() },
+      weather_check_passed: true,
     }).eq('id', permit.id);
     load();
   };
@@ -228,10 +237,15 @@ export default function WorkPermits() {
                 </div>
                 <p className="text-xs text-muted-foreground">{p.permit_date} · {p.location || '-'}</p>
                 {p.gate_check_result?.all_ok === false && (
-                  <p className="text-xs text-destructive mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />작업불가 - 조건 미충족</p>
+                  <p className="text-xs text-destructive mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />결재불가 - 위험성평가/작업계획서 조건 미충족</p>
                 )}
                 {p.gate_check_result?.all_ok === true && (
-                  <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />작업가능</p>
+                  <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />결재 가능 (위험성평가·작업계획서 충족)</p>
+                )}
+                {p.status === '승인' && (
+                  p.gate_check_result?.exec_ok
+                    ? <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />당일 TBM 완료 - 작업 실행 가능</p>
+                    : <p className="text-xs text-warning mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />작업 불가 - 당일 TBM 미실시</p>
                 )}
                 {p.rejection_reason && <p className="text-xs text-destructive mt-1">반려: {p.rejection_reason}</p>}
                 <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
@@ -306,18 +320,32 @@ export default function WorkPermits() {
         <DialogContent>
           <DialogHeader><DialogTitle>작업 게이트 체크 결과</DialogTitle></DialogHeader>
           {!gateResult ? <p className="text-sm text-muted-foreground">검사 중...</p> : (
-            <div className="space-y-2">
-              {Object.entries(gateResult.checks).map(([k, v]: any) => (
-                <div key={k} className="flex items-center gap-2 p-2 rounded border">
-                  {v.ok ? <CheckCircle2 className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-destructive" />}
-                  <span className="text-sm font-medium w-24">
-                    {k === 'assessment' ? '위험성평가' : k === 'work_plan' ? '작업계획서' : k === 'tbm' ? 'TBM' : '날씨'}
-                  </span>
-                  <span className="text-sm text-muted-foreground">{v.msg}</span>
+            <div className="space-y-3">
+              <div>
+                <p className="text-xs font-semibold mb-1 text-muted-foreground">결재 조건 (사전 승인용)</p>
+                <div className="space-y-1">
+                  {Object.entries(gateResult.checks).map(([k, v]: any) => (
+                    <div key={k} className="flex items-center gap-2 p-2 rounded border">
+                      {v.ok ? <CheckCircle2 className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-destructive" />}
+                      <span className="text-sm font-medium w-24">{k === 'assessment' ? '위험성평가' : '작업계획서'}</span>
+                      <span className="text-sm text-muted-foreground">{v.msg}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-              <div className={`p-3 rounded text-center font-bold ${gateResult.all_ok ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
-                {gateResult.all_ok ? '✅ 작업 가능' : '🚫 작업 불가'}
+                <div className={`p-2 mt-2 rounded text-center text-sm font-bold ${gateResult.all_ok ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
+                  {gateResult.all_ok ? '✅ 결재 가능' : '🚫 결재 불가'}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold mb-1 text-muted-foreground">작업 실행 조건 (당일 TBM)</p>
+                <div className="flex items-center gap-2 p-2 rounded border">
+                  {gateResult.exec?.tbm.ok ? <CheckCircle2 className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-warning" />}
+                  <span className="text-sm font-medium w-24">TBM</span>
+                  <span className="text-sm text-muted-foreground">{gateResult.exec?.tbm.msg}</span>
+                </div>
+                <div className={`p-2 mt-2 rounded text-center text-sm font-bold ${gateResult.exec_ok ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
+                  {gateResult.exec_ok ? '✅ 작업 실행 가능' : '⚠ 작업 불가 - 당일 TBM 미실시'}
+                </div>
               </div>
             </div>
           )}

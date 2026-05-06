@@ -114,11 +114,26 @@ export default function TbmParticipate() {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
         <Card className="max-w-md w-full">
-          <CardContent className="p-8 text-center space-y-3">
+          <CardContent className="p-8 text-center space-y-4">
             <CheckCircle2 className="h-16 w-16 text-success mx-auto" />
             <h2 className="text-xl font-bold">참여가 완료되었습니다</h2>
             <p className="text-sm text-muted-foreground">{name}님, TBM 참여 및 전자서명이 정상 등록되었습니다.</p>
             <p className="text-xs text-muted-foreground">안전한 작업 되십시오.</p>
+            <div className="pt-2">
+              <Button
+                className="w-full"
+                onClick={() => {
+                  try { window.close(); } catch {}
+                  setTimeout(() => {
+                    if (!window.closed) {
+                      window.location.href = 'about:blank';
+                    }
+                  }, 150);
+                }}
+              >
+                창 닫기
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

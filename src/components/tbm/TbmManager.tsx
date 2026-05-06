@@ -374,19 +374,27 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         <tr><th>공종</th><td>${esc(sAny.process_category || '-')}</td><th>회사 (시공사/협력사)</th><td>${esc(sAny.company_name || '-')}</td></tr>
       </table>
 
-      <h2>2. 작업 내용 / 주요 작업내용</h2>
-      <table><tr><td style="min-height:18mm;white-space:pre-wrap">${esc(s.briefing_summary || '-')}</td></tr></table>
+      <h2>2. 오늘 작업 내용</h2>
+      <table><tr><td style="min-height:14mm;white-space:pre-wrap">${esc(sAny.work_content || '-')}</td></tr></table>
 
-      <h2>3. 위험요인 및 안전대책 (위험성평가 연동)</h2>
+      <h2>3. 작업 순서</h2>
+      <table><tr><td style="min-height:14mm;white-space:pre-wrap">${esc(sAny.work_steps || '-')}</td></tr></table>
+
+      <h2>4. 위험요인 및 안전대책 (위험성평가 연동)</h2>
       <table>
         <thead><tr><th style="width:40%">위험요인</th><th style="width:15%" class="center">위험등급</th><th>안전대책</th></tr></thead>
         <tbody>${risksHtml}</tbody>
       </table>
 
-      <h2>4. 교육 / 브리핑 내용</h2>
+      <h2>5. 특별 주의사항</h2>
+      <table><tr><td style="min-height:12mm;white-space:pre-wrap">${esc(sAny.special_notes || '-')}</td></tr></table>
+
+      <h2>6. 작업 금지사항</h2>
+      <table><tr><td style="min-height:12mm;white-space:pre-wrap">${esc(sAny.prohibited_actions || '-')}</td></tr></table>
+
+      <h2>7. TBM 브리핑 내용</h2>
       <table>
-        <tr><th style="width:22%">작업 전 안전교육</th><td style="white-space:pre-wrap">${esc(s.briefing_summary || '-')}</td></tr>
-        <tr><th>당일 위험요소 설명</th><td>위 3항 위험요인 전체 항목에 대해 작업 전 설명·확인하였음</td></tr>
+        <tr><td style="white-space:pre-wrap;min-height:18mm">${esc(s.briefing_summary || '-')}</td></tr>
       </table>
 
       <h2>5. 근로자 서명</h2>

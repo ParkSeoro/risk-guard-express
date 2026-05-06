@@ -487,7 +487,7 @@ export default function SafetyInspections() {
                           <div className="grid grid-cols-3 gap-2">
                             <div>
                               <Label className="text-xs">담당자</Label>
-                              <IMESafeInput value={a.assignee_name} onChange={(v) => updateActionField(a, { assignee_name: v })} />
+                              <IMESafeInput defaultValue={a.assignee_name} onCommit={(v) => updateActionField(a, { assignee_name: v })} />
                             </div>
                             <div>
                               <Label className="text-xs">기한</Label>

@@ -54,10 +54,17 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const [tbmDate, setTbmDate] = useState(new Date().toISOString().slice(0, 10));
   const [location, setLocation] = useState('');
   const [leader, setLeader] = useState('');
-  const [summary, setSummary] = useState('');
+  const [summary, setSummary] = useState(BRIEFING_TEMPLATE);
   const [companyId, setCompanyId] = useState('');
   const [processCategory, setProcessCategory] = useState('');
   const [companies, setCompanies] = useState<any[]>([]);
+  const [workContent, setWorkContent] = useState('');
+  const [workSteps, setWorkSteps] = useState('');
+  const [specialNotes, setSpecialNotes] = useState('');
+  const [prohibitedActions, setProhibitedActions] = useState('');
+  const [risksDraft, setRisksDraft] = useState<Array<{ hazard: string; grade: string; measure: string }>>([]);
+  const [showCopyDialog, setShowCopyDialog] = useState(false);
+  const [copyCandidates, setCopyCandidates] = useState<TbmSession[]>([]);
 
   const load = async () => {
     let q = supabase.from('tbm_sessions' as any).select('*').eq('project_id', projectId).order('created_at', { ascending: false });
@@ -72,24 +79,73 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
   const resetForm = () => {
     setTitle(''); setTbmDate(new Date().toISOString().slice(0, 10));
-    setLocation(''); setLeader(''); setSummary(''); setCompanyId(''); setProcessCategory('');
+    setLocation(''); setLeader(''); setSummary(BRIEFING_TEMPLATE);
+    setCompanyId(''); setProcessCategory('');
+    setWorkContent(''); setWorkSteps(''); setSpecialNotes(''); setProhibitedActions('');
+    setRisksDraft(defaultRisks.length ? defaultRisks.map(r => ({ ...r })) : []);
   };
+
+  // Initialize risksDraft when opening create dialog
+  useEffect(() => {
+    if (showCreate && !editing) {
+      setRisksDraft(defaultRisks.length ? defaultRisks.map(r => ({ ...r })) : []);
+    }
+  }, [showCreate, editing, defaultRisks]);
 
   const openEdit = (s: any) => {
     setEditing(s);
     setTitle(s.title || ''); setTbmDate(s.tbm_date || ''); setLocation(s.location || '');
     setLeader(s.leader_name || ''); setSummary(s.briefing_summary || '');
     setCompanyId(s.company_id || ''); setProcessCategory(s.process_category || '');
+    setWorkContent(s.work_content || ''); setWorkSteps(s.work_steps || '');
+    setSpecialNotes(s.special_notes || ''); setProhibitedActions(s.prohibited_actions || '');
+    const r = s.briefing_risks;
+    const arr = Array.isArray(r) ? r : (r ? (() => { try { return JSON.parse(r); } catch { return []; } })() : []);
+    setRisksDraft(arr.map((x: any) => ({ hazard: x.hazard || '', grade: x.grade || '', measure: x.measure || '' })));
   };
+
+  const openCopyDialog = async () => {
+    let q = supabase.from('tbm_sessions' as any)
+      .select('*').eq('project_id', projectId)
+      .order('tbm_date', { ascending: false }).limit(20);
+    if (processCategory) q = q.eq('process_category', processCategory);
+    const { data } = await q;
+    setCopyCandidates((data as any) || []);
+    setShowCopyDialog(true);
+  };
+
+  const applyCopyFrom = (s: any) => {
+    setWorkContent(s.work_content || '');
+    setWorkSteps(s.work_steps || '');
+    setSpecialNotes(s.special_notes || '');
+    setProhibitedActions(s.prohibited_actions || '');
+    setSummary(s.briefing_summary || BRIEFING_TEMPLATE);
+    if (!processCategory && s.process_category) setProcessCategory(s.process_category);
+    const r = s.briefing_risks;
+    const arr = Array.isArray(r) ? r : (r ? (() => { try { return JSON.parse(r); } catch { return []; } })() : []);
+    setRisksDraft(arr.map((x: any) => ({ hazard: x.hazard || '', grade: x.grade || '', measure: x.measure || '' })));
+    setShowCopyDialog(false);
+    toast({ title: '이전 TBM 내용을 불러왔습니다.', description: '근로자/서명/날짜는 복사되지 않았습니다.' });
+  };
+
+  const updateRisk = (idx: number, key: 'hazard' | 'grade' | 'measure', value: string) => {
+    setRisksDraft(prev => prev.map((r, i) => i === idx ? { ...r, [key]: value } : r));
+  };
+  const addRisk = () => setRisksDraft(prev => [...prev, { hazard: '', grade: '', measure: '' }]);
+  const removeRisk = (idx: number) => setRisksDraft(prev => prev.filter((_, i) => i !== idx));
 
   const save = async () => {
     if (!title.trim()) return toast({ title: '제목을 입력하세요.', variant: 'destructive' });
     if (!companyId) return toast({ title: '회사(시공사/협력사)를 선택하세요.', variant: 'destructive' });
     const cmpName = companies.find(c => c.id === companyId)?.name || '';
+    const cleanRisks = risksDraft.filter(r => (r.hazard || '').trim() || (r.measure || '').trim());
     const payload: any = {
       title, tbm_date: tbmDate, location, leader_name: leader,
       briefing_summary: summary, company_id: companyId, company_name: cmpName,
       process_category: processCategory,
+      work_content: workContent, work_steps: workSteps,
+      special_notes: specialNotes, prohibited_actions: prohibitedActions,
+      briefing_risks: cleanRisks as any,
     };
     if (editing) {
       const { error } = await supabase.from('tbm_sessions' as any).update(payload).eq('id', editing.id);
@@ -99,7 +155,6 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     } else {
       const { error } = await supabase.from('tbm_sessions' as any).insert({
         ...payload, project_id: projectId, run_id: runId || null,
-        briefing_risks: defaultRisks as any,
       });
       if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
       toast({ title: 'TBM이 생성되었습니다.' });

@@ -154,10 +154,21 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
               <div><Label>장소</Label><Input value={location} onChange={(e) => setLocation(e.target.value)} /></div>
             </div>
             <div><Label>주관자</Label><Input value={leader} onChange={(e) => setLeader(e.target.value)} /></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>회사 (시공사/협력사) *</Label>
+                <select className="w-full h-10 rounded-md border bg-background px-3 text-sm" value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
+                  <option value="">선택</option>
+                  {companies.map(c => <option key={c.id} value={c.id}>{c.name} ({c.type})</option>)}
+                </select>
+              </div>
+              <div><Label>공종</Label><Input value={processCategory} onChange={(e) => setProcessCategory(e.target.value)} placeholder="예: 철근콘크리트" /></div>
+            </div>
             <div><Label>브리핑 요약</Label><Textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={4} /></div>
             {defaultRisks.length > 0 && (
               <p className="text-xs text-muted-foreground">위험성평가에서 주요 위험 {defaultRisks.length}건이 자동 포함됩니다.</p>
             )}
+            <p className="text-xs text-warning">⚠ 회사 선택 필수: QR 스캔 시 해당 회사의 위험성평가만 매칭됩니다.</p>
             <Button onClick={create} className="w-full">생성</Button>
           </div>
         </DialogContent>

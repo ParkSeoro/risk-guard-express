@@ -36,6 +36,8 @@ import TodoDashboard from "./pages/TodoDashboard";
 import AIAssistant from "./pages/AIAssistant";
 import SiteWeather from "./pages/SiteWeather";
 import SafetyCost from "./pages/SafetyCost";
+import WorkPermits from "./pages/WorkPermits";
+import TbmParticipate from "./pages/TbmParticipate";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -124,6 +126,7 @@ function ProtectedRoutes() {
         <Route path="/ai-assistant" element={<AIAssistant />} />
         <Route path="/site-weather" element={<SiteWeather />} />
         <Route path="/safety-cost" element={<SafetyCost />} />
+        <Route path="/work-permits" element={<WorkPermits />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>
@@ -147,6 +150,7 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<AuthRoute />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/tbm/:token" element={<TbmParticipate />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
         </AuthProvider>

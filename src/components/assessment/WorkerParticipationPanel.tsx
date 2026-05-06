@@ -441,6 +441,44 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
+          {/* 고위험 작업 자동 사고사례 패널 */}
+          {canEdit && (
+            <div className="rounded border p-2 bg-muted/20 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <Switch checked={autoAccidentEnabled} onCheckedChange={setAutoAccidentEnabled} />
+                  <span className="font-medium">고위험 작업 사고사례 자동 생성</span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1"
+                  disabled={autoAccidentLoading || detectedHighRisk.length === 0}
+                  onClick={() => runAutoAccidentGeneration(false)}
+                >
+                  {autoAccidentLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+                  지금 생성
+                </Button>
+              </div>
+              {detectedHighRisk.length > 0 ? (
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="text-[10px] text-muted-foreground">식별된 고위험:</span>
+                  {detectedHighRisk.map(c => (
+                    <Badge key={c} variant="destructive" className="text-[9px] h-4">{c}</Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[10px] text-muted-foreground">고위험 작업이 식별되지 않았습니다.</p>
+              )}
+              {hasHighRiskWithoutCases && autoAccidentRan && (
+                <div className="flex items-start gap-1.5 p-2 rounded bg-destructive/10 text-destructive text-[11px]">
+                  <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  <span>고위험 작업이 식별되었지만 사고사례가 등록되지 않았습니다. 자동 생성을 실행하거나 수동으로 등록해주세요.</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {canEdit && (
             <div className="grid grid-cols-2 gap-2 p-2 border rounded bg-muted/30">
               <Input className="h-8" placeholder="사고유형" value={accidentDraft.accident_type} onChange={e => setAccidentDraft(p => ({ ...p, accident_type: e.target.value }))} />

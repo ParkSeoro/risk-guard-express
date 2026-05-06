@@ -2950,6 +2950,110 @@ export type Database = {
         }
         Relationships: []
       }
+      tbm_participations: {
+        Row: {
+          briefing_confirmed: boolean
+          company_name: string
+          created_at: string
+          id: string
+          ip_hash: string
+          participated_at: string
+          signature_data: string
+          tbm_session_id: string
+          user_agent: string
+          worker_name: string
+          worker_phone: string
+        }
+        Insert: {
+          briefing_confirmed?: boolean
+          company_name?: string
+          created_at?: string
+          id?: string
+          ip_hash?: string
+          participated_at?: string
+          signature_data?: string
+          tbm_session_id: string
+          user_agent?: string
+          worker_name: string
+          worker_phone: string
+        }
+        Update: {
+          briefing_confirmed?: boolean
+          company_name?: string
+          created_at?: string
+          id?: string
+          ip_hash?: string
+          participated_at?: string
+          signature_data?: string
+          tbm_session_id?: string
+          user_agent?: string
+          worker_name?: string
+          worker_phone?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tbm_participations_tbm_session_id_fkey"
+            columns: ["tbm_session_id"]
+            isOneToOne: false
+            referencedRelation: "tbm_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tbm_sessions: {
+        Row: {
+          briefing_risks: Json
+          briefing_summary: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          leader_name: string
+          location: string
+          project_id: string
+          qr_token: string
+          run_id: string | null
+          tbm_date: string
+          title: string
+          updated_at: string
+          work_plan_id: string | null
+        }
+        Insert: {
+          briefing_risks?: Json
+          briefing_summary?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          leader_name?: string
+          location?: string
+          project_id: string
+          qr_token?: string
+          run_id?: string | null
+          tbm_date?: string
+          title?: string
+          updated_at?: string
+          work_plan_id?: string | null
+        }
+        Update: {
+          briefing_risks?: Json
+          briefing_summary?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          leader_name?: string
+          location?: string
+          project_id?: string
+          qr_token?: string
+          run_id?: string | null
+          tbm_date?: string
+          title?: string
+          updated_at?: string
+          work_plan_id?: string | null
+        }
+        Relationships: []
+      }
       todo_items: {
         Row: {
           company_id: string | null
@@ -3180,6 +3284,72 @@ export type Database = {
           },
         ]
       }
+      work_permits: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          approved_by_name: string
+          assessment_run_id: string | null
+          created_at: string
+          created_by: string | null
+          gate_check_result: Json
+          id: string
+          location: string
+          permit_date: string
+          project_id: string
+          rejection_reason: string
+          status: string
+          tbm_session_id: string | null
+          updated_at: string
+          weather_check_passed: boolean
+          weather_snapshot: Json
+          work_description: string
+          work_plan_id: string | null
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          approved_by_name?: string
+          assessment_run_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          gate_check_result?: Json
+          id?: string
+          location?: string
+          permit_date?: string
+          project_id: string
+          rejection_reason?: string
+          status?: string
+          tbm_session_id?: string | null
+          updated_at?: string
+          weather_check_passed?: boolean
+          weather_snapshot?: Json
+          work_description?: string
+          work_plan_id?: string | null
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          approved_by_name?: string
+          assessment_run_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          gate_check_result?: Json
+          id?: string
+          location?: string
+          permit_date?: string
+          project_id?: string
+          rejection_reason?: string
+          status?: string
+          tbm_session_id?: string | null
+          updated_at?: string
+          weather_check_passed?: boolean
+          weather_snapshot?: Json
+          work_description?: string
+          work_plan_id?: string | null
+        }
+        Relationships: []
+      }
       work_plans: {
         Row: {
           attachments: Json
@@ -3329,6 +3499,7 @@ export type Database = {
         Args: { _project_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
       }
+      get_tbm_by_token: { Args: { _token: string }; Returns: Json }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -3356,6 +3527,19 @@ export type Database = {
       }
       process_invite_code: {
         Args: { _invite_code: string; _user_id: string }
+        Returns: Json
+      }
+      submit_tbm_participation: {
+        Args: {
+          _briefing_confirmed: boolean
+          _company_name: string
+          _ip_hash: string
+          _signature_data: string
+          _token: string
+          _user_agent: string
+          _worker_name: string
+          _worker_phone: string
+        }
         Returns: Json
       }
     }

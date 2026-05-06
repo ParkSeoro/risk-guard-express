@@ -40,6 +40,7 @@ import WorkPermits from "./pages/WorkPermits";
 import TbmParticipate from "./pages/TbmParticipate";
 import TbmLogs from "./pages/TbmLogs";
 import InspectionMode from "./pages/InspectionMode";
+import SafetyInspections from "./pages/SafetyInspections";
 import SiteReadinessChecklist from "./pages/SiteReadinessChecklist";
 import NotFound from "./pages/NotFound";
 

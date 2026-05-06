@@ -38,6 +38,7 @@ import SiteWeather from "./pages/SiteWeather";
 import SafetyCost from "./pages/SafetyCost";
 import WorkPermits from "./pages/WorkPermits";
 import TbmParticipate from "./pages/TbmParticipate";
+import TbmLogs from "./pages/TbmLogs";
 import InspectionMode from "./pages/InspectionMode";
 import SiteReadinessChecklist from "./pages/SiteReadinessChecklist";
 import NotFound from "./pages/NotFound";

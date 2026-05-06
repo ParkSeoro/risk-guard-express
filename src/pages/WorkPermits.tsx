@@ -13,12 +13,17 @@ import { useToast } from '@/hooks/use-toast';
 import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature } from 'lucide-react';
 
 const STATUS_COLOR: Record<string, string> = {
+  '작성중': 'bg-muted text-muted-foreground',
+  '검토대기': 'bg-warning/10 text-warning',
+  '검토완료': 'bg-primary/10 text-primary',
   '대기': 'bg-muted text-muted-foreground',
   '승인': 'bg-success/10 text-success',
   '반려': 'bg-destructive/10 text-destructive',
   '작업중': 'bg-primary/10 text-primary',
   '완료': 'bg-accent/10 text-accent',
 };
+
+const userLabel = (u: any) => u?.user_metadata?.display_name || u?.email || '';
 
 export default function WorkPermits() {
   const { toast } = useToast();

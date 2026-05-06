@@ -460,7 +460,7 @@ export default function SafetyInspections() {
                         </div>
                       </div>
                       <div className="flex gap-2 items-start">
-                        <IMESafeInput value={it.note} onChange={(v) => updateItemNote(it, v)} placeholder="비고" className="flex-1 text-sm" />
+                        <IMESafeInput defaultValue={it.note} onCommit={(v) => updateItemNote(it, v)} placeholder="비고" className="flex-1 text-sm" />
                         <label className="cursor-pointer inline-flex items-center gap-1 text-xs px-2 py-1 border rounded hover:bg-accent">
                           <Camera className="h-3 w-3" />사진
                           <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={(e) => onItemPhoto(it, e.target.files)} />

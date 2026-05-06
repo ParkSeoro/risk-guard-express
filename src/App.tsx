@@ -133,6 +133,7 @@ function ProtectedRoutes() {
         <Route path="/work-permits" element={<WorkPermits />} />
         <Route path="/tbm-logs" element={<TbmLogs />} />
         <Route path="/inspection-mode" element={<InspectionMode />} />
+        <Route path="/safety-inspections" element={<SafetyInspections />} />
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature } from 'lucide-react';
+import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature, Pencil, Trash2 } from 'lucide-react';
 
 const STATUS_COLOR: Record<string, string> = {
   '작성중': 'bg-muted text-muted-foreground',

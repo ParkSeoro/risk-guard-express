@@ -107,8 +107,20 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     load();
   };
 
+  const getPublicBase = () => {
+    const stored = (typeof window !== 'undefined' && localStorage.getItem('tbm_public_base_url')) || '';
+    if (stored) return stored.replace(/\/$/, '');
+    const origin = window.location.origin;
+    // 미리보기/샌드박스 도메인은 로그인 필요 → 게시 도메인으로 대체
+    if (/id-preview--|lovable\.dev|lovable-sandbox|localhost|127\.0\.0\.1/.test(origin)) {
+      return 'https://safenex.org';
+    }
+    return origin;
+  };
+
   const openQr = async (s: TbmSession) => {
-    const url = `${window.location.origin}/tbm/${s.qr_token}`;
+    const base = getPublicBase();
+    const url = `${base}/tbm/${s.qr_token}`;
     const dataUrl = await QRCode.toDataURL(url, { width: 400, margin: 2 });
     setQrDataUrl(dataUrl);
     setQrSession(s);
@@ -207,7 +219,24 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
           <DialogHeader><DialogTitle>{qrSession?.title} QR</DialogTitle></DialogHeader>
           <div className="text-center space-y-3">
             {qrDataUrl && <img src={qrDataUrl} alt="QR" className="mx-auto w-72 h-72" />}
-            <p className="text-xs text-muted-foreground break-all">{qrSession && `${window.location.origin}/tbm/${qrSession.qr_token}`}</p>
+            <p className="text-xs text-muted-foreground break-all">{qrSession && `${getPublicBase()}/tbm/${qrSession.qr_token}`}</p>
+            <div className="text-left space-y-1">
+              <Label className="text-xs">QR 공개 베이스 URL (모바일에서 접속 가능한 도메인)</Label>
+              <div className="flex gap-1">
+                <Input
+                  defaultValue={localStorage.getItem('tbm_public_base_url') || getPublicBase()}
+                  placeholder="https://safenex.org"
+                  className="h-8 text-xs"
+                  onBlur={(e) => {
+                    const v = e.target.value.trim().replace(/\/$/, '');
+                    if (v) localStorage.setItem('tbm_public_base_url', v);
+                    else localStorage.removeItem('tbm_public_base_url');
+                    if (qrSession) openQr(qrSession);
+                  }}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground">미리보기 도메인은 로그인이 필요해 외부 폰에서 접속이 안 됩니다. 게시된 도메인(예: safenex.org)을 사용하세요.</p>
+            </div>
             <Button onClick={printQr} className="w-full"><Printer className="h-4 w-4 mr-1" />QR 인쇄</Button>
           </div>
         </DialogContent>

@@ -172,9 +172,9 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         </div>
       )}
 
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+      <Dialog open={showCreate || !!editing} onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditing(null); resetForm(); } }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>TBM 생성</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editing ? 'TBM 수정' : 'TBM 생성'}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div><Label>제목 *</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="2026-05-06 오전 TBM" /></div>
             <div className="grid grid-cols-2 gap-2">
@@ -193,11 +193,11 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
               <div><Label>공종</Label><Input value={processCategory} onChange={(e) => setProcessCategory(e.target.value)} placeholder="예: 철근콘크리트" /></div>
             </div>
             <div><Label>브리핑 요약</Label><Textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={4} /></div>
-            {defaultRisks.length > 0 && (
+            {!editing && defaultRisks.length > 0 && (
               <p className="text-xs text-muted-foreground">위험성평가에서 주요 위험 {defaultRisks.length}건이 자동 포함됩니다.</p>
             )}
             <p className="text-xs text-warning">⚠ 회사 선택 필수: QR 스캔 시 해당 회사의 위험성평가만 매칭됩니다.</p>
-            <Button onClick={create} className="w-full">생성</Button>
+            <Button onClick={save} className="w-full">{editing ? '수정' : '생성'}</Button>
           </div>
         </DialogContent>
       </Dialog>

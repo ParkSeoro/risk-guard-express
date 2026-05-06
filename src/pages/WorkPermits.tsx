@@ -72,7 +72,7 @@ export default function WorkPermits() {
       assessment_run_id: form.assessment_run_id || null,
       tbm_session_id: form.tbm_session_id || null,
       created_by: user?.id,
-      status: '대기',
+      status: '작성중',
     });
     if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
     toast({ title: '작업허가서가 생성되었습니다.' });

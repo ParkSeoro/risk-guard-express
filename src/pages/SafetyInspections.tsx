@@ -404,7 +404,7 @@ export default function SafetyInspections() {
             </div>
             <div>
               <Label>점검자</Label>
-              <IMESafeInput value={form.inspector_name} onChange={(v) => setForm({ ...form, inspector_name: v })} />
+              <IMESafeInput defaultValue={form.inspector_name} onCommit={(v) => setForm({ ...form, inspector_name: v })} />
             </div>
             <div>
               <Label>요약(선택)</Label>

@@ -156,6 +156,7 @@ const WorkPlanDetail = () => {
       attachments,
       start_date: startDate || null,
       end_date: endDate || null,
+      auto_education_enabled: plan?.auto_education_enabled ?? true,
       updated_at: new Date().toISOString(),
     }).eq('id', planId);
 

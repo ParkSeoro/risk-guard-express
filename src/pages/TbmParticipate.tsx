@@ -58,6 +58,8 @@ export default function TbmParticipate() {
     if (!name.trim()) return toast({ title: '이름을 입력하세요.', variant: 'destructive' });
     if (!phone.trim() || phone.replace(/\D/g, '').length < 8) return toast({ title: '전화번호를 정확히 입력하세요.', variant: 'destructive' });
     if (!confirmed) return toast({ title: '브리핑 확인 체크가 필요합니다.', variant: 'destructive' });
+    if (!ppeChecked) return toast({ title: 'PPE(보호구) 착용 확인이 필요합니다.', variant: 'destructive' });
+    if (!understoodChecked) return toast({ title: '내용 이해 확인이 필요합니다.', variant: 'destructive' });
     if (!sigRef.current || sigRef.current.isEmpty()) return toast({ title: '전자서명이 필요합니다.', variant: 'destructive' });
 
     setSubmitting(true);

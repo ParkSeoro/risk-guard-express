@@ -38,26 +38,34 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const [location, setLocation] = useState('');
   const [leader, setLeader] = useState('');
   const [summary, setSummary] = useState('');
+  const [companyId, setCompanyId] = useState('');
+  const [processCategory, setProcessCategory] = useState('');
+  const [companies, setCompanies] = useState<any[]>([]);
 
   const load = async () => {
     let q = supabase.from('tbm_sessions' as any).select('*').eq('project_id', projectId).order('created_at', { ascending: false });
     if (runId) q = q.eq('run_id', runId);
     const { data } = await q;
     setSessions((data as any) || []);
+    const { data: cs } = await supabase.from('companies').select('id, name, type').eq('project_id', projectId).order('name');
+    setCompanies(cs || []);
   };
 
   useEffect(() => { load(); }, [projectId, runId]);
 
   const create = async () => {
     if (!title.trim()) return toast({ title: '제목을 입력하세요.', variant: 'destructive' });
+    if (!companyId) return toast({ title: '회사(시공사/협력사)를 선택하세요. QR 매칭에 필수입니다.', variant: 'destructive' });
+    const cmpName = companies.find(c => c.id === companyId)?.name || '';
     const { error } = await supabase.from('tbm_sessions' as any).insert({
       project_id: projectId, run_id: runId || null,
       title, tbm_date: tbmDate, location, leader_name: leader,
       briefing_summary: summary, briefing_risks: defaultRisks as any,
+      company_id: companyId, company_name: cmpName, process_category: processCategory,
     });
     if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
     toast({ title: 'TBM이 생성되었습니다.' });
-    setShowCreate(false); setTitle(''); setLocation(''); setLeader(''); setSummary('');
+    setShowCreate(false); setTitle(''); setLocation(''); setLeader(''); setSummary(''); setCompanyId(''); setProcessCategory('');
     load();
   };
 

@@ -3055,13 +3055,17 @@ export type Database = {
           leader_name: string
           location: string
           process_category: string | null
+          prohibited_actions: string
           project_id: string
           qr_token: string
           run_id: string | null
+          special_notes: string
           tbm_date: string
           title: string
           updated_at: string
+          work_content: string
           work_plan_id: string | null
+          work_steps: string
         }
         Insert: {
           briefing_risks?: Json
@@ -3075,13 +3079,17 @@ export type Database = {
           leader_name?: string
           location?: string
           process_category?: string | null
+          prohibited_actions?: string
           project_id: string
           qr_token?: string
           run_id?: string | null
+          special_notes?: string
           tbm_date?: string
           title?: string
           updated_at?: string
+          work_content?: string
           work_plan_id?: string | null
+          work_steps?: string
         }
         Update: {
           briefing_risks?: Json
@@ -3095,13 +3103,17 @@ export type Database = {
           leader_name?: string
           location?: string
           process_category?: string | null
+          prohibited_actions?: string
           project_id?: string
           qr_token?: string
           run_id?: string | null
+          special_notes?: string
           tbm_date?: string
           title?: string
           updated_at?: string
+          work_content?: string
           work_plan_id?: string | null
+          work_steps?: string
         }
         Relationships: []
       }

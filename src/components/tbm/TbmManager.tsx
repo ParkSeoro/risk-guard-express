@@ -107,15 +107,29 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     load();
   };
 
-  const getPublicBase = () => {
-    const stored = (typeof window !== 'undefined' && localStorage.getItem('tbm_public_base_url')) || '';
-    if (stored) return stored.replace(/\/$/, '');
-    const origin = window.location.origin;
-    // 미리보기/샌드박스 도메인은 로그인 필요 → 게시 도메인으로 대체
-    if (/id-preview--|lovable\.dev|lovable-sandbox|localhost|127\.0\.0\.1/.test(origin)) {
-      return 'https://safenex.org';
+  const PUBLIC_TBM_BASE_URL = 'https://safenex.org';
+
+  const normalizePublicBase = (value?: string | null) => {
+    const raw = (value || '').trim().replace(/\/+$/, '');
+    if (!raw) return '';
+    const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    try {
+      const url = new URL(withProtocol);
+      if (/id-preview--|lovable\.dev|lovable-sandbox|localhost|127\.0\.0\.1/.test(url.host)) {
+        return PUBLIC_TBM_BASE_URL;
+      }
+      return url.origin;
+    } catch {
+      return PUBLIC_TBM_BASE_URL;
     }
-    return origin;
+  };
+
+  const getPublicBase = () => {
+    const stored = typeof window !== 'undefined' ? localStorage.getItem('tbm_public_base_url') : '';
+    const normalizedStored = normalizePublicBase(stored);
+    if (normalizedStored) return normalizedStored;
+    const normalizedOrigin = typeof window !== 'undefined' ? normalizePublicBase(window.location.origin) : '';
+    return normalizedOrigin || PUBLIC_TBM_BASE_URL;
   };
 
   const openQr = async (s: TbmSession) => {
@@ -228,7 +242,8 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
                   placeholder="https://safenex.org"
                   className="h-8 text-xs"
                   onBlur={(e) => {
-                    const v = e.target.value.trim().replace(/\/$/, '');
+                    const v = normalizePublicBase(e.target.value);
+                    e.target.value = v || PUBLIC_TBM_BASE_URL;
                     if (v) localStorage.setItem('tbm_public_base_url', v);
                     else localStorage.removeItem('tbm_public_base_url');
                     if (qrSession) openQr(qrSession);

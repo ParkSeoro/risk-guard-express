@@ -7,8 +7,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Trash2, Sparkles, Loader2, Upload, MessageSquare, HeartPulse, AlertTriangle, Users } from 'lucide-react';
+import { Plus, Trash2, Sparkles, Loader2, Upload, MessageSquare, HeartPulse, AlertTriangle, Users, Wand2 } from 'lucide-react';
+import { detectHighRiskCategories, type RiskItemLike } from '@/lib/highRiskDetection';
+import { autoGenerateAccidentCases } from '@/lib/autoAccidentGeneration';
 
 interface Props {
   runId: string;
@@ -16,11 +19,12 @@ interface Props {
   userId?: string;
   canEdit: boolean;
   onChanged?: () => void;
+  riskItems?: RiskItemLike[];
 }
 
 const HEALTH_CATEGORIES = ['분진', '소음', '화학물질', '고온/저온', '밀폐공간', '진동', '기타'];
 
-export default function WorkerParticipationPanel({ runId, projectId, userId, canEdit, onChanged }: Props) {
+export default function WorkerParticipationPanel({ runId, projectId, userId, canEdit, onChanged, riskItems = [] }: Props) {
   const { toast } = useToast();
   const [opinions, setOpinions] = useState<any[]>([]);
   const [healths, setHealths] = useState<any[]>([]);

@@ -611,6 +611,16 @@ const AssessmentRunDetail = () => {
     if (activeItems.length === 0) {
       toast({ title: '항목이 1건 이상 있어야 결재 상신이 가능합니다.', variant: 'destructive' }); return;
     }
+    // 근로자 참여 / 보건 / AI 검토 게이트
+    if ((run.opinion_required ?? true) && participationCounts.opinions === 0) {
+      toast({ title: '근로자 의견이 없습니다.', description: '근로자 참여 탭에서 의견을 1건 이상 등록해야 결재 상신이 가능합니다.', variant: 'destructive' }); return;
+    }
+    if ((run.health_required ?? true) && participationCounts.healths === 0) {
+      toast({ title: '보건 항목이 없습니다.', description: '보건 유해요인을 1건 이상 등록해주세요.', variant: 'destructive' }); return;
+    }
+    if (participationCounts.unreviewedAi > 0 || participationCounts.unreviewedHealth > 0) {
+      toast({ title: 'AI 자동 생성 항목 검토가 필요합니다.', description: `미검토 ${participationCounts.unreviewedAi + participationCounts.unreviewedHealth}건을 검토해주세요.`, variant: 'destructive' }); return;
+    }
 
     // Fetch latest approval_lines from DB
     const { data: savedLines } = await supabase

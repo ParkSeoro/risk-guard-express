@@ -219,17 +219,20 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
   const printQr = () => {
     if (!qrSession || !qrDataUrl) return;
+    const printableUrl = qrUrl || buildQrUrl(qrSession.qr_token);
     const w = window.open('', '_blank');
     if (!w) return;
     w.document.write(`<html><head><title>TBM QR</title><style>
       body{font-family:'Malgun Gothic',sans-serif;text-align:center;padding:40px}
-      img{width:380px;height:380px}
+      img{width:380px;height:380px;image-rendering:pixelated}
       h1{font-size:24px;margin:8px 0}
       p{color:#555;margin:4px 0}
+      .url{font-size:12px;word-break:break-all;color:#333;margin-top:10px}
     </style></head><body>
       <h1>${qrSession.title}</h1>
       <p>${qrSession.tbm_date} · ${qrSession.location || ''}</p>
       <img src="${qrDataUrl}"/>
+      <p class="url">${printableUrl}</p>
       <p style="font-size:14px;margin-top:16px">스마트폰으로 QR을 스캔하여 참여하세요</p>
     </body></html>`);
     w.document.close(); w.focus(); w.print();
@@ -299,12 +302,30 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!qrSession} onOpenChange={(v) => !v && setQrSession(null)}>
+      <Dialog open={!!qrSession} onOpenChange={(v) => { if (!v) { setQrSession(null); setQrDataUrl(''); setQrUrl(''); } }}>
         <DialogContent>
           <DialogHeader><DialogTitle>{qrSession?.title} QR</DialogTitle></DialogHeader>
           <div className="text-center space-y-3">
-            {qrDataUrl && <img src={qrDataUrl} alt="QR" className="mx-auto w-72 h-72" />}
-            <p className="text-xs text-muted-foreground break-all">{qrSession && `${getPublicBase()}/tbm/${qrSession.qr_token}`}</p>
+            {qrGenerating ? (
+              <div className="mx-auto w-72 h-72 rounded-md border bg-muted/30 flex items-center justify-center text-sm text-muted-foreground">
+                QR 생성 중...
+              </div>
+            ) : qrDataUrl ? (
+              <img src={qrDataUrl} alt="TBM 참여 QR 코드" className="mx-auto w-72 h-72 bg-white p-3 rounded-md border" />
+            ) : (
+              <div className="mx-auto w-72 h-72 rounded-md border bg-muted/30 flex items-center justify-center text-sm text-muted-foreground">
+                QR을 생성할 수 없습니다.
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground break-all">{qrUrl || (qrSession ? buildQrUrl(qrSession.qr_token) : '')}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant="outline" onClick={regenerateQr} disabled={qrGenerating || !qrSession}>
+                <RefreshCw className="h-4 w-4 mr-1" />QR 자동재생성
+              </Button>
+              <Button type="button" variant="outline" onClick={() => qrUrl && window.open(qrUrl, '_blank')} disabled={!qrUrl}>
+                <ExternalLink className="h-4 w-4 mr-1" />링크 테스트
+              </Button>
+            </div>
             <div className="text-left space-y-1">
               <Label className="text-xs">QR 공개 베이스 URL (모바일에서 접속 가능한 도메인)</Label>
               <div className="flex gap-1">
@@ -317,7 +338,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
                     e.target.value = v || PUBLIC_TBM_BASE_URL;
                     if (v) localStorage.setItem('tbm_public_base_url', v);
                     else localStorage.removeItem('tbm_public_base_url');
-                    if (qrSession) openQr(qrSession);
+                    if (qrSession) renderQr(qrSession);
                   }}
                 />
               </div>

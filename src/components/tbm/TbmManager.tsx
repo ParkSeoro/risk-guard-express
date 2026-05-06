@@ -238,6 +238,117 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     w.document.close(); w.focus(); w.print();
   };
 
+  const printTbmLog = async (s: TbmSession) => {
+    // Fetch participants & project info
+    const { data: parts } = await supabase.from('tbm_participations' as any)
+      .select('*').eq('tbm_session_id', s.id).order('participated_at');
+    const { data: project } = await supabase.from('projects')
+      .select('name, site_name').eq('id', projectId).single();
+    const sAny = s as any;
+    const risksRaw = sAny.briefing_risks;
+    const risks: Array<{ hazard?: string; grade?: string; measure?: string }> =
+      Array.isArray(risksRaw) ? risksRaw : (risksRaw ? (() => { try { return JSON.parse(risksRaw); } catch { return []; } })() : []);
+    const partsList = (parts as any[]) || [];
+
+    const w = window.open('', '_blank');
+    if (!w) { toast({ title: '팝업이 차단되었습니다.', variant: 'destructive' }); return; }
+
+    const esc = (v: any) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+    const fmtDate = (d: string) => d ? new Date(d).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '';
+    const today = sAny.tbm_date || '';
+
+    const risksHtml = risks.length === 0
+      ? `<tr><td colspan="3" class="muted">위험요인 없음</td></tr>`
+      : risks.map((r) => `<tr>
+          <td>${esc(r.hazard || '')}</td>
+          <td class="center">${esc(r.grade || '')}</td>
+          <td>${esc(r.measure || '')}</td>
+        </tr>`).join('');
+
+    const partsHtml = partsList.length === 0
+      ? `<tr><td colspan="6" class="muted center">참여자 없음</td></tr>`
+      : partsList.map((p, i) => `<tr>
+          <td class="center">${i + 1}</td>
+          <td>${esc(p.worker_name)}</td>
+          <td>${esc(p.worker_phone)}</td>
+          <td>${esc(p.company_name || '-')}</td>
+          <td class="center">${fmtDate(p.participated_at)}</td>
+          <td class="center">${p.signature_data ? `<img src="${esc(p.signature_data)}" />` : ''}</td>
+        </tr>`).join('');
+
+    w.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"/>
+      <title>TBM 일지 - ${esc(s.title)}</title>
+      <style>
+        @page { size: A4; margin: 12mm; }
+        * { box-sizing: border-box; }
+        body { font-family: 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo', sans-serif; color: #111; font-size: 11pt; }
+        h1 { text-align: center; font-size: 18pt; margin: 0 0 4mm; border-bottom: 2px solid #111; padding-bottom: 3mm; }
+        h2 { font-size: 12pt; margin: 5mm 0 2mm; padding: 2mm 3mm; background: #f0f0f0; border-left: 4px solid #111; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 3mm; }
+        th, td { border: 1px solid #333; padding: 2mm 3mm; vertical-align: top; }
+        th { background: #f5f5f5; font-weight: 600; text-align: left; }
+        .info th { width: 22%; }
+        .center { text-align: center; }
+        .muted { color: #777; }
+        td img { height: 14mm; max-width: 40mm; object-fit: contain; }
+        tr { page-break-inside: avoid; }
+        thead { display: table-header-group; }
+        .footer { margin-top: 6mm; font-size: 9pt; color: #555; text-align: right; }
+      </style></head><body>
+      <h1>TBM (Tool Box Meeting) 일지</h1>
+
+      <h2>1. 기본 정보</h2>
+      <table class="info">
+        <tr><th>공사명</th><td>${esc((project as any)?.name || '')}</td><th>현장명</th><td>${esc((project as any)?.site_name || '')}</td></tr>
+        <tr><th>작업명 / 제목</th><td>${esc(s.title)}</td><th>작업일자</th><td>${esc(today)} (KST)</td></tr>
+        <tr><th>작업장소</th><td>${esc(s.location || '-')}</td><th>주관자</th><td>${esc(s.leader_name || '-')}</td></tr>
+        <tr><th>공종</th><td>${esc(sAny.process_category || '-')}</td><th>회사 (시공사/협력사)</th><td>${esc(sAny.company_name || '-')}</td></tr>
+      </table>
+
+      <h2>2. 작업 내용 / 주요 작업내용</h2>
+      <table><tr><td style="min-height:18mm;white-space:pre-wrap">${esc(s.briefing_summary || '-')}</td></tr></table>
+
+      <h2>3. 위험요인 및 안전대책 (위험성평가 연동)</h2>
+      <table>
+        <thead><tr><th style="width:40%">위험요인</th><th style="width:15%" class="center">위험등급</th><th>안전대책</th></tr></thead>
+        <tbody>${risksHtml}</tbody>
+      </table>
+
+      <h2>4. 교육 / 브리핑 내용</h2>
+      <table>
+        <tr><th style="width:22%">작업 전 안전교육</th><td style="white-space:pre-wrap">${esc(s.briefing_summary || '-')}</td></tr>
+        <tr><th>당일 위험요소 설명</th><td>위 3항 위험요인 전체 항목에 대해 작업 전 설명·확인하였음</td></tr>
+      </table>
+
+      <h2>5. 근로자 서명</h2>
+      <table>
+        <thead><tr>
+          <th style="width:8%" class="center">No</th>
+          <th style="width:14%">성명</th>
+          <th style="width:18%">전화번호</th>
+          <th style="width:18%">소속</th>
+          <th style="width:18%" class="center">참여시간</th>
+          <th style="width:24%" class="center">전자서명</th>
+        </tr></thead>
+        <tbody>${partsHtml}</tbody>
+      </table>
+
+      <p class="footer">출력일시: ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} · 산업안전보건법 TBM 실시 기록</p>
+      <script>
+        window.onload = function(){
+          var imgs = document.images;
+          var pending = imgs.length;
+          if (!pending) { setTimeout(function(){ window.print(); }, 200); return; }
+          for (var i=0;i<imgs.length;i++){
+            if (imgs[i].complete) { if(--pending===0) setTimeout(function(){window.print();},200); }
+            else { imgs[i].onload = imgs[i].onerror = function(){ if(--pending===0) setTimeout(function(){window.print();},200); }; }
+          }
+        };
+      </script>
+    </body></html>`);
+    w.document.close(); w.focus();
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">

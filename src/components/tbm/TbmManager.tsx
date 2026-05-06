@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, QrCode, Printer, Users, Trash2, Power, Pencil } from 'lucide-react';
+import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil } from 'lucide-react';
 
 interface Props {
   projectId: string;
@@ -30,6 +30,8 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const [editing, setEditing] = useState<TbmSession | null>(null);
   const [qrSession, setQrSession] = useState<TbmSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
+  const [qrUrl, setQrUrl] = useState('');
+  const [qrGenerating, setQrGenerating] = useState(false);
   const [participants, setParticipants] = useState<any[]>([]);
   const [showParts, setShowParts] = useState<TbmSession | null>(null);
 
@@ -132,12 +134,77 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     return normalizedOrigin || PUBLIC_TBM_BASE_URL;
   };
 
-  const openQr = async (s: TbmSession) => {
-    const base = getPublicBase();
-    const url = `${base}/tbm/${s.qr_token}`;
-    const dataUrl = await QRCode.toDataURL(url, { width: 400, margin: 2 });
+  const createQrToken = () => {
+    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+      return crypto.randomUUID().replace(/-/g, '');
+    }
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  const hasValidQrToken = (token?: string) => /^[a-zA-Z0-9_-]{20,}$/.test(token || '');
+
+  const buildQrUrl = (token: string) => `${getPublicBase()}/tbm/${encodeURIComponent(token)}`;
+
+  const ensureQrToken = async (s: TbmSession, force = false) => {
+    if (!force && hasValidQrToken(s.qr_token)) return s;
+    const nextToken = createQrToken();
+    const { data, error } = await supabase
+      .from('tbm_sessions' as any)
+      .update({ qr_token: nextToken })
+      .eq('id', s.id)
+      .select('*')
+      .single();
+    if (error) {
+      toast({ title: 'QR 재생성 실패', description: error.message, variant: 'destructive' });
+      return null;
+    }
+    const refreshed = ((data as any) || { ...s, qr_token: nextToken }) as TbmSession;
+    setSessions((prev) => prev.map((item) => (item.id === refreshed.id ? refreshed : item)));
+    setQrSession((current) => (current?.id === refreshed.id ? refreshed : current));
+    return refreshed;
+  };
+
+  const renderQr = async (s: TbmSession) => {
+    const url = buildQrUrl(s.qr_token);
+    const dataUrl = await QRCode.toDataURL(url, {
+      width: 512,
+      margin: 4,
+      errorCorrectionLevel: 'H',
+      color: { dark: '#000000', light: '#ffffff' },
+    });
+    setQrUrl(url);
     setQrDataUrl(dataUrl);
     setQrSession(s);
+  };
+
+  const openQr = async (s: TbmSession) => {
+    setQrGenerating(true);
+    try {
+      const refreshed = await ensureQrToken(s);
+      if (refreshed) await renderQr(refreshed);
+    } catch (err: any) {
+      toast({ title: 'QR 이미지 생성 실패', description: err?.message || 'QR을 다시 생성해 주세요.', variant: 'destructive' });
+    } finally {
+      setQrGenerating(false);
+    }
+  };
+
+  const regenerateQr = async () => {
+    if (!qrSession) return;
+    setQrGenerating(true);
+    try {
+      const refreshed = await ensureQrToken(qrSession, true);
+      if (refreshed) {
+        await renderQr(refreshed);
+        toast({ title: 'QR이 새로 생성되었습니다.' });
+      }
+    } catch (err: any) {
+      toast({ title: 'QR 재생성 실패', description: err?.message || '잠시 후 다시 시도하세요.', variant: 'destructive' });
+    } finally {
+      setQrGenerating(false);
+    }
   };
 
   const openParts = async (s: TbmSession) => {

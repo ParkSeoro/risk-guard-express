@@ -34,6 +34,8 @@ export default function TbmParticipate() {
   const [phone, setPhone] = useState('');
   const [company, setCompany] = useState('');
   const [confirmed, setConfirmed] = useState(false);
+  const [ppeChecked, setPpeChecked] = useState(false);
+  const [understoodChecked, setUnderstoodChecked] = useState(false);
 
   const sigRef = useRef<SignatureCanvas | null>(null);
 

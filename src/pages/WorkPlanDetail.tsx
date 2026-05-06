@@ -468,6 +468,29 @@ const WorkPlanDetail = () => {
         )}
       </div>
 
+      {/* AI Education Material Auto-Generation Toggle */}
+      <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" />
+          <div>
+            <Label htmlFor="auto-edu-toggle" className="text-sm font-medium cursor-pointer">
+              교육자료 AI 자동 생성
+            </Label>
+            <p className="text-[11px] text-muted-foreground">
+              결재 승인 시 위험성평가 기반 안전교육 자료를 자동으로 생성합니다.
+            </p>
+          </div>
+        </div>
+        <Switch
+          id="auto-edu-toggle"
+          checked={plan?.auto_education_enabled ?? true}
+          onCheckedChange={(v) => {
+            setPlan((prev: any) => ({ ...prev, auto_education_enabled: v }));
+            setIsDirty(true);
+          }}
+        />
+      </div>
+
       {/* Legal Basis */}
       {wpType && (
         <Card className="bg-muted/30">

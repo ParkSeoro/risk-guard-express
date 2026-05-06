@@ -23,6 +23,8 @@ const mainItems = [
   { title: "산업안전보건관리비", url: "/safety-cost", icon: ReceiptText },
   { title: "검증센터", url: "/verification-center", icon: SearchCheck },
   { title: "결재함", url: "/approvals", icon: FileCheck },
+  { title: "현장 적용 체크", url: "/site-readiness", icon: ClipboardList },
+  { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
   { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
   { title: "AI 어시스턴트", url: "/ai-assistant", icon: Bot },
   { title: "프로젝트", url: "/projects", icon: FolderKanban },

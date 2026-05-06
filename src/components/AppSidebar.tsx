@@ -2,7 +2,7 @@ import {
   LayoutDashboard, FolderKanban, ShieldAlert, Database, 
   FileCheck, HardHat, ChevronLeft, LogOut, User,
   ShieldCheck, History, Shield, SearchCheck, Settings,
-  FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature
+  FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";

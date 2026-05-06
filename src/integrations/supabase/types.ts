@@ -2843,6 +2843,72 @@ export type Database = {
           },
         ]
       }
+      safety_education_materials: {
+        Row: {
+          accident_cases: Json
+          auto_generated: boolean
+          company_id: string | null
+          created_at: string
+          created_by: string | null
+          generated_by: string | null
+          id: string
+          key_hazards: Json
+          ppe_requirements: Json
+          prohibited_actions: Json
+          project_id: string
+          run_id: string | null
+          safety_measures: Json
+          tbm_summary: string
+          title: string
+          updated_at: string
+          version_number: number
+          work_overview: string
+          work_plan_id: string | null
+        }
+        Insert: {
+          accident_cases?: Json
+          auto_generated?: boolean
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          generated_by?: string | null
+          id?: string
+          key_hazards?: Json
+          ppe_requirements?: Json
+          prohibited_actions?: Json
+          project_id: string
+          run_id?: string | null
+          safety_measures?: Json
+          tbm_summary?: string
+          title?: string
+          updated_at?: string
+          version_number?: number
+          work_overview?: string
+          work_plan_id?: string | null
+        }
+        Update: {
+          accident_cases?: Json
+          auto_generated?: boolean
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          generated_by?: string | null
+          id?: string
+          key_hazards?: Json
+          ppe_requirements?: Json
+          prohibited_actions?: Json
+          project_id?: string
+          run_id?: string | null
+          safety_measures?: Json
+          tbm_summary?: string
+          title?: string
+          updated_at?: string
+          version_number?: number
+          work_overview?: string
+          work_plan_id?: string | null
+        }
+        Relationships: []
+      }
       safety_inspection_actions: {
         Row: {
           assignee_id: string | null
@@ -3520,6 +3586,36 @@ export type Database = {
           },
         ]
       }
+      work_permit_workers: {
+        Row: {
+          created_at: string
+          id: string
+          notification_status: string
+          notified_at: string | null
+          project_id: string
+          work_permit_id: string
+          worker_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notification_status?: string
+          notified_at?: string | null
+          project_id: string
+          work_permit_id: string
+          worker_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notification_status?: string
+          notified_at?: string | null
+          project_id?: string
+          work_permit_id?: string
+          worker_id?: string
+        }
+        Relationships: []
+      }
       work_permits: {
         Row: {
           approval_comment: string | null
@@ -3643,6 +3739,7 @@ export type Database = {
       work_plans: {
         Row: {
           attachments: Json
+          auto_education_enabled: boolean
           company_id: string | null
           created_at: string
           created_by: string | null
@@ -3660,6 +3757,7 @@ export type Database = {
         }
         Insert: {
           attachments?: Json
+          auto_education_enabled?: boolean
           company_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -3677,6 +3775,7 @@ export type Database = {
         }
         Update: {
           attachments?: Json
+          auto_education_enabled?: boolean
           company_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -3715,6 +3814,57 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      worker_entry_logs: {
+        Row: {
+          created_at: string
+          education_confirmed: boolean
+          entry_at: string
+          entry_method: string
+          entry_signature_data: string | null
+          exit_at: string | null
+          exit_signature_data: string | null
+          id: string
+          no_accident_confirmed: boolean
+          project_id: string
+          risk_assessment_confirmed: boolean
+          tbm_confirmed: boolean
+          work_permit_id: string | null
+          worker_id: string
+        }
+        Insert: {
+          created_at?: string
+          education_confirmed?: boolean
+          entry_at?: string
+          entry_method?: string
+          entry_signature_data?: string | null
+          exit_at?: string | null
+          exit_signature_data?: string | null
+          id?: string
+          no_accident_confirmed?: boolean
+          project_id: string
+          risk_assessment_confirmed?: boolean
+          tbm_confirmed?: boolean
+          work_permit_id?: string | null
+          worker_id: string
+        }
+        Update: {
+          created_at?: string
+          education_confirmed?: boolean
+          entry_at?: string
+          entry_method?: string
+          entry_signature_data?: string | null
+          exit_at?: string | null
+          exit_signature_data?: string | null
+          id?: string
+          no_accident_confirmed?: boolean
+          project_id?: string
+          risk_assessment_confirmed?: boolean
+          tbm_confirmed?: boolean
+          work_permit_id?: string | null
+          worker_id?: string
+        }
+        Relationships: []
       }
       worker_opinions: {
         Row: {
@@ -3767,6 +3917,48 @@ export type Database = {
         }
         Relationships: []
       }
+      workers: {
+        Row: {
+          company_id: string | null
+          company_name: string
+          created_at: string
+          education_confirmed_at: string | null
+          id: string
+          is_active: boolean
+          name: string
+          phone: string
+          project_id: string
+          qr_token: string
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string | null
+          company_name?: string
+          created_at?: string
+          education_confirmed_at?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          phone: string
+          project_id: string
+          qr_token?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string | null
+          company_name?: string
+          created_at?: string
+          education_confirmed_at?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          phone?: string
+          project_id?: string
+          qr_token?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -3781,6 +3973,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      confirm_worker_education: { Args: { _token: string }; Returns: Json }
       ensure_master_allowlist: {
         Args: { _user_id: string }
         Returns: undefined
@@ -3790,6 +3983,7 @@ export type Database = {
         Returns: Database["public"]["Enums"]["app_role"]
       }
       get_tbm_by_token: { Args: { _token: string }; Returns: Json }
+      get_worker_by_token: { Args: { _token: string }; Returns: Json }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -3819,6 +4013,15 @@ export type Database = {
         Args: { _invite_code: string; _user_id: string }
         Returns: Json
       }
+      register_worker: {
+        Args: {
+          _company_name: string
+          _name: string
+          _phone: string
+          _project_id: string
+        }
+        Returns: Json
+      }
       shares_project_with: {
         Args: { _target: string; _viewer: string }
         Returns: boolean
@@ -3834,6 +4037,21 @@ export type Database = {
           _worker_name: string
           _worker_phone: string
         }
+        Returns: Json
+      }
+      worker_entry: {
+        Args: {
+          _edu_confirmed: boolean
+          _ra_confirmed: boolean
+          _signature: string
+          _tbm_confirmed: boolean
+          _token: string
+          _work_permit_id: string
+        }
+        Returns: Json
+      }
+      worker_exit: {
+        Args: { _no_accident: boolean; _signature: string; _token: string }
         Returns: Json
       }
     }

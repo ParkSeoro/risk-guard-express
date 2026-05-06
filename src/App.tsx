@@ -130,6 +130,7 @@ function ProtectedRoutes() {
         <Route path="/site-weather" element={<SiteWeather />} />
         <Route path="/safety-cost" element={<SafetyCost />} />
         <Route path="/work-permits" element={<WorkPermits />} />
+        <Route path="/tbm-logs" element={<TbmLogs />} />
         <Route path="/inspection-mode" element={<InspectionMode />} />
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="*" element={<NotFound />} />

@@ -3328,6 +3328,7 @@ export type Database = {
       }
       work_permits: {
         Row: {
+          approval_comment: string | null
           approved_at: string | null
           approved_by: string | null
           approved_by_name: string
@@ -3346,8 +3347,15 @@ export type Database = {
           personnel_count: number
           project_id: string
           rejection_reason: string
+          review_comment: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          reviewed_by_name: string | null
           signatures: Json
           status: string
+          submitted_at: string | null
+          submitted_by: string | null
+          submitted_by_name: string | null
           tbm_session_id: string | null
           updated_at: string
           weather_check_passed: boolean
@@ -3359,6 +3367,7 @@ export type Database = {
           work_start_at: string | null
         }
         Insert: {
+          approval_comment?: string | null
           approved_at?: string | null
           approved_by?: string | null
           approved_by_name?: string
@@ -3377,8 +3386,15 @@ export type Database = {
           personnel_count?: number
           project_id: string
           rejection_reason?: string
+          review_comment?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewed_by_name?: string | null
           signatures?: Json
           status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          submitted_by_name?: string | null
           tbm_session_id?: string | null
           updated_at?: string
           weather_check_passed?: boolean
@@ -3390,6 +3406,7 @@ export type Database = {
           work_start_at?: string | null
         }
         Update: {
+          approval_comment?: string | null
           approved_at?: string | null
           approved_by?: string | null
           approved_by_name?: string
@@ -3408,8 +3425,15 @@ export type Database = {
           personnel_count?: number
           project_id?: string
           rejection_reason?: string
+          review_comment?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewed_by_name?: string | null
           signatures?: Json
           status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          submitted_by_name?: string | null
           tbm_session_id?: string | null
           updated_at?: string
           weather_check_passed?: boolean

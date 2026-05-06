@@ -13,12 +13,17 @@ import { useToast } from '@/hooks/use-toast';
 import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature } from 'lucide-react';
 
 const STATUS_COLOR: Record<string, string> = {
+  '작성중': 'bg-muted text-muted-foreground',
+  '검토대기': 'bg-warning/10 text-warning',
+  '검토완료': 'bg-primary/10 text-primary',
   '대기': 'bg-muted text-muted-foreground',
   '승인': 'bg-success/10 text-success',
   '반려': 'bg-destructive/10 text-destructive',
   '작업중': 'bg-primary/10 text-primary',
   '완료': 'bg-accent/10 text-accent',
 };
+
+const userLabel = (u: any) => u?.user_metadata?.display_name || u?.email || '';
 
 export default function WorkPermits() {
   const { toast } = useToast();
@@ -67,7 +72,7 @@ export default function WorkPermits() {
       assessment_run_id: form.assessment_run_id || null,
       tbm_session_id: form.tbm_session_id || null,
       created_by: user?.id,
-      status: '대기',
+      status: '작성중',
     });
     if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
     toast({ title: '작업허가서가 생성되었습니다.' });
@@ -118,12 +123,44 @@ export default function WorkPermits() {
     load();
   };
 
-  const approve = async (permit: any) => {
-    const gate = permit.gate_check_result;
-    if (!gate?.all_ok) return toast({ title: '게이트 체크를 먼저 통과해야 합니다.', variant: 'destructive' });
+  const submit = async (permit: any) => {
+    if (!permit.gate_check_result?.all_ok) {
+      return toast({ title: '게이트 체크 통과 후 상신할 수 있습니다.', variant: 'destructive' });
+    }
     await supabase.from('work_permits' as any).update({
-      status: '승인', approved_by: user?.id, approved_by_name: (user as any)?.user_metadata?.display_name || user?.email,
+      status: '검토대기',
+      submitted_by: user?.id,
+      submitted_by_name: userLabel(user),
+      submitted_at: new Date().toISOString(),
+    }).eq('id', permit.id);
+    toast({ title: '검토 요청이 상신되었습니다.' });
+    load();
+  };
+
+  const review = async (permit: any) => {
+    const comment = prompt('검토 의견 (선택)') || '';
+    await supabase.from('work_permits' as any).update({
+      status: '검토완료',
+      reviewed_by: user?.id,
+      reviewed_by_name: userLabel(user),
+      reviewed_at: new Date().toISOString(),
+      review_comment: comment,
+    }).eq('id', permit.id);
+    toast({ title: '검토 완료되었습니다.' });
+    load();
+  };
+
+  const approve = async (permit: any) => {
+    if (permit.status !== '검토완료') {
+      return toast({ title: '검토 완료 후 승인할 수 있습니다.', variant: 'destructive' });
+    }
+    const comment = prompt('승인 의견 (선택)') || '';
+    await supabase.from('work_permits' as any).update({
+      status: '승인',
+      approved_by: user?.id,
+      approved_by_name: userLabel(user),
       approved_at: new Date().toISOString(),
+      approval_comment: comment,
     }).eq('id', permit.id);
     toast({ title: '승인되었습니다.' });
     load();
@@ -133,6 +170,7 @@ export default function WorkPermits() {
     const reason = prompt('반려 사유를 입력하세요');
     if (!reason) return;
     await supabase.from('work_permits' as any).update({ status: '반려', rejection_reason: reason }).eq('id', permit.id);
+    toast({ title: '반려되었습니다.' });
     load();
   };
 
@@ -165,12 +203,26 @@ export default function WorkPermits() {
                   <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />작업가능</p>
                 )}
                 {p.rejection_reason && <p className="text-xs text-destructive mt-1">반려: {p.rejection_reason}</p>}
+                <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                  {p.submitted_at && <div>📤 상신: {p.submitted_by_name || '-'} · {new Date(p.submitted_at).toLocaleString('ko-KR')}</div>}
+                  {p.reviewed_at && <div>🔍 검토: {p.reviewed_by_name || '-'} · {new Date(p.reviewed_at).toLocaleString('ko-KR')}{p.review_comment ? ` · ${p.review_comment}` : ''}</div>}
+                  {p.approved_at && <div>✅ 승인: {p.approved_by_name || '-'} · {new Date(p.approved_at).toLocaleString('ko-KR')}{p.approval_comment ? ` · ${p.approval_comment}` : ''}</div>}
+                </div>
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-1 flex-wrap">
                 <Button size="sm" variant="outline" onClick={() => runGateCheck(p)}><ShieldCheck className="h-3 w-3 mr-1" />게이트체크</Button>
-                {p.status === '대기' && isAdmin && (
+                {p.status === '작성중' && (
+                  <Button size="sm" onClick={() => submit(p)} disabled={!p.gate_check_result?.all_ok}>상신</Button>
+                )}
+                {p.status === '검토대기' && isAdmin && (
                   <>
-                    <Button size="sm" onClick={() => approve(p)} disabled={!p.gate_check_result?.all_ok}><CheckCircle2 className="h-3 w-3 mr-1" />승인</Button>
+                    <Button size="sm" onClick={() => review(p)}>검토완료</Button>
+                    <Button size="sm" variant="destructive" onClick={() => reject(p)}><XCircle className="h-3 w-3 mr-1" />반려</Button>
+                  </>
+                )}
+                {p.status === '검토완료' && isAdmin && (
+                  <>
+                    <Button size="sm" onClick={() => approve(p)}><CheckCircle2 className="h-3 w-3 mr-1" />승인</Button>
                     <Button size="sm" variant="destructive" onClick={() => reject(p)}><XCircle className="h-3 w-3 mr-1" />반려</Button>
                   </>
                 )}

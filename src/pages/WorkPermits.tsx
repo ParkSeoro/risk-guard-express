@@ -267,9 +267,9 @@ export default function WorkPermits() {
         ))}
       </div>
 
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+      <Dialog open={showCreate || !!editing} onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditing(null); setForm(blankForm); } }}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>작업허가서 생성</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editing ? '작업허가서 수정' : '작업허가서 생성'}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <div><Label>일자</Label><Input type="date" value={form.permit_date} onChange={(e) => setForm({ ...form, permit_date: e.target.value })} /></div>

@@ -1334,6 +1334,7 @@ const AssessmentRunDetail = () => {
           userId={user?.id}
           canEdit={!!(canEdit || canForceEdit)}
           onChanged={refreshParticipation}
+          riskItems={items as any}
         />
       </div>
 

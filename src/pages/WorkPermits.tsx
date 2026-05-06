@@ -320,18 +320,32 @@ export default function WorkPermits() {
         <DialogContent>
           <DialogHeader><DialogTitle>작업 게이트 체크 결과</DialogTitle></DialogHeader>
           {!gateResult ? <p className="text-sm text-muted-foreground">검사 중...</p> : (
-            <div className="space-y-2">
-              {Object.entries(gateResult.checks).map(([k, v]: any) => (
-                <div key={k} className="flex items-center gap-2 p-2 rounded border">
-                  {v.ok ? <CheckCircle2 className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-destructive" />}
-                  <span className="text-sm font-medium w-24">
-                    {k === 'assessment' ? '위험성평가' : k === 'work_plan' ? '작업계획서' : k === 'tbm' ? 'TBM' : '날씨'}
-                  </span>
-                  <span className="text-sm text-muted-foreground">{v.msg}</span>
+            <div className="space-y-3">
+              <div>
+                <p className="text-xs font-semibold mb-1 text-muted-foreground">결재 조건 (사전 승인용)</p>
+                <div className="space-y-1">
+                  {Object.entries(gateResult.checks).map(([k, v]: any) => (
+                    <div key={k} className="flex items-center gap-2 p-2 rounded border">
+                      {v.ok ? <CheckCircle2 className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-destructive" />}
+                      <span className="text-sm font-medium w-24">{k === 'assessment' ? '위험성평가' : '작업계획서'}</span>
+                      <span className="text-sm text-muted-foreground">{v.msg}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-              <div className={`p-3 rounded text-center font-bold ${gateResult.all_ok ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
-                {gateResult.all_ok ? '✅ 작업 가능' : '🚫 작업 불가'}
+                <div className={`p-2 mt-2 rounded text-center text-sm font-bold ${gateResult.all_ok ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
+                  {gateResult.all_ok ? '✅ 결재 가능' : '🚫 결재 불가'}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold mb-1 text-muted-foreground">작업 실행 조건 (당일 TBM)</p>
+                <div className="flex items-center gap-2 p-2 rounded border">
+                  {gateResult.exec?.tbm.ok ? <CheckCircle2 className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-warning" />}
+                  <span className="text-sm font-medium w-24">TBM</span>
+                  <span className="text-sm text-muted-foreground">{gateResult.exec?.tbm.msg}</span>
+                </div>
+                <div className={`p-2 mt-2 rounded text-center text-sm font-bold ${gateResult.exec_ok ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
+                  {gateResult.exec_ok ? '✅ 작업 실행 가능' : '⚠ 작업 불가 - 당일 TBM 미실시'}
+                </div>
               </div>
             </div>
           )}

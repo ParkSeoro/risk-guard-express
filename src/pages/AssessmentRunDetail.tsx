@@ -32,8 +32,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import FeedbackPanel from '@/components/FeedbackPanel';
 import ApprovalLineManager, { type ApprovalLine } from '@/components/ApprovalLineManager';
 import WorkerParticipationPanel from '@/components/assessment/WorkerParticipationPanel';
-import TbmManager from '@/components/tbm/TbmManager';
-import TbmPrintSection from '@/components/tbm/TbmPrintSection';
 import * as XLSX from 'xlsx';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
@@ -1336,18 +1334,11 @@ const AssessmentRunDetail = () => {
           userId={user?.id}
           canEdit={!!(canEdit || canForceEdit)}
           onChanged={refreshParticipation}
+          riskItems={items as any}
         />
       </div>
 
-      {/* TBM QR Sessions */}
-      <Card className="print:hidden">
-        <CardContent className="py-4">
-          <TbmManager projectId={run.project_id} runId={runId!} />
-        </CardContent>
-      </Card>
-
-      {/* TBM signatures (print only) */}
-      <TbmPrintSection runId={runId!} />
+      {/* TBM은 별도 메뉴에서 관리됩니다. (사이드바 → TBM 일지) */}
 
       {/* Worker Participation Photos */}
       <Card className="print:hidden">

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,8 +7,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Trash2, Sparkles, Loader2, Upload, MessageSquare, HeartPulse, AlertTriangle, Users } from 'lucide-react';
+import { Plus, Trash2, Sparkles, Loader2, Upload, MessageSquare, HeartPulse, AlertTriangle, Users, Wand2 } from 'lucide-react';
+import { detectHighRiskCategories, type RiskItemLike } from '@/lib/highRiskDetection';
+import { autoGenerateAccidentCases } from '@/lib/autoAccidentGeneration';
 
 interface Props {
   runId: string;
@@ -16,11 +19,12 @@ interface Props {
   userId?: string;
   canEdit: boolean;
   onChanged?: () => void;
+  riskItems?: RiskItemLike[];
 }
 
 const HEALTH_CATEGORIES = ['분진', '소음', '화학물질', '고온/저온', '밀폐공간', '진동', '기타'];
 
-export default function WorkerParticipationPanel({ runId, projectId, userId, canEdit, onChanged }: Props) {
+export default function WorkerParticipationPanel({ runId, projectId, userId, canEdit, onChanged, riskItems = [] }: Props) {
   const { toast } = useToast();
   const [opinions, setOpinions] = useState<any[]>([]);
   const [healths, setHealths] = useState<any[]>([]);
@@ -38,6 +42,14 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
   const [aiProcess, setAiProcess] = useState('');
   const [aiEquipment, setAiEquipment] = useState('');
 
+  // 고위험 작업 자동 사고사례 생성
+  const [autoAccidentEnabled, setAutoAccidentEnabled] = useState(true);
+  const [autoAccidentRan, setAutoAccidentRan] = useState(false);
+  const [autoAccidentLoading, setAutoAccidentLoading] = useState(false);
+  const detectedHighRisk = useMemo(() => detectHighRiskCategories(riskItems), [riskItems]);
+  const autoCases = accidents.filter(a => a.source_type === 'auto');
+  const hasHighRiskWithoutCases = detectedHighRisk.length > 0 && autoCases.length === 0;
+
   const reload = async () => {
     const [op, hz, ac] = await Promise.all([
       supabase.from('worker_opinions' as any).select('*').eq('run_id', runId).order('created_at'),
@@ -49,6 +61,39 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
     setAccidents((ac.data as any[]) || []);
   };
   useEffect(() => { reload(); }, [runId]);
+
+  const runAutoAccidentGeneration = async (silent = false) => {
+    if (!canEdit || detectedHighRisk.length === 0) return;
+    setAutoAccidentLoading(true);
+    try {
+      const res = await autoGenerateAccidentCases({ runId, projectId, items: riskItems, userId });
+      await reload();
+      onChanged?.();
+      if (!silent) {
+        toast({
+          title: `사고사례 자동 생성 완료`,
+          description: `고위험 카테고리 ${res.categories.length}건, 사례 ${res.inserted}건 추가`,
+        });
+      }
+    } catch (e: any) {
+      if (!silent) toast({ title: '자동 생성 실패', description: e.message, variant: 'destructive' });
+    } finally {
+      setAutoAccidentLoading(false);
+      setAutoAccidentRan(true);
+    }
+  };
+
+  // 자동 트리거: 위험성평가 항목 로드 후 1회
+  useEffect(() => {
+    if (!autoAccidentEnabled || autoAccidentRan) return;
+    if (!canEdit) return;
+    if (riskItems.length === 0) return;
+    if (detectedHighRisk.length === 0) { setAutoAccidentRan(true); return; }
+    if (autoCases.length > 0) { setAutoAccidentRan(true); return; }
+    runAutoAccidentGeneration(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [riskItems.length, autoAccidentEnabled, canEdit]);
+
 
   // ---------- Opinion ----------
   const addOpinion = async () => {
@@ -396,6 +441,44 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
+          {/* 고위험 작업 자동 사고사례 패널 */}
+          {canEdit && (
+            <div className="rounded border p-2 bg-muted/20 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <Switch checked={autoAccidentEnabled} onCheckedChange={setAutoAccidentEnabled} />
+                  <span className="font-medium">고위험 작업 사고사례 자동 생성</span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1"
+                  disabled={autoAccidentLoading || detectedHighRisk.length === 0}
+                  onClick={() => runAutoAccidentGeneration(false)}
+                >
+                  {autoAccidentLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+                  지금 생성
+                </Button>
+              </div>
+              {detectedHighRisk.length > 0 ? (
+                <div className="flex items-center gap-1 flex-wrap">
+                  <span className="text-[10px] text-muted-foreground">식별된 고위험:</span>
+                  {detectedHighRisk.map(c => (
+                    <Badge key={c} variant="destructive" className="text-[9px] h-4">{c}</Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[10px] text-muted-foreground">고위험 작업이 식별되지 않았습니다.</p>
+              )}
+              {hasHighRiskWithoutCases && autoAccidentRan && (
+                <div className="flex items-start gap-1.5 p-2 rounded bg-destructive/10 text-destructive text-[11px]">
+                  <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  <span>고위험 작업이 식별되었지만 사고사례가 등록되지 않았습니다. 자동 생성을 실행하거나 수동으로 등록해주세요.</span>
+                </div>
+              )}
+            </div>
+          )}
+
           {canEdit && (
             <div className="grid grid-cols-2 gap-2 p-2 border rounded bg-muted/30">
               <Input className="h-8" placeholder="사고유형" value={accidentDraft.accident_type} onChange={e => setAccidentDraft(p => ({ ...p, accident_type: e.target.value }))} />
@@ -417,7 +500,7 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
                   {a.result && <p className="text-[11px]">결과: {a.result}</p>}
                   <p className="text-[11px]">예방: {a.prevention}</p>
                   {a.description && <p className="text-[10px] text-muted-foreground">{a.description}</p>}
-                  <Badge variant="outline" className="text-[9px] mt-1">{a.source_type === 'ai' ? '🤖 AI' : a.source_type === 'recommended' ? '📋 추천' : '✍️ 수동'}</Badge>
+                  <Badge variant="outline" className="text-[9px] mt-1">{a.source_type === 'ai' ? '🤖 AI' : a.source_type === 'auto' ? '⚡ 자동(고위험)' : a.source_type === 'recommended' ? '📋 추천' : '✍️ 수동'}</Badge>
                 </div>
                 {canEdit && <div className="flex gap-1">
                   <label className="cursor-pointer">

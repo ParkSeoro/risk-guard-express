@@ -203,9 +203,23 @@ export default function TbmParticipate() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">전자서명 *</CardTitle>
+        <Card className={ppeChecked ? 'border-success' : ''}>
+          <CardContent className="p-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <Checkbox checked={ppeChecked} onCheckedChange={(v) => setPpeChecked(!!v)} />
+              <span className="text-sm">안전모, 안전화, 보호구(PPE)를 모두 착용하였습니다. *</span>
+            </label>
+          </CardContent>
+        </Card>
+
+        <Card className={understoodChecked ? 'border-success' : ''}>
+          <CardContent className="p-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <Checkbox checked={understoodChecked} onCheckedChange={(v) => setUnderstoodChecked(!!v)} />
+              <span className="text-sm">브리핑 내용을 충분히 이해했으며 궁금한 사항은 작업 전 관리감독자에게 문의하겠습니다. *</span>
+            </label>
+          </CardContent>
+        </Card>
             <Button variant="ghost" size="sm" onClick={clearSig}>지우기</Button>
           </CardHeader>
           <CardContent>

@@ -1,9 +1,11 @@
 import { 
   LayoutDashboard, FolderKanban, ShieldAlert, Database, 
   FileCheck, HardHat, ChevronLeft, LogOut, User,
-  ShieldCheck, History, Shield, SearchCheck, Settings,
-  FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode
+  Shield, SearchCheck, Settings,
+  FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
+  ClipboardCheck, History, ChevronDown
 } from "lucide-react";
+import { useState, useEffect } from "react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -11,27 +13,52 @@ import {
   SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
   SidebarHeader, SidebarFooter, useSidebar,
 } from "@/components/ui/sidebar";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 
-const mainItems = [
-  { title: "대시보드", url: "/", icon: LayoutDashboard },
-  { title: "할 일", url: "/todo", icon: ListTodo },
-  { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
-  { title: "작업계획서", url: "/work-plans", icon: FileText },
-  { title: "작업허가서", url: "/work-permits", icon: FileSignature },
-  { title: "TBM 일지", url: "/tbm-logs", icon: QrCode },
-  { title: "법적업무", url: "/legal-duties", icon: Scale },
-  { title: "산업안전보건관리비", url: "/safety-cost", icon: ReceiptText },
-  { title: "검증센터", url: "/verification-center", icon: SearchCheck },
-  { title: "결재함", url: "/approvals", icon: FileCheck },
-  { title: "현장 적용 체크", url: "/site-readiness", icon: ClipboardList },
-  { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
-  { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
-  { title: "AI 어시스턴트", url: "/ai-assistant", icon: Bot },
-  { title: "프로젝트", url: "/projects", icon: FolderKanban },
+type Item = { title: string; url: string; icon: any };
+type Group = { label: string; key: string; items: Item[] };
+
+const groups: Group[] = [
+  {
+    label: "안전관리", key: "safety",
+    items: [
+      { title: "대시보드", url: "/", icon: LayoutDashboard },
+      { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
+      { title: "작업계획서", url: "/work-plans", icon: FileText },
+      { title: "작업허가서", url: "/work-permits", icon: FileSignature },
+      { title: "TBM 일지", url: "/tbm-logs", icon: QrCode },
+    ],
+  },
+  {
+    label: "점검/교육", key: "inspect",
+    items: [
+      { title: "안전점검", url: "/safety-inspections", icon: ClipboardCheck },
+      { title: "검증센터", url: "/verification-center", icon: SearchCheck },
+      { title: "현장 적용 체크", url: "/site-readiness", icon: ClipboardList },
+    ],
+  },
+  {
+    label: "비용/법적", key: "legal",
+    items: [
+      { title: "산업안전보건관리비", url: "/safety-cost", icon: ReceiptText },
+      { title: "법적업무", url: "/legal-duties", icon: Scale },
+    ],
+  },
+  {
+    label: "운영", key: "ops",
+    items: [
+      { title: "할 일", url: "/todo", icon: ListTodo },
+      { title: "결재함", url: "/approvals", icon: FileCheck },
+      { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
+      { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
+      { title: "AI 어시스턴트", url: "/ai-assistant", icon: Bot },
+      { title: "프로젝트", url: "/projects", icon: FolderKanban },
+    ],
+  },
 ];
 
-const adminItems = [
+const adminItems: Item[] = [
   { title: "기준정보", url: "/master-data", icon: Database },
   { title: "감사 로그", url: "/audit-logs", icon: History },
   { title: "권한 점검", url: "/permission-test", icon: Shield },
@@ -41,7 +68,40 @@ const adminItems = [
 export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed";
-  const { profile, signOut, isAdmin } = useAuth();
+  const { profile, signOut } = useAuth();
+
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem('sidebar:groups') || '{"safety":true,"inspect":true,"legal":true,"ops":true,"admin":false}'); }
+    catch { return { safety: true, inspect: true, legal: true, ops: true, admin: false }; }
+  });
+  useEffect(() => {
+    localStorage.setItem('sidebar:groups', JSON.stringify(openGroups));
+  }, [openGroups]);
+
+  const toggleGroup = (k: string) => setOpenGroups(s => ({ ...s, [k]: !s[k] }));
+
+  const renderItem = (item: Item) => (
+    <SidebarMenuItem key={item.url}>
+      <SidebarMenuButton asChild>
+        <NavLink
+          to={item.url}
+          end={item.url === "/"}
+          className="hover:bg-sidebar-accent/80 rounded-md transition-colors"
+          activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold"
+          onClick={() => {
+            try {
+              const recent = JSON.parse(localStorage.getItem('sidebar:recent') || '[]');
+              const next = [item.url, ...recent.filter((u: string) => u !== item.url)].slice(0, 5);
+              localStorage.setItem('sidebar:recent', JSON.stringify(next));
+            } catch {}
+          }}
+        >
+          <item.icon className="mr-2 h-4 w-4 shrink-0" />
+          {!collapsed && <span>{item.title}</span>}
+        </NavLink>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
 
   return (
     <Sidebar collapsible="icon">
@@ -60,40 +120,50 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-muted text-[10px] uppercase tracking-widest">메뉴</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {mainItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <NavLink to={item.url} end={item.url === "/"} className="hover:bg-sidebar-accent/80 rounded-md transition-colors" activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold">
-                      <item.icon className="mr-2 h-4 w-4 shrink-0" />
-                      {!collapsed && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {groups.map(g => (
+          <SidebarGroup key={g.key}>
+            {!collapsed ? (
+              <Collapsible open={openGroups[g.key] ?? true} onOpenChange={() => toggleGroup(g.key)}>
+                <CollapsibleTrigger className="w-full">
+                  <SidebarGroupLabel className="text-sidebar-muted text-[10px] uppercase tracking-widest flex items-center justify-between cursor-pointer hover:text-sidebar-foreground">
+                    <span>{g.label}</span>
+                    <ChevronDown className={`h-3 w-3 transition-transform ${openGroups[g.key] === false ? '-rotate-90' : ''}`} />
+                  </SidebarGroupLabel>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarGroupContent>
+                    <SidebarMenu>{g.items.map(renderItem)}</SidebarMenu>
+                  </SidebarGroupContent>
+                </CollapsibleContent>
+              </Collapsible>
+            ) : (
+              <SidebarGroupContent>
+                <SidebarMenu>{g.items.map(renderItem)}</SidebarMenu>
+              </SidebarGroupContent>
+            )}
+          </SidebarGroup>
+        ))}
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-muted text-[10px] uppercase tracking-widest">관리</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {adminItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <NavLink to={item.url} className="hover:bg-sidebar-accent/80 rounded-md transition-colors" activeClassName="bg-sidebar-accent text-sidebar-primary font-semibold">
-                      <item.icon className="mr-2 h-4 w-4 shrink-0" />
-                      {!collapsed && <span>{item.title}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
+          {!collapsed ? (
+            <Collapsible open={openGroups['admin'] ?? false} onOpenChange={() => toggleGroup('admin')}>
+              <CollapsibleTrigger className="w-full">
+                <SidebarGroupLabel className="text-sidebar-muted text-[10px] uppercase tracking-widest flex items-center justify-between cursor-pointer hover:text-sidebar-foreground">
+                  <span>시스템</span>
+                  <ChevronDown className={`h-3 w-3 transition-transform ${openGroups['admin'] === false ? '-rotate-90' : ''}`} />
+                </SidebarGroupLabel>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu>{adminItems.map(renderItem)}</SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </Collapsible>
+          ) : (
+            <SidebarGroupContent>
+              <SidebarMenu>{adminItems.map(renderItem)}</SidebarMenu>
+            </SidebarGroupContent>
+          )}
         </SidebarGroup>
       </SidebarContent>
 

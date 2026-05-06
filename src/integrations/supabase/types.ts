@@ -2843,6 +2843,179 @@ export type Database = {
           },
         ]
       }
+      safety_inspection_actions: {
+        Row: {
+          assignee_id: string | null
+          assignee_name: string
+          completed_at: string | null
+          completed_by: string | null
+          completion_note: string
+          created_at: string
+          due_date: string | null
+          evidence_photos: Json
+          id: string
+          inspection_id: string
+          issue: string
+          item_id: string | null
+          project_id: string
+          severity: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          assignee_id?: string | null
+          assignee_name?: string
+          completed_at?: string | null
+          completed_by?: string | null
+          completion_note?: string
+          created_at?: string
+          due_date?: string | null
+          evidence_photos?: Json
+          id?: string
+          inspection_id: string
+          issue?: string
+          item_id?: string | null
+          project_id: string
+          severity?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          assignee_id?: string | null
+          assignee_name?: string
+          completed_at?: string | null
+          completed_by?: string | null
+          completion_note?: string
+          created_at?: string
+          due_date?: string | null
+          evidence_photos?: Json
+          id?: string
+          inspection_id?: string
+          issue?: string
+          item_id?: string | null
+          project_id?: string
+          severity?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "safety_inspection_actions_inspection_id_fkey"
+            columns: ["inspection_id"]
+            isOneToOne: false
+            referencedRelation: "safety_inspections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_inspection_actions_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "safety_inspection_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      safety_inspection_items: {
+        Row: {
+          checklist_code: string
+          created_at: string
+          id: string
+          inspection_id: string
+          label: string
+          legal_basis: string
+          note: string
+          photos: Json
+          result: string
+          sort_order: number
+        }
+        Insert: {
+          checklist_code?: string
+          created_at?: string
+          id?: string
+          inspection_id: string
+          label: string
+          legal_basis?: string
+          note?: string
+          photos?: Json
+          result?: string
+          sort_order?: number
+        }
+        Update: {
+          checklist_code?: string
+          created_at?: string
+          id?: string
+          inspection_id?: string
+          label?: string
+          legal_basis?: string
+          note?: string
+          photos?: Json
+          result?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "safety_inspection_items_inspection_id_fkey"
+            columns: ["inspection_id"]
+            isOneToOne: false
+            referencedRelation: "safety_inspections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      safety_inspections: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          inspected_at: string
+          inspection_type: string
+          inspector_id: string | null
+          inspector_name: string
+          is_deleted: boolean
+          location: string
+          process_category: string
+          project_id: string
+          status: string
+          summary: string
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inspected_at?: string
+          inspection_type?: string
+          inspector_id?: string | null
+          inspector_name?: string
+          is_deleted?: boolean
+          location?: string
+          process_category?: string
+          project_id: string
+          status?: string
+          summary?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          inspected_at?: string
+          inspection_type?: string
+          inspector_id?: string | null
+          inspector_name?: string
+          is_deleted?: boolean
+          location?: string
+          process_category?: string
+          project_id?: string
+          status?: string
+          summary?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       schedule_uploads: {
         Row: {
           column_mapping: Json | null

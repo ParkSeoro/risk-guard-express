@@ -40,6 +40,7 @@ import WorkPermits from "./pages/WorkPermits";
 import TbmParticipate from "./pages/TbmParticipate";
 import TbmLogs from "./pages/TbmLogs";
 import InspectionMode from "./pages/InspectionMode";
+import SafetyInspections from "./pages/SafetyInspections";
 import SiteReadinessChecklist from "./pages/SiteReadinessChecklist";
 import NotFound from "./pages/NotFound";
 
@@ -132,6 +133,7 @@ function ProtectedRoutes() {
         <Route path="/work-permits" element={<WorkPermits />} />
         <Route path="/tbm-logs" element={<TbmLogs />} />
         <Route path="/inspection-mode" element={<InspectionMode />} />
+        <Route path="/safety-inspections" element={<SafetyInspections />} />
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

@@ -203,12 +203,26 @@ export default function WorkPermits() {
                   <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />작업가능</p>
                 )}
                 {p.rejection_reason && <p className="text-xs text-destructive mt-1">반려: {p.rejection_reason}</p>}
+                <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                  {p.submitted_at && <div>📤 상신: {p.submitted_by_name || '-'} · {new Date(p.submitted_at).toLocaleString('ko-KR')}</div>}
+                  {p.reviewed_at && <div>🔍 검토: {p.reviewed_by_name || '-'} · {new Date(p.reviewed_at).toLocaleString('ko-KR')}{p.review_comment ? ` · ${p.review_comment}` : ''}</div>}
+                  {p.approved_at && <div>✅ 승인: {p.approved_by_name || '-'} · {new Date(p.approved_at).toLocaleString('ko-KR')}{p.approval_comment ? ` · ${p.approval_comment}` : ''}</div>}
+                </div>
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-1 flex-wrap">
                 <Button size="sm" variant="outline" onClick={() => runGateCheck(p)}><ShieldCheck className="h-3 w-3 mr-1" />게이트체크</Button>
-                {p.status === '대기' && isAdmin && (
+                {p.status === '작성중' && (
+                  <Button size="sm" onClick={() => submit(p)} disabled={!p.gate_check_result?.all_ok}>상신</Button>
+                )}
+                {p.status === '검토대기' && isAdmin && (
                   <>
-                    <Button size="sm" onClick={() => approve(p)} disabled={!p.gate_check_result?.all_ok}><CheckCircle2 className="h-3 w-3 mr-1" />승인</Button>
+                    <Button size="sm" onClick={() => review(p)}>검토완료</Button>
+                    <Button size="sm" variant="destructive" onClick={() => reject(p)}><XCircle className="h-3 w-3 mr-1" />반려</Button>
+                  </>
+                )}
+                {p.status === '검토완료' && isAdmin && (
+                  <>
+                    <Button size="sm" onClick={() => approve(p)}><CheckCircle2 className="h-3 w-3 mr-1" />승인</Button>
                     <Button size="sm" variant="destructive" onClick={() => reject(p)}><XCircle className="h-3 w-3 mr-1" />반려</Button>
                   </>
                 )}

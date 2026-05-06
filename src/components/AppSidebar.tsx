@@ -34,8 +34,16 @@ const groups: Group[] = [
     label: "점검/교육", key: "inspect",
     items: [
       { title: "안전점검", url: "/safety-inspections", icon: ClipboardCheck },
+      { title: "교육자료", url: "/education-materials", icon: FileText },
       { title: "검증센터", url: "/verification-center", icon: SearchCheck },
       { title: "현장 적용 체크", url: "/site-readiness", icon: ClipboardList },
+    ],
+  },
+  {
+    label: "근로자", key: "workers",
+    items: [
+      { title: "근로자 관리", url: "/workers", icon: HardHat },
+      { title: "입퇴장 현황", url: "/worker-attendance", icon: ClipboardList },
     ],
   },
   {

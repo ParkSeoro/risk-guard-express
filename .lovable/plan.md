@@ -1,38 +1,91 @@
+# 산업안전보건법 기반 통합 안전관리 체계 완성
 
-## 전면 재정비 계획
+기존 시스템·권한·결재 구조를 유지하면서 6개 영역을 단계적으로 추가/개편합니다. 범위가 크므로 **Phase 단위로 나눠** 진행하며, 각 Phase 완료 후 동작 확인 후 다음으로 진행합니다.
 
-### Phase 1: 시스템명 변경 + 기초 작업
-1. **시스템명 변경**: "디아이지에어가스 위험성평가 시스템" → "안전관리시스템"
-   - `index.html` 타이틀/메타 태그
-   - `AppSidebar.tsx` 헤더
-   - 모든 PDF Edge Function (generate-pdf, generate-workplan-pdf)
+---
 
-### Phase 2: 사고데이터 기반 위험 예측 시스템 (신규)
-2. **DB 테이블 생성**: `accident_cases` 테이블
-   - 사고유형, 공종, 장비, 발생원인, 결과, 사망/부상 등
-   - 초기 데이터: 한국 건설현장 주요 사고 유형 30건+ 시드
-3. **예측 UI**: 공종+장비 입력 시 유사 사고 검색 및 위험요인 자동 추천
-4. **AI 연동**: 위험성평가 생성 시 사고데이터 컨텍스트 주입
+## Phase 1 — 사이드바 구조 개편 (즉시, UI만)
+`src/components/AppSidebar.tsx` 를 그룹형 메뉴로 재구성합니다. 라우트는 기존 유지, 신규 라우트(점검/사고/교육)는 placeholder 페이지로 먼저 등록.
 
-### Phase 3: 첨부서류 체계 재구성
-5. **공통 필수서류 추가**: 사업자등록증, 보험가입증명서, 안전보건교육이수증
-6. **장비 필수서류 추가**: 차량등록증, 보험증권, 검사증, 운전면허증
-7. **작업별 자격증류 추가**: 비계→기능자격증, 크레인→리깅플랜 필수
-8. **결재 차단 로직**: 필수서류 미첨부 시 결재 불가 (UI 경고)
+그룹:
+- **안전관리**: 위험성평가 / TBM 일지 / 작업계획서 / 작업허가서
+- **점검/교육**: 안전점검(신규) / 교육관리(신규) / TBM 일지
+- **사고/개선**: 사고관리(신규) / 아차사고(신규) / 개선조치(검증센터 매핑)
+- **비용/법적**: 산업안전보건관리비 / 법적업무
+- **운영**: 할 일 / 결재함 / 현장 적용 체크 / 감독 대응 / 현장 일기예보 / AI 어시스턴트
+- **시스템**: 프로젝트 / 기준정보 / 감사 로그 / 권한 점검 / 설정
 
-### Phase 4: 권한/데이터 접근 강화
-- **이미 구현됨**: useProjectAccess 훅 + RLS 정책으로 서버 레벨 차단 중
-- **보강점**: Edge Function 내 projectId/companyId 필터 검증 추가
+기능: 그룹 접기/펼치기(Collapsible), 권한 기반 필터(useProjectAccess), 최근 사용 메뉴(localStorage top 5).
 
-### Phase 5: PDF 출력 개선
-- KOSHA 양식 참고하여 작업계획서 PDF 구조 보강
-- 첨부파일 자동 포함
-- 인쇄 버튼 중복 실행 방지
+---
 
-### 이미 구현된 기능 (변경 최소화)
-- 결재 시스템 (4단계 순차 결재)
-- 리깅플랜 계산 엔진 (T = W/(2×cosθ), 안전율 판정)
-- 작업계획서 KOSHA 기준 항목
+## Phase 2 — 법적 안전점검 시스템 (핵심)
 
-### 작업 순서
-Phase 1 → Phase 2 (DB 마이그레이션) → Phase 3 → Phase 4 → Phase 5
+### DB (migration)
+- `safety_inspections` (project_id, company_id, type[`pre_work`|`during_work`|`weekly`|`monthly`|`special`|`patrol`], process_category, inspector_id, inspected_at, location, summary, status, created_by, is_deleted)
+- `safety_inspection_items` (inspection_id, checklist_code, label, legal_basis, result[`pass`|`fail`|`na`], note, photos jsonb)
+- `safety_inspection_actions` (inspection_id, item_id, issue, severity, assignee_id, due_date, status[`pending`|`in_progress`|`done`], evidence_photos jsonb, completed_at, completed_by)
+- RLS: 프로젝트 멤버 조회, 회사 격리, 작성자/Master 수정.
+
+### 페이지: `src/pages/SafetyInspections.tsx`
+- 점검 유형 선택 → 공종 선택 → **체크리스트 자동 생성** (`src/lib/inspectionTemplates.ts` 신규: 공종×유형별 법적 필수 항목 매핑).
+- 항목별 결과/사진/비고 입력 (`attachments` 버킷 사용).
+- Fail 항목은 즉시 **조치 요청 자동 생성** → 담당자 지정.
+- 조치 화면: 상태 변경 시 **증빙 사진 필수 검증**.
+- 미조치 항목은 대시보드/할일/감독대응 모드에 자동 표시.
+- **PDF/인쇄**: A4, Malgun Gothic, 점검표 + 사진 그리드 + 조치 요약 (기존 `printTbmLog` 패턴 재사용).
+
+---
+
+## Phase 3 — 사고 / 아차사고 관리
+### DB
+- `safety_incidents` (project_id, company_id, type[`accident`|`near_miss`], occurred_at, location, description, cause_analysis, recurrence_prevention, severity, photos jsonb, linked_run_id, status, is_deleted)
+
+### 페이지: `src/pages/Incidents.tsx`
+- 사고/아차사고 분리 탭, 원인분석·재발방지 필드.
+- **연동**: 사고 등록 시 해당 공종 위험성평가에 "사고 이력 반영" 플래그 + 관련 점검 체크리스트 항목 강화(가중치).
+- 기존 `accident_cases` 자동 추천 로직과 연결 (`src/components/AccidentPrediction.tsx`).
+
+---
+
+## Phase 4 — 교육관리
+### DB
+- `safety_trainings` (project_id, title, type[`legal`|`special`|`tbm`|`new_worker`], training_date, duration_hours, trainer, materials jsonb, is_deleted)
+- `safety_training_attendances` (training_id, worker_name, worker_phone, company_id, signature_data, attended)
+
+### 페이지: `src/pages/Trainings.tsx`
+- 법정 교육 등록, 참석자 서명/기록.
+- **작업 통제 연동**: 작업허가서 실행 가능 조건에 `교육 이수` 추가 (Phase 6).
+
+---
+
+## Phase 5 — 법적업무 자동 관리 강화
+기존 `LegalDuties` 확장:
+- Daily/Weekly/Monthly 구분 필터.
+- 오늘 할 일 자동 집계 → `TodoDashboard` 카드 추가.
+- TBM/점검/교육이 의무로 자동 생성되도록 트리거(클라이언트 자동 시드).
+
+---
+
+## Phase 6 — 작업 통제 게이트 확장
+`src/pages/WorkPermits.tsx` `exec_ok` 계산에 다음 추가:
+- 당일 안전점검(pre_work) 완료
+- 작업자 법정교육 이수 상태(회사/공종 단위)
+
+미충족 시 "작업 불가" 배지 + 사유 표시.
+
+---
+
+## 기술 메모
+- 모든 신규 테이블 RLS: `is_project_member` + `can_access_safety_cost` 패턴 재사용.
+- 사진 업로드: 기존 `attachments` 버킷, `project_id/feature/...` 경로.
+- PDF: 클라이언트 `window.print()` + Malgun Gothic 인라인 스타일 (기존 TBM 패턴).
+- IME: 모든 텍스트 입력은 `IMESafeInput` 사용.
+- Term: `산업안전보건관리비`, `굴착기` 등 `termCorrection` 적용.
+
+---
+
+## 진행 방식
+범위가 매우 크므로 **Phase 1(사이드바) → Phase 2(안전점검) 우선 구현** 후 작동 확인 받고 Phase 3~6 순차 진행합니다.
+
+진행해도 될까요? 또는 우선순위를 바꾸고 싶은 Phase가 있으면 알려주세요.

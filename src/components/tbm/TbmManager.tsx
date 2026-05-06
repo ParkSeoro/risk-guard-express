@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText } from 'lucide-react';
+import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText, Copy } from 'lucide-react';
 
 interface Props {
   projectId: string;
@@ -21,7 +21,21 @@ interface Props {
 type TbmSession = {
   id: string; title: string; tbm_date: string; location: string; leader_name: string;
   qr_token: string; is_active: boolean; briefing_summary: string; briefing_risks: any;
+  work_content?: string; work_steps?: string; special_notes?: string; prohibited_actions?: string;
+  process_category?: string; company_id?: string; company_name?: string;
 };
+
+const BRIEFING_TEMPLATE = `■ 오늘 작업 설명:
+- 
+
+■ 주요 위험 강조:
+- 
+
+■ 특별 주의사항:
+- 
+
+■ 작업 금지사항:
+- `;
 
 export default function TbmManager({ projectId, runId, defaultRisks = [] }: Props) {
   const { toast } = useToast();
@@ -40,10 +54,17 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const [tbmDate, setTbmDate] = useState(new Date().toISOString().slice(0, 10));
   const [location, setLocation] = useState('');
   const [leader, setLeader] = useState('');
-  const [summary, setSummary] = useState('');
+  const [summary, setSummary] = useState(BRIEFING_TEMPLATE);
   const [companyId, setCompanyId] = useState('');
   const [processCategory, setProcessCategory] = useState('');
   const [companies, setCompanies] = useState<any[]>([]);
+  const [workContent, setWorkContent] = useState('');
+  const [workSteps, setWorkSteps] = useState('');
+  const [specialNotes, setSpecialNotes] = useState('');
+  const [prohibitedActions, setProhibitedActions] = useState('');
+  const [risksDraft, setRisksDraft] = useState<Array<{ hazard: string; grade: string; measure: string }>>([]);
+  const [showCopyDialog, setShowCopyDialog] = useState(false);
+  const [copyCandidates, setCopyCandidates] = useState<TbmSession[]>([]);
 
   const load = async () => {
     let q = supabase.from('tbm_sessions' as any).select('*').eq('project_id', projectId).order('created_at', { ascending: false });
@@ -58,24 +79,73 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
   const resetForm = () => {
     setTitle(''); setTbmDate(new Date().toISOString().slice(0, 10));
-    setLocation(''); setLeader(''); setSummary(''); setCompanyId(''); setProcessCategory('');
+    setLocation(''); setLeader(''); setSummary(BRIEFING_TEMPLATE);
+    setCompanyId(''); setProcessCategory('');
+    setWorkContent(''); setWorkSteps(''); setSpecialNotes(''); setProhibitedActions('');
+    setRisksDraft(defaultRisks.length ? defaultRisks.map(r => ({ ...r })) : []);
   };
+
+  // Initialize risksDraft when opening create dialog
+  useEffect(() => {
+    if (showCreate && !editing) {
+      setRisksDraft(defaultRisks.length ? defaultRisks.map(r => ({ ...r })) : []);
+    }
+  }, [showCreate, editing, defaultRisks]);
 
   const openEdit = (s: any) => {
     setEditing(s);
     setTitle(s.title || ''); setTbmDate(s.tbm_date || ''); setLocation(s.location || '');
     setLeader(s.leader_name || ''); setSummary(s.briefing_summary || '');
     setCompanyId(s.company_id || ''); setProcessCategory(s.process_category || '');
+    setWorkContent(s.work_content || ''); setWorkSteps(s.work_steps || '');
+    setSpecialNotes(s.special_notes || ''); setProhibitedActions(s.prohibited_actions || '');
+    const r = s.briefing_risks;
+    const arr = Array.isArray(r) ? r : (r ? (() => { try { return JSON.parse(r); } catch { return []; } })() : []);
+    setRisksDraft(arr.map((x: any) => ({ hazard: x.hazard || '', grade: x.grade || '', measure: x.measure || '' })));
   };
+
+  const openCopyDialog = async () => {
+    let q = supabase.from('tbm_sessions' as any)
+      .select('*').eq('project_id', projectId)
+      .order('tbm_date', { ascending: false }).limit(20);
+    if (processCategory) q = q.eq('process_category', processCategory);
+    const { data } = await q;
+    setCopyCandidates((data as any) || []);
+    setShowCopyDialog(true);
+  };
+
+  const applyCopyFrom = (s: any) => {
+    setWorkContent(s.work_content || '');
+    setWorkSteps(s.work_steps || '');
+    setSpecialNotes(s.special_notes || '');
+    setProhibitedActions(s.prohibited_actions || '');
+    setSummary(s.briefing_summary || BRIEFING_TEMPLATE);
+    if (!processCategory && s.process_category) setProcessCategory(s.process_category);
+    const r = s.briefing_risks;
+    const arr = Array.isArray(r) ? r : (r ? (() => { try { return JSON.parse(r); } catch { return []; } })() : []);
+    setRisksDraft(arr.map((x: any) => ({ hazard: x.hazard || '', grade: x.grade || '', measure: x.measure || '' })));
+    setShowCopyDialog(false);
+    toast({ title: '이전 TBM 내용을 불러왔습니다.', description: '근로자/서명/날짜는 복사되지 않았습니다.' });
+  };
+
+  const updateRisk = (idx: number, key: 'hazard' | 'grade' | 'measure', value: string) => {
+    setRisksDraft(prev => prev.map((r, i) => i === idx ? { ...r, [key]: value } : r));
+  };
+  const addRisk = () => setRisksDraft(prev => [...prev, { hazard: '', grade: '', measure: '' }]);
+  const removeRisk = (idx: number) => setRisksDraft(prev => prev.filter((_, i) => i !== idx));
 
   const save = async () => {
     if (!title.trim()) return toast({ title: '제목을 입력하세요.', variant: 'destructive' });
     if (!companyId) return toast({ title: '회사(시공사/협력사)를 선택하세요.', variant: 'destructive' });
     const cmpName = companies.find(c => c.id === companyId)?.name || '';
+    const cleanRisks = risksDraft.filter(r => (r.hazard || '').trim() || (r.measure || '').trim());
     const payload: any = {
       title, tbm_date: tbmDate, location, leader_name: leader,
       briefing_summary: summary, company_id: companyId, company_name: cmpName,
       process_category: processCategory,
+      work_content: workContent, work_steps: workSteps,
+      special_notes: specialNotes, prohibited_actions: prohibitedActions,
+      briefing_risks: cleanRisks as any,
     };
     if (editing) {
       const { error } = await supabase.from('tbm_sessions' as any).update(payload).eq('id', editing.id);
@@ -85,7 +155,6 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     } else {
       const { error } = await supabase.from('tbm_sessions' as any).insert({
         ...payload, project_id: projectId, run_id: runId || null,
-        briefing_risks: defaultRisks as any,
       });
       if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
       toast({ title: 'TBM이 생성되었습니다.' });
@@ -305,22 +374,30 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         <tr><th>공종</th><td>${esc(sAny.process_category || '-')}</td><th>회사 (시공사/협력사)</th><td>${esc(sAny.company_name || '-')}</td></tr>
       </table>
 
-      <h2>2. 작업 내용 / 주요 작업내용</h2>
-      <table><tr><td style="min-height:18mm;white-space:pre-wrap">${esc(s.briefing_summary || '-')}</td></tr></table>
+      <h2>2. 오늘 작업 내용</h2>
+      <table><tr><td style="min-height:14mm;white-space:pre-wrap">${esc(sAny.work_content || '-')}</td></tr></table>
 
-      <h2>3. 위험요인 및 안전대책 (위험성평가 연동)</h2>
+      <h2>3. 작업 순서</h2>
+      <table><tr><td style="min-height:14mm;white-space:pre-wrap">${esc(sAny.work_steps || '-')}</td></tr></table>
+
+      <h2>4. 위험요인 및 안전대책 (위험성평가 연동)</h2>
       <table>
         <thead><tr><th style="width:40%">위험요인</th><th style="width:15%" class="center">위험등급</th><th>안전대책</th></tr></thead>
         <tbody>${risksHtml}</tbody>
       </table>
 
-      <h2>4. 교육 / 브리핑 내용</h2>
+      <h2>5. 특별 주의사항</h2>
+      <table><tr><td style="min-height:12mm;white-space:pre-wrap">${esc(sAny.special_notes || '-')}</td></tr></table>
+
+      <h2>6. 작업 금지사항</h2>
+      <table><tr><td style="min-height:12mm;white-space:pre-wrap">${esc(sAny.prohibited_actions || '-')}</td></tr></table>
+
+      <h2>7. TBM 브리핑 내용</h2>
       <table>
-        <tr><th style="width:22%">작업 전 안전교육</th><td style="white-space:pre-wrap">${esc(s.briefing_summary || '-')}</td></tr>
-        <tr><th>당일 위험요소 설명</th><td>위 3항 위험요인 전체 항목에 대해 작업 전 설명·확인하였음</td></tr>
+        <tr><td style="white-space:pre-wrap;min-height:18mm">${esc(s.briefing_summary || '-')}</td></tr>
       </table>
 
-      <h2>5. 근로자 서명</h2>
+      <h2>8. 근로자 서명</h2>
       <table>
         <thead><tr>
           <th style="width:8%" class="center">No</th>
@@ -385,16 +462,28 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
       )}
 
       <Dialog open={showCreate || !!editing} onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditing(null); resetForm(); } }}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{editing ? 'TBM 수정' : 'TBM 생성'}</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div><Label>제목 *</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="2026-05-06 오전 TBM" /></div>
-            <div className="grid grid-cols-2 gap-2">
-              <div><Label>일자</Label><Input type="date" value={tbmDate} onChange={(e) => setTbmDate(e.target.value)} /></div>
-              <div><Label>장소</Label><Input value={location} onChange={(e) => setLocation(e.target.value)} /></div>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center justify-between gap-2">
+              <DialogTitle>{editing ? 'TBM 수정' : 'TBM 생성'}</DialogTitle>
+              <Button type="button" size="sm" variant="outline" onClick={openCopyDialog}>
+                <Copy className="h-3 w-3 mr-1" />이전 TBM 불러오기
+              </Button>
             </div>
-            <div><Label>주관자</Label><Input value={leader} onChange={(e) => setLeader(e.target.value)} /></div>
-            <div className="grid grid-cols-2 gap-2">
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* 기본 정보 */}
+            <section className="space-y-2 rounded-md border p-3">
+              <p className="text-xs font-semibold text-muted-foreground">① 기본 정보</p>
+              <div><Label>제목 *</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="2026-05-06 오전 TBM" /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>일자</Label><Input type="date" value={tbmDate} onChange={(e) => setTbmDate(e.target.value)} /></div>
+                <div><Label>장소</Label><Input value={location} onChange={(e) => setLocation(e.target.value)} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>주관자</Label><Input value={leader} onChange={(e) => setLeader(e.target.value)} /></div>
+                <div><Label>공종</Label><Input value={processCategory} onChange={(e) => setProcessCategory(e.target.value)} placeholder="예: 철근콘크리트" /></div>
+              </div>
               <div>
                 <Label>회사 (시공사/협력사) *</Label>
                 <select className="w-full h-10 rounded-md border bg-background px-3 text-sm" value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
@@ -402,15 +491,86 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
                   {companies.map(c => <option key={c.id} value={c.id}>{c.name} ({c.type})</option>)}
                 </select>
               </div>
-              <div><Label>공종</Label><Input value={processCategory} onChange={(e) => setProcessCategory(e.target.value)} placeholder="예: 철근콘크리트" /></div>
-            </div>
-            <div><Label>브리핑 요약</Label><Textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={4} /></div>
-            {!editing && defaultRisks.length > 0 && (
-              <p className="text-xs text-muted-foreground">위험성평가에서 주요 위험 {defaultRisks.length}건이 자동 포함됩니다.</p>
-            )}
+            </section>
+
+            {/* 작업내용 */}
+            <section className="space-y-2 rounded-md border p-3">
+              <p className="text-xs font-semibold text-muted-foreground">② 작업내용</p>
+              <div><Label>오늘 작업 내용</Label><Textarea value={workContent} onChange={(e) => setWorkContent(e.target.value)} rows={3} placeholder="예: 3F 슬래브 철근 배근 및 점검" /></div>
+              <div><Label>작업 순서</Label><Textarea value={workSteps} onChange={(e) => setWorkSteps(e.target.value)} rows={4} placeholder="1) 자재 반입&#10;2) 배근 위치 측량&#10;3) 철근 배근&#10;4) 결속 및 검측" /></div>
+            </section>
+
+            {/* 위험요인 / 안전대책 */}
+            <section className="space-y-2 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-muted-foreground">③ 위험요인 및 안전대책 (위험성평가 자동 연동)</p>
+                <Button type="button" size="sm" variant="ghost" onClick={addRisk}><Plus className="h-3 w-3 mr-1" />추가</Button>
+              </div>
+              {risksDraft.length === 0 ? (
+                <p className="text-xs text-muted-foreground">자동 불러올 위험요인이 없습니다. "추가"로 직접 입력하세요.</p>
+              ) : (
+                <div className="space-y-2">
+                  {risksDraft.map((r, i) => (
+                    <div key={i} className="grid grid-cols-12 gap-2 items-start">
+                      <div className="col-span-5"><Label className="text-[11px]">위험요인</Label><Textarea rows={2} value={r.hazard} onChange={(e) => updateRisk(i, 'hazard', e.target.value)} /></div>
+                      <div className="col-span-2"><Label className="text-[11px]">등급</Label><Input value={r.grade} onChange={(e) => updateRisk(i, 'grade', e.target.value)} placeholder="상/중/하" /></div>
+                      <div className="col-span-4"><Label className="text-[11px]">안전대책</Label><Textarea rows={2} value={r.measure} onChange={(e) => updateRisk(i, 'measure', e.target.value)} /></div>
+                      <div className="col-span-1 flex items-end h-full">
+                        <Button type="button" size="sm" variant="ghost" onClick={() => removeRisk(i)} title="삭제"><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* 주의/금지 */}
+            <section className="space-y-2 rounded-md border p-3">
+              <p className="text-xs font-semibold text-muted-foreground">④ 특별 주의사항 / 작업 금지사항</p>
+              <div><Label>특별 주의사항</Label><Textarea value={specialNotes} onChange={(e) => setSpecialNotes(e.target.value)} rows={3} placeholder="예: 강풍 시 고소작업 중지, 상하 동시작업 금지 등" /></div>
+              <div><Label>작업 금지사항</Label><Textarea value={prohibitedActions} onChange={(e) => setProhibitedActions(e.target.value)} rows={3} placeholder="예: 안전대 미체결 작업 금지, 무자격자 장비 운전 금지" /></div>
+            </section>
+
+            {/* 브리핑 */}
+            <section className="space-y-2 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-muted-foreground">⑤ TBM 브리핑 내용</p>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setSummary(BRIEFING_TEMPLATE)}>템플릿 불러오기</Button>
+              </div>
+              <Textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={8} placeholder={BRIEFING_TEMPLATE} />
+            </section>
+
             <p className="text-xs text-warning">⚠ 회사 선택 필수: QR 스캔 시 해당 회사의 위험성평가만 매칭됩니다.</p>
             <Button onClick={save} className="w-full">{editing ? '수정' : '생성'}</Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 이전 TBM 불러오기 */}
+      <Dialog open={showCopyDialog} onOpenChange={setShowCopyDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>이전 TBM 불러오기 {processCategory && `· ${processCategory}`}</DialogTitle></DialogHeader>
+          <p className="text-xs text-muted-foreground mb-2">
+            동일 공종의 최근 TBM이 우선 표시됩니다. 작업내용·위험요인·안전대책·브리핑만 복사되며, 근로자/서명/날짜는 복사되지 않습니다.
+          </p>
+          {copyCandidates.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">불러올 TBM이 없습니다.</p>
+          ) : (
+            <div className="space-y-2">
+              {copyCandidates.map((c: any) => (
+                <div key={c.id} className="flex items-start justify-between gap-2 border rounded-md p-2">
+                  <div className="min-w-0 text-sm">
+                    <p className="font-semibold truncate">{c.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {c.tbm_date} · {c.process_category || '-'} · {c.company_name || '-'}
+                    </p>
+                    {c.work_content && <p className="text-xs mt-1 line-clamp-2">{c.work_content}</p>}
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => applyCopyFrom(c)}>불러오기</Button>
+                </div>
+              ))}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

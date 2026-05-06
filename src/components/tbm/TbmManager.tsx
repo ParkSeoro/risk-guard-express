@@ -54,19 +54,42 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
   useEffect(() => { load(); }, [projectId, runId]);
 
-  const create = async () => {
+  const resetForm = () => {
+    setTitle(''); setTbmDate(new Date().toISOString().slice(0, 10));
+    setLocation(''); setLeader(''); setSummary(''); setCompanyId(''); setProcessCategory('');
+  };
+
+  const openEdit = (s: any) => {
+    setEditing(s);
+    setTitle(s.title || ''); setTbmDate(s.tbm_date || ''); setLocation(s.location || '');
+    setLeader(s.leader_name || ''); setSummary(s.briefing_summary || '');
+    setCompanyId(s.company_id || ''); setProcessCategory(s.process_category || '');
+  };
+
+  const save = async () => {
     if (!title.trim()) return toast({ title: '제목을 입력하세요.', variant: 'destructive' });
-    if (!companyId) return toast({ title: '회사(시공사/협력사)를 선택하세요. QR 매칭에 필수입니다.', variant: 'destructive' });
+    if (!companyId) return toast({ title: '회사(시공사/협력사)를 선택하세요.', variant: 'destructive' });
     const cmpName = companies.find(c => c.id === companyId)?.name || '';
-    const { error } = await supabase.from('tbm_sessions' as any).insert({
-      project_id: projectId, run_id: runId || null,
+    const payload: any = {
       title, tbm_date: tbmDate, location, leader_name: leader,
-      briefing_summary: summary, briefing_risks: defaultRisks as any,
-      company_id: companyId, company_name: cmpName, process_category: processCategory,
-    });
-    if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
-    toast({ title: 'TBM이 생성되었습니다.' });
-    setShowCreate(false); setTitle(''); setLocation(''); setLeader(''); setSummary(''); setCompanyId(''); setProcessCategory('');
+      briefing_summary: summary, company_id: companyId, company_name: cmpName,
+      process_category: processCategory,
+    };
+    if (editing) {
+      const { error } = await supabase.from('tbm_sessions' as any).update(payload).eq('id', editing.id);
+      if (error) return toast({ title: '수정 실패', description: error.message, variant: 'destructive' });
+      toast({ title: 'TBM이 수정되었습니다.' });
+      setEditing(null);
+    } else {
+      const { error } = await supabase.from('tbm_sessions' as any).insert({
+        ...payload, project_id: projectId, run_id: runId || null,
+        briefing_risks: defaultRisks as any,
+      });
+      if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
+      toast({ title: 'TBM이 생성되었습니다.' });
+      setShowCreate(false);
+    }
+    resetForm();
     load();
   };
 
@@ -76,8 +99,11 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   };
 
   const remove = async (s: TbmSession) => {
-    if (!confirm('이 TBM을 삭제하시겠습니까?')) return;
-    await supabase.from('tbm_sessions' as any).delete().eq('id', s.id);
+    const reason = prompt(`이 TBM "${s.title}"을(를) 삭제합니다. 사유를 입력하세요.`);
+    if (!reason) return;
+    const { error } = await supabase.from('tbm_sessions' as any).delete().eq('id', s.id);
+    if (error) return toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
+    toast({ title: 'TBM이 삭제되었습니다.' });
     load();
   };
 

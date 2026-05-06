@@ -155,6 +155,28 @@ const AssessmentRunDetail = () => {
   // Worker participation photos
   const [workerPhotoUploading, setWorkerPhotoUploading] = useState(false);
 
+  // Worker opinion / health / accident counts (for approval gate)
+  const [participationCounts, setParticipationCounts] = useState({ opinions: 0, healths: 0, accidents: 0, unreviewedHealth: 0, unreviewedAi: 0 });
+  const refreshParticipation = useCallback(async () => {
+    if (!runId) return;
+    const [op, hz, ac, ai] = await Promise.all([
+      supabase.from('worker_opinions' as any).select('id', { count: 'exact', head: true }).eq('run_id', runId),
+      supabase.from('health_hazards' as any).select('id, is_user_reviewed').eq('run_id', runId),
+      supabase.from('assessment_accidents' as any).select('id', { count: 'exact', head: true }).eq('run_id', runId),
+      supabase.from('risk_items').select('id, is_user_reviewed, source_type').eq('run_id', runId).eq('source_type', 'ai_opinion'),
+    ]);
+    const healthRows = (hz.data as any[]) || [];
+    const aiRows = (ai.data as any[]) || [];
+    setParticipationCounts({
+      opinions: op.count || 0,
+      healths: healthRows.length,
+      accidents: ac.count || 0,
+      unreviewedHealth: healthRows.filter(r => !r.is_user_reviewed).length,
+      unreviewedAi: aiRows.filter((r: any) => !r.is_user_reviewed).length,
+    });
+  }, [runId]);
+  useEffect(() => { refreshParticipation(); }, [refreshParticipation]);
+
   const recommendationKey = (item: { process?: string; sub_task?: string; hazard?: string }) =>
     `${item.process || ''}|||${item.sub_task || ''}|||${item.hazard || ''}`;
 

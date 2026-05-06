@@ -42,6 +42,14 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
   const [aiProcess, setAiProcess] = useState('');
   const [aiEquipment, setAiEquipment] = useState('');
 
+  // 고위험 작업 자동 사고사례 생성
+  const [autoAccidentEnabled, setAutoAccidentEnabled] = useState(true);
+  const [autoAccidentRan, setAutoAccidentRan] = useState(false);
+  const [autoAccidentLoading, setAutoAccidentLoading] = useState(false);
+  const detectedHighRisk = useMemo(() => detectHighRiskCategories(riskItems), [riskItems]);
+  const autoCases = accidents.filter(a => a.source_type === 'auto');
+  const hasHighRiskWithoutCases = detectedHighRisk.length > 0 && autoCases.length === 0;
+
   const reload = async () => {
     const [op, hz, ac] = await Promise.all([
       supabase.from('worker_opinions' as any).select('*').eq('run_id', runId).order('created_at'),
@@ -53,6 +61,39 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
     setAccidents((ac.data as any[]) || []);
   };
   useEffect(() => { reload(); }, [runId]);
+
+  const runAutoAccidentGeneration = async (silent = false) => {
+    if (!canEdit || detectedHighRisk.length === 0) return;
+    setAutoAccidentLoading(true);
+    try {
+      const res = await autoGenerateAccidentCases({ runId, projectId, items: riskItems, userId });
+      await reload();
+      onChanged?.();
+      if (!silent) {
+        toast({
+          title: `사고사례 자동 생성 완료`,
+          description: `고위험 카테고리 ${res.categories.length}건, 사례 ${res.inserted}건 추가`,
+        });
+      }
+    } catch (e: any) {
+      if (!silent) toast({ title: '자동 생성 실패', description: e.message, variant: 'destructive' });
+    } finally {
+      setAutoAccidentLoading(false);
+      setAutoAccidentRan(true);
+    }
+  };
+
+  // 자동 트리거: 위험성평가 항목 로드 후 1회
+  useEffect(() => {
+    if (!autoAccidentEnabled || autoAccidentRan) return;
+    if (!canEdit) return;
+    if (riskItems.length === 0) return;
+    if (detectedHighRisk.length === 0) { setAutoAccidentRan(true); return; }
+    if (autoCases.length > 0) { setAutoAccidentRan(true); return; }
+    runAutoAccidentGeneration(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [riskItems.length, autoAccidentEnabled, canEdit]);
+
 
   // ---------- Opinion ----------
   const addOpinion = async () => {

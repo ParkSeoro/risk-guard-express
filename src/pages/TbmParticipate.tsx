@@ -220,6 +220,10 @@ export default function TbmParticipate() {
             </label>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-base">전자서명 *</CardTitle>
             <Button variant="ghost" size="sm" onClick={clearSig}>지우기</Button>
           </CardHeader>
           <CardContent>

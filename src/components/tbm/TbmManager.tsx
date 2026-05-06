@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText } from 'lucide-react';
+import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText, Copy } from 'lucide-react';
 
 interface Props {
   projectId: string;
@@ -21,7 +21,21 @@ interface Props {
 type TbmSession = {
   id: string; title: string; tbm_date: string; location: string; leader_name: string;
   qr_token: string; is_active: boolean; briefing_summary: string; briefing_risks: any;
+  work_content?: string; work_steps?: string; special_notes?: string; prohibited_actions?: string;
+  process_category?: string; company_id?: string; company_name?: string;
 };
+
+const BRIEFING_TEMPLATE = `■ 오늘 작업 설명:
+- 
+
+■ 주요 위험 강조:
+- 
+
+■ 특별 주의사항:
+- 
+
+■ 작업 금지사항:
+- `;
 
 export default function TbmManager({ projectId, runId, defaultRisks = [] }: Props) {
   const { toast } = useToast();

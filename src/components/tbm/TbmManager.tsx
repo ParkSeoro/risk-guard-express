@@ -107,8 +107,20 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     load();
   };
 
+  const getPublicBase = () => {
+    const stored = (typeof window !== 'undefined' && localStorage.getItem('tbm_public_base_url')) || '';
+    if (stored) return stored.replace(/\/$/, '');
+    const origin = window.location.origin;
+    // 미리보기/샌드박스 도메인은 로그인 필요 → 게시 도메인으로 대체
+    if (/id-preview--|lovable\.dev|lovable-sandbox|localhost|127\.0\.0\.1/.test(origin)) {
+      return 'https://safenex.org';
+    }
+    return origin;
+  };
+
   const openQr = async (s: TbmSession) => {
-    const url = `${window.location.origin}/tbm/${s.qr_token}`;
+    const base = getPublicBase();
+    const url = `${base}/tbm/${s.qr_token}`;
     const dataUrl = await QRCode.toDataURL(url, { width: 400, margin: 2 });
     setQrDataUrl(dataUrl);
     setQrSession(s);

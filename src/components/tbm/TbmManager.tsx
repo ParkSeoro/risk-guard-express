@@ -397,7 +397,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         <tr><td style="white-space:pre-wrap;min-height:18mm">${esc(s.briefing_summary || '-')}</td></tr>
       </table>
 
-      <h2>5. 근로자 서명</h2>
+      <h2>8. 근로자 서명</h2>
       <table>
         <thead><tr>
           <th style="width:8%" class="center">No</th>

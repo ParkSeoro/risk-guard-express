@@ -42,6 +42,11 @@ import TbmLogs from "./pages/TbmLogs";
 import InspectionMode from "./pages/InspectionMode";
 import SafetyInspections from "./pages/SafetyInspections";
 import SiteReadinessChecklist from "./pages/SiteReadinessChecklist";
+import EducationMaterials from "./pages/EducationMaterials";
+import WorkerManagement from "./pages/WorkerManagement";
+import WorkerAttendance from "./pages/WorkerAttendance";
+import WorkerRegister from "./pages/WorkerRegister";
+import WorkerPortal from "./pages/WorkerPortal";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -135,6 +140,9 @@ function ProtectedRoutes() {
         <Route path="/inspection-mode" element={<InspectionMode />} />
         <Route path="/safety-inspections" element={<SafetyInspections />} />
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
+        <Route path="/education-materials" element={<EducationMaterials />} />
+        <Route path="/workers" element={<WorkerManagement />} />
+        <Route path="/worker-attendance" element={<WorkerAttendance />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>
@@ -159,6 +167,8 @@ const App = () => (
             <Route path="/auth" element={<AuthRoute />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/tbm/:token" element={<TbmParticipate />} />
+            <Route path="/worker/register" element={<WorkerRegister />} />
+            <Route path="/worker/portal/:token" element={<WorkerPortal />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
         </AuthProvider>

@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, QrCode, Printer, Users, Trash2, Power } from 'lucide-react';
+import { Plus, QrCode, Printer, Users, Trash2, Power, Pencil } from 'lucide-react';
 
 interface Props {
   projectId: string;

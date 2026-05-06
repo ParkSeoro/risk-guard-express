@@ -135,12 +135,16 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   };
 
   const createQrToken = () => {
-    if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-      return crypto.randomUUID().replace(/-/g, '');
+    const webCrypto = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+    if (webCrypto?.randomUUID) {
+      return webCrypto.randomUUID().replace(/-/g, '');
     }
-    const bytes = new Uint8Array(24);
-    crypto.getRandomValues(bytes);
-    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    if (webCrypto?.getRandomValues) {
+      const bytes = new Uint8Array(24);
+      webCrypto.getRandomValues(bytes);
+      return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    }
+    return `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
   };
 
   const hasValidQrToken = (token?: string) => /^[a-zA-Z0-9_-]{20,}$/.test(token || '');

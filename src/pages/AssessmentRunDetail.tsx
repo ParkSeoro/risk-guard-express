@@ -1326,6 +1326,17 @@ const AssessmentRunDetail = () => {
         </CardContent>
       </Card>
 
+      {/* Worker Opinion / Health / Accident Panel */}
+      <div className="print:hidden">
+        <WorkerParticipationPanel
+          runId={runId!}
+          projectId={run.project_id}
+          userId={user?.id}
+          canEdit={!!(canEdit || canForceEdit)}
+          onChanged={refreshParticipation}
+        />
+      </div>
+
       {/* Worker Participation Photos */}
       <Card className="print:hidden">
         <CardContent className="py-3">

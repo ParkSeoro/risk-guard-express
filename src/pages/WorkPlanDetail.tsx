@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import {
   ArrowLeft, Save, FileText, Upload, Calculator, CheckCircle2, AlertTriangle,
   Sparkles, Printer, Download, SendHorizontal, Loader2, Wrench, Copy, Eye,

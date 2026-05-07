@@ -76,10 +76,13 @@ export default function SystemTestEngine() {
 
     setProgress({ current: "시작", done: 0, total: keys.length });
     try {
+      // Always run coverage last so it can audit prior results
+      const ordered = [...keys].sort((a, b) => (a === "coverage" ? 1 : b === "coverage" ? -1 : 0));
       let idx = 0;
-      for (const k of keys) {
+      for (const k of ordered) {
         idx++;
-        setProgress({ current: SCENARIOS[k].label, done: idx - 1, total: keys.length });
+        setProgress({ current: SCENARIOS[k].label, done: idx - 1, total: ordered.length });
+        ctx.priorResults = all;
         const stepResults = await SCENARIOS[k].run(ctx);
         all.push(...stepResults);
         setResults([...all]);

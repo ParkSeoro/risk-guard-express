@@ -37,6 +37,8 @@ export default function InstallPrompt() {
   const [expanded, setExpanded] = useState(false);
   const platform = useMemo(detectPlatform, []);
   const inIframe = useMemo(isInIframe, []);
+  const loc = useLocation();
+  const allowed = ALLOWED_PATHS.some((p) => loc.pathname === p || loc.pathname.startsWith(p + "/"));
 
   // 배포 주소 (iframe 안이면 top 주소 추정 불가 → 알려진 호스트 우선순위)
   const deployUrl = useMemo(() => {

@@ -51,6 +51,7 @@ import Manual from "./pages/Manual";
 import MobileHome from "./pages/MobileHome";
 import MobileInspect from "./pages/MobileInspect";
 import MobileAlerts from "./pages/MobileAlerts";
+import MobileActions from "./pages/MobileActions";
 import InstallPrompt from "./components/InstallPrompt";
 import { useOfflineSync } from "./hooks/useOfflineSync";
 import NotFound from "./pages/NotFound";
@@ -179,6 +180,7 @@ const App = () => (
             <Route path="/m" element={<MobileHome />} />
             <Route path="/m/inspect" element={<MobileInspect />} />
             <Route path="/m/alerts" element={<MobileAlerts />} />
+            <Route path="/m/actions" element={<MobileActions />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
           <InstallPrompt />

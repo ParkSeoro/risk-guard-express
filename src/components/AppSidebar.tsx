@@ -3,7 +3,7 @@ import {
   FileCheck, HardHat, ChevronLeft, LogOut, User,
   Shield, SearchCheck, Settings,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
-  ClipboardCheck, History, ChevronDown
+  ClipboardCheck, History, ChevronDown, Beaker, Activity
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink } from "@/components/NavLink";
@@ -72,6 +72,11 @@ const adminItems: Item[] = [
   { title: "권한 점검", url: "/permission-test", icon: Shield },
   { title: "사용 설명서", url: "/manual", icon: FileText },
   { title: "설정", url: "/settings", icon: Settings },
+];
+
+const masterOnlyItems: Item[] = [
+  { title: "AI 테스트 엔진", url: "/admin/ai-test", icon: Beaker },
+  { title: "AI 로그", url: "/admin/ai-logs", icon: Activity },
 ];
 
 export function AppSidebar() {

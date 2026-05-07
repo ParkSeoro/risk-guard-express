@@ -33,6 +33,8 @@ export default function SystemTestEngine() {
   const [results, setResults] = useState<StepResult[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [command, setCommand] = useState("");
+  const [commandHint, setCommandHint] = useState<string>("");
 
   useEffect(() => {
     if (!isMaster) return;

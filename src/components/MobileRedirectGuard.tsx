@@ -14,6 +14,7 @@ const MOBILE_EXCLUDE = [
   /^\/tbm\//,
   /^\/manual/,
   /^\/assessment-run\//,
+  /^\/work-plan\//,
   /^\/worker-attendance/,
 ];
 

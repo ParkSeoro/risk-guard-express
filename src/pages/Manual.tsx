@@ -10,10 +10,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { restartTutorial } from "@/components/TutorialOverlay";
 import {
   HardHat, ShieldAlert, FileText, FileSignature, QrCode, ClipboardCheck,
   Users, ClipboardList, BookOpen, ArrowLeft, CheckCircle2, AlertTriangle,
-  LogIn, Bot, Sparkles, Search, X, MessageSquare
+  LogIn, Bot, Sparkles, Search, X, MessageSquare, Printer, PlayCircle,
+  ReceiptText, Scale, ScanLine, Hand, PenLine
 } from "lucide-react";
 
 type Section = {

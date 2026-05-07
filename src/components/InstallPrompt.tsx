@@ -90,7 +90,7 @@ export default function InstallPrompt() {
 
   const openUrl = () => window.open(deployUrl, "_blank", "noopener");
 
-  if (!show) return null;
+  if (!show || !allowed) return null;
 
   return (
     <div className="fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto bg-card border-2 border-primary rounded-xl shadow-2xl overflow-hidden">

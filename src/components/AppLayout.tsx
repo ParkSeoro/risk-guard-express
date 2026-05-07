@@ -4,6 +4,8 @@ import { User, LogOut, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { NotificationBell } from "@/components/NotificationBell";
+import { HelpButton } from "@/components/HelpButton";
+import { TutorialOverlay } from "@/components/TutorialOverlay";
 import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createContext, useContext } from "react";

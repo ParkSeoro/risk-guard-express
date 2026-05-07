@@ -16,8 +16,38 @@ export default function MobileScan() {
   const [last, setLast] = useState<{ token: string; url: string } | null>(null);
   const [error, setError] = useState("");
 
+  // Capacitor 네이티브 환경 감지 (정식 앱 빌드)
+  const isNative = typeof (window as any)?.Capacitor?.isNativePlatform === "function"
+    && (window as any).Capacitor.isNativePlatform();
+
+  const startNative = async () => {
+    try {
+      const mod: any = await import("@capacitor-community/barcode-scanner");
+      const BarcodeScanner = mod.BarcodeScanner;
+      const status = await BarcodeScanner.checkPermission({ force: true });
+      if (!status.granted) {
+        setError("카메라 권한이 거부되었습니다. 시스템 설정에서 카메라를 허용해주세요.");
+        return;
+      }
+      document.body.classList.add("scanner-active");
+      await BarcodeScanner.hideBackground();
+      setScanning(true);
+      const result = await BarcodeScanner.startScan();
+      document.body.classList.remove("scanner-active");
+      setScanning(false);
+      if (result.hasContent) {
+        await onDetect(result.content);
+      }
+    } catch (e: any) {
+      document.body.classList.remove("scanner-active");
+      setScanning(false);
+      setError("네이티브 스캔 실패: " + (e?.message || "오류"));
+    }
+  };
+
   const start = async () => {
     setError(""); setLast(null);
+    if (isNative) return startNative();
     // 1) 보안 컨텍스트 / API 가용성 점검
     if (typeof window !== "undefined" && !window.isSecureContext) {
       setError("HTTPS 환경에서만 카메라를 사용할 수 있습니다. 배포 도메인(예: safenex.org)에서 다시 시도하세요.");

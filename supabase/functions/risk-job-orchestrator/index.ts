@@ -74,7 +74,7 @@ async function runBatch(
         ...baseBody,
         process_name: task.subProcess,
         target_count: task.count,
-        batch_index: task.index,
+        batch_index: 0,
         batch_size: task.count,
       }),
     });

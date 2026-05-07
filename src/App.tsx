@@ -52,6 +52,9 @@ import MobileHome from "./pages/MobileHome";
 import MobileInspect from "./pages/MobileInspect";
 import MobileAlerts from "./pages/MobileAlerts";
 import MobileActions from "./pages/MobileActions";
+import MobileApprovals from "./pages/MobileApprovals";
+import MobileWorkers from "./pages/MobileWorkers";
+import MobileRiskAssessment from "./pages/MobileRiskAssessment";
 import InstallPrompt from "./components/InstallPrompt";
 import MobileRedirectGuard from "./components/MobileRedirectGuard";
 import { useOfflineSync } from "./hooks/useOfflineSync";
@@ -182,6 +185,9 @@ const App = () => (
             <Route path="/m/inspect" element={<MobileInspect />} />
             <Route path="/m/alerts" element={<MobileAlerts />} />
             <Route path="/m/actions" element={<MobileActions />} />
+            <Route path="/m/approvals" element={<MobileApprovals />} />
+            <Route path="/m/workers" element={<MobileWorkers />} />
+            <Route path="/m/risk-assessment" element={<MobileRiskAssessment />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
           <MobileRedirectGuard />

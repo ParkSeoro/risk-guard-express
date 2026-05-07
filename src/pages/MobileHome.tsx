@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench } from "lucide-react";
+import { ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert } from "lucide-react";
 import { isOnline, listQueue } from "@/lib/offlineQueue";
 import { isPushSupported, registerSW, subscribeToPush } from "@/lib/pushSubscription";
 import { setForceDesktop } from "@/components/MobileRedirectGuard";
@@ -98,9 +98,11 @@ export default function MobileHome() {
               <ActionTile icon={Bell} label="알림" sub={`미확인 ${unread}건`}
                 onClick={() => navigate("/m/alerts")} />
               <ActionTile icon={FileCheck2} label="결재함" sub="대기 결재"
-                onClick={() => navigate("/approvals")} />
-              <ActionTile icon={QrCode} label="QR 발급" sub="근로자/회사"
-                onClick={() => navigate("/workers")} />
+                onClick={() => navigate("/m/approvals")} />
+              <ActionTile icon={ShieldAlert} label="위험성평가" sub="요약 보기"
+                onClick={() => navigate("/m/risk-assessment")} />
+              <ActionTile icon={QrCode} label="근로자 QR" sub="발급/조회"
+                onClick={() => navigate("/m/workers")} />
               <ActionTile icon={HardHat} label="입퇴장 현황" sub="오늘 출입"
                 onClick={() => navigate("/worker-attendance")} />
               <ActionTile icon={BookOpen} label="사용 설명서" sub="도움말"

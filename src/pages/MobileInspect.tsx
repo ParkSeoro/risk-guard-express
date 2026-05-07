@@ -92,8 +92,9 @@ export default function MobileInspect() {
           item_id: (item as any)?.id,
           project_id: projectId,
           issue: issue || location,
-          severity: "medium",
+          severity,
           status: "pending",
+          due_date: dueDate || null,
         }).select().single();
 
         // 알림: 프로젝트 안전관리자/관리자

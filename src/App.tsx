@@ -176,12 +176,22 @@ const App = () => (
             <Route path="/worker/register" element={<WorkerRegister />} />
             <Route path="/worker/portal/:token" element={<WorkerPortal />} />
             <Route path="/manual" element={<Manual />} />
+            <Route path="/m" element={<MobileHome />} />
+            <Route path="/m/inspect" element={<MobileInspect />} />
+            <Route path="/m/alerts" element={<MobileAlerts />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
+          <InstallPrompt />
+          <OfflineSyncMount />
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
+
+function OfflineSyncMount() {
+  useOfflineSync();
+  return null;
+}
 
 export default App;

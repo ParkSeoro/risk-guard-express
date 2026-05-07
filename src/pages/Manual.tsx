@@ -400,7 +400,9 @@ export default function Manual() {
           </Card>
         )}
 
-        <InquiryForm />
+        <div className="print:hidden">
+          <InquiryForm />
+        </div>
 
         <div className="text-center pt-4 pb-8 text-xs text-muted-foreground">
           본 메뉴얼은 누구나 열람할 수 있습니다 · 시스템 관련 문의는 현장 안전관리자에게 연락 바랍니다.

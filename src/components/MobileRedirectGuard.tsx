@@ -13,6 +13,8 @@ const MOBILE_EXCLUDE = [
   /^\/worker\//,
   /^\/tbm\//,
   /^\/manual/,
+  /^\/assessment-run\//,
+  /^\/worker-attendance/,
 ];
 
 export default function MobileRedirectGuard() {

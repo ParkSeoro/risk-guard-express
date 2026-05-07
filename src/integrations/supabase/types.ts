@@ -1254,6 +1254,42 @@ export type Database = {
         }
         Relationships: []
       }
+      manual_inquiries: {
+        Row: {
+          category: string
+          contact: string | null
+          created_at: string
+          id: string
+          message: string
+          name: string | null
+          page_url: string | null
+          status: string
+          user_agent: string | null
+        }
+        Insert: {
+          category: string
+          contact?: string | null
+          created_at?: string
+          id?: string
+          message: string
+          name?: string | null
+          page_url?: string | null
+          status?: string
+          user_agent?: string | null
+        }
+        Update: {
+          category?: string
+          contact?: string | null
+          created_at?: string
+          id?: string
+          message?: string
+          name?: string | null
+          page_url?: string | null
+          status?: string
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       master_assignees: {
         Row: {
           created_at: string

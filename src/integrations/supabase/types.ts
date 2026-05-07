@@ -77,6 +77,160 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_generated_items_buffer: {
+        Row: {
+          batch_index: number
+          created_at: string
+          id: string
+          items: Json
+          job_id: string
+        }
+        Insert: {
+          batch_index?: number
+          created_at?: string
+          id?: string
+          items?: Json
+          job_id: string
+        }
+        Update: {
+          batch_index?: number
+          created_at?: string
+          id?: string
+          items?: Json
+          job_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_generated_items_buffer_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "ai_generation_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_generation_jobs: {
+        Row: {
+          completed_at: string | null
+          completed_batches: number
+          created_at: string
+          created_by: string
+          diversity_score: number | null
+          duplicate_rate: number | null
+          equipment: string | null
+          error_message: string | null
+          id: string
+          items_generated: number
+          process_name: string
+          project_id: string
+          quality_score: number | null
+          run_id: string | null
+          started_at: string | null
+          status: string
+          target_count: number
+          total_batches: number
+          updated_at: string
+          work_description: string | null
+          work_environment: Json | null
+          work_location: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          completed_batches?: number
+          created_at?: string
+          created_by: string
+          diversity_score?: number | null
+          duplicate_rate?: number | null
+          equipment?: string | null
+          error_message?: string | null
+          id?: string
+          items_generated?: number
+          process_name: string
+          project_id: string
+          quality_score?: number | null
+          run_id?: string | null
+          started_at?: string | null
+          status?: string
+          target_count?: number
+          total_batches?: number
+          updated_at?: string
+          work_description?: string | null
+          work_environment?: Json | null
+          work_location?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          completed_batches?: number
+          created_at?: string
+          created_by?: string
+          diversity_score?: number | null
+          duplicate_rate?: number | null
+          equipment?: string | null
+          error_message?: string | null
+          id?: string
+          items_generated?: number
+          process_name?: string
+          project_id?: string
+          quality_score?: number | null
+          run_id?: string | null
+          started_at?: string | null
+          status?: string
+          target_count?: number
+          total_batches?: number
+          updated_at?: string
+          work_description?: string | null
+          work_environment?: Json | null
+          work_location?: string | null
+        }
+        Relationships: []
+      }
+      ai_generation_logs: {
+        Row: {
+          batch_index: number
+          created_at: string
+          error: string | null
+          id: string
+          job_id: string
+          latency_ms: number | null
+          model: string | null
+          prompt: string | null
+          raw_response: Json | null
+          tokens_used: number | null
+        }
+        Insert: {
+          batch_index?: number
+          created_at?: string
+          error?: string | null
+          id?: string
+          job_id: string
+          latency_ms?: number | null
+          model?: string | null
+          prompt?: string | null
+          raw_response?: Json | null
+          tokens_used?: number | null
+        }
+        Update: {
+          batch_index?: number
+          created_at?: string
+          error?: string | null
+          id?: string
+          job_id?: string
+          latency_ms?: number | null
+          model?: string | null
+          prompt?: string | null
+          raw_response?: Json | null
+          tokens_used?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_generation_logs_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "ai_generation_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_risk_cache: {
         Row: {
           cache_key: string
@@ -165,6 +319,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ai_test_runs: {
+        Row: {
+          created_at: string
+          duration_ms: number | null
+          error_location: string | null
+          id: string
+          input_params: Json | null
+          pass_fail: string | null
+          result: Json | null
+          test_type: string
+          tested_by: string
+        }
+        Insert: {
+          created_at?: string
+          duration_ms?: number | null
+          error_location?: string | null
+          id?: string
+          input_params?: Json | null
+          pass_fail?: string | null
+          result?: Json | null
+          test_type: string
+          tested_by: string
+        }
+        Update: {
+          created_at?: string
+          duration_ms?: number | null
+          error_location?: string | null
+          id?: string
+          input_params?: Json | null
+          pass_fail?: string | null
+          result?: Json | null
+          test_type?: string
+          tested_by?: string
+        }
+        Relationships: []
       }
       approval_lines: {
         Row: {
@@ -2370,6 +2560,51 @@ export type Database = {
           },
         ]
       }
+      risk_knowledge_base: {
+        Row: {
+          content: string
+          created_at: string
+          created_by: string | null
+          embedding_summary: string | null
+          equipment_tags: string[] | null
+          id: string
+          is_active: boolean
+          legal_reference: string | null
+          process_tags: string[] | null
+          source_type: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          created_by?: string | null
+          embedding_summary?: string | null
+          equipment_tags?: string[] | null
+          id?: string
+          is_active?: boolean
+          legal_reference?: string | null
+          process_tags?: string[] | null
+          source_type: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          created_by?: string | null
+          embedding_summary?: string | null
+          equipment_tags?: string[] | null
+          id?: string
+          is_active?: boolean
+          legal_reference?: string | null
+          process_tags?: string[] | null
+          source_type?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       risk_templates: {
         Row: {
           created_at: string
@@ -2436,6 +2671,39 @@ export type Database = {
           severity_grade?: string
           sub_task?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      risk_user_corrections: {
+        Row: {
+          corrected: Json | null
+          corrected_by: string
+          created_at: string
+          field_changed: string | null
+          id: string
+          original: Json | null
+          process_name: string | null
+          project_id: string
+        }
+        Insert: {
+          corrected?: Json | null
+          corrected_by: string
+          created_at?: string
+          field_changed?: string | null
+          id?: string
+          original?: Json | null
+          process_name?: string | null
+          project_id: string
+        }
+        Update: {
+          corrected?: Json | null
+          corrected_by?: string
+          created_at?: string
+          field_changed?: string | null
+          id?: string
+          original?: Json | null
+          process_name?: string | null
+          project_id?: string
         }
         Relationships: []
       }

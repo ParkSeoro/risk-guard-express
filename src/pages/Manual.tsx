@@ -155,7 +155,7 @@ export default function Manual() {
             </div>
           </div>
           <div className="flex items-center gap-2 print:hidden">
-            <Button variant="outline" size="sm" onClick={() => restartTutorial() || window.location.assign("/")}>
+            <Button variant="outline" size="sm" onClick={() => { restartTutorial(); window.location.assign("/"); }}>
               <PlayCircle className="h-4 w-4 mr-1" /> 따라하기 다시 보기
             </Button>
             <Button variant="outline" size="sm" onClick={() => window.print()}>

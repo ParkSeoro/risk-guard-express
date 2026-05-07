@@ -28,13 +28,19 @@ export default function WorkerAttendance() {
   const load = async () => {
     const { data, error } = await supabase
       .from("worker_entry_logs")
-      .select("*, workers(name, phone, company_name)")
+      .select("*")
       .eq("project_id", projectId)
       .gte("entry_at", date + "T00:00:00")
       .lte("entry_at", date + "T23:59:59")
       .order("entry_at", { ascending: false });
     if (error) { toast.error(error.message); return; }
-    setLogs(data || []);
+    const ids = Array.from(new Set((data || []).map((l: any) => l.worker_id).filter(Boolean)));
+    let workersMap: Record<string, any> = {};
+    if (ids.length) {
+      const { data: ws } = await supabase.from("workers").select("id,name,phone,company_name").in("id", ids);
+      workersMap = Object.fromEntries((ws || []).map((w: any) => [w.id, w]));
+    }
+    setLogs((data || []).map((l: any) => ({ ...l, workers: workersMap[l.worker_id] })));
   };
 
   const exportCsv = () => {

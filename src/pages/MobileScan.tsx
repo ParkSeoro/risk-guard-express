@@ -22,7 +22,9 @@ export default function MobileScan() {
 
   const startNative = async () => {
     try {
-      const mod: any = await import("@capacitor-community/barcode-scanner");
+      // 동적 import — 네이티브 빌드(Capacitor)에서만 패키지가 설치되어 있음. 웹 번들러가 정적 분석하지 못하도록 변수 경유.
+      const pkg = "@capacitor-community/barcode-scanner";
+      const mod: any = await import(/* @vite-ignore */ pkg);
       const BarcodeScanner = mod.BarcodeScanner;
       const status = await BarcodeScanner.checkPermission({ force: true });
       if (!status.granted) {

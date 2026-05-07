@@ -48,7 +48,15 @@ export default function WorkerRegister() {
     if (result?.error) { toast.error("등록 실패: " + result.error); return; }
     localStorage.setItem("workerToken", result.qr_token);
     toast.success("등록 완료");
-    navigate(`/worker/portal/${result.qr_token}`);
+    setDoneToken(result.qr_token);
+  };
+
+  const tryClose = () => {
+    window.close();
+    setTimeout(() => {
+      // If window.close() didn't work (most browsers block it), show guidance
+      toast.info("브라우저 탭을 직접 닫아주세요");
+    }, 300);
   };
 
   if (!projectId) {

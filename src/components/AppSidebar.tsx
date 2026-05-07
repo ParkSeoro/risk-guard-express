@@ -3,7 +3,7 @@ import {
   FileCheck, HardHat, ChevronLeft, LogOut, User,
   Shield, SearchCheck, Settings,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
-  ClipboardCheck, History, ChevronDown, Beaker, Activity
+  ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink } from "@/components/NavLink";
@@ -77,6 +77,7 @@ const adminItems: Item[] = [
 const masterOnlyItems: Item[] = [
   { title: "AI 테스트 엔진", url: "/admin/ai-test", icon: Beaker },
   { title: "AI 로그", url: "/admin/ai-logs", icon: Activity },
+  { title: "시스템 테스트 엔진", url: "/admin/system-test", icon: FlaskConical },
 ];
 
 export function AppSidebar() {

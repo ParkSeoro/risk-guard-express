@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { runStep, StepResult, TestContext, trackArtifact } from "./runner";
 import { FEATURE_COVERAGE, REQUIRED_COLUMNS, REQUIRED_RPCS } from "./manifest";
+import { runMobileScenario } from "./mobileScenarios";
 
 const QA_PREFIX = "__QA__";
 

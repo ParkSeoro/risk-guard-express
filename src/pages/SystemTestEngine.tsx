@@ -19,6 +19,8 @@ import {
   TestContext,
 } from "@/lib/systemTest/runner";
 import { SCENARIOS, ScenarioKey } from "@/lib/systemTest/scenarios";
+import { planCommand, applyStepFilter, COMMAND_HINTS } from "@/lib/systemTest/commandRouter";
+import { Input } from "@/components/ui/input";
 
 export default function SystemTestEngine() {
   const { hasRole, user } = useAuth();
@@ -31,6 +33,8 @@ export default function SystemTestEngine() {
   const [results, setResults] = useState<StepResult[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [command, setCommand] = useState("");
+  const [commandHint, setCommandHint] = useState<string>("");
 
   useEffect(() => {
     if (!isMaster) return;
@@ -54,14 +58,20 @@ export default function SystemTestEngine() {
 
   if (!isMaster) return <Navigate to="/" replace />;
 
-  const runScenarios = async (keys: ScenarioKey[]) => {
+  const runScenarios = async (
+    keys: ScenarioKey[],
+    opts?: { stepFilter?: (s: StepResult) => boolean; scopeLabel?: string }
+  ) => {
     if (!projectId || !user) {
       toast({ title: "프로젝트를 선택하세요", variant: "destructive" });
       return;
     }
     setRunning(true);
     setResults([]);
-    const runId = await createRun(user.id, keys.length === Object.keys(SCENARIOS).length ? "all" : keys.join(","));
+    const scope =
+      opts?.scopeLabel ||
+      (keys.length === Object.keys(SCENARIOS).length ? "all" : keys.join(","));
+    const runId = await createRun(user.id, scope);
     setActiveRunId(runId);
 
     const all: StepResult[] = [];
@@ -76,7 +86,6 @@ export default function SystemTestEngine() {
 
     setProgress({ current: "시작", done: 0, total: keys.length });
     try {
-      // Always run coverage last so it can audit prior results
       const ordered = [...keys].sort((a, b) => (a === "coverage" ? 1 : b === "coverage" ? -1 : 0));
       let idx = 0;
       for (const k of ordered) {
@@ -85,13 +94,15 @@ export default function SystemTestEngine() {
         ctx.priorResults = all;
         const stepResults = await SCENARIOS[k].run(ctx);
         all.push(...stepResults);
-        setResults([...all]);
+        const visible = opts?.stepFilter ? all.filter(opts.stepFilter) : all;
+        setResults([...visible]);
       }
-      await persistResults(runId, all);
-      await finalizeRun(runId, all);
-      const passed = all.filter((r) => r.pass_fail === "pass").length;
+      const finalResults = opts?.stepFilter ? all.filter(opts.stepFilter) : all;
+      await persistResults(runId, finalResults);
+      await finalizeRun(runId, finalResults);
+      const passed = finalResults.filter((r) => r.pass_fail === "pass").length;
       toast({
-        title: `테스트 완료: ${passed}/${all.length} PASS`,
+        title: `테스트 완료: ${passed}/${finalResults.length} PASS`,
         description: `Run ID: ${runId.slice(0, 8)}`,
       });
     } catch (err: any) {
@@ -102,6 +113,17 @@ export default function SystemTestEngine() {
       setRunning(false);
       loadHistory();
     }
+  };
+
+  const runCommand = async () => {
+    const plan = planCommand(command);
+    if (!plan.matched) {
+      setCommandHint(plan.reason + " — 예시: " + COMMAND_HINTS.join(" / "));
+      toast({ title: "명령 인식 실패", description: plan.reason, variant: "destructive" });
+      return;
+    }
+    setCommandHint(plan.reason);
+    await runScenarios(plan.scenarios, { stepFilter: plan.stepFilter, scopeLabel: `cmd:${command}` });
   };
 
   const groupedScores = useMemo(() => {
@@ -180,6 +202,37 @@ export default function SystemTestEngine() {
           ))}
           {results.length > 0 && (
             <Button variant="ghost" size="sm" onClick={exportCsv}>CSV 내보내기</Button>
+          )}
+        </div>
+
+        <div className="border-t pt-3 space-y-2">
+          <Label>특정 기능 테스트 명령</Label>
+          <div className="flex gap-2">
+            <Input
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !running) runCommand(); }}
+              placeholder='예: "모바일 카메라", "/m/inspect", "TBM", "근로자 등록", "위험성평가"'
+              disabled={running}
+            />
+            <Button onClick={runCommand} disabled={running || !projectId || !command.trim()}>
+              <Play className="h-4 w-4 mr-1" /> 명령 실행
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {COMMAND_HINTS.map((h) => (
+              <button
+                key={h}
+                type="button"
+                className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/70"
+                onClick={() => setCommand(h)}
+              >
+                {h}
+              </button>
+            ))}
+          </div>
+          {commandHint && (
+            <div className="text-xs text-muted-foreground">→ {commandHint}</div>
           )}
         </div>
 

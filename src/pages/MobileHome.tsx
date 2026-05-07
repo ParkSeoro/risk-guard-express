@@ -35,6 +35,25 @@ export default function MobileHome() {
       .then(({ count }) => setUnread(count || 0));
     // SW 등록 (조용히)
     registerSW();
+    // selectedProjectId 가 비어있으면 가입된 첫 프로젝트로 자동 설정
+    // → 모바일 페이지들이 "빈 화면 / 링크 없음" 상태로 빠지는 것 방지
+    (async () => {
+      const cur = localStorage.getItem("selectedProjectId");
+      if (cur) return;
+      const { data } = await supabase
+        .from("project_members")
+        .select("project_id, projects!inner(id, name)")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+      const pid = (data as any)?.project_id;
+      if (pid) {
+        localStorage.setItem("selectedProjectId", pid);
+        toast.message("프로젝트 자동 선택됨");
+      } else {
+        toast.error("가입된 프로젝트가 없습니다 — 데스크톱에서 프로젝트를 선택하세요");
+      }
+    })();
   }, [user]);
 
   const enablePush = async () => {

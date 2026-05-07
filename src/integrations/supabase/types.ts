@@ -1113,6 +1113,72 @@ export type Database = {
         }
         Relationships: []
       }
+      incident_reports: {
+        Row: {
+          created_at: string
+          description: string
+          gps_lat: number | null
+          gps_lng: number | null
+          id: string
+          incident_type: string
+          is_deleted: boolean
+          location: string
+          occurred_at: string
+          photos: string[]
+          project_id: string
+          reporter_id: string | null
+          reporter_name: string
+          review_note: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          severity: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string
+          gps_lat?: number | null
+          gps_lng?: number | null
+          id?: string
+          incident_type?: string
+          is_deleted?: boolean
+          location?: string
+          occurred_at?: string
+          photos?: string[]
+          project_id: string
+          reporter_id?: string | null
+          reporter_name?: string
+          review_note?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          severity?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          gps_lat?: number | null
+          gps_lng?: number | null
+          id?: string
+          incident_type?: string
+          is_deleted?: boolean
+          location?: string
+          occurred_at?: string
+          photos?: string[]
+          project_id?: string
+          reporter_id?: string | null
+          reporter_name?: string
+          review_note?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          severity?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       inspection_responses: {
         Row: {
           created_at: string

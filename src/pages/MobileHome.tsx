@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList } from "lucide-react";
+import { ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine } from "lucide-react";
 import { isOnline, listQueue } from "@/lib/offlineQueue";
 import { isPushSupported, registerSW, subscribeToPush } from "@/lib/pushSubscription";
 import { setForceDesktop } from "@/components/MobileRedirectGuard";
@@ -93,11 +93,19 @@ export default function MobileHome() {
             <div className="grid grid-cols-2 gap-3">
               <ActionTile icon={ClipboardCheck} label="안전점검" sub="현장 점검 등록"
                 onClick={() => navigate("/m/inspect")} highlight />
+              <ActionTile icon={AlertOctagon} label="사고 신고" sub="아차/경미/중대"
+                onClick={() => navigate("/m/incident")} />
+              <ActionTile icon={Users} label="TBM 진행" sub="QR 발급/참여"
+                onClick={() => navigate("/m/tbm")} />
+              <ActionTile icon={ScanLine} label="QR 스캔" sub="근로자 출입"
+                onClick={() => navigate("/m/scan")} />
+              <ActionTile icon={FileCheck2} label="허가서 결재" sub="대기 결재"
+                onClick={() => navigate("/m/permits")} />
               <ActionTile icon={Wrench} label="조치 관리" sub="진행중/완료"
                 onClick={() => navigate("/m/actions")} />
               <ActionTile icon={Bell} label="알림" sub={`미확인 ${unread}건`}
                 onClick={() => navigate("/m/alerts")} />
-              <ActionTile icon={FileCheck2} label="결재함" sub="대기 결재"
+              <ActionTile icon={FileCheck2} label="결재함" sub="위험성평가"
                 onClick={() => navigate("/m/approvals")} />
               <ActionTile icon={ShieldAlert} label="위험성평가" sub="요약 보기"
                 onClick={() => navigate("/m/risk-assessment")} />

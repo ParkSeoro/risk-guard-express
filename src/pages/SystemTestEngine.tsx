@@ -58,14 +58,20 @@ export default function SystemTestEngine() {
 
   if (!isMaster) return <Navigate to="/" replace />;
 
-  const runScenarios = async (keys: ScenarioKey[]) => {
+  const runScenarios = async (
+    keys: ScenarioKey[],
+    opts?: { stepFilter?: (s: StepResult) => boolean; scopeLabel?: string }
+  ) => {
     if (!projectId || !user) {
       toast({ title: "프로젝트를 선택하세요", variant: "destructive" });
       return;
     }
     setRunning(true);
     setResults([]);
-    const runId = await createRun(user.id, keys.length === Object.keys(SCENARIOS).length ? "all" : keys.join(","));
+    const scope =
+      opts?.scopeLabel ||
+      (keys.length === Object.keys(SCENARIOS).length ? "all" : keys.join(","));
+    const runId = await createRun(user.id, scope);
     setActiveRunId(runId);
 
     const all: StepResult[] = [];
@@ -80,7 +86,6 @@ export default function SystemTestEngine() {
 
     setProgress({ current: "시작", done: 0, total: keys.length });
     try {
-      // Always run coverage last so it can audit prior results
       const ordered = [...keys].sort((a, b) => (a === "coverage" ? 1 : b === "coverage" ? -1 : 0));
       let idx = 0;
       for (const k of ordered) {
@@ -89,13 +94,15 @@ export default function SystemTestEngine() {
         ctx.priorResults = all;
         const stepResults = await SCENARIOS[k].run(ctx);
         all.push(...stepResults);
-        setResults([...all]);
+        const visible = opts?.stepFilter ? all.filter(opts.stepFilter) : all;
+        setResults([...visible]);
       }
-      await persistResults(runId, all);
-      await finalizeRun(runId, all);
-      const passed = all.filter((r) => r.pass_fail === "pass").length;
+      const finalResults = opts?.stepFilter ? all.filter(opts.stepFilter) : all;
+      await persistResults(runId, finalResults);
+      await finalizeRun(runId, finalResults);
+      const passed = finalResults.filter((r) => r.pass_fail === "pass").length;
       toast({
-        title: `테스트 완료: ${passed}/${all.length} PASS`,
+        title: `테스트 완료: ${passed}/${finalResults.length} PASS`,
         description: `Run ID: ${runId.slice(0, 8)}`,
       });
     } catch (err: any) {
@@ -106,6 +113,17 @@ export default function SystemTestEngine() {
       setRunning(false);
       loadHistory();
     }
+  };
+
+  const runCommand = async () => {
+    const plan = planCommand(command);
+    if (!plan.matched) {
+      setCommandHint(plan.reason + " — 예시: " + COMMAND_HINTS.join(" / "));
+      toast({ title: "명령 인식 실패", description: plan.reason, variant: "destructive" });
+      return;
+    }
+    setCommandHint(plan.reason);
+    await runScenarios(plan.scenarios, { stepFilter: plan.stepFilter, scopeLabel: `cmd:${command}` });
   };
 
   const groupedScores = useMemo(() => {

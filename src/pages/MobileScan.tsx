@@ -22,9 +22,10 @@ export default function MobileScan() {
 
   const startNative = async () => {
     try {
-      // 동적 import — 네이티브 빌드(Capacitor)에서만 패키지가 설치되어 있음. 웹 번들러가 정적 분석하지 못하도록 변수 경유.
-      const pkg = "@capacitor-community/barcode-scanner";
-      const mod: any = await import(/* @vite-ignore */ pkg);
+      // 동적 import — 네이티브 빌드(Capacitor)에서만 패키지가 설치되어 있음.
+      // 웹 빌드(Rollup)가 모듈을 해석하지 못하므로, 번들러가 분석할 수 없도록 Function 생성자를 통해 런타임 import 한다.
+      const dynamicImport = new Function("m", "return import(m)") as (m: string) => Promise<any>;
+      const mod: any = await dynamicImport("@capacitor-community/barcode-scanner");
       const BarcodeScanner = mod.BarcodeScanner;
       const status = await BarcodeScanner.checkPermission({ force: true });
       if (!status.granted) {

@@ -10,10 +10,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { restartTutorial } from "@/components/TutorialOverlay";
 import {
   HardHat, ShieldAlert, FileText, FileSignature, QrCode, ClipboardCheck,
   Users, ClipboardList, BookOpen, ArrowLeft, CheckCircle2, AlertTriangle,
-  LogIn, Bot, Sparkles, Search, X, MessageSquare
+  LogIn, Bot, Sparkles, Search, X, MessageSquare, Printer, PlayCircle,
+  ReceiptText, Scale, ScanLine, Hand, PenLine
 } from "lucide-react";
 
 type Section = {
@@ -152,11 +154,19 @@ export default function Manual() {
               <p className="text-xs text-muted-foreground">안전관리시스템 · 관리자 & 근로자용</p>
             </div>
           </div>
-          <Link to="/auth">
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-1" /> 로그인
+          <div className="flex items-center gap-2 print:hidden">
+            <Button variant="outline" size="sm" onClick={() => { restartTutorial(); window.location.assign("/"); }}>
+              <PlayCircle className="h-4 w-4 mr-1" /> 따라하기 다시 보기
             </Button>
-          </Link>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="h-4 w-4 mr-1" /> PDF 저장/인쇄
+            </Button>
+            <Link to="/auth">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="h-4 w-4 mr-1" /> 로그인
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -268,6 +278,69 @@ export default function Manual() {
                 </CardContent>
               </Card>
             </section>
+
+            {/* 전체 작업 흐름 */}
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <FileSignature className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-bold">전체 작업 흐름 (관리자)</h2>
+              </div>
+              <Card>
+                <CardContent className="p-5">
+                  <div className="grid gap-2 md:grid-cols-8 text-center text-xs">
+                    {[
+                      { i: <ShieldAlert className="h-5 w-5" />, t: "위험성평가" },
+                      { i: <FileText className="h-5 w-5" />, t: "작업계획서" },
+                      { i: <FileSignature className="h-5 w-5" />, t: "작업허가" },
+                      { i: <QrCode className="h-5 w-5" />, t: "TBM" },
+                      { i: <HardHat className="h-5 w-5" />, t: "작업" },
+                      { i: <ClipboardCheck className="h-5 w-5" />, t: "점검/조치" },
+                      { i: <AlertTriangle className="h-5 w-5" />, t: "사고 대응" },
+                      { i: <ReceiptText className="h-5 w-5" />, t: "비용 정산" },
+                    ].map((s, i) => (
+                      <div key={i} className="flex flex-col items-center gap-1 p-2 rounded-md bg-muted/40">
+                        <div className="h-9 w-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center">{s.i}</div>
+                        <div className="font-semibold">{i + 1}. {s.t}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-3">
+                    각 단계는 결재/검증을 거쳐 다음 단계로 진행됩니다. 조건 미충족 시 시스템이 자동으로 차단합니다.
+                  </p>
+                </CardContent>
+              </Card>
+            </section>
+
+            {/* 근로자 시각 가이드 */}
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <Users className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-bold">근로자 시각 가이드 (그림 중심)</h2>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <PicCard
+                  icon={<ScanLine className="h-10 w-10" />}
+                  step="STEP 1"
+                  title="QR 스캔"
+                  desc="휴대폰 카메라로 현장 입구의 QR을 비추세요."
+                />
+                <PicCard
+                  icon={<Hand className="h-10 w-10" />}
+                  step="STEP 2"
+                  title="확인 (체크)"
+                  desc="위험성평가·교육·TBM 안내를 읽고 모두 체크합니다."
+                />
+                <PicCard
+                  icon={<PenLine className="h-10 w-10" />}
+                  step="STEP 3"
+                  title="서명 후 입장"
+                  desc="화면에 손가락으로 서명하면 입장이 완료됩니다."
+                />
+              </div>
+              <p className="text-xs text-center text-muted-foreground mt-3">
+                ※ 퇴근 시에도 같은 방법으로 <b>퇴장 + 무재해 확인 + 서명</b>을 진행합니다.
+              </p>
+            </section>
           </>
         )}
 
@@ -327,7 +400,9 @@ export default function Manual() {
           </Card>
         )}
 
-        <InquiryForm />
+        <div className="print:hidden">
+          <InquiryForm />
+        </div>
 
         <div className="text-center pt-4 pb-8 text-xs text-muted-foreground">
           본 메뉴얼은 누구나 열람할 수 있습니다 · 시스템 관련 문의는 현장 안전관리자에게 연락 바랍니다.
@@ -447,6 +522,20 @@ function Step({ icon, title, desc }: any) {
       <div className="font-semibold text-sm">{title}</div>
       <div className="text-xs text-muted-foreground">{desc}</div>
     </div>
+  );
+}
+function PicCard({ icon, step, title, desc }: any) {
+  return (
+    <Card className="border-2 border-primary/20">
+      <CardContent className="p-6 text-center space-y-2">
+        <div className="mx-auto h-20 w-20 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+          {icon}
+        </div>
+        <div className="text-xs font-bold text-primary tracking-wider">{step}</div>
+        <div className="text-lg font-bold">{title}</div>
+        <div className="text-sm text-muted-foreground">{desc}</div>
+      </CardContent>
+    </Card>
   );
 }
 function Arrow() {

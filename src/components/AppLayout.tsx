@@ -4,6 +4,8 @@ import { User, LogOut, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { NotificationBell } from "@/components/NotificationBell";
+import { HelpButton } from "@/components/HelpButton";
+import { TutorialOverlay } from "@/components/TutorialOverlay";
 import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createContext, useContext } from "react";
@@ -69,11 +71,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
                 <NotificationBell />
+                <HelpButton className="text-muted-foreground" />
                 <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={signOut}>
                   <LogOut className="h-4 w-4" />
                 </Button>
               </div>
             </header>
+            <TutorialOverlay />
             <main className="flex-1 overflow-auto p-6 bg-background">
               {children}
             </main>

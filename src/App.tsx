@@ -53,6 +53,7 @@ import MobileInspect from "./pages/MobileInspect";
 import MobileAlerts from "./pages/MobileAlerts";
 import MobileActions from "./pages/MobileActions";
 import InstallPrompt from "./components/InstallPrompt";
+import MobileRedirectGuard from "./components/MobileRedirectGuard";
 import { useOfflineSync } from "./hooks/useOfflineSync";
 import NotFound from "./pages/NotFound";
 
@@ -183,6 +184,7 @@ const App = () => (
             <Route path="/m/actions" element={<MobileActions />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
+          <MobileRedirectGuard />
           <InstallPrompt />
           <OfflineSyncMount />
         </AuthProvider>

@@ -4538,26 +4538,16 @@ export type Database = {
         Args: { _project_id: string; _target_user: string }
         Returns: Json
       }
-      register_worker:
-        | {
-            Args: {
-              _company_name: string
-              _name: string
-              _phone: string
-              _project_id: string
-            }
-            Returns: Json
-          }
-        | {
-            Args: {
-              _company_id?: string
-              _company_name: string
-              _name: string
-              _phone: string
-              _project_id: string
-            }
-            Returns: Json
-          }
+      register_worker: {
+        Args: {
+          _company_id?: string
+          _company_name: string
+          _name: string
+          _phone: string
+          _project_id: string
+        }
+        Returns: Json
+      }
       shares_project_with: {
         Args: { _target: string; _viewer: string }
         Returns: boolean

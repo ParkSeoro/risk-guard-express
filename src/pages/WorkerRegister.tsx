@@ -63,6 +63,35 @@ export default function WorkerRegister() {
     return <div className="min-h-screen flex items-center justify-center text-muted-foreground">잘못된 링크입니다.</div>;
   }
 
+  if (doneToken) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-8 pb-6 text-center space-y-4">
+            <div className="mx-auto h-16 w-16 rounded-full bg-success/10 flex items-center justify-center">
+              <CheckCircle2 className="h-10 w-10 text-success" />
+            </div>
+            <div className="text-2xl font-bold">등록 완료</div>
+            <div className="text-muted-foreground">
+              <strong>{name}</strong>님, 등록이 완료되었습니다.
+            </div>
+            <div className="text-sm text-muted-foreground bg-muted p-3 rounded">
+              현장 입장 시 본인 QR을 다시 스캔하거나<br />아래 버튼으로 입퇴장 페이지를 여세요.
+            </div>
+            <div className="space-y-2 pt-2">
+              <Button className="w-full h-14 text-lg" onClick={() => navigate(`/worker/portal/${doneToken}`)}>
+                입퇴장 페이지로 이동
+              </Button>
+              <Button variant="outline" className="w-full h-12" onClick={tryClose}>
+                창 닫기
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
       <Card className="w-full max-w-md">

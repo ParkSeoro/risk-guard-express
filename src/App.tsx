@@ -48,6 +48,11 @@ import WorkerAttendance from "./pages/WorkerAttendance";
 import WorkerRegister from "./pages/WorkerRegister";
 import WorkerPortal from "./pages/WorkerPortal";
 import Manual from "./pages/Manual";
+import MobileHome from "./pages/MobileHome";
+import MobileInspect from "./pages/MobileInspect";
+import MobileAlerts from "./pages/MobileAlerts";
+import InstallPrompt from "./components/InstallPrompt";
+import { useOfflineSync } from "./hooks/useOfflineSync";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();

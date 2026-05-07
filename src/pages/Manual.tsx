@@ -5,10 +5,15 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 import {
   HardHat, ShieldAlert, FileText, FileSignature, QrCode, ClipboardCheck,
   Users, ClipboardList, BookOpen, ArrowLeft, CheckCircle2, AlertTriangle,
-  LogIn, Bot, Sparkles, Search, X
+  LogIn, Bot, Sparkles, Search, X, MessageSquare
 } from "lucide-react";
 
 type Section = {
@@ -322,6 +327,8 @@ export default function Manual() {
           </Card>
         )}
 
+        <InquiryForm />
+
         <div className="text-center pt-4 pb-8 text-xs text-muted-foreground">
           본 메뉴얼은 누구나 열람할 수 있습니다 · 시스템 관련 문의는 현장 안전관리자에게 연락 바랍니다.
           <div className="mt-3">
@@ -330,6 +337,106 @@ export default function Manual() {
         </div>
       </div>
     </div>
+  );
+}
+
+function InquiryForm() {
+  const [category, setCategory] = useState("error");
+  const [name, setName] = useState("");
+  const [contact, setContact] = useState("");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const submit = async () => {
+    const msg = message.trim();
+    if (msg.length < 5) {
+      toast({ title: "내용을 5자 이상 입력해 주세요.", variant: "destructive" });
+      return;
+    }
+    if (msg.length > 2000) {
+      toast({ title: "내용은 2000자 이내로 입력해 주세요.", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    const { error } = await (supabase as any).from("manual_inquiries").insert({
+      category,
+      name: name.trim().slice(0, 100) || null,
+      contact: contact.trim().slice(0, 200) || null,
+      message: msg,
+      page_url: typeof window !== "undefined" ? window.location.href : null,
+      user_agent: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 500) : null,
+    });
+    setSubmitting(false);
+    if (error) {
+      toast({ title: "전송 실패", description: error.message, variant: "destructive" });
+      return;
+    }
+    setDone(true);
+    setMessage(""); setName(""); setContact("");
+  };
+
+  return (
+    <section id="inquiry">
+      <div className="flex items-center gap-2 mb-3">
+        <MessageSquare className="h-5 w-5 text-primary" />
+        <h2 className="text-lg font-bold">오류 신고 / 문의하기</h2>
+      </div>
+      <Card>
+        <CardContent className="p-5 space-y-3">
+          {done ? (
+            <div className="text-center py-8 space-y-3">
+              <CheckCircle2 className="h-10 w-10 text-primary mx-auto" />
+              <p className="font-semibold">접수되었습니다. 감사합니다!</p>
+              <p className="text-xs text-muted-foreground">검토 후 필요 시 입력하신 연락처로 회신드립니다.</p>
+              <Button variant="outline" size="sm" onClick={() => setDone(false)}>다시 작성</Button>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div>
+                  <Label className="text-xs">분류 *</Label>
+                  <Select value={category} onValueChange={setCategory}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="error">오류 신고</SelectItem>
+                      <SelectItem value="question">사용 문의</SelectItem>
+                      <SelectItem value="suggestion">기능 제안</SelectItem>
+                      <SelectItem value="other">기타</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">이름 (선택)</Label>
+                  <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} placeholder="홍길동" />
+                </div>
+                <div>
+                  <Label className="text-xs">연락처/이메일 (선택)</Label>
+                  <Input value={contact} onChange={(e) => setContact(e.target.value)} maxLength={200} placeholder="010-0000-0000 또는 email@..." />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs">내용 * <span className="text-muted-foreground">({message.length}/2000)</span></Label>
+                <Textarea
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value.slice(0, 2000))}
+                  rows={5}
+                  placeholder="발생 위치, 재현 방법, 화면에 나타난 메시지 등을 자세히 적어주세요."
+                />
+              </div>
+              <div className="flex justify-end">
+                <Button onClick={submit} disabled={submitting || message.trim().length < 5}>
+                  {submitting ? "전송 중..." : "신고 보내기"}
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                ※ 입력하신 정보는 시스템 관리자(마스터)만 열람할 수 있으며, 문의 처리 목적으로만 사용됩니다.
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </section>
   );
 }
 

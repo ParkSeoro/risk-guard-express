@@ -39,16 +39,22 @@ export default function MobileInspect() {
   useEffect(() => {
     if (!projectId) return;
     (async () => {
-      const { data } = await supabase
+      const { data: pm } = await supabase
         .from("project_members")
-        .select("user_id, role, profiles:user_id(display_name)")
+        .select("user_id, role")
         .eq("project_id", projectId);
-      const list: Member[] = ((data as any) || []).map((m: any) => ({
+      const ids = ((pm as any) || []).map((m: any) => m.user_id);
+      if (ids.length === 0) { setMembers([]); return; }
+      const { data: profs } = await supabase
+        .from("profiles")
+        .select("user_id, display_name")
+        .in("user_id", ids);
+      const map = new Map(((profs as any) || []).map((p: any) => [p.user_id, p.display_name]));
+      setMembers(((pm as any) || []).map((m: any) => ({
         user_id: m.user_id,
-        display_name: m.profiles?.display_name || "이름없음",
+        display_name: map.get(m.user_id) || "이름없음",
         role: m.role,
-      }));
-      setMembers(list);
+      })));
     })();
   }, [projectId]);
 

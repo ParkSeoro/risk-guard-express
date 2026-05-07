@@ -71,11 +71,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   </div>
                 </div>
                 <NotificationBell />
+                <HelpButton className="text-muted-foreground" />
                 <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={signOut}>
                   <LogOut className="h-4 w-4" />
                 </Button>
               </div>
             </header>
+            <TutorialOverlay />
             <main className="flex-1 overflow-auto p-6 bg-background">
               {children}
             </main>

@@ -18,18 +18,59 @@ export default function MobileScan() {
 
   const start = async () => {
     setError(""); setLast(null);
+    // 1) 보안 컨텍스트 / API 가용성 점검
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      setError("HTTPS 환경에서만 카메라를 사용할 수 있습니다. 배포 도메인(예: safenex.org)에서 다시 시도하세요.");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError("이 브라우저는 카메라 API를 지원하지 않습니다. Chrome/Safari 최신 버전을 사용하세요.");
+      return;
+    }
+    // 2) 사용자 제스처 컨텍스트에서 직접 권한 요청 (iOS Safari/iframe 호환)
+    let probeStream: MediaStream | null = null;
+    try {
+      probeStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+    } catch (e: any) {
+      const name = e?.name || "";
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        setError("카메라 권한이 거부되었습니다. 브라우저 주소창의 자물쇠 아이콘 → 카메라 허용 후 다시 시도하세요.");
+      } else if (name === "NotFoundError" || name === "OverconstrainedError") {
+        setError("후면 카메라를 찾을 수 없습니다. 다른 카메라로 다시 시도합니다.");
+        try {
+          probeStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          setError("");
+        } catch (e2: any) {
+          setError("카메라 시작 실패: " + (e2?.message || e2?.name || "알 수 없는 오류"));
+          return;
+        }
+      } else if (name === "NotReadableError") {
+        setError("다른 앱이 카메라를 사용 중입니다. 해당 앱을 종료 후 다시 시도하세요.");
+        return;
+      } else {
+        setError("카메라 시작 실패: " + (e?.message || name || "알 수 없는 오류"));
+        return;
+      }
+    }
+    // 권한 확인용 스트림은 즉시 정지 (Html5Qrcode가 자체 스트림 시작)
+    try { probeStream?.getTracks().forEach(t => t.stop()); } catch {}
+
+    // 3) QR 스캐너 시작
     try {
       const scanner = new Html5Qrcode(containerId);
       scannerRef.current = scanner;
       await scanner.start(
-        { facingMode: "environment" },
+        { facingMode: { ideal: "environment" } as any },
         { fps: 10, qrbox: { width: 240, height: 240 } },
         (decoded) => onDetect(decoded),
         () => {}
       );
       setScanning(true);
     } catch (e: any) {
-      setError(e?.message || "카메라 시작 실패");
+      setError("스캐너 초기화 실패: " + (e?.message || e?.name || "오류"));
     }
   };
 

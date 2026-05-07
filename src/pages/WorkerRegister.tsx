@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Loader2, HardHat } from "lucide-react";
+import { Loader2, HardHat, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function WorkerRegister() {
@@ -19,6 +19,7 @@ export default function WorkerRegister() {
   const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [doneToken, setDoneToken] = useState<string | null>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -47,11 +48,48 @@ export default function WorkerRegister() {
     if (result?.error) { toast.error("등록 실패: " + result.error); return; }
     localStorage.setItem("workerToken", result.qr_token);
     toast.success("등록 완료");
-    navigate(`/worker/portal/${result.qr_token}`);
+    setDoneToken(result.qr_token);
+  };
+
+  const tryClose = () => {
+    window.close();
+    setTimeout(() => {
+      // If window.close() didn't work (most browsers block it), show guidance
+      toast.info("브라우저 탭을 직접 닫아주세요");
+    }, 300);
   };
 
   if (!projectId) {
     return <div className="min-h-screen flex items-center justify-center text-muted-foreground">잘못된 링크입니다.</div>;
+  }
+
+  if (doneToken) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-8 pb-6 text-center space-y-4">
+            <div className="mx-auto h-16 w-16 rounded-full bg-success/10 flex items-center justify-center">
+              <CheckCircle2 className="h-10 w-10 text-success" />
+            </div>
+            <div className="text-2xl font-bold">등록 완료</div>
+            <div className="text-muted-foreground">
+              <strong>{name}</strong>님, 등록이 완료되었습니다.
+            </div>
+            <div className="text-sm text-muted-foreground bg-muted p-3 rounded">
+              현장 입장 시 본인 QR을 다시 스캔하거나<br />아래 버튼으로 입퇴장 페이지를 여세요.
+            </div>
+            <div className="space-y-2 pt-2">
+              <Button className="w-full h-14 text-lg" onClick={() => navigate(`/worker/portal/${doneToken}`)}>
+                입퇴장 페이지로 이동
+              </Button>
+              <Button variant="outline" className="w-full h-12" onClick={tryClose}>
+                창 닫기
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (

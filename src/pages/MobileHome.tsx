@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff } from "lucide-react";
+import { ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench } from "lucide-react";
 import { isOnline, listQueue } from "@/lib/offlineQueue";
 
 // 모바일 통합 홈 — 로그인 사용자(관리자) / 비로그인(근로자 안내)
@@ -80,6 +80,8 @@ export default function MobileHome() {
             <div className="grid grid-cols-2 gap-3">
               <ActionTile icon={ClipboardCheck} label="안전점검" sub="현장 점검 등록"
                 onClick={() => navigate("/m/inspect")} highlight />
+              <ActionTile icon={Wrench} label="조치 관리" sub="진행중/완료"
+                onClick={() => navigate("/m/actions")} />
               <ActionTile icon={Bell} label="알림" sub={`미확인 ${unread}건`}
                 onClick={() => navigate("/m/alerts")} />
               <ActionTile icon={FileCheck2} label="결재함" sub="대기 결재"

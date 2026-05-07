@@ -12,7 +12,9 @@ export default function WorkerRegister() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const projectId = params.get("project") || "";
+  const companyIdParam = params.get("company") || "";
   const [projectName, setProjectName] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
@@ -22,7 +24,11 @@ export default function WorkerRegister() {
     if (!projectId) return;
     supabase.from("projects").select("name").eq("id", projectId).maybeSingle()
       .then(({ data }) => setProjectName(data?.name || ""));
-  }, [projectId]);
+    if (companyIdParam) {
+      supabase.from("companies").select("name").eq("id", companyIdParam).maybeSingle()
+        .then(({ data }) => setCompanyName(data?.name || ""));
+    }
+  }, [projectId, companyIdParam]);
 
   const submit = async () => {
     if (!projectId) { toast.error("잘못된 링크입니다"); return; }
@@ -32,8 +38,9 @@ export default function WorkerRegister() {
       _project_id: projectId,
       _name: name.trim(),
       _phone: phone.trim(),
-      _company_name: company.trim(),
-    });
+      _company_name: companyIdParam ? companyName : company.trim(),
+      _company_id: companyIdParam || null,
+    } as any);
     setSubmitting(false);
     if (error) { toast.error("등록 실패: " + error.message); return; }
     const result = data as any;

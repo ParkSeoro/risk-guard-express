@@ -68,25 +68,29 @@ export default function WorkerRegister() {
             </div>
           </div>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-4">
+          {companyIdParam && companyName && (
+            <div className="bg-primary/10 border border-primary/30 rounded p-2 text-sm">
+              소속사: <strong>{companyName}</strong> <span className="text-muted-foreground">(자동 지정)</span>
+            </div>
+          )}
           <div>
-            <Label>이름 *</Label>
-            <Input value={name} onChange={e => setName(e.target.value)} placeholder="홍길동" />
+            <Label className="text-base">이름 *</Label>
+            <Input className="h-12 text-lg" value={name} onChange={e => setName(e.target.value)} placeholder="홍길동" />
           </div>
           <div>
-            <Label>전화번호 *</Label>
-            <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="010-1234-5678" inputMode="tel" />
+            <Label className="text-base">전화번호 *</Label>
+            <Input className="h-12 text-lg" value={phone} onChange={e => setPhone(e.target.value)} placeholder="010-1234-5678" inputMode="tel" />
           </div>
-          <div>
-            <Label>소속사</Label>
-            <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="(주)○○건설" />
-          </div>
-          <Button className="w-full" onClick={submit} disabled={submitting}>
-            {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}등록하기
+          {!companyIdParam && (
+            <div>
+              <Label className="text-base">소속사</Label>
+              <Input className="h-12 text-lg" value={company} onChange={e => setCompany(e.target.value)} placeholder="(주)○○건설" />
+            </div>
+          )}
+          <Button className="w-full h-14 text-lg" onClick={submit} disabled={submitting}>
+            {submitting && <Loader2 className="h-5 w-5 mr-2 animate-spin" />}등록하기
           </Button>
-          <p className="text-xs text-muted-foreground">
-            등록 후 위험성평가 열람, 교육 확인, TBM 참여, 입퇴장 기록이 가능합니다.
-          </p>
         </CardContent>
       </Card>
     </div>

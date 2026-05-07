@@ -154,11 +154,19 @@ export default function Manual() {
               <p className="text-xs text-muted-foreground">안전관리시스템 · 관리자 & 근로자용</p>
             </div>
           </div>
-          <Link to="/auth">
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-1" /> 로그인
+          <div className="flex items-center gap-2 print:hidden">
+            <Button variant="outline" size="sm" onClick={() => restartTutorial() || window.location.assign("/")}>
+              <PlayCircle className="h-4 w-4 mr-1" /> 따라하기 다시 보기
             </Button>
-          </Link>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="h-4 w-4 mr-1" /> PDF 저장/인쇄
+            </Button>
+            <Link to="/auth">
+              <Button variant="outline" size="sm">
+                <ArrowLeft className="h-4 w-4 mr-1" /> 로그인
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
 

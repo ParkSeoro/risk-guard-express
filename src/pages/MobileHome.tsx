@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench } from "lucide-react";
 import { isOnline, listQueue } from "@/lib/offlineQueue";
 import { isPushSupported, registerSW, subscribeToPush } from "@/lib/pushSubscription";
+import { setForceDesktop } from "@/components/MobileRedirectGuard";
 import { toast } from "sonner";
 
 // 모바일 통합 홈 — 로그인 사용자(관리자) / 비로그인(근로자 안내)
@@ -109,7 +110,7 @@ export default function MobileHome() {
             <Button variant="outline" className="w-full h-12" onClick={enablePush}>
               <Bell className="h-4 w-4 mr-2" /> 푸시 알림 켜기
             </Button>
-            <Button variant="ghost" className="w-full h-12" onClick={() => navigate("/")}>
+            <Button variant="ghost" className="w-full h-12" onClick={() => { setForceDesktop(true); navigate("/"); }}>
               데스크톱 화면으로 전환
             </Button>
           </>

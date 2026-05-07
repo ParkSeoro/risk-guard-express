@@ -1096,6 +1096,7 @@ export const SCENARIOS = {
   e2e: { label: "E2E 페르소나 체인", run: runE2EChainScenario },
   drift: { label: "스키마/RPC 드리프트", run: runDriftScenario },
   coverage: { label: "기능 커버리지", run: runCoverageScenario },
+  mobile: { label: "모바일 라우트/카메라", run: runMobileScenario },
 } as const;
 
 export type ScenarioKey = keyof typeof SCENARIOS;

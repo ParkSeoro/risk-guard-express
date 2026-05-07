@@ -6,11 +6,11 @@ const QA_PREFIX = "__QA__";
 // ================================================================
 // Helper: assert that a forbidden operation actually fails
 // ================================================================
-async function expectFailure<T>(
-  promise: Promise<{ data: T | null; error: any }>,
+async function expectFailure(
+  builder: any,
   label: string
 ): Promise<{ pass: boolean; details: any; error_location?: string }> {
-  const { data, error } = await promise;
+  const { data, error } = await builder;
   if (error) return { pass: true, details: { rejected_with: error.code || error.message } };
   return {
     pass: false,

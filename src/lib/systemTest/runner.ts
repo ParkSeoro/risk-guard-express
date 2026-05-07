@@ -19,6 +19,7 @@ export type TestContext = {
   artifacts: Array<{ kind: string; ref_table: string; ref_id: string }>;
   log: (s: StepResult) => Promise<void>;
   onProgress?: (current: string, done: number, total: number) => void;
+  priorResults?: StepResult[];
 };
 
 export async function runStep(

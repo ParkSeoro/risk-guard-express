@@ -170,6 +170,7 @@ const App = () => (
             <Route path="/tbm/:token" element={<TbmParticipate />} />
             <Route path="/worker/register" element={<WorkerRegister />} />
             <Route path="/worker/portal/:token" element={<WorkerPortal />} />
+            <Route path="/manual" element={<Manual />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
         </AuthProvider>

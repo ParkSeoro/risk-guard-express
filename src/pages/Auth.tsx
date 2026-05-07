@@ -173,7 +173,7 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center space-y-2">
           <div className="flex justify-center">
@@ -256,8 +256,11 @@ const Auth = () => {
               <button onClick={() => setMode('login')} className="text-muted-foreground hover:underline">← 로그인으로 돌아가기</button>
             )}
           </div>
-        </CardContent>
+         </CardContent>
       </Card>
+      <a href="/manual" className="mt-4 text-xs text-muted-foreground hover:text-foreground hover:underline">
+        📖 사용 설명서 보기 (관리자 & 근로자용)
+      </a>
     </div>
   );
 };

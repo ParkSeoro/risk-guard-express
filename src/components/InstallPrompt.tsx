@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Download, X, Share, Plus, MoreVertical, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
+
+// 설치 안내 배너는 모바일 홈(/m) 과 로그인(/auth) 화면에서만 노출 — 한 곳에 고정
+const ALLOWED_PATHS = ["/m", "/auth"];
 
 // PWA 설치 안내 배너 — 플랫폼별 안내 + 현재 배포 주소 링크
 type Platform = "android" | "ios" | "desktop";

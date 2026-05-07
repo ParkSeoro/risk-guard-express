@@ -27,7 +27,7 @@ export async function runAdminScenario(ctx: TestContext): Promise<StepResult[]> 
           period_label: `${QA_PREFIX}${ctx.runId.slice(0, 8)}`,
           status: "작성중",
           created_by: ctx.userId,
-          assessment_type: "정기",
+          type: "정기",
         } as any)
         .select("id")
         .single();
@@ -65,8 +65,8 @@ export async function runAdminScenario(ctx: TestContext): Promise<StepResult[]> 
         .from("work_permits")
         .insert({
           project_id: ctx.projectId!,
-          title: `${QA_PREFIX}PMT-${ctx.runId.slice(0, 6)}`,
-          work_type: "일반",
+          work_name: `${QA_PREFIX}PMT-${ctx.runId.slice(0, 6)}`,
+          permit_type: "일반",
           status: "신청",
           created_by: ctx.userId,
         } as any)
@@ -137,7 +137,8 @@ export async function runWorkerScenario(ctx: TestContext): Promise<StepResult[]>
         _name: `${QA_PREFIX}W`,
         _phone: phone,
         _company_name: `${QA_PREFIX}Co`,
-      });
+        _company_id: undefined as any,
+      } as any);
       if (error) return { pass: false, error_location: error.message };
       const r = data as any;
       if (!r?.success) return { pass: false, error_location: r?.error || "no success" };
@@ -188,7 +189,7 @@ export async function runWorkflowScenario(ctx: TestContext): Promise<StepResult[
           period_label: `${QA_PREFIX}FLOW`,
           status: "작성중",
           created_by: ctx.userId,
-          assessment_type: "정기",
+          type: "정기",
         } as any)
         .select("id")
         .single();
@@ -227,7 +228,7 @@ export async function runNotificationScenario(ctx: TestContext): Promise<StepRes
         .insert({
           user_id: ctx.userId,
           title: `${QA_PREFIX}알림`,
-          body: "QA test notification",
+          message: "QA test notification",
           type: "test",
         } as any)
         .select("id")
@@ -256,7 +257,7 @@ export async function runIntegrityScenario(ctx: TestContext): Promise<StepResult
           period_label: label,
           status: "작성중",
           created_by: ctx.userId,
-          assessment_type: "정기",
+          type: "정기",
         } as any)
         .select("id, period_label")
         .single();

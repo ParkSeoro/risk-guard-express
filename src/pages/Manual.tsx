@@ -5,10 +5,15 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 import {
   HardHat, ShieldAlert, FileText, FileSignature, QrCode, ClipboardCheck,
   Users, ClipboardList, BookOpen, ArrowLeft, CheckCircle2, AlertTriangle,
-  LogIn, Bot, Sparkles, Search, X
+  LogIn, Bot, Sparkles, Search, X, MessageSquare
 } from "lucide-react";
 
 type Section = {

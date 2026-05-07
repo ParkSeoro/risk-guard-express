@@ -47,6 +47,7 @@ import WorkerManagement from "./pages/WorkerManagement";
 import WorkerAttendance from "./pages/WorkerAttendance";
 import WorkerRegister from "./pages/WorkerRegister";
 import WorkerPortal from "./pages/WorkerPortal";
+import Manual from "./pages/Manual";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();

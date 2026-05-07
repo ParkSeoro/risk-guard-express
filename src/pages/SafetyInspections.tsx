@@ -88,11 +88,12 @@ export default function SafetyInspections() {
 
     const { data: acts } = await supabase
       .from('safety_inspection_actions' as any)
-      .select('*')
+      .select('*, inspection:inspection_id(id, is_deleted)')
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
       .limit(200);
-    setActions((acts as any) || []);
+    // 삭제된 점검에 속한 조치는 제외
+    setActions(((acts as any) || []).filter((a: any) => !a.inspection?.is_deleted));
   };
   useEffect(() => { load(); }, [projectId]);
 

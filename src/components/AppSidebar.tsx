@@ -172,13 +172,13 @@ export function AppSidebar() {
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <SidebarGroupContent>
-                  <SidebarMenu>{adminItems.map(renderItem)}</SidebarMenu>
+                  <SidebarMenu>{adminFinal.map(renderItem)}</SidebarMenu>
                 </SidebarGroupContent>
               </CollapsibleContent>
             </Collapsible>
           ) : (
             <SidebarGroupContent>
-              <SidebarMenu>{adminItems.map(renderItem)}</SidebarMenu>
+              <SidebarMenu>{adminFinal.map(renderItem)}</SidebarMenu>
             </SidebarGroupContent>
           )}
         </SidebarGroup>

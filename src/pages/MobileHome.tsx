@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench } from "lucide-react";
 import { isOnline, listQueue } from "@/lib/offlineQueue";
+import { isPushSupported, registerSW, subscribeToPush } from "@/lib/pushSubscription";
+import { toast } from "sonner";
 
 // 모바일 통합 홈 — 로그인 사용자(관리자) / 비로그인(근로자 안내)
 export default function MobileHome() {
@@ -30,7 +32,17 @@ export default function MobileHome() {
     supabase.from("notifications").select("id", { count: "exact", head: true })
       .eq("user_id", user.id).eq("is_read", false)
       .then(({ count }) => setUnread(count || 0));
+    // SW 등록 (조용히)
+    registerSW();
   }, [user]);
+
+  const enablePush = async () => {
+    if (!user) return;
+    if (!isPushSupported()) { toast.error("이 브라우저는 푸시 알림을 지원하지 않습니다"); return; }
+    const r = await subscribeToPush(user.id);
+    if (r.ok) toast.success("푸시 알림이 활성화되었습니다");
+    else toast.error("푸시 알림 활성화 실패: " + (r.reason || ""));
+  };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">로딩…</div>;
 
@@ -94,7 +106,10 @@ export default function MobileHome() {
                 onClick={() => navigate("/manual")} />
             </div>
 
-            <Button variant="outline" className="w-full h-12" onClick={() => navigate("/")}>
+            <Button variant="outline" className="w-full h-12" onClick={enablePush}>
+              <Bell className="h-4 w-4 mr-2" /> 푸시 알림 켜기
+            </Button>
+            <Button variant="ghost" className="w-full h-12" onClick={() => navigate("/")}>
               데스크톱 화면으로 전환
             </Button>
           </>

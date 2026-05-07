@@ -158,6 +158,19 @@ Deno.serve(async (req) => {
       },
     }]);
 
+    // 6. Trigger web push (fire-and-forget)
+    try {
+      fetch(`${supabaseUrl}/functions/v1/send-push`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${serviceRoleKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id, title, body: message || title,
+          related_id, related_type, tag: related_id || type,
+          url: related_type === 'safety_inspection' ? '/m/actions' : '/m/alerts',
+        }),
+      }).catch(() => {});
+    } catch (_) {}
+
     return new Response(JSON.stringify({ 
       success: true, 
       notification_id: notification.id,

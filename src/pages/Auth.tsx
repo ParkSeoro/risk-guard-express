@@ -256,8 +256,11 @@ const Auth = () => {
               <button onClick={() => setMode('login')} className="text-muted-foreground hover:underline">← 로그인으로 돌아가기</button>
             )}
           </div>
-        </CardContent>
+         </CardContent>
       </Card>
+      <a href="/manual" className="mt-4 text-xs text-muted-foreground hover:text-foreground hover:underline">
+        📖 사용 설명서 보기 (관리자 & 근로자용)
+      </a>
     </div>
   );
 };

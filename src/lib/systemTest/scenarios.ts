@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { runStep, StepResult, TestContext, trackArtifact } from "./runner";
+import { FEATURE_COVERAGE, REQUIRED_COLUMNS, REQUIRED_RPCS } from "./manifest";
 
 const QA_PREFIX = "__QA__";
 
@@ -778,6 +779,305 @@ export async function runAuditScenario(ctx: TestContext): Promise<StepResult[]> 
 }
 
 // ================================================================
+// 12. E2E persona chain — 관리자→시공사→근로자 데이터가 끊기지 않는지
+// ================================================================
+export async function runE2EChainScenario(ctx: TestContext): Promise<StepResult[]> {
+  const out: StepResult[] = [];
+  const tag = `${QA_PREFIX}E2E-${ctx.runId.slice(0, 6)}`;
+  let runId: string | null = null;
+  let wpId: string | null = null;
+  let permitId: string | null = null;
+  let tbmId: string | null = null;
+  let tbmToken: string | null = null;
+  let workerToken: string | null = null;
+  let workerId: string | null = null;
+  let entryLogId: string | null = null;
+  const phone = `019${Date.now().toString().slice(-8)}`;
+
+  // [관리자] 평가 생성
+  out.push(
+    await runStep("e2e", "admin_create_run", async () => {
+      const { data, error } = await supabase
+        .from("assessment_runs")
+        .insert({
+          project_id: ctx.projectId!,
+          period_label: tag,
+          status: "승인완료",
+          type: "정기",
+          created_by: ctx.userId,
+          start_date: new Date().toISOString().slice(0, 10),
+          end_date: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+        } as any)
+        .select("id")
+        .single();
+      if (error) return { pass: false, error_location: error.message };
+      runId = data.id;
+      await trackArtifact(ctx.runId, "ra", "assessment_runs", data.id);
+      return { pass: true, details: { run_id: data.id } };
+    })
+  );
+
+  // [관리자] 작업계획서 — RA 컨텍스트로 작성
+  out.push(
+    await runStep("e2e", "admin_create_wp", async () => {
+      const { data, error } = await supabase
+        .from("work_plans")
+        .insert({
+          project_id: ctx.projectId!,
+          title: `${tag}-WP`,
+          work_type: "일반작업",
+          status: "승인완료",
+          created_by: ctx.userId,
+        } as any)
+        .select("id")
+        .single();
+      if (error) return { pass: false, error_location: error.message };
+      wpId = data.id;
+      await trackArtifact(ctx.runId, "wp", "work_plans", data.id);
+      return { pass: true, details: { wp_id: data.id } };
+    })
+  );
+
+  // [관리자] 작업허가 승인 — RA + WP 모두 참조
+  out.push(
+    await runStep("e2e", "admin_approve_permit", async () => {
+      if (!wpId || !runId) return { pass: false, error_location: "missing wp/run" };
+      const { data, error } = await supabase
+        .from("work_permits")
+        .insert({
+          project_id: ctx.projectId!,
+          work_plan_id: wpId,
+          assessment_run_id: runId,
+          permit_type: "일반",
+          work_name: `${tag}-PMT`,
+          status: "승인",
+          created_by: ctx.userId,
+          approved_by: ctx.userId,
+          approved_at: new Date().toISOString(),
+        } as any)
+        .select("id, work_plan_id, assessment_run_id, status")
+        .single();
+      if (error) return { pass: false, error_location: error.message };
+      permitId = data.id;
+      await trackArtifact(ctx.runId, "permit", "work_permits", data.id);
+      const linked = data.work_plan_id === wpId && data.assessment_run_id === runId;
+      return {
+        pass: linked && data.status === "승인",
+        details: data,
+        error_location: linked ? undefined : "permit lost RA/WP link",
+      };
+    })
+  );
+
+  // [시공사] TBM 생성 — RA 참조 유지
+  out.push(
+    await runStep("e2e", "contractor_create_tbm", async () => {
+      if (!runId) return { pass: false, error_location: "missing run" };
+      const { data, error } = await supabase
+        .from("tbm_sessions")
+        .insert({
+          project_id: ctx.projectId!,
+          run_id: runId,
+          title: `${tag}-TBM`,
+          tbm_date: new Date().toISOString().slice(0, 10),
+          leader_name: "QA Lead",
+          location: "QA Site",
+          briefing_summary: "QA briefing",
+          briefing_risks: [] as any,
+          is_active: true,
+          created_by: ctx.userId,
+        } as any)
+        .select("id, qr_token, run_id")
+        .single();
+      if (error) return { pass: false, error_location: error.message };
+      tbmId = data.id;
+      tbmToken = data.qr_token;
+      await trackArtifact(ctx.runId, "tbm", "tbm_sessions", data.id);
+      return {
+        pass: data.run_id === runId && !!data.qr_token,
+        details: { tbm: data.id, has_token: !!data.qr_token },
+        error_location: data.run_id !== runId ? "TBM lost RA link" : undefined,
+      };
+    })
+  );
+
+  // [근로자] 등록
+  out.push(
+    await runStep("e2e", "worker_register", async () => {
+      const { data, error } = await supabase.rpc("register_worker", {
+        _project_id: ctx.projectId!,
+        _name: `${tag}-W`,
+        _phone: phone,
+        _company_name: `${tag}-Co`,
+        _company_id: undefined as any,
+      } as any);
+      if (error) return { pass: false, error_location: error.message };
+      const r = data as any;
+      if (!r?.success) return { pass: false, error_location: r?.error || "no success" };
+      workerId = r.worker_id;
+      workerToken = r.qr_token;
+      await trackArtifact(ctx.runId, "worker", "workers", r.worker_id);
+      return { pass: true, details: { worker_id: r.worker_id } };
+    })
+  );
+
+  // [근로자] QR 입장 — 허가증 참조
+  out.push(
+    await runStep("e2e", "worker_entry", async () => {
+      if (!workerToken || !permitId) return { pass: false, error_location: "missing token/permit" };
+      const sig = "data:image/png;base64," + "A".repeat(200);
+      const { data, error } = await supabase.rpc("worker_entry", {
+        _token: workerToken,
+        _work_permit_id: permitId,
+        _signature: sig,
+        _ra_confirmed: true,
+        _edu_confirmed: true,
+        _tbm_confirmed: true,
+      });
+      if (error) return { pass: false, error_location: error.message };
+      const r = data as any;
+      if (!r?.success) return { pass: false, error_location: r?.error || "entry failed" };
+      entryLogId = r.log_id;
+      await trackArtifact(ctx.runId, "entry_log", "worker_entry_logs", r.log_id);
+      return { pass: true, details: r };
+    })
+  );
+
+  // [근로자] QR 퇴장
+  out.push(
+    await runStep("e2e", "worker_exit", async () => {
+      if (!workerToken) return { pass: false, error_location: "missing token" };
+      const sig = "data:image/png;base64," + "B".repeat(200);
+      const { data, error } = await supabase.rpc("worker_exit", {
+        _token: workerToken,
+        _signature: sig,
+        _no_accident: true,
+      });
+      if (error) return { pass: false, error_location: error.message };
+      const r = data as any;
+      return {
+        pass: !!r?.success,
+        details: r,
+        error_location: r?.success ? undefined : r?.error || "exit failed",
+      };
+    })
+  );
+
+  // 체인 무결성: 입장 로그→허가→계획서→평가까지 거꾸로 추적되는지
+  out.push(
+    await runStep("e2e", "chain_integrity", async () => {
+      if (!entryLogId) return { pass: false, error_location: "no entry log" };
+      const { data: log } = await supabase
+        .from("worker_entry_logs")
+        .select("id, work_permit_id, worker_id")
+        .eq("id", entryLogId)
+        .single();
+      if (!log || log.work_permit_id !== permitId)
+        return { pass: false, error_location: "entry → permit link broken" };
+
+      const { data: pmt } = await supabase
+        .from("work_permits")
+        .select("work_plan_id, assessment_run_id")
+        .eq("id", log.work_permit_id!)
+        .single();
+      if (!pmt || pmt.work_plan_id !== wpId || pmt.assessment_run_id !== runId)
+        return { pass: false, error_location: "permit → WP/RA link broken", details: pmt };
+
+      const { data: tbm } = await supabase
+        .from("tbm_sessions")
+        .select("run_id")
+        .eq("id", tbmId!)
+        .single();
+      if (!tbm || tbm.run_id !== runId)
+        return { pass: false, error_location: "TBM → RA link broken" };
+
+      return {
+        pass: true,
+        details: { run_id: runId, wp_id: wpId, permit_id: permitId, tbm_id: tbmId, log_id: entryLogId },
+      };
+    })
+  );
+
+  return out;
+}
+
+// ================================================================
+// 13. Schema/RPC drift — 기대 컬럼/RPC 시그니처가 사라지면 즉시 FAIL
+// ================================================================
+export async function runDriftScenario(ctx: TestContext): Promise<StepResult[]> {
+  const out: StepResult[] = [];
+
+  for (const [table, cols] of Object.entries(REQUIRED_COLUMNS)) {
+    out.push(
+      await runStep("drift", `cols_${table}`, async () => {
+        // select all required columns; missing column → error
+        const { error } = await supabase
+          .from(table as any)
+          .select(cols.join(","))
+          .limit(1);
+        return {
+          pass: !error,
+          details: { table, expected: cols },
+          error_location: error
+            ? `${table}: ${error.message} (기대 컬럼 ${cols.join(",")})`
+            : undefined,
+        };
+      })
+    );
+  }
+
+  for (const rpc of REQUIRED_RPCS) {
+    out.push(
+      await runStep("drift", `rpc_${rpc.name}`, async () => {
+        const { error } = await supabase.rpc(rpc.name as any, rpc.sample_args);
+        // Only RPC-not-found / signature-mismatch counts as drift.
+        // Application-level errors (validation, NOT_FOUND, forbidden) are OK — function exists.
+        const msg = error?.message || "";
+        const isMissing =
+          /Could not find the function|does not exist|schema cache/i.test(msg);
+        return {
+          pass: !isMissing,
+          details: { rpc: rpc.name, soft_error: msg || null },
+          error_location: isMissing ? `RPC drift: ${rpc.name} — ${msg}` : undefined,
+        };
+      })
+    );
+  }
+
+  return out;
+}
+
+// ================================================================
+// 14. Coverage manifest — 등록된 모든 기능에 대해 직전 실행 결과가 존재하는지
+// ----------------------------------------------------------------
+// 이 시나리오는 "다른 시나리오들이 먼저 실행된 결과 배열" 을 받아야 의미가 있어서,
+// runner 가 ctx.priorResults 로 전달합니다. (없으면 SKIP)
+// ================================================================
+export async function runCoverageScenario(ctx: TestContext): Promise<StepResult[]> {
+  const out: StepResult[] = [];
+  const prior = ctx.priorResults || [];
+  const seen = new Set(prior.map((r) => `${r.scenario_key}.${r.step_key}`));
+
+  for (const [feature, keys] of Object.entries(FEATURE_COVERAGE)) {
+    const missing = keys.filter((k) => !seen.has(k));
+    out.push({
+      scenario_key: "coverage",
+      step_key: feature.replace(/[^a-zA-Z0-9가-힣]/g, "_").slice(0, 60),
+      pass_fail: missing.length === 0 ? "pass" : "fail",
+      duration_ms: 0,
+      error_location:
+        missing.length === 0
+          ? null
+          : `누락된 검증 단계: ${missing.join(", ")} — 새 기능 추가 시 manifest.ts 와 시나리오를 동기화하세요.`,
+      details: { feature, expected: keys, missing },
+      score: missing.length === 0 ? 100 : 0,
+    });
+  }
+
+  return out;
+}
+
+// ================================================================
 // Registry
 // ================================================================
 export const SCENARIOS = {
@@ -792,6 +1092,10 @@ export const SCENARIOS = {
   rpc: { label: "RPC 점검", run: runRpcScenario },
   edgefn: { label: "엣지 함수 헬스", run: runEdgeFunctionScenario },
   audit: { label: "감사 로그", run: runAuditScenario },
+  e2e: { label: "E2E 페르소나 체인", run: runE2EChainScenario },
+  drift: { label: "스키마/RPC 드리프트", run: runDriftScenario },
+  coverage: { label: "기능 커버리지", run: runCoverageScenario },
 } as const;
 
 export type ScenarioKey = keyof typeof SCENARIOS;
+

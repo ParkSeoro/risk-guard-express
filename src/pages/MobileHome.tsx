@@ -126,6 +126,37 @@ export default function MobileHome() {
 
         {user && (
           <>
+            {/* 프로젝트 선택 (마스터: 전체 / 일반: 가입 프로젝트) */}
+            {projects.length > 0 && (
+              <Card>
+                <CardContent className="pt-4 space-y-2">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Building2 className="h-3.5 w-3.5" />
+                    <span>{isMaster ? "프로젝트 선택 (마스터)" : "현재 프로젝트"}</span>
+                  </div>
+                  {isMaster && projects.length > 1 ? (
+                    <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                      <SelectTrigger className="h-11"><SelectValue placeholder="프로젝트를 선택하세요" /></SelectTrigger>
+                      <SelectContent>
+                        {projects.map(p => (
+                          <SelectItem key={p.id} value={p.id}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{p.name}</span>
+                              <span className="text-[10px] text-muted-foreground">{p.site_name}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="text-sm font-medium">
+                      {projects.find(p => p.id === selectedProjectId)?.name || "선택되지 않음"}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {queueCount > 0 && (
               <Card className="border-warning/40 bg-warning/5">
                 <CardContent className="pt-4 text-sm">

@@ -19,6 +19,8 @@ import {
   TestContext,
 } from "@/lib/systemTest/runner";
 import { SCENARIOS, ScenarioKey } from "@/lib/systemTest/scenarios";
+import { planCommand, applyStepFilter, COMMAND_HINTS } from "@/lib/systemTest/commandRouter";
+import { Input } from "@/components/ui/input";
 
 export default function SystemTestEngine() {
   const { hasRole, user } = useAuth();

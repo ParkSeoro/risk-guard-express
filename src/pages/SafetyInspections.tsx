@@ -57,7 +57,8 @@ type InspAction = {
 export default function SafetyInspections() {
   const { profile } = useAuth();
   const { toast } = useToast();
-  const projectId = typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') || '' : '';
+  const { selectedProject } = useGlobalProjectAccess();
+  const projectId = selectedProject;
   const [tab, setTab] = useState('list');
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [actions, setActions] = useState<(InspAction & { inspection?: Inspection })[]>([]);

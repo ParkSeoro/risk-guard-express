@@ -3634,6 +3634,124 @@ export type Database = {
         }
         Relationships: []
       }
+      system_test_artifacts: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          ref_id: string
+          ref_table: string
+          run_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind: string
+          ref_id: string
+          ref_table: string
+          run_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          ref_id?: string
+          ref_table?: string
+          run_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "system_test_artifacts_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "system_test_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      system_test_results: {
+        Row: {
+          created_at: string
+          details: Json | null
+          duration_ms: number | null
+          error_location: string | null
+          id: string
+          pass_fail: string
+          run_id: string
+          scenario_key: string
+          score: number | null
+          step_key: string
+        }
+        Insert: {
+          created_at?: string
+          details?: Json | null
+          duration_ms?: number | null
+          error_location?: string | null
+          id?: string
+          pass_fail: string
+          run_id: string
+          scenario_key: string
+          score?: number | null
+          step_key: string
+        }
+        Update: {
+          created_at?: string
+          details?: Json | null
+          duration_ms?: number | null
+          error_location?: string | null
+          id?: string
+          pass_fail?: string
+          run_id?: string
+          scenario_key?: string
+          score?: number | null
+          step_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "system_test_results_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "system_test_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      system_test_runs: {
+        Row: {
+          created_at: string
+          finished_at: string | null
+          id: string
+          scope: string
+          started_at: string
+          started_by: string
+          status: string
+          summary: Json | null
+          total_score: number | null
+        }
+        Insert: {
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          scope?: string
+          started_at?: string
+          started_by: string
+          status?: string
+          summary?: Json | null
+          total_score?: number | null
+        }
+        Update: {
+          created_at?: string
+          finished_at?: string | null
+          id?: string
+          scope?: string
+          started_at?: string
+          started_by?: string
+          status?: string
+          summary?: Json | null
+          total_score?: number | null
+        }
+        Relationships: []
+      }
       tbm_participations: {
         Row: {
           briefing_confirmed: boolean
@@ -4414,6 +4532,10 @@ export type Database = {
       }
       process_invite_code: {
         Args: { _invite_code: string; _user_id: string }
+        Returns: Json
+      }
+      qa_impersonate_check: {
+        Args: { _project_id: string; _target_user: string }
         Returns: Json
       }
       register_worker:

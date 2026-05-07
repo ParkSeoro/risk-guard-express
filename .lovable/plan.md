@@ -1,162 +1,88 @@
-# 위험성평가 AI 생성 시스템 고도화
+# 시스템 테스트 엔진 (System QA Engine)
 
-기존 `generate-risk-ai` edge function과 `riskAutoGenAI.ts`를 확장하여 7개 영역을 단계적으로 개선합니다. 신규 프로젝트 생성 없이 기존 구조 위에 얹습니다.
+기존 AI 테스트 엔진(`/admin/ai-test`)과는 별개로, **시스템 전체 동작/권한/연동/무결성**을 검증하는 독립 모듈을 추가합니다. 마스터 전용. 기존 기능은 일절 변경하지 않습니다.
 
----
+## 1. 아키텍처
 
-## Phase 1 — DB 스키마 확장 (Migration)
+```text
+[Master UI]  ──►  /admin/system-test
+   │
+   ▼
+src/lib/systemTest/
+   ├─ runner.ts           시나리오 실행 엔진 (PASS/FAIL/점수 집계)
+   ├─ context.ts          테스트 컨텍스트 (격리된 임시 데이터, 자동 정리)
+   ├─ scenarios/
+   │    ├─ admin.ts          프로젝트/사용자/평가/계획/허가
+   │    ├─ contractor.ts     시공사/협력사 평가·계획·TBM
+   │    ├─ worker.ts         QR 참여 / 서명 / 입퇴장
+   │    ├─ permissions.ts    역할별 접근 PASS/FAIL
+   │    ├─ workflow.ts       RA→WP→Permit→TBM→점검→사고→비용 연동
+   │    ├─ notifications.ts  알림 발생 검증
+   │    └─ integrity.ts      저장/수정/중복 검사
+   └─ report.ts           기능별 점수, 오류 위치 리포트
+```
 
-신규 테이블만 추가, 기존 테이블 변경 최소화. 모두 RLS 적용.
+- 운영 시스템과 분리: 모든 테스트 데이터는 `__qa__` prefix + `qa_run_id` 태깅 → 종료 시 일괄 soft-delete
+- 제3자 관점: 직접 supabase-js / edge function curl 호출, UI 컴포넌트 의존성 없음
+- 권한 테스트는 **테스트용 임시 사용자 토큰**(아래 DB 함수)으로 별도 클라이언트를 만들어 호출
 
-- **`ai_generation_jobs`** — 비동기 백그라운드 생성 작업
-  - `id`, `project_id`, `run_id`(nullable), `created_by`
-  - `process_name`, `equipment`, `work_description`, `target_count`(50/100/150/300)
-  - `status` (`queued`|`running`|`partial`|`completed`|`failed`)
-  - `total_batches`, `completed_batches`, `items_generated`
-  - `quality_score`(numeric), `diversity_score`, `duplicate_rate`
-  - `error_message`, `started_at`, `completed_at`
-- **`ai_generation_logs`** — 입출력 로그 (오류 추적)
-  - `job_id`(FK), `batch_index`, `prompt`(text), `raw_response`(jsonb)
-  - `model`, `tokens_used`, `latency_ms`, `error`(text)
-- **`ai_generated_items_buffer`** — 배치별 중간 결과
-  - `job_id`(FK), `batch_index`, `items`(jsonb), `created_at`
-- **`risk_user_corrections`** — 사용자 수정 학습 데이터
-  - `project_id`, `process_name`, `original`(jsonb), `corrected`(jsonb)
-  - `field_changed`, `corrected_by`, `created_at`
-- **`risk_knowledge_base`** — RAG 데이터 (법령/KOSHA/사고사례)
-  - `source_type` (`law`|`kosha`|`accident`|`internal`)
-  - `process_tags`(text[]), `equipment_tags`(text[])
-  - `title`, `content`(text), `embedding_summary`(text — 키워드 추출)
-  - `legal_reference` (조항)
-- **`ai_test_runs`** — 테스트 엔진 결과 (마스터 전용)
-  - `tested_by`, `test_type` (`generation`|`speed`|`quality`)
-  - `input_params`(jsonb), `result`(jsonb)
-  - `pass_fail` (`pass`|`fail`), `error_location`, `duration_ms`
+## 2. DB 마이그레이션
 
-RLS: 본인/마스터/프로젝트 멤버 패턴 (기존 `is_project_member`, `has_role` 활용).
+신규 테이블 (RLS: master only):
+- `system_test_runs` — id, started_by, started_at, finished_at, total_score, status (running/completed/failed)
+- `system_test_results` — run_id, scenario_key, step_key, pass_fail, duration_ms, error_location, details(jsonb), score
+- `system_test_artifacts` — run_id, kind, ref_table, ref_id (정리 추적용)
 
----
+신규 RPC (SECURITY DEFINER, master only):
+- `qa_cleanup_run(run_id uuid)` — 해당 run의 artifacts 전부 soft-delete
+- `qa_impersonate_check(_role app_role, _project_id uuid)` — 권한 시뮬레이션 결과 반환 (실제 토큰 발급 없이 RLS 함수들 호출)
 
-## Phase 2 — 비동기 배치 생성 엔진
+> 권한 시나리오는 새 사용자를 만들지 않고 `has_role`, `is_project_member`, `can_access_safety_cost`, `get_project_role` 등 기존 함수를 마스터 권한으로 호출해 EXPECT vs ACTUAL 비교.
 
-**Edge Function 신규**: `supabase/functions/risk-job-orchestrator/index.ts`
-- POST `/start` — `ai_generation_jobs` 행 생성, 즉시 반환 (job_id)
-- 백그라운드 `EdgeRuntime.waitUntil()`로 batch 분할 (30개 단위)
-- 각 배치를 `Promise.all`로 병렬 실행 (최대 3 동시)
-- 배치 완료마다 `ai_generated_items_buffer` insert + job progress update
-- 완료 시 status `completed`, 실패 배치는 `partial`
+## 3. 시나리오 (요약)
 
-**기존 `generate-risk-ai` 재활용** — 단일 배치 생성기로 유지, orchestrator가 호출.
+| 키 | 단계 | 검증 |
+|---|---|---|
+| admin.create_project | 프로젝트 INSERT | row 존재 + RLS |
+| admin.approve_user | profile.account_status='active' | 변경 반영 |
+| admin.create_ra | assessment_runs INSERT + items | 연결 무결성 |
+| admin.create_wp | work_plans INSERT | RA 참조 |
+| admin.approve_permit | work_permits 상태 전이 | 알림 트리거 |
+| contractor.write_ra | 협력사 컨텍스트로 RA | company_id 격리 |
+| contractor.tbm | tbm_sessions 생성 | qr_token 발급 |
+| worker.qr_join | get_tbm_by_token | session 매칭 |
+| worker.sign_in | submit_tbm_participation + worker_entry | 서명 길이/중복 |
+| perm.master_all | 모든 리소스 접근 | true |
+| perm.contractor_isolated | 타 회사 데이터 접근 | false |
+| flow.ra_to_cost | RA→WP→Permit→TBM→Inspection→Incident→SafetyCost 체인 | 각 단계 ID 연결 |
+| notify.fail | 강제 FAIL → 알림 row | notifications 테이블 신규 row |
+| notify.approve | 승인 → 알림 row | 동일 |
+| integ.crud | INSERT/UPDATE/SELECT 일치 | 값 비교 |
+| integ.dup | 동일 데이터 2회 시도 | 거부 또는 단일 row |
 
-**클라이언트 (`riskAutoGenAI.ts`)**:
-- `startBackgroundJob(opts)` 함수 추가 → job_id 반환
-- Realtime 구독으로 `ai_generation_jobs` row 변경 감지
-- 진행률·중간 결과·완료 알림 toast
+각 step → `{pass, duration, error_location?, details}` 반환. 시나리오별 점수 = pass비율 × 100. 총점 = 가중 평균.
 
----
+## 4. UI: `src/pages/SystemTestEngine.tsx`
 
-## Phase 3 — 공종 분해 + 다양성 보장
+- 라우트: `/admin/system-test` (App.tsx에 master gate)
+- 사이드바 "시스템" 그룹 + masterOnlyItems에 추가 (아이콘: `FlaskConical`)
+- 구성:
+  - 상단: "전체 실행" / 시나리오별 실행 버튼 그리드
+  - 진행률 Progress bar + 현재 step 라벨
+  - 결과 트리: 시나리오 → step, PASS/FAIL 배지, 오류 위치, duration
+  - 기능별 점수 카드 (관리자/시공사/근로자/권한/연동/알림/무결성)
+  - 최근 실행 이력 (system_test_runs)
+  - "테스트 데이터 정리" 버튼 (qa_cleanup_run)
 
-**신규 lib**: `src/lib/processDecomposer.ts`
-- 입력 공종을 sub-process로 자동 분해 (예: 굴착 → 굴착·운반·정리·배수)
-- KOSHA 표준 분류 매핑 테이블 내장
-- 각 sub-process에 target_count 균등 분배
+## 5. 기존 시스템 영향
 
-**중복 방지** (orchestrator 내):
-- `(sub_task, hazard)` 키 정규화 후 jaccard similarity > 0.85 제거
-- 다양성 스코어 = unique sub_task 수 / 총 항목 수
+- 기존 코드 수정: `App.tsx`(라우트 1줄), `AppSidebar.tsx`(masterOnlyItems 1줄) **만**
+- 모든 시나리오는 try/finally로 자동 정리. 실패해도 운영 데이터 오염 없음
+- 알림 테스트는 dev `EMAIL_OVERRIDE`로 외부 발송 차단됨
 
----
+## 완료 기준 매핑
 
-## Phase 4 — RAG 적용
-
-**신규 Edge Function**: `supabase/functions/rag-search/index.ts`
-- 입력: process_name, equipment, work_description
-- `risk_knowledge_base` 키워드 매칭 (process_tags overlap + content ilike)
-- 상위 N개 컨텍스트 반환
-
-**`generate-risk-ai` 수정**:
-- 호출 전 RAG 컨텍스트 fetch
-- system prompt에 "[참고자료]" 섹션 주입 (법령 조항 + 사고사례 요약)
-- 출력 `legal_basis` 필드에 RAG에서 가져온 조항 우선 매핑
-
-**시드 데이터 마이그레이션**: 기존 `legalReferences`, `accident_cases` 테이블에서 `risk_knowledge_base`로 import.
-
----
-
-## Phase 5 — 사용자 수정 학습
-
-**훅 추가**: `src/hooks/useRiskItemTracking.ts`
-- 위험성평가 항목 저장/수정 시 원본과 비교 → 변경 필드를 `risk_user_corrections` insert
-- 주기적으로 빈도 높은 패턴을 RAG knowledge_base에 `internal` 소스로 승격 (마스터 수동 승인)
-
-**기존 `RiskAssessment.tsx` 저장 로직에 hook 연결** (최소 침습).
-
----
-
-## Phase 6 — 품질 점수 + 테스트 엔진
-
-**신규 lib**: `src/lib/qualityScoring.ts`
-- 반복율 = 1 - (unique hazards / total)
-- 다양성 = unique sub_tasks / total
-- 위험요인 분포 엔트로피 계산
-- 종합 점수 (0~100)
-
-**자동 호출**: orchestrator 완료 시 점수 계산 후 `ai_generation_jobs.quality_score` 업데이트
-
-**신규 페이지**: `src/pages/AITestEngine.tsx` (마스터 전용 가드)
-- 생성 테스트: 샘플 입력 → 정상 출력 검증
-- 속도 테스트: 50/100 항목 생성 시간 측정
-- 품질 테스트: 점수 임계값(70+) 검증
-- PASS/FAIL 배지 + 오류 스택 표시
-- 결과 `ai_test_runs` 저장
-
-라우트 `/admin/ai-test` 추가, AppSidebar (마스터만) 노출.
-
----
-
-## Phase 7 — 로그 시스템
-
-- `ai_generation_logs` 자동 기록 (orchestrator + generate-risk-ai)
-- 신규 페이지 `src/pages/AILogs.tsx` (마스터 전용)
-- job별 펼치기 → batch별 prompt/response/error 확인
-- CSV export 버튼
-
----
-
-## UI 통합
-
-기존 위험성평가 생성 다이얼로그(`AssessmentRunDetail.tsx`)에:
-- 항목 수 선택: **50 / 100 / 150 / 300** (라디오)
-- 생성 시작 → job_id 받음 → Progress bar 컴포넌트 표시
-- "백그라운드 진행 중" 토글로 다른 작업 가능
-- 완료 시 toast + "결과 보기" 버튼
-
-신규 컴포넌트:
-- `src/components/risk-ai/AIJobProgress.tsx` — 실시간 진행률
-- `src/components/risk-ai/QualityBadge.tsx` — 점수 표시
-
----
-
-## 기술 메모
-
-- Edge Function 백그라운드: `EdgeRuntime.waitUntil(promise)` (Deno Deploy 패턴)
-- 동시성: `p-limit` 대신 수동 chunk + Promise.all (3 concurrent)
-- 모델: `google/gemini-3-flash-preview` 기본, 마스터 테스트에서 `gpt-5-mini` 비교 가능
-- Realtime: `ALTER PUBLICATION supabase_realtime ADD TABLE ai_generation_jobs`
-- 로그 보존: 30일 후 자동 삭제 cron (선택)
-- RAG: 임베딩 없이 키워드/태그 매칭으로 시작 (pgvector 도입은 추후)
-
----
-
-## 작업 순서
-
-1. **Phase 1** — 마이그레이션 (테이블 + RLS + Realtime)
-2. **Phase 2** — orchestrator 함수 + 클라이언트 job 트래킹 + UI 진행률
-3. **Phase 3** — processDecomposer + 중복 제거
-4. **Phase 4** — RAG 함수 + knowledge_base 시드 + prompt 주입
-5. **Phase 5** — 사용자 수정 추적 훅
-6. **Phase 6** — 품질 스코어링 + 테스트 엔진 페이지
-7. **Phase 7** — 로그 뷰어 페이지
-
-각 Phase 종료 후 빌드 가능 상태 유지. 기존 동기 생성 경로(`generateRiskItemsHybrid`)는 fallback으로 보존.
+- ✅ 전체 자동 테스트: `runAll()` 한 버튼
+- ✅ 권한 검증: permissions 시나리오 + perm.* 키
+- ✅ 기능 연동: flow.ra_to_cost
+- ✅ 결과 리포트: system_test_results + UI 점수/오류위치 + CSV 내보내기

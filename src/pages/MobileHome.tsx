@@ -5,7 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Building2, ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine } from "lucide-react";
 import { isOnline, listQueue } from "@/lib/offlineQueue";
 import { isPushSupported, registerSW, subscribeToPush } from "@/lib/pushSubscription";
 import { setForceDesktop } from "@/components/MobileRedirectGuard";
@@ -14,10 +15,22 @@ import { toast } from "sonner";
 // 모바일 통합 홈 — 로그인 사용자(관리자) / 비로그인(근로자 안내)
 export default function MobileHome() {
   const navigate = useNavigate();
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, hasRole } = useAuth();
+  const isMaster = hasRole('master');
   const [unread, setUnread] = useState(0);
   const [queueCount, setQueueCount] = useState(0);
   const [online, setOnline] = useState(isOnline());
+  const [projects, setProjects] = useState<{ id: string; name: string; site_name: string }[]>([]);
+  const [selectedProjectId, setSelectedProjectIdState] = useState<string>(() => {
+    try { return localStorage.getItem("selectedProjectId") || ""; } catch { return ""; }
+  });
+
+  const setSelectedProjectId = (id: string) => {
+    setSelectedProjectIdState(id);
+    try { localStorage.setItem("selectedProjectId", id); } catch {}
+    const p = projects.find(x => x.id === id);
+    toast.success("프로젝트 선택: " + (p?.name || ""));
+  };
 
   useEffect(() => {
     const on = () => setOnline(true);
@@ -33,28 +46,39 @@ export default function MobileHome() {
     supabase.from("notifications").select("id", { count: "exact", head: true })
       .eq("user_id", user.id).eq("is_read", false)
       .then(({ count }) => setUnread(count || 0));
-    // SW 등록 (조용히)
     registerSW();
-    // selectedProjectId 가 비어있으면 가입된 첫 프로젝트로 자동 설정
-    // → 모바일 페이지들이 "빈 화면 / 링크 없음" 상태로 빠지는 것 방지
+
+    // 프로젝트 목록 로드 — 마스터: 전체 / 일반: 가입된 것 (자동 단일 선택)
     (async () => {
-      const cur = localStorage.getItem("selectedProjectId");
-      if (cur) return;
-      const { data } = await supabase
-        .from("project_members")
-        .select("project_id, projects!inner(id, name)")
-        .eq("user_id", user.id)
-        .limit(1)
-        .maybeSingle();
-      const pid = (data as any)?.project_id;
-      if (pid) {
-        localStorage.setItem("selectedProjectId", pid);
-        toast.message("프로젝트 자동 선택됨");
+      let list: { id: string; name: string; site_name: string }[] = [];
+      if (isMaster) {
+        const { data } = await supabase.from("projects").select("id, name, site_name").order("created_at", { ascending: false });
+        list = data || [];
       } else {
-        toast.error("가입된 프로젝트가 없습니다 — 데스크톱에서 프로젝트를 선택하세요");
+        const { data } = await supabase
+          .from("project_members")
+          .select("projects(id, name, site_name)")
+          .eq("user_id", user.id);
+        list = (data || []).map((m: any) => m.projects).filter(Boolean);
+      }
+      setProjects(list);
+      const cur = localStorage.getItem("selectedProjectId");
+      const validCur = cur && list.some(p => p.id === cur);
+      if (validCur) {
+        setSelectedProjectIdState(cur!);
+      } else if (list.length > 0) {
+        // 마스터: 다중 프로젝트면 직접 선택, 단일이면 자동
+        // 일반: 항상 첫 프로젝트 자동 설정
+        if (!isMaster || list.length === 1) {
+          localStorage.setItem("selectedProjectId", list[0].id);
+          setSelectedProjectIdState(list[0].id);
+          if (!isMaster) toast.message("프로젝트 자동 선택: " + list[0].name);
+        }
+      } else {
+        toast.error(isMaster ? "등록된 프로젝트가 없습니다" : "가입된 프로젝트가 없습니다 — 관리자에게 문의하세요");
       }
     })();
-  }, [user]);
+  }, [user, isMaster]);
 
   const enablePush = async () => {
     if (!user) return;
@@ -102,6 +126,37 @@ export default function MobileHome() {
 
         {user && (
           <>
+            {/* 프로젝트 선택 (마스터: 전체 / 일반: 가입 프로젝트) */}
+            {projects.length > 0 && (
+              <Card>
+                <CardContent className="pt-4 space-y-2">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Building2 className="h-3.5 w-3.5" />
+                    <span>{isMaster ? "프로젝트 선택 (마스터)" : "현재 프로젝트"}</span>
+                  </div>
+                  {isMaster && projects.length > 1 ? (
+                    <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                      <SelectTrigger className="h-11"><SelectValue placeholder="프로젝트를 선택하세요" /></SelectTrigger>
+                      <SelectContent>
+                        {projects.map(p => (
+                          <SelectItem key={p.id} value={p.id}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{p.name}</span>
+                              <span className="text-[10px] text-muted-foreground">{p.site_name}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="text-sm font-medium">
+                      {projects.find(p => p.id === selectedProjectId)?.name || "선택되지 않음"}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {queueCount > 0 && (
               <Card className="border-warning/40 bg-warning/5">
                 <CardContent className="pt-4 text-sm">

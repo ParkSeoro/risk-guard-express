@@ -48,6 +48,11 @@ import WorkerAttendance from "./pages/WorkerAttendance";
 import WorkerRegister from "./pages/WorkerRegister";
 import WorkerPortal from "./pages/WorkerPortal";
 import Manual from "./pages/Manual";
+import MobileHome from "./pages/MobileHome";
+import MobileInspect from "./pages/MobileInspect";
+import MobileAlerts from "./pages/MobileAlerts";
+import InstallPrompt from "./components/InstallPrompt";
+import { useOfflineSync } from "./hooks/useOfflineSync";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -171,12 +176,22 @@ const App = () => (
             <Route path="/worker/register" element={<WorkerRegister />} />
             <Route path="/worker/portal/:token" element={<WorkerPortal />} />
             <Route path="/manual" element={<Manual />} />
+            <Route path="/m" element={<MobileHome />} />
+            <Route path="/m/inspect" element={<MobileInspect />} />
+            <Route path="/m/alerts" element={<MobileAlerts />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
+          <InstallPrompt />
+          <OfflineSyncMount />
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
+
+function OfflineSyncMount() {
+  useOfflineSync();
+  return null;
+}
 
 export default App;

@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Download, X, Share, Plus, MoreVertical, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
+
+// 설치 안내 배너는 모바일 홈(/m) 과 로그인(/auth) 화면에서만 노출 — 한 곳에 고정
+const ALLOWED_PATHS = ["/m", "/auth"];
 
 // PWA 설치 안내 배너 — 플랫폼별 안내 + 현재 배포 주소 링크
 type Platform = "android" | "ios" | "desktop";
@@ -33,6 +37,8 @@ export default function InstallPrompt() {
   const [expanded, setExpanded] = useState(false);
   const platform = useMemo(detectPlatform, []);
   const inIframe = useMemo(isInIframe, []);
+  const loc = useLocation();
+  const allowed = ALLOWED_PATHS.some((p) => loc.pathname === p || loc.pathname.startsWith(p + "/"));
 
   // 배포 주소 (iframe 안이면 top 주소 추정 불가 → 알려진 호스트 우선순위)
   const deployUrl = useMemo(() => {
@@ -84,7 +90,7 @@ export default function InstallPrompt() {
 
   const openUrl = () => window.open(deployUrl, "_blank", "noopener");
 
-  if (!show) return null;
+  if (!show || !allowed) return null;
 
   return (
     <div className="fixed bottom-4 left-4 right-4 z-50 max-w-md mx-auto bg-card border-2 border-primary rounded-xl shadow-2xl overflow-hidden">

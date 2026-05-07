@@ -12,10 +12,14 @@ import { toast } from "sonner";
 export default function WorkerManagement() {
   const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
+  const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
+  const [companyId, setCompanyId] = useState<string>("");
   const [workers, setWorkers] = useState<any[]>([]);
   const [showQr, setShowQr] = useState(false);
   const baseUrl = window.location.origin;
-  const registerUrl = projectId ? `${baseUrl}/worker/register?project=${projectId}` : "";
+  const registerUrl = projectId
+    ? `${baseUrl}/worker/register?project=${projectId}${companyId ? `&company=${companyId}` : ''}`
+    : "";
 
   useEffect(() => {
     supabase.from("projects").select("id,name").then(({ data }) => setProjects(data || []));
@@ -24,6 +28,9 @@ export default function WorkerManagement() {
   useEffect(() => {
     if (!projectId) return;
     localStorage.setItem("currentProjectId", projectId);
+    setCompanyId("");
+    supabase.from("companies").select("id,name").eq("project_id", projectId).order("name")
+      .then(({ data }) => setCompanies(data || []));
     load();
   }, [projectId]);
 

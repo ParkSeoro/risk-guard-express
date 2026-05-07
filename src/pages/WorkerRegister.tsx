@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Loader2, HardHat } from "lucide-react";
+import { Loader2, HardHat, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function WorkerRegister() {

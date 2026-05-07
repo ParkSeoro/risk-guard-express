@@ -158,7 +158,7 @@ export default function SafetyInspections() {
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
     setDetailItems(prev => prev.map(x => x.id === item.id ? { ...x, result } : x));
 
-    // Auto-create action when fail
+    // Auto-create action when fail + notify project safety managers
     if (result === 'fail' && detail) {
       const exists = detailActions.find(a => a.item_id === item.id);
       if (!exists) {
@@ -170,7 +170,31 @@ export default function SafetyInspections() {
           severity: 'medium',
           status: 'pending',
         }).select().single();
-        if (!e2 && a) setDetailActions(prev => [...prev, { ...(a as any), evidence_photos: [] }]);
+        if (!e2 && a) {
+          setDetailActions(prev => [...prev, { ...(a as any), evidence_photos: [] }]);
+          // Notify project members with admin/safety_manager role
+          try {
+            const { data: members } = await supabase
+              .from('project_members')
+              .select('user_id, role')
+              .eq('project_id', projectId)
+              .in('role', ['master', 'project_admin', 'safety_manager']);
+            const { sendNotification } = await import('@/lib/notificationService');
+            await Promise.all(((members as any) || []).map((m: any) =>
+              sendNotification({
+                user_id: m.user_id,
+                title: '안전점검 불합격 발생',
+                message: `${detail.location} · ${item.label}`,
+                type: 'inspection_fail',
+                related_id: detail.id,
+                related_type: 'safety_inspection',
+                project_id: projectId,
+              })
+            ));
+          } catch (e) {
+            if (import.meta.env.DEV) console.warn('notify failed', e);
+          }
+        }
       }
     }
   };

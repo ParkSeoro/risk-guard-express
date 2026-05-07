@@ -88,7 +88,9 @@ export function useProjectAccess(): ProjectAccess {
 
   useEffect(() => {
     loadProjects();
-  }, [user]);
+    // isMaster depends on roles which load asynchronously after user;
+    // re-run when it flips so master sees the full project list.
+  }, [user, isMaster]);
 
   useEffect(() => {
     if (selectedProject && user && !isMaster) {

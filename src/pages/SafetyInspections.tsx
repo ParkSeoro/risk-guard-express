@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ClipboardCheck, Plus, Camera, Printer, AlertTriangle, CheckCircle2, XCircle, Loader2, Trash2 } from 'lucide-react';
 import { buildChecklist, INSPECTION_TYPE_LABELS, PROCESS_CATEGORIES, type InspectionType } from '@/lib/inspectionTemplates';
 import IMESafeInput from '@/components/IMESafeInput';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 
 type Inspection = {
   id: string;
@@ -56,7 +57,8 @@ type InspAction = {
 export default function SafetyInspections() {
   const { profile } = useAuth();
   const { toast } = useToast();
-  const projectId = typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') || '' : '';
+  const { selectedProject } = useGlobalProjectAccess();
+  const projectId = selectedProject;
   const [tab, setTab] = useState('list');
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [actions, setActions] = useState<(InspAction & { inspection?: Inspection })[]>([]);

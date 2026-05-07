@@ -183,9 +183,28 @@ export default function MobileInspect() {
             </div>
 
             {result === "fail" && (
-              <div className="flex gap-2 text-xs bg-destructive/10 border border-destructive/30 rounded p-2">
-                <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
-                <span>불합격 등록 시 자동으로 조치 요청이 생성되고 담당자에게 알림이 발송됩니다.</span>
+              <div className="space-y-3 border border-destructive/30 rounded-lg p-3 bg-destructive/5">
+                <div>
+                  <Label className="text-base">심각도</Label>
+                  <div className="grid grid-cols-3 gap-2 mt-1">
+                    {(["low","medium","high"] as const).map(s => (
+                      <Button key={s} type="button" size="sm"
+                        variant={severity === s ? "default" : "outline"}
+                        className="h-10"
+                        onClick={() => setSeverity(s)}>
+                        {s === "low" ? "낮음" : s === "medium" ? "보통" : "높음"}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-base">조치 기한</Label>
+                  <Input type="date" className="h-12 text-base" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                </div>
+                <div className="flex gap-2 text-xs">
+                  <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+                  <span>등록 시 자동으로 조치 요청이 생성되고 담당자에게 알림이 발송됩니다.</span>
+                </div>
               </div>
             )}
 

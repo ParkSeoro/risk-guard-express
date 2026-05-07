@@ -522,6 +522,20 @@ function Step({ icon, title, desc }: any) {
     </div>
   );
 }
+function PicCard({ icon, step, title, desc }: any) {
+  return (
+    <Card className="border-2 border-primary/20">
+      <CardContent className="p-6 text-center space-y-2">
+        <div className="mx-auto h-20 w-20 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+          {icon}
+        </div>
+        <div className="text-xs font-bold text-primary tracking-wider">{step}</div>
+        <div className="text-lg font-bold">{title}</div>
+        <div className="text-sm text-muted-foreground">{desc}</div>
+      </CardContent>
+    </Card>
+  );
+}
 function Arrow() {
   return <div className="text-muted-foreground hidden md:block">→</div>;
 }

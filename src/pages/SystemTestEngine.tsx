@@ -205,6 +205,37 @@ export default function SystemTestEngine() {
           )}
         </div>
 
+        <div className="border-t pt-3 space-y-2">
+          <Label>특정 기능 테스트 명령</Label>
+          <div className="flex gap-2">
+            <Input
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !running) runCommand(); }}
+              placeholder='예: "모바일 카메라", "/m/inspect", "TBM", "근로자 등록", "위험성평가"'
+              disabled={running}
+            />
+            <Button onClick={runCommand} disabled={running || !projectId || !command.trim()}>
+              <Play className="h-4 w-4 mr-1" /> 명령 실행
+            </Button>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {COMMAND_HINTS.map((h) => (
+              <button
+                key={h}
+                type="button"
+                className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/70"
+                onClick={() => setCommand(h)}
+              >
+                {h}
+              </button>
+            ))}
+          </div>
+          {commandHint && (
+            <div className="text-xs text-muted-foreground">→ {commandHint}</div>
+          )}
+        </div>
+
         {running && (
           <div className="space-y-1">
             <div className="text-xs text-muted-foreground">

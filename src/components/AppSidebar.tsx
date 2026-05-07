@@ -82,7 +82,10 @@ const masterOnlyItems: Item[] = [
 export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed";
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, hasRole } = useAuth();
+  const isMaster = hasRole('master');
+
+  const adminFinal = isMaster ? [...adminItems, ...masterOnlyItems] : adminItems;
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem('sidebar:groups') || '{"safety":true,"inspect":true,"legal":true,"ops":true,"admin":false}'); }

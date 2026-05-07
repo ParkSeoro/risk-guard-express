@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.register_worker(uuid, text, text, text);

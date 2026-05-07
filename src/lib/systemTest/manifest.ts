@@ -59,6 +59,12 @@ export const FEATURE_COVERAGE: Record<string, string[]> = {
     "e2e.worker_exit",
     "e2e.chain_integrity",
   ],
+  "모바일 환경 (HTTPS/SW/카메라/프로젝트)": [
+    "mobile.secure_context",
+    "mobile.service_worker",
+    "mobile.selected_project_id",
+    "mobile.storage_attachments_bucket",
+  ],
 };
 
 // 핵심 테이블별 필수 컬럼 (드리프트 감지용)

@@ -48,6 +48,8 @@ import WorkerAttendance from "./pages/WorkerAttendance";
 import WorkerRegister from "./pages/WorkerRegister";
 import WorkerPortal from "./pages/WorkerPortal";
 import Manual from "./pages/Manual";
+import AITestEngine from "./pages/AITestEngine";
+import AILogs from "./pages/AILogs";
 import MobileHome from "./pages/MobileHome";
 import MobileInspect from "./pages/MobileInspect";
 import MobileAlerts from "./pages/MobileAlerts";
@@ -159,6 +161,8 @@ function ProtectedRoutes() {
         <Route path="/education-materials" element={<EducationMaterials />} />
         <Route path="/workers" element={<WorkerManagement />} />
         <Route path="/worker-attendance" element={<WorkerAttendance />} />
+        <Route path="/admin/ai-test" element={<AITestEngine />} />
+        <Route path="/admin/ai-logs" element={<AILogs />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

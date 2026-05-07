@@ -3,7 +3,7 @@ import {
   FileCheck, HardHat, ChevronLeft, LogOut, User,
   Shield, SearchCheck, Settings,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
-  ClipboardCheck, History, ChevronDown
+  ClipboardCheck, History, ChevronDown, Beaker, Activity
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink } from "@/components/NavLink";
@@ -74,10 +74,18 @@ const adminItems: Item[] = [
   { title: "설정", url: "/settings", icon: Settings },
 ];
 
+const masterOnlyItems: Item[] = [
+  { title: "AI 테스트 엔진", url: "/admin/ai-test", icon: Beaker },
+  { title: "AI 로그", url: "/admin/ai-logs", icon: Activity },
+];
+
 export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed";
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, hasRole } = useAuth();
+  const isMaster = hasRole('master');
+
+  const adminFinal = isMaster ? [...adminItems, ...masterOnlyItems] : adminItems;
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem('sidebar:groups') || '{"safety":true,"inspect":true,"legal":true,"ops":true,"admin":false}'); }
@@ -164,13 +172,13 @@ export function AppSidebar() {
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <SidebarGroupContent>
-                  <SidebarMenu>{adminItems.map(renderItem)}</SidebarMenu>
+                  <SidebarMenu>{adminFinal.map(renderItem)}</SidebarMenu>
                 </SidebarGroupContent>
               </CollapsibleContent>
             </Collapsible>
           ) : (
             <SidebarGroupContent>
-              <SidebarMenu>{adminItems.map(renderItem)}</SidebarMenu>
+              <SidebarMenu>{adminFinal.map(renderItem)}</SidebarMenu>
             </SidebarGroupContent>
           )}
         </SidebarGroup>

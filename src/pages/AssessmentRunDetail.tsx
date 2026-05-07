@@ -1908,7 +1908,7 @@ const AssessmentRunDetail = () => {
               <Select value={String(autoGenTargetCount)} onValueChange={v => setAutoGenTargetCount(Number(v))}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {[10, 20, 30, 50, 100].map(n => <SelectItem key={n} value={String(n)}>{n}개</SelectItem>)}
+                  {[30, 50, 100, 150, 300].map(n => <SelectItem key={n} value={String(n)}>{n}개</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

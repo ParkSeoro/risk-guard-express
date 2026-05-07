@@ -21,6 +21,8 @@ export default function MobileInspect() {
   const [issue, setIssue] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
   const [result, setResult] = useState<"pass" | "fail" | null>(null);
+  const [severity, setSeverity] = useState<"low" | "medium" | "high">("medium");
+  const [dueDate, setDueDate] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
 
   const onPick = (files: FileList | null) => {

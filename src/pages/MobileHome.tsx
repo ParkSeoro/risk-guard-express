@@ -106,7 +106,10 @@ export default function MobileHome() {
                 onClick={() => navigate("/manual")} />
             </div>
 
-            <Button variant="outline" className="w-full h-12" onClick={() => navigate("/")}>
+            <Button variant="outline" className="w-full h-12" onClick={enablePush}>
+              <Bell className="h-4 w-4 mr-2" /> 푸시 알림 켜기
+            </Button>
+            <Button variant="ghost" className="w-full h-12" onClick={() => navigate("/")}>
               데스크톱 화면으로 전환
             </Button>
           </>

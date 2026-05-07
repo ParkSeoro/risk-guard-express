@@ -127,15 +127,15 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
 
-      <SidebarContent>
+      <SidebarContent className="gap-2">
         {groups.map(g => (
-          <SidebarGroup key={g.key}>
+          <SidebarGroup key={g.key} className="pb-2">
             {!collapsed ? (
               <Collapsible open={openGroups[g.key] ?? true} onOpenChange={() => toggleGroup(g.key)}>
                 <CollapsibleTrigger className="w-full">
-                  <SidebarGroupLabel className="text-sidebar-muted text-[10px] uppercase tracking-widest flex items-center justify-between cursor-pointer hover:text-sidebar-foreground">
+                  <SidebarGroupLabel className="text-sidebar-primary text-base font-bold tracking-tight flex items-center justify-between cursor-pointer hover:text-sidebar-foreground py-2 h-auto">
                     <span>{g.label}</span>
-                    <ChevronDown className={`h-3 w-3 transition-transform ${openGroups[g.key] === false ? '-rotate-90' : ''}`} />
+                    <ChevronDown className={`h-4 w-4 transition-transform ${openGroups[g.key] === false ? '-rotate-90' : ''}`} />
                   </SidebarGroupLabel>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
@@ -152,13 +152,13 @@ export function AppSidebar() {
           </SidebarGroup>
         ))}
 
-        <SidebarGroup>
+        <SidebarGroup className="pb-2">
           {!collapsed ? (
             <Collapsible open={openGroups['admin'] ?? false} onOpenChange={() => toggleGroup('admin')}>
               <CollapsibleTrigger className="w-full">
-                <SidebarGroupLabel className="text-sidebar-muted text-[10px] uppercase tracking-widest flex items-center justify-between cursor-pointer hover:text-sidebar-foreground">
+                <SidebarGroupLabel className="text-sidebar-primary text-base font-bold tracking-tight flex items-center justify-between cursor-pointer hover:text-sidebar-foreground py-2 h-auto">
                   <span>시스템</span>
-                  <ChevronDown className={`h-3 w-3 transition-transform ${openGroups['admin'] === false ? '-rotate-90' : ''}`} />
+                  <ChevronDown className={`h-4 w-4 transition-transform ${openGroups['admin'] === false ? '-rotate-90' : ''}`} />
                 </SidebarGroupLabel>
               </CollapsibleTrigger>
               <CollapsibleContent>

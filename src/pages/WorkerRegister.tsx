@@ -19,6 +19,7 @@ export default function WorkerRegister() {
   const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [doneToken, setDoneToken] = useState<string | null>(null);
 
   useEffect(() => {
     if (!projectId) return;

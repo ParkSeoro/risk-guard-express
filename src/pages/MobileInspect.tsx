@@ -339,8 +339,11 @@ export default function MobileInspect() {
                       <div className="flex items-center gap-1 text-xs text-destructive">
                         <AlertTriangle className="h-3.5 w-3.5" /> 자동으로 조치 요청이 생성됩니다.
                       </div>
-                      <Textarea placeholder="발견 사항/조치 의견" rows={2} value={it.note || ""}
-                        onChange={e => setNote(it, e.target.value)} onBlur={() => flushNote(it)} />
+                      <IMESafeTextarea placeholder="발견 사항/조치 의견" rows={2} defaultValue={it.note || ""}
+                        onCommit={async (val) => {
+                          setNote(it, val);
+                          await supabase.from("safety_inspection_items" as any).update({ note: val || "" }).eq("id", it.id);
+                        }} />
                       <label className="block">
                         <div className="border-2 border-dashed rounded p-3 text-center text-sm active:bg-muted">
                           <Camera className="h-5 w-5 inline mr-1" /> 사진 추가

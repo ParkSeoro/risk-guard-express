@@ -256,18 +256,25 @@ export default function MobileInspect() {
 
               <div>
                 <Label className="text-base">점검자 *</Label>
-                <Select value={form.inspector_id || "_self"}
+                <Select value={form.inspector_id || undefined}
                   onValueChange={(v) => {
-                    if (v === "_self") {
-                      setForm({ ...form, inspector_id: profile?.user_id || "", inspector_name: profile?.display_name || "" });
-                    } else {
-                      const m = members.find(x => x.user_id === v);
-                      setForm({ ...form, inspector_id: v, inspector_name: m?.display_name || "" });
-                    }
+                    const m = members.find(x => x.user_id === v);
+                    const isSelf = v === profile?.user_id;
+                    setForm({
+                      ...form,
+                      inspector_id: v,
+                      inspector_name: isSelf ? (profile?.display_name || "") : (m?.display_name || ""),
+                    });
                   }}>
-                  <SelectTrigger className="h-12 text-base"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-12 text-base">
+                    <SelectValue placeholder="점검자 선택">
+                      {form.inspector_name || (profile?.user_id === form.inspector_id ? `본인 (${profile?.display_name || "나"})` : "")}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="_self">본인 ({profile?.display_name || "나"})</SelectItem>
+                    {profile?.user_id && (
+                      <SelectItem value={profile.user_id}>본인 ({profile.display_name || "나"})</SelectItem>
+                    )}
                     {members.filter(m => m.user_id !== profile?.user_id).map(m => (
                       <SelectItem key={m.user_id} value={m.user_id}>{m.display_name} · {m.role}</SelectItem>
                     ))}
@@ -356,13 +363,27 @@ export default function MobileInspect() {
                           setNote(it, val);
                           await supabase.from("safety_inspection_items" as any).update({ note: val || "" }).eq("id", it.id);
                         }} />
-                      <label className="block">
-                        <div className="border-2 border-dashed rounded p-3 text-center text-sm active:bg-muted">
-                          <Camera className="h-5 w-5 inline mr-1" /> 사진 추가
-                        </div>
-                        <input type="file" accept="image/*" capture="environment" multiple className="hidden"
-                          onChange={e => onPickPhoto(it, e.target.files)} />
-                      </label>
+                      <div>
+                        <input
+                          id={`photo-input-${it.id}`}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          multiple
+                          style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+                          onChange={e => { onPickPhoto(it, e.target.files); e.target.value = ""; }}
+                        />
+                        <button
+                          type="button"
+                          className="w-full border-2 border-dashed rounded p-3 text-center text-sm active:bg-muted"
+                          onClick={() => {
+                            const el = document.getElementById(`photo-input-${it.id}`) as HTMLInputElement | null;
+                            el?.click();
+                          }}
+                        >
+                          <Camera className="h-5 w-5 inline mr-1" /> 사진 추가 / 촬영
+                        </button>
+                      </div>
                       {it.photos?.length > 0 && (
                         <div className="grid grid-cols-3 gap-1">
                           {it.photos.map((u: string, i: number) => (

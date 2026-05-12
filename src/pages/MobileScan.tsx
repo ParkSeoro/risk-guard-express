@@ -72,22 +72,22 @@ export default function MobileScan() {
       });
     } catch (e: any) {
       const name = e?.name || "";
+      const iframeHint = inIframe ? " (미리보기 창에서는 카메라가 차단될 수 있습니다 — 아래 ‘새 창에서 열기’를 사용하세요.)" : "";
       if (name === "NotAllowedError" || name === "SecurityError") {
-        setError("카메라 권한이 거부되었습니다. 브라우저 주소창의 자물쇠 아이콘 → 카메라 허용 후 다시 시도하세요.");
+        setError("카메라 권한이 거부되었습니다. 브라우저 주소창의 자물쇠 아이콘 → 카메라 허용 후 다시 시도하세요." + iframeHint);
+        return;
       } else if (name === "NotFoundError" || name === "OverconstrainedError") {
-        setError("후면 카메라를 찾을 수 없습니다. 다른 카메라로 다시 시도합니다.");
         try {
           probeStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          setError("");
         } catch (e2: any) {
-          setError("카메라 시작 실패: " + (e2?.message || e2?.name || "알 수 없는 오류"));
+          setError("카메라 시작 실패: " + (e2?.message || e2?.name || "알 수 없는 오류") + iframeHint);
           return;
         }
       } else if (name === "NotReadableError") {
         setError("다른 앱이 카메라를 사용 중입니다. 해당 앱을 종료 후 다시 시도하세요.");
         return;
       } else {
-        setError("카메라 시작 실패: " + (e?.message || name || "알 수 없는 오류"));
+        setError("카메라 시작 실패: " + (e?.message || name || "알 수 없는 오류") + iframeHint);
         return;
       }
     }

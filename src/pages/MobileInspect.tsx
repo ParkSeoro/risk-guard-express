@@ -256,18 +256,25 @@ export default function MobileInspect() {
 
               <div>
                 <Label className="text-base">점검자 *</Label>
-                <Select value={form.inspector_id || "_self"}
+                <Select value={form.inspector_id || undefined}
                   onValueChange={(v) => {
-                    if (v === "_self") {
-                      setForm({ ...form, inspector_id: profile?.user_id || "", inspector_name: profile?.display_name || "" });
-                    } else {
-                      const m = members.find(x => x.user_id === v);
-                      setForm({ ...form, inspector_id: v, inspector_name: m?.display_name || "" });
-                    }
+                    const m = members.find(x => x.user_id === v);
+                    const isSelf = v === profile?.user_id;
+                    setForm({
+                      ...form,
+                      inspector_id: v,
+                      inspector_name: isSelf ? (profile?.display_name || "") : (m?.display_name || ""),
+                    });
                   }}>
-                  <SelectTrigger className="h-12 text-base"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-12 text-base">
+                    <SelectValue placeholder="점검자 선택">
+                      {form.inspector_name || (profile?.user_id === form.inspector_id ? `본인 (${profile?.display_name || "나"})` : "")}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="_self">본인 ({profile?.display_name || "나"})</SelectItem>
+                    {profile?.user_id && (
+                      <SelectItem value={profile.user_id}>본인 ({profile.display_name || "나"})</SelectItem>
+                    )}
                     {members.filter(m => m.user_id !== profile?.user_id).map(m => (
                       <SelectItem key={m.user_id} value={m.user_id}>{m.display_name} · {m.role}</SelectItem>
                     ))}

@@ -183,8 +183,14 @@ export default function MobileInspect() {
     const unset = items.filter(i => !i.result).length;
     if (unset > 0 && !confirm(`미체크 항목이 ${unset}건 있습니다. 그래도 완료할까요?`)) return;
     const hasFail = items.some(i => i.result === "fail");
-    await supabase.from("safety_inspections" as any)
-      .update({ status: hasFail ? "in_progress" : "completed" }).eq("id", inspectionId);
+    const nextStatus = hasFail ? "in_progress" : "completed";
+    const { error } = await supabase.from("safety_inspections" as any)
+      .update({ status: nextStatus }).eq("id", inspectionId);
+    if (error) { toast.error("저장 실패: " + error.message); return; }
+    await auditLog("update", "safety_inspection", inspectionId, projectId, {
+      status: nextStatus, pass: items.filter(i=>i.result==='pass').length,
+      fail: items.filter(i=>i.result==='fail').length,
+    });
     toast.success(hasFail ? "조치 필요 항목과 함께 저장됨" : "점검 완료");
     navigate("/m");
   };

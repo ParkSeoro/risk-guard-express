@@ -179,9 +179,9 @@ export default function SafetyInspections() {
           try {
             const { data: members } = await supabase
               .from('project_members')
-              .select('user_id, role')
+              .select('user_id, role_new')
               .eq('project_id', projectId)
-              .in('role', ['master', 'project_admin', 'safety_manager']);
+              .in('role_new', ['project_admin', 'safety_manager']);
             const { sendNotification } = await import('@/lib/notificationService');
             await Promise.all(((members as any) || []).map((m: any) =>
               sendNotification({

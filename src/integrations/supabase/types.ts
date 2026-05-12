@@ -1865,7 +1865,7 @@ export type Database = {
           company_id: string | null
           created_at: string
           created_by: string | null
-          default_role: Database["public"]["Enums"]["app_role"]
+          default_role: Database["public"]["Enums"]["project_role"]
           expires_at: string | null
           id: string
           max_uses: number | null
@@ -1877,7 +1877,7 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           created_by?: string | null
-          default_role?: Database["public"]["Enums"]["app_role"]
+          default_role?: Database["public"]["Enums"]["project_role"]
           expires_at?: string | null
           id?: string
           max_uses?: number | null
@@ -1889,7 +1889,7 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           created_by?: string | null
-          default_role?: Database["public"]["Enums"]["app_role"]
+          default_role?: Database["public"]["Enums"]["project_role"]
           expires_at?: string | null
           id?: string
           max_uses?: number | null
@@ -1919,7 +1919,7 @@ export type Database = {
           created_at: string
           id: string
           project_id: string
-          requested_role: Database["public"]["Enums"]["app_role"]
+          requested_role: Database["public"]["Enums"]["project_role"]
           reviewed_at: string | null
           reviewed_by: string | null
           status: string
@@ -1931,7 +1931,7 @@ export type Database = {
           created_at?: string
           id?: string
           project_id: string
-          requested_role?: Database["public"]["Enums"]["app_role"]
+          requested_role?: Database["public"]["Enums"]["project_role"]
           reviewed_at?: string | null
           reviewed_by?: string | null
           status?: string
@@ -1943,7 +1943,7 @@ export type Database = {
           created_at?: string
           id?: string
           project_id?: string
-          requested_role?: Database["public"]["Enums"]["app_role"]
+          requested_role?: Database["public"]["Enums"]["project_role"]
           reviewed_at?: string | null
           reviewed_by?: string | null
           status?: string
@@ -1966,11 +1966,9 @@ export type Database = {
           company_id: string | null
           created_at: string
           id: string
-          position: string | null
           position_new: Database["public"]["Enums"]["project_position"] | null
           project_id: string
-          role: Database["public"]["Enums"]["app_role"]
-          role_new: Database["public"]["Enums"]["project_role"] | null
+          role_new: Database["public"]["Enums"]["project_role"]
           user_id: string
         }
         Insert: {
@@ -1978,11 +1976,9 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           id?: string
-          position?: string | null
           position_new?: Database["public"]["Enums"]["project_position"] | null
           project_id: string
-          role?: Database["public"]["Enums"]["app_role"]
-          role_new?: Database["public"]["Enums"]["project_role"] | null
+          role_new?: Database["public"]["Enums"]["project_role"]
           user_id: string
         }
         Update: {
@@ -1990,11 +1986,9 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           id?: string
-          position?: string | null
           position_new?: Database["public"]["Enums"]["project_position"] | null
           project_id?: string
-          role?: Database["public"]["Enums"]["app_role"]
-          role_new?: Database["public"]["Enums"]["project_role"] | null
+          role_new?: Database["public"]["Enums"]["project_role"]
           user_id?: string
         }
         Relationships: [
@@ -4039,17 +4033,17 @@ export type Database = {
       user_roles: {
         Row: {
           id: string
-          role: Database["public"]["Enums"]["app_role"]
+          role: Database["public"]["Enums"]["global_role"]
           user_id: string
         }
         Insert: {
           id?: string
-          role: Database["public"]["Enums"]["app_role"]
+          role: Database["public"]["Enums"]["global_role"]
           user_id: string
         }
         Update: {
           id?: string
-          role?: Database["public"]["Enums"]["app_role"]
+          role?: Database["public"]["Enums"]["global_role"]
           user_id?: string
         }
         Relationships: []
@@ -4599,10 +4593,6 @@ export type Database = {
         Args: { _user_id: string }
         Returns: undefined
       }
-      get_project_role: {
-        Args: { _project_id: string; _user_id: string }
-        Returns: Database["public"]["Enums"]["app_role"]
-      }
       get_project_role_new: {
         Args: { _project_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["project_role"]
@@ -4625,19 +4615,17 @@ export type Database = {
         }
         Returns: boolean
       }
-      has_role: {
-        Args: {
-          _role: Database["public"]["Enums"]["app_role"]
-          _user_id: string
-        }
-        Returns: boolean
-      }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_company_project_member: {
         Args: { _company_id: string; _user_id: string }
         Returns: boolean
       }
+      is_global_admin: { Args: { _user_id: string }; Returns: boolean }
       is_master: { Args: { _user_id: string }; Returns: boolean }
+      is_project_admin: {
+        Args: { _project_id: string; _user_id: string }
+        Returns: boolean
+      }
       is_project_member: {
         Args: { _project_id: string; _user_id: string }
         Returns: boolean
@@ -4703,13 +4691,6 @@ export type Database = {
       }
     }
     Enums: {
-      app_role:
-        | "master"
-        | "project_admin"
-        | "safety_manager"
-        | "contractor"
-        | "viewer"
-        | "user"
       global_role: "master"
       project_position:
         | "CEO"
@@ -4857,14 +4838,6 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: [
-        "master",
-        "project_admin",
-        "safety_manager",
-        "contractor",
-        "viewer",
-        "user",
-      ],
       global_role: ["master"],
       project_position: [
         "CEO",

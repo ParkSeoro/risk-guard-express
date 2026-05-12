@@ -117,11 +117,11 @@ const AssessmentRuns = () => {
     if (isMaster) { setProjectRole('master'); return; }
     const { data } = await supabase
       .from('project_members')
-      .select('role')
+      .select('role_new')
       .eq('project_id', selectedProject)
       .eq('user_id', user.id)
       .maybeSingle();
-    setProjectRole(data?.role || null);
+    setProjectRole(data?.role_new || null);
   };
 
   const canCreateRun = isMaster || projectRole === 'project_admin' || projectRole === 'safety_manager';

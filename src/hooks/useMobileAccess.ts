@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
-export type MobileRole = 'master' | 'project_admin' | 'safety_manager' | 'contractor' | 'viewer' | 'user';
+export type MobileRole = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor' | 'worker' | 'viewer' | 'contractor';
 
 /**
  * 모바일 페이지 공통 액세스 훅.
@@ -63,12 +63,12 @@ export function useMobileAccess() {
       }
       const { data } = await supabase
         .from('project_members')
-        .select('role, company_id')
+        .select('role_new, company_id')
         .eq('user_id', user.id)
         .eq('project_id', projectId)
         .maybeSingle();
       if (!cancelled) {
-        setRole((data?.role as MobileRole) || 'viewer');
+        setRole((data?.role_new as MobileRole) || 'viewer');
         setCompanyId(data?.company_id || null);
         setLoading(false);
       }

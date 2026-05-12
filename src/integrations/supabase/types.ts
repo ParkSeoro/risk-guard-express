@@ -4590,6 +4590,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      can_write_company_data: {
+        Args: { _company_id: string; _project_id: string; _user_id: string }
+        Returns: boolean
+      }
       confirm_worker_education: { Args: { _token: string }; Returns: Json }
       ensure_master_allowlist: {
         Args: { _user_id: string }

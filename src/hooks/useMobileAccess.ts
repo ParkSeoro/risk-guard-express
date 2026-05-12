@@ -63,12 +63,12 @@ export function useMobileAccess() {
       }
       const { data } = await supabase
         .from('project_members')
-        .select('role, company_id')
+        .select('role_new, company_id')
         .eq('user_id', user.id)
         .eq('project_id', projectId)
         .maybeSingle();
       if (!cancelled) {
-        setRole((data?.role as MobileRole) || 'viewer');
+        setRole((data?.role_new as MobileRole) || 'viewer');
         setCompanyId(data?.company_id || null);
         setLoading(false);
       }

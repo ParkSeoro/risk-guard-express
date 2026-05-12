@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useMobileAccess } from "@/hooks/useMobileAccess";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
+import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { ArrowLeft, FileCheck2, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 
@@ -19,7 +21,8 @@ const STATUS_BADGE: Record<string, string> = {
 export default function MobilePermits() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const projectId = typeof window !== "undefined" ? localStorage.getItem("selectedProjectId") || "" : "";
+  const { projectId, applyCompanyFilter } = useMobileAccess();
+  const { log: logAudit } = useAuditLog();
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState<any | null>(null);
@@ -27,16 +30,17 @@ export default function MobilePermits() {
   const [acting, setActing] = useState(false);
 
   const load = async () => {
-    if (!projectId) return;
+    if (!projectId) { setLoading(false); return; }
     setLoading(true);
-    const { data } = await supabase.from("work_permits" as any)
-      .select("*").eq("project_id", projectId)
-      .in("status", ["대기", "검토중"])
+    let q: any = supabase.from("work_permits" as any).select("*").eq("project_id", projectId);
+    q = applyCompanyFilter(q);
+    const { data, error } = await q.in("status", ["대기", "검토중"])
       .order("permit_date", { ascending: false }).limit(100);
+    if (error) toast.error("로드 실패: " + error.message);
     setList((data as any) || []);
     setLoading(false);
   };
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId]);
 
   const act = async (status: "승인" | "반려") => {
     if (!active) return;
@@ -53,6 +57,7 @@ export default function MobilePermits() {
       if (status === "반려") update.rejection_reason = comment;
       const { error } = await supabase.from("work_permits" as any).update(update).eq("id", active.id);
       if (error) throw error;
+      await logAudit(status === "승인" ? 'approve' : 'reject', 'work_permit', active.id, projectId, { comment });
       toast.success(status === "승인" ? "승인 완료" : "반려 처리됨");
       setActive(null); setComment("");
       load();
@@ -75,9 +80,14 @@ export default function MobilePermits() {
       </header>
 
       <main className="p-4 space-y-3 max-w-md mx-auto">
+        {!projectId && (
+          <Card className="border-warning/40 bg-warning/5">
+            <CardContent className="pt-3 pb-3 text-sm">프로젝트를 먼저 선택하세요.</CardContent>
+          </Card>
+        )}
         {loading && <div className="text-center text-muted-foreground py-8"><Loader2 className="h-5 w-5 animate-spin inline mr-2" />로딩…</div>}
 
-        {!active && !loading && list.length === 0 && (
+        {!active && !loading && projectId && list.length === 0 && (
           <Card><CardContent className="pt-6 text-center text-sm text-muted-foreground">
             대기중인 작업허가서가 없습니다.
           </CardContent></Card>
@@ -122,7 +132,7 @@ export default function MobilePermits() {
 
             <Card>
               <CardContent className="pt-4 space-y-3">
-                <Textarea rows={3} value={comment} onChange={e => setComment(e.target.value)}
+                <IMESafeTextarea rows={3} defaultValue={comment} onCommit={setComment}
                   placeholder="결재 의견 (반려 시 필수)" />
                 <div className="grid grid-cols-2 gap-2">
                   <Button variant="destructive" className="h-14" disabled={acting} onClick={() => act("반려")}>

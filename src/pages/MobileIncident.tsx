@@ -2,14 +2,17 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useMobileAccess } from "@/hooks/useMobileAccess";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import IMESafeInput from "@/components/IMESafeInput";
+import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Camera, Loader2, AlertOctagon, MapPin } from "lucide-react";
 import { toast } from "sonner";
+import { correctTerms } from "@/lib/termCorrection";
 
 const TYPES = [
   { v: "near_miss", label: "아차사고" },
@@ -26,7 +29,8 @@ const SEVERITY = [
 export default function MobileIncident() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const projectId = typeof window !== "undefined" ? localStorage.getItem("selectedProjectId") || "" : "";
+  const { projectId, applyCompanyFilter } = useMobileAccess();
+  const { log: logAudit } = useAuditLog();
   const [type, setType] = useState("near_miss");
   const [severity, setSeverity] = useState("medium");
   const [location, setLocation] = useState("");
@@ -38,13 +42,15 @@ export default function MobileIncident() {
 
   const loadRecent = async () => {
     if (!projectId) return;
-    const { data } = await supabase.from("incident_reports" as any)
+    let q: any = supabase.from("incident_reports" as any)
       .select("id, incident_type, severity, location, occurred_at, status")
-      .eq("project_id", projectId).eq("is_deleted", false)
-      .order("occurred_at", { ascending: false }).limit(5);
+      .eq("project_id", projectId).eq("is_deleted", false);
+    q = applyCompanyFilter(q);
+    const { data, error } = await q.order("occurred_at", { ascending: false }).limit(5);
+    if (error) toast.error("최근 신고 로드 실패: " + error.message);
     setRecent((data as any) || []);
   };
-  useEffect(() => { loadRecent(); }, [projectId]);
+  useEffect(() => { loadRecent(); /* eslint-disable-next-line */ }, [projectId]);
 
   const grabGps = () => {
     if (!navigator.geolocation) return toast.error("GPS 미지원");
@@ -76,19 +82,21 @@ export default function MobileIncident() {
     try {
       const urls: string[] = [];
       for (const f of photos) urls.push(await upload(f));
-      const { data, error } = await supabase.from("incident_reports" as any).insert({
+      const payload = {
         project_id: projectId,
         reporter_id: profile?.user_id,
         reporter_name: profile?.display_name || "",
         incident_type: type,
         severity,
-        location,
-        description,
+        location: correctTerms(location),
+        description: correctTerms(description),
         photos: urls,
         gps_lat: gps?.lat,
         gps_lng: gps?.lng,
-      }).select().single();
+      };
+      const { data, error } = await supabase.from("incident_reports" as any).insert(payload).select().single();
       if (error) throw error;
+      await logAudit('create', 'incident_report', (data as any).id, projectId, { type, severity, location: payload.location });
 
       // 관리자 알림
       try {
@@ -100,7 +108,7 @@ export default function MobileIncident() {
           sendNotification({
             user_id: m.user_id,
             title: severity === "high" ? "🚨 중대 사고 신고" : "사고 신고 접수",
-            message: `${TYPES.find(x => x.v === type)?.label} · ${location}`,
+            message: `${TYPES.find(x => x.v === type)?.label} · ${payload.location}`,
             type: "incident_report",
             related_id: (data as any).id,
             related_type: "incident_report",
@@ -130,6 +138,11 @@ export default function MobileIncident() {
       </header>
 
       <main className="p-4 space-y-4 max-w-md mx-auto">
+        {!projectId && (
+          <Card className="border-warning/40 bg-warning/5">
+            <CardContent className="pt-3 pb-3 text-sm">프로젝트를 먼저 선택하세요. <Button variant="link" size="sm" onClick={() => navigate("/m")}>홈으로</Button></CardContent>
+          </Card>
+        )}
         <Card>
           <CardContent className="pt-4 space-y-3">
             <div>
@@ -155,8 +168,8 @@ export default function MobileIncident() {
 
             <div>
               <Label className="text-base">발생 위치 *</Label>
-              <Input className="h-12 text-base" value={location}
-                onChange={e => setLocation(e.target.value)} placeholder="예: B동 2층 계단" />
+              <IMESafeInput className="h-12 text-base" defaultValue={location}
+                onCommit={setLocation} placeholder="예: B동 2층 계단" />
               <Button variant="outline" size="sm" className="mt-2 w-full" onClick={grabGps}>
                 <MapPin className="h-4 w-4 mr-1" /> {gps ? `위치 기록됨 (${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)})` : "현재 GPS 좌표 추가"}
               </Button>
@@ -164,8 +177,8 @@ export default function MobileIncident() {
 
             <div>
               <Label className="text-base">상황 설명 *</Label>
-              <Textarea rows={4} value={description}
-                onChange={e => setDescription(e.target.value)} placeholder="언제·어떻게·결과" />
+              <IMESafeTextarea rows={4} defaultValue={description}
+                onCommit={setDescription} placeholder="언제·어떻게·결과" />
             </div>
 
             <div>
@@ -191,7 +204,7 @@ export default function MobileIncident() {
               )}
             </div>
 
-            <Button className="w-full h-14 text-base" variant="destructive" onClick={submit} disabled={submitting}>
+            <Button className="w-full h-14 text-base" variant="destructive" onClick={submit} disabled={submitting || !projectId}>
               {submitting && <Loader2 className="h-5 w-5 mr-2 animate-spin" />} 신고 접수
             </Button>
           </CardContent>

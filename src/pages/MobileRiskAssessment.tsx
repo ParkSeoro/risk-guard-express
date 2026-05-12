@@ -14,10 +14,11 @@ const STATUS_COLOR: Record<string, string> = {
   "작성중": "bg-muted text-muted-foreground",
 };
 
-// 모바일 위험성평가: 읽기 전용 요약 + 데스크톱 전환
+import { useMobileAccess } from "@/hooks/useMobileAccess";
+
 export default function MobileRiskAssessment() {
   const navigate = useNavigate();
-  const projectId = typeof window !== "undefined" ? localStorage.getItem("selectedProjectId") || "" : "";
+  const { projectId, applyCompanyFilter } = useMobileAccess();
   const [rows, setRows] = useState<any[]>([]);
   const [counts, setCounts] = useState<Record<string, { high: number; medium: number; low: number; total: number }>>({});
   const [q, setQ] = useState("");
@@ -26,9 +27,10 @@ export default function MobileRiskAssessment() {
   const load = async () => {
     if (!projectId) return;
     setLoading(true);
-    const { data } = await supabase.from("assessment_runs").select("*")
-      .eq("project_id", projectId).eq("is_deleted", false)
-      .order("updated_at", { ascending: false }).limit(50);
+    let query: any = supabase.from("assessment_runs").select("*")
+      .eq("project_id", projectId).eq("is_deleted", false);
+    query = applyCompanyFilter(query);
+    const { data } = await query.order("updated_at", { ascending: false }).limit(50);
     setRows(data || []);
 
     if (data && data.length) {

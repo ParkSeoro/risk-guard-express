@@ -16,10 +16,11 @@ const STATUS_COLOR: Record<string, string> = {
   "만료": "bg-destructive/10 text-destructive",
 };
 
-// 모바일 작업계획: 목록 + 상태/기간 요약 (편집은 데스크톱)
+import { useMobileAccess } from "@/hooks/useMobileAccess";
+
 export default function MobileWorkPlans() {
   const navigate = useNavigate();
-  const projectId = typeof window !== "undefined" ? localStorage.getItem("selectedProjectId") || "" : "";
+  const { projectId, applyCompanyFilter } = useMobileAccess();
   const [rows, setRows] = useState<any[]>([]);
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<"active" | "all">("active");
@@ -28,10 +29,11 @@ export default function MobileWorkPlans() {
   const load = async () => {
     if (!projectId) return;
     setLoading(true);
-    const { data } = await supabase.from("work_plans").select("*")
-      .eq("project_id", projectId)
-      .order("updated_at", { ascending: false }).limit(100);
-    setRows((data || []).filter((r: any) => !r.is_deleted));
+    let query: any = (supabase.from("work_plans") as any).select("*")
+      .eq("project_id", projectId).eq("is_deleted", false);
+    query = applyCompanyFilter(query);
+    const { data } = await query.order("updated_at", { ascending: false }).limit(100);
+    setRows(data || []);
     setLoading(false);
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId]);

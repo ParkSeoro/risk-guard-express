@@ -57,7 +57,7 @@ const WorkPlans = () => {
   };
 
   const loadPlans = async () => {
-    let query: any = supabase
+    let query: any = (supabase as any)
       .from('work_plans')
       .select('*')
       .eq('project_id', access.selectedProject)

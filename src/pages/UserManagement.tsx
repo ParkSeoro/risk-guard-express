@@ -13,9 +13,41 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Users, Search, UserCheck, UserX, Shield, Plus, Building2, AlertCircle } from 'lucide-react';
 
-const roleLabels: Record<string, string> = {
-  master: '마스터', project_admin: '프로젝트 관리자', user: '사용자',
-  safety_manager: '안전관리자 (레거시)', contractor: '협력사 (레거시)', viewer: '열람자',
+// === New permission model ===
+// Global role: only `master` is meaningful (system-wide admin).
+// Project role: 6-tier project-scoped role.
+// Position: 11 formal job titles used for approval routing.
+const globalRoleLabels: Record<string, string> = {
+  master: '마스터 (시스템 관리자)',
+  none: '일반 사용자',
+};
+const projectRoleLabels: Record<string, string> = {
+  project_admin: '프로젝트 관리자',
+  safety_manager: '안전관리자',
+  site_manager: '현장소장',
+  supervisor: '감리/감독',
+  worker: '작업자',
+  viewer: '열람자',
+};
+const positionLabels: Record<string, string> = {
+  CEO: '대표이사',
+  EXECUTIVE: '임원',
+  SITE_MANAGER: '현장소장',
+  HSE_MANAGER: '안전관리자',
+  CONSTRUCTION_MGR: '공사부장',
+  FIELD_ENGINEER: '공사담당',
+  FOREMAN: '직장/조장',
+  WORKER: '작업자',
+  OWNER_PM: '발주처 PM',
+  OWNER_HSE: '발주처 안전',
+  SUPERVISOR: '감리',
+};
+/** Map new project_role -> legacy app_role enum (for the role column).
+ *  Unknown new values fall back to 'viewer'. */
+const projectRoleToLegacy = (r: string): string => {
+  if (r === 'site_manager' || r === 'supervisor' || r === 'worker') return 'contractor';
+  if (['project_admin', 'safety_manager', 'viewer'].includes(r)) return r;
+  return 'viewer';
 };
 
 const statusLabels: Record<string, { label: string; color: string }> = {
@@ -60,11 +92,6 @@ const UserManagement = () => {
   // Existing memberships for inline editing
   const [userMemberships, setUserMemberships] = useState<Record<string, any[]>>({});
 
-  const positionLabels: Record<string, string> = {
-    site_manager: '현장대리인',
-    supervisor: '관리감독자',
-    safety_manager: '안전관리자',
-  };
 
   const isMaster = hasRole('master');
 

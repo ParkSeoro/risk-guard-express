@@ -333,7 +333,14 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Main layout */}
+      {/* Quick Start — 역할별 다음 행동 */}
+      <QuickStartCards
+        navigate={navigate}
+        isMaster={isMaster}
+        isProjectAdmin={isProjectAdmin}
+        isContractor={isContractor}
+      />
+
       <div className="space-y-6">
         {/* Weather Summary Card */}
         <WeatherSummaryCard projectId={selectedProject} />

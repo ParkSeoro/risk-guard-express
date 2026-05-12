@@ -28,6 +28,7 @@ export default function MobileHome() {
   const setSelectedProjectId = (id: string) => {
     setSelectedProjectIdState(id);
     try { localStorage.setItem("selectedProjectId", id); } catch {}
+    try { window.dispatchEvent(new Event('mobile:project-changed')); } catch {}
     const p = projects.find(x => x.id === id);
     toast.success("프로젝트 선택: " + (p?.name || ""));
   };

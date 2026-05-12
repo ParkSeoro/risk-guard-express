@@ -2,29 +2,29 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useMobileAccess } from "@/hooks/useMobileAccess";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import IMESafeInput from "@/components/IMESafeInput";
+import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Loader2, QrCode, Copy, Users } from "lucide-react";
 import { toast } from "sonner";
 import QRCode from "qrcode";
+import { applyTermCorrections } from "@/lib/termCorrection";
 
 // 모바일 TBM 즉석 진행 — 세션 생성 → QR 표시 → 참여 현황 폴링
 export default function MobileTbm() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const projectId = typeof window !== "undefined" ? localStorage.getItem("selectedProjectId") || "" : "";
+  const { projectId } = useMobileAccess();
+  const { log: logAudit } = useAuditLog();
   const [creating, setCreating] = useState(false);
   const [session, setSession] = useState<any>(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [participants, setParticipants] = useState<any[]>([]);
-  const [form, setForm] = useState({
-    title: "",
-    location: "",
-    summary: "",
-  });
+  const [form, setForm] = useState({ title: "", location: "", summary: "" });
 
   const portalUrl = session ? `${window.location.origin}/tbm/${session.qr_token}` : "";
 
@@ -52,16 +52,18 @@ export default function MobileTbm() {
     if (!form.title.trim()) return toast.error("TBM 제목을 입력하세요");
     setCreating(true);
     try {
-      const { data, error } = await supabase.from("tbm_sessions" as any).insert({
+      const payload = {
         project_id: projectId,
-        title: form.title,
-        location: form.location,
-        briefing_summary: form.summary,
+        title: applyTermCorrections(form.title),
+        location: applyTermCorrections(form.location),
+        briefing_summary: applyTermCorrections(form.summary),
         leader_name: profile?.display_name || "",
         created_by: profile?.user_id,
-      }).select().single();
+      };
+      const { data, error } = await supabase.from("tbm_sessions" as any).insert(payload).select().single();
       if (error) throw error;
       setSession(data);
+      await logAudit('create', 'tbm_session', (data as any).id, projectId, { title: payload.title });
       toast.success("TBM 세션이 생성되었습니다");
     } catch (e: any) {
       toast.error("생성 실패: " + e.message);
@@ -82,26 +84,31 @@ export default function MobileTbm() {
       </header>
 
       <main className="p-4 space-y-4 max-w-md mx-auto">
+        {!projectId && (
+          <Card className="border-warning/40 bg-warning/5">
+            <CardContent className="pt-3 pb-3 text-sm">프로젝트를 먼저 선택하세요. <Button variant="link" size="sm" onClick={() => navigate("/m")}>홈으로</Button></CardContent>
+          </Card>
+        )}
         {!session ? (
           <Card>
             <CardContent className="pt-4 space-y-3">
               <div>
                 <Label className="text-base">TBM 제목 *</Label>
-                <Input className="h-12 text-base" value={form.title}
-                  onChange={e => setForm({ ...form, title: e.target.value })}
+                <IMESafeInput className="h-12 text-base" defaultValue={form.title}
+                  onCommit={(v) => setForm(f => ({ ...f, title: v }))}
                   placeholder="예: 3월 5일 굴착작업 TBM" />
               </div>
               <div>
                 <Label className="text-base">장소</Label>
-                <Input className="h-12 text-base" value={form.location}
-                  onChange={e => setForm({ ...form, location: e.target.value })} />
+                <IMESafeInput className="h-12 text-base" defaultValue={form.location}
+                  onCommit={(v) => setForm(f => ({ ...f, location: v }))} />
               </div>
               <div>
                 <Label className="text-base">요약/위험요인</Label>
-                <Textarea rows={3} value={form.summary}
-                  onChange={e => setForm({ ...form, summary: e.target.value })} />
+                <IMESafeTextarea rows={3} defaultValue={form.summary}
+                  onCommit={(v) => setForm(f => ({ ...f, summary: v }))} />
               </div>
-              <Button className="w-full h-14 text-base" onClick={create} disabled={creating}>
+              <Button className="w-full h-14 text-base" onClick={create} disabled={creating || !projectId}>
                 {creating && <Loader2 className="h-5 w-5 mr-2 animate-spin" />}
                 <QrCode className="h-5 w-5 mr-2" /> 세션 생성 + QR 표시
               </Button>

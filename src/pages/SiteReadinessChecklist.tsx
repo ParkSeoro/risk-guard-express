@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -10,7 +12,7 @@ type Item = { key: string; label: string; ok: boolean; detail: string };
 type Group = { title: string; items: Item[] };
 
 export default function SiteReadinessChecklist() {
-  const projectId = typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') || '' : '';
+  const { selectedProject: projectId } = useProjectAccess();
   const [groups, setGroups] = useState<Record<string, Group>>({ admin: { title: '관리자', items: [] }, worker: { title: '근로자', items: [] }, client: { title: '발주처', items: [] } });
   const [loading, setLoading] = useState(false);
 
@@ -19,6 +21,7 @@ export default function SiteReadinessChecklist() {
   const run = async () => {
     if (!projectId) return;
     setLoading(true);
+    try {
     const [{ data: runs }, { data: tbms }, { data: parts }, { data: permits }, { data: costs }, { data: insp }, { data: accidents }] = await Promise.all([
       supabase.from('assessment_runs').select('id, status, start_date, end_date').eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('tbm_sessions' as any).select('id, qr_token, is_active, tbm_date').eq('project_id', projectId),
@@ -68,7 +71,11 @@ export default function SiteReadinessChecklist() {
       worker: { title: '근로자', items: worker },
       client: { title: '발주처', items: client },
     });
-    setLoading(false);
+    } catch (e: any) {
+      toast.error('체크리스트 로드 실패: ' + (e?.message || ''));
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { run(); }, [projectId]);

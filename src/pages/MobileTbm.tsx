@@ -54,6 +54,7 @@ export default function MobileTbm() {
     try {
       const payload = {
         project_id: projectId,
+        company_id: companyId,
         title: correctTerms(form.title),
         location: correctTerms(form.location),
         briefing_summary: correctTerms(form.summary),

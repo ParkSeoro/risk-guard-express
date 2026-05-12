@@ -101,8 +101,8 @@ export default function MobileIncident() {
       // 관리자 알림
       try {
         const { data: members } = await supabase.from("project_members")
-          .select("user_id, role").eq("project_id", projectId)
-          .in("role", ["master", "project_admin", "safety_manager"]);
+          .select("user_id, role_new").eq("project_id", projectId)
+          .in("role_new", ["project_admin", "safety_manager"]);
         const { sendNotification } = await import("@/lib/notificationService");
         await Promise.all(((members as any) || []).map((m: any) =>
           sendNotification({

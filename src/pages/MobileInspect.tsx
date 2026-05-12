@@ -24,7 +24,8 @@ type Member = { user_id: string; display_name: string; role: string };
 export default function MobileInspect() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const projectId = typeof window !== "undefined" ? localStorage.getItem("selectedProjectId") || "" : "";
+  const { projectId } = useMobileAccess();
+  const { log: auditLog } = useAuditLog();
 
   const [step, setStep] = useState<Step>("setup");
   const [members, setMembers] = useState<Member[]>([]);

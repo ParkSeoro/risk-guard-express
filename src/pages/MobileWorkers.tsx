@@ -9,9 +9,11 @@ import { ArrowLeft, QrCode, Search, UserPlus, Loader2, Copy } from "lucide-react
 import { toast } from "sonner";
 import QRCode from "qrcode";
 
+import { useMobileAccess } from "@/hooks/useMobileAccess";
+
 export default function MobileWorkers() {
   const navigate = useNavigate();
-  const projectId = typeof window !== "undefined" ? localStorage.getItem("selectedProjectId") || "" : "";
+  const { projectId, applyCompanyFilter } = useMobileAccess();
   const [workers, setWorkers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
@@ -20,9 +22,11 @@ export default function MobileWorkers() {
   const load = async () => {
     if (!projectId) return;
     setLoading(true);
-    const { data } = await supabase.from("workers").select("*")
-      .eq("project_id", projectId).eq("is_active", true)
-      .order("created_at", { ascending: false }).limit(200);
+    let query: any = supabase.from("workers").select("*")
+      .eq("project_id", projectId).eq("is_active", true);
+    query = applyCompanyFilter(query);
+    const { data, error } = await query.order("created_at", { ascending: false }).limit(200);
+    if (error) toast.error("로드 실패: " + error.message);
     setWorkers(data || []);
     setLoading(false);
   };

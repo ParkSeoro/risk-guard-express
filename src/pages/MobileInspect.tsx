@@ -75,6 +75,7 @@ export default function MobileInspect() {
     try {
       const { data: ins, error } = await supabase.from("safety_inspections" as any).insert({
         project_id: projectId,
+        company_id: companyId,
         inspection_type: form.inspection_type,
         process_category: form.process_category,
         location: correctTerms(form.location),

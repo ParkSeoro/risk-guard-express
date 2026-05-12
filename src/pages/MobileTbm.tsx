@@ -18,7 +18,7 @@ import { correctTerms } from "@/lib/termCorrection";
 export default function MobileTbm() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const { projectId } = useMobileAccess();
+  const { projectId, companyId } = useMobileAccess();
   const { log: logAudit } = useAuditLog();
   const [creating, setCreating] = useState(false);
   const [session, setSession] = useState<any>(null);

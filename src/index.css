@@ -145,6 +145,44 @@
   }
 }
 
+/* Global themed scrollbars — Deep Navy & Safety Orange */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--primary) / 0.35) hsl(var(--muted) / 0.3);
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: hsl(var(--muted) / 0.3);
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: hsl(var(--primary) / 0.35);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background-color 0.2s ease;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--accent) / 0.7);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:active {
+  background: hsl(var(--accent));
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Print: hide scrollbars */
+@media print {
+  *::-webkit-scrollbar { display: none; }
+  * { scrollbar-width: none; }
+}
+
 /* Print styles - A4 enforced */
 @media print {
   body {

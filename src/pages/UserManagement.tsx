@@ -100,7 +100,7 @@ const UserManagement = () => {
     const [{ data: profiles }, { data: allRoles }, { data: allMembers }] = await Promise.all([
       supabase.from('profiles').select('*').order('created_at', { ascending: false }),
       supabase.from('user_roles').select('user_id, role'),
-      supabase.from('project_members').select('id, user_id, project_id, role, company_id, company, position'),
+      supabase.from('project_members').select('id, user_id, project_id, role, role_new, company_id, company, position, position_new'),
     ]);
     const enriched: UserWithRole[] = (profiles || []).map((p: any) => ({
       ...p,

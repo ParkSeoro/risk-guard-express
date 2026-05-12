@@ -7,11 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Camera, CheckCircle2, XCircle, MinusCircle, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { buildChecklist, INSPECTION_TYPE_LABELS, PROCESS_CATEGORIES, type InspectionType } from "@/lib/inspectionTemplates";
+import { useMobileAccess } from "@/hooks/useMobileAccess";
+import { useAuditLog } from "@/hooks/useAuditLog";
+import { correctTerms } from "@/lib/termCorrection";
 
 // 모바일 안전점검 — 데스크톱과 동일한 구조(점검 유형/공종/담당자 선택 → 체크리스트 → 항목별 합/불/해당없음 + 사진)
 type Step = "setup" | "checklist";

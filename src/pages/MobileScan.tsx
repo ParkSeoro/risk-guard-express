@@ -166,7 +166,14 @@ export default function MobileScan() {
               </Button>
             )}
 
-            {error && <Badge variant="destructive" className="w-full justify-center">{error}</Badge>}
+            {error && (
+              <div className="space-y-2">
+                <Badge variant="destructive" className="w-full justify-center whitespace-normal text-left py-2">{error}</Badge>
+                <Button variant="outline" className="w-full" onClick={() => window.open("https://safenex.org/m/scan", "_blank")}>
+                  <ExternalLink className="h-4 w-4 mr-1" /> 새 창에서 열기 (safenex.org)
+                </Button>
+              </div>
+            )}
 
             {last && (
               <div className="space-y-2 border-t pt-3">

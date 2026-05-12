@@ -13,9 +13,41 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Users, Search, UserCheck, UserX, Shield, Plus, Building2, AlertCircle } from 'lucide-react';
 
-const roleLabels: Record<string, string> = {
-  master: '마스터', project_admin: '프로젝트 관리자', user: '사용자',
-  safety_manager: '안전관리자 (레거시)', contractor: '협력사 (레거시)', viewer: '열람자',
+// === New permission model ===
+// Global role: only `master` is meaningful (system-wide admin).
+// Project role: 6-tier project-scoped role.
+// Position: 11 formal job titles used for approval routing.
+const globalRoleLabels: Record<string, string> = {
+  master: '마스터 (시스템 관리자)',
+  none: '일반 사용자',
+};
+const projectRoleLabels: Record<string, string> = {
+  project_admin: '프로젝트 관리자',
+  safety_manager: '안전관리자',
+  site_manager: '현장소장',
+  supervisor: '감리/감독',
+  worker: '작업자',
+  viewer: '열람자',
+};
+const positionLabels: Record<string, string> = {
+  CEO: '대표이사',
+  EXECUTIVE: '임원',
+  SITE_MANAGER: '현장소장',
+  HSE_MANAGER: '안전관리자',
+  CONSTRUCTION_MGR: '공사부장',
+  FIELD_ENGINEER: '공사담당',
+  FOREMAN: '직장/조장',
+  WORKER: '작업자',
+  OWNER_PM: '발주처 PM',
+  OWNER_HSE: '발주처 안전',
+  SUPERVISOR: '감리',
+};
+/** Map new project_role -> legacy app_role enum (for the role column).
+ *  Unknown new values fall back to 'viewer'. */
+const projectRoleToLegacy = (r: string): string => {
+  if (r === 'site_manager' || r === 'supervisor' || r === 'worker') return 'contractor';
+  if (['project_admin', 'safety_manager', 'viewer'].includes(r)) return r;
+  return 'viewer';
 };
 
 const statusLabels: Record<string, { label: string; color: string }> = {
@@ -60,11 +92,6 @@ const UserManagement = () => {
   // Existing memberships for inline editing
   const [userMemberships, setUserMemberships] = useState<Record<string, any[]>>({});
 
-  const positionLabels: Record<string, string> = {
-    site_manager: '현장대리인',
-    supervisor: '관리감독자',
-    safety_manager: '안전관리자',
-  };
 
   const isMaster = hasRole('master');
 
@@ -73,7 +100,7 @@ const UserManagement = () => {
     const [{ data: profiles }, { data: allRoles }, { data: allMembers }] = await Promise.all([
       supabase.from('profiles').select('*').order('created_at', { ascending: false }),
       supabase.from('user_roles').select('user_id, role'),
-      supabase.from('project_members').select('id, user_id, project_id, role, company_id, company, position'),
+      supabase.from('project_members').select('id, user_id, project_id, role, role_new, company_id, company, position, position_new'),
     ]);
     const enriched: UserWithRole[] = (profiles || []).map((p: any) => ({
       ...p,
@@ -148,11 +175,16 @@ const UserManagement = () => {
         return;
       }
     }
-    const parsedRole = roleChangeSchema.safeParse(newRole);
-    if (!parsedRole.success) {
-      toast({ title: '유효하지 않은 역할입니다.', variant: 'destructive' });
-      setSaving(null);
-      return;
+    // New global role dropdown only has two values: 'master' and '' (none).
+    // Empty / 'none' means: remove all global roles (user becomes project-only).
+    const wantsMaster = newRole === 'master';
+    if (wantsMaster) {
+      const parsedRole = roleChangeSchema.safeParse('master');
+      if (!parsedRole.success) {
+        toast({ title: '유효하지 않은 역할입니다.', variant: 'destructive' });
+        setSaving(null);
+        return;
+      }
     }
     const { error: delError } = await supabase.from('user_roles').delete().eq('user_id', userId);
     if (delError) {
@@ -161,15 +193,15 @@ const UserManagement = () => {
       setSaving(null);
       return;
     }
-    if (parsedRole.data) {
-      const { error: insError } = await supabase.from('user_roles').insert([{ user_id: userId, role: parsedRole.data }]);
+    if (wantsMaster) {
+      const { error: insError } = await supabase.from('user_roles').insert([{ user_id: userId, role: 'master' as any }]);
       if (insError) {
         toast({ title: '역할 변경 실패', description: insError.message, variant: 'destructive' });
         setSaving(null);
         return;
       }
     }
-    toast({ title: `역할이 '${roleLabels[newRole] || newRole}'(으)로 변경되었습니다.` });
+    toast({ title: `전역 역할이 '${globalRoleLabels[newRole] || newRole}'(으)로 변경되었습니다.` });
     log('역할변경', 'user_role', userId, undefined, { role: newRole });
     setSaving(null);
     fetchUsers();
@@ -184,10 +216,17 @@ const UserManagement = () => {
     setAssignError('');
   };
 
-  // Update existing project membership inline
-  const handleUpdateMembership = async (membershipId: string, field: string, value: string) => {
+  // Update existing project membership inline.
+  // When changing role_new / position_new we also mirror to the legacy
+  // `role` / `position` columns until Phase 4 cleanup.
+  const handleUpdateMembership = async (membershipId: string, field: string, value: string | null) => {
     const updateData: Record<string, any> = { [field]: value };
-    // If changing company_id, also update company name
+    if (field === 'role_new') {
+      updateData.role = projectRoleToLegacy(String(value)) as any;
+    }
+    if (field === 'position_new') {
+      updateData.position = value || '';
+    }
     if (field === 'company_id') {
       const company = projectCompanies.find(c => c.id === value);
       updateData.company = company?.name || '';
@@ -202,14 +241,16 @@ const UserManagement = () => {
     }
   };
 
+  const COMPANY_REQUIRED_ROLES = ['worker', 'site_manager', 'supervisor'];
+
   const handleAssignMembership = async () => {
     setAssignError('');
     if (!assignUserId || !assignProjectId || !assignRole) {
       setAssignError('사용자, 프로젝트, 역할을 모두 선택해주세요.');
       return;
     }
-    if (assignRole === 'contractor' && !assignCompanyId) {
-      setAssignError('협력사 담당자는 소속 업체를 반드시 선택해야 합니다.');
+    if (COMPANY_REQUIRED_ROLES.includes(assignRole) && !assignCompanyId) {
+      setAssignError('작업자/현장소장/감리는 소속 업체를 반드시 선택해야 합니다.');
       return;
     }
     setAssignSaving(true);
@@ -218,10 +259,13 @@ const UserManagement = () => {
       const { error } = await supabase.from('project_members').insert([{
         project_id: assignProjectId,
         user_id: assignUserId,
-        role: assignRole as any,
+        // Write BOTH new and legacy columns for backward compatibility
+        role: projectRoleToLegacy(assignRole) as any,
+        role_new: assignRole as any,
         company_id: assignCompanyId || null,
         company: companyName,
         position: assignPosition || '',
+        position_new: (assignPosition || null) as any,
       }]);
       if (error) {
         if (error.message.includes('duplicate') || error.message.includes('unique')) {
@@ -332,10 +376,10 @@ const UserManagement = () => {
                     </Badge>
                   </td>
                   <td className="text-center">
-                    <Select value={u.roles[0] || 'viewer'} onValueChange={v => handleRoleChange(u.user_id, v)}>
-                      <SelectTrigger className="h-7 w-28 text-xs mx-auto"><SelectValue /></SelectTrigger>
+                    <Select value={u.roles[0] || 'none'} onValueChange={v => handleRoleChange(u.user_id, v === 'none' ? '' : v)}>
+                      <SelectTrigger className="h-7 w-32 text-xs mx-auto"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {Object.entries(roleLabels).map(([k, v]) => (
+                        {Object.entries(globalRoleLabels).map(([k, v]) => (
                           <SelectItem key={k} value={k}>{v}</SelectItem>
                         ))}
                       </SelectContent>
@@ -352,15 +396,15 @@ const UserManagement = () => {
                           return (
                             <div key={m.id} className="flex items-center gap-1 text-[10px] flex-wrap">
                               <Badge variant="secondary" className="text-[10px] shrink-0">{proj?.name || '프로젝트'}</Badge>
-                              <Select value={m.role} onValueChange={(v) => handleUpdateMembership(m.id, 'role', v)}>
-                                <SelectTrigger className="h-5 w-20 text-[10px] border-dashed"><SelectValue /></SelectTrigger>
+                              <Select value={m.role_new || (projectRoleLabels[m.role] ? m.role : 'viewer')} onValueChange={(v) => handleUpdateMembership(m.id, 'role_new', v)}>
+                                <SelectTrigger className="h-5 w-24 text-[10px] border-dashed"><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                  {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
+                                  {Object.entries(projectRoleLabels).map(([k, v]) => (
                                     <SelectItem key={k} value={k} className="text-[10px]">{v}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <Select value={m.position || '_none'} onValueChange={(v) => handleUpdateMembership(m.id, 'position', v === '_none' ? '' : v)}>
+                              <Select value={m.position_new || m.position || '_none'} onValueChange={(v) => handleUpdateMembership(m.id, 'position_new', v === '_none' ? null : v)}>
                                 <SelectTrigger className="h-5 w-24 text-[10px] border-dashed"><SelectValue placeholder="직책" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="_none" className="text-[10px]">직책 없음</SelectItem>
@@ -444,14 +488,14 @@ const UserManagement = () => {
               <Select value={assignRole} onValueChange={(v) => { setAssignRole(v); setAssignError(''); }}>
                 <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
+                  {Object.entries(projectRoleLabels).map(([k, v]) => (
                     <SelectItem key={k} value={k}>{v}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">소속 업체 {assignRole === 'contractor' ? '*' : '(선택)'}</Label>
+              <Label className="text-xs">소속 업체 {COMPANY_REQUIRED_ROLES.includes(assignRole) ? '*' : '(선택)'}</Label>
               {assignProjectId ? (
                 projectCompanies.length > 0 ? (
                   <Select value={assignCompanyId || '_none'} onValueChange={(v) => { setAssignCompanyId(v === '_none' ? '' : v); setAssignError(''); }}>

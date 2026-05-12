@@ -5,8 +5,26 @@ const MAX_SHORT_TEXT = 100;
 const MAX_MEDIUM_TEXT = 500;
 const MAX_LONG_TEXT = 2000;
 
-// Valid app roles
+// Legacy app_role enum values (still accepted during the transition).
+// New project_role/global_role enums are validated separately below.
 const VALID_ROLES = ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer', 'user'] as const;
+
+// New project-scoped role (6 tiers)
+export const VALID_PROJECT_ROLES = [
+  'project_admin', 'safety_manager', 'site_manager', 'supervisor', 'worker', 'viewer',
+] as const;
+export const projectRoleSchema = z.enum(VALID_PROJECT_ROLES, {
+  errorMap: () => ({ message: '유효하지 않은 프로젝트 역할입니다.' }),
+});
+
+// Project positions (11)
+export const VALID_POSITIONS = [
+  'CEO', 'EXECUTIVE', 'SITE_MANAGER', 'HSE_MANAGER', 'CONSTRUCTION_MGR',
+  'FIELD_ENGINEER', 'FOREMAN', 'WORKER', 'OWNER_PM', 'OWNER_HSE', 'SUPERVISOR',
+] as const;
+export const projectPositionSchema = z.enum(VALID_POSITIONS, {
+  errorMap: () => ({ message: '유효하지 않은 직책입니다.' }),
+});
 
 // Valid grade values
 const VALID_GRADES = ['상', '중', '하'] as const;

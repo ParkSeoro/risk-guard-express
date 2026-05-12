@@ -3,7 +3,7 @@ import {
   FileCheck, HardHat, ChevronLeft, LogOut, User,
   Shield, SearchCheck, Settings,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
-  ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical
+  ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, GitCompare
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink } from "@/components/NavLink";
@@ -21,34 +21,40 @@ type Group = { label: string; key: string; items: Item[] };
 
 const groups: Group[] = [
   {
-    label: "안전관리", key: "safety",
+    label: "홈", key: "home",
     items: [
       { title: "대시보드", url: "/", icon: LayoutDashboard },
-      { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
-      { title: "작업계획서", url: "/work-plans", icon: FileText },
-      { title: "작업허가서", url: "/work-permits", icon: FileSignature },
-      { title: "TBM 일지", url: "/tbm-logs", icon: QrCode },
     ],
   },
   {
-    label: "점검/교육", key: "inspect",
+    label: "현장 작업", key: "field",
     items: [
-      { title: "안전점검", url: "/safety-inspections", icon: ClipboardCheck },
-      { title: "교육자료", url: "/education-materials", icon: FileText },
-      { title: "검증센터", url: "/verification-center", icon: SearchCheck },
+      { title: "작업계획서", url: "/work-plans", icon: FileText },
+      { title: "작업허가서", url: "/work-permits", icon: FileSignature },
+      { title: "TBM 일지", url: "/tbm-logs", icon: QrCode },
       { title: "현장 적용 체크", url: "/site-readiness", icon: ClipboardList },
     ],
   },
   {
-    label: "근로자", key: "workers",
+    label: "위험관리", key: "risk",
     items: [
-      { title: "근로자 관리", url: "/workers", icon: HardHat },
-      { title: "입퇴장 현황", url: "/worker-attendance", icon: ClipboardList },
+      { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
+      { title: "검증센터", url: "/verification-center", icon: SearchCheck },
+      { title: "AI 어시스턴트", url: "/ai-assistant", icon: Bot },
     ],
   },
   {
-    label: "비용/법적", key: "legal",
+    label: "안전점검", key: "inspect",
     items: [
+      { title: "안전점검", url: "/safety-inspections", icon: ClipboardCheck },
+      { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
+      { title: "교육자료", url: "/education-materials", icon: FileText },
+    ],
+  },
+  {
+    label: "인력·비용·법적", key: "ops_mgmt",
+    items: [
+      { title: "근로자 관리", url: "/workers", icon: HardHat },
       { title: "산업안전보건관리비", url: "/safety-cost", icon: ReceiptText },
       { title: "법적업무", url: "/legal-duties", icon: Scale },
     ],
@@ -58,10 +64,8 @@ const groups: Group[] = [
     items: [
       { title: "할 일", url: "/todo", icon: ListTodo },
       { title: "결재함", url: "/approvals", icon: FileCheck },
-      { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
-      { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
-      { title: "AI 어시스턴트", url: "/ai-assistant", icon: Bot },
       { title: "프로젝트", url: "/projects", icon: FolderKanban },
+      { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
     ],
   },
 ];
@@ -75,6 +79,7 @@ const adminItems: Item[] = [
 ];
 
 const masterOnlyItems: Item[] = [
+  { title: "일관성 감사", url: "/admin/consistency-audit", icon: GitCompare },
   { title: "AI 테스트 엔진", url: "/admin/ai-test", icon: Beaker },
   { title: "AI 로그", url: "/admin/ai-logs", icon: Activity },
   { title: "시스템 테스트 엔진", url: "/admin/system-test", icon: FlaskConical },
@@ -89,8 +94,8 @@ export function AppSidebar() {
   const adminFinal = isMaster ? [...adminItems, ...masterOnlyItems] : adminItems;
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
-    try { return JSON.parse(localStorage.getItem('sidebar:groups') || '{"safety":true,"inspect":true,"legal":true,"ops":true,"admin":false}'); }
-    catch { return { safety: true, inspect: true, legal: true, ops: true, admin: false }; }
+    try { return JSON.parse(localStorage.getItem('sidebar:groups') || '{"home":true,"field":true,"risk":true,"inspect":true,"ops_mgmt":true,"ops":true,"admin":false}'); }
+    catch { return { home: true, field: true, risk: true, inspect: true, ops_mgmt: true, ops: true, admin: false }; }
   });
   useEffect(() => {
     localStorage.setItem('sidebar:groups', JSON.stringify(openGroups));

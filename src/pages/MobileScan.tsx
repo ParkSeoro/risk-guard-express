@@ -56,13 +56,9 @@ export default function MobileScan() {
       setError("HTTPS 환경에서만 카메라를 사용할 수 있습니다. 배포 도메인(예: safenex.org)에서 다시 시도하세요.");
       return;
     }
-    // iframe(미리보기) 안에서는 카메라 권한이 부모 정책에 의해 차단되는 경우가 많음
+    // iframe(미리보기) 환경 감지 — 즉시 차단하지 않고 시도해본 뒤 실패 시 새 창 열기 안내
     let inIframe = false;
     try { inIframe = window.self !== window.top; } catch { inIframe = true; }
-    if (inIframe) {
-      setError("미리보기(iframe) 환경에서는 카메라가 차단됩니다. 새 창에서 https://safenex.org/m/scan 으로 직접 열거나, 홈 화면에 설치한 앱으로 실행하세요.");
-      return;
-    }
     if (!navigator.mediaDevices?.getUserMedia) {
       setError("이 브라우저는 카메라 API를 지원하지 않습니다. Chrome/Safari 최신 버전을 사용하세요.");
       return;

@@ -2,74 +2,157 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
-export type ProjectRole = 'master' | 'project_admin' | 'safety_manager' | 'contractor' | 'viewer' | 'user';
+/**
+ * Project-scoped role (new model).
+ * Legacy `contractor` / `user` values still appear in old data and are
+ * coerced to `worker` at runtime.
+ */
+export type ProjectRole =
+  | 'master'
+  | 'project_admin'
+  | 'safety_manager'
+  | 'site_manager'
+  | 'supervisor'
+  | 'worker'
+  | 'viewer';
+
+export type ProjectPosition =
+  | 'CEO'
+  | 'EXECUTIVE'
+  | 'SITE_MANAGER'
+  | 'HSE_MANAGER'
+  | 'CONSTRUCTION_MGR'
+  | 'FIELD_ENGINEER'
+  | 'FOREMAN'
+  | 'WORKER'
+  | 'OWNER_PM'
+  | 'OWNER_HSE'
+  | 'SUPERVISOR'
+  | null;
+
+export type CompanyType = 'client' | 'gc' | 'contractor' | 'vendor' | null;
+
+export type FeatureKey =
+  | 'risk_assessment'
+  | 'work_plan'
+  | 'work_permit'
+  | 'safety_inspection'
+  | 'tbm'
+  | 'incident'
+  | 'safety_cost'
+  | 'legal_duty'
+  | 'todo'
+  | 'approval'
+  | 'company'
+  | 'member'
+  | 'master_data'
+  | 'audit_log';
+
+type Perm = { create: boolean; edit: boolean; delete: boolean; approve: boolean };
+
+const ALL: Perm = { create: true, edit: true, delete: true, approve: true };
+const RO: Perm = { create: false, edit: false, delete: false, approve: false };
+const CRUD_NO_APPROVE: Perm = { create: true, edit: true, delete: true, approve: false };
+const CRU_APPROVE: Perm = { create: true, edit: true, delete: false, approve: true };
+const CRU_NO_APPROVE: Perm = { create: true, edit: true, delete: false, approve: false };
+const APPROVE_ONLY: Perm = { create: false, edit: false, delete: false, approve: true };
+
+/**
+ * Authoritative permission matrix.
+ * Mirrors `.lovable/plan.md` §3.
+ */
+const PERMISSION_MATRIX: Record<ProjectRole, Record<FeatureKey, Perm>> = {
+  master: {
+    risk_assessment: ALL, work_plan: ALL, work_permit: ALL, safety_inspection: ALL,
+    tbm: ALL, incident: ALL, safety_cost: ALL, legal_duty: ALL, todo: ALL,
+    approval: CRU_APPROVE, company: ALL, member: ALL, master_data: ALL, audit_log: ALL,
+  },
+  project_admin: {
+    risk_assessment: ALL, work_plan: ALL, work_permit: ALL, safety_inspection: ALL,
+    tbm: ALL, incident: ALL, safety_cost: ALL, legal_duty: ALL, todo: ALL,
+    approval: CRU_APPROVE, company: ALL, member: ALL, master_data: ALL, audit_log: ALL,
+  },
+  safety_manager: {
+    risk_assessment: CRU_APPROVE, work_plan: CRU_APPROVE, work_permit: CRU_APPROVE,
+    safety_inspection: CRUD_NO_APPROVE, tbm: CRUD_NO_APPROVE, incident: CRUD_NO_APPROVE,
+    safety_cost: CRUD_NO_APPROVE, legal_duty: CRUD_NO_APPROVE, todo: CRUD_NO_APPROVE,
+    approval: APPROVE_ONLY, company: RO, member: RO, master_data: CRUD_NO_APPROVE, audit_log: RO,
+  },
+  site_manager: {
+    risk_assessment: CRU_APPROVE, work_plan: CRU_APPROVE, work_permit: CRU_APPROVE,
+    safety_inspection: CRUD_NO_APPROVE, tbm: CRUD_NO_APPROVE, incident: CRUD_NO_APPROVE,
+    safety_cost: RO, legal_duty: RO, todo: CRUD_NO_APPROVE,
+    approval: APPROVE_ONLY, company: RO, member: RO, master_data: RO, audit_log: RO,
+  },
+  supervisor: {
+    risk_assessment: RO, work_plan: RO, work_permit: APPROVE_ONLY,
+    safety_inspection: CRU_NO_APPROVE, tbm: RO, incident: CRU_NO_APPROVE,
+    safety_cost: RO, legal_duty: RO, todo: CRU_NO_APPROVE,
+    approval: APPROVE_ONLY, company: RO, member: RO, master_data: RO, audit_log: RO,
+  },
+  worker: {
+    risk_assessment: CRU_NO_APPROVE, work_plan: CRU_NO_APPROVE, work_permit: RO,
+    safety_inspection: RO, tbm: RO, incident: CRU_NO_APPROVE,
+    safety_cost: RO, legal_duty: RO, todo: CRU_NO_APPROVE,
+    approval: { create: true, edit: false, delete: false, approve: false },
+    company: RO, member: RO, master_data: RO, audit_log: RO,
+  },
+  viewer: {
+    risk_assessment: RO, work_plan: RO, work_permit: RO, safety_inspection: RO,
+    tbm: RO, incident: RO, safety_cost: RO, legal_duty: RO, todo: RO,
+    approval: RO, company: RO, member: RO, master_data: RO, audit_log: RO,
+  },
+};
+
+/** Map any legacy role string to a canonical ProjectRole. */
+function normalizeRole(input: string | null | undefined): ProjectRole {
+  switch ((input || '').toLowerCase()) {
+    case 'master': return 'master';
+    case 'project_admin': return 'project_admin';
+    case 'safety_manager': return 'safety_manager';
+    case 'site_manager': return 'site_manager';
+    case 'supervisor': return 'supervisor';
+    case 'worker':
+    case 'contractor': // legacy
+    case 'user':       // legacy
+      return 'worker';
+    case 'viewer':
+    default:
+      return 'viewer';
+  }
+}
 
 export interface ProjectAccess {
   projects: { id: string; name: string; site_name: string }[];
   selectedProject: string;
   setSelectedProject: (id: string) => void;
   userCompanyId: string | null;
+  userCompanyType: CompanyType;
   userRole: ProjectRole;
+  userPosition: ProjectPosition;
   isMaster: boolean;
   isProjectAdmin: boolean;
-  isContractor: boolean;
+  isSafetyManager: boolean;
+  isSiteManager: boolean;
+  isSupervisor: boolean;
+  isWorker: boolean;
+  isContractor: boolean; // legacy alias = isWorker
   loading: boolean;
-  /** Apply to supabase query builder for company-scoped filtering */
+  /** Apply to supabase query builder for company-scoped filtering.
+   * Owner-side full-access roles bypass. RLS still enforces hierarchy. */
   applyCompanyFilter: (query: any) => any;
-  /** Permission checks */
   canCreate: (feature: FeatureKey) => boolean;
   canEdit: (feature: FeatureKey) => boolean;
   canDelete: (feature: FeatureKey) => boolean;
   canApprove: (feature: FeatureKey) => boolean;
 }
 
-export type FeatureKey = 'risk_assessment' | 'work_plan' | 'legal_duty' | 'todo' | 'approval';
-
-// Permission matrix: role -> feature -> actions
-const PERMISSION_MATRIX: Record<string, Record<FeatureKey, { create: boolean; edit: boolean; delete: boolean; approve: boolean }>> = {
-  master: {
-    risk_assessment: { create: true, edit: true, delete: true, approve: true },
-    work_plan: { create: true, edit: true, delete: true, approve: true },
-    legal_duty: { create: true, edit: true, delete: true, approve: false },
-    todo: { create: true, edit: true, delete: true, approve: false },
-    approval: { create: true, edit: true, delete: false, approve: true },
-  },
-  project_admin: {
-    risk_assessment: { create: true, edit: true, delete: true, approve: true },
-    work_plan: { create: true, edit: true, delete: true, approve: true },
-    legal_duty: { create: true, edit: true, delete: true, approve: false },
-    todo: { create: true, edit: true, delete: true, approve: false },
-    approval: { create: true, edit: true, delete: false, approve: true },
-  },
-  safety_manager: {
-    risk_assessment: { create: true, edit: true, delete: false, approve: true },
-    work_plan: { create: true, edit: true, delete: false, approve: true },
-    legal_duty: { create: true, edit: true, delete: false, approve: false },
-    todo: { create: true, edit: true, delete: true, approve: false },
-    approval: { create: false, edit: false, delete: false, approve: true },
-  },
-  contractor: {
-    risk_assessment: { create: true, edit: true, delete: false, approve: false },
-    work_plan: { create: true, edit: true, delete: false, approve: false },
-    legal_duty: { create: false, edit: false, delete: false, approve: false },
-    todo: { create: true, edit: true, delete: true, approve: false },
-    approval: { create: true, edit: false, delete: false, approve: false },
-  },
-  viewer: {
-    risk_assessment: { create: false, edit: false, delete: false, approve: false },
-    work_plan: { create: false, edit: false, delete: false, approve: false },
-    legal_duty: { create: false, edit: false, delete: false, approve: false },
-    todo: { create: false, edit: false, delete: false, approve: false },
-    approval: { create: false, edit: false, delete: false, approve: false },
-  },
-  user: {
-    risk_assessment: { create: true, edit: true, delete: false, approve: false },
-    work_plan: { create: true, edit: true, delete: false, approve: false },
-    legal_duty: { create: false, edit: false, delete: false, approve: false },
-    todo: { create: true, edit: true, delete: true, approve: false },
-    approval: { create: true, edit: false, delete: false, approve: false },
-  },
-};
+interface MemberInfo {
+  role: ProjectRole;
+  position: ProjectPosition;
+  company_id: string | null;
+  company_type: CompanyType;
+}
 
 export function useProjectAccess(): ProjectAccess {
   const { user, hasRole } = useAuth();
@@ -78,7 +161,7 @@ export function useProjectAccess(): ProjectAccess {
   const [selectedProject, setSelectedProjectState] = useState(() => {
     try { return localStorage.getItem('selectedProjectId') || ''; } catch { return ''; }
   });
-  const [memberInfo, setMemberInfo] = useState<{ role: ProjectRole; company_id: string | null } | null>(null);
+  const [memberInfo, setMemberInfo] = useState<MemberInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
   const setSelectedProject = (id: string) => {
@@ -88,23 +171,23 @@ export function useProjectAccess(): ProjectAccess {
 
   useEffect(() => {
     loadProjects();
-    // isMaster depends on roles which load asynchronously after user;
-    // re-run when it flips so master sees the full project list.
   }, [user, isMaster]);
 
   useEffect(() => {
     if (selectedProject && user && !isMaster) {
       loadMemberInfo();
     } else if (isMaster) {
-      setMemberInfo({ role: 'master', company_id: null });
+      setMemberInfo({ role: 'master', position: null, company_id: null, company_type: null });
     }
   }, [selectedProject, user, isMaster]);
 
   const loadProjects = async () => {
     if (!user) { setLoading(false); return; }
-    
     if (isMaster) {
-      const { data } = await supabase.from('projects').select('id, name, site_name').order('created_at', { ascending: false });
+      const { data } = await supabase
+        .from('projects')
+        .select('id, name, site_name')
+        .order('created_at', { ascending: false });
       if (data && data.length > 0) {
         setProjects(data);
         const saved = localStorage.getItem('selectedProjectId');
@@ -118,11 +201,8 @@ export function useProjectAccess(): ProjectAccess {
         .from('project_members')
         .select('project_id, projects(id, name, site_name)')
         .eq('user_id', user.id);
-      
       if (members && members.length > 0) {
-        const projs = members
-          .map(m => (m as any).projects)
-          .filter(Boolean);
+        const projs = members.map(m => (m as any).projects).filter(Boolean);
         setProjects(projs);
         const saved = localStorage.getItem('selectedProjectId');
         const validSaved = saved && projs.some((p: any) => p.id === saved);
@@ -136,48 +216,73 @@ export function useProjectAccess(): ProjectAccess {
 
   const loadMemberInfo = async () => {
     if (!user || !selectedProject) return;
+    // Read NEW columns (role_new/position_new) and fall back to legacy ones.
     const { data } = await supabase
       .from('project_members')
-      .select('role, company_id')
+      .select('role, company_id, role_new, position_new, companies(type)' as any)
       .eq('user_id', user.id)
       .eq('project_id', selectedProject)
       .maybeSingle();
-    
+
     if (data) {
-      setMemberInfo({ role: data.role as ProjectRole, company_id: data.company_id });
+      const d = data as any;
+      setMemberInfo({
+        role: normalizeRole(d.role_new || d.role),
+        position: (d.position_new || null) as ProjectPosition,
+        company_id: d.company_id || null,
+        company_type: (d.companies?.type as CompanyType) || null,
+      });
     }
   };
 
-  const userRole = useMemo(() => {
-    if (isMaster) return 'master' as ProjectRole;
-    return (memberInfo?.role || 'viewer') as ProjectRole;
-  }, [isMaster, memberInfo]);
+  const userRole = useMemo<ProjectRole>(
+    () => (isMaster ? 'master' : memberInfo?.role || 'viewer'),
+    [isMaster, memberInfo],
+  );
 
   const isProjectAdmin = userRole === 'project_admin' || userRole === 'master';
-  const isContractor = userRole === 'contractor';
+  const isSafetyManager = userRole === 'safety_manager';
+  const isSiteManager = userRole === 'site_manager';
+  const isSupervisor = userRole === 'supervisor';
+  const isWorker = userRole === 'worker';
+
   const userCompanyId = isMaster ? null : (memberInfo?.company_id || null);
+  const userCompanyType: CompanyType = isMaster ? null : (memberInfo?.company_type ?? null);
+  const userPosition: ProjectPosition = isMaster ? null : (memberInfo?.position ?? null);
 
   const applyCompanyFilter = (query: any): any => {
-    if (isMaster || isProjectAdmin) return query;
-    if (userCompanyId) return query.eq('company_id', userCompanyId);
+    // Owner-side roles see all companies in a project (RLS-enforced)
+    if (userRole === 'master' || userRole === 'project_admin' || userRole === 'safety_manager') {
+      return query;
+    }
+    // worker/viewer: hard restrict to own company on client (RLS is the real gate)
+    if (userRole === 'worker' || userRole === 'viewer') {
+      if (userCompanyId) return query.eq('company_id', userCompanyId);
+      // No company → restrict to nothing
+      return query.eq('company_id', '00000000-0000-0000-0000-000000000000');
+    }
+    // site_manager/supervisor: rely on RLS for descendant filtering (no client filter)
     return query;
   };
 
-  const getPermissions = (feature: FeatureKey) => {
-    const roleKey = ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer', 'user'].includes(userRole)
-      ? userRole : 'user';
-    return PERMISSION_MATRIX[roleKey]?.[feature] || { create: false, edit: false, delete: false, approve: false };
-  };
+  const getPermissions = (feature: FeatureKey): Perm =>
+    PERMISSION_MATRIX[userRole]?.[feature] ?? RO;
 
   return {
     projects,
     selectedProject,
     setSelectedProject,
     userCompanyId,
+    userCompanyType,
     userRole,
+    userPosition,
     isMaster,
     isProjectAdmin,
-    isContractor,
+    isSafetyManager,
+    isSiteManager,
+    isSupervisor,
+    isWorker,
+    isContractor: isWorker, // legacy alias for compatibility
     loading,
     applyCompanyFilter,
     canCreate: (f) => getPermissions(f).create,

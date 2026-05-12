@@ -15,8 +15,9 @@ export default function MobileAlerts() {
 
   const load = async () => {
     if (!user) return;
-    const { data } = await supabase.from("notifications").select("*")
+    const { data, error } = await supabase.from("notifications").select("*")
       .eq("user_id", user.id).order("created_at", { ascending: false }).limit(50);
+    if (error) { (await import("sonner")).toast.error("알림 불러오기 실패: " + error.message); return; }
     setItems(data || []);
   };
   useEffect(() => { load(); }, [user]);

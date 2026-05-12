@@ -7,11 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Camera, CheckCircle2, XCircle, MinusCircle, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { buildChecklist, INSPECTION_TYPE_LABELS, PROCESS_CATEGORIES, type InspectionType } from "@/lib/inspectionTemplates";
+import { useMobileAccess } from "@/hooks/useMobileAccess";
+import { useAuditLog } from "@/hooks/useAuditLog";
+import { correctTerms } from "@/lib/termCorrection";
 
 // 모바일 안전점검 — 데스크톱과 동일한 구조(점검 유형/공종/담당자 선택 → 체크리스트 → 항목별 합/불/해당없음 + 사진)
 type Step = "setup" | "checklist";
@@ -20,7 +24,8 @@ type Member = { user_id: string; display_name: string; role: string };
 export default function MobileInspect() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const projectId = typeof window !== "undefined" ? localStorage.getItem("selectedProjectId") || "" : "";
+  const { projectId } = useMobileAccess();
+  const { log: auditLog } = useAuditLog();
 
   const [step, setStep] = useState<Step>("setup");
   const [members, setMembers] = useState<Member[]>([]);
@@ -72,14 +77,19 @@ export default function MobileInspect() {
         project_id: projectId,
         inspection_type: form.inspection_type,
         process_category: form.process_category,
-        location: form.location,
-        summary: form.summary,
+        location: correctTerms(form.location),
+        summary: correctTerms(form.summary),
         inspector_name: form.inspector_name || profile?.display_name || "",
         inspector_id: form.inspector_id || profile?.user_id,
         created_by: profile?.user_id,
         status: "in_progress",
       }).select().single();
       if (error) throw error;
+      await auditLog("create", "safety_inspection", (ins as any).id, projectId, {
+        inspection_type: form.inspection_type,
+        process_category: form.process_category,
+        location: form.location,
+      });
 
       const checklist = buildChecklist(form.inspection_type, form.process_category);
       const rows = checklist.map((c, i) => ({
@@ -173,8 +183,14 @@ export default function MobileInspect() {
     const unset = items.filter(i => !i.result).length;
     if (unset > 0 && !confirm(`미체크 항목이 ${unset}건 있습니다. 그래도 완료할까요?`)) return;
     const hasFail = items.some(i => i.result === "fail");
-    await supabase.from("safety_inspections" as any)
-      .update({ status: hasFail ? "in_progress" : "completed" }).eq("id", inspectionId);
+    const nextStatus = hasFail ? "in_progress" : "completed";
+    const { error } = await supabase.from("safety_inspections" as any)
+      .update({ status: nextStatus }).eq("id", inspectionId);
+    if (error) { toast.error("저장 실패: " + error.message); return; }
+    await auditLog("update", "safety_inspection", inspectionId, projectId, {
+      status: nextStatus, pass: items.filter(i=>i.result==='pass').length,
+      fail: items.filter(i=>i.result==='fail').length,
+    });
     toast.success(hasFail ? "조치 필요 항목과 함께 저장됨" : "점검 완료");
     navigate("/m");
   };
@@ -256,8 +272,8 @@ export default function MobileInspect() {
 
               <div>
                 <Label className="text-base">개요/메모</Label>
-                <Textarea value={form.summary}
-                  onChange={e => setForm({ ...form, summary: e.target.value })}
+                <IMESafeTextarea defaultValue={form.summary}
+                  onCommit={(val) => setForm({ ...form, summary: val })}
                   placeholder="필요 시 메모" rows={2} />
               </div>
 
@@ -323,8 +339,11 @@ export default function MobileInspect() {
                       <div className="flex items-center gap-1 text-xs text-destructive">
                         <AlertTriangle className="h-3.5 w-3.5" /> 자동으로 조치 요청이 생성됩니다.
                       </div>
-                      <Textarea placeholder="발견 사항/조치 의견" rows={2} value={it.note || ""}
-                        onChange={e => setNote(it, e.target.value)} onBlur={() => flushNote(it)} />
+                      <IMESafeTextarea placeholder="발견 사항/조치 의견" rows={2} defaultValue={it.note || ""}
+                        onCommit={async (val) => {
+                          setNote(it, val);
+                          await supabase.from("safety_inspection_items" as any).update({ note: val || "" }).eq("id", it.id);
+                        }} />
                       <label className="block">
                         <div className="border-2 border-dashed rounded p-3 text-center text-sm active:bg-muted">
                           <Camera className="h-5 w-5 inline mr-1" /> 사진 추가

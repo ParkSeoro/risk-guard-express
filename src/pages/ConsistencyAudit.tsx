@@ -66,11 +66,11 @@ const AUDIT: PageAudit[] = [
   { page: "MobilePermits.tsx",         title: "[M] 허가서 결재",   results: { access: "pass",    soft: "na",      ime: "pass",    audit: "pass",    zod: "fail", toast: "pass",    term: "na" } },
   { page: "MobileApprovals.tsx",       title: "[M] 결재함",        results: { access: "na",      soft: "na",      ime: "pass",    audit: "pass",    zod: "na",   toast: "pass",    term: "na" } },
   { page: "MobileActions.tsx",         title: "[M] 조치 관리",     results: { access: "pass",    soft: "na",      ime: "pass",    audit: "pass",    zod: "fail", toast: "pass",    term: "pass" } },
-  { page: "MobileInspect.tsx",         title: "[M] 안전점검",      results: { access: "fail",    soft: "na",      ime: "fail",    audit: "fail",    zod: "fail", toast: "pass",    term: "fail" } },
+  { page: "MobileInspect.tsx",         title: "[M] 안전점검",      results: { access: "pass",    soft: "na",      ime: "pass",    audit: "pass",    zod: "partial", toast: "pass",    term: "pass" } },
   { page: "MobileWorkers.tsx",         title: "[M] 근로자 QR",     results: { access: "pass",    soft: "na",      ime: "fail",    audit: "fail",    zod: "na",   toast: "pass",    term: "na" } },
   { page: "MobileRiskAssessment.tsx",  title: "[M] 위험성평가",    results: { access: "pass",    soft: "pass",    ime: "fail",    audit: "na",      zod: "na",   toast: "fail",    term: "na" } },
   { page: "MobileWorkPlans.tsx",       title: "[M] 작업계획",      results: { access: "pass",    soft: "pass",    ime: "fail",    audit: "na",      zod: "na",   toast: "fail",    term: "na" } },
-  { page: "MobileAlerts.tsx",          title: "[M] 알림",          results: { access: "na",      soft: "na",      ime: "na",      audit: "na",      zod: "na",   toast: "fail",    term: "na" } },
+  { page: "MobileAlerts.tsx",          title: "[M] 알림",          results: { access: "na",      soft: "na",      ime: "na",      audit: "na",      zod: "na",   toast: "pass",    term: "na" } },
   { page: "MobileScan.tsx",            title: "[M] QR 스캔",       results: { access: "na",      soft: "na",      ime: "na",      audit: "na",      zod: "na",   toast: "pass",    term: "na" } },
 ];
 

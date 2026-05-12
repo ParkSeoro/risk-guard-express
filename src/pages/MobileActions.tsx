@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useMobileAccess } from "@/hooks/useMobileAccess";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Camera, CheckCircle2, Loader2, AlertTriangle } from "lucide-react";
+import IMESafeTextarea from "@/components/IMESafeTextarea";
+import { ArrowLeft, Camera, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { correctTerms } from "@/lib/termCorrection";
 
 type ActionRow = {
   id: string;
@@ -31,7 +34,8 @@ const sevLabel: Record<string, string> = { high: "높음", medium: "보통", low
 export default function MobileActions() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const projectId = typeof window !== "undefined" ? localStorage.getItem("selectedProjectId") || "" : "";
+  const { projectId, applyCompanyFilter } = useMobileAccess();
+  const { log: logAudit } = useAuditLog();
   const [tab, setTab] = useState<"pending" | "completed">("pending");
   const [rows, setRows] = useState<ActionRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -43,13 +47,10 @@ export default function MobileActions() {
   const load = async () => {
     if (!projectId) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from("safety_inspection_actions" as any)
-      .select("*")
-      .eq("project_id", projectId)
-      .in("status", tab === "pending" ? ["pending", "in_progress"] : ["completed"])
-      .order("created_at", { ascending: false })
-      .limit(50);
+    let q: any = supabase.from("safety_inspection_actions" as any).select("*").eq("project_id", projectId);
+    q = applyCompanyFilter(q);
+    const { data, error } = await q.in("status", tab === "pending" ? ["pending", "in_progress"] : ["completed"])
+      .order("created_at", { ascending: false }).limit(50);
     if (error) toast.error(error.message);
     setRows(((data as any) || []) as ActionRow[]);
     setLoading(false);
@@ -69,15 +70,17 @@ export default function MobileActions() {
         if (upErr) throw upErr;
         photos.push(supabase.storage.from("attachments").getPublicUrl(path).data.publicUrl);
       }
+      const cleanNote = correctTerms(note);
       const { error } = await supabase.from("safety_inspection_actions" as any)
         .update({
           status: "completed",
-          completion_note: note,
+          completion_note: cleanNote,
           completed_at: new Date().toISOString(),
           completed_by: profile?.user_id,
           evidence_photos: photos,
         }).eq("id", row.id);
       if (error) throw error;
+      await logAudit('complete', 'safety_inspection_action', row.id, projectId, { note: cleanNote });
       toast.success("조치 완료 처리됨");
       setOpenId(null); setNote(""); setPhoto(null);
       load();
@@ -109,8 +112,13 @@ export default function MobileActions() {
       </div>
 
       <main className="p-4 space-y-3 max-w-md mx-auto">
+        {!projectId && (
+          <Card className="border-warning/40 bg-warning/5">
+            <CardContent className="pt-3 pb-3 text-sm">프로젝트를 먼저 선택하세요.</CardContent>
+          </Card>
+        )}
         {loading && <div className="text-center text-muted-foreground py-8"><Loader2 className="h-5 w-5 animate-spin inline" /></div>}
-        {!loading && rows.length === 0 && <div className="text-center text-muted-foreground py-8 text-sm">조치 항목이 없습니다</div>}
+        {!loading && projectId && rows.length === 0 && <div className="text-center text-muted-foreground py-8 text-sm">조치 항목이 없습니다</div>}
         {rows.map(r => (
           <Card key={r.id}>
             <CardContent className="pt-4 space-y-2">
@@ -127,7 +135,7 @@ export default function MobileActions() {
               {tab === "pending" && (
                 openId === r.id ? (
                   <div className="space-y-2 pt-2 border-t">
-                    <Textarea rows={2} placeholder="조치 내용" value={note} onChange={e => setNote(e.target.value)} />
+                    <IMESafeTextarea rows={2} placeholder="조치 내용" defaultValue={note} onCommit={setNote} />
                     <label className="block">
                       <div className="border-2 border-dashed rounded p-3 text-center text-sm cursor-pointer">
                         <Camera className="h-5 w-5 inline mr-1" />

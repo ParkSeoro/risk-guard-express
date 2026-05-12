@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
+import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { ArrowLeft, CheckCircle2, XCircle, Loader2, FileCheck2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -13,6 +14,7 @@ import { toast } from "sonner";
 export default function MobileApprovals() {
   const navigate = useNavigate();
   const { user, profile } = useAuth();
+  const { log: logAudit } = useAuditLog();
   const [rows, setRows] = useState<any[]>([]);
   const [runs, setRuns] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(false);
@@ -23,16 +25,16 @@ export default function MobileApprovals() {
   const load = async () => {
     if (!user) return;
     setLoading(true);
-    // 내가 결재자인 모든 결재 단계
-    const { data: ap } = await supabase.from("approvals").select("*")
+    const { data: ap, error } = await supabase.from("approvals").select("*")
       .eq("approver_id", user.id).order("created_at", { ascending: false }).limit(100);
+    if (error) { toast.error("결재 목록 로드 실패: " + error.message); setLoading(false); return; }
     const list = (ap || []).filter((a: any) => a.status === "대기");
     setRows(list);
 
     const runIds = Array.from(new Set(list.map((a: any) => a.run_id).filter(Boolean)));
     if (runIds.length) {
       const { data: r } = await supabase.from("assessment_runs")
-        .select("id, period_label, status, type").in("id", runIds);
+        .select("id, period_label, status, type, project_id").in("id", runIds);
       const map: Record<string, any> = {};
       (r || []).forEach((x: any) => { map[x.id] = x; });
       setRuns(map);
@@ -46,9 +48,9 @@ export default function MobileApprovals() {
     if (action === "반려" && !comment.trim()) return toast.error("반려 사유를 입력하세요");
     setSubmitting(true);
     try {
-      // 이전 단계 미승인 차단
-      const { data: all } = await supabase.from("approvals").select("*")
+      const { data: all, error: e1 } = await supabase.from("approvals").select("*")
         .eq("run_id", ap.run_id).eq("approval_version", ap.approval_version || 1);
+      if (e1) throw e1;
       const sorted = (all || []).filter((a: any) => a.status !== "취소")
         .sort((a: any, b: any) => (a.step_order || 0) - (b.step_order || 0));
       const idx = sorted.findIndex((a: any) => a.id === ap.id);
@@ -57,13 +59,14 @@ export default function MobileApprovals() {
         setSubmitting(false);
         return;
       }
-      await supabase.from("approvals").update({
+      const { error: e2 } = await supabase.from("approvals").update({
         status: action,
         approver_id: user!.id,
         approver_name: profile?.display_name || "",
         comment: comment || "",
         approved_at: new Date().toISOString(),
       }).eq("id", ap.id);
+      if (e2) throw e2;
 
       if (action === "승인") {
         const allApproved = sorted.every((a: any) => a.status === "승인" || a.id === ap.id);
@@ -73,6 +76,7 @@ export default function MobileApprovals() {
       } else {
         await supabase.from("assessment_runs").update({ status: "보완중" }).eq("id", ap.run_id);
       }
+      await logAudit(action === "승인" ? 'approve' : 'reject', 'assessment_run', ap.run_id, runs[ap.run_id]?.project_id, { step: ap.step, comment });
 
       toast.success(action === "승인" ? "승인 완료" : "반려 처리됨");
       setOpenId(null); setComment("");
@@ -118,7 +122,7 @@ export default function MobileApprovals() {
 
                 {openId === r.id ? (
                   <div className="space-y-2 pt-2 border-t">
-                    <Textarea rows={2} placeholder="의견/사유 (반려 시 필수)" value={comment} onChange={e => setComment(e.target.value)} />
+                    <IMESafeTextarea rows={2} placeholder="의견/사유 (반려 시 필수)" defaultValue={comment} onCommit={setComment} />
                     <div className="grid grid-cols-3 gap-2">
                       <Button variant="outline" onClick={() => { setOpenId(null); setComment(""); }}>취소</Button>
                       <Button variant="destructive" onClick={() => decide(r, "반려")} disabled={submitting}>

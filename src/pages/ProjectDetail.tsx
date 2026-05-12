@@ -124,7 +124,7 @@ const ProjectDetail = () => {
       setProjectRole('master');
     } else {
       const myMembership = (membersRes.data || []).find((m: any) => m.user_id === user!.id);
-      setProjectRole(myMembership?.role || null);
+      setProjectRole(myMembership?.role_new || null);
     }
   };
 

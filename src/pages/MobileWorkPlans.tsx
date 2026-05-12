@@ -29,7 +29,7 @@ export default function MobileWorkPlans() {
   const load = async () => {
     if (!projectId) return;
     setLoading(true);
-    let query: any = supabase.from("work_plans").select("*")
+    let query: any = (supabase.from("work_plans") as any).select("*")
       .eq("project_id", projectId).eq("is_deleted", false);
     query = applyCompanyFilter(query);
     const { data } = await query.order("updated_at", { ascending: false }).limit(100);

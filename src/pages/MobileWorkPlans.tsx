@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Search, Loader2, ExternalLink, FileText } from "lucide-react";
+import { toast } from "sonner";
 
 const STATUS_COLOR: Record<string, string> = {
   "승인완료": "bg-success/10 text-success",
@@ -32,7 +33,8 @@ export default function MobileWorkPlans() {
     let query: any = (supabase.from("work_plans") as any).select("*")
       .eq("project_id", projectId).eq("is_deleted", false);
     query = applyCompanyFilter(query);
-    const { data } = await query.order("updated_at", { ascending: false }).limit(100);
+    const { data, error } = await query.order("updated_at", { ascending: false }).limit(100);
+    if (error) toast.error("로드 실패: " + error.message);
     setRows(data || []);
     setLoading(false);
   };

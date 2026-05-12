@@ -10,10 +10,12 @@ import { toast } from "sonner";
 import QRCode from "qrcode";
 
 import { useMobileAccess } from "@/hooks/useMobileAccess";
+import { useAuditLog } from "@/hooks/useAuditLog";
 
 export default function MobileWorkers() {
   const navigate = useNavigate();
   const { projectId, applyCompanyFilter } = useMobileAccess();
+  const { log: auditLog } = useAuditLog();
   const [workers, setWorkers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
@@ -37,9 +39,14 @@ export default function MobileWorkers() {
   );
 
   const showQr = async (w: any) => {
-    const url = `${window.location.origin}/worker/portal/${w.qr_token}`;
-    const img = await QRCode.toDataURL(url, { width: 320, margin: 1 });
-    setQr({ name: w.name, img, url });
+    try {
+      const url = `${window.location.origin}/worker/portal/${w.qr_token}`;
+      const img = await QRCode.toDataURL(url, { width: 320, margin: 1 });
+      setQr({ name: w.name, img, url });
+      await auditLog("view_qr", "worker", w.id, projectId || undefined, { name: w.name });
+    } catch (e: any) {
+      toast.error("QR 생성 실패: " + (e?.message || ""));
+    }
   };
 
   const copy = async (text: string) => {

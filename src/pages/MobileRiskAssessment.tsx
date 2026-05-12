@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Search, Loader2, ExternalLink, FileText } from "lucide-react";
+import { toast } from "sonner";
 
 const STATUS_COLOR: Record<string, string> = {
   "승인완료": "bg-success/10 text-success",
@@ -30,13 +31,15 @@ export default function MobileRiskAssessment() {
     let query: any = supabase.from("assessment_runs").select("*")
       .eq("project_id", projectId).eq("is_deleted", false);
     query = applyCompanyFilter(query);
-    const { data } = await query.order("updated_at", { ascending: false }).limit(50);
+    const { data, error } = await query.order("updated_at", { ascending: false }).limit(50);
+    if (error) toast.error("로드 실패: " + error.message);
     setRows(data || []);
 
     if (data && data.length) {
       const ids = data.map((r: any) => r.id);
-      const { data: items } = await supabase.from("risk_items").select("run_id, risk_grade")
+      const { data: items, error: iErr } = await supabase.from("risk_items").select("run_id, risk_grade")
         .in("run_id", ids);
+      if (iErr) toast.error("위험항목 로드 실패: " + iErr.message);
       const c: Record<string, any> = {};
       ids.forEach(id => c[id] = { high: 0, medium: 0, low: 0, total: 0 });
       (items || []).forEach((it: any) => {

@@ -51,6 +51,7 @@ import Manual from "./pages/Manual";
 import AITestEngine from "./pages/AITestEngine";
 import AILogs from "./pages/AILogs";
 import SystemTestEngine from "./pages/SystemTestEngine";
+import ConsistencyAudit from "./pages/ConsistencyAudit";
 import MobileHome from "./pages/MobileHome";
 import MobileInspect from "./pages/MobileInspect";
 import MobileAlerts from "./pages/MobileAlerts";
@@ -161,10 +162,11 @@ function ProtectedRoutes() {
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="/education-materials" element={<EducationMaterials />} />
         <Route path="/workers" element={<WorkerManagement />} />
-        <Route path="/worker-attendance" element={<WorkerAttendance />} />
+        <Route path="/worker-attendance" element={<Navigate to="/workers?tab=attendance" replace />} />
         <Route path="/admin/ai-test" element={<AITestEngine />} />
         <Route path="/admin/ai-logs" element={<AILogs />} />
         <Route path="/admin/system-test" element={<SystemTestEngine />} />
+        <Route path="/admin/consistency-audit" element={<ConsistencyAudit />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

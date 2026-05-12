@@ -77,14 +77,19 @@ export default function MobileInspect() {
         project_id: projectId,
         inspection_type: form.inspection_type,
         process_category: form.process_category,
-        location: form.location,
-        summary: form.summary,
+        location: correctTerms(form.location),
+        summary: correctTerms(form.summary),
         inspector_name: form.inspector_name || profile?.display_name || "",
         inspector_id: form.inspector_id || profile?.user_id,
         created_by: profile?.user_id,
         status: "in_progress",
       }).select().single();
       if (error) throw error;
+      await auditLog("create", "safety_inspection", (ins as any).id, projectId, {
+        inspection_type: form.inspection_type,
+        process_category: form.process_category,
+        location: form.location,
+      });
 
       const checklist = buildChecklist(form.inspection_type, form.process_category);
       const rows = checklist.map((c, i) => ({

@@ -1119,6 +1119,7 @@ export type Database = {
           created_at: string
           id: string
           is_default: boolean | null
+          is_deleted: boolean
           name: string
           project_id: string | null
           sort_order: number | null
@@ -1128,6 +1129,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_default?: boolean | null
+          is_deleted?: boolean
           name: string
           project_id?: string | null
           sort_order?: number | null
@@ -1137,6 +1139,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_default?: boolean | null
+          is_deleted?: boolean
           name?: string
           project_id?: string | null
           sort_order?: number | null
@@ -1158,6 +1161,7 @@ export type Database = {
           created_by: string | null
           id: string
           is_default: boolean | null
+          is_deleted: boolean
           manufacturer: string | null
           model_name: string | null
           name: string
@@ -1171,6 +1175,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_default?: boolean | null
+          is_deleted?: boolean
           manufacturer?: string | null
           model_name?: string | null
           name: string
@@ -1184,6 +1189,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_default?: boolean | null
+          is_deleted?: boolean
           manufacturer?: string | null
           model_name?: string | null
           name?: string
@@ -1421,6 +1427,7 @@ export type Database = {
           frequency: string
           id: string
           is_active: boolean
+          is_deleted: boolean
           legal_basis: string | null
           project_id: string
           updated_at: string
@@ -1434,6 +1441,7 @@ export type Database = {
           frequency?: string
           id?: string
           is_active?: boolean
+          is_deleted?: boolean
           legal_basis?: string | null
           project_id: string
           updated_at?: string
@@ -1447,6 +1455,7 @@ export type Database = {
           frequency?: string
           id?: string
           is_active?: boolean
+          is_deleted?: boolean
           legal_basis?: string | null
           project_id?: string
           updated_at?: string
@@ -1551,6 +1560,7 @@ export type Database = {
           created_at: string
           department_id: string | null
           id: string
+          is_deleted: boolean
           name: string
           phone: string | null
           position: string | null
@@ -1559,6 +1569,7 @@ export type Database = {
           created_at?: string
           department_id?: string | null
           id?: string
+          is_deleted?: boolean
           name: string
           phone?: string | null
           position?: string | null
@@ -1567,6 +1578,7 @@ export type Database = {
           created_at?: string
           department_id?: string | null
           id?: string
+          is_deleted?: boolean
           name?: string
           phone?: string | null
           position?: string | null
@@ -1585,18 +1597,21 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          is_deleted: boolean
           name: string
           project_id: string | null
         }
         Insert: {
           created_at?: string
           id?: string
+          is_deleted?: boolean
           name: string
           project_id?: string | null
         }
         Update: {
           created_at?: string
           id?: string
+          is_deleted?: boolean
           name?: string
           project_id?: string | null
         }
@@ -1615,18 +1630,21 @@ export type Database = {
           created_at: string
           icon: string | null
           id: string
+          is_deleted: boolean
           name: string
         }
         Insert: {
           created_at?: string
           icon?: string | null
           id?: string
+          is_deleted?: boolean
           name: string
         }
         Update: {
           created_at?: string
           icon?: string | null
           id?: string
+          is_deleted?: boolean
           name?: string
         }
         Relationships: []
@@ -1636,6 +1654,7 @@ export type Database = {
           category: string | null
           created_at: string
           id: string
+          is_deleted: boolean
           name: string
           project_id: string | null
         }
@@ -1643,6 +1662,7 @@ export type Database = {
           category?: string | null
           created_at?: string
           id?: string
+          is_deleted?: boolean
           name: string
           project_id?: string | null
         }
@@ -1650,6 +1670,7 @@ export type Database = {
           category?: string | null
           created_at?: string
           id?: string
+          is_deleted?: boolean
           name?: string
           project_id?: string | null
         }
@@ -3052,6 +3073,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          is_deleted: boolean
           item_name: string
           legal_basis: string
           maker: string
@@ -3083,6 +3105,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_deleted?: boolean
           item_name?: string
           legal_basis?: string
           maker?: string
@@ -3114,6 +3137,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_deleted?: boolean
           item_name?: string
           legal_basis?: string
           maker?: string
@@ -3255,6 +3279,7 @@ export type Database = {
           created_by: string | null
           generated_by: string | null
           id: string
+          is_deleted: boolean
           key_hazards: Json
           ppe_requirements: Json
           prohibited_actions: Json
@@ -3276,6 +3301,7 @@ export type Database = {
           created_by?: string | null
           generated_by?: string | null
           id?: string
+          is_deleted?: boolean
           key_hazards?: Json
           ppe_requirements?: Json
           prohibited_actions?: Json
@@ -3297,6 +3323,7 @@ export type Database = {
           created_by?: string | null
           generated_by?: string | null
           id?: string
+          is_deleted?: boolean
           key_hazards?: Json
           ppe_requirements?: Json
           prohibited_actions?: Json
@@ -3812,6 +3839,7 @@ export type Database = {
           created_by: string | null
           id: string
           is_active: boolean
+          is_deleted: boolean
           leader_name: string
           location: string
           process_category: string | null
@@ -3836,6 +3864,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_active?: boolean
+          is_deleted?: boolean
           leader_name?: string
           location?: string
           process_category?: string | null
@@ -3860,6 +3889,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_active?: boolean
+          is_deleted?: boolean
           leader_name?: string
           location?: string
           process_category?: string | null
@@ -3887,6 +3917,7 @@ export type Database = {
           due_date: string
           frequency: string
           id: string
+          is_deleted: boolean
           legal_duty_id: string | null
           project_id: string
           status: string
@@ -3903,6 +3934,7 @@ export type Database = {
           due_date: string
           frequency?: string
           id?: string
+          is_deleted?: boolean
           legal_duty_id?: string | null
           project_id: string
           status?: string
@@ -3919,6 +3951,7 @@ export type Database = {
           due_date?: string
           frequency?: string
           id?: string
+          is_deleted?: boolean
           legal_duty_id?: string | null
           project_id?: string
           status?: string
@@ -4152,6 +4185,7 @@ export type Database = {
           form_data: Json
           gate_check_result: Json
           id: string
+          is_deleted: boolean
           location: string
           permit_date: string
           permit_type: string
@@ -4191,6 +4225,7 @@ export type Database = {
           form_data?: Json
           gate_check_result?: Json
           id?: string
+          is_deleted?: boolean
           location?: string
           permit_date?: string
           permit_type?: string
@@ -4230,6 +4265,7 @@ export type Database = {
           form_data?: Json
           gate_check_result?: Json
           id?: string
+          is_deleted?: boolean
           location?: string
           permit_date?: string
           permit_type?: string
@@ -4266,6 +4302,7 @@ export type Database = {
           created_by: string | null
           end_date: string | null
           id: string
+          is_deleted: boolean
           parent_id: string | null
           project_id: string
           sections: Json
@@ -4284,6 +4321,7 @@ export type Database = {
           created_by?: string | null
           end_date?: string | null
           id?: string
+          is_deleted?: boolean
           parent_id?: string | null
           project_id: string
           sections?: Json
@@ -4302,6 +4340,7 @@ export type Database = {
           created_by?: string | null
           end_date?: string | null
           id?: string
+          is_deleted?: boolean
           parent_id?: string | null
           project_id?: string
           sections?: Json

@@ -379,10 +379,10 @@ const UserManagement = () => {
                           return (
                             <div key={m.id} className="flex items-center gap-1 text-[10px] flex-wrap">
                               <Badge variant="secondary" className="text-[10px] shrink-0">{proj?.name || '프로젝트'}</Badge>
-                              <Select value={m.role} onValueChange={(v) => handleUpdateMembership(m.id, 'role', v)}>
-                                <SelectTrigger className="h-5 w-20 text-[10px] border-dashed"><SelectValue /></SelectTrigger>
+                              <Select value={m.role_new || projectRoleToLegacy(m.role) === m.role ? (m.role_new || m.role) : (m.role_new || 'viewer')} onValueChange={(v) => handleUpdateMembership(m.id, 'role_new', v)}>
+                                <SelectTrigger className="h-5 w-24 text-[10px] border-dashed"><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                  {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
+                                  {Object.entries(projectRoleLabels).map(([k, v]) => (
                                     <SelectItem key={k} value={k} className="text-[10px]">{v}</SelectItem>
                                   ))}
                                 </SelectContent>

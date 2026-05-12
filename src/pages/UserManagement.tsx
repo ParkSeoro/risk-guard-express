@@ -211,10 +211,17 @@ const UserManagement = () => {
     setAssignError('');
   };
 
-  // Update existing project membership inline
-  const handleUpdateMembership = async (membershipId: string, field: string, value: string) => {
+  // Update existing project membership inline.
+  // When changing role_new / position_new we also mirror to the legacy
+  // `role` / `position` columns until Phase 4 cleanup.
+  const handleUpdateMembership = async (membershipId: string, field: string, value: string | null) => {
     const updateData: Record<string, any> = { [field]: value };
-    // If changing company_id, also update company name
+    if (field === 'role_new') {
+      updateData.role = projectRoleToLegacy(String(value)) as any;
+    }
+    if (field === 'position_new') {
+      updateData.position = value || '';
+    }
     if (field === 'company_id') {
       const company = projectCompanies.find(c => c.id === value);
       updateData.company = company?.name || '';
@@ -229,14 +236,16 @@ const UserManagement = () => {
     }
   };
 
+  const COMPANY_REQUIRED_ROLES = ['worker', 'site_manager', 'supervisor'];
+
   const handleAssignMembership = async () => {
     setAssignError('');
     if (!assignUserId || !assignProjectId || !assignRole) {
       setAssignError('사용자, 프로젝트, 역할을 모두 선택해주세요.');
       return;
     }
-    if (assignRole === 'contractor' && !assignCompanyId) {
-      setAssignError('협력사 담당자는 소속 업체를 반드시 선택해야 합니다.');
+    if (COMPANY_REQUIRED_ROLES.includes(assignRole) && !assignCompanyId) {
+      setAssignError('작업자/현장소장/감리는 소속 업체를 반드시 선택해야 합니다.');
       return;
     }
     setAssignSaving(true);
@@ -245,10 +254,13 @@ const UserManagement = () => {
       const { error } = await supabase.from('project_members').insert([{
         project_id: assignProjectId,
         user_id: assignUserId,
-        role: assignRole as any,
+        // Write BOTH new and legacy columns for backward compatibility
+        role: projectRoleToLegacy(assignRole) as any,
+        role_new: assignRole as any,
         company_id: assignCompanyId || null,
         company: companyName,
         position: assignPosition || '',
+        position_new: (assignPosition || null) as any,
       }]);
       if (error) {
         if (error.message.includes('duplicate') || error.message.includes('unique')) {

@@ -1,14 +1,13 @@
-import { useEffect, useState } from 'react';
 import TbmManager from '@/components/tbm/TbmManager';
 import { ClipboardList } from 'lucide-react';
+import { useProjectAccess } from '@/hooks/useProjectAccess';
 
 export default function TbmLogs() {
-  const [projectId, setProjectId] = useState<string>('');
+  const { selectedProject: projectId, loading } = useProjectAccess();
 
-  useEffect(() => {
-    const id = localStorage.getItem('selectedProjectId') || '';
-    setProjectId(id);
-  }, []);
+  if (loading) {
+    return <div className="p-6 text-sm text-muted-foreground">로딩 중...</div>;
+  }
 
   if (!projectId) {
     return (

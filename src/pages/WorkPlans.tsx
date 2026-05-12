@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
+import { useAuditLog } from '@/hooks/useAuditLog';
 import { WORK_PLAN_TYPES } from '@/lib/workPlanTemplates';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,7 @@ const WorkPlans = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
+  const { log: auditLog } = useAuditLog();
   const access = useGlobalProjectAccess();
   const [plans, setPlans] = useState<any[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -55,18 +57,22 @@ const WorkPlans = () => {
   };
 
   const loadPlans = async () => {
-    let query = supabase
+    let query: any = (supabase as any)
       .from('work_plans')
       .select('*')
       .eq('project_id', access.selectedProject)
+      .eq('is_deleted', false)
       .order('created_at', { ascending: false });
 
     query = access.applyCompanyFilter(query);
-    const { data } = await query;
+    const { data, error } = await query;
+    if (error) {
+      toast({ title: '목록 로드 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
     let items = data || [];
 
     // Auto-expire past end_date items
-    const now = new Date();
     const toExpire = items.filter(p => p.end_date && p.status === '완료' && isPast(parseISO(p.end_date)));
     if (toExpire.length > 0) {
       await Promise.all(toExpire.map(p =>
@@ -113,6 +119,7 @@ const WorkPlans = () => {
       toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
     } else {
       toast({ title: '작업계획서가 생성되었습니다.' });
+      if (data) await auditLog('create', 'work_plan', data.id, access.selectedProject, { title, work_type: newPlan.workType });
       setDialogOpen(false);
       setNewPlan({ workType: '', title: '', startDate: '', endDate: '' });
       setSelectedCompany('');
@@ -139,6 +146,7 @@ const WorkPlans = () => {
       toast({ title: '복사 실패', description: error.message, variant: 'destructive' });
     } else if (data) {
       toast({ title: '새 회차가 생성되었습니다.' });
+      await auditLog('clone', 'work_plan', data.id, plan.project_id, { from_id: plan.id, version: data.version });
       navigate(`/work-plan/${data.id}`);
     }
   };

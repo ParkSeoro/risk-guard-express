@@ -94,19 +94,27 @@ export default function MobileScan() {
     // 권한 확인용 스트림은 즉시 정지 (Html5Qrcode가 자체 스트림 시작)
     try { probeStream?.getTracks().forEach(t => t.stop()); } catch {}
 
-    // 3) QR 스캐너 시작
+    // 3) QR 스캐너 시작 — 카메라 목록을 직접 조회 후 deviceId로 시작 (facingMode 제약 실패 회피)
     try {
+      const cameras = await Html5Qrcode.getCameras();
+      if (!cameras || cameras.length === 0) {
+        setError("사용 가능한 카메라를 찾을 수 없습니다.");
+        return;
+      }
+      const back = cameras.find(c => /back|rear|environment|후면/i.test(c.label)) || cameras[cameras.length - 1];
       const scanner = new Html5Qrcode(containerId);
       scannerRef.current = scanner;
-      await scanner.start(
-        { facingMode: { ideal: "environment" } as any },
-        { fps: 10, qrbox: { width: 240, height: 240 } },
-        (decoded) => onDetect(decoded),
-        () => {}
-      );
+      const config = { fps: 10, qrbox: { width: 240, height: 240 } };
+      try {
+        await scanner.start({ deviceId: { exact: back.id } } as any, config, (decoded) => onDetect(decoded), () => {});
+      } catch (e1: any) {
+        // 폴백: 첫 카메라
+        await scanner.start({ deviceId: { exact: cameras[0].id } } as any, config, (decoded) => onDetect(decoded), () => {});
+      }
       setScanning(true);
     } catch (e: any) {
-      setError("스캐너 초기화 실패: " + (e?.message || e?.name || "오류"));
+      const iframeHint = inIframe ? " (미리보기에서는 차단될 수 있음 — ‘새 창에서 열기’ 사용)" : "";
+      setError("스캐너 초기화 실패: " + (e?.message || e?.name || "오류") + iframeHint);
     }
   };
 

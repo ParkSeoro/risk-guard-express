@@ -363,13 +363,27 @@ export default function MobileInspect() {
                           setNote(it, val);
                           await supabase.from("safety_inspection_items" as any).update({ note: val || "" }).eq("id", it.id);
                         }} />
-                      <label className="block">
-                        <div className="border-2 border-dashed rounded p-3 text-center text-sm active:bg-muted">
-                          <Camera className="h-5 w-5 inline mr-1" /> 사진 추가
-                        </div>
-                        <input type="file" accept="image/*" capture="environment" multiple className="hidden"
-                          onChange={e => onPickPhoto(it, e.target.files)} />
-                      </label>
+                      <div>
+                        <input
+                          id={`photo-input-${it.id}`}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          multiple
+                          style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+                          onChange={e => { onPickPhoto(it, e.target.files); e.target.value = ""; }}
+                        />
+                        <button
+                          type="button"
+                          className="w-full border-2 border-dashed rounded p-3 text-center text-sm active:bg-muted"
+                          onClick={() => {
+                            const el = document.getElementById(`photo-input-${it.id}`) as HTMLInputElement | null;
+                            el?.click();
+                          }}
+                        >
+                          <Camera className="h-5 w-5 inline mr-1" /> 사진 추가 / 촬영
+                        </button>
+                      </div>
                       {it.photos?.length > 0 && (
                         <div className="grid grid-cols-3 gap-1">
                           {it.photos.map((u: string, i: number) => (

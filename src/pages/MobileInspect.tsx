@@ -24,7 +24,7 @@ type Member = { user_id: string; display_name: string; role: string };
 export default function MobileInspect() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const { projectId } = useMobileAccess();
+  const { projectId, companyId } = useMobileAccess();
   const { log: auditLog } = useAuditLog();
 
   const [step, setStep] = useState<Step>("setup");

@@ -70,7 +70,7 @@ const AUDIT: PageAudit[] = [
   { page: "MobileWorkers.tsx",         title: "[M] 근로자 QR",     results: { access: "pass",    soft: "na",      ime: "fail",    audit: "fail",    zod: "na",   toast: "pass",    term: "na" } },
   { page: "MobileRiskAssessment.tsx",  title: "[M] 위험성평가",    results: { access: "pass",    soft: "pass",    ime: "fail",    audit: "na",      zod: "na",   toast: "fail",    term: "na" } },
   { page: "MobileWorkPlans.tsx",       title: "[M] 작업계획",      results: { access: "pass",    soft: "pass",    ime: "fail",    audit: "na",      zod: "na",   toast: "fail",    term: "na" } },
-  { page: "MobileAlerts.tsx",          title: "[M] 알림",          results: { access: "na",      soft: "na",      ime: "na",      audit: "na",      zod: "na",   toast: "fail",    term: "na" } },
+  { page: "MobileAlerts.tsx",          title: "[M] 알림",          results: { access: "na",      soft: "na",      ime: "na",      audit: "na",      zod: "na",   toast: "pass",    term: "na" } },
   { page: "MobileScan.tsx",            title: "[M] QR 스캔",       results: { access: "na",      soft: "na",      ime: "na",      audit: "na",      zod: "na",   toast: "pass",    term: "na" } },
 ];
 

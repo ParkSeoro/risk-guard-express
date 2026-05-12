@@ -41,6 +41,17 @@ export default function MobileInspect() {
   const [inspectionId, setInspectionId] = useState<string | null>(null);
   const [items, setItems] = useState<any[]>([]);
 
+  // profile 늦게 로드되는 경우, 점검자 자동 채움
+  useEffect(() => {
+    if (profile?.user_id && !form.inspector_id) {
+      setForm(f => ({
+        ...f,
+        inspector_id: profile.user_id,
+        inspector_name: profile.display_name || "",
+      }));
+    }
+  }, [profile?.user_id]);
+
   useEffect(() => {
     if (!projectId) return;
     (async () => {

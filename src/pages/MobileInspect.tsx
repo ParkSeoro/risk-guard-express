@@ -46,7 +46,7 @@ export default function MobileInspect() {
     (async () => {
       const { data: pm } = await supabase
         .from("project_members")
-        .select("user_id, role")
+        .select("user_id, role_new")
         .eq("project_id", projectId);
       const ids = ((pm as any) || []).map((m: any) => m.user_id);
       if (ids.length === 0) { setMembers([]); return; }
@@ -58,7 +58,7 @@ export default function MobileInspect() {
       setMembers(((pm as any) || []).map((m: any) => ({
         user_id: m.user_id,
         display_name: map.get(m.user_id) || "이름없음",
-        role: m.role,
+        role: m.role_new,
       })));
     })();
   }, [projectId]);

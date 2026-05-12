@@ -11,7 +11,8 @@ import { getGradeClassName } from "@/lib/riskGrade";
 import {
   AlertTriangle, CheckCircle2, ShieldAlert, BarChart3, FileCheck,
   ClipboardList, ShieldCheck, Clock, Plus, ArrowRight, RefreshCw,
-  FileText, ListTodo, Scale, Cloud, CloudRain, Wind, Thermometer, Sun
+  FileText, ListTodo, Scale, Cloud, CloudRain, Wind, Thermometer, Sun,
+  FileSignature, Bot, Users, History
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -78,7 +79,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const {
     projects, selectedProject, setSelectedProject,
-    userCompanyId, isMaster, isProjectAdmin, applyCompanyFilter, loading: accessLoading
+    userCompanyId, isMaster, isProjectAdmin, isContractor, applyCompanyFilter, loading: accessLoading
   } = useGlobalProjectAccess();
   const [data, setData] = useState<DashboardData>(EMPTY);
   const [loading, setLoading] = useState(true);
@@ -332,7 +333,14 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Main layout */}
+      {/* Quick Start — 역할별 다음 행동 */}
+      <QuickStartCards
+        navigate={navigate}
+        isMaster={isMaster}
+        isProjectAdmin={isProjectAdmin}
+        isContractor={isContractor}
+      />
+
       <div className="space-y-6">
         {/* Weather Summary Card */}
         <WeatherSummaryCard projectId={selectedProject} />
@@ -799,4 +807,81 @@ function WeatherSummaryCard({ projectId }: { projectId: string }) {
   );
 }
 
+// ===== Quick Start cards (role-aware) =====
+interface QuickStartCardsProps {
+  navigate: (path: string) => void;
+  isMaster: boolean;
+  isProjectAdmin: boolean;
+  isContractor: boolean;
+}
+
+function QuickStartCards({ navigate, isMaster, isProjectAdmin, isContractor }: QuickStartCardsProps) {
+  type QSItem = { title: string; desc: string; icon: any; path: string; tone: 'primary' | 'warning' | 'success' | 'destructive' };
+
+  let items: QSItem[];
+  if (isMaster) {
+    items = [
+      { title: "프로젝트 관리", desc: "전체 프로젝트 현황 보기", icon: FolderKanbanIcon, path: "/projects", tone: 'primary' },
+      { title: "사용자/권한", desc: "사용자 초대 및 권한 부여", icon: Users, path: "/settings/permissions", tone: 'success' },
+      { title: "감사 로그", desc: "전체 시스템 활동 점검", icon: History, path: "/audit-logs", tone: 'warning' },
+      { title: "일관성 감사", desc: "공통 법칙 적용 현황", icon: ShieldCheck, path: "/admin/consistency-audit", tone: 'destructive' },
+    ];
+  } else if (isContractor) {
+    items = [
+      { title: "위험성평가 작성", desc: "내 회사 평가 회차 만들기", icon: ShieldAlert, path: "/risk-assessment", tone: 'destructive' },
+      { title: "작업허가서 신청", desc: "허가 필요 작업 신청", icon: FileSignature, path: "/work-permits", tone: 'warning' },
+      { title: "TBM 일지 작성", desc: "오늘 TBM 기록", icon: ClipboardList, path: "/tbm-logs", tone: 'primary' },
+      { title: "AI 어시스턴트", desc: "위험요소 빠르게 검색", icon: Bot, path: "/ai-assistant", tone: 'success' },
+    ];
+  } else {
+    // project_admin / safety_manager / user (default)
+    items = [
+      { title: "결재 대기 확인", desc: "내가 결재할 문서", icon: FileCheck, path: "/approvals", tone: 'warning' },
+      { title: "위험성평가", desc: "회차 생성 및 검토", icon: ShieldAlert, path: "/risk-assessment", tone: 'destructive' },
+      { title: "작업계획서", desc: "오늘의 작업 계획", icon: FileText, path: "/work-plans", tone: 'primary' },
+      { title: "안전점검", desc: "정기 점검 수행", icon: ClipboardCheckIcon, path: "/safety-inspections", tone: 'success' },
+    ];
+  }
+
+  const toneClass: Record<QSItem['tone'], string> = {
+    primary: "bg-primary/10 text-primary",
+    warning: "bg-warning/10 text-warning",
+    success: "bg-success/10 text-success",
+    destructive: "bg-destructive/10 text-destructive",
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <h2 className="text-sm font-semibold text-muted-foreground">빠른 시작</h2>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {items.map((it) => (
+          <button
+            key={it.title}
+            onClick={() => navigate(it.path)}
+            className="group text-left rounded-lg border border-border bg-card p-4 hover:border-primary/40 hover:shadow-sm transition-all"
+          >
+            <div className={`h-9 w-9 rounded-md flex items-center justify-center ${toneClass[it.tone]} mb-3`}>
+              <it.icon className="h-4 w-4" />
+            </div>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1">
+                <div className="text-sm font-semibold leading-tight">{it.title}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{it.desc}</div>
+              </div>
+              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0 mt-0.5" />
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// re-import aliases to avoid duplicate name with imports
+import { FolderKanban as FolderKanbanIcon, ClipboardCheck as ClipboardCheckIcon } from "lucide-react";
+
 export default Dashboard;
+

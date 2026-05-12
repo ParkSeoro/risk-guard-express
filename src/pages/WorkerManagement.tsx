@@ -1,15 +1,22 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { QRCodeSVG } from "qrcode.react";
-import { HardHat, QrCode, UserPlus, Trash2 } from "lucide-react";
+import { HardHat, QrCode, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import WorkerAttendance from "./WorkerAttendance";
 
 export default function WorkerManagement() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") === "attendance" ? "attendance" : "register";
+  const [tab, setTab] = useState<string>(initialTab);
+
   const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
@@ -52,58 +59,81 @@ export default function WorkerManagement() {
     load();
   };
 
+  const onTabChange = (v: string) => {
+    setTab(v);
+    const p = new URLSearchParams(searchParams);
+    if (v === "attendance") p.set("tab", "attendance"); else p.delete("tab");
+    setSearchParams(p, { replace: true });
+  };
+
   return (
     <div className="space-y-4 animate-fade-in">
-      <div className="flex items-center gap-2 flex-wrap">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><HardHat className="h-6 w-6" /> 근로자 관리</h1>
-        <Select value={projectId} onValueChange={setProjectId}>
-          <SelectTrigger className="w-64"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
-          <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
-        </Select>
-        {projectId && (
-          <Button onClick={() => setShowQr(true)}><QrCode className="h-4 w-4 mr-2" />등록 QR 표시</Button>
-        )}
-      </div>
+      <h1 className="text-2xl font-bold flex items-center gap-2">
+        <HardHat className="h-6 w-6" /> 근로자 관리
+      </h1>
 
-      {projectId && (
-        <Card>
-          <CardHeader><CardTitle>등록 근로자 ({workers.length}명)</CardTitle></CardHeader>
-          <CardContent>
-            {workers.length === 0 ? (
-              <div className="text-sm text-muted-foreground py-8 text-center">아직 등록된 근로자가 없습니다.<br />상단의 "등록 QR 표시" 버튼으로 QR을 표시하면 근로자가 직접 등록합니다.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted">
-                    <tr>
-                      <th className="text-left p-2">이름</th>
-                      <th className="text-left p-2">전화</th>
-                      <th className="text-left p-2">소속사</th>
-                      <th className="text-left p-2">교육확인</th>
-                      <th className="text-left p-2">상태</th>
-                      <th className="p-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {workers.map(w => (
-                      <tr key={w.id} className="border-b">
-                        <td className="p-2 font-medium">{w.name}</td>
-                        <td className="p-2">{w.phone}</td>
-                        <td className="p-2">{w.company_name}</td>
-                        <td className="p-2">{w.education_confirmed_at ? <Badge className="bg-success">확인</Badge> : <Badge variant="secondary">미확인</Badge>}</td>
-                        <td className="p-2">{w.is_active ? <Badge>활성</Badge> : <Badge variant="outline">비활성</Badge>}</td>
-                        <td className="p-2">
-                          <Button size="icon" variant="ghost" onClick={() => remove(w.id)}><Trash2 className="h-4 w-4" /></Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+      <Tabs value={tab} onValueChange={onTabChange}>
+        <TabsList>
+          <TabsTrigger value="register">등록 정보</TabsTrigger>
+          <TabsTrigger value="attendance">입퇴장 현황</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="register" className="space-y-4 mt-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={projectId} onValueChange={setProjectId}>
+              <SelectTrigger className="w-64"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
+              <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+            </Select>
+            {projectId && (
+              <Button onClick={() => setShowQr(true)}><QrCode className="h-4 w-4 mr-2" />등록 QR 표시</Button>
             )}
-          </CardContent>
-        </Card>
-      )}
+          </div>
+
+          {projectId && (
+            <Card>
+              <CardHeader><CardTitle>등록 근로자 ({workers.length}명)</CardTitle></CardHeader>
+              <CardContent>
+                {workers.length === 0 ? (
+                  <div className="text-sm text-muted-foreground py-8 text-center">아직 등록된 근로자가 없습니다.<br />상단의 "등록 QR 표시" 버튼으로 QR을 표시하면 근로자가 직접 등록합니다.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted">
+                        <tr>
+                          <th className="text-left p-2">이름</th>
+                          <th className="text-left p-2">전화</th>
+                          <th className="text-left p-2">소속사</th>
+                          <th className="text-left p-2">교육확인</th>
+                          <th className="text-left p-2">상태</th>
+                          <th className="p-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {workers.map(w => (
+                          <tr key={w.id} className="border-b">
+                            <td className="p-2 font-medium">{w.name}</td>
+                            <td className="p-2">{w.phone}</td>
+                            <td className="p-2">{w.company_name}</td>
+                            <td className="p-2">{w.education_confirmed_at ? <Badge className="bg-success">확인</Badge> : <Badge variant="secondary">미확인</Badge>}</td>
+                            <td className="p-2">{w.is_active ? <Badge>활성</Badge> : <Badge variant="outline">비활성</Badge>}</td>
+                            <td className="p-2">
+                              <Button size="icon" variant="ghost" onClick={() => remove(w.id)}><Trash2 className="h-4 w-4" /></Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="attendance" className="mt-4">
+          <WorkerAttendance />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={showQr} onOpenChange={setShowQr}>
         <DialogContent>

@@ -490,7 +490,7 @@ const UserManagement = () => {
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">소속 업체 {assignRole === 'contractor' ? '*' : '(선택)'}</Label>
+              <Label className="text-xs">소속 업체 {COMPANY_REQUIRED_ROLES.includes(assignRole) ? '*' : '(선택)'}</Label>
               {assignProjectId ? (
                 projectCompanies.length > 0 ? (
                   <Select value={assignCompanyId || '_none'} onValueChange={(v) => { setAssignCompanyId(v === '_none' ? '' : v); setAssignError(''); }}>

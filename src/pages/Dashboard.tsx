@@ -11,7 +11,8 @@ import { getGradeClassName } from "@/lib/riskGrade";
 import {
   AlertTriangle, CheckCircle2, ShieldAlert, BarChart3, FileCheck,
   ClipboardList, ShieldCheck, Clock, Plus, ArrowRight, RefreshCw,
-  FileText, ListTodo, Scale, Cloud, CloudRain, Wind, Thermometer, Sun
+  FileText, ListTodo, Scale, Cloud, CloudRain, Wind, Thermometer, Sun,
+  FileSignature, Bot, Users, History
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,

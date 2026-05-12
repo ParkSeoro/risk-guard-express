@@ -44,7 +44,7 @@ import SafetyInspections from "./pages/SafetyInspections";
 import SiteReadinessChecklist from "./pages/SiteReadinessChecklist";
 import EducationMaterials from "./pages/EducationMaterials";
 import WorkerManagement from "./pages/WorkerManagement";
-import WorkerAttendance from "./pages/WorkerAttendance";
+// WorkerAttendance is now embedded inside WorkerManagement as a tab; legacy route redirects.
 import WorkerRegister from "./pages/WorkerRegister";
 import WorkerPortal from "./pages/WorkerPortal";
 import Manual from "./pages/Manual";

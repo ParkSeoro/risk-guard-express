@@ -44,10 +44,25 @@ interface Props {
 }
 
 const POSITION_LABELS: Record<string, string> = {
+  // legacy project_role values stored in approval_lines.position
   supervisor: '관리감독자',
   safety_manager: '안전관리자',
   site_manager: '현장대리인',
   project_admin: '프로젝트 관리자',
+  worker: '작업자',
+  viewer: '열람자',
+  // new project_position enum (project_members.position_new)
+  CEO: '대표이사',
+  EXECUTIVE: '임원',
+  SITE_MANAGER: '현장소장',
+  HSE_MANAGER: '안전보건관리자',
+  CONSTRUCTION_MGR: '공사관리자',
+  FIELD_ENGINEER: '현장기사',
+  FOREMAN: '작업반장',
+  WORKER: '작업자',
+  OWNER_PM: '발주처PM',
+  OWNER_HSE: '발주처안전',
+  SUPERVISOR: '감리원',
 };
 
 const STEP_TEMPLATES = [

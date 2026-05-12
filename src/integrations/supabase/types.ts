@@ -1684,6 +1684,53 @@ export type Database = {
           },
         ]
       }
+      migration_unmapped_members: {
+        Row: {
+          created_at: string
+          id: string
+          project_id: string | null
+          project_member_id: string | null
+          raw_company_text: string | null
+          raw_position: string | null
+          raw_role: string | null
+          reason: string | null
+          resolved: boolean
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          project_id?: string | null
+          project_member_id?: string | null
+          raw_company_text?: string | null
+          raw_position?: string | null
+          raw_role?: string | null
+          reason?: string | null
+          resolved?: boolean
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          project_id?: string | null
+          project_member_id?: string | null
+          raw_company_text?: string | null
+          raw_position?: string | null
+          raw_role?: string | null
+          reason?: string | null
+          resolved?: boolean
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "migration_unmapped_members_project_member_id_fkey"
+            columns: ["project_member_id"]
+            isOneToOne: false
+            referencedRelation: "project_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notification_preferences: {
         Row: {
           business_hours_only: boolean
@@ -1920,8 +1967,10 @@ export type Database = {
           created_at: string
           id: string
           position: string | null
+          position_new: Database["public"]["Enums"]["project_position"] | null
           project_id: string
           role: Database["public"]["Enums"]["app_role"]
+          role_new: Database["public"]["Enums"]["project_role"] | null
           user_id: string
         }
         Insert: {
@@ -1930,8 +1979,10 @@ export type Database = {
           created_at?: string
           id?: string
           position?: string | null
+          position_new?: Database["public"]["Enums"]["project_position"] | null
           project_id: string
           role?: Database["public"]["Enums"]["app_role"]
+          role_new?: Database["public"]["Enums"]["project_role"] | null
           user_id: string
         }
         Update: {
@@ -1940,8 +1991,10 @@ export type Database = {
           created_at?: string
           id?: string
           position?: string | null
+          position_new?: Database["public"]["Enums"]["project_position"] | null
           project_id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          role_new?: Database["public"]["Enums"]["project_role"] | null
           user_id?: string
         }
         Relationships: [
@@ -4524,6 +4577,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_access_company_data: {
+        Args: { _company_id: string; _project_id: string; _user_id: string }
+        Returns: boolean
+      }
       can_access_safety_cost: {
         Args: {
           _company_id: string
@@ -4542,8 +4599,28 @@ export type Database = {
         Args: { _project_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
       }
+      get_project_role_new: {
+        Args: { _project_id: string; _user_id: string }
+        Returns: Database["public"]["Enums"]["project_role"]
+      }
       get_tbm_by_token: { Args: { _token: string }; Returns: Json }
+      get_user_company_id: {
+        Args: { _project_id: string; _user_id: string }
+        Returns: string
+      }
+      get_user_position: {
+        Args: { _project_id: string; _user_id: string }
+        Returns: Database["public"]["Enums"]["project_position"]
+      }
       get_worker_by_token: { Args: { _token: string }; Returns: Json }
+      has_project_role: {
+        Args: {
+          _project_id: string
+          _roles: Database["public"]["Enums"]["project_role"][]
+          _user_id: string
+        }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -4556,6 +4633,7 @@ export type Database = {
         Args: { _company_id: string; _user_id: string }
         Returns: boolean
       }
+      is_master: { Args: { _user_id: string }; Returns: boolean }
       is_project_member: {
         Args: { _project_id: string; _user_id: string }
         Returns: boolean
@@ -4628,6 +4706,26 @@ export type Database = {
         | "contractor"
         | "viewer"
         | "user"
+      global_role: "master"
+      project_position:
+        | "CEO"
+        | "EXECUTIVE"
+        | "SITE_MANAGER"
+        | "HSE_MANAGER"
+        | "CONSTRUCTION_MGR"
+        | "FIELD_ENGINEER"
+        | "FOREMAN"
+        | "WORKER"
+        | "OWNER_PM"
+        | "OWNER_HSE"
+        | "SUPERVISOR"
+      project_role:
+        | "project_admin"
+        | "safety_manager"
+        | "site_manager"
+        | "supervisor"
+        | "worker"
+        | "viewer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -4762,6 +4860,28 @@ export const Constants = {
         "contractor",
         "viewer",
         "user",
+      ],
+      global_role: ["master"],
+      project_position: [
+        "CEO",
+        "EXECUTIVE",
+        "SITE_MANAGER",
+        "HSE_MANAGER",
+        "CONSTRUCTION_MGR",
+        "FIELD_ENGINEER",
+        "FOREMAN",
+        "WORKER",
+        "OWNER_PM",
+        "OWNER_HSE",
+        "SUPERVISOR",
+      ],
+      project_role: [
+        "project_admin",
+        "safety_manager",
+        "site_manager",
+        "supervisor",
+        "worker",
+        "viewer",
       ],
     },
   },

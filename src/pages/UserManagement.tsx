@@ -387,7 +387,7 @@ const UserManagement = () => {
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <Select value={m.position || '_none'} onValueChange={(v) => handleUpdateMembership(m.id, 'position', v === '_none' ? '' : v)}>
+                              <Select value={m.position_new || m.position || '_none'} onValueChange={(v) => handleUpdateMembership(m.id, 'position_new', v === '_none' ? null : v)}>
                                 <SelectTrigger className="h-5 w-24 text-[10px] border-dashed"><SelectValue placeholder="직책" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="_none" className="text-[10px]">직책 없음</SelectItem>

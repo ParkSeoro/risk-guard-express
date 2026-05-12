@@ -139,8 +139,8 @@ export default function MobileInspect() {
         });
         try {
           const { data: m } = await supabase.from("project_members")
-            .select("user_id, role").eq("project_id", projectId)
-            .in("role", ["master", "project_admin", "safety_manager"]);
+            .select("user_id, role_new").eq("project_id", projectId)
+            .in("role_new", ["project_admin", "safety_manager"]);
           const { sendNotification } = await import("@/lib/notificationService");
           await Promise.all(((m as any) || []).map((x: any) =>
             sendNotification({

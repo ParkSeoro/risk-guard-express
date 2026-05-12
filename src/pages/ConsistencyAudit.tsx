@@ -58,6 +58,20 @@ const AUDIT: PageAudit[] = [
   { page: "Approvals.tsx",             title: "결재함",            results: { access: "pass",    soft: "fail",    ime: "na",      audit: "pass",    zod: "na",   toast: "fail",    term: "na" } },
   { page: "MasterData.tsx",            title: "기준정보",          results: { access: "fail",    soft: "fail",    ime: "fail",    audit: "fail",    zod: "fail", toast: "fail",    term: "fail" } },
   { page: "Settings.tsx",              title: "설정",              results: { access: "na",      soft: "na",      ime: "na",      audit: "na",      zod: "na",   toast: "na",      term: "na" } },
+
+  // ====== 모바일 (이번 라운드 수정 후) ======
+  { page: "MobileHome.tsx",            title: "[M] 홈",            results: { access: "pass",    soft: "na",      ime: "na",      audit: "na",      zod: "na",   toast: "pass",    term: "na" } },
+  { page: "MobileTbm.tsx",             title: "[M] TBM",           results: { access: "pass",    soft: "na",      ime: "pass",    audit: "pass",    zod: "fail", toast: "pass",    term: "pass" } },
+  { page: "MobileIncident.tsx",        title: "[M] 사고 신고",     results: { access: "pass",    soft: "pass",    ime: "pass",    audit: "pass",    zod: "fail", toast: "pass",    term: "pass" } },
+  { page: "MobilePermits.tsx",         title: "[M] 허가서 결재",   results: { access: "pass",    soft: "na",      ime: "pass",    audit: "pass",    zod: "fail", toast: "pass",    term: "na" } },
+  { page: "MobileApprovals.tsx",       title: "[M] 결재함",        results: { access: "na",      soft: "na",      ime: "pass",    audit: "pass",    zod: "na",   toast: "pass",    term: "na" } },
+  { page: "MobileActions.tsx",         title: "[M] 조치 관리",     results: { access: "pass",    soft: "na",      ime: "pass",    audit: "pass",    zod: "fail", toast: "pass",    term: "pass" } },
+  { page: "MobileInspect.tsx",         title: "[M] 안전점검",      results: { access: "fail",    soft: "na",      ime: "fail",    audit: "fail",    zod: "fail", toast: "pass",    term: "fail" } },
+  { page: "MobileWorkers.tsx",         title: "[M] 근로자 QR",     results: { access: "pass",    soft: "na",      ime: "fail",    audit: "fail",    zod: "na",   toast: "pass",    term: "na" } },
+  { page: "MobileRiskAssessment.tsx",  title: "[M] 위험성평가",    results: { access: "pass",    soft: "pass",    ime: "fail",    audit: "na",      zod: "na",   toast: "fail",    term: "na" } },
+  { page: "MobileWorkPlans.tsx",       title: "[M] 작업계획",      results: { access: "pass",    soft: "pass",    ime: "fail",    audit: "na",      zod: "na",   toast: "fail",    term: "na" } },
+  { page: "MobileAlerts.tsx",          title: "[M] 알림",          results: { access: "na",      soft: "na",      ime: "na",      audit: "na",      zod: "na",   toast: "fail",    term: "na" } },
+  { page: "MobileScan.tsx",            title: "[M] QR 스캔",       results: { access: "na",      soft: "na",      ime: "na",      audit: "na",      zod: "na",   toast: "pass",    term: "na" } },
 ];
 
 const STATUS_META: Record<Status, { label: string; cls: string; icon: any }> = {

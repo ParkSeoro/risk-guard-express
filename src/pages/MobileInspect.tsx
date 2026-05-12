@@ -272,8 +272,8 @@ export default function MobileInspect() {
 
               <div>
                 <Label className="text-base">개요/메모</Label>
-                <Textarea value={form.summary}
-                  onChange={e => setForm({ ...form, summary: e.target.value })}
+                <IMESafeTextarea defaultValue={form.summary}
+                  onCommit={(val) => setForm({ ...form, summary: val })}
                   placeholder="필요 시 메모" rows={2} />
               </div>
 

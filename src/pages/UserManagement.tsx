@@ -359,10 +359,10 @@ const UserManagement = () => {
                     </Badge>
                   </td>
                   <td className="text-center">
-                    <Select value={u.roles[0] || 'viewer'} onValueChange={v => handleRoleChange(u.user_id, v)}>
-                      <SelectTrigger className="h-7 w-28 text-xs mx-auto"><SelectValue /></SelectTrigger>
+                    <Select value={u.roles[0] || 'none'} onValueChange={v => handleRoleChange(u.user_id, v === 'none' ? '' : v)}>
+                      <SelectTrigger className="h-7 w-32 text-xs mx-auto"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        {Object.entries(roleLabels).map(([k, v]) => (
+                        {Object.entries(globalRoleLabels).map(([k, v]) => (
                           <SelectItem key={k} value={k}>{v}</SelectItem>
                         ))}
                       </SelectContent>

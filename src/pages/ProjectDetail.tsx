@@ -195,12 +195,12 @@ const ProjectDetail = () => {
 
   const handleAddMember = async () => {
     if (!projectId || !memberUserId) return;
-    if (memberRole === 'contractor' && !memberCompanyId) {
-      toast({ title: '협력사 담당자는 소속 업체를 선택해야 합니다.', variant: 'destructive' });
+    if (['site_manager', 'supervisor', 'worker'].includes(memberRole) && !memberCompanyId) {
+      toast({ title: '현장/감독/작업자 역할은 소속 업체를 선택해야 합니다.', variant: 'destructive' });
       return;
     }
     const { error } = await supabase.from('project_members').insert([{
-      project_id: projectId, user_id: memberUserId, role: memberRole as any,
+      project_id: projectId, user_id: memberUserId, role_new: memberRole as any,
       company_id: memberCompanyId || null,
     }]);
     if (error) {
@@ -215,10 +215,9 @@ const ProjectDetail = () => {
   };
 
   const handleRemoveMember = async (memberId: string) => {
-    // Prevent removing last project_admin
-    const admins = members.filter(m => m.role === 'project_admin');
+    const admins = members.filter(m => m.role_new === 'project_admin');
     const target = members.find(m => m.id === memberId);
-    if (target?.role === 'project_admin' && admins.length <= 1) {
+    if (target?.role_new === 'project_admin' && admins.length <= 1) {
       toast({ title: '프로젝트 관리자가 최소 1명 필요합니다.', variant: 'destructive' });
       return;
     }
@@ -229,14 +228,14 @@ const ProjectDetail = () => {
 
   const handleChangeRole = async (memberId: string, newRole: string) => {
     const target = members.find(m => m.id === memberId);
-    if (target?.role === 'project_admin' && newRole !== 'project_admin') {
-      const admins = members.filter(m => m.role === 'project_admin');
+    if (target?.role_new === 'project_admin' && newRole !== 'project_admin') {
+      const admins = members.filter(m => m.role_new === 'project_admin');
       if (admins.length <= 1) {
         toast({ title: '프로젝트 관리자가 최소 1명 필요합니다.', variant: 'destructive' });
         return;
       }
     }
-    await supabase.from('project_members').update({ role: newRole as any }).eq('id', memberId);
+    await supabase.from('project_members').update({ role_new: newRole as any }).eq('id', memberId);
     fetchAll();
   };
 

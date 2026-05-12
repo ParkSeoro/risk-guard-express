@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Loader2, QrCode, Copy, Users } from "lucide-react";
 import { toast } from "sonner";
 import QRCode from "qrcode";
-import { applyTermCorrections } from "@/lib/termCorrection";
+import { correctTerms } from "@/lib/termCorrection";
 
 // 모바일 TBM 즉석 진행 — 세션 생성 → QR 표시 → 참여 현황 폴링
 export default function MobileTbm() {

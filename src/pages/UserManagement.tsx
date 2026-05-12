@@ -175,11 +175,16 @@ const UserManagement = () => {
         return;
       }
     }
-    const parsedRole = roleChangeSchema.safeParse(newRole);
-    if (!parsedRole.success) {
-      toast({ title: '유효하지 않은 역할입니다.', variant: 'destructive' });
-      setSaving(null);
-      return;
+    // New global role dropdown only has two values: 'master' and '' (none).
+    // Empty / 'none' means: remove all global roles (user becomes project-only).
+    const wantsMaster = newRole === 'master';
+    if (wantsMaster) {
+      const parsedRole = roleChangeSchema.safeParse('master');
+      if (!parsedRole.success) {
+        toast({ title: '유효하지 않은 역할입니다.', variant: 'destructive' });
+        setSaving(null);
+        return;
+      }
     }
     const { error: delError } = await supabase.from('user_roles').delete().eq('user_id', userId);
     if (delError) {
@@ -188,8 +193,8 @@ const UserManagement = () => {
       setSaving(null);
       return;
     }
-    if (parsedRole.data) {
-      const { error: insError } = await supabase.from('user_roles').insert([{ user_id: userId, role: parsedRole.data }]);
+    if (wantsMaster) {
+      const { error: insError } = await supabase.from('user_roles').insert([{ user_id: userId, role: 'master' as any }]);
       if (insError) {
         toast({ title: '역할 변경 실패', description: insError.message, variant: 'destructive' });
         setSaving(null);

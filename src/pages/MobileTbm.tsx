@@ -54,9 +54,9 @@ export default function MobileTbm() {
     try {
       const payload = {
         project_id: projectId,
-        title: applyTermCorrections(form.title),
-        location: applyTermCorrections(form.location),
-        briefing_summary: applyTermCorrections(form.summary),
+        title: correctTerms(form.title),
+        location: correctTerms(form.location),
+        briefing_summary: correctTerms(form.summary),
         leader_name: profile?.display_name || "",
         created_by: profile?.user_id,
       };

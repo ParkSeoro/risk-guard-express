@@ -56,13 +56,9 @@ export default function MobileScan() {
       setError("HTTPS 환경에서만 카메라를 사용할 수 있습니다. 배포 도메인(예: safenex.org)에서 다시 시도하세요.");
       return;
     }
-    // iframe(미리보기) 안에서는 카메라 권한이 부모 정책에 의해 차단되는 경우가 많음
+    // iframe(미리보기) 환경 감지 — 즉시 차단하지 않고 시도해본 뒤 실패 시 새 창 열기 안내
     let inIframe = false;
     try { inIframe = window.self !== window.top; } catch { inIframe = true; }
-    if (inIframe) {
-      setError("미리보기(iframe) 환경에서는 카메라가 차단됩니다. 새 창에서 https://safenex.org/m/scan 으로 직접 열거나, 홈 화면에 설치한 앱으로 실행하세요.");
-      return;
-    }
     if (!navigator.mediaDevices?.getUserMedia) {
       setError("이 브라우저는 카메라 API를 지원하지 않습니다. Chrome/Safari 최신 버전을 사용하세요.");
       return;
@@ -76,22 +72,22 @@ export default function MobileScan() {
       });
     } catch (e: any) {
       const name = e?.name || "";
+      const iframeHint = inIframe ? " (미리보기 창에서는 카메라가 차단될 수 있습니다 — 아래 ‘새 창에서 열기’를 사용하세요.)" : "";
       if (name === "NotAllowedError" || name === "SecurityError") {
-        setError("카메라 권한이 거부되었습니다. 브라우저 주소창의 자물쇠 아이콘 → 카메라 허용 후 다시 시도하세요.");
+        setError("카메라 권한이 거부되었습니다. 브라우저 주소창의 자물쇠 아이콘 → 카메라 허용 후 다시 시도하세요." + iframeHint);
+        return;
       } else if (name === "NotFoundError" || name === "OverconstrainedError") {
-        setError("후면 카메라를 찾을 수 없습니다. 다른 카메라로 다시 시도합니다.");
         try {
           probeStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          setError("");
         } catch (e2: any) {
-          setError("카메라 시작 실패: " + (e2?.message || e2?.name || "알 수 없는 오류"));
+          setError("카메라 시작 실패: " + (e2?.message || e2?.name || "알 수 없는 오류") + iframeHint);
           return;
         }
       } else if (name === "NotReadableError") {
         setError("다른 앱이 카메라를 사용 중입니다. 해당 앱을 종료 후 다시 시도하세요.");
         return;
       } else {
-        setError("카메라 시작 실패: " + (e?.message || name || "알 수 없는 오류"));
+        setError("카메라 시작 실패: " + (e?.message || name || "알 수 없는 오류") + iframeHint);
         return;
       }
     }
@@ -170,7 +166,14 @@ export default function MobileScan() {
               </Button>
             )}
 
-            {error && <Badge variant="destructive" className="w-full justify-center">{error}</Badge>}
+            {error && (
+              <div className="space-y-2">
+                <Badge variant="destructive" className="w-full justify-center whitespace-normal text-left py-2">{error}</Badge>
+                <Button variant="outline" className="w-full" onClick={() => window.open("https://safenex.org/m/scan", "_blank")}>
+                  <ExternalLink className="h-4 w-4 mr-1" /> 새 창에서 열기 (safenex.org)
+                </Button>
+              </div>
+            )}
 
             {last && (
               <div className="space-y-2 border-t pt-3">

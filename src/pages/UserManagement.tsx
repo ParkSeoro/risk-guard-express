@@ -196,7 +196,7 @@ const UserManagement = () => {
         return;
       }
     }
-    toast({ title: `역할이 '${roleLabels[newRole] || newRole}'(으)로 변경되었습니다.` });
+    toast({ title: `전역 역할이 '${globalRoleLabels[newRole] || newRole}'(으)로 변경되었습니다.` });
     log('역할변경', 'user_role', userId, undefined, { role: newRole });
     setSaving(null);
     fetchUsers();

@@ -3,7 +3,7 @@ import { ClipboardList } from 'lucide-react';
 import { useProjectAccess } from '@/hooks/useProjectAccess';
 
 export default function TbmLogs() {
-  const { projectId, loading } = useProjectAccess();
+  const { selectedProject: projectId, loading } = useProjectAccess();
 
   if (loading) {
     return <div className="p-6 text-sm text-muted-foreground">로딩 중...</div>;

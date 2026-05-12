@@ -17,7 +17,8 @@ import {
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
-  safety_manager: '안전관리자', contractor: '협력사 담당자', viewer: '열람자',
+  safety_manager: '안전관리자', site_manager: '현장대리인',
+  supervisor: '관리감독자', worker: '작업자', viewer: '열람자',
 };
 
 const companyTypes: Record<string, string> = {

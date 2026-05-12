@@ -18,7 +18,7 @@ import { correctTerms } from "@/lib/termCorrection";
 export default function MobileTbm() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const { projectId } = useMobileAccess();
+  const { projectId, companyId } = useMobileAccess();
   const { log: logAudit } = useAuditLog();
   const [creating, setCreating] = useState(false);
   const [session, setSession] = useState<any>(null);
@@ -54,6 +54,7 @@ export default function MobileTbm() {
     try {
       const payload = {
         project_id: projectId,
+        company_id: companyId,
         title: correctTerms(form.title),
         location: correctTerms(form.location),
         briefing_summary: correctTerms(form.summary),

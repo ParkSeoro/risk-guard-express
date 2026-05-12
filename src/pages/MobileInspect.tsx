@@ -24,7 +24,7 @@ type Member = { user_id: string; display_name: string; role: string };
 export default function MobileInspect() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const { projectId } = useMobileAccess();
+  const { projectId, companyId } = useMobileAccess();
   const { log: auditLog } = useAuditLog();
 
   const [step, setStep] = useState<Step>("setup");
@@ -75,6 +75,7 @@ export default function MobileInspect() {
     try {
       const { data: ins, error } = await supabase.from("safety_inspections" as any).insert({
         project_id: projectId,
+        company_id: companyId,
         inspection_type: form.inspection_type,
         process_category: form.process_category,
         location: correctTerms(form.location),

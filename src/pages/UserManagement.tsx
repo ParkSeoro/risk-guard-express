@@ -471,7 +471,7 @@ const UserManagement = () => {
               <Select value={assignRole} onValueChange={(v) => { setAssignRole(v); setAssignError(''); }}>
                 <SelectTrigger className="text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
+                  {Object.entries(projectRoleLabels).map(([k, v]) => (
                     <SelectItem key={k} value={k}>{v}</SelectItem>
                   ))}
                 </SelectContent>

@@ -67,7 +67,7 @@ export default function MobileWorkPlans() {
       <main className="p-4 space-y-3 max-w-md mx-auto">
         <div className="relative">
           <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input value={q} onChange={e => setQ(e.target.value)} placeholder="제목/작업종류 검색" className="pl-9 h-11" />
+          <Input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="제목/작업종류 검색" className="pl-9 h-11" />
         </div>
 
         <Card className="bg-warning/5 border-warning/40">

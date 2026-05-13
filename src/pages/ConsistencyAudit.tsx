@@ -151,11 +151,13 @@ const TITLES: Record<string, string> = {
 // 검사 제외 페이지 (라우팅용/스플래시)
 const EXCLUDED = new Set(["NotFound.tsx", "Index.tsx", "Auth.tsx", "ResetPassword.tsx"]);
 
-function evaluateRule(source: string, rule: RuleDef): Status {
-  // applicabilityHint가 있고 매칭 안 되면 na
-  if (rule.applicabilityHint && !rule.applicabilityHint.test(source)) {
+function evaluateRule(source: string, rule: RuleDef, file: string): Status {
+  // 관리/정보 페이지는 데이터 룰 면제
+  if (ADMIN_INFO_PAGES.test(file) && (rule.key === "access" || rule.key === "audit" || rule.key === "zod" || rule.key === "term")) {
     return "na";
   }
+  if (rule.excludeIf && rule.excludeIf.test(source)) return "na";
+  if (rule.applicabilityHint && !rule.applicabilityHint.test(source)) return "na";
   const matches = rule.patterns.filter(p => p.test(source)).length;
   if (matches >= 2) return "pass";
   if (matches === 1) return "partial";
@@ -169,7 +171,7 @@ function runAudit(): PageAudit[] {
     if (EXCLUDED.has(file)) continue;
     const r: Record<string, Status> = {};
     for (const rule of RULES) {
-      r[rule.key] = evaluateRule(source, rule);
+      r[rule.key] = evaluateRule(source, rule, file);
     }
     results.push({
       page: file,
@@ -178,7 +180,6 @@ function runAudit(): PageAudit[] {
       size: source.length,
     });
   }
-  // 모바일 우선 정렬 옵션은 UI에서, 여기선 알파벳
   return results.sort((a, b) => a.page.localeCompare(b.page));
 }
 

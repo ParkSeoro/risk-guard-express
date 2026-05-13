@@ -69,7 +69,7 @@ export default function MobileWorkers() {
       <main className="p-4 space-y-3 max-w-md mx-auto">
         <div className="relative">
           <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input value={q} onChange={e => setQ(e.target.value)} placeholder="이름/전화/업체"
+          <Input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="이름/전화/업체"
             className="pl-9 h-11" />
         </div>
 

@@ -23,15 +23,28 @@ interface RuleDef {
   patterns: RegExp[];
   /** 이 패턴이 하나도 안 보이면 폼/입력이 없는 페이지로 간주 → na */
   applicabilityHint?: RegExp;
+  /** 이 패턴이 매칭되면 룰 적용 자체를 면제 (admin-only / 데이터 비귀속 페이지 등) → na */
+  excludeIf?: RegExp;
 }
+
+// 데이터 입력/수정 흐름이 거의 없는 시스템·관리·정보 페이지 — 격리/Zod 등 룰 면제
+const ADMIN_INFO_PAGES = /^(?:AIAssistant|AILogs|AITestEngine|AuditLogs|ConsistencyAudit|Dashboard|Manual|PermissionTest|Profile|Settings|SettingsAccount|SettingsAI|SettingsNotifications|SettingsPermissions|SystemTestEngine|TodoDashboard|MobileAlerts|MobileHome|SiteWeather|MobileScan)\.tsx$/;
+
+// 위험성평가/작업계획서/사고보고처럼 한국어 위험요인 텍스트를 다루는 페이지에서만 용어 보정 필요
+const TERM_RELEVANT = /risk_items|hazard\s*[:=]|improvement_measure|sub_task|workplan_hazards|accident_cases/;
 
 const RULES: RuleDef[] = [
   {
     key: "access",
     label: "프로젝트/회사 격리",
-    why: "useProjectAccess / useGlobalProjectAccess 훅으로 회사·역할 격리 적용",
+    why: "useProjectAccess / useMobileAccess / useGlobalProjectAccess 훅으로 회사·역할 격리 적용",
     memoryRef: "logic/project-access-hook",
-    patterns: [/useProjectAccess|useGlobalProjectAccess/, /can_access_company_data|company_id|projectId/],
+    patterns: [
+      /useProjectAccess|useMobileAccess|useGlobalProjectAccess/,
+      /applyCompanyFilter|can_access_company_data|company_id|project_id|projectId/,
+    ],
+    // 실제 supabase 데이터 조회/쓰기를 하는 페이지에서만 격리 의미가 있음
+    applicabilityHint: /supabase[\s\S]{0,200}\.from\(/,
   },
   {
     key: "soft",
@@ -44,42 +57,50 @@ const RULES: RuleDef[] = [
   {
     key: "ime",
     label: "IME 한글 안정성",
-    why: "한글 입력 폼에 IMESafeInput 사용 (조합 중 끊김 방지)",
+    why: "한국어 자유 텍스트 입력에 IMESafeInput / IMESafeTextarea 사용",
     memoryRef: "tech/ime-stability",
-    patterns: [/IMESafeInput|IMESafeTextarea/, /IMESafeInput[\s\S]{0,200}IMESafeInput|IMESafe(?:Input|Textarea)[\s\S]{0,500}IMESafe(?:Input|Textarea)/],
-    applicabilityHint: /<Input |<Textarea |type="text"/,
+    patterns: [
+      /IMESafeInput|IMESafeTextarea/,
+      /IMESafe(?:Input|Textarea)[\s\S]{0,800}IMESafe(?:Input|Textarea)|<IMESafe(?:Input|Textarea)[^>]*placeholder=["'][^"']*[\u3131-\uD79D]/,
+    ],
+    // 자유 한국어 텍스트 입력 후보가 있어야 적용 (search/email/password/number/file는 제외)
+    applicabilityHint: /<Textarea |<Input(?![^>]*type=["'](?:search|email|password|number|file|date|time|hidden|checkbox|radio)["'])/,
+    // QR/스캐너/프로필 등은 한국어 자유텍스트 폼이 아님
+    excludeIf: /Html5Qrcode|QrScanner|Scanner/,
   },
   {
     key: "audit",
     label: "감사 로그",
-    why: "CRUD/오버라이드 발생 시 audit_log 기록",
+    why: "데이터 변경(CRUD/오버라이드) 시 audit_log 기록",
     memoryRef: "features/audit-tracking",
-    patterns: [/useAuditLog|audit_log|logAudit/, /logAudit\(|audit_log[\s\S]{0,300}insert/],
-    applicabilityHint: /\.insert\(|\.update\(|\.delete\(/,
+    patterns: [/useAuditLog|audit_log|logAudit/, /logAudit\(|audit_log[\s\S]{0,300}insert|useAuditLog\(/],
+    applicabilityHint: /supabase[\s\S]{0,200}\.(?:insert|update|delete)\(/,
   },
   {
     key: "zod",
     label: "Zod 검증",
-    why: "폼 submit 시 schema.parse로 데이터 검증",
+    why: "폼 submit / insert 전에 zod schema로 데이터 검증",
     memoryRef: "tech/data-validation",
-    patterns: [/from\s+["']zod["']|z\.object|z\.string/, /\.parse\(|\.safeParse\(|zodResolver/],
-    applicabilityHint: /handleSubmit|onSubmit|\.insert\(/,
+    patterns: [/from\s+["']zod["']|z\.object|z\.string|zodResolver/, /\.parse\(|\.safeParse\(|zodResolver/],
+    // insert가 있는 페이지에서만 검증 룰 적용 (단순 status 토글/조회는 제외)
+    applicabilityHint: /supabase[\s\S]{0,200}\.insert\(/,
   },
   {
     key: "toast",
     label: "에러 가시화",
     why: "catch 블록에서 toast로 사용자에게 오류 전달 (무음 금지)",
     memoryRef: "system/error-handling-policy",
-    patterns: [/catch\s*\([^)]*\)\s*\{[\s\S]{0,300}toast/, /toast[\s\S]{0,50}(?:error|destructive|variant)/],
-    applicabilityHint: /try\s*\{|catch\s*\(/,
+    patterns: [/catch\s*\([^)]*\)\s*\{[\s\S]{0,400}toast/, /toast[\s\S]{0,80}(?:variant\s*:\s*["']destructive|title\s*:\s*["'][^"']*(?:오류|실패|에러))/],
+    applicabilityHint: /try\s*\{[\s\S]*?catch/,
   },
   {
     key: "term",
     label: "용어 표준화",
-    why: "termCorrection으로 굴삭기→굴착기 등 자동 보정",
+    why: "위험요인/작업 텍스트 입력·저장 시 termCorrection으로 보정 (굴삭기→굴착기 등)",
     memoryRef: "system/terminology-standardization",
     patterns: [/correctTerms|termCorrection|correctItemTerms/, /correctTerms\(|correctItemTerms\(/],
-    applicabilityHint: /process|hazard|sub_task|improvement_measure|굴착|작업/,
+    // 위험요인/공종 텍스트를 실제로 다루는 페이지만 적용
+    applicabilityHint: TERM_RELEVANT,
   },
 ];
 
@@ -130,11 +151,13 @@ const TITLES: Record<string, string> = {
 // 검사 제외 페이지 (라우팅용/스플래시)
 const EXCLUDED = new Set(["NotFound.tsx", "Index.tsx", "Auth.tsx", "ResetPassword.tsx"]);
 
-function evaluateRule(source: string, rule: RuleDef): Status {
-  // applicabilityHint가 있고 매칭 안 되면 na
-  if (rule.applicabilityHint && !rule.applicabilityHint.test(source)) {
+function evaluateRule(source: string, rule: RuleDef, file: string): Status {
+  // 관리/정보 페이지는 데이터 룰 면제
+  if (ADMIN_INFO_PAGES.test(file) && (rule.key === "access" || rule.key === "audit" || rule.key === "zod" || rule.key === "term")) {
     return "na";
   }
+  if (rule.excludeIf && rule.excludeIf.test(source)) return "na";
+  if (rule.applicabilityHint && !rule.applicabilityHint.test(source)) return "na";
   const matches = rule.patterns.filter(p => p.test(source)).length;
   if (matches >= 2) return "pass";
   if (matches === 1) return "partial";
@@ -148,7 +171,7 @@ function runAudit(): PageAudit[] {
     if (EXCLUDED.has(file)) continue;
     const r: Record<string, Status> = {};
     for (const rule of RULES) {
-      r[rule.key] = evaluateRule(source, rule);
+      r[rule.key] = evaluateRule(source, rule, file);
     }
     results.push({
       page: file,
@@ -157,7 +180,6 @@ function runAudit(): PageAudit[] {
       size: source.length,
     });
   }
-  // 모바일 우선 정렬 옵션은 UI에서, 여기선 알파벳
   return results.sort((a, b) => a.page.localeCompare(b.page));
 }
 

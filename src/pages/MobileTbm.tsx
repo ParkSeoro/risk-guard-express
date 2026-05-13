@@ -56,7 +56,8 @@ export default function MobileTbm() {
 
   const create = async () => {
     if (!projectId) return toast.error("프로젝트를 먼저 선택하세요");
-    if (!form.title.trim()) return toast.error("TBM 제목을 입력하세요");
+    const parsed = tbmSchema.safeParse(form);
+    if (!parsed.success) return toast.error(parsed.error.issues[0]?.message || "입력값을 확인하세요");
     setCreating(true);
     try {
       const payload = {

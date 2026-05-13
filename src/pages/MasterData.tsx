@@ -14,10 +14,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, AlertTriangle, Save } from "lucide-react";
 import { GRADES, type RiskGrade, calculateRiskGrade, getGradeClassName, setMatrixConfig, getMatrixConfig } from "@/lib/riskGrade";
+import { useAuditLog } from "@/hooks/useAuditLog";
 
 const MasterData = () => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const { toast } = useToast();
+  const { log } = useAuditLog();
   const [processes, setProcesses] = useState<any[]>([]);
   const [ppe, setPpe] = useState<any[]>([]);
   const [legalRefs, setLegalRefs] = useState<any[]>([]);
@@ -94,8 +96,23 @@ const MasterData = () => {
   };
 
   const handleDelete = async (type: string, id: string) => {
+    const reason = prompt('마스터데이터 삭제 사유를 입력하세요. (필수)');
+    if (!reason || !reason.trim()) return;
     const tableMap: Record<string, string> = { process: 'master_processes', ppe: 'master_ppe', legal: 'legal_references', department: 'master_departments', assignee: 'master_assignees', rule: 'validation_rules' };
-    await supabase.from(tableMap[type] as any).delete().eq('id', id);
+    const softDeleteTypes = new Set(['process', 'ppe', 'department', 'assignee']);
+    if (softDeleteTypes.has(type)) {
+      const { error } = await supabase.from(tableMap[type] as any).update({
+        is_deleted: true,
+        deleted_at: new Date().toISOString(),
+        deleted_reason: reason,
+        deleted_by: user?.id || null,
+      }).eq('id', id);
+      if (error) { toast({ title: '삭제 실패', description: error.message, variant: 'destructive' }); return; }
+    } else {
+      const { error } = await supabase.from(tableMap[type] as any).delete().eq('id', id);
+      if (error) { toast({ title: '삭제 실패', description: error.message, variant: 'destructive' }); return; }
+    }
+    await log('삭제', `master_${type}`, id, undefined, { reason });
     toast({ title: '삭제되었습니다.' });
     fetchAll();
   };

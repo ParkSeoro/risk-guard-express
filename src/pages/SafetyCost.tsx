@@ -360,9 +360,14 @@ const SafetyCost = () => {
 
   async function deleteItem(item: Item) {
     if (selectedReport?.status === 'approved') { toast({ title: '승인 완료된 내역서의 항목은 삭제할 수 없습니다.', variant: 'destructive' }); return; }
-    if (!window.confirm(`'${item.item_name}' 항목을 삭제할까요? 연결된 증빙 기록도 함께 정리됩니다.`)) return;
-    await supabase.from('safety_cost_evidence_files' as any).delete().eq('item_id', item.id);
-    const { error } = await supabase.from('safety_cost_items' as any).delete().eq('id', item.id);
+    const reason = window.prompt(`'${item.item_name}' 항목을 삭제합니다. 사유를 입력하세요. (필수)`);
+    if (!reason || !reason.trim()) return;
+    const { error } = await supabase.from('safety_cost_items' as any).update({
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_reason: reason,
+      deleted_by: user?.id || null,
+    }).eq('id', item.id);
     if (error) { toast({ title: '항목 삭제 실패', description: error.message, variant: 'destructive' }); return; }
     await supabase.from('safety_cost_audit_logs' as any).insert({
       project_id: item.project_id || access.selectedProject,

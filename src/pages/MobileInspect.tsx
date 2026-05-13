@@ -90,7 +90,8 @@ export default function MobileInspect() {
 
   const startInspection = async () => {
     if (!projectId) return toast.error("프로젝트를 먼저 선택하세요");
-    if (!form.location.trim()) return toast.error("점검 위치를 입력하세요");
+    const parsed = inspectionSetupSchema.safeParse(form);
+    if (!parsed.success) return toast.error(parsed.error.issues[0]?.message || "입력값을 확인하세요");
     setCreating(true);
     try {
       const { data: ins, error } = await supabase.from("safety_inspections" as any).insert({

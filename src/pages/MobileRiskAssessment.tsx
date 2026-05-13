@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { IMESafeInput } from "@/components/IMESafeInput";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Search, Loader2, ExternalLink, FileText } from "lucide-react";
 import { toast } from "sonner";

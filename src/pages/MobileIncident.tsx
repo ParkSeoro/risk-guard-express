@@ -84,8 +84,8 @@ export default function MobileIncident() {
 
   const submit = async () => {
     if (!projectId) return toast.error("프로젝트를 먼저 선택하세요");
-    if (!location.trim()) return toast.error("위치를 입력하세요");
-    if (!description.trim()) return toast.error("내용을 입력하세요");
+    const parsed = incidentSchema.safeParse({ type, severity, location, description });
+    if (!parsed.success) return toast.error(parsed.error.issues[0]?.message || "입력값을 확인하세요");
     setSubmitting(true);
     try {
       const urls: string[] = [];

@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { ListTodo, RefreshCw, Trash2, Pencil, Plus, PieChart } from 'lucide-react';
+import { useAuditLog } from '@/hooks/useAuditLog';
 import { format, isToday, isThisWeek, isThisMonth, startOfDay, endOfMonth } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { PieChart as RPieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
@@ -26,6 +27,7 @@ const TodoDashboard = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const access = useGlobalProjectAccess();
+  const { log } = useAuditLog();
   const [todos, setTodos] = useState<any[]>([]);
   const [duties, setDuties] = useState<any[]>([]);
   const [generating, setGenerating] = useState(false);
@@ -44,6 +46,7 @@ const TodoDashboard = () => {
     let query = supabase.from('todo_items').select('*')
       .eq('project_id', access.selectedProject)
       .eq('user_id', user.id)
+      .eq('is_deleted', false)
       .order('due_date', { ascending: true });
     
     query = access.applyCompanyFilter(query);
@@ -54,7 +57,8 @@ const TodoDashboard = () => {
   const loadDuties = async () => {
     let query = supabase.from('legal_duties').select('*')
       .eq('project_id', access.selectedProject)
-      .eq('is_active', true);
+      .eq('is_active', true)
+      .eq('is_deleted', false);
     query = access.applyCompanyFilter(query);
     const { data } = await query;
     setDuties(data || []);
@@ -126,7 +130,16 @@ const TodoDashboard = () => {
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
-    await supabase.from('todo_items').delete().eq('id', deleteTarget.id);
+    const reason = prompt('삭제 사유를 입력하세요. (필수)');
+    if (!reason || !reason.trim()) return;
+    const { error } = await supabase.from('todo_items').update({
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_reason: reason,
+      deleted_by: user?.id || null,
+    } as any).eq('id', deleteTarget.id);
+    if (error) { toast({ title: '삭제 실패', description: error.message, variant: 'destructive' }); return; }
+    await log('삭제', 'todo_item', deleteTarget.id, access.selectedProject || undefined, { reason, title: deleteTarget.title });
     setTodos(prev => prev.filter(t => t.id !== deleteTarget.id));
     setDeleteTarget(null);
     toast({ title: '삭제되었습니다.' });

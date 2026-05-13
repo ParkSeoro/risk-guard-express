@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature, Pencil, Trash2 } from 'lucide-react';
+import { useAuditLog } from '@/hooks/useAuditLog';
 
 const STATUS_COLOR: Record<string, string> = {
   '작성중': 'bg-muted text-muted-foreground',
@@ -28,6 +29,7 @@ const userLabel = (u: any) => u?.user_metadata?.display_name || u?.email || '';
 export default function WorkPermits() {
   const { toast } = useToast();
   const { user, isAdmin } = useAuth();
+  const { log } = useAuditLog();
   const projectId = typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') || '' : '';
 
   const [permits, setPermits] = useState<any[]>([]);
@@ -49,7 +51,7 @@ export default function WorkPermits() {
   const load = async () => {
     if (!projectId) return;
     const [{ data: p }, { data: wp }, { data: ar }, { data: tb }] = await Promise.all([
-      supabase.from('work_permits' as any).select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
+      supabase.from('work_permits' as any).select('*').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }),
       supabase.from('work_plans' as any).select('id, title, status').eq('project_id', projectId).order('created_at', { ascending: false }).limit(100),
       supabase.from('assessment_runs').select('id, period_label, status').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }).limit(100),
       supabase.from('tbm_sessions' as any).select('id, title, tbm_date, is_active').eq('project_id', projectId).order('created_at', { ascending: false }).limit(50),
@@ -105,9 +107,15 @@ export default function WorkPermits() {
 
   const remove = async (p: any) => {
     const reason = prompt(`작업허가서를 삭제합니다. 사유를 입력하세요.\n[${p.work_description}]`);
-    if (!reason) return;
-    const { error } = await supabase.from('work_permits' as any).delete().eq('id', p.id);
+    if (!reason || !reason.trim()) return;
+    const { error } = await supabase.from('work_permits' as any).update({
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_reason: reason,
+      deleted_by: user?.id || null,
+    }).eq('id', p.id);
     if (error) return toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
+    await log('삭제', 'work_permit', p.id, projectId || undefined, { reason, work_description: p.work_description });
     toast({ title: '작업허가서가 삭제되었습니다.' });
     load();
   };

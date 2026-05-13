@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Scale, Sparkles, Lock, Plus, Pencil, Trash2 } from 'lucide-react';
+import { useAuditLog } from '@/hooks/useAuditLog';
 
 const categoryLabels: Record<string, string> = {
   daily: '일일 업무',
@@ -41,6 +42,7 @@ const LegalDuties = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const access = useGlobalProjectAccess();
+  const { log } = useAuditLog();
   const [duties, setDuties] = useState<any[]>([]);
   const [generating, setGenerating] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -56,6 +58,7 @@ const LegalDuties = () => {
       .from('legal_duties')
       .select('*')
       .eq('project_id', access.selectedProject)
+      .eq('is_deleted', false)
       .order('duty_category', { ascending: true });
     
     query = access.applyCompanyFilter(query);
@@ -161,8 +164,17 @@ const LegalDuties = () => {
   };
 
   const handleDeleteDuty = async (id: string) => {
-    if (!confirm('이 업무를 삭제하시겠습니까?')) return;
-    await supabase.from('legal_duties').delete().eq('id', id);
+    const reason = prompt('삭제 사유를 입력하세요. (필수)');
+    if (!reason || !reason.trim()) return;
+    const target = duties.find(d => d.id === id);
+    const { error } = await supabase.from('legal_duties').update({
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_reason: reason,
+      deleted_by: user?.id || null,
+    } as any).eq('id', id);
+    if (error) { toast({ title: '삭제 실패', description: error.message, variant: 'destructive' }); return; }
+    await log('삭제', 'legal_duty', id, access.selectedProject || undefined, { reason, duty_name: target?.duty_name });
     toast({ title: '삭제되었습니다.' });
     setDuties(prev => prev.filter(d => d.id !== id));
   };

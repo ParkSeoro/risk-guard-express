@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import {
   ArrowLeft, Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck, Tag, X, Settings2
 } from 'lucide-react';
+import { useAuditLog } from '@/hooks/useAuditLog';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
@@ -35,6 +36,7 @@ const ProjectDetail = () => {
   const { user, hasRole } = useAuth();
   const { toast } = useToast();
   const isMaster = hasRole('master');
+  const { log } = useAuditLog();
 
   const [project, setProject] = useState<any>(null);
   const [projectRole, setProjectRole] = useState<string | null>(null);
@@ -106,7 +108,7 @@ const ProjectDetail = () => {
       supabase.from('project_invites').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_join_requests').select('*, profiles:user_id(display_name, company)').eq('project_id', projectId).eq('status', 'pending'),
       supabase.from('approval_route_templates' as any).select('*').eq('project_id', projectId).order('created_at'),
-      supabase.from('environment_tags' as any).select('*').or(`project_id.eq.${projectId},project_id.is.null`).order('created_at'),
+      supabase.from('environment_tags' as any).select('*').or(`project_id.eq.${projectId},project_id.is.null`).eq('is_deleted', false).order('created_at'),
     ]);
 
     setProject(projRes.data);
@@ -221,7 +223,10 @@ const ProjectDetail = () => {
       toast({ title: '프로젝트 관리자가 최소 1명 필요합니다.', variant: 'destructive' });
       return;
     }
+    const reason = prompt('멤버 제거 사유를 입력하세요. (필수)');
+    if (!reason || !reason.trim()) return;
     await supabase.from('project_members').delete().eq('id', memberId);
+    await log('멤버 제거', 'project_member', memberId, projectId || undefined, { reason, removed_user_id: target?.user_id, role: target?.role_new });
     toast({ title: '멤버가 제거되었습니다.' });
     fetchAll();
   };
@@ -265,6 +270,7 @@ const ProjectDetail = () => {
 
   const handleDeleteInvite = async (id: string) => {
     await supabase.from('project_invites').delete().eq('id', id);
+    await log('초대코드 삭제', 'project_invite', id, projectId || undefined);
     fetchAll();
   };
 
@@ -322,7 +328,12 @@ const ProjectDetail = () => {
   };
 
   const handleDeleteCompany = async (id: string) => {
-    await supabase.from('companies').delete().eq('id', id);
+    const reason = prompt('업체 삭제 사유를 입력하세요. (필수)');
+    if (!reason || !reason.trim()) return;
+    const target = companies.find(c => c.id === id);
+    const { error } = await supabase.from('companies').delete().eq('id', id);
+    if (error) { toast({ title: '삭제 실패', description: error.message, variant: 'destructive' }); return; }
+    await log('업체 삭제', 'company', id, projectId || undefined, { reason, name: target?.name, type: target?.type });
     toast({ title: '업체가 삭제되었습니다.' });
     fetchAll();
   };
@@ -425,6 +436,7 @@ const ProjectDetail = () => {
 
   const handleDeleteTemplate = async (id: string) => {
     await supabase.from('approval_route_templates').delete().eq('id', id);
+    await log('결재라인 삭제', 'approval_route_template', id, projectId || undefined);
     toast({ title: '결재라인이 삭제되었습니다.' });
     fetchAll();
   };
@@ -441,7 +453,12 @@ const ProjectDetail = () => {
   };
 
   const handleDeleteTag = async (id: string) => {
-    await supabase.from('environment_tags' as any).delete().eq('id', id);
+    await supabase.from('environment_tags' as any).update({
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_by: user?.id || null,
+    }).eq('id', id);
+    await log('태그 삭제', 'environment_tag', id, projectId || undefined);
     fetchAll();
     toast({ title: '태그가 삭제되었습니다.' });
   };

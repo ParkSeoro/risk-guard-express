@@ -12,7 +12,14 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Loader2, QrCode, Copy, Users } from "lucide-react";
 import { toast } from "sonner";
 import QRCode from "qrcode";
+import { z } from "zod";
 import { correctTerms } from "@/lib/termCorrection";
+
+const tbmSchema = z.object({
+  title: z.string().trim().min(2, "TBM 제목을 2자 이상 입력하세요").max(200),
+  location: z.string().trim().max(200).optional(),
+  summary: z.string().trim().max(2000).optional(),
+});
 
 // 모바일 TBM 즉석 진행 — 세션 생성 → QR 표시 → 참여 현황 폴링
 export default function MobileTbm() {
@@ -49,7 +56,8 @@ export default function MobileTbm() {
 
   const create = async () => {
     if (!projectId) return toast.error("프로젝트를 먼저 선택하세요");
-    if (!form.title.trim()) return toast.error("TBM 제목을 입력하세요");
+    const parsed = tbmSchema.safeParse(form);
+    if (!parsed.success) return toast.error(parsed.error.issues[0]?.message || "입력값을 확인하세요");
     setCreating(true);
     try {
       const payload = {

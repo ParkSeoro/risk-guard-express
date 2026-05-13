@@ -12,7 +12,15 @@ import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Camera, Loader2, AlertOctagon, MapPin } from "lucide-react";
 import { toast } from "sonner";
+import { z } from "zod";
 import { correctTerms } from "@/lib/termCorrection";
+
+const incidentSchema = z.object({
+  type: z.enum(["near_miss", "minor", "major", "property"]),
+  severity: z.enum(["low", "medium", "high"]),
+  location: z.string().trim().min(2, "위치를 2자 이상 입력하세요").max(200, "위치는 200자 이하"),
+  description: z.string().trim().min(5, "내용을 5자 이상 입력하세요").max(2000, "내용은 2000자 이하"),
+});
 
 const TYPES = [
   { v: "near_miss", label: "아차사고" },
@@ -76,8 +84,8 @@ export default function MobileIncident() {
 
   const submit = async () => {
     if (!projectId) return toast.error("프로젝트를 먼저 선택하세요");
-    if (!location.trim()) return toast.error("위치를 입력하세요");
-    if (!description.trim()) return toast.error("내용을 입력하세요");
+    const parsed = incidentSchema.safeParse({ type, severity, location, description });
+    if (!parsed.success) return toast.error(parsed.error.issues[0]?.message || "입력값을 확인하세요");
     setSubmitting(true);
     try {
       const urls: string[] = [];

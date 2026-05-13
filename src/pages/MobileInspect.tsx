@@ -12,10 +12,19 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Camera, CheckCircle2, XCircle, MinusCircle, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
+import { z } from "zod";
 import { buildChecklist, INSPECTION_TYPE_LABELS, PROCESS_CATEGORIES, type InspectionType } from "@/lib/inspectionTemplates";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { correctTerms } from "@/lib/termCorrection";
+
+const inspectionSetupSchema = z.object({
+  inspection_type: z.string().min(1),
+  process_category: z.string().min(1),
+  location: z.string().trim().min(2, "점검 위치를 2자 이상 입력하세요").max(200),
+  summary: z.string().trim().max(2000).optional(),
+  inspector_name: z.string().trim().max(100).optional(),
+});
 
 // 모바일 안전점검 — 데스크톱과 동일한 구조(점검 유형/공종/담당자 선택 → 체크리스트 → 항목별 합/불/해당없음 + 사진)
 type Step = "setup" | "checklist";
@@ -81,7 +90,8 @@ export default function MobileInspect() {
 
   const startInspection = async () => {
     if (!projectId) return toast.error("프로젝트를 먼저 선택하세요");
-    if (!form.location.trim()) return toast.error("점검 위치를 입력하세요");
+    const parsed = inspectionSetupSchema.safeParse(form);
+    if (!parsed.success) return toast.error(parsed.error.issues[0]?.message || "입력값을 확인하세요");
     setCreating(true);
     try {
       const { data: ins, error } = await supabase.from("safety_inspections" as any).insert({

@@ -46,6 +46,7 @@ const TodoDashboard = () => {
     let query = supabase.from('todo_items').select('*')
       .eq('project_id', access.selectedProject)
       .eq('user_id', user.id)
+      .eq('is_deleted', false)
       .order('due_date', { ascending: true });
     
     query = access.applyCompanyFilter(query);
@@ -56,7 +57,8 @@ const TodoDashboard = () => {
   const loadDuties = async () => {
     let query = supabase.from('legal_duties').select('*')
       .eq('project_id', access.selectedProject)
-      .eq('is_active', true);
+      .eq('is_active', true)
+      .eq('is_deleted', false);
     query = access.applyCompanyFilter(query);
     const { data } = await query;
     setDuties(data || []);

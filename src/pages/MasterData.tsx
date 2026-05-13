@@ -36,11 +36,11 @@ const MasterData = () => {
 
   const fetchAll = async () => {
     const [p, pp, lr, d, a, vr] = await Promise.all([
-      supabase.from('master_processes').select('*').order('name'),
-      supabase.from('master_ppe').select('*').order('name'),
+      supabase.from('master_processes').select('*').eq('is_deleted', false).order('name'),
+      supabase.from('master_ppe').select('*').eq('is_deleted', false).order('name'),
       supabase.from('legal_references').select('*').order('law_name'),
-      supabase.from('master_departments').select('*').order('name'),
-      supabase.from('master_assignees').select('*, master_departments(name)').order('name'),
+      supabase.from('master_departments').select('*').eq('is_deleted', false).order('name'),
+      supabase.from('master_assignees').select('*, master_departments(name)').eq('is_deleted', false).order('name'),
       supabase.from('validation_rules').select('*').order('rule_name'),
     ]);
     setProcesses(p.data || []);

@@ -58,6 +58,7 @@ const LegalDuties = () => {
       .from('legal_duties')
       .select('*')
       .eq('project_id', access.selectedProject)
+      .eq('is_deleted', false)
       .order('duty_category', { ascending: true });
     
     query = access.applyCompanyFilter(query);

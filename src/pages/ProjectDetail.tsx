@@ -108,7 +108,7 @@ const ProjectDetail = () => {
       supabase.from('project_invites').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_join_requests').select('*, profiles:user_id(display_name, company)').eq('project_id', projectId).eq('status', 'pending'),
       supabase.from('approval_route_templates' as any).select('*').eq('project_id', projectId).order('created_at'),
-      supabase.from('environment_tags' as any).select('*').or(`project_id.eq.${projectId},project_id.is.null`).order('created_at'),
+      supabase.from('environment_tags' as any).select('*').or(`project_id.eq.${projectId},project_id.is.null`).eq('is_deleted', false).order('created_at'),
     ]);
 
     setProject(projRes.data);

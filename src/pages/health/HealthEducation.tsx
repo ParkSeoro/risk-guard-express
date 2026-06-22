@@ -12,7 +12,7 @@ import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
 import { Plus, GraduationCap } from "lucide-react";
 
-const ACTIVE_PROJECT_KEY = "active_project_id";
+const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const TYPES = ["정기", "특별", "관리감독자", "MSDS", "신규채용", "작업변경"];
 
 export default function HealthEducation() {

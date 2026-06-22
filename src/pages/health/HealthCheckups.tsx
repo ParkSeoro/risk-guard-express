@@ -12,7 +12,7 @@ import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
 import { Plus, Stethoscope } from "lucide-react";
 
-const ACTIVE_PROJECT_KEY = "active_project_id";
+const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const TYPES = ["일반", "특수", "배치전", "수시", "임시"];
 const RESULTS = ["정상A", "정상B", "요관찰C", "유소견D1", "유소견D2", "판정불가", "미수검"];
 

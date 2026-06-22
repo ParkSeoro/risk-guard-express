@@ -671,16 +671,16 @@ const WorkPlanDetail = () => {
 
         {/* Attachments Tab */}
         <TabsContent value="attachments" className="space-y-3 mt-4">
-          <AttachmentChecklist workType={plan.work_type}
-            attachments={attachments.map((a: any, i: number) => ({
-              key: a.key || `att_${i}`, uploaded: !!a.uploaded, fileUrl: a.fileUrl,
-            }))}
-            onAttachmentsChange={(newAtts) => {
-              setAttachments(newAtts.map((a, i) => ({ ...a, name: a.key, id: `att_${i}` })));
-              setIsDirty(true);
-            }}
-            onUpload={(idx, file) => handleFileUpload(idx, file)}
-          />
+          {plan?.project_id && (
+            <AttachmentChecklist
+              workPlanId={plan.id}
+              projectId={plan.project_id}
+              companyId={plan.company_id}
+              workType={plan.work_type}
+              readOnly={plan.status !== '작성중'}
+              onChange={() => setIsDirty(true)}
+            />
+          )}
         </TabsContent>
 
         {/* Preview Tab */}

@@ -29,7 +29,8 @@ function isInIframe(): boolean {
 }
 
 const DISMISS_KEY = "installPromptDismissedAt";
-const DISMISS_HOURS = 24;
+const DISMISS_HOURS = 24 * 7; // 7일
+
 
 export default function InstallPrompt() {
   const [deferred, setDeferred] = useState<any>(null);

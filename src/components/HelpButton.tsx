@@ -45,13 +45,24 @@ export function HelpButton({ className }: { className?: string }) {
         ) : (
           <p className="text-sm text-muted-foreground">이 화면에 대한 도움말이 아직 등록되지 않았습니다.</p>
         )}
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setOpen(false);
+              window.dispatchEvent(new CustomEvent("tutorial:open"));
+            }}
+          >
+            처음부터 따라하기
+          </Button>
           <Link to="/manual" onClick={() => setOpen(false)}>
             <Button variant="outline" size="sm">
               <BookOpen className="h-4 w-4 mr-1" /> 전체 매뉴얼 열기
             </Button>
           </Link>
         </DialogFooter>
+
       </DialogContent>
     </Dialog>
   );

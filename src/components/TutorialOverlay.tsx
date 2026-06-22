@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Sparkles, ArrowRight, ArrowLeft, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+
 
 const STORAGE_KEY = "tutorial:completed:v1";
 
@@ -43,14 +44,25 @@ const STEPS = [
 export function TutorialOverlay() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
 
+  // 자동 표시는 오직 /dashboard 진입 시, 한 번만. 그 외 모든 화면에선 자동 표시 금지.
   useEffect(() => {
     if (!user) return;
+    if (pathname !== "/dashboard") return;
     const done = localStorage.getItem(STORAGE_KEY);
     if (!done) setOpen(true);
-  }, [user]);
+  }, [user, pathname]);
+
+  // 사이드바/도움말에서 명시적으로 호출
+  useEffect(() => {
+    const handler = () => { setStep(0); setOpen(true); };
+    window.addEventListener("tutorial:open", handler);
+    return () => window.removeEventListener("tutorial:open", handler);
+  }, []);
+
 
   const close = (markDone = true) => {
     if (markDone) localStorage.setItem(STORAGE_KEY, new Date().toISOString());

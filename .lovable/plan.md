@@ -16,7 +16,17 @@
 - 트리거 `trg_health_education_log_sync`: 보건교육 이수 시 safety_education_materials 통계 누적
 - `todo_items.source_table/source_id/category` 추가 (보건 추적 가능)
 
-## 진행 중
+### 추가 완료 (2026-06-22 #2)
+- **유해요인조사 익명 응답**: `/health/survey/:token` 공개 페이지 + 산안법 표준 문항(근골격계/뇌심혈관/직무스트레스/감정노동) + 자동 위험도 산정
+  - 백엔드 RPC: `get_hazard_survey_public`, `submit_hazard_survey_response` (점수 합산 → low/medium/high 자동 분류, 응답/고위험 카운터 자동 갱신)
+- **크론 엣지 함수**: `health-checkup-reminder` (매일 09:00 KST 실행) — 예정·지연 건강진단을 묶어 안전관리자에게 알림 전송
+- **SystemTestEngine 보건 회귀**: `health` 시나리오 추가 (건강진단→To-Do 자동생성, conducted_date→done 자동완료, 환경측정 초과→risk 강도 자동상향, 공개 RPC 존재 검증) — 총 5단계
+- **작업계획서 법정 계산기 라이브러리**: `src/lib/workPlanCalculators.ts` — 굴착 사면 안전율, 비계 적재하중, 크레인 양중(풍속 포함), 고소작업 추락방호, 밀폐공간 가스 농도, 환기 풍량 — 모두 적합/부적합 판정 + 법적 근거 + 권장 조치 자동 반환
+
+## 진행 중 — 작업계획서 UX 재설계
+
+다음 단계로 `WorkPlanDetail.tsx`에 계산기 카드를 공종별로 연결하고, 구조화 입력(드롭다운/숫자) → 자동 계산 결과 → 본문 자동 삽입 흐름을 구현 예정.
+
 
 
 

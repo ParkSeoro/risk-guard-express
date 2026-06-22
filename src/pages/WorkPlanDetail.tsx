@@ -636,6 +636,37 @@ const WorkPlanDetail = () => {
           </Card>
         </TabsContent>
 
+        {/* Legal Calculator Tab */}
+        <TabsContent value="calculator" className="space-y-4 mt-4">
+          <LegalCalculatorPanel
+            workType={plan.work_type}
+            onAppendToMethod={(text) => {
+              const idx = sections.findIndex(s => s.key === 'method');
+              if (idx < 0) {
+                toast({ title: '작업방법 섹션을 찾을 수 없습니다', variant: 'destructive' });
+                return;
+              }
+              const current = sections[idx].content || '';
+              // Method section may be JSON (structured) or plain text — append as plain block at end
+              let nextContent = current;
+              try {
+                const parsed = JSON.parse(current);
+                if (parsed && typeof parsed === 'object') {
+                  const note = (parsed.notes || '') + (parsed.notes ? '\n\n' : '') + text;
+                  nextContent = JSON.stringify({ ...parsed, notes: note });
+                } else {
+                  nextContent = (current ? current + '\n\n' : '') + text;
+                }
+              } catch {
+                nextContent = (current ? current + '\n\n' : '') + text;
+              }
+              handleSectionChange(idx, nextContent);
+              setIsDirty(true);
+            }}
+          />
+        </TabsContent>
+
+
         {/* Attachments Tab */}
         <TabsContent value="attachments" className="space-y-3 mt-4">
           <AttachmentChecklist workType={plan.work_type}

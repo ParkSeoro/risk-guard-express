@@ -8,8 +8,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { QRCodeSVG } from "qrcode.react";
-import { HardHat, QrCode, Trash2 } from "lucide-react";
+import { HardHat, QrCode, Trash2, ExternalLink, Settings2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { Link } from "react-router-dom";
 import WorkerAttendance from "./WorkerAttendance";
 
 export default function WorkerManagement() {
@@ -85,7 +86,10 @@ export default function WorkerManagement() {
               <SelectContent>{projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
             </Select>
             {projectId && (
-              <Button onClick={() => setShowQr(true)}><QrCode className="h-4 w-4 mr-2" />등록 QR 표시</Button>
+              <>
+                <Button onClick={() => setShowQr(true)}><QrCode className="h-4 w-4 mr-2" />등록 QR 표시</Button>
+                <Link to="/workers/legal-mapping"><Button variant="outline"><Settings2 className="h-4 w-4 mr-2" />법정 교육 매핑</Button></Link>
+              </>
             )}
           </div>
 
@@ -103,20 +107,29 @@ export default function WorkerManagement() {
                           <th className="text-left p-2">이름</th>
                           <th className="text-left p-2">전화</th>
                           <th className="text-left p-2">소속사</th>
+                          <th className="text-left p-2">직종</th>
                           <th className="text-left p-2">교육확인</th>
+                          <th className="text-left p-2">대상</th>
                           <th className="text-left p-2">상태</th>
                           <th className="p-2"></th>
                         </tr>
                       </thead>
                       <tbody>
                         {workers.map(w => (
-                          <tr key={w.id} className="border-b">
-                            <td className="p-2 font-medium">{w.name}</td>
+                          <tr key={w.id} className="border-b hover:bg-muted/40">
+                            <td className="p-2 font-medium">
+                              <Link to={`/workers/${w.id}`} className="text-primary hover:underline">{w.name}</Link>
+                            </td>
                             <td className="p-2">{w.phone}</td>
                             <td className="p-2">{w.company_name}</td>
+                            <td className="p-2 text-xs">{w.job_type || "-"}</td>
                             <td className="p-2">{w.education_confirmed_at ? <Badge className="bg-success">확인</Badge> : <Badge variant="secondary">미확인</Badge>}</td>
-                            <td className="p-2">{w.is_active ? <Badge>활성</Badge> : <Badge variant="outline">비활성</Badge>}</td>
                             <td className="p-2">
+                              {w.requires_daily_health_log && <Badge variant="outline" className="gap-1 text-warning border-warning"><AlertTriangle className="h-3 w-3" />일일일지</Badge>}
+                            </td>
+                            <td className="p-2">{w.is_active ? <Badge>활성</Badge> : <Badge variant="outline">비활성</Badge>}</td>
+                            <td className="p-2 flex gap-1">
+                              <Link to={`/workers/${w.id}`}><Button size="icon" variant="ghost"><ExternalLink className="h-4 w-4" /></Button></Link>
                               <Button size="icon" variant="ghost" onClick={() => remove(w.id)}><Trash2 className="h-4 w-4" /></Button>
                             </td>
                           </tr>

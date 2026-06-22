@@ -100,8 +100,12 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 4) 법정의무 D-30 To-Do 자동 생성 + D-7 알림
+    const { data: ldCount } = await supabase.rpc("generate_legal_duty_todos");
+    legalDutyTodos = (ldCount as number) || 0;
+
     return new Response(
-      JSON.stringify({ ok: true, overdue, dailyLogsCreated, notified, date: todayStr }),
+      JSON.stringify({ ok: true, overdue, dailyLogsCreated, notified, legalDutyTodos, date: todayStr }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e: any) {

@@ -49,8 +49,20 @@ const WorkPlans = () => {
     if (access.selectedProject) {
       loadPlans();
       loadCompanies();
+      loadRuns();
     }
   }, [access.selectedProject, access.userCompanyId]);
+
+  const loadRuns = async () => {
+    if (!access.selectedProject) return;
+    const { data } = await supabase.from('assessment_runs')
+      .select('id, title, period_label, status')
+      .eq('project_id', access.selectedProject)
+      .eq('is_deleted', false)
+      .eq('status', '승인완료')
+      .order('updated_at', { ascending: false }).limit(50);
+    setRuns(data || []);
+  };
 
   const loadCompanies = async () => {
     if (!access.selectedProject) return;

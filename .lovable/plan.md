@@ -1,23 +1,24 @@
 
 # 계획: Phase B 완료 + 산업보건 통합 모듈
 
-## Step 1 — Phase B 일괄 적용 (에러/감사 표준화)
+## ✅ 완료 (2026-06-22)
 
-**목표**: 모든 페이지에서 동일한 에러 메시지·감사 로그·소프트 삭제 패턴 사용.
+### Phase B-1 — 소프트 삭제 표준화
+- `is_deleted` 컬럼 추가: `projects`, `companies`, `risk_items`, `generated_batches`, `safety_cost_monthly_reports`, `approval_route_templates`
+- `SOFT_DELETE_TABLES` 화이트리스트 확장(28개 테이블, 보건 모듈 4종 포함) + `TABLE_LABELS` 한글화
+- 7개 핵심 페이지 hard delete → `useSoftDelete` 치환: `Projects`, `WorkPlans`, `MasterData`, `ProjectDetail`(companies/templates), `RiskAssessment`(items/batch), `SafetyCost`(monthly_reports), `AssessmentRunDetail`(items)
+- 잔여 hard delete는 멤버십/결재선 재구성 등 의도된 케이스
 
-대상 (25+ 페이지):
-- 핵심: `Projects`, `ProjectDetail`, `WorkerManagement`, `WorkerAttendance`, `WorkerPortal`, `RiskAssessment`, `AssessmentRuns`, `AssessmentRunDetail`, `WorkPlans`, `WorkPlanDetail`, `WorkPermits`, `SafetyCost`, `SafetyInspections`, `TbmLogs`, `LegalDuties`, `TodoDashboard`, `Approvals`, `VerificationCenter`, `MasterData`, `UserManagement`, `Settings*`
-- 모바일: `MobileScan`, `MobileWorkers`, `MobileInspect`, `MobileIncident`, `MobilePermits`
+### Phase H-3 — 통합 자동화 (백엔드)
+- 트리거 `trg_env_measurement_exceedance`: 작업환경측정 노출기준 초과 → 연결 risk_items 강도 자동 +1, 사유 자동 기록
+- RPC `apply_env_exceedance_to_risk(measurement_id)`: 수동 재적용용
+- 트리거 `trg_health_checkup_todo`: health_checkups.scheduled_date → todo_items 자동 생성/동기화, conducted_date 입력 시 자동 완료
+- 트리거 `trg_health_education_log_sync`: 보건교육 이수 시 safety_education_materials 통계 누적
+- `todo_items.source_table/source_id/category` 추가 (보건 추적 가능)
 
-작업:
-1. 모든 `catch (e: any) { toast({...}) }` → `useToastError()` 의 `handle(e, '...작업명')`
-2. 모든 `.delete()` → `useSoftDelete()` 또는 `scopedSoftDelete()`
-3. 모든 직접 `supabase.from(x).select()` (프로젝트 격리 필요한 테이블) → `scopedSelect()`
-4. 일관된 토스트 톤(성공/실패/경고) 한국어 통일
+## 진행 중
 
-검증: 페이지별 build, 핵심 시나리오 5개 Playwright 스모크 테스트.
 
----
 
 ## Step 2 — 산업보건(Health) 통합 데이터 모델
 

@@ -1117,6 +1117,9 @@ export type Database = {
         Row: {
           category: string
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           id: string
           is_default: boolean | null
           is_deleted: boolean
@@ -1127,6 +1130,9 @@ export type Database = {
         Insert: {
           category?: string
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_default?: boolean | null
           is_deleted?: boolean
@@ -1137,6 +1143,9 @@ export type Database = {
         Update: {
           category?: string
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_default?: boolean | null
           is_deleted?: boolean
@@ -1159,6 +1168,9 @@ export type Database = {
           company_id: string | null
           created_at: string | null
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           id: string
           is_default: boolean | null
           is_deleted: boolean
@@ -1173,6 +1185,9 @@ export type Database = {
           company_id?: string | null
           created_at?: string | null
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_default?: boolean | null
           is_deleted?: boolean
@@ -1187,6 +1202,9 @@ export type Database = {
           company_id?: string | null
           created_at?: string | null
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_default?: boolean | null
           is_deleted?: boolean
@@ -1312,6 +1330,9 @@ export type Database = {
       incident_reports: {
         Row: {
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           description: string
           gps_lat: number | null
           gps_lng: number | null
@@ -1333,6 +1354,9 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           description?: string
           gps_lat?: number | null
           gps_lng?: number | null
@@ -1354,6 +1378,9 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           description?: string
           gps_lat?: number | null
           gps_lng?: number | null
@@ -1421,6 +1448,9 @@ export type Database = {
         Row: {
           company_id: string | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           description: string | null
           duty_category: string
           duty_name: string
@@ -1435,6 +1465,9 @@ export type Database = {
         Insert: {
           company_id?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           description?: string | null
           duty_category?: string
           duty_name: string
@@ -1449,6 +1482,9 @@ export type Database = {
         Update: {
           company_id?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           description?: string | null
           duty_category?: string
           duty_name?: string
@@ -1558,6 +1594,9 @@ export type Database = {
       master_assignees: {
         Row: {
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           department_id: string | null
           id: string
           is_deleted: boolean
@@ -1567,6 +1606,9 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           department_id?: string | null
           id?: string
           is_deleted?: boolean
@@ -1576,6 +1618,9 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           department_id?: string | null
           id?: string
           is_deleted?: boolean
@@ -1596,6 +1641,9 @@ export type Database = {
       master_departments: {
         Row: {
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           id: string
           is_deleted: boolean
           name: string
@@ -1603,6 +1651,9 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_deleted?: boolean
           name: string
@@ -1610,6 +1661,9 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_deleted?: boolean
           name?: string
@@ -1628,6 +1682,9 @@ export type Database = {
       master_ppe: {
         Row: {
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           icon: string | null
           id: string
           is_deleted: boolean
@@ -1635,6 +1692,9 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           icon?: string | null
           id?: string
           is_deleted?: boolean
@@ -1642,6 +1702,9 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           icon?: string | null
           id?: string
           is_deleted?: boolean
@@ -1653,6 +1716,9 @@ export type Database = {
         Row: {
           category: string | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           id: string
           is_deleted: boolean
           name: string
@@ -1661,6 +1727,9 @@ export type Database = {
         Insert: {
           category?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_deleted?: boolean
           name: string
@@ -1669,6 +1738,9 @@ export type Database = {
         Update: {
           category?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_deleted?: boolean
           name?: string
@@ -3119,6 +3191,9 @@ export type Database = {
           construction_id: string
           created_at: string
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           id: string
           is_deleted: boolean
           item_name: string
@@ -3151,6 +3226,9 @@ export type Database = {
           construction_id: string
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_deleted?: boolean
           item_name?: string
@@ -3183,6 +3261,9 @@ export type Database = {
           construction_id?: string
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_deleted?: boolean
           item_name?: string
@@ -3324,6 +3405,9 @@ export type Database = {
           company_id: string | null
           created_at: string
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           generated_by: string | null
           id: string
           is_deleted: boolean
@@ -3346,6 +3430,9 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           generated_by?: string | null
           id?: string
           is_deleted?: boolean
@@ -3368,6 +3455,9 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           generated_by?: string | null
           id?: string
           is_deleted?: boolean
@@ -3510,6 +3600,9 @@ export type Database = {
           company_id: string | null
           created_at: string
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           id: string
           inspected_at: string
           inspection_type: string
@@ -3527,6 +3620,9 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           inspected_at?: string
           inspection_type?: string
@@ -3544,6 +3640,9 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           inspected_at?: string
           inspection_type?: string
@@ -3884,6 +3983,9 @@ export type Database = {
           company_name: string | null
           created_at: string
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           id: string
           is_active: boolean
           is_deleted: boolean
@@ -3909,6 +4011,9 @@ export type Database = {
           company_name?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_active?: boolean
           is_deleted?: boolean
@@ -3934,6 +4039,9 @@ export type Database = {
           company_name?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_active?: boolean
           is_deleted?: boolean
@@ -3960,6 +4068,9 @@ export type Database = {
           completed_at: string | null
           completed_by: string | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           description: string | null
           due_date: string
           frequency: string
@@ -3977,6 +4088,9 @@ export type Database = {
           completed_at?: string | null
           completed_by?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           description?: string | null
           due_date: string
           frequency?: string
@@ -3994,6 +4108,9 @@ export type Database = {
           completed_at?: string | null
           completed_by?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           description?: string | null
           due_date?: string
           frequency?: string
@@ -4227,6 +4344,9 @@ export type Database = {
           contractor_company: string
           created_at: string
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           dig_company: string
           extension_until: string | null
           form_data: Json
@@ -4267,6 +4387,9 @@ export type Database = {
           contractor_company?: string
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           dig_company?: string
           extension_until?: string | null
           form_data?: Json
@@ -4307,6 +4430,9 @@ export type Database = {
           contractor_company?: string
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           dig_company?: string
           extension_until?: string | null
           form_data?: Json
@@ -4347,6 +4473,9 @@ export type Database = {
           company_id: string | null
           created_at: string
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           end_date: string | null
           id: string
           is_deleted: boolean
@@ -4366,6 +4495,9 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           end_date?: string | null
           id?: string
           is_deleted?: boolean
@@ -4385,6 +4517,9 @@ export type Database = {
           company_id?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           end_date?: string | null
           id?: string
           is_deleted?: boolean

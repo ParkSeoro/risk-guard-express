@@ -3050,6 +3050,7 @@ export type Database = {
         Row: {
           assignee: string | null
           assignee_user_id: string | null
+          auto_adjust_reason: string | null
           batch_id: string | null
           created_at: string
           created_by: string | null
@@ -3105,6 +3106,7 @@ export type Database = {
         Insert: {
           assignee?: string | null
           assignee_user_id?: string | null
+          auto_adjust_reason?: string | null
           batch_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -3160,6 +3162,7 @@ export type Database = {
         Update: {
           assignee?: string | null
           assignee_user_id?: string | null
+          auto_adjust_reason?: string | null
           batch_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -5535,6 +5538,7 @@ export type Database = {
         Returns: undefined
       }
       get_daily_qr_status: { Args: { _token: string }; Returns: Json }
+      get_hazard_survey_public: { Args: { _qr_token: string }; Returns: Json }
       get_project_role_new: {
         Args: { _project_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["project_role"]
@@ -5607,6 +5611,16 @@ export type Database = {
       shares_project_with: {
         Args: { _target: string; _viewer: string }
         Returns: boolean
+      }
+      submit_hazard_survey_response: {
+        Args: {
+          _company_name: string
+          _qr_token: string
+          _scores: Json
+          _worker_name: string
+          _worker_phone: string
+        }
+        Returns: Json
       }
       submit_tbm_participation: {
         Args: {

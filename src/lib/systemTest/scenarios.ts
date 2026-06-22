@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { runStep, StepResult, TestContext, trackArtifact } from "./runner";
 import { FEATURE_COVERAGE, REQUIRED_COLUMNS, REQUIRED_RPCS } from "./manifest";
 import { runMobileScenario } from "./mobileScenarios";
+import { runHealthScenario } from "./healthScenario";
 
 const QA_PREFIX = "__QA__";
 
@@ -1097,6 +1098,7 @@ export const SCENARIOS = {
   drift: { label: "스키마/RPC 드리프트", run: runDriftScenario },
   coverage: { label: "기능 커버리지", run: runCoverageScenario },
   mobile: { label: "모바일 라우트/카메라", run: runMobileScenario },
+  health: { label: "보건 모듈 (건강진단/측정/조사)", run: runHealthScenario },
 } as const;
 
 export type ScenarioKey = keyof typeof SCENARIOS;

@@ -59,6 +59,7 @@ import Chemicals from "./pages/health/Chemicals";
 import EnvMeasurements from "./pages/health/EnvMeasurements";
 import HealthEducation from "./pages/health/HealthEducation";
 import HazardSurveys from "./pages/health/HazardSurveys";
+import HazardSurveyResponse from "./pages/health/HazardSurveyResponse";
 import MobileHome from "./pages/MobileHome";
 import MobileInspect from "./pages/MobileInspect";
 import MobileAlerts from "./pages/MobileAlerts";
@@ -207,6 +208,7 @@ const App = () => (
             <Route path="/tbm/:token" element={<TbmParticipate />} />
             <Route path="/worker/register" element={<WorkerRegister />} />
             <Route path="/worker/portal/:token" element={<WorkerPortal />} />
+            <Route path="/health/survey/:token" element={<HazardSurveyResponse />} />
             <Route path="/manual" element={<Manual />} />
             <Route path="/m" element={<MobileHome />} />
             <Route path="/m/inspect" element={<MobileInspect />} />

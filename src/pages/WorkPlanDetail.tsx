@@ -9,6 +9,7 @@ import RiggingPlanForm from '@/components/rigging/RiggingPlanForm';
 import { generateAttachments, type AttachmentItem } from '@/lib/attachmentTemplates';
 import StructuredSectionForm, { validateSection } from '@/components/work-plan/StructuredSectionForm';
 import AttachmentChecklist from '@/components/work-plan/AttachmentChecklist';
+import LegalCalculatorPanel from '@/components/work-plan/LegalCalculatorPanel';
 import EquipmentManager from '@/components/equipment/EquipmentManager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -515,6 +516,7 @@ const WorkPlanDetail = () => {
           )}
           <TabsTrigger value="equipment" className="text-xs gap-1"><Wrench className="h-3 w-3" />장비</TabsTrigger>
           <TabsTrigger value="checklist" className="text-xs gap-1"><CheckCircle2 className="h-3 w-3" />체크리스트</TabsTrigger>
+          <TabsTrigger value="calculator" className="text-xs gap-1"><Calculator className="h-3 w-3" />법정계산</TabsTrigger>
           <TabsTrigger value="attachments" className="text-xs">첨부파일</TabsTrigger>
           <TabsTrigger value="preview" className="text-xs gap-1"><Eye className="h-3 w-3" />미리보기</TabsTrigger>
         </TabsList>
@@ -633,6 +635,37 @@ const WorkPlanDetail = () => {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Legal Calculator Tab */}
+        <TabsContent value="calculator" className="space-y-4 mt-4">
+          <LegalCalculatorPanel
+            workType={plan.work_type}
+            onAppendToMethod={(text) => {
+              const idx = sections.findIndex(s => s.key === 'method');
+              if (idx < 0) {
+                toast({ title: '작업방법 섹션을 찾을 수 없습니다', variant: 'destructive' });
+                return;
+              }
+              const current = sections[idx].content || '';
+              // Method section may be JSON (structured) or plain text — append as plain block at end
+              let nextContent = current;
+              try {
+                const parsed = JSON.parse(current);
+                if (parsed && typeof parsed === 'object') {
+                  const note = (parsed.notes || '') + (parsed.notes ? '\n\n' : '') + text;
+                  nextContent = JSON.stringify({ ...parsed, notes: note });
+                } else {
+                  nextContent = (current ? current + '\n\n' : '') + text;
+                }
+              } catch {
+                nextContent = (current ? current + '\n\n' : '') + text;
+              }
+              handleSectionChange(idx, nextContent);
+              setIsDirty(true);
+            }}
+          />
+        </TabsContent>
+
 
         {/* Attachments Tab */}
         <TabsContent value="attachments" className="space-y-3 mt-4">

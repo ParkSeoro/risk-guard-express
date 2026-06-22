@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
   const inSevenDays = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
-  let overdue = 0, dailyLogsCreated = 0, notified = 0;
+  let overdue = 0, dailyLogsCreated = 0, notified = 0, legalDutyTodos = 0;
 
   try {
     // 1) 만료 처리

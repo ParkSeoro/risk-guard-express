@@ -11,6 +11,7 @@ import { Calculator, ClipboardCheck, AlertTriangle, CheckCircle2, Copy } from 'l
 import { useToast } from '@/hooks/use-toast';
 import {
   calcCraneLoad, calcExcavationSlope, calcFallProtection, calcConfinedSpaceAtmosphere,
+  calcScaffoldLoad, calcVentilation, calcDemolitionZone, calcElectricalApproach,
   SOIL_STANDARD_SLOPE, type CalcResult,
 } from '@/lib/workPlanCalculators';
 
@@ -171,14 +172,108 @@ function ConfinedCalc({ onAppend }: { onAppend: (t: string) => void }) {
   );
 }
 
+/* ---------- Scaffold Load ---------- */
+function ScaffoldCalc({ onAppend }: { onAppend: (t: string) => void }) {
+  const { toast } = useToast();
+  const [s, setS] = useState({ areaSqm: 10, workerCount: 4, materialKg: 300, workerWeightKg: 80 });
+  const r = useMemo(() => calcScaffoldLoad(s), [s]);
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="space-y-1"><Label className="text-xs">발판 면적(㎡)</Label><Input type="number" step="0.1" value={s.areaSqm} onChange={e => setS({ ...s, areaSqm: Number(e.target.value) || 0 })} className="h-8" /></div>
+        <div className="space-y-1"><Label className="text-xs">작업원 수</Label><Input type="number" value={s.workerCount} onChange={e => setS({ ...s, workerCount: Number(e.target.value) || 0 })} className="h-8" /></div>
+        <div className="space-y-1"><Label className="text-xs">1인+공구(kgf)</Label><Input type="number" value={s.workerWeightKg} onChange={e => setS({ ...s, workerWeightKg: Number(e.target.value) || 0 })} className="h-8" /></div>
+        <div className="space-y-1"><Label className="text-xs">자재(kgf)</Label><Input type="number" value={s.materialKg} onChange={e => setS({ ...s, materialKg: Number(e.target.value) || 0 })} className="h-8" /></div>
+      </div>
+      <ResultBlock result={r} />
+      <Button size="sm" variant="outline" className="gap-1" onClick={() => { onAppend(resultToText('비계 적재하중', r)); toast({ title: '작업방법 섹션에 추가됨' }); }}>
+        <Copy className="h-3 w-3" />계산결과를 작업방법에 추가
+      </Button>
+    </div>
+  );
+}
+
+/* ---------- Ventilation ---------- */
+function VentilationCalc({ onAppend }: { onAppend: (t: string) => void }) {
+  const { toast } = useToast();
+  const [s, setS] = useState({ workerCount: 5, perPerson: 3, machineCmm: 0, suppliedCmm: 0 });
+  const r = useMemo(() => calcVentilation(s), [s]);
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="space-y-1"><Label className="text-xs">작업원 수</Label><Input type="number" value={s.workerCount} onChange={e => setS({ ...s, workerCount: Number(e.target.value) || 0 })} className="h-8" /></div>
+        <div className="space-y-1"><Label className="text-xs">1인당(㎥/min)</Label><Input type="number" step="0.1" value={s.perPerson} onChange={e => setS({ ...s, perPerson: Number(e.target.value) || 0 })} className="h-8" /></div>
+        <div className="space-y-1"><Label className="text-xs">장비풍량(㎥/min)</Label><Input type="number" value={s.machineCmm} onChange={e => setS({ ...s, machineCmm: Number(e.target.value) || 0 })} className="h-8" /></div>
+        <div className="space-y-1"><Label className="text-xs">공급풍량(㎥/min)</Label><Input type="number" value={s.suppliedCmm} onChange={e => setS({ ...s, suppliedCmm: Number(e.target.value) || 0 })} className="h-8" /></div>
+      </div>
+      <ResultBlock result={r} />
+      <Button size="sm" variant="outline" className="gap-1" onClick={() => { onAppend(resultToText('환기 풍량', r)); toast({ title: '작업방법 섹션에 추가됨' }); }}>
+        <Copy className="h-3 w-3" />계산결과를 작업방법에 추가
+      </Button>
+    </div>
+  );
+}
+
+/* ---------- Demolition ---------- */
+function DemolitionCalc({ onAppend }: { onAppend: (t: string) => void }) {
+  const { toast } = useToast();
+  const [s, setS] = useState({ structureHeightM: 12, barrierDistanceM: 20, adjacentDistanceM: 25, method: '기계식' as const });
+  const r = useMemo(() => calcDemolitionZone(s), [s]);
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div className="space-y-1"><Label className="text-xs">구조물 높이(m)</Label><Input type="number" step="0.1" value={s.structureHeightM} onChange={e => setS({ ...s, structureHeightM: Number(e.target.value) || 0 })} className="h-8" /></div>
+        <div className="space-y-1">
+          <Label className="text-xs">해체 공법</Label>
+          <Select value={s.method} onValueChange={(v: any) => setS({ ...s, method: v })}>
+            <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {['기계식', '발파', '압쇄', '전도'].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1"><Label className="text-xs">방호선 이격(m)</Label><Input type="number" step="0.1" value={s.barrierDistanceM} onChange={e => setS({ ...s, barrierDistanceM: Number(e.target.value) || 0 })} className="h-8" /></div>
+        <div className="space-y-1"><Label className="text-xs">인접시설 이격(m)</Label><Input type="number" step="0.1" value={s.adjacentDistanceM} onChange={e => setS({ ...s, adjacentDistanceM: Number(e.target.value) || 0 })} className="h-8" /></div>
+      </div>
+      <ResultBlock result={r} />
+      <Button size="sm" variant="outline" className="gap-1" onClick={() => { onAppend(resultToText('해체 영향권', r)); toast({ title: '작업방법 섹션에 추가됨' }); }}>
+        <Copy className="h-3 w-3" />계산결과를 작업방법에 추가
+      </Button>
+    </div>
+  );
+}
+
+/* ---------- Electrical ---------- */
+function ElectricalCalc({ onAppend }: { onAppend: (t: string) => void }) {
+  const { toast } = useToast();
+  const [s, setS] = useState({ voltageKv: 22.9, actualCm: 100, insulated: false });
+  const r = useMemo(() => calcElectricalApproach(s), [s]);
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+        <div className="space-y-1"><Label className="text-xs">전압(kV)</Label><Input type="number" step="0.1" value={s.voltageKv} onChange={e => setS({ ...s, voltageKv: Number(e.target.value) || 0 })} className="h-8" /></div>
+        <div className="space-y-1"><Label className="text-xs">실제 이격(cm)</Label><Input type="number" value={s.actualCm} onChange={e => setS({ ...s, actualCm: Number(e.target.value) || 0 })} className="h-8" /></div>
+        <div className="flex items-center gap-2"><Switch checked={s.insulated} onCheckedChange={(v) => setS({ ...s, insulated: v })} /><Label className="text-xs">절연용 보호구 사용</Label></div>
+      </div>
+      <ResultBlock result={r} />
+      <Button size="sm" variant="outline" className="gap-1" onClick={() => { onAppend(resultToText('전기 접근한계거리', r)); toast({ title: '작업방법 섹션에 추가됨' }); }}>
+        <Copy className="h-3 w-3" />계산결과를 작업방법에 추가
+      </Button>
+    </div>
+  );
+}
+
 export default function LegalCalculatorPanel({ workType, onAppendToMethod }: Props) {
   const map: Record<string, { label: string; Comp: (p: { onAppend: (t: string) => void }) => JSX.Element }[]> = {
     heavy_lifting: [{ label: '크레인 양중 안전율', Comp: CraneCalc }],
     steel: [{ label: '크레인 양중 안전율', Comp: CraneCalc }, { label: '추락 방호조치', Comp: FallCalc }],
     excavation: [{ label: '굴착 사면 안전율', Comp: ExcavationCalc }],
     high_work: [{ label: '추락 방호조치', Comp: FallCalc }],
-    scaffold: [{ label: '추락 방호조치', Comp: FallCalc }],
-    confined_space: [{ label: '밀폐공간 가스농도', Comp: ConfinedCalc }],
+    scaffold: [{ label: '비계 적재하중', Comp: ScaffoldCalc }, { label: '추락 방호조치', Comp: FallCalc }],
+    confined_space: [{ label: '밀폐공간 가스농도', Comp: ConfinedCalc }, { label: '환기 풍량', Comp: VentilationCalc }],
+    tunnel: [{ label: '환기 풍량', Comp: VentilationCalc }, { label: '밀폐공간 가스농도', Comp: ConfinedCalc }],
+    demolition: [{ label: '해체 영향권', Comp: DemolitionCalc }],
+    electrical: [{ label: '전기 접근한계거리', Comp: ElectricalCalc }],
   };
   const list = map[workType] || [];
   const append = (t: string) => onAppendToMethod?.(t);

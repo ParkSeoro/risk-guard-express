@@ -266,16 +266,122 @@ export function calcConfinedSpaceAtmosphere(input: ConfinedSpaceInput): CalcResu
  * 필요 풍량 Q (㎥/min) = N × q
  *   N: 작업인원, q: 1인당 필요 풍량 (3 ㎥/min 권장)
  * ============================================================ */
-export function calcVentilation(workerCount: number, perPerson = 3, machineCfm = 0) {
-  const needed = workerCount * perPerson + machineCfm;
+export interface VentilationInput {
+  workerCount: number;
+  perPerson?: number;
+  machineCmm?: number;
+  /** 공급 풍량(현장 실측, ㎥/min) — 입력 시 적합 판정 */
+  suppliedCmm?: number;
+}
+export function calcVentilation(input: VentilationInput): CalcResult {
+  const per = input.perPerson ?? 3;
+  const needed = input.workerCount * per + (input.machineCmm ?? 0);
+  const supplied = input.suppliedCmm ?? 0;
+  const hasSupplied = supplied > 0;
+  const safe = !hasSupplied || supplied >= needed;
   return {
-    verdict: "pass" as const,
-    conclusion: `필요 풍량 ${needed.toFixed(1)} ㎥/min 이상 (작업원 ${workerCount}명)`,
+    verdict: !hasSupplied ? "warn" : safe ? "pass" : "fail",
+    conclusion: !hasSupplied
+      ? `필요 풍량 ${needed.toFixed(1)} ㎥/min — 실측 풍량 입력 권장`
+      : safe
+      ? `적합 (공급 ${supplied} ≥ 필요 ${needed.toFixed(1)} ㎥/min)`
+      : `부적합 — 공급 ${supplied} < 필요 ${needed.toFixed(1)} ㎥/min`,
     breakdown: {
-      "작업원 풍량": `${workerCount} × ${perPerson} = ${workerCount * perPerson} ㎥/min`,
-      "장비 풍량": `${machineCfm} ㎥/min`,
+      "작업원 풍량": `${input.workerCount} × ${per} = ${input.workerCount * per} ㎥/min`,
+      "장비 풍량": `${input.machineCmm ?? 0} ㎥/min`,
       "필요 총 풍량": `${needed.toFixed(1)} ㎥/min`,
+      "실측 공급 풍량": hasSupplied ? `${supplied} ㎥/min` : "미입력",
     },
     legalBasis: "KOSHA GUIDE C-49, 산업안전보건기준에 관한 규칙 제628조",
+    recommendations: safe ? [] : ["송풍기 용량 증대 또는 환기덕트 추가", "작업인원/장비 분산 운영"],
+  };
+}
+
+/* ============================================================
+ * 7) 해체작업 — 전도 영향권/이격거리 (산안기준규칙 제207조, 해체공사표준안전작업지침)
+ * 영향권 반경 = 구조물 높이 × 1.5 (안전여유)
+ * ============================================================ */
+export interface DemolitionInput {
+  structureHeightM: number;
+  /** 보호울타리(방호선) 이격거리 (m) */
+  barrierDistanceM: number;
+  /** 인접 시설/도로 거리 (m) */
+  adjacentDistanceM: number;
+  method: "기계식" | "발파" | "압쇄" | "전도";
+}
+export function calcDemolitionZone(input: DemolitionInput): CalcResult {
+  const factor = input.method === "발파" ? 2.0 : input.method === "전도" ? 1.8 : 1.5;
+  const requiredM = input.structureHeightM * factor;
+  const barrierOk = input.barrierDistanceM >= requiredM;
+  const adjacentOk = input.adjacentDistanceM >= requiredM;
+  const safe = barrierOk && adjacentOk;
+  return {
+    verdict: safe ? "pass" : "fail",
+    conclusion: safe
+      ? `적합 — 영향권 ${requiredM.toFixed(1)}m 외부에 방호선/인접시설 확보`
+      : `부적합 — 영향권 ${requiredM.toFixed(1)}m 내에 보호울타리 또는 인접시설 위치`,
+    breakdown: {
+      "구조물 높이": `${input.structureHeightM} m`,
+      "해체 공법": input.method,
+      "영향권 계수": `× ${factor}`,
+      "필요 이격거리": `${requiredM.toFixed(1)} m`,
+      "방호선 이격": `${input.barrierDistanceM} m`,
+      "인접시설 이격": `${input.adjacentDistanceM} m`,
+    },
+    legalBasis: "산업안전보건기준에 관한 규칙 제207조, KOSHA C-43(해체공사)",
+    recommendations: safe ? [] : [
+      "방호선/보호울타리 외측 재배치",
+      "발파·전도 공법 대신 기계식/압쇄 검토",
+      "교통통제·인근 출입통제 계획 보완",
+    ],
+  };
+}
+
+/* ============================================================
+ * 8) 전기작업 — 충전부 접근한계거리 (산안기준규칙 제321조 별표 5)
+ * ============================================================ */
+const ELECTRIC_APPROACH_LIMIT: Array<{ maxKv: number; limitCm: number }> = [
+  { maxKv: 0.3, limitCm: 30 },
+  { maxKv: 0.75, limitCm: 30 },
+  { maxKv: 2, limitCm: 45 },
+  { maxKv: 15, limitCm: 60 },
+  { maxKv: 37, limitCm: 90 },
+  { maxKv: 88, limitCm: 110 },
+  { maxKv: 121, limitCm: 130 },
+  { maxKv: 145, limitCm: 150 },
+  { maxKv: 169, limitCm: 170 },
+  { maxKv: 242, limitCm: 230 },
+  { maxKv: 362, limitCm: 380 },
+  { maxKv: 550, limitCm: 550 },
+  { maxKv: 800, limitCm: 790 },
+];
+export interface ElectricalApproachInput {
+  voltageKv: number;
+  /** 작업자/장비와 충전부 실제 거리 (cm) */
+  actualCm: number;
+  insulated: boolean;
+}
+export function calcElectricalApproach(input: ElectricalApproachInput): CalcResult {
+  const rule = ELECTRIC_APPROACH_LIMIT.find(r => input.voltageKv <= r.maxKv) ?? ELECTRIC_APPROACH_LIMIT[ELECTRIC_APPROACH_LIMIT.length - 1];
+  const requiredCm = input.insulated ? Math.max(30, rule.limitCm * 0.6) : rule.limitCm;
+  const safe = input.actualCm >= requiredCm;
+  return {
+    verdict: safe ? "pass" : "fail",
+    conclusion: safe
+      ? `적합 — 실제 ${input.actualCm}cm ≥ 한계 ${requiredCm}cm`
+      : `부적합 — 실제 ${input.actualCm}cm < 접근한계 ${requiredCm}cm`,
+    breakdown: {
+      "전압": `${input.voltageKv} kV`,
+      "법정 접근한계": `${rule.limitCm} cm`,
+      "절연용 보호구": input.insulated ? "사용 (60% 단축 적용)" : "미사용",
+      "적용 한계거리": `${requiredCm} cm`,
+      "실제 이격": `${input.actualCm} cm`,
+    },
+    legalBasis: "산업안전보건기준에 관한 규칙 제321조 별표 5",
+    recommendations: safe ? [] : [
+      "정전작업 절차로 전환 (가능 시)",
+      "절연용 방호구/보호구 추가 사용",
+      "활선근접 작업감시인(전기담당) 배치",
+    ],
   };
 }

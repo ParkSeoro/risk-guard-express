@@ -126,8 +126,9 @@ const WorkPlans = () => {
       created_by: user?.id,
       start_date: newPlan.startDate,
       end_date: newPlan.endDate,
+      assessment_run_id: newPlan.assessmentRunId || null,
       version: 1,
-    }).select().single();
+    } as any).select().single();
 
     if (error) {
       toast({ title: '생성 실패', description: error.message, variant: 'destructive' });

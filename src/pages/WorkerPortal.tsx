@@ -76,13 +76,14 @@ export default function WorkerPortal() {
       const w = data as WorkerInfo;
       setWorker(w);
       await loadDaily(w.id);
-      const { data: mats } = await supabase
-        .from("safety_education_materials")
-        .select("id,title,work_overview,key_hazards")
-        .eq("project_id", w.project_id)
-        .order("created_at", { ascending: false })
-        .limit(5);
-      setMaterials(mats || []);
+      const { data: today } = await supabase.rpc("get_worker_today_content", { _token: token });
+      const t = today as any;
+      if (t?.success) {
+        setMaterials(t.materials || []);
+        setHazards(t.hazards || []);
+        setRuns(t.runs || []);
+        setWorkDate(t.work_date || "");
+      }
     })();
   }, [token]);
 

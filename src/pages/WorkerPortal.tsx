@@ -35,6 +35,9 @@ export default function WorkerPortal() {
   const [worker, setWorker] = useState<WorkerInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [materials, setMaterials] = useState<any[]>([]);
+  const [hazards, setHazards] = useState<any[]>([]);
+  const [runs, setRuns] = useState<any[]>([]);
+  const [workDate, setWorkDate] = useState<string>("");
   const [daily, setDaily] = useState<DailyQR | null>(null);
   const sigEntry = useRef<SignatureCanvas>(null);
   const sigExit = useRef<SignatureCanvas>(null);

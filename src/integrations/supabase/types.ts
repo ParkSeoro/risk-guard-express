@@ -5329,6 +5329,7 @@ export type Database = {
       }
       work_plans: {
         Row: {
+          assessment_run_id: string | null
           attachments: Json
           auto_education_enabled: boolean
           company_id: string | null
@@ -5351,6 +5352,7 @@ export type Database = {
           work_type: string
         }
         Insert: {
+          assessment_run_id?: string | null
           attachments?: Json
           auto_education_enabled?: boolean
           company_id?: string | null
@@ -5373,6 +5375,7 @@ export type Database = {
           work_type: string
         }
         Update: {
+          assessment_run_id?: string | null
           attachments?: Json
           auto_education_enabled?: boolean
           company_id?: string | null
@@ -5395,6 +5398,13 @@ export type Database = {
           work_type?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "work_plans_assessment_run_id_fkey"
+            columns: ["assessment_run_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_runs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "work_plans_company_id_fkey"
             columns: ["company_id"]
@@ -5930,6 +5940,7 @@ export type Database = {
         Args: { _user_id: string }
         Returns: undefined
       }
+      generate_legal_duty_todos: { Args: never; Returns: number }
       generate_worker_required_items: {
         Args: { _worker_id: string }
         Returns: number

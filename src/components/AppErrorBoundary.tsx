@@ -1,0 +1,53 @@
+import React from "react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+interface State { error: Error | null; }
+
+export class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  State
+> {
+  state: State = { error: null };
+
+  static getDerivedStateFromError(error: Error): State {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    // eslint-disable-next-line no-console
+    console.error("[AppErrorBoundary]", error, info.componentStack);
+  }
+
+  reset = () => this.setState({ error: null });
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-[60vh] flex items-center justify-center p-6">
+          <div className="max-w-md w-full bg-card border-2 border-destructive/30 rounded-xl p-6 shadow-lg space-y-4">
+            <div className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              <h2 className="font-bold text-lg">화면을 불러오지 못했습니다</h2>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              일시적인 오류가 발생했습니다. 새로고침하거나 이전 화면으로 돌아가주세요.
+            </p>
+            <pre className="text-xs bg-muted/50 rounded p-2 overflow-auto max-h-32">
+              {this.state.error.message}
+            </pre>
+            <div className="flex gap-2">
+              <Button onClick={() => { this.reset(); window.location.reload(); }} size="sm">
+                <RefreshCw className="h-3.5 w-3.5 mr-1" /> 새로고침
+              </Button>
+              <Button onClick={() => { this.reset(); window.history.back(); }} size="sm" variant="outline">
+                이전 화면
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}

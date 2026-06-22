@@ -6,6 +6,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { NotificationBell } from "@/components/NotificationBell";
 import { HelpButton } from "@/components/HelpButton";
 import { TutorialOverlay } from "@/components/TutorialOverlay";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
+
 import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createContext, useContext } from "react";
@@ -83,8 +85,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </header>
             <TutorialOverlay />
             <main className="flex-1 overflow-auto p-6 bg-background">
-              {children}
+              <AppErrorBoundary>{children}</AppErrorBoundary>
             </main>
+
           </div>
         </div>
       </SidebarProvider>

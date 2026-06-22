@@ -4557,9 +4557,61 @@ export type Database = {
           },
         ]
       }
+      worker_daily_qr: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          project_id: string
+          qr_token: string
+          used_for_entry: boolean
+          used_for_exit: boolean
+          work_date: string
+          worker_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          id?: string
+          project_id: string
+          qr_token: string
+          used_for_entry?: boolean
+          used_for_exit?: boolean
+          work_date: string
+          worker_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          project_id?: string
+          qr_token?: string
+          used_for_entry?: boolean
+          used_for_exit?: boolean
+          work_date?: string
+          worker_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "worker_daily_qr_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "worker_daily_qr_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       worker_entry_logs: {
         Row: {
           created_at: string
+          daily_qr_id: string | null
           education_confirmed: boolean
           entry_at: string
           entry_method: string
@@ -4576,6 +4628,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          daily_qr_id?: string | null
           education_confirmed?: boolean
           entry_at?: string
           entry_method?: string
@@ -4592,6 +4645,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          daily_qr_id?: string | null
           education_confirmed?: boolean
           entry_at?: string
           entry_method?: string
@@ -4606,7 +4660,15 @@ export type Database = {
           work_permit_id?: string | null
           worker_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "worker_entry_logs_daily_qr_id_fkey"
+            columns: ["daily_qr_id"]
+            isOneToOne: false
+            referencedRelation: "worker_daily_qr"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       worker_opinions: {
         Row: {
@@ -4728,6 +4790,7 @@ export type Database = {
         Args: { _user_id: string }
         Returns: undefined
       }
+      get_daily_qr_status: { Args: { _token: string }; Returns: Json }
       get_project_role_new: {
         Args: { _project_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["project_role"]
@@ -4765,6 +4828,7 @@ export type Database = {
         Args: { _project_id: string; _user_id: string }
         Returns: boolean
       }
+      issue_daily_qr: { Args: { _worker_id: string }; Returns: Json }
       list_joinable_projects: {
         Args: never
         Returns: {
@@ -4806,6 +4870,18 @@ export type Database = {
           _user_agent: string
           _worker_name: string
           _worker_phone: string
+        }
+        Returns: Json
+      }
+      worker_daily_scan: {
+        Args: {
+          _action: string
+          _edu_confirmed?: boolean
+          _no_accident?: boolean
+          _ra_confirmed?: boolean
+          _signature: string
+          _tbm_confirmed?: boolean
+          _token: string
         }
         Returns: Json
       }

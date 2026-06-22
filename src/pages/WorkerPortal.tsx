@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import SignatureCanvas from "react-signature-canvas";
+import { QRCodeCanvas } from "qrcode.react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Loader2, HardHat, ShieldCheck, FileText, LogIn, LogOut, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, HardHat, FileText, LogIn, LogOut, AlertCircle, CheckCircle2, QrCode } from "lucide-react";
 import { toast } from "sonner";
 
 type WorkerInfo = {
@@ -21,13 +22,20 @@ type WorkerInfo = {
   education_confirmed_at?: string | null;
 };
 
+type DailyQR = {
+  qr_token: string;
+  work_date: string;
+  expires_at: string;
+  used_for_entry: boolean;
+  used_for_exit: boolean;
+};
+
 export default function WorkerPortal() {
   const { token } = useParams();
   const [worker, setWorker] = useState<WorkerInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [materials, setMaterials] = useState<any[]>([]);
-  const [openLog, setOpenLog] = useState<any | null>(null);
-  const [activePermit, setActivePermit] = useState<any | null>(null);
+  const [daily, setDaily] = useState<DailyQR | null>(null);
   const sigEntry = useRef<SignatureCanvas>(null);
   const sigExit = useRef<SignatureCanvas>(null);
   const [raCheck, setRaCheck] = useState(false);
@@ -35,6 +43,20 @@ export default function WorkerPortal() {
   const [tbmCheck, setTbmCheck] = useState(false);
   const [noAccident, setNoAccident] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const loadDaily = async (workerId: string) => {
+    const { data } = await supabase.rpc("issue_daily_qr", { _worker_id: workerId });
+    const r = data as any;
+    if (r?.success) {
+      setDaily({
+        qr_token: r.qr_token,
+        work_date: r.work_date,
+        expires_at: r.expires_at,
+        used_for_entry: r.used_for_entry,
+        used_for_exit: r.used_for_exit,
+      });
+    }
+  };
 
   useEffect(() => {
     if (!token) return;
@@ -47,32 +69,14 @@ export default function WorkerPortal() {
       }
       const w = data as WorkerInfo;
       setWorker(w);
-      // load education materials
+      await loadDaily(w.id);
       const { data: mats } = await supabase
         .from("safety_education_materials")
-        .select("id,title,work_overview,key_hazards,safety_measures,prohibited_actions,ppe_requirements,tbm_summary")
+        .select("id,title,work_overview,key_hazards")
         .eq("project_id", w.project_id)
         .order("created_at", { ascending: false })
         .limit(5);
       setMaterials(mats || []);
-      // check open entry log today
-      const today = new Date().toISOString().slice(0, 10);
-      const { data: log } = await supabase
-        .from("worker_entry_logs")
-        .select("*")
-        .eq("worker_id", w.id)
-        .gte("entry_at", today + "T00:00:00")
-        .is("exit_at", null)
-        .order("entry_at", { ascending: false })
-        .limit(1);
-      if (log && log[0]) setOpenLog(log[0]);
-      // active permit (today, approved, that includes this worker)
-      const { data: permits } = await supabase
-        .from("work_permit_workers")
-        .select("work_permit_id, work_permits!inner(id, work_name, status, permit_date)")
-        .eq("worker_id", w.id);
-      const todayPermit = (permits as any[] || []).find(p => p.work_permits?.status === "승인" && p.work_permits?.permit_date === today);
-      if (todayPermit) setActivePermit(todayPermit.work_permits);
     })();
   }, [token]);
 
@@ -84,49 +88,45 @@ export default function WorkerPortal() {
     toast.success("교육 확인 완료");
   };
 
-  const submitEntry = async () => {
-    if (!token) return;
-    if (sigEntry.current?.isEmpty()) { toast.error("서명을 입력해주세요"); return; }
-    if (!raCheck || !eduCheck) { toast.error("위험성평가/교육 확인이 필요합니다"); return; }
-    const sig = sigEntry.current!.getCanvas().toDataURL("image/png");
+  const submitScan = async (action: "entry" | "exit") => {
+    if (!daily || !worker) return;
+    const sigRef = action === "entry" ? sigEntry : sigExit;
+    if (sigRef.current?.isEmpty()) { toast.error("서명을 입력해주세요"); return; }
+    if (action === "entry" && (!raCheck || !eduCheck)) {
+      toast.error("위험성평가/교육 확인이 필요합니다"); return;
+    }
+    if (action === "exit" && !noAccident) { toast.error("무재해 확인이 필요합니다"); return; }
+
+    const sig = sigRef.current!.getCanvas().toDataURL("image/png");
     setSubmitting(true);
-    const { data, error } = await supabase.rpc("worker_entry", {
-      _token: token,
-      _work_permit_id: activePermit?.id || null,
+    const { data, error } = await supabase.rpc("worker_daily_scan", {
+      _token: daily.qr_token,
+      _action: action,
       _signature: sig,
       _ra_confirmed: raCheck,
       _edu_confirmed: eduCheck,
       _tbm_confirmed: tbmCheck,
+      _no_accident: noAccident,
     });
     setSubmitting(false);
-    const result = data as any;
-    if (error || result?.error) { toast.error("입장 실패: " + (error?.message || result?.error)); return; }
-    toast.success("입장 완료");
-    setOpenLog({ id: result.log_id, entry_at: new Date().toISOString() });
-  };
-
-  const submitExit = async () => {
-    if (!token) return;
-    if (sigExit.current?.isEmpty()) { toast.error("서명을 입력해주세요"); return; }
-    if (!noAccident) { toast.error("무재해 확인이 필요합니다"); return; }
-    const sig = sigExit.current!.getCanvas().toDataURL("image/png");
-    setSubmitting(true);
-    const { data, error } = await supabase.rpc("worker_exit", {
-      _token: token, _signature: sig, _no_accident: noAccident,
-    });
-    setSubmitting(false);
-    const result = data as any;
-    if (error || result?.error) { toast.error("퇴장 실패: " + (error?.message || result?.error)); return; }
-    toast.success("퇴장 완료. 수고하셨습니다.");
-    setOpenLog(null);
-    setNoAccident(false);
+    const r = data as any;
+    if (error || r?.error) {
+      toast.error((action === "entry" ? "출근" : "퇴근") + " 실패: " + (r?.message || r?.error || error?.message));
+      return;
+    }
+    toast.success(action === "entry" ? "출근 완료" : "퇴근 완료. 수고하셨습니다.");
+    await loadDaily(worker.id);
+    sigRef.current?.clear();
+    if (action === "exit") setNoAccident(false);
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   if (!worker) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">등록된 근로자가 아닙니다.</div>;
 
   const eduOk = !!worker.education_confirmed_at;
-  const canEnter = !!activePermit && eduOk;
+  const expired = daily ? new Date(daily.expires_at) < new Date() : false;
+  const canEntry = !!daily && !daily.used_for_entry && !expired && eduOk;
+  const canExit = !!daily && daily.used_for_entry && !daily.used_for_exit && !expired;
 
   return (
     <div className="min-h-screen bg-muted/30 p-4">
@@ -141,37 +141,54 @@ export default function WorkerPortal() {
                 <CardTitle>{worker.name}</CardTitle>
                 <div className="text-xs text-muted-foreground">{worker.company_name} · {worker.phone}</div>
               </div>
-              {openLog ? (
-                <Badge className="bg-success">입장중</Badge>
-              ) : canEnter ? (
-                <Badge variant="secondary">대기</Badge>
+              {daily?.used_for_exit ? (
+                <Badge variant="secondary">퇴근완료</Badge>
+              ) : daily?.used_for_entry ? (
+                <Badge className="bg-success">출근중</Badge>
               ) : (
-                <Badge variant="destructive">작업 불가</Badge>
+                <Badge variant="outline">대기</Badge>
               )}
             </div>
           </CardHeader>
         </Card>
 
-        {!canEnter && !openLog && (
-          <Card className="border-destructive/50 bg-destructive/5">
-            <CardContent className="pt-4 flex gap-2">
-              <AlertCircle className="h-5 w-5 text-destructive shrink-0" />
-              <div className="text-sm">
-                <strong>작업 불가</strong>
-                <ul className="mt-1 list-disc pl-4 space-y-0.5">
-                  {!activePermit && <li>당일 승인된 작업허가서가 없습니다</li>}
-                  {!eduOk && <li>교육 확인이 필요합니다</li>}
-                </ul>
+        {/* 오늘의 QR */}
+        {daily && (
+          <Card className="border-primary/40">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2">
+                <QrCode className="h-4 w-4" /> 오늘의 QR ({daily.work_date})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center gap-2 pb-4">
+              <div className="bg-white p-3 rounded border">
+                <QRCodeCanvas value={daily.qr_token} size={180} />
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {expired ? "만료됨 — 새로고침하여 다시 발급받으세요" : `자정까지 유효 · 안전관리자에게 보여줄 수 있습니다`}
+              </div>
+              <div className="flex gap-3 text-xs">
+                <span>출근: {daily.used_for_entry ? "✓" : "—"}</span>
+                <span>퇴근: {daily.used_for_exit ? "✓" : "—"}</span>
               </div>
             </CardContent>
           </Card>
         )}
 
-        <Tabs defaultValue={openLog ? "exit" : (eduOk ? "entry" : "education")}>
+        {!eduOk && (
+          <Card className="border-destructive/50 bg-destructive/5">
+            <CardContent className="pt-4 flex gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive shrink-0" />
+              <div className="text-sm"><strong>교육 확인 필요</strong> — 아래 [교육] 탭에서 확인하세요.</div>
+            </CardContent>
+          </Card>
+        )}
+
+        <Tabs defaultValue={!eduOk ? "education" : canEntry ? "entry" : "exit"}>
           <TabsList className="grid grid-cols-3 w-full h-12">
             <TabsTrigger value="education" className="text-base"><FileText className="h-5 w-5 mr-1" />교육</TabsTrigger>
-            <TabsTrigger value="entry" className="text-base" disabled={!!openLog}><LogIn className="h-5 w-5 mr-1" />입장</TabsTrigger>
-            <TabsTrigger value="exit" className="text-base" disabled={!openLog}><LogOut className="h-5 w-5 mr-1" />퇴장</TabsTrigger>
+            <TabsTrigger value="entry" className="text-base" disabled={!canEntry}><LogIn className="h-5 w-5 mr-1" />출근</TabsTrigger>
+            <TabsTrigger value="exit" className="text-base" disabled={!canExit}><LogOut className="h-5 w-5 mr-1" />퇴근</TabsTrigger>
           </TabsList>
 
           <TabsContent value="education">
@@ -201,11 +218,6 @@ export default function WorkerPortal() {
           <TabsContent value="entry">
             <Card>
               <CardContent className="pt-4 space-y-3">
-                {activePermit && (
-                  <div className="text-sm bg-muted p-2 rounded">
-                    <strong>오늘 작업:</strong> {activePermit.work_name}
-                  </div>
-                )}
                 <Label className="flex items-center gap-2 text-base">
                   <Checkbox
                     checked={raCheck && eduCheck && tbmCheck}
@@ -220,8 +232,8 @@ export default function WorkerPortal() {
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => sigEntry.current?.clear()}>지우기</Button>
                 </div>
-                <Button className="w-full h-14 text-lg" onClick={submitEntry} disabled={submitting || !canEnter}>
-                  {submitting && <Loader2 className="h-5 w-5 mr-2 animate-spin" />}<LogIn className="h-5 w-5 mr-2" />입장
+                <Button className="w-full h-14 text-lg" onClick={() => submitScan("entry")} disabled={submitting || !canEntry}>
+                  {submitting && <Loader2 className="h-5 w-5 mr-2 animate-spin" />}<LogIn className="h-5 w-5 mr-2" />출근
                 </Button>
               </CardContent>
             </Card>
@@ -230,9 +242,6 @@ export default function WorkerPortal() {
           <TabsContent value="exit">
             <Card>
               <CardContent className="pt-4 space-y-3">
-                <div className="text-sm bg-muted p-2 rounded">
-                  입장: {openLog && new Date(openLog.entry_at).toLocaleString("ko-KR")}
-                </div>
                 <Label className="flex items-center gap-2 text-base">
                   <Checkbox checked={noAccident} onCheckedChange={v => setNoAccident(!!v)} />
                   <strong>무재해 확인</strong>
@@ -244,8 +253,8 @@ export default function WorkerPortal() {
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => sigExit.current?.clear()}>지우기</Button>
                 </div>
-                <Button className="w-full h-14 text-lg" onClick={submitExit} disabled={submitting}>
-                  {submitting && <Loader2 className="h-5 w-5 mr-2 animate-spin" />}<LogOut className="h-5 w-5 mr-2" />퇴장
+                <Button className="w-full h-14 text-lg" onClick={() => submitScan("exit")} disabled={submitting || !canExit}>
+                  {submitting && <Loader2 className="h-5 w-5 mr-2 animate-spin" />}<LogOut className="h-5 w-5 mr-2" />퇴근
                 </Button>
               </CardContent>
             </Card>

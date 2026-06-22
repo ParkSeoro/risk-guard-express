@@ -174,14 +174,22 @@ export default function WorkerManagement() {
           <DialogHeader><DialogTitle>근로자 등록 QR</DialogTitle></DialogHeader>
           <div className="flex flex-col items-center gap-3 p-4">
             <div className="w-full">
-              <Select value={companyId || "__none__"} onValueChange={(v) => setCompanyId(v === "__none__" ? "" : v)}>
+              <Select
+                value={companyId || "__none__"}
+                onValueChange={(v) => setCompanyId(v === "__none__" ? "" : v)}
+                disabled={companyLocked}
+              >
                 <SelectTrigger><SelectValue placeholder="소속사 자동 지정 (선택)" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">소속사 미지정 (근로자가 직접 입력)</SelectItem>
                   {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <div className="text-[11px] text-muted-foreground mt-1">선택된 회사가 QR에 포함되어 자동 지정됩니다.</div>
+              <div className="text-[11px] text-muted-foreground mt-1">
+                {companyLocked
+                  ? "협력사 권한이라 본인 소속사로 자동 지정됩니다 (변경 불가)."
+                  : "선택된 회사가 QR에 포함되어 자동 지정됩니다."}
+              </div>
             </div>
             {registerUrl && <QRCodeSVG value={registerUrl} size={240} level="H" />}
             <div className="text-xs text-muted-foreground break-all text-center">{registerUrl}</div>

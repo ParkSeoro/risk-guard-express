@@ -266,6 +266,17 @@ const WorkPlans = () => {
                     </div>
                   )}
                   <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">연계 위험성평가 (승인완료, 선택)</Label>
+                    <Select value={newPlan.assessmentRunId} onValueChange={v => setNewPlan(p => ({ ...p, assessmentRunId: v }))}>
+                      <SelectTrigger><SelectValue placeholder="연결할 위험성평가 선택 (선택사항)" /></SelectTrigger>
+                      <SelectContent>
+                        {runs.length === 0
+                          ? <SelectItem value="__none__" disabled>승인완료된 위험성평가가 없습니다</SelectItem>
+                          : runs.map(r => <SelectItem key={r.id} value={r.id}>{r.title || r.period_label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
                     <Label className="text-xs font-medium">제목 (선택)</Label>
                     <Input value={newPlan.title} onChange={e => setNewPlan(p => ({ ...p, title: e.target.value }))} placeholder="미입력 시 자동 생성" className="h-9" />
                   </div>

@@ -1,234 +1,102 @@
 
-# 권한 구조 DB 재설계 계획
+# 안전관리시스템 완결화 로드맵
 
-## 1. 현재 구조 진단 (실측)
+ChatGPT 진단과 제가 본 `/consistency-audit` 결과를 종합하면, 결론은 같습니다:
+**"문서 작성 기능은 많은데, 통제·신뢰 레이어가 아직 표준화되지 않았다."**
+화면을 더 늘리기 전에 **기초 통제를 강제(enforce)** 하고, 그 위에 운영/법적 모듈을 얹는 순서로 가야 합니다.
 
-### 테이블 / 컬럼
-```
-user_roles      (id, user_id, role: app_role)                       — 3 master + 2 safety_manager + 1 project_admin
-project_members (id, project_id, user_id, role: app_role,
-                 company TEXT, company_id UUID, position TEXT)      — 8건 / company_id=NULL 8건(!)
-profiles        (user_id, display_name, phone, company TEXT,
-                 position TEXT, account_status)
-companies       (id, project_id, type, name, parent_company_id …)
-```
-
-### app_role enum (현재)
-`{master, project_admin, safety_manager, contractor, viewer, user}` ← 글로벌과 프로젝트 역할이 한 enum에 섞임
-
-### 발견된 결정적 결함
-| # | 문제 | 영향 |
-|---|------|------|
-| **B1** | `companies` RLS 정책에서 `get_project_role(project_id, auth.uid())` — 함수 시그니처는 `(_user_id, _project_id)`. **인수 순서가 뒤집힘** | 협력업체 격리가 사실상 무력화. project_admin이 회사를 만들지 못하거나, 잘못된 회사에 접근 가능 |
-| **B2** | `user_roles`에 `safety_manager`, `project_admin` 같은 **프로젝트 역할**이 저장됨 | "전 프로젝트에서 PM"이 되는 권한 부풀림. `has_role()` 호출 시 글로벌 권한처럼 통과 |
-| **B3** | `project_members.company_id`가 모두 NULL(8/8) | 협력업체 데이터 격리(`applyCompanyFilter`)가 실질 동작 안 함 |
-| **B4** | `position`이 free-text(TEXT) — 결재선/조직매핑이 문자열 매칭 | 오타·표기차이로 결재선 매칭 실패 |
-| **B5** | `profiles.company`/`profiles.position`이 프로젝트 무관한 단일 값 | 한 사용자가 프로젝트마다 회사/직책이 다를 수 없음 |
-| **B6** | `project_members.company` TEXT vs `company_id` UUID 이중 저장 | SSOT 위반 (메모리의 Company Data SSOT 정책과 충돌) |
+아래는 **4단계 로드맵**입니다. 각 단계는 다음 단계의 전제조건입니다.
 
 ---
 
-## 2. 목표 구조 (To-Be)
+## Phase 1. 기초 통제 강제 (Foundation Enforcement) — 1순위
 
-### 권한 모델 (3계층)
+> 목표: "화면이 늘어도 데이터 신뢰가 흔들리지 않는다."
+> 지금까지는 각 페이지 개발자(=저)가 규칙을 "지키도록" 했지만, 이제는 **시스템이 강제**하도록 바꿉니다.
 
-```
-[Global]   user_roles            ─ master 만 허용 (시스템 전체 관리)
-              │
-[Project]  project_members       ─ 프로젝트 멤버십 + role + company_id + position
-              │
-[Company]  companies (type)      ─ client / gc / contractor 위계
-```
+1. **프로젝트/회사 격리 SSOT 헬퍼**
+   - `src/lib/dataAccess.ts` 신설: `scopedQuery(table, { projectId, companyId, role })` 한 줄로 모든 조회·쓰기 통과
+   - 모든 페이지의 `supabase.from(...)` 직접 호출을 점진적으로 이 헬퍼로 치환
+   - DB측: `risk_items`, `work_plans`, `work_permits`, `safety_inspections`, `incident_reports`, `tbm_sessions`, `safety_cost_items` 의 RLS를 `can_access_company_data` 기준으로 재검증 (누락된 테이블 보강)
 
-### 새 enum 정의
+2. **소프트 삭제 + 복구 UI 표준화**
+   - 모든 주요 테이블에 `is_deleted`, `deleted_at`, `deleted_by`, `deleted_reason` 컬럼 통일
+   - `useSoftDelete(table)` 훅 신설 → 사유 입력 prompt + audit_log 자동 기록
+   - **휴지통(Trash) 페이지** 신설: Master/PM 권한자가 30일 내 항목 복구
 
-```sql
--- 1) 글로벌 역할 (시스템 차원)
-CREATE TYPE public.global_role AS ENUM ('master');
+3. **감사 로그 자동화**
+   - `scopedQuery`에 mutation 감지 → `audit_logs` 자동 insert (수동 `useAuditLog` 호출 의존 제거)
+   - 기존 `AuditLogs` 페이지에 **필터(테이블/사용자/기간/사유)** 와 CSV export 추가
 
--- 2) 프로젝트 역할 (프로젝트 차원)
-CREATE TYPE public.project_role AS ENUM (
-  'project_admin',   -- 발주처 또는 PM (전권)
-  'safety_manager',  -- 안전관리자 (등록·승인)
-  'site_manager',    -- 현장소장 (등록·승인)
-  'supervisor',      -- 감리/감독
-  'worker',          -- 일반 작업자 (자기 회사 데이터만)
-  'viewer'           -- 읽기 전용
-);
+4. **입력 검증 + 에러 가시화 표준화**
+   - `src/lib/schemas/` 폴더에 모든 도메인 Zod 스키마 모음 (현재 페이지별로 흩어져있음)
+   - `ErrorBoundary` + `toast` + `FormError` 컴포넌트로 RLS/검증 오류를 **한국어 사용자 메시지**로 번역
+   - "왜 막혔는지 모르는 구간" 제거: 모든 실패 경로에 toast + 콘솔 동시 출력
 
--- 3) 직책 (결재선·조직매핑용)
-CREATE TYPE public.project_position AS ENUM (
-  'CEO',              -- 대표이사
-  'EXECUTIVE',        -- 임원
-  'SITE_MANAGER',     -- 현장소장
-  'HSE_MANAGER',      -- 안전관리자
-  'CONSTRUCTION_MGR', -- 공사부장
-  'FIELD_ENGINEER',   -- 공사담당
-  'FOREMAN',          -- 직장/조장
-  'WORKER',           -- 작업자
-  'OWNER_PM',         -- 발주처 PM
-  'OWNER_HSE',        -- 발주처 안전
-  'SUPERVISOR'        -- 감리
-);
-```
-
-### 테이블 변경
-
-```sql
--- user_roles: master 전용으로 정리
--- (기존 데이터는 마이그레이션으로 project_members로 이관)
--- enum 타입을 global_role로 교체
-
--- project_members
-ALTER TABLE project_members
-  ADD COLUMN role_new project_role,
-  ADD COLUMN position_new project_position,
-  DROP COLUMN company;               -- TEXT 중복 제거 (SSOT)
--- role_new로 데이터 이관 후 role 컬럼 교체
-
--- profiles
-ALTER TABLE profiles
-  DROP COLUMN company,               -- 프로젝트별 다를 수 있으므로 project_members로 이전
-  DROP COLUMN position;              -- 동일
-
--- companies (변경 없음 - type 컬럼은 그대로 사용)
-```
-
-### 보조 함수 (모두 SECURITY DEFINER, search_path=public)
-
-```sql
--- 글로벌 역할 체크 (master 전용)
-is_master(_user_id uuid) RETURNS boolean
-
--- 프로젝트 역할 조회
-get_project_role(_user_id uuid, _project_id uuid) RETURNS project_role
-
--- 프로젝트 권한 체크
-has_project_role(_user_id uuid, _project_id uuid, _roles project_role[]) RETURNS boolean
-
--- 회사 격리: 사용자가 해당 회사 데이터를 볼 수 있는가
-can_access_company_data(_user_id uuid, _project_id uuid, _company_id uuid) RETURNS boolean
-  -- master/project_admin/safety_manager: 모든 회사
-  -- 그 외: 본인 company_id 또는 하위 회사(parent_company_id 트리)
-
--- 직책 기반 결재선 매칭
-get_user_position(_user_id uuid, _project_id uuid) RETURNS project_position
-```
+5. **용어 표준화 엔진 확장**
+   - `termCorrection.ts` 에 **UI 라벨 사전** 추가 (예: "TBM" = "작업 전 안전점검(TBM)" 고정)
+   - i18n 키 도입 없이도 `<Term k="tbm" />` 컴포넌트로 모든 화면 라벨 통일
 
 ---
 
-## 3. 권한 매트릭스 (역할 × 기능)
+## Phase 2. 모듈 간 연동 규칙 정리 (Cross-module Wiring) — 2순위
 
-| 기능 | master | project_admin | safety_manager | site_manager | supervisor | worker | viewer |
-|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| 프로젝트 생성/삭제 | ✓ | – | – | – | – | – | – |
-| 멤버 초대/제거 | ✓ | ✓ | – | – | – | – | – |
-| 회사(협력사) 관리 | ✓ | ✓ | – | – | – | – | – |
-| 위험성평가 작성 | ✓ | ✓ | ✓ | ✓ | – | 자기회사 | – |
-| 위험성평가 승인 | ✓ | ✓ | ✓ | ✓(설정) | – | – | – |
-| 작업계획서 작성 | ✓ | ✓ | ✓ | ✓ | – | 자기회사 | – |
-| 작업허가서 승인 | ✓ | ✓ | ✓ | ✓ | ✓ | – | – |
-| 안전점검 등록 | ✓ | ✓ | ✓ | ✓ | ✓ | – | – |
-| TBM 운영 | ✓ | ✓ | ✓ | ✓ | – | 참여만 | – |
-| 산업안전보건관리비 | ✓ | ✓ | ✓ | – | – | – | – |
-| 법적업무 | ✓ | ✓ | ✓ | – | – | – | – |
-| 사고 신고(모바일) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – |
-| 감사 로그 조회 | ✓ | ✓ | – | – | – | – | – |
-| 기준정보 관리 | ✓ | ✓ | – | – | – | – | – |
-| 모든 데이터 읽기 | ✓ | ✓ | ✓ | 자기회사+하위 | 자기회사 | 자기회사 | 자기회사 |
+> 목표: 위험성평가 → 작업계획서 → 작업허가 → TBM → 점검 → 사고 → 교육 → 산업안전보건관리비가 **하나의 흐름**으로 이어진다.
 
-**회사 격리 규칙** (RLS에 강제):
-- `master`/`project_admin`/`safety_manager` → 프로젝트 내 전 회사 접근
-- `site_manager`/`supervisor` → 본인 회사 + parent_company_id 트리의 하위 회사
-- `worker`/`viewer` → 본인 `company_id` 데이터만
+1. **공통 참조 모델**: 모든 운영 문서에 `source_run_id`, `source_work_plan_id`, `source_permit_id` FK 표준화
+2. **자동 파생 규칙**:
+   - 작업계획서 승인 → 해당 공정의 위험성평가 항목 자동 임포트
+   - 작업허가서 발급 → 당일 TBM 세션 자동 생성(공정·회사 매칭)
+   - TBM 위험요인 → 위험성평가의 "High" 항목에서 자동 발췌 (현재 일부만)
+   - 사고 발생 → 해당 위험성평가 항목에 `incident_linked=true` 마크 + 재평가 To-Do 자동 생성
+3. **연동 시각화**: `ProjectDetail`에 "안전관리 흐름도" 탭 — 문서 간 연결을 그래프로 표시 (끊어진 연결 = 운영 리스크)
 
 ---
 
-## 4. 마이그레이션 단계
+## Phase 3. 법적 안전관리 모듈 보강 (Statutory Modules) — 3순위
 
-### Phase 1 — DB 스키마 (1 마이그레이션)
-1. `global_role`, `project_role`, `project_position` enum 생성
-2. `is_master`, `has_project_role`, `can_access_company_data`, `get_user_position` 함수 생성
-3. `project_members.role_new project_role`, `position_new project_position` 추가
-4. `project_members.company TEXT` 삭제
-5. `profiles.company`, `profiles.position` 삭제
+> 목표: 산안법·중대재해처벌법 기본 운영축을 한 시스템에서 완결.
 
-### Phase 2 — 데이터 이관 (insert 도구로)
-1. `user_roles`에서 비-master 행(`safety_manager`, `project_admin`)을 모든 기존 프로젝트의 `project_members.role_new`로 이관
-   - master는 그대로 유지
-2. `project_members.role` → `role_new` 복사 (이름 매핑)
-3. `project_members.company_id` 채우기:
-   - `project_members.company` TEXT 값으로 `companies.name` 매칭 → `company_id` 채움
-   - 매칭 실패 항목은 콘솔 출력 후 마스터가 수동 보정
+1. **안전점검 체계 세분화**
+   - 일상점검 / 정기점검(주·월·분기·반기·연) / 합동점검 / 자체점검 / 작업 전 점검 분리
+   - 법정 점검주기 자동 알림 + 미실시 시 To-Do/감사로그 자동 생성
 
-### Phase 3 — 컬럼 교체 마이그레이션
-1. `project_members.role` DROP, `role_new` → `role` RENAME
-2. `position` 컬럼 동일
-3. `app_role` enum DROP (이제 사용 안 함)
+2. **교육 이력 + 법정교육 관리**
+   - 정기교육 / 채용시 / 작업내용 변경 시 / 특별교육 / 관리감독자 교육 카테고리 분리
+   - 근로자별 이수 이력(시간/주제/강사) + 만료 알림
+   - QR 출석 → 자동 이수 처리 (이미 `workers` 테이블 기반 있음, 확장)
 
-### Phase 4 — RLS 정책 재작성
-1. `companies` 정책에서 **인수 순서 버그 수정** + `safety_manager` 권한 추가
-2. 모든 비즈니스 테이블(work_plans, work_permits, tbm_sessions, safety_costs, …) RLS를 `can_access_company_data()` 기준으로 통일
-3. `user_roles` 정책: master만 INSERT/UPDATE/DELETE
+3. **사고·아차사고·재발방지**
+   - `incident_reports` 에 **아차사고(near-miss)** 타입 추가
+   - 사고 → 원인분석(4M/FTA) → 재발방지대책 → 위험성평가 반영까지 워크플로우
+   - 중대재해 발생 시 고용노동부 보고 양식 PDF 자동 생성
 
-### Phase 5 — 코드 보완
-1. `useProjectAccess` hook을 새 enum/함수에 맞춰 갱신
-   - `userRole: ProjectRole` 타입을 새 enum과 1:1 매칭
-   - `PERMISSION_MATRIX` 위 표대로 재작성
-2. `AuthContext`: `profile.company`/`profile.position` 제거, 대신 선택된 프로젝트의 `project_members`에서 조회
-3. `useGlobalProjectAccess` (AppLayout)에 `position`, `companyType` 추가
-4. 결재선 매칭(`approval_lines`)을 `project_position` enum 키 기반으로 변경
-5. UserManagement / 초대 코드 UI에 position/role 드롭다운(enum) 추가
+4. **법적업무 자동화 강화**
+   - 기존 `LegalDuties` 22개 항목에 **법조문 링크 + 증빙첨부 의무** 추가
+   - 산업안전보건위원회 회의록·노사협의체 모듈 신설
 
-### Phase 6 — 감사·복구
-1. 마이그레이션 전 백업 쿼리 결과를 audit_logs에 1회 기록
-2. 마스터 페이지에 "권한 데이터 이관 결과" 카드 추가 (누가 어느 회사/직책으로 이관됐는지 표)
+5. **근로자 참여·출입·서명 체계 통합**
+   - 이미 있는 `worker_entry_logs` + `tbm_participations` + `worker_opinions` 를 **근로자 포털** 하나로 통합 대시보드
 
 ---
 
-## 5. 위험 / 롤백
+## Phase 4. QA 회귀 검증 + 룰 엔진 (Hardening) — 4순위
 
-| 위험 | 완화 |
-|------|------|
-| 데이터 이관 중 RLS 권한이 일시적으로 끊겨 사용자 로그인 후 빈 화면 | enum/함수/컬럼 추가는 비파괴(ALTER ADD)로 먼저 적용 → 코드와 데이터 이관 완료 후에야 옛 컬럼 DROP |
-| 협력업체 매칭 실패 (company TEXT ↔ companies.name 불일치) | Phase 2에서 실패 목록을 별도 테이블 `migration_unmapped_members`에 적재 → 마스터 UI에서 수동 매핑 |
-| 결재선 깨짐 | Phase 5에서 기존 `approval_lines.position`(TEXT)을 새 enum으로 자동 보정하는 매핑표 + 미매칭은 master 알림 |
+1. **SystemTestEngine 확장**: 4단계 모든 신규 규칙을 시나리오로 등록 → CI처럼 매 배포 전 회귀
+2. **ConsistencyAudit 강화**: 현재의 정규식 룰 외에 **DB 무결성 검사**(고아 FK, 격리 위반 데이터) 추가
+3. **현장별 커스터마이징 규칙 엔진**: 프로젝트별로 "필수 첨부", "승인 단계 수", "교육 주기" 등을 JSON 규칙으로 오버라이드
 
 ---
 
-## 6. 검증 체크리스트
-- [ ] `companies` 정책 인수 순서 버그 수정 후 project_admin이 새 회사를 생성/수정 가능
-- [ ] worker로 로그인 시 본인 회사 외 work_plans/risk_items 조회 시 빈 결과
-- [ ] safety_manager는 모든 회사 데이터 조회 가능
-- [ ] master 1명 미만 방지 트리거 정상 (기존 유지)
-- [ ] 초대 코드(`process_invite_code`)가 새 project_role enum과 동작
-- [ ] 결재선 매칭이 position enum 기준으로 100% 매핑
+## 이번 턴에 결정해주실 것
 
----
+위 4단계 중 **Phase 1부터 순서대로** 진행하는 것을 강력히 권장합니다. (Phase 2~4는 Phase 1 위에서만 안전합니다.)
 
-## 7. 영향 받는 파일 (예상)
+다만 Phase 1도 5개 작업이 있어 한 번에 다 하면 회귀 위험이 큽니다. **다음 중 어디서부터** 시작할지 골라주세요:
 
-**DB**: 마이그레이션 4~5건 + insert 1건
-**코드**:
-- `src/hooks/useProjectAccess.ts` (대규모)
-- `src/contexts/AuthContext.tsx` (profile 타입)
-- `src/components/AppLayout.tsx` (`useGlobalProjectAccess`)
-- `src/components/ApprovalLineManager.tsx`
-- `src/components/DepartmentAssigneeMapping.tsx`
-- `src/pages/UserManagement.tsx`
-- `src/pages/SettingsPermissions.tsx`
-- `src/pages/Profile.tsx`
-- `src/integrations/supabase/types.ts` (자동 생성)
+- **A. Phase 1-1 + 1-2 (격리 SSOT + 소프트삭제 표준화)** ← 가장 추천. 데이터 손실/혼선의 근본 원인을 차단.
+- **B. Phase 1-3 + 1-4 (감사로그 자동화 + 에러 가시화)** ← 운영 신뢰도 즉시 체감.
+- **C. Phase 1 전체를 한 번에** ← 시간은 더 걸리지만 깨끗하게 정리.
+- **D. 다른 순서 / 다른 조합** (말씀해주세요)
 
-총 6 phase, 추정 3~4 라운드 소요.
-
----
-
-## 8. 확인 필요 (사용자 결정)
-
-1. **`project_role` enum의 6개 값**(project_admin / safety_manager / site_manager / supervisor / worker / viewer)이 우리 회사 현장과 맞는가? 추가/삭제 필요?
-2. **회사 위계 격리**: site_manager가 "본인 회사 + 하위 협력업체"를 보는 규칙이 맞는가, 아니면 본인 회사만?
-3. **데이터 이관 중 다운타임 허용 시간**: 기존 사용자 영향 없이 단계적으로 갈지(권장), 한번에 갈지?
-4. **기존 `app_role` enum의 `user`/`contractor` 값** 처리: drop해도 되는지(현 데이터에 사용 흔적 0건)?
-
-이 4개 답변 주시면 바로 Phase 1 마이그레이션부터 실행합니다.
+> "대한민국의 모든 안전관리를 이 시스템 하나로?" — **Phase 1~3을 마치면 '예'** 라고 답할 수 있습니다. 지금은 Phase 0.7 정도 완료 상태입니다.

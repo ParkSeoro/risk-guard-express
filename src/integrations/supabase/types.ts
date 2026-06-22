@@ -5182,6 +5182,112 @@ export type Database = {
         }
         Relationships: []
       }
+      work_plan_attachments: {
+        Row: {
+          attachment_key: string
+          calc_ref: string | null
+          category: string
+          company_id: string | null
+          created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          description: string | null
+          file_path: string | null
+          file_size: number | null
+          file_url: string | null
+          id: string
+          is_deleted: boolean
+          is_mandatory: boolean
+          locked: boolean
+          mime_type: string | null
+          name: string
+          project_id: string
+          retention_until: string | null
+          source_ref_id: string | null
+          source_table: string | null
+          source_type: string
+          updated_at: string
+          uploaded_by: string | null
+          work_plan_id: string
+        }
+        Insert: {
+          attachment_key: string
+          calc_ref?: string | null
+          category: string
+          company_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          description?: string | null
+          file_path?: string | null
+          file_size?: number | null
+          file_url?: string | null
+          id?: string
+          is_deleted?: boolean
+          is_mandatory?: boolean
+          locked?: boolean
+          mime_type?: string | null
+          name: string
+          project_id: string
+          retention_until?: string | null
+          source_ref_id?: string | null
+          source_table?: string | null
+          source_type?: string
+          updated_at?: string
+          uploaded_by?: string | null
+          work_plan_id: string
+        }
+        Update: {
+          attachment_key?: string
+          calc_ref?: string | null
+          category?: string
+          company_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          description?: string | null
+          file_path?: string | null
+          file_size?: number | null
+          file_url?: string | null
+          id?: string
+          is_deleted?: boolean
+          is_mandatory?: boolean
+          locked?: boolean
+          mime_type?: string | null
+          name?: string
+          project_id?: string
+          retention_until?: string | null
+          source_ref_id?: string | null
+          source_table?: string | null
+          source_type?: string
+          updated_at?: string
+          uploaded_by?: string | null
+          work_plan_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_plan_attachments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_plan_attachments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_plan_attachments_work_plan_id_fkey"
+            columns: ["work_plan_id"]
+            isOneToOne: false
+            referencedRelation: "work_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       work_plans: {
         Row: {
           attachments: Json
@@ -5556,6 +5662,14 @@ export type Database = {
       get_worker_health_warnings: {
         Args: { _worker_id: string }
         Returns: Json
+      }
+      get_wpa_missing_mandatory: {
+        Args: { _plan_id: string }
+        Returns: {
+          attachment_key: string
+          category: string
+          name: string
+        }[]
       }
       has_project_role: {
         Args: {

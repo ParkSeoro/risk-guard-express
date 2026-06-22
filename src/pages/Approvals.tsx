@@ -28,6 +28,21 @@ const Approvals = () => {
   const [rejectComment, setRejectComment] = useState('');
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [tab, setTab] = useState('mine');
+  const [entityPending, setEntityPending] = useState<any[]>([]);
+
+  const fetchEntityPending = async () => {
+    const { data } = await supabase.rpc('get_my_pending_entity_approvals');
+    setEntityPending((data as any[]) || []);
+  };
+
+  const actOnEntity = async (id: string, action: 'approve'|'reject') => {
+    const comment = action === 'reject' ? (prompt('반려 사유') || '') : '';
+    if (action === 'reject' && !comment) return;
+    const { data, error } = await supabase.rpc('act_on_entity_approval', { _approval_id: id, _action: action, _comment: comment });
+    const r = data as any;
+    if (error || r?.error) toast({ title: '처리 실패', description: r?.error || error?.message, variant: 'destructive' });
+    else { toast({ title: action === 'approve' ? '승인 완료' : '반려 완료' }); fetchEntityPending(); }
+  };
 
   const fetchData = async () => {
     if (!selectedProject) return;

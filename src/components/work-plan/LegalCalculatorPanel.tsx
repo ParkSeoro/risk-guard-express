@@ -7,13 +7,69 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Calculator, ClipboardCheck, AlertTriangle, CheckCircle2, Copy } from 'lucide-react';
+import { Calculator, ClipboardCheck, AlertTriangle, CheckCircle2, Copy, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   calcCraneLoad, calcExcavationSlope, calcFallProtection, calcConfinedSpaceAtmosphere,
   calcScaffoldLoad, calcVentilation, calcDemolitionZone, calcElectricalApproach,
   SOIL_STANDARD_SLOPE, type CalcResult,
 } from '@/lib/workPlanCalculators';
+
+/**
+ * 필수 입력 검증 헬퍼.
+ * 각 계산기는 자신이 요구하는 법정 기준값(예: 정격하중, 토질, 작업높이 등)을 정의하고,
+ * 누락 시 저장(작업방법 추가)을 차단 + 입력 가이드를 즉시 노출합니다.
+ */
+interface MissingField { label: string; hint: string; legalBasis?: string; }
+
+function MissingGuide({ items }: { items: MissingField[] }) {
+  if (items.length === 0) return null;
+  return (
+    <Alert variant="destructive" className="border-amber-300 bg-amber-50 text-amber-900 [&>svg]:text-amber-600">
+      <Info className="h-4 w-4" />
+      <AlertTitle className="text-sm font-semibold">필수 법정 기준값이 누락되었습니다 — 저장이 차단됩니다</AlertTitle>
+      <AlertDescription className="text-xs space-y-1 mt-1">
+        <ul className="list-disc list-inside space-y-0.5">
+          {items.map((it, i) => (
+            <li key={i}>
+              <span className="font-medium">{it.label}</span> — {it.hint}
+              {it.legalBasis && <span className="block ml-4 text-[10px] text-amber-700">근거: {it.legalBasis}</span>}
+            </li>
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function SaveButton({
+  missing, onSave,
+}: { missing: MissingField[]; onSave: () => void }) {
+  const { toast } = useToast();
+  const blocked = missing.length > 0;
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="gap-1"
+      disabled={blocked}
+      onClick={() => {
+        if (blocked) {
+          toast({
+            title: '저장 차단',
+            description: `${missing[0].label} 등 ${missing.length}개 필수값을 먼저 입력해주세요.`,
+            variant: 'destructive',
+          });
+          return;
+        }
+        onSave();
+      }}
+    >
+      <Copy className="h-3 w-3" />{blocked ? '필수값 입력 필요' : '계산결과를 작업방법에 추가'}
+    </Button>
+  );
+}
 
 /**
  * 작업계획서 법정 계산 패널.

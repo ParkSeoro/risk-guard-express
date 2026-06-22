@@ -5900,6 +5900,10 @@ export type Database = {
         Args: { _user_id: string }
         Returns: undefined
       }
+      generate_worker_required_items: {
+        Args: { _worker_id: string }
+        Returns: number
+      }
       get_daily_qr_status: { Args: { _token: string }; Returns: Json }
       get_hazard_survey_public: { Args: { _qr_token: string }; Returns: Json }
       get_project_role_new: {
@@ -5961,6 +5965,7 @@ export type Database = {
           status: string
         }[]
       }
+      mark_required_items_overdue: { Args: never; Returns: number }
       process_invite_code: {
         Args: { _invite_code: string; _user_id: string }
         Returns: Json

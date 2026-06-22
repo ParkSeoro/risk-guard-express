@@ -45,7 +45,7 @@ export async function runHealthScenario(ctx: TestContext): Promise<StepResult[]>
     if (!checkupId) return { pass: false, error_location: "no checkup", details: {} };
     await supabase.from("health_checkups").update({
       conducted_date: new Date().toISOString().slice(0, 10),
-      result: "정상",
+      result: "정상A",
     }).eq("id", checkupId);
     const { data: todos } = await supabase
       .from("todo_items").select("status")
@@ -101,8 +101,9 @@ export async function runHealthScenario(ctx: TestContext): Promise<StepResult[]>
       return { pass: false, error_location: "measurement insert", details: { error: mErr.message } };
     }
 
-    const { data: updated } = await supabase.from("risk_items").select("severity, override_reason").eq("id", risk.id).single();
-    const upgraded = (updated?.severity ?? 0) >= 2;
+    const { data: updated } = await supabase.from("risk_items").select("severity, auto_adjust_reason").eq("id", risk.id).single();
+    const u = updated as any;
+    const upgraded = (u?.severity ?? 0) >= 2;
 
     // cleanup
     await supabase.from("work_env_measurements").update({ is_deleted: true }).eq("factor_id", factor.id);
@@ -112,7 +113,7 @@ export async function runHealthScenario(ctx: TestContext): Promise<StepResult[]>
     return {
       pass: upgraded,
       error_location: upgraded ? undefined : "trigger trg_env_measurement_exceedance failed to upgrade risk",
-      details: { severity_after: updated?.severity, reason: updated?.override_reason },
+      details: { severity_after: u?.severity, reason: u?.auto_adjust_reason },
     };
   }));
 

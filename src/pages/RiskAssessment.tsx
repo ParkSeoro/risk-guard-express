@@ -170,7 +170,7 @@ const RiskAssessment = () => {
     }
   };
 
-  const { softDelete: _softDeleteRA } = useSoftDelete();
+  const { softDelete: softDeleteRA } = useSoftDelete();
   const handleDelete = async (id: string) => {
     const r = await softDeleteRA('risk_items', id, { label: '위험성평가 항목', projectId: selectedProjectId });
     if (r.ok) setItems(prev => prev.filter(i => i.id !== id));

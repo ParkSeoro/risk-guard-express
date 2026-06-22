@@ -479,6 +479,8 @@ export type Database = {
           company_id: string | null
           company_name: string | null
           created_at: string
+          entity_id: string | null
+          entity_type: string | null
           id: string
           position: string | null
           project_id: string
@@ -486,6 +488,7 @@ export type Database = {
           run_id: string | null
           status: string
           step: string
+          step_order: number | null
           updated_at: string
           version: number | null
         }
@@ -498,6 +501,8 @@ export type Database = {
           company_id?: string | null
           company_name?: string | null
           created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
           id?: string
           position?: string | null
           project_id: string
@@ -505,6 +510,7 @@ export type Database = {
           run_id?: string | null
           status?: string
           step: string
+          step_order?: number | null
           updated_at?: string
           version?: number | null
         }
@@ -517,6 +523,8 @@ export type Database = {
           company_id?: string | null
           company_name?: string | null
           created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
           id?: string
           position?: string | null
           project_id?: string
@@ -524,6 +532,7 @@ export type Database = {
           run_id?: string | null
           status?: string
           step?: string
+          step_order?: number | null
           updated_at?: string
           version?: number | null
         }
@@ -5914,6 +5923,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      act_on_entity_approval: {
+        Args: { _action: string; _approval_id: string; _comment?: string }
+        Returns: Json
+      }
       apply_env_exceedance_to_risk: {
         Args: { _measurement_id: string }
         Returns: number
@@ -5947,6 +5960,21 @@ export type Database = {
       }
       get_daily_qr_status: { Args: { _token: string }; Returns: Json }
       get_hazard_survey_public: { Args: { _qr_token: string }; Returns: Json }
+      get_my_pending_entity_approvals: {
+        Args: never
+        Returns: {
+          approval_id: string
+          created_at: string
+          entity_date: string
+          entity_id: string
+          entity_title: string
+          entity_type: string
+          project_id: string
+          step: string
+          step_order: number
+          step_position: string
+        }[]
+      }
       get_project_role_new: {
         Args: { _project_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["project_role"]
@@ -6034,6 +6062,10 @@ export type Database = {
       should_push_notify: {
         Args: { _type: string; _user_id: string }
         Returns: boolean
+      }
+      submit_entity_for_approval: {
+        Args: { _entity_id: string; _entity_type: string; _project_id: string }
+        Returns: Json
       }
       submit_hazard_survey_response: {
         Args: {

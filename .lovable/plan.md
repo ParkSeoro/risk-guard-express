@@ -1,102 +1,73 @@
 
-# 안전관리시스템 완결화 로드맵
+요청이 워낙 크기 때문에 한 번에 다 치면 회귀 위험이 매우 큽니다. 아래 순서대로 진행하고, 각 단계가 끝날 때마다 ConsistencyAudit + SystemTestEngine 으로 작동을 검증합니다.
 
-ChatGPT 진단과 제가 본 `/consistency-audit` 결과를 종합하면, 결론은 같습니다:
-**"문서 작성 기능은 많은데, 통제·신뢰 레이어가 아직 표준화되지 않았다."**
-화면을 더 늘리기 전에 **기초 통제를 강제(enforce)** 하고, 그 위에 운영/법적 모듈을 얹는 순서로 가야 합니다.
+## A. 매뉴얼/도움말 정비 (먼저, 사용 경험 즉시 개선)
+**문제**: HelpButton, TutorialOverlay, Manual.tsx, InstallPrompt 등 여러 도움말이 동시에/반복적으로 뜸.
+**조치**:
+1. `useHelpController` 훅 도입 — 페이지 라우트별로 "한 번만 자동 표시" + dismiss 영구 저장 (localStorage `help-seen:<route>`).
+2. TutorialOverlay 는 최초 1회 + 명시적 "도움말" 버튼으로만 호출.
+3. HelpButton 은 우측 하단 floating 단일 인스턴스로 통합 (사이드바/페이지별 중복 제거).
+4. Manual.tsx = "전체 매뉴얼 뷰어" 한 곳으로만 유지. 각 페이지 안의 inline 매뉴얼 박스 제거 → "?" 아이콘 → 우측 Sheet 패널로 통일.
+5. InstallPrompt 는 모바일 + 최초 방문 후 3분 경과 시에만 표시.
 
-아래는 **4단계 로드맵**입니다. 각 단계는 다음 단계의 전제조건입니다.
+## B. Phase 1-3 + 1-4: 감사 로그 자동화 + 에러 가시화 표준화
+1. `src/lib/dataAccess.ts` 에 `scopedInsert / scopedUpdate / scopedSoftDelete` wrapper 확장 — 모든 mutation 이 자동으로 `audit_logs` 에 기록.
+2. `src/lib/errors.ts` 생성 — Supabase/RLS/Zod 에러를 한국어 메시지로 변환 (`translateError`).
+3. `useToastError(error)` 헬퍼 — toast + console.error + 옵션으로 Sentry-style 로깅.
+4. 전 페이지의 `catch` 블록을 `useToastError` 로 일괄 치환 (회귀 영향이 큰 핵심 25개 페이지 우선).
+5. 글로벌 `ErrorBoundary` 를 `AppLayout` 에 부착해 React 런타임 에러도 한국어 토스트.
 
----
+## C. 근로자 일일 QR 출퇴근 재설계
+**현재**: workers 테이블에 영구 `qr_token`. 매일 새 토큰이 아님.
+**변경 설계**:
+- 신규 테이블 `worker_daily_qr (id, worker_id, project_id, work_date, qr_token UNIQUE, expires_at, created_at)` — 매일 0시 또는 최초 조회 시 자동 생성, `expires_at = 당일 23:59 KST`.
+- RPC `issue_daily_qr(_worker_id, _date)` — 이미 있으면 반환, 없으면 생성.
+- RPC `worker_scan(_token, _action 'entry'|'exit', _signature)` — 토큰 → daily_qr → worker 로 resolve, 만료 검증, `worker_entry_logs` 에 기록.
+  - entry: 같은 날 open entry 있으면 거부.
+  - exit: open entry 닫음.
+- 현장 입구에서 근로자는 본인 폰의 "오늘의 QR"(WorkerPortal 에 큰 QR 표시)을 보여주고, 안전관리자가 모바일에서 `MobileScan` 으로 스캔 → 자동 entry/exit 판정.
+- 또는 근로자 폰에서 직접 출근/퇴근 버튼 (자가 인증) — 위치/서명 포함.
+- 신규 페이지/수정:
+  - `src/pages/WorkerPortal.tsx` 개편: "오늘의 QR" 카드 + 출근/퇴근 상태 + 서명패드.
+  - `src/pages/MobileScan.tsx` 개편: 카메라 스캔 → 토큰 → 어떤 worker인지 표시 → 출근/퇴근 액션.
+  - `src/pages/WorkerAttendance.tsx`: 일자별 출퇴근 현황 + 미퇴근자 알림.
+- 마이그레이션: 위 신규 테이블 + GRANT + RLS (project 멤버만 조회).
 
-## Phase 1. 기초 통제 강제 (Foundation Enforcement) — 1순위
+## D. Phase 2: 모듈 간 연동 규칙
+1. `source_run_id`, `source_work_plan_id`, `source_permit_id` 표준 컬럼 점검 (이미 일부 존재) → 누락된 곳 추가.
+2. 자동 파생 트리거 (애플리케이션 레벨):
+   - 작업계획서 승인완료 → 위험성평가 run 자동 제안
+   - 작업허가 발급 → 그날 TBM 세션 자동 생성
+   - 사고 등록 → 동일 공정 재평가 To-Do 자동 생성
+3. ProjectDetail 에 "안전관리 흐름도" 탭 추가 — 위 연결 시각화 (간단한 카드 체인).
 
-> 목표: "화면이 늘어도 데이터 신뢰가 흔들리지 않는다."
-> 지금까지는 각 페이지 개발자(=저)가 규칙을 "지키도록" 했지만, 이제는 **시스템이 강제**하도록 바꿉니다.
+## E. Phase 3: 법적 안전관리 모듈 보강
+1. **안전점검 세분화**: 일상/정기/합동/자체/작업전 type 컬럼 추가, 각 템플릿 차별화.
+2. **법정교육 관리**: `safety_education_materials` 옆에 `worker_education_logs (worker_id, material_id, completed_at, signature)` 추가. 법정교육 종류 (정기/특별/관리감독자/신규채용/작업내용변경) enum.
+3. **사고·아차사고·재발방지**: `accident_cases` / `incident_reports` 에 `near_miss` 플래그, `recurrence_prevention_plan` 텍스트, "재발방지 완료" 워크플로우.
+4. **법적업무 자동화**: `legal_duties` 의 주기(weekly/monthly/quarterly/yearly) 기반으로 To-Do 자동 생성 cron — `supabase/functions/legal-duty-scheduler` + pg_cron.
 
-1. **프로젝트/회사 격리 SSOT 헬퍼**
-   - `src/lib/dataAccess.ts` 신설: `scopedQuery(table, { projectId, companyId, role })` 한 줄로 모든 조회·쓰기 통과
-   - 모든 페이지의 `supabase.from(...)` 직접 호출을 점진적으로 이 헬퍼로 치환
-   - DB측: `risk_items`, `work_plans`, `work_permits`, `safety_inspections`, `incident_reports`, `tbm_sessions`, `safety_cost_items` 의 RLS를 `can_access_company_data` 기준으로 재검증 (누락된 테이블 보강)
+## F. Phase 4: QA 회귀 검증
+1. `SystemTestEngine` 시나리오 추가:
+   - 일일 QR 발급 → 스캔 → 출퇴근 라이프사이클
+   - 작업계획서 → 위험성평가 자동 파생
+   - 소프트 삭제 → 휴지통 복구
+2. `ConsistencyAudit` 에 새 규칙 추가:
+   - audit_logs 누락 mutation
+   - daily_qr 만료 미처리
+3. 매 Phase 종료 후 ConsistencyAudit 실행 → 점수 추적.
 
-2. **소프트 삭제 + 복구 UI 표준화**
-   - 모든 주요 테이블에 `is_deleted`, `deleted_at`, `deleted_by`, `deleted_reason` 컬럼 통일
-   - `useSoftDelete(table)` 훅 신설 → 사유 입력 prompt + audit_log 자동 기록
-   - **휴지통(Trash) 페이지** 신설: Master/PM 권한자가 30일 내 항목 복구
+## 실행 순서 / 단계별 커밋
+1. **A (매뉴얼 정비)** — 1턴
+2. **B (감사+에러)** — 2턴
+3. **C (일일 QR)** — 2턴 (마이그레이션 + UI)
+4. **D (연동)** — 2턴
+5. **E (법적 모듈)** — 3턴
+6. **F (QA)** — 1턴
 
-3. **감사 로그 자동화**
-   - `scopedQuery`에 mutation 감지 → `audit_logs` 자동 insert (수동 `useAuditLog` 호출 의존 제거)
-   - 기존 `AuditLogs` 페이지에 **필터(테이블/사용자/기간/사유)** 와 CSV export 추가
+총 ~11턴 예상. 각 단계 끝에 `/consistency-audit` 와 `/system-test` 결과 캡처/확인.
 
-4. **입력 검증 + 에러 가시화 표준화**
-   - `src/lib/schemas/` 폴더에 모든 도메인 Zod 스키마 모음 (현재 페이지별로 흩어져있음)
-   - `ErrorBoundary` + `toast` + `FormError` 컴포넌트로 RLS/검증 오류를 **한국어 사용자 메시지**로 번역
-   - "왜 막혔는지 모르는 구간" 제거: 모든 실패 경로에 toast + 콘솔 동시 출력
-
-5. **용어 표준화 엔진 확장**
-   - `termCorrection.ts` 에 **UI 라벨 사전** 추가 (예: "TBM" = "작업 전 안전점검(TBM)" 고정)
-   - i18n 키 도입 없이도 `<Term k="tbm" />` 컴포넌트로 모든 화면 라벨 통일
-
----
-
-## Phase 2. 모듈 간 연동 규칙 정리 (Cross-module Wiring) — 2순위
-
-> 목표: 위험성평가 → 작업계획서 → 작업허가 → TBM → 점검 → 사고 → 교육 → 산업안전보건관리비가 **하나의 흐름**으로 이어진다.
-
-1. **공통 참조 모델**: 모든 운영 문서에 `source_run_id`, `source_work_plan_id`, `source_permit_id` FK 표준화
-2. **자동 파생 규칙**:
-   - 작업계획서 승인 → 해당 공정의 위험성평가 항목 자동 임포트
-   - 작업허가서 발급 → 당일 TBM 세션 자동 생성(공정·회사 매칭)
-   - TBM 위험요인 → 위험성평가의 "High" 항목에서 자동 발췌 (현재 일부만)
-   - 사고 발생 → 해당 위험성평가 항목에 `incident_linked=true` 마크 + 재평가 To-Do 자동 생성
-3. **연동 시각화**: `ProjectDetail`에 "안전관리 흐름도" 탭 — 문서 간 연결을 그래프로 표시 (끊어진 연결 = 운영 리스크)
-
----
-
-## Phase 3. 법적 안전관리 모듈 보강 (Statutory Modules) — 3순위
-
-> 목표: 산안법·중대재해처벌법 기본 운영축을 한 시스템에서 완결.
-
-1. **안전점검 체계 세분화**
-   - 일상점검 / 정기점검(주·월·분기·반기·연) / 합동점검 / 자체점검 / 작업 전 점검 분리
-   - 법정 점검주기 자동 알림 + 미실시 시 To-Do/감사로그 자동 생성
-
-2. **교육 이력 + 법정교육 관리**
-   - 정기교육 / 채용시 / 작업내용 변경 시 / 특별교육 / 관리감독자 교육 카테고리 분리
-   - 근로자별 이수 이력(시간/주제/강사) + 만료 알림
-   - QR 출석 → 자동 이수 처리 (이미 `workers` 테이블 기반 있음, 확장)
-
-3. **사고·아차사고·재발방지**
-   - `incident_reports` 에 **아차사고(near-miss)** 타입 추가
-   - 사고 → 원인분석(4M/FTA) → 재발방지대책 → 위험성평가 반영까지 워크플로우
-   - 중대재해 발생 시 고용노동부 보고 양식 PDF 자동 생성
-
-4. **법적업무 자동화 강화**
-   - 기존 `LegalDuties` 22개 항목에 **법조문 링크 + 증빙첨부 의무** 추가
-   - 산업안전보건위원회 회의록·노사협의체 모듈 신설
-
-5. **근로자 참여·출입·서명 체계 통합**
-   - 이미 있는 `worker_entry_logs` + `tbm_participations` + `worker_opinions` 를 **근로자 포털** 하나로 통합 대시보드
-
----
-
-## Phase 4. QA 회귀 검증 + 룰 엔진 (Hardening) — 4순위
-
-1. **SystemTestEngine 확장**: 4단계 모든 신규 규칙을 시나리오로 등록 → CI처럼 매 배포 전 회귀
-2. **ConsistencyAudit 강화**: 현재의 정규식 룰 외에 **DB 무결성 검사**(고아 FK, 격리 위반 데이터) 추가
-3. **현장별 커스터마이징 규칙 엔진**: 프로젝트별로 "필수 첨부", "승인 단계 수", "교육 주기" 등을 JSON 규칙으로 오버라이드
-
----
-
-## 이번 턴에 결정해주실 것
-
-위 4단계 중 **Phase 1부터 순서대로** 진행하는 것을 강력히 권장합니다. (Phase 2~4는 Phase 1 위에서만 안전합니다.)
-
-다만 Phase 1도 5개 작업이 있어 한 번에 다 하면 회귀 위험이 큽니다. **다음 중 어디서부터** 시작할지 골라주세요:
-
-- **A. Phase 1-1 + 1-2 (격리 SSOT + 소프트삭제 표준화)** ← 가장 추천. 데이터 손실/혼선의 근본 원인을 차단.
-- **B. Phase 1-3 + 1-4 (감사로그 자동화 + 에러 가시화)** ← 운영 신뢰도 즉시 체감.
-- **C. Phase 1 전체를 한 번에** ← 시간은 더 걸리지만 깨끗하게 정리.
-- **D. 다른 순서 / 다른 조합** (말씀해주세요)
-
-> "대한민국의 모든 안전관리를 이 시스템 하나로?" — **Phase 1~3을 마치면 '예'** 라고 답할 수 있습니다. 지금은 Phase 0.7 정도 완료 상태입니다.
+## 확인 요청
+- 위 순서 그대로 진행할까요, 아니면 **C(일일 QR)** 부터 먼저 처리할까요? (사용자가 명시적으로 요청한 새 기능이라 우선순위 조정 가능)
+- 일일 QR 방식: **(가)** 근로자 폰의 오늘의 QR 을 관리자가 스캔 / **(나)** 근로자 본인이 폰에서 출근·퇴근 버튼 직접 클릭 / **(다)** 둘 다 지원 — 어느 쪽으로 갈까요?
+- 매뉴얼 정비 시, 기존 페이지 내 인라인 매뉴얼 박스를 모두 제거하고 우측 Sheet 로 통일해도 될까요? (정보는 보존, 표시 방식만 변경)

@@ -5713,6 +5713,36 @@ export type Database = {
         }
         Relationships: []
       }
+      worker_phone_otps: {
+        Row: {
+          attempts: number
+          code: string
+          created_at: string
+          expires_at: string
+          id: string
+          phone: string
+          used: boolean
+        }
+        Insert: {
+          attempts?: number
+          code: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          phone: string
+          used?: boolean
+        }
+        Update: {
+          attempts?: number
+          code?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          phone?: string
+          used?: boolean
+        }
+        Relationships: []
+      }
       worker_required_items: {
         Row: {
           completed_at: string | null
@@ -5984,6 +6014,7 @@ export type Database = {
         }
         Returns: Json
       }
+      request_worker_otp: { Args: { _phone: string }; Returns: Json }
       shares_project_with: {
         Args: { _target: string; _viewer: string }
         Returns: boolean
@@ -6013,6 +6044,10 @@ export type Database = {
           _worker_name: string
           _worker_phone: string
         }
+        Returns: Json
+      }
+      verify_worker_otp: {
+        Args: { _code: string; _phone: string }
         Returns: Json
       }
       worker_daily_scan:

@@ -85,8 +85,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </header>
             <TutorialOverlay />
             <main className="flex-1 overflow-auto p-6 bg-background">
-              {children}
+              <AppErrorBoundary>{children}</AppErrorBoundary>
             </main>
+
           </div>
         </div>
       </SidebarProvider>

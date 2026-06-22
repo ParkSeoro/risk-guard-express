@@ -234,6 +234,33 @@ const Approvals = () => {
         </Select>
       </div>
 
+      {entityPending.length > 0 && (
+        <Card className="border-primary/40 bg-primary/5">
+          <CardContent className="p-3 space-y-2">
+            <div className="text-sm font-bold flex items-center gap-2">
+              <FileCheck className="h-4 w-4" /> 작업계획서·작업허가서 결재 대기 ({entityPending.length})
+            </div>
+            {entityPending.map((e: any) => (
+              <div key={e.approval_id} className="flex items-center gap-2 p-2 border rounded bg-background">
+                <Badge variant="outline" className="text-[10px]">
+                  {e.entity_type === 'work_plan' ? '작업계획서' : '작업허가서'}
+                </Badge>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate">{e.entity_title || '-'}</div>
+                  <div className="text-xs text-muted-foreground">{e.entity_date || ''} · {e.step}</div>
+                </div>
+                <Button size="sm" onClick={() => actOnEntity(e.approval_id, 'approve')}>
+                  <CheckCircle2 className="h-3 w-3 mr-1" />승인
+                </Button>
+                <Button size="sm" variant="destructive" onClick={() => actOnEntity(e.approval_id, 'reject')}>
+                  <XCircle className="h-3 w-3 mr-1" />반려
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="w-full">
           <TabsTrigger value="mine" className="flex-1">내 결재 (대기)</TabsTrigger>

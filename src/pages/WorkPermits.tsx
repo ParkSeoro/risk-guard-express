@@ -281,6 +281,7 @@ export default function WorkPermits() {
                     <Button size="sm" variant="destructive" onClick={() => reject(p)}><XCircle className="h-3 w-3 mr-1" />반려</Button>
                   </>
                 )}
+                <Button size="sm" variant="outline" onClick={() => setWorkersDialog(p)} title="근로자 배정"><Users className="h-3 w-3" /></Button>
                 <Button size="sm" variant="outline" onClick={() => openEdit(p)} title="수정"><Pencil className="h-3 w-3" /></Button>
                 {isAdmin && (
                   <Button size="sm" variant="outline" onClick={() => remove(p)} title="삭제"><Trash2 className="h-3 w-3 text-destructive" /></Button>

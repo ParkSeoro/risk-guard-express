@@ -2310,42 +2310,81 @@ export type Database = {
         Row: {
           business_hours_only: boolean
           channel_email: boolean
+          channel_in_app: boolean
           channel_kakao: boolean
+          channel_push: boolean
           channel_sms: boolean
           created_at: string
           event_approval_request: boolean
           event_approval_result: boolean
+          event_assessment_result: boolean
+          event_general: boolean
+          event_health_checkup_due: boolean
+          event_health_warning: boolean
+          event_incident: boolean
           event_return_request: boolean
+          event_safety_inspection: boolean
+          event_tbm: boolean
+          event_todo_due: boolean
           event_validation_complete: boolean
+          event_work_permit: boolean
           id: string
+          push_quiet_end: string | null
+          push_quiet_start: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           business_hours_only?: boolean
           channel_email?: boolean
+          channel_in_app?: boolean
           channel_kakao?: boolean
+          channel_push?: boolean
           channel_sms?: boolean
           created_at?: string
           event_approval_request?: boolean
           event_approval_result?: boolean
+          event_assessment_result?: boolean
+          event_general?: boolean
+          event_health_checkup_due?: boolean
+          event_health_warning?: boolean
+          event_incident?: boolean
           event_return_request?: boolean
+          event_safety_inspection?: boolean
+          event_tbm?: boolean
+          event_todo_due?: boolean
           event_validation_complete?: boolean
+          event_work_permit?: boolean
           id?: string
+          push_quiet_end?: string | null
+          push_quiet_start?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           business_hours_only?: boolean
           channel_email?: boolean
+          channel_in_app?: boolean
           channel_kakao?: boolean
+          channel_push?: boolean
           channel_sms?: boolean
           created_at?: string
           event_approval_request?: boolean
           event_approval_result?: boolean
+          event_assessment_result?: boolean
+          event_general?: boolean
+          event_health_checkup_due?: boolean
+          event_health_warning?: boolean
+          event_incident?: boolean
           event_return_request?: boolean
+          event_safety_inspection?: boolean
+          event_tbm?: boolean
+          event_todo_due?: boolean
           event_validation_complete?: boolean
+          event_work_permit?: boolean
           id?: string
+          push_quiet_end?: string | null
+          push_quiet_start?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -5724,6 +5763,10 @@ export type Database = {
       }
       shares_project_with: {
         Args: { _target: string; _viewer: string }
+        Returns: boolean
+      }
+      should_push_notify: {
+        Args: { _type: string; _user_id: string }
         Returns: boolean
       }
       submit_hazard_survey_response: {

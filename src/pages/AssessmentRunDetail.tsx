@@ -6,6 +6,7 @@ import { useAuditLog } from '@/hooks/useAuditLog';
 import { useToast } from '@/hooks/use-toast';
 import { validateRiskItemField } from '@/lib/inputValidation';
 import { sendNotification } from '@/lib/notificationService';
+import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -460,10 +461,11 @@ const AssessmentRunDetail = () => {
     if (data) { setItems(prev => [...prev, data]); toast({ title: '새 항목 추가됨' }); }
   };
 
+  const { softDelete: _softDeleteARD } = useSoftDelete();
   const handleDelete = async (id: string) => {
     if (!canEdit && !canForceEdit) return;
-    await supabase.from('risk_items').delete().eq('id', id);
-    setItems(prev => prev.filter(i => i.id !== id));
+    const r = await _softDeleteARD('risk_items', id, { label: '위험성평가 항목', projectId: run?.project_id });
+    if (r.ok) setItems(prev => prev.filter(i => i.id !== id));
   };
 
   const handleDuplicate = async (item: RiskItemRow) => {

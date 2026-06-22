@@ -15,6 +15,7 @@ import {
   ArrowLeft, Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck, Tag, X, Settings2
 } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
+import { useSoftDelete } from '@/hooks/useSoftDelete';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
@@ -327,15 +328,14 @@ const ProjectDetail = () => {
     }
   };
 
+  const { softDelete } = useSoftDelete();
   const handleDeleteCompany = async (id: string) => {
-    const reason = prompt('업체 삭제 사유를 입력하세요. (필수)');
-    if (!reason || !reason.trim()) return;
     const target = companies.find(c => c.id === id);
-    const { error } = await supabase.from('companies').delete().eq('id', id);
-    if (error) { toast({ title: '삭제 실패', description: error.message, variant: 'destructive' }); return; }
-    await log('업체 삭제', 'company', id, projectId || undefined, { reason, name: target?.name, type: target?.type });
-    toast({ title: '업체가 삭제되었습니다.' });
-    fetchAll();
+    const r = await softDelete('companies', id, {
+      label: `협력사 "${target?.name || ''}"`,
+      projectId: projectId || undefined,
+    });
+    if (r.ok) fetchAll();
   };
 
   const STEP_LABEL_OPTIONS = [
@@ -435,10 +435,11 @@ const ProjectDetail = () => {
   };
 
   const handleDeleteTemplate = async (id: string) => {
-    await supabase.from('approval_route_templates').delete().eq('id', id);
-    await log('결재라인 삭제', 'approval_route_template', id, projectId || undefined);
-    toast({ title: '결재라인이 삭제되었습니다.' });
-    fetchAll();
+    const r = await softDelete('approval_route_templates', id, {
+      label: '결재선 템플릿',
+      projectId: projectId || undefined,
+    });
+    if (r.ok) fetchAll();
   };
 
   // Tag Management

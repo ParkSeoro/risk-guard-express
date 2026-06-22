@@ -15,6 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Pencil, Trash2, AlertTriangle, Save } from "lucide-react";
 import { GRADES, type RiskGrade, calculateRiskGrade, getGradeClassName, setMatrixConfig, getMatrixConfig } from "@/lib/riskGrade";
 import { useAuditLog } from "@/hooks/useAuditLog";
+import { useSoftDelete } from "@/hooks/useSoftDelete";
+import type { SoftDeleteTable } from "@/lib/dataAccess";
 
 const MasterData = () => {
   const { isAdmin, user } = useAuth();
@@ -95,26 +97,24 @@ const MasterData = () => {
     fetchAll();
   };
 
+  const { softDelete } = useSoftDelete();
   const handleDelete = async (type: string, id: string) => {
-    const reason = prompt('마스터데이터 삭제 사유를 입력하세요. (필수)');
-    if (!reason || !reason.trim()) return;
     const tableMap: Record<string, string> = { process: 'master_processes', ppe: 'master_ppe', legal: 'legal_references', department: 'master_departments', assignee: 'master_assignees', rule: 'validation_rules' };
-    const softDeleteTypes = new Set(['process', 'ppe', 'department', 'assignee']);
-    if (softDeleteTypes.has(type)) {
-      const { error } = await supabase.from(tableMap[type] as any).update({
-        is_deleted: true,
-        deleted_at: new Date().toISOString(),
-        deleted_reason: reason,
-        deleted_by: user?.id || null,
-      }).eq('id', id);
-      if (error) { toast({ title: '삭제 실패', description: error.message, variant: 'destructive' }); return; }
+    const softTables = new Set(['master_processes', 'master_ppe', 'master_departments', 'master_assignees']);
+    const tbl = tableMap[type];
+    if (!tbl) return;
+    if (softTables.has(tbl)) {
+      const r = await softDelete(tbl as SoftDeleteTable, id, { label: `${type} 마스터` });
+      if (r.ok) fetchAll();
     } else {
-      const { error } = await supabase.from(tableMap[type] as any).delete().eq('id', id);
+      const reason = prompt('마스터데이터 삭제 사유를 입력하세요. (필수)');
+      if (!reason || !reason.trim()) return;
+      const { error } = await supabase.from(tbl as any).delete().eq('id', id);
       if (error) { toast({ title: '삭제 실패', description: error.message, variant: 'destructive' }); return; }
+      await log('삭제', `master_${type}`, id, undefined, { reason });
+      toast({ title: '삭제되었습니다.' });
+      fetchAll();
     }
-    await log('삭제', `master_${type}`, id, undefined, { reason });
-    toast({ title: '삭제되었습니다.' });
-    fetchAll();
   };
 
   const openEdit = (type: string, item?: any) => {

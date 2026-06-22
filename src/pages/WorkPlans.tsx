@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
 import { useAuditLog } from '@/hooks/useAuditLog';
+import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { WORK_PLAN_TYPES } from '@/lib/workPlanTemplates';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -151,15 +152,14 @@ const WorkPlans = () => {
     }
   };
 
+  const { softDelete } = useSoftDelete();
   const handleDelete = async () => {
     if (!deleteTarget) return;
-    const { error } = await supabase.from('work_plans').delete().eq('id', deleteTarget.id);
-    if (error) {
-      toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: '삭제되었습니다.' });
-      setPlans(prev => prev.filter(p => p.id !== deleteTarget.id));
-    }
+    const r = await softDelete('work_plans', deleteTarget.id, {
+      label: `작업계획서 "${deleteTarget.title || ''}"`,
+      projectId: deleteTarget.project_id,
+    });
+    if (r.ok) setPlans(prev => prev.filter(p => p.id !== deleteTarget.id));
     setDeleteTarget(null);
   };
 

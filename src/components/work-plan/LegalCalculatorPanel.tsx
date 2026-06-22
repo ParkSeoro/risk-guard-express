@@ -172,7 +172,7 @@ function ConfinedCalc({ onAppend }: { onAppend: (t: string) => void }) {
 }
 
 export default function LegalCalculatorPanel({ workType, onAppendToMethod }: Props) {
-  const map: Record<string, { label: string; Comp: React.FC<{ onAppend: (t: string) => void }> }[]> = {
+  const map: Record<string, { label: string; Comp: (p: { onAppend: (t: string) => void }) => JSX.Element }[]> = {
     heavy_lifting: [{ label: '크레인 양중 안전율', Comp: CraneCalc }],
     steel: [{ label: '크레인 양중 안전율', Comp: CraneCalc }, { label: '추락 방호조치', Comp: FallCalc }],
     excavation: [{ label: '굴착 사면 안전율', Comp: ExcavationCalc }],

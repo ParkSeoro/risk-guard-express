@@ -88,6 +88,19 @@ export default function WorkerPortal() {
     toast.success("교육 확인 완료");
   };
 
+  const doScan = async (action: "entry" | "exit", sig: string, ack: boolean) => {
+    return await supabase.rpc("worker_daily_scan", {
+      _token: daily!.qr_token,
+      _action: action,
+      _signature: sig,
+      _ra_confirmed: raCheck,
+      _edu_confirmed: eduCheck,
+      _tbm_confirmed: tbmCheck,
+      _no_accident: noAccident,
+      _ack_warnings: ack,
+    });
+  };
+
   const submitScan = async (action: "entry" | "exit") => {
     if (!daily || !worker) return;
     const sigRef = action === "entry" ? sigEntry : sigExit;
@@ -99,22 +112,27 @@ export default function WorkerPortal() {
 
     const sig = sigRef.current!.getCanvas().toDataURL("image/png");
     setSubmitting(true);
-    const { data, error } = await supabase.rpc("worker_daily_scan", {
-      _token: daily.qr_token,
-      _action: action,
-      _signature: sig,
-      _ra_confirmed: raCheck,
-      _edu_confirmed: eduCheck,
-      _tbm_confirmed: tbmCheck,
-      _no_accident: noAccident,
-    });
+    let { data, error } = await doScan(action, sig, false);
+    let r = data as any;
+
+    if (!error && r?.warning && Array.isArray(r?.warnings) && r.warnings.length > 0) {
+      const lines = r.warnings.map((w: any) => `• ${w.message}`).join("\n");
+      const ok = window.confirm(`주의: 미이수 항목이 확인되었습니다.\n${lines}\n\n관리자에게 자동 알림이 발송됩니다. 계속 진행하시겠습니까?`);
+      if (!ok) { setSubmitting(false); return; }
+      ({ data, error } = await doScan(action, sig, true));
+      r = data as any;
+    }
+
     setSubmitting(false);
-    const r = data as any;
     if (error || r?.error) {
       toast.error((action === "entry" ? "출근" : "퇴근") + " 실패: " + (r?.message || r?.error || error?.message));
       return;
     }
-    toast.success(action === "entry" ? "출근 완료" : "퇴근 완료. 수고하셨습니다.");
+    if (action === "entry" && Array.isArray(r?.warnings) && r.warnings.length > 0) {
+      toast.warning("출근 완료 (미이수 항목이 관리자에게 통보되었습니다)");
+    } else {
+      toast.success(action === "entry" ? "출근 완료" : "퇴근 완료. 수고하셨습니다.");
+    }
     await loadDaily(worker.id);
     sigRef.current?.clear();
     if (action === "exit") setNoAccident(false);

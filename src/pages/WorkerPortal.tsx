@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Loader2, HardHat, FileText, LogIn, LogOut, AlertCircle, CheckCircle2, QrCode } from "lucide-react";
+import { Loader2, HardHat, FileText, LogIn, LogOut, AlertCircle, CheckCircle2, QrCode, Home, Phone, Siren, ShieldAlert, MapPin, Flame, Heart } from "lucide-react";
 import { toast } from "sonner";
 
 type WorkerInfo = {
@@ -205,12 +205,82 @@ export default function WorkerPortal() {
           </Card>
         )}
 
-        <Tabs defaultValue={!eduOk ? "education" : canEntry ? "entry" : "exit"}>
-          <TabsList className="grid grid-cols-3 w-full h-12">
-            <TabsTrigger value="education" className="text-base"><FileText className="h-5 w-5 mr-1" />교육</TabsTrigger>
-            <TabsTrigger value="entry" className="text-base" disabled={!canEntry}><LogIn className="h-5 w-5 mr-1" />출근</TabsTrigger>
-            <TabsTrigger value="exit" className="text-base" disabled={!canExit}><LogOut className="h-5 w-5 mr-1" />퇴근</TabsTrigger>
+        <Tabs defaultValue="home">
+          <TabsList className="grid grid-cols-4 w-full h-12">
+            <TabsTrigger value="home" className="text-sm"><Home className="h-4 w-4 mr-1" />홈</TabsTrigger>
+            <TabsTrigger value="education" className="text-sm"><FileText className="h-4 w-4 mr-1" />교육</TabsTrigger>
+            <TabsTrigger value="entry" className="text-sm" disabled={!canEntry}><LogIn className="h-4 w-4 mr-1" />출근</TabsTrigger>
+            <TabsTrigger value="exit" className="text-sm" disabled={!canExit}><LogOut className="h-4 w-4 mr-1" />퇴근</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="home" className="space-y-3">
+            {/* 비상 SOS */}
+            <Card className="border-destructive bg-destructive/5">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2 text-destructive">
+                  <Siren className="h-5 w-5" /> 비상상황 신고
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 pb-4">
+                <div className="grid grid-cols-2 gap-2">
+                  <a href="tel:119"><Button variant="destructive" className="w-full h-16 text-lg"><Flame className="h-5 w-5 mr-1" />119</Button></a>
+                  <a href="tel:112"><Button variant="destructive" className="w-full h-16 text-lg"><ShieldAlert className="h-5 w-5 mr-1" />112</Button></a>
+                </div>
+                <div className="text-xs text-muted-foreground bg-background rounded p-2 mt-2 leading-relaxed">
+                  <strong className="text-foreground">비상 대피 절차</strong><br />
+                  1. 즉시 작업 중지 · 동료에게 큰 소리로 알림<br />
+                  2. 지정 대피로를 따라 집결지로 이동<br />
+                  3. 인원 확인 후 관리자에게 보고<br />
+                  4. 부상자 발생 시 119 우선 신고 후 응급조치
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* 오늘의 위험요인 */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-warning" /> 오늘의 위험요인
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 pb-4">
+                {materials.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">등록된 위험성평가가 없습니다.</div>
+                ) : (
+                  (materials[0]?.key_hazards || []).slice(0, 4).map((h: any, i: number) => (
+                    <div key={i} className="border rounded p-2 text-sm">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant={h.risk_level === "상" ? "destructive" : h.risk_level === "중" ? "default" : "secondary"}>
+                          {h.risk_level}
+                        </Badge>
+                        <strong>{h.hazard}</strong>
+                      </div>
+                      <div className="text-xs text-muted-foreground">{h.description}</div>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+
+            {/* 내 안전현황 */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Heart className="h-4 w-4 text-primary" /> 내 안전현황
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid grid-cols-2 gap-2 pb-4 text-sm">
+                <div className="flex items-center gap-2 p-2 border rounded">
+                  {eduOk ? <CheckCircle2 className="h-4 w-4 text-success" /> : <AlertCircle className="h-4 w-4 text-destructive" />}
+                  교육 {eduOk ? "완료" : "미확인"}
+                </div>
+                <div className="flex items-center gap-2 p-2 border rounded">
+                  {daily?.used_for_entry ? <CheckCircle2 className="h-4 w-4 text-success" /> : <MapPin className="h-4 w-4 text-muted-foreground" />}
+                  {daily?.used_for_exit ? "퇴근완료" : daily?.used_for_entry ? "현장입장" : "출근대기"}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="education">
             <Card>

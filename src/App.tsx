@@ -49,6 +49,7 @@ import LegalEducationMapping from "./pages/LegalEducationMapping";
 // WorkerAttendance is now embedded inside WorkerManagement as a tab; legacy route redirects.
 import WorkerRegister from "./pages/WorkerRegister";
 import WorkerPortal from "./pages/WorkerPortal";
+import WorkerEntry from "./pages/WorkerEntry";
 import Manual from "./pages/Manual";
 import AITestEngine from "./pages/AITestEngine";
 import AILogs from "./pages/AILogs";
@@ -212,6 +213,7 @@ const App = () => (
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/tbm/:token" element={<TbmParticipate />} />
             <Route path="/worker/register" element={<WorkerRegister />} />
+            <Route path="/worker" element={<WorkerEntry />} />
             <Route path="/worker/portal/:token" element={<WorkerPortal />} />
             <Route path="/health/survey/:token" element={<HazardSurveyResponse />} />
             <Route path="/manual" element={<Manual />} />

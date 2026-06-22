@@ -60,11 +60,14 @@ export default function WorkerPortal() {
 
   useEffect(() => {
     if (!token) return;
+    // 토큰을 영구 보관 — PWA 재실행 시 /worker 진입점에서 자동 로그인
+    localStorage.setItem("workerToken", token);
     (async () => {
       const { data, error } = await supabase.rpc("get_worker_by_token", { _token: token });
       setLoading(false);
       if (error || (data as any)?.error) {
         toast.error("등록되지 않은 토큰입니다");
+        localStorage.removeItem("workerToken");
         return;
       }
       const w = data as WorkerInfo;

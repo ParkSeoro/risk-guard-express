@@ -267,7 +267,17 @@ export default function WorkPermits() {
               <div className="flex gap-1 flex-wrap">
                 <Button size="sm" variant="outline" onClick={() => runGateCheck(p)}><ShieldCheck className="h-3 w-3 mr-1" />게이트체크</Button>
                 {p.status === '작성중' && (
-                  <Button size="sm" onClick={() => submit(p)} disabled={!p.gate_check_result?.all_ok}>상신</Button>
+                  <>
+                    <Button size="sm" onClick={() => submit(p)} disabled={!p.gate_check_result?.all_ok}>상신</Button>
+                    <Button size="sm" variant="outline" onClick={async () => {
+                      const { data, error } = await supabase.rpc('submit_entity_for_approval', {
+                        _entity_type: 'work_permit', _entity_id: p.id, _project_id: projectId,
+                      });
+                      const r = data as any;
+                      if (error || r?.error) toast({ title: '결재 상신 실패', description: r?.error || error?.message, variant: 'destructive' });
+                      else { toast({ title: `결재 상신 (${r.steps}단계)` }); load(); }
+                    }}>결재라인 상신</Button>
+                  </>
                 )}
                 {p.status === '검토대기' && isAdmin && (
                   <>

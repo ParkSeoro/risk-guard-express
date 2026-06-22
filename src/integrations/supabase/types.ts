@@ -3878,7 +3878,9 @@ export type Database = {
         Row: {
           accident_cases: Json
           auto_generated: boolean
+          category: string | null
           company_id: string | null
+          completion_count: number | null
           created_at: string
           created_by: string | null
           deleted_at: string | null
@@ -3888,6 +3890,7 @@ export type Database = {
           id: string
           is_deleted: boolean
           key_hazards: Json
+          last_completed_at: string | null
           ppe_requirements: Json
           prohibited_actions: Json
           project_id: string
@@ -3903,7 +3906,9 @@ export type Database = {
         Insert: {
           accident_cases?: Json
           auto_generated?: boolean
+          category?: string | null
           company_id?: string | null
+          completion_count?: number | null
           created_at?: string
           created_by?: string | null
           deleted_at?: string | null
@@ -3913,6 +3918,7 @@ export type Database = {
           id?: string
           is_deleted?: boolean
           key_hazards?: Json
+          last_completed_at?: string | null
           ppe_requirements?: Json
           prohibited_actions?: Json
           project_id: string
@@ -3928,7 +3934,9 @@ export type Database = {
         Update: {
           accident_cases?: Json
           auto_generated?: boolean
+          category?: string | null
           company_id?: string | null
+          completion_count?: number | null
           created_at?: string
           created_by?: string | null
           deleted_at?: string | null
@@ -3938,6 +3946,7 @@ export type Database = {
           id?: string
           is_deleted?: boolean
           key_hazards?: Json
+          last_completed_at?: string | null
           ppe_requirements?: Json
           prohibited_actions?: Json
           project_id?: string
@@ -4540,6 +4549,7 @@ export type Database = {
       }
       todo_items: {
         Row: {
+          category: string | null
           company_id: string | null
           completed_at: string | null
           completed_by: string | null
@@ -4554,12 +4564,15 @@ export type Database = {
           is_deleted: boolean
           legal_duty_id: string | null
           project_id: string
+          source_id: string | null
+          source_table: string | null
           status: string
           title: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          category?: string | null
           company_id?: string | null
           completed_at?: string | null
           completed_by?: string | null
@@ -4574,12 +4587,15 @@ export type Database = {
           is_deleted?: boolean
           legal_duty_id?: string | null
           project_id: string
+          source_id?: string | null
+          source_table?: string | null
           status?: string
           title: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          category?: string | null
           company_id?: string | null
           completed_at?: string | null
           completed_by?: string | null
@@ -4594,6 +4610,8 @@ export type Database = {
           is_deleted?: boolean
           legal_duty_id?: string | null
           project_id?: string
+          source_id?: string | null
+          source_table?: string | null
           status?: string
           title?: string
           updated_at?: string
@@ -5418,6 +5436,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_env_exceedance_to_risk: {
+        Args: { _measurement_id: string }
+        Returns: number
+      }
       can_access_company_data: {
         Args: { _company_id: string; _project_id: string; _user_id: string }
         Returns: boolean

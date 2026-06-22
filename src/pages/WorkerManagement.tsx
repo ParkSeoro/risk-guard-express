@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import WorkerAttendance from "./WorkerAttendance";
 
+const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "worker"]);
+
 export default function WorkerManagement() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTab = searchParams.get("tab") === "attendance" ? "attendance" : "register";
@@ -22,6 +24,7 @@ export default function WorkerManagement() {
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
   const [companyId, setCompanyId] = useState<string>("");
+  const [companyLocked, setCompanyLocked] = useState(false);
   const [workers, setWorkers] = useState<any[]>([]);
   const [showQr, setShowQr] = useState(false);
   const baseUrl = window.location.origin;
@@ -37,8 +40,26 @@ export default function WorkerManagement() {
     if (!projectId) return;
     localStorage.setItem("currentProjectId", projectId);
     setCompanyId("");
+    setCompanyLocked(false);
     supabase.from("companies").select("id,name").eq("project_id", projectId).order("name")
       .then(({ data }) => setCompanies(data || []));
+    // 관리자 소속사 자동 지정 — 협력사 권한이면 잠금, 전체권한이면 기본값만 채우고 변경 가능
+    (async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth?.user) return;
+      const { data: pm } = await supabase
+        .from("project_members")
+        .select("role_new, company_id")
+        .eq("user_id", auth.user.id)
+        .eq("project_id", projectId)
+        .maybeSingle();
+      if (pm?.company_id) {
+        setCompanyId(pm.company_id);
+        if (pm.role_new && RESTRICTED_ROLES.has(pm.role_new as string)) {
+          setCompanyLocked(true);
+        }
+      }
+    })();
     load();
   }, [projectId]);
 

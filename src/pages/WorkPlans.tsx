@@ -123,7 +123,7 @@ const WorkPlans = () => {
       toast({ title: '작업계획서가 생성되었습니다.' });
       if (data) await auditLog('create', 'work_plan', data.id, access.selectedProject, { title, work_type: newPlan.workType });
       setDialogOpen(false);
-      setNewPlan({ workType: '', title: '', startDate: '', endDate: '' });
+      setNewPlan({ workType: '', title: '', startDate: '', endDate: '', assessmentRunId: '' });
       setSelectedCompany('');
       if (data) navigate(`/work-plan/${data.id}`);
     }

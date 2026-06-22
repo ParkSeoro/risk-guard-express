@@ -11,6 +11,7 @@ import { Calculator, ClipboardCheck, AlertTriangle, CheckCircle2, Copy } from 'l
 import { useToast } from '@/hooks/use-toast';
 import {
   calcCraneLoad, calcExcavationSlope, calcFallProtection, calcConfinedSpaceAtmosphere,
+  calcScaffoldLoad, calcVentilation, calcDemolitionZone, calcElectricalApproach,
   SOIL_STANDARD_SLOPE, type CalcResult,
 } from '@/lib/workPlanCalculators';
 

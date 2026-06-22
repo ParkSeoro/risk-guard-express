@@ -12,7 +12,7 @@ import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
 import { Plus, ClipboardList, Copy } from "lucide-react";
 
-const ACTIVE_PROJECT_KEY = "active_project_id";
+const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const TYPES = ["근골격계", "뇌심혈관", "직무스트레스", "감정노동"];
 
 export default function HazardSurveys() {

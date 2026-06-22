@@ -5,7 +5,7 @@ import { NavLink } from "@/components/NavLink";
 import { Activity, Stethoscope, FlaskConical, ClipboardList, GraduationCap } from "lucide-react";
 import { useToastError } from "@/hooks/useToastError";
 
-const ACTIVE_PROJECT_KEY = "active_project_id";
+const ACTIVE_PROJECT_KEY = "selectedProjectId";
 
 type Stats = {
   workers: number;

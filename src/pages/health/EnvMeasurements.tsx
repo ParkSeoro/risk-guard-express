@@ -12,7 +12,7 @@ import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
 import { Plus, ClipboardList, AlertTriangle } from "lucide-react";
 
-const ACTIVE_PROJECT_KEY = "active_project_id";
+const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const CATEGORIES = ["소음", "분진", "화학물질", "물리적", "생물학적", "진동", "조명", "고온"];
 const ROUNDS = ["1차(상반기)", "2차(하반기)", "수시"];
 

@@ -12,7 +12,7 @@ import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
 import { Plus, FlaskConical, FileText } from "lucide-react";
 
-const ACTIVE_PROJECT_KEY = "active_project_id";
+const ACTIVE_PROJECT_KEY = "selectedProjectId";
 
 export default function Chemicals() {
   const handle = useToastError();

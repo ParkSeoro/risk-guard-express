@@ -349,6 +349,18 @@ const WorkPlans = () => {
                               <Pencil className="h-3.5 w-3.5 mr-2" /> 제목 수정
                             </DropdownMenuItem>
                           )}
+                          {plan.status === '작성중' && access.canEdit('work_plan') && (
+                            <DropdownMenuItem onClick={async () => {
+                              const { data, error } = await supabase.rpc('submit_entity_for_approval', {
+                                _entity_type: 'work_plan', _entity_id: plan.id, _project_id: plan.project_id,
+                              });
+                              const r = data as any;
+                              if (error || r?.error) toast({ title: '상신 실패', description: r?.error || error?.message, variant: 'destructive' });
+                              else { toast({ title: `결재 상신 (${r.steps}단계)` }); loadPlans(); }
+                            }}>
+                              <CheckCircle2 className="h-3.5 w-3.5 mr-2" /> 결재 상신
+                            </DropdownMenuItem>
+                          )}
                           {access.canCreate('work_plan') && (
                             <DropdownMenuItem onClick={() => handleClone(plan)}>
                               <Copy className="h-3.5 w-3.5 mr-2" /> 이 계획서로 새로 만들기

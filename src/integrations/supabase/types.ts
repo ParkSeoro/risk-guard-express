@@ -3050,6 +3050,7 @@ export type Database = {
         Row: {
           assignee: string | null
           assignee_user_id: string | null
+          auto_adjust_reason: string | null
           batch_id: string | null
           created_at: string
           created_by: string | null
@@ -3105,6 +3106,7 @@ export type Database = {
         Insert: {
           assignee?: string | null
           assignee_user_id?: string | null
+          auto_adjust_reason?: string | null
           batch_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -3160,6 +3162,7 @@ export type Database = {
         Update: {
           assignee?: string | null
           assignee_user_id?: string | null
+          auto_adjust_reason?: string | null
           batch_id?: string | null
           created_at?: string
           created_by?: string | null

@@ -134,9 +134,14 @@ function resultToText(title: string, r: CalcResult): string {
 /* ---------- Crane ---------- */
 function CraneCalc({ onAppend }: { onAppend: (t: string) => void }) {
   const { toast } = useToast();
-  const [s, setS] = useState({ ratedCapacityTon: 25, loadTon: 10, riggingTon: 0.5, radiusM: 8, windMs: 4 });
+  const [s, setS] = useState({ ratedCapacityTon: 0, loadTon: 0, riggingTon: 0, radiusM: 0, windMs: 0 });
   const r = useMemo(() => calcCraneLoad(s), [s]);
   const upd = (k: keyof typeof s, v: string) => setS({ ...s, [k]: Number(v) || 0 });
+  const missing: MissingField[] = [
+    s.ratedCapacityTon <= 0 && { label: '정격하중(t)', hint: '크레인 사양표에서 해당 작업반경의 정격하중을 입력하세요.', legalBasis: '산안기준규칙 제132조' },
+    s.radiusM <= 0 && { label: '작업반경(m)', hint: '실제 양중 위치의 반경을 m 단위로 입력하세요.' },
+    s.loadTon <= 0 && { label: '인양물 무게(t)', hint: '시방서/도면 또는 실측치를 입력하세요.' },
+  ].filter(Boolean) as MissingField[];
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
@@ -146,10 +151,9 @@ function CraneCalc({ onAppend }: { onAppend: (t: string) => void }) {
         <div className="space-y-1"><Label className="text-xs">리깅(t)</Label><Input type="number" step="0.1" value={s.riggingTon} onChange={e => upd('riggingTon', e.target.value)} className="h-8" /></div>
         <div className="space-y-1"><Label className="text-xs">풍속(m/s)</Label><Input type="number" step="0.1" value={s.windMs} onChange={e => upd('windMs', e.target.value)} className="h-8" /></div>
       </div>
-      <ResultBlock result={r} />
-      <Button size="sm" variant="outline" className="gap-1" onClick={() => { onAppend(resultToText('크레인 양중 안전율', r)); toast({ title: '작업방법 섹션에 추가됨' }); }}>
-        <Copy className="h-3 w-3" />계산결과를 작업방법에 추가
-      </Button>
+      <MissingGuide items={missing} />
+      {missing.length === 0 && <ResultBlock result={r} />}
+      <SaveButton missing={missing} onSave={() => { onAppend(resultToText('크레인 양중 안전율', r)); toast({ title: '작업방법 섹션에 추가됨' }); }} />
     </div>
   );
 }

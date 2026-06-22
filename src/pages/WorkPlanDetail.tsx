@@ -318,23 +318,25 @@ const WorkPlanDetail = () => {
       toast({ title: '필수 입력 항목을 확인해주세요.', variant: 'destructive' });
       return;
     }
-    // 첨부서류 확인 (선택사항 - 경고만 표시)
-    const uploadedKeys = attachments.filter((a: any) => a.uploaded).map((a: any) => a.key);
-    const { getMissingRequiredAttachments } = await import('@/lib/attachmentTemplates');
-    const missing = getMissingRequiredAttachments(plan.work_type, uploadedKeys);
-    if (missing.length > 0) {
-      const names = missing.slice(0, 5).map(m => m.name).join(', ');
-      const more = missing.length > 5 ? ` 외 ${missing.length - 5}건` : '';
-      toast({ 
-        title: '첨부서류 안내', 
-        description: `${names}${more}이(가) 미첨부 상태입니다. 결재 진행은 가능합니다.`,
+    // 법정 필수 첨부(legal & required) 검증 — 누락 시 결재 차단
+    const { getApprovalBlockers } = await import('@/lib/workPlanAttachments');
+    const blockers = await getApprovalBlockers(planId!, plan.work_type);
+    if (blockers.length > 0) {
+      const names = blockers.slice(0, 5).map(b => b.name).join(', ');
+      const more = blockers.length > 5 ? ` 외 ${blockers.length - 5}건` : '';
+      toast({
+        title: '결재 상신이 차단되었습니다',
+        description: `법정 필수 첨부 누락: ${names}${more}. 첨부 후 다시 상신해주세요.`,
+        variant: 'destructive',
       });
+      return;
     }
     await handleSave();
     await supabase.from('work_plans').update({ status: '결재중' }).eq('id', planId);
     setPlan((prev: any) => ({ ...prev, status: '결재중' }));
     toast({ title: '결재 상신이 완료되었습니다.' });
   };
+
 
   const handlePdfDownload = async () => {
     if (!planId) return;

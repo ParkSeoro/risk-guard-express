@@ -829,6 +829,139 @@ export type Database = {
           },
         ]
       }
+      chemical_workers: {
+        Row: {
+          chemical_id: string
+          created_at: string | null
+          id: string
+          msds_education_at: string | null
+          project_id: string
+          worker_id: string
+        }
+        Insert: {
+          chemical_id: string
+          created_at?: string | null
+          id?: string
+          msds_education_at?: string | null
+          project_id: string
+          worker_id: string
+        }
+        Update: {
+          chemical_id?: string
+          created_at?: string | null
+          id?: string
+          msds_education_at?: string | null
+          project_id?: string
+          worker_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chemical_workers_chemical_id_fkey"
+            columns: ["chemical_id"]
+            isOneToOne: false
+            referencedRelation: "chemicals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chemical_workers_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chemical_workers_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chemicals: {
+        Row: {
+          cas_no: string | null
+          company_id: string | null
+          created_at: string | null
+          created_by: string | null
+          hazard_class: string | null
+          hazard_pictograms: Json | null
+          id: string
+          is_carcinogen: boolean | null
+          is_deleted: boolean | null
+          is_reproductive_toxin: boolean | null
+          monthly_usage: number | null
+          msds_file_url: string | null
+          name: string
+          notes: string | null
+          project_id: string
+          storage_location: string | null
+          trade_name: string | null
+          unit: string | null
+          updated_at: string | null
+          warning_label_url: string | null
+        }
+        Insert: {
+          cas_no?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          hazard_class?: string | null
+          hazard_pictograms?: Json | null
+          id?: string
+          is_carcinogen?: boolean | null
+          is_deleted?: boolean | null
+          is_reproductive_toxin?: boolean | null
+          monthly_usage?: number | null
+          msds_file_url?: string | null
+          name: string
+          notes?: string | null
+          project_id: string
+          storage_location?: string | null
+          trade_name?: string | null
+          unit?: string | null
+          updated_at?: string | null
+          warning_label_url?: string | null
+        }
+        Update: {
+          cas_no?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          hazard_class?: string | null
+          hazard_pictograms?: Json | null
+          id?: string
+          is_carcinogen?: boolean | null
+          is_deleted?: boolean | null
+          is_reproductive_toxin?: boolean | null
+          monthly_usage?: number | null
+          msds_file_url?: string | null
+          name?: string
+          notes?: string | null
+          project_id?: string
+          storage_location?: string | null
+          trade_name?: string | null
+          unit?: string | null
+          updated_at?: string | null
+          warning_label_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chemicals_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chemicals_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       comments: {
         Row: {
           content: string
@@ -1272,6 +1405,340 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hazard_survey_responses: {
+        Row: {
+          ai_summary: string | null
+          company_name: string | null
+          created_at: string | null
+          id: string
+          ip_hash: string | null
+          project_id: string
+          risk_level: string | null
+          scores: Json | null
+          survey_id: string
+          total_score: number | null
+          worker_id: string | null
+          worker_name: string | null
+          worker_phone: string | null
+        }
+        Insert: {
+          ai_summary?: string | null
+          company_name?: string | null
+          created_at?: string | null
+          id?: string
+          ip_hash?: string | null
+          project_id: string
+          risk_level?: string | null
+          scores?: Json | null
+          survey_id: string
+          total_score?: number | null
+          worker_id?: string | null
+          worker_name?: string | null
+          worker_phone?: string | null
+        }
+        Update: {
+          ai_summary?: string | null
+          company_name?: string | null
+          created_at?: string | null
+          id?: string
+          ip_hash?: string | null
+          project_id?: string
+          risk_level?: string | null
+          scores?: Json | null
+          survey_id?: string
+          total_score?: number | null
+          worker_id?: string | null
+          worker_name?: string | null
+          worker_phone?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hazard_survey_responses_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hazard_survey_responses_survey_id_fkey"
+            columns: ["survey_id"]
+            isOneToOne: false
+            referencedRelation: "hazard_surveys"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hazard_survey_responses_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hazard_surveys: {
+        Row: {
+          actions: Json | null
+          company_id: string | null
+          created_at: string | null
+          created_by: string | null
+          findings: Json | null
+          high_risk_count: number | null
+          id: string
+          is_active: boolean | null
+          is_deleted: boolean | null
+          next_due_date: string | null
+          project_id: string
+          qr_token: string | null
+          response_count: number | null
+          survey_date: string
+          target_count: number | null
+          title: string
+          type: Database["public"]["Enums"]["hazard_survey_type"]
+          updated_at: string | null
+        }
+        Insert: {
+          actions?: Json | null
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          findings?: Json | null
+          high_risk_count?: number | null
+          id?: string
+          is_active?: boolean | null
+          is_deleted?: boolean | null
+          next_due_date?: string | null
+          project_id: string
+          qr_token?: string | null
+          response_count?: number | null
+          survey_date: string
+          target_count?: number | null
+          title: string
+          type: Database["public"]["Enums"]["hazard_survey_type"]
+          updated_at?: string | null
+        }
+        Update: {
+          actions?: Json | null
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          findings?: Json | null
+          high_risk_count?: number | null
+          id?: string
+          is_active?: boolean | null
+          is_deleted?: boolean | null
+          next_due_date?: string | null
+          project_id?: string
+          qr_token?: string | null
+          response_count?: number | null
+          survey_date?: string
+          target_count?: number | null
+          title?: string
+          type?: Database["public"]["Enums"]["hazard_survey_type"]
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hazard_surveys_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hazard_surveys_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      health_checkups: {
+        Row: {
+          company_id: string | null
+          conducted_date: string | null
+          created_at: string | null
+          created_by: string | null
+          followup_required: boolean | null
+          followup_summary: string | null
+          hazard_factors: Json | null
+          id: string
+          institution: string | null
+          is_deleted: boolean | null
+          next_due_date: string | null
+          notes: string | null
+          project_id: string
+          report_url: string | null
+          restrictions: string | null
+          result: Database["public"]["Enums"]["health_checkup_result"] | null
+          scheduled_date: string | null
+          type: Database["public"]["Enums"]["health_checkup_type"]
+          updated_at: string | null
+          worker_id: string | null
+          worker_name: string | null
+          worker_phone: string | null
+        }
+        Insert: {
+          company_id?: string | null
+          conducted_date?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          followup_required?: boolean | null
+          followup_summary?: string | null
+          hazard_factors?: Json | null
+          id?: string
+          institution?: string | null
+          is_deleted?: boolean | null
+          next_due_date?: string | null
+          notes?: string | null
+          project_id: string
+          report_url?: string | null
+          restrictions?: string | null
+          result?: Database["public"]["Enums"]["health_checkup_result"] | null
+          scheduled_date?: string | null
+          type: Database["public"]["Enums"]["health_checkup_type"]
+          updated_at?: string | null
+          worker_id?: string | null
+          worker_name?: string | null
+          worker_phone?: string | null
+        }
+        Update: {
+          company_id?: string | null
+          conducted_date?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          followup_required?: boolean | null
+          followup_summary?: string | null
+          hazard_factors?: Json | null
+          id?: string
+          institution?: string | null
+          is_deleted?: boolean | null
+          next_due_date?: string | null
+          notes?: string | null
+          project_id?: string
+          report_url?: string | null
+          restrictions?: string | null
+          result?: Database["public"]["Enums"]["health_checkup_result"] | null
+          scheduled_date?: string | null
+          type?: Database["public"]["Enums"]["health_checkup_type"]
+          updated_at?: string | null
+          worker_id?: string | null
+          worker_name?: string | null
+          worker_phone?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "health_checkups_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "health_checkups_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "health_checkups_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      health_education_logs: {
+        Row: {
+          attachment_url: string | null
+          company_id: string | null
+          conducted_at: string | null
+          created_at: string | null
+          created_by: string | null
+          hours: number | null
+          id: string
+          instructor: string | null
+          is_deleted: boolean | null
+          material_id: string | null
+          notes: string | null
+          project_id: string
+          title: string | null
+          type: Database["public"]["Enums"]["health_education_type"]
+          updated_at: string | null
+          worker_id: string | null
+          worker_name: string | null
+        }
+        Insert: {
+          attachment_url?: string | null
+          company_id?: string | null
+          conducted_at?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          hours?: number | null
+          id?: string
+          instructor?: string | null
+          is_deleted?: boolean | null
+          material_id?: string | null
+          notes?: string | null
+          project_id: string
+          title?: string | null
+          type: Database["public"]["Enums"]["health_education_type"]
+          updated_at?: string | null
+          worker_id?: string | null
+          worker_name?: string | null
+        }
+        Update: {
+          attachment_url?: string | null
+          company_id?: string | null
+          conducted_at?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          hours?: number | null
+          id?: string
+          instructor?: string | null
+          is_deleted?: boolean | null
+          material_id?: string | null
+          notes?: string | null
+          project_id?: string
+          title?: string | null
+          type?: Database["public"]["Enums"]["health_education_type"]
+          updated_at?: string | null
+          worker_id?: string | null
+          worker_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "health_education_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "health_education_logs_material_id_fkey"
+            columns: ["material_id"]
+            isOneToOne: false
+            referencedRelation: "safety_education_materials"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "health_education_logs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "health_education_logs_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
             referencedColumns: ["id"]
           },
         ]
@@ -2539,6 +3006,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           department: string | null
+          env_exceedance_source: string | null
           excluded_at: string | null
           excluded_by: string | null
           excluded_reason: string | null
@@ -2560,6 +3028,8 @@ export type Database = {
           item_category: string
           legal_basis: string[] | null
           likelihood_grade: string
+          linked_chemical_ids: string[] | null
+          linked_env_factor_ids: string[] | null
           note: string | null
           ppe: string[] | null
           process: string
@@ -2587,6 +3057,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           department?: string | null
+          env_exceedance_source?: string | null
           excluded_at?: string | null
           excluded_by?: string | null
           excluded_reason?: string | null
@@ -2608,6 +3079,8 @@ export type Database = {
           item_category?: string
           legal_basis?: string[] | null
           likelihood_grade?: string
+          linked_chemical_ids?: string[] | null
+          linked_env_factor_ids?: string[] | null
           note?: string | null
           ppe?: string[] | null
           process: string
@@ -2635,6 +3108,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           department?: string | null
+          env_exceedance_source?: string | null
           excluded_at?: string | null
           excluded_by?: string | null
           excluded_reason?: string | null
@@ -2656,6 +3130,8 @@ export type Database = {
           item_category?: string
           legal_basis?: string[] | null
           likelihood_grade?: string
+          linked_chemical_ids?: string[] | null
+          linked_env_factor_ids?: string[] | null
           note?: string | null
           ppe?: string[] | null
           process?: string
@@ -4304,6 +4780,153 @@ export type Database = {
           },
         ]
       }
+      work_env_factors: {
+        Row: {
+          cas_no: string | null
+          category: Database["public"]["Enums"]["env_factor_category"]
+          created_at: string | null
+          created_by: string | null
+          exposure_limit_unit: string | null
+          exposure_limit_value: number | null
+          id: string
+          is_deleted: boolean | null
+          name: string
+          notes: string | null
+          project_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          cas_no?: string | null
+          category: Database["public"]["Enums"]["env_factor_category"]
+          created_at?: string | null
+          created_by?: string | null
+          exposure_limit_unit?: string | null
+          exposure_limit_value?: number | null
+          id?: string
+          is_deleted?: boolean | null
+          name: string
+          notes?: string | null
+          project_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          cas_no?: string | null
+          category?: Database["public"]["Enums"]["env_factor_category"]
+          created_at?: string | null
+          created_by?: string | null
+          exposure_limit_unit?: string | null
+          exposure_limit_value?: number | null
+          id?: string
+          is_deleted?: boolean | null
+          name?: string
+          notes?: string | null
+          project_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_env_factors_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      work_env_measurements: {
+        Row: {
+          action_required: boolean | null
+          action_summary: string | null
+          agency: string | null
+          company_id: string | null
+          created_at: string | null
+          created_by: string | null
+          exposure_limit: number | null
+          factor_id: string | null
+          factor_name: string | null
+          id: string
+          is_deleted: boolean | null
+          is_exceeded: boolean | null
+          location: string | null
+          measure_date: string
+          measured_value: number | null
+          next_due_date: string | null
+          project_id: string
+          report_url: string | null
+          round: string
+          unit: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          action_required?: boolean | null
+          action_summary?: string | null
+          agency?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          exposure_limit?: number | null
+          factor_id?: string | null
+          factor_name?: string | null
+          id?: string
+          is_deleted?: boolean | null
+          is_exceeded?: boolean | null
+          location?: string | null
+          measure_date: string
+          measured_value?: number | null
+          next_due_date?: string | null
+          project_id: string
+          report_url?: string | null
+          round: string
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          action_required?: boolean | null
+          action_summary?: string | null
+          agency?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          exposure_limit?: number | null
+          factor_id?: string | null
+          factor_name?: string | null
+          id?: string
+          is_deleted?: boolean | null
+          is_exceeded?: boolean | null
+          location?: string | null
+          measure_date?: string
+          measured_value?: number | null
+          next_due_date?: string | null
+          project_id?: string
+          report_url?: string | null
+          round?: string
+          unit?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_env_measurements_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_env_measurements_factor_id_fkey"
+            columns: ["factor_id"]
+            isOneToOne: false
+            referencedRelation: "work_env_factors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_env_measurements_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       work_permit_workers: {
         Row: {
           created_at: string
@@ -4618,6 +5241,8 @@ export type Database = {
           entry_signature_data: string | null
           exit_at: string | null
           exit_signature_data: string | null
+          health_warning_items: Json | null
+          health_warning_shown: boolean | null
           id: string
           no_accident_confirmed: boolean
           project_id: string
@@ -4635,6 +5260,8 @@ export type Database = {
           entry_signature_data?: string | null
           exit_at?: string | null
           exit_signature_data?: string | null
+          health_warning_items?: Json | null
+          health_warning_shown?: boolean | null
           id?: string
           no_accident_confirmed?: boolean
           project_id: string
@@ -4652,6 +5279,8 @@ export type Database = {
           entry_signature_data?: string | null
           exit_at?: string | null
           exit_signature_data?: string | null
+          health_warning_items?: Json | null
+          health_warning_shown?: boolean | null
           id?: string
           no_accident_confirmed?: boolean
           project_id?: string
@@ -4727,12 +5356,19 @@ export type Database = {
           company_name: string
           created_at: string
           education_confirmed_at: string | null
+          health_checkup_status:
+            | Database["public"]["Enums"]["health_checkup_result"]
+            | null
+          health_restrictions: string | null
           id: string
           is_active: boolean
+          last_checkup_date: string | null
           name: string
+          next_checkup_due: string | null
           phone: string
           project_id: string
           qr_token: string
+          special_education_required_until: string | null
           updated_at: string
         }
         Insert: {
@@ -4740,12 +5376,19 @@ export type Database = {
           company_name?: string
           created_at?: string
           education_confirmed_at?: string | null
+          health_checkup_status?:
+            | Database["public"]["Enums"]["health_checkup_result"]
+            | null
+          health_restrictions?: string | null
           id?: string
           is_active?: boolean
+          last_checkup_date?: string | null
           name: string
+          next_checkup_due?: string | null
           phone: string
           project_id: string
           qr_token?: string
+          special_education_required_until?: string | null
           updated_at?: string
         }
         Update: {
@@ -4753,12 +5396,19 @@ export type Database = {
           company_name?: string
           created_at?: string
           education_confirmed_at?: string | null
+          health_checkup_status?:
+            | Database["public"]["Enums"]["health_checkup_result"]
+            | null
+          health_restrictions?: string | null
           id?: string
           is_active?: boolean
+          last_checkup_date?: string | null
           name?: string
+          next_checkup_due?: string | null
           phone?: string
           project_id?: string
           qr_token?: string
+          special_education_required_until?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -4805,6 +5455,10 @@ export type Database = {
         Returns: Database["public"]["Enums"]["project_position"]
       }
       get_worker_by_token: { Args: { _token: string }; Returns: Json }
+      get_worker_health_warnings: {
+        Args: { _worker_id: string }
+        Returns: Json
+      }
       has_project_role: {
         Args: {
           _project_id: string
@@ -4873,18 +5527,32 @@ export type Database = {
         }
         Returns: Json
       }
-      worker_daily_scan: {
-        Args: {
-          _action: string
-          _edu_confirmed?: boolean
-          _no_accident?: boolean
-          _ra_confirmed?: boolean
-          _signature: string
-          _tbm_confirmed?: boolean
-          _token: string
-        }
-        Returns: Json
-      }
+      worker_daily_scan:
+        | {
+            Args: {
+              _action: string
+              _edu_confirmed?: boolean
+              _no_accident?: boolean
+              _ra_confirmed?: boolean
+              _signature: string
+              _tbm_confirmed?: boolean
+              _token: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              _ack_warnings?: boolean
+              _action: string
+              _edu_confirmed?: boolean
+              _no_accident?: boolean
+              _ra_confirmed?: boolean
+              _signature: string
+              _tbm_confirmed?: boolean
+              _token: string
+            }
+            Returns: Json
+          }
       worker_entry: {
         Args: {
           _edu_confirmed: boolean
@@ -4902,7 +5570,33 @@ export type Database = {
       }
     }
     Enums: {
+      env_factor_category:
+        | "소음"
+        | "분진"
+        | "화학물질"
+        | "물리적"
+        | "생물학적"
+        | "진동"
+        | "조명"
+        | "고온"
       global_role: "master"
+      hazard_survey_type: "근골격계" | "뇌심혈관" | "직무스트레스" | "감정노동"
+      health_checkup_result:
+        | "정상A"
+        | "정상B"
+        | "요관찰C"
+        | "유소견D1"
+        | "유소견D2"
+        | "판정불가"
+        | "미수검"
+      health_checkup_type: "일반" | "특수" | "배치전" | "수시" | "임시"
+      health_education_type:
+        | "정기"
+        | "특별"
+        | "관리감독자"
+        | "MSDS"
+        | "신규채용"
+        | "작업변경"
       project_position:
         | "CEO"
         | "EXECUTIVE"
@@ -5049,7 +5743,36 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      env_factor_category: [
+        "소음",
+        "분진",
+        "화학물질",
+        "물리적",
+        "생물학적",
+        "진동",
+        "조명",
+        "고온",
+      ],
       global_role: ["master"],
+      hazard_survey_type: ["근골격계", "뇌심혈관", "직무스트레스", "감정노동"],
+      health_checkup_result: [
+        "정상A",
+        "정상B",
+        "요관찰C",
+        "유소견D1",
+        "유소견D2",
+        "판정불가",
+        "미수검",
+      ],
+      health_checkup_type: ["일반", "특수", "배치전", "수시", "임시"],
+      health_education_type: [
+        "정기",
+        "특별",
+        "관리감독자",
+        "MSDS",
+        "신규채용",
+        "작업변경",
+      ],
       project_position: [
         "CEO",
         "EXECUTIVE",

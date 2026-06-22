@@ -1,13 +1,21 @@
 // 공종별 첨부자료 자동 생성 템플릿 (KOSHA 기준)
 // 작업 유형과 조건에 따라 필수 첨부자료 목록을 자동으로 생성
 
+export type AttachmentKind = 'legal' | 'calc_evidence' | 'site_proof';
+export type AttachmentAutoSource = 'equipment' | 'msds' | 'env_measurement' | 'cert' | 'rigging' | 'risk_assessment';
+
 export interface AttachmentItem {
   key: string;
   name: string;
   required: boolean;
   description: string;
   category: string;
+  /** 3계층 분류 — 결재 차단 여부 결정 (legal 누락 시만 차단) */
+  kind?: AttachmentKind;
+  /** 자동 첨부 출처 — 지정 시 다른 모듈 데이터에서 끌어옴 */
+  autoSource?: AttachmentAutoSource;
 }
+
 
 interface AttachmentCondition {
   field: string;

@@ -36,13 +36,14 @@ const WorkPlans = () => {
   const access = useGlobalProjectAccess();
   const [plans, setPlans] = useState<any[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [newPlan, setNewPlan] = useState({ workType: '', title: '', startDate: '', endDate: '' });
+  const [newPlan, setNewPlan] = useState({ workType: '', title: '', startDate: '', endDate: '', assessmentRunId: '' });
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [editTarget, setEditTarget] = useState<any>(null);
   const [editTitle, setEditTitle] = useState('');
   const [companies, setCompanies] = useState<any[]>([]);
   const [selectedCompany, setSelectedCompany] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [runs, setRuns] = useState<any[]>([]);
 
   useEffect(() => {
     if (access.selectedProject) {

@@ -160,7 +160,6 @@ function CraneCalc({ onAppend }: { onAppend: (t: string) => void }) {
 
 /* ---------- Excavation ---------- */
 function ExcavationCalc({ onAppend }: { onAppend: (t: string) => void }) {
-function ExcavationCalc({ onAppend }: { onAppend: (t: string) => void }) {
   const { toast } = useToast();
   const [s, setS] = useState({ soilType: '' as keyof typeof SOIL_STANDARD_SLOPE | '', depthM: 0, actualHorizontal: 0 });
   const r = useMemo(() => s.soilType ? calcExcavationSlope(s as any) : null, [s]);

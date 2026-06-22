@@ -5954,6 +5954,7 @@ export type Database = {
         Args: { _worker_id: string }
         Returns: Json
       }
+      get_worker_today_content: { Args: { _token: string }; Returns: Json }
       get_wpa_missing_mandatory: {
         Args: { _plan_id: string }
         Returns: {

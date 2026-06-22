@@ -205,5 +205,51 @@ export function getMissingRequiredAttachments(
   conditions?: Record<string, string>
 ): AttachmentItem[] {
   const all = generateAttachments(workType, conditions);
-  return all.filter(a => a.required && !uploadedKeys.includes(a.key));
+  return all.filter(a => a.required && !uploadedKeys.includes(a.key)).map(withKind);
 }
+
+/**
+ * 첨부 항목을 3계층(legal / calc_evidence / site_proof)으로 분류.
+ * 명시 kind가 없으면 키/카테고리에서 추론.
+ */
+export function withKind(item: AttachmentItem): AttachmentItem {
+  if (item.kind) return item;
+  const key = item.key.toLowerCase();
+  const cat = item.category;
+  // 인허가·자격·검사증·MSDS·법정 계산서 → legal
+  if (
+    ['인허가', '자격', '점검'].includes(cat) ||
+    /permit|license|cert|inspection|insurance|biz_license|msds|asbestos/.test(key)
+  ) return { ...item, kind: 'legal' };
+  // 계산·구조·계측·도면 → calc_evidence
+  if (
+    ['구조', '계획', '도면', '조사'].includes(cat) ||
+    /calc|plan|drawing|radius|ground_review|geo_report|monitoring|ventilation/.test(key)
+  ) return { ...item, kind: 'calc_evidence' };
+  return { ...item, kind: 'site_proof' };
+}
+
+/**
+ * 결재 차단용 — 법정 필수(legal & required) 항목만 반환
+ */
+export function getMandatoryLegalAttachments(
+  workType: string,
+  conditions?: Record<string, string>
+): AttachmentItem[] {
+  return generateAttachments(workType, conditions)
+    .map(withKind)
+    .filter(a => a.required && a.kind === 'legal');
+}
+
+/**
+ * 자동 첨부 가능한 항목 키 매핑 — useWorkPlanAttachments 훅에서 사용
+ */
+export const AUTO_ATTACH_KEYS: Record<AttachmentAutoSource, string[]> = {
+  equipment: ['vehicle_reg', 'vehicle_insurance', 'inspection_cert', 'operator_license', 'equipment_spec', 'crane_spec'],
+  msds: ['msds'],
+  env_measurement: ['atmosphere_record', 'gas_measurement'],
+  cert: ['scaffold_cert', 'safety_training'],
+  rigging: ['rigging_plan', 'sling_safety_review'],
+  risk_assessment: ['risk_assessment'],
+};
+

@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
   const inSevenDays = new Date(today.getTime() + 7 * 86400000).toISOString().slice(0, 10);
-  let overdue = 0, dailyLogsCreated = 0, notified = 0;
+  let overdue = 0, dailyLogsCreated = 0, notified = 0, legalDutyTodos = 0;
 
   try {
     // 1) 만료 처리
@@ -100,8 +100,12 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 4) 법정의무 D-30 To-Do 자동 생성 + D-7 알림
+    const { data: ldCount } = await supabase.rpc("generate_legal_duty_todos");
+    legalDutyTodos = (ldCount as number) || 0;
+
     return new Response(
-      JSON.stringify({ ok: true, overdue, dailyLogsCreated, notified, date: todayStr }),
+      JSON.stringify({ ok: true, overdue, dailyLogsCreated, notified, legalDutyTodos, date: todayStr }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e: any) {

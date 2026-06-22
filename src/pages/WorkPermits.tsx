@@ -362,6 +362,13 @@ export default function WorkPermits() {
           )}
         </DialogContent>
       </Dialog>
+
+      <WorkPermitWorkersDialog
+        permit={workersDialog}
+        projectId={projectId}
+        open={!!workersDialog}
+        onClose={() => setWorkersDialog(null)}
+      />
     </div>
   );
 }

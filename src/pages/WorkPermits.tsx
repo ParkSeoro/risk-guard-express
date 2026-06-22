@@ -10,8 +10,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature, Pencil, Trash2 } from 'lucide-react';
+import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature, Pencil, Trash2, Users } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
+import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialog';
 
 const STATUS_COLOR: Record<string, string> = {
   '작성중': 'bg-muted text-muted-foreground',
@@ -40,6 +41,7 @@ export default function WorkPermits() {
   const [editing, setEditing] = useState<any | null>(null);
   const [gateOpen, setGateOpen] = useState<any | null>(null);
   const [gateResult, setGateResult] = useState<any>(null);
+  const [workersDialog, setWorkersDialog] = useState<any | null>(null);
 
   const blankForm = {
     permit_date: new Date().toISOString().slice(0, 10),
@@ -265,7 +267,17 @@ export default function WorkPermits() {
               <div className="flex gap-1 flex-wrap">
                 <Button size="sm" variant="outline" onClick={() => runGateCheck(p)}><ShieldCheck className="h-3 w-3 mr-1" />게이트체크</Button>
                 {p.status === '작성중' && (
-                  <Button size="sm" onClick={() => submit(p)} disabled={!p.gate_check_result?.all_ok}>상신</Button>
+                  <>
+                    <Button size="sm" onClick={() => submit(p)} disabled={!p.gate_check_result?.all_ok}>상신</Button>
+                    <Button size="sm" variant="outline" onClick={async () => {
+                      const { data, error } = await supabase.rpc('submit_entity_for_approval', {
+                        _entity_type: 'work_permit', _entity_id: p.id, _project_id: projectId,
+                      });
+                      const r = data as any;
+                      if (error || r?.error) toast({ title: '결재 상신 실패', description: r?.error || error?.message, variant: 'destructive' });
+                      else { toast({ title: `결재 상신 (${r.steps}단계)` }); load(); }
+                    }}>결재라인 상신</Button>
+                  </>
                 )}
                 {p.status === '검토대기' && isAdmin && (
                   <>
@@ -279,6 +291,7 @@ export default function WorkPermits() {
                     <Button size="sm" variant="destructive" onClick={() => reject(p)}><XCircle className="h-3 w-3 mr-1" />반려</Button>
                   </>
                 )}
+                <Button size="sm" variant="outline" onClick={() => setWorkersDialog(p)} title="근로자 배정"><Users className="h-3 w-3" /></Button>
                 <Button size="sm" variant="outline" onClick={() => openEdit(p)} title="수정"><Pencil className="h-3 w-3" /></Button>
                 {isAdmin && (
                   <Button size="sm" variant="outline" onClick={() => remove(p)} title="삭제"><Trash2 className="h-3 w-3 text-destructive" /></Button>
@@ -359,6 +372,13 @@ export default function WorkPermits() {
           )}
         </DialogContent>
       </Dialog>
+
+      <WorkPermitWorkersDialog
+        permit={workersDialog}
+        projectId={projectId}
+        open={!!workersDialog}
+        onClose={() => setWorkersDialog(null)}
+      />
     </div>
   );
 }

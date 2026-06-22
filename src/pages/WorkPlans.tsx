@@ -36,20 +36,33 @@ const WorkPlans = () => {
   const access = useGlobalProjectAccess();
   const [plans, setPlans] = useState<any[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [newPlan, setNewPlan] = useState({ workType: '', title: '', startDate: '', endDate: '' });
+  const [newPlan, setNewPlan] = useState({ workType: '', title: '', startDate: '', endDate: '', assessmentRunId: '' });
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [editTarget, setEditTarget] = useState<any>(null);
   const [editTitle, setEditTitle] = useState('');
   const [companies, setCompanies] = useState<any[]>([]);
   const [selectedCompany, setSelectedCompany] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [runs, setRuns] = useState<any[]>([]);
 
   useEffect(() => {
     if (access.selectedProject) {
       loadPlans();
       loadCompanies();
+      loadRuns();
     }
   }, [access.selectedProject, access.userCompanyId]);
+
+  const loadRuns = async () => {
+    if (!access.selectedProject) return;
+    const { data } = await supabase.from('assessment_runs')
+      .select('id, title, period_label, status')
+      .eq('project_id', access.selectedProject)
+      .eq('is_deleted', false)
+      .eq('status', '승인완료')
+      .order('updated_at', { ascending: false }).limit(50);
+    setRuns(data || []);
+  };
 
   const loadCompanies = async () => {
     if (!access.selectedProject) return;
@@ -113,8 +126,9 @@ const WorkPlans = () => {
       created_by: user?.id,
       start_date: newPlan.startDate,
       end_date: newPlan.endDate,
+      assessment_run_id: newPlan.assessmentRunId || null,
       version: 1,
-    }).select().single();
+    } as any).select().single();
 
     if (error) {
       toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
@@ -122,7 +136,7 @@ const WorkPlans = () => {
       toast({ title: '작업계획서가 생성되었습니다.' });
       if (data) await auditLog('create', 'work_plan', data.id, access.selectedProject, { title, work_type: newPlan.workType });
       setDialogOpen(false);
-      setNewPlan({ workType: '', title: '', startDate: '', endDate: '' });
+      setNewPlan({ workType: '', title: '', startDate: '', endDate: '', assessmentRunId: '' });
       setSelectedCompany('');
       if (data) navigate(`/work-plan/${data.id}`);
     }
@@ -252,6 +266,17 @@ const WorkPlans = () => {
                     </div>
                   )}
                   <div className="space-y-1.5">
+                    <Label className="text-xs font-medium">연계 위험성평가 (승인완료, 선택)</Label>
+                    <Select value={newPlan.assessmentRunId} onValueChange={v => setNewPlan(p => ({ ...p, assessmentRunId: v }))}>
+                      <SelectTrigger><SelectValue placeholder="연결할 위험성평가 선택 (선택사항)" /></SelectTrigger>
+                      <SelectContent>
+                        {runs.length === 0
+                          ? <SelectItem value="__none__" disabled>승인완료된 위험성평가가 없습니다</SelectItem>
+                          : runs.map(r => <SelectItem key={r.id} value={r.id}>{r.title || r.period_label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
                     <Label className="text-xs font-medium">제목 (선택)</Label>
                     <Input value={newPlan.title} onChange={e => setNewPlan(p => ({ ...p, title: e.target.value }))} placeholder="미입력 시 자동 생성" className="h-9" />
                   </div>
@@ -322,6 +347,18 @@ const WorkPlans = () => {
                           {access.canEdit('work_plan') && (
                             <DropdownMenuItem onClick={() => { setEditTarget(plan); setEditTitle(plan.title); }}>
                               <Pencil className="h-3.5 w-3.5 mr-2" /> 제목 수정
+                            </DropdownMenuItem>
+                          )}
+                          {plan.status === '작성중' && access.canEdit('work_plan') && (
+                            <DropdownMenuItem onClick={async () => {
+                              const { data, error } = await supabase.rpc('submit_entity_for_approval', {
+                                _entity_type: 'work_plan', _entity_id: plan.id, _project_id: plan.project_id,
+                              });
+                              const r = data as any;
+                              if (error || r?.error) toast({ title: '상신 실패', description: r?.error || error?.message, variant: 'destructive' });
+                              else { toast({ title: `결재 상신 (${r.steps}단계)` }); loadPlans(); }
+                            }}>
+                              <CheckCircle2 className="h-3.5 w-3.5 mr-2" /> 결재 상신
                             </DropdownMenuItem>
                           )}
                           {access.canCreate('work_plan') && (

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Sparkles, ArrowRight, ArrowLeft, X } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+
 
 const STORAGE_KEY = "tutorial:completed:v1";
 

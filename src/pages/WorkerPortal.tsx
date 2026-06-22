@@ -240,26 +240,32 @@ export default function WorkerPortal() {
               </CardContent>
             </Card>
 
-            {/* 오늘의 위험요인 */}
+            {/* 오늘의 위험요인 — 회사·날짜 스코프 */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base flex items-center gap-2">
                   <AlertCircle className="h-4 w-4 text-warning" /> 오늘의 위험요인
                 </CardTitle>
+                <div className="text-xs text-muted-foreground">
+                  {workDate} · {worker.company_name || "소속 회사"} · 적용 위평 {runs.length}건
+                </div>
               </CardHeader>
               <CardContent className="space-y-2 pb-4">
-                {materials.length === 0 ? (
-                  <div className="text-sm text-muted-foreground">등록된 위험성평가가 없습니다.</div>
+                {hazards.length === 0 ? (
+                  <div className="text-sm text-muted-foreground">오늘 적용되는 위험요인이 없습니다.</div>
                 ) : (
-                  (materials[0]?.key_hazards || []).slice(0, 4).map((h: any, i: number) => (
-                    <div key={i} className="border rounded p-2 text-sm">
+                  hazards.slice(0, 5).map((h: any) => (
+                    <div key={h.id} className="border rounded p-2 text-sm">
                       <div className="flex items-center gap-2 mb-1">
                         <Badge variant={h.risk_level === "상" ? "destructive" : h.risk_level === "중" ? "default" : "secondary"}>
                           {h.risk_level}
                         </Badge>
-                        <strong>{h.hazard}</strong>
+                        <strong>{h.process}{h.sub_task ? ` · ${h.sub_task}` : ""}</strong>
                       </div>
-                      <div className="text-xs text-muted-foreground">{h.description}</div>
+                      <div className="text-xs"><span className="text-muted-foreground">유해위험:</span> {h.hazard}</div>
+                      {h.improvement_measure && (
+                        <div className="text-xs mt-1"><span className="text-muted-foreground">대책:</span> {h.improvement_measure}</div>
+                      )}
                     </div>
                   ))
                 )}

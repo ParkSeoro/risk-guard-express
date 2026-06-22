@@ -299,7 +299,7 @@ const RiskAssessment = () => {
       deleted_by: user?.id || null,
       deleted_reason: '배치 되돌리기',
     }).eq('batch_id', batch.id);
-    await _softDeleteRA('generated_batches', batch.id, {
+    await softDeleteRA('generated_batches', batch.id, {
       label: `AI 생성 배치 (${batch.total_items}건)`,
       projectId: selectedProjectId,
       reason: '배치 되돌리기',

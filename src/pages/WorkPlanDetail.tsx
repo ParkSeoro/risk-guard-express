@@ -9,6 +9,7 @@ import RiggingPlanForm from '@/components/rigging/RiggingPlanForm';
 import { generateAttachments, type AttachmentItem } from '@/lib/attachmentTemplates';
 import StructuredSectionForm, { validateSection } from '@/components/work-plan/StructuredSectionForm';
 import AttachmentChecklist from '@/components/work-plan/AttachmentChecklist';
+import LegalCalculatorPanel from '@/components/work-plan/LegalCalculatorPanel';
 import EquipmentManager from '@/components/equipment/EquipmentManager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';

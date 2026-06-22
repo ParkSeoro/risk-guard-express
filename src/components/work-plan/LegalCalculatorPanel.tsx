@@ -7,13 +7,69 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Calculator, ClipboardCheck, AlertTriangle, CheckCircle2, Copy } from 'lucide-react';
+import { Calculator, ClipboardCheck, AlertTriangle, CheckCircle2, Copy, Info } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   calcCraneLoad, calcExcavationSlope, calcFallProtection, calcConfinedSpaceAtmosphere,
   calcScaffoldLoad, calcVentilation, calcDemolitionZone, calcElectricalApproach,
   SOIL_STANDARD_SLOPE, type CalcResult,
 } from '@/lib/workPlanCalculators';
+
+/**
+ * 필수 입력 검증 헬퍼.
+ * 각 계산기는 자신이 요구하는 법정 기준값(예: 정격하중, 토질, 작업높이 등)을 정의하고,
+ * 누락 시 저장(작업방법 추가)을 차단 + 입력 가이드를 즉시 노출합니다.
+ */
+interface MissingField { label: string; hint: string; legalBasis?: string; }
+
+function MissingGuide({ items }: { items: MissingField[] }) {
+  if (items.length === 0) return null;
+  return (
+    <Alert variant="destructive" className="border-amber-300 bg-amber-50 text-amber-900 [&>svg]:text-amber-600">
+      <Info className="h-4 w-4" />
+      <AlertTitle className="text-sm font-semibold">필수 법정 기준값이 누락되었습니다 — 저장이 차단됩니다</AlertTitle>
+      <AlertDescription className="text-xs space-y-1 mt-1">
+        <ul className="list-disc list-inside space-y-0.5">
+          {items.map((it, i) => (
+            <li key={i}>
+              <span className="font-medium">{it.label}</span> — {it.hint}
+              {it.legalBasis && <span className="block ml-4 text-[10px] text-amber-700">근거: {it.legalBasis}</span>}
+            </li>
+          ))}
+        </ul>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function SaveButton({
+  missing, onSave,
+}: { missing: MissingField[]; onSave: () => void }) {
+  const { toast } = useToast();
+  const blocked = missing.length > 0;
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="gap-1"
+      disabled={blocked}
+      onClick={() => {
+        if (blocked) {
+          toast({
+            title: '저장 차단',
+            description: `${missing[0].label} 등 ${missing.length}개 필수값을 먼저 입력해주세요.`,
+            variant: 'destructive',
+          });
+          return;
+        }
+        onSave();
+      }}
+    >
+      <Copy className="h-3 w-3" />{blocked ? '필수값 입력 필요' : '계산결과를 작업방법에 추가'}
+    </Button>
+  );
+}
 
 /**
  * 작업계획서 법정 계산 패널.
@@ -78,9 +134,14 @@ function resultToText(title: string, r: CalcResult): string {
 /* ---------- Crane ---------- */
 function CraneCalc({ onAppend }: { onAppend: (t: string) => void }) {
   const { toast } = useToast();
-  const [s, setS] = useState({ ratedCapacityTon: 25, loadTon: 10, riggingTon: 0.5, radiusM: 8, windMs: 4 });
+  const [s, setS] = useState({ ratedCapacityTon: 0, loadTon: 0, riggingTon: 0, radiusM: 0, windMs: 0 });
   const r = useMemo(() => calcCraneLoad(s), [s]);
   const upd = (k: keyof typeof s, v: string) => setS({ ...s, [k]: Number(v) || 0 });
+  const missing: MissingField[] = [
+    s.ratedCapacityTon <= 0 && { label: '정격하중(t)', hint: '크레인 사양표에서 해당 작업반경의 정격하중을 입력하세요.', legalBasis: '산안기준규칙 제132조' },
+    s.radiusM <= 0 && { label: '작업반경(m)', hint: '실제 양중 위치의 반경을 m 단위로 입력하세요.' },
+    s.loadTon <= 0 && { label: '인양물 무게(t)', hint: '시방서/도면 또는 실측치를 입력하세요.' },
+  ].filter(Boolean) as MissingField[];
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
@@ -90,10 +151,9 @@ function CraneCalc({ onAppend }: { onAppend: (t: string) => void }) {
         <div className="space-y-1"><Label className="text-xs">리깅(t)</Label><Input type="number" step="0.1" value={s.riggingTon} onChange={e => upd('riggingTon', e.target.value)} className="h-8" /></div>
         <div className="space-y-1"><Label className="text-xs">풍속(m/s)</Label><Input type="number" step="0.1" value={s.windMs} onChange={e => upd('windMs', e.target.value)} className="h-8" /></div>
       </div>
-      <ResultBlock result={r} />
-      <Button size="sm" variant="outline" className="gap-1" onClick={() => { onAppend(resultToText('크레인 양중 안전율', r)); toast({ title: '작업방법 섹션에 추가됨' }); }}>
-        <Copy className="h-3 w-3" />계산결과를 작업방법에 추가
-      </Button>
+      <MissingGuide items={missing} />
+      {missing.length === 0 && <ResultBlock result={r} />}
+      <SaveButton missing={missing} onSave={() => { onAppend(resultToText('크레인 양중 안전율', r)); toast({ title: '작업방법 섹션에 추가됨' }); }} />
     </div>
   );
 }
@@ -101,15 +161,20 @@ function CraneCalc({ onAppend }: { onAppend: (t: string) => void }) {
 /* ---------- Excavation ---------- */
 function ExcavationCalc({ onAppend }: { onAppend: (t: string) => void }) {
   const { toast } = useToast();
-  const [s, setS] = useState({ soilType: '토사_점토' as keyof typeof SOIL_STANDARD_SLOPE, depthM: 3, actualHorizontal: 1.2 });
-  const r = useMemo(() => calcExcavationSlope(s), [s]);
+  const [s, setS] = useState({ soilType: '' as keyof typeof SOIL_STANDARD_SLOPE | '', depthM: 0, actualHorizontal: 0 });
+  const r = useMemo(() => s.soilType ? calcExcavationSlope(s as any) : null, [s]);
+  const missing: MissingField[] = [
+    !s.soilType && { label: '토질 종류', hint: '시추주상도 또는 KOSHA GUIDE C-39 토질 분류표 기준으로 선택하세요.', legalBasis: '산안기준규칙 별표 11' },
+    s.depthM <= 0 && { label: '굴착 깊이(m)', hint: '계획 또는 실제 굴착 깊이를 m 단위로 입력하세요.' },
+    s.actualHorizontal <= 0 && { label: '실제 수평거리', hint: '1m 수직 기준 사면의 수평거리(m)를 입력하세요.' },
+  ].filter(Boolean) as MissingField[];
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
         <div className="space-y-1">
           <Label className="text-xs">토질</Label>
           <Select value={s.soilType} onValueChange={(v: any) => setS({ ...s, soilType: v })}>
-            <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-8"><SelectValue placeholder="선택" /></SelectTrigger>
             <SelectContent>
               {Object.keys(SOIL_STANDARD_SLOPE).map(k => (
                 <SelectItem key={k} value={k}>{k} ({SOIL_STANDARD_SLOPE[k].ratio})</SelectItem>
@@ -120,10 +185,9 @@ function ExcavationCalc({ onAppend }: { onAppend: (t: string) => void }) {
         <div className="space-y-1"><Label className="text-xs">굴착 깊이(m)</Label><Input type="number" step="0.1" value={s.depthM} onChange={e => setS({ ...s, depthM: Number(e.target.value) || 0 })} className="h-8" /></div>
         <div className="space-y-1"><Label className="text-xs">실제 수평거리(1m 수직당, m)</Label><Input type="number" step="0.1" value={s.actualHorizontal} onChange={e => setS({ ...s, actualHorizontal: Number(e.target.value) || 0 })} className="h-8" /></div>
       </div>
-      <ResultBlock result={r} />
-      <Button size="sm" variant="outline" className="gap-1" onClick={() => { onAppend(resultToText('굴착 사면 안전율', r)); toast({ title: '작업방법 섹션에 추가됨' }); }}>
-        <Copy className="h-3 w-3" />계산결과를 작업방법에 추가
-      </Button>
+      <MissingGuide items={missing} />
+      {missing.length === 0 && r && <ResultBlock result={r} />}
+      <SaveButton missing={missing} onSave={() => { if (r) { onAppend(resultToText('굴착 사면 안전율', r)); toast({ title: '작업방법 섹션에 추가됨' }); } }} />
     </div>
   );
 }
@@ -131,8 +195,12 @@ function ExcavationCalc({ onAppend }: { onAppend: (t: string) => void }) {
 /* ---------- Fall Protection ---------- */
 function FallCalc({ onAppend }: { onAppend: (t: string) => void }) {
   const { toast } = useToast();
-  const [s, setS] = useState({ heightM: 3, hasRailing: true, hasNet: false, hasLifeline: true, anchorageStrengthKgf: 600 });
+  const [s, setS] = useState({ heightM: 0, hasRailing: false, hasNet: false, hasLifeline: false, anchorageStrengthKgf: 0 });
   const r = useMemo(() => calcFallProtection(s), [s]);
+  const missing: MissingField[] = [
+    s.heightM <= 0 && { label: '작업 높이(m)', hint: '지표면 또는 추락기준점에서 작업면까지 높이를 입력하세요.', legalBasis: '산안기준규칙 제42조' },
+    s.hasLifeline && s.anchorageStrengthKgf <= 0 && { label: '부착설비 강도(kgf)', hint: '안전대 부착설비 설계 강도를 kgf 단위로 입력하세요. 법정 최소 510kgf(5,000N).', legalBasis: '산안기준규칙 제44조' },
+  ].filter(Boolean) as MissingField[];
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -143,10 +211,9 @@ function FallCalc({ onAppend }: { onAppend: (t: string) => void }) {
         <div className="flex items-center gap-2"><Switch checked={s.hasNet} onCheckedChange={(v) => setS({ ...s, hasNet: v })} /><Label className="text-xs">추락방호망</Label></div>
         <div className="flex items-center gap-2"><Switch checked={s.hasLifeline} onCheckedChange={(v) => setS({ ...s, hasLifeline: v })} /><Label className="text-xs">안전대 부착설비</Label></div>
       </div>
-      <ResultBlock result={r} />
-      <Button size="sm" variant="outline" className="gap-1" onClick={() => { onAppend(resultToText('추락 방호조치', r)); toast({ title: '작업방법 섹션에 추가됨' }); }}>
-        <Copy className="h-3 w-3" />계산결과를 작업방법에 추가
-      </Button>
+      <MissingGuide items={missing} />
+      {missing.length === 0 && <ResultBlock result={r} />}
+      <SaveButton missing={missing} onSave={() => { onAppend(resultToText('추락 방호조치', r)); toast({ title: '작업방법 섹션에 추가됨' }); }} />
     </div>
   );
 }
@@ -154,20 +221,25 @@ function FallCalc({ onAppend }: { onAppend: (t: string) => void }) {
 /* ---------- Confined Space ---------- */
 function ConfinedCalc({ onAppend }: { onAppend: (t: string) => void }) {
   const { toast } = useToast();
-  const [s, setS] = useState({ oxygenPct: 20.9, coPpm: 5, h2sPpm: 0, lelPct: 0 });
+  const [s, setS] = useState({ oxygenPct: 0, coPpm: -1, h2sPpm: -1, lelPct: -1 });
   const r = useMemo(() => calcConfinedSpaceAtmosphere(s), [s]);
+  const missing: MissingField[] = [
+    s.oxygenPct <= 0 && { label: '산소 농도(%)', hint: '가스측정기 실측치를 입력하세요. 미측정 시 출입 불가.', legalBasis: '산안기준규칙 제619조' },
+    s.coPpm < 0 && { label: 'CO 농도(ppm)', hint: '일산화탄소 실측치를 입력하세요.' },
+    s.h2sPpm < 0 && { label: 'H2S 농도(ppm)', hint: '황화수소 실측치를 입력하세요.' },
+    s.lelPct < 0 && { label: 'LEL(%)', hint: '폭발하한계 실측치를 입력하세요.' },
+  ].filter(Boolean) as MissingField[];
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <div className="space-y-1"><Label className="text-xs">산소(%)</Label><Input type="number" step="0.1" value={s.oxygenPct} onChange={e => setS({ ...s, oxygenPct: Number(e.target.value) || 0 })} className="h-8" /></div>
-        <div className="space-y-1"><Label className="text-xs">CO(ppm)</Label><Input type="number" value={s.coPpm} onChange={e => setS({ ...s, coPpm: Number(e.target.value) || 0 })} className="h-8" /></div>
-        <div className="space-y-1"><Label className="text-xs">H2S(ppm)</Label><Input type="number" value={s.h2sPpm} onChange={e => setS({ ...s, h2sPpm: Number(e.target.value) || 0 })} className="h-8" /></div>
-        <div className="space-y-1"><Label className="text-xs">LEL(%)</Label><Input type="number" step="0.1" value={s.lelPct} onChange={e => setS({ ...s, lelPct: Number(e.target.value) || 0 })} className="h-8" /></div>
+        <div className="space-y-1"><Label className="text-xs">CO(ppm)</Label><Input type="number" value={s.coPpm < 0 ? '' : s.coPpm} onChange={e => setS({ ...s, coPpm: e.target.value === '' ? -1 : Number(e.target.value) })} className="h-8" /></div>
+        <div className="space-y-1"><Label className="text-xs">H2S(ppm)</Label><Input type="number" value={s.h2sPpm < 0 ? '' : s.h2sPpm} onChange={e => setS({ ...s, h2sPpm: e.target.value === '' ? -1 : Number(e.target.value) })} className="h-8" /></div>
+        <div className="space-y-1"><Label className="text-xs">LEL(%)</Label><Input type="number" step="0.1" value={s.lelPct < 0 ? '' : s.lelPct} onChange={e => setS({ ...s, lelPct: e.target.value === '' ? -1 : Number(e.target.value) })} className="h-8" /></div>
       </div>
-      <ResultBlock result={r} />
-      <Button size="sm" variant="outline" className="gap-1" onClick={() => { onAppend(resultToText('밀폐공간 가스농도', r)); toast({ title: '작업방법 섹션에 추가됨' }); }}>
-        <Copy className="h-3 w-3" />계산결과를 작업방법에 추가
-      </Button>
+      <MissingGuide items={missing} />
+      {missing.length === 0 && <ResultBlock result={r} />}
+      <SaveButton missing={missing} onSave={() => { onAppend(resultToText('밀폐공간 가스농도', r)); toast({ title: '작업방법 섹션에 추가됨' }); }} />
     </div>
   );
 }
@@ -175,8 +247,12 @@ function ConfinedCalc({ onAppend }: { onAppend: (t: string) => void }) {
 /* ---------- Scaffold Load ---------- */
 function ScaffoldCalc({ onAppend }: { onAppend: (t: string) => void }) {
   const { toast } = useToast();
-  const [s, setS] = useState({ areaSqm: 10, workerCount: 4, materialKg: 300, workerWeightKg: 80 });
+  const [s, setS] = useState({ areaSqm: 0, workerCount: 0, materialKg: 0, workerWeightKg: 80 });
   const r = useMemo(() => calcScaffoldLoad(s), [s]);
+  const missing: MissingField[] = [
+    s.areaSqm <= 0 && { label: '발판 면적(㎡)', hint: '작업발판 유효면적을 ㎡ 단위로 입력하세요.', legalBasis: 'KOSHA GUIDE C-30' },
+    s.workerCount <= 0 && { label: '작업원 수', hint: '동시 작업 인원수를 입력하세요.' },
+  ].filter(Boolean) as MissingField[];
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -185,10 +261,9 @@ function ScaffoldCalc({ onAppend }: { onAppend: (t: string) => void }) {
         <div className="space-y-1"><Label className="text-xs">1인+공구(kgf)</Label><Input type="number" value={s.workerWeightKg} onChange={e => setS({ ...s, workerWeightKg: Number(e.target.value) || 0 })} className="h-8" /></div>
         <div className="space-y-1"><Label className="text-xs">자재(kgf)</Label><Input type="number" value={s.materialKg} onChange={e => setS({ ...s, materialKg: Number(e.target.value) || 0 })} className="h-8" /></div>
       </div>
-      <ResultBlock result={r} />
-      <Button size="sm" variant="outline" className="gap-1" onClick={() => { onAppend(resultToText('비계 적재하중', r)); toast({ title: '작업방법 섹션에 추가됨' }); }}>
-        <Copy className="h-3 w-3" />계산결과를 작업방법에 추가
-      </Button>
+      <MissingGuide items={missing} />
+      {missing.length === 0 && <ResultBlock result={r} />}
+      <SaveButton missing={missing} onSave={() => { onAppend(resultToText('비계 적재하중', r)); toast({ title: '작업방법 섹션에 추가됨' }); }} />
     </div>
   );
 }
@@ -196,8 +271,12 @@ function ScaffoldCalc({ onAppend }: { onAppend: (t: string) => void }) {
 /* ---------- Ventilation ---------- */
 function VentilationCalc({ onAppend }: { onAppend: (t: string) => void }) {
   const { toast } = useToast();
-  const [s, setS] = useState({ workerCount: 5, perPerson: 3, machineCmm: 0, suppliedCmm: 0 });
+  const [s, setS] = useState({ workerCount: 0, perPerson: 3, machineCmm: 0, suppliedCmm: 0 });
   const r = useMemo(() => calcVentilation(s), [s]);
+  const missing: MissingField[] = [
+    s.workerCount <= 0 && { label: '작업원 수', hint: '동시 작업 인원수를 입력하세요.', legalBasis: 'KOSHA GUIDE C-49' },
+    s.perPerson <= 0 && { label: '1인당 풍량(㎥/min)', hint: '법정 기본값 3 ㎥/min 이상 입력하세요.' },
+  ].filter(Boolean) as MissingField[];
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -206,10 +285,9 @@ function VentilationCalc({ onAppend }: { onAppend: (t: string) => void }) {
         <div className="space-y-1"><Label className="text-xs">장비풍량(㎥/min)</Label><Input type="number" value={s.machineCmm} onChange={e => setS({ ...s, machineCmm: Number(e.target.value) || 0 })} className="h-8" /></div>
         <div className="space-y-1"><Label className="text-xs">공급풍량(㎥/min)</Label><Input type="number" value={s.suppliedCmm} onChange={e => setS({ ...s, suppliedCmm: Number(e.target.value) || 0 })} className="h-8" /></div>
       </div>
-      <ResultBlock result={r} />
-      <Button size="sm" variant="outline" className="gap-1" onClick={() => { onAppend(resultToText('환기 풍량', r)); toast({ title: '작업방법 섹션에 추가됨' }); }}>
-        <Copy className="h-3 w-3" />계산결과를 작업방법에 추가
-      </Button>
+      <MissingGuide items={missing} />
+      {missing.length === 0 && <ResultBlock result={r} />}
+      <SaveButton missing={missing} onSave={() => { onAppend(resultToText('환기 풍량', r)); toast({ title: '작업방법 섹션에 추가됨' }); }} />
     </div>
   );
 }
@@ -217,8 +295,13 @@ function VentilationCalc({ onAppend }: { onAppend: (t: string) => void }) {
 /* ---------- Demolition ---------- */
 function DemolitionCalc({ onAppend }: { onAppend: (t: string) => void }) {
   const { toast } = useToast();
-  const [s, setS] = useState({ structureHeightM: 12, barrierDistanceM: 20, adjacentDistanceM: 25, method: '기계식' as const });
+  const [s, setS] = useState({ structureHeightM: 0, barrierDistanceM: 0, adjacentDistanceM: 0, method: '기계식' as const });
   const r = useMemo(() => calcDemolitionZone(s), [s]);
+  const missing: MissingField[] = [
+    s.structureHeightM <= 0 && { label: '구조물 높이(m)', hint: '해체 대상 구조물 최상부 높이를 입력하세요.', legalBasis: '산안기준규칙 제207조' },
+    s.barrierDistanceM <= 0 && { label: '방호선 이격(m)', hint: '보호울타리/방호선 위치까지 거리(m)를 입력하세요.' },
+    s.adjacentDistanceM <= 0 && { label: '인접시설 이격(m)', hint: '인접 시설/도로까지 최단거리(m)를 입력하세요.' },
+  ].filter(Boolean) as MissingField[];
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -235,10 +318,9 @@ function DemolitionCalc({ onAppend }: { onAppend: (t: string) => void }) {
         <div className="space-y-1"><Label className="text-xs">방호선 이격(m)</Label><Input type="number" step="0.1" value={s.barrierDistanceM} onChange={e => setS({ ...s, barrierDistanceM: Number(e.target.value) || 0 })} className="h-8" /></div>
         <div className="space-y-1"><Label className="text-xs">인접시설 이격(m)</Label><Input type="number" step="0.1" value={s.adjacentDistanceM} onChange={e => setS({ ...s, adjacentDistanceM: Number(e.target.value) || 0 })} className="h-8" /></div>
       </div>
-      <ResultBlock result={r} />
-      <Button size="sm" variant="outline" className="gap-1" onClick={() => { onAppend(resultToText('해체 영향권', r)); toast({ title: '작업방법 섹션에 추가됨' }); }}>
-        <Copy className="h-3 w-3" />계산결과를 작업방법에 추가
-      </Button>
+      <MissingGuide items={missing} />
+      {missing.length === 0 && <ResultBlock result={r} />}
+      <SaveButton missing={missing} onSave={() => { onAppend(resultToText('해체 영향권', r)); toast({ title: '작업방법 섹션에 추가됨' }); }} />
     </div>
   );
 }
@@ -246,8 +328,12 @@ function DemolitionCalc({ onAppend }: { onAppend: (t: string) => void }) {
 /* ---------- Electrical ---------- */
 function ElectricalCalc({ onAppend }: { onAppend: (t: string) => void }) {
   const { toast } = useToast();
-  const [s, setS] = useState({ voltageKv: 22.9, actualCm: 100, insulated: false });
+  const [s, setS] = useState({ voltageKv: 0, actualCm: 0, insulated: false });
   const r = useMemo(() => calcElectricalApproach(s), [s]);
+  const missing: MissingField[] = [
+    s.voltageKv <= 0 && { label: '전압(kV)', hint: '충전부 공칭 전압을 kV 단위로 입력하세요.', legalBasis: '산안기준규칙 제321조 별표 5' },
+    s.actualCm <= 0 && { label: '실제 이격(cm)', hint: '작업자/장비와 충전부의 최단거리(cm)를 입력하세요.' },
+  ].filter(Boolean) as MissingField[];
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -255,10 +341,9 @@ function ElectricalCalc({ onAppend }: { onAppend: (t: string) => void }) {
         <div className="space-y-1"><Label className="text-xs">실제 이격(cm)</Label><Input type="number" value={s.actualCm} onChange={e => setS({ ...s, actualCm: Number(e.target.value) || 0 })} className="h-8" /></div>
         <div className="flex items-center gap-2"><Switch checked={s.insulated} onCheckedChange={(v) => setS({ ...s, insulated: v })} /><Label className="text-xs">절연용 보호구 사용</Label></div>
       </div>
-      <ResultBlock result={r} />
-      <Button size="sm" variant="outline" className="gap-1" onClick={() => { onAppend(resultToText('전기 접근한계거리', r)); toast({ title: '작업방법 섹션에 추가됨' }); }}>
-        <Copy className="h-3 w-3" />계산결과를 작업방법에 추가
-      </Button>
+      <MissingGuide items={missing} />
+      {missing.length === 0 && <ResultBlock result={r} />}
+      <SaveButton missing={missing} onSave={() => { onAppend(resultToText('전기 접근한계거리', r)); toast({ title: '작업방법 섹션에 추가됨' }); }} />
     </div>
   );
 }

@@ -516,6 +516,7 @@ const WorkPlanDetail = () => {
           )}
           <TabsTrigger value="equipment" className="text-xs gap-1"><Wrench className="h-3 w-3" />장비</TabsTrigger>
           <TabsTrigger value="checklist" className="text-xs gap-1"><CheckCircle2 className="h-3 w-3" />체크리스트</TabsTrigger>
+          <TabsTrigger value="calculator" className="text-xs gap-1"><Calculator className="h-3 w-3" />법정계산</TabsTrigger>
           <TabsTrigger value="attachments" className="text-xs">첨부파일</TabsTrigger>
           <TabsTrigger value="preview" className="text-xs gap-1"><Eye className="h-3 w-3" />미리보기</TabsTrigger>
         </TabsList>

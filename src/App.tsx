@@ -53,6 +53,12 @@ import AILogs from "./pages/AILogs";
 import SystemTestEngine from "./pages/SystemTestEngine";
 import ConsistencyAudit from "./pages/ConsistencyAudit";
 import Trash from "./pages/Trash";
+import HealthDashboard from "./pages/health/HealthDashboard";
+import HealthCheckups from "./pages/health/HealthCheckups";
+import Chemicals from "./pages/health/Chemicals";
+import EnvMeasurements from "./pages/health/EnvMeasurements";
+import HealthEducation from "./pages/health/HealthEducation";
+import HazardSurveys from "./pages/health/HazardSurveys";
 import MobileHome from "./pages/MobileHome";
 import MobileInspect from "./pages/MobileInspect";
 import MobileAlerts from "./pages/MobileAlerts";
@@ -169,6 +175,12 @@ function ProtectedRoutes() {
         <Route path="/admin/system-test" element={<SystemTestEngine />} />
         <Route path="/admin/consistency-audit" element={<ConsistencyAudit />} />
         <Route path="/admin/trash" element={<Trash />} />
+        <Route path="/health" element={<HealthDashboard />} />
+        <Route path="/health/checkups" element={<HealthCheckups />} />
+        <Route path="/health/chemicals" element={<Chemicals />} />
+        <Route path="/health/measurements" element={<EnvMeasurements />} />
+        <Route path="/health/education" element={<HealthEducation />} />
+        <Route path="/health/hazard-surveys" element={<HazardSurveys />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

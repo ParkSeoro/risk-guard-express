@@ -3,7 +3,8 @@ import {
   FileCheck, HardHat, ChevronLeft, LogOut, User,
   Shield, SearchCheck, Settings,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
-  ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, GitCompare, Trash2
+  ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, GitCompare, Trash2,
+  Stethoscope, GraduationCap, HeartPulse
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink } from "@/components/NavLink";
@@ -57,6 +58,17 @@ const groups: Group[] = [
       { title: "근로자 관리", url: "/workers", icon: HardHat },
       { title: "산업안전보건관리비", url: "/safety-cost", icon: ReceiptText },
       { title: "법적업무", url: "/legal-duties", icon: Scale },
+    ],
+  },
+  {
+    label: "보건관리", key: "health",
+    items: [
+      { title: "보건 대시보드", url: "/health", icon: HeartPulse },
+      { title: "건강진단", url: "/health/checkups", icon: Stethoscope },
+      { title: "작업환경측정", url: "/health/measurements", icon: ClipboardList },
+      { title: "화학물질/MSDS", url: "/health/chemicals", icon: FlaskConical },
+      { title: "보건교육", url: "/health/education", icon: GraduationCap },
+      { title: "유해요인조사", url: "/health/hazard-surveys", icon: ClipboardList },
     ],
   },
   {

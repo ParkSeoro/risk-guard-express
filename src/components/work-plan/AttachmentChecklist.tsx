@@ -89,7 +89,7 @@ export default function AttachmentChecklist({ workPlanId, projectId, companyId, 
     const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
     const { error } = await supabase
       .from('work_plan_attachments')
-      .update({ file_url: urlData.publicUrl, file_name: file.name, file_size: file.size })
+      .update({ file_url: urlData.publicUrl, file_path: path, file_size: file.size, mime_type: file.type })
       .eq('id', row.id);
     if (error) {
       toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
@@ -107,7 +107,7 @@ export default function AttachmentChecklist({ workPlanId, projectId, companyId, 
     }
     const { error } = await supabase
       .from('work_plan_attachments')
-      .update({ file_url: null, file_name: null, file_size: null })
+      .update({ file_url: null, file_path: null, file_size: null, mime_type: null })
       .eq('id', row.id);
     if (error) {
       toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });

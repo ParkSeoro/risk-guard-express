@@ -44,6 +44,8 @@ import SafetyInspections from "./pages/SafetyInspections";
 import SiteReadinessChecklist from "./pages/SiteReadinessChecklist";
 import EducationMaterials from "./pages/EducationMaterials";
 import WorkerManagement from "./pages/WorkerManagement";
+import WorkerDetail from "./pages/WorkerDetail";
+import LegalEducationMapping from "./pages/LegalEducationMapping";
 // WorkerAttendance is now embedded inside WorkerManagement as a tab; legacy route redirects.
 import WorkerRegister from "./pages/WorkerRegister";
 import WorkerPortal from "./pages/WorkerPortal";
@@ -72,6 +74,7 @@ import MobileTbm from "./pages/MobileTbm";
 import MobilePermits from "./pages/MobilePermits";
 import MobileIncident from "./pages/MobileIncident";
 import MobileScan from "./pages/MobileScan";
+import MobileDailyHealthLog from "./pages/MobileDailyHealthLog";
 import InstallPrompt from "./components/InstallPrompt";
 import MobileRedirectGuard from "./components/MobileRedirectGuard";
 import { useOfflineSync } from "./hooks/useOfflineSync";
@@ -170,6 +173,8 @@ function ProtectedRoutes() {
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="/education-materials" element={<EducationMaterials />} />
         <Route path="/workers" element={<WorkerManagement />} />
+        <Route path="/workers/legal-mapping" element={<LegalEducationMapping />} />
+        <Route path="/workers/:id" element={<WorkerDetail />} />
         <Route path="/worker-attendance" element={<Navigate to="/workers?tab=attendance" replace />} />
         <Route path="/admin/ai-test" element={<AITestEngine />} />
         <Route path="/admin/ai-logs" element={<AILogs />} />
@@ -222,6 +227,7 @@ const App = () => (
             <Route path="/m/permits" element={<MobilePermits />} />
             <Route path="/m/incident" element={<MobileIncident />} />
             <Route path="/m/scan" element={<MobileScan />} />
+            <Route path="/m/daily-health-log" element={<MobileDailyHealthLog />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
           <MobileRedirectGuard />

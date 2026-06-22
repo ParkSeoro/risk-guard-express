@@ -18,6 +18,9 @@ export default function WorkerRegister() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [jobType, setJobType] = useState("general");
+  const [hireDate, setHireDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [doneToken, setDoneToken] = useState<string | null>(null);
 
@@ -46,6 +49,14 @@ export default function WorkerRegister() {
     if (error) { toast.error("등록 실패: " + error.message); return; }
     const result = data as any;
     if (result?.error) { toast.error("등록 실패: " + result.error); return; }
+    // 신규 정보(생년월일/직종/입사일) 동기화 → 트리거가 의무사항 자동 생성
+    if (result.worker_id && (birthDate || jobType || hireDate)) {
+      await supabase.from("workers").update({
+        birth_date: birthDate || null,
+        job_type: jobType,
+        hire_date: hireDate || new Date().toISOString().slice(0, 10),
+      }).eq("id", result.worker_id);
+    }
     localStorage.setItem("workerToken", result.qr_token);
     toast.success("등록 완료");
     setDoneToken(result.qr_token);
@@ -126,6 +137,28 @@ export default function WorkerRegister() {
               <Input className="h-12 text-lg" value={company} onChange={e => setCompany(e.target.value)} placeholder="(주)○○건설" />
             </div>
           )}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-base">생년월일</Label>
+              <Input type="date" className="h-12 text-base" value={birthDate} onChange={e => setBirthDate(e.target.value)} />
+              <div className="text-[11px] text-muted-foreground mt-1">만 65세 이상 시 일일 건강일지 대상</div>
+            </div>
+            <div>
+              <Label className="text-base">입사일</Label>
+              <Input type="date" className="h-12 text-base" value={hireDate} onChange={e => setHireDate(e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <Label className="text-base">직종</Label>
+            <select className="w-full h-12 text-base border rounded-md px-3 bg-background" value={jobType} onChange={e => setJobType(e.target.value)}>
+              <option value="general">일반작업</option>
+              <option value="office">사무직</option>
+              <option value="manager">관리감독자</option>
+              <option value="hazardous">유해위험작업</option>
+              <option value="chemical">화학물질 취급</option>
+            </select>
+            <div className="text-[11px] text-muted-foreground mt-1">직종에 따라 필수 법정 교육·건진이 자동 등록됩니다</div>
+          </div>
           <Button className="w-full h-14 text-lg" onClick={submit} disabled={submitting}>
             {submitting && <Loader2 className="h-5 w-5 mr-2 animate-spin" />}등록하기
           </Button>

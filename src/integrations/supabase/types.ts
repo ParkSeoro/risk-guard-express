@@ -5418,6 +5418,78 @@ export type Database = {
           },
         ]
       }
+      worker_daily_health_logs: {
+        Row: {
+          body_temp: number | null
+          bp_diastolic: number | null
+          bp_systolic: number | null
+          created_at: string
+          fit_to_work: boolean
+          id: string
+          is_deleted: boolean
+          log_date: string
+          note: string | null
+          project_id: string
+          reason: string
+          signature_data: string | null
+          sleep_hours: number | null
+          symptoms: Json
+          updated_at: string
+          worker_id: string
+        }
+        Insert: {
+          body_temp?: number | null
+          bp_diastolic?: number | null
+          bp_systolic?: number | null
+          created_at?: string
+          fit_to_work?: boolean
+          id?: string
+          is_deleted?: boolean
+          log_date?: string
+          note?: string | null
+          project_id: string
+          reason?: string
+          signature_data?: string | null
+          sleep_hours?: number | null
+          symptoms?: Json
+          updated_at?: string
+          worker_id: string
+        }
+        Update: {
+          body_temp?: number | null
+          bp_diastolic?: number | null
+          bp_systolic?: number | null
+          created_at?: string
+          fit_to_work?: boolean
+          id?: string
+          is_deleted?: boolean
+          log_date?: string
+          note?: string | null
+          project_id?: string
+          reason?: string
+          signature_data?: string | null
+          sleep_hours?: number | null
+          symptoms?: Json
+          updated_at?: string
+          worker_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "worker_daily_health_logs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "worker_daily_health_logs_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       worker_daily_qr: {
         Row: {
           created_at: string
@@ -5537,6 +5609,59 @@ export type Database = {
           },
         ]
       }
+      worker_legal_education_mapping: {
+        Row: {
+          created_at: string
+          education_type: string
+          first_due_days: number
+          id: string
+          interval_months: number
+          is_deleted: boolean
+          is_system_default: boolean
+          job_type: string
+          legal_basis: string | null
+          project_id: string | null
+          required_hours: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          education_type: string
+          first_due_days?: number
+          id?: string
+          interval_months?: number
+          is_deleted?: boolean
+          is_system_default?: boolean
+          job_type: string
+          legal_basis?: string | null
+          project_id?: string | null
+          required_hours?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          education_type?: string
+          first_due_days?: number
+          id?: string
+          interval_months?: number
+          is_deleted?: boolean
+          is_system_default?: boolean
+          job_type?: string
+          legal_basis?: string | null
+          project_id?: string | null
+          required_hours?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "worker_legal_education_mapping_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       worker_opinions: {
         Row: {
           analysis_result: Json | null
@@ -5588,8 +5713,80 @@ export type Database = {
         }
         Relationships: []
       }
+      worker_required_items: {
+        Row: {
+          completed_at: string | null
+          completed_ref_id: string | null
+          created_at: string
+          due_date: string | null
+          id: string
+          is_deleted: boolean
+          item_type: string
+          legal_basis: string | null
+          notes: string | null
+          project_id: string
+          source: string
+          status: string
+          subtype: string
+          updated_at: string
+          worker_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          completed_ref_id?: string | null
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          is_deleted?: boolean
+          item_type: string
+          legal_basis?: string | null
+          notes?: string | null
+          project_id: string
+          source?: string
+          status?: string
+          subtype: string
+          updated_at?: string
+          worker_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          completed_ref_id?: string | null
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          is_deleted?: boolean
+          item_type?: string
+          legal_basis?: string | null
+          notes?: string | null
+          project_id?: string
+          source?: string
+          status?: string
+          subtype?: string
+          updated_at?: string
+          worker_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "worker_required_items_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "worker_required_items_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workers: {
         Row: {
+          assigned_chemicals: string[] | null
+          assigned_processes: string[] | null
+          birth_date: string | null
           company_id: string | null
           company_name: string
           created_at: string
@@ -5597,19 +5794,27 @@ export type Database = {
           health_checkup_status:
             | Database["public"]["Enums"]["health_checkup_result"]
             | null
+          health_grade: string | null
           health_restrictions: string | null
+          hire_date: string | null
           id: string
           is_active: boolean
+          job_type: string | null
           last_checkup_date: string | null
           name: string
           next_checkup_due: string | null
+          outdoor_worker: boolean
           phone: string
           project_id: string
           qr_token: string
+          requires_daily_health_log: boolean
           special_education_required_until: string | null
           updated_at: string
         }
         Insert: {
+          assigned_chemicals?: string[] | null
+          assigned_processes?: string[] | null
+          birth_date?: string | null
           company_id?: string | null
           company_name?: string
           created_at?: string
@@ -5617,19 +5822,27 @@ export type Database = {
           health_checkup_status?:
             | Database["public"]["Enums"]["health_checkup_result"]
             | null
+          health_grade?: string | null
           health_restrictions?: string | null
+          hire_date?: string | null
           id?: string
           is_active?: boolean
+          job_type?: string | null
           last_checkup_date?: string | null
           name: string
           next_checkup_due?: string | null
+          outdoor_worker?: boolean
           phone: string
           project_id: string
           qr_token?: string
+          requires_daily_health_log?: boolean
           special_education_required_until?: string | null
           updated_at?: string
         }
         Update: {
+          assigned_chemicals?: string[] | null
+          assigned_processes?: string[] | null
+          birth_date?: string | null
           company_id?: string | null
           company_name?: string
           created_at?: string
@@ -5637,15 +5850,20 @@ export type Database = {
           health_checkup_status?:
             | Database["public"]["Enums"]["health_checkup_result"]
             | null
+          health_grade?: string | null
           health_restrictions?: string | null
+          hire_date?: string | null
           id?: string
           is_active?: boolean
+          job_type?: string | null
           last_checkup_date?: string | null
           name?: string
           next_checkup_due?: string | null
+          outdoor_worker?: boolean
           phone?: string
           project_id?: string
           qr_token?: string
+          requires_daily_health_log?: boolean
           special_education_required_until?: string | null
           updated_at?: string
         }

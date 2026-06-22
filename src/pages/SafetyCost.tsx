@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
 import { sendNotification } from '@/lib/notificationService';
+import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { SAFETY_COST_CATEGORIES, analyzeSafetyCostCompliance, classifySafetyCostItem, formatKRW, getSafetyCostStatusLabel } from '@/lib/safetyCost';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -229,12 +230,14 @@ const SafetyCost = () => {
     setReportEditOpen(false); toast({ title: '월별 사용내역서가 수정되었습니다.' }); fetchAll();
   }
 
+  const { softDelete: _softDeleteSC } = useSoftDelete();
   async function deleteReport(report: Report) {
     if (report.status === 'approved') { toast({ title: '승인 완료된 내역서는 삭제할 수 없습니다.', variant: 'destructive' }); return; }
-    if (!window.confirm(`${String(report.report_month).slice(0, 7)} 월별 사용내역서를 삭제할까요? 항목과 증빙 연결도 함께 삭제됩니다.`)) return;
-    const { error } = await supabase.from('safety_cost_monthly_reports' as any).delete().eq('id', report.id);
-    if (error) { toast({ title: '월별 사용내역서 삭제 실패', description: error.message, variant: 'destructive' }); return; }
-    setSelectedReportId(''); toast({ title: '월별 사용내역서가 삭제되었습니다.' }); fetchAll();
+    const r = await _softDeleteSC('safety_cost_monthly_reports', report.id, {
+      label: `${String(report.report_month).slice(0, 7)} 월별 사용내역서`,
+      projectId: report.project_id,
+    });
+    if (r.ok) { setSelectedReportId(''); fetchAll(); }
   }
 
   async function updateReportTotal(reportId: string) {

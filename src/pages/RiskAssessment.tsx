@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { useToast } from "@/hooks/use-toast";
+import { useSoftDelete } from "@/hooks/useSoftDelete";
 import { validateRiskItemField } from '@/lib/inputValidation';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -169,11 +170,10 @@ const RiskAssessment = () => {
     }
   };
 
+  const { softDelete: softDeleteRA } = useSoftDelete();
   const handleDelete = async (id: string) => {
-    await supabase.from('risk_items').delete().eq('id', id);
-    setItems(prev => prev.filter(i => i.id !== id));
-    toast({ title: "행이 삭제되었습니다." });
-    log('삭제', 'risk_item', id, selectedProjectId);
+    const r = await softDeleteRA('risk_items', id, { label: '위험성평가 항목', projectId: selectedProjectId });
+    if (r.ok) setItems(prev => prev.filter(i => i.id !== id));
   };
 
   const handleExclude = async (id: string) => {
@@ -283,6 +283,7 @@ const RiskAssessment = () => {
     const { data: batches } = await supabase.from('generated_batches')
       .select('id, total_items, created_at')
       .eq('project_id', selectedProjectId)
+      .eq('is_deleted', false)
       .order('created_at', { ascending: false })
       .limit(1);
     if (!batches || batches.length === 0) {
@@ -290,11 +291,21 @@ const RiskAssessment = () => {
       return;
     }
     const batch = batches[0];
-    await supabase.from('risk_items').delete().eq('batch_id', batch.id);
-    await supabase.from('generated_batches').delete().eq('id', batch.id);
+    if (!window.confirm(`최근 배치 ${batch.total_items}건을 휴지통으로 이동할까요?`)) return;
+    // Soft delete all items in this batch
+    await (supabase.from('risk_items') as any).update({
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_by: user?.id || null,
+      deleted_reason: '배치 되돌리기',
+    }).eq('batch_id', batch.id);
+    await softDeleteRA('generated_batches', batch.id, {
+      label: `AI 생성 배치 (${batch.total_items}건)`,
+      projectId: selectedProjectId,
+      reason: '배치 되돌리기',
+      promptReason: false,
+    });
     setItems(prev => prev.filter(i => i.batch_id !== batch.id));
-    toast({ title: `배치 ${batch.total_items}건이 삭제되었습니다.` });
-    log('배치삭제', 'generated_batch', batch.id, selectedProjectId);
   };
 
   const handleExportXLSX = async () => {

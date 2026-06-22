@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { useToast } from "@/hooks/use-toast";
+import { useSoftDelete } from "@/hooks/useSoftDelete";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -160,11 +161,11 @@ const Projects = () => {
     }
   };
 
+  const { softDelete } = useSoftDelete();
   const handleDelete = async (id: string) => {
-    await supabase.from('projects').delete().eq('id', id);
-    toast({ title: '프로젝트가 삭제되었습니다.' });
-    log('삭제', 'project', id);
-    fetchProjects();
+    const target = projects.find(p => p.id === id);
+    const r = await softDelete('projects', id, { label: `프로젝트 "${target?.name || ''}"`, projectId: id });
+    if (r.ok) fetchProjects();
   };
 
   const resetForm = () => setForm({ name: '', site_name: '', site_address: '', period_start: '', period_end: '', client: '', gc_company_id: '', tags: '', status: '진행중' });

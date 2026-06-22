@@ -418,8 +418,12 @@ export type Database = {
           assessment_type: string
           created_at: string
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           id: string
           is_default: boolean
+          is_deleted: boolean
           name: string
           project_id: string
           steps: Json
@@ -429,8 +433,12 @@ export type Database = {
           assessment_type?: string
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_default?: boolean
+          is_deleted?: boolean
           name?: string
           project_id: string
           steps?: Json
@@ -440,8 +448,12 @@ export type Database = {
           assessment_type?: string
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
           is_default?: boolean
+          is_deleted?: boolean
           name?: string
           project_id?: string
           steps?: Json
@@ -1019,7 +1031,11 @@ export type Database = {
           business_no: string | null
           contact: string | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           id: string
+          is_deleted: boolean
           name: string
           parent_company_id: string | null
           period: string | null
@@ -1033,7 +1049,11 @@ export type Database = {
           business_no?: string | null
           contact?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
+          is_deleted?: boolean
           name: string
           parent_company_id?: string | null
           period?: string | null
@@ -1047,7 +1067,11 @@ export type Database = {
           business_no?: string | null
           contact?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
+          is_deleted?: boolean
           name?: string
           parent_company_id?: string | null
           period?: string | null
@@ -1369,7 +1393,11 @@ export type Database = {
         Row: {
           created_at: string | null
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           id: string
+          is_deleted: boolean
           options: Json | null
           project_id: string
           risk_distribution: Json | null
@@ -1380,7 +1408,11 @@ export type Database = {
         Insert: {
           created_at?: string | null
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
+          is_deleted?: boolean
           options?: Json | null
           project_id: string
           risk_distribution?: Json | null
@@ -1391,7 +1423,11 @@ export type Database = {
         Update: {
           created_at?: string | null
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
+          is_deleted?: boolean
           options?: Json | null
           project_id?: string
           risk_distribution?: Json | null
@@ -2553,8 +2589,12 @@ export type Database = {
           contractor: string | null
           created_at: string
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           gc_company_id: string | null
           id: string
+          is_deleted: boolean
           name: string
           period_end: string | null
           period_start: string | null
@@ -2572,8 +2612,12 @@ export type Database = {
           contractor?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           gc_company_id?: string | null
           id?: string
+          is_deleted?: boolean
           name: string
           period_end?: string | null
           period_start?: string | null
@@ -2591,8 +2635,12 @@ export type Database = {
           contractor?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           gc_company_id?: string | null
           id?: string
+          is_deleted?: boolean
           name?: string
           period_end?: string | null
           period_start?: string | null
@@ -3005,6 +3053,9 @@ export type Database = {
           batch_id: string | null
           created_at: string
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           department: string | null
           env_exceedance_source: string | null
           excluded_at: string | null
@@ -3022,6 +3073,7 @@ export type Database = {
           improved_severity: number
           improved_severity_grade: string
           improvement_measure: string | null
+          is_deleted: boolean
           is_excluded: boolean
           is_locked: boolean | null
           is_user_reviewed: boolean
@@ -3056,6 +3108,9 @@ export type Database = {
           batch_id?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           department?: string | null
           env_exceedance_source?: string | null
           excluded_at?: string | null
@@ -3073,6 +3128,7 @@ export type Database = {
           improved_severity?: number
           improved_severity_grade?: string
           improvement_measure?: string | null
+          is_deleted?: boolean
           is_excluded?: boolean
           is_locked?: boolean | null
           is_user_reviewed?: boolean
@@ -3107,6 +3163,9 @@ export type Database = {
           batch_id?: string | null
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           department?: string | null
           env_exceedance_source?: string | null
           excluded_at?: string | null
@@ -3124,6 +3183,7 @@ export type Database = {
           improved_severity?: number
           improved_severity_grade?: string
           improvement_measure?: string | null
+          is_deleted?: boolean
           is_excluded?: boolean
           is_locked?: boolean | null
           is_user_reviewed?: boolean
@@ -3801,7 +3861,11 @@ export type Database = {
           construction_id: string
           created_at: string
           created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           id: string
+          is_deleted: boolean
           project_id: string
           rejected_reason: string
           report_month: string
@@ -3820,7 +3884,11 @@ export type Database = {
           construction_id: string
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
+          is_deleted?: boolean
           project_id: string
           rejected_reason?: string
           report_month: string
@@ -3839,7 +3907,11 @@ export type Database = {
           construction_id?: string
           created_at?: string
           created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           id?: string
+          is_deleted?: boolean
           project_id?: string
           rejected_reason?: string
           report_month?: string
@@ -3878,7 +3950,9 @@ export type Database = {
         Row: {
           accident_cases: Json
           auto_generated: boolean
+          category: string | null
           company_id: string | null
+          completion_count: number | null
           created_at: string
           created_by: string | null
           deleted_at: string | null
@@ -3888,6 +3962,7 @@ export type Database = {
           id: string
           is_deleted: boolean
           key_hazards: Json
+          last_completed_at: string | null
           ppe_requirements: Json
           prohibited_actions: Json
           project_id: string
@@ -3903,7 +3978,9 @@ export type Database = {
         Insert: {
           accident_cases?: Json
           auto_generated?: boolean
+          category?: string | null
           company_id?: string | null
+          completion_count?: number | null
           created_at?: string
           created_by?: string | null
           deleted_at?: string | null
@@ -3913,6 +3990,7 @@ export type Database = {
           id?: string
           is_deleted?: boolean
           key_hazards?: Json
+          last_completed_at?: string | null
           ppe_requirements?: Json
           prohibited_actions?: Json
           project_id: string
@@ -3928,7 +4006,9 @@ export type Database = {
         Update: {
           accident_cases?: Json
           auto_generated?: boolean
+          category?: string | null
           company_id?: string | null
+          completion_count?: number | null
           created_at?: string
           created_by?: string | null
           deleted_at?: string | null
@@ -3938,6 +4018,7 @@ export type Database = {
           id?: string
           is_deleted?: boolean
           key_hazards?: Json
+          last_completed_at?: string | null
           ppe_requirements?: Json
           prohibited_actions?: Json
           project_id?: string
@@ -4540,6 +4621,7 @@ export type Database = {
       }
       todo_items: {
         Row: {
+          category: string | null
           company_id: string | null
           completed_at: string | null
           completed_by: string | null
@@ -4554,12 +4636,15 @@ export type Database = {
           is_deleted: boolean
           legal_duty_id: string | null
           project_id: string
+          source_id: string | null
+          source_table: string | null
           status: string
           title: string
           updated_at: string
           user_id: string
         }
         Insert: {
+          category?: string | null
           company_id?: string | null
           completed_at?: string | null
           completed_by?: string | null
@@ -4574,12 +4659,15 @@ export type Database = {
           is_deleted?: boolean
           legal_duty_id?: string | null
           project_id: string
+          source_id?: string | null
+          source_table?: string | null
           status?: string
           title: string
           updated_at?: string
           user_id: string
         }
         Update: {
+          category?: string | null
           company_id?: string | null
           completed_at?: string | null
           completed_by?: string | null
@@ -4594,6 +4682,8 @@ export type Database = {
           is_deleted?: boolean
           legal_duty_id?: string | null
           project_id?: string
+          source_id?: string | null
+          source_table?: string | null
           status?: string
           title?: string
           updated_at?: string
@@ -5418,6 +5508,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_env_exceedance_to_risk: {
+        Args: { _measurement_id: string }
+        Returns: number
+      }
       can_access_company_data: {
         Args: { _company_id: string; _project_id: string; _user_id: string }
         Returns: boolean

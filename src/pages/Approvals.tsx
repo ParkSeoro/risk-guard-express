@@ -67,7 +67,7 @@ const Approvals = () => {
     setRuns(runsData);
   };
 
-  useEffect(() => { fetchData(); }, [selectedProject, userCompanyId]);
+  useEffect(() => { fetchData(); fetchEntityPending(); }, [selectedProject, userCompanyId]);
 
   // Group by run_id, only show the latest approval_version per run
   const grouped = (() => {

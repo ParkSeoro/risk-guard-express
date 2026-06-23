@@ -1,6 +1,7 @@
 // Edge function: 근로자 의견 텍스트를 분석하여 위험요인 / 보건요인 / 사고사례 후보를 생성
 // 또한 공종 기반 보건/사고 자동 생성 모드도 지원
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,6 +9,24 @@ const corsHeaders = {
 };
 
 const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+
+async function requireUser(req: Request): Promise<{ userId: string } | Response> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+  const token = authHeader.slice(7);
+  const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!);
+  const { data, error } = await sb.auth.getClaims(token);
+  if (error || !data?.claims?.sub) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+  return { userId: data.claims.sub as string };
+}
 
 interface RequestBody {
   mode: 'opinion' | 'health' | 'accident';
@@ -140,6 +159,8 @@ const accidentSchema = {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+  const auth = await requireUser(req);
+  if (auth instanceof Response) return auth;
   try {
     if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY missing');
     const body = (await req.json()) as RequestBody;

@@ -221,7 +221,22 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const admin = createClient(supabaseUrl, serviceKey);
+
+    // Auth: require user JWT, derive created_by from token (never trust body)
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const userSb = createClient(supabaseUrl, anonKey);
+    const { data: claims, error: claimErr } = await userSb.auth.getClaims(authHeader.slice(7));
+    if (claimErr || !claims?.claims?.sub) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const authedUserId = claims.claims.sub as string;
 
     const body = await req.json();
     const action = body.action || "start";
@@ -230,7 +245,6 @@ serve(async (req) => {
       const {
         project_id,
         run_id,
-        created_by,
         process_name,
         equipment,
         work_description,
@@ -238,6 +252,7 @@ serve(async (req) => {
         work_environment,
         target_count,
       } = body;
+      const created_by = authedUserId; // derived from JWT, ignore body value
 
       if (!project_id || !created_by || !process_name) {
         return new Response(JSON.stringify({ error: "필수 파라미터 누락" }), {
@@ -245,6 +260,17 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+
+      // Verify project membership
+      const { data: isMember } = await admin.rpc('is_project_member', {
+        _user_id: authedUserId, _project_id: project_id,
+      });
+      if (!isMember) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
 
       const tc = [50, 100, 150, 300].includes(Number(target_count)) ? Number(target_count) : 50;
 

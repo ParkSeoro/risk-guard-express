@@ -244,7 +244,25 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const adminClient = createClient(supabaseUrl, supabaseKey);
+
+    // Auth: allow service-role (internal orchestrator) OR validate user JWT
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const token = authHeader.slice(7);
+    const isInternal = token === supabaseKey;
+    if (!isInternal) {
+      const userSb = createClient(supabaseUrl, anonKey);
+      const { data: claims, error: claimErr } = await userSb.auth.getClaims(token);
+      if (claimErr || !claims?.claims?.sub) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
 
     const body = await req.json();
     const {
@@ -261,6 +279,21 @@ serve(async (req) => {
       batch_index,
       batch_size,
     } = body;
+
+    // Verify project membership for non-internal callers
+    if (!isInternal && project_id) {
+      const userSb = createClient(supabaseUrl, anonKey,
+        { global: { headers: { Authorization: authHeader } } });
+      const { data: isMember } = await userSb.rpc('is_project_member', {
+        _user_id: (await userSb.auth.getClaims(token)).data!.claims.sub,
+        _project_id: project_id,
+      });
+      if (!isMember) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
 
     // ── Resolve AI settings ──
     let useOpenAI = false;

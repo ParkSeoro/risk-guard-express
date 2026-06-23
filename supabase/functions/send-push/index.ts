@@ -22,6 +22,29 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+    // Auth: allow service-role (internal) OR authenticated caller
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const token = authHeader.slice(7);
+    const isInternal = token === serviceRoleKey;
+    let callerId: string | null = null;
+    if (!isInternal) {
+      const userSb = createClient(supabaseUrl, anonKey);
+      const { data: claims, error: claimErr } = await userSb.auth.getClaims(token);
+      if (claimErr || !claims?.claims?.sub) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      callerId = claims.claims.sub as string;
+    }
+
     const VAPID_PUBLIC = Deno.env.get("VAPID_PUBLIC_KEY");
     const VAPID_PRIVATE = Deno.env.get("VAPID_PRIVATE_KEY");
     const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") || "mailto:admin@example.com";
@@ -31,15 +54,24 @@ Deno.serve(async (req) => {
     }
     webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const p: Payload = await req.json();
     if (!p.user_id || !p.title) {
       return new Response(JSON.stringify({ error: "user_id, title required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // Non-internal callers may only push to themselves or members of a shared project
+    if (!isInternal && callerId !== p.user_id) {
+      const { data: shares } = await supabase.rpc('shares_project_with', {
+        _viewer: callerId, _target: p.user_id,
+      });
+      const { data: isAdmin } = await supabase.rpc('is_global_admin', { _user_id: callerId });
+      if (!shares && !isAdmin) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
 
     const { data: subs, error } = await supabase

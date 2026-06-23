@@ -51,6 +51,27 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+
+    // Auth: allow service-role (internal triggers) OR authenticated caller
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    const token = authHeader.slice(7);
+    const isInternal = token === serviceRoleKey;
+    let callerId: string | null = null;
+    if (!isInternal) {
+      const userSb = createClient(supabaseUrl, anonKey);
+      const { data: claims, error: claimErr } = await userSb.auth.getClaims(token);
+      if (claimErr || !claims?.claims?.sub) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      callerId = claims.claims.sub as string;
+    }
+
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const payload: NotificationPayload = await req.json();
@@ -61,6 +82,18 @@ Deno.serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    // Non-internal callers may only notify themselves or members of a shared project
+    if (!isInternal && callerId !== user_id) {
+      const { data: shares } = await supabase.rpc('shares_project_with', {
+        _viewer: callerId, _target: user_id,
+      });
+      const { data: isAdmin } = await supabase.rpc('is_global_admin', { _user_id: callerId });
+      if (!shares && !isAdmin) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
 
     // 1. Create in-app notification

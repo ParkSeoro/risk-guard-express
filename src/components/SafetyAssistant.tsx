@@ -10,6 +10,7 @@ import {
   Bot, Send, ClipboardCheck, BookOpen, AlertTriangle,
   Search, Loader2, X, Maximize2, Minimize2, Plus, MessageSquare, Trash2
 } from 'lucide-react';
+import DOMPurify from 'dompurify';
 
 interface Message {
   id?: string;
@@ -287,14 +288,20 @@ export function SafetyAssistant() {
                       }`}>
                         <div className="whitespace-pre-wrap leading-relaxed prose prose-xs max-w-none dark:prose-invert"
                           dangerouslySetInnerHTML={{
-                            __html: msg.content
-                              .replace(/^### (.*$)/gm, '<h4 class="font-bold text-xs mt-2 mb-1">$1</h4>')
-                              .replace(/^## (.*$)/gm, '<h3 class="font-bold text-sm mt-3 mb-1">$1</h3>')
-                              .replace(/^\- \[ \] (.*$)/gm, '<div class="flex items-center gap-1.5"><input type="checkbox" class="rounded" /><span>$1</span></div>')
-                              .replace(/^\- \[x\] (.*$)/gm, '<div class="flex items-center gap-1.5"><input type="checkbox" checked class="rounded" /><span>$1</span></div>')
-                              .replace(/^\- (.*$)/gm, '<div class="ml-2">• $1</div>')
-                              .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                              .replace(/\n/g, '<br />')
+                            __html: DOMPurify.sanitize(
+                              msg.content
+                                .replace(/&/g, '&amp;')
+                                .replace(/</g, '&lt;')
+                                .replace(/>/g, '&gt;')
+                                .replace(/^### (.*$)/gm, '<h4 class="font-bold text-xs mt-2 mb-1">$1</h4>')
+                                .replace(/^## (.*$)/gm, '<h3 class="font-bold text-sm mt-3 mb-1">$1</h3>')
+                                .replace(/^\- \[ \] (.*$)/gm, '<div class="flex items-center gap-1.5"><input type="checkbox" class="rounded" /><span>$1</span></div>')
+                                .replace(/^\- \[x\] (.*$)/gm, '<div class="flex items-center gap-1.5"><input type="checkbox" checked class="rounded" /><span>$1</span></div>')
+                                .replace(/^\- (.*$)/gm, '<div class="ml-2">• $1</div>')
+                                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                                .replace(/\n/g, '<br />'),
+                              { ALLOWED_TAGS: ['h3','h4','strong','br','div','span','input'], ALLOWED_ATTR: ['class','type','checked'] }
+                            )
                           }}
                         />
                       </div>

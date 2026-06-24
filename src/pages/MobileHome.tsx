@@ -261,3 +261,20 @@ function ActionTile({ icon: Icon, label, sub, onClick, highlight }: any) {
     </button>
   );
 }
+
+const TILE_DEFS: Record<MobileTileKey, { icon: any; label: string; sub: string; to: string }> = {
+  inspect: { icon: ClipboardCheck, label: "안전점검", sub: "현장 점검 등록", to: "/m/inspect" },
+  incident: { icon: AlertOctagon, label: "사고 신고", sub: "아차/경미/중대", to: "/m/incident" },
+  tbm: { icon: Users, label: "TBM 진행", sub: "QR 발급/참여", to: "/m/tbm" },
+  scan: { icon: ScanLine, label: "QR 스캔", sub: "근로자 출입", to: "/m/scan" },
+  permits: { icon: FileCheck2, label: "허가서 결재", sub: "대기 결재", to: "/m/permits" },
+  actions: { icon: Wrench, label: "조치 관리", sub: "진행중/완료", to: "/m/actions" },
+  alerts: { icon: Bell, label: "알림", sub: "미확인", to: "/m/alerts" },
+  approvals: { icon: FileCheck2, label: "결재함", sub: "위험성평가", to: "/m/approvals" },
+  risk: { icon: ShieldAlert, label: "위험성평가", sub: "요약 보기", to: "/m/risk-assessment" },
+  "work-plans": { icon: ClipboardList, label: "작업계획", sub: "목록/상태", to: "/m/work-plans" },
+  workers: { icon: QrCode, label: "근로자 QR", sub: "발급/조회", to: "/m/workers" },
+  attendance: { icon: HardHat, label: "입퇴장 현황", sub: "오늘 출입", to: "/worker-attendance" },
+  "daily-health": { icon: HeartPulse, label: "일일 건강로그", sub: "오늘 컨디션", to: "/m/daily-health-log" },
+  manual: { icon: BookOpen, label: "사용 설명서", sub: "도움말", to: "/manual" },
+};

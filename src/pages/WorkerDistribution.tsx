@@ -104,7 +104,7 @@ export default function WorkerDistribution() {
       .then(({ data }) => setZones((data || []) as any as Zone[]));
   }, [activeMap]);
 
-  const loadEvents = async () => {
+  const loadEvents = async (source: "realtime" | "polling" = "polling") => {
     if (!projectId) return;
     const since = new Date();
     since.setHours(0, 0, 0, 0);
@@ -116,6 +116,8 @@ export default function WorkerDistribution() {
       .order("created_at", { ascending: true })
       .limit(2000);
     setEvents((data || []) as Evt[]);
+    setLastSource(source);
+    setLastUpdated(new Date());
   };
 
   // Compute current occupancy per zone: per worker key, take the last event of the day.

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Play, Square, ShieldCheck } from "lucide-react";
+import { MapPin, Play, Square, ShieldCheck, History } from "lucide-react";
 import { toast } from "sonner";
 import {
   startTracking,
@@ -11,11 +12,30 @@ import {
   type TrackingIdentity,
 } from "@/lib/tracking/locationTracker";
 
+type MyLog = { id: string; zone_id: string | null; event_type: string; source: string | null; created_at: string };
+
 export default function WorkerTrackingCard({ identity }: { identity: TrackingIdentity }) {
   const [consented, setConsented] = useState<boolean>(hasTrackingConsent());
   const [running, setRunning] = useState(false);
   const [info, setInfo] = useState<{ acc: number; zone: string | null; source: string } | null>(null);
+  const [logs, setLogs] = useState<MyLog[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
   const stopRef = useRef<null | (() => void)>(null);
+
+  const loadLogs = async () => {
+    if (!identity.worker_phone) return;
+    const since = new Date(); since.setHours(0, 0, 0, 0);
+    const { data } = await supabase
+      .from("worker_zone_events")
+      .select("id, zone_id, event_type, source, created_at")
+      .eq("project_id", identity.project_id)
+      .eq("worker_phone", identity.worker_phone)
+      .gte("created_at", since.toISOString())
+      .order("created_at", { ascending: false })
+      .limit(50);
+    setLogs((data || []) as MyLog[]);
+  };
+  useEffect(() => { if (showLogs) loadLogs(); }, [showLogs]);
 
   useEffect(() => () => stopRef.current?.(), []);
 
@@ -101,6 +121,25 @@ export default function WorkerTrackingCard({ identity }: { identity: TrackingIde
             )}
             {!info && running && (
               <div className="text-xs text-muted-foreground">위치 신호 수신 중…</div>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowLogs((s) => !s)}
+              className="text-xs text-primary flex items-center gap-1 mt-1"
+            >
+              <History className="h-3 w-3" /> {showLogs ? "내 위치 로그 닫기" : "오늘 내 위치 로그 보기"}
+            </button>
+            {showLogs && (
+              <div className="text-xs space-y-1 max-h-40 overflow-auto border rounded p-2">
+                {logs.length === 0 ? (
+                  <div className="text-muted-foreground">기록 없음</div>
+                ) : logs.map((l) => (
+                  <div key={l.id} className="flex justify-between">
+                    <span>{l.event_type === "exit" ? "🚪 퇴장" : l.event_type === "unauthorized_entry" ? "⚠️ 무단진입" : "🟢 진입"} · {l.source || "-"}</span>
+                    <span className="text-muted-foreground">{new Date(l.created_at).toLocaleTimeString("ko-KR")}</span>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}

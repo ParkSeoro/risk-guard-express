@@ -318,6 +318,13 @@ export type Database = {
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "ai_settings_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: true
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
         ]
       }
       ai_test_runs: {
@@ -405,11 +412,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "approval_lines_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "approval_lines_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "approval_lines_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -466,6 +487,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "approval_route_templates_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -545,6 +573,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "approvals_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+          {
             foreignKeyName: "approvals_risk_item_id_fkey"
             columns: ["risk_item_id"]
             isOneToOne: false
@@ -616,6 +651,70 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      assessment_notices: {
+        Row: {
+          acknowledged_worker_ids: string[] | null
+          body: string | null
+          created_at: string
+          created_by: string | null
+          expires_at: string | null
+          id: string
+          posted_at: string
+          project_id: string
+          run_id: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          acknowledged_worker_ids?: string[] | null
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          posted_at?: string
+          project_id: string
+          run_id?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          acknowledged_worker_ids?: string[] | null
+          body?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          posted_at?: string
+          project_id?: string
+          run_id?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_notices_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assessment_notices_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "assessment_notices_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_runs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       assessment_run_participants: {
         Row: {
@@ -742,6 +841,13 @@ export type Database = {
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "assessment_runs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
         ]
       }
       audit_logs: {
@@ -785,6 +891,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_logs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -924,11 +1037,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "chemical_usage_plans_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "chemical_usage_plans_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chemical_usage_plans_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -971,6 +1098,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chemical_workers_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "chemical_workers_worker_id_fkey"
@@ -1057,11 +1191,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "chemicals_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "chemicals_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chemicals_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -1106,6 +1254,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "comments_risk_item_id_fkey"
@@ -1180,11 +1335,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "companies_parent_company_id_fkey"
+            columns: ["parent_company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "companies_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "companies_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -1234,11 +1403,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "company_construction_info_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "company_construction_info_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_construction_info_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -1271,6 +1454,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -1353,11 +1543,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "confined_space_permits_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "confined_space_permits_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "confined_space_permits_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "confined_space_permits_work_permit_id_fkey"
@@ -1411,6 +1615,13 @@ export type Database = {
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "department_assignees_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
         ]
       }
       dismissed_recommendations: {
@@ -1445,6 +1656,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dismissed_recommendations_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "dismissed_recommendations_run_id_fkey"
@@ -1549,11 +1767,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "emergency_drills_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "emergency_drills_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "emergency_drills_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -1604,6 +1836,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "environment_tags_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -1668,11 +1907,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "equipment_master_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "equipment_master_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "equipment_master_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -1730,6 +1983,13 @@ export type Database = {
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "generated_batches_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
         ]
       }
       hazard_survey_responses: {
@@ -1785,6 +2045,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hazard_survey_responses_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "hazard_survey_responses_survey_id_fkey"
@@ -1872,11 +2139,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "hazard_surveys_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "hazard_surveys_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hazard_surveys_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -1962,11 +2243,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "health_checkups_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "health_checkups_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "health_checkups_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "health_checkups_worker_id_fkey"
@@ -2044,6 +2339,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "health_education_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "health_education_logs_material_id_fkey"
             columns: ["material_id"]
             isOneToOne: false
@@ -2056,6 +2358,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "health_education_logs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "health_education_logs_worker_id_fkey"
@@ -2120,6 +2429,7 @@ export type Database = {
       incident_reports: {
         Row: {
           authority_report_no: string | null
+          company_id: string | null
           created_at: string
           deleted_at: string | null
           deleted_by: string | null
@@ -2148,6 +2458,7 @@ export type Database = {
         }
         Insert: {
           authority_report_no?: string | null
+          company_id?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: string | null
@@ -2176,6 +2487,7 @@ export type Database = {
         }
         Update: {
           authority_report_no?: string | null
+          company_id?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: string | null
@@ -2202,7 +2514,22 @@ export type Database = {
           status?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "incident_reports_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_reports_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+        ]
       }
       inspection_responses: {
         Row: {
@@ -2307,11 +2634,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "legal_duties_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "legal_duties_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "legal_duties_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -2479,6 +2820,13 @@ export type Database = {
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "master_departments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
         ]
       }
       master_ppe: {
@@ -2555,6 +2903,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "master_processes_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -2672,11 +3027,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "musculoskeletal_surveys_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "musculoskeletal_surveys_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "musculoskeletal_surveys_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -2809,7 +3178,50 @@ export type Database = {
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "notifications_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
         ]
+      }
+      pii_access_logs: {
+        Row: {
+          access_type: string
+          created_at: string
+          fields: string[] | null
+          id: string
+          ip_address: string | null
+          project_id: string | null
+          reason: string | null
+          user_id: string | null
+          worker_id: string | null
+        }
+        Insert: {
+          access_type: string
+          created_at?: string
+          fields?: string[] | null
+          id?: string
+          ip_address?: string | null
+          project_id?: string | null
+          reason?: string | null
+          user_id?: string | null
+          worker_id?: string | null
+        }
+        Update: {
+          access_type?: string
+          created_at?: string
+          fields?: string[] | null
+          id?: string
+          ip_address?: string | null
+          project_id?: string | null
+          reason?: string | null
+          user_id?: string | null
+          worker_id?: string | null
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -2893,11 +3305,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "project_invites_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "project_invites_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_invites_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -2946,6 +3372,13 @@ export type Database = {
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "project_join_requests_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
         ]
       }
       project_members: {
@@ -2988,11 +3421,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "project_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "project_members_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_members_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -3079,6 +3526,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "projects_gc_company_id_fkey"
+            columns: ["gc_company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -3419,6 +3873,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "risk_item_feedback_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+          {
             foreignKeyName: "risk_item_feedback_risk_item_id_fkey"
             columns: ["risk_item_id"]
             isOneToOne: false
@@ -3643,6 +4104,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "risk_items_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+          {
             foreignKeyName: "risk_items_responsible_department_id_fkey"
             columns: ["responsible_department_id"]
             isOneToOne: false
@@ -3805,6 +4273,89 @@ export type Database = {
         }
         Relationships: []
       }
+      safety_appointments: {
+        Row: {
+          appointed_at: string
+          authority_doc_no: string | null
+          company_id: string | null
+          created_at: string
+          ended_at: string | null
+          evidence_url: string | null
+          full_name: string
+          id: string
+          is_deleted: boolean
+          project_id: string
+          reason: string | null
+          reported_to_authority_at: string | null
+          role_type: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          appointed_at: string
+          authority_doc_no?: string | null
+          company_id?: string | null
+          created_at?: string
+          ended_at?: string | null
+          evidence_url?: string | null
+          full_name: string
+          id?: string
+          is_deleted?: boolean
+          project_id: string
+          reason?: string | null
+          reported_to_authority_at?: string | null
+          role_type: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          appointed_at?: string
+          authority_doc_no?: string | null
+          company_id?: string | null
+          created_at?: string
+          ended_at?: string | null
+          evidence_url?: string | null
+          full_name?: string
+          id?: string
+          is_deleted?: boolean
+          project_id?: string
+          reason?: string | null
+          reported_to_authority_at?: string | null
+          role_type?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "safety_appointments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_appointments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "safety_appointments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_appointments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+        ]
+      }
       safety_cost_approval_steps: {
         Row: {
           approved_at: string | null
@@ -3869,6 +4420,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "safety_cost_approval_steps_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "safety_cost_approval_steps_construction_id_fkey"
             columns: ["construction_id"]
             isOneToOne: false
@@ -3881,6 +4439,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_approval_steps_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "safety_cost_approval_steps_report_id_fkey"
@@ -3952,6 +4517,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "safety_cost_audit_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "safety_cost_audit_logs_construction_id_fkey"
             columns: ["construction_id"]
             isOneToOne: false
@@ -3971,6 +4543,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_audit_logs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "safety_cost_audit_logs_report_id_fkey"
@@ -4036,11 +4615,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "safety_cost_constructions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "safety_cost_constructions_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_constructions_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -4108,6 +4701,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "safety_cost_evidence_files_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "safety_cost_evidence_files_construction_id_fkey"
             columns: ["construction_id"]
             isOneToOne: false
@@ -4127,6 +4727,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_evidence_files_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "safety_cost_evidence_files_report_id_fkey"
@@ -4252,6 +4859,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "safety_cost_items_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "safety_cost_items_construction_id_fkey"
             columns: ["construction_id"]
             isOneToOne: false
@@ -4264,6 +4878,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_items_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "safety_cost_items_report_id_fkey"
@@ -4353,6 +4974,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "safety_cost_monthly_reports_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "safety_cost_monthly_reports_construction_id_fkey"
             columns: ["construction_id"]
             isOneToOne: false
@@ -4365,6 +4993,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "safety_cost_monthly_reports_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -4584,11 +5219,14 @@ export type Database = {
           deleted_reason: string | null
           id: string
           inspected_at: string
+          inspection_category: string | null
           inspection_type: string
           inspector_id: string | null
           inspector_name: string
           is_deleted: boolean
+          legal_frequency: string | null
           location: string
+          participating_company_ids: string[] | null
           process_category: string
           project_id: string
           status: string
@@ -4604,11 +5242,14 @@ export type Database = {
           deleted_reason?: string | null
           id?: string
           inspected_at?: string
+          inspection_category?: string | null
           inspection_type?: string
           inspector_id?: string | null
           inspector_name?: string
           is_deleted?: boolean
+          legal_frequency?: string | null
           location?: string
+          participating_company_ids?: string[] | null
           process_category?: string
           project_id: string
           status?: string
@@ -4624,11 +5265,14 @@ export type Database = {
           deleted_reason?: string | null
           id?: string
           inspected_at?: string
+          inspection_category?: string | null
           inspection_type?: string
           inspector_id?: string | null
           inspector_name?: string
           is_deleted?: boolean
+          legal_frequency?: string | null
           location?: string
+          participating_company_ids?: string[] | null
           process_category?: string
           project_id?: string
           status?: string
@@ -4681,6 +5325,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_uploads_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -4777,6 +5428,13 @@ export type Database = {
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "site_maps_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
         ]
       }
       site_zones: {
@@ -4832,6 +5490,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_zones_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "site_zones_site_map_id_fkey"
@@ -4900,11 +5565,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "special_health_targets_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "special_health_targets_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "special_health_targets_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "special_health_targets_worker_id_fkey"
@@ -5324,6 +6003,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "todo_items_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "todo_items_legal_duty_id_fkey"
             columns: ["legal_duty_id"]
             isOneToOne: false
@@ -5336,6 +6022,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "todo_items_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -5401,6 +6094,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "validation_results_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "validation_results_risk_item_id_fkey"
@@ -5494,6 +6194,13 @@ export type Database = {
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "weather_cache_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
         ]
       }
       wifi_fingerprint_samples: {
@@ -5537,6 +6244,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wifi_fingerprint_samples_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "wifi_fingerprint_samples_zone_id_fkey"
@@ -5597,6 +6311,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_env_factors_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -5679,6 +6400,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "work_env_measurements_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "work_env_measurements_factor_id_fkey"
             columns: ["factor_id"]
             isOneToOne: false
@@ -5691,6 +6419,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_env_measurements_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -5947,11 +6682,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "work_plan_attachments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "work_plan_attachments_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_plan_attachments_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "work_plan_attachments_work_plan_id_fkey"
@@ -6048,6 +6797,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "work_plans_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
             foreignKeyName: "work_plans_parent_id_fkey"
             columns: ["parent_id"]
             isOneToOne: false
@@ -6059,6 +6815,86 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_plans_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+        ]
+      }
+      work_stop_requests: {
+        Row: {
+          created_at: string
+          hazard_description: string
+          id: string
+          location: string | null
+          photo_url: string | null
+          project_id: string
+          reporter_name: string
+          resolution_note: string | null
+          resumed_at: string | null
+          resumed_by: string | null
+          retaliation_flag: boolean
+          status: string
+          updated_at: string
+          worker_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          hazard_description: string
+          id?: string
+          location?: string | null
+          photo_url?: string | null
+          project_id: string
+          reporter_name: string
+          resolution_note?: string | null
+          resumed_at?: string | null
+          resumed_by?: string | null
+          retaliation_flag?: boolean
+          status?: string
+          updated_at?: string
+          worker_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          hazard_description?: string
+          id?: string
+          location?: string | null
+          photo_url?: string | null
+          project_id?: string
+          reporter_name?: string
+          resolution_note?: string | null
+          resumed_at?: string | null
+          resumed_by?: string | null
+          retaliation_flag?: boolean
+          status?: string
+          updated_at?: string
+          worker_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_stop_requests_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_stop_requests_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "work_stop_requests_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
             referencedColumns: ["id"]
           },
         ]
@@ -6127,6 +6963,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "worker_daily_health_logs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+          {
             foreignKeyName: "worker_daily_health_logs_worker_id_fkey"
             columns: ["worker_id"]
             isOneToOne: false
@@ -6178,7 +7021,107 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "worker_daily_qr_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+          {
             foreignKeyName: "worker_daily_qr_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      worker_education_records: {
+        Row: {
+          company_id: string | null
+          completed_at: string
+          course_name: string
+          created_at: string
+          created_by: string | null
+          education_type: string
+          evidence_url: string | null
+          hours: number
+          id: string
+          instructor: string | null
+          is_deleted: boolean
+          next_due_at: string | null
+          notes: string | null
+          project_id: string
+          updated_at: string
+          worker_id: string
+        }
+        Insert: {
+          company_id?: string | null
+          completed_at: string
+          course_name: string
+          created_at?: string
+          created_by?: string | null
+          education_type: string
+          evidence_url?: string | null
+          hours?: number
+          id?: string
+          instructor?: string | null
+          is_deleted?: boolean
+          next_due_at?: string | null
+          notes?: string | null
+          project_id: string
+          updated_at?: string
+          worker_id: string
+        }
+        Update: {
+          company_id?: string | null
+          completed_at?: string
+          course_name?: string
+          created_at?: string
+          created_by?: string | null
+          education_type?: string
+          evidence_url?: string | null
+          hours?: number
+          id?: string
+          instructor?: string | null
+          is_deleted?: boolean
+          next_due_at?: string | null
+          notes?: string | null
+          project_id?: string
+          updated_at?: string
+          worker_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "worker_education_records_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "worker_education_records_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "worker_education_records_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "worker_education_records_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "worker_education_records_worker_id_fkey"
             columns: ["worker_id"]
             isOneToOne: false
             referencedRelation: "workers"
@@ -6304,6 +7247,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "worker_legal_education_mapping_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
         ]
       }
@@ -6449,6 +7399,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "worker_required_items_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+          {
             foreignKeyName: "worker_required_items_worker_id_fkey"
             columns: ["worker_id"]
             isOneToOne: false
@@ -6525,6 +7482,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "worker_zone_events_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
           },
           {
             foreignKeyName: "worker_zone_events_worker_qr_id_fkey"
@@ -6669,6 +7633,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "zone_qr_codes_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+          {
             foreignKeyName: "zone_qr_codes_zone_id_fkey"
             columns: ["zone_id"]
             isOneToOne: false
@@ -6679,6 +7650,20 @@ export type Database = {
       }
     }
     Views: {
+      v_contractor_safety_scorecard: {
+        Row: {
+          company_id: string | null
+          company_name: string | null
+          education_count: number | null
+          incident_count: number | null
+          major_incident_count: number | null
+          overdue_actions: number | null
+          project_id: string | null
+          tbm_participations: number | null
+          worker_count: number | null
+        }
+        Relationships: []
+      }
       v_worker_attendance_today: {
         Row: {
           attendance_source: string | null
@@ -6724,7 +7709,15 @@ export type Database = {
         Args: { _company_id: string; _project_id: string; _user_id: string }
         Returns: boolean
       }
-      check_data_integrity: { Args: { _project_id?: string }; Returns: Json }
+      check_data_integrity: {
+        Args: { p_project_id: string }
+        Returns: {
+          code: string
+          message: string
+          ref_id: string
+          severity: string
+        }[]
+      }
       confirm_worker_education: { Args: { _token: string }; Returns: Json }
       delegate_approval: {
         Args: {

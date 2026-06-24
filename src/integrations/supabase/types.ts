@@ -5003,6 +5003,71 @@ export type Database = {
           },
         ]
       }
+      safety_cost_violations: {
+        Row: {
+          actual_amount: number | null
+          category_code: string | null
+          company_id: string | null
+          created_at: string
+          detail: string | null
+          expected_amount: number | null
+          id: string
+          is_deleted: boolean | null
+          legal_basis: string | null
+          project_id: string
+          report_id: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          severity: string
+          updated_at: string
+          violation_code: string
+        }
+        Insert: {
+          actual_amount?: number | null
+          category_code?: string | null
+          company_id?: string | null
+          created_at?: string
+          detail?: string | null
+          expected_amount?: number | null
+          id?: string
+          is_deleted?: boolean | null
+          legal_basis?: string | null
+          project_id: string
+          report_id?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          updated_at?: string
+          violation_code: string
+        }
+        Update: {
+          actual_amount?: number | null
+          category_code?: string | null
+          company_id?: string | null
+          created_at?: string
+          detail?: string | null
+          expected_amount?: number | null
+          id?: string
+          is_deleted?: boolean | null
+          legal_basis?: string | null
+          project_id?: string
+          report_id?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          updated_at?: string
+          violation_code?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "safety_cost_violations_report_id_fkey"
+            columns: ["report_id"]
+            isOneToOne: false
+            referencedRelation: "safety_cost_monthly_reports"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       safety_education_materials: {
         Row: {
           accident_cases: Json
@@ -7683,6 +7748,10 @@ export type Database = {
       }
     }
     Functions: {
+      acknowledge_assessment_notice: {
+        Args: { _notice_id: string }
+        Returns: Json
+      }
       act_on_entity_approval: {
         Args: { _action: string; _approval_id: string; _comment?: string }
         Returns: Json
@@ -7710,11 +7779,11 @@ export type Database = {
         Returns: boolean
       }
       check_data_integrity: {
-        Args: { p_project_id: string }
+        Args: { _project_id?: string }
         Returns: {
           code: string
-          message: string
-          ref_id: string
+          count: number
+          detail: string
           severity: string
         }[]
       }
@@ -7725,6 +7794,14 @@ export type Database = {
           _new_approver_id: string
           _reason: string
         }
+        Returns: Json
+      }
+      derive_permit_from_work_plan: {
+        Args: { _permit_date?: string; _work_plan_id: string }
+        Returns: Json
+      }
+      derive_tbm_from_work_plan: {
+        Args: { _tbm_date?: string; _work_plan_id: string }
         Returns: Json
       }
       ensure_master_allowlist: {
@@ -7866,6 +7943,10 @@ export type Database = {
           _worker_name: string
           _worker_phone: string
         }
+        Returns: Json
+      }
+      validate_safety_cost_report: {
+        Args: { _report_id: string }
         Returns: Json
       }
       verify_worker_otp: {

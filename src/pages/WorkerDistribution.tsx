@@ -20,6 +20,8 @@ type Evt = {
   worker_name: string | null;
   worker_phone: string | null;
   event_type: string;
+  source: string | null;
+  accuracy_m: number | null;
   created_at: string;
 };
 
@@ -97,7 +99,7 @@ export default function WorkerDistribution() {
     since.setHours(0, 0, 0, 0);
     const { data } = await supabase
       .from("worker_zone_events")
-      .select("id,zone_id,worker_name,worker_phone,event_type,created_at")
+      .select("id,zone_id,worker_name,worker_phone,event_type,source,accuracy_m,created_at")
       .eq("project_id", projectId)
       .gte("created_at", since.toISOString())
       .order("created_at", { ascending: true })

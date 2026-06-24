@@ -6,21 +6,27 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine } from "lucide-react";
+import { Building2, ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine, HeartPulse, Settings2, RotateCcw } from "lucide-react";
 import { isOnline, listQueue } from "@/lib/offlineQueue";
 import { isPushSupported, registerSW, subscribeToPush } from "@/lib/pushSubscription";
 import { setForceDesktop } from "@/components/MobileRedirectGuard";
 import { toast } from "sonner";
+import { ALL_TILES, MobileTileKey, getMobileTiles, setMobileTiles, resetMobileTiles, detectRole } from "@/lib/mobileMenuPrefs";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // 모바일 통합 홈 — 로그인 사용자(관리자) / 비로그인(근로자 안내)
 export default function MobileHome() {
   const navigate = useNavigate();
   const { user, profile, loading, hasRole } = useAuth();
   const isMaster = hasRole('master');
+  const role = detectRole(hasRole);
   const [unread, setUnread] = useState(0);
   const [queueCount, setQueueCount] = useState(0);
   const [online, setOnline] = useState(isOnline());
   const [projects, setProjects] = useState<{ id: string; name: string; site_name: string }[]>([]);
+  const [tiles, setTiles] = useState<MobileTileKey[]>(() => getMobileTiles(role));
+  const [editOpen, setEditOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectIdState] = useState<string>(() => {
     try { return localStorage.getItem("selectedProjectId") || ""; } catch { return ""; }
   });
@@ -40,6 +46,12 @@ export default function MobileHome() {
     window.addEventListener("offline", off);
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
+
+  useEffect(() => {
+    const sync = () => setTiles(getMobileTiles(role));
+    window.addEventListener("mobile:tiles-changed", sync);
+    return () => window.removeEventListener("mobile:tiles-changed", sync);
+  }, [role]);
 
   useEffect(() => {
     listQueue().then(q => setQueueCount(q.length)).catch(() => {});
@@ -165,33 +177,61 @@ export default function MobileHome() {
                 </CardContent>
               </Card>
             )}
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-muted-foreground">
+                바로가기 ({tiles.length}) · 역할: <strong>{role === "worker" ? "근로자" : role === "supervisor" ? "관리자" : "안전관리자"}</strong>
+              </div>
+              <Sheet open={editOpen} onOpenChange={setEditOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-8">
+                    <Settings2 className="h-3.5 w-3.5 mr-1" /> 메뉴 편집
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="bottom" className="h-[80vh] overflow-auto">
+                  <SheetHeader>
+                    <SheetTitle>홈 메뉴 사용자 설정</SheetTitle>
+                  </SheetHeader>
+                  <div className="text-xs text-muted-foreground mt-2 mb-3">자주 쓰는 메뉴만 켜두세요.</div>
+                  <div className="space-y-2">
+                    {ALL_TILES.map(t => {
+                      const checked = tiles.includes(t.key);
+                      return (
+                        <label key={t.key} className="flex items-center gap-3 p-3 rounded-lg border bg-card cursor-pointer">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(v) => {
+                              const next = v ? [...tiles, t.key] : tiles.filter(k => k !== t.key);
+                              setTiles(next);
+                              setMobileTiles(next);
+                            }}
+                          />
+                          <span className="font-medium">{t.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <Button variant="outline" className="w-full mt-4" onClick={() => { resetMobileTiles(); setTiles(getMobileTiles(role)); }}>
+                    <RotateCcw className="h-4 w-4 mr-2" /> 역할 기본값으로 초기화
+                  </Button>
+                </SheetContent>
+              </Sheet>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
-              <ActionTile icon={ClipboardCheck} label="안전점검" sub="현장 점검 등록"
-                onClick={() => navigate("/m/inspect")} highlight />
-              <ActionTile icon={AlertOctagon} label="사고 신고" sub="아차/경미/중대"
-                onClick={() => navigate("/m/incident")} />
-              <ActionTile icon={Users} label="TBM 진행" sub="QR 발급/참여"
-                onClick={() => navigate("/m/tbm")} />
-              <ActionTile icon={ScanLine} label="QR 스캔" sub="근로자 출입"
-                onClick={() => navigate("/m/scan")} />
-              <ActionTile icon={FileCheck2} label="허가서 결재" sub="대기 결재"
-                onClick={() => navigate("/m/permits")} />
-              <ActionTile icon={Wrench} label="조치 관리" sub="진행중/완료"
-                onClick={() => navigate("/m/actions")} />
-              <ActionTile icon={Bell} label="알림" sub={`미확인 ${unread}건`}
-                onClick={() => navigate("/m/alerts")} />
-              <ActionTile icon={FileCheck2} label="결재함" sub="위험성평가"
-                onClick={() => navigate("/m/approvals")} />
-              <ActionTile icon={ShieldAlert} label="위험성평가" sub="요약 보기"
-                onClick={() => navigate("/m/risk-assessment")} />
-              <ActionTile icon={ClipboardList} label="작업계획" sub="목록/상태"
-                onClick={() => navigate("/m/work-plans")} />
-              <ActionTile icon={QrCode} label="근로자 QR" sub="발급/조회"
-                onClick={() => navigate("/m/workers")} />
-              <ActionTile icon={HardHat} label="입퇴장 현황" sub="오늘 출입"
-                onClick={() => navigate("/worker-attendance")} />
-              <ActionTile icon={BookOpen} label="사용 설명서" sub="도움말"
-                onClick={() => navigate("/manual")} />
+              {tiles.map((key, idx) => {
+                const t = TILE_DEFS[key];
+                if (!t) return null;
+                return (
+                  <ActionTile
+                    key={key}
+                    icon={t.icon}
+                    label={t.label}
+                    sub={key === "alerts" ? `미확인 ${unread}건` : t.sub}
+                    onClick={() => navigate(t.to)}
+                    highlight={idx === 0}
+                  />
+                );
+              })}
             </div>
 
             <Button variant="outline" className="w-full h-12" onClick={enablePush}>
@@ -221,3 +261,20 @@ function ActionTile({ icon: Icon, label, sub, onClick, highlight }: any) {
     </button>
   );
 }
+
+const TILE_DEFS: Record<MobileTileKey, { icon: any; label: string; sub: string; to: string }> = {
+  inspect: { icon: ClipboardCheck, label: "안전점검", sub: "현장 점검 등록", to: "/m/inspect" },
+  incident: { icon: AlertOctagon, label: "사고 신고", sub: "아차/경미/중대", to: "/m/incident" },
+  tbm: { icon: Users, label: "TBM 진행", sub: "QR 발급/참여", to: "/m/tbm" },
+  scan: { icon: ScanLine, label: "QR 스캔", sub: "근로자 출입", to: "/m/scan" },
+  permits: { icon: FileCheck2, label: "허가서 결재", sub: "대기 결재", to: "/m/permits" },
+  actions: { icon: Wrench, label: "조치 관리", sub: "진행중/완료", to: "/m/actions" },
+  alerts: { icon: Bell, label: "알림", sub: "미확인", to: "/m/alerts" },
+  approvals: { icon: FileCheck2, label: "결재함", sub: "위험성평가", to: "/m/approvals" },
+  risk: { icon: ShieldAlert, label: "위험성평가", sub: "요약 보기", to: "/m/risk-assessment" },
+  "work-plans": { icon: ClipboardList, label: "작업계획", sub: "목록/상태", to: "/m/work-plans" },
+  workers: { icon: QrCode, label: "근로자 QR", sub: "발급/조회", to: "/m/workers" },
+  attendance: { icon: HardHat, label: "입퇴장 현황", sub: "오늘 출입", to: "/worker-attendance" },
+  "daily-health": { icon: HeartPulse, label: "일일 건강로그", sub: "오늘 컨디션", to: "/m/daily-health-log" },
+  manual: { icon: BookOpen, label: "사용 설명서", sub: "도움말", to: "/manual" },
+};

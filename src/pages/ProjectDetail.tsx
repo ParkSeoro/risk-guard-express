@@ -120,7 +120,7 @@ const ProjectDetail = () => {
       supabase.from('projects').select('*').eq('id', projectId).single(),
       supabase.from('project_members').select('*').eq('project_id', projectId),
       supabase.from('profiles').select('user_id, display_name, company, phone, position'),
-      supabase.from('companies').select('*').eq('project_id', projectId).order('name'),
+      supabase.from('companies').select('*').eq('project_id', projectId).eq('is_deleted', false).order('name'),
       supabase.from('project_invites').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_join_requests').select('*, profiles:user_id(display_name, company)').eq('project_id', projectId).eq('status', 'pending'),
       supabase.from('approval_route_templates' as any).select('*').eq('project_id', projectId).order('created_at'),

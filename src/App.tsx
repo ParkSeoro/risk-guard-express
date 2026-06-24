@@ -195,6 +195,7 @@ function ProtectedRoutes() {
         <Route path="/health/hazard-surveys" element={<HazardSurveys />} />
         <Route path="/site-maps" element={<SiteMaps />} />
         <Route path="/zone-events" element={<ZoneEvents />} />
+        <Route path="/worker-distribution" element={<WorkerDistribution />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

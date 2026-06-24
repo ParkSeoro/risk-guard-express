@@ -192,6 +192,8 @@ function ProtectedRoutes() {
         <Route path="/safety-appointments" element={<SafetyAppointments />} />
         <Route path="/work-stop" element={<WorkStopRequests />} />
         <Route path="/contractor-scorecard" element={<ContractorScorecard />} />
+        <Route path="/assessment-notices" element={<AssessmentNotices />} />
+        <Route path="/safety-cost-validation" element={<SafetyCostValidation />} />
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="/education-materials" element={<EducationMaterials />} />
         <Route path="/workers" element={<WorkerManagement />} />

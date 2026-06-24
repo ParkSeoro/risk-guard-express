@@ -68,6 +68,8 @@ const groups: Group[] = [
       { title: "안전보건교육 이수", url: "/worker-education", icon: GraduationCap },
       { title: "안전관리자 선임", url: "/safety-appointments", icon: UserCheck },
       { title: "협력사 안전성적표", url: "/contractor-scorecard", icon: BarChart3 },
+      { title: "위험성평가 공지", url: "/assessment-notices", icon: Megaphone },
+      { title: "산안비 검증", url: "/safety-cost-validation", icon: ShieldAlert },
     ],
   },
   {

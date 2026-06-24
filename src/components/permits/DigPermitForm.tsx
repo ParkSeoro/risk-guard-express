@@ -7,7 +7,7 @@ import ResponsiveSignaturePad, { ResponsiveSignaturePadHandle } from '@/componen
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-export type PermitType = 'general' | 'confined_space' | 'hot_work';
+export type PermitType = 'general' | 'confined_space' | 'hot_work' | 'excavation';
 
 export interface PermitFormData {
   // common
@@ -48,8 +48,21 @@ export interface PermitFormData {
   applicant_company?: string;
   // confined-space-specific
   cs_type?: string;          // 맨홀/탱크/Cold Box/기타
+  cs_type_other?: string;
+  cs_safety?: Record<string, boolean>;
+  cs_safety_note?: string;
   // hot-work-specific
   hw_type?: string;          // 용접/절단/기타
+  hw_type_other?: string;
+  hw_safety?: Record<string, boolean>;
+  hw_safety_note?: string;
+  // excavation-specific
+  ex_depth?: string;          // 굴착 깊이 (m)
+  ex_width?: string;          // 굴착 폭 (m)
+  ex_method?: string;         // 굴착 방법 (인력/기계)
+  ex_underground?: string;    // 지하매설물 확인 (가스/전기/통신 등)
+  ex_safety?: Record<string, boolean>;
+  ex_safety_note?: string;
   // staff names + phones
   safety_manager_name?: string;
   safety_manager_phone?: string;
@@ -157,6 +170,29 @@ export default function DigPermitForm({
           placeholder={placeholder}
         />
   );
+
+  // 체크박스 + 노트 묶음 (밀폐/화기/굴착 안전조치 공통)
+  const SafetyChecklist = ({ items, mapKey, noteKey }: { items: string[]; mapKey: keyof PermitFormData; noteKey: keyof PermitFormData }) => {
+    const map = ((data as any)[mapKey] || {}) as Record<string, boolean>;
+    const setItem = (it: string, v: boolean) => update({ [mapKey]: { ...map, [it]: v } } as any);
+    return (
+      <div className="text-[11px] leading-5 space-y-1">
+        <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+          {items.map(it => (
+            <label key={it} className="inline-flex items-start">
+              {readOnly || printMode
+                ? <Box checked={!!map[it]} />
+                : <input type="checkbox" checked={!!map[it]} onChange={e => setItem(it, e.target.checked)} className="mr-1 mt-0.5" />}
+              <span>{it}</span>
+            </label>
+          ))}
+        </div>
+        <div className="pt-1 border-t border-dashed border-muted-foreground/30">
+          비고/세부사항: <Inp value={(data as any)[noteKey]} onChangeText={(v: string) => update({ [noteKey]: v } as any)} />
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className={`dig-permit-form ${printMode ? 'print-mode' : ''} bg-white text-foreground text-xs`} style={{ fontFamily: '"Malgun Gothic","Apple SD Gothic Neo",sans-serif' }}>
@@ -400,16 +436,20 @@ export default function DigPermitForm({
                       <input type="radio" disabled={readOnly || printMode} checked={data.cs_type === t} onChange={() => update({ cs_type: t })} className="mr-1" />{t}
                     </label>
                   ))}
+                  {data.cs_type === '기타' && (
+                    <span className="ml-2">→ <Inp value={data.cs_type_other} onChangeText={(v: string) => update({ cs_type_other: v })} placeholder="기타 작업 종류" /></span>
+                  )}
                 </td>
               </tr>
               <tr><th className="hd">작업 개요<br/>(필요시 도면 첨부)</th><td colSpan={3}><Inp value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} /></td></tr>
               <tr>
                 <th className="hd">안전조치<br/>(해당항목)</th>
-                <td colSpan={3} className="text-[11px] leading-5">
-                  □ 밸브차단 및 차단표식 부착 □ 맹판 설치 및 표지 부착 □ 가스농도 측정<br />
-                  □ 용기세척 후 공기 치환 및 환기 □ 산소농도 측정 □ 압력 방출<br />
-                  □ 정전/잠금 표지 부착 □ 감시인 배치 □ 환기장비<br />
-                  □ 조명장비 □ 소화기 □ 안전장구(구명선 등) □ 안전교육
+                <td colSpan={3}>
+                  <SafetyChecklist
+                    items={['밸브차단 및 차단표식 부착', '맹판 설치 및 표지 부착', '가스농도 측정', '용기세척 후 공기 치환 및 환기', '산소농도 측정', '압력 방출', '정전/잠금 표지 부착', '감시인 배치', '환기장비', '조명장비', '소화기', '안전장구(구명선 등)', '안전교육']}
+                    mapKey="cs_safety"
+                    noteKey="cs_safety_note"
+                  />
                 </td>
               </tr>
               <tr><td colSpan={4} className="text-center font-semibold bg-[#f0f0f0]">가스농도 측정결과 확인</td></tr>
@@ -461,22 +501,25 @@ export default function DigPermitForm({
               <tr>
                 <th className="hd">작업 구분</th>
                 <td colSpan={3}>
-                  {['용접', '절단', '기타'].map(t => (
+                  {['용접', '절단', '그라인딩', '토치', '기타'].map(t => (
                     <label key={t} className="mr-3 inline-flex items-center">
                       <input type="radio" disabled={readOnly || printMode} checked={data.hw_type === t} onChange={() => update({ hw_type: t })} className="mr-1" />{t}
                     </label>
                   ))}
+                  {data.hw_type === '기타' && (
+                    <span className="ml-2">→ <Inp value={data.hw_type_other} onChangeText={(v: string) => update({ hw_type_other: v })} placeholder="기타 화기 종류" /></span>
+                  )}
                 </td>
               </tr>
               <tr><th className="hd">작업 개요</th><td colSpan={3}><Inp value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} /></td></tr>
               <tr>
                 <th className="hd">안전조치<br/>(해당항목)</th>
-                <td colSpan={3} className="text-[11px] leading-5">
-                  □ 가연물 이동(11m 이상) 및 보호조치 □ 소화기 등 소화기구 비치<br/>
-                  □ 불티비산 방지포 설치 □ 화기작업 안전교육 실시<br/>
-                  □ 화재감시자 지정(타 업무 수행 불가)<br/>
-                  □ 작업종료 후 최소 30분 이상 관찰 □ 가스농도 측정(필요 시)<br/>
-                  □ 작업구역 통풍 및 환기 □ 역화방지기 설치 □ 용접기·호스 점검
+                <td colSpan={3}>
+                  <SafetyChecklist
+                    items={['가연물 이동(11m 이상) 및 보호조치', '소화기 등 소화기구 비치', '불티비산 방지포 설치', '화기작업 안전교육 실시', '화재감시자 지정(타 업무 수행 불가)', '작업종료 후 최소 30분 이상 관찰', '가스농도 측정(필요 시)', '작업구역 통풍 및 환기', '역화방지기 설치', '용접기·호스 점검']}
+                    mapKey="hw_safety"
+                    noteKey="hw_safety_note"
+                  />
                 </td>
               </tr>
               <tr><td colSpan={4} className="text-center font-semibold bg-[#f0f0f0]">가스농도 측정결과</td></tr>
@@ -493,6 +536,71 @@ export default function DigPermitForm({
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 연장근무 발생 시 작업허가 연장 승인 필요</div>
+        </>
+      )}
+
+      {permitType === 'excavation' && (
+        <>
+          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {docNo}</div></div>
+          <h2 className="title">굴착·중장비 작업허가서</h2>
+          <table>
+            <tbody>
+              <tr>
+                <th className="hd w-[100px]">신청인</th>
+                <td>소속 : <Inp value={data.applicant_company} onChangeText={(v: string) => update({ applicant_company: v })} /></td>
+                <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
+                <td className="w-[120px]"><SigCell k="applicant" /></td>
+              </tr>
+              <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
+              <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>
+              <tr>
+                <th className="hd">굴착 제원</th>
+                <td colSpan={3}>
+                  깊이 : <Inp value={data.ex_depth} onChangeText={(v: string) => update({ ex_depth: v })} placeholder="m" /> ·
+                  폭 : <Inp value={data.ex_width} onChangeText={(v: string) => update({ ex_width: v })} placeholder="m" /> ·
+                  공법 : <Inp value={data.ex_method} onChangeText={(v: string) => update({ ex_method: v })} placeholder="인력/기계/혼합" />
+                </td>
+              </tr>
+              <tr>
+                <th className="hd">투입 중장비</th>
+                <td colSpan={3}><Inp value={data.hz_heavy_equipment_name} onChangeText={(v: string) => update({ hz_heavy_equipment_name: v })} placeholder="굴착기 0.7㎥, 덤프 15t 등" /></td>
+              </tr>
+              <tr>
+                <th className="hd">지하매설물<br/>확인사항</th>
+                <td colSpan={3}><Inp value={data.ex_underground} onChangeText={(v: string) => update({ ex_underground: v })} placeholder="가스/수도/전기/통신/소방배관 위치·도면 확인 결과" /></td>
+              </tr>
+              <tr><th className="hd">작업 개요</th><td colSpan={3}><Inp value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} /></td></tr>
+              <tr>
+                <th className="hd">안전조치<br/>(해당항목)</th>
+                <td colSpan={3}>
+                  <SafetyChecklist
+                    items={[
+                      '굴착 전 지하매설물 도면 확인',
+                      '지중탐사(GPR/탐침봉) 실시',
+                      '굴착 기울기 준수(흙 1:1.0 등)',
+                      '흙막이 / 지보공 설치',
+                      '주변 침하·균열 점검',
+                      '안전난간·덮개·표지 설치',
+                      '굴착토 적치(굴착면 0.6m 이상 이격)',
+                      '유도자/신호수 배치',
+                      '작업반경 출입통제(휀스)',
+                      '중장비 안전점검표 확인',
+                      '중장비 면허·자격 확인',
+                      '운전자 특별안전교육 실시',
+                      '비상연락망 게시',
+                      '우천/강풍 시 작업중지 기준',
+                    ]}
+                    mapKey="ex_safety"
+                    noteKey="ex_safety_note"
+                  />
+                </td>
+              </tr>
+              <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
+              <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
+              <tr><th className="hd">승인자</th><td colSpan={2}>{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : '년 월 일'} 성명 : {signatures.dig_approver?.name || ''}</td><td><SigCell k="dig_approver" /></td></tr>
+            </tbody>
+          </table>
+          <div className="text-[10px] mt-2 px-2">※ 지하매설물 손상 시 즉시 작업중지 후 관리주체에 통보. 깊이 1.5m 이상 굴착 시 흙막이/지보공 의무.</div>
         </>
       )}
 

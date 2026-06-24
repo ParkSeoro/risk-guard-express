@@ -261,8 +261,18 @@ export default function SiteMaps() {
         <div className="grid md:grid-cols-[1fr_320px] gap-4">
           <Card>
             <CardHeader className="pb-2 flex flex-row items-center justify-between">
-              <CardTitle className="text-base">{activeMap.name}</CardTitle>
+              <div>
+                <CardTitle className="text-base">{activeMap.name}</CardTitle>
+                <div className="text-[11px] text-muted-foreground mt-0.5">
+                  {activeMap.geo_anchor_nw_lat != null
+                    ? `GPS 좌표 설정됨 (NW ${activeMap.geo_anchor_nw_lat?.toFixed(5)}, ${activeMap.geo_anchor_nw_lng?.toFixed(5)})`
+                    : "지도 좌표 미설정 — GPS 자동추적 비활성"}
+                </div>
+              </div>
               <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => saveAnchors(activeMap)}>
+                  지도 좌표 설정
+                </Button>
                 {!drafting ? (
                   <Button size="sm" onClick={() => { setDrafting(true); setDraftPts([]); }}>
                     <Plus className="h-4 w-4 mr-1" /> 구역 그리기

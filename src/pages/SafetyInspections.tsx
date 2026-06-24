@@ -15,6 +15,7 @@ import { ClipboardCheck, Plus, Camera, Printer, AlertTriangle, CheckCircle2, XCi
 import { buildChecklist, INSPECTION_TYPE_LABELS, PROCESS_CATEGORIES, type InspectionType } from '@/lib/inspectionTemplates';
 import IMESafeInput from '@/components/IMESafeInput';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
+import MultiCompanyFilter from '@/components/MultiCompanyFilter';
 
 type Inspection = {
   id: string;

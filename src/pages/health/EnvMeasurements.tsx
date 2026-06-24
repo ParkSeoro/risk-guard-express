@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
 import { Plus, ClipboardList, AlertTriangle } from "lucide-react";
+import { useProjectAccess } from "@/hooks/useProjectAccess";
 
 const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const CATEGORIES = ["소음", "분진", "화학물질", "물리적", "생물학적", "진동", "조명", "고온"];
@@ -18,6 +19,7 @@ const ROUNDS = ["1차(상반기)", "2차(하반기)", "수시"];
 
 export default function EnvMeasurements() {
   const handle = useToastError();
+  const { applyCompanyFilter, userCompanyId } = useProjectAccess();
   const [list, setList] = useState<any[]>([]);
   const [factors, setFactors] = useState<any[]>([]);
   const [openM, setOpenM] = useState(false);
@@ -31,15 +33,17 @@ export default function EnvMeasurements() {
     if (!projectId) return;
     setLoading(true);
     try {
+      let mQ = supabase.from("work_env_measurements").select("*").eq("project_id", projectId).eq("is_deleted", false).order("measure_date", { ascending: false });
+      mQ = applyCompanyFilter(mQ);
       const [{ data: m }, { data: f }] = await Promise.all([
-        supabase.from("work_env_measurements").select("*").eq("project_id", projectId).eq("is_deleted", false).order("measure_date", { ascending: false }),
+        mQ,
         supabase.from("work_env_factors").select("*").eq("project_id", projectId).eq("is_deleted", false).order("name"),
       ]);
       setList(m || []); setFactors(f || []);
     } catch (e) { handle(e, "측정 자료 조회"); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => { load(); }, [projectId, userCompanyId]);
 
   const submitFactor = async () => {
     if (!projectId || !ff.name) { toast.error("인자명 필수"); return; }

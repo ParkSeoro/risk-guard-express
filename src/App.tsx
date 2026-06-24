@@ -77,6 +77,11 @@ import MobilePermits from "./pages/MobilePermits";
 import MobileIncident from "./pages/MobileIncident";
 import Incidents from "./pages/Incidents";
 import EmergencyDrills from "./pages/EmergencyDrills";
+import WorkerEducation from "./pages/WorkerEducation";
+import SafetyAppointments from "./pages/SafetyAppointments";
+import WorkStopRequests from "./pages/WorkStopRequests";
+import ContractorScorecard from "./pages/ContractorScorecard";
+import MobileWorkStop from "./pages/MobileWorkStop";
 import MobileScan from "./pages/MobileScan";
 import MobileDailyHealthLog from "./pages/MobileDailyHealthLog";
 import SiteMaps from "./pages/SiteMaps";
@@ -181,6 +186,10 @@ function ProtectedRoutes() {
         <Route path="/safety-inspections" element={<SafetyInspections />} />
         <Route path="/incidents" element={<Incidents />} />
         <Route path="/emergency-drills" element={<EmergencyDrills />} />
+        <Route path="/worker-education" element={<WorkerEducation />} />
+        <Route path="/safety-appointments" element={<SafetyAppointments />} />
+        <Route path="/work-stop" element={<WorkStopRequests />} />
+        <Route path="/contractor-scorecard" element={<ContractorScorecard />} />
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="/education-materials" element={<EducationMaterials />} />
         <Route path="/workers" element={<WorkerManagement />} />
@@ -246,6 +255,7 @@ const App = () => (
             <Route path="/m/incident" element={<MobileIncident />} />
             <Route path="/m/scan" element={<MobileScan />} />
             <Route path="/m/daily-health-log" element={<MobileDailyHealthLog />} />
+            <Route path="/m/work-stop" element={<MobileWorkStop />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
           <MobileRedirectGuard />

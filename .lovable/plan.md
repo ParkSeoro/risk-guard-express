@@ -125,15 +125,21 @@
 ### 완료
 - **Phase A (기반)**: `v_worker_attendance_today` view, `check_data_integrity()` RPC, 검증엔진 `xtbl` 시나리오
 - **Phase B**: 위험성평가→할일 디스패처(B1), 결재 위임 RPC + 통합 알림 디스패처(B3·B4), 점검 부적합→할일 자동화(F4·L5)
-- **Phase C**: 중대재해 24시간 보고 카운트다운(C3), MSDS 발암성→특수건강진단 의무 매핑(C2)
-- **신규 — 사고·비상 도메인**:
-  - `incident_reports` 확장: `is_major`, `legal_deadline_at`, `reported_to_authority_at`, `authority_report_no`
-  - `emergency_drills` 테이블 신설 (산안법 §52 / 시행규칙 §38)
-  - `check_data_integrity`에 두 가지 추가: `MAJOR_INCIDENT_OVERDUE`(중대재해 24h 보고 시한), `EMERGENCY_DRILL_MISSING`(연 1회 비상대피훈련 미실시)
-  - 데스크톱 페이지: `/incidents` (사고관리 + 24h 시한 카운트다운 + 노동청 보고 기록), `/emergency-drills` (훈련 등록·이력·차기예정 자동산출)
-  - 사이드바 새 그룹 "사고·비상"
+- **Phase C — 법적 보강 (대부분 완료)**:
+  - C1 안전보건교육 이수관리: `worker_education_records` + 차기주기 자동산정 트리거, `/worker-education`
+  - C2 특수건강진단 자동 의무 매핑 (MSDS 발암성→근로자)
+  - C3 중대재해 24시간 보고 카운트다운
+  - C4 안전관리자 선임이력: `safety_appointments`, 점검 분류(자체/순회/합동/협의체) 컬럼 추가, `/safety-appointments`
+  - C5 협력사 안전성적표: `v_contractor_safety_scorecard` view + 점수/등급 산정, `/contractor-scorecard`
+  - C6 작업중지권: `work_stop_requests` + 접수 즉시 관리자 critical 알림 트리거, 데스크톱 `/work-stop` + 모바일 `/m/work-stop`
+  - C8 위험성평가 공지: `assessment_notices` 테이블 (UI는 후속)
+  - C9 PII 접근 감사: `pii_access_logs` (Master 전용 조회)
+- **신규 — 사고·비상 도메인**: `incident_reports` 확장, `emergency_drills`, `/incidents`, `/emergency-drills`, 사이드바 "사고·비상" 그룹
+- **검증엔진 확장**: `check_data_integrity`에 7가지 체크 (HIGH_RISK_NO_TODO, MAJOR_INCIDENT_OVERDUE, EMERGENCY_DRILL_MISSING, INSPECTION_ACTION_OVERDUE, EDUCATION_OVERDUE, SAFETY_MANAGER_MISSING, WORK_STOP_PENDING)
+- **사이드바**: 신규 "법정 이행" 그룹 추가 (교육이수·선임이력·협력사 안전성적표)
 
 ### 남은 항목
 - Phase A2 — 보건/점검 페이지 다중 회사 필터 UI 통일
-- Phase C1, C4~C9 — 교육 이수관리, 선임이력·도급 협의체, 협력사 안전성적표, 작업중지권 모바일, 산안비 정산보고, 평가 공지/의견수렴, PII 마스킹
+- C7 — 산안비 자동 정산보고 + 위반 경고
+- C8 UI — 평가 공지 작성/근로자 확인 화면
 - Phase D — 작업계획서→허가서→TBM 자동 파생, 회귀 테스트

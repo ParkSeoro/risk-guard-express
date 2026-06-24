@@ -23,6 +23,21 @@ const roleLabels: Record<string, string> = {
   supervisor: '관리감독자', worker: '작업자', viewer: '열람자',
 };
 
+const positionLabels: Record<string, string> = {
+  CEO: '대표이사',
+  EXECUTIVE: '임원',
+  SITE_MANAGER: '현장소장',
+  HSE_MANAGER: '안전관리자',
+  CONSTRUCTION_MGR: '공사부장',
+  FIELD_ENGINEER: '공사담당',
+  FOREMAN: '직장/조장',
+  WORKER: '작업자',
+  OWNER_PM: '발주처 PM',
+  OWNER_HSE: '발주처 안전',
+  SUPERVISOR: '감리',
+};
+
+
 const companyTypes: Record<string, string> = {
   client: '발주처', gc: '시공사', contractor: '협력사', vendor: '공급사',
 };

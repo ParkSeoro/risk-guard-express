@@ -1134,6 +1134,7 @@ export const SCENARIOS = {
   flow: { label: "기능 연동", run: runWorkflowScenario },
   notify: { label: "알림", run: runNotificationScenario },
   integ: { label: "데이터 무결성", run: runIntegrityScenario },
+  xtbl: { label: "교차 테이블 연동 (SSOT)", run: runCrossTableScenario },
   schema: { label: "스키마 점검", run: runSchemaScenario },
   rpc: { label: "RPC 점검", run: runRpcScenario },
   edgefn: { label: "엣지 함수 헬스", run: runEdgeFunctionScenario },

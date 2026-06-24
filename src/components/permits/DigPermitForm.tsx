@@ -539,6 +539,71 @@ export default function DigPermitForm({
         </>
       )}
 
+      {permitType === 'excavation' && (
+        <>
+          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {docNo}</div></div>
+          <h2 className="title">굴착·중장비 작업허가서</h2>
+          <table>
+            <tbody>
+              <tr>
+                <th className="hd w-[100px]">신청인</th>
+                <td>소속 : <Inp value={data.applicant_company} onChangeText={(v: string) => update({ applicant_company: v })} /></td>
+                <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
+                <td className="w-[120px]"><SigCell k="applicant" /></td>
+              </tr>
+              <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
+              <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>
+              <tr>
+                <th className="hd">굴착 제원</th>
+                <td colSpan={3}>
+                  깊이 : <Inp value={data.ex_depth} onChangeText={(v: string) => update({ ex_depth: v })} placeholder="m" /> ·
+                  폭 : <Inp value={data.ex_width} onChangeText={(v: string) => update({ ex_width: v })} placeholder="m" /> ·
+                  공법 : <Inp value={data.ex_method} onChangeText={(v: string) => update({ ex_method: v })} placeholder="인력/기계/혼합" />
+                </td>
+              </tr>
+              <tr>
+                <th className="hd">투입 중장비</th>
+                <td colSpan={3}><Inp value={data.hz_heavy_equipment_name} onChangeText={(v: string) => update({ hz_heavy_equipment_name: v })} placeholder="굴착기 0.7㎥, 덤프 15t 등" /></td>
+              </tr>
+              <tr>
+                <th className="hd">지하매설물<br/>확인사항</th>
+                <td colSpan={3}><Inp value={data.ex_underground} onChangeText={(v: string) => update({ ex_underground: v })} placeholder="가스/수도/전기/통신/소방배관 위치·도면 확인 결과" /></td>
+              </tr>
+              <tr><th className="hd">작업 개요</th><td colSpan={3}><Inp value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} /></td></tr>
+              <tr>
+                <th className="hd">안전조치<br/>(해당항목)</th>
+                <td colSpan={3}>
+                  <SafetyChecklist
+                    items={[
+                      '굴착 전 지하매설물 도면 확인',
+                      '지중탐사(GPR/탐침봉) 실시',
+                      '굴착 기울기 준수(흙 1:1.0 등)',
+                      '흙막이 / 지보공 설치',
+                      '주변 침하·균열 점검',
+                      '안전난간·덮개·표지 설치',
+                      '굴착토 적치(굴착면 0.6m 이상 이격)',
+                      '유도자/신호수 배치',
+                      '작업반경 출입통제(휀스)',
+                      '중장비 안전점검표 확인',
+                      '중장비 면허·자격 확인',
+                      '운전자 특별안전교육 실시',
+                      '비상연락망 게시',
+                      '우천/강풍 시 작업중지 기준',
+                    ]}
+                    mapKey="ex_safety"
+                    noteKey="ex_safety_note"
+                  />
+                </td>
+              </tr>
+              <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
+              <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
+              <tr><th className="hd">승인자</th><td colSpan={2}>{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : '년 월 일'} 성명 : {signatures.dig_approver?.name || ''}</td><td><SigCell k="dig_approver" /></td></tr>
+            </tbody>
+          </table>
+          <div className="text-[10px] mt-2 px-2">※ 지하매설물 손상 시 즉시 작업중지 후 관리주체에 통보. 깊이 1.5m 이상 굴착 시 흙막이/지보공 의무.</div>
+        </>
+      )}
+
       {/* Sign dialog */}
       <Dialog open={!!signTarget} onOpenChange={(v) => !v && setSignTarget(null)}>
         <DialogContent>

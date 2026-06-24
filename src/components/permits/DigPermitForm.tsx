@@ -7,7 +7,7 @@ import ResponsiveSignaturePad, { ResponsiveSignaturePadHandle } from '@/componen
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-export type PermitType = 'general' | 'confined_space' | 'hot_work';
+export type PermitType = 'general' | 'confined_space' | 'hot_work' | 'excavation';
 
 export interface PermitFormData {
   // common
@@ -48,8 +48,21 @@ export interface PermitFormData {
   applicant_company?: string;
   // confined-space-specific
   cs_type?: string;          // 맨홀/탱크/Cold Box/기타
+  cs_type_other?: string;
+  cs_safety?: Record<string, boolean>;
+  cs_safety_note?: string;
   // hot-work-specific
   hw_type?: string;          // 용접/절단/기타
+  hw_type_other?: string;
+  hw_safety?: Record<string, boolean>;
+  hw_safety_note?: string;
+  // excavation-specific
+  ex_depth?: string;          // 굴착 깊이 (m)
+  ex_width?: string;          // 굴착 폭 (m)
+  ex_method?: string;         // 굴착 방법 (인력/기계)
+  ex_underground?: string;    // 지하매설물 확인 (가스/전기/통신 등)
+  ex_safety?: Record<string, boolean>;
+  ex_safety_note?: string;
   // staff names + phones
   safety_manager_name?: string;
   safety_manager_phone?: string;

@@ -81,6 +81,8 @@ import WorkerEducation from "./pages/WorkerEducation";
 import SafetyAppointments from "./pages/SafetyAppointments";
 import WorkStopRequests from "./pages/WorkStopRequests";
 import ContractorScorecard from "./pages/ContractorScorecard";
+import AssessmentNotices from "./pages/AssessmentNotices";
+import SafetyCostValidation from "./pages/SafetyCostValidation";
 import MobileWorkStop from "./pages/MobileWorkStop";
 import MobileScan from "./pages/MobileScan";
 import MobileDailyHealthLog from "./pages/MobileDailyHealthLog";
@@ -190,6 +192,8 @@ function ProtectedRoutes() {
         <Route path="/safety-appointments" element={<SafetyAppointments />} />
         <Route path="/work-stop" element={<WorkStopRequests />} />
         <Route path="/contractor-scorecard" element={<ContractorScorecard />} />
+        <Route path="/assessment-notices" element={<AssessmentNotices />} />
+        <Route path="/safety-cost-validation" element={<SafetyCostValidation />} />
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="/education-materials" element={<EducationMaterials />} />
         <Route path="/workers" element={<WorkerManagement />} />

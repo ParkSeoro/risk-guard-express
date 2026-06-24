@@ -139,7 +139,11 @@
 - **사이드바**: 신규 "법정 이행" 그룹 추가 (교육이수·선임이력·협력사 안전성적표)
 
 ### 남은 항목
-- Phase A2 — 보건/점검 페이지 다중 회사 필터 UI 통일
-- C7 — 산안비 자동 정산보고 + 위반 경고
-- C8 UI — 평가 공지 작성/근로자 확인 화면
-- Phase D — 작업계획서→허가서→TBM 자동 파생, 회귀 테스트
+- Phase A2 — 보건/점검 페이지 다중 회사 필터 UI 통일 (UI 일괄 작업, 페이지별 검토 필요)
+- Phase D2 — 회귀 테스트 시나리오 확장
+
+### 추가 완료 (2026-06-24 후속)
+- **C7 산안비 검증**: `safety_cost_violations` 테이블, `validate_safety_cost_report` RPC (인건비 비율/증빙 누락/분류 미확정 자동 적발 + critical 알림), `/safety-cost-validation` 페이지
+- **C8 UI**: `/assessment-notices` 공지 작성·근로자 확인 페이지, `acknowledge_assessment_notice` RPC (의견수렴 증빙)
+- **Phase D1**: 작업계획서 승인 후 작업허가서/TBM 자동 파생 (`derive_permit_from_work_plan`, `derive_tbm_from_work_plan` RPC + WorkPlanDetail 버튼)
+- **데이터 정합성 체크 확장**: SAFETY_COST_UNVALIDATED, ASSESSMENT_NOTICE_UNREAD 항목 추가

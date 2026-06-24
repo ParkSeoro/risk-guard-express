@@ -246,6 +246,7 @@ const App = () => (
             <Route path="/worker/portal/:token" element={<WorkerPortal />} />
             <Route path="/health/survey/:token" element={<HazardSurveyResponse />} />
             <Route path="/z/:code" element={<ZoneCheckin />} />
+            <Route path="/c/:token" element={<CompanyScan />} />
             <Route path="/manual" element={<Manual />} />
             <Route path="/m" element={<MobileHome />} />
             <Route path="/m/inspect" element={<MobileInspect />} />

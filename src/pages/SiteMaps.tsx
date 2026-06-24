@@ -15,6 +15,7 @@ type SiteMap = { id: string; name: string; image_url: string | null; project_id:
 type Zone = {
   id: string;
   site_map_id: string;
+  project_id: string;
   name: string;
   zone_type: "normal" | "work" | "restricted" | "danger";
   color: string | null;

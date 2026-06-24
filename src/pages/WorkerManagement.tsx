@@ -182,6 +182,10 @@ export default function WorkerManagement() {
         <TabsContent value="daily-qr" className="mt-4">
           <WorkerDailyQR />
         </TabsContent>
+
+        <TabsContent value="company-qr" className="mt-4">
+          <CompanyDailyQR />
+        </TabsContent>
       </Tabs>
 
       <Dialog open={showQr} onOpenChange={setShowQr}>

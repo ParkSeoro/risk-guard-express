@@ -221,12 +221,6 @@ const UserManagement = () => {
   // `role` / `position` columns until Phase 4 cleanup.
   const handleUpdateMembership = async (membershipId: string, field: string, value: string | null) => {
     const updateData: Record<string, any> = { [field]: value };
-    if (field === 'role_new') {
-      updateData.role = projectRoleToLegacy(String(value)) as any;
-    }
-    if (field === 'position_new') {
-      updateData.position = value || '';
-    }
     if (field === 'company_id') {
       const company = projectCompanies.find(c => c.id === value);
       updateData.company = company?.name || '';

@@ -109,8 +109,9 @@ export default function SiteMaps() {
   const onUpload = async (file: File) => {
     if (!projectId) { toast.error("프로젝트를 선택하세요"); return; }
     const ext = file.name.split(".").pop() || "png";
-    const path = `site-maps/${projectId}/${Date.now()}.${ext}`;
-    const { error: upErr } = await supabase.storage.from("attachments").upload(path, file);
+    // Storage RLS expects the first folder to be the project_id UUID
+    const path = `${projectId}/site-maps/${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("attachments").upload(path, file, { upsert: false, contentType: file.type });
     if (upErr) { toast.error("업로드 실패: " + upErr.message); return; }
     const { data: pub } = supabase.storage.from("attachments").getPublicUrl(path);
     const name = prompt("사이트맵 이름", "본관 1층 평면도") || "신규 사이트맵";

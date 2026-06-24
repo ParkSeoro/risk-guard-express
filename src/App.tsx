@@ -101,7 +101,7 @@ function ProtectedRoutes() {
   }, [user, isMaster]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">로딩 중...</div>;
-  if (!user) return <Navigate to="/auth" replace />;
+  if (!user) return <Navigate to="/landing" replace />;
 
   if (profile && (profile as any).account_status === 'pending') {
     return (
@@ -209,6 +209,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
+            <Route path="/landing" element={<Index />} />
             <Route path="/auth" element={<AuthRoute />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/tbm/:token" element={<TbmParticipate />} />

@@ -11,7 +11,11 @@ import { QRCodeSVG } from "qrcode.react";
 import { Map, Plus, Trash2, Upload, QrCode, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
-type SiteMap = { id: string; name: string; image_url: string | null; project_id: string };
+type SiteMap = {
+  id: string; name: string; image_url: string | null; project_id: string;
+  geo_anchor_nw_lat?: number | null; geo_anchor_nw_lng?: number | null;
+  geo_anchor_se_lat?: number | null; geo_anchor_se_lng?: number | null;
+};
 type Zone = {
   id: string;
   site_map_id: string;
@@ -69,7 +73,7 @@ export default function SiteMaps() {
   const loadMaps = async () => {
     const { data } = await supabase
       .from("site_maps")
-      .select("id,name,image_url,project_id")
+      .select("id,name,image_url,project_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng")
       .eq("project_id", projectId)
       .eq("is_deleted", false)
       .order("created_at", { ascending: false });
@@ -138,6 +142,19 @@ export default function SiteMaps() {
   const finishDraft = async () => {
     if (!activeMap || draftPts.length < 3) { toast.error("3개 이상의 점이 필요합니다"); return; }
     if (!draftName.trim()) { toast.error("구역 이름을 입력하세요"); return; }
+    // If the map has geo anchors, project the normalized polygon to lat/lng so
+    // GPS geofencing can use it on the server.
+    let geo_polygon: { lat: number; lng: number }[] | null = null;
+    if (
+      activeMap.geo_anchor_nw_lat != null && activeMap.geo_anchor_nw_lng != null &&
+      activeMap.geo_anchor_se_lat != null && activeMap.geo_anchor_se_lng != null
+    ) {
+      const { projectPolygonToGeo } = await import("@/lib/tracking/geofence");
+      geo_polygon = projectPolygonToGeo(draftPts, {
+        nw_lat: activeMap.geo_anchor_nw_lat, nw_lng: activeMap.geo_anchor_nw_lng,
+        se_lat: activeMap.geo_anchor_se_lat, se_lng: activeMap.geo_anchor_se_lng,
+      });
+    }
     const { error } = await supabase.from("site_zones").insert({
       site_map_id: activeMap.id,
       project_id: activeMap.project_id,
@@ -145,14 +162,33 @@ export default function SiteMaps() {
       zone_type: draftType,
       color: ZONE_COLOR[draftType],
       polygon: draftPts as any,
+      geo_polygon: geo_polygon as any,
     });
     if (error) { toast.error(error.message); return; }
-    toast.success("구역 추가 완료");
+    toast.success(geo_polygon ? "구역 추가 완료 (GPS 지오펜스 활성)" : "구역 추가 완료 — 지도 좌표가 미설정이라 GPS 추적은 비활성");
     setDrafting(false);
     setDraftPts([]);
     setDraftName("");
     loadZones();
   };
+
+  const saveAnchors = async (m: SiteMap) => {
+    const nw_lat = Number(prompt("북서(좌상단) 위도 (예: 37.5665)", String(m.geo_anchor_nw_lat ?? ""))?.trim());
+    const nw_lng = Number(prompt("북서(좌상단) 경도 (예: 126.9780)", String(m.geo_anchor_nw_lng ?? ""))?.trim());
+    const se_lat = Number(prompt("남동(우하단) 위도", String(m.geo_anchor_se_lat ?? ""))?.trim());
+    const se_lng = Number(prompt("남동(우하단) 경도", String(m.geo_anchor_se_lng ?? ""))?.trim());
+    if ([nw_lat, nw_lng, se_lat, se_lng].some((n) => !Number.isFinite(n))) {
+      toast.error("위경도 4개를 모두 입력해야 합니다"); return;
+    }
+    const { error } = await supabase.from("site_maps").update({
+      geo_anchor_nw_lat: nw_lat, geo_anchor_nw_lng: nw_lng,
+      geo_anchor_se_lat: se_lat, geo_anchor_se_lng: se_lng,
+    }).eq("id", m.id);
+    if (error) { toast.error(error.message); return; }
+    toast.success("지도 좌표 저장됨. 이후 그리는 구역부터 GPS 지오펜스가 적용됩니다.");
+    loadMaps();
+  };
+
 
   const deleteZone = async (z: Zone) => {
     if (!confirm(`'${z.name}' 구역을 삭제할까요?`)) return;
@@ -225,8 +261,18 @@ export default function SiteMaps() {
         <div className="grid md:grid-cols-[1fr_320px] gap-4">
           <Card>
             <CardHeader className="pb-2 flex flex-row items-center justify-between">
-              <CardTitle className="text-base">{activeMap.name}</CardTitle>
+              <div>
+                <CardTitle className="text-base">{activeMap.name}</CardTitle>
+                <div className="text-[11px] text-muted-foreground mt-0.5">
+                  {activeMap.geo_anchor_nw_lat != null
+                    ? `GPS 좌표 설정됨 (NW ${activeMap.geo_anchor_nw_lat?.toFixed(5)}, ${activeMap.geo_anchor_nw_lng?.toFixed(5)})`
+                    : "지도 좌표 미설정 — GPS 자동추적 비활성"}
+                </div>
+              </div>
               <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => saveAnchors(activeMap)}>
+                  지도 좌표 설정
+                </Button>
                 {!drafting ? (
                   <Button size="sm" onClick={() => { setDrafting(true); setDraftPts([]); }}>
                     <Plus className="h-4 w-4 mr-1" /> 구역 그리기

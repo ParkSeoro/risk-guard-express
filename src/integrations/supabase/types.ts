@@ -4344,6 +4344,10 @@ export type Database = {
         Row: {
           created_at: string
           created_by: string | null
+          geo_anchor_nw_lat: number | null
+          geo_anchor_nw_lng: number | null
+          geo_anchor_se_lat: number | null
+          geo_anchor_se_lng: number | null
           height_m: number | null
           height_px: number | null
           id: string
@@ -4359,6 +4363,10 @@ export type Database = {
         Insert: {
           created_at?: string
           created_by?: string | null
+          geo_anchor_nw_lat?: number | null
+          geo_anchor_nw_lng?: number | null
+          geo_anchor_se_lat?: number | null
+          geo_anchor_se_lng?: number | null
           height_m?: number | null
           height_px?: number | null
           id?: string
@@ -4374,6 +4382,10 @@ export type Database = {
         Update: {
           created_at?: string
           created_by?: string | null
+          geo_anchor_nw_lat?: number | null
+          geo_anchor_nw_lng?: number | null
+          geo_anchor_se_lat?: number | null
+          geo_anchor_se_lng?: number | null
           height_m?: number | null
           height_px?: number | null
           id?: string
@@ -4401,6 +4413,7 @@ export type Database = {
           color: string | null
           created_at: string
           description: string | null
+          geo_polygon: Json | null
           id: string
           is_deleted: boolean
           name: string
@@ -4408,12 +4421,14 @@ export type Database = {
           project_id: string
           site_map_id: string
           updated_at: string
+          wifi_fingerprint: Json | null
           zone_type: string
         }
         Insert: {
           color?: string | null
           created_at?: string
           description?: string | null
+          geo_polygon?: Json | null
           id?: string
           is_deleted?: boolean
           name: string
@@ -4421,12 +4436,14 @@ export type Database = {
           project_id: string
           site_map_id: string
           updated_at?: string
+          wifi_fingerprint?: Json | null
           zone_type?: string
         }
         Update: {
           color?: string | null
           created_at?: string
           description?: string | null
+          geo_polygon?: Json | null
           id?: string
           is_deleted?: boolean
           name?: string
@@ -4434,6 +4451,7 @@ export type Database = {
           project_id?: string
           site_map_id?: string
           updated_at?: string
+          wifi_fingerprint?: Json | null
           zone_type?: string
         }
         Relationships: [
@@ -5030,6 +5048,57 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wifi_fingerprint_samples: {
+        Row: {
+          bssid: string
+          collected_by_user_id: string | null
+          created_at: string
+          id: string
+          project_id: string
+          rssi: number
+          sample_at: string
+          ssid: string | null
+          zone_id: string
+        }
+        Insert: {
+          bssid: string
+          collected_by_user_id?: string | null
+          created_at?: string
+          id?: string
+          project_id: string
+          rssi: number
+          sample_at?: string
+          ssid?: string | null
+          zone_id: string
+        }
+        Update: {
+          bssid?: string
+          collected_by_user_id?: string | null
+          created_at?: string
+          id?: string
+          project_id?: string
+          rssi?: number
+          sample_at?: string
+          ssid?: string | null
+          zone_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wifi_fingerprint_samples_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wifi_fingerprint_samples_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "site_zones"
             referencedColumns: ["id"]
           },
         ]
@@ -5946,12 +6015,15 @@ export type Database = {
       }
       worker_zone_events: {
         Row: {
+          accuracy_m: number | null
           acknowledged: boolean
           acknowledged_at: string | null
           acknowledged_by: string | null
           created_at: string
           event_type: string
           id: string
+          lat: number | null
+          lng: number | null
           notes: string | null
           position_x: number | null
           position_y: number | null
@@ -5963,12 +6035,15 @@ export type Database = {
           zone_id: string | null
         }
         Insert: {
+          accuracy_m?: number | null
           acknowledged?: boolean
           acknowledged_at?: string | null
           acknowledged_by?: string | null
           created_at?: string
           event_type: string
           id?: string
+          lat?: number | null
+          lng?: number | null
           notes?: string | null
           position_x?: number | null
           position_y?: number | null
@@ -5980,12 +6055,15 @@ export type Database = {
           zone_id?: string | null
         }
         Update: {
+          accuracy_m?: number | null
           acknowledged?: boolean
           acknowledged_at?: string | null
           acknowledged_by?: string | null
           created_at?: string
           event_type?: string
           id?: string
+          lat?: number | null
+          lng?: number | null
           notes?: string | null
           position_x?: number | null
           position_y?: number | null

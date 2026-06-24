@@ -1,60 +1,109 @@
-
 ## 목표
-6가지 피드백을 **추가 비용 없이** 현재 스택(React + Lovable Cloud/Supabase + PWA)에서 실행 가능한 범위로 적용합니다. 외부 IoT/비콘/유료 지도 SDK는 사용하지 않습니다.
+QR 일일이 찍지 않아도 근로자 위치가 자동으로 추적되도록 한다. **GPS 지오펜싱(실외) + Wi-Fi AP 핑거프린팅(실내)** 하이브리드를 Capacitor 네이티브 앱으로 구현하고, 결과는 기존 `worker_zone_events` 테이블에 그대로 쌓아 분포 대시보드에 자동 반영한다.
 
----
+## 전체 그림
 
-### 1. 시스템 정체성 재정의 — "통합 안전관리시스템"
-- 브랜드 문구(`index.html`, `MobileHome` 헤더, `AppSidebar` 상단, PDF 푸터, README, `mem://project/brand-identity`)에서 "위험성평가 자동" 표현을 모두 **"통합 안전관리시스템 (Integrated Safety Management)"** 로 교체.
-- 사이드바 IA를 5개 묶음으로 재정렬: ① 대시보드 ② 작업관리(허가서·작업계획서·TBM·점검) ③ 근로자 ④ 위험성평가 ⑤ 보고/관리(법정의무·산안비·감사). 위험성평가는 "한 모듈"로 격하.
-- 비용: 0원 (문구·라우팅만).
+```text
+[근로자 폰 - Capacitor 앱]
+   ├─ 백그라운드 GPS (실외) ──┐
+   ├─ Wi-Fi 스캔 (실내)     ─┤──► /track 엣지함수 ──► worker_zone_events
+   └─ 가속도/배터리 최적화   ─┘                           │
+                                                          ▼
+                                              실시간 분포 대시보드
+                                              (이미 구축 완료)
+```
 
-### 2. 근로자 위치 트래킹 (저비용 방식)
-유료 BLE/UWB 없이 **무료 조합**으로 구현:
-- **현장 사이트맵**: 관리자가 이미지(평면도 PNG/JPG)를 업로드 → Lovable Cloud Storage 저장 → React에서 SVG 오버레이로 폴리곤(위험구역/금지구역/작업구역)을 그리는 에디터. 외부 지도 API 불필요.
-- **위치 수집 2-tier**:
-  - **Tier A (정밀, 무료) — QR 체크포인트**: 구역 입구에 인쇄 QR 부착. 근로자가 PWA로 스캔 시 `worker_zone_events` 에 입/퇴장 기록. 금지구역 QR을 찍으면 즉시 본인+안전관리자에게 경고 알림.
-  - **Tier B (보조) — 브라우저 Geolocation**: 모바일 PWA가 백그라운드 watchPosition으로 좌표 전송, 사이트맵 좌표계와 affine 매핑하여 폴리곤 in/out 판정. (실내 정확도 한계는 UI에 명시.)
-- **퇴근 시 잔류 확인**: `worker_entry_logs` 에 퇴장 기록이 없는 근로자를 일일 종료 시 대시보드 카드 + 푸시로 표시.
-- 신규 테이블: `site_maps`, `site_zones`(geo polygon JSON, type: danger/restricted/work), `zone_qr_codes`, `worker_zone_events`.
+## Phase A — 데이터 모델 & 사이트맵 보강 (DB)
 
-### 3. 모바일 UX 재구성 — 역할별 메뉴
-- `MobileHome` 메뉴를 **고정 그리드 → 역할 기반 동적 메뉴**로 변경.
-- `profiles.mobile_menu_prefs jsonb` 추가 + Settings에서 사용자가 "쓰는 기능만" 켜기/끄기.
-- 역할별 기본 프리셋: 근로자(출근/TBM/허가서 보기/안전알림), 관리감독자(점검/TBM/허가서/근로자현황), 안전관리자(전체+감사). 불필요 항목은 기본 OFF.
-- 모바일 서명 패드 왼쪽 치우침 버그 수정: 캔버스 `width=clientWidth` + `getBoundingClientRect()` 기준 좌표 보정, devicePixelRatio 적용. (현재 좌표가 0,0 기준으로만 계산되어 발생.)
+기존 `site_zones`(폴리곤 0~1 정규화)에 **실좌표·Wi-Fi 지문**을 더한다.
 
-### 4. 인덱스(홈) 화면 리뉴얼
-- `src/pages/Index.tsx` 는 현재 14줄 Lovable 기본 골격 — 완전 재설계.
-- 도메인에 맞는 디자인 방향 3개를 **렌더링된 프로토타입**으로 보여드리고 한 개 선택 → 그 방향으로 구현. (디자인 토큰만 사용, 추가 라이선스 없음.)
-- 헤로 + KPI + "오늘의 작업/허가/위험" 라이브 카드 + CTA 구성으로, 다른 Lovable 템플릿과 구별되도록 타이포·레이아웃·모션을 재정의.
+- `site_maps`에 컬럼 추가
+  - `geo_anchor_nw` (lat, lng) / `geo_anchor_se` (lat, lng): 맵 이미지의 모서리 실좌표 → 폴리곤을 위경도로 변환 가능
+- `site_zones`에 컬럼 추가
+  - `geo_polygon` (jsonb): NW/SE 앵커로부터 계산된 위경도 폴리곤 (지오펜스 판정용)
+  - `wifi_fingerprint` (jsonb): `[{bssid, avg_rssi, stddev}]` 형태, 구역별 Wi-Fi 지문
+- `worker_zone_events`에 컬럼 추가
+  - `source` enum: `qr` | `gps` | `wifi` | `manual` (기존 QR 호환 유지)
+  - `accuracy_m` numeric, `lat`/`lng` numeric (감사·후속 분석용)
+- 신규 테이블 `wifi_fingerprint_samples` (캘리브레이션 원본)
+  - `zone_id`, `sample_at`, `bssid`, `rssi`, `collected_by_user_id`
+  - RLS: 같은 프로젝트 관리자만 read/write
+- 모든 신규 테이블에 GRANT (authenticated/service_role) + RLS + 정책
 
-### 5. 근로자 라이프사이클 명확화
-- **출근→이동→퇴근** 타임라인 뷰: `WorkerAttendance` 페이지를 탭 구조(오늘 현황 / 이동 로그 / 퇴근 미체크)로 개편.
-- 출근 등록 시 캡처한 **서명**을 그 날짜의 TBM 일지/안전점검/작업허가서의 참여자 서명란에 자동 주입 (FK: `worker_daily_qr.id` → `tbm_participations`, `work_permit_workers`).
-- "위험구역 진입 이력" 컬럼 추가 (#2 의 `worker_zone_events` 조인).
-- 서명 패드 정렬 버그(#3) 동일 컴포넌트로 수정.
+## Phase B — 사이트맵 캘리브레이션 UI (관리자)
 
-### 6. 안전작업허가서 — DIG 표준 양식 반영
-첨부 엑셀(`MD-000000-SF003`)을 정확히 재현. 4개 시트를 4개 폼 섹션으로 구성:
-1. **안전작업허가서(본지)** — 상단 결재(시공/CM/안전/SM/소장), 작업일시·개요·인원, 첨부서류 체크박스(위험성평가/안전작업점검표/TBM/중장비/작업계획서), 안전조치 요구사항 18개 체크, 위험작업 카테고리 6개(밀폐/화기/정전/굴착/방사선/고소/중장비)는 헤더 체크 + 하위 세부 체크박스 + 자유텍스트.
-2. **밀폐공간 작업허가서(을지)** — 작업구분 체크(맨홀/저장탱크/Cold Box/기타+텍스트), 안전조치 12개 체크, 가스농도 측정 테이블(O₂/CO₂/H₂S/CO 기준선 내장).
-3. **화기작업허가서**, 4. **굴착/중장비 등 첨부 양식** — 동일 패턴.
-- 구현: 기존 `src/components/permits/DigPermitForm.tsx` 를 엑셀 셀 좌표 기준으로 재작성. `work_permits` 테이블에 `form_data jsonb` 컬럼 추가하여 체크박스 상태·자유텍스트·가스측정값을 키-값으로 저장 (스키마 변경 최소화).
-- PDF 출력: 엑셀 레이아웃을 그대로 따르는 A4 세로 4페이지 템플릿 (Puppeteer, 기존 인프라 재사용 → 0원).
+`/site-maps` 페이지 확장:
+1. 맵 이미지 업로드 후, 지도 모서리 두 점(NW/SE)의 위경도를 입력하거나 Leaflet 미니맵에서 클릭으로 지정
+2. 폴리곤 그리기는 그대로 → 저장 시 `geo_polygon` 자동 계산
+3. **구역별 "Wi-Fi 지문 수집" 버튼**: 캘리브레이션 모드로 들어가 폰을 해당 구역에 두고 30초간 주변 AP RSSI 샘플링 → `wifi_fingerprint_samples`에 저장 → 구역별 평균/표준편차를 `site_zones.wifi_fingerprint`에 집계
 
----
+## Phase C — Capacitor 네이티브 앱 전환
 
-## 기술 메모
-- 신규 테이블 모두 `project_id` 컬럼 + RLS(`useProjectAccess` 패턴), GRANT 명시.
-- QR/Geolocation/이미지 SVG 오버레이는 전부 브라우저 표준 API — 외부 결제 없음.
-- 푸시 경고는 기존 Resend + Web Push 인프라 재사용.
-- 메모리 업데이트: `mem://index.md` Core 의 "위험성평가 자동" → "통합 안전관리" 로 교체.
+설치/설정:
+- `@capacitor/core`, `@capacitor/cli`, `@capacitor/ios`, `@capacitor/android`
+- `@capacitor/geolocation` (포그라운드 GPS)
+- `@capacitor-community/background-geolocation` (백그라운드 GPS + 지오펜스)
+- `@capacitor-community/wifi` 또는 `cordova-plugin-wifiwizard2` 대체 (Wi-Fi BSSID/RSSI 스캔; iOS는 NEHotspotHelper 권한 제한 있음 → iOS는 GPS 비중을 더 크게)
+- `appId: app.lovable.943c0fa50f48402483eac68afc236634`, `appName: safenex-worker`
+- hot-reload용 `server.url`은 프리뷰 URL로 설정
 
-## 추천 진행 순서 (각 단계 후 확인)
-1. **#1 리브랜딩 + #6 DIG 허가서** (가장 즉효, 데이터 모델 단순)
-2. **#3 모바일 메뉴 + 서명 버그 + #5 근로자 라이프사이클**
-3. **#4 인덱스 리뉴얼** (디자인 방향 3개 선택)
-4. **#2 위치 트래킹** (사이트맵 업로드 → QR 체크포인트 → Geolocation 보조 순으로 점진 출시)
+권한 UX:
+- 첫 실행 시 "항상 허용" 위치 권한, 알림 권한 안내 (iOS 백그라운드 필수)
+- 배터리 최적화 예외 안내 화면(Android)
 
-확인 부탁드립니다 — 이 순서/범위로 진행할까요, 아니면 특정 항목부터 먼저 착수할까요?
+## Phase D — 추적 클라이언트 로직
+
+`src/lib/tracking/locationTracker.ts` (신규):
+- **포그라운드**: 10초 주기 GPS + 30초 주기 Wi-Fi 스캔
+- **백그라운드**: `BackgroundGeolocation`으로 지오펜스 등록(프로젝트의 모든 `site_zones.geo_polygon`) → enter/exit 콜백에서 이벤트 전송
+- **융합 판정**:
+  - GPS 정확도 ≤ 15m이면 GPS 우선
+  - 그 외엔 Wi-Fi 지문과 코사인 유사도 비교 → 최상위 구역 채택
+  - 두 결과가 다르면 더 정확도 높은 쪽 채택, `accuracy_m` 기록
+- **디바운스**: 동일 구역 연속 이벤트는 5분 합치기, 다른 구역으로 전환된 경우만 entry/exit pair 생성
+
+`src/lib/tracking/wifiFingerprint.ts`:
+- 코사인 유사도 함수, RSSI 정규화
+
+## Phase E — 엣지 함수 `track-location`
+
+`supabase/functions/track-location/index.ts`:
+- 입력: `{ worker_id, lat, lng, accuracy, wifi_scan: [{bssid, rssi}], device_ts }`
+- Zod 검증
+- 서버측에서도 지오펜스 재계산(클라이언트 변조 방지) + Wi-Fi 매칭 재실행
+- `worker_zone_events`에 `source`, `accuracy_m`, `lat`, `lng`와 함께 insert
+- 위험구역이면 기존 로직대로 `unauthorized_entry`
+- CORS + JWT 검증
+
+## Phase F — 대시보드/UX 보강
+
+기존 `WorkerDistribution.tsx`:
+- 마커 모양으로 소스 구분 (GPS=●, Wi-Fi=◆, QR=▲, Manual=○)
+- 마커에 정확도 반경 원(`accuracy_m`) 표시
+- "위치 정확도 낮음" 카드: 평균 accuracy_m이 30m 초과인 구역 경고
+
+`/admin/tracking-health` (신규 소형 페이지):
+- 최근 24h 소스별 비율, 평균 accuracy, 실패율
+- Wi-Fi 지문 수집 누락 구역 리스트 → 캘리브레이션 유도
+
+## Phase G — 프라이버시 & 정책
+
+- 근로자 첫 로그인 시 위치추적 동의 화면 (목적·보관기간·옵트아웃)
+- 근로자 본인 화면에서 "오늘의 내 추적 로그 보기" + "삭제 요청" 버튼
+- `worker_zone_events.lat/lng`는 90일 후 자동 NULL 처리(스케줄러 또는 cron)
+
+## 기술 노트
+- iOS Wi-Fi 스캔은 시스템 제약(MFi/NEHotspotHelper 승인 필요)이 있어 사실상 GPS+지오펜스 위주가 됨. 실내 정확도가 핵심인 현장은 Android 단말 우선 배포 권장.
+- 백그라운드 GPS는 배터리 영향이 있으므로 거리 필터(이동 10m 이상)와 정지 감지(Stationary Mode) 활성화.
+- 지오펜스는 OS당 등록 한도(iOS 20개)가 있어 구역이 많을 땐 "현재 위치 반경 1km 내 구역만 동적 등록" 전략 적용.
+- 모든 신규 DB 작업은 마이그레이션 1건으로 묶고 GRANT 포함.
+
+## 산출물 요약
+- DB 마이그레이션 1건(컬럼 추가 + 신규 테이블 + RLS/GRANT)
+- 엣지함수 `track-location`
+- 신규 모듈: `src/lib/tracking/*`
+- 수정 페이지: `SiteMaps.tsx`(캘리브레이션), `WorkerDistribution.tsx`(소스 표시)
+- 신규 페이지: `/admin/tracking-health`, 근로자 동의/내로그 화면
+- Capacitor 설정 및 플러그인 도입
+
+승인하시면 Phase A(DB)부터 순서대로 진행합니다.

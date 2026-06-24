@@ -259,13 +259,6 @@ const Projects = () => {
   );
 
 
-  const getGcName = (project: ProjectRow) => {
-    const gcId = (project as any).gc_company_id;
-    if (gcId && companyNameMap[gcId]) return companyNameMap[gcId];
-    if (project.contractor) return project.contractor; // legacy fallback
-    return '—';
-  };
-
   const projectFormFields = (onSubmit: () => void, submitLabel: string) => (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
@@ -275,22 +268,24 @@ const Projects = () => {
         <div className="space-y-1"><Label>시작일</Label><Input type="date" value={form.period_start} onChange={e => setForm(p => ({ ...p, period_start: e.target.value }))} /></div>
         <div className="space-y-1"><Label>종료일</Label><Input type="date" value={form.period_end} onChange={e => setForm(p => ({ ...p, period_end: e.target.value }))} /></div>
         <div className="space-y-1"><Label>발주사</Label><Input value={form.client} onChange={e => setForm(p => ({ ...p, client: e.target.value }))} /></div>
-        <div className="space-y-1">
-          <Label>시공사 (등록 업체 선택)</Label>
-          <Select value={form.gc_company_id || '__none__'} onValueChange={v => setForm(p => ({ ...p, gc_company_id: v === '__none__' ? '' : v }))}>
-            <SelectTrigger className="text-xs"><SelectValue placeholder="시공사 선택" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">미지정</SelectItem>
-              {allGcCompanies.map(c => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {allGcCompanies.length === 0 && (
-            <p className="text-[10px] text-muted-foreground">등록된 시공사(GC)가 없습니다. 프로젝트 설정 &gt; 업체관리에서 먼저 등록하세요.</p>
-          )}
+        <MultiCompanyPicker
+          label="시공사 (다중 선택 가능)"
+          options={gcCompanies}
+          selected={form.gc_company_ids}
+          onToggle={(id) => toggleId('gc_company_ids', id)}
+          emptyHint="등록된 시공사가 없습니다."
+        />
+        <div className="col-span-2">
+          <MultiCompanyPicker
+            label="협력사 (다중 선택 가능)"
+            options={subCompanies}
+            selected={form.sub_company_ids}
+            onToggle={(id) => toggleId('sub_company_ids', id)}
+            emptyHint="등록된 협력사가 없습니다."
+          />
         </div>
       </div>
+
       <div className="space-y-1"><Label>공종 태그 (쉼표 구분)</Label><Input value={form.tags} onChange={e => setForm(p => ({ ...p, tags: e.target.value }))} placeholder="6000t Tank, Cooling Tower, 배관" /></div>
       <div className="space-y-1">
         <Label>상태</Label>

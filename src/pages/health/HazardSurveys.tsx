@@ -11,12 +11,14 @@ import { Badge } from "@/components/ui/badge";
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
 import { Plus, ClipboardList, Copy } from "lucide-react";
+import { useProjectAccess } from "@/hooks/useProjectAccess";
 
 const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const TYPES = ["근골격계", "뇌심혈관", "직무스트레스", "감정노동"];
 
 export default function HazardSurveys() {
   const handle = useToastError();
+  const { applyCompanyFilter, userCompanyId } = useProjectAccess();
   const [list, setList] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<any>({ type: "근골격계", survey_date: new Date().toISOString().slice(0, 10) });
@@ -27,12 +29,14 @@ export default function HazardSurveys() {
     if (!projectId) return;
     setLoading(true);
     try {
-      const { data } = await supabase.from("hazard_surveys").select("*").eq("project_id", projectId).eq("is_deleted", false).order("survey_date", { ascending: false });
+      let q = supabase.from("hazard_surveys").select("*").eq("project_id", projectId).eq("is_deleted", false).order("survey_date", { ascending: false });
+      q = applyCompanyFilter(q);
+      const { data } = await q;
       setList(data || []);
     } catch (e) { handle(e, "유해요인조사 조회"); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => { load(); }, [projectId, userCompanyId]);
 
   const submit = async () => {
     if (!projectId || !form.title || !form.survey_date) { toast.error("제목·실시일 필수"); return; }

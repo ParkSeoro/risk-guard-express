@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
 import { Plus, Stethoscope } from "lucide-react";
+import { useProjectAccess } from "@/hooks/useProjectAccess";
 
 const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const TYPES = ["일반", "특수", "배치전", "수시", "임시"];
@@ -18,6 +19,7 @@ const RESULTS = ["정상A", "정상B", "요관찰C", "유소견D1", "유소견D2
 
 export default function HealthCheckups() {
   const handle = useToastError();
+  const { applyCompanyFilter, userCompanyId } = useProjectAccess();
   const [list, setList] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,16 +31,17 @@ export default function HealthCheckups() {
     if (!projectId) return;
     setLoading(true);
     try {
-      const [{ data: hc }, { data: ws }] = await Promise.all([
-        supabase.from("health_checkups").select("*").eq("project_id", projectId).eq("is_deleted", false).order("scheduled_date", { ascending: false }).limit(200),
-        supabase.from("workers").select("id,name,company_name,phone,company_id").eq("project_id", projectId).eq("is_active", true).order("name"),
-      ]);
+      let hcQ = supabase.from("health_checkups").select("*").eq("project_id", projectId).eq("is_deleted", false).order("scheduled_date", { ascending: false }).limit(200);
+      hcQ = applyCompanyFilter(hcQ);
+      let wsQ = supabase.from("workers").select("id,name,company_name,phone,company_id").eq("project_id", projectId).eq("is_active", true).order("name");
+      wsQ = applyCompanyFilter(wsQ);
+      const [{ data: hc }, { data: ws }] = await Promise.all([hcQ, wsQ]);
       setList(hc || []);
       setWorkers(ws || []);
     } catch (e) { handle(e, "건강진단 목록"); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => { load(); }, [projectId, userCompanyId]);
 
   const submit = async () => {
     if (!projectId || !form.worker_id || !form.type) {

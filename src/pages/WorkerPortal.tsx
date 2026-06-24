@@ -11,6 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Loader2, HardHat, FileText, LogIn, LogOut, AlertCircle, CheckCircle2, QrCode, Home, Phone, Siren, ShieldAlert, MapPin, Flame, Heart } from "lucide-react";
 import { toast } from "sonner";
+import WorkerTrackingCard from "@/components/worker/WorkerTrackingCard";
 
 type WorkerInfo = {
   id: string;
@@ -176,6 +177,15 @@ export default function WorkerPortal() {
             </div>
           </CardHeader>
         </Card>
+
+        <WorkerTrackingCard
+          identity={{
+            project_id: worker.project_id,
+            worker_id: worker.id,
+            worker_name: worker.name,
+            worker_phone: worker.phone,
+          }}
+        />
 
         {/* 오늘의 QR */}
         {daily && (

@@ -20,10 +20,13 @@ export default function MobileHome() {
   const navigate = useNavigate();
   const { user, profile, loading, hasRole } = useAuth();
   const isMaster = hasRole('master');
+  const role = detectRole(hasRole);
   const [unread, setUnread] = useState(0);
   const [queueCount, setQueueCount] = useState(0);
   const [online, setOnline] = useState(isOnline());
   const [projects, setProjects] = useState<{ id: string; name: string; site_name: string }[]>([]);
+  const [tiles, setTiles] = useState<MobileTileKey[]>(() => getMobileTiles(role));
+  const [editOpen, setEditOpen] = useState(false);
   const [selectedProjectId, setSelectedProjectIdState] = useState<string>(() => {
     try { return localStorage.getItem("selectedProjectId") || ""; } catch { return ""; }
   });

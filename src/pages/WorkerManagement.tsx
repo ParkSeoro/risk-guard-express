@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import WorkerAttendance from "./WorkerAttendance";
 import WorkerDailyQR from "./WorkerDailyQR";
+import CompanyDailyQR from "./CompanyDailyQR";
 import WorkerBulkImportDialog from "@/components/workers/WorkerBulkImportDialog";
 
 const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "worker"]);

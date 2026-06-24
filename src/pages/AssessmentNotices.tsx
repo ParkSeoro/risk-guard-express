@@ -27,7 +27,7 @@ interface Notice {
 
 export default function AssessmentNotices() {
   const { user } = useAuth();
-  const { selectedProjectId } = useGlobalProjectAccess();
+  const { selectedProject } = useGlobalProjectAccess();
   const { toast } = useToast();
 
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -39,24 +39,24 @@ export default function AssessmentNotices() {
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
-    if (!selectedProjectId) { setNotices([]); setLoading(false); return; }
+    if (!selectedProject) { setNotices([]); setLoading(false); return; }
     setLoading(true);
     const { data, error } = await supabase
       .from('assessment_notices')
       .select('*')
-      .eq('project_id', selectedProjectId)
+      .eq('project_id', selectedProject)
       .order('posted_at', { ascending: false });
     if (error) toast({ title: '공지 조회 실패', description: error.message, variant: 'destructive' });
     setNotices((data as Notice[]) || []);
     setLoading(false);
   };
-  useEffect(() => { load(); }, [selectedProjectId]);
+  useEffect(() => { load(); }, [selectedProject]);
 
   const handleCreate = async () => {
-    if (!title.trim() || !selectedProjectId) return;
+    if (!title.trim() || !selectedProject) return;
     setSaving(true);
     const payload: any = {
-      project_id: selectedProjectId,
+      project_id: selectedProject,
       title: title.trim(),
       body: body.trim() || null,
       posted_at: new Date().toISOString(),

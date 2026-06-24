@@ -647,10 +647,22 @@ const ProjectDetail = () => {
                     <div className="flex items-center gap-2">
                       {canManage ? (
                         <>
-                          <Select value={m.role} onValueChange={v => handleChangeRole(m.id, v)}>
-                            <SelectTrigger className="h-7 w-36 text-xs"><SelectValue /></SelectTrigger>
+                          <Select value={m.role_new || 'viewer'} onValueChange={v => handleChangeRole(m.id, v)}>
+                            <SelectTrigger className="h-7 w-36 text-xs"><SelectValue placeholder="역할" /></SelectTrigger>
                             <SelectContent>
                               {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
+                                <SelectItem key={k} value={k}>{v}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={m.position_new || '_none'}
+                            onValueChange={v => handleChangePosition(m.id, v === '_none' ? null : v)}
+                          >
+                            <SelectTrigger className="h-7 w-36 text-xs"><SelectValue placeholder="직책" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">직책 미지정</SelectItem>
+                              {Object.entries(positionLabels).map(([k, v]) => (
                                 <SelectItem key={k} value={k}>{v}</SelectItem>
                               ))}
                             </SelectContent>
@@ -660,9 +672,15 @@ const ProjectDetail = () => {
                           </Button>
                         </>
                       ) : (
-                        <Badge variant="secondary" className="text-[10px]">{roleLabels[m.role]}</Badge>
+                        <>
+                          <Badge variant="secondary" className="text-[10px]">{roleLabels[m.role_new] || '열람자'}</Badge>
+                          {m.position_new && (
+                            <Badge variant="outline" className="text-[10px]">{positionLabels[m.position_new] || m.position_new}</Badge>
+                          )}
+                        </>
                       )}
                     </div>
+
                   </div>
                 ))}
                 {members.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">멤버가 없습니다.</p>}

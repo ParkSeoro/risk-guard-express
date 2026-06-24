@@ -80,6 +80,7 @@ import MobileDailyHealthLog from "./pages/MobileDailyHealthLog";
 import SiteMaps from "./pages/SiteMaps";
 import ZoneCheckin from "./pages/ZoneCheckin";
 import ZoneEvents from "./pages/ZoneEvents";
+import WorkerDistribution from "./pages/WorkerDistribution";
 import InstallPrompt from "./components/InstallPrompt";
 import MobileRedirectGuard from "./components/MobileRedirectGuard";
 import { useOfflineSync } from "./hooks/useOfflineSync";

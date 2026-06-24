@@ -75,6 +75,8 @@ import MobileWorkPlans from "./pages/MobileWorkPlans";
 import MobileTbm from "./pages/MobileTbm";
 import MobilePermits from "./pages/MobilePermits";
 import MobileIncident from "./pages/MobileIncident";
+import Incidents from "./pages/Incidents";
+import EmergencyDrills from "./pages/EmergencyDrills";
 import MobileScan from "./pages/MobileScan";
 import MobileDailyHealthLog from "./pages/MobileDailyHealthLog";
 import SiteMaps from "./pages/SiteMaps";

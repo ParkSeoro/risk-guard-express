@@ -55,6 +55,21 @@ export interface PermitFormData {
   safety_manager_phone?: string;
   supervisor_name?: string;
   supervisor_phone?: string;
+  // hazard categories (위험작업허가 확인사항) — 카테고리 활성 + 세부 체크 + 자유텍스트
+  hz_confined?: boolean;       hz_confined_detail?: Record<string, boolean>; hz_confined_note?: string;
+  hz_hot?: boolean;            hz_hot_detail?: Record<string, boolean>;      hz_hot_note?: string;
+  hz_loto?: boolean;           hz_loto_detail?: Record<string, boolean>;     hz_loto_note?: string;
+  hz_excavation?: boolean;     hz_excavation_detail?: Record<string, boolean>; hz_excavation_note?: string;
+  hz_radiation?: boolean;      hz_radiation_detail?: Record<string, boolean>; hz_radiation_note?: string;
+  hz_height?: boolean;         hz_height_detail?: Record<string, boolean>;   hz_height_note?: string;
+  hz_heavy?: boolean;          hz_heavy_detail?: Record<string, boolean>;    hz_heavy_note?: string;
+  hz_heavy_equipment_name?: string;
+  // measurement checkboxes for gas section
+  gas_for_hot?: boolean;
+  gas_for_confined?: boolean;
+  // 기타 안전조치
+  chk_etc?: boolean;
+  chk_etc_note?: string;
 }
 
 export interface PermitSignatures {

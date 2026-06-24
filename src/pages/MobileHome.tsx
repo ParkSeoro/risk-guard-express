@@ -48,6 +48,12 @@ export default function MobileHome() {
   }, []);
 
   useEffect(() => {
+    const sync = () => setTiles(getMobileTiles(role));
+    window.addEventListener("mobile:tiles-changed", sync);
+    return () => window.removeEventListener("mobile:tiles-changed", sync);
+  }, [role]);
+
+  useEffect(() => {
     listQueue().then(q => setQueueCount(q.length)).catch(() => {});
     if (!user) return;
     supabase.from("notifications").select("id", { count: "exact", head: true })

@@ -77,6 +77,9 @@ import MobilePermits from "./pages/MobilePermits";
 import MobileIncident from "./pages/MobileIncident";
 import MobileScan from "./pages/MobileScan";
 import MobileDailyHealthLog from "./pages/MobileDailyHealthLog";
+import SiteMaps from "./pages/SiteMaps";
+import ZoneCheckin from "./pages/ZoneCheckin";
+import ZoneEvents from "./pages/ZoneEvents";
 import InstallPrompt from "./components/InstallPrompt";
 import MobileRedirectGuard from "./components/MobileRedirectGuard";
 import { useOfflineSync } from "./hooks/useOfflineSync";
@@ -189,6 +192,8 @@ function ProtectedRoutes() {
         <Route path="/health/measurements" element={<EnvMeasurements />} />
         <Route path="/health/education" element={<HealthEducation />} />
         <Route path="/health/hazard-surveys" element={<HazardSurveys />} />
+        <Route path="/site-maps" element={<SiteMaps />} />
+        <Route path="/zone-events" element={<ZoneEvents />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>
@@ -218,6 +223,7 @@ const App = () => (
             <Route path="/worker" element={<WorkerEntry />} />
             <Route path="/worker/portal/:token" element={<WorkerPortal />} />
             <Route path="/health/survey/:token" element={<HazardSurveyResponse />} />
+            <Route path="/z/:code" element={<ZoneCheckin />} />
             <Route path="/manual" element={<Manual />} />
             <Route path="/m" element={<MobileHome />} />
             <Route path="/m/inspect" element={<MobileInspect />} />

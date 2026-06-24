@@ -4,7 +4,7 @@ import {
   Shield, SearchCheck, Settings,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
   ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, GitCompare, Trash2,
-  Stethoscope, GraduationCap, HeartPulse
+  Stethoscope, GraduationCap, HeartPulse, Map
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { NavLink } from "@/components/NavLink";
@@ -50,6 +50,8 @@ const groups: Group[] = [
       { title: "안전점검", url: "/safety-inspections", icon: ClipboardCheck },
       { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
       { title: "교육자료", url: "/education-materials", icon: FileText },
+      { title: "현장 사이트맵/구역", url: "/site-maps", icon: Map },
+      { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
     ],
   },
   {

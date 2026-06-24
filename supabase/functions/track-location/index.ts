@@ -71,6 +71,14 @@ Deno.serve(async (req) => {
     }
     const body = parsed.data;
 
+    // Reject obviously bad fixes when there is also no Wi-Fi signal to fall back on.
+    if (body.accuracy_m > 100 && (!body.wifi_scan || body.wifi_scan.length === 0)) {
+      return new Response(
+        JSON.stringify({ zone_id: null, source: null, event_type: null, ignored: "low_accuracy" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!

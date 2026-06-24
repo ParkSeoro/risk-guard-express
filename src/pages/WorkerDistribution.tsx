@@ -58,20 +58,26 @@ export default function WorkerDistribution() {
     if (!projectId) return;
     localStorage.setItem("currentProjectId", projectId);
     loadMaps();
-    loadEvents();
+    loadEvents("polling");
+    setRtStatus("connecting");
     const ch = supabase
       .channel(`wd:${projectId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "worker_zone_events", filter: `project_id=eq.${projectId}` },
-        () => loadEvents()
+        () => loadEvents("realtime")
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") setRtStatus("connected");
+        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setRtStatus("disconnected");
+      });
     // Realtime이 주된 갱신 경로이고, 폴링은 안전망(60초)
-    const t = setInterval(loadEvents, 60000);
+    const t = setInterval(() => loadEvents("polling"), 60000);
+    const tick = setInterval(() => setNowTick(Date.now()), 1000);
     return () => {
       supabase.removeChannel(ch);
       clearInterval(t);
+      clearInterval(tick);
     };
   }, [projectId]);
 

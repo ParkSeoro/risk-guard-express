@@ -81,6 +81,8 @@ import WorkerEducation from "./pages/WorkerEducation";
 import SafetyAppointments from "./pages/SafetyAppointments";
 import WorkStopRequests from "./pages/WorkStopRequests";
 import ContractorScorecard from "./pages/ContractorScorecard";
+import AssessmentNotices from "./pages/AssessmentNotices";
+import SafetyCostValidation from "./pages/SafetyCostValidation";
 import MobileWorkStop from "./pages/MobileWorkStop";
 import MobileScan from "./pages/MobileScan";
 import MobileDailyHealthLog from "./pages/MobileDailyHealthLog";

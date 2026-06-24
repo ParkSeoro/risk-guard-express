@@ -9,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { CheckCircle2, AlertTriangle, HardHat, Loader2 } from 'lucide-react';
-import SignatureCanvas from 'react-signature-canvas';
+import ResponsiveSignaturePad, { ResponsiveSignaturePadHandle } from '@/components/ResponsiveSignaturePad';
 
 type Briefing = {
   id: string;
@@ -40,7 +40,7 @@ export default function TbmParticipate() {
   const [ppeChecked, setPpeChecked] = useState(false);
   const [understoodChecked, setUnderstoodChecked] = useState(false);
 
-  const sigRef = useRef<SignatureCanvas | null>(null);
+  const sigRef = useRef<ResponsiveSignaturePadHandle | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -66,7 +66,7 @@ export default function TbmParticipate() {
     if (!sigRef.current || sigRef.current.isEmpty()) return toast({ title: '전자서명이 필요합니다.', variant: 'destructive' });
 
     setSubmitting(true);
-    const signature = sigRef.current.getCanvas().toDataURL('image/png');
+    const signature = sigRef.current.toDataURL('image/png');
     const { data, error } = await supabase.rpc('submit_tbm_participation' as any, {
       _token: token,
       _worker_name: name,
@@ -258,12 +258,8 @@ export default function TbmParticipate() {
             <Button variant="ghost" size="sm" onClick={clearSig}>지우기</Button>
           </CardHeader>
           <CardContent>
-            <div className="border-2 rounded-md bg-background touch-none">
-              <SignatureCanvas
-                ref={(r) => { sigRef.current = r; }}
-                penColor="#0a1f44"
-                canvasProps={{ className: 'w-full h-40 rounded-md', width: 600, height: 160 }}
-              />
+            <div className="border-2 rounded-md bg-background">
+              <ResponsiveSignaturePad ref={sigRef} height={160} />
             </div>
             <p className="text-xs text-muted-foreground mt-2">손가락 또는 펜으로 위 영역에 서명해 주세요.</p>
           </CardContent>

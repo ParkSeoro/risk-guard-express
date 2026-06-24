@@ -3,7 +3,7 @@
  * 일반 / 밀폐공간 / 화기작업 3종 지원, 결재란 자동 입력, 인쇄 최적화.
  */
 import { useEffect, useRef, useState } from 'react';
-import SignatureCanvas from 'react-signature-canvas';
+import ResponsiveSignaturePad, { ResponsiveSignaturePadHandle } from '@/components/ResponsiveSignaturePad';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
@@ -100,7 +100,7 @@ export default function DigPermitForm({
   const update = (patch: Partial<PermitFormData>) => onChange?.({ ...data, ...patch });
   const [signTarget, setSignTarget] = useState<keyof PermitSignatures | null>(null);
   const [signName, setSignName] = useState('');
-  const sigRef = useRef<SignatureCanvas | null>(null);
+  const sigRef = useRef<ResponsiveSignaturePadHandle | null>(null);
 
   const handleSign = () => {
     if (!signTarget) return;
@@ -108,7 +108,7 @@ export default function DigPermitForm({
     if (!sigRef.current || sigRef.current.isEmpty()) { alert('서명을 입력하세요.'); return; }
     onSign?.(signTarget, {
       name: signName.trim(),
-      signature: sigRef.current.getCanvas().toDataURL('image/png'),
+      signature: sigRef.current.toDataURL('image/png'),
       signed_at: new Date().toISOString(),
     });
     setSignTarget(null); setSignName('');
@@ -431,7 +431,7 @@ export default function DigPermitForm({
           <div className="space-y-3">
             <input className="w-full border rounded px-3 py-2 text-sm" placeholder="성명" value={signName} onChange={(e) => setSignName(e.target.value)} />
             <div className="border-2 rounded">
-              <SignatureCanvas ref={(r) => { sigRef.current = r; }} penColor="#0a1f44" canvasProps={{ className: 'w-full h-32', width: 480, height: 130 }} />
+              <ResponsiveSignaturePad ref={sigRef} height={140} />
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => sigRef.current?.clear()} className="flex-1">지우기</Button>

@@ -53,6 +53,7 @@ const groups: Group[] = [
       { title: "현장 사이트맵/구역", url: "/site-maps", icon: Map },
       { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
       { title: "근로자 분포 대시보드", url: "/worker-distribution", icon: Users },
+      { title: "위치 추적 상태 점검", url: "/admin/tracking-health", icon: Users },
     ],
   },
   {

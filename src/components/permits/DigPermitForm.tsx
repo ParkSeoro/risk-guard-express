@@ -157,7 +157,30 @@ export default function DigPermitForm({
       <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => setSignTarget(k)}>
         {label || '서명'}
       </Button>
+  );
+
+  // 체크박스 + 노트 묶음 (밀폐/화기/굴착 안전조치 공통)
+  const SafetyChecklist = ({ items, mapKey, noteKey }: { items: string[]; mapKey: keyof PermitFormData; noteKey: keyof PermitFormData }) => {
+    const map = ((data as any)[mapKey] || {}) as Record<string, boolean>;
+    const setItem = (it: string, v: boolean) => update({ [mapKey]: { ...map, [it]: v } } as any);
+    return (
+      <div className="text-[11px] leading-5 space-y-1">
+        <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+          {items.map(it => (
+            <label key={it} className="inline-flex items-start">
+              {readOnly || printMode
+                ? <Box checked={!!map[it]} />
+                : <input type="checkbox" checked={!!map[it]} onChange={e => setItem(it, e.target.checked)} className="mr-1 mt-0.5" />}
+              <span>{it}</span>
+            </label>
+          ))}
+        </div>
+        <div className="pt-1 border-t border-dashed border-muted-foreground/30">
+          비고/세부사항: <Inp value={(data as any)[noteKey]} onChangeText={(v: string) => update({ [noteKey]: v } as any)} />
+        </div>
+      </div>
     );
+  };
   };
 
   const Inp = ({ value, onChangeText, placeholder, className = '' }: any) => (

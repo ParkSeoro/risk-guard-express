@@ -436,16 +436,20 @@ export default function DigPermitForm({
                       <input type="radio" disabled={readOnly || printMode} checked={data.cs_type === t} onChange={() => update({ cs_type: t })} className="mr-1" />{t}
                     </label>
                   ))}
+                  {data.cs_type === '기타' && (
+                    <span className="ml-2">→ <Inp value={data.cs_type_other} onChangeText={(v: string) => update({ cs_type_other: v })} placeholder="기타 작업 종류" /></span>
+                  )}
                 </td>
               </tr>
               <tr><th className="hd">작업 개요<br/>(필요시 도면 첨부)</th><td colSpan={3}><Inp value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} /></td></tr>
               <tr>
                 <th className="hd">안전조치<br/>(해당항목)</th>
-                <td colSpan={3} className="text-[11px] leading-5">
-                  □ 밸브차단 및 차단표식 부착 □ 맹판 설치 및 표지 부착 □ 가스농도 측정<br />
-                  □ 용기세척 후 공기 치환 및 환기 □ 산소농도 측정 □ 압력 방출<br />
-                  □ 정전/잠금 표지 부착 □ 감시인 배치 □ 환기장비<br />
-                  □ 조명장비 □ 소화기 □ 안전장구(구명선 등) □ 안전교육
+                <td colSpan={3}>
+                  <SafetyChecklist
+                    items={['밸브차단 및 차단표식 부착', '맹판 설치 및 표지 부착', '가스농도 측정', '용기세척 후 공기 치환 및 환기', '산소농도 측정', '압력 방출', '정전/잠금 표지 부착', '감시인 배치', '환기장비', '조명장비', '소화기', '안전장구(구명선 등)', '안전교육']}
+                    mapKey="cs_safety"
+                    noteKey="cs_safety_note"
+                  />
                 </td>
               </tr>
               <tr><td colSpan={4} className="text-center font-semibold bg-[#f0f0f0]">가스농도 측정결과 확인</td></tr>

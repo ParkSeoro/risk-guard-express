@@ -190,6 +190,44 @@ export default function SiteMaps() {
   };
 
 
+  const reprojectAll = async () => {
+    if (!activeMap) return;
+    if (activeMap.geo_anchor_nw_lat == null || activeMap.geo_anchor_se_lat == null) {
+      toast.error("먼저 '지도 좌표 설정'으로 위경도를 입력하세요"); return;
+    }
+    const { projectPolygonToGeo } = await import("@/lib/tracking/geofence");
+    const anchors = {
+      nw_lat: activeMap.geo_anchor_nw_lat!, nw_lng: activeMap.geo_anchor_nw_lng!,
+      se_lat: activeMap.geo_anchor_se_lat!, se_lng: activeMap.geo_anchor_se_lng!,
+    };
+    let n = 0;
+    for (const z of zones) {
+      const geo = projectPolygonToGeo(z.polygon, anchors);
+      const { error } = await supabase.from("site_zones").update({ geo_polygon: geo as any }).eq("id", z.id);
+      if (!error) n++;
+    }
+    toast.success(`${n}개 구역의 GPS 좌표를 재계산했습니다`);
+    loadZones();
+  };
+
+  const saveWifiFingerprint = async (z: Zone) => {
+    const raw = prompt(
+      `'${z.name}' 구역의 Wi-Fi 지문을 JSON 배열로 입력하세요\n예: [{"bssid":"aa:bb:..","avg_rssi":-55}, ...]`,
+      ""
+    );
+    if (!raw) return;
+    try {
+      const fp = JSON.parse(raw);
+      if (!Array.isArray(fp)) throw new Error("배열이 아닙니다");
+      const { error } = await supabase.from("site_zones").update({ wifi_fingerprint: fp as any }).eq("id", z.id);
+      if (error) throw error;
+      toast.success("Wi-Fi 지문 저장 완료");
+      loadZones();
+    } catch (e: any) {
+      toast.error("JSON 형식 오류: " + e.message);
+    }
+  };
+
   const deleteZone = async (z: Zone) => {
     if (!confirm(`'${z.name}' 구역을 삭제할까요?`)) return;
     await supabase.from("site_zones").update({ is_deleted: true }).eq("id", z.id);

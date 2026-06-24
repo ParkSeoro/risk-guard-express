@@ -52,6 +52,7 @@ const groups: Group[] = [
       { title: "교육자료", url: "/education-materials", icon: FileText },
       { title: "현장 사이트맵/구역", url: "/site-maps", icon: Map },
       { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
+      { title: "근로자 분포 대시보드", url: "/worker-distribution", icon: Users },
     ],
   },
   {

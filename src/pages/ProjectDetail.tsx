@@ -23,6 +23,21 @@ const roleLabels: Record<string, string> = {
   supervisor: '관리감독자', worker: '작업자', viewer: '열람자',
 };
 
+const positionLabels: Record<string, string> = {
+  CEO: '대표이사',
+  EXECUTIVE: '임원',
+  SITE_MANAGER: '현장소장',
+  HSE_MANAGER: '안전관리자',
+  CONSTRUCTION_MGR: '공사부장',
+  FIELD_ENGINEER: '공사담당',
+  FOREMAN: '직장/조장',
+  WORKER: '작업자',
+  OWNER_PM: '발주처 PM',
+  OWNER_HSE: '발주처 안전',
+  SUPERVISOR: '감리',
+};
+
+
 const companyTypes: Record<string, string> = {
   client: '발주처', gc: '시공사', contractor: '협력사', vendor: '공급사',
 };
@@ -245,6 +260,21 @@ const ProjectDetail = () => {
     fetchAll();
   };
 
+  const handleChangePosition = async (memberId: string, newPosition: string | null) => {
+    const { error } = await supabase
+      .from('project_members')
+      .update({ position_new: newPosition as any })
+      .eq('id', memberId);
+    if (error) {
+      toast({ title: '직책 저장 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: '직책이 저장되었습니다.' });
+    await log('직책변경', 'project_member', memberId, projectId || undefined, { position: newPosition });
+    fetchAll();
+  };
+
+
   const handleCreateInvite = async () => {
     if (!projectId || !user) return;
     const code = crypto.randomUUID().split('-')[0].toUpperCase();
@@ -278,7 +308,7 @@ const ProjectDetail = () => {
   const handleApproveRequest = async (reqId: string, userId: string, role: string) => {
     // Add as member
     await supabase.from('project_members').insert([{
-      project_id: projectId!, user_id: userId, role: role as any,
+      project_id: projectId!, user_id: userId, role_new: role as any,
     }]);
     // Update request
     await supabase.from('project_join_requests').update({
@@ -287,6 +317,7 @@ const ProjectDetail = () => {
     toast({ title: '가입 요청을 승인했습니다.' });
     fetchAll();
   };
+
 
   const handleRejectRequest = async (reqId: string) => {
     await supabase.from('project_join_requests').update({
@@ -631,10 +662,22 @@ const ProjectDetail = () => {
                     <div className="flex items-center gap-2">
                       {canManage ? (
                         <>
-                          <Select value={m.role} onValueChange={v => handleChangeRole(m.id, v)}>
-                            <SelectTrigger className="h-7 w-36 text-xs"><SelectValue /></SelectTrigger>
+                          <Select value={m.role_new || 'viewer'} onValueChange={v => handleChangeRole(m.id, v)}>
+                            <SelectTrigger className="h-7 w-36 text-xs"><SelectValue placeholder="역할" /></SelectTrigger>
                             <SelectContent>
                               {Object.entries(roleLabels).filter(([k]) => k !== 'master').map(([k, v]) => (
+                                <SelectItem key={k} value={k}>{v}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Select
+                            value={m.position_new || '_none'}
+                            onValueChange={v => handleChangePosition(m.id, v === '_none' ? null : v)}
+                          >
+                            <SelectTrigger className="h-7 w-36 text-xs"><SelectValue placeholder="직책" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">직책 미지정</SelectItem>
+                              {Object.entries(positionLabels).map(([k, v]) => (
                                 <SelectItem key={k} value={k}>{v}</SelectItem>
                               ))}
                             </SelectContent>
@@ -644,9 +687,15 @@ const ProjectDetail = () => {
                           </Button>
                         </>
                       ) : (
-                        <Badge variant="secondary" className="text-[10px]">{roleLabels[m.role]}</Badge>
+                        <>
+                          <Badge variant="secondary" className="text-[10px]">{roleLabels[m.role_new] || '열람자'}</Badge>
+                          {m.position_new && (
+                            <Badge variant="outline" className="text-[10px]">{positionLabels[m.position_new] || m.position_new}</Badge>
+                          )}
+                        </>
                       )}
                     </div>
+
                   </div>
                 ))}
                 {members.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">멤버가 없습니다.</p>}

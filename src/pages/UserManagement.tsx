@@ -383,11 +383,11 @@ const UserManagement = () => {
                       <div className="space-y-1">
                         {memberships.map((m: any) => {
                           const proj = projects.find(p => p.id === m.project_id);
-                          const posLabel = positionLabels[m.position] || m.position;
+                          const posLabel = positionLabels[m.position_new] || m.position_new;
                           return (
                             <div key={m.id} className="flex items-center gap-1 text-[10px] flex-wrap">
                               <Badge variant="secondary" className="text-[10px] shrink-0">{proj?.name || '프로젝트'}</Badge>
-                              <Select value={m.role_new || (projectRoleLabels[m.role] ? m.role : 'viewer')} onValueChange={(v) => handleUpdateMembership(m.id, 'role_new', v)}>
+                              <Select value={m.role_new || 'viewer'} onValueChange={(v) => handleUpdateMembership(m.id, 'role_new', v)}>
                                 <SelectTrigger className="h-5 w-24 text-[10px] border-dashed"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                   {Object.entries(projectRoleLabels).map(([k, v]) => (
@@ -395,7 +395,7 @@ const UserManagement = () => {
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <Select value={m.position_new || m.position || '_none'} onValueChange={(v) => handleUpdateMembership(m.id, 'position_new', v === '_none' ? null : v)}>
+                              <Select value={m.position_new || '_none'} onValueChange={(v) => handleUpdateMembership(m.id, 'position_new', v === '_none' ? null : v)}>
                                 <SelectTrigger className="h-5 w-24 text-[10px] border-dashed"><SelectValue placeholder="직책" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="_none" className="text-[10px]">직책 없음</SelectItem>

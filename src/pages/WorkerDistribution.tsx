@@ -63,7 +63,8 @@ export default function WorkerDistribution() {
         () => loadEvents()
       )
       .subscribe();
-    const t = setInterval(loadEvents, 30000);
+    // Realtime이 주된 갱신 경로이고, 폴링은 안전망(60초)
+    const t = setInterval(loadEvents, 60000);
     return () => {
       supabase.removeChannel(ch);
       clearInterval(t);

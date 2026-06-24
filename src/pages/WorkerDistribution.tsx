@@ -173,6 +173,23 @@ export default function WorkerDistribution() {
             <Users className="h-6 w-6 text-primary" /> 현장 근로자 분포도
           </h1>
           <p className="text-sm text-muted-foreground">QR 입·출 이벤트 기반 실시간 분포 (오늘 기준)</p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <Badge
+              variant={rtStatus === "connected" ? "default" : rtStatus === "connecting" ? "secondary" : "destructive"}
+              className="text-[10px] gap-1"
+              title={`Realtime: ${rtStatus}`}
+            >
+              <Radio className={`h-3 w-3 ${rtStatus === "connected" ? "animate-pulse" : ""}`} />
+              {rtStatus === "connected" ? "Realtime 연결" : rtStatus === "connecting" ? "Realtime 연결중" : "Realtime 끊김"}
+            </Badge>
+            <Badge variant="outline" className="text-[10px] gap-1">
+              마지막 갱신: {lastSource === "realtime" ? "Realtime" : lastSource === "polling" ? "폴링(60s)" : "초기"}
+            </Badge>
+            <Badge variant="outline" className="text-[10px] gap-1">
+              <RefreshCw className="h-3 w-3" />
+              {lastUpdated ? `${formatAgo(nowTick - lastUpdated.getTime())} 전 (${lastUpdated.toLocaleTimeString("ko-KR")})` : "대기중"}
+            </Badge>
+          </div>
         </div>
         <div className="flex gap-2">
           <Select value={projectId} onValueChange={setProjectId}>

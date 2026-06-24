@@ -303,6 +303,7 @@ export default function WorkerDistribution() {
                     <th className="p-2">연락처</th>
                     <th className="p-2">현재 구역</th>
                     <th className="p-2">진입 시각</th>
+                    <th className="p-2">소스</th>
                     <th className="p-2">상태</th>
                   </tr>
                 </thead>
@@ -311,12 +312,23 @@ export default function WorkerDistribution() {
                     .sort((a, b) => (a.at < b.at ? 1 : -1))
                     .map((w, i) => {
                       const z = w.zone_id ? zoneById[w.zone_id] : undefined;
+                      const srcLabel =
+                        w.source === "gps" ? "GPS"
+                        : w.source === "wifi" ? "Wi-Fi"
+                        : w.source === "qr" ? "QR"
+                        : w.source || "-";
                       return (
                         <tr key={i} className="border-t">
                           <td className="p-2 font-medium">{w.name}</td>
                           <td className="p-2 text-muted-foreground">{w.phone || "-"}</td>
                           <td className="p-2">{z?.name || "-"}</td>
                           <td className="p-2 text-muted-foreground">{new Date(w.at).toLocaleTimeString("ko-KR")}</td>
+                          <td className="p-2">
+                            <Badge variant="outline" className="text-[10px]">{srcLabel}</Badge>
+                            {typeof w.accuracy_m === "number" && (
+                              <span className="ml-1 text-[10px] text-muted-foreground">±{Math.round(w.accuracy_m)}m</span>
+                            )}
+                          </td>
                           <td className="p-2">
                             {w.event_type === "unauthorized_entry"
                               ? <Badge variant="destructive">위험구역</Badge>

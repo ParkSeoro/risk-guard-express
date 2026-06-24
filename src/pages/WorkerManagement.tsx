@@ -21,7 +21,10 @@ const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "worker"]);
 export default function WorkerManagement() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const initialTab = tabParam === "attendance" ? "attendance" : tabParam === "daily-qr" ? "daily-qr" : "register";
+  const initialTab = tabParam === "attendance" ? "attendance"
+    : tabParam === "daily-qr" ? "daily-qr"
+    : tabParam === "company-qr" ? "company-qr"
+    : "register";
   const [tab, setTab] = useState<string>(initialTab);
 
   const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");

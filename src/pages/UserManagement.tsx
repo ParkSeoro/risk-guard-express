@@ -100,7 +100,7 @@ const UserManagement = () => {
     const [{ data: profiles }, { data: allRoles }, { data: allMembers }] = await Promise.all([
       supabase.from('profiles').select('*').order('created_at', { ascending: false }),
       supabase.from('user_roles').select('user_id, role'),
-      supabase.from('project_members').select('id, user_id, project_id, role, role_new, company_id, company, position, position_new'),
+      supabase.from('project_members').select('id, user_id, project_id, role_new, company_id, company, position_new'),
     ]);
     const enriched: UserWithRole[] = (profiles || []).map((p: any) => ({
       ...p,
@@ -221,12 +221,6 @@ const UserManagement = () => {
   // `role` / `position` columns until Phase 4 cleanup.
   const handleUpdateMembership = async (membershipId: string, field: string, value: string | null) => {
     const updateData: Record<string, any> = { [field]: value };
-    if (field === 'role_new') {
-      updateData.role = projectRoleToLegacy(String(value)) as any;
-    }
-    if (field === 'position_new') {
-      updateData.position = value || '';
-    }
     if (field === 'company_id') {
       const company = projectCompanies.find(c => c.id === value);
       updateData.company = company?.name || '';
@@ -259,12 +253,9 @@ const UserManagement = () => {
       const { error } = await supabase.from('project_members').insert([{
         project_id: assignProjectId,
         user_id: assignUserId,
-        // Write BOTH new and legacy columns for backward compatibility
-        role: projectRoleToLegacy(assignRole) as any,
         role_new: assignRole as any,
         company_id: assignCompanyId || null,
         company: companyName,
-        position: assignPosition || '',
         position_new: (assignPosition || null) as any,
       }]);
       if (error) {
@@ -392,11 +383,11 @@ const UserManagement = () => {
                       <div className="space-y-1">
                         {memberships.map((m: any) => {
                           const proj = projects.find(p => p.id === m.project_id);
-                          const posLabel = positionLabels[m.position] || m.position;
+                          const posLabel = positionLabels[m.position_new] || m.position_new;
                           return (
                             <div key={m.id} className="flex items-center gap-1 text-[10px] flex-wrap">
                               <Badge variant="secondary" className="text-[10px] shrink-0">{proj?.name || '프로젝트'}</Badge>
-                              <Select value={m.role_new || (projectRoleLabels[m.role] ? m.role : 'viewer')} onValueChange={(v) => handleUpdateMembership(m.id, 'role_new', v)}>
+                              <Select value={m.role_new || 'viewer'} onValueChange={(v) => handleUpdateMembership(m.id, 'role_new', v)}>
                                 <SelectTrigger className="h-5 w-24 text-[10px] border-dashed"><SelectValue /></SelectTrigger>
                                 <SelectContent>
                                   {Object.entries(projectRoleLabels).map(([k, v]) => (
@@ -404,7 +395,7 @@ const UserManagement = () => {
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <Select value={m.position_new || m.position || '_none'} onValueChange={(v) => handleUpdateMembership(m.id, 'position_new', v === '_none' ? null : v)}>
+                              <Select value={m.position_new || '_none'} onValueChange={(v) => handleUpdateMembership(m.id, 'position_new', v === '_none' ? null : v)}>
                                 <SelectTrigger className="h-5 w-24 text-[10px] border-dashed"><SelectValue placeholder="직책" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="_none" className="text-[10px]">직책 없음</SelectItem>

@@ -1455,6 +1455,108 @@ export type Database = {
           },
         ]
       }
+      emergency_drills: {
+        Row: {
+          attachments: Json
+          company_id: string | null
+          conducted_date: string | null
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
+          drill_type: string
+          id: string
+          improvements: string
+          is_deleted: boolean
+          issues_found: string
+          leader_name: string
+          legal_basis: string
+          location: string
+          next_due_date: string | null
+          participants: Json
+          participants_count: number
+          photos: string[]
+          project_id: string
+          scenario: string
+          scheduled_date: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          attachments?: Json
+          company_id?: string | null
+          conducted_date?: string | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
+          drill_type?: string
+          id?: string
+          improvements?: string
+          is_deleted?: boolean
+          issues_found?: string
+          leader_name?: string
+          legal_basis?: string
+          location?: string
+          next_due_date?: string | null
+          participants?: Json
+          participants_count?: number
+          photos?: string[]
+          project_id: string
+          scenario?: string
+          scheduled_date?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          attachments?: Json
+          company_id?: string | null
+          conducted_date?: string | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
+          drill_type?: string
+          id?: string
+          improvements?: string
+          is_deleted?: boolean
+          issues_found?: string
+          leader_name?: string
+          legal_basis?: string
+          location?: string
+          next_due_date?: string | null
+          participants?: Json
+          participants_count?: number
+          photos?: string[]
+          project_id?: string
+          scenario?: string
+          scheduled_date?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "emergency_drills_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "emergency_drills_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       environment_tags: {
         Row: {
           category: string
@@ -2017,6 +2119,7 @@ export type Database = {
       }
       incident_reports: {
         Row: {
+          authority_report_no: string | null
           created_at: string
           deleted_at: string | null
           deleted_by: string | null
@@ -2027,10 +2130,13 @@ export type Database = {
           id: string
           incident_type: string
           is_deleted: boolean
+          is_major: boolean
+          legal_deadline_at: string | null
           location: string
           occurred_at: string
           photos: string[]
           project_id: string
+          reported_to_authority_at: string | null
           reporter_id: string | null
           reporter_name: string
           review_note: string
@@ -2041,6 +2147,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          authority_report_no?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: string | null
@@ -2051,10 +2158,13 @@ export type Database = {
           id?: string
           incident_type?: string
           is_deleted?: boolean
+          is_major?: boolean
+          legal_deadline_at?: string | null
           location?: string
           occurred_at?: string
           photos?: string[]
           project_id: string
+          reported_to_authority_at?: string | null
           reporter_id?: string | null
           reporter_name?: string
           review_note?: string
@@ -2065,6 +2175,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          authority_report_no?: string | null
           created_at?: string
           deleted_at?: string | null
           deleted_by?: string | null
@@ -2075,10 +2186,13 @@ export type Database = {
           id?: string
           incident_type?: string
           is_deleted?: boolean
+          is_major?: boolean
+          legal_deadline_at?: string | null
           location?: string
           occurred_at?: string
           photos?: string[]
           project_id?: string
+          reported_to_authority_at?: string | null
           reporter_id?: string | null
           reporter_name?: string
           review_note?: string

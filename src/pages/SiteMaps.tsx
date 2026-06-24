@@ -428,6 +428,9 @@ export default function SiteMaps() {
                       <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => addQr(z, "exit")}>
                         <QrCode className="h-3 w-3 mr-1" /> 출구 QR
                       </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => saveWifiFingerprint(z)}>
+                        Wi-Fi 지문
+                      </Button>
                     </div>
                     {zoneQrs.length > 0 && (
                       <div className="space-y-1 pt-1 border-t">

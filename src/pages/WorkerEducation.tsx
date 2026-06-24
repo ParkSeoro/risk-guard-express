@@ -39,7 +39,7 @@ export default function WorkerEducation() {
     setLoading(true);
     const [{ data: rs, error: e1 }, { data: ws }] = await Promise.all([
       supabase.from("worker_education_records").select("*").eq("project_id", projectId).eq("is_deleted", false).order("completed_at", { ascending: false }),
-      supabase.from("workers").select("id, full_name, company_id").eq("project_id", projectId),
+      supabase.from("workers").select("id, name, company_id").eq("project_id", projectId),
     ]);
     if (e1) toast.error(e1.message);
     setRows((rs as Row[]) || []);
@@ -125,7 +125,7 @@ export default function WorkerEducation() {
                     const overdue = r.next_due_at && r.next_due_at < today;
                     return (
                       <tr key={r.id} className="border-t hover:bg-muted/30">
-                        <td className="p-2">{workerMap[r.worker_id]?.full_name || "-"}</td>
+                        <td className="p-2">{workerMap[r.worker_id]?.name || "-"}</td>
                         <td className="p-2"><Badge variant="outline">{r.education_type}</Badge></td>
                         <td className="p-2 font-medium">{r.course_name}</td>
                         <td className="p-2 text-center">{r.hours}h</td>
@@ -155,7 +155,7 @@ export default function WorkerEducation() {
               <div><Label>근로자</Label>
                 <Select value={form.worker_id} onValueChange={v => setForm({ ...form, worker_id: v })}>
                   <SelectTrigger><SelectValue placeholder="선택" /></SelectTrigger>
-                  <SelectContent>{workers.map(w => <SelectItem key={w.id} value={w.id}>{w.full_name}</SelectItem>)}</SelectContent>
+                  <SelectContent>{workers.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div><Label>교육 유형</Label>

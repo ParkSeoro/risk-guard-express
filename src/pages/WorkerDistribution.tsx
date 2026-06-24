@@ -118,7 +118,7 @@ export default function WorkerDistribution() {
     const perZone: Record<string, { name: string; phone: string | null; at: string }[]> = {};
     let totalIn = 0;
     let dangerCount = 0;
-    const residual: { name: string; phone: string | null; zone_id: string | null; at: string; event_type: string }[] = [];
+    const residual: { name: string; phone: string | null; zone_id: string | null; at: string; event_type: string; source: string | null; accuracy_m: number | null }[] = [];
     for (const k of Object.keys(lastByWorker)) {
       const e = lastByWorker[k];
       if (e.event_type === "entry" || e.event_type === "unauthorized_entry") {
@@ -131,6 +131,8 @@ export default function WorkerDistribution() {
           zone_id: e.zone_id,
           at: e.created_at,
           event_type: e.event_type,
+          source: e.source,
+          accuracy_m: e.accuracy_m,
         });
         if (e.event_type === "unauthorized_entry") dangerCount += 1;
       }

@@ -6565,7 +6565,23 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      v_worker_attendance_today: {
+        Row: {
+          attendance_source: string | null
+          attended: boolean | null
+          company_id: string | null
+          company_name: string | null
+          entry_at: string | null
+          exit_at: string | null
+          exited: boolean | null
+          project_id: string | null
+          tbm_at: string | null
+          work_date: string | null
+          worker_id: string | null
+          worker_name: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       act_on_entity_approval: {
@@ -6594,6 +6610,7 @@ export type Database = {
         Args: { _company_id: string; _project_id: string; _user_id: string }
         Returns: boolean
       }
+      check_data_integrity: { Args: { _project_id?: string }; Returns: Json }
       confirm_worker_education: { Args: { _token: string }; Returns: Json }
       ensure_master_allowlist: {
         Args: { _user_id: string }

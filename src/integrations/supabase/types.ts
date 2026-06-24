@@ -850,6 +850,88 @@ export type Database = {
           },
         ]
       }
+      chemical_usage_plans: {
+        Row: {
+          actual_qty: number | null
+          chemical_id: string | null
+          company_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_deleted: boolean | null
+          legal_basis: string | null
+          month: number | null
+          notes: string | null
+          plan_type: string
+          planned_qty: number | null
+          project_id: string
+          storage_max_qty: number | null
+          unit: string | null
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          actual_qty?: number | null
+          chemical_id?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_deleted?: boolean | null
+          legal_basis?: string | null
+          month?: number | null
+          notes?: string | null
+          plan_type: string
+          planned_qty?: number | null
+          project_id: string
+          storage_max_qty?: number | null
+          unit?: string | null
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          actual_qty?: number | null
+          chemical_id?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_deleted?: boolean | null
+          legal_basis?: string | null
+          month?: number | null
+          notes?: string | null
+          plan_type?: string
+          planned_qty?: number | null
+          project_id?: string
+          storage_max_qty?: number | null
+          unit?: string | null
+          updated_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chemical_usage_plans_chemical_id_fkey"
+            columns: ["chemical_id"]
+            isOneToOne: false
+            referencedRelation: "chemicals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chemical_usage_plans_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chemical_usage_plans_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chemical_workers: {
         Row: {
           chemical_id: string
@@ -1188,6 +1270,100 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      confined_space_permits: {
+        Row: {
+          co_ppm: number | null
+          company_id: string | null
+          created_at: string
+          created_by: string | null
+          flammable_lel_pct: number | null
+          h2s_ppm: number | null
+          id: string
+          is_deleted: boolean | null
+          is_safe: boolean | null
+          location: string
+          measured_at: string | null
+          measured_by: string | null
+          notes: string | null
+          o2_pct: number | null
+          project_id: string
+          rescue_plan: string | null
+          supervisor_name: string | null
+          updated_at: string
+          ventilation_method: string | null
+          work_date: string
+          work_permit_id: string | null
+        }
+        Insert: {
+          co_ppm?: number | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          flammable_lel_pct?: number | null
+          h2s_ppm?: number | null
+          id?: string
+          is_deleted?: boolean | null
+          is_safe?: boolean | null
+          location: string
+          measured_at?: string | null
+          measured_by?: string | null
+          notes?: string | null
+          o2_pct?: number | null
+          project_id: string
+          rescue_plan?: string | null
+          supervisor_name?: string | null
+          updated_at?: string
+          ventilation_method?: string | null
+          work_date: string
+          work_permit_id?: string | null
+        }
+        Update: {
+          co_ppm?: number | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          flammable_lel_pct?: number | null
+          h2s_ppm?: number | null
+          id?: string
+          is_deleted?: boolean | null
+          is_safe?: boolean | null
+          location?: string
+          measured_at?: string | null
+          measured_by?: string | null
+          notes?: string | null
+          o2_pct?: number | null
+          project_id?: string
+          rescue_plan?: string | null
+          supervisor_name?: string | null
+          updated_at?: string
+          ventilation_method?: string | null
+          work_date?: string
+          work_permit_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "confined_space_permits_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "confined_space_permits_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "confined_space_permits_work_permit_id_fkey"
+            columns: ["work_permit_id"]
+            isOneToOne: false
+            referencedRelation: "work_permits"
             referencedColumns: ["id"]
           },
         ]
@@ -2311,6 +2487,81 @@ export type Database = {
             columns: ["project_member_id"]
             isOneToOne: false
             referencedRelation: "project_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      musculoskeletal_surveys: {
+        Row: {
+          attachments: Json | null
+          company_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          improvement_plan: string | null
+          is_deleted: boolean | null
+          legal_basis: string | null
+          next_due_date: string | null
+          process_name: string | null
+          project_id: string
+          risk_level: string | null
+          survey_date: string
+          symptom_count: number | null
+          task_description: string | null
+          updated_at: string
+          worker_count: number | null
+        }
+        Insert: {
+          attachments?: Json | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          improvement_plan?: string | null
+          is_deleted?: boolean | null
+          legal_basis?: string | null
+          next_due_date?: string | null
+          process_name?: string | null
+          project_id: string
+          risk_level?: string | null
+          survey_date: string
+          symptom_count?: number | null
+          task_description?: string | null
+          updated_at?: string
+          worker_count?: number | null
+        }
+        Update: {
+          attachments?: Json | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          improvement_plan?: string | null
+          is_deleted?: boolean | null
+          legal_basis?: string | null
+          next_due_date?: string | null
+          process_name?: string | null
+          project_id?: string
+          risk_level?: string | null
+          survey_date?: string
+          symptom_count?: number | null
+          task_description?: string | null
+          updated_at?: string
+          worker_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "musculoskeletal_surveys_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "musculoskeletal_surveys_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -4467,6 +4718,79 @@ export type Database = {
             columns: ["site_map_id"]
             isOneToOne: false
             referencedRelation: "site_maps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      special_health_targets: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          created_by: string | null
+          exposure_started_at: string | null
+          hazard_type: string
+          id: string
+          is_deleted: boolean | null
+          legal_basis: string | null
+          next_checkup_due: string | null
+          notes: string | null
+          project_id: string
+          required_checkup_interval_months: number | null
+          updated_at: string
+          worker_id: string | null
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          exposure_started_at?: string | null
+          hazard_type: string
+          id?: string
+          is_deleted?: boolean | null
+          legal_basis?: string | null
+          next_checkup_due?: string | null
+          notes?: string | null
+          project_id: string
+          required_checkup_interval_months?: number | null
+          updated_at?: string
+          worker_id?: string | null
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          exposure_started_at?: string | null
+          hazard_type?: string
+          id?: string
+          is_deleted?: boolean | null
+          legal_basis?: string | null
+          next_checkup_due?: string | null
+          notes?: string | null
+          project_id?: string
+          required_checkup_interval_months?: number | null
+          updated_at?: string
+          worker_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "special_health_targets_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "special_health_targets_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "special_health_targets_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
             referencedColumns: ["id"]
           },
         ]

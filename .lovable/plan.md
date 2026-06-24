@@ -1,119 +1,60 @@
-# 근로자 360° 통합 관리 시스템
 
-분산된 근로자/교육/건강/출퇴근/TBM 기능을 **하나의 근로자 마스터** 중심으로 묶고, 등록 한 번으로 모든 의무 사항이 자동 계산·알림되도록 재설계합니다.
-
----
-
-## 1단계: DB 스키마 확장
-
-### workers 테이블 컬럼 추가
-- `birth_date` (date) — 만 나이 자동 계산용
-- `job_type` (text) — 직종 코드 (일반작업/관리감독자/유해위험작업/특수작업 등)
-- `hire_date` (date)
-- `assigned_processes` (text[]) — 배정 공정
-- `assigned_chemicals` (uuid[]) — 노출 화학물질 (chemicals 참조)
-- `requires_daily_health_log` (boolean) — 일일 건강일지 대상 자동 플래그
-- `health_grade` (text) — A/C1/C2/D1/D2 등 건진 등급
-- `outdoor_worker` (boolean) — 옥외 작업자 (혹서기/혹한기 대상 판별 보조)
-
-### 신규 테이블
-**`worker_legal_education_mapping`** (시스템 기본 + 프로젝트 편집)
-- `job_type`, `education_type`, `interval_months`, `first_due_days`, `legal_basis`, `is_system_default`, `project_id` (null = 시스템 기본)
-
-**`worker_daily_health_logs`** (일일 건강일지)
-- `worker_id`, `log_date`, `body_temp`, `bp_systolic`, `bp_diastolic`, `sleep_hours`, `symptoms` (jsonb), `fit_to_work` (boolean), `signature_data`, `reason` (age65/health_d/heat/cold), `created_at`
-
-**`worker_required_items`** (자동 생성 의무사항 큐)
-- `worker_id`, `item_type` (education/checkup/daily_log), `subtype`, `due_date`, `status` (pending/done/overdue), `source` (auto/manual), `legal_basis`, `completed_at`, `completed_ref_id`
-
-### 시스템 기본 교육 매핑 시드 (산안법 기준)
-- 일반작업: 신규교육(채용 시 8h, 1회) + 정기교육(분기 6h)
-- 관리감독자: 연 16h
-- 특별교육: 유해위험작업 배정 시 16h (2년 주기 갱신)
-- 일반건강진단: 사무직 2년 / 그 외 1년
-- 특수건강진단: 유해인자 노출 시 6개월~24개월 (인자별)
+## 목표
+6가지 피드백을 **추가 비용 없이** 현재 스택(React + Lovable Cloud/Supabase + PWA)에서 실행 가능한 범위로 적용합니다. 외부 IoT/비콘/유료 지도 SDK는 사용하지 않습니다.
 
 ---
 
-## 2단계: 자동화 엔진
+### 1. 시스템 정체성 재정의 — "통합 안전관리시스템"
+- 브랜드 문구(`index.html`, `MobileHome` 헤더, `AppSidebar` 상단, PDF 푸터, README, `mem://project/brand-identity`)에서 "위험성평가 자동" 표현을 모두 **"통합 안전관리시스템 (Integrated Safety Management)"** 로 교체.
+- 사이드바 IA를 5개 묶음으로 재정렬: ① 대시보드 ② 작업관리(허가서·작업계획서·TBM·점검) ③ 근로자 ④ 위험성평가 ⑤ 보고/관리(법정의무·산안비·감사). 위험성평가는 "한 모듈"로 격하.
+- 비용: 0원 (문구·라우팅만).
 
-### DB 트리거
-- `trg_worker_auto_requirements`: workers INSERT/UPDATE 시 job_type/연령/배정 화학물질을 보고 `worker_required_items`에 due_date 자동 산출하여 행 생성
-- `trg_health_checkup_complete_requirement`: health_checkups INSERT 시 매칭되는 required_item을 done 처리하고 다음 주기 행 생성
-- `trg_health_education_complete_requirement`: health_education_logs INSERT 시 동일 처리
-- `trg_worker_daily_log_flag`: 만 65세 이상 또는 health_grade in (D1,D2) → requires_daily_health_log=true 자동 갱신
+### 2. 근로자 위치 트래킹 (저비용 방식)
+유료 BLE/UWB 없이 **무료 조합**으로 구현:
+- **현장 사이트맵**: 관리자가 이미지(평면도 PNG/JPG)를 업로드 → Lovable Cloud Storage 저장 → React에서 SVG 오버레이로 폴리곤(위험구역/금지구역/작업구역)을 그리는 에디터. 외부 지도 API 불필요.
+- **위치 수집 2-tier**:
+  - **Tier A (정밀, 무료) — QR 체크포인트**: 구역 입구에 인쇄 QR 부착. 근로자가 PWA로 스캔 시 `worker_zone_events` 에 입/퇴장 기록. 금지구역 QR을 찍으면 즉시 본인+안전관리자에게 경고 알림.
+  - **Tier B (보조) — 브라우저 Geolocation**: 모바일 PWA가 백그라운드 watchPosition으로 좌표 전송, 사이트맵 좌표계와 affine 매핑하여 폴리곤 in/out 판정. (실내 정확도 한계는 UI에 명시.)
+- **퇴근 시 잔류 확인**: `worker_entry_logs` 에 퇴장 기록이 없는 근로자를 일일 종료 시 대시보드 카드 + 푸시로 표시.
+- 신규 테이블: `site_maps`, `site_zones`(geo polygon JSON, type: danger/restricted/work), `zone_qr_codes`, `worker_zone_events`.
 
-### Edge Function 신설
-**`worker-daily-scheduler`** (매일 06:00 cron)
-- D-7 만료 임박 → `notifications` insert (푸시는 기존 트리거가 자동 전송)
-- 오늘 일일 건강일지 미작성자 (대상자만) → 본인 + 안전관리자 알림
-- 출근했는데 미이수 항목 있는 근로자 일일 리포트
+### 3. 모바일 UX 재구성 — 역할별 메뉴
+- `MobileHome` 메뉴를 **고정 그리드 → 역할 기반 동적 메뉴**로 변경.
+- `profiles.mobile_menu_prefs jsonb` 추가 + Settings에서 사용자가 "쓰는 기능만" 켜기/끄기.
+- 역할별 기본 프리셋: 근로자(출근/TBM/허가서 보기/안전알림), 관리감독자(점검/TBM/허가서/근로자현황), 안전관리자(전체+감사). 불필요 항목은 기본 OFF.
+- 모바일 서명 패드 왼쪽 치우침 버그 수정: 캔버스 `width=clientWidth` + `getBoundingClientRect()` 기준 좌표 보정, devicePixelRatio 적용. (현재 좌표가 0,0 기준으로만 계산되어 발생.)
 
-### 출근 QR 플로우 보강
-- `worker_daily_scan` 함수 확장: 일일 건강일지 대상자가 오늘 작성 안 했으면 경고 반환 → 모바일에서 일지 입력 화면으로 유도
+### 4. 인덱스(홈) 화면 리뉴얼
+- `src/pages/Index.tsx` 는 현재 14줄 Lovable 기본 골격 — 완전 재설계.
+- 도메인에 맞는 디자인 방향 3개를 **렌더링된 프로토타입**으로 보여드리고 한 개 선택 → 그 방향으로 구현. (디자인 토큰만 사용, 추가 라이선스 없음.)
+- 헤로 + KPI + "오늘의 작업/허가/위험" 라이브 카드 + CTA 구성으로, 다른 Lovable 템플릿과 구별되도록 타이포·레이아웃·모션을 재정의.
 
----
+### 5. 근로자 라이프사이클 명확화
+- **출근→이동→퇴근** 타임라인 뷰: `WorkerAttendance` 페이지를 탭 구조(오늘 현황 / 이동 로그 / 퇴근 미체크)로 개편.
+- 출근 등록 시 캡처한 **서명**을 그 날짜의 TBM 일지/안전점검/작업허가서의 참여자 서명란에 자동 주입 (FK: `worker_daily_qr.id` → `tbm_participations`, `work_permit_workers`).
+- "위험구역 진입 이력" 컬럼 추가 (#2 의 `worker_zone_events` 조인).
+- 서명 패드 정렬 버그(#3) 동일 컴포넌트로 수정.
 
-## 3단계: 통합 UI
-
-### 신규: `/workers/:id` 근로자 360° 상세 페이지
-탭 구조:
-1. **개요** — 기본정보 + 경고 배지 + 다음 의무 D-day 리스트
-2. **법정 교육** — 매핑 기반 필수 교육표, 이수일/만료일/상태, 교육 등록 버튼
-3. **건강관리** — 일반/특수 건진 이력, 다음 일자, 등급, 작업제한
-4. **일일 건강일지** (대상자만 표시) — 캘린더형 작성 현황
-5. **출퇴근/TBM** — 최근 30일 이력
-6. **유해인자** — 배정 공정/화학물질/MSDS 링크
-
-### PC: `/workers` 목록 개편
-- 필터: 만료임박 / 미이수 / 고령자 / 유소견 / 미등록
-- 일괄 작업: 알림 발송, CSV 내보내기, 교육/건진 일정 일괄 등록
-- 상태 컬럼에 색 배지 (위험·주의·정상)
-
-### 모바일: `/m/workers/:id`
-- 동일 데이터, 모바일 최적화 카드 뷰
-- **공통 `useWorker(id)` 훅** — PC/모바일이 같은 소스 사용 (단절 방지)
-
-### `/workers/legal-education-mapping` (관리자)
-- 시스템 기본 매핑 조회 + 프로젝트별 오버라이드 편집
-
----
-
-## 4단계: 일일 건강일지 운영
-
-### 대상 자동 산정
-- 만 65세 이상 (상시, 연중)
-- 건진 등급 D1/D2 (상시)
-- (확장 여지) 혹서기 옥외 작업자 — 토글로 후속 가능
-
-### 입력 UX
-- **모바일 출근 QR 스캔 → 대상자면 일지 입력 화면 자동 표시 → 작성 후 출근 처리**
-- 미작성 시 안전관리자에게 즉시 알림
-- 입력 항목: 체온, 혈압(선택), 수면시간, 증상 체크리스트(두통/어지러움/가슴통증 등), 작업 가능 여부 + 서명
-
-### 대시보드 위젯
-- 보건관리 대시보드에 "오늘 일일 건강일지 현황" 카드 (작성/미작성/이상소견)
+### 6. 안전작업허가서 — DIG 표준 양식 반영
+첨부 엑셀(`MD-000000-SF003`)을 정확히 재현. 4개 시트를 4개 폼 섹션으로 구성:
+1. **안전작업허가서(본지)** — 상단 결재(시공/CM/안전/SM/소장), 작업일시·개요·인원, 첨부서류 체크박스(위험성평가/안전작업점검표/TBM/중장비/작업계획서), 안전조치 요구사항 18개 체크, 위험작업 카테고리 6개(밀폐/화기/정전/굴착/방사선/고소/중장비)는 헤더 체크 + 하위 세부 체크박스 + 자유텍스트.
+2. **밀폐공간 작업허가서(을지)** — 작업구분 체크(맨홀/저장탱크/Cold Box/기타+텍스트), 안전조치 12개 체크, 가스농도 측정 테이블(O₂/CO₂/H₂S/CO 기준선 내장).
+3. **화기작업허가서**, 4. **굴착/중장비 등 첨부 양식** — 동일 패턴.
+- 구현: 기존 `src/components/permits/DigPermitForm.tsx` 를 엑셀 셀 좌표 기준으로 재작성. `work_permits` 테이블에 `form_data jsonb` 컬럼 추가하여 체크박스 상태·자유텍스트·가스측정값을 키-값으로 저장 (스키마 변경 최소화).
+- PDF 출력: 엑셀 레이아웃을 그대로 따르는 A4 세로 4페이지 템플릿 (Puppeteer, 기존 인프라 재사용 → 0원).
 
 ---
 
 ## 기술 메모
+- 신규 테이블 모두 `project_id` 컬럼 + RLS(`useProjectAccess` 패턴), GRANT 명시.
+- QR/Geolocation/이미지 SVG 오버레이는 전부 브라우저 표준 API — 외부 결제 없음.
+- 푸시 경고는 기존 Resend + Web Push 인프라 재사용.
+- 메모리 업데이트: `mem://index.md` Core 의 "위험성평가 자동" → "통합 안전관리" 로 교체.
 
-- 모든 신규 테이블: `GRANT` + RLS (`is_project_member` / `can_access_company_data` 기반)
-- soft delete 패턴 준수 (`is_deleted`)
-- `useWorker(id)` 훅으로 PC/모바일 데이터 SSOT 통일
-- 기존 `notifications` 트리거 활용 → 푸시 자동 발송 (추가 작업 불필요)
-- 시드: 시스템 기본 교육 매핑은 별도 insert (마이그레이션에서 1회)
+## 추천 진행 순서 (각 단계 후 확인)
+1. **#1 리브랜딩 + #6 DIG 허가서** (가장 즉효, 데이터 모델 단순)
+2. **#3 모바일 메뉴 + 서명 버그 + #5 근로자 라이프사이클**
+3. **#4 인덱스 리뉴얼** (디자인 방향 3개 선택)
+4. **#2 위치 트래킹** (사이트맵 업로드 → QR 체크포인트 → Geolocation 보조 순으로 점진 출시)
 
----
-
-## 작업 순서
-1. 마이그레이션 1: workers 컬럼 확장 + 신규 3개 테이블 + GRANT/RLS + 시드
-2. 마이그레이션 2: 트리거 + `worker_daily_scan` 함수 보강
-3. Edge Function `worker-daily-scheduler` + cron 등록
-4. `useWorker` 훅 + `/workers/:id` 상세 페이지
-5. `/workers` 목록 개편
-6. `/m/workers/:id` 모바일 뷰
-7. 일일 건강일지 입력 화면 + 모바일 출근 플로우 연결
-8. 법정 교육 매핑 관리 화면
-
-승인하시면 1번부터 순차 진행하겠습니다.
+확인 부탁드립니다 — 이 순서/범위로 진행할까요, 아니면 특정 항목부터 먼저 착수할까요?

@@ -11,12 +11,14 @@ import { Badge } from "@/components/ui/badge";
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
 import { Plus, GraduationCap } from "lucide-react";
+import { useProjectAccess } from "@/hooks/useProjectAccess";
 
 const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const TYPES = ["정기", "특별", "관리감독자", "MSDS", "신규채용", "작업변경"];
 
 export default function HealthEducation() {
   const handle = useToastError();
+  const { applyCompanyFilter, userCompanyId } = useProjectAccess();
   const [list, setList] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
@@ -28,15 +30,16 @@ export default function HealthEducation() {
     if (!projectId) return;
     setLoading(true);
     try {
-      const [{ data: l }, { data: ws }] = await Promise.all([
-        supabase.from("health_education_logs").select("*").eq("project_id", projectId).eq("is_deleted", false).order("conducted_at", { ascending: false }).limit(300),
-        supabase.from("workers").select("id,name,company_name,company_id").eq("project_id", projectId).eq("is_active", true).order("name"),
-      ]);
+      let lQ = supabase.from("health_education_logs").select("*").eq("project_id", projectId).eq("is_deleted", false).order("conducted_at", { ascending: false }).limit(300);
+      lQ = applyCompanyFilter(lQ);
+      let wsQ = supabase.from("workers").select("id,name,company_name,company_id").eq("project_id", projectId).eq("is_active", true).order("name");
+      wsQ = applyCompanyFilter(wsQ);
+      const [{ data: l }, { data: ws }] = await Promise.all([lQ, wsQ]);
       setList(l || []); setWorkers(ws || []);
     } catch (e) { handle(e, "보건교육 조회"); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => { load(); }, [projectId, userCompanyId]);
 
   const submit = async () => {
     if (!projectId || !form.worker_id || !form.title) { toast.error("근로자·제목 필수"); return; }

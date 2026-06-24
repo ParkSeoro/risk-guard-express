@@ -464,6 +464,26 @@ const WorkPlanDetail = () => {
             <Copy className="h-3.5 w-3.5" /> 이 계획서로 새로 만들기
           </Button>
         )}
+        {plan.status === '승인완료' && (
+          <>
+            <Button size="sm" variant="outline" className="gap-1" onClick={async () => {
+              const { data, error } = await supabase.rpc('derive_permit_from_work_plan', { _work_plan_id: planId });
+              if (error) { toast({ title: '작업허가서 생성 실패', description: error.message, variant: 'destructive' }); return; }
+              const d: any = data;
+              if (d?.permit_id) { toast({ title: d.reused ? '기존 허가서로 이동' : '작업허가서가 생성되었습니다.' }); navigate(`/work-permits`); }
+            }}>
+              <FileText className="h-3.5 w-3.5" /> 작업허가서 자동생성
+            </Button>
+            <Button size="sm" variant="outline" className="gap-1" onClick={async () => {
+              const { data, error } = await supabase.rpc('derive_tbm_from_work_plan', { _work_plan_id: planId });
+              if (error) { toast({ title: 'TBM 생성 실패', description: error.message, variant: 'destructive' }); return; }
+              const d: any = data;
+              if (d?.tbm_id) { toast({ title: d.reused ? '기존 TBM으로 이동' : 'TBM 세션이 생성되었습니다.' }); navigate(`/tbm`); }
+            }}>
+              <ClipboardList className="h-3.5 w-3.5" /> TBM 자동생성
+            </Button>
+          </>
+        )}
         {plan.status === '작성중' && (
           <Button size="sm" variant="default" onClick={handleSubmitApproval} className="gap-1 ml-auto">
             <SendHorizontal className="h-3.5 w-3.5" /> 결재 상신

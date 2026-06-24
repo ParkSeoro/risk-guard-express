@@ -122,6 +122,25 @@ export default function WorkerTrackingCard({ identity }: { identity: TrackingIde
             {!info && running && (
               <div className="text-xs text-muted-foreground">위치 신호 수신 중…</div>
             )}
+            <button
+              type="button"
+              onClick={() => setShowLogs((s) => !s)}
+              className="text-xs text-primary flex items-center gap-1 mt-1"
+            >
+              <History className="h-3 w-3" /> {showLogs ? "내 위치 로그 닫기" : "오늘 내 위치 로그 보기"}
+            </button>
+            {showLogs && (
+              <div className="text-xs space-y-1 max-h-40 overflow-auto border rounded p-2">
+                {logs.length === 0 ? (
+                  <div className="text-muted-foreground">기록 없음</div>
+                ) : logs.map((l) => (
+                  <div key={l.id} className="flex justify-between">
+                    <span>{l.event_type === "exit" ? "🚪 퇴장" : l.event_type === "unauthorized_entry" ? "⚠️ 무단진입" : "🟢 진입"} · {l.source || "-"}</span>
+                    <span className="text-muted-foreground">{new Date(l.created_at).toLocaleTimeString("ko-KR")}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </CardContent>

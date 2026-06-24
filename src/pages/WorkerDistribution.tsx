@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Users, MapPin, ShieldAlert, Activity } from "lucide-react";
+import { Users, MapPin, ShieldAlert, Activity, Radio, RefreshCw } from "lucide-react";
 
 type SiteMap = { id: string; name: string; image_url: string | null };
 type Zone = {
@@ -38,6 +38,15 @@ const ZONE_LABEL: Record<Zone["zone_type"], string> = {
   danger: "위험구역",
 };
 
+function formatAgo(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}초`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}분`;
+  const h = Math.floor(m / 60);
+  return `${h}시간`;
+}
+
 export default function WorkerDistribution() {
   const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
@@ -45,6 +54,10 @@ export default function WorkerDistribution() {
   const [activeMap, setActiveMap] = useState<SiteMap | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [events, setEvents] = useState<Evt[]>([]);
+  const [lastSource, setLastSource] = useState<"realtime" | "polling" | "init">("init");
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [rtStatus, setRtStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
+  const [nowTick, setNowTick] = useState(Date.now());
 
   useEffect(() => {
     supabase.from("projects").select("id,name").then(({ data }) => setProjects(data || []));
@@ -54,20 +67,26 @@ export default function WorkerDistribution() {
     if (!projectId) return;
     localStorage.setItem("currentProjectId", projectId);
     loadMaps();
-    loadEvents();
+    loadEvents("polling");
+    setRtStatus("connecting");
     const ch = supabase
       .channel(`wd:${projectId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "worker_zone_events", filter: `project_id=eq.${projectId}` },
-        () => loadEvents()
+        () => loadEvents("realtime")
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") setRtStatus("connected");
+        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setRtStatus("disconnected");
+      });
     // Realtime이 주된 갱신 경로이고, 폴링은 안전망(60초)
-    const t = setInterval(loadEvents, 60000);
+    const t = setInterval(() => loadEvents("polling"), 60000);
+    const tick = setInterval(() => setNowTick(Date.now()), 1000);
     return () => {
       supabase.removeChannel(ch);
       clearInterval(t);
+      clearInterval(tick);
     };
   }, [projectId]);
 
@@ -94,7 +113,7 @@ export default function WorkerDistribution() {
       .then(({ data }) => setZones((data || []) as any as Zone[]));
   }, [activeMap]);
 
-  const loadEvents = async () => {
+  const loadEvents = async (source: "realtime" | "polling" = "polling") => {
     if (!projectId) return;
     const since = new Date();
     since.setHours(0, 0, 0, 0);
@@ -106,6 +125,8 @@ export default function WorkerDistribution() {
       .order("created_at", { ascending: true })
       .limit(2000);
     setEvents((data || []) as Evt[]);
+    setLastSource(source);
+    setLastUpdated(new Date());
   };
 
   // Compute current occupancy per zone: per worker key, take the last event of the day.
@@ -161,6 +182,23 @@ export default function WorkerDistribution() {
             <Users className="h-6 w-6 text-primary" /> 현장 근로자 분포도
           </h1>
           <p className="text-sm text-muted-foreground">QR 입·출 이벤트 기반 실시간 분포 (오늘 기준)</p>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <Badge
+              variant={rtStatus === "connected" ? "default" : rtStatus === "connecting" ? "secondary" : "destructive"}
+              className="text-[10px] gap-1"
+              title={`Realtime: ${rtStatus}`}
+            >
+              <Radio className={`h-3 w-3 ${rtStatus === "connected" ? "animate-pulse" : ""}`} />
+              {rtStatus === "connected" ? "Realtime 연결" : rtStatus === "connecting" ? "Realtime 연결중" : "Realtime 끊김"}
+            </Badge>
+            <Badge variant="outline" className="text-[10px] gap-1">
+              마지막 갱신: {lastSource === "realtime" ? "Realtime" : lastSource === "polling" ? "폴링(60s)" : "초기"}
+            </Badge>
+            <Badge variant="outline" className="text-[10px] gap-1">
+              <RefreshCw className="h-3 w-3" />
+              {lastUpdated ? `${formatAgo(nowTick - lastUpdated.getTime())} 전 (${lastUpdated.toLocaleTimeString("ko-KR")})` : "대기중"}
+            </Badge>
+          </div>
         </div>
         <div className="flex gap-2">
           <Select value={projectId} onValueChange={setProjectId}>

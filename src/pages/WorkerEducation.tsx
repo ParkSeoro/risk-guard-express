@@ -18,7 +18,7 @@ type Row = {
   completed_at: string; next_due_at: string | null; instructor: string | null;
   notes: string | null; evidence_url: string | null; is_deleted: boolean;
 };
-type Worker = { id: string; full_name: string; company_id: string | null };
+type Worker = { id: string; name: string; company_id: string | null };
 
 const TYPES = ['정기','채용시','작업변경시','특별','관리감독자','기초안전보건'];
 

@@ -260,6 +260,21 @@ const ProjectDetail = () => {
     fetchAll();
   };
 
+  const handleChangePosition = async (memberId: string, newPosition: string | null) => {
+    const { error } = await supabase
+      .from('project_members')
+      .update({ position_new: newPosition as any })
+      .eq('id', memberId);
+    if (error) {
+      toast({ title: '직책 저장 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: '직책이 저장되었습니다.' });
+    await log('직책변경', 'project_member', memberId, projectId || undefined, { position: newPosition });
+    fetchAll();
+  };
+
+
   const handleCreateInvite = async () => {
     if (!projectId || !user) return;
     const code = crypto.randomUUID().split('-')[0].toUpperCase();

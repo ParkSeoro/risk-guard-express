@@ -4340,6 +4340,119 @@ export type Database = {
         }
         Relationships: []
       }
+      site_maps: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          height_m: number | null
+          height_px: number | null
+          id: string
+          image_url: string | null
+          is_active: boolean
+          is_deleted: boolean
+          name: string
+          project_id: string
+          updated_at: string
+          width_m: number | null
+          width_px: number | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          height_m?: number | null
+          height_px?: number | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          is_deleted?: boolean
+          name: string
+          project_id: string
+          updated_at?: string
+          width_m?: number | null
+          width_px?: number | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          height_m?: number | null
+          height_px?: number | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          is_deleted?: boolean
+          name?: string
+          project_id?: string
+          updated_at?: string
+          width_m?: number | null
+          width_px?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_maps_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      site_zones: {
+        Row: {
+          color: string | null
+          created_at: string
+          description: string | null
+          id: string
+          is_deleted: boolean
+          name: string
+          polygon: Json
+          project_id: string
+          site_map_id: string
+          updated_at: string
+          zone_type: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_deleted?: boolean
+          name: string
+          polygon: Json
+          project_id: string
+          site_map_id: string
+          updated_at?: string
+          zone_type?: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_deleted?: boolean
+          name?: string
+          polygon?: Json
+          project_id?: string
+          site_map_id?: string
+          updated_at?: string
+          zone_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "site_zones_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "site_zones_site_map_id_fkey"
+            columns: ["site_map_id"]
+            isOneToOne: false
+            referencedRelation: "site_maps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       standard_risk_library: {
         Row: {
           category_large: string
@@ -5831,6 +5944,82 @@ export type Database = {
           },
         ]
       }
+      worker_zone_events: {
+        Row: {
+          acknowledged: boolean
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          created_at: string
+          event_type: string
+          id: string
+          notes: string | null
+          position_x: number | null
+          position_y: number | null
+          project_id: string
+          source: string
+          worker_name: string | null
+          worker_phone: string | null
+          worker_qr_id: string | null
+          zone_id: string | null
+        }
+        Insert: {
+          acknowledged?: boolean
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          notes?: string | null
+          position_x?: number | null
+          position_y?: number | null
+          project_id: string
+          source?: string
+          worker_name?: string | null
+          worker_phone?: string | null
+          worker_qr_id?: string | null
+          zone_id?: string | null
+        }
+        Update: {
+          acknowledged?: boolean
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          notes?: string | null
+          position_x?: number | null
+          position_y?: number | null
+          project_id?: string
+          source?: string
+          worker_name?: string | null
+          worker_phone?: string | null
+          worker_qr_id?: string | null
+          zone_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "worker_zone_events_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "worker_zone_events_worker_qr_id_fkey"
+            columns: ["worker_qr_id"]
+            isOneToOne: false
+            referencedRelation: "worker_daily_qr"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "worker_zone_events_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "site_zones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workers: {
         Row: {
           assigned_chemicals: string[] | null
@@ -5917,6 +6106,54 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      zone_qr_codes: {
+        Row: {
+          code: string
+          created_at: string
+          direction: string
+          id: string
+          is_active: boolean
+          label: string | null
+          project_id: string
+          zone_id: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          direction?: string
+          id?: string
+          is_active?: boolean
+          label?: string | null
+          project_id: string
+          zone_id: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          direction?: string
+          id?: string
+          is_active?: boolean
+          label?: string | null
+          project_id?: string
+          zone_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "zone_qr_codes_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "zone_qr_codes_zone_id_fkey"
+            columns: ["zone_id"]
+            isOneToOne: false
+            referencedRelation: "site_zones"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

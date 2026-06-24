@@ -45,6 +45,10 @@ export default function WorkerDistribution() {
   const [activeMap, setActiveMap] = useState<SiteMap | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [events, setEvents] = useState<Evt[]>([]);
+  const [lastSource, setLastSource] = useState<"realtime" | "polling" | "init">("init");
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [rtStatus, setRtStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
+  const [nowTick, setNowTick] = useState(Date.now());
 
   useEffect(() => {
     supabase.from("projects").select("id,name").then(({ data }) => setProjects(data || []));

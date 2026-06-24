@@ -8,10 +8,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { QRCodeSVG } from "qrcode.react";
-import { HardHat, QrCode, Trash2, ExternalLink, Settings2, AlertTriangle } from "lucide-react";
+import { HardHat, QrCode, Trash2, ExternalLink, Settings2, AlertTriangle, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import WorkerAttendance from "./WorkerAttendance";
+import WorkerBulkImportDialog from "@/components/workers/WorkerBulkImportDialog";
 
 const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "worker"]);
 
@@ -27,6 +28,7 @@ export default function WorkerManagement() {
   const [companyLocked, setCompanyLocked] = useState(false);
   const [workers, setWorkers] = useState<any[]>([]);
   const [showQr, setShowQr] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
   const baseUrl = window.location.origin;
   const registerUrl = projectId
     ? `${baseUrl}/worker/register?project=${projectId}${companyId ? `&company=${companyId}` : ''}`
@@ -109,6 +111,7 @@ export default function WorkerManagement() {
             {projectId && (
               <>
                 <Button onClick={() => setShowQr(true)}><QrCode className="h-4 w-4 mr-2" />등록 QR 표시</Button>
+                <Button variant="secondary" onClick={() => setShowBulk(true)}><FileSpreadsheet className="h-4 w-4 mr-2" />엑셀 일괄등록</Button>
                 <Link to="/workers/legal-mapping"><Button variant="outline"><Settings2 className="h-4 w-4 mr-2" />법정 교육 매핑</Button></Link>
               </>
             )}
@@ -197,6 +200,14 @@ export default function WorkerManagement() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <WorkerBulkImportDialog
+        projectId={projectId}
+        defaultCompanyId={companyLocked ? companyId : undefined}
+        open={showBulk}
+        onClose={() => setShowBulk(false)}
+        onDone={load}
+      />
     </div>
   );
 }

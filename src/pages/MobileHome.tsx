@@ -177,33 +177,61 @@ export default function MobileHome() {
                 </CardContent>
               </Card>
             )}
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-muted-foreground">
+                바로가기 ({tiles.length}) · 역할: <strong>{role === "worker" ? "근로자" : role === "supervisor" ? "관리자" : "안전관리자"}</strong>
+              </div>
+              <Sheet open={editOpen} onOpenChange={setEditOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-8">
+                    <Settings2 className="h-3.5 w-3.5 mr-1" /> 메뉴 편집
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="bottom" className="h-[80vh] overflow-auto">
+                  <SheetHeader>
+                    <SheetTitle>홈 메뉴 사용자 설정</SheetTitle>
+                  </SheetHeader>
+                  <div className="text-xs text-muted-foreground mt-2 mb-3">자주 쓰는 메뉴만 켜두세요.</div>
+                  <div className="space-y-2">
+                    {ALL_TILES.map(t => {
+                      const checked = tiles.includes(t.key);
+                      return (
+                        <label key={t.key} className="flex items-center gap-3 p-3 rounded-lg border bg-card cursor-pointer">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(v) => {
+                              const next = v ? [...tiles, t.key] : tiles.filter(k => k !== t.key);
+                              setTiles(next);
+                              setMobileTiles(next);
+                            }}
+                          />
+                          <span className="font-medium">{t.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <Button variant="outline" className="w-full mt-4" onClick={() => { resetMobileTiles(); setTiles(getMobileTiles(role)); }}>
+                    <RotateCcw className="h-4 w-4 mr-2" /> 역할 기본값으로 초기화
+                  </Button>
+                </SheetContent>
+              </Sheet>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
-              <ActionTile icon={ClipboardCheck} label="안전점검" sub="현장 점검 등록"
-                onClick={() => navigate("/m/inspect")} highlight />
-              <ActionTile icon={AlertOctagon} label="사고 신고" sub="아차/경미/중대"
-                onClick={() => navigate("/m/incident")} />
-              <ActionTile icon={Users} label="TBM 진행" sub="QR 발급/참여"
-                onClick={() => navigate("/m/tbm")} />
-              <ActionTile icon={ScanLine} label="QR 스캔" sub="근로자 출입"
-                onClick={() => navigate("/m/scan")} />
-              <ActionTile icon={FileCheck2} label="허가서 결재" sub="대기 결재"
-                onClick={() => navigate("/m/permits")} />
-              <ActionTile icon={Wrench} label="조치 관리" sub="진행중/완료"
-                onClick={() => navigate("/m/actions")} />
-              <ActionTile icon={Bell} label="알림" sub={`미확인 ${unread}건`}
-                onClick={() => navigate("/m/alerts")} />
-              <ActionTile icon={FileCheck2} label="결재함" sub="위험성평가"
-                onClick={() => navigate("/m/approvals")} />
-              <ActionTile icon={ShieldAlert} label="위험성평가" sub="요약 보기"
-                onClick={() => navigate("/m/risk-assessment")} />
-              <ActionTile icon={ClipboardList} label="작업계획" sub="목록/상태"
-                onClick={() => navigate("/m/work-plans")} />
-              <ActionTile icon={QrCode} label="근로자 QR" sub="발급/조회"
-                onClick={() => navigate("/m/workers")} />
-              <ActionTile icon={HardHat} label="입퇴장 현황" sub="오늘 출입"
-                onClick={() => navigate("/worker-attendance")} />
-              <ActionTile icon={BookOpen} label="사용 설명서" sub="도움말"
-                onClick={() => navigate("/manual")} />
+              {tiles.map((key, idx) => {
+                const t = TILE_DEFS[key];
+                if (!t) return null;
+                return (
+                  <ActionTile
+                    key={key}
+                    icon={t.icon}
+                    label={t.label}
+                    sub={key === "alerts" ? `미확인 ${unread}건` : t.sub}
+                    onClick={() => navigate(t.to)}
+                    highlight={idx === 0}
+                  />
+                );
+              })}
             </div>
 
             <Button variant="outline" className="w-full h-12" onClick={enablePush}>

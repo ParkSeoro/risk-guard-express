@@ -253,12 +253,9 @@ const UserManagement = () => {
       const { error } = await supabase.from('project_members').insert([{
         project_id: assignProjectId,
         user_id: assignUserId,
-        // Write BOTH new and legacy columns for backward compatibility
-        role: projectRoleToLegacy(assignRole) as any,
         role_new: assignRole as any,
         company_id: assignCompanyId || null,
         company: companyName,
-        position: assignPosition || '',
         position_new: (assignPosition || null) as any,
       }]);
       if (error) {

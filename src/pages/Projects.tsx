@@ -11,7 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Calendar, Building2, Users, Tag, Plus, Pencil, Trash2, Shield } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar, Building2, Users, Tag, Plus, Pencil, Trash2, Shield, ChevronDown } from "lucide-react";
+
 import { useNavigate } from "react-router-dom";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -27,13 +30,14 @@ const Projects = () => {
   const [editProject, setEditProject] = useState<ProjectRow | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // All companies across projects for GC selection, and project-specific ones
-  const [allGcCompanies, setAllGcCompanies] = useState<{ id: string; name: string; project_id: string }[]>([]);
+  // All companies across projects for selection
+  const [allCompanies, setAllCompanies] = useState<{ id: string; name: string; project_id: string; type: string }[]>([]);
   const [companyNameMap, setCompanyNameMap] = useState<Record<string, string>>({});
 
   const [form, setForm] = useState({
     name: '', site_name: '', site_address: '', period_start: '', period_end: '',
-    client: '', gc_company_id: '', tags: '', status: '진행중'
+    client: '', gc_company_ids: [] as string[], sub_company_ids: [] as string[],
+    tags: '', status: '진행중'
   });
 
   const fetchProjects = async () => {
@@ -43,16 +47,18 @@ const Projects = () => {
   };
 
   const fetchCompanies = async () => {
-    const { data } = await supabase.from('companies').select('id, name, project_id, type').eq('type', 'gc').order('name');
-    setAllGcCompanies(data || []);
-    // Build name map for display
-    const { data: allCompanies } = await supabase.from('companies').select('id, name');
+    const { data } = await supabase.from('companies').select('id, name, project_id, type').eq('is_deleted', false).order('name');
+    setAllCompanies(data || []);
     const map: Record<string, string> = {};
-    (allCompanies || []).forEach(c => { map[c.id] = c.name; });
+    (data || []).forEach(c => { map[c.id] = c.name; });
     setCompanyNameMap(map);
   };
 
   useEffect(() => { fetchProjects(); fetchCompanies(); }, []);
+
+  const gcCompanies = allCompanies.filter(c => c.type === 'gc');
+  const subCompanies = allCompanies.filter(c => c.type === 'contractor' || c.type === 'subcontractor');
+
 
   const [createLoading, setCreateLoading] = useState(false);
 
@@ -91,10 +97,12 @@ const Projects = () => {
           }
         } catch { /* geocoding is best-effort */ }
       }
-      // Only include gc_company_id if a valid value is selected
-      if (form.gc_company_id && form.gc_company_id !== '') {
-        insertData.gc_company_id = form.gc_company_id;
-      }
+      // Multi-select arrays
+      insertData.gc_company_ids = form.gc_company_ids;
+      insertData.sub_company_ids = form.sub_company_ids;
+      // Keep legacy single column in sync with first selected GC for backward compat
+      if (form.gc_company_ids[0]) insertData.gc_company_id = form.gc_company_ids[0];
+
 
       const { data, error } = await supabase.from('projects').insert([insertData]).select().single();
       if (error) {
@@ -134,10 +142,13 @@ const Projects = () => {
       period_start: form.period_start || null,
       period_end: form.period_end || null,
       client: form.client,
-      gc_company_id: form.gc_company_id || null,
+      gc_company_id: form.gc_company_ids[0] || null,
+      gc_company_ids: form.gc_company_ids,
+      sub_company_ids: form.sub_company_ids,
       tags: form.tags.split(',').map(s => s.trim()).filter(Boolean),
       status: form.status,
     };
+
 
     // Geocode address if changed
     if (form.site_address.trim()) {
@@ -168,26 +179,85 @@ const Projects = () => {
     if (r.ok) fetchProjects();
   };
 
-  const resetForm = () => setForm({ name: '', site_name: '', site_address: '', period_start: '', period_end: '', client: '', gc_company_id: '', tags: '', status: '진행중' });
+  const resetForm = () => setForm({ name: '', site_name: '', site_address: '', period_start: '', period_end: '', client: '', gc_company_ids: [], sub_company_ids: [], tags: '', status: '진행중' });
 
   const openEdit = (p: ProjectRow) => {
     setEditProject(p);
+    const gcIds = ((p as any).gc_company_ids as string[] | null) || [];
+    const subIds = ((p as any).sub_company_ids as string[] | null) || [];
+    const legacyGc = (p as any).gc_company_id;
     setForm({
       name: p.name, site_name: p.site_name,
       site_address: (p as any).site_address || '',
       period_start: p.period_start || '',
       period_end: p.period_end || '', client: p.client || '',
-      gc_company_id: (p as any).gc_company_id || '',
+      gc_company_ids: gcIds.length ? gcIds : (legacyGc ? [legacyGc] : []),
+      sub_company_ids: subIds,
       tags: (p.tags || []).join(', '), status: p.status,
     });
   };
 
   const getGcName = (project: ProjectRow) => {
-    const gcId = (project as any).gc_company_id;
-    if (gcId && companyNameMap[gcId]) return companyNameMap[gcId];
-    if (project.contractor) return project.contractor; // legacy fallback
+    const ids = ((project as any).gc_company_ids as string[] | null) || [];
+    const legacy = (project as any).gc_company_id;
+    const all = ids.length ? ids : (legacy ? [legacy] : []);
+    const names = all.map(id => companyNameMap[id]).filter(Boolean);
+    if (names.length) return names.join(', ');
+    if (project.contractor) return project.contractor;
     return '—';
   };
+
+  const getSubNames = (project: ProjectRow) => {
+    const ids = ((project as any).sub_company_ids as string[] | null) || [];
+    return ids.map(id => companyNameMap[id]).filter(Boolean);
+  };
+
+  const toggleId = (key: 'gc_company_ids' | 'sub_company_ids', id: string) => {
+    setForm(p => ({
+      ...p,
+      [key]: p[key].includes(id) ? p[key].filter(x => x !== id) : [...p[key], id],
+    }));
+  };
+
+  const MultiCompanyPicker = ({ label, options, selected, onToggle, emptyHint }: {
+    label: string; options: { id: string; name: string }[]; selected: string[];
+    onToggle: (id: string) => void; emptyHint: string;
+  }) => (
+    <div className="space-y-1">
+      <Label>{label}</Label>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className="w-full justify-between text-xs font-normal h-9">
+            <span className="truncate">
+              {selected.length === 0 ? '미지정' : `${selected.length}개 선택됨`}
+            </span>
+            <ChevronDown className="h-3.5 w-3.5 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-64 p-2 max-h-72 overflow-y-auto" align="start">
+          {options.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground p-2">{emptyHint}</p>
+          ) : options.map(c => (
+            <label key={c.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-muted rounded cursor-pointer text-sm">
+              <Checkbox checked={selected.includes(c.id)} onCheckedChange={() => onToggle(c.id)} />
+              <span className="truncate">{c.name}</span>
+            </label>
+          ))}
+        </PopoverContent>
+      </Popover>
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1 pt-1">
+          {selected.map(id => (
+            <Badge key={id} variant="secondary" className="text-[10px] gap-1">
+              {companyNameMap[id] || id}
+              <button type="button" onClick={() => onToggle(id)} className="ml-0.5 hover:text-destructive">×</button>
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
 
   const projectFormFields = (onSubmit: () => void, submitLabel: string) => (
     <div className="space-y-3">
@@ -198,22 +268,24 @@ const Projects = () => {
         <div className="space-y-1"><Label>시작일</Label><Input type="date" value={form.period_start} onChange={e => setForm(p => ({ ...p, period_start: e.target.value }))} /></div>
         <div className="space-y-1"><Label>종료일</Label><Input type="date" value={form.period_end} onChange={e => setForm(p => ({ ...p, period_end: e.target.value }))} /></div>
         <div className="space-y-1"><Label>발주사</Label><Input value={form.client} onChange={e => setForm(p => ({ ...p, client: e.target.value }))} /></div>
-        <div className="space-y-1">
-          <Label>시공사 (등록 업체 선택)</Label>
-          <Select value={form.gc_company_id || '__none__'} onValueChange={v => setForm(p => ({ ...p, gc_company_id: v === '__none__' ? '' : v }))}>
-            <SelectTrigger className="text-xs"><SelectValue placeholder="시공사 선택" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none__">미지정</SelectItem>
-              {allGcCompanies.map(c => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {allGcCompanies.length === 0 && (
-            <p className="text-[10px] text-muted-foreground">등록된 시공사(GC)가 없습니다. 프로젝트 설정 &gt; 업체관리에서 먼저 등록하세요.</p>
-          )}
+        <MultiCompanyPicker
+          label="시공사 (다중 선택 가능)"
+          options={gcCompanies}
+          selected={form.gc_company_ids}
+          onToggle={(id) => toggleId('gc_company_ids', id)}
+          emptyHint="등록된 시공사가 없습니다."
+        />
+        <div className="col-span-2">
+          <MultiCompanyPicker
+            label="협력사 (다중 선택 가능)"
+            options={subCompanies}
+            selected={form.sub_company_ids}
+            onToggle={(id) => toggleId('sub_company_ids', id)}
+            emptyHint="등록된 협력사가 없습니다."
+          />
         </div>
       </div>
+
       <div className="space-y-1"><Label>공종 태그 (쉼표 구분)</Label><Input value={form.tags} onChange={e => setForm(p => ({ ...p, tags: e.target.value }))} placeholder="6000t Tank, Cooling Tower, 배관" /></div>
       <div className="space-y-1">
         <Label>상태</Label>
@@ -278,7 +350,13 @@ const Projects = () => {
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <Users className="h-3.5 w-3.5" /><span>시공사: {getGcName(project)}</span>
                       </div>
+                      {getSubNames(project).length > 0 && (
+                        <div className="flex items-center gap-2 text-muted-foreground col-span-2">
+                          <Users className="h-3.5 w-3.5" /><span>협력사: {getSubNames(project).join(', ')}</span>
+                        </div>
+                      )}
                     </div>
+
                     {(project.tags || []).length > 0 && (
                       <div className="flex items-center gap-1.5">
                         <Tag className="h-3 w-3 text-muted-foreground" />

@@ -65,15 +65,19 @@ export default function WorkerDailyQR() {
   const issueAll = async () => {
     setLoading(true);
     let ok = 0, fail = 0;
+    let lastErr = "";
     for (const w of filtered) {
       const { data, error } = await supabase.rpc("issue_daily_qr", { _worker_id: w.id });
-      if (error || (data as any)?.error) { fail++; continue; }
+      if (error) { fail++; lastErr = error.message; continue; }
+      if ((data as any)?.error) { fail++; lastErr = (data as any).error; continue; }
       ok++;
     }
     setLoading(false);
-    toast.success(`${ok}건 발급 완료${fail ? ` / ${fail}건 실패` : ''}`);
+    if (fail) toast.error(`${ok}건 발급, ${fail}건 실패: ${lastErr}`);
+    else toast.success(`${ok}건 발급 완료`);
     loadExistingQrs();
   };
+
 
   const printAll = () => window.print();
 

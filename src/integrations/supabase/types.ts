@@ -2892,6 +2892,7 @@ export type Database = {
           deleted_by: string | null
           deleted_reason: string | null
           gc_company_id: string | null
+          gc_company_ids: string[]
           id: string
           is_deleted: boolean
           name: string
@@ -2902,6 +2903,7 @@ export type Database = {
           site_lng: number | null
           site_name: string
           status: string
+          sub_company_ids: string[]
           subcontractors: string[] | null
           tags: string[] | null
           updated_at: string
@@ -2915,6 +2917,7 @@ export type Database = {
           deleted_by?: string | null
           deleted_reason?: string | null
           gc_company_id?: string | null
+          gc_company_ids?: string[]
           id?: string
           is_deleted?: boolean
           name: string
@@ -2925,6 +2928,7 @@ export type Database = {
           site_lng?: number | null
           site_name?: string
           status?: string
+          sub_company_ids?: string[]
           subcontractors?: string[] | null
           tags?: string[] | null
           updated_at?: string
@@ -2938,6 +2942,7 @@ export type Database = {
           deleted_by?: string | null
           deleted_reason?: string | null
           gc_company_id?: string | null
+          gc_company_ids?: string[]
           id?: string
           is_deleted?: boolean
           name?: string
@@ -2948,6 +2953,7 @@ export type Database = {
           site_lng?: number | null
           site_name?: string
           status?: string
+          sub_company_ids?: string[]
           subcontractors?: string[] | null
           tags?: string[] | null
           updated_at?: string

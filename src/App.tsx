@@ -81,6 +81,7 @@ import SiteMaps from "./pages/SiteMaps";
 import ZoneCheckin from "./pages/ZoneCheckin";
 import ZoneEvents from "./pages/ZoneEvents";
 import WorkerDistribution from "./pages/WorkerDistribution";
+import AdminTrackingHealth from "./pages/AdminTrackingHealth";
 import InstallPrompt from "./components/InstallPrompt";
 import MobileRedirectGuard from "./components/MobileRedirectGuard";
 import { useOfflineSync } from "./hooks/useOfflineSync";
@@ -196,6 +197,7 @@ function ProtectedRoutes() {
         <Route path="/site-maps" element={<SiteMaps />} />
         <Route path="/zone-events" element={<ZoneEvents />} />
         <Route path="/worker-distribution" element={<WorkerDistribution />} />
+        <Route path="/admin/tracking-health" element={<AdminTrackingHealth />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AppLayout>

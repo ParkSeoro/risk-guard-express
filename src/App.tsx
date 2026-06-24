@@ -179,6 +179,8 @@ function ProtectedRoutes() {
         <Route path="/tbm-logs" element={<TbmLogs />} />
         <Route path="/inspection-mode" element={<InspectionMode />} />
         <Route path="/safety-inspections" element={<SafetyInspections />} />
+        <Route path="/incidents" element={<Incidents />} />
+        <Route path="/emergency-drills" element={<EmergencyDrills />} />
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="/education-materials" element={<EducationMaterials />} />
         <Route path="/workers" element={<WorkerManagement />} />

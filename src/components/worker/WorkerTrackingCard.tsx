@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Play, Square, ShieldCheck } from "lucide-react";
+import { MapPin, Play, Square, ShieldCheck, History } from "lucide-react";
 import { toast } from "sonner";
 import {
   startTracking,
@@ -11,11 +12,30 @@ import {
   type TrackingIdentity,
 } from "@/lib/tracking/locationTracker";
 
+type MyLog = { id: string; zone_id: string | null; event_type: string; source: string | null; created_at: string };
+
 export default function WorkerTrackingCard({ identity }: { identity: TrackingIdentity }) {
   const [consented, setConsented] = useState<boolean>(hasTrackingConsent());
   const [running, setRunning] = useState(false);
   const [info, setInfo] = useState<{ acc: number; zone: string | null; source: string } | null>(null);
+  const [logs, setLogs] = useState<MyLog[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
   const stopRef = useRef<null | (() => void)>(null);
+
+  const loadLogs = async () => {
+    if (!identity.worker_phone) return;
+    const since = new Date(); since.setHours(0, 0, 0, 0);
+    const { data } = await supabase
+      .from("worker_zone_events")
+      .select("id, zone_id, event_type, source, created_at")
+      .eq("project_id", identity.project_id)
+      .eq("worker_phone", identity.worker_phone)
+      .gte("created_at", since.toISOString())
+      .order("created_at", { ascending: false })
+      .limit(50);
+    setLogs((data || []) as MyLog[]);
+  };
+  useEffect(() => { if (showLogs) loadLogs(); }, [showLogs]);
 
   useEffect(() => () => stopRef.current?.(), []);
 

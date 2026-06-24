@@ -311,6 +311,9 @@ export default function SiteMaps() {
                 <Button size="sm" variant="outline" onClick={() => saveAnchors(activeMap)}>
                   지도 좌표 설정
                 </Button>
+                <Button size="sm" variant="outline" onClick={reprojectAll} disabled={!zones.length}>
+                  전체 GPS 재계산
+                </Button>
                 {!drafting ? (
                   <Button size="sm" onClick={() => { setDrafting(true); setDraftPts([]); }}>
                     <Plus className="h-4 w-4 mr-1" /> 구역 그리기

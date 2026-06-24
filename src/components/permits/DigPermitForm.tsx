@@ -501,22 +501,25 @@ export default function DigPermitForm({
               <tr>
                 <th className="hd">작업 구분</th>
                 <td colSpan={3}>
-                  {['용접', '절단', '기타'].map(t => (
+                  {['용접', '절단', '그라인딩', '토치', '기타'].map(t => (
                     <label key={t} className="mr-3 inline-flex items-center">
                       <input type="radio" disabled={readOnly || printMode} checked={data.hw_type === t} onChange={() => update({ hw_type: t })} className="mr-1" />{t}
                     </label>
                   ))}
+                  {data.hw_type === '기타' && (
+                    <span className="ml-2">→ <Inp value={data.hw_type_other} onChangeText={(v: string) => update({ hw_type_other: v })} placeholder="기타 화기 종류" /></span>
+                  )}
                 </td>
               </tr>
               <tr><th className="hd">작업 개요</th><td colSpan={3}><Inp value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} /></td></tr>
               <tr>
                 <th className="hd">안전조치<br/>(해당항목)</th>
-                <td colSpan={3} className="text-[11px] leading-5">
-                  □ 가연물 이동(11m 이상) 및 보호조치 □ 소화기 등 소화기구 비치<br/>
-                  □ 불티비산 방지포 설치 □ 화기작업 안전교육 실시<br/>
-                  □ 화재감시자 지정(타 업무 수행 불가)<br/>
-                  □ 작업종료 후 최소 30분 이상 관찰 □ 가스농도 측정(필요 시)<br/>
-                  □ 작업구역 통풍 및 환기 □ 역화방지기 설치 □ 용접기·호스 점검
+                <td colSpan={3}>
+                  <SafetyChecklist
+                    items={['가연물 이동(11m 이상) 및 보호조치', '소화기 등 소화기구 비치', '불티비산 방지포 설치', '화기작업 안전교육 실시', '화재감시자 지정(타 업무 수행 불가)', '작업종료 후 최소 30분 이상 관찰', '가스농도 측정(필요 시)', '작업구역 통풍 및 환기', '역화방지기 설치', '용접기·호스 점검']}
+                    mapKey="hw_safety"
+                    noteKey="hw_safety_note"
+                  />
                 </td>
               </tr>
               <tr><td colSpan={4} className="text-center font-semibold bg-[#f0f0f0]">가스농도 측정결과</td></tr>

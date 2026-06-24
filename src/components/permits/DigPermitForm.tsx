@@ -265,12 +265,69 @@ export default function DigPermitForm({
                   ))}
                 </tr>
               ))}
+              {/* 기타 안전조치 */}
+              <tr>
+                <td colSpan={6} className="text-[11px]">
+                  <label className="inline-flex items-center mr-2">
+                    {readOnly || printMode
+                      ? <Box checked={!!data.chk_etc} />
+                      : <input type="checkbox" checked={!!data.chk_etc} onChange={(e) => update({ chk_etc: e.target.checked })} className="mr-1" />}
+                    기타
+                  </label>
+                  (<Inp value={data.chk_etc_note} onChangeText={(v: string) => update({ chk_etc_note: v })} />)
+                </td>
+              </tr>
+
+              {/* === 위험작업허가 확인사항 === */}
+              <tr><th className="hd" colSpan={6}>위험작업허가 확인사항(해당 작업에 ☑ 표시 후 세부 항목 확인)</th></tr>
+              {([
+                { key: 'hz_confined', label: '밀폐공간', note: 'hz_confined_note', detail: 'hz_confined_detail', items: ['통신수단', '구명장비(로프·송기마스크 등)', '2인1조 작업', '밀폐작업 특별안전교육', '관리감독자 배치', 'DIG 밀폐공간 작업점검표', '밀폐작업허가서 첨부'] },
+                { key: 'hz_hot', label: '화기', note: 'hz_hot_note', detail: 'hz_hot_detail', items: ['불티방지포 설치', 'DIG 화기작업 작업점검표', '화재감시자 배치', '소화기 비치', '작업 후 30분 잔류 감시'] },
+                { key: 'hz_loto', label: '정전(LOTO)', note: 'hz_loto_note', detail: 'hz_loto_detail', items: ['제어실: 스위치·차단기 내림', '제어실: 잠금장치 시건·표지', '현장: 스위치·차단기 내림', '현장: 잠금장치 시건·표지', '방전·접지 실시', '활선접근 경보장치 휴대'] },
+                { key: 'hz_excavation', label: '굴착', note: 'hz_excavation_note', detail: 'hz_excavation_detail', items: ['매설물 확인: 가스·기계·소방배관', '매설물 확인: 전기·통신', '굴착면 기울기 준수', '흙막이/지보공 설치', '주변 침하·균열 점검'] },
+                { key: 'hz_radiation', label: '방사선', note: 'hz_radiation_note', detail: 'hz_radiation_detail', items: ['비인가자 출입제한', '방사선 위험·경고 표지', '자격증 소지', '방사선 측정장비 휴대'] },
+                { key: 'hz_height', label: '고소', note: 'hz_height_note', detail: 'hz_height_detail', items: ['작업발판·안전난간', '안전대 착용·2중고리 부착', '추락방지망', '사다리 사용 적정', '개구부 덮개·표지'] },
+                { key: 'hz_heavy', label: '중장비', note: 'hz_heavy_note', detail: 'hz_heavy_detail', items: ['안전점검표', '유도자·신호수 배치', '작업반경 통제(Fence)', '기상·노면 상태', '전선·설비 간섭', '용걸이 용구 상태(와이어 등)'] },
+              ] as const).map((cat) => {
+                const detail = ((data as any)[cat.detail] || {}) as Record<string, boolean>;
+                const setDetail = (item: string, v: boolean) =>
+                  update({ [cat.detail]: { ...detail, [item]: v } } as any);
+                return (
+                  <tr key={cat.key}>
+                    <td className="w-[90px] align-top">
+                      <label className="inline-flex items-center font-semibold">
+                        {readOnly || printMode
+                          ? <Box checked={!!(data as any)[cat.key]} />
+                          : <input type="checkbox" checked={!!(data as any)[cat.key]} onChange={(e) => update({ [cat.key]: e.target.checked } as any)} className="mr-1" />}
+                        {cat.label}
+                      </label>
+                    </td>
+                    <td colSpan={5} className="text-[11px] leading-5">
+                      {cat.key === 'hz_heavy' && (
+                        <div className="mb-1">투입장비 : <Inp value={data.hz_heavy_equipment_name} onChangeText={(v: string) => update({ hz_heavy_equipment_name: v })} /></div>
+                      )}
+                      <div className="flex flex-wrap gap-x-3 gap-y-1">
+                        {cat.items.map((it) => (
+                          <label key={it} className="inline-flex items-center">
+                            {readOnly || printMode
+                              ? <Box checked={!!detail[it]} />
+                              : <input type="checkbox" disabled={!(data as any)[cat.key]} checked={!!detail[it]} onChange={(e) => setDetail(it, e.target.checked)} className="mr-1" />}
+                            {it}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="mt-1">비고 : <Inp value={(data as any)[cat.note]} onChangeText={(v: string) => update({ [cat.note]: v } as any)} /></div>
+                    </td>
+                  </tr>
+                );
+              })}
+
               {/* Gas readings */}
               <tr>
                 <td rowSpan={5} className="text-center font-semibold">
                   가스농도측정<br />
-                  <label className="inline-flex items-center mt-1"><input type="checkbox" disabled={readOnly || printMode} className="mr-1" />화기작업</label><br/>
-                  <label className="inline-flex items-center"><input type="checkbox" disabled={readOnly || printMode} className="mr-1" />밀폐공간</label>
+                  <label className="inline-flex items-center mt-1"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.gas_for_hot} onChange={(e) => update({ gas_for_hot: e.target.checked })} className="mr-1" />화기작업</label><br/>
+                  <label className="inline-flex items-center"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.gas_for_confined} onChange={(e) => update({ gas_for_confined: e.target.checked })} className="mr-1" />밀폐공간</label>
                 </td>
                 <th className="hd">측정물질</th>
                 <th className="hd">농도</th>

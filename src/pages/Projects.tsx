@@ -350,7 +350,13 @@ const Projects = () => {
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <Users className="h-3.5 w-3.5" /><span>시공사: {getGcName(project)}</span>
                       </div>
+                      {getSubNames(project).length > 0 && (
+                        <div className="flex items-center gap-2 text-muted-foreground col-span-2">
+                          <Users className="h-3.5 w-3.5" /><span>협력사: {getSubNames(project).join(', ')}</span>
+                        </div>
+                      )}
                     </div>
+
                     {(project.tags || []).length > 0 && (
                       <div className="flex items-center gap-1.5">
                         <Tag className="h-3 w-3 text-muted-foreground" />

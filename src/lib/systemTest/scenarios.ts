@@ -623,6 +623,50 @@ export async function runIntegrityScenario(ctx: TestContext): Promise<StepResult
 }
 
 // ================================================================
+// 7b. Cross-table integrity — calls server-side check_data_integrity()
+// Catches "screens are connected to nothing" silo bugs that single-table
+// scenarios miss (high-risk → todo, MSDS carcinogen → special checkup, etc.)
+// ================================================================
+export async function runCrossTableScenario(ctx: TestContext): Promise<StepResult[]> {
+  const out: StepResult[] = [];
+
+  out.push(
+    await runStep("xtbl", "check_data_integrity_rpc", async () => {
+      const { data, error } = await supabase.rpc("check_data_integrity" as any, {
+        _project_id: ctx.projectId ?? null,
+      });
+      if (error) return { pass: false, error_location: error.message };
+      const findings = ((data as any)?.findings ?? []) as Array<{
+        code: string; severity: string; count: number; message: string;
+      }>;
+      const high = findings.filter(f => f.severity === "high");
+      return {
+        pass: high.length === 0,
+        error_location: high.length > 0
+          ? `${high.length} high-severity integrity issue(s): ${high.map(f => f.code).join(", ")}`
+          : undefined,
+        details: { total: findings.length, findings },
+      };
+    })
+  );
+
+  out.push(
+    await runStep("xtbl", "attendance_ssot_view_queryable", async () => {
+      const { data, error } = await supabase
+        .from("v_worker_attendance_today" as any)
+        .select("worker_id, attended, attendance_source")
+        .limit(5);
+      if (error) return { pass: false, error_location: error.message };
+      return { pass: true, details: { sample_rows: (data as any[])?.length ?? 0 } };
+    })
+  );
+
+  return out;
+}
+
+
+
+// ================================================================
 // 8. Schema sanity — critical tables/columns exist & are queryable
 // ================================================================
 export async function runSchemaScenario(ctx: TestContext): Promise<StepResult[]> {

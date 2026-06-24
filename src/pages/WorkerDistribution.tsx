@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Users, MapPin, ShieldAlert, Activity } from "lucide-react";
+import { Users, MapPin, ShieldAlert, Activity, Radio, RefreshCw } from "lucide-react";
 
 type SiteMap = { id: string; name: string; image_url: string | null };
 type Zone = {

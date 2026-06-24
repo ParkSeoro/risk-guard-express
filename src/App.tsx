@@ -255,6 +255,7 @@ const App = () => (
             <Route path="/m/incident" element={<MobileIncident />} />
             <Route path="/m/scan" element={<MobileScan />} />
             <Route path="/m/daily-health-log" element={<MobileDailyHealthLog />} />
+            <Route path="/m/work-stop" element={<MobileWorkStop />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
           <MobileRedirectGuard />

@@ -6242,6 +6242,7 @@ export type Database = {
         Args: { _action: string; _approval_id: string; _comment?: string }
         Returns: Json
       }
+      anonymize_old_location_data: { Args: never; Returns: number }
       apply_env_exceedance_to_risk: {
         Args: { _measurement_id: string }
         Returns: number

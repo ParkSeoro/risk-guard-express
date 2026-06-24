@@ -157,6 +157,18 @@ export default function DigPermitForm({
       <Button size="sm" variant="outline" className="h-6 text-[10px] px-2" onClick={() => setSignTarget(k)}>
         {label || '서명'}
       </Button>
+    );
+  };
+
+  const Inp = ({ value, onChangeText, placeholder, className = '' }: any) => (
+    readOnly || printMode
+      ? <span className="text-xs px-1">{value || ''}</span>
+      : <input
+          className={`w-full text-xs bg-transparent outline-none px-1 ${className}`}
+          value={value || ''}
+          onChange={(e) => onChangeText(e.target.value)}
+          placeholder={placeholder}
+        />
   );
 
   // 체크박스 + 노트 묶음 (밀폐/화기/굴착 안전조치 공통)
@@ -181,18 +193,6 @@ export default function DigPermitForm({
       </div>
     );
   };
-  };
-
-  const Inp = ({ value, onChangeText, placeholder, className = '' }: any) => (
-    readOnly || printMode
-      ? <span className="text-xs px-1">{value || ''}</span>
-      : <input
-          className={`w-full text-xs bg-transparent outline-none px-1 ${className}`}
-          value={value || ''}
-          onChange={(e) => onChangeText(e.target.value)}
-          placeholder={placeholder}
-        />
-  );
 
   return (
     <div className={`dig-permit-form ${printMode ? 'print-mode' : ''} bg-white text-foreground text-xs`} style={{ fontFamily: '"Malgun Gothic","Apple SD Gothic Neo",sans-serif' }}>

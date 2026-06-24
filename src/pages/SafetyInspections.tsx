@@ -15,6 +15,7 @@ import { ClipboardCheck, Plus, Camera, Printer, AlertTriangle, CheckCircle2, XCi
 import { buildChecklist, INSPECTION_TYPE_LABELS, PROCESS_CATEGORIES, type InspectionType } from '@/lib/inspectionTemplates';
 import IMESafeInput from '@/components/IMESafeInput';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
+import MultiCompanyFilter from '@/components/MultiCompanyFilter';
 
 type Inspection = {
   id: string;
@@ -67,6 +68,7 @@ export default function SafetyInspections() {
   const [detailItems, setDetailItems] = useState<InspItem[]>([]);
   const [detailActions, setDetailActions] = useState<InspAction[]>([]);
   const [loading, setLoading] = useState(false);
+  const [companyFilter, setCompanyFilter] = useState<string[]>([]);
 
   // create form
   const [form, setForm] = useState({
@@ -361,20 +363,29 @@ export default function SafetyInspections() {
         </TabsList>
 
         <TabsContent value="list">
+          <div className="mb-2">
+            <MultiCompanyFilter projectId={projectId} value={companyFilter} onChange={setCompanyFilter} />
+          </div>
           <div className="grid gap-2">
-            {inspections.length === 0 ? (
-              <Card><CardContent className="p-6 text-center text-sm text-muted-foreground">아직 점검 기록이 없습니다.</CardContent></Card>
-            ) : inspections.map(i => (
-              <Card key={i.id} className="cursor-pointer hover:bg-accent/30" onClick={() => openDetail(i)}>
-                <CardContent className="p-3 flex items-center justify-between text-sm">
-                  <div className="flex-1">
-                    <div className="font-semibold">{INSPECTION_TYPE_LABELS[i.inspection_type]} · {i.process_category}</div>
-                    <div className="text-xs text-muted-foreground">{i.location} · {i.inspector_name} · {new Date(i.inspected_at).toLocaleString('ko-KR')}</div>
-                  </div>
-                  <Badge variant={i.status === 'completed' ? 'default' : 'secondary'}>{i.status === 'completed' ? '완료' : '진행중'}</Badge>
-                </CardContent>
-              </Card>
-            ))}
+            {(() => {
+              const filtered = companyFilter.length === 0
+                ? inspections
+                : inspections.filter((i: any) => i.company_id && companyFilter.includes(i.company_id));
+              if (filtered.length === 0) {
+                return <Card><CardContent className="p-6 text-center text-sm text-muted-foreground">조건에 맞는 점검 기록이 없습니다.</CardContent></Card>;
+              }
+              return filtered.map(i => (
+                <Card key={i.id} className="cursor-pointer hover:bg-accent/30" onClick={() => openDetail(i)}>
+                  <CardContent className="p-3 flex items-center justify-between text-sm">
+                    <div className="flex-1">
+                      <div className="font-semibold">{INSPECTION_TYPE_LABELS[i.inspection_type]} · {i.process_category}</div>
+                      <div className="text-xs text-muted-foreground">{i.location} · {i.inspector_name} · {new Date(i.inspected_at).toLocaleString('ko-KR')}</div>
+                    </div>
+                    <Badge variant={i.status === 'completed' ? 'default' : 'secondary'}>{i.status === 'completed' ? '완료' : '진행중'}</Badge>
+                  </CardContent>
+                </Card>
+              ));
+            })()}
           </div>
         </TabsContent>
 

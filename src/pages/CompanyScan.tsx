@@ -146,13 +146,13 @@ export default function CompanyScan() {
 
           <div>
             <Label className="text-xs">이름</Label>
-            <IMESafeInput value={name} onChange={(e) => setName(e.target.value)} placeholder="홍길동" />
+            <IMESafeInput defaultValue={name} onCommit={setName} placeholder="홍길동" />
           </div>
           <div>
             <Label className="text-xs">연락처(휴대폰)</Label>
             <IMESafeInput
-              value={phone}
-              onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ""))}
+              defaultValue={phone}
+              onCommit={(v) => setPhone(v.replace(/[^0-9]/g, ""))}
               placeholder="01012345678"
               inputMode="numeric"
             />

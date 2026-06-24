@@ -51,6 +51,7 @@ import LegalEducationMapping from "./pages/LegalEducationMapping";
 import WorkerRegister from "./pages/WorkerRegister";
 import WorkerPortal from "./pages/WorkerPortal";
 import WorkerEntry from "./pages/WorkerEntry";
+import CompanyScan from "./pages/CompanyScan";
 import Manual from "./pages/Manual";
 import AITestEngine from "./pages/AITestEngine";
 import AILogs from "./pages/AILogs";

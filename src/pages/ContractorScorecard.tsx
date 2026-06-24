@@ -40,7 +40,7 @@ export default function ContractorScorecard() {
         .select("*")
         .eq("project_id", projectId);
       if (error) toast.error(error.message);
-      setRows((data as Row[]) || []);
+      setRows(((data as unknown) as Row[]) || []);
       setLoading(false);
     })();
   }, [projectId]);

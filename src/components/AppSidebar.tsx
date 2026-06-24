@@ -55,6 +55,13 @@ const groups: Group[] = [
     ],
   },
   {
+    label: "사고·비상", key: "incident",
+    items: [
+      { title: "사고 관리", url: "/incidents", icon: AlertOctagon },
+      { title: "비상대피훈련", url: "/emergency-drills", icon: Siren },
+    ],
+  },
+  {
     label: "근로자 관리", key: "workers",
     items: [
       { title: "근로자 명부", url: "/workers", icon: HardHat },

@@ -6612,6 +6612,14 @@ export type Database = {
       }
       check_data_integrity: { Args: { _project_id?: string }; Returns: Json }
       confirm_worker_education: { Args: { _token: string }; Returns: Json }
+      delegate_approval: {
+        Args: {
+          _approval_id: string
+          _new_approver_id: string
+          _reason: string
+        }
+        Returns: Json
+      }
       ensure_master_allowlist: {
         Args: { _user_id: string }
         Returns: undefined

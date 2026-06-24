@@ -20,8 +20,9 @@ export default function MobileWorkStop() {
     const pid = localStorage.getItem("selectedProjectId");
     setProjectId(pid);
     if (user) {
-      supabase.from("profiles").select("name").eq("id", user.id).maybeSingle().then(({ data }) => {
-        if (data?.name) setForm(f => ({ ...f, reporter_name: data.name as string }));
+      supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle().then(({ data }) => {
+        const n = (data as any)?.full_name;
+        if (n) setForm(f => ({ ...f, reporter_name: n }));
       });
     }
   }, [user]);

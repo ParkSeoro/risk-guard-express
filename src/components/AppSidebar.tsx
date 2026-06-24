@@ -50,6 +50,14 @@ const groups: Group[] = [
       { title: "안전점검", url: "/safety-inspections", icon: ClipboardCheck },
       { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
       { title: "교육자료", url: "/education-materials", icon: FileText },
+    ],
+  },
+  {
+    label: "근로자 관리", key: "workers",
+    items: [
+      { title: "근로자 명부", url: "/workers", icon: HardHat },
+      { title: "입퇴장 현황", url: "/workers?tab=attendance", icon: ClipboardList },
+      { title: "일일 QR 발급/인쇄", url: "/workers?tab=daily-qr", icon: QrCode },
       { title: "현장 사이트맵/구역", url: "/site-maps", icon: Map },
       { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
       { title: "근로자 분포 대시보드", url: "/worker-distribution", icon: Users },
@@ -57,9 +65,8 @@ const groups: Group[] = [
     ],
   },
   {
-    label: "인력·비용·법적", key: "ops_mgmt",
+    label: "비용·법적", key: "ops_mgmt",
     items: [
-      { title: "근로자 관리", url: "/workers", icon: HardHat },
       { title: "산업안전보건관리비", url: "/safety-cost", icon: ReceiptText },
       { title: "법적업무", url: "/legal-duties", icon: Scale },
     ],

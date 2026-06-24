@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import SignatureCanvas from "react-signature-canvas";
+import ResponsiveSignaturePad, { ResponsiveSignaturePadHandle } from "@/components/ResponsiveSignaturePad";
 import { QRCodeCanvas } from "qrcode.react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,8 +39,8 @@ export default function WorkerPortal() {
   const [runs, setRuns] = useState<any[]>([]);
   const [workDate, setWorkDate] = useState<string>("");
   const [daily, setDaily] = useState<DailyQR | null>(null);
-  const sigEntry = useRef<SignatureCanvas>(null);
-  const sigExit = useRef<SignatureCanvas>(null);
+  const sigEntry = useRef<ResponsiveSignaturePadHandle | null>(null);
+  const sigExit = useRef<ResponsiveSignaturePadHandle | null>(null);
   const [raCheck, setRaCheck] = useState(false);
   const [eduCheck, setEduCheck] = useState(false);
   const [tbmCheck, setTbmCheck] = useState(false);
@@ -117,7 +117,7 @@ export default function WorkerPortal() {
     }
     if (action === "exit" && !noAccident) { toast.error("무재해 확인이 필요합니다"); return; }
 
-    const sig = sigRef.current!.getCanvas().toDataURL("image/png");
+    const sig = sigRef.current!.toDataURL("image/png");
     setSubmitting(true);
     let { data, error } = await doScan(action, sig, false);
     let r = data as any;
@@ -329,7 +329,7 @@ export default function WorkerPortal() {
                 <div>
                   <Label className="text-base">서명</Label>
                   <div className="border-2 rounded bg-white">
-                    <SignatureCanvas ref={sigEntry} canvasProps={{ className: "w-full h-40" }} />
+                    <ResponsiveSignaturePad ref={sigEntry} height={160} />
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => sigEntry.current?.clear()}>지우기</Button>
                 </div>
@@ -350,7 +350,7 @@ export default function WorkerPortal() {
                 <div>
                   <Label className="text-base">서명</Label>
                   <div className="border-2 rounded bg-white">
-                    <SignatureCanvas ref={sigExit} canvasProps={{ className: "w-full h-40" }} />
+                    <ResponsiveSignaturePad ref={sigExit} height={160} />
                   </div>
                   <Button variant="ghost" size="sm" onClick={() => sigExit.current?.clear()}>지우기</Button>
                 </div>

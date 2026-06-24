@@ -11,7 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Calendar, Building2, Users, Tag, Plus, Pencil, Trash2, Shield } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar, Building2, Users, Tag, Plus, Pencil, Trash2, Shield, ChevronDown } from "lucide-react";
+
 import { useNavigate } from "react-router-dom";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -27,13 +30,14 @@ const Projects = () => {
   const [editProject, setEditProject] = useState<ProjectRow | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // All companies across projects for GC selection, and project-specific ones
-  const [allGcCompanies, setAllGcCompanies] = useState<{ id: string; name: string; project_id: string }[]>([]);
+  // All companies across projects for selection
+  const [allCompanies, setAllCompanies] = useState<{ id: string; name: string; project_id: string; type: string }[]>([]);
   const [companyNameMap, setCompanyNameMap] = useState<Record<string, string>>({});
 
   const [form, setForm] = useState({
     name: '', site_name: '', site_address: '', period_start: '', period_end: '',
-    client: '', gc_company_id: '', tags: '', status: '진행중'
+    client: '', gc_company_ids: [] as string[], sub_company_ids: [] as string[],
+    tags: '', status: '진행중'
   });
 
   const fetchProjects = async () => {
@@ -43,16 +47,18 @@ const Projects = () => {
   };
 
   const fetchCompanies = async () => {
-    const { data } = await supabase.from('companies').select('id, name, project_id, type').eq('type', 'gc').order('name');
-    setAllGcCompanies(data || []);
-    // Build name map for display
-    const { data: allCompanies } = await supabase.from('companies').select('id, name');
+    const { data } = await supabase.from('companies').select('id, name, project_id, type').eq('is_deleted', false).order('name');
+    setAllCompanies(data || []);
     const map: Record<string, string> = {};
-    (allCompanies || []).forEach(c => { map[c.id] = c.name; });
+    (data || []).forEach(c => { map[c.id] = c.name; });
     setCompanyNameMap(map);
   };
 
   useEffect(() => { fetchProjects(); fetchCompanies(); }, []);
+
+  const gcCompanies = allCompanies.filter(c => c.type === 'gc');
+  const subCompanies = allCompanies.filter(c => c.type === 'contractor' || c.type === 'subcontractor');
+
 
   const [createLoading, setCreateLoading] = useState(false);
 

@@ -142,6 +142,19 @@ export default function SiteMaps() {
   const finishDraft = async () => {
     if (!activeMap || draftPts.length < 3) { toast.error("3개 이상의 점이 필요합니다"); return; }
     if (!draftName.trim()) { toast.error("구역 이름을 입력하세요"); return; }
+    // If the map has geo anchors, project the normalized polygon to lat/lng so
+    // GPS geofencing can use it on the server.
+    let geo_polygon: { lat: number; lng: number }[] | null = null;
+    if (
+      activeMap.geo_anchor_nw_lat != null && activeMap.geo_anchor_nw_lng != null &&
+      activeMap.geo_anchor_se_lat != null && activeMap.geo_anchor_se_lng != null
+    ) {
+      const { projectPolygonToGeo } = await import("@/lib/tracking/geofence");
+      geo_polygon = projectPolygonToGeo(draftPts, {
+        nw_lat: activeMap.geo_anchor_nw_lat, nw_lng: activeMap.geo_anchor_nw_lng,
+        se_lat: activeMap.geo_anchor_se_lat, se_lng: activeMap.geo_anchor_se_lng,
+      });
+    }
     const { error } = await supabase.from("site_zones").insert({
       site_map_id: activeMap.id,
       project_id: activeMap.project_id,
@@ -149,14 +162,33 @@ export default function SiteMaps() {
       zone_type: draftType,
       color: ZONE_COLOR[draftType],
       polygon: draftPts as any,
+      geo_polygon: geo_polygon as any,
     });
     if (error) { toast.error(error.message); return; }
-    toast.success("구역 추가 완료");
+    toast.success(geo_polygon ? "구역 추가 완료 (GPS 지오펜스 활성)" : "구역 추가 완료 — 지도 좌표가 미설정이라 GPS 추적은 비활성");
     setDrafting(false);
     setDraftPts([]);
     setDraftName("");
     loadZones();
   };
+
+  const saveAnchors = async (m: SiteMap) => {
+    const nw_lat = Number(prompt("북서(좌상단) 위도 (예: 37.5665)", String(m.geo_anchor_nw_lat ?? ""))?.trim());
+    const nw_lng = Number(prompt("북서(좌상단) 경도 (예: 126.9780)", String(m.geo_anchor_nw_lng ?? ""))?.trim());
+    const se_lat = Number(prompt("남동(우하단) 위도", String(m.geo_anchor_se_lat ?? ""))?.trim());
+    const se_lng = Number(prompt("남동(우하단) 경도", String(m.geo_anchor_se_lng ?? ""))?.trim());
+    if ([nw_lat, nw_lng, se_lat, se_lng].some((n) => !Number.isFinite(n))) {
+      toast.error("위경도 4개를 모두 입력해야 합니다"); return;
+    }
+    const { error } = await supabase.from("site_maps").update({
+      geo_anchor_nw_lat: nw_lat, geo_anchor_nw_lng: nw_lng,
+      geo_anchor_se_lat: se_lat, geo_anchor_se_lng: se_lng,
+    }).eq("id", m.id);
+    if (error) { toast.error(error.message); return; }
+    toast.success("지도 좌표 저장됨. 이후 그리는 구역부터 GPS 지오펜스가 적용됩니다.");
+    loadMaps();
+  };
+
 
   const deleteZone = async (z: Zone) => {
     if (!confirm(`'${z.name}' 구역을 삭제할까요?`)) return;

@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import WorkerAttendance from "./WorkerAttendance";
 import WorkerDailyQR from "./WorkerDailyQR";
+import CompanyDailyQR from "./CompanyDailyQR";
 import WorkerBulkImportDialog from "@/components/workers/WorkerBulkImportDialog";
 
 const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "worker"]);
@@ -20,7 +21,10 @@ const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "worker"]);
 export default function WorkerManagement() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const initialTab = tabParam === "attendance" ? "attendance" : tabParam === "daily-qr" ? "daily-qr" : "register";
+  const initialTab = tabParam === "attendance" ? "attendance"
+    : tabParam === "daily-qr" ? "daily-qr"
+    : tabParam === "company-qr" ? "company-qr"
+    : "register";
   const [tab, setTab] = useState<string>(initialTab);
 
   const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
@@ -102,7 +106,8 @@ export default function WorkerManagement() {
         <TabsList>
           <TabsTrigger value="register">등록 정보</TabsTrigger>
           <TabsTrigger value="attendance">입퇴장 현황</TabsTrigger>
-          <TabsTrigger value="daily-qr">일일 QR 발급/인쇄</TabsTrigger>
+          <TabsTrigger value="daily-qr">근로자별 일일 QR</TabsTrigger>
+          <TabsTrigger value="company-qr">시공사 게시판 QR</TabsTrigger>
         </TabsList>
 
         <TabsContent value="register" className="space-y-4 mt-4">
@@ -176,6 +181,10 @@ export default function WorkerManagement() {
 
         <TabsContent value="daily-qr" className="mt-4">
           <WorkerDailyQR />
+        </TabsContent>
+
+        <TabsContent value="company-qr" className="mt-4">
+          <CompanyDailyQR />
         </TabsContent>
       </Tabs>
 

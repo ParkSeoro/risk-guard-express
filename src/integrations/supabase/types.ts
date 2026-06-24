@@ -1425,6 +1425,68 @@ export type Database = {
           },
         ]
       }
+      company_daily_qr: {
+        Row: {
+          company_id: string
+          created_at: string
+          expires_at: string
+          id: string
+          issued_by: string | null
+          project_id: string
+          qr_token: string
+          work_date: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          issued_by?: string | null
+          project_id: string
+          qr_token: string
+          work_date: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          issued_by?: string | null
+          project_id?: string
+          qr_token?: string
+          work_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_daily_qr_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_daily_qr_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "company_daily_qr_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_daily_qr_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+        ]
+      }
       company_members: {
         Row: {
           company_id: string
@@ -7196,6 +7258,7 @@ export type Database = {
       }
       worker_entry_logs: {
         Row: {
+          company_daily_qr_id: string | null
           created_at: string
           daily_qr_id: string | null
           education_confirmed: boolean
@@ -7215,6 +7278,7 @@ export type Database = {
           worker_id: string
         }
         Insert: {
+          company_daily_qr_id?: string | null
           created_at?: string
           daily_qr_id?: string | null
           education_confirmed?: boolean
@@ -7234,6 +7298,7 @@ export type Database = {
           worker_id: string
         }
         Update: {
+          company_daily_qr_id?: string | null
           created_at?: string
           daily_qr_id?: string | null
           education_confirmed?: boolean
@@ -7253,6 +7318,13 @@ export type Database = {
           worker_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "worker_entry_logs_company_daily_qr_id_fkey"
+            columns: ["company_daily_qr_id"]
+            isOneToOne: false
+            referencedRelation: "company_daily_qr"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "worker_entry_logs_daily_qr_id_fkey"
             columns: ["daily_qr_id"]
@@ -7787,6 +7859,20 @@ export type Database = {
           severity: string
         }[]
       }
+      company_qr_check_in: {
+        Args: {
+          _action: string
+          _edu_confirmed?: boolean
+          _name: string
+          _no_accident?: boolean
+          _phone: string
+          _ra_confirmed?: boolean
+          _signature: string
+          _tbm_confirmed?: boolean
+          _token: string
+        }
+        Returns: Json
+      }
       confirm_worker_education: { Args: { _token: string }; Returns: Json }
       delegate_approval: {
         Args: {
@@ -7813,6 +7899,7 @@ export type Database = {
         Args: { _worker_id: string }
         Returns: number
       }
+      get_company_qr_by_token: { Args: { _token: string }; Returns: Json }
       get_daily_qr_status: { Args: { _token: string }; Returns: Json }
       get_hazard_survey_public: { Args: { _qr_token: string }; Returns: Json }
       get_my_pending_entity_approvals: {
@@ -7879,6 +7966,10 @@ export type Database = {
       is_project_member: {
         Args: { _project_id: string; _user_id: string }
         Returns: boolean
+      }
+      issue_company_daily_qr: {
+        Args: { _company_id: string; _work_date?: string }
+        Returns: Json
       }
       issue_daily_qr: { Args: { _worker_id: string }; Returns: Json }
       list_joinable_projects: {

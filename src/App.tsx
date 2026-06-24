@@ -51,6 +51,7 @@ import LegalEducationMapping from "./pages/LegalEducationMapping";
 import WorkerRegister from "./pages/WorkerRegister";
 import WorkerPortal from "./pages/WorkerPortal";
 import WorkerEntry from "./pages/WorkerEntry";
+import CompanyScan from "./pages/CompanyScan";
 import Manual from "./pages/Manual";
 import AITestEngine from "./pages/AITestEngine";
 import AILogs from "./pages/AILogs";
@@ -245,6 +246,7 @@ const App = () => (
             <Route path="/worker/portal/:token" element={<WorkerPortal />} />
             <Route path="/health/survey/:token" element={<HazardSurveyResponse />} />
             <Route path="/z/:code" element={<ZoneCheckin />} />
+            <Route path="/c/:token" element={<CompanyScan />} />
             <Route path="/manual" element={<Manual />} />
             <Route path="/m" element={<MobileHome />} />
             <Route path="/m/inspect" element={<MobileInspect />} />

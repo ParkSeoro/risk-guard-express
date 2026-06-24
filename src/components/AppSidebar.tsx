@@ -77,7 +77,8 @@ const groups: Group[] = [
     items: [
       { title: "근로자 명부", url: "/workers", icon: HardHat },
       { title: "입퇴장 현황", url: "/workers?tab=attendance", icon: ClipboardList },
-      { title: "일일 QR 발급/인쇄", url: "/workers?tab=daily-qr", icon: QrCode },
+      { title: "근로자별 일일 QR", url: "/workers?tab=daily-qr", icon: QrCode },
+      { title: "시공사 게시판 QR", url: "/workers?tab=company-qr", icon: QrCode },
       { title: "현장 사이트맵/구역", url: "/site-maps", icon: Map },
       { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
       { title: "근로자 분포 대시보드", url: "/worker-distribution", icon: Users },

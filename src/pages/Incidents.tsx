@@ -44,7 +44,7 @@ function deadlineLabel(iso: string | null): { text: string; tone: "ok" | "warn" 
 }
 
 export default function Incidents() {
-  const { projectId } = useProjectAccess();
+  const { selectedProject: projectId } = useProjectAccess();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -179,7 +179,7 @@ export default function Incidents() {
         <DialogContent>
           <DialogHeader><DialogTitle>사고 보고</DialogTitle></DialogHeader>
           <div className="space-y-3">
-            <div><Label>신고자</Label><IMESafeInput value={form.reporter_name} onChange={e => setForm({ ...form, reporter_name: e.target.value })} /></div>
+            <div><Label>신고자</Label><Input value={form.reporter_name} onChange={e => setForm({ ...form, reporter_name: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>유형</Label>
                 <Select value={form.incident_type} onValueChange={v => setForm({ ...form, incident_type: v })}>
@@ -202,8 +202,8 @@ export default function Incidents() {
               <input type="datetime-local" className="w-full border rounded px-3 py-2 bg-background"
                 value={form.occurred_at} onChange={e => setForm({ ...form, occurred_at: e.target.value })} />
             </div>
-            <div><Label>위치</Label><IMESafeInput value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} /></div>
-            <div><Label>내용</Label><IMESafeTextarea rows={4} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
+            <div><Label>위치</Label><Input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} /></div>
+            <div><Label>내용</Label><Textarea rows={4} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
             {(form.incident_type === "major" || form.severity === "high") &&
               <div className="text-xs text-destructive border border-destructive/30 bg-destructive/5 rounded p-2">
                 ⚠ 중대재해로 분류됩니다. 발생 시점부터 24시간 이내 관할 노동청 보고 의무가 자동 생성됩니다 (산안법 §57).
@@ -230,7 +230,7 @@ function ReportForm({ onSubmit }: { onSubmit: (no: string) => void }) {
   const [no, setNo] = useState("");
   return (
     <div className="space-y-3">
-      <div><Label>보고서 접수번호</Label><IMESafeInput value={no} onChange={e => setNo(e.target.value)} placeholder="예: 노동청 2026-0001" /></div>
+      <div><Label>보고서 접수번호</Label><Input value={no} onChange={e => setNo(e.target.value)} placeholder="예: 노동청 2026-0001" /></div>
       <DialogFooter><Button onClick={() => no.trim() && onSubmit(no.trim())}>보고 완료 기록</Button></DialogFooter>
     </div>
   );

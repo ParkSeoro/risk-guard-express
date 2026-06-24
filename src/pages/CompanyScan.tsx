@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import ResponsiveSignaturePad, { ResponsiveSignaturePadHandle } from "@/components/ResponsiveSignaturePad";
-import { IMESafeInput } from "@/components/IMESafeInput";
+import IMESafeInput from "@/components/IMESafeInput";
 import { Building2, LogIn, LogOut, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 

@@ -75,6 +75,8 @@ import MobileWorkPlans from "./pages/MobileWorkPlans";
 import MobileTbm from "./pages/MobileTbm";
 import MobilePermits from "./pages/MobilePermits";
 import MobileIncident from "./pages/MobileIncident";
+import Incidents from "./pages/Incidents";
+import EmergencyDrills from "./pages/EmergencyDrills";
 import MobileScan from "./pages/MobileScan";
 import MobileDailyHealthLog from "./pages/MobileDailyHealthLog";
 import SiteMaps from "./pages/SiteMaps";
@@ -177,6 +179,8 @@ function ProtectedRoutes() {
         <Route path="/tbm-logs" element={<TbmLogs />} />
         <Route path="/inspection-mode" element={<InspectionMode />} />
         <Route path="/safety-inspections" element={<SafetyInspections />} />
+        <Route path="/incidents" element={<Incidents />} />
+        <Route path="/emergency-drills" element={<EmergencyDrills />} />
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="/education-materials" element={<EducationMaterials />} />
         <Route path="/workers" element={<WorkerManagement />} />

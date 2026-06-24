@@ -4,7 +4,7 @@ import {
   Shield, SearchCheck, Settings,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
   ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, GitCompare, Trash2,
-  Stethoscope, GraduationCap, HeartPulse, Map, Users
+  Stethoscope, GraduationCap, HeartPulse, Map, Users, AlertOctagon, Siren
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
@@ -52,6 +52,13 @@ const groups: Group[] = [
       { title: "안전점검", url: "/safety-inspections", icon: ClipboardCheck },
       { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
       { title: "교육자료", url: "/education-materials", icon: FileText },
+    ],
+  },
+  {
+    label: "사고·비상", key: "incident",
+    items: [
+      { title: "사고 관리", url: "/incidents", icon: AlertOctagon },
+      { title: "비상대피훈련", url: "/emergency-drills", icon: Siren },
     ],
   },
   {

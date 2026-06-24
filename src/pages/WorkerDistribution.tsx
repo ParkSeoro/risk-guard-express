@@ -38,6 +38,15 @@ const ZONE_LABEL: Record<Zone["zone_type"], string> = {
   danger: "위험구역",
 };
 
+function formatAgo(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}초`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}분`;
+  const h = Math.floor(m / 60);
+  return `${h}시간`;
+}
+
 export default function WorkerDistribution() {
   const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);

@@ -11,7 +11,11 @@ import { QRCodeSVG } from "qrcode.react";
 import { Map, Plus, Trash2, Upload, QrCode, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
-type SiteMap = { id: string; name: string; image_url: string | null; project_id: string };
+type SiteMap = {
+  id: string; name: string; image_url: string | null; project_id: string;
+  geo_anchor_nw_lat?: number | null; geo_anchor_nw_lng?: number | null;
+  geo_anchor_se_lat?: number | null; geo_anchor_se_lng?: number | null;
+};
 type Zone = {
   id: string;
   site_map_id: string;
@@ -69,7 +73,7 @@ export default function SiteMaps() {
   const loadMaps = async () => {
     const { data } = await supabase
       .from("site_maps")
-      .select("id,name,image_url,project_id")
+      .select("id,name,image_url,project_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng")
       .eq("project_id", projectId)
       .eq("is_deleted", false)
       .order("created_at", { ascending: false });

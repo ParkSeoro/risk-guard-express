@@ -293,7 +293,7 @@ const ProjectDetail = () => {
   const handleApproveRequest = async (reqId: string, userId: string, role: string) => {
     // Add as member
     await supabase.from('project_members').insert([{
-      project_id: projectId!, user_id: userId, role: role as any,
+      project_id: projectId!, user_id: userId, role_new: role as any,
     }]);
     // Update request
     await supabase.from('project_join_requests').update({
@@ -302,6 +302,7 @@ const ProjectDetail = () => {
     toast({ title: '가입 요청을 승인했습니다.' });
     fetchAll();
   };
+
 
   const handleRejectRequest = async (reqId: string) => {
     await supabase.from('project_join_requests').update({

@@ -77,6 +77,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     <p className="text-muted-foreground">{roleLabel}</p>
                   </div>
                 </div>
+                <AICreditBanner />
                 <NotificationBell />
                 <HelpButton className="text-muted-foreground" />
                 <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={signOut}>
@@ -84,7 +85,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </Button>
               </div>
             </header>
-            <AICreditBanner />
             <TutorialOverlay />
             <main className="flex-1 overflow-auto p-6 bg-background">
               <AppErrorBoundary>{children}</AppErrorBoundary>

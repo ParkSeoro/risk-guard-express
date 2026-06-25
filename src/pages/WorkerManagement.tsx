@@ -89,10 +89,10 @@ export default function WorkerManagement() {
   };
 
   const remove = async (id: string) => {
-    if (!confirm("삭제하시겠습니까? (휴지통으로 이동)")) return;
+    if (!confirm("삭제하시겠습니까?")) return;
     const { error } = await supabase
       .from("workers")
-      .update({ is_active: false, is_deleted: true })
+      .update({ is_active: false })
       .eq("id", id);
     if (error) { toast.error(error.message); return; }
     setWorkers(prev => prev.filter(w => w.id !== id));

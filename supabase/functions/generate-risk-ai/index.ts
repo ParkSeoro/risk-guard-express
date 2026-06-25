@@ -196,6 +196,10 @@ ${ragContext}
     console.error(`[Batch ${batchIndex}] AI error:`, status, text);
     if (status === 429) throw new Error("RATE_LIMIT");
     if (status === 402) throw new Error("CREDITS_EXHAUSTED");
+    // Lovable AI Gateway returns 403 with credit_limit_reached when workspace limit is hit
+    if (status === 403 && /credit_limit_reached|credit limit/i.test(text)) {
+      throw new Error("CREDITS_EXHAUSTED");
+    }
     throw new Error(`AI_ERROR_${status}`);
   }
 

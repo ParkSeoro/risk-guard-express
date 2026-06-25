@@ -2,7 +2,9 @@ import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { Sparkles, RefreshCw, AlertTriangle, CheckCircle2, X } from "lucide-react";
+import { Sparkles, RefreshCw, AlertTriangle, CheckCircle2, X, CreditCard } from "lucide-react";
+
+const RECHARGE_URL = "https://lovable.dev/settings/plans";
 
 type CreditStatus = "ok" | "rate_limited" | "exhausted" | "error" | "loading";
 
@@ -101,6 +103,15 @@ export function AICreditBanner() {
         <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={check}>
           <RefreshCw className="h-3 w-3 mr-1" />
           다시 확인
+        </Button>
+        <Button
+          size="sm"
+          variant="default"
+          className="h-6 px-2 text-xs"
+          onClick={() => window.open(RECHARGE_URL, "_blank", "noopener,noreferrer")}
+        >
+          <CreditCard className="h-3 w-3 mr-1" />
+          크레딧 충전
         </Button>
         <Button
           size="sm"

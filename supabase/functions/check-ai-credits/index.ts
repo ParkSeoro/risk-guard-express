@@ -42,9 +42,16 @@ Deno.serve(async (req) => {
       status = 'rate_limited';
       message = '일시적 요청 한도 초과(rate limit). 잠시 후 다시 시도하세요.';
     } else if (!r.ok) {
-      status = 'error';
       const body = await r.text().catch(() => '');
-      message = `게이트웨이 오류 (${r.status}) ${body.slice(0, 200)}`;
+      let parsedType = '';
+      try { parsedType = JSON.parse(body)?.type ?? ''; } catch { /* noop */ }
+      if (r.status === 403 && (parsedType === 'credit_limit_reached' || body.includes('credit_limit_reached'))) {
+        status = 'exhausted';
+        message = '워크스페이스 크레딧 한도에 도달했습니다. 워크스페이스 소유자에게 한도 상향을 요청하거나 크레딧을 충전하세요.';
+      } else {
+        status = 'error';
+        message = `게이트웨이 오류 (${r.status}) ${body.slice(0, 200)}`;
+      }
     }
 
     return new Response(

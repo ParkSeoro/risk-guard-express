@@ -106,6 +106,15 @@ export function AICreditBanner() {
         </Button>
         <Button
           size="sm"
+          variant="default"
+          className="h-6 px-2 text-xs"
+          onClick={() => window.open(RECHARGE_URL, "_blank", "noopener,noreferrer")}
+        >
+          <CreditCard className="h-3 w-3 mr-1" />
+          크레딧 충전
+        </Button>
+        <Button
+          size="sm"
           variant="ghost"
           className="h-6 w-6 p-0"
           onClick={() => setState(null)}

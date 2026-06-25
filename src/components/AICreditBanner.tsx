@@ -2,7 +2,9 @@ import { useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { Sparkles, RefreshCw, AlertTriangle, CheckCircle2, X } from "lucide-react";
+import { Sparkles, RefreshCw, AlertTriangle, CheckCircle2, X, CreditCard } from "lucide-react";
+
+const RECHARGE_URL = "https://lovable.dev/settings/plans";
 
 type CreditStatus = "ok" | "rate_limited" | "exhausted" | "error" | "loading";
 

@@ -72,11 +72,11 @@ const PERMISSION_MATRIX: Record<ProjectRole, Record<FeatureKey, Perm>> = {
     tbm: ALL, incident: ALL, safety_cost: ALL, legal_duty: ALL, todo: ALL,
     approval: CRU_APPROVE, company: ALL, member: ALL, master_data: ALL, audit_log: ALL,
   },
+  // 안전관리자: 프로젝트 내에서 마스터 전용(글로벌 관리)을 제외한 모든 권한을 보유
   safety_manager: {
-    risk_assessment: CRU_APPROVE, work_plan: CRU_APPROVE, work_permit: CRU_APPROVE,
-    safety_inspection: CRUD_NO_APPROVE, tbm: CRUD_NO_APPROVE, incident: CRUD_NO_APPROVE,
-    safety_cost: CRUD_NO_APPROVE, legal_duty: CRUD_NO_APPROVE, todo: CRUD_NO_APPROVE,
-    approval: APPROVE_ONLY, company: RO, member: RO, master_data: CRUD_NO_APPROVE, audit_log: RO,
+    risk_assessment: ALL, work_plan: ALL, work_permit: ALL, safety_inspection: ALL,
+    tbm: ALL, incident: ALL, safety_cost: ALL, legal_duty: ALL, todo: ALL,
+    approval: CRU_APPROVE, company: ALL, member: ALL, master_data: ALL, audit_log: ALL,
   },
   site_manager: {
     risk_assessment: CRU_APPROVE, work_plan: CRU_APPROVE, work_permit: CRU_APPROVE,

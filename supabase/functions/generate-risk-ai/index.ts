@@ -196,6 +196,10 @@ ${ragContext}
     console.error(`[Batch ${batchIndex}] AI error:`, status, text);
     if (status === 429) throw new Error("RATE_LIMIT");
     if (status === 402) throw new Error("CREDITS_EXHAUSTED");
+    // Lovable AI Gateway returns 403 with credit_limit_reached when workspace limit is hit
+    if (status === 403 && /credit_limit_reached|credit limit/i.test(text)) {
+      throw new Error("CREDITS_EXHAUSTED");
+    }
     throw new Error(`AI_ERROR_${status}`);
   }
 
@@ -521,7 +525,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (msg === "CREDITS_EXHAUSTED") {
-      return new Response(JSON.stringify({ error: "AI 크레딧이 부족합니다." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "AI 크레딧이 부족합니다. 워크스페이스 크레딧을 충전해주세요." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     return new Response(
       JSON.stringify({ error: msg }),

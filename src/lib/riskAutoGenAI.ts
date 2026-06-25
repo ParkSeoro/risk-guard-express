@@ -167,9 +167,18 @@ export async function generateRiskItemsHybrid(
     report('complete', totalBatches, totalBatches);
     return { items: allItems.slice(0, targetCount), source: 'ai', normalizedEquipment };
   } catch (err: any) {
-    console.error('[AI Engine] AI 호출 실패:', err?.message);
+    const rawMsg = err?.message || '';
+    console.error('[AI Engine] AI 호출 실패:', rawMsg);
 
-    // Fallback to library
+    // Surface credit/rate errors immediately — do not silently fall back
+    if (/크레딧|CREDITS_EXHAUSTED|credit_limit|402/i.test(rawMsg)) {
+      throw new Error('AI 크레딧이 부족합니다. 워크스페이스 크레딧을 충전한 뒤 다시 시도해주세요.');
+    }
+    if (/RATE_LIMIT|429|too many/i.test(rawMsg)) {
+      throw new Error('요청이 너무 많습니다. 잠시 후 다시 시도해주세요.');
+    }
+
+    // Fallback to library only for unknown errors
     report('fallback', 0, 1);
     console.log('[AI Engine] AI 실패 → 라이브러리 폴백');
     const libraryItems = await generateRiskItems({
@@ -184,7 +193,7 @@ export async function generateRiskItemsHybrid(
       return { items: libraryItems.slice(0, targetCount), source: 'library' };
     }
 
-    report('complete', 1, 1);
-    return { items: [], source: 'ai' };
+    // Library also empty — propagate the real reason
+    throw new Error(rawMsg || 'AI 생성에 실패했습니다.');
   }
 }

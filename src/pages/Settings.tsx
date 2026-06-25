@@ -20,7 +20,7 @@ const settingsCards = [
     icon: Shield,
     path: '/settings/permissions',
     requiresAdmin: true,
-    badge: '마스터 전용',
+    badge: '관리자 전용',
   },
   {
     id: 'ai',
@@ -43,7 +43,7 @@ const settingsCards = [
 
 const Settings = () => {
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { hasRole } = useAuth();
 
   return (
     <div className="space-y-6 animate-fade-in max-w-3xl">
@@ -59,7 +59,11 @@ const Settings = () => {
 
       <div className="grid gap-4">
         {settingsCards.map((card) => {
-          const disabled = card.requiresAdmin && !isAdmin();
+          const disabled = card.id === 'ai'
+            ? !hasRole('master')
+            : card.id === 'permissions'
+              ? !(hasRole('master') || hasRole('project_admin'))
+              : false;
           return (
             <Card
               key={card.id}

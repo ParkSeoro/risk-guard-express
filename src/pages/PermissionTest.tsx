@@ -29,9 +29,9 @@ const menuPermissions: { menu: string; roles: string[]; description: string }[] 
   { menu: '검증센터', roles: ['master', 'project_admin', 'safety_manager'], description: '안전관리자 이상만 검증 실행' },
   { menu: '결재함', roles: ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer'], description: '열람 가능, 결재는 권한별' },
   { menu: 'TBM 기록', roles: ['master', 'project_admin', 'safety_manager', 'contractor'], description: '협력사 이상 작성' },
-  { menu: '사용자 관리', roles: ['master'], description: '마스터 전용' },
-  { menu: '기준정보', roles: ['master', 'project_admin'], description: '관리자 이상' },
-  { menu: '감사 로그', roles: ['master', 'project_admin'], description: '관리자 이상' },
+  { menu: '사용자 관리', roles: ['master', 'project_admin'], description: '마스터/프로젝트 관리자' },
+  { menu: '기준정보', roles: ['master', 'project_admin', 'safety_manager'], description: '안전관리자 이상' },
+  { menu: '감사 로그', roles: ['master', 'project_admin', 'safety_manager'], description: '안전관리자 이상' },
   { menu: '권한 점검', roles: ['master'], description: '마스터 전용' },
 ];
 
@@ -40,10 +40,10 @@ const actionPermissions: { action: string; roles: string[] }[] = [
   { action: '위험성평가 제출', roles: ['master', 'project_admin', 'safety_manager', 'contractor'] },
   { action: '검증 실행', roles: ['master', 'project_admin', 'safety_manager'] },
   { action: '결재 상신', roles: ['master', 'project_admin', 'safety_manager'] },
-  { action: '결재 승인/반려', roles: ['master', 'project_admin'] },
-  { action: '사용자 승인/역할 변경', roles: ['master'] },
-  { action: '프로젝트 생성/삭제', roles: ['master'] },
-  { action: '기준정보 수정', roles: ['master', 'project_admin'] },
+  { action: '결재 승인/반려', roles: ['master', 'project_admin', 'safety_manager'] },
+  { action: '사용자 승인/역할 변경', roles: ['master', 'project_admin'] },
+  { action: '프로젝트 생성/삭제', roles: ['master', 'project_admin'] },
+  { action: '기준정보 수정', roles: ['master', 'project_admin', 'safety_manager'] },
   { action: 'PDF/XLSX 다운로드', roles: ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer'] },
 ];
 

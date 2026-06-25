@@ -59,21 +59,38 @@ const PermissionTest = () => {
       setLoading(true);
       const { data: profiles } = await supabase.from('profiles').select('*');
       const { data: allRoles } = await supabase.from('user_roles').select('user_id, role');
-      const { data: members } = await supabase.from('project_members').select('user_id, project_id, role');
+      const { data: members } = await supabase
+        .from('project_members')
+        .select('user_id, project_id, role, role_new' as any);
       const { data: projects } = await supabase.from('projects').select('id, name');
 
       const projectMap = new Map((projects || []).map(p => [p.id, p.name]));
 
-      const enriched: UserInfo[] = (profiles || []).map((p: any) => ({
-        user_id: p.user_id,
-        display_name: p.display_name,
-        company: p.company || '',
-        account_status: p.account_status || 'active',
-        roles: (allRoles || []).filter((r: any) => r.user_id === p.user_id).map((r: any) => r.role),
-        projectMemberships: (members || []).filter((m: any) => m.user_id === p.user_id).map((m: any) => ({
-          project_id: m.project_id, project_name: projectMap.get(m.project_id) || m.project_id, role: m.role,
-        })),
-      }));
+      const enriched: UserInfo[] = (profiles || []).map((p: any) => {
+        const systemRoles = (allRoles || [])
+          .filter((r: any) => r.user_id === p.user_id)
+          .map((r: any) => r.role as string);
+        const memberships = (members || [])
+          .filter((m: any) => m.user_id === p.user_id)
+          .map((m: any) => ({
+            project_id: m.project_id,
+            project_name: projectMap.get(m.project_id) || m.project_id,
+            role: (m.role_new || m.role || 'viewer') as string,
+          }));
+        // 시스템 역할 + 프로젝트 멤버십 역할을 모두 합쳐서 권한 판정
+        const combined = Array.from(new Set([
+          ...systemRoles,
+          ...memberships.map(m => m.role),
+        ])).filter(Boolean);
+        return {
+          user_id: p.user_id,
+          display_name: p.display_name,
+          company: p.company || '',
+          account_status: p.account_status || 'active',
+          roles: combined,
+          projectMemberships: memberships,
+        };
+      });
       setUsers(enriched);
       if (enriched.length > 0) setSelectedUserId(enriched[0].user_id);
       setLoading(false);

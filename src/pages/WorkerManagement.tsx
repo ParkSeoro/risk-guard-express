@@ -21,11 +21,17 @@ const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "worker"]);
 export default function WorkerManagement() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const initialTab = tabParam === "attendance" ? "attendance"
-    : tabParam === "daily-qr" ? "daily-qr"
-    : tabParam === "company-qr" ? "company-qr"
+  const resolveTab = (v: string | null) =>
+    v === "attendance" ? "attendance"
+    : v === "daily-qr" ? "daily-qr"
+    : v === "company-qr" ? "company-qr"
     : "register";
-  const [tab, setTab] = useState<string>(initialTab);
+  const [tab, setTab] = useState<string>(resolveTab(tabParam));
+
+  // URL → state 동기화 (사이드바에서 다른 탭 링크 클릭 시 화면 전환되도록)
+  useEffect(() => {
+    setTab(resolveTab(tabParam));
+  }, [tabParam]);
 
   const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
@@ -76,6 +82,7 @@ export default function WorkerManagement() {
       .from("workers")
       .select("*")
       .eq("project_id", projectId)
+      .eq("is_active", true)
       .order("created_at", { ascending: false });
     if (error) { toast.error(error.message); return; }
     setWorkers(data || []);
@@ -83,10 +90,13 @@ export default function WorkerManagement() {
 
   const remove = async (id: string) => {
     if (!confirm("삭제하시겠습니까?")) return;
-    const { error } = await supabase.from("workers").update({ is_active: false }).eq("id", id);
+    const { error } = await supabase
+      .from("workers")
+      .update({ is_active: false })
+      .eq("id", id);
     if (error) { toast.error(error.message); return; }
-    toast.success("비활성화 완료");
-    load();
+    setWorkers(prev => prev.filter(w => w.id !== id));
+    toast.success("삭제 완료");
   };
 
   const onTabChange = (v: string) => {

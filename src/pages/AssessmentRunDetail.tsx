@@ -236,7 +236,7 @@ const AssessmentRunDetail = () => {
         supabase.from('projects').select('*').eq('id', projectId).single(),
         supabase.from('master_departments').select('id, name').or(`project_id.eq.${projectId},project_id.is.null`),
         supabase.from('department_assignees').select('department_id, default_user_id').eq('project_id', projectId),
-        supabase.from('project_members').select('user_id, company, position, company_id, role').eq('project_id', projectId),
+        supabase.from('project_members').select('user_id, company, position_new, company_id, role_new').eq('project_id', projectId),
         supabase.from('environment_tags' as any).select('id, name, category').or(`project_id.eq.${projectId},project_id.is.null`).order('sort_order'),
         supabase.from('companies').select('id, name, type').eq('project_id', projectId),
       ]);
@@ -248,8 +248,10 @@ const AssessmentRunDetail = () => {
       const profiles = profilesRes.data || [];
       const membersList = (membersRes.data || []).map((m: any) => {
         const prof = profiles.find((p: any) => p.user_id === m.user_id);
-        const positionLabel = m.position ? ` / ${m.position === 'site_manager' ? '현장대리인' : m.position === 'supervisor' ? '관리감독자' : m.position === 'safety_manager' ? '안전관리자' : m.position}` : '';
-        return { user_id: m.user_id, display_name: `${prof?.display_name || ''}${positionLabel}`, company: m.company || prof?.company || '', company_id: m.company_id || null, position: m.position || '', role: m.role || 'viewer' };
+        const memberPosition = m.position_new || '';
+        const memberRole = m.role_new || 'viewer';
+        const positionLabel = memberPosition ? ` / ${memberPosition === 'SITE_MANAGER' ? '현장소장' : memberPosition === 'SUPERVISOR' ? '감리' : memberPosition === 'HSE_MANAGER' ? '안전관리자' : memberPosition}` : '';
+        return { user_id: m.user_id, display_name: `${prof?.display_name || ''}${positionLabel}`, company: m.company || prof?.company || '', company_id: m.company_id || null, position: memberPosition, role: memberRole };
       });
       setProjectMembers(membersList);
 

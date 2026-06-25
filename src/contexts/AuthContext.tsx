@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
 
-type AppRole = 'master' | 'project_admin' | 'safety_manager' | 'contractor' | 'viewer' | 'user';
+type AppRole = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor' | 'contractor' | 'worker' | 'viewer' | 'user';
 
 interface Profile {
   id: string;
@@ -43,12 +43,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data) setProfile(data as Profile);
   };
 
+  const normalizeRole = (role: string | null | undefined): AppRole | null => {
+    if (!role) return null;
+    if (role === 'worker') return 'contractor';
+    if (['master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor', 'contractor', 'viewer', 'user'].includes(role)) {
+      return role as AppRole;
+    }
+    return null;
+  };
+
   const fetchRoles = async (userId: string) => {
-    const { data } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId);
-    if (data) setRoles(data.map(r => r.role as AppRole));
+    const [{ data: systemRoles }, { data: projectRoles }] = await Promise.all([
+      supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId),
+      supabase
+        .from('project_members')
+        .select('role_new')
+        .eq('user_id', userId),
+    ]);
+
+    const combined = [
+      ...(systemRoles || []).map((r: any) => normalizeRole(r.role)),
+      ...(projectRoles || []).map((m: any) => normalizeRole(m.role_new)),
+    ].filter(Boolean) as AppRole[];
+
+    setRoles(Array.from(new Set(combined)));
   };
 
   const refreshProfile = async () => {
@@ -121,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const hasRole = (role: AppRole) => roles.includes(role);
-  const isAdmin = () => roles.includes('master') || roles.includes('project_admin');
+  const isAdmin = () => roles.includes('master') || roles.includes('project_admin') || roles.includes('safety_manager');
 
   return (
     <AuthContext.Provider value={{ user, session, profile, roles, loading, signOut, hasRole, isAdmin, refreshProfile }}>

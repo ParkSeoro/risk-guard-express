@@ -216,10 +216,10 @@ export function useProjectAccess(): ProjectAccess {
 
   const loadMemberInfo = async () => {
     if (!user || !selectedProject) return;
-    // Read NEW columns (role_new/position_new) and fall back to legacy ones.
+    // Read project-scoped role/position columns.
     const { data } = await supabase
       .from('project_members')
-      .select('role, company_id, role_new, position_new, companies(type)' as any)
+      .select('company_id, role_new, position_new, companies(type)' as any)
       .eq('user_id', user.id)
       .eq('project_id', selectedProject)
       .maybeSingle();
@@ -227,7 +227,7 @@ export function useProjectAccess(): ProjectAccess {
     if (data) {
       const d = data as any;
       setMemberInfo({
-        role: normalizeRole(d.role_new || d.role),
+        role: normalizeRole(d.role_new),
         position: (d.position_new || null) as ProjectPosition,
         company_id: d.company_id || null,
         company_type: (d.companies?.type as CompanyType) || null,

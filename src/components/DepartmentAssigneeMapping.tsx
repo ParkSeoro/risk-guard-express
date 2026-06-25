@@ -29,7 +29,7 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
   const fetchData = async () => {
     const [deptRes, memberRes, profileRes, mappingRes] = await Promise.all([
       supabase.from('master_departments').select('*').order('name'),
-      supabase.from('project_members').select('user_id, role').eq('project_id', projectId),
+      supabase.from('project_members').select('user_id, role_new').eq('project_id', projectId),
       supabase.from('profiles').select('user_id, display_name, company, position'),
       supabase.from('department_assignees').select('*').eq('project_id', projectId),
     ]);

@@ -8,9 +8,9 @@ import UserManagement from './UserManagement';
 const SettingsPermissions = () => {
   const navigate = useNavigate();
   const { hasRole } = useAuth();
-  const isMaster = hasRole('master');
+  const canManagePermissions = hasRole('master') || hasRole('project_admin');
 
-  if (!isMaster) {
+  if (!canManagePermissions) {
     return (
       <div className="space-y-4 animate-fade-in max-w-3xl">
         <div className="flex items-center gap-2">
@@ -23,7 +23,7 @@ const SettingsPermissions = () => {
         </div>
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            마스터 권한이 필요합니다.
+            마스터 또는 프로젝트 관리자 권한이 필요합니다.
           </CardContent>
         </Card>
       </div>

@@ -12,13 +12,14 @@ interface UserInfo {
   display_name: string;
   company: string;
   account_status: string;
-  roles: string[];
+  systemRoles: string[];
+  effectiveRoles: string[];
   projectMemberships: { project_id: string; project_name: string; role: string }[];
 }
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자', safety_manager: '안전관리자',
-  contractor: '협력사 담당자', viewer: '열람자',
+  site_manager: '현장소장', supervisor: '감리/감독', contractor: '협력사 담당자', worker: '작업자', viewer: '열람자',
 };
 
 const menuPermissions: { menu: string; roles: string[]; description: string }[] = [
@@ -28,9 +29,9 @@ const menuPermissions: { menu: string; roles: string[]; description: string }[] 
   { menu: '검증센터', roles: ['master', 'project_admin', 'safety_manager'], description: '안전관리자 이상만 검증 실행' },
   { menu: '결재함', roles: ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer'], description: '열람 가능, 결재는 권한별' },
   { menu: 'TBM 기록', roles: ['master', 'project_admin', 'safety_manager', 'contractor'], description: '협력사 이상 작성' },
-  { menu: '사용자 관리', roles: ['master'], description: '마스터 전용' },
-  { menu: '기준정보', roles: ['master', 'project_admin'], description: '관리자 이상' },
-  { menu: '감사 로그', roles: ['master', 'project_admin'], description: '관리자 이상' },
+  { menu: '사용자 관리', roles: ['master', 'project_admin'], description: '마스터/프로젝트 관리자' },
+  { menu: '기준정보', roles: ['master', 'project_admin', 'safety_manager'], description: '안전관리자 이상' },
+  { menu: '감사 로그', roles: ['master', 'project_admin', 'safety_manager'], description: '안전관리자 이상' },
   { menu: '권한 점검', roles: ['master'], description: '마스터 전용' },
 ];
 
@@ -39,12 +40,18 @@ const actionPermissions: { action: string; roles: string[] }[] = [
   { action: '위험성평가 제출', roles: ['master', 'project_admin', 'safety_manager', 'contractor'] },
   { action: '검증 실행', roles: ['master', 'project_admin', 'safety_manager'] },
   { action: '결재 상신', roles: ['master', 'project_admin', 'safety_manager'] },
-  { action: '결재 승인/반려', roles: ['master', 'project_admin'] },
-  { action: '사용자 승인/역할 변경', roles: ['master'] },
-  { action: '프로젝트 생성/삭제', roles: ['master'] },
-  { action: '기준정보 수정', roles: ['master', 'project_admin'] },
+  { action: '결재 승인/반려', roles: ['master', 'project_admin', 'safety_manager'] },
+  { action: '사용자 승인/역할 변경', roles: ['master', 'project_admin'] },
+  { action: '프로젝트 생성/삭제', roles: ['master', 'project_admin'] },
+  { action: '기준정보 수정', roles: ['master', 'project_admin', 'safety_manager'] },
   { action: 'PDF/XLSX 다운로드', roles: ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer'] },
 ];
+
+const normalizeRole = (role: string | null | undefined) => {
+  if (!role) return '';
+  if (role === 'worker') return 'contractor';
+  return role;
+};
 
 const PermissionTest = () => {
   const { hasRole } = useAuth();
@@ -61,7 +68,7 @@ const PermissionTest = () => {
       const { data: allRoles } = await supabase.from('user_roles').select('user_id, role');
       const { data: members } = await supabase
         .from('project_members')
-        .select('user_id, project_id, role, role_new' as any);
+        .select('user_id, project_id, role_new' as any);
       const { data: projects } = await supabase.from('projects').select('id, name');
 
       const projectMap = new Map((projects || []).map(p => [p.id, p.name]));
@@ -69,15 +76,16 @@ const PermissionTest = () => {
       const enriched: UserInfo[] = (profiles || []).map((p: any) => {
         const systemRoles = (allRoles || [])
           .filter((r: any) => r.user_id === p.user_id)
-          .map((r: any) => r.role as string);
+          .map((r: any) => normalizeRole(r.role))
+          .filter(Boolean);
         const memberships = (members || [])
           .filter((m: any) => m.user_id === p.user_id)
           .map((m: any) => ({
             project_id: m.project_id,
             project_name: projectMap.get(m.project_id) || m.project_id,
-            role: (m.role_new || m.role || 'viewer') as string,
+            role: normalizeRole(m.role_new) || 'viewer',
           }));
-        // 시스템 역할 + 프로젝트 멤버십 역할을 모두 합쳐서 권한 판정
+        // 전역 역할 + 프로젝트 역할을 합쳐 실제 메뉴 접근 권한을 판정
         const combined = Array.from(new Set([
           ...systemRoles,
           ...memberships.map(m => m.role),
@@ -87,7 +95,8 @@ const PermissionTest = () => {
           display_name: p.display_name,
           company: p.company || '',
           account_status: p.account_status || 'active',
-          roles: combined,
+          systemRoles,
+          effectiveRoles: combined,
           projectMemberships: memberships,
         };
       });
@@ -125,7 +134,7 @@ const PermissionTest = () => {
               <SelectContent>
                 {users.map(u => (
                   <SelectItem key={u.user_id} value={u.user_id}>
-                    {u.display_name} ({u.company || '소속 없음'}) — {u.roles.map(r => roleLabels[r] || r).join(', ') || '역할 없음'}
+                    {u.display_name} ({u.company || '소속 없음'}) — {u.effectiveRoles.map(r => roleLabels[r] || r).join(', ') || '역할 없음'}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -140,11 +149,12 @@ const PermissionTest = () => {
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm">사용자 정보</CardTitle></CardHeader>
             <CardContent>
-              <div className="grid grid-cols-4 gap-4 text-sm">
+              <div className="grid grid-cols-5 gap-4 text-sm">
                 <div><span className="text-muted-foreground text-xs">이름</span><p className="font-medium">{selectedUser.display_name}</p></div>
                 <div><span className="text-muted-foreground text-xs">소속</span><p>{selectedUser.company || '—'}</p></div>
                 <div><span className="text-muted-foreground text-xs">계정 상태</span><p><Badge variant="outline" className="text-[10px]">{selectedUser.account_status}</Badge></p></div>
-                <div><span className="text-muted-foreground text-xs">시스템 역할</span><p>{selectedUser.roles.map(r => <Badge key={r} variant="outline" className="text-[10px] mr-1">{roleLabels[r] || r}</Badge>)}{selectedUser.roles.length === 0 && <span className="text-muted-foreground">없음</span>}</p></div>
+                <div><span className="text-muted-foreground text-xs">전역 역할</span><p>{selectedUser.systemRoles.map(r => <Badge key={r} variant="outline" className="text-[10px] mr-1">{roleLabels[r] || r}</Badge>)}{selectedUser.systemRoles.length === 0 && <span className="text-muted-foreground">없음</span>}</p></div>
+                <div><span className="text-muted-foreground text-xs">적용 역할</span><p>{selectedUser.effectiveRoles.map(r => <Badge key={r} variant="outline" className="text-[10px] mr-1">{roleLabels[r] || r}</Badge>)}{selectedUser.effectiveRoles.length === 0 && <span className="text-muted-foreground">없음</span>}</p></div>
               </div>
               {selectedUser.projectMemberships.length > 0 && (
                 <div className="mt-3 pt-3 border-t">
@@ -165,7 +175,7 @@ const PermissionTest = () => {
             <CardContent>
               <div className="space-y-1">
                 {menuPermissions.map(mp => {
-                  const hasAccess = selectedUser.roles.some(r => mp.roles.includes(r));
+                  const hasAccess = selectedUser.effectiveRoles.some(r => mp.roles.includes(r));
                   return (
                     <div key={mp.menu} className={`flex items-center justify-between p-2 rounded text-sm ${hasAccess ? 'bg-success/5' : 'bg-destructive/5'}`}>
                       <div className="flex items-center gap-2">
@@ -189,7 +199,7 @@ const PermissionTest = () => {
             <CardContent>
               <div className="space-y-1">
                 {actionPermissions.map(ap => {
-                  const hasAccess = selectedUser.roles.some(r => ap.roles.includes(r));
+                  const hasAccess = selectedUser.effectiveRoles.some(r => ap.roles.includes(r));
                   return (
                     <div key={ap.action} className={`flex items-center justify-between p-2 rounded text-sm ${hasAccess ? 'bg-success/5' : 'bg-destructive/5'}`}>
                       <div className="flex items-center gap-2">
@@ -198,7 +208,7 @@ const PermissionTest = () => {
                       </div>
                       <div className="flex gap-1">
                         {ap.roles.map(r => (
-                          <Badge key={r} variant="outline" className={`text-[9px] ${selectedUser.roles.includes(r) ? 'bg-success/10 text-success' : ''}`}>
+                          <Badge key={r} variant="outline" className={`text-[9px] ${selectedUser.effectiveRoles.includes(r) ? 'bg-success/10 text-success' : ''}`}>
                             {roleLabels[r] || r}
                           </Badge>
                         ))}

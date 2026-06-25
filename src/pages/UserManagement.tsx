@@ -94,6 +94,7 @@ const UserManagement = () => {
 
 
   const isMaster = hasRole('master');
+  const canManagePermissions = isMaster || hasRole('project_admin');
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -165,6 +166,10 @@ const UserManagement = () => {
   };
 
   const handleRoleChange = async (userId: string, newRole: string) => {
+    if (!isMaster) {
+      toast({ title: '전역 역할은 마스터만 변경할 수 있습니다.', variant: 'destructive' });
+      return;
+    }
     setSaving(userId);
     const user = users.find(u => u.user_id === userId);
     if (user?.roles.includes('master') && newRole !== 'master') {
@@ -286,11 +291,11 @@ const UserManagement = () => {
     return true;
   });
 
-  if (!isMaster) {
+  if (!canManagePermissions) {
     return (
       <div className="space-y-4 animate-fade-in">
         <h1 className="text-2xl font-bold">사용자 관리</h1>
-        <Card><CardContent className="py-12 text-center text-muted-foreground">마스터 권한이 필요합니다.</CardContent></Card>
+        <Card><CardContent className="py-12 text-center text-muted-foreground">마스터 또는 프로젝트 관리자 권한이 필요합니다.</CardContent></Card>
       </div>
     );
   }
@@ -300,7 +305,7 @@ const UserManagement = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><Users className="h-6 w-6" /> 사용자 관리</h1>
-          <p className="text-sm text-muted-foreground mt-1">신규가입 승인, 역할 부여, 프로젝트 소속 지정 (마스터 전용)</p>
+          <p className="text-sm text-muted-foreground mt-1">신규가입 승인, 역할 부여, 프로젝트 소속 지정</p>
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => { resetAssignForm(); setShowAssignDialog(true); }}>
@@ -367,14 +372,18 @@ const UserManagement = () => {
                     </Badge>
                   </td>
                   <td className="text-center">
-                    <Select value={u.roles[0] || 'none'} onValueChange={v => handleRoleChange(u.user_id, v === 'none' ? '' : v)}>
-                      <SelectTrigger className="h-7 w-32 text-xs mx-auto"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {Object.entries(globalRoleLabels).map(([k, v]) => (
-                          <SelectItem key={k} value={k}>{v}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {isMaster ? (
+                      <Select value={u.roles[0] || 'none'} onValueChange={v => handleRoleChange(u.user_id, v === 'none' ? '' : v)}>
+                        <SelectTrigger className="h-7 w-32 text-xs mx-auto"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(globalRoleLabels).map(([k, v]) => (
+                            <SelectItem key={k} value={k}>{v}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px]">{u.roles.includes('master') ? '마스터' : '일반 사용자'}</Badge>
+                    )}
                   </td>
                   <td>
                     {memberships.length === 0 ? (

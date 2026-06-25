@@ -7,6 +7,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { HelpButton } from "@/components/HelpButton";
 import { TutorialOverlay } from "@/components/TutorialOverlay";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
+import { AICreditBanner } from "@/components/AICreditBanner";
 
 import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -83,6 +84,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </Button>
               </div>
             </header>
+            <AICreditBanner />
             <TutorialOverlay />
             <main className="flex-1 overflow-auto p-6 bg-background">
               <AppErrorBoundary>{children}</AppErrorBoundary>

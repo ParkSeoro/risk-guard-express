@@ -149,11 +149,12 @@ const PermissionTest = () => {
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm">사용자 정보</CardTitle></CardHeader>
             <CardContent>
-              <div className="grid grid-cols-4 gap-4 text-sm">
+              <div className="grid grid-cols-5 gap-4 text-sm">
                 <div><span className="text-muted-foreground text-xs">이름</span><p className="font-medium">{selectedUser.display_name}</p></div>
                 <div><span className="text-muted-foreground text-xs">소속</span><p>{selectedUser.company || '—'}</p></div>
                 <div><span className="text-muted-foreground text-xs">계정 상태</span><p><Badge variant="outline" className="text-[10px]">{selectedUser.account_status}</Badge></p></div>
                 <div><span className="text-muted-foreground text-xs">전역 역할</span><p>{selectedUser.systemRoles.map(r => <Badge key={r} variant="outline" className="text-[10px] mr-1">{roleLabels[r] || r}</Badge>)}{selectedUser.systemRoles.length === 0 && <span className="text-muted-foreground">없음</span>}</p></div>
+                <div><span className="text-muted-foreground text-xs">적용 역할</span><p>{selectedUser.effectiveRoles.map(r => <Badge key={r} variant="outline" className="text-[10px] mr-1">{roleLabels[r] || r}</Badge>)}{selectedUser.effectiveRoles.length === 0 && <span className="text-muted-foreground">없음</span>}</p></div>
               </div>
               {selectedUser.projectMemberships.length > 0 && (
                 <div className="mt-3 pt-3 border-t">

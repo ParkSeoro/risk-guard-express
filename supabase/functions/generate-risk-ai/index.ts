@@ -525,7 +525,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (msg === "CREDITS_EXHAUSTED") {
-      return new Response(JSON.stringify({ error: "AI 크레딧이 부족합니다." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "AI 크레딧이 부족합니다. 워크스페이스 크레딧을 충전해주세요." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     return new Response(
       JSON.stringify({ error: msg }),

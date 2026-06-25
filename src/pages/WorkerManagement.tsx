@@ -82,17 +82,21 @@ export default function WorkerManagement() {
       .from("workers")
       .select("*")
       .eq("project_id", projectId)
+      .eq("is_active", true)
       .order("created_at", { ascending: false });
     if (error) { toast.error(error.message); return; }
     setWorkers(data || []);
   };
 
   const remove = async (id: string) => {
-    if (!confirm("삭제하시겠습니까?")) return;
-    const { error } = await supabase.from("workers").update({ is_active: false }).eq("id", id);
+    if (!confirm("삭제하시겠습니까? (휴지통으로 이동)")) return;
+    const { error } = await supabase
+      .from("workers")
+      .update({ is_active: false, is_deleted: true })
+      .eq("id", id);
     if (error) { toast.error(error.message); return; }
-    toast.success("비활성화 완료");
-    load();
+    setWorkers(prev => prev.filter(w => w.id !== id));
+    toast.success("삭제 완료");
   };
 
   const onTabChange = (v: string) => {

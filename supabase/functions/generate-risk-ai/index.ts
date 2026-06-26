@@ -494,8 +494,10 @@ serve(async (req) => {
 
     const isComplete = currentBatchIndex + 1 >= totalBatches;
 
-    // Cache on final batch (or single-batch request)
-    if (isComplete && deduped.length > 0) {
+    // Cache only when the entire response is in a single batch (no batch_index sent
+    // and totalBatches === 1). Caching the final batch of a multi-batch run would
+    // store only that last batch's items and poison future cache hits.
+    if (isComplete && deduped.length > 0 && totalBatches === 1 && (batch_index === undefined || batch_index === null)) {
       await adminClient.from("ai_risk_cache").upsert(
         {
           cache_key: cacheKey,

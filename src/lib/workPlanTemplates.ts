@@ -228,6 +228,31 @@ export const WORK_PLAN_TYPES: WorkPlanType[] = [
     ],
   },
   {
+    id: 'vehicle_equipment',
+    name: '차량계 건설기계 작업',
+    legalBasis: '산업안전보건법 제38조, 산업안전보건기준에 관한 규칙 제38조·제98조~제103조·제196조~제214조',
+    description: '굴착기, 로더, 덤프트럭, 지게차, 불도저 등 차량계 건설기계·하역운반기계 사용 작업 (작업계획서 작성·게시 의무)',
+    hasRiggingPlan: false,
+    templateSections: [
+      { key: 'overview', title: '작업 개요', type: 'text', placeholder: '작업명, 작업일시, 작업위치, 작업내용, 운행경로 등을 기재하세요.' },
+      { key: 'equipment', title: '사용 기계 정보', type: 'table', placeholder: '기계 종류·능력·규격, 등록번호, 운전자, 검사일자 등' },
+      { key: 'route', title: '운행경로 및 작업장소', type: 'text', placeholder: '진입로, 운행구간, 작업반경, 지반 상태, 경사도 등', aiPrompt: '차량계 건설기계의 운행경로와 작업장소의 안전 조건을 작성해주세요.' },
+      { key: 'method', title: '작업 방법 및 절차', type: 'text', placeholder: '작업순서, 신호수·유도자 배치, 후진경보, 출입통제 등', aiPrompt: '차량계 건설기계 작업의 세부 절차와 안전조치를 작성해주세요.' },
+      { key: 'risk', title: '위험요인 및 안전대책', type: 'text', placeholder: '협착, 충돌, 전도, 추락, 낙하 등 위험요인과 대책', aiPrompt: '차량계 건설기계 사용 시 위험요인과 안전대책을 작성해주세요.' },
+      { key: 'signal', title: '유도자·신호체계', type: 'text', placeholder: '유도자 배치, 신호방법, 운전자와의 통신수단 등' },
+      { key: 'emergency', title: '비상시 조치계획', type: 'text', placeholder: '전도·충돌·협착사고 발생 시 대응절차' },
+    ],
+    requiredAttachments: [
+      '건설기계 등록증',
+      '건설기계 보험증권',
+      '정기검사/안전검사 합격증',
+      '운전원 면허증/조종사 자격증',
+      '장비 제원표',
+      '운행경로도',
+      '유도자 배치도',
+    ],
+  },
+  {
     id: 'other_hazardous',
     name: '기타 위험 작업',
     legalBasis: '산업안전보건법 제36조, 산업안전보건기준에 관한 규칙',
@@ -244,6 +269,7 @@ export const WORK_PLAN_TYPES: WorkPlanType[] = [
       '장비점검표',
     ],
   },
+
 ];
 
 export function getWorkPlanType(id: string): WorkPlanType | undefined {

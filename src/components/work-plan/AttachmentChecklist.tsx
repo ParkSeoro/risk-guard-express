@@ -80,8 +80,10 @@ export default function AttachmentChecklist({ workPlanId, projectId, companyId, 
   };
 
   const handleUpload = async (row: Row, file: File) => {
-    const path = `work-plans/${workPlanId}/${row.attachment_key}_${Date.now()}_${file.name}`;
+    const safeName = file.name.replace(/[^\w.\-]+/g, '_');
+    const path = `${projectId}/work-plans/${workPlanId}/${row.attachment_key}_${Date.now()}_${safeName}`;
     const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { upsert: true });
+
     if (upErr) {
       toast({ title: '업로드 실패', description: upErr.message, variant: 'destructive' });
       return;

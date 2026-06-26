@@ -7833,6 +7833,10 @@ export type Database = {
         Args: { _measurement_id: string }
         Returns: number
       }
+      attachment_path_belongs_to_member: {
+        Args: { _path: string; _uid: string }
+        Returns: boolean
+      }
       can_access_company_data: {
         Args: { _company_id: string; _project_id: string; _user_id: string }
         Returns: boolean

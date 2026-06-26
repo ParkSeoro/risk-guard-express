@@ -3197,37 +3197,46 @@ export type Database = {
       }
       notifications: {
         Row: {
+          body: string | null
           created_at: string
           id: string
           is_read: boolean
+          link: string | null
           message: string
           project_id: string | null
           related_id: string | null
           related_type: string | null
+          severity: string | null
           title: string
           type: string
           user_id: string
         }
         Insert: {
+          body?: string | null
           created_at?: string
           id?: string
           is_read?: boolean
+          link?: string | null
           message?: string
           project_id?: string | null
           related_id?: string | null
           related_type?: string | null
+          severity?: string | null
           title: string
           type?: string
           user_id: string
         }
         Update: {
+          body?: string | null
           created_at?: string
           id?: string
           is_read?: boolean
+          link?: string | null
           message?: string
           project_id?: string | null
           related_id?: string | null
           related_type?: string | null
+          severity?: string | null
           title?: string
           type?: string
           user_id?: string

@@ -12,10 +12,17 @@ interface Props {
   projectId: string;
 }
 
+interface DeptRow {
+  id: string;
+  name: string;
+  company_id: string;
+  company_name: string;
+}
+
 const DepartmentAssigneeMapping = ({ projectId }: Props) => {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
-  const [departments, setDepartments] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<DeptRow[]>([]);
   const [mappings, setMappings] = useState<Record<string, { id?: string; default_user_id: string; backup_user_id: string }>>({});
   const [saving, setSaving] = useState(false);
   const { options: pool } = useProjectAssigneePool({ projectId, requireUser: true });
@@ -26,14 +33,41 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
   }, [projectId]);
 
   const fetchData = async () => {
-    const [deptRes, mappingRes] = await Promise.all([
-      supabase.from('master_departments').select('*').order('name'),
-      supabase.from('department_assignees').select('*').eq('project_id', projectId),
-    ]);
-    setDepartments(deptRes.data || []);
+    // 1. Companies for this project
+    const { data: companies } = await supabase
+      .from('companies')
+      .select('id, name')
+      .eq('project_id', projectId)
+      .eq('is_deleted', false);
 
+    const companyIds = (companies || []).map((c) => c.id);
+    const companyName = new Map((companies || []).map((c) => [c.id, c.name as string]));
+
+    // 2. company_departments for those companies
+    let deptList: DeptRow[] = [];
+    if (companyIds.length > 0) {
+      const { data: cd } = await supabase
+        .from('company_departments' as any)
+        .select('id, name, company_id, sort_order')
+        .in('company_id', companyIds)
+        .eq('is_deleted', false)
+        .order('sort_order', { ascending: true });
+      deptList = ((cd || []) as any[]).map((d) => ({
+        id: d.id,
+        name: d.name,
+        company_id: d.company_id,
+        company_name: companyName.get(d.company_id) || '',
+      }));
+    }
+    setDepartments(deptList);
+
+    // 3. Existing mappings
+    const { data: mappingRes } = await supabase
+      .from('department_assignees')
+      .select('*')
+      .eq('project_id', projectId);
     const map: typeof mappings = {};
-    (mappingRes.data || []).forEach((m: any) => {
+    (mappingRes || []).forEach((m: any) => {
       map[m.department_id] = {
         id: m.id,
         default_user_id: m.default_user_id || '',
@@ -43,7 +77,7 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
     setMappings(map);
   };
 
-  const memberProfiles = pool.map(o => ({
+  const memberProfiles = pool.map((o) => ({
     user_id: o.user_id as string,
     display_name: o.display_name,
     company: o.company_name,
@@ -51,10 +85,12 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
   }));
 
   const handleChange = (deptId: string, field: 'default_user_id' | 'backup_user_id', value: string) => {
-    setMappings(prev => ({
+    setMappings((prev) => ({
       ...prev,
       [deptId]: {
         ...prev[deptId],
+        default_user_id: prev[deptId]?.default_user_id || '',
+        backup_user_id: prev[deptId]?.backup_user_id || '',
         [field]: value === '_none' ? '' : value,
       },
     }));
@@ -66,15 +102,12 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
       for (const dept of departments) {
         const mapping = mappings[dept.id];
         if (!mapping) continue;
-
         if (mapping.id) {
-          // Update existing
           await supabase.from('department_assignees').update({
             default_user_id: mapping.default_user_id || null,
             backup_user_id: mapping.backup_user_id || null,
           }).eq('id', mapping.id);
         } else if (mapping.default_user_id || mapping.backup_user_id) {
-          // Insert new
           const { data } = await supabase.from('department_assignees').insert([{
             project_id: projectId,
             department_id: dept.id,
@@ -82,7 +115,7 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
             backup_user_id: mapping.backup_user_id || null,
           }]).select().single();
           if (data) {
-            setMappings(prev => ({
+            setMappings((prev) => ({
               ...prev,
               [dept.id]: { ...prev[dept.id], id: data.id },
             }));
@@ -100,11 +133,18 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
       <Card>
         <CardContent className="py-8 text-center text-muted-foreground text-sm">
           <AlertTriangle className="h-5 w-5 mx-auto mb-2" />
-          부서가 등록되지 않았습니다. 기준정보에서 부서를 먼저 추가해주세요.
+          등록된 부서가 없습니다. <strong>회사 관리 → 조직도</strong> 에서 부서를 먼저 추가해 주세요.
         </CardContent>
       </Card>
     );
   }
+
+  // Group departments by company
+  const grouped = departments.reduce<Record<string, { company_name: string; rows: DeptRow[] }>>((acc, d) => {
+    if (!acc[d.company_id]) acc[d.company_id] = { company_name: d.company_name, rows: [] };
+    acc[d.company_id].rows.push(d);
+    return acc;
+  }, {});
 
   return (
     <Card>
@@ -118,59 +158,65 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
       </CardHeader>
       <CardContent>
         <p className="text-xs text-muted-foreground mb-4">
-          부서별로 기본 담당자를 지정하면 위험성평가 작성 시 책임부서 선택에 따라 담당자가 자동으로 채워집니다.
+          각 회사의 부서별 기본 담당자를 지정하면 위험성평가 등의 책임부서 선택 시 담당자가 자동으로 채워집니다.
+          부서·담당자 등록은 <strong>회사 관리</strong>에서 합니다.
         </p>
-        <table className="w-full data-table text-sm">
-          <thead>
-            <tr>
-              <th className="w-1/4">부서</th>
-              <th className="w-1/3">기본 담당자</th>
-              <th className="w-1/3">백업 담당자</th>
-            </tr>
-          </thead>
-          <tbody>
-            {departments.map(dept => {
-              const mapping = mappings[dept.id] || { default_user_id: '', backup_user_id: '' };
-              return (
-                <tr key={dept.id}>
-                  <td className="font-medium">{dept.name}</td>
-                  <td>
-                    <Select
-                      value={mapping.default_user_id || '_none'}
-                      onValueChange={v => handleChange(dept.id, 'default_user_id', v)}
-                    >
-                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">— 미지정 —</SelectItem>
-                        {memberProfiles.map(mp => (
-                          <SelectItem key={mp.user_id} value={mp.user_id}>
-                            {mp.display_name} {mp.position ? `(${mp.position})` : ''} {mp.company ? `· ${mp.company}` : ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </td>
-                  <td>
-                    <Select
-                      value={mapping.backup_user_id || '_none'}
-                      onValueChange={v => handleChange(dept.id, 'backup_user_id', v)}
-                    >
-                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="_none">— 미지정 —</SelectItem>
-                        {memberProfiles.map(mp => (
-                          <SelectItem key={mp.user_id} value={mp.user_id}>
-                            {mp.display_name} {mp.position ? `(${mp.position})` : ''} {mp.company ? `· ${mp.company}` : ''}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </td>
+        {Object.entries(grouped).map(([cid, g]) => (
+          <div key={cid} className="mb-6">
+            <h4 className="text-sm font-semibold mb-2">{g.company_name}</h4>
+            <table className="w-full data-table text-sm">
+              <thead>
+                <tr>
+                  <th className="w-1/4">부서</th>
+                  <th className="w-1/3">기본 담당자</th>
+                  <th className="w-1/3">백업 담당자</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {g.rows.map((dept) => {
+                  const mapping = mappings[dept.id] || { default_user_id: '', backup_user_id: '' };
+                  return (
+                    <tr key={dept.id}>
+                      <td className="font-medium">{dept.name}</td>
+                      <td>
+                        <Select
+                          value={mapping.default_user_id || '_none'}
+                          onValueChange={(v) => handleChange(dept.id, 'default_user_id', v)}
+                        >
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_none">— 미지정 —</SelectItem>
+                            {memberProfiles.map((mp) => (
+                              <SelectItem key={mp.user_id} value={mp.user_id}>
+                                {mp.display_name} {mp.position ? `(${mp.position})` : ''} {mp.company ? `· ${mp.company}` : ''}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </td>
+                      <td>
+                        <Select
+                          value={mapping.backup_user_id || '_none'}
+                          onValueChange={(v) => handleChange(dept.id, 'backup_user_id', v)}
+                        >
+                          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="_none">— 미지정 —</SelectItem>
+                            {memberProfiles.map((mp) => (
+                              <SelectItem key={mp.user_id} value={mp.user_id}>
+                                {mp.display_name} {mp.position ? `(${mp.position})` : ''} {mp.company ? `· ${mp.company}` : ''}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </CardContent>
     </Card>
   );

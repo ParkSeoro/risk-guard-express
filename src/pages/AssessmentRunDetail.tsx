@@ -131,6 +131,8 @@ const AssessmentRunDetail = () => {
   // Department & assignee data for dropdowns
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [deptAssignees, setDeptAssignees] = useState<{ department_id: string; default_user_id: string | null }[]>([]);
+  // Department default assignee derived from org chart (company_managers) + override (department_assignees)
+  const [deptDefaults, setDeptDefaults] = useState<Record<string, { user_id: string; display_name: string; company: string }>>({});
   const [projectMembers, setProjectMembers] = useState<{ user_id: string; display_name: string; company: string; company_id: string | null; position: string; role: string }[]>([]);
 
   // Edit run metadata

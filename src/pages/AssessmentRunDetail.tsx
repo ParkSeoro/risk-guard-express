@@ -29,6 +29,7 @@ import { validateRiskItems, saveValidationResults, validateImportedItems, type V
 import { generateRemediationActions, applyRemediationActions, buildRemediationSummaryText, executeAutoRemediation, type RemediationAction } from '@/lib/remediationEngine';
 import type { Database } from '@/integrations/supabase/types';
 import IMESafeInput from '@/components/IMESafeInput';
+import { useProjectAccess } from '@/hooks/useProjectAccess';
 import { Checkbox } from '@/components/ui/checkbox';
 import FeedbackPanel from '@/components/FeedbackPanel';
 import ApprovalLineManager, { type ApprovalLine } from '@/components/ApprovalLineManager';
@@ -55,6 +56,7 @@ const AssessmentRunDetail = () => {
   const { runId } = useParams();
   const navigate = useNavigate();
   const { user, profile, isAdmin, roles } = useAuth();
+  const { userRole, userCompanyId, isMaster } = useProjectAccess();
   const { log } = useAuditLog();
   const { toast } = useToast();
 
@@ -1301,7 +1303,12 @@ const AssessmentRunDetail = () => {
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">프로젝트:</span><span>{project?.name || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">현장명:</span><span>{project?.site_name || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">발주처:</span><span>{projectCompanies.find(c => c.type === 'client')?.name || '(미지정)'}</span></div>
-            <div className="flex gap-1"><span className="font-medium text-muted-foreground">시공사:</span><span>{projectCompanies.filter(c => c.type === 'gc').map(c => c.name).join(', ') || '(미지정)'}</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">시공사:</span><span>{(() => {
+              const gcs = projectCompanies.filter(c => c.type === 'gc');
+              const seesAll = isMaster || userRole === 'project_admin' || userRole === 'safety_manager';
+              const visible = seesAll ? gcs : (userCompanyId ? gcs.filter(c => c.id === userCompanyId) : []);
+              return visible.map(c => c.name).join(', ') || '(미지정)';
+            })()}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">기간:</span><span>{run.start_date || project?.period_start || ''} ~ {run.end_date || project?.period_end || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">항목 수:</span><span>{stats.total}건</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">상태:</span>

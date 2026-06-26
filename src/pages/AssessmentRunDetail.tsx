@@ -2631,12 +2631,11 @@ const AssessmentRunDetail = () => {
 
             {batchApplyDept && batchDeptId && batchApplyAssignee && !batchAssigneeUserId && (
               (() => {
-                const mapping = deptAssignees.find(da => da.department_id === batchDeptId);
-                const assignee = mapping?.default_user_id ? projectMembers.find(m => m.user_id === mapping.default_user_id) : null;
-                return assignee ? (
-                  <p className="text-xs text-accent">→ 기본 담당자: {assignee.display_name}{assignee.company ? ` (${assignee.company})` : ''}</p>
+                const def = deptDefaults[batchDeptId];
+                return def?.user_id ? (
+                  <p className="text-xs text-accent">→ 기본 담당자: {def.display_name}{def.company ? ` (${def.company})` : ''}</p>
                 ) : (
-                  <p className="text-xs text-destructive">⚠ 해당 부서에 기본 담당자 매핑이 없습니다.</p>
+                  <p className="text-xs text-destructive">⚠ 해당 부서에 담당자가 등록되어 있지 않습니다. 회사 관리 → 조직도에서 담당자를 추가하세요.</p>
                 );
               })()
             )}

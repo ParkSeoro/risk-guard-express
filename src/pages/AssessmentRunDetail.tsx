@@ -2584,11 +2584,11 @@ const AssessmentRunDetail = () => {
                 <Select value={batchDeptId || '__none__'} onValueChange={v => {
                   const deptId = v === '__none__' ? '' : v;
                   setBatchDeptId(deptId);
-                  // Auto-fill assignee from dept mapping
+                  // Auto-fill assignee from dept default (org chart)
                   if (deptId && batchApplyAssignee && !batchAssigneeUserId) {
-                    const mapping = deptAssignees.find(da => da.department_id === deptId);
-                    if (mapping?.default_user_id) {
-                      setBatchAssigneeUserId(mapping.default_user_id);
+                    const def = deptDefaults[deptId];
+                    if (def?.user_id) {
+                      setBatchAssigneeUserId(def.user_id);
                     }
                   }
                 }}>

@@ -127,8 +127,9 @@ export default function Index() {
               </div>
             </div>
           </div>
-
+        </div>
       </section>
+
 
       {/* Modules */}
       <section className="bg-[hsl(220,60%,9%)] border-y border-[hsl(220,45%,22%)] py-24">

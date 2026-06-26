@@ -540,6 +540,13 @@ const AssessmentRunDetail = () => {
     setEditingCell(null);
   };
 
+  // For synthetic `mgr:<id>` keys (org-chart managers without auth user) we
+  // must NOT write the key into risk_items.assignee_user_id (uuid column).
+  const resolveAssigneeWrite = (key: string | null | undefined, displayName: string) => {
+    if (!key || key.startsWith('mgr:')) return { assignee_user_id: null, assignee: displayName };
+    return { assignee_user_id: key, assignee: displayName };
+  };
+
   // Department selection with auto-fill assignee
   const handleDepartmentChange = async (itemId: string, deptId: string) => {
     if (!canEdit && !canForceEdit) return;
@@ -549,9 +556,8 @@ const AssessmentRunDetail = () => {
       department: dept?.name || '',
     };
     const def = deptDefaults[deptId];
-    if (def?.user_id) {
-      updateData.assignee_user_id = def.user_id;
-      updateData.assignee = def.display_name;
+    if (def?.user_id || def?.display_name) {
+      Object.assign(updateData, resolveAssigneeWrite(def.user_id, def.display_name));
     } else {
       toast({ title: '해당 부서에 기본 담당자가 지정되지 않았습니다.', description: '회사 관리 → 조직도에서 부서 담당자를 등록하세요.', variant: 'destructive' });
     }
@@ -565,10 +571,7 @@ const AssessmentRunDetail = () => {
   const handleAssigneeChange = async (itemId: string, userId: string) => {
     if (!canEdit && !canForceEdit) return;
     const member = projectMembers.find(m => m.user_id === userId);
-    const updateData: Record<string, any> = {
-      assignee_user_id: userId,
-      assignee: member?.display_name || '',
-    };
+    const updateData: Record<string, any> = resolveAssigneeWrite(userId, member?.display_name || '');
     await supabase.from('risk_items').update(updateData).eq('id', itemId);
     const { data: updated } = await supabase.from('risk_items').select('*').eq('id', itemId).single();
     if (updated) setItems(prev => prev.map(item => item.id === itemId ? updated : item));

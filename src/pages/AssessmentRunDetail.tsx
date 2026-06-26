@@ -56,6 +56,7 @@ const AssessmentRunDetail = () => {
   const { runId } = useParams();
   const navigate = useNavigate();
   const { user, profile, isAdmin, roles } = useAuth();
+  const { userRole, userCompanyId, isMaster } = useProjectAccess();
   const { log } = useAuditLog();
   const { toast } = useToast();
 

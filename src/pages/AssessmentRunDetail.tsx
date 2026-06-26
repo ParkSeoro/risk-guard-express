@@ -993,17 +993,15 @@ const AssessmentRunDetail = () => {
             // keep existing
           } else {
             const member = projectMembers.find(m => m.user_id === batchAssigneeUserId);
-            updateData.assignee_user_id = batchAssigneeUserId;
-            updateData.assignee = member?.display_name || '';
+            Object.assign(updateData, resolveAssigneeWrite(batchAssigneeUserId, member?.display_name || ''));
           }
         } else if (batchApplyDept && batchDeptId && batchApplyAssignee && !batchAssigneeUserId) {
           const def = deptDefaults[batchDeptId];
-          if (def?.user_id) {
+          if (def?.user_id || def?.display_name) {
             if (!batchOverrideManual && (item as any).assignee_user_id && batchScope !== 'empty') {
               // keep existing
             } else {
-              updateData.assignee_user_id = def.user_id;
-              updateData.assignee = def.display_name;
+              Object.assign(updateData, resolveAssigneeWrite(def.user_id, def.display_name));
             }
           }
         }

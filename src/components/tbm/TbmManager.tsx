@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText, Copy } from 'lucide-react';
+import AssigneeSelect from '@/components/AssigneeSelect';
 
 interface Props {
   projectId: string;

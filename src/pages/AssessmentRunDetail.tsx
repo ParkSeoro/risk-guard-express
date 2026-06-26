@@ -1303,7 +1303,12 @@ const AssessmentRunDetail = () => {
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">프로젝트:</span><span>{project?.name || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">현장명:</span><span>{project?.site_name || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">발주처:</span><span>{projectCompanies.find(c => c.type === 'client')?.name || '(미지정)'}</span></div>
-            <div className="flex gap-1"><span className="font-medium text-muted-foreground">시공사:</span><span>{projectCompanies.filter(c => c.type === 'gc').map(c => c.name).join(', ') || '(미지정)'}</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">시공사:</span><span>{(() => {
+              const gcs = projectCompanies.filter(c => c.type === 'gc');
+              const seesAll = isMaster || userRole === 'project_admin' || userRole === 'safety_manager';
+              const visible = seesAll ? gcs : (userCompanyId ? gcs.filter(c => c.id === userCompanyId) : []);
+              return visible.map(c => c.name).join(', ') || '(미지정)';
+            })()}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">기간:</span><span>{run.start_date || project?.period_start || ''} ~ {run.end_date || project?.period_end || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">항목 수:</span><span>{stats.total}건</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">상태:</span>

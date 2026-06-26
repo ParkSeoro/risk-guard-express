@@ -119,6 +119,7 @@ async function fetchRAGContext(
 async function generateBatch(
   apiUrl: string,
   apiKey: string,
+  useOpenAI: boolean,
   model: string,
   processName: string,
   equipText: string,
@@ -174,12 +175,17 @@ ${ragContext}
   }
 ]`;
 
+  const requestHeaders = useOpenAI
+    ? { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }
+    : {
+        "Lovable-API-Key": apiKey,
+        "X-Lovable-AIG-SDK": "risk-auto-generation",
+        "Content-Type": "application/json",
+      };
+
   const response = await fetch(apiUrl, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers: requestHeaders,
     body: JSON.stringify({
       model,
       messages: [
@@ -358,11 +364,19 @@ serve(async (req) => {
 
       const sysPrompt = `너는 대한민국 건설현장 20년 경력의 안전관리 전문가다.\n산업안전보건법, KOSHA GUIDE 기준으로 실제 현장에서 사용 가능한 수준의 작업계획서를 작성한다.\n반드시 요청된 JSON 형식으로만 출력하라.`;
 
+      const requestHeaders = useOpenAI
+        ? { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }
+        : {
+            "Lovable-API-Key": apiKey,
+            "X-Lovable-AIG-SDK": "work-plan-section-generation",
+            "Content-Type": "application/json",
+          };
+
       const response = await fetch(apiUrl, {
         method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        headers: requestHeaders,
         body: JSON.stringify({
-          model: useOpenAI ? openaiModel : "google/gemini-2.5-flash",
+          model: useOpenAI ? openaiModel : "google/gemini-3-flash-preview",
           messages: [
             { role: "system", content: sysPrompt },
             { role: "user", content: prompt },
@@ -471,13 +485,14 @@ serve(async (req) => {
       );
     }
 
-    const defaultModel = useOpenAI ? openaiModel : "google/gemini-2.5-flash";
+    const defaultModel = useOpenAI ? openaiModel : "google/gemini-3-flash-preview";
 
     console.log(`[AI Engine] Generating batch ${currentBatchIndex + 1}/${totalBatches} (${currentBatchSize} items)`);
 
     const rawItems = await generateBatch(
       apiUrl,
       apiKey!,
+      useOpenAI,
       defaultModel,
       process_name,
       equipText,

@@ -252,19 +252,28 @@ const AssessmentRunDetail = () => {
       // Departments now come from company_departments scoped to this project's companies
       const companyIds = companies.map((c) => c.id);
       let deptRows: any[] = [];
+      let companyManagerRows: any[] = [];
       if (companyIds.length > 0) {
-        const { data: cdData } = await supabase
-          .from('company_departments' as any)
-          .select('id, name, company_id')
-          .in('company_id', companyIds)
-          .eq('is_deleted', false)
-          .order('sort_order', { ascending: true });
+        const [cdRes, cmRes] = await Promise.all([
+          supabase
+            .from('company_departments' as any)
+            .select('id, name, company_id')
+            .in('company_id', companyIds)
+            .eq('is_deleted', false)
+            .order('sort_order', { ascending: true }),
+          supabase
+            .from('company_managers' as any)
+            .select('id, name, user_id, department_id, company_id, position, is_primary')
+            .in('company_id', companyIds)
+            .eq('is_deleted', false),
+        ]);
         const companyName = new Map(companies.map((c) => [c.id, c.name]));
-        deptRows = (cdData || []).map((d: any) => ({
+        deptRows = (cdRes.data || []).map((d: any) => ({
           id: d.id,
           name: companies.length > 1 ? `${companyName.get(d.company_id) || ''} · ${d.name}` : d.name,
           company_id: d.company_id,
         }));
+        companyManagerRows = (cmRes.data || []) as any[];
       }
       setDepartments(deptRows);
 

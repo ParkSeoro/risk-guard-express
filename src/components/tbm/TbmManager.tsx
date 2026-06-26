@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText, Copy } from 'lucide-react';
+import AssigneeSelect from '@/components/AssigneeSelect';
 
 interface Props {
   projectId: string;
@@ -481,7 +482,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
                 <div><Label>장소</Label><Input value={location} onChange={(e) => setLocation(e.target.value)} /></div>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <div><Label>주관자</Label><Input value={leader} onChange={(e) => setLeader(e.target.value)} /></div>
+                <div><Label>주관자</Label><AssigneeSelect projectId={projectId} companyId={companyId || null} value={leader} onChange={({ name }) => setLeader(name)} /></div>
                 <div><Label>공종</Label><Input value={processCategory} onChange={(e) => setProcessCategory(e.target.value)} placeholder="예: 철근콘크리트" /></div>
               </div>
               <div>

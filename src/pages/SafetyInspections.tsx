@@ -16,6 +16,7 @@ import { buildChecklist, INSPECTION_TYPE_LABELS, PROCESS_CATEGORIES, type Inspec
 import IMESafeInput from '@/components/IMESafeInput';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import MultiCompanyFilter from '@/components/MultiCompanyFilter';
+import AssigneeSelect from '@/components/AssigneeSelect';
 
 type Inspection = {
   id: string;
@@ -525,7 +526,11 @@ export default function SafetyInspections() {
                           <div className="grid grid-cols-3 gap-2">
                             <div>
                               <Label className="text-xs">담당자</Label>
-                              <IMESafeInput defaultValue={a.assignee_name} onCommit={(v) => updateActionField(a, { assignee_name: v })} />
+                              <AssigneeSelect
+                                projectId={projectId || ''}
+                                value={a.assignee_name || ''}
+                                onChange={({ name }) => updateActionField(a, { assignee_name: name })}
+                              />
                             </div>
                             <div>
                               <Label className="text-xs">기한</Label>

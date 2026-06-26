@@ -166,7 +166,6 @@ const MasterData = () => {
           <TabsTrigger value="processes">공정 목록</TabsTrigger>
           <TabsTrigger value="ppe">PPE 목록</TabsTrigger>
           <TabsTrigger value="legal">법적근거</TabsTrigger>
-          <TabsTrigger value="departments">부서·담당자</TabsTrigger>
           <TabsTrigger value="dept-mapping">담당자 매핑</TabsTrigger>
           <TabsTrigger value="rules">검증 규칙</TabsTrigger>
         </TabsList>

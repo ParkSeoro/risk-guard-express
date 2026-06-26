@@ -514,15 +514,12 @@ const AssessmentRunDetail = () => {
       responsible_department_id: deptId,
       department: dept?.name || '',
     };
-    const mapping = deptAssignees.find(da => da.department_id === deptId);
-    if (mapping?.default_user_id) {
-      const assigneeProfile = projectMembers.find(m => m.user_id === mapping.default_user_id);
-      if (assigneeProfile) {
-        updateData.assignee_user_id = mapping.default_user_id;
-        updateData.assignee = assigneeProfile.display_name;
-      }
+    const def = deptDefaults[deptId];
+    if (def?.user_id) {
+      updateData.assignee_user_id = def.user_id;
+      updateData.assignee = def.display_name;
     } else {
-      toast({ title: '해당 부서에 기본 담당자 매핑이 없습니다.', description: '기준정보 > 부서별 담당자에서 매핑을 설정하세요.', variant: 'destructive' });
+      toast({ title: '해당 부서에 기본 담당자가 지정되지 않았습니다.', description: '회사 관리 → 조직도에서 부서 담당자를 등록하세요.', variant: 'destructive' });
     }
     await supabase.from('risk_items').update(updateData).eq('id', itemId);
     const { data: updated } = await supabase.from('risk_items').select('*').eq('id', itemId).single();

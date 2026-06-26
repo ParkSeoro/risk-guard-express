@@ -98,36 +98,36 @@ export default function Index() {
             </div>
           </div>
 
-          {/* Right: stat panel mimicking control room */}
+          {/* Right: capabilities panel (no fake live data on public landing) */}
           <div className="lg:col-span-5">
             <div className="relative rounded-2xl border border-[hsl(220,45%,28%)] bg-[hsl(220,55%,10%)] p-6 shadow-2xl">
               <div className="absolute -top-3 left-6 px-3 py-0.5 bg-[hsl(25,95%,53%)] text-[hsl(220,60%,12%)] text-[10px] font-black tracking-widest rounded">
-                LIVE STATUS
+                PLATFORM SCOPE
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <StatCard label="오늘 출입" value="142" sub="명" icon={Users} tone="ok" />
-                <StatCard label="진행중 작업" value="18" sub="건" icon={Activity} tone="ok" />
-                <StatCard label="고위험 항목" value="3" sub="건" icon={AlertTriangle} tone="warn" />
-                <StatCard label="결재 대기" value="7" sub="건" icon={FileSignature} tone="ok" />
+                <StatCard label="위험성평가" value="4" sub="종" icon={ShieldAlert} tone="brand" />
+                <StatCard label="작업계획서" value="11" sub="종" icon={ClipboardCheck} tone="ok" />
+                <StatCard label="법정업무" value="22" sub="항" icon={FileSignature} tone="brand" />
+                <StatCard label="전자결재" value="5" sub="단계" icon={CheckCircle2} tone="ok" />
               </div>
               <div className="mt-4 pt-4 border-t border-[hsl(220,45%,22%)] space-y-2">
                 {[
-                  { t: "TBM 완료", s: "A동 철근반 · 09:12", c: "hsl(145 63% 50%)" },
-                  { t: "허가서 승인", s: "용접작업 #2041 · 09:24", c: "hsl(25 95% 53%)" },
-                  { t: "위험구역 진입 경고", s: "B-3 크레인 작업 반경 · 09:31", c: "hsl(0 72% 60%)" },
+                  { t: "산업안전보건법 대응", s: "위험성평가·작업계획서·법정 To-Do 자동화", c: "hsl(145 63% 50%)" },
+                  { t: "AI 위험성평가 엔진", s: "공정·작업별 자동 생성 + 검증센터 보완", c: "hsl(25 95% 53%)" },
+                  { t: "QR 출입 · TBM · 사고/비상", s: "현장 데이터가 결재·감사 로그로 연결", c: "hsl(210 90% 60%)" },
                 ].map(e => (
                   <div key={e.t} className="flex items-start gap-2 text-xs">
                     <span className="h-2 w-2 rounded-full mt-1.5 shrink-0" style={{ background: e.c }} />
                     <div className="flex-1">
                       <div className="font-semibold text-[hsl(210,30%,95%)]">{e.t}</div>
-                      <div className="text-[hsl(210,15%,60%)] font-mono">{e.s}</div>
+                      <div className="text-[hsl(210,15%,60%)]">{e.s}</div>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           </div>
-        </div>
+
       </section>
 
       {/* Modules */}

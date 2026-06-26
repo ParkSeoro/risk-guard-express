@@ -277,29 +277,60 @@ const AssessmentRunDetail = () => {
       }
       setDepartments(deptRows);
 
-      // Project members come from the unified pool (company_managers + project_members),
-      // de-duplicated by user_id (company_manager row wins so the field-defined position is kept).
+      // [DEBUG] Trace org-chart → dropdown pipeline
+      console.debug('[AssessmentRunDetail] assignee pipeline', {
+        projectId,
+        companyCount: companies.length,
+        departmentRows: deptRows.length,
+        companyManagerRows: companyManagerRows.length,
+        managersWithUserId: companyManagerRows.filter((m: any) => m.user_id).length,
+        managersWithoutUserId: companyManagerRows.filter((m: any) => !m.user_id).length,
+        poolRows: (poolRes.data || []).length,
+        poolError: (poolRes as any).error?.message,
+        cmError: undefined,
+      });
+
+      // Build assignee list from BOTH the unified pool AND raw company_managers,
+      // so org-chart entries that aren't linked to an auth user_id still appear.
       const poolRows = (poolRes.data || []) as any[];
-      const byUser = new Map<string, any>();
-      for (const r of poolRows) {
-        if (!r.user_id) continue; // assignees must have an auth user
-        const existing = byUser.get(r.user_id);
-        if (!existing || (r.source === 'company_manager' && existing.source !== 'company_manager')) {
-          byUser.set(r.user_id, r);
-        }
-      }
       const positionLabelMap: Record<string, string> = {
         SITE_MANAGER: '현장소장', site_manager: '현장소장',
         SUPERVISOR: '감리', supervisor: '감리',
         HSE_MANAGER: '안전관리자', safety_manager: '안전관리자',
         project_admin: '프로젝트관리자',
       };
-      const membersList = Array.from(byUser.values()).map((r: any) => {
+      const companyNameById = new Map(companies.map((c: any) => [c.id, c.name]));
+      // key strategy: real user_id wins; otherwise synthetic `mgr:<manager_id>`
+      const byKey = new Map<string, any>();
+      // a) unified pool (has user_id only)
+      for (const r of poolRows) {
+        if (!r.user_id) continue;
+        const existing = byKey.get(r.user_id);
+        if (!existing || (r.source === 'company_manager' && existing.source !== 'company_manager')) {
+          byKey.set(r.user_id, {
+            key: r.user_id, user_id: r.user_id,
+            display_name: r.display_name, position: r.position || '',
+            company_id: r.company_id, company_name: r.company_name || '',
+          });
+        }
+      }
+      // b) raw company_managers — include rows even without user_id
+      for (const cm of companyManagerRows) {
+        const k = cm.user_id || `mgr:${cm.id}`;
+        if (byKey.has(k)) continue;
+        byKey.set(k, {
+          key: k, user_id: cm.user_id || null,
+          display_name: cm.name, position: cm.position || '',
+          company_id: cm.company_id, company_name: companyNameById.get(cm.company_id) || '',
+        });
+      }
+      const membersList = Array.from(byKey.values()).map((r: any) => {
         const pos = r.position || '';
         const label = pos ? ` / ${positionLabelMap[pos] || pos}` : '';
         const role = pos === 'project_admin' || pos === 'safety_manager' ? pos : (pos || 'viewer');
         return {
-          user_id: r.user_id as string,
+          user_id: r.key as string,                 // dropdown key (may be synthetic)
+          real_user_id: r.user_id as string | null, // actual auth uuid (or null)
           display_name: `${r.display_name || ''}${label}`,
           company: r.company_name || '',
           company_id: r.company_id || null,
@@ -308,36 +339,34 @@ const AssessmentRunDetail = () => {
         };
       });
       setProjectMembers(membersList);
+      console.debug('[AssessmentRunDetail] projectMembers built', {
+        total: membersList.length,
+        withAuthUser: membersList.filter(m => m.real_user_id).length,
+        nameOnly: membersList.filter(m => !m.real_user_id).length,
+        sample: membersList.slice(0, 5).map(m => ({ name: m.display_name, hasUser: !!m.real_user_id, co: m.company })),
+      });
 
       // Build department default-assignee map: override > primary manager > first manager
-      const membersByUser = new Map(membersList.map((m) => [m.user_id, m]));
+      const membersByKey = new Map(membersList.map((m) => [m.user_id, m]));
       const defaults: Record<string, { user_id: string; display_name: string; company: string }> = {};
-      // 2) primary manager
-      for (const cm of companyManagerRows) {
-        if (!cm.department_id || !cm.user_id || !cm.is_primary) continue;
-        if (defaults[cm.department_id]) continue;
-        const m = membersByUser.get(cm.user_id);
-        defaults[cm.department_id] = {
-          user_id: cm.user_id,
+      const pushDefault = (deptId: string, cm: any) => {
+        if (!deptId || defaults[deptId]) return;
+        const key = cm.user_id || `mgr:${cm.id}`;
+        const m = membersByKey.get(key);
+        defaults[deptId] = {
+          user_id: key,
           display_name: m?.display_name || cm.name || '',
-          company: m?.company || '',
+          company: m?.company || companyNameById.get(cm.company_id) || '',
         };
-      }
-      // 3) any manager with user_id
-      for (const cm of companyManagerRows) {
-        if (!cm.department_id || !cm.user_id) continue;
-        if (defaults[cm.department_id]) continue;
-        const m = membersByUser.get(cm.user_id);
-        defaults[cm.department_id] = {
-          user_id: cm.user_id,
-          display_name: m?.display_name || cm.name || '',
-          company: m?.company || '',
-        };
-      }
+      };
+      // 2) primary manager (with or without user_id)
+      for (const cm of companyManagerRows) if (cm.is_primary) pushDefault(cm.department_id, cm);
+      // 3) any manager
+      for (const cm of companyManagerRows) pushDefault(cm.department_id, cm);
       // 1) explicit override wins
       for (const da of (deptAssigneeRes.data || [])) {
         if (!da.department_id || !da.default_user_id) continue;
-        const m = membersByUser.get(da.default_user_id);
+        const m = membersByKey.get(da.default_user_id);
         defaults[da.department_id] = {
           user_id: da.default_user_id,
           display_name: m?.display_name || '',
@@ -345,6 +374,11 @@ const AssessmentRunDetail = () => {
         };
       }
       setDeptDefaults(defaults);
+      console.debug('[AssessmentRunDetail] deptDefaults built', {
+        mappedDepartments: Object.keys(defaults).length,
+        totalDepartments: deptRows.length,
+        unmapped: deptRows.filter(d => !defaults[d.id]).map(d => d.name),
+      });
 
       // Auto-populate participants from approval route template if none exist
       const currentParticipants = partRes.data || [];
@@ -506,6 +540,13 @@ const AssessmentRunDetail = () => {
     setEditingCell(null);
   };
 
+  // For synthetic `mgr:<id>` keys (org-chart managers without auth user) we
+  // must NOT write the key into risk_items.assignee_user_id (uuid column).
+  const resolveAssigneeWrite = (key: string | null | undefined, displayName: string) => {
+    if (!key || key.startsWith('mgr:')) return { assignee_user_id: null, assignee: displayName };
+    return { assignee_user_id: key, assignee: displayName };
+  };
+
   // Department selection with auto-fill assignee
   const handleDepartmentChange = async (itemId: string, deptId: string) => {
     if (!canEdit && !canForceEdit) return;
@@ -515,9 +556,8 @@ const AssessmentRunDetail = () => {
       department: dept?.name || '',
     };
     const def = deptDefaults[deptId];
-    if (def?.user_id) {
-      updateData.assignee_user_id = def.user_id;
-      updateData.assignee = def.display_name;
+    if (def?.user_id || def?.display_name) {
+      Object.assign(updateData, resolveAssigneeWrite(def.user_id, def.display_name));
     } else {
       toast({ title: '해당 부서에 기본 담당자가 지정되지 않았습니다.', description: '회사 관리 → 조직도에서 부서 담당자를 등록하세요.', variant: 'destructive' });
     }
@@ -531,10 +571,7 @@ const AssessmentRunDetail = () => {
   const handleAssigneeChange = async (itemId: string, userId: string) => {
     if (!canEdit && !canForceEdit) return;
     const member = projectMembers.find(m => m.user_id === userId);
-    const updateData: Record<string, any> = {
-      assignee_user_id: userId,
-      assignee: member?.display_name || '',
-    };
+    const updateData: Record<string, any> = resolveAssigneeWrite(userId, member?.display_name || '');
     await supabase.from('risk_items').update(updateData).eq('id', itemId);
     const { data: updated } = await supabase.from('risk_items').select('*').eq('id', itemId).single();
     if (updated) setItems(prev => prev.map(item => item.id === itemId ? updated : item));
@@ -956,17 +993,15 @@ const AssessmentRunDetail = () => {
             // keep existing
           } else {
             const member = projectMembers.find(m => m.user_id === batchAssigneeUserId);
-            updateData.assignee_user_id = batchAssigneeUserId;
-            updateData.assignee = member?.display_name || '';
+            Object.assign(updateData, resolveAssigneeWrite(batchAssigneeUserId, member?.display_name || ''));
           }
         } else if (batchApplyDept && batchDeptId && batchApplyAssignee && !batchAssigneeUserId) {
           const def = deptDefaults[batchDeptId];
-          if (def?.user_id) {
+          if (def?.user_id || def?.display_name) {
             if (!batchOverrideManual && (item as any).assignee_user_id && batchScope !== 'empty') {
               // keep existing
             } else {
-              updateData.assignee_user_id = def.user_id;
-              updateData.assignee = def.display_name;
+              Object.assign(updateData, resolveAssigneeWrite(def.user_id, def.display_name));
             }
           }
         }

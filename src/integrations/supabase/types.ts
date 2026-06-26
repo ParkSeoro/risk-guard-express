@@ -1487,6 +1487,118 @@ export type Database = {
           },
         ]
       }
+      company_departments: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          is_deleted: boolean
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          is_deleted?: boolean
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          is_deleted?: boolean
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_departments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_departments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      company_managers: {
+        Row: {
+          company_id: string
+          created_at: string
+          department_id: string | null
+          email: string | null
+          id: string
+          is_deleted: boolean
+          is_primary: boolean
+          name: string
+          phone: string | null
+          position: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          department_id?: string | null
+          email?: string | null
+          id?: string
+          is_deleted?: boolean
+          is_primary?: boolean
+          name: string
+          phone?: string | null
+          position?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          department_id?: string | null
+          email?: string | null
+          id?: string
+          is_deleted?: boolean
+          is_primary?: boolean
+          name?: string
+          phone?: string | null
+          position?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_managers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_managers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "company_managers_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "company_departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_members: {
         Row: {
           company_id: string
@@ -7796,6 +7908,23 @@ export type Database = {
       }
     }
     Views: {
+      project_assignee_pool: {
+        Row: {
+          company_id: string | null
+          company_name: string | null
+          department_id: string | null
+          department_name: string | null
+          display_name: string | null
+          email: string | null
+          phone: string | null
+          position: string | null
+          project_id: string | null
+          source: string | null
+          source_id: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
       v_contractor_safety_scorecard: {
         Row: {
           company_id: string | null

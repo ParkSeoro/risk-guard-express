@@ -112,10 +112,18 @@ const BASE_ATTACHMENTS: Record<string, AttachmentItem[]> = {
     { key: 'vibration_prediction', name: '발파진동/소음 예측서', required: true, description: '진동, 소음 영향 예측', category: '조사' },
     { key: 'evacuation_plan', name: '대피계획도', required: true, description: '발파 시 대피구역 설정', category: '안전' },
   ],
+  vehicle_equipment: [
+    { key: 'vehicle_route', name: '운행경로도', required: true, description: '차량계 건설기계 진입로 및 운행 구간 도면', category: '도면' },
+    { key: 'signal_layout', name: '유도자 배치도', required: true, description: '신호수·유도자 배치 위치 및 통신수단', category: '안전' },
+    { key: 'ground_review', name: '지반 지지력 검토서', required: false, description: '중량 장비 운행 구간 지반 안전성 검토', category: '구조' },
+    { key: 'reverse_alarm', name: '후진경보장치 점검표', required: true, description: '후진경보·경광등·미러 정상 작동 확인', category: '점검' },
+    { key: 'control_plan', name: '통제계획서', required: true, description: '작업구역 출입통제 및 안전구역 설정', category: '안전' },
+  ],
   other_hazardous: [
     { key: 'work_permit', name: '작업허가서', required: true, description: '위험작업 허가 서류', category: '인허가' },
     { key: 'equipment_check', name: '장비점검표', required: true, description: '사용 장비 점검기록', category: '점검' },
   ],
+
 };
 
 // 조건별 추가 첨부자료
@@ -155,7 +163,7 @@ const CONDITIONAL_ATTACHMENTS: AttachmentCondition[] = [
 
 // 장비 사용 공종 (장비서류 필수)
 const EQUIPMENT_REQUIRED_TYPES = [
-  'heavy_lifting', 'excavation', 'tunnel', 'steel', 'demolition',
+  'heavy_lifting', 'excavation', 'tunnel', 'steel', 'demolition', 'vehicle_equipment',
 ];
 
 /**

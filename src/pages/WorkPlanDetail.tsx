@@ -402,8 +402,9 @@ const WorkPlanDetail = () => {
   };
 
   const handleFileUpload = async (attIdx: number, file: File) => {
-    if (!planId || !user) return;
-    const path = `work-plans/${planId}/${attIdx}_${file.name}`;
+    if (!planId || !user || !plan?.project_id) return;
+    const safeName = file.name.replace(/[^\w.\-]+/g, '_');
+    const path = `${plan.project_id}/work-plans/${planId}/${attIdx}_${Date.now()}_${safeName}`;
     const { error: uploadError } = await supabase.storage.from('attachments').upload(path, file, { upsert: true });
     if (uploadError) {
       toast({ title: '업로드 실패', description: uploadError.message, variant: 'destructive' });
@@ -415,6 +416,7 @@ const WorkPlanDetail = () => {
     setIsDirty(true);
     toast({ title: '업로드 완료' });
   };
+
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
   if (!plan) return null;

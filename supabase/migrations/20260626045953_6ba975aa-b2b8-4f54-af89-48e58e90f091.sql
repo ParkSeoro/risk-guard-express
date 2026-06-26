@@ -1,0 +1,1 @@
+DELETE FROM public.ai_risk_cache WHERE jsonb_array_length(generated_items) < 8;

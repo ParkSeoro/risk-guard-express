@@ -131,6 +131,8 @@ const AssessmentRunDetail = () => {
   // Department & assignee data for dropdowns
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [deptAssignees, setDeptAssignees] = useState<{ department_id: string; default_user_id: string | null }[]>([]);
+  // Department default assignee derived from org chart (company_managers) + override (department_assignees)
+  const [deptDefaults, setDeptDefaults] = useState<Record<string, { user_id: string; display_name: string; company: string }>>({});
   const [projectMembers, setProjectMembers] = useState<{ user_id: string; display_name: string; company: string; company_id: string | null; position: string; role: string }[]>([]);
 
   // Edit run metadata
@@ -250,19 +252,28 @@ const AssessmentRunDetail = () => {
       // Departments now come from company_departments scoped to this project's companies
       const companyIds = companies.map((c) => c.id);
       let deptRows: any[] = [];
+      let companyManagerRows: any[] = [];
       if (companyIds.length > 0) {
-        const { data: cdData } = await supabase
-          .from('company_departments' as any)
-          .select('id, name, company_id')
-          .in('company_id', companyIds)
-          .eq('is_deleted', false)
-          .order('sort_order', { ascending: true });
+        const [cdRes, cmRes] = await Promise.all([
+          supabase
+            .from('company_departments' as any)
+            .select('id, name, company_id')
+            .in('company_id', companyIds)
+            .eq('is_deleted', false)
+            .order('sort_order', { ascending: true }),
+          supabase
+            .from('company_managers' as any)
+            .select('id, name, user_id, department_id, company_id, position, is_primary')
+            .in('company_id', companyIds)
+            .eq('is_deleted', false),
+        ]);
         const companyName = new Map(companies.map((c) => [c.id, c.name]));
-        deptRows = (cdData || []).map((d: any) => ({
+        deptRows = (cdRes.data || []).map((d: any) => ({
           id: d.id,
           name: companies.length > 1 ? `${companyName.get(d.company_id) || ''} · ${d.name}` : d.name,
           company_id: d.company_id,
         }));
+        companyManagerRows = (cmRes.data || []) as any[];
       }
       setDepartments(deptRows);
 
@@ -297,6 +308,43 @@ const AssessmentRunDetail = () => {
         };
       });
       setProjectMembers(membersList);
+
+      // Build department default-assignee map: override > primary manager > first manager
+      const membersByUser = new Map(membersList.map((m) => [m.user_id, m]));
+      const defaults: Record<string, { user_id: string; display_name: string; company: string }> = {};
+      // 2) primary manager
+      for (const cm of companyManagerRows) {
+        if (!cm.department_id || !cm.user_id || !cm.is_primary) continue;
+        if (defaults[cm.department_id]) continue;
+        const m = membersByUser.get(cm.user_id);
+        defaults[cm.department_id] = {
+          user_id: cm.user_id,
+          display_name: m?.display_name || cm.name || '',
+          company: m?.company || '',
+        };
+      }
+      // 3) any manager with user_id
+      for (const cm of companyManagerRows) {
+        if (!cm.department_id || !cm.user_id) continue;
+        if (defaults[cm.department_id]) continue;
+        const m = membersByUser.get(cm.user_id);
+        defaults[cm.department_id] = {
+          user_id: cm.user_id,
+          display_name: m?.display_name || cm.name || '',
+          company: m?.company || '',
+        };
+      }
+      // 1) explicit override wins
+      for (const da of (deptAssigneeRes.data || [])) {
+        if (!da.department_id || !da.default_user_id) continue;
+        const m = membersByUser.get(da.default_user_id);
+        defaults[da.department_id] = {
+          user_id: da.default_user_id,
+          display_name: m?.display_name || '',
+          company: m?.company || '',
+        };
+      }
+      setDeptDefaults(defaults);
 
       // Auto-populate participants from approval route template if none exist
       const currentParticipants = partRes.data || [];
@@ -466,15 +514,12 @@ const AssessmentRunDetail = () => {
       responsible_department_id: deptId,
       department: dept?.name || '',
     };
-    const mapping = deptAssignees.find(da => da.department_id === deptId);
-    if (mapping?.default_user_id) {
-      const assigneeProfile = projectMembers.find(m => m.user_id === mapping.default_user_id);
-      if (assigneeProfile) {
-        updateData.assignee_user_id = mapping.default_user_id;
-        updateData.assignee = assigneeProfile.display_name;
-      }
+    const def = deptDefaults[deptId];
+    if (def?.user_id) {
+      updateData.assignee_user_id = def.user_id;
+      updateData.assignee = def.display_name;
     } else {
-      toast({ title: '해당 부서에 기본 담당자 매핑이 없습니다.', description: '기준정보 > 부서별 담당자에서 매핑을 설정하세요.', variant: 'destructive' });
+      toast({ title: '해당 부서에 기본 담당자가 지정되지 않았습니다.', description: '회사 관리 → 조직도에서 부서 담당자를 등록하세요.', variant: 'destructive' });
     }
     await supabase.from('risk_items').update(updateData).eq('id', itemId);
     const { data: updated } = await supabase.from('risk_items').select('*').eq('id', itemId).single();
@@ -915,16 +960,13 @@ const AssessmentRunDetail = () => {
             updateData.assignee = member?.display_name || '';
           }
         } else if (batchApplyDept && batchDeptId && batchApplyAssignee && !batchAssigneeUserId) {
-          const mapping = deptAssignees.find(da => da.department_id === batchDeptId);
-          if (mapping?.default_user_id) {
+          const def = deptDefaults[batchDeptId];
+          if (def?.user_id) {
             if (!batchOverrideManual && (item as any).assignee_user_id && batchScope !== 'empty') {
               // keep existing
             } else {
-              const assigneeProfile = projectMembers.find(m => m.user_id === mapping.default_user_id);
-              if (assigneeProfile) {
-                updateData.assignee_user_id = mapping.default_user_id;
-                updateData.assignee = assigneeProfile.display_name;
-              }
+              updateData.assignee_user_id = def.user_id;
+              updateData.assignee = def.display_name;
             }
           }
         }
@@ -2542,11 +2584,11 @@ const AssessmentRunDetail = () => {
                 <Select value={batchDeptId || '__none__'} onValueChange={v => {
                   const deptId = v === '__none__' ? '' : v;
                   setBatchDeptId(deptId);
-                  // Auto-fill assignee from dept mapping
+                  // Auto-fill assignee from dept default (org chart)
                   if (deptId && batchApplyAssignee && !batchAssigneeUserId) {
-                    const mapping = deptAssignees.find(da => da.department_id === deptId);
-                    if (mapping?.default_user_id) {
-                      setBatchAssigneeUserId(mapping.default_user_id);
+                    const def = deptDefaults[deptId];
+                    if (def?.user_id) {
+                      setBatchAssigneeUserId(def.user_id);
                     }
                   }
                 }}>
@@ -2589,12 +2631,11 @@ const AssessmentRunDetail = () => {
 
             {batchApplyDept && batchDeptId && batchApplyAssignee && !batchAssigneeUserId && (
               (() => {
-                const mapping = deptAssignees.find(da => da.department_id === batchDeptId);
-                const assignee = mapping?.default_user_id ? projectMembers.find(m => m.user_id === mapping.default_user_id) : null;
-                return assignee ? (
-                  <p className="text-xs text-accent">→ 기본 담당자: {assignee.display_name}{assignee.company ? ` (${assignee.company})` : ''}</p>
+                const def = deptDefaults[batchDeptId];
+                return def?.user_id ? (
+                  <p className="text-xs text-accent">→ 기본 담당자: {def.display_name}{def.company ? ` (${def.company})` : ''}</p>
                 ) : (
-                  <p className="text-xs text-destructive">⚠ 해당 부서에 기본 담당자 매핑이 없습니다.</p>
+                  <p className="text-xs text-destructive">⚠ 해당 부서에 담당자가 등록되어 있지 않습니다. 회사 관리 → 조직도에서 담당자를 추가하세요.</p>
                 );
               })()
             )}

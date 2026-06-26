@@ -1,72 +1,40 @@
-## 문제 요약
+## 문제
 
-현재 부서·담당자 정보가 **3중으로 분리**되어 있어 화면마다 다른 목록이 나옵니다:
+회사 관리 → 조직도 에서 부서(예: 청원산기(주) · 시공팀)에 인원을 등록했지만, 위험성평가 "일괄 적용" 패널에서 "해당 부서에 기본 담당자 매핑이 없습니다" 가 표시됨.
 
-| 저장소 | 어디서 입력 | 어디서 조회 |
-|---|---|---|
-| `master_departments` + `master_assignees` | 관리자 페이지 (MasterData) | **위험성평가 일괄 모달**, 부서매핑 |
-| `company_departments` + `company_managers` | **회사 관리 → 조직도/관리자** | CompanyDetail 만 |
-| `project_members` | 사용자 초대 | 점검·비용·작업계획 등 모든 다른 메뉴 |
+원인: `AssessmentRunDetail.tsx`가 부서별 기본 담당자를 **오직 `department_assignees` 테이블**(별도 매핑 화면에서 수동 지정해야 채워지는 SSOT 이전 잔재)에서만 찾고 있음. 회사 관리에 등록한 `company_managers` 정보는 무시되고 있음.
 
-회사 조직도에 등록한 사람이 위험성평가에 나오지 않는 이유: 위험성평가 모달은 `master_departments` + `project_members` 만 읽고, `company_managers` 는 무시합니다. 통합 뷰(`project_assignee_pool`)도 만들었으나 부서매핑 화면 1곳만 사용 중입니다.
+## 해결 방향
 
-## 통합 방향 — 회사 관리(company_*)를 단일 진실(SSOT)로
+회사 관리 조직도(`company_departments` + `company_managers`)를 부서 담당자의 **SSOT**로 삼는다. 별도 매핑 화면은 보조 오버라이드로만 사용.
 
-**원칙**
-- 부서 = `company_departments` (각 시공사·협력사가 자기 부서 관리)
-- 사람 = `company_managers` (시스템 계정 연결은 선택)
-- 프로젝트 접근 권한만 `project_members` 가 담당 (역할·로그인 ID)
-- 모든 "담당자 지정" 드롭다운은 **단 하나의 뷰** `project_assignee_pool` 에서 읽음
+부서별 "기본 담당자" 결정 우선순위:
+1. `department_assignees.default_user_id` (수동 오버라이드가 있으면 우선 — 기존 운영 보호)
+2. 해당 부서 `company_managers` 중 `is_primary = true` 이면서 `user_id`가 있는 사람
+3. 해당 부서 `company_managers` 중 `user_id`가 있는 첫 사람 (이름순)
+4. 없으면 "매핑 없음" 경고
 
-**버릴 것**
-- `master_assignees` — 사용처 1곳(MasterData), auth 연결 없음, 완전 폐기
-- `master_departments` — 평가/매핑 UI 의 부서 소스에서 제거
-- MasterData 페이지의 부서·담당자 탭 → "회사 관리"로 안내 후 제거
+## 작업 항목 (frontend만 수정)
 
-**유지·확장할 것**
-- `company_departments` / `company_managers` — 입력 화면은 회사 상세만
-- `project_assignee_pool` 뷰 — 모든 메뉴의 표준 데이터 소스
-- `department_assignees` (부서→기본 담당자 매핑) — `department_id` 의 참조 대상을 `master_departments` → `company_departments` 로 전환
+### `src/pages/AssessmentRunDetail.tsx`
+- 데이터 로드 단계에서 `company_managers` (id, department_id, user_id, name, position, is_primary, is_deleted=false) 를 해당 프로젝트의 회사들로 스코프해서 함께 fetch.
+- `deptDefaults: Map<department_id, { user_id, display_name }>` 를 위 우선순위로 계산해 state로 보관.
+- 다음 3 군데를 `deptAssignees.find(...)` → `deptDefaults.get(deptId)` 로 교체:
+  - `handleDepartmentChange` (line ~469): 자동 채움 + 매핑 없음 토스트
+  - 일괄 적용 `onValueChange` (line ~2547): 자동 채움
+  - 일괄 적용 경고/미리보기 (line ~2590-2598): "기본 담당자: …" or "매핑 없음" 표시
+- 담당자 드롭다운(라인 ~1797, ~2573)에 회사 관리자가 빠지지 않도록, `projectMembers` 리스트에 `company_managers`에서 가져온 user_id 매핑 인원들도 머지(중복 user_id 제거). 표시 라벨: `이름 (회사 · 직책)`.
 
-## 단계별 실행 계획
+### 별도 매핑 화면 (`DepartmentAssigneeMapping.tsx`)
+- 동작은 유지하되 안내 문구를 "회사 관리 조직도에 부서별 담당자를 지정하면 자동으로 사용됩니다. 이 화면은 예외적인 경우의 오버라이드용입니다." 로 변경.
 
-### Phase 1 — 데이터 마이그레이션 (DB)
-1. `department_assignees.department_id` 를 `company_departments(id)` 참조로 전환 (FK 재지정).
-2. 기존 `master_departments` 행을 각 프로젝트의 "기본 시공사" 의 `company_departments` 로 복사 (이름 기준 매핑, 중복 시 skip), 매핑 테이블의 ID를 새 ID로 교체.
-3. `master_assignees` 의 이름·연락처를 해당 프로젝트의 "기본 시공사" `company_managers` 로 복사 (이미 같은 이름·전화 존재 시 skip).
-4. `project_assignee_pool` 뷰에 `department_id`/`department_name` 컬럼이 이미 노출되어 있는지 확인 후 누락 시 보강.
+## 검증
 
-### Phase 2 — UI 통합 (코드, master 제거)
-1. `AssessmentRunDetail.tsx`
-   - 행 단위 드롭다운(라인 239–259, ~2515, ~2532) 의 `master_departments`·`project_members` 직접 조회 제거.
-   - 부서 = `company_departments` (현재 프로젝트 회사들), 담당자 = `useProjectAssigneePool` 로 일원화.
-   - 일괄 모달의 부서·담당자 목록도 동일 소스로 교체.
-2. `DepartmentAssigneeMapping.tsx`
-   - 부서 소스를 `company_departments` 로 변경, `is_deleted=false` 필터 추가.
-   - 시공사별로 그룹핑된 부서 트리 표시(여러 회사가 같은 이름의 부서를 가질 수 있음).
-3. 다른 담당자 픽커가 있는 페이지(`SafetyInspections.tsx` 등) 도 점진적으로 `useProjectAssigneePool` 로 통일 (이번 Phase 는 위험성평가 우선, 나머지는 Phase 4).
+1. 회사 관리 → 조직도에서 부서 1개와 그 부서의 `is_primary` 관리자 1명 등록되어 있는 상태로 위험성평가 → 일괄 적용 → 책임부서 선택 시 "기본 담당자: 이름 (회사)" 가 보여야 한다.
+2. 표 안에서 부서 셀을 바꿀 때 담당자가 자동 채워져야 한다.
+3. 같은 부서에 `department_assignees` 오버라이드가 있으면 그 값이 우선되어야 한다.
 
-### Phase 3 — Master 화면 정리
-1. `MasterData.tsx` 의 "부서 관리" / "담당자 관리" 탭 제거 → 빈 자리에 "회사 관리로 이동" 버튼·안내.
-2. 사이드바·라우터에서 해당 탭 접근 동선 정리.
-3. RLS 로 `master_assignees` / `master_departments` 의 `INSERT`/`UPDATE` 차단(읽기는 한시 허용, 마이그레이션 검증용).
+## 비대상
 
-### Phase 4 — 잔여 메뉴 통일 & 정리
-1. 점검·비용·TBM·작업계획 등 `project_members` 를 직접 픽커로 쓰는 곳을 `useProjectAssigneePool` 로 교체.
-2. 검증 완료 후 `master_assignees` DROP, `master_departments` DROP(또는 deprecated 표식 후 다음 릴리스에 DROP).
-
-### Phase 5 — 검증
-1. 시드 시나리오: 회사 조직도에 부서·담당자 등록 → 위험성평가 일괄 모달과 행 드롭다운에 즉시 노출되는지 확인.
-2. `company_managers.user_id` 가 비어 있어도(아직 가입 안 한 사람) 위험성평가 담당자로 선택 가능한지 확인.
-3. 기존 위험성평가 데이터의 담당자 표시가 깨지지 않는지(이미 저장된 user_id 가 풀에 존재하는지) 회귀 확인.
-
-## 사용자 경험 변화
-
-- "회사 관리 → 조직도/관리자" 에 한 번 등록하면 **위험성평가·TBM·점검·비용 등 모든 메뉴의 담당자 드롭다운**에 자동 노출.
-- 마스터 데이터의 "부서/담당자" 탭은 사라지고, 모든 입력은 회사 단위로만.
-- 아직 시스템 계정이 없는 협력업체 담당자도 풀에 떠서 선택 가능 (감사로그·알림은 user_id 가 연결된 후 동작).
-
-## 확인 필요
-
-1. **Phase 1 의 자동 복사** — 현재 `master_departments`/`master_assignees` 의 기존 데이터를 어느 시공사 밑으로 이전할지 자동 매핑이 어렵다면, 마이그레이션을 건너뛰고 "기존 데이터는 보존하되 신규 화면은 회사 데이터만" 으로 갈 수도 있습니다. 자동 이전 vs 신규부터 시작 중 선호하시는 방향?
-2. **Phase 4 의 범위** — 점검/비용/TBM 등 다른 메뉴까지 이번에 한꺼번에 통합할지, 위험성평가만 먼저 적용 후 단계적으로 갈지?
+- DB 스키마 변경 없음 (`company_managers`, `company_departments`, `department_assignees`는 그대로).
+- TBM/안전점검 등 다른 화면은 이미 `useProjectAssigneePool` 사용 중이라 영향 없음.

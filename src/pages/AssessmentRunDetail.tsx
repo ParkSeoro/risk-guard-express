@@ -309,6 +309,43 @@ const AssessmentRunDetail = () => {
       });
       setProjectMembers(membersList);
 
+      // Build department default-assignee map: override > primary manager > first manager
+      const membersByUser = new Map(membersList.map((m) => [m.user_id, m]));
+      const defaults: Record<string, { user_id: string; display_name: string; company: string }> = {};
+      // 2) primary manager
+      for (const cm of companyManagerRows) {
+        if (!cm.department_id || !cm.user_id || !cm.is_primary) continue;
+        if (defaults[cm.department_id]) continue;
+        const m = membersByUser.get(cm.user_id);
+        defaults[cm.department_id] = {
+          user_id: cm.user_id,
+          display_name: m?.display_name || cm.name || '',
+          company: m?.company || '',
+        };
+      }
+      // 3) any manager with user_id
+      for (const cm of companyManagerRows) {
+        if (!cm.department_id || !cm.user_id) continue;
+        if (defaults[cm.department_id]) continue;
+        const m = membersByUser.get(cm.user_id);
+        defaults[cm.department_id] = {
+          user_id: cm.user_id,
+          display_name: m?.display_name || cm.name || '',
+          company: m?.company || '',
+        };
+      }
+      // 1) explicit override wins
+      for (const da of (deptAssigneeRes.data || [])) {
+        if (!da.department_id || !da.default_user_id) continue;
+        const m = membersByUser.get(da.default_user_id);
+        defaults[da.department_id] = {
+          user_id: da.default_user_id,
+          display_name: m?.display_name || '',
+          company: m?.company || '',
+        };
+      }
+      setDeptDefaults(defaults);
+
       // Auto-populate participants from approval route template if none exist
       const currentParticipants = partRes.data || [];
       if (currentParticipants.length === 0 && runRes.data.project_id) {

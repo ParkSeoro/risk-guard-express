@@ -158,8 +158,8 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
       </CardHeader>
       <CardContent>
         <p className="text-xs text-muted-foreground mb-4">
-          각 회사의 부서별 기본 담당자를 지정하면 위험성평가 등의 책임부서 선택 시 담당자가 자동으로 채워집니다.
-          부서·담당자 등록은 <strong>회사 관리</strong>에서 합니다.
+          기본적으로 <strong>회사 관리 → 조직도</strong>에 등록한 부서 담당자(우선: 대표 담당자)가 자동으로 사용됩니다.
+          이 화면은 예외적으로 다른 사람을 기본 담당자로 강제 지정하고 싶을 때만 사용하세요.
         </p>
         {Object.entries(grouped).map(([cid, g]) => (
           <div key={cid} className="mb-6">

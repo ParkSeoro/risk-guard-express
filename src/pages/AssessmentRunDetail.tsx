@@ -526,6 +526,7 @@ const AssessmentRunDetail = () => {
           tags: autoGenTags,
           targetCount: autoGenTargetCount,
           deduplicate: true,
+          projectId: run.project_id,
         };
         const result = await generateRiskItemsHybrid(opts);
         console.log(`[AutoGen] 결과 수신: ${result.items.length}건 (source: ${result.source})`);
@@ -551,9 +552,12 @@ const AssessmentRunDetail = () => {
         status: '초안', ppe: g.ppe, legal_basis: g.legal_basis, department: g.department, assignee: g.assignee,
         created_by: user.id, sort_order: items.length + i,
       }));
-      const { data } = await supabase.from('risk_items').insert(inserts).select();
+      const { data, error } = await supabase.from('risk_items').insert(inserts).select();
+      if (error) throw new Error(error.message || '자동작성 항목 저장 실패');
       const sourceMap: Record<string, string> = { library: '라이브러리', cache: '캐시', ai: 'AI', hybrid: '하이브리드' };
-      if (data) { setItems(prev => [...prev, ...data]); toast({ title: `${data.length}건 자동 생성 완료 (${sourceMap[sourceLabel] || sourceLabel})` }); }
+      if (!data || data.length === 0) throw new Error('자동작성 결과가 저장되지 않았습니다. 권한 또는 프로젝트 설정을 확인해주세요.');
+      setItems(prev => [...prev, ...data]);
+      toast({ title: `${data.length}건 자동 생성 완료 (${sourceMap[sourceLabel] || sourceLabel})` });
       setShowAutoGen(false); setAutoGenProcesses([]); setAutoGenProcessInput(''); setAutoGenTags([]);
       setAutoGenWorkLocation(''); setAutoGenWorkEnv([]); setAutoGenEquipment(''); setAutoGenConditionText('');
     } catch (err: any) { toast({ title: err?.message || '자동 생성 실패', variant: 'destructive' }); }

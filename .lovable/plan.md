@@ -1,75 +1,72 @@
+## 문제 요약
 
-# 시공사/협력사 상세 관리 기능 도입
+현재 부서·담당자 정보가 **3중으로 분리**되어 있어 화면마다 다른 목록이 나옵니다:
 
-## 문제 진단
+| 저장소 | 어디서 입력 | 어디서 조회 |
+|---|---|---|
+| `master_departments` + `master_assignees` | 관리자 페이지 (MasterData) | **위험성평가 일괄 모달**, 부서매핑 |
+| `company_departments` + `company_managers` | **회사 관리 → 조직도/관리자** | CompanyDetail 만 |
+| `project_members` | 사용자 초대 | 점검·비용·작업계획 등 모든 다른 메뉴 |
 
-1. **담당자 풀 부족**: 현재 부서·담당자 매핑(`DepartmentAssigneeMapping`) 화면에서 선택 가능한 담당자가 `role = safety_manager`로 한정되어, 시공사/협력사 현장소장·공무·관리자 등이 후보로 뜨지 않음.
-2. **회사 단위 관리 화면 부재**: `companies` 테이블과 `company_construction_info`(공사 개요)만 있고, 각 시공사가 스스로 ① 조직도 ② 관리자(현장소장·안전관리자·공사팀장 등) ③ 공사 개요를 등록·관리할 수 있는 통합 메뉴가 없음. 그래서 위험성평가/TBM/작업허가 등 다른 메뉴에서 담당자 드롭다운에 누구도 나오지 않음.
-3. **연결 부재**: 회사별 등록된 인력이 `project_members` / `user_roles` / `department_assignees` 와 자동으로 매핑되지 않아 다른 메뉴에서 활용 불가.
+회사 조직도에 등록한 사람이 위험성평가에 나오지 않는 이유: 위험성평가 모달은 `master_departments` + `project_members` 만 읽고, `company_managers` 는 무시합니다. 통합 뷰(`project_assignee_pool`)도 만들었으나 부서매핑 화면 1곳만 사용 중입니다.
 
-## 핵심 아이디어 — "회사 카드(Company Workspace)" 도입
+## 통합 방향 — 회사 관리(company_*)를 단일 진실(SSOT)로
 
-각 시공사/협력사를 하나의 미니 워크스페이스로 보고, 카드 안에 모든 회사 정보를 집약합니다. Master/PM 은 전체를 보고, 시공사 소속 사용자는 자기 회사 카드만 편집할 수 있게 함 (RLS).
+**원칙**
+- 부서 = `company_departments` (각 시공사·협력사가 자기 부서 관리)
+- 사람 = `company_managers` (시스템 계정 연결은 선택)
+- 프로젝트 접근 권한만 `project_members` 가 담당 (역할·로그인 ID)
+- 모든 "담당자 지정" 드롭다운은 **단 하나의 뷰** `project_assignee_pool` 에서 읽음
 
-### Company Workspace 탭 구성
-```
-회사관리(/companies/:id)
- ├─ 1. 회사 개요         (사업자번호, 대표, 본사 주소, 업종)  ← companies
- ├─ 2. 공사 개요         (공종, 계약금액, 공기, 도급/하도급)  ← company_construction_info
- ├─ 3. 조직도/부서       (시공팀, 안전팀, 공무팀 …)          ← company_departments (신규)
- ├─ 4. 관리자/담당자     (현장소장·안전관리자·공사팀장 등)    ← company_managers (신규)
- ├─ 5. 근로자 명부       (기존 workers 연동, 회사 필터)
- ├─ 6. 보유 장비         (기존 equipment_master 회사 필터)
- └─ 7. 안전 성과         (ContractorScorecard 미니뷰)
-```
+**버릴 것**
+- `master_assignees` — 사용처 1곳(MasterData), auth 연결 없음, 완전 폐기
+- `master_departments` — 평가/매핑 UI 의 부서 소스에서 제거
+- MasterData 페이지의 부서·담당자 탭 → "회사 관리"로 안내 후 제거
 
-## 작업 범위
+**유지·확장할 것**
+- `company_departments` / `company_managers` — 입력 화면은 회사 상세만
+- `project_assignee_pool` 뷰 — 모든 메뉴의 표준 데이터 소스
+- `department_assignees` (부서→기본 담당자 매핑) — `department_id` 의 참조 대상을 `master_departments` → `company_departments` 로 전환
 
-### A. 데이터 모델 (신규/보강)
-- **`company_departments`** : 회사별 부서(시공팀, 안전팀, 공무팀, 품질팀 …) — `company_id`, `name`, `sort_order`.
-- **`company_managers`** : 회사별 관리자 — `company_id`, `department_id`, `name`, `position`(현장소장/안전관리자/공무팀장/공사팀장/품질관리자 등 enum), `phone`, `email`, `user_id`(nullable — 로그인 계정과 연결되면 자동 권한 부여), `is_primary`.
-- `company_construction_info` 에 누락 필드 보강(공기 시작/종료, 도급 단계, 발주처) — 이미 존재하는 컬럼은 그대로 사용.
-- 모든 신규 테이블 `public` GRANT + RLS:
-  - SELECT: 같은 프로젝트의 멤버는 회사 조회 가능 (협력사 데이터 격리 룰 유지 — 자기 회사+소속 GC).
-  - INSERT/UPDATE/DELETE: Master/PM 전체, 시공사 소속 `safety_manager`/`site_manager`는 자기 회사만.
+## 단계별 실행 계획
 
-### B. UI — 신규 페이지/컴포넌트
-1. **`/companies` (회사 목록)** — 사이드바 "회사 관리" 메뉴 신설. 회사 카드 그리드(공종/관리자수/근로자수/안전등급 뱃지).
-2. **`/companies/:id` (회사 상세)** — 위 7개 탭 구현.
-3. **`CompanyManagerForm`** — 직책 선택 → 사용자 검색(이미 가입한 계정과 매칭) → 매칭 시 `user_roles`/`project_members`에 자동 등록(역할 매핑: 현장소장→`site_manager`, 안전관리자→`safety_manager`, 그 외→`user`).
-4. **`CompanyDepartmentManager`** — 부서 CRUD + 정렬.
+### Phase 1 — 데이터 마이그레이션 (DB)
+1. `department_assignees.department_id` 를 `company_departments(id)` 참조로 전환 (FK 재지정).
+2. 기존 `master_departments` 행을 각 프로젝트의 "기본 시공사" 의 `company_departments` 로 복사 (이름 기준 매핑, 중복 시 skip), 매핑 테이블의 ID를 새 ID로 교체.
+3. `master_assignees` 의 이름·연락처를 해당 프로젝트의 "기본 시공사" `company_managers` 로 복사 (이미 같은 이름·전화 존재 시 skip).
+4. `project_assignee_pool` 뷰에 `department_id`/`department_name` 컬럼이 이미 노출되어 있는지 확인 후 누락 시 보강.
 
-### C. 담당자 풀(Assignee Pool) 통합
-`DepartmentAssigneeMapping` 및 위험성평가/TBM/작업허가/안전점검에서 담당자 후보를 다음 합집합으로 변경:
-```
-candidates = company_managers (현재 프로젝트의 시공사들)
-           ∪ project_members where role in (project_admin, safety_manager, site_manager)
-```
-- 헬퍼: `useProjectAssigneePool(projectId, { companyId?, positions? })` 훅 신규 작성 → 모든 드롭다운 공통 사용.
-- 매핑 UI에서 회사 필터 + 직책 필터 추가, 표시 형식 `[회사] 이름 (직책)`.
+### Phase 2 — UI 통합 (코드, master 제거)
+1. `AssessmentRunDetail.tsx`
+   - 행 단위 드롭다운(라인 239–259, ~2515, ~2532) 의 `master_departments`·`project_members` 직접 조회 제거.
+   - 부서 = `company_departments` (현재 프로젝트 회사들), 담당자 = `useProjectAssigneePool` 로 일원화.
+   - 일괄 모달의 부서·담당자 목록도 동일 소스로 교체.
+2. `DepartmentAssigneeMapping.tsx`
+   - 부서 소스를 `company_departments` 로 변경, `is_deleted=false` 필터 추가.
+   - 시공사별로 그룹핑된 부서 트리 표시(여러 회사가 같은 이름의 부서를 가질 수 있음).
+3. 다른 담당자 픽커가 있는 페이지(`SafetyInspections.tsx` 등) 도 점진적으로 `useProjectAssigneePool` 로 통일 (이번 Phase 는 위험성평가 우선, 나머지는 Phase 4).
 
-### D. 다른 메뉴 연동 (드롭다운만 교체, 비즈니스 로직 유지)
-- `AssessmentRunDetail.tsx` (책임부서 담당자 자동 채움)
-- `TbmManager.tsx` (TBM 진행자)
-- `WorkPermits` / `SafetyInspections` (감독자)
-- `ApprovalLineManager` (결재선 후보)
+### Phase 3 — Master 화면 정리
+1. `MasterData.tsx` 의 "부서 관리" / "담당자 관리" 탭 제거 → 빈 자리에 "회사 관리로 이동" 버튼·안내.
+2. 사이드바·라우터에서 해당 탭 접근 동선 정리.
+3. RLS 로 `master_assignees` / `master_departments` 의 `INSERT`/`UPDATE` 차단(읽기는 한시 허용, 마이그레이션 검증용).
 
-### E. 권한
-- 메뉴 노출: Master, PM, 안전관리자(전체 조회), 시공사 site_manager(자사 편집).
-- 기존 `useProjectAccess` 의 `canManageCompany(companyId)` 헬퍼 추가.
+### Phase 4 — 잔여 메뉴 통일 & 정리
+1. 점검·비용·TBM·작업계획 등 `project_members` 를 직접 픽커로 쓰는 곳을 `useProjectAssigneePool` 로 교체.
+2. 검증 완료 후 `master_assignees` DROP, `master_departments` DROP(또는 deprecated 표식 후 다음 릴리스에 DROP).
 
-## 기술 메모
-- 신규 테이블은 모두 `is_deleted` 소프트 삭제 + `scopedSelect` 패턴 준수.
-- `company_managers.user_id` 연결 시 트리거로 `project_members`/`user_roles` upsert (중복 방지).
-- 마이그레이션 1개로 테이블/GRANT/RLS/트리거 모두 작성.
-- 신규 메뉴는 `AppSidebar.tsx` 의 "마스터 데이터" 그룹 아래 "회사 관리" 로 추가.
+### Phase 5 — 검증
+1. 시드 시나리오: 회사 조직도에 부서·담당자 등록 → 위험성평가 일괄 모달과 행 드롭다운에 즉시 노출되는지 확인.
+2. `company_managers.user_id` 가 비어 있어도(아직 가입 안 한 사람) 위험성평가 담당자로 선택 가능한지 확인.
+3. 기존 위험성평가 데이터의 담당자 표시가 깨지지 않는지(이미 저장된 user_id 가 풀에 존재하는지) 회귀 확인.
 
-## 산출물
-1. SQL 마이그레이션 (테이블 2개 + RLS + 트리거).
-2. `src/pages/Companies.tsx`, `src/pages/CompanyDetail.tsx`.
-3. `src/components/company/*` (Overview/Construction/Departments/Managers/Workers/Equipment/Scorecard 탭).
-4. `src/hooks/useProjectAssigneePool.ts`.
-5. `DepartmentAssigneeMapping` + 4개 메뉴 드롭다운 교체.
-6. 사이드바·라우팅 등록.
+## 사용자 경험 변화
 
-확정해 주시면 위 순서대로 한 번에 구현하겠습니다.
+- "회사 관리 → 조직도/관리자" 에 한 번 등록하면 **위험성평가·TBM·점검·비용 등 모든 메뉴의 담당자 드롭다운**에 자동 노출.
+- 마스터 데이터의 "부서/담당자" 탭은 사라지고, 모든 입력은 회사 단위로만.
+- 아직 시스템 계정이 없는 협력업체 담당자도 풀에 떠서 선택 가능 (감사로그·알림은 user_id 가 연결된 후 동작).
+
+## 확인 필요
+
+1. **Phase 1 의 자동 복사** — 현재 `master_departments`/`master_assignees` 의 기존 데이터를 어느 시공사 밑으로 이전할지 자동 매핑이 어렵다면, 마이그레이션을 건너뛰고 "기존 데이터는 보존하되 신규 화면은 회사 데이터만" 으로 갈 수도 있습니다. 자동 이전 vs 신규부터 시작 중 선호하시는 방향?
+2. **Phase 4 의 범위** — 점검/비용/TBM 등 다른 메뉴까지 이번에 한꺼번에 통합할지, 위험성평가만 먼저 적용 후 단계적으로 갈지?

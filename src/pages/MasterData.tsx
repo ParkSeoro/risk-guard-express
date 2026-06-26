@@ -166,7 +166,6 @@ const MasterData = () => {
           <TabsTrigger value="processes">공정 목록</TabsTrigger>
           <TabsTrigger value="ppe">PPE 목록</TabsTrigger>
           <TabsTrigger value="legal">법적근거</TabsTrigger>
-          <TabsTrigger value="departments">부서·담당자</TabsTrigger>
           <TabsTrigger value="dept-mapping">담당자 매핑</TabsTrigger>
           <TabsTrigger value="rules">검증 규칙</TabsTrigger>
         </TabsList>
@@ -317,57 +316,7 @@ const MasterData = () => {
         </TabsContent>
 
         {/* Departments */}
-        <TabsContent value="departments">
-          <div className="grid grid-cols-2 gap-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-base">부서</CardTitle>
-                {admin && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit('department')}><Plus className="h-3.5 w-3.5" /> 추가</Button>}
-              </CardHeader>
-              <CardContent className="p-0">
-                <table className="w-full data-table text-sm">
-                  <thead><tr><th>부서명</th>{admin && <th className="w-20 text-center">작업</th>}</tr></thead>
-                  <tbody>
-                    {departments.map(d => (
-                      <tr key={d.id}>
-                        <td className="font-medium">{d.name}</td>
-                        {admin && <td className="text-center">
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit('department', d)}><Pencil className="h-3 w-3" /></Button>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete('department', d.id)}><Trash2 className="h-3 w-3" /></Button>
-                        </td>}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-base">담당자</CardTitle>
-                {admin && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit('assignee')}><Plus className="h-3.5 w-3.5" /> 추가</Button>}
-              </CardHeader>
-              <CardContent className="p-0">
-                <table className="w-full data-table text-sm">
-                  <thead><tr><th>이름</th><th>부서</th><th>직위</th><th>연락처</th>{admin && <th className="w-16 text-center">작업</th>}</tr></thead>
-                  <tbody>
-                    {assignees.map(a => (
-                      <tr key={a.id}>
-                        <td className="font-medium">{a.name}</td>
-                        <td><Badge variant="secondary" className="text-[10px]">{a.master_departments?.name || '—'}</Badge></td>
-                        <td>{a.position}</td>
-                        <td className="text-muted-foreground">{a.phone}</td>
-                        {admin && <td className="text-center">
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit('assignee', a)}><Pencil className="h-3 w-3" /></Button>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete('assignee', a.id)}><Trash2 className="h-3 w-3" /></Button>
-                        </td>}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
+        {/* 부서·담당자 입력은 회사 관리에서 합니다. 이 탭은 제거되었습니다. */}
 
         {/* Department-Assignee Mapping - uses first available project */}
         <TabsContent value="dept-mapping">

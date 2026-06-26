@@ -234,26 +234,67 @@ const AssessmentRunDetail = () => {
     if (runRes.data) {
       setRun(runRes.data);
       const projectId = runRes.data.project_id;
-      const [projRes, deptRes, deptAssigneeRes, membersRes, envTagsRes, companiesRes] = await Promise.all([
+      const [projRes, companiesRes, deptAssigneeRes, poolRes, envTagsRes] = await Promise.all([
         supabase.from('projects').select('*').eq('id', projectId).single(),
-        supabase.from('master_departments').select('id, name').or(`project_id.eq.${projectId},project_id.is.null`),
+        supabase.from('companies').select('id, name, type').eq('project_id', projectId).eq('is_deleted', false),
         supabase.from('department_assignees').select('department_id, default_user_id').eq('project_id', projectId),
-        supabase.from('project_members').select('user_id, company, position_new, company_id, role_new').eq('project_id', projectId),
+        supabase.from('project_assignee_pool' as any).select('source, source_id, user_id, display_name, position, company_id, company_name, department_id, department_name').eq('project_id', projectId),
         supabase.from('environment_tags' as any).select('id, name, category').or(`project_id.eq.${projectId},project_id.is.null`).order('sort_order'),
-        supabase.from('companies').select('id, name, type').eq('project_id', projectId),
       ]);
       setProject(projRes.data);
-      setDepartments(deptRes.data || []);
-      setDeptAssignees(deptAssigneeRes.data || []);
+      const companies = (companiesRes.data || []) as any[];
+      setProjectCompanies(companies);
       setEnvironmentTags((envTagsRes.data || []) as any);
-      setProjectCompanies((companiesRes.data || []) as any);
-      const profiles = profilesRes.data || [];
-      const membersList = (membersRes.data || []).map((m: any) => {
-        const prof = profiles.find((p: any) => p.user_id === m.user_id);
-        const memberPosition = m.position_new || '';
-        const memberRole = m.role_new || 'viewer';
-        const positionLabel = memberPosition ? ` / ${memberPosition === 'SITE_MANAGER' ? '현장소장' : memberPosition === 'SUPERVISOR' ? '감리' : memberPosition === 'HSE_MANAGER' ? '안전관리자' : memberPosition}` : '';
-        return { user_id: m.user_id, display_name: `${prof?.display_name || ''}${positionLabel}`, company: m.company || prof?.company || '', company_id: m.company_id || null, position: memberPosition, role: memberRole };
+      setDeptAssignees(deptAssigneeRes.data || []);
+
+      // Departments now come from company_departments scoped to this project's companies
+      const companyIds = companies.map((c) => c.id);
+      let deptRows: any[] = [];
+      if (companyIds.length > 0) {
+        const { data: cdData } = await supabase
+          .from('company_departments' as any)
+          .select('id, name, company_id')
+          .in('company_id', companyIds)
+          .eq('is_deleted', false)
+          .order('sort_order', { ascending: true });
+        const companyName = new Map(companies.map((c) => [c.id, c.name]));
+        deptRows = (cdData || []).map((d: any) => ({
+          id: d.id,
+          name: companies.length > 1 ? `${companyName.get(d.company_id) || ''} · ${d.name}` : d.name,
+          company_id: d.company_id,
+        }));
+      }
+      setDepartments(deptRows);
+
+      // Project members come from the unified pool (company_managers + project_members),
+      // de-duplicated by user_id (company_manager row wins so the field-defined position is kept).
+      const poolRows = (poolRes.data || []) as any[];
+      const byUser = new Map<string, any>();
+      for (const r of poolRows) {
+        if (!r.user_id) continue; // assignees must have an auth user
+        const existing = byUser.get(r.user_id);
+        if (!existing || (r.source === 'company_manager' && existing.source !== 'company_manager')) {
+          byUser.set(r.user_id, r);
+        }
+      }
+      const positionLabelMap: Record<string, string> = {
+        SITE_MANAGER: '현장소장', site_manager: '현장소장',
+        SUPERVISOR: '감리', supervisor: '감리',
+        HSE_MANAGER: '안전관리자', safety_manager: '안전관리자',
+        project_admin: '프로젝트관리자',
+      };
+      const membersList = Array.from(byUser.values()).map((r: any) => {
+        const pos = r.position || '';
+        const label = pos ? ` / ${positionLabelMap[pos] || pos}` : '';
+        const role = pos === 'project_admin' || pos === 'safety_manager' ? pos : (pos || 'viewer');
+        return {
+          user_id: r.user_id as string,
+          display_name: `${r.display_name || ''}${label}`,
+          company: r.company_name || '',
+          company_id: r.company_id || null,
+          position: pos,
+          role,
+        };
       });
       setProjectMembers(membersList);
 

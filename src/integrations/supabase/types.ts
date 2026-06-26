@@ -1779,7 +1779,7 @@ export type Database = {
             foreignKeyName: "department_assignees_department_id_fkey"
             columns: ["department_id"]
             isOneToOne: false
-            referencedRelation: "master_departments"
+            referencedRelation: "company_departments"
             referencedColumns: ["id"]
           },
           {

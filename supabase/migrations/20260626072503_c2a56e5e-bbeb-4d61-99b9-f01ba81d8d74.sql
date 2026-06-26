@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.sync_company_manager_to_project_member() FROM PUBLIC, anon, authenticated;

@@ -4,7 +4,8 @@ import {
   Shield, SearchCheck, Settings,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
   ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, GitCompare, Trash2,
-  Stethoscope, GraduationCap, HeartPulse, Map, Users, AlertOctagon, Siren, OctagonAlert, UserCheck, BarChart3, Megaphone
+  Stethoscope, GraduationCap, HeartPulse, Map, Users, AlertOctagon, Siren, OctagonAlert, UserCheck, BarChart3, Megaphone,
+  Building2,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
@@ -88,6 +89,7 @@ const groups: Group[] = [
   {
     label: "비용·법적", key: "ops_mgmt",
     items: [
+      { title: "회사 관리", url: "/companies", icon: Building2 },
       { title: "산업안전보건관리비", url: "/safety-cost", icon: ReceiptText },
       { title: "법적업무", url: "/legal-duties", icon: Scale },
     ],

@@ -417,16 +417,20 @@ serve(async (req) => {
       .toLowerCase()
       .trim();
 
-    // If this is not a batch request (batch_index undefined), check cache first
+    // Cache hit only when stored set is large enough for the request.
+    // Older code cached just the last batch (4-6 items), starving subsequent
+    // requests for the same key. Require >= max(8, target-2).
     if (batch_index === undefined || batch_index === null) {
+      const minCacheItems = Math.max(8, totalCount - 2);
       const { data: cached } = await adminClient
         .from("ai_risk_cache")
         .select("*")
         .eq("cache_key", cacheKey)
         .maybeSingle();
 
-      if (cached && Array.isArray(cached.generated_items) && (cached.generated_items as any[]).length > 3) {
-        console.log(`[AI Engine] Cache hit: ${(cached.generated_items as any[]).length} items`);
+      const cachedItems = (cached?.generated_items as any[]) || [];
+      if (cached && Array.isArray(cachedItems) && cachedItems.length >= minCacheItems) {
+        console.log(`[AI Engine] Cache hit: ${cachedItems.length} items`);
         await adminClient
           .from("ai_risk_cache")
           .update({ hit_count: (cached.hit_count || 0) + 1 })
@@ -434,9 +438,9 @@ serve(async (req) => {
 
         return new Response(
           JSON.stringify({
-            items: (cached.generated_items as any[]).slice(0, totalCount),
+            items: cachedItems.slice(0, totalCount),
             source: "cache",
-            count: Math.min((cached.generated_items as any[]).length, totalCount),
+            count: Math.min(cachedItems.length, totalCount),
             normalized_equipment: normalizedEquipment,
             total_batches: 1,
             batch_index: 0,
@@ -444,6 +448,8 @@ serve(async (req) => {
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
+      } else if (cached) {
+        console.log(`[AI Engine] Stale cache (${cachedItems.length} < ${minCacheItems}), regenerating`);
       }
     }
 
@@ -488,8 +494,10 @@ serve(async (req) => {
 
     const isComplete = currentBatchIndex + 1 >= totalBatches;
 
-    // Cache on final batch (or single-batch request)
-    if (isComplete && deduped.length > 0) {
+    // Cache only when the entire response is in a single batch (no batch_index sent
+    // and totalBatches === 1). Caching the final batch of a multi-batch run would
+    // store only that last batch's items and poison future cache hits.
+    if (isComplete && deduped.length > 0 && totalBatches === 1 && (batch_index === undefined || batch_index === null)) {
       await adminClient.from("ai_risk_cache").upsert(
         {
           cache_key: cacheKey,

@@ -16,10 +16,9 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const [departments, setDepartments] = useState<any[]>([]);
-  const [members, setMembers] = useState<any[]>([]);
-  const [profiles, setProfiles] = useState<any[]>([]);
   const [mappings, setMappings] = useState<Record<string, { id?: string; default_user_id: string; backup_user_id: string }>>({});
   const [saving, setSaving] = useState(false);
+  const { options: pool } = useProjectAssigneePool({ projectId, requireUser: true });
 
   useEffect(() => {
     if (!projectId) return;
@@ -27,17 +26,12 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
   }, [projectId]);
 
   const fetchData = async () => {
-    const [deptRes, memberRes, profileRes, mappingRes] = await Promise.all([
+    const [deptRes, mappingRes] = await Promise.all([
       supabase.from('master_departments').select('*').order('name'),
-      supabase.from('project_members').select('user_id, role_new').eq('project_id', projectId),
-      supabase.from('profiles').select('user_id, display_name, company, position'),
       supabase.from('department_assignees').select('*').eq('project_id', projectId),
     ]);
     setDepartments(deptRes.data || []);
-    setMembers(memberRes.data || []);
-    setProfiles(profileRes.data || []);
 
-    // Build mappings
     const map: typeof mappings = {};
     (mappingRes.data || []).forEach((m: any) => {
       map[m.department_id] = {
@@ -49,10 +43,12 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
     setMappings(map);
   };
 
-  const memberProfiles = members.map(m => {
-    const p = profiles.find(pr => pr.user_id === m.user_id);
-    return { user_id: m.user_id, display_name: p?.display_name || m.user_id.slice(0, 8), company: p?.company, position: p?.position };
-  });
+  const memberProfiles = pool.map(o => ({
+    user_id: o.user_id as string,
+    display_name: o.display_name,
+    company: o.company_name,
+    position: o.position,
+  }));
 
   const handleChange = (deptId: string, field: 'default_user_id' | 'backup_user_id', value: string) => {
     setMappings(prev => ({

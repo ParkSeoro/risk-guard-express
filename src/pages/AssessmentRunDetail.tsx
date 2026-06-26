@@ -960,16 +960,13 @@ const AssessmentRunDetail = () => {
             updateData.assignee = member?.display_name || '';
           }
         } else if (batchApplyDept && batchDeptId && batchApplyAssignee && !batchAssigneeUserId) {
-          const mapping = deptAssignees.find(da => da.department_id === batchDeptId);
-          if (mapping?.default_user_id) {
+          const def = deptDefaults[batchDeptId];
+          if (def?.user_id) {
             if (!batchOverrideManual && (item as any).assignee_user_id && batchScope !== 'empty') {
               // keep existing
             } else {
-              const assigneeProfile = projectMembers.find(m => m.user_id === mapping.default_user_id);
-              if (assigneeProfile) {
-                updateData.assignee_user_id = mapping.default_user_id;
-                updateData.assignee = assigneeProfile.display_name;
-              }
+              updateData.assignee_user_id = def.user_id;
+              updateData.assignee = def.display_name;
             }
           }
         }

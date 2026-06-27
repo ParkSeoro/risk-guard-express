@@ -153,14 +153,17 @@ export default function WorkerRegister() {
           <div>
             <Label className="text-base">직종</Label>
             <select className="w-full h-12 text-base border rounded-md px-3 bg-background" value={jobType} onChange={e => setJobType(e.target.value)}>
-              <option value="general">일반작업</option>
-              <option value="office">사무직</option>
-              <option value="manager">관리감독자</option>
-              <option value="hazardous">유해위험작업</option>
-              <option value="chemical">화학물질 취급</option>
+              {Object.entries(JOB_TYPE_LABELS).map(([v, label]) => (
+                <option key={v} value={v}>{label}</option>
+              ))}
             </select>
             <div className="text-[11px] text-muted-foreground mt-1">직종에 따라 필수 법정 교육·건진이 자동 등록됩니다</div>
           </div>
+
+          {projectId && jobType && (
+            <RequiredEducationPanel mode="preview" projectId={projectId} jobType={jobType} />
+          )}
+
           <Button className="w-full h-14 text-lg" onClick={submit} disabled={submitting}>
             {submitting && <Loader2 className="h-5 w-5 mr-2 animate-spin" />}등록하기
           </Button>

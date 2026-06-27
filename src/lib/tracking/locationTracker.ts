@@ -147,6 +147,12 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   let currentMode: "moving" | "idle" | "danger" = "moving";
   let stopped = false;
 
+  // 네이티브 환경: 백그라운드 워처가 가능하면 그쪽으로 위임 (앱 종료/잠금 상태에서도 동작)
+  const bgStop = await tryNativeBackground(opts);
+  if (bgStop) {
+    return () => { stopped = true; bgStop(); };
+  }
+
   const geo = await getGeolocation();
   const handle = await geo.watch(
     async (pos) => {

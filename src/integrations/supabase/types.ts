@@ -363,6 +363,54 @@ export type Database = {
         }
         Relationships: []
       }
+      app_releases: {
+        Row: {
+          bundle_url: string
+          channel: string
+          checksum: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_deleted: boolean
+          mandatory: boolean
+          min_native_version: string | null
+          notes: string | null
+          released_at: string
+          updated_at: string
+          version: string
+        }
+        Insert: {
+          bundle_url: string
+          channel?: string
+          checksum?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_deleted?: boolean
+          mandatory?: boolean
+          min_native_version?: string | null
+          notes?: string | null
+          released_at?: string
+          updated_at?: string
+          version: string
+        }
+        Update: {
+          bundle_url?: string
+          channel?: string
+          checksum?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_deleted?: boolean
+          mandatory?: boolean
+          min_native_version?: string | null
+          notes?: string | null
+          released_at?: string
+          updated_at?: string
+          version?: string
+        }
+        Relationships: []
+      }
       approval_lines: {
         Row: {
           company_id: string | null
@@ -8058,6 +8106,18 @@ export type Database = {
       get_company_qr_by_token: { Args: { _token: string }; Returns: Json }
       get_daily_qr_status: { Args: { _token: string }; Returns: Json }
       get_hazard_survey_public: { Args: { _qr_token: string }; Returns: Json }
+      get_latest_app_release: {
+        Args: { _channel?: string }
+        Returns: {
+          bundle_url: string
+          channel: string
+          checksum: string
+          mandatory: boolean
+          min_native_version: string
+          released_at: string
+          version: string
+        }[]
+      }
       get_my_pending_entity_approvals: {
         Args: never
         Returns: {

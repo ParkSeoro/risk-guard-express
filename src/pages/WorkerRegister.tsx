@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Loader2, HardHat, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { JOB_TYPE_LABELS } from "@/hooks/useWorker";
+import RequiredEducationPanel from "@/components/worker/RequiredEducationPanel";
 
 export default function WorkerRegister() {
   const [params] = useSearchParams();

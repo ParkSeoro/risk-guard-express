@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ArrowLeft, HardHat, AlertTriangle, Heart, GraduationCap, Calendar, ScrollText, FlaskConical } from "lucide-react";
+import RequiredEducationPanel from "@/components/worker/RequiredEducationPanel";
 
 const statusBadge = (status: string, due?: string) => {
   if (status === "done") return <Badge variant="outline" className="bg-success/10 text-success border-success/40">완료</Badge>;
@@ -108,9 +109,10 @@ export default function WorkerDetail() {
         </TabsContent>
 
         <TabsContent value="education" className="mt-4 space-y-3">
+          <RequiredEducationPanel mode="worker" workerId={id!} />
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">법정 교육 현황</CardTitle>
+              <CardTitle className="text-base">의무 일정(법정교육)</CardTitle>
               <Link to="/health/education"><Button size="sm" variant="outline">교육 등록</Button></Link>
             </CardHeader>
             <CardContent>

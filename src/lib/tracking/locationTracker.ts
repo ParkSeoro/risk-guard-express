@@ -31,7 +31,56 @@ export type TrackerOptions = {
   onError?: (err: Error) => void;
 };
 
-type Capacitor = { isNativePlatform?: () => boolean };
+type Capacitor = { isNativePlatform?: () => boolean; getPlatform?: () => string };
+
+async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => void)> {
+  const cap = (globalThis as any).Capacitor as Capacitor | undefined;
+  if (!cap?.isNativePlatform?.()) return null;
+  try {
+    const mod: any = await import("@capacitor-community/background-geolocation");
+    const BackgroundGeolocation = mod.BackgroundGeolocation || mod.default;
+    if (!BackgroundGeolocation?.addWatcher) return null;
+    const watcherId = await BackgroundGeolocation.addWatcher(
+      {
+        backgroundMessage: "위험구역 자동감지를 위해 위치를 추적 중입니다.",
+        backgroundTitle: "안전관리시스템 위치 추적",
+        requestPermissions: true,
+        stale: false,
+        distanceFilter: 8,
+      },
+      async (location: any, error: any) => {
+        if (error) { opts.onError?.(new Error(error.message || String(error))); return; }
+        if (!location) return;
+        try {
+          const { data } = await supabase.functions.invoke("track-location", {
+            body: {
+              ...opts.identity,
+              lat: location.latitude,
+              lng: location.longitude,
+              accuracy_m: location.accuracy,
+              wifi_scan: [],
+              device_ts: new Date(location.time || Date.now()).toISOString(),
+            },
+          });
+          opts.onUpdate?.({
+            lat: location.latitude,
+            lng: location.longitude,
+            accuracy: location.accuracy,
+            zone_id: (data as any)?.zone_id ?? null,
+            source: (data as any)?.source ?? "gps-bg",
+            mode: "bg",
+          });
+        } catch (e: any) {
+          opts.onError?.(new Error(e?.message || String(e)));
+        }
+      }
+    );
+    return () => { try { BackgroundGeolocation.removeWatcher({ id: watcherId }); } catch {} };
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn("background-geo not available, falling back", e);
+    return null;
+  }
+}
 
 async function getGeolocation(): Promise<{
   watch: (cb: (pos: GeolocationPosition) => void, err: (e: any) => void) => Promise<{ remove: () => void }>;
@@ -97,6 +146,12 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   let lastMovedAt = Date.now();
   let currentMode: "moving" | "idle" | "danger" = "moving";
   let stopped = false;
+
+  // 네이티브 환경: 백그라운드 워처가 가능하면 그쪽으로 위임 (앱 종료/잠금 상태에서도 동작)
+  const bgStop = await tryNativeBackground(opts);
+  if (bgStop) {
+    return () => { stopped = true; bgStop(); };
+  }
 
   const geo = await getGeolocation();
   const handle = await geo.watch(

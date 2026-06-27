@@ -363,6 +363,54 @@ export type Database = {
         }
         Relationships: []
       }
+      app_releases: {
+        Row: {
+          bundle_url: string
+          channel: string
+          checksum: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_deleted: boolean
+          mandatory: boolean
+          min_native_version: string | null
+          notes: string | null
+          released_at: string
+          updated_at: string
+          version: string
+        }
+        Insert: {
+          bundle_url: string
+          channel?: string
+          checksum?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_deleted?: boolean
+          mandatory?: boolean
+          min_native_version?: string | null
+          notes?: string | null
+          released_at?: string
+          updated_at?: string
+          version: string
+        }
+        Update: {
+          bundle_url?: string
+          channel?: string
+          checksum?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_deleted?: boolean
+          mandatory?: boolean
+          min_native_version?: string | null
+          notes?: string | null
+          released_at?: string
+          updated_at?: string
+          version?: string
+        }
+        Relationships: []
+      }
       approval_lines: {
         Row: {
           company_id: string | null
@@ -8015,6 +8063,20 @@ export type Database = {
         }
         Returns: Json
       }
+      compute_worker_required_education: {
+        Args: { _worker_id: string }
+        Returns: {
+          education_type: string
+          first_due_days: number
+          interval_months: number
+          job_type: string
+          last_completed_at: string
+          legal_basis: string
+          next_due_at: string
+          required_hours: number
+          status: string
+        }[]
+      }
       confirm_worker_education: { Args: { _token: string }; Returns: Json }
       delegate_approval: {
         Args: {
@@ -8044,6 +8106,18 @@ export type Database = {
       get_company_qr_by_token: { Args: { _token: string }; Returns: Json }
       get_daily_qr_status: { Args: { _token: string }; Returns: Json }
       get_hazard_survey_public: { Args: { _qr_token: string }; Returns: Json }
+      get_latest_app_release: {
+        Args: { _channel?: string }
+        Returns: {
+          bundle_url: string
+          channel: string
+          checksum: string
+          mandatory: boolean
+          min_native_version: string
+          released_at: string
+          version: string
+        }[]
+      }
       get_my_pending_entity_approvals: {
         Args: never
         Returns: {
@@ -8124,6 +8198,16 @@ export type Database = {
         }[]
       }
       mark_required_items_overdue: { Args: never; Returns: number }
+      preview_required_education: {
+        Args: { _job_type: string; _project_id: string }
+        Returns: {
+          education_type: string
+          first_due_days: number
+          interval_months: number
+          legal_basis: string
+          required_hours: number
+        }[]
+      }
       process_invite_code: {
         Args: { _invite_code: string; _user_id: string }
         Returns: Json

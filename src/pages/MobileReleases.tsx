@@ -55,7 +55,8 @@ export default function MobileReleases() {
         contentType: "application/zip", upsert: false,
       });
       if (up.error) throw up.error;
-      const { data: pub } = supabase.storage.from("app-updates").getPublicUrl(path);
+      // 비공개 버킷이라 다운로드는 OTA 클라이언트가 서명 URL을 생성. 경로만 저장.
+      const bundleUrl = `storage:${path}`;
 
       // SHA-256 체크섬
       const buf = await file.arrayBuffer();

@@ -179,6 +179,7 @@ function ProtectedRoutes() {
         <Route path="/settings/permissions" element={<SettingsPermissions />} />
         <Route path="/settings/notifications" element={<SettingsNotifications />} />
         <Route path="/settings/ai" element={<SettingsAI />} />
+        <Route path="/settings/mobile-releases" element={<MobileReleases />} />
         <Route path="/work-plans" element={<WorkPlans />} />
         <Route path="/work-plan/:planId" element={<WorkPlanDetail />} />
         <Route path="/legal-duties" element={<LegalDuties />} />

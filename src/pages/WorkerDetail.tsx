@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ArrowLeft, HardHat, AlertTriangle, Heart, GraduationCap, Calendar, ScrollText, FlaskConical } from "lucide-react";
+import RequiredEducationPanel from "@/components/worker/RequiredEducationPanel";
 
 const statusBadge = (status: string, due?: string) => {
   if (status === "done") return <Badge variant="outline" className="bg-success/10 text-success border-success/40">완료</Badge>;

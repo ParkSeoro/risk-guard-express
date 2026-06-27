@@ -8015,6 +8015,20 @@ export type Database = {
         }
         Returns: Json
       }
+      compute_worker_required_education: {
+        Args: { _worker_id: string }
+        Returns: {
+          education_type: string
+          first_due_days: number
+          interval_months: number
+          job_type: string
+          last_completed_at: string
+          legal_basis: string
+          next_due_at: string
+          required_hours: number
+          status: string
+        }[]
+      }
       confirm_worker_education: { Args: { _token: string }; Returns: Json }
       delegate_approval: {
         Args: {
@@ -8124,6 +8138,16 @@ export type Database = {
         }[]
       }
       mark_required_items_overdue: { Args: never; Returns: number }
+      preview_required_education: {
+        Args: { _job_type: string; _project_id: string }
+        Returns: {
+          education_type: string
+          first_due_days: number
+          interval_months: number
+          legal_basis: string
+          required_hours: number
+        }[]
+      }
       process_invite_code: {
         Args: { _invite_code: string; _user_id: string }
         Returns: Json

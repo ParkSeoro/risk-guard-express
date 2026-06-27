@@ -67,7 +67,7 @@ export default function MobileReleases() {
       const { error } = await supabase.from("app_releases" as any).insert({
         version: form.version.trim(),
         channel: form.channel,
-        bundle_url: pub.publicUrl,
+        bundle_url: bundleUrl,
         checksum,
         mandatory: form.mandatory,
         min_native_version: form.min_native_version.trim() || null,

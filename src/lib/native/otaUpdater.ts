@@ -38,8 +38,18 @@ export async function initOtaUpdater() {
     if (!release?.bundle_url || !release?.version) return;
     if (cmpVersion(release.version, currentVersion) <= 0) return;
 
+    // bundle_url 이 "storage:<path>" 이면 서명 URL 생성, 아니면 그대로 사용 (외부 URL 호환)
+    let downloadUrl = release.bundle_url as string;
+    if (downloadUrl.startsWith("storage:")) {
+      const path = downloadUrl.replace(/^storage:/, "");
+      const { data: signed, error: sErr } = await supabase.storage
+        .from("app-updates").createSignedUrl(path, 60 * 60);
+      if (sErr || !signed?.signedUrl) { console.warn("[ota] sign url", sErr); return; }
+      downloadUrl = signed.signedUrl;
+    }
+
     const bundle = await CapacitorUpdater.download({
-      url: release.bundle_url,
+      url: downloadUrl,
       version: release.version,
       checksum: release.checksum || undefined,
     } as any);

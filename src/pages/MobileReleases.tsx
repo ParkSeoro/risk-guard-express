@@ -19,7 +19,8 @@ type Release = {
 };
 
 export default function MobileReleases() {
-  const { isMaster } = useAuth();
+  const { hasRole } = useAuth();
+  const isMaster = hasRole("master");
   const [list, setList] = useState<Release[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);

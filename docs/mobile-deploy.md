@@ -136,35 +136,35 @@ node scripts/ota-bundle.mjs 1.0.1  # releases/safenex-1.0.1.zip
 
 ## 7. 트러블슈팅
 
----
-
-## 8. GitHub Actions 자동 빌드 (선택)
-
-`.github/workflows/mobile-release.yml` 가 추가되어 있어, 아래 트리거 중 하나로 OTA zip 이 자동 생성됩니다.
-
-| 트리거 | 결과물 위치 |
-| --- | --- |
-| `main` 브랜치 push | Actions → 해당 run → Artifacts (`safenex-ota-<버전>`) |
-| Actions 탭 → Run workflow (버전 직접 입력) | 동일 |
-| `git tag v1.0.1 && git push --tags` | GitHub **Releases** 에 zip + SHA256SUMS.txt 자동 첨부 |
-
-운영 흐름 예:
-```bash
-git tag v1.0.1
-git push origin v1.0.1
-# → Actions 완료 후 Releases 페이지에서 safenex-1.0.1.zip 다운로드
-# → /settings/mobile-releases 에 업로드
-```
-
-> 네이티브 폴더(`ios/`, `android/`)가 레포에 커밋되어 있으면 `npx cap sync` 까지 자동 실행됩니다.
-> AAB/IPA 빌드는 코드 서명 키 보안 때문에 자동화에 포함하지 않았습니다 (로컬 Mac/Studio 에서 수행).
-
 | 증상 | 원인 / 조치 |
 | --- | --- |
 | Apple 심사 "Guideline 4.2 — minimum functionality" | `server.url` 이 남아있음. `unset CAP_DEV_URL` 후 재빌드 |
 | Android 백그라운드 위치 안 됨 | OS 설정에서 "항상 허용" 필요 + Foreground Service 알림 표시 확인 |
 | OTA 적용 후 흰 화면 | `appReadyTimeout: 5000` 으로 자동 롤백됨. 새 번들 재배포 |
 | 푸시 안 옴 | FCM(Android) `google-services.json`, APNs(iOS) 인증서 등록 확인 |
+
+---
+
+## 8. GitHub Actions 자동 빌드
+
+`.github/workflows/mobile-release.yml` 가 추가되어 있어, 아래 트리거 중 하나로 OTA zip 이 자동 생성됩니다.
+
+| 트리거 | 결과물 |
+| --- | --- |
+| `main` 브랜치 push | Actions → 해당 run → Artifacts (`safenex-ota-<버전>`) |
+| Actions 탭 → **Run workflow** (버전 직접 입력) | 동일 |
+| `git tag v1.0.1 && git push --tags` | GitHub **Releases** 에 zip + `SHA256SUMS.txt` 자동 첨부 |
+
+운영 흐름 예:
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+# Actions 완료 후 Releases 에서 safenex-1.0.1.zip 다운로드
+# → 시스템 /settings/mobile-releases 에 업로드
+```
+
+- 네이티브 폴더(`ios/`, `android/`)가 레포에 커밋되어 있으면 `npx cap sync` 까지 자동 실행됩니다.
+- AAB/IPA 빌드는 코드 서명 키 보안 때문에 자동화에 포함하지 않았습니다 (로컬 Mac/Android Studio 에서 수행).
 
 ---
 

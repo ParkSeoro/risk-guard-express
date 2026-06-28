@@ -1,0 +1,92 @@
+name: Mobile Release (OTA bundle)
+
+# 사용 방법
+# ----------------------------------------------------------------
+# 1) main 브랜치에 push 되면 자동으로 OTA 번들을 빌드합니다.
+# 2) 또는 GitHub Actions 탭에서 "Run workflow" 로 버전을 수동 지정해 실행할 수 있습니다.
+# 3) 완성된 zip 은 Actions Artifact 로 다운로드 받거나,
+#    버전 태그(v*)를 push 하면 GitHub Releases 에 자동 첨부됩니다.
+# ----------------------------------------------------------------
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "OTA 번들 버전 (예: 1.0.1). 비우면 날짜 기반 자동 생성"
+        required: false
+        default: ""
+
+permissions:
+  contents: write   # Releases 첨부에 필요
+
+jobs:
+  build-ota:
+    name: Build web + OTA bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production build (CAP_DEV_URL 비움)
+        env:
+          CAP_DEV_URL: ""
+        run: npm run build
+
+      # Capacitor 네이티브 폴더(ios/, android/)가 레포에 커밋되어 있을 때만 sync 합니다.
+      - name: Capacitor sync (있을 때만)
+        run: |
+          if [ -d "ios" ] || [ -d "android" ]; then
+            npx cap sync
+          else
+            echo "ios/, android/ 폴더 없음 → cap sync 건너뜀"
+          fi
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            V="${{ github.event.inputs.version }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            V="${GITHUB_REF#refs/tags/v}"
+          else
+            V="$(node -p "require('./package.json').version || '0.0.0'")-$(date -u +%Y%m%d%H%M)"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "→ OTA 버전: $V"
+
+      - name: Pack OTA zip
+        run: node scripts/ota-bundle.mjs "${{ steps.ver.outputs.version }}"
+
+      - name: SHA-256 체크섬 기록
+        run: |
+          cd releases
+          sha256sum *.zip | tee SHA256SUMS.txt
+
+      - name: Upload as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: safenex-ota-${{ steps.ver.outputs.version }}
+          path: releases/*
+          retention-days: 30
+
+      # v* 태그를 push 했을 때만 GitHub Release 에 자동 첨부
+      - name: Attach to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            releases/*.zip
+            releases/SHA256SUMS.txt
+          generate_release_notes: true

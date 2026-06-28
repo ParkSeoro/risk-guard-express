@@ -24,6 +24,7 @@ import PermissionTest from "./pages/PermissionTest";
 import Profile from "./pages/Profile";
 import Auth from "./pages/Auth";
 import Index from "./pages/Index";
+import Privacy from "./pages/Privacy";
 import ResetPassword from "./pages/ResetPassword";
 import Settings from "./pages/Settings";
 import SettingsAccount from "./pages/SettingsAccount";

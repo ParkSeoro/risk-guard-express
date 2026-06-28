@@ -244,6 +244,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/landing" element={<Index />} />
+            <Route path="/privacy" element={<Privacy />} />
             <Route path="/auth" element={<AuthRoute />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/tbm/:token" element={<TbmParticipate />} />

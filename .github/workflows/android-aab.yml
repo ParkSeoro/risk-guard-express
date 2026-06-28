@@ -1,0 +1,171 @@
+name: Android AAB (Play 내부 테스트)
+
+# Google Play Console 내부 테스트 트랙에 올릴 서명된 AAB(app-release.aab)를 자동 생성합니다.
+# 결과물은 Actions → 해당 run → Artifacts 에서 다운로드해 Play Console 에 업로드하세요.
+#
+# ─ 필수 GitHub Secrets (Settings → Secrets and variables → Actions) ─────────────
+#   ANDROID_KEYSTORE_BASE64   : *.jks 키스토어를 base64 로 인코딩한 문자열
+#                               (Windows PowerShell)
+#                                 [Convert]::ToBase64String([IO.File]::ReadAllBytes("safenex.jks")) | clip
+#                               (macOS/Linux)
+#                                 base64 -i safenex.jks | pbcopy
+#   ANDROID_KEYSTORE_PASSWORD : 키스토어 비밀번호
+#   ANDROID_KEY_ALIAS         : 키 alias (예: safenex)
+#   ANDROID_KEY_PASSWORD      : 키 비밀번호
+# ─ 선택 ────────────────────────────────────────────────────────────────────────
+#   ANDROID_VERSION_CODE      : 정수. 비우면 GitHub run number 사용 (자동 증가)
+#   ANDROID_VERSION_NAME      : 예) 1.0.1. 비우면 package.json version 사용
+# ───────────────────────────────────────────────────────────────────────────────
+#
+# 키스토어 만드는 법 (1회):
+#   keytool -genkey -v -keystore safenex.jks -alias safenex \
+#     -keyalg RSA -keysize 2048 -validity 10000
+#   → 생성된 safenex.jks 를 base64 로 변환해 Secret 에 등록.
+#   → safenex.jks 원본은 안전한 곳(1Password, Bitwarden 등)에 보관. 절대 분실 금지.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "versionName (예: 1.0.1). 비우면 package.json 사용"
+        required: false
+        default: ""
+      version_code:
+        description: "versionCode (정수). 비우면 GitHub run number"
+        required: false
+        default: ""
+  push:
+    tags: ["android-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-aab:
+    name: Build signed AAB
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Production web build
+        env:
+          CAP_DEV_URL: ""
+        run: bun run build
+
+      - name: Add Android platform (없으면 생성)
+        run: |
+          if [ ! -d "android" ]; then
+            bunx cap add android
+            node scripts/prepare-native.mjs || true
+          fi
+          bunx cap sync android
+
+      - name: Resolve version
+        id: ver
+        run: |
+          VN="${{ github.event.inputs.version_name }}"
+          [ -z "$VN" ] && VN="${{ secrets.ANDROID_VERSION_NAME }}"
+          [ -z "$VN" ] && VN="$(node -p "require('./package.json').version || '1.0.0'")"
+          VC="${{ github.event.inputs.version_code }}"
+          [ -z "$VC" ] && VC="${{ secrets.ANDROID_VERSION_CODE }}"
+          [ -z "$VC" ] && VC="${{ github.run_number }}"
+          echo "version_name=$VN" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VC" >> "$GITHUB_OUTPUT"
+          echo "→ versionName=$VN  versionCode=$VC"
+
+      - name: Decode keystore
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret 이 비어 있습니다."
+            exit 1
+          fi
+          mkdir -p android/app
+          echo "$KS_B64" | base64 -d > android/app/release.jks
+          echo "keystore decoded ($(wc -c < android/app/release.jks) bytes)"
+
+      - name: Patch build.gradle (signing + versions + R8 호환)
+        env:
+          VN: ${{ steps.ver.outputs.version_name }}
+          VC: ${{ steps.ver.outputs.version_code }}
+        run: |
+          GRADLE=android/app/build.gradle
+          # proguard-android.txt → optimize 버전으로 (최신 AGP 호환)
+          sed -i "s/getDefaultProguardFile('proguard-android\.txt')/getDefaultProguardFile('proguard-android-optimize.txt')/g" "$GRADLE"
+          # versionName / versionCode 치환
+          sed -i "s/versionCode [0-9]\+/versionCode ${VC}/" "$GRADLE"
+          sed -i "s/versionName \"[^\"]*\"/versionName \"${VN}\"/" "$GRADLE"
+          # signingConfig 주입 (이미 있으면 skip)
+          if ! grep -q "signingConfigs {" "$GRADLE"; then
+            node -e "
+              const fs=require('fs');
+              const p='$GRADLE';
+              let s=fs.readFileSync(p,'utf8');
+              const sign=\`
+    signingConfigs {
+        release {
+            storeFile file('release.jks')
+            storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+            keyAlias System.getenv('ANDROID_KEY_ALIAS')
+            keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+        }
+    }\`;
+              s=s.replace(/android\s*\{/, 'android {'+sign);
+              s=s.replace(/buildTypes\s*\{\s*release\s*\{/, \"buildTypes {\\n        release {\\n            signingConfig signingConfigs.release\");
+              fs.writeFileSync(p,s);
+            "
+          fi
+          echo "----- patched build.gradle -----"
+          sed -n '1,80p' "$GRADLE"
+
+      - name: Build release AAB
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew :app:bundleRelease --no-daemon --stacktrace
+
+      - name: Locate AAB
+        id: aab
+        run: |
+          AAB=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n1)
+          echo "path=$AAB" >> "$GITHUB_OUTPUT"
+          ls -lh "$AAB"
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: safenex-${{ steps.ver.outputs.version_name }}-${{ steps.ver.outputs.version_code }}.aab
+          path: ${{ steps.aab.outputs.path }}
+          retention-days: 90
+
+      - name: Attach to GitHub Release (android-v* 태그)
+        if: startsWith(github.ref, 'refs/tags/android-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.aab.outputs.path }}
+          generate_release_notes: true

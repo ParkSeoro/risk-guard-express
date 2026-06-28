@@ -24,6 +24,7 @@ import PermissionTest from "./pages/PermissionTest";
 import Profile from "./pages/Profile";
 import Auth from "./pages/Auth";
 import Index from "./pages/Index";
+import Privacy from "./pages/Privacy";
 import ResetPassword from "./pages/ResetPassword";
 import Settings from "./pages/Settings";
 import SettingsAccount from "./pages/SettingsAccount";
@@ -244,6 +245,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/landing" element={<Index />} />
+            <Route path="/privacy" element={<Privacy />} />
             <Route path="/auth" element={<AuthRoute />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/tbm/:token" element={<TbmParticipate />} />

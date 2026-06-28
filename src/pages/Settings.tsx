@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon } from 'lucide-react';
+import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone } from 'lucide-react';
 
 const settingsCards = [
   {
@@ -11,7 +11,7 @@ const settingsCards = [
     description: '이름, 이메일, 소속, 연락처 등 내 계정 정보를 수정합니다.',
     icon: User,
     path: '/settings/account',
-    requiresAdmin: false,
+    requires: 'any' as const,
   },
   {
     id: 'permissions',
@@ -19,7 +19,7 @@ const settingsCards = [
     description: '사용자 승인, 역할 부여, 접근 권한을 관리합니다.',
     icon: Shield,
     path: '/settings/permissions',
-    requiresAdmin: true,
+    requires: 'admin' as const,
     badge: '관리자 전용',
   },
   {
@@ -28,7 +28,7 @@ const settingsCards = [
     description: 'AI API Key, 모델 선택, AI 사용 여부를 설정합니다.',
     icon: Bot,
     path: '/settings/ai',
-    requiresAdmin: true,
+    requires: 'master' as const,
     badge: '마스터 전용',
   },
   {
@@ -37,7 +37,16 @@ const settingsCards = [
     description: '이메일, SMS, 카카오 알림 수신 채널과 이벤트를 설정합니다.',
     icon: Bell,
     path: '/settings/notifications',
-    requiresAdmin: false,
+    requires: 'any' as const,
+  },
+  {
+    id: 'mobile-releases',
+    title: '모바일 앱 릴리스 (OTA)',
+    description: 'iOS·Android 앱에 OTA 업데이트 번들을 게시·관리합니다.',
+    icon: Smartphone,
+    path: '/settings/mobile-releases',
+    requires: 'master' as const,
+    badge: '마스터 전용',
   },
 ];
 
@@ -58,12 +67,15 @@ const Settings = () => {
       </div>
 
       <div className="grid gap-4">
-        {settingsCards.map((card) => {
-          const disabled = card.id === 'ai'
-            ? !hasRole('master')
-            : card.id === 'permissions'
-              ? !(hasRole('master') || hasRole('project_admin'))
-              : false;
+        {settingsCards
+          .filter((card) => card.requires !== 'master' || hasRole('master'))
+          .map((card) => {
+          const disabled =
+            card.requires === 'master'
+              ? !hasRole('master')
+              : card.requires === 'admin'
+                ? !(hasRole('master') || hasRole('project_admin'))
+                : false;
           return (
             <Card
               key={card.id}

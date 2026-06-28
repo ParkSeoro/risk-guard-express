@@ -2,10 +2,15 @@ name: Mobile Release (OTA bundle)
 
 # 사용 방법
 # ----------------------------------------------------------------
-# 1) main 브랜치에 push 되면 자동으로 OTA 번들을 빌드합니다.
-# 2) 또는 GitHub Actions 탭에서 "Run workflow" 로 버전을 수동 지정해 실행할 수 있습니다.
-# 3) 완성된 zip 은 Actions Artifact 로 다운로드 받거나,
-#    버전 태그(v*)를 push 하면 GitHub Releases 에 자동 첨부됩니다.
+# 1) main 브랜치에 push → OTA 번들 자동 생성 + (시크릿 있으면) 자동 게시
+# 2) Actions 탭 → "Run workflow" 로 버전을 수동 지정 가능
+# 3) v* 태그 push → GitHub Releases 에도 zip 첨부
+#
+# 자동 게시(/settings/mobile-releases 등재)를 위해 필요한 GitHub Secrets:
+#   - OTA_PUBLISH_URL    예) https://iqtiozscqwuacgzrlfzu.supabase.co/functions/v1/publish-ota-release
+#   - OTA_PUBLISH_TOKEN  Lovable Cloud 시크릿과 동일 값(마스터가 워크스페이스 시크릿에서 복사)
+#   - OTA_CHANNEL        기본 stable. beta 채널로 보내려면 beta
+# 시크릿이 없으면 zip 만 Artifact 로 남기고 업로드 단계는 건너뜁니다.
 # ----------------------------------------------------------------
 
 on:
@@ -18,9 +23,17 @@ on:
         description: "OTA 번들 버전 (예: 1.0.1). 비우면 날짜 기반 자동 생성"
         required: false
         default: ""
+      channel:
+        description: "배포 채널 (stable / beta)"
+        required: false
+        default: "stable"
+      mandatory:
+        description: "필수 업데이트 여부 (true/false)"
+        required: false
+        default: "false"
 
 permissions:
-  contents: write   # Releases 첨부에 필요
+  contents: write
 
 jobs:
   build-ota:
@@ -39,12 +52,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Production build (CAP_DEV_URL 비움)
+      - name: Production build
         env:
           CAP_DEV_URL: ""
         run: npm run build
 
-      # Capacitor 네이티브 폴더(ios/, android/)가 레포에 커밋되어 있을 때만 sync 합니다.
       - name: Capacitor sync (있을 때만)
         run: |
           if [ -d "ios" ] || [ -d "android" ]; then
@@ -53,7 +65,7 @@ jobs:
             echo "ios/, android/ 폴더 없음 → cap sync 건너뜀"
           fi
 
-      - name: Resolve version
+      - name: Resolve version & channel
         id: ver
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
@@ -63,16 +75,60 @@ jobs:
           else
             V="$(node -p "require('./package.json').version || '0.0.0'")-$(date -u +%Y%m%d%H%M)"
           fi
-          echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "→ OTA 버전: $V"
+          CH="${{ github.event.inputs.channel }}"
+          [ -z "$CH" ] && CH="${{ secrets.OTA_CHANNEL }}"
+          [ -z "$CH" ] && CH="stable"
+          MAN="${{ github.event.inputs.mandatory }}"
+          [ -z "$MAN" ] && MAN="false"
+          echo "version=$V"   >> "$GITHUB_OUTPUT"
+          echo "channel=$CH"  >> "$GITHUB_OUTPUT"
+          echo "mandatory=$MAN" >> "$GITHUB_OUTPUT"
+          echo "→ version=$V  channel=$CH  mandatory=$MAN"
 
       - name: Pack OTA zip
         run: node scripts/ota-bundle.mjs "${{ steps.ver.outputs.version }}"
 
-      - name: SHA-256 체크섬 기록
+      - name: SHA-256 체크섬
         run: |
           cd releases
           sha256sum *.zip | tee SHA256SUMS.txt
+
+      - name: Publish to /settings/mobile-releases (Lovable Cloud)
+        if: ${{ env.OTA_PUBLISH_URL != '' && env.OTA_PUBLISH_TOKEN != '' }}
+        env:
+          OTA_PUBLISH_URL: ${{ secrets.OTA_PUBLISH_URL }}
+          OTA_PUBLISH_TOKEN: ${{ secrets.OTA_PUBLISH_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          CHANNEL: ${{ steps.ver.outputs.channel }}
+          MANDATORY: ${{ steps.ver.outputs.mandatory }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          ZIP=$(ls releases/safenex-*.zip | head -n1)
+          echo "→ POST $OTA_PUBLISH_URL  (file=$ZIP)"
+          HTTP=$(curl -sS -w "%{http_code}" -o /tmp/ota-resp.json \
+            -X POST "$OTA_PUBLISH_URL" \
+            -H "Authorization: Bearer $OTA_PUBLISH_TOKEN" \
+            -H "Content-Type: application/zip" \
+            -H "X-OTA-Version: $VERSION" \
+            -H "X-OTA-Channel: $CHANNEL" \
+            -H "X-OTA-Mandatory: $MANDATORY" \
+            -H "X-OTA-Notes: CI publish from ${COMMIT:0:7}" \
+            --data-binary "@$ZIP")
+          echo "HTTP $HTTP"
+          cat /tmp/ota-resp.json
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::OTA publish failed ($HTTP)"
+            exit 1
+          fi
+
+      - name: Skip notice when secrets missing
+        if: ${{ env.OTA_PUBLISH_URL == '' || env.OTA_PUBLISH_TOKEN == '' }}
+        env:
+          OTA_PUBLISH_URL: ${{ secrets.OTA_PUBLISH_URL }}
+          OTA_PUBLISH_TOKEN: ${{ secrets.OTA_PUBLISH_TOKEN }}
+        run: |
+          echo "::warning::OTA_PUBLISH_URL / OTA_PUBLISH_TOKEN GitHub Secrets 미설정 → 자동 게시 건너뜀."
+          echo "마스터가 /settings/mobile-releases 에서 수동 업로드 가능."
 
       - name: Upload as workflow artifact
         uses: actions/upload-artifact@v4
@@ -81,7 +137,6 @@ jobs:
           path: releases/*
           retention-days: 30
 
-      # v* 태그를 push 했을 때만 GitHub Release 에 자동 첨부
       - name: Attach to GitHub Release (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2

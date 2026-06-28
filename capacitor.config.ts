@@ -5,8 +5,8 @@ import type { CapacitorConfig } from '@capacitor/cli';
 const devUrl = process.env.CAP_DEV_URL;
 
 const config: CapacitorConfig = {
-  appId: 'app.lovable.943c0fa50f48402483eac68afc236634',
-  appName: 'safenex',
+  appId: 'org.safenex.app',
+  appName: 'Safenex',
   webDir: 'dist',
   ...(devUrl
     ? { server: { url: devUrl, cleartext: true } }

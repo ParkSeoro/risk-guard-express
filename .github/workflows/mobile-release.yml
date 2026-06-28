@@ -46,21 +46,25 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
+          node-version: "22"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Production build
         env:
           CAP_DEV_URL: ""
-        run: npm run build
+        run: bun run build
 
       - name: Capacitor sync (있을 때만)
         run: |
           if [ -d "ios" ] || [ -d "android" ]; then
-            npx cap sync
+            bunx cap sync
           else
             echo "ios/, android/ 폴더 없음 → cap sync 건너뜀"
           fi

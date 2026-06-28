@@ -37,7 +37,8 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
   const cap = (globalThis as any).Capacitor as Capacitor | undefined;
   if (!cap?.isNativePlatform?.()) return null;
   try {
-    const mod: any = await import("@capacitor-community/background-geolocation");
+    const pkg = "@capacitor-community/background-geolocation";
+    const mod: any = await import(/* @vite-ignore */ pkg);
     const BackgroundGeolocation = mod.BackgroundGeolocation || mod.default;
     if (!BackgroundGeolocation?.addWatcher) return null;
     const watcherId = await BackgroundGeolocation.addWatcher(

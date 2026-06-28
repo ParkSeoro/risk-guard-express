@@ -1,69 +1,140 @@
+# 네이티브 모바일 앱 빌드 및 배포 방법
 
-# 계획
-
-## 1. 근로자 등록 시 받아야 할 법정교육 자동 표시
-
-### 데이터 흐름 (이미 존재)
-- `worker_legal_education_mapping` : 직종(job_type) × 고용형태(employment_type) × 요건유형(req_type) → 과정명/주기/근거법조문
-- `workers.required_items` / `worker_required_items` : 개별 근로자에게 부여된 항목
-- `worker_education_records` : 실제 이수 기록
-
-### 구현 (UI/표시만)
-- **신규 RPC `compute_worker_required_education(worker_id)`**: 매핑 테이블을 조회해 해당 근로자에게 필요한 교육 목록(과정명, 시간, 주기, 다음예정일, 근거조문)을 반환.
-- **WorkerRegister.tsx**: 직종/고용형태 선택 즉시 우측에 "이 근로자에게 필요한 법정교육" 카드 미리보기. 등록 완료 시 매핑된 항목을 `worker_required_items`에 자동 시드.
-- **WorkerDetail.tsx — 법정교육 탭**: 현재 "교육 이수 내역"만 표시 → "필요 교육 vs 이수 현황" 매트릭스(미이수/만료임박/완료, 근거조문 표기).
-- **WorkerManagement.tsx 리스트**: 행마다 "교육 완료율" 배지(예: 3/5). 미이수 클릭 시 상세로.
-- **WorkerEducation.tsx**: 상단에 "프로젝트 전체 미이수 현황"(직종별 집계) 추가.
-- **리포트 반영**:
-  - TBM 일지: 참여자별 미이수 교육 경고 라벨
-  - 작업허가서 작성 시 작업자 선택 화면에 "법정교육 미이수" 배지
-  - 계약사 점수카드(ContractorScorecard): 교육 이수율 항목 추가
-
-### 자동 갱신
-- workers INSERT/UPDATE(job_type, employment_type, hired_at) 트리거 → `worker_required_items` 자동 동기화
+현재 프로젝트는 이미 Capacitor가 설정되어 있고, `capacitor.config.ts`에 핫리로드 URL과 백그라운드 위치추적/OTA 업데이트 플러그인이 구성되어 있습니다. 아래 절차대로 진행하시면 실제 디바이스 → 내부 테스트 → 스토어 출시까지 완료할 수 있습니다.
 
 ---
 
-## 2. 모바일 네이티브 앱화 (백그라운드 위치 + 자동 업데이트)
+## 1단계: GitHub로 코드 내보내기 (필수)
 
-현재 상태: `@capacitor/core`, `@capacitor/geolocation` 설치, `capacitor.config.ts`는 라이브 프리뷰 URL을 가리킴(개발용). 실제 스토어 배포/백그라운드 미지원.
+Lovable 샌드박스에서는 네이티브 빌드를 할 수 없습니다. 반드시 본인 PC에서 빌드해야 합니다.
 
-### 2-1. 네이티브 백그라운드 위치 추적
-- `@capacitor-community/background-geolocation` 추가
-- `src/lib/tracking/locationTracker.ts`를 분기:
-  - 네이티브: BackgroundGeolocation watcher (앱 종료/잠금 화면에서도 동작, iOS Always-Allow, Android Foreground Service)
-  - 웹/PWA: 기존 navigator.geolocation 유지
-- iOS `Info.plist`: `NSLocationAlwaysAndWhenInUseUsageDescription`, `UIBackgroundModes: location`
-- Android `AndroidManifest.xml`: `ACCESS_BACKGROUND_LOCATION`, `FOREGROUND_SERVICE_LOCATION`, 알림 채널
-- 배터리 최적화 안내 다이얼로그 (Android), iOS 권한 단계 안내
-
-### 2-2. OTA 자동 업데이트 (네이티브 쉘 유지, JS 번들만 갱신)
-- `@capgo/capacitor-updater` (오픈소스, Capgo CDN 또는 자체 S3/Supabase Storage 호스팅 가능) 채택
-- 빌드 파이프라인:
-  - `npm run build` → `dist/` zip → Supabase Storage `app-updates/` 업로드
-  - 메타 테이블 `app_releases(version, channel, url, mandatory, min_native_version, released_at)`
-- 앱 부팅 시 `CapacitorUpdater.notifyAppReady()` → 백그라운드에서 최신 버전 체크 → 다운로드 후 다음 실행 시 적용 (mandatory면 즉시 reload)
-- 마스터 화면에 "릴리스 채널" 관리(stable/beta), 강제 업데이트 토글
-- 네이티브 코드 변경 시(권한, 플러그인 추가)는 스토어 재제출 필요 — 메타에 `min_native_version`으로 차단
-
-### 2-3. capacitor.config.ts 정리
-- 프로덕션 빌드에서는 `server.url` 제거(자체 번들 사용), 개발 빌드 변수로만 사용
-- `appName`을 `safenex` 등 실제 명칭으로 정정
-- 푸시: `@capacitor/push-notifications` 추가 → 기존 `push_subscriptions`/`send-push` 함수와 연결(FCM/APNs 토큰)
-
-### 2-4. 배포 가이드 문서
-- `/docs/mobile-build.md`: GitHub 내보내기 → `npx cap add ios/android` → 서명/스토어 업로드 순서, OTA 채널 운영, 권한 심사 답변 템플릿
+1. Lovable 우측 상단 **GitHub → Export to GitHub** 클릭
+2. 본인 PC에서 `git clone <레포 주소>` 후 폴더 진입
+3. `npm install` 로 패키지 설치
 
 ---
 
-## 기술 메모
+## 2단계: 개발 환경 준비
 
-- DB: `worker_legal_education_mapping`은 이미 시드 완료(약 42개). RPC와 트리거만 신규.
-- 모바일: 네이티브 빌드/스토어 제출은 사용자 로컬에서 수행해야 함(샌드박스에서 불가). Lovable에서는 코드/설정/OTA 인프라까지 완비.
-- 보안: OTA 번들은 서명 검증(공개키 내장) + HTTPS Storage URL.
+| 대상 | 필요한 도구 | OS 제한 |
+|---|---|---|
+| **iOS (iPhone/iPad)** | Xcode 15+, Apple Developer 계정($99/년), CocoaPods | **Mac 필수** |
+| **Android** | Android Studio, JDK 17, Google Play Console 계정($25 1회) | Windows/Mac/Linux 모두 가능 |
 
-## 확인 부탁
+---
 
-A. 위 두 가지 모두 한 번에 진행할까요, 아니면 1번(교육 매핑 UI)부터 먼저 끝낼까요?
-B. OTA 호스팅은 **Lovable Cloud Storage(자체 호스팅)** 로 가도 될까요? (Capgo 유료 서비스 대신)
-C. 모바일 푸시는 FCM(Android) + APNs(iOS) 키를 사용자가 준비해야 합니다. 지금 준비 가능한지요?
+## 3단계: 네이티브 플랫폼 추가 및 빌드
+
+```bash
+# 한 번만 실행
+npx cap add ios       # iOS 추가 (Mac에서만)
+npx cap add android   # Android 추가
+
+# 코드 수정할 때마다 실행
+npm run build         # 웹 번들 생성
+npx cap sync          # 네이티브 프로젝트에 반영
+
+# 실제 디바이스/에뮬레이터 실행
+npx cap run ios
+npx cap run android
+```
+
+이 단계에서 핫리로드 모드(`server.url`이 Lovable 프리뷰 URL로 설정됨)로 동작하므로, Lovable에서 코드만 바꿔도 폰에 즉시 반영됩니다.
+
+---
+
+## 4단계: 권한 설정 (백그라운드 위치추적용)
+
+### iOS — `ios/App/App/Info.plist` 추가
+```xml
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>근무 중 위치 안전 관리를 위해 백그라운드 위치가 필요합니다</string>
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>출퇴근 QR 체크인 시 위치를 확인합니다</string>
+<key>UIBackgroundModes</key>
+<array><string>location</string><string>fetch</string></array>
+```
+
+### Android — `android/app/src/main/AndroidManifest.xml` 추가
+```xml
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+```
+
+---
+
+## 5단계: 출시용 빌드 (스토어 제출 전)
+
+출시 빌드 직전, `capacitor.config.ts`에서 `server.url`을 **반드시 제거**하세요. 그러지 않으면 스토어 심사에서 리젝됩니다.
+
+### Android — AAB 생성
+```bash
+cd android
+./gradlew bundleRelease
+# 결과물: android/app/build/outputs/bundle/release/app-release.aab
+```
+서명 키(`.jks`)는 Android Studio → Build → Generate Signed Bundle에서 1회 생성 후 안전하게 보관.
+
+### iOS — Xcode에서 Archive
+1. `npx cap open ios`
+2. Xcode → Product → Archive
+3. Distribute App → App Store Connect → Upload
+
+---
+
+## 6단계: 스토어 등록
+
+### Google Play
+1. [Play Console](https://play.google.com/console) → 앱 만들기
+2. **내부 테스트 트랙**에 AAB 업로드 → 테스터 이메일 등록 (가장 빠른 검증)
+3. 데이터 보안, 개인정보처리방침 URL, 스크린샷(폰 2~8장) 입력
+4. 프로덕션 출시 신청 (보통 1~3일 심사)
+
+### Apple App Store
+1. [App Store Connect](https://appstoreconnect.apple.com) → 새 앱 생성 (Bundle ID: `app.lovable.943c0fa50f48402483eac68afc236634`)
+2. **TestFlight**으로 내부 테스트 (즉시 가능)
+3. 스크린샷(6.7" iPhone 필수), 개인정보처리방침 URL 입력
+4. 심사 제출 (보통 24~48시간)
+
+---
+
+## 7단계: 출시 후 — OTA 업데이트 운영 (Xcode/Android Studio 재빌드 불필요)
+
+JS/CSS 수정 사항은 매번 스토어 심사 받지 않고 즉시 배포할 수 있습니다.
+
+1. 로컬에서 `npm run build` → `dist/` 폴더를 zip 압축
+2. 시스템 로그인 → **마스터 계정** → `/settings/mobile-releases`
+3. zip 업로드, 버전(예: `1.0.1`) 입력, 출시 채널 선택
+4. 사용자 폰이 다음 실행 시 자동으로 새 번들 다운로드 → 적용
+
+⚠️ 단, 네이티브 코드/플러그인을 추가/수정한 경우에는 OTA로 배포 불가. 반드시 스토어 재빌드/심사 필요.
+
+---
+
+## 예상 일정
+
+| 단계 | 소요 시간 |
+|---|---|
+| GitHub export + 로컬 셋업 | 30분 ~ 2시간 |
+| 디바이스 첫 실행 (Android) | 1~2시간 |
+| 디바이스 첫 실행 (iOS, Mac 필요) | 2~4시간 (인증서 발급 포함) |
+| Play Store 내부 테스트 | 당일 |
+| App Store TestFlight | 당일 |
+| Play Store 프로덕션 심사 | 1~3일 |
+| App Store 프로덕션 심사 | 1~3일 |
+
+---
+
+## 다음 액션 — 무엇을 도와드릴까요?
+
+플랜 모드에서는 코드를 수정할 수 없습니다. 승인해 주시면 아래 중 필요한 것을 빌드 모드에서 진행합니다:
+
+- ✅ `capacitor.config.ts`에 **출시용/개발용 모드 전환 스크립트** 추가
+- ✅ `Info.plist` / `AndroidManifest.xml` 권한 자동 주입 스크립트
+- ✅ OTA 번들 zip 자동 생성 npm 스크립트 (`npm run ota:build`)
+- ✅ 스토어 등록용 **개인정보처리방침 페이지**(`/privacy`) 생성
+- ✅ 상세 운영 매뉴얼을 `docs/mobile-deploy.md`로 저장
+
+원하시는 항목을 알려주시면 한 번에 처리하겠습니다.

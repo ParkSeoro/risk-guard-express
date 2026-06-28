@@ -74,23 +74,27 @@ Deno.serve(async (req) => {
     });
   if (up.error) return json({ error: "upload_failed", detail: up.error.message }, 500);
 
-  // 5) 행 삽입
+  // 5) 행 upsert (같은 channel+version 재게시 시 덮어쓰기 → CI 재실행 안전)
   const { data, error } = await supabase
     .from("app_releases")
-    .insert({
-      version,
-      channel,
-      bundle_url: `storage:${path}`,
-      checksum,
-      mandatory,
-      min_native_version: minNative || null,
-      notes: notes || `Published from CI at ${new Date().toISOString()}`,
-    })
+    .upsert(
+      {
+        version,
+        channel,
+        bundle_url: `storage:${path}`,
+        checksum,
+        mandatory,
+        min_native_version: minNative || null,
+        notes: notes || `Published from CI at ${new Date().toISOString()}`,
+        is_deleted: false,
+      },
+      { onConflict: "channel,version" },
+    )
     .select()
     .single();
 
   if (error) {
-    // 충돌 시 업로드한 파일도 청소
+    // 실패 시 업로드한 파일 청소
     await supabase.storage.from("app-updates").remove([path]);
     return json({ error: "insert_failed", detail: error.message }, 500);
   }

@@ -127,7 +127,7 @@ const SafetyCost = () => {
   useEffect(() => { if (access.selectedProject) fetchAll(); }, [access.selectedProject]);
   useEffect(() => {
     if (!selectedConstructionId && scopedConstructions.length) setSelectedConstructionId(scopedConstructions[0].id);
-  }, [constructions, selectedConstructionId]);
+  }, [scopedConstructions, selectedConstructionId]);
   useEffect(() => {
     const filtered = reports.filter((r) => r.construction_id === selectedConstructionId);
     if (!filtered.some((r) => r.id === selectedReportId)) setSelectedReportId(filtered[0]?.id || '');

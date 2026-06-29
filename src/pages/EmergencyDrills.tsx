@@ -11,7 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Siren, Plus, CalendarClock, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Siren, Plus, CalendarClock, CheckCircle2, AlertTriangle, Search, Timer } from "lucide-react";
+
 import { toast } from "sonner";
 
 type Drill = {

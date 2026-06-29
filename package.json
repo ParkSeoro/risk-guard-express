@@ -60,6 +60,7 @@
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
+    "pdfjs-dist": "^6.1.200",
     "pptxgenjs": "^4.0.1",
     "qrcode": "^1.5.4",
     "qrcode.react": "^4.2.0",

@@ -62,19 +62,28 @@ export default function SettingsApprovalRoutes() {
   }, [projectId, entityType]);
 
 
-  // 본인 / 회사 / 프로젝트 공용 가시성 필터
+  // 본인 / 회사 / 프로젝트 공용 가시성 필터 + 검색
   const visibleTemplates = templates.filter((t) => {
     const isMine = t.owner_user_id === user?.id;
     const isMyCompany = !t.owner_user_id && t.company_id && myCompanyId && t.company_id === myCompanyId;
     const isShared = !t.owner_user_id && !t.company_id;
     const isOtherCompany = !t.owner_user_id && t.company_id && t.company_id !== myCompanyId;
-    // 마스터/PA만 타회사 전용 템플릿 조회 가능
     if (!isOwnerSide && isOtherCompany) return false;
-    if (scope === 'mine') return isMine;
-    if (scope === 'company') return isMyCompany;
-    if (scope === 'shared') return isShared;
+    if (scope === 'mine' && !isMine) return false;
+    if (scope === 'company' && !isMyCompany) return false;
+    if (scope === 'shared' && !isShared) return false;
+    const q = search.trim().toLowerCase();
+    if (q && !(t.name || '').toLowerCase().includes(q)) return false;
     return true;
   });
+
+  const counts = {
+    mine: templates.filter((t) => t.owner_user_id === user?.id).length,
+    company: templates.filter((t) => !t.owner_user_id && t.company_id === myCompanyId).length,
+    shared: templates.filter((t) => !t.owner_user_id && !t.company_id).length,
+    total: templates.length,
+  };
+
 
   const startCreate = () => setEditing({
     id: null, name: '', entity_type: entityType, project_id: projectId,

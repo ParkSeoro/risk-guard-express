@@ -776,6 +776,17 @@ const WorkPlanDetail = () => {
           </Card>
         </TabsContent>
       </Tabs>
+      {plan && (
+        <SubmitApprovalDialog
+          open={approvalDialogOpen}
+          onOpenChange={setApprovalDialogOpen}
+          entityType="work_plan"
+          entityId={plan.id}
+          projectId={plan.project_id}
+          submitterCompanyId={plan.company_id || null}
+          onSubmitted={handleApprovalSubmitted}
+        />
+      )}
     </div>
   );
 };

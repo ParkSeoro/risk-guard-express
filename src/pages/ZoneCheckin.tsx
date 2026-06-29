@@ -50,7 +50,8 @@ export default function ZoneCheckin() {
 
   const submit = async () => {
     if (!qr || !zone) return;
-    if (!name.trim()) { setError("이름을 입력하세요"); return; }
+    const parsed = checkinSchema.safeParse({ name: name.trim(), phone: phone.trim() });
+    if (!parsed.success) { setError(zodErrorMessage(parsed.error)); return; }
     setError(""); setSubmitting(true);
     const isHazard = zone.zone_type === "danger" || zone.zone_type === "restricted";
     const eventType =
@@ -60,16 +61,16 @@ export default function ZoneCheckin() {
     const { error: insErr } = await supabase.from("worker_zone_events").insert({
       project_id: zone.project_id,
       zone_id: zone.id,
-      worker_name: name.trim(),
-      worker_phone: phone.trim() || null,
+      worker_name: parsed.data.name,
+      worker_phone: parsed.data.phone || null,
       event_type: eventType,
       source: "qr",
       notes: qr.label || null,
     });
     setSubmitting(false);
     if (insErr) { setError(insErr.message); return; }
-    localStorage.setItem("zone:lastName", name.trim());
-    if (phone) localStorage.setItem("zone:lastPhone", phone.trim());
+    localStorage.setItem("zone:lastName", parsed.data.name);
+    if (parsed.data.phone) localStorage.setItem("zone:lastPhone", parsed.data.phone);
     setDone(isHazard && qr.direction === "entry" ? "warn" : "ok");
   };
 

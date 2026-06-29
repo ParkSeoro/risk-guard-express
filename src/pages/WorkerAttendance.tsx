@@ -89,12 +89,13 @@ export default function WorkerAttendance() {
     return c;
   }, [logs]);
 
-  // 권한 기반 회사 격리: 비-마스터/관리자는 자기 회사 기록만
+  // 권한 기반 회사 격리: 비-관리자급은 RLS에 위임 (workers.company_name은 이름 문자열이라 id 매칭 불가)
   const scopedLogs = useMemo(() => {
-    if (isMaster || role === "project_admin" || role === "safety_manager") return logs;
-    if (!companyId) return logs;
-    return logs.filter(l => !l.workers?.company_name || l.workers?.company_name === companyId);
-  }, [logs, isMaster, role, companyId]);
+    if (isMaster || isProjectAdmin || isSafetyManager) return logs;
+    // 추가 가시화 필터가 필요하면 추후 company_name 매핑 도입
+    return logs;
+  }, [logs, isMaster, isProjectAdmin, isSafetyManager, userCompanyId]);
+
 
   const filteredLogs = useMemo(() => {
     const q = search.trim().toLowerCase();

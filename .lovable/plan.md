@@ -1,50 +1,65 @@
-## 현재 상황
-디버그 APK는 서명이 약해서 최신 안드로이드(특히 삼성/원UI)는 "Play Protect 차단", "안전하지 않은 앱", "패키지 파싱 오류"로 설치 자체를 막습니다. 우회보다는 **공식 채널처럼 보이는 방법**으로 가는 게 가장 빠르고, 사용자에게도 안전합니다.
+## 목표
+Lovable AI Gateway 호출을 모두 **Google Gemini API 직접 호출**로 전환하여 비용을 대폭 절감합니다. (Gemini 2.5 Flash는 Lovable Gateway 대비 약 1/5~1/10 수준)
 
----
+## 사전 준비 (사용자 작업)
+1. https://aistudio.google.com/apikey 접속 → "Create API key" 클릭
+2. 발급된 키 복사 → Lovable에서 `GEMINI_API_KEY` 시크릿으로 저장 (제가 폼 띄워드림)
 
-## 추천하는 3가지 길 (쉬운 순서)
+## 변경 대상 엣지 함수 (총 7개)
 
-### ⭐ 방법 A — PWA(홈화면 설치) **+ 푸시/카메라/위치까지 동작**  [오늘, 코드 0줄 추가]
-지금 시스템에 이미 `manifest.json`, `InstallPrompt.tsx`, 서비스워커, 푸시 구독이 **다 들어가 있습니다**. 사용자는 그냥:
+| 함수 | 현재 모델 | 전환 후 |
+|---|---|---|
+| `generate-risk-ai` | gemini-2.5-flash (via Lovable) | `gemini-2.5-flash` (직접) |
+| `risk-job-orchestrator` | 위와 동일 | 위와 동일 |
+| `safety-assistant` | 위와 동일 | 위와 동일 |
+| `generate-education-material` | 위와 동일 | 위와 동일 |
+| `analyze-safety-cost-document` | 위와 동일 + 이미지 분석 | `gemini-2.5-flash` (멀티모달) |
+| `analyze-worker-opinion` | 위와 동일 | 위와 동일 |
+| `check-ai-credits` | Lovable 잔액 확인용 | **Gemini 키 유효성 확인으로 변경** |
 
-1. 폰 크롬에서 `https://safenex.org` 접속
-2. 우측 상단 ⋮ → **"앱 설치"** (또는 안내 배너의 "설치" 버튼)
-3. 홈 화면에 아이콘 생성 → 네이티브 앱처럼 전체화면 실행
+## 기술 변경 사항
 
-장점: APK 배포·서명·Play Protect 이슈 **전부 무관**. 카메라/QR/푸시/오프라인 큐 동작.  
-한계: **백그라운드 GPS 추적**은 PWA로 불가 (포그라운드에서는 정상).  
-→ 일반 근로자/관리자 95%는 이걸로 충분합니다.
+### 1. 공통 헬퍼 신규 생성: `supabase/functions/_shared/gemini.ts`
+- Google Generative Language REST API (`https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`) 직접 호출
+- OpenAI 호환 포맷 → Gemini 네이티브 포맷 변환 (system/user/assistant → systemInstruction/contents, tools → functionDeclarations)
+- 429/quota/safety block 에러 한국어로 변환
+- JSON 출력 모드 (`responseMimeType: "application/json"`) 지원
+- 멀티모달 이미지 입력 (inlineData base64) 지원
 
-### ⭐⭐ 방법 B — **Firebase App Distribution** (디버그 APK를 "초대 링크"로 배포)  [반나절]
-디버그 키로 서명된 APK도 Firebase 가 **신뢰된 출처로 인증**해 주기 때문에 Play Protect 경고가 거의 안 뜹니다.
+### 2. 각 함수 수정
+- `fetch("https://ai.gateway.lovable.dev/...")` 호출 → `callGemini()` 헬퍼로 교체
+- 환경변수: `LOVABLE_API_KEY` → `GEMINI_API_KEY`
+- 응답 파싱: `data.choices[0].message.content` → `data.candidates[0].content.parts[0].text`
+- 에러 메시지: "AI 크레딧" → "Gemini API 한도/키" 로 안내 문구 수정
 
-- 마스터가 Firebase 콘솔에 APK 업로드 → 테스터 이메일 추가
-- 사용자는 메일로 받은 링크 클릭 → "App Tester" 앱으로 1번만 설치 → 이후 자동 업데이트
-- 비용 무료, Play Store 심사 불필요
+### 3. UI 변경
+- `AICreditBanner.tsx`: "AI 크레딧" → "Gemini API 상태"로 라벨 변경, 충전 URL 제거 (Google AI Studio는 무료 할당량 기반)
+- `riskAutoGenAI.ts`: 에러 메시지 한글화 ("Gemini API 키가 없거나 한도 초과" 등)
+- `Settings.tsx`: 마스터 전용 "Gemini API 키 관리" 섹션 추가 (키 등록 상태 표시 + 재등록 버튼)
 
-이 흐름을 GitHub Actions(`mobile-release.yml`) 에 한 단계 더 추가하면 **푸시할 때마다 테스터 폰에 자동 갱신**.
+### 4. 모델 선택 정책
+- **기본**: `gemini-2.5-flash` (Lovable Gateway의 google/gemini-2.5-flash와 동일 모델, 비용은 직접가)
+- **백업/대량용**: `gemini-2.5-flash-lite` (더 저렴, risk-job-orchestrator 배치에서 사용)
+- **이미지 분석**: `gemini-2.5-flash` (멀티모달 지원)
 
-### ⭐⭐⭐ 방법 C — **Google Play 내부 테스트 트랙**  [3~7일, 가장 안정적]
-$25 1회 결제 → AAB 업로드 → 내부 테스터 100명까지 Play Store 링크로 정상 설치.  
-설치 후 Play Protect 경고 **0건**, 자동 업데이트, 추후 정식 출시로 전환 용이.
+### 5. 마이그레이션 안전장치
+- `GEMINI_API_KEY` 미설정 시 명확한 에러 메시지 ("마스터가 설정 > AI에서 Gemini 키를 등록해야 합니다")
+- 첫 호출 시 자동 검증 후 결과 토스트
 
----
+## 영향받지 않는 부분
+- 결재/위험성평가 DB 스키마, RLS, 결재 워크플로우 — **건드리지 않음**
+- 프론트엔드 위험성평가 UI/플로우 — **그대로 유지** (내부 함수 호출만 바뀜)
+- 캐싱 (`ai_risk_cache`), 잡 큐 (`ai_generation_jobs`) — **그대로 유지**
 
-## 같이 보강할 작은 항목들 (방법 A 채택 시)
-1. `InstallPrompt.tsx` 의 안내문에 **"Play Protect 차단 시 PWA로 설치하기"** 토글 추가
-2. `/m/install` 페이지: QR + 단계별 스크린샷 (안드로이드·iOS 분리)
-3. `manifest.json` 에 `screenshots`, `shortcuts`(출퇴근 QR/사고보고) 추가 → 설치 화면이 더 "앱처럼" 보임
-4. 마스터용 `/settings/distribution` 페이지에 "현재 배포 방식(PWA/Firebase/Play)" 안내
+## 비용 예상 (월 1만 회 호출 기준)
+- 현재 Lovable Gateway: 약 $50~150
+- Gemini 직접 (2.5 Flash): 약 $5~15 + **무료 할당량 (분당 15회, 일 1500회)** 내에서는 $0
 
----
+## 실행 순서
+1. `GEMINI_API_KEY` 시크릿 등록 요청 (폼 띄움)
+2. `_shared/gemini.ts` 헬퍼 작성
+3. 7개 엣지 함수 순차 교체
+4. 프론트 UI 라벨/에러 메시지 업데이트
+5. 위험성평가 1건 자동생성 테스트로 검증
 
-## 어떤 길로 갈까요?
-
-| 선택 | 추천 대상 |
-| --- | --- |
-| **A. PWA로 통일** | 지금 당장, 추가 비용·심사·서명 0 |
-| **A + B 병행** | 일부 관리자만 백그라운드 GPS 필요할 때 |
-| **C. Play 내부 테스트** | 다음 주까지 정식 배포 준비 |
-
-원하시는 번호(또는 조합)를 알려주시면 그에 맞춰 구현 계획을 확정하겠습니다.
+승인하시면 진행합니다.

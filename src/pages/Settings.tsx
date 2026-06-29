@@ -23,6 +23,14 @@ const settingsCards = [
     badge: '관리자 전용',
   },
   {
+    id: 'approval-routes',
+    title: '결재선 관리',
+    description: '문서 유형별·회사별 기본 결재선 템플릿을 등록·관리합니다.',
+    icon: GitBranch,
+    path: '/settings/approval-routes',
+    requires: 'admin' as const,
+    badge: '관리자 전용',
+  {
     id: 'ai',
     title: 'AI 설정',
     description: 'AI API Key, 모델 선택, AI 사용 여부를 설정합니다.',

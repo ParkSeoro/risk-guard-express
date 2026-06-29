@@ -243,9 +243,16 @@ export default function WorkPermits() {
           <Card key={p.id}>
             <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Badge className={STATUS_COLOR[p.status] || ''}>{p.status}</Badge>
                   <span className="font-semibold">{p.work_description}</span>
+                  {(() => {
+                    const today = new Date().toISOString().slice(0, 10);
+                    if (!p.permit_date) return null;
+                    if (p.permit_date < today) return <Badge variant="outline" className="text-destructive border-destructive/40">만료 (유효기간 경과)</Badge>;
+                    if (p.permit_date === today) return <Badge variant="outline" className="text-success border-success/40">오늘 유효</Badge>;
+                    return <Badge variant="outline" className="text-muted-foreground">예정 ({p.permit_date})</Badge>;
+                  })()}
                 </div>
                 <p className="text-xs text-muted-foreground">{p.permit_date} · {p.location || '-'}</p>
                 {p.gate_check_result?.all_ok === false && (

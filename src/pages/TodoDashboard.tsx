@@ -15,11 +15,23 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
-import { ListTodo, RefreshCw, Trash2, Pencil, Plus, PieChart } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ListTodo, RefreshCw, Trash2, Pencil, Plus, PieChart, Search } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
-import { format, isToday, isThisWeek, isThisMonth, startOfDay, endOfMonth } from 'date-fns';
+import { format, isToday, isThisWeek, isThisMonth, startOfDay, endOfMonth, differenceInCalendarDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { PieChart as RPieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
+
+type StatusFilter = 'all' | 'pending' | 'done' | 'overdue';
+
+const dueBadge = (dueStr: string, status: string) => {
+  if (status === '완료') return null;
+  const diff = differenceInCalendarDays(new Date(dueStr), startOfDay(new Date()));
+  if (diff < 0) return <Badge variant="destructive" className="text-[9px] h-4">D+{Math.abs(diff)} 초과</Badge>;
+  if (diff === 0) return <Badge className="text-[9px] h-4 bg-orange-500 hover:bg-orange-500">D-Day</Badge>;
+  if (diff <= 3) return <Badge variant="outline" className="text-[9px] h-4 text-orange-600 border-orange-300">D-{diff}</Badge>;
+  return null;
+};
 
 const CHART_COLORS = ['hsl(var(--primary))', 'hsl(var(--muted))'];
 
@@ -30,12 +42,15 @@ const TodoDashboard = () => {
   const { log } = useAuditLog();
   const [todos, setTodos] = useState<any[]>([]);
   const [duties, setDuties] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [editTodo, setEditTodo] = useState<any>(null);
   const [editForm, setEditForm] = useState({ title: '', description: '', due_date: '' });
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState({ title: '', description: '', due_date: format(new Date(), 'yyyy-MM-dd') });
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   useEffect(() => {
     if (access.selectedProject && user) { loadTodos(); loadDuties(); }
@@ -43,6 +58,7 @@ const TodoDashboard = () => {
 
   const loadTodos = async () => {
     if (!user) return;
+    setLoading(true);
     let query = supabase.from('todo_items').select('*')
       .eq('project_id', access.selectedProject)
       .eq('user_id', user.id)
@@ -52,6 +68,7 @@ const TodoDashboard = () => {
     query = access.applyCompanyFilter(query);
     const { data } = await query;
     setTodos(data || []);
+    setLoading(false);
   };
 
   const loadDuties = async () => {

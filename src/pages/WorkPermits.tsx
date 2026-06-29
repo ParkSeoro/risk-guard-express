@@ -14,6 +14,8 @@ import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature,
 import { useAuditLog } from '@/hooks/useAuditLog';
 import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialog';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
+import { useProjectAccess } from '@/hooks/useProjectAccess';
+
 
 const STATUS_COLOR: Record<string, string> = {
   '작성중': 'bg-muted text-muted-foreground',
@@ -33,6 +35,8 @@ export default function WorkPermits() {
   const { user, isAdmin } = useAuth();
   const { log } = useAuditLog();
   const projectId = typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') || '' : '';
+  const { userCompanyId } = useProjectAccess(projectId || undefined);
+
 
   const [permits, setPermits] = useState<any[]>([]);
   const [plans, setPlans] = useState<any[]>([]);
@@ -388,7 +392,7 @@ export default function WorkPermits() {
           entityType="work_permit"
           entityId={approvalTarget.id}
           projectId={projectId}
-          submitterCompanyId={approvalTarget.company_id || null}
+          submitterCompanyId={approvalTarget.company_id || userCompanyId || null}
           onSubmitted={() => { setApprovalTarget(null); load(); }}
         />
       )}

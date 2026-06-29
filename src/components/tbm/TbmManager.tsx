@@ -531,7 +531,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
             {/* 기본 정보 */}
             <section className="space-y-2 rounded-md border p-3">
               <p className="text-xs font-semibold text-muted-foreground">① 기본 정보</p>
-              <div><Label>제목 *</Label><IMESafeInput value={title} onValueChange={setTitle} placeholder="2026-05-06 오전 TBM" /></div>
+              <div><Label>제목 *</Label><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="2026-05-06 오전 TBM" /></div>
               <div className="grid grid-cols-2 gap-2">
                 <div><Label>일자</Label><Input type="date" value={tbmDate} onChange={(e) => setTbmDate(e.target.value)} /></div>
                 <div><Label>장소</Label><Input value={location} onChange={(e) => setLocation(e.target.value)} /></div>

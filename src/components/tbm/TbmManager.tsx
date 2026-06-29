@@ -9,8 +9,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText, Copy } from 'lucide-react';
+import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText, Copy, ClipboardList } from 'lucide-react';
 import AssigneeSelect from '@/components/AssigneeSelect';
+import { useSoftDelete } from '@/hooks/useSoftDelete';
+
 
 interface Props {
   projectId: string;
@@ -40,8 +42,12 @@ const BRIEFING_TEMPLATE = `■ 오늘 작업 설명:
 
 export default function TbmManager({ projectId, runId, defaultRisks = [] }: Props) {
   const { toast } = useToast();
+  const { softDelete } = useSoftDelete();
   const [sessions, setSessions] = useState<TbmSession[]>([]);
+  const [participantCounts, setParticipantCounts] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+
   const [editing, setEditing] = useState<TbmSession | null>(null);
   const [qrSession, setQrSession] = useState<TbmSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
@@ -68,13 +74,36 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const [copyCandidates, setCopyCandidates] = useState<TbmSession[]>([]);
 
   const load = async () => {
-    let q = supabase.from('tbm_sessions' as any).select('*').eq('project_id', projectId).order('created_at', { ascending: false });
+    setLoading(true);
+    let q = supabase.from('tbm_sessions' as any)
+      .select('*')
+      .eq('project_id', projectId)
+      .or('is_deleted.is.null,is_deleted.eq.false')
+      .order('created_at', { ascending: false });
     if (runId) q = q.eq('run_id', runId);
     const { data } = await q;
-    setSessions((data as any) || []);
+    const list = ((data as any) || []) as TbmSession[];
+    setSessions(list);
+    // fetch participant counts in one shot
+    if (list.length > 0) {
+      const ids = list.map((s) => s.id);
+      const { data: parts } = await supabase
+        .from('tbm_participations' as any)
+        .select('tbm_session_id')
+        .in('tbm_session_id', ids);
+      const counts: Record<string, number> = {};
+      ((parts as any[]) || []).forEach((p) => {
+        counts[p.tbm_session_id] = (counts[p.tbm_session_id] || 0) + 1;
+      });
+      setParticipantCounts(counts);
+    } else {
+      setParticipantCounts({});
+    }
     const { data: cs } = await supabase.from('companies').select('id, name, type').eq('project_id', projectId).order('name');
     setCompanies(cs || []);
+    setLoading(false);
   };
+
 
   useEffect(() => { load(); }, [projectId, runId]);
 
@@ -171,13 +200,13 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   };
 
   const remove = async (s: TbmSession) => {
-    const reason = prompt(`이 TBM "${s.title}"을(를) 삭제합니다. 사유를 입력하세요.`);
-    if (!reason) return;
-    const { error } = await supabase.from('tbm_sessions' as any).delete().eq('id', s.id);
-    if (error) return toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
-    toast({ title: 'TBM이 삭제되었습니다.' });
-    load();
+    const res = await softDelete('tbm_sessions', s.id, {
+      projectId,
+      label: `TBM "${s.title}"`,
+    });
+    if (res.ok) load();
   };
+
 
   const PUBLIC_TBM_BASE_URL = 'https://safenex.org';
 
@@ -434,17 +463,40 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         <Button size="sm" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4 mr-1" />TBM 생성</Button>
       </div>
 
-      {sessions.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-6">등록된 TBM이 없습니다.</p>
+      {loading ? (
+        <div className="grid gap-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-16 rounded-md border bg-muted/30 animate-pulse" />
+          ))}
+        </div>
+      ) : sessions.length === 0 ? (
+        <div className="flex flex-col items-center justify-center text-center py-10 border rounded-md bg-muted/20 gap-3">
+          <ClipboardList className="h-10 w-10 text-muted-foreground" />
+          <div>
+            <p className="font-semibold">등록된 TBM이 없습니다.</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              QR 코드를 발행해 근로자가 참여 서명할 수 있는 첫 TBM을 만들어 보세요.
+            </p>
+          </div>
+          <Button size="sm" onClick={() => setShowCreate(true)}>
+            <Plus className="h-4 w-4 mr-1" />첫 TBM 생성
+          </Button>
+        </div>
       ) : (
         <div className="grid gap-2">
           {sessions.map(s => (
             <Card key={s.id}>
               <CardContent className="p-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold truncate">{s.title}</p>
                     <Badge variant={s.is_active ? 'default' : 'secondary'}>{s.is_active ? '진행중' : '종료'}</Badge>
+                    <Badge variant="outline" className="text-[10px]">
+                      <Users className="h-3 w-3 mr-1" />참여 {participantCounts[s.id] || 0}명
+                    </Badge>
+                    {s.company_name && (
+                      <Badge variant="outline" className="text-[10px]">{s.company_name}</Badge>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">{s.tbm_date} · {s.location} · {s.leader_name}</p>
                 </div>
@@ -454,13 +506,14 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
                   <Button size="sm" variant="outline" onClick={() => printTbmLog(s)} title="TBM 일지 인쇄/PDF"><FileText className="h-3 w-3 mr-1" />일지 인쇄</Button>
                   <Button size="sm" variant="outline" onClick={() => toggleActive(s)} title="활성/종료"><Power className="h-3 w-3" /></Button>
                   <Button size="sm" variant="outline" onClick={() => openEdit(s)} title="수정"><Pencil className="h-3 w-3" /></Button>
-                  <Button size="sm" variant="outline" onClick={() => remove(s)} title="삭제"><Trash2 className="h-3 w-3 text-destructive" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => remove(s)} title="휴지통으로 이동"><Trash2 className="h-3 w-3 text-destructive" /></Button>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
+
 
       <Dialog open={showCreate || !!editing} onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditing(null); resetForm(); } }}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">

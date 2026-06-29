@@ -35,10 +35,10 @@
 - [x] 위험성 등급 zod 검증 (`risk_grade.ts`)
 - [x] 첨부 0/다중 — `evidence-attachments` 메모리에 정책 명시
 
-## 6. State sync ⚠️
+## 6. State sync ✅
 - [x] 결재완료 시 `assessment_runs.status='승인완료'` 미러 (`trg_assessment_run_approved_notify` 보강 후)
 - [x] 작성자/참여자 인앱 알림
-- [ ] **남은 작업**: 사이드바 "결재 대기" 뱃지에 위험성평가 카운트 포함 확인
+- [x] 사이드바 "결재함" 뱃지 — `usePendingApprovalsCount` 훅이 위험성평가 포함 모든 entity 합산
 
 ## 7. Audit ✅
 - [x] 자동생성/일괄적용/등급 변경 — `audit_logs` 기록
@@ -56,6 +56,5 @@
 - E2E: `SCENARIOS.admin`, `SCENARIOS.flow`, `SCENARIOS.core12`
 
 ## 남은 작업
-- 사이드바 뱃지에 위험성평가 결재 대기 건수 합산 검증
-- AI 자동생성 시 토큰 사용량(`ai_settings.token_quota`) 초과 시 친화적 메시지
-- 자동생성 결과의 `process` 가 빈 문자열일 때 그룹 헤더 깨짐 (관찰 필요)
+- (없음 — 1차 사이클 #1 완료)
+

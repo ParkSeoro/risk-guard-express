@@ -78,6 +78,17 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
   const [lines, setLines] = useState<ApprovalLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState(false);
+  const [showAllCompanies, setShowAllCompanies] = useState(false);
+
+  // 작성자(현재 사용자) 소속 회사 — 결재선 드롭다운 기본 필터
+  const currentMember = projectMembers.find(m => m.user_id === user?.id);
+  const authorCompanyId = currentMember?.company_id || null;
+  const OWNER_ROLES = new Set(['master', 'project_admin', 'safety_manager']);
+  const visibleMembers = showAllCompanies || !authorCompanyId
+    ? projectMembers
+    : projectMembers.filter(m =>
+        m.company_id === authorCompanyId || OWNER_ROLES.has(m.role)
+      );
 
   const fetchLines = useCallback(async () => {
     const { data } = await supabase
@@ -241,7 +252,16 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
             <Users className="h-4 w-4" /> 결재라인 설정
           </CardTitle>
           {!readOnly && (
-            <div className="flex gap-1.5">
+            <div className="flex gap-1.5 items-center">
+              <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer select-none mr-1">
+                <input
+                  type="checkbox"
+                  className="h-3 w-3"
+                  checked={showAllCompanies}
+                  onChange={e => setShowAllCompanies(e.target.checked)}
+                />
+                타사 포함
+              </label>
               <Button size="sm" variant="outline" className="gap-1 text-xs h-7" onClick={autoGenerate}>
                 <RefreshCw className="h-3 w-3" /> 자동 생성
               </Button>
@@ -308,7 +328,10 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
                             <SelectValue placeholder="결재자 선택">{line.user_name || '선택...'}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            {projectMembers.map(m => (
+                            {visibleMembers.length === 0 && (
+                              <div className="px-3 py-2 text-xs text-muted-foreground">표시할 결재자가 없습니다.</div>
+                            )}
+                            {visibleMembers.map(m => (
                               <SelectItem key={m.user_id} value={m.user_id}>
                                 {m.display_name} ({POSITION_LABELS[m.position] || m.position || m.role})
                                 {m.company && ` · ${m.company}`}

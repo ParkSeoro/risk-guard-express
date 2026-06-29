@@ -1,20 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { QRCodeSVG } from "qrcode.react";
-import { HardHat, QrCode, Trash2, ExternalLink, Settings2, AlertTriangle, FileSpreadsheet } from "lucide-react";
+import { HardHat, QrCode, Trash2, ExternalLink, Settings2, AlertTriangle, FileSpreadsheet, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import WorkerAttendance from "./WorkerAttendance";
 import WorkerDailyQR from "./WorkerDailyQR";
 import CompanyDailyQR from "./CompanyDailyQR";
 import WorkerBulkImportDialog from "@/components/workers/WorkerBulkImportDialog";
+import { useAuditLog } from "@/hooks/useAuditLog";
 
 const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "worker"]);
 
@@ -41,10 +44,24 @@ export default function WorkerManagement() {
   const [workers, setWorkers] = useState<any[]>([]);
   const [showQr, setShowQr] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const { log } = useAuditLog();
   const baseUrl = window.location.origin;
   const registerUrl = projectId
     ? `${baseUrl}/worker/register?project=${projectId}${companyId ? `&company=${companyId}` : ''}`
     : "";
+
+  const filteredWorkers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return workers;
+    return workers.filter(w =>
+      (w.name || "").toLowerCase().includes(q) ||
+      (w.phone || "").toLowerCase().includes(q) ||
+      (w.company_name || "").toLowerCase().includes(q) ||
+      (w.job_type || "").toLowerCase().includes(q)
+    );
+  }, [workers, search]);
 
   useEffect(() => {
     supabase.from("projects").select("id,name").then(({ data }) => setProjects(data || []));
@@ -78,25 +95,30 @@ export default function WorkerManagement() {
   }, [projectId]);
 
   const load = async () => {
+    setLoading(true);
     const { data, error } = await supabase
       .from("workers")
       .select("*")
       .eq("project_id", projectId)
       .eq("is_active", true)
       .order("created_at", { ascending: false });
+    setLoading(false);
     if (error) { toast.error(error.message); return; }
     setWorkers(data || []);
   };
 
-  const remove = async (id: string) => {
-    if (!confirm("삭제하시겠습니까?")) return;
+  const remove = async (w: any) => {
+    const reason = window.prompt(`[${w.name}] 비활성 처리 사유를 입력하세요.\n(나중에 재활성 가능합니다)`, "");
+    if (reason === null) return;
+    if (!reason.trim()) { toast.error("사유는 필수입니다"); return; }
     const { error } = await supabase
       .from("workers")
       .update({ is_active: false })
-      .eq("id", id);
+      .eq("id", w.id);
     if (error) { toast.error(error.message); return; }
-    setWorkers(prev => prev.filter(w => w.id !== id));
-    toast.success("삭제 완료");
+    await log("soft_delete", "workers", w.id, projectId, { reason: reason.trim(), label: w.name });
+    setWorkers(prev => prev.filter(x => x.id !== w.id));
+    toast.success("비활성 처리됨");
   };
 
   const onTabChange = (v: string) => {
@@ -114,7 +136,9 @@ export default function WorkerManagement() {
 
       <Tabs value={tab} onValueChange={onTabChange}>
         <TabsList>
-          <TabsTrigger value="register">등록 정보</TabsTrigger>
+          <TabsTrigger value="register" className="gap-2">
+            등록 정보 {workers.length > 0 && <Badge variant="secondary">{workers.length}</Badge>}
+          </TabsTrigger>
           <TabsTrigger value="attendance">입퇴장 현황</TabsTrigger>
           <TabsTrigger value="daily-qr">근로자별 일일 QR</TabsTrigger>
           <TabsTrigger value="company-qr">시공사 게시판 QR</TabsTrigger>
@@ -137,10 +161,38 @@ export default function WorkerManagement() {
 
           {projectId && (
             <Card>
-              <CardHeader><CardTitle>등록 근로자 ({workers.length}명)</CardTitle></CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
+                <CardTitle>등록 근로자 ({filteredWorkers.length}{search ? ` / ${workers.length}` : ''}명)</CardTitle>
+                <div className="relative w-64">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    className="pl-8 h-9"
+                    placeholder="이름·전화·소속사·직종 검색"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+              </CardHeader>
               <CardContent>
-                {workers.length === 0 ? (
-                  <div className="text-sm text-muted-foreground py-8 text-center">아직 등록된 근로자가 없습니다.<br />상단의 "등록 QR 표시" 버튼으로 QR을 표시하면 근로자가 직접 등록합니다.</div>
+                {loading ? (
+                  <div className="space-y-2">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
+                ) : workers.length === 0 ? (
+                  <div className="text-sm text-muted-foreground py-12 text-center space-y-3">
+                    <HardHat className="h-10 w-10 mx-auto text-muted-foreground/50" />
+                    <div>아직 등록된 근로자가 없습니다.<br />아래 방법 중 하나로 등록하세요.</div>
+                    <div className="flex gap-2 justify-center pt-2">
+                      <Button size="sm" onClick={() => setShowQr(true)}><QrCode className="h-4 w-4 mr-2" />등록 QR</Button>
+                      <Button size="sm" variant="secondary" onClick={() => setShowBulk(true)}><FileSpreadsheet className="h-4 w-4 mr-2" />엑셀 일괄등록</Button>
+                    </div>
+                  </div>
+                ) : filteredWorkers.length === 0 ? (
+                  <div className="text-sm text-muted-foreground py-8 text-center">
+                    검색 결과가 없습니다. <Button variant="link" className="p-0 h-auto" onClick={() => setSearch("")}>전체 보기</Button>
+                  </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -157,7 +209,7 @@ export default function WorkerManagement() {
                         </tr>
                       </thead>
                       <tbody>
-                        {workers.map(w => (
+                        {filteredWorkers.map(w => (
                           <tr key={w.id} className="border-b hover:bg-muted/40">
                             <td className="p-2 font-medium">
                               <Link to={`/workers/${w.id}`} className="text-primary hover:underline">{w.name}</Link>
@@ -172,7 +224,7 @@ export default function WorkerManagement() {
                             <td className="p-2">{w.is_active ? <Badge>활성</Badge> : <Badge variant="outline">비활성</Badge>}</td>
                             <td className="p-2 flex gap-1">
                               <Link to={`/workers/${w.id}`}><Button size="icon" variant="ghost"><ExternalLink className="h-4 w-4" /></Button></Link>
-                              <Button size="icon" variant="ghost" onClick={() => remove(w.id)}><Trash2 className="h-4 w-4" /></Button>
+                              <Button size="icon" variant="ghost" onClick={() => remove(w)} title="비활성 처리(사유 필수)"><Trash2 className="h-4 w-4" /></Button>
                             </td>
                           </tr>
                         ))}

@@ -348,7 +348,28 @@ const TodoDashboard = () => {
         </div>
       )}
 
-      {todos.length === 0 ? (
+      {/* Search + Status filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="할 일 검색..." className="h-8 pl-7 text-xs" />
+        </div>
+        <Select value={statusFilter} onValueChange={v => setStatusFilter(v as StatusFilter)}>
+          <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="text-xs">전체</SelectItem>
+            <SelectItem value="pending" className="text-xs">미완료</SelectItem>
+            <SelectItem value="overdue" className="text-xs">지연 ({overdueCount})</SelectItem>
+            <SelectItem value="done" className="text-xs">완료</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {loading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+        </div>
+      ) : todos.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <ListTodo className="h-10 w-10 mx-auto mb-3 opacity-30" />

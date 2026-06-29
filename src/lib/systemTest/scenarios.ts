@@ -3,6 +3,7 @@ import { runStep, StepResult, TestContext, trackArtifact } from "./runner";
 import { FEATURE_COVERAGE, REQUIRED_COLUMNS, REQUIRED_RPCS } from "./manifest";
 import { runMobileScenario } from "./mobileScenarios";
 import { runHealthScenario } from "./healthScenario";
+import { runCore12Scenario } from "./coreFeatureScenarios";
 
 const QA_PREFIX = "__QA__";
 
@@ -1144,6 +1145,7 @@ export const SCENARIOS = {
   coverage: { label: "기능 커버리지", run: runCoverageScenario },
   mobile: { label: "모바일 라우트/카메라", run: runMobileScenario },
   health: { label: "보건 모듈 (건강진단/측정/조사)", run: runHealthScenario },
+  core12: { label: "코어 12 기능 스모크", run: runCore12Scenario },
 } as const;
 
 export type ScenarioKey = keyof typeof SCENARIOS;

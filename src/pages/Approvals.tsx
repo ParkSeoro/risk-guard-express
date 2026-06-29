@@ -29,6 +29,7 @@ const Approvals = () => {
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [tab, setTab] = useState('mine');
   const [entityPending, setEntityPending] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const fetchEntityPending = async () => {
     const { data } = await supabase.rpc('get_my_pending_entity_approvals');
@@ -45,26 +46,31 @@ const Approvals = () => {
   };
 
   const fetchData = async () => {
-    if (!selectedProject) return;
-    const [a, r] = await Promise.all([
-      supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false }),
-      supabase.from('assessment_runs').select('*').eq('project_id', selectedProject),
-    ]);
-    let approvalsData = a.data || [];
-    let runsData = r.data || [];
-    
-    // 업체 기반 필터링: 발주사/관리자가 아닌 경우 본인 회사 관련 결재만 표시
-    if (!isMaster && !isProjectAdmin && userCompanyId) {
-      approvalsData = approvalsData.filter((ap: any) => 
-        ap.approver_id === user?.id || ap.company_id === userCompanyId
-      );
-      runsData = runsData.filter((r: any) => 
-        !r.target_company_ids || r.target_company_ids.length === 0 || r.target_company_ids.includes(userCompanyId)
-      );
+    if (!selectedProject) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const [a, r] = await Promise.all([
+        supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false }),
+        supabase.from('assessment_runs').select('*').eq('project_id', selectedProject),
+      ]);
+      let approvalsData = a.data || [];
+      let runsData = r.data || [];
+
+      // 업체 기반 필터링: 발주사/관리자가 아닌 경우 본인 회사 관련 결재만 표시
+      if (!isMaster && !isProjectAdmin && userCompanyId) {
+        approvalsData = approvalsData.filter((ap: any) =>
+          ap.approver_id === user?.id || ap.company_id === userCompanyId
+        );
+        runsData = runsData.filter((r: any) =>
+          !r.target_company_ids || r.target_company_ids.length === 0 || r.target_company_ids.includes(userCompanyId)
+        );
+      }
+
+      setApprovals(approvalsData);
+      setRuns(runsData);
+    } finally {
+      setLoading(false);
     }
-    
-    setApprovals(approvalsData);
-    setRuns(runsData);
   };
 
   useEffect(() => { fetchData(); fetchEntityPending(); }, [selectedProject, userCompanyId]);
@@ -263,15 +269,29 @@ const Approvals = () => {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="w-full">
-          <TabsTrigger value="mine" className="flex-1">내 결재 (대기)</TabsTrigger>
+          <TabsTrigger value="mine" className="flex-1 gap-1.5">
+            내 결재 (대기)
+            {(() => {
+              const mineCount = user ? Object.values(grouped).filter((steps: any) =>
+                (steps as any[]).some(s => s.approver_id === user.id && s.status === '대기')
+              ).length + entityPending.length : 0;
+              return mineCount > 0 ? <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">{mineCount}</Badge> : null;
+            })()}
+          </TabsTrigger>
           <TabsTrigger value="submitted" className="flex-1">상신한 결재</TabsTrigger>
           {isAdmin() && <TabsTrigger value="all" className="flex-1">전체 현황 (읽기전용)</TabsTrigger>}
         </TabsList>
 
         <TabsContent value={tab} className="space-y-3 mt-3">
-          {Object.keys(filteredGrouped).length === 0 ? (
-            <Card><CardContent className="py-12 text-center text-muted-foreground">
-              {tab === 'mine' ? '대기 중인 결재가 없습니다.' : '결재 내역이 없습니다.'}
+          {loading ? (
+            <div className="space-y-2">
+              {[0,1,2].map(i => <div key={i} className="h-20 rounded bg-muted animate-pulse" />)}
+            </div>
+          ) : Object.keys(filteredGrouped).length === 0 ? (
+            <Card><CardContent className="py-12 text-center text-muted-foreground space-y-2">
+              <FileCheck className="h-10 w-10 mx-auto opacity-30" />
+              <div>{tab === 'mine' ? '대기 중인 결재가 없습니다.' : tab === 'submitted' ? '상신한 결재가 없습니다.' : '결재 내역이 없습니다.'}</div>
+              {tab === 'mine' && <div className="text-xs">위험성평가·작업계획서·작업허가서를 상신하면 이 곳에 표시됩니다.</div>}
             </CardContent></Card>
           ) : (
             Object.entries(filteredGrouped).map(([runId, steps]) => {

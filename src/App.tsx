@@ -179,6 +179,7 @@ function ProtectedRoutes() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/account" element={<SettingsAccount />} />
         <Route path="/settings/permissions" element={<SettingsPermissions />} />
+        <Route path="/settings/approval-routes" element={<SettingsApprovalRoutes />} />
         <Route path="/settings/notifications" element={<SettingsNotifications />} />
         <Route path="/settings/ai" element={<SettingsAI />} />
         <Route path="/settings/mobile-releases" element={<MobileReleases />} />

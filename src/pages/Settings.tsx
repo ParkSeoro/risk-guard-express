@@ -30,6 +30,7 @@ const settingsCards = [
     path: '/settings/approval-routes',
     requires: 'admin' as const,
     badge: '관리자 전용',
+  },
   {
     id: 'ai',
     title: 'AI 설정',

@@ -36,6 +36,8 @@ const MasterData = () => {
 
   const [editDialog, setEditDialog] = useState<{ type: string; item?: any } | null>(null);
   const [form, setForm] = useState<Record<string, any>>({});
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState({ process: '', ppe: '', legal: '', rule: '' });
 
   const fetchAll = async () => {
     const [p, pp, lr, d, a, vr] = await Promise.all([

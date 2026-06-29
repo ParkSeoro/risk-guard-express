@@ -374,6 +374,17 @@ export default function WorkPermits() {
         open={!!workersDialog}
         onClose={() => setWorkersDialog(null)}
       />
+      {approvalTarget && (
+        <SubmitApprovalDialog
+          open={!!approvalTarget}
+          onOpenChange={(v) => !v && setApprovalTarget(null)}
+          entityType="work_permit"
+          entityId={approvalTarget.id}
+          projectId={projectId}
+          submitterCompanyId={approvalTarget.company_id || null}
+          onSubmitted={() => { setApprovalTarget(null); load(); }}
+        />
+      )}
     </div>
   );
 }

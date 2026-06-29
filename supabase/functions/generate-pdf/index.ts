@@ -543,7 +543,7 @@ tr { page-break-inside: avoid; }
 </html>`;
 
     return new Response(JSON.stringify({
-      html, title: `위험성평가표 [${run.type}] ${run.period_label}`,
+      html, title: docTitle,
       fileName: `위험성평가_${run.type}_${run.period_label}_${today}.pdf`
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

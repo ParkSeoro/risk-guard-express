@@ -15,11 +15,23 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
-import { ListTodo, RefreshCw, Trash2, Pencil, Plus, PieChart } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ListTodo, RefreshCw, Trash2, Pencil, Plus, PieChart, Search } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
-import { format, isToday, isThisWeek, isThisMonth, startOfDay, endOfMonth } from 'date-fns';
+import { format, isToday, isThisWeek, isThisMonth, startOfDay, endOfMonth, differenceInCalendarDays } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { PieChart as RPieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
+
+type StatusFilter = 'all' | 'pending' | 'done' | 'overdue';
+
+const dueBadge = (dueStr: string, status: string) => {
+  if (status === '완료') return null;
+  const diff = differenceInCalendarDays(new Date(dueStr), startOfDay(new Date()));
+  if (diff < 0) return <Badge variant="destructive" className="text-[9px] h-4">D+{Math.abs(diff)} 초과</Badge>;
+  if (diff === 0) return <Badge className="text-[9px] h-4 bg-orange-500 hover:bg-orange-500">D-Day</Badge>;
+  if (diff <= 3) return <Badge variant="outline" className="text-[9px] h-4 text-orange-600 border-orange-300">D-{diff}</Badge>;
+  return null;
+};
 
 const CHART_COLORS = ['hsl(var(--primary))', 'hsl(var(--muted))'];
 
@@ -30,12 +42,15 @@ const TodoDashboard = () => {
   const { log } = useAuditLog();
   const [todos, setTodos] = useState<any[]>([]);
   const [duties, setDuties] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [editTodo, setEditTodo] = useState<any>(null);
   const [editForm, setEditForm] = useState({ title: '', description: '', due_date: '' });
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState({ title: '', description: '', due_date: format(new Date(), 'yyyy-MM-dd') });
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   useEffect(() => {
     if (access.selectedProject && user) { loadTodos(); loadDuties(); }
@@ -43,6 +58,7 @@ const TodoDashboard = () => {
 
   const loadTodos = async () => {
     if (!user) return;
+    setLoading(true);
     let query = supabase.from('todo_items').select('*')
       .eq('project_id', access.selectedProject)
       .eq('user_id', user.id)
@@ -52,6 +68,7 @@ const TodoDashboard = () => {
     query = access.applyCompanyFilter(query);
     const { data } = await query;
     setTodos(data || []);
+    setLoading(false);
   };
 
   const loadDuties = async () => {
@@ -179,9 +196,25 @@ const TodoDashboard = () => {
     loadTodos();
   };
 
-  const todayTodos = useMemo(() => todos.filter(t => isToday(new Date(t.due_date))), [todos]);
-  const weekTodos = useMemo(() => todos.filter(t => isThisWeek(new Date(t.due_date), { locale: ko })), [todos]);
-  const monthTodos = useMemo(() => todos.filter(t => isThisMonth(new Date(t.due_date))), [todos]);
+  const filteredTodos = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const today = startOfDay(new Date());
+    return todos.filter(t => {
+      if (q && !`${t.title} ${t.description || ''}`.toLowerCase().includes(q)) return false;
+      if (statusFilter === 'done' && t.status !== '완료') return false;
+      if (statusFilter === 'pending' && t.status === '완료') return false;
+      if (statusFilter === 'overdue') {
+        if (t.status === '완료') return false;
+        if (differenceInCalendarDays(new Date(t.due_date), today) >= 0) return false;
+      }
+      return true;
+    });
+  }, [todos, search, statusFilter]);
+
+  const todayTodos = useMemo(() => filteredTodos.filter(t => isToday(new Date(t.due_date))), [filteredTodos]);
+  const weekTodos = useMemo(() => filteredTodos.filter(t => isThisWeek(new Date(t.due_date), { locale: ko })), [filteredTodos]);
+  const monthTodos = useMemo(() => filteredTodos.filter(t => isThisMonth(new Date(t.due_date))), [filteredTodos]);
+  const overdueCount = useMemo(() => todos.filter(t => t.status !== '완료' && differenceInCalendarDays(new Date(t.due_date), startOfDay(new Date())) < 0).length, [todos]);
 
   const completedToday = todayTodos.filter(t => t.status === '완료').length;
   const completedWeek = weekTodos.filter(t => t.status === '완료').length;
@@ -208,7 +241,10 @@ const TodoDashboard = () => {
     <div className={`flex items-center gap-3 p-2.5 rounded-lg border ${todo.status === '완료' ? 'bg-muted/30 border-muted' : 'bg-background'}`}>
       <Checkbox checked={todo.status === '완료'} onCheckedChange={() => toggleTodo(todo.id, todo.status)} />
       <div className="flex-1 min-w-0">
-        <p className={`text-sm ${todo.status === '완료' ? 'line-through text-muted-foreground' : ''}`}>{todo.title}</p>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <p className={`text-sm ${todo.status === '완료' ? 'line-through text-muted-foreground' : ''}`}>{todo.title}</p>
+          {dueBadge(todo.due_date, todo.status)}
+        </div>
         {todo.description && <p className="text-[10px] text-muted-foreground truncate">{todo.description}</p>}
       </div>
       <div className="text-[10px] text-muted-foreground shrink-0">{format(new Date(todo.due_date), 'MM/dd (EEE)', { locale: ko })}</div>
@@ -312,7 +348,28 @@ const TodoDashboard = () => {
         </div>
       )}
 
-      {todos.length === 0 ? (
+      {/* Search + Status filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[180px]">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="할 일 검색..." className="h-8 pl-7 text-xs" />
+        </div>
+        <Select value={statusFilter} onValueChange={v => setStatusFilter(v as StatusFilter)}>
+          <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="text-xs">전체</SelectItem>
+            <SelectItem value="pending" className="text-xs">미완료</SelectItem>
+            <SelectItem value="overdue" className="text-xs">지연 ({overdueCount})</SelectItem>
+            <SelectItem value="done" className="text-xs">완료</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {loading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+        </div>
+      ) : todos.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <ListTodo className="h-10 w-10 mx-auto mb-3 opacity-30" />

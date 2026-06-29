@@ -225,17 +225,23 @@ export default function SettingsApprovalRoutes() {
             </div>
             <Button onClick={startCreate}><Plus className="h-4 w-4 mr-1" /> 새 템플릿</Button>
           </div>
-          <div className="flex items-center gap-1 text-xs">
-            <span className="text-muted-foreground mr-1">보기:</span>
-            {([
-              { v: 'mine', label: '내 전용' },
-              { v: 'company', label: '회사 공용' },
-              { v: 'shared', label: '프로젝트 공용' },
-              { v: 'all', label: '전체' },
-            ] as { v: ScopeFilter; label: string }[]).map((s) => (
-              <Button key={s.v} size="sm" variant={scope === s.v ? 'default' : 'outline'} className="h-7"
-                onClick={() => setScope(s.v)}>{s.label}</Button>
-            ))}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-1 text-xs flex-wrap">
+              <span className="text-muted-foreground mr-1">보기:</span>
+              {([
+                { v: 'mine', label: '내 전용' },
+                { v: 'company', label: '회사 공용' },
+                { v: 'shared', label: '프로젝트 공용' },
+                { v: 'all', label: '전체' },
+              ] as { v: ScopeFilter; label: string }[]).map((s) => (
+                <Button key={s.v} size="sm" variant={scope === s.v ? 'default' : 'outline'} className="h-7"
+                  onClick={() => setScope(s.v)}>{s.label}</Button>
+              ))}
+            </div>
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="템플릿명 검색" className="pl-8 h-8" />
+            </div>
           </div>
           <p className="text-xs text-muted-foreground">
             결재선은 <b>로그인 사용자별</b>로 다를 수 있습니다. "내 전용" 템플릿은 본인만 사용·수정할 수 있고,
@@ -245,8 +251,11 @@ export default function SettingsApprovalRoutes() {
         <CardContent>
           {loading && <div className="text-center py-6"><Loader2 className="h-5 w-5 animate-spin inline" /></div>}
           {!loading && visibleTemplates.length === 0 && (
-            <div className="text-center py-8 text-sm text-muted-foreground">등록된 템플릿이 없습니다</div>
+            <div className="text-center py-8 text-sm text-muted-foreground">
+              {templates.length === 0 ? '등록된 템플릿이 없습니다' : '검색/필터 결과 없음'}
+            </div>
           )}
+
           <div className="space-y-2">
             {visibleTemplates.map((t) => {
               const isMine = t.owner_user_id === user?.id;
@@ -269,10 +278,14 @@ export default function SettingsApprovalRoutes() {
                   </div>
                   <div className="flex gap-1">
                     <Button size="sm" variant="outline" onClick={() => startEdit(t)} disabled={!canMutate}>편집</Button>
+                    <Button size="icon" variant="ghost" onClick={() => duplicate(t)} title="복사">
+                      <Copy className="h-4 w-4" />
+                    </Button>
                     <Button size="icon" variant="ghost" className="text-destructive" onClick={() => remove(t.id)} disabled={!canMutate}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
+
                 </div>
               );
             })}

@@ -334,6 +334,10 @@ const WorkPlanDetail = () => {
       return;
     }
     await handleSave();
+    setApprovalDialogOpen(true);
+  };
+
+  const handleApprovalSubmitted = async () => {
     await supabase.from('work_plans').update({ status: '결재중' }).eq('id', planId);
     setPlan((prev: any) => ({ ...prev, status: '결재중' }));
     toast({ title: '결재 상신이 완료되었습니다.' });

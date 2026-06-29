@@ -152,6 +152,22 @@ export default function SettingsApprovalRoutes() {
     load();
   };
 
+  const duplicate = async (t: any) => {
+    const { id, created_at, updated_at, ...rest } = t;
+    const { error } = await supabase.from('approval_route_templates').insert({
+      ...rest,
+      name: `${t.name} (복사)`,
+      owner_user_id: user?.id, // 복사본은 내 전용으로 시작 (안전한 기본)
+      company_id: null,
+      is_default: false,
+      created_by: user?.id,
+    });
+    if (error) return toast.error(error.message);
+    toast.success('복사되었습니다 (내 전용으로 저장)');
+    load();
+  };
+
+
   const updateStep = (idx: number, patch: Partial<Step>) => {
     setEditing((e: any) => ({ ...e, steps: e.steps.map((s: Step, i: number) => i === idx ? { ...s, ...patch } : s) }));
   };

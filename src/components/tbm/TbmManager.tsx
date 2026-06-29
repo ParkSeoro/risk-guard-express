@@ -11,8 +11,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useToast } from '@/hooks/use-toast';
 import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText, Copy, ClipboardList } from 'lucide-react';
 import AssigneeSelect from '@/components/AssigneeSelect';
-import IMESafeInput from '@/components/IMESafeInput';
-import IMESafeTextarea from '@/components/IMESafeTextarea';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 
 

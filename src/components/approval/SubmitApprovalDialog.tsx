@@ -106,11 +106,16 @@ export default function SubmitApprovalDialog({
         setApprovers((ap as any) || []);
         setTemplates(tpl || []);
 
-        // pick default template matching company, else any default, else empty
-        const def = (tpl || []).find((t: any) =>
-          (t.company_id && t.company_id === submitterCompanyId) ||
-          (!t.company_id && t.is_default)
-        );
+        // 우선순위: 1) 본인 전용 기본 2) 본인 전용 3) 회사 기본 4) 회사 5) 프로젝트 기본 6) 첫 항목
+        const list = (tpl || []) as any[];
+        const uid = (await supabase.auth.getUser()).data.user?.id;
+        const mine = list.filter((t) => t.owner_user_id === uid);
+        const co = list.filter((t) => !t.owner_user_id && t.company_id === submitterCompanyId);
+        const shared = list.filter((t) => !t.owner_user_id && !t.company_id);
+        const def =
+          mine.find((t) => t.is_default) || mine[0] ||
+          co.find((t) => t.is_default) || co[0] ||
+          shared.find((t) => t.is_default) || shared[0];
         if (def) {
           setSelectedTemplateId(def.id);
           setSteps(normalizeSteps(def.steps));
@@ -118,6 +123,7 @@ export default function SubmitApprovalDialog({
           setSelectedTemplateId('');
           setSteps([{ label: '검토', position: 'safety_manager', user_id: '', user_name: '', company_id: null, company_name: '' }]);
         }
+
       } catch (e: any) {
         toast.error('결재선 정보를 불러오지 못했습니다: ' + (e.message || e));
       } finally {
@@ -199,14 +205,16 @@ export default function SubmitApprovalDialog({
         await supabase.from('approval_route_templates').insert({
           project_id: projectId,
           entity_type: entityType,
-          company_id: submitterCompanyId,
-          name: `${ENTITY_LABELS[entityType]} 기본 결재선`,
+          owner_user_id: user?.id, // 본인 전용 템플릿으로 저장
+          company_id: null,
+          name: `${ENTITY_LABELS[entityType]} 내 결재선`,
           assessment_type: '정기',
-          is_default: false,
+          is_default: true,
           steps: steps as any,
           created_by: user?.id,
         });
       }
+
 
       toast.success('결재가 상신되었습니다');
       onOpenChange(false);

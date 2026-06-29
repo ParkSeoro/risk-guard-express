@@ -16,13 +16,18 @@ const PROJECT_KEY = 'selected_project_id';
 
 interface Step { label: string; position: string; user_id: string; user_name: string; company_id: string | null; company_name: string }
 
+type ScopeFilter = 'mine' | 'company' | 'shared' | 'all';
+
 export default function SettingsApprovalRoutes() {
   const navigate = useNavigate();
-  const { hasRole, user } = useAuth();
-  const canEdit = hasRole('master') || hasRole('project_admin') || hasRole('safety_manager');
+  const { hasRole, user, profile } = useAuth();
+  const canEdit = !!user; // 누구나 본인 전용 템플릿 관리 가능. 회사/프로젝트 공용은 isOwnerSide 만.
   const projectId = localStorage.getItem(PROJECT_KEY) || '';
+  const myCompanyId: string | null = (profile as any)?.company_id || null;
+  const isOwnerSide = hasRole('master') || hasRole('project_admin');
 
   const [entityType, setEntityType] = useState<ApprovalEntityType>('assessment_run');
+  const [scope, setScope] = useState<ScopeFilter>('mine');
   const [templates, setTemplates] = useState<any[]>([]);
   const [companies, setCompanies] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,6 +40,7 @@ export default function SettingsApprovalRoutes() {
     const [{ data: tpl }, { data: cos }] = await Promise.all([
       supabase.from('approval_route_templates').select('*')
         .eq('project_id', projectId).eq('entity_type', entityType).eq('is_deleted', false)
+        .order('owner_user_id', { ascending: false, nullsFirst: false })
         .order('is_default', { ascending: false }),
       supabase.from('companies').select('id,name,type').eq('project_id', projectId).eq('is_deleted', false),
     ]);
@@ -44,26 +50,51 @@ export default function SettingsApprovalRoutes() {
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId, entityType]);
 
+  // 본인 / 회사 / 프로젝트 공용 가시성 필터
+  const visibleTemplates = templates.filter((t) => {
+    const isMine = t.owner_user_id === user?.id;
+    const isMyCompany = !t.owner_user_id && t.company_id && myCompanyId && t.company_id === myCompanyId;
+    const isShared = !t.owner_user_id && !t.company_id;
+    const isOtherCompany = !t.owner_user_id && t.company_id && t.company_id !== myCompanyId;
+    // 마스터/PA만 타회사 전용 템플릿 조회 가능
+    if (!isOwnerSide && isOtherCompany) return false;
+    if (scope === 'mine') return isMine;
+    if (scope === 'company') return isMyCompany;
+    if (scope === 'shared') return isShared;
+    return true;
+  });
+
   const startCreate = () => setEditing({
     id: null, name: '', entity_type: entityType, project_id: projectId,
+    owner_user_id: user?.id, // 기본 "내 전용"
     company_id: null, is_default: false, steps: [],
   });
 
-  const startEdit = async (t: any) => {
-    setEditing({ ...t, steps: Array.isArray(t.steps) ? t.steps : [] });
-    // load approvers for the company
+  const refreshApproversFor = async (cid: string | null) => {
     const { data } = await supabase.rpc('get_eligible_approvers', {
-      _project_id: projectId, _submitter_company_id: t.company_id,
+      _project_id: projectId, _submitter_company_id: cid,
     });
     setApprovers((data as any) || []);
   };
 
+  const startEdit = async (t: any) => {
+    setEditing({ ...t, steps: Array.isArray(t.steps) ? t.steps : [] });
+    await refreshApproversFor(t.company_id || myCompanyId);
+  };
+
+  const onScopeChange = async (s: 'mine' | 'company' | 'shared') => {
+    setEditing((e: any) => ({
+      ...e,
+      owner_user_id: s === 'mine' ? user?.id : null,
+      company_id: s === 'company' ? myCompanyId : null,
+    }));
+    await refreshApproversFor(s === 'company' ? myCompanyId : myCompanyId);
+  };
+
   const onCompanyChange = async (cid: string) => {
-    setEditing((e: any) => ({ ...e, company_id: cid === '__none__' ? null : cid }));
-    const { data } = await supabase.rpc('get_eligible_approvers', {
-      _project_id: projectId, _submitter_company_id: cid === '__none__' ? null : cid,
-    });
-    setApprovers((data as any) || []);
+    const next = cid === '__none__' ? null : cid;
+    setEditing((e: any) => ({ ...e, company_id: next, owner_user_id: null }));
+    await refreshApproversFor(next || myCompanyId);
   };
 
   const save = async () => {
@@ -73,6 +104,7 @@ export default function SettingsApprovalRoutes() {
     const payload = {
       project_id: projectId,
       entity_type: editing.entity_type,
+      owner_user_id: editing.owner_user_id || null,
       company_id: editing.company_id,
       name: editing.name,
       assessment_type: '정기',
@@ -88,6 +120,7 @@ export default function SettingsApprovalRoutes() {
     setEditing(null);
     load();
   };
+
 
   const remove = async (id: string) => {
     if (!confirm('이 템플릿을 삭제하시겠습니까?')) return;
@@ -140,49 +173,76 @@ export default function SettingsApprovalRoutes() {
       </div>
 
       <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-base">문서 유형</CardTitle>
-            <Select value={entityType} onValueChange={(v) => setEntityType(v as ApprovalEntityType)}>
-              <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {(Object.keys(ENTITY_LABELS) as ApprovalEntityType[]).map((k) => (
-                  <SelectItem key={k} value={k}>{ENTITY_LABELS[k]}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <CardHeader className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">문서 유형</CardTitle>
+              <Select value={entityType} onValueChange={(v) => setEntityType(v as ApprovalEntityType)}>
+                <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(ENTITY_LABELS) as ApprovalEntityType[]).map((k) => (
+                    <SelectItem key={k} value={k}>{ENTITY_LABELS[k]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={startCreate}><Plus className="h-4 w-4 mr-1" /> 새 템플릿</Button>
           </div>
-          <Button onClick={startCreate}><Plus className="h-4 w-4 mr-1" /> 새 템플릿</Button>
+          <div className="flex items-center gap-1 text-xs">
+            <span className="text-muted-foreground mr-1">보기:</span>
+            {([
+              { v: 'mine', label: '내 전용' },
+              { v: 'company', label: '회사 공용' },
+              { v: 'shared', label: '프로젝트 공용' },
+              { v: 'all', label: '전체' },
+            ] as { v: ScopeFilter; label: string }[]).map((s) => (
+              <Button key={s.v} size="sm" variant={scope === s.v ? 'default' : 'outline'} className="h-7"
+                onClick={() => setScope(s.v)}>{s.label}</Button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            결재선은 <b>로그인 사용자별</b>로 다를 수 있습니다. "내 전용" 템플릿은 본인만 사용·수정할 수 있고,
+            "회사 공용"은 소속 회사 사용자가 공유합니다.
+          </p>
         </CardHeader>
         <CardContent>
           {loading && <div className="text-center py-6"><Loader2 className="h-5 w-5 animate-spin inline" /></div>}
-          {!loading && templates.length === 0 && (
+          {!loading && visibleTemplates.length === 0 && (
             <div className="text-center py-8 text-sm text-muted-foreground">등록된 템플릿이 없습니다</div>
           )}
           <div className="space-y-2">
-            {templates.map((t) => (
-              <div key={t.id} className="border rounded p-3 flex items-center justify-between">
-                <div className="space-y-1">
-                  <div className="font-medium flex items-center gap-2">
-                    {t.name}
-                    {t.is_default && <Badge variant="secondary">기본</Badge>}
-                    {t.company_id && <Badge variant="outline">{companies.find((c) => c.id === t.company_id)?.name || '회사전용'}</Badge>}
+            {visibleTemplates.map((t) => {
+              const isMine = t.owner_user_id === user?.id;
+              const canMutate = isMine || (isOwnerSide);
+              return (
+                <div key={t.id} className="border rounded p-3 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <div className="font-medium flex items-center gap-2 flex-wrap">
+                      {t.name}
+                      {t.is_default && <Badge variant="secondary">기본</Badge>}
+                      {isMine
+                        ? <Badge className="bg-primary/10 text-primary border-primary/30" variant="outline">내 전용</Badge>
+                        : t.company_id
+                          ? <Badge variant="outline">{companies.find((c) => c.id === t.company_id)?.name || '회사 공용'}</Badge>
+                          : <Badge variant="outline">프로젝트 공용</Badge>}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {(Array.isArray(t.steps) ? t.steps : []).map((s: any, i: number) => `${i + 1}. ${s.label || s.step_label} (${s.user_name || '-'})`).join(' → ')}
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {(Array.isArray(t.steps) ? t.steps : []).map((s: any, i: number) => `${i + 1}. ${s.label || s.step_label} (${s.user_name || '-'})`).join(' → ')}
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="outline" onClick={() => startEdit(t)} disabled={!canMutate}>편집</Button>
+                    <Button size="icon" variant="ghost" className="text-destructive" onClick={() => remove(t.id)} disabled={!canMutate}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
-                <div className="flex gap-1">
-                  <Button size="sm" variant="outline" onClick={() => startEdit(t)}>편집</Button>
-                  <Button size="icon" variant="ghost" className="text-destructive" onClick={() => remove(t.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>
+
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent className="max-w-2xl">
@@ -195,7 +255,28 @@ export default function SettingsApprovalRoutes() {
                   <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs">적용 회사 (선택 안하면 프로젝트 공용)</label>
+                  <label className="text-xs">적용 범위</label>
+                  <div className="flex gap-1 mt-1">
+                    {([
+                      { v: 'mine', label: '내 전용' },
+                      { v: 'company', label: '회사 공용', disabled: !myCompanyId },
+                      { v: 'shared', label: '프로젝트 공용', disabled: !isOwnerSide },
+                    ] as { v: 'mine' | 'company' | 'shared'; label: string; disabled?: boolean }[]).map((s) => {
+                      const active =
+                        (s.v === 'mine' && editing.owner_user_id) ||
+                        (s.v === 'company' && !editing.owner_user_id && editing.company_id) ||
+                        (s.v === 'shared' && !editing.owner_user_id && !editing.company_id);
+                      return (
+                        <Button key={s.v} type="button" size="sm" variant={active ? 'default' : 'outline'} className="h-8 flex-1"
+                          disabled={s.disabled} onClick={() => onScopeChange(s.v)}>{s.label}</Button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              {isOwnerSide && !editing.owner_user_id && (
+                <div>
+                  <label className="text-xs">회사 공용으로 지정할 회사 (마스터/관리자 전용)</label>
                   <Select value={editing.company_id || '__none__'} onValueChange={onCompanyChange}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -204,12 +285,13 @@ export default function SettingsApprovalRoutes() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
+              )}
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={!!editing.is_default}
                   onChange={(e) => setEditing({ ...editing, is_default: e.target.checked })} />
-                기본 템플릿으로 설정
+                기본 템플릿으로 설정 (해당 범위 내에서 우선 적용)
               </label>
+
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

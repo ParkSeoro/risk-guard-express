@@ -19,7 +19,7 @@ interface Step { label: string; position: string; user_id: string; user_name: st
 export default function SettingsApprovalRoutes() {
   const navigate = useNavigate();
   const { hasRole, user } = useAuth();
-  const canEdit = hasRole('master') || hasRole('project_admin');
+  const canEdit = hasRole('master') || hasRole('project_admin') || hasRole('safety_manager');
   const projectId = localStorage.getItem(PROJECT_KEY) || '';
 
   const [entityType, setEntityType] = useState<ApprovalEntityType>('assessment_run');

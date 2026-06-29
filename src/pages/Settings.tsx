@@ -83,7 +83,7 @@ const Settings = () => {
             card.requires === 'master'
               ? !hasRole('master')
               : card.requires === 'admin'
-                ? !(hasRole('master') || hasRole('project_admin'))
+                ? !(hasRole('master') || hasRole('project_admin') || hasRole('safety_manager'))
                 : false;
           return (
             <Card

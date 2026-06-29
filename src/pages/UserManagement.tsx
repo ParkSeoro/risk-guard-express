@@ -145,10 +145,33 @@ const UserManagement = () => {
 
   useEffect(() => { fetchUsers(); fetchProjects(); }, []);
 
+  // Realtime: refresh on profile / membership changes
+  useEffect(() => {
+    const ch = supabase
+      .channel('user-mgmt-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => fetchUsers())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'project_members' }, () => fetchUsers())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_roles' }, () => fetchUsers())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
   useEffect(() => {
     if (assignProjectId) fetchProjectCompanies(assignProjectId);
     else setProjectCompanies([]);
   }, [assignProjectId]);
+
+  const handleRemoveMembership = async (membershipId: string, projectName: string) => {
+    if (!confirm(`'${projectName}' 프로젝트 소속을 제거하시겠습니까?`)) return;
+    const { error } = await supabase.from('project_members').delete().eq('id', membershipId);
+    if (error) {
+      toast({ title: '소속 제거 실패', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: '프로젝트 소속이 제거되었습니다.' });
+      log('멤버십삭제', 'project_member', membershipId);
+      fetchUsers();
+    }
+  };
 
   const handleStatusChange = async (userId: string, status: string) => {
     const parsed = accountStatusSchema.safeParse(status);

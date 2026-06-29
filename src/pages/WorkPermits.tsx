@@ -43,6 +43,7 @@ export default function WorkPermits() {
   const [gateOpen, setGateOpen] = useState<any | null>(null);
   const [gateResult, setGateResult] = useState<any>(null);
   const [workersDialog, setWorkersDialog] = useState<any | null>(null);
+  const [approvalTarget, setApprovalTarget] = useState<any | null>(null);
 
   const blankForm = {
     permit_date: new Date().toISOString().slice(0, 10),

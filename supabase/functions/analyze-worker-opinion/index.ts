@@ -51,29 +51,19 @@ const ACCIDENT_PROMPT = `당신은 건설 안전 사고분석 전문가입니다
 국내 유사 사고사례 1~3건을 요약하여 사고유형, 원인, 결과, 예방대책을 한국어로 제시합니다.`;
 
 async function callAI(systemPrompt: string, userPrompt: string, schema: any) {
-  const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      tools: [{ type: 'function', function: { name: 'submit', description: '결과', parameters: schema } }],
-      tool_choice: { type: 'function', function: { name: 'submit' } },
-    }),
+  const schemaHint = `반드시 다음 JSON 스키마를 따르는 JSON 객체만 출력하세요 (마크다운 금지):\n${JSON.stringify(schema)}`;
+  const data = await callGeminiChat({
+    model: 'gemini-2.5-flash',
+    messages: [
+      { role: 'system', content: `${systemPrompt}\n\n${schemaHint}` },
+      { role: 'user', content: userPrompt },
+    ],
+    response_format: { type: 'json_object' },
+    temperature: 0.3,
   });
-  if (!resp.ok) {
-    const txt = await resp.text();
-    throw new Error(`AI Gateway error ${resp.status}: ${txt}`);
-  }
-  const data = await resp.json();
-  const args = data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-  return args ? JSON.parse(args) : {};
+  const content = data.choices?.[0]?.message?.content || '';
+  const m = content.match(/\{[\s\S]*\}/);
+  return m ? JSON.parse(m[0]) : {};
 }
 
 const opinionSchema = {

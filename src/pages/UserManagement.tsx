@@ -493,6 +493,11 @@ const UserManagement = () => {
                                 </SelectContent>
                               </Select>
                               {m.company && <span className="text-muted-foreground">({m.company})</span>}
+                              <Button size="sm" variant="ghost" className="h-5 w-5 p-0 text-destructive hover:text-destructive"
+                                onClick={() => handleRemoveMembership(m.id, proj?.name || '프로젝트')}
+                                title="이 프로젝트 소속 제거">
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
                             </div>
                           );
                         })}

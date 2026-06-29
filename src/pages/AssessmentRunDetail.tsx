@@ -1398,10 +1398,26 @@ const AssessmentRunDetail = () => {
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">현장명:</span><span>{project?.site_name || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">발주처:</span><span>{projectCompanies.find(c => c.type === 'client')?.name || '(미지정)'}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">시공사:</span><span>{(() => {
-              const gcs = projectCompanies.filter(c => c.type === 'gc');
+              const gcs = projectCompanies.filter(c => c.type === 'gc' || c.type === 'contractor');
+              // 1) 명시적으로 지정된 대상 회사가 있으면 그것만
+              const targetIds: string[] = (run as any).target_company_ids || [];
+              if (targetIds.length > 0) {
+                const named = gcs.filter(c => targetIds.includes(c.id)).map(c => c.name);
+                if (named.length > 0) return named.join(', ');
+              }
+              const targetNames: string[] = (run as any).target_contractors || [];
+              if (targetNames.length > 0) return targetNames.join(', ');
+              // 2) 작성자(또는 현재 사용자)의 소속 회사로 한정
+              const creatorMember = projectMembers.find(m => m.user_id === run.created_by);
+              const ownerCompanyId = creatorMember?.company_id || userCompanyId;
+              if (ownerCompanyId) {
+                const own = gcs.find(c => c.id === ownerCompanyId);
+                if (own) return own.name;
+                if (creatorMember?.company) return creatorMember.company;
+              }
+              // 3) 마스터/관리자에게만 전체 목록 노출, 일반 사용자는 미지정 표시
               const seesAll = isMaster || userRole === 'project_admin' || userRole === 'safety_manager';
-              const visible = seesAll ? gcs : (userCompanyId ? gcs.filter(c => c.id === userCompanyId) : []);
-              return visible.map(c => c.name).join(', ') || '(미지정)';
+              return seesAll ? (gcs.map(c => c.name).join(', ') || '(미지정)') : '(미지정)';
             })()}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">기간:</span><span>{run.start_date || project?.period_start || ''} ~ {run.end_date || project?.period_end || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">항목 수:</span><span>{stats.total}건</span></div>

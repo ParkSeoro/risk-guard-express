@@ -25,10 +25,10 @@
 - [x] `work_plan_attachments` 스토리지 RLS — 작성자 회사 외 차단
 - [x] 시공사 헤더 — 작성자 회사 우선 표시
 
-## 4. Empty / Loading / Error UI ⚠️
+## 4. Empty / Loading / Error UI ✅
 - [x] 목록 0건 — 안내 + "새 작업계획서" CTA (`WorkPlans.tsx`)
 - [x] 로딩 스켈레톤
-- [ ] **남은 작업**: 첨부 업로드 실패 시 토스트 + 진행률 표시 (현재 진행률 미표시)
+- [x] 첨부 업로드 진행 표시(스피너/disabled) + 20MB 초과 토스트 (`AttachmentChecklist`)
 
 ## 5. Edge inputs ✅
 - [x] `IMESafeInput`/`IMESafeTextarea` 사용
@@ -56,5 +56,5 @@
 - E2E: `SCENARIOS.core12.work_plan_smoke`, `SCENARIOS.flow.create_work_plan`
 
 ## 남은 작업
-- 첨부 업로드 진행률(%) 표시
 - 7탭 중 "위험성평가 연계" 탭에서 같은 프로젝트 RA 회차 자동 추천
+

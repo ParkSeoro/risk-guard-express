@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Paperclip, Upload, CheckCircle2, Lock, Bot, FileWarning } from 'lucide-react';
+import { Paperclip, Upload, CheckCircle2, Lock, Bot, FileWarning, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface Row {
@@ -43,6 +43,8 @@ export default function AttachmentChecklist({ workPlanId, projectId, companyId, 
   const [template, setTemplate] = useState<AttachmentItem[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const MAX_BYTES = 20 * 1024 * 1024; // 20MB
 
   const reload = useCallback(async () => {
     const { data, error } = await supabase
@@ -80,26 +82,34 @@ export default function AttachmentChecklist({ workPlanId, projectId, companyId, 
   };
 
   const handleUpload = async (row: Row, file: File) => {
-    const safeName = file.name.replace(/[^\w.\-]+/g, '_');
-    const path = `${projectId}/work-plans/${workPlanId}/${row.attachment_key}_${Date.now()}_${safeName}`;
-    const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { upsert: true });
-
-    if (upErr) {
-      toast({ title: '업로드 실패', description: upErr.message, variant: 'destructive' });
+    if (file.size > MAX_BYTES) {
+      toast({ title: '파일이 너무 큽니다.', description: `최대 ${Math.round(MAX_BYTES / 1024 / 1024)}MB 까지 업로드할 수 있습니다.`, variant: 'destructive' });
       return;
     }
-    const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
-    const { error } = await supabase
-      .from('work_plan_attachments')
-      .update({ file_url: urlData.publicUrl, file_path: path, file_size: file.size, mime_type: file.type })
-      .eq('id', row.id);
-    if (error) {
-      toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
-      return;
+    setUploadingId(row.id);
+    try {
+      const safeName = file.name.replace(/[^\w.\-]+/g, '_');
+      const path = `${projectId}/work-plans/${workPlanId}/${row.attachment_key}_${Date.now()}_${safeName}`;
+      const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { upsert: true });
+      if (upErr) {
+        toast({ title: '업로드 실패', description: upErr.message, variant: 'destructive' });
+        return;
+      }
+      const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
+      const { error } = await supabase
+        .from('work_plan_attachments')
+        .update({ file_url: urlData.publicUrl, file_path: path, file_size: file.size, mime_type: file.type })
+        .eq('id', row.id);
+      if (error) {
+        toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
+        return;
+      }
+      toast({ title: '업로드되었습니다.' });
+      onChange?.();
+      await reload();
+    } finally {
+      setUploadingId(null);
     }
-    toast({ title: '업로드되었습니다.' });
-    onChange?.();
-    reload();
   };
 
   const handleRemove = async (row: Row) => {
@@ -201,15 +211,20 @@ export default function AttachmentChecklist({ workPlanId, projectId, companyId, 
                       )}
                       {!readOnly && !row.locked && (
                         <>
-                          <label className="cursor-pointer shrink-0">
-                            <input type="file" className="hidden" onChange={e => {
+                          <label className={`cursor-pointer shrink-0 ${uploadingId === row.id ? 'opacity-50 pointer-events-none' : ''}`}>
+                            <input type="file" className="hidden" disabled={uploadingId === row.id} onChange={e => {
                               if (e.target.files?.[0]) handleUpload(row, e.target.files[0]);
+                              e.target.value = '';
                             }} />
-                            <Button asChild size="sm" variant="ghost" className="h-6 text-[10px] gap-1">
-                              <span><Upload className="h-3 w-3" /> {uploaded ? '교체' : '업로드'}</span>
+                            <Button asChild size="sm" variant="ghost" className="h-6 text-[10px] gap-1" disabled={uploadingId === row.id}>
+                              <span>
+                                {uploadingId === row.id
+                                  ? <><Loader2 className="h-3 w-3 animate-spin" /> 업로드 중…</>
+                                  : <><Upload className="h-3 w-3" /> {uploaded ? '교체' : '업로드'}</>}
+                              </span>
                             </Button>
                           </label>
-                          {uploaded && (
+                          {uploaded && uploadingId !== row.id && (
                             <Button size="sm" variant="ghost" className="h-6 text-[10px] text-destructive"
                               onClick={() => handleRemove(row)}>제거</Button>
                           )}

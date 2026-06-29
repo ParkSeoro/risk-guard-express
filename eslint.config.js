@@ -21,6 +21,9 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/no-unused-vars": "off",
+      // Silent fail 차단 — catch 블록은 비울 수 없음.
+      // 일부러 무시할 때는 명시적으로 `catch (e) { /* intentionally ignored: <이유> */ }` 로 주석을 남기세요.
+      "no-empty": ["error", { allowEmptyCatch: false }],
     },
   },
 );

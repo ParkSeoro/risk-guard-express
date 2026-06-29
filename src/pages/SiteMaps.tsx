@@ -8,8 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { QRCodeSVG } from "qrcode.react";
-import { Map, Plus, Trash2, Upload, QrCode, Check, X } from "lucide-react";
+import { Map, Plus, Trash2, Upload, QrCode, Check, X, Search } from "lucide-react";
 import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSoftDelete } from "@/hooks/useSoftDelete";
+
 
 type SiteMap = {
   id: string; name: string; image_url: string | null; project_id: string;

@@ -348,8 +348,16 @@ const WorkPlanDetail = () => {
     if (!planId) return;
     setSaving(true);
     try {
+      // Pre-render PDF attachments to images so they appear inline in the printed output
+      const { renderAttachmentsToImages } = await import('@/lib/pdfRender');
+      const { data: atts } = await supabase
+        .from('work_plan_attachments')
+        .select('file_url, mime_type')
+        .eq('work_plan_id', planId);
+      const renderedAttachments = await renderAttachmentsToImages(atts || []);
+
       const { data, error } = await supabase.functions.invoke('generate-workplan-pdf', {
-        body: { planId },
+        body: { planId, renderedAttachments },
       });
       if (error) throw error;
       if (data?.html) {
@@ -372,7 +380,6 @@ const WorkPlanDetail = () => {
               setTimeout(() => document.body.removeChild(iframe), 1000);
             }, 500);
           };
-          // For browsers that fire onload synchronously
           if (doc.readyState === 'complete') {
             setTimeout(() => {
               iframe.contentWindow?.print();
@@ -386,6 +393,7 @@ const WorkPlanDetail = () => {
       toast({ title: 'PDF 생성 실패', description: err?.message, variant: 'destructive' });
     } finally { setSaving(false); }
   };
+
 
   const handleClone = async () => {
     if (!plan || !user) return;

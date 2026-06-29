@@ -319,7 +319,10 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
                             <SelectValue placeholder="결재자 선택">{line.user_name || '선택...'}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            {projectMembers.map(m => (
+                            {visibleMembers.length === 0 && (
+                              <div className="px-3 py-2 text-xs text-muted-foreground">표시할 결재자가 없습니다.</div>
+                            )}
+                            {visibleMembers.map(m => (
                               <SelectItem key={m.user_id} value={m.user_id}>
                                 {m.display_name} ({POSITION_LABELS[m.position] || m.position || m.role})
                                 {m.company && ` · ${m.company}`}

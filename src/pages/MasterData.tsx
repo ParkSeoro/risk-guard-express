@@ -159,6 +159,20 @@ const MasterData = () => {
     <div className="space-y-4 animate-fade-in">
       <div><h1 className="text-2xl font-bold">기준정보 관리</h1><p className="text-sm text-muted-foreground mt-1">시스템 전체에서 공통으로 사용하는 마스터 데이터를 한 곳에서 관리합니다.</p></div>
 
+      {/* KPI Summary */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        {loading ? (
+          [0,1,2,3].map(i => <Skeleton key={i} className="h-16" />)
+        ) : (
+          <>
+            <Card><CardContent className="p-3 flex items-center gap-2"><Layers className="h-4 w-4 text-primary" /><div><p className="text-[10px] text-muted-foreground">공정</p><p className="text-lg font-bold">{processes.length}</p></div></CardContent></Card>
+            <Card><CardContent className="p-3 flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary" /><div><p className="text-[10px] text-muted-foreground">PPE</p><p className="text-lg font-bold">{ppe.length}</p></div></CardContent></Card>
+            <Card><CardContent className="p-3 flex items-center gap-2"><BookOpen className="h-4 w-4 text-primary" /><div><p className="text-[10px] text-muted-foreground">법적근거</p><p className="text-lg font-bold">{legalRefs.length}<span className="text-[10px] text-amber-600 ml-1">{legalRefs.filter(l => l.needs_review).length > 0 && `(검토 ${legalRefs.filter(l => l.needs_review).length})`}</span></p></div></CardContent></Card>
+            <Card><CardContent className="p-3 flex items-center gap-2"><ListChecks className="h-4 w-4 text-primary" /><div><p className="text-[10px] text-muted-foreground">검증 규칙</p><p className="text-lg font-bold">{validationRules.filter(r => r.is_active).length}<span className="text-[10px] text-muted-foreground">/{validationRules.length}</span></p></div></CardContent></Card>
+          </>
+        )}
+      </div>
+
       <Card className="bg-muted/30 border-dashed">
         <CardContent className="p-3 text-xs space-y-1">
           <p className="font-semibold text-foreground">📚 기준정보란?</p>

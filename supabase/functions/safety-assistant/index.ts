@@ -235,18 +235,11 @@ Deno.serve(async (req) => {
 
     messages.push({ role: 'user', content: message });
 
-    const response = await fetch(AI_GATEWAY_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages,
-        max_tokens: 3000,
-        temperature: 0.2,
-      }),
+    const response = await geminiChatFetch({
+      model: 'gemini-2.5-flash',
+      messages,
+      max_tokens: 3000,
+      temperature: 0.2,
     });
 
     if (!response.ok) {

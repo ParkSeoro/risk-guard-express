@@ -223,7 +223,21 @@ const SettingsAI = () => {
         </Card>
       ) : (
         <div className="space-y-4">
-          {/* AI Toggle */}
+          {/* Usage KPI (최근 7일) */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <Card><CardContent className="p-3"><div className="text-[10px] text-muted-foreground flex items-center gap-1"><Activity className="h-3 w-3" />7일 작업</div><div className="text-xl font-bold">{stats.total}</div></CardContent></Card>
+            <Card><CardContent className="p-3"><div className="text-[10px] text-muted-foreground flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-success" />성공</div><div className="text-xl font-bold text-success">{stats.success}</div></CardContent></Card>
+            <Card><CardContent className="p-3"><div className="text-[10px] text-muted-foreground flex items-center gap-1"><AlertTriangle className="h-3 w-3 text-destructive" />실패</div><div className="text-xl font-bold text-destructive">{stats.failed}</div></CardContent></Card>
+            <Card><CardContent className="p-3"><div className="text-[10px] text-muted-foreground flex items-center gap-1"><Timer className="h-3 w-3" />평균 응답</div><div className="text-xl font-bold">{stats.avgLatency}ms</div></CardContent></Card>
+            <Card><CardContent className="p-3"><div className="text-[10px] text-muted-foreground">오늘 작업</div><div className="text-xl font-bold">{stats.today}</div></CardContent></Card>
+          </div>
+          {isMaster && (
+            <div className="text-xs text-muted-foreground flex items-center gap-2">
+              상세 로그/배치는
+              <Link to="/ai-logs" className="text-primary hover:underline">AI 로그 페이지</Link>에서 확인하세요.
+            </div>
+          )}
+
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">AI 사용 설정</CardTitle>

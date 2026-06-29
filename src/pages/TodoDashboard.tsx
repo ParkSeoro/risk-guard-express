@@ -196,9 +196,25 @@ const TodoDashboard = () => {
     loadTodos();
   };
 
-  const todayTodos = useMemo(() => todos.filter(t => isToday(new Date(t.due_date))), [todos]);
-  const weekTodos = useMemo(() => todos.filter(t => isThisWeek(new Date(t.due_date), { locale: ko })), [todos]);
-  const monthTodos = useMemo(() => todos.filter(t => isThisMonth(new Date(t.due_date))), [todos]);
+  const filteredTodos = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const today = startOfDay(new Date());
+    return todos.filter(t => {
+      if (q && !`${t.title} ${t.description || ''}`.toLowerCase().includes(q)) return false;
+      if (statusFilter === 'done' && t.status !== '완료') return false;
+      if (statusFilter === 'pending' && t.status === '완료') return false;
+      if (statusFilter === 'overdue') {
+        if (t.status === '완료') return false;
+        if (differenceInCalendarDays(new Date(t.due_date), today) >= 0) return false;
+      }
+      return true;
+    });
+  }, [todos, search, statusFilter]);
+
+  const todayTodos = useMemo(() => filteredTodos.filter(t => isToday(new Date(t.due_date))), [filteredTodos]);
+  const weekTodos = useMemo(() => filteredTodos.filter(t => isThisWeek(new Date(t.due_date), { locale: ko })), [filteredTodos]);
+  const monthTodos = useMemo(() => filteredTodos.filter(t => isThisMonth(new Date(t.due_date))), [filteredTodos]);
+  const overdueCount = useMemo(() => todos.filter(t => t.status !== '완료' && differenceInCalendarDays(new Date(t.due_date), startOfDay(new Date())) < 0).length, [todos]);
 
   const completedToday = todayTodos.filter(t => t.status === '완료').length;
   const completedWeek = weekTodos.filter(t => t.status === '완료').length;
@@ -225,7 +241,10 @@ const TodoDashboard = () => {
     <div className={`flex items-center gap-3 p-2.5 rounded-lg border ${todo.status === '완료' ? 'bg-muted/30 border-muted' : 'bg-background'}`}>
       <Checkbox checked={todo.status === '완료'} onCheckedChange={() => toggleTodo(todo.id, todo.status)} />
       <div className="flex-1 min-w-0">
-        <p className={`text-sm ${todo.status === '완료' ? 'line-through text-muted-foreground' : ''}`}>{todo.title}</p>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <p className={`text-sm ${todo.status === '완료' ? 'line-through text-muted-foreground' : ''}`}>{todo.title}</p>
+          {dueBadge(todo.due_date, todo.status)}
+        </div>
         {todo.description && <p className="text-[10px] text-muted-foreground truncate">{todo.description}</p>}
       </div>
       <div className="text-[10px] text-muted-foreground shrink-0">{format(new Date(todo.due_date), 'MM/dd (EEE)', { locale: ko })}</div>

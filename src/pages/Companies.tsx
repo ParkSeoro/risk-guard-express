@@ -56,12 +56,13 @@ export default function Companies() {
     const counts: Record<string, { m: number; d: number; w: number }> = {};
     const ciSet = new Set<string>();
     if (ids.length > 0) {
-      const [{ data: mgrs }, { data: deps }, { data: wks }, { data: cis }] = await Promise.all([
+      const results: any = await Promise.all([
         supabase.from('company_managers' as any).select('company_id').in('company_id', ids).eq('is_deleted', false),
         supabase.from('company_departments' as any).select('company_id').in('company_id', ids).eq('is_deleted', false),
         supabase.from('workers').select('company_id').in('company_id', ids).eq('is_deleted', false),
         supabase.from('company_construction_info' as any).select('company_id').in('company_id', ids),
       ]);
+      const [{ data: mgrs }, { data: deps }, { data: wks }, { data: cis }] = results;
       ids.forEach(id => { counts[id] = { m: 0, d: 0, w: 0 }; });
       (mgrs as any[] | null)?.forEach(m => { if (counts[m.company_id]) counts[m.company_id].m++; });
       (deps as any[] | null)?.forEach(d => { if (counts[d.company_id]) counts[d.company_id].d++; });

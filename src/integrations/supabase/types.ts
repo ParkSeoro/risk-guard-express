@@ -8041,6 +8041,10 @@ export type Database = {
         Args: { _notice_id: string }
         Returns: Json
       }
+      act_on_approval: {
+        Args: { _action: string; _approval_id: string; _comment?: string }
+        Returns: Json
+      }
       act_on_entity_approval: {
         Args: { _action: string; _approval_id: string; _comment?: string }
         Returns: Json

@@ -1,65 +1,19 @@
-# Feature Card — TBM (Tool Box Meeting / QR 작업 전 안전회의)
+# #24 TBM (Tool Box Meeting)
 
-- 담당자: -
-- 관련 라우트: `/tbm-logs`, `/m/tbm`, `/m/tbm/:token` (참여 페이지), `/admin/trash`
-- 관련 테이블: `tbm_sessions`, `tbm_participations`, `companies`, `assessment_runs(run_id)`
-- 관련 RPC: `submit_approval` (TBM 결재 시), `compute_worker_required_education`
-- 관련 시나리오 키: `tbm_create_qr_participate`
+## 범위
+- `tbm_sessions` (세션·QR·브리핑), `tbm_participations` (근로자 참여 서명).
 
----
+## 품질 8차원 적용
+1. **데이터 정합성** – `is_deleted` 소프트삭제 + 사유 (`useSoftDelete`), 회사 SSOT (`company_id` + `company_name` 동기 저장).
+2. **권한 가드** – 페이지 진입은 `useProjectAccess`; RLS는 회사·프로젝트 스코프.
+3. **로딩 상태** – Skeleton 카드 행 3개.
+4. **빈 상태 / 검색 결과 없음** – 등록 0건(첫 TBM 생성 CTA) vs 필터 0건 분리 메시지.
+5. **검색·필터** – 제목·장소·주관자·공종·회사명 통합 검색 + 상태(전체/진행중/종료) + 회사 필터.
+6. **요약 KPI** – 전체/진행중/오늘/총 참여자.
+7. **실시간** – `tbm_sessions`(프로젝트 필터) + `tbm_participations` Realtime 구독.
+8. **출력/감사** – QR 인쇄, A4 일지 인쇄(참여자 서명 포함), 모든 변경은 audit_logs.
 
-## 1. Happy path
-- [x] 관리자가 TBM 세션을 생성하고 QR을 인쇄한다
-- [x] 근로자가 QR 스캔 → 이름·전화번호 입력 + 서명 → `tbm_participations` 1행 생성
-- [x] "일지 인쇄" 로 KOSHA 표준 A4 PDF 출력 (참여자/서명 포함)
-- 시나리오 키: `tbm_create_qr_participate`
-
-## 2. Permission (역할 × CRUD)
-- [x] master / project_admin / safety_manager: 모든 TBM CRUD + QR 재발급
-- [x] site_manager / supervisor: 자기 회사 TBM CRUD
-- [x] worker: 참여만 (QR 스캔 → tbm_participations insert)
-- [x] viewer: 조회만
-- [x] `useProjectAccess.canEditTbm` / `canDeleteTbm` 으로 일원화 (인라인 role 체크 없음)
-- 매트릭스 테스트: `src/test/permissions.matrix.test.ts` (`feature: 'tbm'`)
-
-## 3. Scope (회사/프로젝트 격리)
-- [x] `tbm_sessions.project_id` RLS — 다른 프로젝트 TBM SELECT 차단
-- [x] worker 역할은 자기 회사 (`company_id`) TBM 참여만 허용
-- [x] 참여자(`tbm_participations`) 는 본인 행만 SELECT (전화번호 PII 보호)
-
-## 4. Empty / Loading / Error UI
-- [x] 0건 상태: 아이콘 + "첫 TBM 생성" CTA (`TbmManager.tsx`)
-- [x] 로딩 중 스켈레톤 (3행 muted bar)
-- [x] QR 생성 실패 시 `toast({ variant: 'destructive' })` (silent fail 없음)
-- [x] 미리보기 도메인에서 QR 발급 시 게시 도메인으로 자동 폴백 + 안내 문구
-
-## 5. Edge inputs
-- [x] 제목/장소/공종 등은 짧은 입력 → 일반 `Input` 사용. 본문(작업내용/순서/금지사항)은 `Textarea` 다중행
-- [x] 위험요인 0건일 때 "추가" CTA 노출, 자동 불러올 risk 없을 때도 빈 상태 안내
-- [x] 첨부 (사진/도면) 은 별도 `evidence_attachments` 모듈로 위임
-- [x] 회사 미선택 시 저장 차단 (toast)
-
-## 6. State sync (결재·미러·알림)
-- [x] 참여자 카운트 뱃지 즉시 갱신 (`participantCounts` map, load 시 일괄 조회)
-- [x] QR 토큰은 `is_active=false` 일 때 참여 페이지에서 거절
-- [x] 결재 제출 시 `submit_approval` 으로 통합 결재함에 노출 (사이드바 뱃지 자동)
-
-## 7. Audit
-- [x] 삭제 시 `useSoftDelete` → `audit_logs.soft_delete` + 사유 필수
-- [x] QR 재발급은 `qr_token` 컬럼 변경 → DB 트리거 `audit_logs` 기록
-- [x] 활성/종료 토글은 `audit_logs.tbm_toggle_active` 로 기록
-
-## 8. Rollback
-- [x] 삭제는 `useSoftDelete('tbm_sessions', …)` 사용 — `/admin/trash` 에서 30일 내 복원 가능
-- [x] 잘못 발급한 QR 은 "QR 자동재생성" 버튼으로 즉시 무효화 + 재발급
-- [x] 참여 서명 잘못 입력 시 master 가 `tbm_participations` 행 단건 삭제 가능
-
----
-
-## 회귀 테스트 링크
-- vitest: 권한 매트릭스 `src/test/permissions.matrix.test.ts` (`tbm` feature)
-- E2E (`/admin/system-test`): `SCENARIOS.tbm_create_qr_participate`
-
-## 남은 작업
-- (선택) TBM 미참여 근로자 알림 자동화 — 출근 QR 스캔 후 1시간 내 TBM 미참여 시 안전관리자에게 푸시
-- (선택) 모바일 `/m/tbm` 에서 오늘의 활성 TBM 자동 정렬 + "내 회사" 필터 디폴트 ON
+## 운영 메모
+- QR 베이스 URL은 미리보기 도메인 자동 차단, 게시 도메인(safenex.org) 사용 권장.
+- 위험성평가 자동 연동: 위험요인/등급/안전대책 행 자동 채움.
+- "이전 TBM 불러오기"로 동일 공종 작업내용/위험요인 복사 가능 (근로자/서명/날짜는 미복사).

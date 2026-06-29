@@ -34,6 +34,8 @@ export default function SettingsApprovalRoutes() {
   const [editing, setEditing] = useState<any | null>(null);
   const [approvers, setApprovers] = useState<any[]>([]);
 
+  const [search, setSearch] = useState('');
+
   const load = async () => {
     if (!projectId) return;
     setLoading(true);
@@ -48,7 +50,17 @@ export default function SettingsApprovalRoutes() {
     setCompanies(cos || []);
     setLoading(false);
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId, entityType]);
+  useEffect(() => {
+    load();
+    if (!projectId) return;
+    const ch = supabase
+      .channel(`approval_routes:${projectId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'approval_route_templates', filter: `project_id=eq.${projectId}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+    /* eslint-disable-next-line */
+  }, [projectId, entityType]);
+
 
   // 본인 / 회사 / 프로젝트 공용 가시성 필터
   const visibleTemplates = templates.filter((t) => {

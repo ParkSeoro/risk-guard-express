@@ -240,7 +240,8 @@ export function useProjectAccess(): ProjectAccess {
     [isMaster, memberInfo],
   );
 
-  const isProjectAdmin = userRole === 'project_admin' || userRole === 'master';
+  // Parity with DB `is_project_admin()`: master + project_admin + safety_manager
+  const isProjectAdmin = userRole === 'project_admin' || userRole === 'master' || userRole === 'safety_manager';
   const isSafetyManager = userRole === 'safety_manager';
   const isSiteManager = userRole === 'site_manager';
   const isSupervisor = userRole === 'supervisor';

@@ -95,17 +95,23 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const [projectRes, riggingRes, approvalsRes, companyRes] = await Promise.all([
+    const [projectRes, riggingRes, approvalsRes, companyRes, attachmentsRes] = await Promise.all([
       supabase.from("projects").select("name, site_name, client, contractor").eq("id", plan.project_id).single(),
       supabase.from("rigging_plans").select("*").eq("work_plan_id", planId).maybeSingle(),
       supabase.from("approvals").select("*").eq("run_id", planId).order("approval_version", { ascending: false }),
       plan.company_id ? supabase.from("companies").select("name").eq("id", plan.company_id).single() : Promise.resolve({ data: null }),
+      supabase.from("work_plan_attachments")
+        .select("id, name, category, attachment_key, file_url, mime_type, description")
+        .eq("work_plan_id", planId)
+        .eq("is_deleted", false)
+        .order("created_at", { ascending: true }),
     ]);
 
     const project = projectRes.data;
     const rigging = riggingRes.data;
     const approvals = approvalsRes.data || [];
     const companyName = companyRes.data?.name || "";
+    const dbAttachments = (attachmentsRes as any).data || [];
 
     let creatorName = "";
     if (plan.created_by) {
@@ -114,7 +120,21 @@ Deno.serve(async (req) => {
     }
 
     const sections: any[] = Array.isArray(plan.sections) ? plan.sections : [];
-    const attachments: any[] = Array.isArray(plan.attachments) ? plan.attachments : [];
+    const legacyAttachments: any[] = Array.isArray(plan.attachments) ? plan.attachments : [];
+    // Merge: prefer DB rows; keep legacy JSON entries that aren't already represented
+    const attachments: any[] = [
+      ...dbAttachments.map((a: any) => ({
+        name: a.name || a.attachment_key || "첨부파일",
+        key: a.attachment_key,
+        fileUrl: a.file_url,
+        mime: a.mime_type,
+        uploaded: !!a.file_url,
+        description: a.description,
+      })),
+      ...legacyAttachments.filter((a: any) => a.uploaded && a.fileUrl &&
+        !dbAttachments.some((d: any) => d.file_url === a.fileUrl)),
+    ];
+
 
     const STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3 };
     const latestVersion = approvals.length > 0 ? (approvals[0] as any).approval_version || 1 : 0;

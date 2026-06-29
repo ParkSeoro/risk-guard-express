@@ -44,8 +44,12 @@ const BRIEFING_TEMPLATE = `■ 오늘 작업 설명:
 
 export default function TbmManager({ projectId, runId, defaultRisks = [] }: Props) {
   const { toast } = useToast();
+  const { softDelete } = useSoftDelete();
   const [sessions, setSessions] = useState<TbmSession[]>([]);
+  const [participantCounts, setParticipantCounts] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+
   const [editing, setEditing] = useState<TbmSession | null>(null);
   const [qrSession, setQrSession] = useState<TbmSession | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');

@@ -149,10 +149,35 @@ export default function Incidents() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">사고 목록</CardTitle></CardHeader>
+        <CardHeader className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-base">사고 목록</CardTitle>
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Input className="pl-8" placeholder="신고자/위치/내용 검색" value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+          </div>
+          <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+            <TabsList>
+              <TabsTrigger value="all">전체 <Badge variant="secondary" className="ml-1">{rows.length}</Badge></TabsTrigger>
+              <TabsTrigger value="major">중대 <Badge variant="secondary" className="ml-1">{stats.major}</Badge></TabsTrigger>
+              <TabsTrigger value="overdue">시한초과 <Badge variant="destructive" className="ml-1">{stats.overdue}</Badge></TabsTrigger>
+              <TabsTrigger value="reported">보고완료</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </CardHeader>
         <CardContent>
-          {loading ? <div className="text-sm text-muted-foreground">로딩...</div> :
-            rows.length === 0 ? <div className="text-sm text-muted-foreground py-8 text-center">등록된 사고 없음</div> :
+          {loading ? (
+            <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+          ) : rows.length === 0 ? (
+            <div className="text-center py-10 space-y-3">
+              <AlertOctagon className="size-10 mx-auto text-muted-foreground" />
+              <div className="text-sm text-muted-foreground">등록된 사고가 없습니다 — 아차사고도 적극 보고해 주세요</div>
+              <Button onClick={() => setOpen(true)}><Plus className="size-4 mr-1" /> 사고 보고</Button>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-8 text-center">검색/필터 결과 없음</div>
+          ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50">
@@ -163,7 +188,7 @@ export default function Incidents() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(r => {
+                  {filtered.map(r => {
                     const d = deadlineLabel(r.legal_deadline_at);
                     return (
                       <tr key={r.id} className="border-t">
@@ -188,9 +213,10 @@ export default function Incidents() {
                 </tbody>
               </table>
             </div>
-          }
+          )}
         </CardContent>
       </Card>
+
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

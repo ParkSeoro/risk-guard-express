@@ -81,6 +81,28 @@ const Approvals = () => {
 
   useEffect(() => { fetchData(); fetchEntityPending(); }, [selectedProject, userCompanyId]);
 
+  // Realtime: approvals 변경 시 즉시 갱신
+  useEffect(() => {
+    if (!selectedProject) return;
+    const ch = supabase
+      .channel(`approvals-${selectedProject}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'approvals', filter: `project_id=eq.${selectedProject}` },
+        () => { fetchData(); fetchEntityPending(); })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [selectedProject]);
+
+  const filteredEntityPending = useMemo(() => {
+    return entityPending.filter((e: any) => {
+      if (entityTypeFilter !== 'all' && e.entity_type !== entityTypeFilter) return false;
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      return (e.entity_title || '').toLowerCase().includes(q) || (e.step || '').toLowerCase().includes(q);
+    });
+  }, [entityPending, entityTypeFilter, search]);
+
+
   // Group by run_id, only show the latest approval_version per run
   const grouped = (() => {
     const maxVersionByRun: Record<string, number> = {};

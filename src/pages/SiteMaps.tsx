@@ -316,11 +316,20 @@ export default function SiteMaps() {
         </div>
       )}
 
-      {!activeMap && (
+      {loading && !activeMap && (
+        <Card><CardContent className="py-6 space-y-3">
+          <Skeleton className="h-6 w-1/3" />
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-6 w-1/4" />
+        </CardContent></Card>
+      )}
+
+      {!loading && !activeMap && (
         <Card><CardContent className="py-12 text-center text-muted-foreground">
           사이트맵을 업로드해 시작하세요. (평면도 이미지 PNG/JPG)
         </CardContent></Card>
       )}
+
 
       {activeMap && (
         <div className="grid md:grid-cols-[1fr_320px] gap-4">

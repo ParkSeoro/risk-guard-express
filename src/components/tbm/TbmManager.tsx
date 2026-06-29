@@ -573,7 +573,8 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
             </Card>
           ))}
         </div>
-      )}
+        );
+      })()}
 
 
       <Dialog open={showCreate || !!editing} onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditing(null); resetForm(); } }}>

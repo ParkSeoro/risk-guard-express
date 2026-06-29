@@ -153,7 +153,7 @@ Deno.serve(async (req) => {
   const auth = await requireUser(req);
   if (auth instanceof Response) return auth;
   try {
-    if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY missing');
+    if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY가 설정되지 않았습니다.');
     const body = (await req.json()) as RequestBody;
 
     if (body.mode === 'opinion') {

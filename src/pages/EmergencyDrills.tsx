@@ -50,6 +50,9 @@ export default function EmergencyDrills() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Drill | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusTab, setStatusTab] = useState<"all" | "upcoming" | "done" | "overdue">("all");
+
 
   const [form, setForm] = useState({
     drill_type: "evacuation",
@@ -77,7 +80,43 @@ export default function EmergencyDrills() {
     setRows((data as Drill[]) || []);
     setLoading(false);
   }
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => {
+    if (!projectId) return;
+    load();
+    const ch = supabase
+      .channel(`emergency_drills:${projectId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "emergency_drills", filter: `project_id=eq.${projectId}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId]);
+
+  function nextDueLabel(iso: string | null): { text: string; tone: "ok" | "warn" | "danger" } | null {
+    if (!iso) return null;
+    const diffDays = Math.floor((new Date(iso).getTime() - Date.now()) / 86_400_000);
+    if (diffDays < 0) return { text: `초과 ${-diffDays}일`, tone: "danger" };
+    if (diffDays <= 30) return { text: `D-${diffDays}일`, tone: "warn" };
+    return { text: `D-${diffDays}일`, tone: "ok" };
+  }
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const now = Date.now();
+    return rows.filter(r => {
+      if (statusTab === "upcoming" && !(r.status === "planned" && r.scheduled_date && new Date(r.scheduled_date).getTime() >= now)) return false;
+      if (statusTab === "done" && r.status !== "done") return false;
+      if (statusTab === "overdue" && !(r.next_due_date && new Date(r.next_due_date).getTime() < now)) return false;
+      if (!q) return true;
+      return (r.title || "").toLowerCase().includes(q)
+        || (r.location || "").toLowerCase().includes(q)
+        || (r.leader_name || "").toLowerCase().includes(q);
+    });
+  }, [rows, search, statusTab]);
+
+  const overdueCount = useMemo(
+    () => rows.filter(r => r.next_due_date && new Date(r.next_due_date).getTime() < Date.now()).length,
+    [rows]
+  );
+
 
   const stats = useMemo(() => {
     const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);

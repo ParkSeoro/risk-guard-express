@@ -202,13 +202,13 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   };
 
   const remove = async (s: TbmSession) => {
-    const reason = prompt(`이 TBM "${s.title}"을(를) 삭제합니다. 사유를 입력하세요.`);
-    if (!reason) return;
-    const { error } = await supabase.from('tbm_sessions' as any).delete().eq('id', s.id);
-    if (error) return toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
-    toast({ title: 'TBM이 삭제되었습니다.' });
-    load();
+    const res = await softDelete('tbm_sessions', s.id, {
+      projectId,
+      label: `TBM "${s.title}"`,
+    });
+    if (res.ok) load();
   };
+
 
   const PUBLIC_TBM_BASE_URL = 'https://safenex.org';
 

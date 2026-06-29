@@ -11,7 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ClipboardCheck, Plus, Camera, Printer, AlertTriangle, CheckCircle2, XCircle, Loader2, Trash2 } from 'lucide-react';
+import { ClipboardCheck, Plus, Camera, Printer, AlertTriangle, CheckCircle2, XCircle, Loader2, Trash2, Search } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 import { buildChecklist, INSPECTION_TYPE_LABELS, PROCESS_CATEGORIES, type InspectionType } from '@/lib/inspectionTemplates';
 import IMESafeInput from '@/components/IMESafeInput';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
@@ -69,7 +70,10 @@ export default function SafetyInspections() {
   const [detailItems, setDetailItems] = useState<InspItem[]>([]);
   const [detailActions, setDetailActions] = useState<InspAction[]>([]);
   const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(true);
   const [companyFilter, setCompanyFilter] = useState<string[]>([]);
+  const [q, setQ] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'in_progress' | 'completed'>('all');
 
   // create form
   const [form, setForm] = useState({
@@ -82,6 +86,7 @@ export default function SafetyInspections() {
 
   const load = async () => {
     if (!projectId) return;
+    setListLoading(true);
     const { data: insps } = await supabase
       .from('safety_inspections' as any)
       .select('*')
@@ -99,6 +104,7 @@ export default function SafetyInspections() {
       .limit(200);
     // 삭제된 점검에 속한 조치는 제외
     setActions(((acts as any) || []).filter((a: any) => !a.inspection?.is_deleted));
+    setListLoading(false);
   };
   useEffect(() => { load(); }, [projectId]);
 
@@ -364,16 +370,32 @@ export default function SafetyInspections() {
         </TabsList>
 
         <TabsContent value="list">
-          <div className="mb-2">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
             <MultiCompanyFilter projectId={projectId} value={companyFilter} onChange={setCompanyFilter} />
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Input className="pl-8 h-9" placeholder="위치/점검자/공종 검색" value={q} onChange={e => setQ(e.target.value)} />
+            </div>
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as any)}>
+              <SelectTrigger className="w-32 h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 상태</SelectItem>
+                <SelectItem value="in_progress">진행중</SelectItem>
+                <SelectItem value="completed">완료</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-2">
-            {(() => {
-              const filtered = companyFilter.length === 0
-                ? inspections
-                : inspections.filter((i: any) => i.company_id && companyFilter.includes(i.company_id));
+            {listLoading ? (
+              [...Array(4)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)
+            ) : (() => {
+              const key = q.trim().toLowerCase();
+              const filtered = inspections
+                .filter((i: any) => companyFilter.length === 0 || (i.company_id && companyFilter.includes(i.company_id)))
+                .filter(i => statusFilter === 'all' || i.status === statusFilter)
+                .filter(i => !key || i.location?.toLowerCase().includes(key) || i.inspector_name?.toLowerCase().includes(key) || i.process_category?.toLowerCase().includes(key));
               if (filtered.length === 0) {
-                return <Card><CardContent className="p-6 text-center text-sm text-muted-foreground">조건에 맞는 점검 기록이 없습니다.</CardContent></Card>;
+                return <Card><CardContent className="p-6 text-center text-sm text-muted-foreground">{q || companyFilter.length || statusFilter !== 'all' ? '조건에 맞는 점검 기록이 없습니다.' : '점검 기록이 없습니다. 새 점검을 시작하세요.'}</CardContent></Card>;
               }
               return filtered.map(i => (
                 <Card key={i.id} className="cursor-pointer hover:bg-accent/30" onClick={() => openDetail(i)}>
@@ -392,21 +414,32 @@ export default function SafetyInspections() {
 
         <TabsContent value="actions">
           <div className="grid gap-2">
-            {actions.filter(a => a.status !== 'done').length === 0 ? (
+            {listLoading ? (
+              [...Array(3)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)
+            ) : actions.filter(a => a.status !== 'done').length === 0 ? (
               <Card><CardContent className="p-6 text-center text-sm text-muted-foreground"><CheckCircle2 className="h-8 w-8 mx-auto text-success mb-2" />미조치 항목이 없습니다.</CardContent></Card>
-            ) : actions.filter(a => a.status !== 'done').map(a => (
-              <Card key={a.id}>
-                <CardContent className="p-3 text-sm">
-                  <div className="flex items-center gap-2 mb-1">
-                    <AlertTriangle className="h-4 w-4 text-destructive" />
-                    <span className="font-semibold">{a.issue}</span>
-                    <Badge variant="outline">{a.severity}</Badge>
-                    <Badge variant="secondary">{a.status === 'pending' ? '대기' : '진행중'}</Badge>
-                  </div>
-                  <div className="text-xs text-muted-foreground">담당: {a.assignee_name || '미지정'} · 기한: {a.due_date || '미정'}</div>
-                </CardContent>
-              </Card>
-            ))}
+            ) : actions.filter(a => a.status !== 'done').map(a => {
+              const dday = a.due_date ? Math.ceil((new Date(a.due_date).getTime() - Date.now()) / 86400000) : null;
+              const overdue = dday !== null && dday < 0;
+              return (
+                <Card key={a.id} className={overdue ? 'border-destructive' : ''}>
+                  <CardContent className="p-3 text-sm">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <AlertTriangle className="h-4 w-4 text-destructive" />
+                      <span className="font-semibold">{a.issue}</span>
+                      <Badge variant="outline">{a.severity}</Badge>
+                      <Badge variant="secondary">{a.status === 'pending' ? '대기' : '진행중'}</Badge>
+                      {dday !== null && (
+                        <Badge variant={overdue ? 'destructive' : dday <= 3 ? 'default' : 'outline'}>
+                          {overdue ? `D+${Math.abs(dday)} 초과` : dday === 0 ? 'D-Day' : `D-${dday}`}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground">담당: {a.assignee_name || '미지정'} · 기한: {a.due_date || '미정'}</div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </TabsContent>
       </Tabs>

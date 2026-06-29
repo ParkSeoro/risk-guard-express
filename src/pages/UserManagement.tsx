@@ -77,6 +77,7 @@ const UserManagement = () => {
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterProject, setFilterProject] = useState('all');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
 

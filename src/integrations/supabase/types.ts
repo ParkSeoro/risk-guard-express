@@ -3202,6 +3202,30 @@ export type Database = {
           },
         ]
       }
+      mobile_idempotency_keys: {
+        Row: {
+          action: string
+          created_at: string
+          key: string
+          response: Json | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          key: string
+          response?: Json | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          key?: string
+          response?: Json | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       musculoskeletal_surveys: {
         Row: {
           attachments: Json | null
@@ -8085,10 +8109,29 @@ export type Database = {
           severity: string
         }[]
       }
+      claim_idempotency: {
+        Args: { _action: string; _key: string }
+        Returns: Json
+      }
       company_qr_check_in: {
         Args: {
           _action: string
           _edu_confirmed?: boolean
+          _name: string
+          _no_accident?: boolean
+          _phone: string
+          _ra_confirmed?: boolean
+          _signature: string
+          _tbm_confirmed?: boolean
+          _token: string
+        }
+        Returns: Json
+      }
+      company_qr_check_in_idem: {
+        Args: {
+          _action: string
+          _edu_confirmed?: boolean
+          _idempotency_key?: string
           _name: string
           _no_accident?: boolean
           _phone: string
@@ -8274,6 +8317,7 @@ export type Database = {
         Args: { _invite_code: string; _user_id: string }
         Returns: Json
       }
+      purge_old_idempotency_keys: { Args: never; Returns: number }
       qa_impersonate_check: {
         Args: { _project_id: string; _target_user: string }
         Returns: Json
@@ -8289,6 +8333,10 @@ export type Database = {
         Returns: Json
       }
       request_worker_otp: { Args: { _phone: string }; Returns: Json }
+      save_idempotency_response: {
+        Args: { _key: string; _response: Json }
+        Returns: undefined
+      }
       shares_project_with: {
         Args: { _target: string; _viewer: string }
         Returns: boolean

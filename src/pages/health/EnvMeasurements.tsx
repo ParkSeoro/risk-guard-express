@@ -57,6 +57,18 @@ export default function EnvMeasurements() {
   };
   useEffect(() => { load(); }, [projectId, userCompanyId]);
 
+  useEffect(() => {
+    if (!projectId) return;
+    const ch = supabase
+      .channel(`env_measurements:${projectId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'work_env_measurements', filter: `project_id=eq.${projectId}` }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'work_env_factors', filter: `project_id=eq.${projectId}` }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+    // eslint-disable-next-line
+  }, [projectId]);
+
+
   const counts = useMemo(() => {
     const exceeded = list.filter(r => r.is_exceeded).length;
     const due = list.filter(r => {

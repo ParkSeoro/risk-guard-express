@@ -1098,11 +1098,11 @@ const AssessmentRunDetail = () => {
 
   const handleExportPDF = async () => {
     if (!run) return;
-    toast({ title: 'PDF 파일 생성 중...', description: '잠시 기다려주세요.' });
+    toast({ title: '인쇄용 HTML 생성 중...', description: '잠시 기다려주세요.' });
     try {
       await exportToPDFServer(runId!, 'assessment', 'download');
       log('PDF다운로드', 'assessment_run', runId!, run.project_id);
-      toast({ title: 'PDF 파일이 다운로드되었습니다.', description: '브라우저에서 열어 인쇄 > PDF로 저장하세요.' });
+      toast({ title: '인쇄용 HTML이 다운로드되었습니다.', description: '파일을 열어 브라우저 인쇄 > PDF로 저장하세요.' });
     } catch (serverErr) {
       console.error('Server PDF failed:', serverErr);
       if (!project) {
@@ -1118,12 +1118,22 @@ const AssessmentRunDetail = () => {
     }
   };
 
-  // Print: open server HTML in new window and trigger print dialog ONCE
+  // Print: open server HTML in new window and trigger print dialog ONCE.
+  // We open the window SYNCHRONOUSLY here so popup blockers don't block it.
   const handlePrint = async () => {
     if (!run) return;
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) {
+      toast({
+        title: '팝업이 차단되었습니다',
+        description: '주소창의 팝업 아이콘에서 허용 후 다시 시도하거나, [PDF 다운로드] 버튼을 사용해 주세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
     toast({ title: '인쇄용 문서 생성 중...' });
     try {
-      await exportToPDFServer(runId!, 'assessment', 'print');
+      await exportToPDFServer(runId!, 'assessment', 'print', printWindow);
     } catch (err) {
       toast({ title: '인쇄 실패', description: String(err), variant: 'destructive' });
     }
@@ -1131,8 +1141,13 @@ const AssessmentRunDetail = () => {
 
   const handleExportValidationPDF = async () => {
     if (!run) return;
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) {
+      toast({ title: '팝업이 차단되었습니다', description: '브라우저 팝업을 허용해 주세요.', variant: 'destructive' });
+      return;
+    }
     try {
-      await exportToPDFServer(runId!, 'validation', 'print');
+      await exportToPDFServer(runId!, 'validation', 'print', printWindow);
     } catch {
       if (!project || !validationReport) return;
       try {

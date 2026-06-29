@@ -78,6 +78,17 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
   const [lines, setLines] = useState<ApprovalLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState(false);
+  const [showAllCompanies, setShowAllCompanies] = useState(false);
+
+  // 작성자(현재 사용자) 소속 회사 — 결재선 드롭다운 기본 필터
+  const currentMember = projectMembers.find(m => m.user_id === user?.id);
+  const authorCompanyId = currentMember?.company_id || null;
+  const OWNER_ROLES = new Set(['master', 'project_admin', 'safety_manager']);
+  const visibleMembers = showAllCompanies || !authorCompanyId
+    ? projectMembers
+    : projectMembers.filter(m =>
+        m.company_id === authorCompanyId || OWNER_ROLES.has(m.role)
+      );
 
   const fetchLines = useCallback(async () => {
     const { data } = await supabase

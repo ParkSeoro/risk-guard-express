@@ -35,7 +35,7 @@ export default function WorkerAttendance() {
   const [search, setSearch] = useState("");
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
-  const { isMaster, companyId, role } = useProjectAccess(projectId);
+  const { isMaster, isProjectAdmin, isSafetyManager, userCompanyId } = useProjectAccess();
 
   useEffect(() => {
     supabase.from("projects").select("id,name").then(({ data }) => setProjects(data || []));

@@ -8,16 +8,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Bot, Eye, EyeOff, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Bot, Eye, EyeOff, Save, Loader2, Activity, CheckCircle2, AlertTriangle, Timer } from 'lucide-react';
 import { toast } from 'sonner';
+import { Link } from 'react-router-dom';
+
 import { Badge } from '@/components/ui/badge';
 
 const MODELS = [
-  { value: 'gpt-4o', label: 'GPT-4o (추천)' },
-  { value: 'gpt-4', label: 'GPT-4' },
-  { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-  { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
+  { value: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash (추천 · 기본)' },
+  { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash (저렴)' },
+  { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro (고품질)' },
+  { value: 'openai/gpt-5-mini', label: 'GPT-5 Mini' },
+  { value: 'openai/gpt-5', label: 'GPT-5' },
 ];
+
 
 const SettingsAI = () => {
   const navigate = useNavigate();

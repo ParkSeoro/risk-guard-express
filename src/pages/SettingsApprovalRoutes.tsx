@@ -255,7 +255,28 @@ export default function SettingsApprovalRoutes() {
                   <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-xs">적용 회사 (선택 안하면 프로젝트 공용)</label>
+                  <label className="text-xs">적용 범위</label>
+                  <div className="flex gap-1 mt-1">
+                    {([
+                      { v: 'mine', label: '내 전용' },
+                      { v: 'company', label: '회사 공용', disabled: !myCompanyId },
+                      { v: 'shared', label: '프로젝트 공용', disabled: !isOwnerSide },
+                    ] as { v: 'mine' | 'company' | 'shared'; label: string; disabled?: boolean }[]).map((s) => {
+                      const active =
+                        (s.v === 'mine' && editing.owner_user_id) ||
+                        (s.v === 'company' && !editing.owner_user_id && editing.company_id) ||
+                        (s.v === 'shared' && !editing.owner_user_id && !editing.company_id);
+                      return (
+                        <Button key={s.v} type="button" size="sm" variant={active ? 'default' : 'outline'} className="h-8 flex-1"
+                          disabled={s.disabled} onClick={() => onScopeChange(s.v)}>{s.label}</Button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+              {isOwnerSide && !editing.owner_user_id && (
+                <div>
+                  <label className="text-xs">회사 공용으로 지정할 회사 (마스터/관리자 전용)</label>
                   <Select value={editing.company_id || '__none__'} onValueChange={onCompanyChange}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -264,12 +285,13 @@ export default function SettingsApprovalRoutes() {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
+              )}
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={!!editing.is_default}
                   onChange={(e) => setEditing({ ...editing, is_default: e.target.checked })} />
-                기본 템플릿으로 설정
+                기본 템플릿으로 설정 (해당 범위 내에서 우선 적용)
               </label>
+
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">

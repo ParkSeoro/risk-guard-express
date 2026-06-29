@@ -92,7 +92,11 @@ export default function EquipmentManager({ projectId, companyId, onSelect, selec
   };
 
   const handleDelete = async (id: string) => {
-    await supabase.from('equipment_master').delete().eq('id', id);
+    const reason = prompt('장비 삭제 사유를 입력하세요. (필수)');
+    if (!reason || !reason.trim()) return;
+    const { error } = await supabase.from('equipment_master').delete().eq('id', id);
+    if (error) { toast({ title: '삭제 실패', description: error.message, variant: 'destructive' }); return; }
+    toast({ title: '장비가 삭제되었습니다.' });
     fetchEquipment();
   };
 

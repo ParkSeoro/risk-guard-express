@@ -60,6 +60,7 @@ import AITestEngine from "./pages/AITestEngine";
 import AILogs from "./pages/AILogs";
 import SystemTestEngine from "./pages/SystemTestEngine";
 import ConsistencyAudit from "./pages/ConsistencyAudit";
+import DataAudit from "./pages/DataAudit";
 import Trash from "./pages/Trash";
 import HealthDashboard from "./pages/health/HealthDashboard";
 import HealthCheckups from "./pages/health/HealthCheckups";

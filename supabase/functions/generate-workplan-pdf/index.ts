@@ -78,7 +78,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { planId } = await req.json();
+    const { planId, renderedAttachments } = await req.json();
+    const preRendered: Record<string, string[]> = renderedAttachments || {};
+
     if (!planId) {
       return new Response(JSON.stringify({ error: "planId required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -310,6 +312,7 @@ Deno.serve(async (req) => {
       const isImage = mime.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(url);
       const isPdf = mime === "application/pdf" || /\.pdf$/i.test(url);
       const titleHtml = `<div class="section-header">${escapeHtml(att.name || att.key || "첨부파일")}</div>`;
+      const renderedImages = preRendered[url];
       if (isImage) {
         const b64 = await imageUrlToBase64(url);
         if (b64) {
@@ -321,16 +324,26 @@ Deno.serve(async (req) => {
           attachmentsHtml += `<div class="page-break"></div>${titleHtml}
             <div style="text-align:center;padding:40pt;color:#dc2626;">이미지 불러오기 실패: ${escapeHtml(url)}</div>`;
         }
+      } else if (renderedImages && renderedImages.length > 0) {
+        // PDF/문서를 클라이언트에서 페이지별 이미지로 렌더링한 결과 사용
+        renderedImages.forEach((img: string, idx: number) => {
+          attachmentsHtml += `<div class="page-break"></div>${idx === 0 ? titleHtml : ""}
+            <div style="text-align:center;padding:10pt;">
+              <div style="font-size:8pt;color:#64748b;margin-bottom:4pt;">페이지 ${idx + 1} / ${renderedImages.length}</div>
+              <img src="${img}" style="max-width:95%;max-height:720pt;object-fit:contain;" />
+            </div>`;
+        });
       } else {
         attachmentsHtml += `<div class="page-break"></div>${titleHtml}
           <div style="padding:20pt;color:#334155;line-height:1.7;">
             <p><b>파일명:</b> ${escapeHtml(url.split("/").pop() || "")}</p>
             <p style="margin-top:6pt;"><b>형식:</b> ${escapeHtml(mime || (isPdf ? "application/pdf" : "binary"))}</p>
             <p style="margin-top:6pt;word-break:break-all;"><b>다운로드 URL:</b><br/><a href="${url}" target="_blank" style="color:#1e40af;">${escapeHtml(url)}</a></p>
-            <p style="font-size:8pt;margin-top:12pt;color:#64748b;">※ PDF·문서 파일은 인쇄본에 직접 포함되지 않습니다. 위 링크로 별도 출력해 첨부해 주세요.</p>
+            <p style="font-size:8pt;margin-top:12pt;color:#64748b;">※ 이 파일 형식은 인쇄본에 직접 포함할 수 없습니다. 위 링크로 별도 출력해 첨부해 주세요.</p>
           </div>`;
       }
     }
+
 
 
     const WORK_TYPE_NAMES: Record<string, string> = {

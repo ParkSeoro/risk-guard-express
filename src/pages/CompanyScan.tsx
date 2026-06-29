@@ -60,7 +60,9 @@ export default function CompanyScan() {
     }
     const signature = sigRef.current?.toDataURL("image/png") || "";
     setSubmitting(true);
-    const { data, error } = await supabase.rpc("company_qr_check_in", {
+    const { newIdempotencyKey, enqueue, isOnline } = await import("@/lib/offlineQueue");
+    const idemKey = newIdempotencyKey();
+    const args = {
       _token: token,
       _name: name.trim(),
       _phone: phone.trim(),
@@ -70,15 +72,33 @@ export default function CompanyScan() {
       _edu_confirmed: eduOk,
       _tbm_confirmed: tbmOk,
       _no_accident: noAcc,
-    });
+      _idempotency_key: idemKey,
+    };
+    // Offline-first: queue when network is unavailable so workers can clock in/out without signal.
+    if (!isOnline()) {
+      await enqueue({ kind: "rpc", idempotencyKey: idemKey,
+        payload: { fn: "company_qr_check_in_idem", args } });
+      setSubmitting(false);
+      setDone({ action, worker_name: name.trim() });
+      toast.success("오프라인 저장됨 — 네트워크 복귀 시 자동 전송");
+      return;
+    }
+    const { data, error } = await supabase.rpc("company_qr_check_in_idem", args);
     setSubmitting(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      // Network/transient — queue for retry
+      await enqueue({ kind: "rpc", idempotencyKey: idemKey,
+        payload: { fn: "company_qr_check_in_idem", args } });
+      setDone({ action, worker_name: name.trim() });
+      toast.success("오프라인 저장됨 — 네트워크 복귀 시 자동 전송");
+      return;
+    }
     const r = data as any;
     if (r?.error) {
       toast.error(r.message || r.error);
       return;
     }
-    setDone({ action: r.action, worker_name: r.worker_name });
+    setDone({ action: r.action || action, worker_name: r.worker_name || name.trim() });
   };
 
   if (loading) {

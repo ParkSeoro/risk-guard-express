@@ -38,6 +38,16 @@ async function flushOnce() {
             label: p.issue || "현장 점검", legal_basis: "", result: p.result, photos: urls, sort_order: 0,
           });
         }
+      } else if (it.kind === "rpc") {
+        // Generic queued RPC. Payload: { fn: string, args: Record<string,any> }
+        // The server-side function should accept `_idempotency_key` to dedupe replays.
+        const p = it.payload || {};
+        const args = { ...(p.args || {}) };
+        if (it.idempotencyKey && !("_idempotency_key" in args)) {
+          args._idempotency_key = it.idempotencyKey;
+        }
+        const { error } = await supabase.rpc(p.fn, args);
+        if (error) throw error;
       }
       await removeFromQueue(it.id!);
       ok++;

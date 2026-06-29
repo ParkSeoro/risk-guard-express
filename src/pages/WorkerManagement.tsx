@@ -44,10 +44,24 @@ export default function WorkerManagement() {
   const [workers, setWorkers] = useState<any[]>([]);
   const [showQr, setShowQr] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const { log } = useAuditLog();
   const baseUrl = window.location.origin;
   const registerUrl = projectId
     ? `${baseUrl}/worker/register?project=${projectId}${companyId ? `&company=${companyId}` : ''}`
     : "";
+
+  const filteredWorkers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return workers;
+    return workers.filter(w =>
+      (w.name || "").toLowerCase().includes(q) ||
+      (w.phone || "").toLowerCase().includes(q) ||
+      (w.company_name || "").toLowerCase().includes(q) ||
+      (w.job_type || "").toLowerCase().includes(q)
+    );
+  }, [workers, search]);
 
   useEffect(() => {
     supabase.from("projects").select("id,name").then(({ data }) => setProjects(data || []));

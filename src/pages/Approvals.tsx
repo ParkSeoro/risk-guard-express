@@ -33,6 +33,9 @@ const Approvals = () => {
   const [tab, setTab] = useState('mine');
   const [entityPending, setEntityPending] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [entityTypeFilter, setEntityTypeFilter] = useState<'all' | 'work_plan' | 'work_permit'>('all');
+
 
   const fetchEntityPending = async () => {
     const { data } = await supabase.rpc('get_my_pending_entity_approvals');

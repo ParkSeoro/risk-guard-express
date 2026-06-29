@@ -122,16 +122,30 @@ const Approvals = () => {
     }, {} as Record<string, any[]>);
   })();
 
+  const applySearch = (group: Record<string, any[]>) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return group;
+    const out: Record<string, any[]> = {};
+    for (const [runId, steps] of Object.entries(group)) {
+      const run = runs.find((r: any) => r.id === runId);
+      const text = [
+        run?.type, run?.period_label,
+        ...(steps as any[]).map(s => `${s.step} ${s.approver_name || ''} ${s.company_name || ''} ${s.comment || ''}`),
+      ].join(' ').toLowerCase();
+      if (text.includes(q)) out[runId] = steps;
+    }
+    return out;
+  };
+
   // Filter tabs
   const getFilteredGrouped = () => {
     if (tab === 'mine' && user) {
-      // Only show runs where I have a pending step assigned to me
       const filtered: Record<string, any[]> = {};
       for (const [runId, steps] of Object.entries(grouped)) {
         const myPending = (steps as any[]).filter(s => s.approver_id === user.id && s.status === '대기');
         if (myPending.length > 0) filtered[runId] = steps as any[];
       }
-      return filtered;
+      return applySearch(filtered);
     }
     if (tab === 'submitted' && user) {
       const filtered: Record<string, any[]> = {};
@@ -139,10 +153,27 @@ const Approvals = () => {
         const submitted = (steps as any[]).some(s => s.approver_id === user.id && s.step === '작성');
         if (submitted) filtered[runId] = steps as any[];
       }
-      return filtered;
+      return applySearch(filtered);
+    }
+    if (tab === 'completed') {
+      const filtered: Record<string, any[]> = {};
+      for (const [runId, steps] of Object.entries(grouped)) {
+        const arr = steps as any[];
+        const allDecided = arr.every(s => s.status === '승인' || s.status === '반려' || s.status === '취소');
+        if (allDecided) filtered[runId] = arr;
+      }
+      return applySearch(filtered);
+    }
+    if (tab === 'rejected') {
+      const filtered: Record<string, any[]> = {};
+      for (const [runId, steps] of Object.entries(grouped)) {
+        if ((steps as any[]).some(s => s.status === '반려')) filtered[runId] = steps as any[];
+      }
+      return applySearch(filtered);
     }
     // 'all' tab — read-only overview (admin only)
-    return grouped;
+    return applySearch(grouped);
+
   };
 
   const filteredGrouped = getFilteredGrouped();

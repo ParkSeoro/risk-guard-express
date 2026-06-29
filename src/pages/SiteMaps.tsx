@@ -53,6 +53,10 @@ export default function SiteMaps() {
   const [selectedZone, setSelectedZone] = useState<Zone | null>(null);
   const [qrCodes, setQrCodes] = useState<Qr[]>([]);
   const [qrDialog, setQrDialog] = useState<Qr | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [zoneSearch, setZoneSearch] = useState("");
+  const [zoneTypeFilter, setZoneTypeFilter] = useState<"all" | Zone["zone_type"]>("all");
+  const { softDelete } = useSoftDelete();
 
   // editor state
   const [drafting, setDrafting] = useState(false);
@@ -62,6 +66,7 @@ export default function SiteMaps() {
 
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [imgBox, setImgBox] = useState({ w: 0, h: 0 });
+
 
   useEffect(() => {
     supabase.from("projects").select("id,name").then(({ data }) => setProjects(data || []));

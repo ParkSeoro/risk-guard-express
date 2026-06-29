@@ -12,6 +12,7 @@ import { useLocation } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 
 import { useAuth } from "@/contexts/AuthContext";
+import { usePendingApprovalsCount } from "@/hooks/usePendingApprovalsCount";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
@@ -20,7 +21,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 
-type Item = { title: string; url: string; icon: any };
+type Item = { title: string; url: string; icon: any; badgeKey?: 'approvals' };
 type Group = { label: string; key: string; items: Item[] };
 
 const groups: Group[] = [
@@ -109,7 +110,7 @@ const groups: Group[] = [
     label: "운영", key: "ops",
     items: [
       { title: "할 일", url: "/todo", icon: ListTodo },
-      { title: "결재함", url: "/approvals", icon: FileCheck },
+      { title: "결재함", url: "/approvals", icon: FileCheck, badgeKey: 'approvals' },
       { title: "프로젝트", url: "/projects", icon: FolderKanban },
       { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
     ],
@@ -139,6 +140,7 @@ export function AppSidebar() {
   const { profile, signOut, hasRole } = useAuth();
   const isMaster = hasRole('master');
   const location = useLocation();
+  const pendingApprovals = usePendingApprovalsCount();
 
   const adminFinal = isMaster ? [...adminItems, ...masterOnlyItems] : adminItems;
 
@@ -186,7 +188,16 @@ export function AppSidebar() {
             }}
           >
             <item.icon className="mr-2 h-4 w-4 shrink-0" />
-            {!collapsed && <span>{item.title}</span>}
+            {!collapsed && <span className="flex-1">{item.title}</span>}
+            {item.badgeKey === 'approvals' && pendingApprovals > 0 && (
+              <span
+                className="ml-auto inline-flex items-center justify-center rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold min-w-[18px] h-[18px] px-1"
+                aria-label={`결재 대기 ${pendingApprovals}건`}
+                title={`결재 대기 ${pendingApprovals}건`}
+              >
+                {pendingApprovals > 99 ? '99+' : pendingApprovals}
+              </span>
+            )}
           </NavLink>
         </SidebarMenuButton>
       </SidebarMenuItem>

@@ -310,12 +310,27 @@ const UserManagement = () => {
 
   const filtered = users.filter(u => {
     if (filterStatus !== 'all' && u.account_status !== filterStatus) return false;
+    if (filterProject !== 'all') {
+      const mems = userMemberships[u.user_id] || [];
+      if (!mems.some(m => m.project_id === filterProject)) return false;
+    }
     if (search) {
       const term = search.toLowerCase();
-      return u.display_name.toLowerCase().includes(term) || u.company?.toLowerCase().includes(term);
+      return (
+        u.display_name?.toLowerCase().includes(term) ||
+        u.company?.toLowerCase().includes(term) ||
+        u.phone?.toLowerCase().includes(term)
+      );
     }
     return true;
   });
+
+  const kpis = {
+    total: users.length,
+    pending: users.filter(u => u.account_status === 'pending').length,
+    active: users.filter(u => u.account_status === 'active').length,
+    master: users.filter(u => u.roles.includes('master')).length,
+  };
 
   if (!canManagePermissions) {
     return (

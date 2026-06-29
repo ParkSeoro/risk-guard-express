@@ -29,6 +29,7 @@ const Approvals = () => {
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [tab, setTab] = useState('mine');
   const [entityPending, setEntityPending] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const fetchEntityPending = async () => {
     const { data } = await supabase.rpc('get_my_pending_entity_approvals');

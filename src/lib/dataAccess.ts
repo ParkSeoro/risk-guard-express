@@ -174,4 +174,7 @@ export const TABLE_LABELS: Record<SoftDeleteTable, string> = {
   hazard_surveys: '유해요인 조사',
   worker_education_records: '근로자 안전보건교육',
   emergency_drills: '비상대피훈련',
+  site_maps: '현장 사이트맵',
+  site_zones: '사이트 구역',
 };
+

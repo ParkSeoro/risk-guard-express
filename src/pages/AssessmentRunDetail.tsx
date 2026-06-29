@@ -776,43 +776,32 @@ const AssessmentRunDetail = () => {
       return;
     }
 
-    const { data: existingApprovals } = await supabase.from('approvals').select('approval_version').eq('run_id', runId).order('approval_version', { ascending: false }).limit(1);
-    const nextVersion = ((existingApprovals?.[0]?.approval_version) || 0) + 1;
-
-    await supabase.from('approvals').update({ status: '취소' }).eq('run_id', runId).eq('status', '대기');
-
-    const inserts = linesToUse.map((line, i) => ({
-      project_id: run.project_id, run_id: runId, step: line.step_label,
-      status: i === 0 ? '승인' : '대기',
-      approver_id: line.user_id, approver_name: line.user_name || '',
-      comment: i === 0 ? approvalComment : '', approval_version: nextVersion,
-      position: line.position, company_name: line.company_name || '',
-      approved_at: i === 0 ? new Date().toISOString() : null,
+    // Unified approval engine: pass approver steps only (skip author at index 0)
+    const approverSteps = linesToUse.slice(1).map((line: any) => ({
+      label: line.step_label,
+      user_id: line.user_id,
+      user_name: line.user_name || '',
+      position: line.position || '',
+      company_id: line.company_id || null,
+      company_name: line.company_name || '',
     }));
-    await supabase.from('approvals').insert(inserts);
-    await supabase.from('assessment_runs').update({ status: '결재진행' }).eq('id', runId);
-
-    const isResubmission = nextVersion > 1;
-    const notifTitle = isResubmission ? '재결재 요청' : '결재 요청';
-    
-    // Notify first pending step only (sequential)
-    const firstPending = linesToUse[1];
-    if (firstPending?.user_id) {
-      await sendNotification({
-        user_id: firstPending.user_id,
-        title: notifTitle,
-        message: `[${project?.name || ''}] [${run.type}] ${run.period_label} 회차의 ${firstPending.step_label} 결재가 ${isResubmission ? '재' : ''}요청되었습니다.`,
-        type: 'approval_request',
-        related_id: runId,
-        related_type: 'assessment_run',
-        project_id: run.project_id,
-      });
+    const { error: submitErr } = await supabase.rpc('submit_approval', {
+      _entity_type: 'assessment_run',
+      _entity_id: runId,
+      _project_id: run.project_id,
+      _company_id: null,
+      _steps: approverSteps as any,
+      _reason: approvalComment || null,
+    });
+    if (submitErr) {
+      toast({ title: '상신 실패', description: submitErr.message, variant: 'destructive' });
+      return;
     }
 
     setRun((prev: any) => ({ ...prev, status: '결재진행' }));
     setShowApproval(false); setApprovalComment('');
-    toast({ title: isResubmission ? `재상신 완료 (${nextVersion}차)` : `결재 상신 (${linesToUse.length - 1}단계 순차 결재)` });
-    log(isResubmission ? '재상신' : '결재상신', 'assessment_run', runId!, run.project_id, { steps: linesToUse.length });
+    toast({ title: `결재 상신 완료 (${approverSteps.length}단계 순차 결재)` });
+    log('결재상신', 'assessment_run', runId!, run.project_id, { steps: approverSteps.length });
   };
 
   // Cancel approval

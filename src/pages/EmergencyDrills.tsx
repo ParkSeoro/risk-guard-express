@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useSoftDelete } from "@/hooks/useSoftDelete";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Siren, Plus, CalendarClock, CheckCircle2, AlertTriangle } from "lucide-react";
@@ -41,6 +43,7 @@ const TYPE_LABEL: Record<string, string> = {
 
 export default function EmergencyDrills() {
   const { selectedProject: projectId } = useProjectAccess();
+  const { softDelete } = useSoftDelete();
   const [rows, setRows] = useState<Drill[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -123,14 +126,9 @@ export default function EmergencyDrills() {
     load();
   }
 
-  async function softDelete(r: Drill) {
-    if (!confirm(`"${r.title}" 훈련을 삭제하시겠습니까?`)) return;
-    const { error } = await supabase.from("emergency_drills")
-      .update({ is_deleted: true, deleted_at: new Date().toISOString() })
-      .eq("id", r.id);
-    if (error) { toast.error(error.message); return; }
-    toast.success("삭제됨");
-    load();
+  async function handleDelete(r: Drill) {
+    const res = await softDelete("emergency_drills", r.id, { projectId, label: r.title });
+    if (res.ok) load();
   }
 
   return (
@@ -160,8 +158,15 @@ export default function EmergencyDrills() {
       <Card>
         <CardHeader><CardTitle className="text-base">훈련 이력</CardTitle></CardHeader>
         <CardContent>
-          {loading ? <div className="text-sm text-muted-foreground">로딩...</div> :
-            rows.length === 0 ? <div className="text-sm text-muted-foreground py-8 text-center">등록된 훈련 없음 — 연 1회 이상 실시 필요</div> :
+          {loading ? (
+            <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+          ) : rows.length === 0 ? (
+            <div className="text-center py-10 space-y-3">
+              <Siren className="size-10 mx-auto text-orange-500" />
+              <div className="text-sm text-muted-foreground">등록된 훈련 없음 — 산안법 §52 연 1회 이상 실시 필요</div>
+              <Button onClick={openCreate}><Plus className="size-4 mr-1" /> 첫 훈련 등록</Button>
+            </div>
+          ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50">
@@ -193,16 +198,17 @@ export default function EmergencyDrills() {
                       </td>
                       <td className="p-2 space-x-1">
                         <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>수정</Button>
-                        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => softDelete(r)}>삭제</Button>
+                        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDelete(r)}>삭제</Button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          }
+          )}
         </CardContent>
       </Card>
+
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">

@@ -476,6 +476,39 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         <Button size="sm" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4 mr-1" />TBM 생성</Button>
       </div>
 
+      {/* KPI summary */}
+      {(() => {
+        const today = new Date().toISOString().slice(0, 10);
+        const totalParts = Object.values(participantCounts).reduce((a, b) => a + b, 0);
+        const activeN = sessions.filter(s => s.is_active).length;
+        const todayN = sessions.filter(s => s.tbm_date === today).length;
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <Card><CardContent className="p-3 flex items-center gap-2"><ClipboardList className="h-4 w-4 text-primary" /><div><p className="text-[10px] text-muted-foreground">전체 TBM</p><p className="text-lg font-bold">{sessions.length}</p></div></CardContent></Card>
+            <Card><CardContent className="p-3 flex items-center gap-2"><Power className="h-4 w-4 text-emerald-600" /><div><p className="text-[10px] text-muted-foreground">진행중</p><p className="text-lg font-bold">{activeN}</p></div></CardContent></Card>
+            <Card><CardContent className="p-3 flex items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" /><div><p className="text-[10px] text-muted-foreground">오늘</p><p className="text-lg font-bold">{todayN}</p></div></CardContent></Card>
+            <Card><CardContent className="p-3 flex items-center gap-2"><Users className="h-4 w-4 text-primary" /><div><p className="text-[10px] text-muted-foreground">총 참여자</p><p className="text-lg font-bold">{totalParts}</p></div></CardContent></Card>
+          </div>
+        );
+      })()}
+
+      {/* Filter bar */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+          <Input className="h-9 text-xs pl-7" placeholder="제목·장소·주관자·공종 검색…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <select className="h-9 rounded-md border bg-background px-2 text-xs" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}>
+          <option value="all">상태: 전체</option>
+          <option value="active">진행중</option>
+          <option value="closed">종료</option>
+        </select>
+        <select className="h-9 rounded-md border bg-background px-2 text-xs" value={companyFilter} onChange={e => setCompanyFilter(e.target.value)}>
+          <option value="all">회사: 전체</option>
+          {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+
       {loading ? (
         <div className="grid gap-2">
           {[0, 1, 2].map((i) => (
@@ -495,9 +528,24 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
             <Plus className="h-4 w-4 mr-1" />첫 TBM 생성
           </Button>
         </div>
-      ) : (
+      ) : (() => {
+        const filtered = sessions.filter(s => {
+          if (statusFilter === 'active' && !s.is_active) return false;
+          if (statusFilter === 'closed' && s.is_active) return false;
+          if (companyFilter !== 'all' && s.company_id !== companyFilter) return false;
+          if (search) {
+            const q = search.toLowerCase();
+            const hay = `${s.title||''} ${s.location||''} ${s.leader_name||''} ${s.process_category||''} ${s.company_name||''}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+          }
+          return true;
+        });
+        if (filtered.length === 0) {
+          return <div className="text-center py-8 text-sm text-muted-foreground border rounded-md bg-muted/10">검색 결과가 없습니다.</div>;
+        }
+        return (
         <div className="grid gap-2">
-          {sessions.map(s => (
+          {filtered.map(s => (
             <Card key={s.id}>
               <CardContent className="p-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">

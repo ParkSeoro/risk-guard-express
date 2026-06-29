@@ -9,11 +9,14 @@ import { sendNotification } from "@/lib/notificationService";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle2, Clock, XCircle, FileCheck, MessageSquare, FileText, ExternalLink } from "lucide-react";
+import { CheckCircle2, Clock, XCircle, FileCheck, MessageSquare, FileText, ExternalLink, Search, Inbox, Send, AlertTriangle } from "lucide-react";
 import { exportToPDF } from "@/lib/exportUtils";
+import { useMemo } from "react";
+
 
 const APPROVAL_STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };
 
@@ -30,6 +33,9 @@ const Approvals = () => {
   const [tab, setTab] = useState('mine');
   const [entityPending, setEntityPending] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [entityTypeFilter, setEntityTypeFilter] = useState<'all' | 'work_plan' | 'work_permit'>('all');
+
 
   const fetchEntityPending = async () => {
     const { data } = await supabase.rpc('get_my_pending_entity_approvals');
@@ -75,6 +81,28 @@ const Approvals = () => {
 
   useEffect(() => { fetchData(); fetchEntityPending(); }, [selectedProject, userCompanyId]);
 
+  // Realtime: approvals 변경 시 즉시 갱신
+  useEffect(() => {
+    if (!selectedProject) return;
+    const ch = supabase
+      .channel(`approvals-${selectedProject}`)
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'approvals', filter: `project_id=eq.${selectedProject}` },
+        () => { fetchData(); fetchEntityPending(); })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [selectedProject]);
+
+  const filteredEntityPending = useMemo(() => {
+    return entityPending.filter((e: any) => {
+      if (entityTypeFilter !== 'all' && e.entity_type !== entityTypeFilter) return false;
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      return (e.entity_title || '').toLowerCase().includes(q) || (e.step || '').toLowerCase().includes(q);
+    });
+  }, [entityPending, entityTypeFilter, search]);
+
+
   // Group by run_id, only show the latest approval_version per run
   const grouped = (() => {
     const maxVersionByRun: Record<string, number> = {};
@@ -94,16 +122,30 @@ const Approvals = () => {
     }, {} as Record<string, any[]>);
   })();
 
+  const applySearch = (group: Record<string, any[]>) => {
+    const q = search.trim().toLowerCase();
+    if (!q) return group;
+    const out: Record<string, any[]> = {};
+    for (const [runId, steps] of Object.entries(group)) {
+      const run = runs.find((r: any) => r.id === runId);
+      const text = [
+        run?.type, run?.period_label,
+        ...(steps as any[]).map(s => `${s.step} ${s.approver_name || ''} ${s.company_name || ''} ${s.comment || ''}`),
+      ].join(' ').toLowerCase();
+      if (text.includes(q)) out[runId] = steps;
+    }
+    return out;
+  };
+
   // Filter tabs
   const getFilteredGrouped = () => {
     if (tab === 'mine' && user) {
-      // Only show runs where I have a pending step assigned to me
       const filtered: Record<string, any[]> = {};
       for (const [runId, steps] of Object.entries(grouped)) {
         const myPending = (steps as any[]).filter(s => s.approver_id === user.id && s.status === '대기');
         if (myPending.length > 0) filtered[runId] = steps as any[];
       }
-      return filtered;
+      return applySearch(filtered);
     }
     if (tab === 'submitted' && user) {
       const filtered: Record<string, any[]> = {};
@@ -111,10 +153,27 @@ const Approvals = () => {
         const submitted = (steps as any[]).some(s => s.approver_id === user.id && s.step === '작성');
         if (submitted) filtered[runId] = steps as any[];
       }
-      return filtered;
+      return applySearch(filtered);
+    }
+    if (tab === 'completed') {
+      const filtered: Record<string, any[]> = {};
+      for (const [runId, steps] of Object.entries(grouped)) {
+        const arr = steps as any[];
+        const allDecided = arr.every(s => s.status === '승인' || s.status === '반려' || s.status === '취소');
+        if (allDecided) filtered[runId] = arr;
+      }
+      return applySearch(filtered);
+    }
+    if (tab === 'rejected') {
+      const filtered: Record<string, any[]> = {};
+      for (const [runId, steps] of Object.entries(grouped)) {
+        if ((steps as any[]).some(s => s.status === '반려')) filtered[runId] = steps as any[];
+      }
+      return applySearch(filtered);
     }
     // 'all' tab — read-only overview (admin only)
-    return grouped;
+    return applySearch(grouped);
+
   };
 
   const filteredGrouped = getFilteredGrouped();
@@ -240,13 +299,68 @@ const Approvals = () => {
         </Select>
       </div>
 
-      {entityPending.length > 0 && (
+      {/* KPI 카드 */}
+      {(() => {
+        const mineCount = user ? Object.values(grouped).filter((steps: any) =>
+          (steps as any[]).some(s => s.approver_id === user.id && s.status === '대기')
+        ).length + entityPending.length : 0;
+        const submittedCount = user ? Object.values(grouped).filter((steps: any) =>
+          (steps as any[]).some(s => s.approver_id === user.id && s.step === '작성')
+        ).length : 0;
+        const completedCount = Object.values(grouped).filter((steps: any) =>
+          (steps as any[]).every(s => s.status === '승인' || s.status === '반려' || s.status === '취소')
+        ).length;
+        const rejectedCount = Object.values(grouped).filter((steps: any) =>
+          (steps as any[]).some(s => s.status === '반려')
+        ).length;
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card><CardContent className="pt-4 flex items-center justify-between">
+              <div><div className="text-xs text-muted-foreground">내 대기</div><div className="text-2xl font-bold text-destructive">{mineCount}</div></div>
+              <Inbox className="h-6 w-6 text-destructive" />
+            </CardContent></Card>
+            <Card><CardContent className="pt-4 flex items-center justify-between">
+              <div><div className="text-xs text-muted-foreground">상신</div><div className="text-2xl font-bold">{submittedCount}</div></div>
+              <Send className="h-6 w-6 text-primary" />
+            </CardContent></Card>
+            <Card><CardContent className="pt-4 flex items-center justify-between">
+              <div><div className="text-xs text-muted-foreground">완료</div><div className="text-2xl font-bold text-success">{completedCount}</div></div>
+              <CheckCircle2 className="h-6 w-6 text-success" />
+            </CardContent></Card>
+            <Card><CardContent className="pt-4 flex items-center justify-between">
+              <div><div className="text-xs text-muted-foreground">반려</div><div className="text-2xl font-bold text-destructive">{rejectedCount}</div></div>
+              <AlertTriangle className="h-6 w-6 text-destructive" />
+            </CardContent></Card>
+          </div>
+        );
+      })()}
+
+      <Card>
+        <CardContent className="pt-4 flex gap-2 items-end flex-wrap">
+          <div className="flex-1 min-w-[240px]">
+            <div className="relative">
+              <Search className="h-4 w-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input className="pl-8" placeholder="제목·결재자·코멘트 검색" value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+          </div>
+          <Select value={entityTypeFilter} onValueChange={(v) => setEntityTypeFilter(v as any)}>
+            <SelectTrigger className="w-44 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체 유형</SelectItem>
+              <SelectItem value="work_plan">작업계획서</SelectItem>
+              <SelectItem value="work_permit">작업허가서</SelectItem>
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
+
+      {filteredEntityPending.length > 0 && (
         <Card className="border-primary/40 bg-primary/5">
           <CardContent className="p-3 space-y-2">
             <div className="text-sm font-bold flex items-center gap-2">
-              <FileCheck className="h-4 w-4" /> 작업계획서·작업허가서 결재 대기 ({entityPending.length})
+              <FileCheck className="h-4 w-4" /> 작업계획서·작업허가서 결재 대기 ({filteredEntityPending.length}/{entityPending.length})
             </div>
-            {entityPending.map((e: any) => (
+            {filteredEntityPending.map((e: any) => (
               <div key={e.approval_id} className="flex items-center gap-2 p-2 border rounded bg-background">
                 <Badge variant="outline" className="text-[10px]">
                   {e.entity_type === 'work_plan' ? '작업계획서' : '작업허가서'}
@@ -268,7 +382,7 @@ const Approvals = () => {
       )}
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="w-full">
+        <TabsList className="w-full flex-wrap h-auto">
           <TabsTrigger value="mine" className="flex-1 gap-1.5">
             내 결재 (대기)
             {(() => {
@@ -279,8 +393,11 @@ const Approvals = () => {
             })()}
           </TabsTrigger>
           <TabsTrigger value="submitted" className="flex-1">상신한 결재</TabsTrigger>
-          {isAdmin() && <TabsTrigger value="all" className="flex-1">전체 현황 (읽기전용)</TabsTrigger>}
+          <TabsTrigger value="completed" className="flex-1">완료</TabsTrigger>
+          <TabsTrigger value="rejected" className="flex-1">반려</TabsTrigger>
+          {isAdmin() && <TabsTrigger value="all" className="flex-1">전체 현황</TabsTrigger>}
         </TabsList>
+
 
         <TabsContent value={tab} className="space-y-3 mt-3">
           {loading ? (

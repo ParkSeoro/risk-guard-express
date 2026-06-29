@@ -3,12 +3,16 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AlertTriangle, CheckCircle2, ShieldAlert, Loader2 } from "lucide-react";
+import IMESafeInput from "@/components/IMESafeInput";
+import { koreanName, phoneKROptional, zodErrorMessage } from "@/lib/commonSchemas";
+import { z } from "zod";
 
 type Zone = { id: string; name: string; zone_type: "normal" | "work" | "restricted" | "danger"; project_id: string };
 type Qr = { id: string; zone_id: string; project_id: string; direction: "entry" | "exit"; label: string | null; is_active: boolean };
+
+const checkinSchema = z.object({ name: koreanName, phone: phoneKROptional });
 
 // Public route — no auth required. Worker scans QR at site checkpoint.
 export default function ZoneCheckin() {

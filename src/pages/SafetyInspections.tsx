@@ -86,6 +86,7 @@ export default function SafetyInspections() {
 
   const load = async () => {
     if (!projectId) return;
+    setListLoading(true);
     const { data: insps } = await supabase
       .from('safety_inspections' as any)
       .select('*')
@@ -103,6 +104,7 @@ export default function SafetyInspections() {
       .limit(200);
     // 삭제된 점검에 속한 조치는 제외
     setActions(((acts as any) || []).filter((a: any) => !a.inspection?.is_deleted));
+    setListLoading(false);
   };
   useEffect(() => { load(); }, [projectId]);
 

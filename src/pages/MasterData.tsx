@@ -260,26 +260,38 @@ const MasterData = () => {
         {/* Processes */}
         <TabsContent value="processes">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
               <CardTitle className="text-base">공정 목록</CardTitle>
-              {admin && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit('process')}><Plus className="h-3.5 w-3.5" /> 추가</Button>}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input className="h-8 text-xs pl-7 w-48" placeholder="공정/분류 검색…" value={search.process} onChange={e => setSearch(s => ({ ...s, process: e.target.value }))} />
+                </div>
+                {admin && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit('process')}><Plus className="h-3.5 w-3.5" /> 추가</Button>}
+              </div>
             </CardHeader>
             <CardContent className="p-0">
-              <table className="w-full data-table text-sm">
-                <thead><tr><th>공정명</th><th>분류</th>{admin && <th className="w-20 text-center">작업</th>}</tr></thead>
-                <tbody>
-                  {processes.map(p => (
-                    <tr key={p.id}>
-                      <td className="font-medium">{p.name}</td>
-                      <td><Badge variant="secondary" className="text-[10px]">{p.category}</Badge></td>
-                      {admin && <td className="text-center">
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit('process', p)}><Pencil className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete('process', p.id)}><Trash2 className="h-3 w-3" /></Button>
-                      </td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {loading ? (
+                <div className="p-4 space-y-2">{[0,1,2].map(i => <Skeleton key={i} className="h-8" />)}</div>
+              ) : (
+                <table className="w-full data-table text-sm">
+                  <thead><tr><th>공정명</th><th>분류</th>{admin && <th className="w-20 text-center">작업</th>}</tr></thead>
+                  <tbody>
+                    {processes.filter(p => !search.process || `${p.name} ${p.category||''}`.toLowerCase().includes(search.process.toLowerCase())).map(p => (
+                      <tr key={p.id}>
+                        <td className="font-medium">{p.name}</td>
+                        <td><Badge variant="secondary" className="text-[10px]">{p.category}</Badge></td>
+                        {admin && <td className="text-center">
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit('process', p)}><Pencil className="h-3 w-3" /></Button>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete('process', p.id)}><Trash2 className="h-3 w-3" /></Button>
+                        </td>}
+                      </tr>
+                    ))}
+                    {processes.length === 0 && <tr><td colSpan={admin?3:2} className="text-center py-6 text-muted-foreground">등록된 공정이 없습니다</td></tr>}
+                    {processes.length > 0 && processes.filter(p => !search.process || `${p.name} ${p.category||''}`.toLowerCase().includes(search.process.toLowerCase())).length === 0 && <tr><td colSpan={admin?3:2} className="text-center py-6 text-muted-foreground">검색 결과가 없습니다</td></tr>}
+                  </tbody>
+                </table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -287,26 +299,37 @@ const MasterData = () => {
         {/* PPE */}
         <TabsContent value="ppe">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
               <CardTitle className="text-base">PPE (개인보호구) 목록</CardTitle>
-              {admin && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit('ppe')}><Plus className="h-3.5 w-3.5" /> 추가</Button>}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input className="h-8 text-xs pl-7 w-48" placeholder="보호구 검색…" value={search.ppe} onChange={e => setSearch(s => ({ ...s, ppe: e.target.value }))} />
+                </div>
+                {admin && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit('ppe')}><Plus className="h-3.5 w-3.5" /> 추가</Button>}
+              </div>
             </CardHeader>
             <CardContent className="p-0">
-              <table className="w-full data-table text-sm">
-                <thead><tr><th>아이콘</th><th>보호구명</th>{admin && <th className="w-20 text-center">작업</th>}</tr></thead>
-                <tbody>
-                  {ppe.map(p => (
-                    <tr key={p.id}>
-                      <td className="w-10 text-center text-lg">{p.icon || '🛡️'}</td>
-                      <td>{p.name}</td>
-                      {admin && <td className="text-center">
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit('ppe', p)}><Pencil className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete('ppe', p.id)}><Trash2 className="h-3 w-3" /></Button>
-                      </td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {loading ? (
+                <div className="p-4 space-y-2">{[0,1,2].map(i => <Skeleton key={i} className="h-8" />)}</div>
+              ) : (
+                <table className="w-full data-table text-sm">
+                  <thead><tr><th>아이콘</th><th>보호구명</th>{admin && <th className="w-20 text-center">작업</th>}</tr></thead>
+                  <tbody>
+                    {ppe.filter(p => !search.ppe || p.name?.toLowerCase().includes(search.ppe.toLowerCase())).map(p => (
+                      <tr key={p.id}>
+                        <td className="w-10 text-center text-lg">{p.icon || '🛡️'}</td>
+                        <td>{p.name}</td>
+                        {admin && <td className="text-center">
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit('ppe', p)}><Pencil className="h-3 w-3" /></Button>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete('ppe', p.id)}><Trash2 className="h-3 w-3" /></Button>
+                        </td>}
+                      </tr>
+                    ))}
+                    {ppe.length === 0 && <tr><td colSpan={admin?3:2} className="text-center py-6 text-muted-foreground">등록된 PPE가 없습니다</td></tr>}
+                  </tbody>
+                </table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -314,31 +337,42 @@ const MasterData = () => {
         {/* Legal */}
         <TabsContent value="legal">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
               <CardTitle className="text-base">법적근거 목록</CardTitle>
-              {admin && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit('legal')}><Plus className="h-3.5 w-3.5" /> 추가</Button>}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input className="h-8 text-xs pl-7 w-56" placeholder="법령/조문/설명/공종 검색…" value={search.legal} onChange={e => setSearch(s => ({ ...s, legal: e.target.value }))} />
+                </div>
+                {admin && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit('legal')}><Plus className="h-3.5 w-3.5" /> 추가</Button>}
+              </div>
             </CardHeader>
             <CardContent className="p-0">
-              <table className="w-full data-table text-sm">
-                <thead><tr><th>법령명</th><th>조문</th><th>설명</th><th>공종 매핑</th><th>검토</th>{admin && <th className="w-20 text-center">작업</th>}</tr></thead>
-                <tbody>
-                  {legalRefs.map(l => (
-                    <tr key={l.id}>
-                      <td className="font-medium whitespace-nowrap">{l.law_name}</td>
-                      <td className="whitespace-nowrap">{l.article}</td>
-                      <td>{l.description}</td>
-                      <td className="text-xs">{(l.process_mappings || []).join(', ')}</td>
-                      <td className="text-center">
-                        {l.needs_review && <Badge variant="outline" className="text-[10px] gap-1"><AlertTriangle className="h-2.5 w-2.5" />검토필요</Badge>}
-                      </td>
-                      {admin && <td className="text-center">
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit('legal', l)}><Pencil className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete('legal', l.id)}><Trash2 className="h-3 w-3" /></Button>
-                      </td>}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {loading ? (
+                <div className="p-4 space-y-2">{[0,1,2].map(i => <Skeleton key={i} className="h-8" />)}</div>
+              ) : (
+                <table className="w-full data-table text-sm">
+                  <thead><tr><th>법령명</th><th>조문</th><th>설명</th><th>공종 매핑</th><th>검토</th>{admin && <th className="w-20 text-center">작업</th>}</tr></thead>
+                  <tbody>
+                    {legalRefs.filter(l => !search.legal || `${l.law_name||''} ${l.article||''} ${l.description||''} ${(l.process_mappings||[]).join(' ')}`.toLowerCase().includes(search.legal.toLowerCase())).map(l => (
+                      <tr key={l.id}>
+                        <td className="font-medium whitespace-nowrap">{l.law_name}</td>
+                        <td className="whitespace-nowrap">{l.article}</td>
+                        <td>{l.description}</td>
+                        <td className="text-xs">{(l.process_mappings || []).join(', ')}</td>
+                        <td className="text-center">
+                          {l.needs_review && <Badge variant="outline" className="text-[10px] gap-1"><AlertTriangle className="h-2.5 w-2.5" />검토필요</Badge>}
+                        </td>
+                        {admin && <td className="text-center">
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit('legal', l)}><Pencil className="h-3 w-3" /></Button>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete('legal', l.id)}><Trash2 className="h-3 w-3" /></Button>
+                        </td>}
+                      </tr>
+                    ))}
+                    {legalRefs.length === 0 && <tr><td colSpan={admin?6:5} className="text-center py-6 text-muted-foreground">등록된 법적근거가 없습니다</td></tr>}
+                  </tbody>
+                </table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -354,31 +388,41 @@ const MasterData = () => {
         {/* Validation Rules */}
         <TabsContent value="rules">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
               <CardTitle className="text-base">검증 규칙 관리</CardTitle>
-              {admin && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit('rule')}><Plus className="h-3.5 w-3.5" /> 추가</Button>}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input className="h-8 text-xs pl-7 w-48" placeholder="규칙/유형/설명 검색…" value={search.rule} onChange={e => setSearch(s => ({ ...s, rule: e.target.value }))} />
+                </div>
+                {admin && <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openEdit('rule')}><Plus className="h-3.5 w-3.5" /> 추가</Button>}
+              </div>
             </CardHeader>
             <CardContent className="p-0">
-              <table className="w-full data-table text-sm">
-                <thead><tr><th>규칙명</th><th>유형</th><th>설명</th><th>심각도</th><th>가중치</th><th>활성</th>{admin && <th className="w-20 text-center">작업</th>}</tr></thead>
-                <tbody>
-                  {validationRules.map(r => (
-                    <tr key={r.id}>
-                      <td className="font-medium">{r.rule_name}</td>
-                      <td><Badge variant="secondary" className="text-[10px]">{r.rule_type}</Badge></td>
-                      <td className="text-xs max-w-[200px]">{r.description}</td>
-                      <td><Badge variant={r.severity === 'error' ? 'destructive' : 'outline'} className="text-[10px]">{r.severity}</Badge></td>
-                      <td className="text-center">{r.weight}</td>
-                      <td className="text-center">{r.is_active ? '✅' : '❌'}</td>
-                      {admin && <td className="text-center">
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit('rule', r)}><Pencil className="h-3 w-3" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete('rule', r.id)}><Trash2 className="h-3 w-3" /></Button>
-                      </td>}
-                    </tr>
-                  ))}
-                  {validationRules.length === 0 && <tr><td colSpan={7} className="text-center py-6 text-muted-foreground">검증 규칙이 없습니다</td></tr>}
-                </tbody>
-              </table>
+              {loading ? (
+                <div className="p-4 space-y-2">{[0,1,2].map(i => <Skeleton key={i} className="h-8" />)}</div>
+              ) : (
+                <table className="w-full data-table text-sm">
+                  <thead><tr><th>규칙명</th><th>유형</th><th>설명</th><th>심각도</th><th>가중치</th><th>활성</th>{admin && <th className="w-20 text-center">작업</th>}</tr></thead>
+                  <tbody>
+                    {validationRules.filter(r => !search.rule || `${r.rule_name||''} ${r.rule_type||''} ${r.description||''}`.toLowerCase().includes(search.rule.toLowerCase())).map(r => (
+                      <tr key={r.id}>
+                        <td className="font-medium">{r.rule_name}</td>
+                        <td><Badge variant="secondary" className="text-[10px]">{r.rule_type}</Badge></td>
+                        <td className="text-xs max-w-[200px]">{r.description}</td>
+                        <td><Badge variant={r.severity === 'error' ? 'destructive' : 'outline'} className="text-[10px]">{r.severity}</Badge></td>
+                        <td className="text-center">{r.weight}</td>
+                        <td className="text-center">{r.is_active ? '✅' : '❌'}</td>
+                        {admin && <td className="text-center">
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openEdit('rule', r)}><Pencil className="h-3 w-3" /></Button>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete('rule', r.id)}><Trash2 className="h-3 w-3" /></Button>
+                        </td>}
+                      </tr>
+                    ))}
+                    {validationRules.length === 0 && <tr><td colSpan={admin?7:6} className="text-center py-6 text-muted-foreground">검증 규칙이 없습니다</td></tr>}
+                  </tbody>
+                </table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

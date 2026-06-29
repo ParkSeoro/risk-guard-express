@@ -16,13 +16,18 @@ const PROJECT_KEY = 'selected_project_id';
 
 interface Step { label: string; position: string; user_id: string; user_name: string; company_id: string | null; company_name: string }
 
+type ScopeFilter = 'mine' | 'company' | 'shared' | 'all';
+
 export default function SettingsApprovalRoutes() {
   const navigate = useNavigate();
-  const { hasRole, user } = useAuth();
+  const { hasRole, user, profile } = useAuth();
   const canEdit = hasRole('master') || hasRole('project_admin') || hasRole('safety_manager');
   const projectId = localStorage.getItem(PROJECT_KEY) || '';
+  const myCompanyId: string | null = (profile as any)?.company_id || null;
+  const isOwnerSide = hasRole('master') || hasRole('project_admin');
 
   const [entityType, setEntityType] = useState<ApprovalEntityType>('assessment_run');
+  const [scope, setScope] = useState<ScopeFilter>('mine');
   const [templates, setTemplates] = useState<any[]>([]);
   const [companies, setCompanies] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,6 +40,7 @@ export default function SettingsApprovalRoutes() {
     const [{ data: tpl }, { data: cos }] = await Promise.all([
       supabase.from('approval_route_templates').select('*')
         .eq('project_id', projectId).eq('entity_type', entityType).eq('is_deleted', false)
+        .order('owner_user_id', { ascending: false, nullsFirst: false })
         .order('is_default', { ascending: false }),
       supabase.from('companies').select('id,name,type').eq('project_id', projectId).eq('is_deleted', false),
     ]);
@@ -44,26 +50,51 @@ export default function SettingsApprovalRoutes() {
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId, entityType]);
 
+  // 본인 / 회사 / 프로젝트 공용 가시성 필터
+  const visibleTemplates = templates.filter((t) => {
+    const isMine = t.owner_user_id === user?.id;
+    const isMyCompany = !t.owner_user_id && t.company_id && myCompanyId && t.company_id === myCompanyId;
+    const isShared = !t.owner_user_id && !t.company_id;
+    const isOtherCompany = !t.owner_user_id && t.company_id && t.company_id !== myCompanyId;
+    // 마스터/PA만 타회사 전용 템플릿 조회 가능
+    if (!isOwnerSide && isOtherCompany) return false;
+    if (scope === 'mine') return isMine;
+    if (scope === 'company') return isMyCompany;
+    if (scope === 'shared') return isShared;
+    return true;
+  });
+
   const startCreate = () => setEditing({
     id: null, name: '', entity_type: entityType, project_id: projectId,
+    owner_user_id: user?.id, // 기본 "내 전용"
     company_id: null, is_default: false, steps: [],
   });
 
-  const startEdit = async (t: any) => {
-    setEditing({ ...t, steps: Array.isArray(t.steps) ? t.steps : [] });
-    // load approvers for the company
+  const refreshApproversFor = async (cid: string | null) => {
     const { data } = await supabase.rpc('get_eligible_approvers', {
-      _project_id: projectId, _submitter_company_id: t.company_id,
+      _project_id: projectId, _submitter_company_id: cid,
     });
     setApprovers((data as any) || []);
   };
 
+  const startEdit = async (t: any) => {
+    setEditing({ ...t, steps: Array.isArray(t.steps) ? t.steps : [] });
+    await refreshApproversFor(t.company_id || myCompanyId);
+  };
+
+  const onScopeChange = async (s: 'mine' | 'company' | 'shared') => {
+    setEditing((e: any) => ({
+      ...e,
+      owner_user_id: s === 'mine' ? user?.id : null,
+      company_id: s === 'company' ? myCompanyId : null,
+    }));
+    await refreshApproversFor(s === 'company' ? myCompanyId : myCompanyId);
+  };
+
   const onCompanyChange = async (cid: string) => {
-    setEditing((e: any) => ({ ...e, company_id: cid === '__none__' ? null : cid }));
-    const { data } = await supabase.rpc('get_eligible_approvers', {
-      _project_id: projectId, _submitter_company_id: cid === '__none__' ? null : cid,
-    });
-    setApprovers((data as any) || []);
+    const next = cid === '__none__' ? null : cid;
+    setEditing((e: any) => ({ ...e, company_id: next, owner_user_id: null }));
+    await refreshApproversFor(next || myCompanyId);
   };
 
   const save = async () => {

@@ -252,7 +252,16 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
             <Users className="h-4 w-4" /> 결재라인 설정
           </CardTitle>
           {!readOnly && (
-            <div className="flex gap-1.5">
+            <div className="flex gap-1.5 items-center">
+              <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer select-none mr-1">
+                <input
+                  type="checkbox"
+                  className="h-3 w-3"
+                  checked={showAllCompanies}
+                  onChange={e => setShowAllCompanies(e.target.checked)}
+                />
+                타사 포함
+              </label>
               <Button size="sm" variant="outline" className="gap-1 text-xs h-7" onClick={autoGenerate}>
                 <RefreshCw className="h-3 w-3" /> 자동 생성
               </Button>

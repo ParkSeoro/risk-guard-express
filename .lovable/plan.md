@@ -1,69 +1,88 @@
-# 통합 결재 시스템 (Unified Approval)
+# 안정화 스프린트 플랜 (신규 기능 동결)
 
-현재 위험성평가·작업계획서·작업허가서·산안비·사고보고·비상훈련 등에 결재 로직이 분산돼 있어 UX가 제각각입니다. 공통 결재 엔진으로 묶고, "사전 결재선 + 상신 시 라인 선택/수정"을 모든 문서에 동일하게 제공합니다.
+목표: **"기능을 더 만들지 않고, 지금 있는 것을 신뢰할 수 있게 만든다."** 대기업 적용 가능 수준의 정합성·권한·결재·오프라인 안정성을 확보합니다. 약 2~3주 분량, 4개 트랙으로 진행하며, 각 트랙은 독립 배포 가능합니다.
 
-## 1. 데이터 모델 정비
+---
 
-- `approval_route_templates` 확장
-  - `entity_type` 컬럼 추가 (`assessment_run | work_plan | work_permit | safety_cost | incident | emergency_drill | tbm`)
-  - `company_id` 추가(시공사별 라인 가능, NULL=프로젝트 공용)
-  - `steps` JSONB 구조 표준화: `[{order, label, position, company_id?, user_id?, required:true}]`
-- `approvals` 테이블 그대로 사용 (이미 `entity_type/entity_id/step_order/approval_version` 존재)
-- `approval_lines`는 레거시(위험성평가 전용) → 신규 템플릿으로 마이그레이션, 호환을 위해 유지
+## 트랙 1. 데이터 정합성 SSOT 통합 (가장 시급)
 
-## 2. 공통 RPC (SECURITY DEFINER)
+지금 부서·담당자 관련 테이블이 4개(`master_departments`, `company_departments`, `department_assignees`, `company_managers`) 공존하면서 FK 오류와 매핑 누락이 반복되고 있습니다.
 
-- `submit_approval(_entity_type, _entity_id, _project_id, _company_id, _steps jsonb, _reason text)`
-  - 권한: 작성자(소속 회사) 본인만 상신 가능
-  - 기존 PENDING 차수 자동 취소 후 새 `approval_version` 생성
-  - `steps` 인자에 따라 `approvals` 행 일괄 INSERT
-  - 결재자에게 알림 발송(첫 단계만)
-- `cancel_approval(_entity_type, _entity_id)` / `delegate_approval`(기존) 재사용
-- `get_eligible_approvers(_project_id, _submitter_company_id)` returns table
-  - 위계: CLIENT - GC - CONTRACTOR 트리에서 **본인 회사 + 상위 회사** 관리자만 반환
-  - 직책 필터: `project_admin / safety_manager / site_manager / supervisor`
-  - 마스터는 항상 포함
+**작업**
+1. SSOT 선언: `company_departments` + `company_managers` 를 **유일 정답**으로 확정. `master_departments`, `department_assignees`, `master_assignees` 는 **읽기 전용 레거시**로 마킹.
+2. 데이터 마이그레이션: 레거시 테이블에만 존재하는 부서/담당자를 SSOT로 복제. 중복 키는 회사 ID 우선.
+3. 모든 FK 정리: `risk_items.responsible_department_id`, `risk_items.assignee_user_id`, `work_plans.*`, `safety_inspections.*`, `incident_reports.*` 등 담당자·부서 참조 컬럼을 **자유 텍스트 FK 미설정** 상태에서 **SSOT 테이블에 대한 부분 FK(`ON DELETE SET NULL`)** 로 재정의.
+4. `useProjectAssigneePool` 훅을 SSOT 단일 소스로 재작성. 모든 `AssigneeSelect`, `DepartmentAssigneeMapping` 컴포넌트가 이 훅만 사용하도록 통합.
+5. 정합성 점검 RPC `audit_data_consistency()` 추가: 고아 레코드·이중 매핑·FK 깨짐을 한 화면(`/admin/data-audit`)에서 조회·자동 보정.
 
-## 3. 프론트엔드 공용 컴포넌트
+**검증**
+- 위험성평가 일괄 책임자 지정 → 작업계획서 → TBM → 점검 4개 화면에서 동일한 담당자 풀이 나오는지 E2E.
 
-`src/components/approval/` 신설
-- `ApprovalRouteEditor.tsx` — 단계 추가/삭제/순서 변경, 각 단계에 회사·직책·담당자 선택. `get_eligible_approvers` 결과만 노출
-- `SubmitApprovalDialog.tsx` — 어떤 문서에서도 호출하는 공용 상신 다이얼로그
-  1) 기본 템플릿(entity_type+company) 자동 로드
-  2) 사용자가 그 자리에서 라인 수정 가능
-  3) "이번만 사용" / "내 기본으로 저장" 선택지
-- `ApprovalStatusTimeline.tsx` — 진행 단계 시각화(이미 부분 구현된 것 흡수)
-- `useApprovalSubmit(entityType)` 훅으로 RPC 호출 표준화
+---
 
-## 4. 기존 문서 페이지 적용
+## 트랙 2. 권한 단일화
 
-다음 페이지의 결재 버튼을 `SubmitApprovalDialog`로 교체:
-- `AssessmentRunDetail.tsx`
-- `WorkPlanDetail.tsx`
-- `WorkPermits.tsx` (모바일 `MobilePermits.tsx`도)
-- `SafetyCost.tsx` (월별 보고서 결재)
-- `Incidents.tsx`, `EmergencyDrills.tsx`
-- `TbmLogs.tsx`
+현재 권한 체크가 `useProjectAccess`, `is_project_admin` RPC, 페이지별 `role===…`, `SettingsPermissions` 의 site override 4곳에 분산되어 있어 "안전관리자" 같은 변경이 매번 누락됩니다.
 
-문서별 고유 사전조건(예: 위험성평가 검증 통과)은 기존 가드 유지.
+**작업**
+1. 권한 매트릭스 정의 표를 `mem://auth/permission-matrix` 에 확정 (역할 × 기능 × CRUD).
+2. DB 함수 `has_permission(_user_id, _project_id, _resource, _action)` 신설. 매트릭스를 SQL 로 1회 인코딩.
+3. 모든 RLS 정책에서 산발적 `role IN (...)` 체크를 `has_permission()` 호출로 치환.
+4. 프론트 `useProjectAccess` 를 매트릭스 기반으로 재작성하여 `can(resource, action)` 단일 API 노출.
+5. `SettingsPermissions.tsx` 는 매트릭스 override 만 담당(컴포넌트별 if 분기 제거).
+6. 권한 회귀 테스트: 역할 5종 × 핵심 메뉴 20개 = 100건 행렬을 vitest 로 자동 검증.
 
-## 5. 결재함 통합
+---
 
-- `/approvals` 와 `/m/approvals` 가 entity_type 별로 탭/필터 표시 (현재는 assessment_run 위주)
-- 카드 클릭 시 entity_type에 맞는 상세 라우트로 이동 (라우팅 매핑 테이블 추가)
+## 트랙 3. 결재 워크플로 신뢰성
 
-## 6. 설정 화면
+결재가 여전히 위험성평가·작업계획서·작업허가서·안전비용에서 각자 구현되고 있고, 반려·재상신·버전 추적이 일관되지 않습니다.
 
-- `Settings.tsx` → "결재선 관리" 항목 추가, `/settings/approval-routes` 페이지에서 entity_type/company별 템플릿 CRUD
+**작업**
+1. **단일 결재 엔진** 으로 통합: `approvals` + `approval_lines` 테이블을 모든 도큐먼트의 정답으로 확정. 도큐먼트별 자체 컬럼(`work_plans.approval_status` 등) 은 결재 엔진의 미러로만 유지.
+2. RPC 정리: `approval_submit / approve / reject / cancel / delegate / resubmit` 6개 함수만 노출. 페이지별 직접 UPDATE 금지.
+3. 재상신 버저닝: `resubmission_version` 자동 증가, 직전 라인 자동 취소, 첨부 스냅샷 보존.
+4. 반려 시 필수 사유 + 작성자에게 푸시·이메일 강제.
+5. `/approvals` 페이지를 진짜 통합 인박스로 (지금은 일부 도큐먼트만 표시). 위임/대기/지연 필터 포함.
+6. `SubmitApprovalDialog` 1개로 모든 도큐먼트가 결재 상신 (현재는 일부 페이지만 사용).
 
-## 7. 기술 메모 (개발자용)
+---
 
-- 마이그레이션 1건: ALTER `approval_route_templates` ADD entity_type, company_id + 인덱스, 기존 행은 `assessment_run`/NULL로 백필
-- RPC 3개 추가: `submit_approval`, `get_eligible_approvers`, (옵션)`save_my_default_route`
-- RLS: 신규 컬럼 정책은 `is_project_member` + `can_access_company_data`로 일관 유지
-- 회사 위계 조회는 `companies.parent_company_id`(있으면) 재귀 CTE, 없으면 `company_managers`/`project_members` 역할 기반 fallback
+## 트랙 4. 모바일/오프라인 안정성
 
-## 확인 사항
+근로자 앱이 출퇴근·TBM·작업중지의 핵심 채널인데, 오프라인 큐(`useOfflineSync`, `offlineQueue`) 의 충돌 처리·재시도가 검증되지 않았습니다.
 
-- "상위 회사"의 정의: 발주처(CLIENT) → 원청(GC) → 협력사(CONTRACTOR) 트리를 그대로 사용하는 것으로 가정했습니다. 다른 정의(예: 협력사가 또 하위 협력사 보유) 있으면 알려주세요.
-- 산안비 결재는 이미 자체 `safety_cost_approval_steps`가 있는데, 통합 엔진으로 흡수할지 / 별도로 두고 UI만 통일할지 선택 필요합니다 (기본은 "UI만 통일, 데이터는 별도 유지" 권장).
+**작업**
+1. 오프라인 큐 스키마 명세화: 모든 모바일 mutation 을 `{op, table, payload, idempotency_key, attempts}` 로 표준화.
+2. 서버측 멱등성: 모든 mobile-facing RPC 에 `idempotency_key` 파라미터 + UNIQUE 인덱스. 중복 출근 체크·중복 TBM 서명 자동 무시.
+3. 충돌 해결 정책 명문화: "마지막 쓰기 승" vs "서버 우선" 을 테이블별로 결정 (출근=서버, 서명=클라).
+4. 백그라운드 위치 추적 헬스 대시보드 (`/admin/tracking-health`) 에 디바이스별 마지막 동기화 시각·실패율 KPI 표시.
+5. OTA 업데이트 롤백 버튼 추가 (마스터 전용). 잘못된 빌드 배포 시 1클릭 이전 버전 복귀.
+6. Playwright E2E 시나리오 3개: 오프라인 출근 → 온라인 복귀 동기화 / TBM 다중 서명 충돌 / 작업중지 요청 큐잉.
+
+---
+
+## 횡단 작업 (모든 트랙 공통)
+
+- **회귀 테스트 인프라**: 위 4개 트랙 각각의 핵심 시나리오를 `src/lib/systemTest/scenarios.ts` 에 추가, `/admin/system-test` 에서 1클릭 실행. CI 에서 매 배포 전 자동 실행.
+- **에러 가시화**: 모든 RPC 호출에 `useToastError` 강제. silent fail 정적 검사를 ESLint 룰로 추가.
+- **변경 영향 분석 문서**: 각 트랙 완료 시 `docs/stabilization/{track}.md` 에 변경 표·롤백 절차 기록.
+
+---
+
+## 진행 순서 (제안)
+
+```text
+주차 1 :  트랙 1 (정합성)   ────────►  배포 + 회귀 검증
+주차 2 :  트랙 2 (권한)     ────────►  배포 + 권한 행렬 테스트
+주차 3 :  트랙 3 (결재)     ────►
+          트랙 4 (모바일)   ────►     병렬 진행 후 통합 배포
+```
+
+각 트랙은 **신규 기능 0개**, 기존 동작은 100% 호환을 원칙으로 합니다. 사용자가 새로 요청하시는 기능은 안정화 스프린트 종료 후 별도 큐로 받습니다.
+
+---
+
+## 첫 단계로 무엇부터 시작할지
+
+승인하시면 **트랙 1 (데이터 정합성 SSOT 통합)** 의 1단계 — SSOT 마이그레이션 SQL 과 `audit_data_consistency()` RPC, `/admin/data-audit` 페이지 — 부터 즉시 착수합니다. 트랙 1 이 완료되어야 트랙 2·3 의 RLS 재작성이 의미가 있기 때문입니다.

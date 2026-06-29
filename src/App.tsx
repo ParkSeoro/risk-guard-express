@@ -60,6 +60,7 @@ import AITestEngine from "./pages/AITestEngine";
 import AILogs from "./pages/AILogs";
 import SystemTestEngine from "./pages/SystemTestEngine";
 import ConsistencyAudit from "./pages/ConsistencyAudit";
+import DataAudit from "./pages/DataAudit";
 import Trash from "./pages/Trash";
 import HealthDashboard from "./pages/health/HealthDashboard";
 import HealthCheckups from "./pages/health/HealthCheckups";
@@ -212,6 +213,7 @@ function ProtectedRoutes() {
         <Route path="/admin/ai-logs" element={<AILogs />} />
         <Route path="/admin/system-test" element={<SystemTestEngine />} />
         <Route path="/admin/consistency-audit" element={<ConsistencyAudit />} />
+        <Route path="/admin/data-audit" element={<DataAudit />} />
         <Route path="/admin/trash" element={<Trash />} />
         <Route path="/health" element={<HealthDashboard />} />
         <Route path="/health/checkups" element={<HealthCheckups />} />

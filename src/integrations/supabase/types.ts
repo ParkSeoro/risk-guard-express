@@ -8000,6 +8000,24 @@ export type Database = {
         }
         Relationships: []
       }
+      v_project_assignee_pool: {
+        Row: {
+          company_id: string | null
+          company_name: string | null
+          department_id: string | null
+          department_name: string | null
+          display_name: string | null
+          email: string | null
+          is_ssot: boolean | null
+          phone: string | null
+          position: string | null
+          project_id: string | null
+          source: string | null
+          source_id: string | null
+          user_id: string | null
+        }
+        Relationships: []
+      }
       v_worker_attendance_today: {
         Row: {
           attendance_source: string | null
@@ -8036,6 +8054,7 @@ export type Database = {
         Args: { _path: string; _uid: string }
         Returns: boolean
       }
+      audit_data_consistency: { Args: never; Returns: Json }
       can_access_company_data: {
         Args: { _company_id: string; _project_id: string; _user_id: string }
         Returns: boolean
@@ -8223,6 +8242,7 @@ export type Database = {
         }[]
       }
       mark_required_items_overdue: { Args: never; Returns: number }
+      migrate_legacy_to_ssot: { Args: { _project_id?: string }; Returns: Json }
       preview_required_education: {
         Args: { _job_type: string; _project_id: string }
         Returns: {

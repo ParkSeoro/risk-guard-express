@@ -126,6 +126,7 @@ const adminItems: Item[] = [
 
 const masterOnlyItems: Item[] = [
  { title: "일관성 감사", url: "/admin/consistency-audit", icon: GitCompare },
+ { title: "데이터 정합성 (SSOT)", url: "/admin/data-audit", icon: Database },
  { title: "휴지통", url: "/admin/trash", icon: Trash2 },
   { title: "AI 테스트 엔진", url: "/admin/ai-test", icon: Beaker },
   { title: "AI 로그", url: "/admin/ai-logs", icon: Activity },

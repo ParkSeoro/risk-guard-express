@@ -1824,7 +1824,7 @@ const AssessmentRunDetail = () => {
                         </td>
                       )}
                       <td className="text-center text-muted-foreground">{idx + 1}</td>
-                      <td className="editable whitespace-nowrap"><EditableCell item={item} field="process" /></td>
+                      <td className="editable whitespace-nowrap">{(item.process || '').trim() ? <EditableCell item={item} field="process" /> : <span className="text-muted-foreground italic">(미분류)</span>}</td>
                       <td className="editable"><EditableCell item={item} field="sub_task" /></td>
                       <td className="editable"><EditableCell item={item} field="hazard" /></td>
                       <td className="editable max-w-[200px]"><EditableCell item={item} field="hazard_situation" /></td>

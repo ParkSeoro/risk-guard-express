@@ -11,7 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Siren, Plus, CalendarClock, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Siren, Plus, CalendarClock, CheckCircle2, AlertTriangle, Search, Timer } from "lucide-react";
+
 import { toast } from "sonner";
 
 type Drill = {
@@ -48,6 +50,9 @@ export default function EmergencyDrills() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Drill | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusTab, setStatusTab] = useState<"all" | "upcoming" | "done" | "overdue">("all");
+
 
   const [form, setForm] = useState({
     drill_type: "evacuation",
@@ -75,7 +80,43 @@ export default function EmergencyDrills() {
     setRows((data as Drill[]) || []);
     setLoading(false);
   }
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => {
+    if (!projectId) return;
+    load();
+    const ch = supabase
+      .channel(`emergency_drills:${projectId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "emergency_drills", filter: `project_id=eq.${projectId}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId]);
+
+  function nextDueLabel(iso: string | null): { text: string; tone: "ok" | "warn" | "danger" } | null {
+    if (!iso) return null;
+    const diffDays = Math.floor((new Date(iso).getTime() - Date.now()) / 86_400_000);
+    if (diffDays < 0) return { text: `초과 ${-diffDays}일`, tone: "danger" };
+    if (diffDays <= 30) return { text: `D-${diffDays}일`, tone: "warn" };
+    return { text: `D-${diffDays}일`, tone: "ok" };
+  }
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const now = Date.now();
+    return rows.filter(r => {
+      if (statusTab === "upcoming" && !(r.status === "planned" && r.scheduled_date && new Date(r.scheduled_date).getTime() >= now)) return false;
+      if (statusTab === "done" && r.status !== "done") return false;
+      if (statusTab === "overdue" && !(r.next_due_date && new Date(r.next_due_date).getTime() < now)) return false;
+      if (!q) return true;
+      return (r.title || "").toLowerCase().includes(q)
+        || (r.location || "").toLowerCase().includes(q)
+        || (r.leader_name || "").toLowerCase().includes(q);
+    });
+  }, [rows, search, statusTab]);
+
+  const overdueCount = useMemo(
+    () => rows.filter(r => r.next_due_date && new Date(r.next_due_date).getTime() < Date.now()).length,
+    [rows]
+  );
+
 
   const stats = useMemo(() => {
     const oneYearAgo = new Date(); oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
@@ -156,7 +197,23 @@ export default function EmergencyDrills() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">훈련 이력</CardTitle></CardHeader>
+        <CardHeader className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-base">훈련 이력</CardTitle>
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Input className="pl-8" placeholder="훈련명·장소·진행자 검색" value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+          </div>
+          <Tabs value={statusTab} onValueChange={(v) => setStatusTab(v as any)}>
+            <TabsList>
+              <TabsTrigger value="all">전체 <Badge variant="secondary" className="ml-1">{rows.length}</Badge></TabsTrigger>
+              <TabsTrigger value="upcoming">예정 <Badge variant="secondary" className="ml-1">{stats.upcoming}</Badge></TabsTrigger>
+              <TabsTrigger value="done">완료 <Badge variant="secondary" className="ml-1">{stats.recent}</Badge></TabsTrigger>
+              <TabsTrigger value="overdue">차기 초과 <Badge variant="destructive" className="ml-1">{overdueCount}</Badge></TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </CardHeader>
         <CardContent>
           {loading ? (
             <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
@@ -166,6 +223,8 @@ export default function EmergencyDrills() {
               <div className="text-sm text-muted-foreground">등록된 훈련 없음 — 산안법 §52 연 1회 이상 실시 필요</div>
               <Button onClick={openCreate}><Plus className="size-4 mr-1" /> 첫 훈련 등록</Button>
             </div>
+          ) : filtered.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-8 text-center">검색/필터 결과 없음</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -179,29 +238,39 @@ export default function EmergencyDrills() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(r => (
-                    <tr key={r.id} className="border-t hover:bg-muted/30">
-                      <td className="p-2"><Badge variant="outline">{TYPE_LABEL[r.drill_type] || r.drill_type}</Badge></td>
-                      <td className="p-2 font-medium">{r.title}</td>
-                      <td className="p-2 whitespace-nowrap">{r.scheduled_date || "-"}</td>
-                      <td className="p-2 whitespace-nowrap">{r.conducted_date || "-"}</td>
-                      <td className="p-2">{r.location}</td>
-                      <td className="p-2">{r.leader_name}</td>
-                      <td className="p-2 text-center">{r.participants_count}</td>
-                      <td className="p-2">
-                        <Badge variant={r.status === "done" ? "outline" : "secondary"}>
-                          {r.status === "done" ? "완료" : r.status === "cancelled" ? "취소" : "예정"}
-                        </Badge>
-                      </td>
-                      <td className="p-2 whitespace-nowrap text-xs">
-                        {r.next_due_date && <span className="flex items-center gap-1"><CalendarClock className="size-3" />{r.next_due_date}</span>}
-                      </td>
-                      <td className="p-2 space-x-1">
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>수정</Button>
-                        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDelete(r)}>삭제</Button>
-                      </td>
-                    </tr>
-                  ))}
+                  {filtered.map(r => {
+                    const due = nextDueLabel(r.next_due_date);
+                    return (
+                      <tr key={r.id} className="border-t hover:bg-muted/30">
+                        <td className="p-2"><Badge variant="outline">{TYPE_LABEL[r.drill_type] || r.drill_type}</Badge></td>
+                        <td className="p-2 font-medium">{r.title}</td>
+                        <td className="p-2 whitespace-nowrap">{r.scheduled_date || "-"}</td>
+                        <td className="p-2 whitespace-nowrap">{r.conducted_date || "-"}</td>
+                        <td className="p-2">{r.location}</td>
+                        <td className="p-2">{r.leader_name}</td>
+                        <td className="p-2 text-center">{r.participants_count}</td>
+                        <td className="p-2">
+                          <Badge variant={r.status === "done" ? "outline" : "secondary"}>
+                            {r.status === "done" ? "완료" : r.status === "cancelled" ? "취소" : "예정"}
+                          </Badge>
+                        </td>
+                        <td className="p-2 whitespace-nowrap text-xs">
+                          {due ? (
+                            <Badge variant={due.tone === "danger" ? "destructive" : due.tone === "warn" ? "secondary" : "outline"}>
+                              <Timer className="size-3 mr-1" />{due.text}
+                            </Badge>
+                          ) : r.next_due_date ? (
+                            <span className="flex items-center gap-1"><CalendarClock className="size-3" />{r.next_due_date}</span>
+                          ) : "-"}
+                        </td>
+                        <td className="p-2 space-x-1">
+                          <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>수정</Button>
+                          <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDelete(r)}>삭제</Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
                 </tbody>
               </table>
             </div>

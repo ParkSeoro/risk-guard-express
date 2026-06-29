@@ -76,7 +76,16 @@ export default function Incidents() {
     setRows((data as Row[]) || []);
     setLoading(false);
   }
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => {
+    if (!projectId) return;
+    load();
+    const ch = supabase
+      .channel(`incident_reports:${projectId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "incident_reports", filter: `project_id=eq.${projectId}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId]);
+
 
   const stats = useMemo(() => {
     const major = rows.filter(r => r.is_major);

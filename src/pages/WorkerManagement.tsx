@@ -95,25 +95,30 @@ export default function WorkerManagement() {
   }, [projectId]);
 
   const load = async () => {
+    setLoading(true);
     const { data, error } = await supabase
       .from("workers")
       .select("*")
       .eq("project_id", projectId)
       .eq("is_active", true)
       .order("created_at", { ascending: false });
+    setLoading(false);
     if (error) { toast.error(error.message); return; }
     setWorkers(data || []);
   };
 
-  const remove = async (id: string) => {
-    if (!confirm("삭제하시겠습니까?")) return;
+  const remove = async (w: any) => {
+    const reason = window.prompt(`[${w.name}] 비활성 처리 사유를 입력하세요.\n(나중에 재활성 가능합니다)`, "");
+    if (reason === null) return;
+    if (!reason.trim()) { toast.error("사유는 필수입니다"); return; }
     const { error } = await supabase
       .from("workers")
       .update({ is_active: false })
-      .eq("id", id);
+      .eq("id", w.id);
     if (error) { toast.error(error.message); return; }
-    setWorkers(prev => prev.filter(w => w.id !== id));
-    toast.success("삭제 완료");
+    await log("soft_delete", "workers", w.id, projectId, { reason: reason.trim(), label: w.name });
+    setWorkers(prev => prev.filter(x => x.id !== w.id));
+    toast.success("비활성 처리됨");
   };
 
   const onTabChange = (v: string) => {

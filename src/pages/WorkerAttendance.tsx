@@ -45,7 +45,13 @@ export default function WorkerAttendance() {
     if (!projectId) return;
     localStorage.setItem("currentProjectId", projectId);
     load();
+    const ch = supabase
+      .channel(`worker_entry_logs:${projectId}:${date}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_entry_logs", filter: `project_id=eq.${projectId}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
   }, [projectId, date]);
+
 
   const load = async () => {
     setLoading(true);

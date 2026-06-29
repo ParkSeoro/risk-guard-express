@@ -126,14 +126,9 @@ export default function EmergencyDrills() {
     load();
   }
 
-  async function softDelete(r: Drill) {
-    if (!confirm(`"${r.title}" 훈련을 삭제하시겠습니까?`)) return;
-    const { error } = await supabase.from("emergency_drills")
-      .update({ is_deleted: true, deleted_at: new Date().toISOString() })
-      .eq("id", r.id);
-    if (error) { toast.error(error.message); return; }
-    toast.success("삭제됨");
-    load();
+  async function handleDelete(r: Drill) {
+    const res = await softDelete("emergency_drills", r.id, { projectId, label: r.title });
+    if (res.ok) load();
   }
 
   return (

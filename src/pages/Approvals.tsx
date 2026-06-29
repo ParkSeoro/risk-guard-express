@@ -46,26 +46,31 @@ const Approvals = () => {
   };
 
   const fetchData = async () => {
-    if (!selectedProject) return;
-    const [a, r] = await Promise.all([
-      supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false }),
-      supabase.from('assessment_runs').select('*').eq('project_id', selectedProject),
-    ]);
-    let approvalsData = a.data || [];
-    let runsData = r.data || [];
-    
-    // 업체 기반 필터링: 발주사/관리자가 아닌 경우 본인 회사 관련 결재만 표시
-    if (!isMaster && !isProjectAdmin && userCompanyId) {
-      approvalsData = approvalsData.filter((ap: any) => 
-        ap.approver_id === user?.id || ap.company_id === userCompanyId
-      );
-      runsData = runsData.filter((r: any) => 
-        !r.target_company_ids || r.target_company_ids.length === 0 || r.target_company_ids.includes(userCompanyId)
-      );
+    if (!selectedProject) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const [a, r] = await Promise.all([
+        supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false }),
+        supabase.from('assessment_runs').select('*').eq('project_id', selectedProject),
+      ]);
+      let approvalsData = a.data || [];
+      let runsData = r.data || [];
+
+      // 업체 기반 필터링: 발주사/관리자가 아닌 경우 본인 회사 관련 결재만 표시
+      if (!isMaster && !isProjectAdmin && userCompanyId) {
+        approvalsData = approvalsData.filter((ap: any) =>
+          ap.approver_id === user?.id || ap.company_id === userCompanyId
+        );
+        runsData = runsData.filter((r: any) =>
+          !r.target_company_ids || r.target_company_ids.length === 0 || r.target_company_ids.includes(userCompanyId)
+        );
+      }
+
+      setApprovals(approvalsData);
+      setRuns(runsData);
+    } finally {
+      setLoading(false);
     }
-    
-    setApprovals(approvalsData);
-    setRuns(runsData);
   };
 
   useEffect(() => { fetchData(); fetchEntityPending(); }, [selectedProject, userCompanyId]);

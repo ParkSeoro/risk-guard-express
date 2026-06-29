@@ -122,7 +122,7 @@ const Dashboard = () => {
     }
 
     // Work Plans - with company filter
-    let wpQuery = supabase.from("work_plans").select("id, status, end_date").eq("project_id", selectedProject);
+    let wpQuery = supabase.from("work_plans").select("id, status, end_date").eq("project_id", selectedProject).eq("is_deleted", false);
     wpQuery = applyCompanyFilter(wpQuery);
     const { data: wpData } = await wpQuery;
     const workPlans = wpData || [];

@@ -55,8 +55,9 @@ Deno.serve(async (req) => {
     }
 
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY가 설정되지 않았습니다. 마스터가 설정 > 시크릿에 등록해야 합니다.");
+
 
     const sb = createClient(
       Deno.env.get("SUPABASE_URL")!,

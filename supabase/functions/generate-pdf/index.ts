@@ -117,21 +117,28 @@ Deno.serve(async (req) => {
     // Derive client/contractor from companies table (SSOT) — no fallback to legacy text fields
     const clientCompanyName = projectCompanies.find((c: any) => c.type === 'client')?.name || '';
 
-    // Scope GC display to the assessment's assigned target companies; fallback to creator's company
-    let assignedCompanyIds: string[] = Array.isArray((run as any).target_company_ids) ? (run as any).target_company_ids : [];
-    if (assignedCompanyIds.length === 0 && run.created_by) {
+    // Scope GC display: 1) target_company_ids 2) target_contractors 명단 3) 작성자 소속 회사 4) (미지정)
+    let gcCompanyNames = '';
+    const targetIds: string[] = Array.isArray((run as any).target_company_ids) ? (run as any).target_company_ids : [];
+    const gcLike = projectCompanies.filter((c: any) => c.type === 'gc' || c.type === 'contractor');
+    if (targetIds.length > 0) {
+      gcCompanyNames = gcLike.filter((c: any) => targetIds.includes(c.id)).map((c: any) => c.name).join(', ');
+    }
+    if (!gcCompanyNames) {
+      const targetNames: string[] = Array.isArray((run as any).target_contractors) ? (run as any).target_contractors : [];
+      if (targetNames.length > 0) gcCompanyNames = targetNames.join(', ');
+    }
+    if (!gcCompanyNames && run.created_by) {
       const { data: pm } = await supabase
         .from('project_members')
-        .select('company_id')
+        .select('company_id, company, companies(name)')
         .eq('user_id', run.created_by)
         .eq('project_id', run.project_id)
         .maybeSingle();
-      if (pm?.company_id) assignedCompanyIds = [pm.company_id];
+      gcCompanyNames = (pm as any)?.companies?.name || (pm as any)?.company || '';
     }
-    const scopedCompanies = assignedCompanyIds.length > 0
-      ? projectCompanies.filter((c: any) => assignedCompanyIds.includes(c.id))
-      : projectCompanies.filter((c: any) => c.type === 'gc');
-    const gcCompanyNames = scopedCompanies.map((c: any) => c.name).join(', ') || '';
+    if (!gcCompanyNames) gcCompanyNames = '(미지정)';
+
 
 
     // ===== SIGNATURE: Build from Approvals (SSOT) =====

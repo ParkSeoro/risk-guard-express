@@ -133,6 +133,7 @@ export const SOFT_DELETE_TABLES = [
   'work_env_measurements',
   'work_env_factors',
   'hazard_surveys',
+  'worker_education_records',
 ] as const;
 
 export type SoftDeleteTable = (typeof SOFT_DELETE_TABLES)[number];
@@ -167,4 +168,5 @@ export const TABLE_LABELS: Record<SoftDeleteTable, string> = {
   work_env_measurements: '작업환경측정',
   work_env_factors: '환경 유해요인',
   hazard_surveys: '유해요인 조사',
+  worker_education_records: '근로자 안전보건교육',
 };

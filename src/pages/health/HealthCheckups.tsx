@@ -54,6 +54,17 @@ export default function HealthCheckups() {
   };
   useEffect(() => { load(); }, [projectId, userCompanyId]);
 
+  useEffect(() => {
+    if (!projectId) return;
+    const ch = supabase
+      .channel(`health_checkups:${projectId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'health_checkups', filter: `project_id=eq.${projectId}` }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+    // eslint-disable-next-line
+  }, [projectId]);
+
+
   const counts = useMemo(() => {
     const findings = list.filter(r => (r.result || "").startsWith("유소견")).length;
     const untested = list.filter(r => r.result === "미수검").length;

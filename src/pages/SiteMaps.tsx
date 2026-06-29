@@ -241,11 +241,12 @@ export default function SiteMaps() {
   };
 
   const deleteZone = async (z: Zone) => {
-    if (!confirm(`'${z.name}' 구역을 삭제할까요?`)) return;
-    await supabase.from("site_zones").update({ is_deleted: true }).eq("id", z.id);
+    const ok = await softDelete("site_zones", z.id, { projectId: activeMap?.project_id, label: `구역 "${z.name}"` });
+    if (!ok) return;
     if (selectedZone?.id === z.id) setSelectedZone(null);
     loadZones();
   };
+
 
   const addQr = async (zone: Zone, direction: "entry" | "exit") => {
     const code = `z_${zone.id.slice(0, 8)}_${direction}_${Date.now().toString(36)}`;

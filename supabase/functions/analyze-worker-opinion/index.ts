@@ -2,13 +2,14 @@
 // 또한 공종 기반 보건/사고 자동 생성 모드도 지원
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { callGeminiChat } from '../_shared/gemini.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
 
 async function requireUser(req: Request): Promise<{ userId: string } | Response> {
   const authHeader = req.headers.get('Authorization');

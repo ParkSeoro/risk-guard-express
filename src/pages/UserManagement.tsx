@@ -358,21 +358,51 @@ const UserManagement = () => {
         </div>
       </div>
 
+      {/* KPI summary */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: '전체 사용자', value: kpis.total, icon: Users, color: 'text-foreground' },
+          { label: '승인대기', value: kpis.pending, icon: Shield, color: 'text-warning' },
+          { label: '활성', value: kpis.active, icon: UserCheck, color: 'text-success' },
+          { label: '마스터', value: kpis.master, icon: Crown, color: 'text-primary' },
+        ].map(k => (
+          <Card key={k.label}>
+            <CardContent className="py-3 flex items-center justify-between">
+              <div>
+                <div className="text-[11px] text-muted-foreground">{k.label}</div>
+                <div className={`text-2xl font-bold ${k.color}`}>{k.value}</div>
+              </div>
+              <k.icon className={`h-6 w-6 ${k.color} opacity-60`} />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Status tabs */}
+      <Tabs value={filterStatus} onValueChange={setFilterStatus}>
+        <TabsList>
+          <TabsTrigger value="all" className="text-xs">전체 ({kpis.total})</TabsTrigger>
+          <TabsTrigger value="pending" className="text-xs">승인대기 ({kpis.pending})</TabsTrigger>
+          <TabsTrigger value="active" className="text-xs">활성 ({kpis.active})</TabsTrigger>
+          <TabsTrigger value="inactive" className="text-xs">비활성 ({users.filter(u => u.account_status === 'inactive').length})</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       <Card>
         <CardContent className="py-3">
-          <div className="flex items-center gap-3">
-            <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+          <div className="flex items-center gap-3 flex-wrap">
+            <Select value={filterProject} onValueChange={setFilterProject}>
+              <SelectTrigger className="h-8 w-48 text-xs"><SelectValue placeholder="프로젝트" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">전체</SelectItem>
-                <SelectItem value="pending">승인대기</SelectItem>
-                <SelectItem value="active">활성</SelectItem>
-                <SelectItem value="inactive">비활성</SelectItem>
+                <SelectItem value="all">전체 프로젝트</SelectItem>
+                {projects.map(p => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
-            <div className="flex-1 relative">
+            <div className="flex-1 relative min-w-[200px]">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input placeholder="이름, 회사 검색..." className="h-8 pl-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="이름, 회사, 연락처 검색..." className="h-8 pl-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <span className="text-xs text-muted-foreground">{filtered.length}명</span>
           </div>
@@ -396,9 +426,17 @@ const UserManagement = () => {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">로딩 중...</td></tr>
+                Array.from({ length: 5 }).map((_, i) => (
+                  <tr key={i}>
+                    {Array.from({ length: 8 }).map((__, j) => (
+                      <td key={j} className="py-2"><Skeleton className="h-4 w-full" /></td>
+                    ))}
+                  </tr>
+                ))
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">사용자가 없습니다.</td></tr>
+                <tr><td colSpan={8} className="text-center py-12 text-muted-foreground">
+                  {users.length === 0 ? '등록된 사용자가 없습니다.' : '검색/필터 조건에 맞는 사용자가 없습니다.'}
+                </td></tr>
               ) : filtered.map(u => {
                 const memberships = userMemberships[u.user_id] || [];
                 return (

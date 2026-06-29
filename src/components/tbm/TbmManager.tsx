@@ -76,13 +76,36 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const [copyCandidates, setCopyCandidates] = useState<TbmSession[]>([]);
 
   const load = async () => {
-    let q = supabase.from('tbm_sessions' as any).select('*').eq('project_id', projectId).order('created_at', { ascending: false });
+    setLoading(true);
+    let q = supabase.from('tbm_sessions' as any)
+      .select('*')
+      .eq('project_id', projectId)
+      .or('is_deleted.is.null,is_deleted.eq.false')
+      .order('created_at', { ascending: false });
     if (runId) q = q.eq('run_id', runId);
     const { data } = await q;
-    setSessions((data as any) || []);
+    const list = ((data as any) || []) as TbmSession[];
+    setSessions(list);
+    // fetch participant counts in one shot
+    if (list.length > 0) {
+      const ids = list.map((s) => s.id);
+      const { data: parts } = await supabase
+        .from('tbm_participations' as any)
+        .select('tbm_session_id')
+        .in('tbm_session_id', ids);
+      const counts: Record<string, number> = {};
+      ((parts as any[]) || []).forEach((p) => {
+        counts[p.tbm_session_id] = (counts[p.tbm_session_id] || 0) + 1;
+      });
+      setParticipantCounts(counts);
+    } else {
+      setParticipantCounts({});
+    }
     const { data: cs } = await supabase.from('companies').select('id, name, type').eq('project_id', projectId).order('name');
     setCompanies(cs || []);
+    setLoading(false);
   };
+
 
   useEffect(() => { load(); }, [projectId, runId]);
 

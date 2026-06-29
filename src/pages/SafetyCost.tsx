@@ -135,18 +135,23 @@ const SafetyCost = () => {
 
   async function fetchAll() {
     if (!access.selectedProject) return;
-    const [companyRes, constructionRes, reportRes, itemRes, evidenceRes] = await Promise.all([
-      supabase.from('companies').select('*').eq('project_id', access.selectedProject).order('name'),
-      supabase.from('safety_cost_constructions' as any).select('*').eq('project_id', access.selectedProject).order('created_at', { ascending: false }),
-      supabase.from('safety_cost_monthly_reports' as any).select('*').eq('project_id', access.selectedProject).order('report_month', { ascending: false }),
-      supabase.from('safety_cost_items' as any).select('*').eq('project_id', access.selectedProject).eq('is_deleted', false).order('sort_order'),
-      supabase.from('safety_cost_evidence_files' as any).select('*').eq('project_id', access.selectedProject).order('created_at', { ascending: false }),
-    ]);
-    setCompanies(companyRes.data || []);
-    setConstructions((constructionRes.data || []) as any[]);
-    setReports((reportRes.data || []) as any[]);
-    setItems((itemRes.data || []) as any[]);
-    setEvidence((evidenceRes.data || []) as any[]);
+    setLoading(true);
+    try {
+      const [companyRes, constructionRes, reportRes, itemRes, evidenceRes] = await Promise.all([
+        supabase.from('companies').select('*').eq('project_id', access.selectedProject).order('name'),
+        supabase.from('safety_cost_constructions' as any).select('*').eq('project_id', access.selectedProject).order('created_at', { ascending: false }),
+        supabase.from('safety_cost_monthly_reports' as any).select('*').eq('project_id', access.selectedProject).order('report_month', { ascending: false }),
+        supabase.from('safety_cost_items' as any).select('*').eq('project_id', access.selectedProject).eq('is_deleted', false).order('sort_order'),
+        supabase.from('safety_cost_evidence_files' as any).select('*').eq('project_id', access.selectedProject).order('created_at', { ascending: false }),
+      ]);
+      setCompanies(companyRes.data || []);
+      setConstructions((constructionRes.data || []) as any[]);
+      setReports((reportRes.data || []) as any[]);
+      setItems((itemRes.data || []) as any[]);
+      setEvidence((evidenceRes.data || []) as any[]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function createConstruction() {

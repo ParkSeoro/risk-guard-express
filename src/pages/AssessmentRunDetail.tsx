@@ -1800,7 +1800,7 @@ const AssessmentRunDetail = () => {
                       {canEdit && (
                         <div className="flex gap-2 mt-1">
                           <Button size="sm" variant="outline" onClick={() => setShowAutoGen(true)}>AI 자동생성</Button>
-                          <Button size="sm" variant="outline" onClick={() => setShowAddItem(true)}>수동으로 추가</Button>
+                          <Button size="sm" variant="outline" onClick={handleAddNew}>수동으로 추가</Button>
                         </div>
                       )}
                     </div>

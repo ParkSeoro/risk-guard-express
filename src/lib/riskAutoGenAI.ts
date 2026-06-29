@@ -171,8 +171,11 @@ export async function generateRiskItemsHybrid(
     console.error('[AI Engine] AI 호출 실패:', rawMsg);
 
     // Surface credit/rate errors immediately — do not silently fall back
-    if (/크레딧|CREDITS_EXHAUSTED|credit_limit|402/i.test(rawMsg)) {
-      throw new Error('AI 크레딧이 부족합니다. 워크스페이스 크레딧을 충전한 뒤 다시 시도해주세요.');
+    if (/크레딧|CREDITS_EXHAUSTED|credit_limit|402|QUOTA_EXHAUSTED|할당량/i.test(rawMsg)) {
+      throw new Error('Gemini API 무료 할당량이 소진되었습니다. Google AI Studio에서 사용량을 확인하거나 결제를 활성화한 뒤 다시 시도해주세요.');
+    }
+    if (/INVALID_KEY|api[_ ]?key|GEMINI_API_KEY/i.test(rawMsg)) {
+      throw new Error('Gemini API 키가 설정되지 않았거나 유효하지 않습니다. 마스터가 설정 > 시크릿에서 GEMINI_API_KEY를 확인해야 합니다.');
     }
     if (/RATE_LIMIT|429|too many/i.test(rawMsg)) {
       throw new Error('요청이 너무 많습니다. 잠시 후 다시 시도해주세요.');

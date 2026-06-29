@@ -1,11 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callGeminiChat, GeminiError } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
-
-const AI_GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
 
 const CATEGORY_GUIDE = `
 대한민국 고용노동부 고시 「건설업 산업안전보건관리비 계상 및 사용기준」 기준으로 분류한다.
@@ -57,7 +56,7 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+    const geminiKey = Deno.env.get("GEMINI_API_KEY");
 
     const userClient = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: authHeader } } });
     const { data: { user }, error: authError } = await userClient.auth.getUser();
@@ -70,8 +69,8 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "분석할 텍스트 또는 PDF/이미지 파일이 없거나 너무 큽니다." }, 400);
     }
 
-    if (!lovableKey) {
-      return jsonResponse({ items: fallbackParse(text), warning: "AI 키가 없어 예비 추출만 수행했습니다." });
+    if (!geminiKey) {
+      return jsonResponse({ items: fallbackParse(text), warning: "GEMINI_API_KEY가 없어 예비 추출만 수행했습니다." });
     }
 
     const prompt = `거래명세서/세금계산서/영수증/엑셀/PDF/이미지에서 한글·영문 OCR을 수행하고 산업안전보건관리비 사용내역 항목을 JSON으로만 반환하세요. 표의 각 행을 품목별로 분리하세요.
@@ -92,23 +91,24 @@ ${String(text).slice(0, 50000)}
         ]
       : prompt;
 
-    const aiRes = await fetch(AI_GATEWAY_URL, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+    let aiJson;
+    try {
+      aiJson = await callGeminiChat({
+        model: "gemini-2.5-flash",
         messages: [
           { role: "system", content: "당신은 대한민국 산업안전보건법과 건설업 산업안전보건관리비 계상 및 사용기준 전문가입니다. 문서 OCR과 표 구조 인식에 능숙하며 공식 기준에 근거해 보수적으로 분류하고 JSON만 반환합니다." },
-          { role: "user", content: userContent },
+          { role: "user", content: userContent as any },
         ],
         response_format: { type: "json_object" },
-      }),
-    });
-
-    if (aiRes.status === 429) return jsonResponse({ error: "AI 사용량이 많아 잠시 후 다시 시도하세요." }, 429);
-    if (aiRes.status === 402) return jsonResponse({ error: "AI 크레딧이 부족합니다. Workspace Usage에서 충전 후 다시 시도하세요." }, 402);
-    if (!aiRes.ok) return jsonResponse({ items: fallbackParse(text), warning: "AI 분석 실패로 예비 추출을 수행했습니다." });
-    const aiJson = await aiRes.json();
+        temperature: 0.2,
+      });
+    } catch (e) {
+      if (e instanceof GeminiError) {
+        if (e.code === "RATE_LIMIT") return jsonResponse({ error: e.message }, 429);
+        if (e.code === "QUOTA_EXHAUSTED") return jsonResponse({ error: e.message }, 402);
+      }
+      return jsonResponse({ items: fallbackParse(text), warning: "AI 분석 실패로 예비 추출을 수행했습니다." });
+    }
     const content = aiJson.choices?.[0]?.message?.content || "{}";
     const parsed = safeJsonParse(content);
     return jsonResponse({ items: Array.isArray(parsed.items) ? parsed.items : [], summary: parsed.summary || null });

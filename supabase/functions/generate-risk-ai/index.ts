@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { geminiChatFetch } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -175,21 +176,30 @@ ${ragContext}
   }
 ]`;
 
-  const response = await fetch(apiUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.4 + batchIndex * 0.05, // slightly vary for diversity
-    }),
-  });
+  const response = useOpenAI
+    ? await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          temperature: 0.4 + batchIndex * 0.05,
+        }),
+      })
+    : await geminiChatFetch({
+        model: "gemini-2.5-flash",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.4 + batchIndex * 0.05,
+      });
 
   if (!response.ok) {
     const status = response.status;
@@ -246,7 +256,7 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    // GEMINI_API_KEY is read inside callGeminiChat helper; no local cache needed.
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -321,13 +331,19 @@ serve(async (req) => {
 
     const apiUrl = useOpenAI
       ? "https://api.openai.com/v1/chat/completions"
-      : "https://ai.gateway.lovable.dev/v1/chat/completions";
-    const apiKey = useOpenAI ? openaiKey : LOVABLE_API_KEY;
+      : ""; // Gemini path uses geminiChatFetch helper directly
+    const apiKey = useOpenAI ? openaiKey : (Deno.env.get("GEMINI_API_KEY") || "");
 
-    if (!apiKey) {
+    if (useOpenAI && !apiKey) {
+      return new Response(
+        JSON.stringify({ error: "OpenAI API Key가 설정되지 않았습니다." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    if (!useOpenAI && !apiKey) {
       return new Response(
         JSON.stringify({
-          error: "AI 설정이 필요합니다. 설정 > AI 설정에서 API Key를 입력하거나 시스템 관리자에게 문의하세요.",
+          error: "Gemini API 키가 설정되지 않았습니다. 마스터가 설정 > 시크릿에서 GEMINI_API_KEY를 등록해야 합니다.",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -359,18 +375,27 @@ serve(async (req) => {
 
       const sysPrompt = `너는 대한민국 건설현장 20년 경력의 안전관리 전문가다.\n산업안전보건법, KOSHA GUIDE 기준으로 실제 현장에서 사용 가능한 수준의 작업계획서를 작성한다.\n반드시 요청된 JSON 형식으로만 출력하라.`;
 
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: useOpenAI ? openaiModel : "google/gemini-3-flash-preview",
-          messages: [
-            { role: "system", content: sysPrompt },
-            { role: "user", content: prompt },
-          ],
-          temperature: 0.3,
-        }),
-      });
+      const response = useOpenAI
+        ? await fetch(apiUrl, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: openaiModel,
+              messages: [
+                { role: "system", content: sysPrompt },
+                { role: "user", content: prompt },
+              ],
+              temperature: 0.3,
+            }),
+          })
+        : await geminiChatFetch({
+            model: "gemini-2.5-flash",
+            messages: [
+              { role: "system", content: sysPrompt },
+              { role: "user", content: prompt },
+            ],
+            temperature: 0.3,
+          });
 
       if (!response.ok) {
         const status = response.status;

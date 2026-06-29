@@ -1,5 +1,6 @@
-// Generate safety education material from a risk assessment run via Lovable AI Gateway.
+// Generate safety education material from a risk assessment run via Google Gemini.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { callGeminiChat, GeminiError } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -54,8 +55,9 @@ Deno.serve(async (req) => {
     }
 
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_KEY) throw new Error("GEMINI_API_KEY가 설정되지 않았습니다. 마스터가 설정 > 시크릿에 등록해야 합니다.");
+
 
     const sb = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -149,43 +151,40 @@ Deno.serve(async (req) => {
       },
     }];
 
-    const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+    const schemaHint = JSON.stringify(tools[0].function.parameters);
+    const systemPrompt = "당신은 대한민국 산업안전보건법 기준의 건설현장 안전교육 전문가입니다. 제공된 위험성평가/작업계획서/사고사례를 분석하여 현장 근로자 교육자료를 작성하세요. 모든 답변은 한국어, 실무적이며 구체적이어야 합니다. 반드시 다음 JSON 스키마에 맞춰 JSON 객체만 출력하세요 (마크다운/설명 금지):\n" + schemaHint;
+
+    let result: any;
+    try {
+      const aiJson = await callGeminiChat({
+        model: "gemini-2.5-flash",
         messages: [
-          { role: "system", content: "당신은 대한민국 산업안전보건법 기준의 건설현장 안전교육 전문가입니다. 제공된 위험성평가/작업계획서/사고사례를 분석하여 현장 근로자 교육자료를 작성하세요. 모든 답변은 한국어, 실무적이며 구체적이어야 합니다." },
+          { role: "system", content: systemPrompt },
           { role: "user", content: `다음 정보를 기반으로 교육자료를 생성하세요:\n\n${ctxText}` },
         ],
-        tools,
-        tool_choice: { type: "function", function: { name: "build_education_material" } },
-      }),
-    });
-
-    if (!aiResp.ok) {
-      const t = await aiResp.text();
-      console.error("AI gateway error", aiResp.status, t);
-      if (aiResp.status === 429) {
-        return new Response(JSON.stringify({ error: "요청이 많습니다. 잠시 후 다시 시도해주세요." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        temperature: 0.3,
+        response_format: { type: "json_object" },
+      });
+      const content = aiJson.choices?.[0]?.message?.content || "";
+      const m = content.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error("AI 응답 형식 오류");
+      result = JSON.parse(m[0]);
+    } catch (e) {
+      if (e instanceof GeminiError) {
+        if (e.code === "RATE_LIMIT") {
+          return new Response(JSON.stringify({ error: e.message }), {
+            status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        if (e.code === "QUOTA_EXHAUSTED") {
+          return new Response(JSON.stringify({ error: e.message }), {
+            status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
-      if (aiResp.status === 402) {
-        return new Response(JSON.stringify({ error: "AI 크레딧이 소진되었습니다." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      throw new Error("AI 호출 실패");
+      throw e;
     }
 
-    const aiJson = await aiResp.json();
-    const toolCall = aiJson.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall) throw new Error("AI 응답 형식 오류");
-    const result = JSON.parse(toolCall.function.arguments);
 
     return new Response(JSON.stringify({ success: true, material: result }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -511,7 +511,8 @@ ${attachmentsHtml}
 </body>
 </html>`;
 
-    return new Response(JSON.stringify({ html, title: plan.title }), {
+    const fileName = `${docTitle}_${formatKST(new Date().toISOString()).slice(0,10)}.pdf`;
+    return new Response(JSON.stringify({ html, title: docTitle, fileName }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

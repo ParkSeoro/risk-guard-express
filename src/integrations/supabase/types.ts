@@ -496,6 +496,7 @@ export type Database = {
           is_default: boolean
           is_deleted: boolean
           name: string
+          owner_user_id: string | null
           project_id: string
           steps: Json
           updated_at: string
@@ -513,6 +514,7 @@ export type Database = {
           is_default?: boolean
           is_deleted?: boolean
           name?: string
+          owner_user_id?: string | null
           project_id: string
           steps?: Json
           updated_at?: string
@@ -530,6 +532,7 @@ export type Database = {
           is_default?: boolean
           is_deleted?: boolean
           name?: string
+          owner_user_id?: string | null
           project_id?: string
           steps?: Json
           updated_at?: string

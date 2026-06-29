@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature, Pencil, Trash2, Users } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialog';
+import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 
 const STATUS_COLOR: Record<string, string> = {
   '작성중': 'bg-muted text-muted-foreground',

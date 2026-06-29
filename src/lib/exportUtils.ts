@@ -67,73 +67,89 @@ function buildSignatureRows(participants: Participant[]): string[][] {
 }
 
 // ========== Server-based PDF: mode = 'print' | 'download' ==========
-export async function exportToPDFServer(runId: string, type: 'assessment' | 'validation' = 'assessment', mode: 'print' | 'download' = 'print') {
-  const { data, error } = await supabase.functions.invoke('generate-pdf', {
-    body: { runId, type },
-  });
+// IMPORTANT: For mode='print', the caller SHOULD pass `preOpenedWindow` opened
+// synchronously inside the click handler (window.open()) to avoid popup blockers.
+// If omitted we still try to open here as a best-effort fallback.
+export async function exportToPDFServer(
+  runId: string,
+  type: 'assessment' | 'validation' = 'assessment',
+  mode: 'print' | 'download' = 'print',
+  preOpenedWindow?: Window | null,
+) {
+  const loadingHtml = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>인쇄 준비 중…</title>
+    <style>body{font-family:system-ui,-apple-system,'Malgun Gothic',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;color:#334155;background:#f8fafc}
+    .box{text-align:center}.spinner{width:36px;height:36px;border:4px solid #e2e8f0;border-top-color:#0f172a;border-radius:50%;animation:s 1s linear infinite;margin:0 auto 12px}
+    @keyframes s{to{transform:rotate(360deg)}}</style></head>
+    <body><div class="box"><div class="spinner"></div><div>인쇄용 문서를 생성하고 있습니다…</div></div></body></html>`;
+  if (preOpenedWindow) {
+    try { preOpenedWindow.document.open(); preOpenedWindow.document.write(loadingHtml); preOpenedWindow.document.close(); } catch {}
+  }
 
-  if (error) {
-    const errMsg = typeof error === 'object' && error.message ? error.message : String(error);
-    throw new Error(`PDF 생성 서버 오류: ${errMsg}`);
+  const downloadHtmlFallback = (html: string, fileName?: string) => {
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName || `위험성평가_인쇄용_${new Date().toISOString().slice(0, 10)}.html`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+  };
+
+  let data: any;
+  try {
+    const resp = await supabase.functions.invoke('generate-pdf', { body: { runId, type } });
+    if (resp.error) {
+      const errMsg = typeof resp.error === 'object' && resp.error.message ? resp.error.message : String(resp.error);
+      throw new Error(`PDF 생성 서버 오류: ${errMsg}`);
+    }
+    data = resp.data;
+  } catch (e) {
+    if (preOpenedWindow) { try { preOpenedWindow.close(); } catch {} }
+    throw e;
   }
   if (!data?.html || data.html.length < 100) {
+    if (preOpenedWindow) { try { preOpenedWindow.close(); } catch {} }
     throw new Error('PDF 생성 실패: 유효한 HTML이 반환되지 않았습니다.');
   }
 
+  const fileName = (data.fileName as string | undefined) || `위험성평가_인쇄용_${new Date().toISOString().slice(0, 10)}.html`;
+
   if (mode === 'download') {
-    // Download as HTML file (user can open in browser and print to PDF)
-    const blob = new Blob([data.html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = data.fileName || `위험성평가_${new Date().toISOString().slice(0, 10)}.html`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+    if (preOpenedWindow) { try { preOpenedWindow.close(); } catch {} }
+    downloadHtmlFallback(data.html, fileName);
     return;
   }
 
-  // mode === 'print': open print window
-  const printWindow = window.open('', '_blank', 'width=1100,height=800');
+  // mode === 'print'
+  const printWindow = preOpenedWindow ?? window.open('', '_blank', 'width=1100,height=800');
   if (!printWindow) {
-    // Fallback: download as HTML file
-    const blob = new Blob([data.html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = data.fileName || `위험성평가_${new Date().toISOString().slice(0, 10)}.html`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
-    return;
+    downloadHtmlFallback(data.html, fileName);
+    throw new Error('팝업이 차단되어 HTML 파일을 다운로드했습니다. 다운로드한 파일을 열어 인쇄해 주세요.');
   }
 
+  printWindow.document.open();
   printWindow.document.write(data.html);
   printWindow.document.close();
 
-  // Use a flag to prevent double print
   let printed = false;
   const doPrint = () => {
     if (printed) return;
     printed = true;
-    printWindow.print();
+    try { printWindow.focus(); printWindow.print(); } catch {}
   };
 
-  // Wait for fonts & images to load then trigger print
   printWindow.onload = () => {
     const images = printWindow.document.querySelectorAll('img');
     const imagePromises = Array.from(images).map(img => {
-      if (img.complete) return Promise.resolve();
+      if ((img as HTMLImageElement).complete) return Promise.resolve();
       return new Promise<void>((resolve) => {
-        img.onload = () => resolve();
-        img.onerror = () => resolve();
+        img.addEventListener('load', () => resolve());
+        img.addEventListener('error', () => resolve());
       });
     });
-    Promise.all(imagePromises).then(() => {
-      setTimeout(doPrint, 300);
-    });
+    Promise.all(imagePromises).then(() => setTimeout(doPrint, 300));
   };
-  // Fallback timeout (only fires if onload didn't)
   setTimeout(doPrint, 4000);
 }
 

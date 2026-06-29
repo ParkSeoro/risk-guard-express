@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+    const geminiKey = Deno.env.get("GEMINI_API_KEY");
 
     const userClient = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: authHeader } } });
     const { data: { user }, error: authError } = await userClient.auth.getUser();
@@ -69,8 +69,8 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "분석할 텍스트 또는 PDF/이미지 파일이 없거나 너무 큽니다." }, 400);
     }
 
-    if (!lovableKey) {
-      return jsonResponse({ items: fallbackParse(text), warning: "AI 키가 없어 예비 추출만 수행했습니다." });
+    if (!geminiKey) {
+      return jsonResponse({ items: fallbackParse(text), warning: "GEMINI_API_KEY가 없어 예비 추출만 수행했습니다." });
     }
 
     const prompt = `거래명세서/세금계산서/영수증/엑셀/PDF/이미지에서 한글·영문 OCR을 수행하고 산업안전보건관리비 사용내역 항목을 JSON으로만 반환하세요. 표의 각 행을 품목별로 분리하세요.

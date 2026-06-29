@@ -372,10 +372,12 @@ Deno.serve(async (req) => {
 
     const workTypeName = WORK_TYPE_NAMES[plan.work_type] || plan.work_type;
 
+    const docTitle = `${plan.title || "작업계획서"}`;
     const html = `<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<title>${escapeHtml(docTitle)}</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
 * { margin:0; padding:0; box-sizing:border-box; }

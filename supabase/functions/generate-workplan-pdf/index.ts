@@ -291,26 +291,47 @@ Deno.serve(async (req) => {
 
     let attachmentsHtml = "";
     const uploadedAttachments = attachments.filter((a: any) => a.uploaded && a.fileUrl);
+    if (uploadedAttachments.length > 0) {
+      attachmentsHtml += `<div class="page-break"></div>
+        <div class="section-header">첨부서류 일람 (총 ${uploadedAttachments.length}건)</div>
+        <table><thead><tr><th style="width:30pt">No</th><th>구분</th><th>파일명</th><th>비고</th></tr></thead><tbody>
+        ${uploadedAttachments.map((a: any, i: number) => `
+          <tr>
+            <td class="center">${i + 1}</td>
+            <td>${escapeHtml(a.key || "")}</td>
+            <td>${escapeHtml(a.name || a.fileUrl?.split("/").pop() || "")}</td>
+            <td style="font-size:7pt;color:#64748b;">${escapeHtml(a.description || "")}</td>
+          </tr>`).join("")}
+        </tbody></table>`;
+    }
     for (const att of uploadedAttachments) {
-      const isImage = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(att.fileUrl || "");
+      const url: string = att.fileUrl || "";
+      const mime: string = (att.mime || "").toLowerCase();
+      const isImage = mime.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(url);
+      const isPdf = mime === "application/pdf" || /\.pdf$/i.test(url);
+      const titleHtml = `<div class="section-header">${escapeHtml(att.name || att.key || "첨부파일")}</div>`;
       if (isImage) {
-        const b64 = await imageUrlToBase64(att.fileUrl);
+        const b64 = await imageUrlToBase64(url);
         if (b64) {
-          attachmentsHtml += `<div class="page-break"></div>
-            <div class="section-header">${escapeHtml(att.name || att.key || "첨부파일")}</div>
+          attachmentsHtml += `<div class="page-break"></div>${titleHtml}
             <div style="text-align:center;padding:10pt;">
-              <img src="${b64}" style="max-width:90%;max-height:700pt;object-fit:contain;" />
+              <img src="${b64}" style="max-width:95%;max-height:720pt;object-fit:contain;" />
             </div>`;
+        } else {
+          attachmentsHtml += `<div class="page-break"></div>${titleHtml}
+            <div style="text-align:center;padding:40pt;color:#dc2626;">이미지 불러오기 실패: ${escapeHtml(url)}</div>`;
         }
       } else {
-        attachmentsHtml += `<div class="page-break"></div>
-          <div class="section-header">${escapeHtml(att.name || att.key || "첨부파일")}</div>
-          <div style="text-align:center;padding:40pt;color:#475569;">
-            <p>파일: ${escapeHtml(att.fileUrl?.split("/").pop() || "")}</p>
-            <p style="font-size:8pt;margin-top:8pt;">이미지가 아닌 파일은 별도로 확인해주세요.</p>
+        attachmentsHtml += `<div class="page-break"></div>${titleHtml}
+          <div style="padding:20pt;color:#334155;line-height:1.7;">
+            <p><b>파일명:</b> ${escapeHtml(url.split("/").pop() || "")}</p>
+            <p style="margin-top:6pt;"><b>형식:</b> ${escapeHtml(mime || (isPdf ? "application/pdf" : "binary"))}</p>
+            <p style="margin-top:6pt;word-break:break-all;"><b>다운로드 URL:</b><br/><a href="${url}" target="_blank" style="color:#1e40af;">${escapeHtml(url)}</a></p>
+            <p style="font-size:8pt;margin-top:12pt;color:#64748b;">※ PDF·문서 파일은 인쇄본에 직접 포함되지 않습니다. 위 링크로 별도 출력해 첨부해 주세요.</p>
           </div>`;
       }
     }
+
 
     const WORK_TYPE_NAMES: Record<string, string> = {
       heavy_lifting: "중량물 취급 작업 (크레인 등)",

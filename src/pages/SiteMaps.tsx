@@ -79,6 +79,7 @@ export default function SiteMaps() {
   }, [projectId]);
 
   const loadMaps = async () => {
+    setLoading(true);
     const { data } = await supabase
       .from("site_maps")
       .select("id,name,image_url,project_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng")
@@ -87,7 +88,9 @@ export default function SiteMaps() {
       .order("created_at", { ascending: false });
     setMaps((data || []) as SiteMap[]);
     if (data && data.length && !activeMap) setActiveMap(data[0] as SiteMap);
+    setLoading(false);
   };
+
 
   useEffect(() => {
     if (!activeMap) { setZones([]); setQrCodes([]); return; }

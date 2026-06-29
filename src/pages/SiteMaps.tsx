@@ -8,8 +8,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { QRCodeSVG } from "qrcode.react";
-import { Map, Plus, Trash2, Upload, QrCode, Check, X } from "lucide-react";
+import { Map, Plus, Trash2, Upload, QrCode, Check, X, Search } from "lucide-react";
 import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSoftDelete } from "@/hooks/useSoftDelete";
+
 
 type SiteMap = {
   id: string; name: string; image_url: string | null; project_id: string;
@@ -50,6 +53,10 @@ export default function SiteMaps() {
   const [selectedZone, setSelectedZone] = useState<Zone | null>(null);
   const [qrCodes, setQrCodes] = useState<Qr[]>([]);
   const [qrDialog, setQrDialog] = useState<Qr | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [zoneSearch, setZoneSearch] = useState("");
+  const [zoneTypeFilter, setZoneTypeFilter] = useState<"all" | Zone["zone_type"]>("all");
+  const { softDelete } = useSoftDelete();
 
   // editor state
   const [drafting, setDrafting] = useState(false);
@@ -59,6 +66,7 @@ export default function SiteMaps() {
 
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [imgBox, setImgBox] = useState({ w: 0, h: 0 });
+
 
   useEffect(() => {
     supabase.from("projects").select("id,name").then(({ data }) => setProjects(data || []));
@@ -71,6 +79,7 @@ export default function SiteMaps() {
   }, [projectId]);
 
   const loadMaps = async () => {
+    setLoading(true);
     const { data } = await supabase
       .from("site_maps")
       .select("id,name,image_url,project_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng")
@@ -79,7 +88,9 @@ export default function SiteMaps() {
       .order("created_at", { ascending: false });
     setMaps((data || []) as SiteMap[]);
     if (data && data.length && !activeMap) setActiveMap(data[0] as SiteMap);
+    setLoading(false);
   };
+
 
   useEffect(() => {
     if (!activeMap) { setZones([]); setQrCodes([]); return; }
@@ -230,11 +241,12 @@ export default function SiteMaps() {
   };
 
   const deleteZone = async (z: Zone) => {
-    if (!confirm(`'${z.name}' 구역을 삭제할까요?`)) return;
-    await supabase.from("site_zones").update({ is_deleted: true }).eq("id", z.id);
+    const ok = await softDelete("site_zones", z.id, { projectId: activeMap?.project_id, label: `구역 "${z.name}"` });
+    if (!ok) return;
     if (selectedZone?.id === z.id) setSelectedZone(null);
     loadZones();
   };
+
 
   const addQr = async (zone: Zone, direction: "entry" | "exit") => {
     const code = `z_${zone.id.slice(0, 8)}_${direction}_${Date.now().toString(36)}`;
@@ -257,7 +269,21 @@ export default function SiteMaps() {
   const pointsAttr = (pts: { x: number; y: number }[]) =>
     pts.map((p) => `${(p.x * imgBox.w).toFixed(1)},${(p.y * imgBox.h).toFixed(1)}`).join(" ");
 
-  const zonesByMap = useMemo(() => zones, [zones]);
+  const zoneCounts = useMemo(() => {
+    const c: Record<string, number> = { all: zones.length, danger: 0, restricted: 0, work: 0, normal: 0 };
+    for (const z of zones) c[z.zone_type] = (c[z.zone_type] || 0) + 1;
+    return c;
+  }, [zones]);
+
+  const zonesByMap = useMemo(() => {
+    const q = zoneSearch.trim().toLowerCase();
+    return zones.filter((z) => {
+      if (zoneTypeFilter !== "all" && z.zone_type !== zoneTypeFilter) return false;
+      if (!q) return true;
+      return (z.name || "").toLowerCase().includes(q) || (z.description || "").toLowerCase().includes(q);
+    });
+  }, [zones, zoneSearch, zoneTypeFilter]);
+
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
@@ -290,11 +316,20 @@ export default function SiteMaps() {
         </div>
       )}
 
-      {!activeMap && (
+      {loading && !activeMap && (
+        <Card><CardContent className="py-6 space-y-3">
+          <Skeleton className="h-6 w-1/3" />
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-6 w-1/4" />
+        </CardContent></Card>
+      )}
+
+      {!loading && !activeMap && (
         <Card><CardContent className="py-12 text-center text-muted-foreground">
           사이트맵을 업로드해 시작하세요. (평면도 이미지 PNG/JPG)
         </CardContent></Card>
       )}
+
 
       {activeMap && (
         <div className="grid md:grid-cols-[1fr_320px] gap-4">
@@ -406,10 +441,36 @@ export default function SiteMaps() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-base">구역 ({zones.length})</CardTitle></CardHeader>
+            <CardHeader className="pb-2 space-y-2">
+              <CardTitle className="text-base">구역 ({zonesByMap.length}/{zones.length})</CardTitle>
+              <div className="relative">
+                <Search className="h-3 w-3 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="구역명·설명 검색"
+                  value={zoneSearch}
+                  onChange={(e) => setZoneSearch(e.target.value)}
+                  className="h-8 pl-7 text-xs"
+                />
+              </div>
+              <div className="flex gap-1 flex-wrap">
+                {(["all", "danger", "restricted", "work", "normal"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setZoneTypeFilter(t)}
+                    className={`px-2 py-0.5 rounded text-[11px] border ${zoneTypeFilter === t ? "bg-primary text-primary-foreground border-primary" : "bg-background"}`}
+                  >
+                    {t === "all" ? "전체" : ZONE_LABEL[t]} ({zoneCounts[t] || 0})
+                  </button>
+                ))}
+              </div>
+            </CardHeader>
             <CardContent className="space-y-2">
               {zones.length === 0 && <div className="text-sm text-muted-foreground">아직 등록된 구역이 없습니다.</div>}
-              {zones.map(z => {
+              {zones.length > 0 && zonesByMap.length === 0 && (
+                <div className="text-sm text-muted-foreground">필터에 해당하는 구역이 없습니다.</div>
+              )}
+              {zonesByMap.map(z => {
+
                 const zoneQrs = qrCodes.filter(q => q.zone_id === z.id);
                 return (
                   <div key={z.id} className={`border rounded p-2 space-y-2 ${selectedZone?.id === z.id ? "border-primary" : ""}`}>

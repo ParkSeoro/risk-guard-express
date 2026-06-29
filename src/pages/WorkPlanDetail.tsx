@@ -27,6 +27,7 @@ import {
   Sparkles, Printer, Download, SendHorizontal, Loader2, Wrench, Copy, Eye,
   CalendarDays, MapPin, User, Shield, ClipboardList
 } from 'lucide-react';
+import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import { format, parseISO } from 'date-fns';
 
 const SLING_ANGLE_FACTORS: Record<string, number> = {

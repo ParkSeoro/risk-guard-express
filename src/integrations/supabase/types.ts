@@ -4362,13 +4362,6 @@ export type Database = {
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "risk_items_responsible_department_id_fkey"
-            columns: ["responsible_department_id"]
-            isOneToOne: false
-            referencedRelation: "master_departments"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "risk_items_run_id_fkey"
             columns: ["run_id"]
             isOneToOne: false

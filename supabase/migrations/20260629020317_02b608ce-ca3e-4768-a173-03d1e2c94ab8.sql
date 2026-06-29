@@ -1,0 +1,1 @@
+ALTER TABLE public.risk_items DROP CONSTRAINT IF EXISTS risk_items_responsible_department_id_fkey;

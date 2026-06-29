@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Sparkles, RefreshCw, AlertTriangle, CheckCircle2, X, CreditCard } from "lucide-react";
 
-const RECHARGE_URL = "https://lovable.dev/settings/plans";
+const RECHARGE_URL = "https://aistudio.google.com/apikey";
 
 type CreditStatus = "ok" | "rate_limited" | "exhausted" | "error" | "loading";
 

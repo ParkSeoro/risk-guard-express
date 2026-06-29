@@ -43,6 +43,7 @@ const TYPE_LABEL: Record<string, string> = {
 
 export default function EmergencyDrills() {
   const { selectedProject: projectId } = useProjectAccess();
+  const { softDelete } = useSoftDelete();
   const [rows, setRows] = useState<Drill[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);

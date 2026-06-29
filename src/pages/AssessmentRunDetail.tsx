@@ -1794,7 +1794,17 @@ const AssessmentRunDetail = () => {
               </thead>
               <tbody>
                 {filteredItems.length === 0 ? (
-                  <tr><td colSpan={22} className="text-center py-8 text-muted-foreground">항목이 없습니다.</td></tr>
+                  <tr><td colSpan={22} className="text-center py-10 text-muted-foreground">
+                    <div className="flex flex-col items-center gap-2">
+                      <div>등록된 위험성평가 항목이 없습니다.</div>
+                      {canEdit && (
+                        <div className="flex gap-2 mt-1">
+                          <Button size="sm" variant="outline" onClick={() => setShowAutoGen(true)}>AI 자동생성</Button>
+                          <Button size="sm" variant="outline" onClick={handleAddNew}>수동으로 추가</Button>
+                        </div>
+                      )}
+                    </div>
+                  </td></tr>
                 ) : filteredItems.map((item, idx) => {
                   const itemVerdict = validationReport?.itemVerdicts?.[item.id];
                   return (

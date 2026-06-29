@@ -3,12 +3,16 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AlertTriangle, CheckCircle2, ShieldAlert, Loader2 } from "lucide-react";
+import IMESafeInput from "@/components/IMESafeInput";
+import { koreanName, phoneKROptional, zodErrorMessage } from "@/lib/commonSchemas";
+import { z } from "zod";
 
 type Zone = { id: string; name: string; zone_type: "normal" | "work" | "restricted" | "danger"; project_id: string };
 type Qr = { id: string; zone_id: string; project_id: string; direction: "entry" | "exit"; label: string | null; is_active: boolean };
+
+const checkinSchema = z.object({ name: koreanName, phone: phoneKROptional });
 
 // Public route — no auth required. Worker scans QR at site checkpoint.
 export default function ZoneCheckin() {
@@ -46,7 +50,8 @@ export default function ZoneCheckin() {
 
   const submit = async () => {
     if (!qr || !zone) return;
-    if (!name.trim()) { setError("이름을 입력하세요"); return; }
+    const parsed = checkinSchema.safeParse({ name: name.trim(), phone: phone.trim() });
+    if (!parsed.success) { setError(zodErrorMessage(parsed.error)); return; }
     setError(""); setSubmitting(true);
     const isHazard = zone.zone_type === "danger" || zone.zone_type === "restricted";
     const eventType =
@@ -56,16 +61,16 @@ export default function ZoneCheckin() {
     const { error: insErr } = await supabase.from("worker_zone_events").insert({
       project_id: zone.project_id,
       zone_id: zone.id,
-      worker_name: name.trim(),
-      worker_phone: phone.trim() || null,
+      worker_name: parsed.data.name,
+      worker_phone: parsed.data.phone || null,
       event_type: eventType,
       source: "qr",
       notes: qr.label || null,
     });
     setSubmitting(false);
     if (insErr) { setError(insErr.message); return; }
-    localStorage.setItem("zone:lastName", name.trim());
-    if (phone) localStorage.setItem("zone:lastPhone", phone.trim());
+    localStorage.setItem("zone:lastName", parsed.data.name);
+    if (parsed.data.phone) localStorage.setItem("zone:lastPhone", parsed.data.phone);
     setDone(isHazard && qr.direction === "entry" ? "warn" : "ok");
   };
 
@@ -142,11 +147,11 @@ export default function ZoneCheckin() {
             )}
             <div className="space-y-1">
               <Label>이름 *</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="홍길동" autoFocus />
+              <IMESafeInput defaultValue={name} onCommit={setName} placeholder="홍길동" autoFocus />
             </div>
             <div className="space-y-1">
               <Label>연락처 (선택)</Label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="010-0000-0000" inputMode="tel" />
+              <IMESafeInput defaultValue={phone} onCommit={setPhone} placeholder="010-0000-0000" inputMode="tel" applyTermCorrection={false} />
             </div>
             {error && <div className="text-sm text-destructive">{error}</div>}
             <Button className="w-full h-14 text-base" disabled={submitting} onClick={submit}>

@@ -40,6 +40,7 @@ const MasterData = () => {
   const [search, setSearch] = useState({ process: '', ppe: '', legal: '', rule: '' });
 
   const fetchAll = async () => {
+    setLoading(true);
     const [p, pp, lr, d, a, vr] = await Promise.all([
       supabase.from('master_processes').select('*').eq('is_deleted', false).order('name'),
       supabase.from('master_ppe').select('*').eq('is_deleted', false).order('name'),
@@ -55,13 +56,23 @@ const MasterData = () => {
     setAssignees(a.data || []);
     setValidationRules(vr.data || []);
 
-    // Load matrix config
     const config = getMatrixConfig();
     setMatrix({ ...config.matrix });
     setMatrixColors({ ...config.colors });
+    setLoading(false);
   };
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => {
+    fetchAll();
+    const ch = supabase
+      .channel('master-data-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'master_processes' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'master_ppe' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'legal_references' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'validation_rules' }, fetchAll)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
 
   const handleSave = async () => {
     if (!editDialog) return;

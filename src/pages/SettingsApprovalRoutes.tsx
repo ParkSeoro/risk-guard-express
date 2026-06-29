@@ -173,49 +173,76 @@ export default function SettingsApprovalRoutes() {
       </div>
 
       <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-base">문서 유형</CardTitle>
-            <Select value={entityType} onValueChange={(v) => setEntityType(v as ApprovalEntityType)}>
-              <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {(Object.keys(ENTITY_LABELS) as ApprovalEntityType[]).map((k) => (
-                  <SelectItem key={k} value={k}>{ENTITY_LABELS[k]}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <CardHeader className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">문서 유형</CardTitle>
+              <Select value={entityType} onValueChange={(v) => setEntityType(v as ApprovalEntityType)}>
+                <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(ENTITY_LABELS) as ApprovalEntityType[]).map((k) => (
+                    <SelectItem key={k} value={k}>{ENTITY_LABELS[k]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={startCreate}><Plus className="h-4 w-4 mr-1" /> 새 템플릿</Button>
           </div>
-          <Button onClick={startCreate}><Plus className="h-4 w-4 mr-1" /> 새 템플릿</Button>
+          <div className="flex items-center gap-1 text-xs">
+            <span className="text-muted-foreground mr-1">보기:</span>
+            {([
+              { v: 'mine', label: '내 전용' },
+              { v: 'company', label: '회사 공용' },
+              { v: 'shared', label: '프로젝트 공용' },
+              { v: 'all', label: '전체' },
+            ] as { v: ScopeFilter; label: string }[]).map((s) => (
+              <Button key={s.v} size="sm" variant={scope === s.v ? 'default' : 'outline'} className="h-7"
+                onClick={() => setScope(s.v)}>{s.label}</Button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            결재선은 <b>로그인 사용자별</b>로 다를 수 있습니다. "내 전용" 템플릿은 본인만 사용·수정할 수 있고,
+            "회사 공용"은 소속 회사 사용자가 공유합니다.
+          </p>
         </CardHeader>
         <CardContent>
           {loading && <div className="text-center py-6"><Loader2 className="h-5 w-5 animate-spin inline" /></div>}
-          {!loading && templates.length === 0 && (
+          {!loading && visibleTemplates.length === 0 && (
             <div className="text-center py-8 text-sm text-muted-foreground">등록된 템플릿이 없습니다</div>
           )}
           <div className="space-y-2">
-            {templates.map((t) => (
-              <div key={t.id} className="border rounded p-3 flex items-center justify-between">
-                <div className="space-y-1">
-                  <div className="font-medium flex items-center gap-2">
-                    {t.name}
-                    {t.is_default && <Badge variant="secondary">기본</Badge>}
-                    {t.company_id && <Badge variant="outline">{companies.find((c) => c.id === t.company_id)?.name || '회사전용'}</Badge>}
+            {visibleTemplates.map((t) => {
+              const isMine = t.owner_user_id === user?.id;
+              const canMutate = isMine || (isOwnerSide);
+              return (
+                <div key={t.id} className="border rounded p-3 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <div className="font-medium flex items-center gap-2 flex-wrap">
+                      {t.name}
+                      {t.is_default && <Badge variant="secondary">기본</Badge>}
+                      {isMine
+                        ? <Badge className="bg-primary/10 text-primary border-primary/30" variant="outline">내 전용</Badge>
+                        : t.company_id
+                          ? <Badge variant="outline">{companies.find((c) => c.id === t.company_id)?.name || '회사 공용'}</Badge>
+                          : <Badge variant="outline">프로젝트 공용</Badge>}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {(Array.isArray(t.steps) ? t.steps : []).map((s: any, i: number) => `${i + 1}. ${s.label || s.step_label} (${s.user_name || '-'})`).join(' → ')}
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {(Array.isArray(t.steps) ? t.steps : []).map((s: any, i: number) => `${i + 1}. ${s.label || s.step_label} (${s.user_name || '-'})`).join(' → ')}
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="outline" onClick={() => startEdit(t)} disabled={!canMutate}>편집</Button>
+                    <Button size="icon" variant="ghost" className="text-destructive" onClick={() => remove(t.id)} disabled={!canMutate}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
-                <div className="flex gap-1">
-                  <Button size="sm" variant="outline" onClick={() => startEdit(t)}>편집</Button>
-                  <Button size="icon" variant="ghost" className="text-destructive" onClick={() => remove(t.id)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>
+
 
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent className="max-w-2xl">

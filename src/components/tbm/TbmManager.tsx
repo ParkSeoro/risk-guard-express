@@ -73,6 +73,11 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const [showCopyDialog, setShowCopyDialog] = useState(false);
   const [copyCandidates, setCopyCandidates] = useState<TbmSession[]>([]);
 
+  // Filters
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'closed'>('all');
+  const [companyFilter, setCompanyFilter] = useState('all');
+
   const load = async () => {
     setLoading(true);
     let q = supabase.from('tbm_sessions' as any)

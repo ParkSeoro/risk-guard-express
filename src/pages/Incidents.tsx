@@ -7,9 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertOctagon, Plus, Timer, FileWarning, CheckCircle2 } from "lucide-react";
+import { AlertOctagon, Plus, Timer, FileWarning, CheckCircle2, Search } from "lucide-react";
 import { toast } from "sonner";
 
 type Row = {

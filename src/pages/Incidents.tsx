@@ -84,6 +84,19 @@ export default function Incidents() {
     return { total: rows.length, major: major.length, overdue: overdue.length };
   }, [rows]);
 
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter(r => {
+      if (statusFilter === "major" && !r.is_major) return false;
+      if (statusFilter === "overdue" && !(r.is_major && !r.reported_to_authority_at && r.legal_deadline_at && new Date(r.legal_deadline_at) < new Date())) return false;
+      if (statusFilter === "reported" && !r.reported_to_authority_at) return false;
+      if (!q) return true;
+      return (r.reporter_name || "").toLowerCase().includes(q)
+        || (r.location || "").toLowerCase().includes(q)
+        || (r.description || "").toLowerCase().includes(q);
+    });
+  }, [rows, search, statusFilter]);
+
   async function submitReport() {
     if (!projectId) return;
     if (!form.reporter_name.trim() || !form.location.trim() || form.description.trim().length < 5) {

@@ -269,7 +269,21 @@ export default function SiteMaps() {
   const pointsAttr = (pts: { x: number; y: number }[]) =>
     pts.map((p) => `${(p.x * imgBox.w).toFixed(1)},${(p.y * imgBox.h).toFixed(1)}`).join(" ");
 
-  const zonesByMap = useMemo(() => zones, [zones]);
+  const zoneCounts = useMemo(() => {
+    const c: Record<string, number> = { all: zones.length, danger: 0, restricted: 0, work: 0, normal: 0 };
+    for (const z of zones) c[z.zone_type] = (c[z.zone_type] || 0) + 1;
+    return c;
+  }, [zones]);
+
+  const zonesByMap = useMemo(() => {
+    const q = zoneSearch.trim().toLowerCase();
+    return zones.filter((z) => {
+      if (zoneTypeFilter !== "all" && z.zone_type !== zoneTypeFilter) return false;
+      if (!q) return true;
+      return (z.name || "").toLowerCase().includes(q) || (z.description || "").toLowerCase().includes(q);
+    });
+  }, [zones, zoneSearch, zoneTypeFilter]);
+
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">

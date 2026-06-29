@@ -269,15 +269,29 @@ const Approvals = () => {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="w-full">
-          <TabsTrigger value="mine" className="flex-1">내 결재 (대기)</TabsTrigger>
+          <TabsTrigger value="mine" className="flex-1 gap-1.5">
+            내 결재 (대기)
+            {(() => {
+              const mineCount = user ? Object.values(grouped).filter((steps: any) =>
+                (steps as any[]).some(s => s.approver_id === user.id && s.status === '대기')
+              ).length + entityPending.length : 0;
+              return mineCount > 0 ? <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">{mineCount}</Badge> : null;
+            })()}
+          </TabsTrigger>
           <TabsTrigger value="submitted" className="flex-1">상신한 결재</TabsTrigger>
           {isAdmin() && <TabsTrigger value="all" className="flex-1">전체 현황 (읽기전용)</TabsTrigger>}
         </TabsList>
 
         <TabsContent value={tab} className="space-y-3 mt-3">
-          {Object.keys(filteredGrouped).length === 0 ? (
-            <Card><CardContent className="py-12 text-center text-muted-foreground">
-              {tab === 'mine' ? '대기 중인 결재가 없습니다.' : '결재 내역이 없습니다.'}
+          {loading ? (
+            <div className="space-y-2">
+              {[0,1,2].map(i => <div key={i} className="h-20 rounded bg-muted animate-pulse" />)}
+            </div>
+          ) : Object.keys(filteredGrouped).length === 0 ? (
+            <Card><CardContent className="py-12 text-center text-muted-foreground space-y-2">
+              <FileCheck className="h-10 w-10 mx-auto opacity-30" />
+              <div>{tab === 'mine' ? '대기 중인 결재가 없습니다.' : tab === 'submitted' ? '상신한 결재가 없습니다.' : '결재 내역이 없습니다.'}</div>
+              {tab === 'mine' && <div className="text-xs">위험성평가·작업계획서·작업허가서를 상신하면 이 곳에 표시됩니다.</div>}
             </CardContent></Card>
           ) : (
             Object.entries(filteredGrouped).map(([runId, steps]) => {

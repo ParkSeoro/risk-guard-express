@@ -331,13 +331,19 @@ serve(async (req) => {
 
     const apiUrl = useOpenAI
       ? "https://api.openai.com/v1/chat/completions"
-      : "https://ai.gateway.lovable.dev/v1/chat/completions";
-    const apiKey = useOpenAI ? openaiKey : LOVABLE_API_KEY;
+      : ""; // Gemini path uses geminiChatFetch helper directly
+    const apiKey = useOpenAI ? openaiKey : (Deno.env.get("GEMINI_API_KEY") || "");
 
-    if (!apiKey) {
+    if (useOpenAI && !apiKey) {
+      return new Response(
+        JSON.stringify({ error: "OpenAI API Key가 설정되지 않았습니다." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    if (!useOpenAI && !apiKey) {
       return new Response(
         JSON.stringify({
-          error: "AI 설정이 필요합니다. 설정 > AI 설정에서 API Key를 입력하거나 시스템 관리자에게 문의하세요.",
+          error: "Gemini API 키가 설정되지 않았습니다. 마스터가 설정 > 시크릿에서 GEMINI_API_KEY를 등록해야 합니다.",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );

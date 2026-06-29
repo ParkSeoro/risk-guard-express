@@ -147,11 +147,11 @@ export default function ZoneCheckin() {
             )}
             <div className="space-y-1">
               <Label>이름 *</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="홍길동" autoFocus />
+              <IMESafeInput defaultValue={name} onCommit={setName} placeholder="홍길동" autoFocus />
             </div>
             <div className="space-y-1">
               <Label>연락처 (선택)</Label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="010-0000-0000" inputMode="tel" />
+              <IMESafeInput defaultValue={phone} onCommit={setPhone} placeholder="010-0000-0000" inputMode="tel" applyTermCorrection={false} />
             </div>
             {error && <div className="text-sm text-destructive">{error}</div>}
             <Button className="w-full h-14 text-base" disabled={submitting} onClick={submit}>

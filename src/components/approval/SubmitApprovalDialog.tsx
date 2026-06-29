@@ -205,14 +205,16 @@ export default function SubmitApprovalDialog({
         await supabase.from('approval_route_templates').insert({
           project_id: projectId,
           entity_type: entityType,
-          company_id: submitterCompanyId,
-          name: `${ENTITY_LABELS[entityType]} 기본 결재선`,
+          owner_user_id: user?.id, // 본인 전용 템플릿으로 저장
+          company_id: null,
+          name: `${ENTITY_LABELS[entityType]} 내 결재선`,
           assessment_type: '정기',
-          is_default: false,
+          is_default: true,
           steps: steps as any,
           created_by: user?.id,
         });
       }
+
 
       toast.success('결재가 상신되었습니다');
       onOpenChange(false);

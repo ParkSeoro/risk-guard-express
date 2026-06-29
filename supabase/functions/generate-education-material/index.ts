@@ -1,5 +1,6 @@
-// Generate safety education material from a risk assessment run via Lovable AI Gateway.
+// Generate safety education material from a risk assessment run via Google Gemini.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { callGeminiChat, GeminiError } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

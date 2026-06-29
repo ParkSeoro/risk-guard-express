@@ -134,6 +134,7 @@ export const SOFT_DELETE_TABLES = [
   'work_env_factors',
   'hazard_surveys',
   'worker_education_records',
+  'emergency_drills',
 ] as const;
 
 export type SoftDeleteTable = (typeof SOFT_DELETE_TABLES)[number];

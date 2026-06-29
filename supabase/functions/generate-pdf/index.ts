@@ -361,10 +361,12 @@ Deno.serve(async (req) => {
         </div>`;
     }
 
+    const docTitle = `위험성평가표 [${run.type}] ${run.period_label}`;
     const html = `<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<title>${docTitle.replace(/</g,'&lt;')}</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -541,7 +543,7 @@ tr { page-break-inside: avoid; }
 </html>`;
 
     return new Response(JSON.stringify({
-      html, title: `위험성평가표 [${run.type}] ${run.period_label}`,
+      html, title: docTitle,
       fileName: `위험성평가_${run.type}_${run.period_label}_${today}.pdf`
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

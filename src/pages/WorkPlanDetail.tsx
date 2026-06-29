@@ -361,6 +361,9 @@ const WorkPlanDetail = () => {
       });
       if (error) throw error;
       if (data?.html) {
+        const desiredTitle = (data.fileName as string)?.replace(/\.pdf$/i, '') || plan.title || '작업계획서';
+        const prevTitle = document.title;
+        document.title = desiredTitle;
         const iframe = document.createElement('iframe');
         iframe.style.position = 'fixed';
         iframe.style.right = '0';
@@ -374,18 +377,19 @@ const WorkPlanDetail = () => {
           doc.open();
           doc.write(data.html);
           doc.close();
-          iframe.onload = () => {
+          const triggerPrint = () => {
+            try { (iframe.contentDocument || iframe.contentWindow?.document)!.title = desiredTitle; } catch {}
             setTimeout(() => {
+              iframe.contentWindow?.focus();
               iframe.contentWindow?.print();
-              setTimeout(() => document.body.removeChild(iframe), 1000);
+              setTimeout(() => {
+                document.body.removeChild(iframe);
+                document.title = prevTitle;
+              }, 1500);
             }, 500);
           };
-          if (doc.readyState === 'complete') {
-            setTimeout(() => {
-              iframe.contentWindow?.print();
-              setTimeout(() => document.body.removeChild(iframe), 1000);
-            }, 500);
-          }
+          iframe.onload = triggerPrint;
+          if (doc.readyState === 'complete') triggerPrint();
         }
         toast({ title: 'PDF 인쇄 대화상자가 열립니다. "PDF로 저장"을 선택하세요.' });
       }

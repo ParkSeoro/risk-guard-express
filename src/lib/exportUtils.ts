@@ -131,6 +131,7 @@ export async function exportToPDFServer(
   printWindow.document.open();
   printWindow.document.write(data.html);
   printWindow.document.close();
+  try { printWindow.document.title = (fileName || '').replace(/\.pdf$/i, '') || printWindow.document.title; } catch {}
 
   let printed = false;
   const doPrint = () => {

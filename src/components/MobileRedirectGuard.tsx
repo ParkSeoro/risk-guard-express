@@ -16,6 +16,9 @@ const MOBILE_EXCLUDE = [
   /^\/assessment-run\//,
   /^\/work-plan\//,
   /^\/worker-attendance/,
+  /^\/landing/,
+  /^\/privacy/,
+  /^\/$/,
 ];
 
 export default function MobileRedirectGuard() {
@@ -25,10 +28,11 @@ export default function MobileRedirectGuard() {
 
   useEffect(() => {
     if (!isMobile) return;
+    // Double-check actual viewport (avoid stale state on rotation/resize)
+    if (typeof window !== "undefined" && window.innerWidth >= 768) return;
     if (typeof window !== "undefined" && localStorage.getItem(FORCE_DESKTOP_KEY) === "1") return;
     const path = location.pathname;
     if (MOBILE_EXCLUDE.some((re) => re.test(path))) return;
-    // 데스크톱 전용 경로 → 모바일 홈으로 이동
     navigate("/m", { replace: true });
   }, [isMobile, location.pathname, navigate]);
 

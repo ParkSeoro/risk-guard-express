@@ -783,7 +783,7 @@ const WorkPlanDetail = () => {
           entityType="work_plan"
           entityId={plan.id}
           projectId={plan.project_id}
-          submitterCompanyId={plan.company_id || null}
+          submitterCompanyId={plan.company_id || access.userCompanyId || null}
           onSubmitted={handleApprovalSubmitted}
         />
       )}

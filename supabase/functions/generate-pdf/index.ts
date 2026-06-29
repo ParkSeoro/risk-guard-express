@@ -116,7 +116,23 @@ Deno.serve(async (req) => {
 
     // Derive client/contractor from companies table (SSOT) — no fallback to legacy text fields
     const clientCompanyName = projectCompanies.find((c: any) => c.type === 'client')?.name || '';
-    const gcCompanyNames = projectCompanies.filter((c: any) => c.type === 'gc').map((c: any) => c.name).join(', ') || '';
+
+    // Scope GC display to the assessment's assigned target companies; fallback to creator's company
+    let assignedCompanyIds: string[] = Array.isArray((run as any).target_company_ids) ? (run as any).target_company_ids : [];
+    if (assignedCompanyIds.length === 0 && run.created_by) {
+      const { data: pm } = await supabase
+        .from('project_members')
+        .select('company_id')
+        .eq('user_id', run.created_by)
+        .eq('project_id', run.project_id)
+        .maybeSingle();
+      if (pm?.company_id) assignedCompanyIds = [pm.company_id];
+    }
+    const scopedCompanies = assignedCompanyIds.length > 0
+      ? projectCompanies.filter((c: any) => assignedCompanyIds.includes(c.id))
+      : projectCompanies.filter((c: any) => c.type === 'gc');
+    const gcCompanyNames = scopedCompanies.map((c: any) => c.name).join(', ') || '';
+
 
     // ===== SIGNATURE: Build from Approvals (SSOT) =====
     const STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };

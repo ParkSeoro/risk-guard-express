@@ -311,6 +311,7 @@ Deno.serve(async (req) => {
       const mime: string = (att.mime || "").toLowerCase();
       const isImage = mime.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(url);
       const isPdf = mime === "application/pdf" || /\.pdf$/i.test(url);
+      const isText = mime.startsWith("text/") || /\.(txt|csv|md|log)$/i.test(url);
       const titleHtml = `<div class="section-header">${escapeHtml(att.name || att.key || "첨부파일")}</div>`;
       const renderedImages = preRendered[url];
       if (isImage) {
@@ -333,6 +334,15 @@ Deno.serve(async (req) => {
               <img src="${img}" style="max-width:95%;max-height:720pt;object-fit:contain;" />
             </div>`;
         });
+      } else if (isText) {
+        // 텍스트 파일은 내용을 직접 본문에 포함하여 인쇄
+        let textBody = "";
+        try {
+          const r = await fetch(url);
+          if (r.ok) textBody = await r.text();
+        } catch {}
+        attachmentsHtml += `<div class="page-break"></div>${titleHtml}
+          <pre style="white-space:pre-wrap;word-break:break-word;font-family:'Noto Sans KR','Malgun Gothic',monospace;font-size:9pt;padding:14pt;border:1px solid #e2e8f0;background:#f8fafc;line-height:1.55;">${escapeHtml(textBody || "(내용을 불러오지 못했습니다)")}</pre>`;
       } else {
         attachmentsHtml += `<div class="page-break"></div>${titleHtml}
           <div style="padding:20pt;color:#334155;line-height:1.7;">

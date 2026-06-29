@@ -110,7 +110,15 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   };
 
 
-  useEffect(() => { load(); }, [projectId, runId]);
+  useEffect(() => {
+    load();
+    const ch = supabase
+      .channel(`tbm-rt-${projectId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tbm_sessions', filter: `project_id=eq.${projectId}` }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tbm_participations' }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId, runId]);
 
   const resetForm = () => {
     setTitle(''); setTbmDate(new Date().toISOString().slice(0, 10));

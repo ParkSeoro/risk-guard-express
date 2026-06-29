@@ -135,7 +135,7 @@ export default function SafetyAppointments() {
           <h1 className="text-2xl font-bold flex items-center gap-2"><UserCheck className="text-primary" /> 안전관리자 선임이력</h1>
           <p className="text-sm text-muted-foreground">산안법 §15~17 — 선임 후 14일 내 노동청 신고 의무</p>
         </div>
-        {canEdit('safety_appointment') && <Button onClick={openCreate}><Plus className="size-4 mr-1" /> 선임 등록</Button>}
+        {canEdit('legal_duty') && <Button onClick={openCreate}><Plus className="size-4 mr-1" /> 선임 등록</Button>}
       </header>
 
       {!hasManager && !loading && (
@@ -204,8 +204,8 @@ export default function SafetyAppointments() {
                         <td className="p-2">{r.authority_doc_no || "-"}</td>
                         <td className="p-2"><Badge variant={active ? "default" : "secondary"}>{active ? "활성" : "종료"}</Badge></td>
                         <td className="p-2 whitespace-nowrap">
-                          {canEdit('safety_appointment') && <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>수정</Button>}
-                          {canDelete('safety_appointment') && (
+                          {canEdit('legal_duty') && <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>수정</Button>}
+                          {canDelete('legal_duty') && (
                             <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDelete(r)}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </Button>

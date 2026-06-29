@@ -51,6 +51,8 @@ export default function Incidents() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState<Row | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "major" | "overdue" | "reported">("all");
 
   const [form, setForm] = useState({
     reporter_name: "",

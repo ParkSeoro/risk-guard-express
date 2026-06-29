@@ -55,6 +55,7 @@ const WorkPlanDetail = () => {
   const [aiLoading, setAiLoading] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string[]>>({});
+  const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   // Basic info fields
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');

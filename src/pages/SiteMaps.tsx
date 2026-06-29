@@ -441,10 +441,36 @@ export default function SiteMaps() {
           </Card>
 
           <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-base">구역 ({zones.length})</CardTitle></CardHeader>
+            <CardHeader className="pb-2 space-y-2">
+              <CardTitle className="text-base">구역 ({zonesByMap.length}/{zones.length})</CardTitle>
+              <div className="relative">
+                <Search className="h-3 w-3 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="구역명·설명 검색"
+                  value={zoneSearch}
+                  onChange={(e) => setZoneSearch(e.target.value)}
+                  className="h-8 pl-7 text-xs"
+                />
+              </div>
+              <div className="flex gap-1 flex-wrap">
+                {(["all", "danger", "restricted", "work", "normal"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setZoneTypeFilter(t)}
+                    className={`px-2 py-0.5 rounded text-[11px] border ${zoneTypeFilter === t ? "bg-primary text-primary-foreground border-primary" : "bg-background"}`}
+                  >
+                    {t === "all" ? "전체" : ZONE_LABEL[t]} ({zoneCounts[t] || 0})
+                  </button>
+                ))}
+              </div>
+            </CardHeader>
             <CardContent className="space-y-2">
               {zones.length === 0 && <div className="text-sm text-muted-foreground">아직 등록된 구역이 없습니다.</div>}
-              {zones.map(z => {
+              {zones.length > 0 && zonesByMap.length === 0 && (
+                <div className="text-sm text-muted-foreground">필터에 해당하는 구역이 없습니다.</div>
+              )}
+              {zonesByMap.map(z => {
+
                 const zoneQrs = qrCodes.filter(q => q.zone_id === z.id);
                 return (
                   <div key={z.id} className={`border rounded p-2 space-y-2 ${selectedZone?.id === z.id ? "border-primary" : ""}`}>

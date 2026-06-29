@@ -9,8 +9,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText, Copy } from 'lucide-react';
+import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText, Copy, ClipboardList } from 'lucide-react';
 import AssigneeSelect from '@/components/AssigneeSelect';
+import IMESafeInput from '@/components/IMESafeInput';
+import IMESafeTextarea from '@/components/IMESafeTextarea';
+import { useSoftDelete } from '@/hooks/useSoftDelete';
+
 
 interface Props {
   projectId: string;

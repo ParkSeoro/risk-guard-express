@@ -100,8 +100,17 @@ const SafetyCost = () => {
     return companies.filter((c) => c.id === access.userCompanyId);
   }, [companies, access.isMaster, access.isProjectAdmin, access.userCompanyId]);
 
+  const scopedConstructions = useMemo(() => {
+    if (access.isMaster || access.isProjectAdmin) return constructions;
+    return constructions.filter((c) => c.company_id === access.userCompanyId);
+  }, [constructions, access.isMaster, access.isProjectAdmin, access.userCompanyId]);
   const filteredReports = reports.filter((r) => r.construction_id === selectedConstructionId);
-  const filteredItems = items.filter((i) => i.report_id === selectedReportId).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const baseItems = items.filter((i) => i.report_id === selectedReportId).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const filteredItems = useMemo(() => {
+    if (!itemSearch.trim()) return baseItems;
+    const q = itemSearch.toLowerCase();
+    return baseItems.filter((it) => [it.item_name, it.supplier_name, it.category_name, it.maker, it.specification].some((v) => String(v || '').toLowerCase().includes(q)));
+  }, [baseItems, itemSearch]);
   const evidenceMissingItems = filteredItems.filter((it) => !evidence.some((e) => e.item_id === it.id));
   const evidenceMissingCount = evidenceMissingItems.length;
   const compliance = useMemo(() => analyzeSafetyCostCompliance(filteredItems, selectedConstruction?.safety_cost_total), [filteredItems, selectedConstruction?.safety_cost_total]);

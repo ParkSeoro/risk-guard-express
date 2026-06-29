@@ -8334,6 +8334,7 @@ export type Database = {
       }
       request_worker_otp: { Args: { _phone: string }; Returns: Json }
       resync_assessment_run_status: { Args: { _run_id: string }; Returns: Json }
+      run_daily_consistency_audit: { Args: never; Returns: Json }
       save_idempotency_response: {
         Args: { _key: string; _response: Json }
         Returns: undefined

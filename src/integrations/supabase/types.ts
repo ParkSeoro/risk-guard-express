@@ -8177,6 +8177,10 @@ export type Database = {
           step_position: string
         }[]
       }
+      get_project_role: {
+        Args: { _project_id: string; _user_id: string }
+        Returns: string
+      }
       get_project_role_new: {
         Args: { _project_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["project_role"]
@@ -8203,6 +8207,15 @@ export type Database = {
           category: string
           name: string
         }[]
+      }
+      has_permission: {
+        Args: {
+          _action: string
+          _feature: string
+          _project_id: string
+          _user_id: string
+        }
+        Returns: boolean
       }
       has_project_role: {
         Args: {

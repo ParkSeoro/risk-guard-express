@@ -8,16 +8,20 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Bot, Eye, EyeOff, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, Bot, Eye, EyeOff, Save, Loader2, Activity, CheckCircle2, AlertTriangle, Timer } from 'lucide-react';
 import { toast } from 'sonner';
+import { Link } from 'react-router-dom';
+
 import { Badge } from '@/components/ui/badge';
 
 const MODELS = [
-  { value: 'gpt-4o', label: 'GPT-4o (추천)' },
-  { value: 'gpt-4', label: 'GPT-4' },
-  { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-  { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
+  { value: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash (추천 · 기본)' },
+  { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash (저렴)' },
+  { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro (고품질)' },
+  { value: 'openai/gpt-5-mini', label: 'GPT-5 Mini' },
+  { value: 'openai/gpt-5', label: 'GPT-5' },
 ];
+
 
 const SettingsAI = () => {
   const navigate = useNavigate();
@@ -33,10 +37,41 @@ const SettingsAI = () => {
   const [showKey, setShowKey] = useState(false);
   const [hasExistingKey, setHasExistingKey] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [stats, setStats] = useState({ total: 0, success: 0, failed: 0, avgLatency: 0, today: 0 });
 
   useEffect(() => {
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    if (!projectId) return;
+    loadStats(projectId);
+    const ch = supabase
+      .channel(`ai_jobs:${projectId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_generation_jobs', filter: `project_id=eq.${projectId}` }, () => loadStats(projectId))
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId]);
+
+  const loadStats = async (pid: string) => {
+    const since7d = new Date(Date.now() - 7 * 86_400_000).toISOString();
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const [{ data: jobs }, { data: logs }] = await Promise.all([
+      supabase.from('ai_generation_jobs').select('id,status,created_at').eq('project_id', pid).gte('created_at', since7d),
+      supabase.from('ai_generation_logs').select('latency_ms,error,created_at').gte('created_at', since7d).limit(1000),
+    ]);
+    const j = jobs || [];
+    const l = logs || [];
+    const lat = l.map(x => x.latency_ms).filter((n): n is number => typeof n === 'number');
+    setStats({
+      total: j.length,
+      success: j.filter(x => x.status === 'completed').length,
+      failed: j.filter(x => x.status === 'failed').length,
+      avgLatency: lat.length ? Math.round(lat.reduce((a, b) => a + b, 0) / lat.length) : 0,
+      today: j.filter(x => new Date(x.created_at) >= todayStart).length,
+    });
+  };
+
 
   const loadSettings = async () => {
     try {
@@ -188,7 +223,21 @@ const SettingsAI = () => {
         </Card>
       ) : (
         <div className="space-y-4">
-          {/* AI Toggle */}
+          {/* Usage KPI (최근 7일) */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <Card><CardContent className="p-3"><div className="text-[10px] text-muted-foreground flex items-center gap-1"><Activity className="h-3 w-3" />7일 작업</div><div className="text-xl font-bold">{stats.total}</div></CardContent></Card>
+            <Card><CardContent className="p-3"><div className="text-[10px] text-muted-foreground flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-success" />성공</div><div className="text-xl font-bold text-success">{stats.success}</div></CardContent></Card>
+            <Card><CardContent className="p-3"><div className="text-[10px] text-muted-foreground flex items-center gap-1"><AlertTriangle className="h-3 w-3 text-destructive" />실패</div><div className="text-xl font-bold text-destructive">{stats.failed}</div></CardContent></Card>
+            <Card><CardContent className="p-3"><div className="text-[10px] text-muted-foreground flex items-center gap-1"><Timer className="h-3 w-3" />평균 응답</div><div className="text-xl font-bold">{stats.avgLatency}ms</div></CardContent></Card>
+            <Card><CardContent className="p-3"><div className="text-[10px] text-muted-foreground">오늘 작업</div><div className="text-xl font-bold">{stats.today}</div></CardContent></Card>
+          </div>
+          {isMaster && (
+            <div className="text-xs text-muted-foreground flex items-center gap-2">
+              상세 로그/배치는
+              <Link to="/ai-logs" className="text-primary hover:underline">AI 로그 페이지</Link>에서 확인하세요.
+            </div>
+          )}
+
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">AI 사용 설정</CardTitle>

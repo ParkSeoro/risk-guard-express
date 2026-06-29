@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { ArrowLeft, GitBranch, Plus, Trash2, ArrowUp, ArrowDown, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, GitBranch, Plus, Trash2, ArrowUp, ArrowDown, Save, Loader2, Copy, Search, User, Building2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { ENTITY_LABELS, type ApprovalEntityType } from '@/components/approval/SubmitApprovalDialog';
 
@@ -34,6 +34,8 @@ export default function SettingsApprovalRoutes() {
   const [editing, setEditing] = useState<any | null>(null);
   const [approvers, setApprovers] = useState<any[]>([]);
 
+  const [search, setSearch] = useState('');
+
   const load = async () => {
     if (!projectId) return;
     setLoading(true);
@@ -48,21 +50,40 @@ export default function SettingsApprovalRoutes() {
     setCompanies(cos || []);
     setLoading(false);
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId, entityType]);
+  useEffect(() => {
+    load();
+    if (!projectId) return;
+    const ch = supabase
+      .channel(`approval_routes:${projectId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'approval_route_templates', filter: `project_id=eq.${projectId}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+    /* eslint-disable-next-line */
+  }, [projectId, entityType]);
 
-  // 본인 / 회사 / 프로젝트 공용 가시성 필터
+
+  // 본인 / 회사 / 프로젝트 공용 가시성 필터 + 검색
   const visibleTemplates = templates.filter((t) => {
     const isMine = t.owner_user_id === user?.id;
     const isMyCompany = !t.owner_user_id && t.company_id && myCompanyId && t.company_id === myCompanyId;
     const isShared = !t.owner_user_id && !t.company_id;
     const isOtherCompany = !t.owner_user_id && t.company_id && t.company_id !== myCompanyId;
-    // 마스터/PA만 타회사 전용 템플릿 조회 가능
     if (!isOwnerSide && isOtherCompany) return false;
-    if (scope === 'mine') return isMine;
-    if (scope === 'company') return isMyCompany;
-    if (scope === 'shared') return isShared;
+    if (scope === 'mine' && !isMine) return false;
+    if (scope === 'company' && !isMyCompany) return false;
+    if (scope === 'shared' && !isShared) return false;
+    const q = search.trim().toLowerCase();
+    if (q && !(t.name || '').toLowerCase().includes(q)) return false;
     return true;
   });
+
+  const counts = {
+    mine: templates.filter((t) => t.owner_user_id === user?.id).length,
+    company: templates.filter((t) => !t.owner_user_id && t.company_id === myCompanyId).length,
+    shared: templates.filter((t) => !t.owner_user_id && !t.company_id).length,
+    total: templates.length,
+  };
+
 
   const startCreate = () => setEditing({
     id: null, name: '', entity_type: entityType, project_id: projectId,
@@ -131,6 +152,22 @@ export default function SettingsApprovalRoutes() {
     load();
   };
 
+  const duplicate = async (t: any) => {
+    const { id, created_at, updated_at, ...rest } = t;
+    const { error } = await supabase.from('approval_route_templates').insert({
+      ...rest,
+      name: `${t.name} (복사)`,
+      owner_user_id: user?.id, // 복사본은 내 전용으로 시작 (안전한 기본)
+      company_id: null,
+      is_default: false,
+      created_by: user?.id,
+    });
+    if (error) return toast.error(error.message);
+    toast.success('복사되었습니다 (내 전용으로 저장)');
+    load();
+  };
+
+
   const updateStep = (idx: number, patch: Partial<Step>) => {
     setEditing((e: any) => ({ ...e, steps: e.steps.map((s: Step, i: number) => i === idx ? { ...s, ...patch } : s) }));
   };
@@ -188,17 +225,23 @@ export default function SettingsApprovalRoutes() {
             </div>
             <Button onClick={startCreate}><Plus className="h-4 w-4 mr-1" /> 새 템플릿</Button>
           </div>
-          <div className="flex items-center gap-1 text-xs">
-            <span className="text-muted-foreground mr-1">보기:</span>
-            {([
-              { v: 'mine', label: '내 전용' },
-              { v: 'company', label: '회사 공용' },
-              { v: 'shared', label: '프로젝트 공용' },
-              { v: 'all', label: '전체' },
-            ] as { v: ScopeFilter; label: string }[]).map((s) => (
-              <Button key={s.v} size="sm" variant={scope === s.v ? 'default' : 'outline'} className="h-7"
-                onClick={() => setScope(s.v)}>{s.label}</Button>
-            ))}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-1 text-xs flex-wrap">
+              <span className="text-muted-foreground mr-1">보기:</span>
+              {([
+                { v: 'mine', label: '내 전용' },
+                { v: 'company', label: '회사 공용' },
+                { v: 'shared', label: '프로젝트 공용' },
+                { v: 'all', label: '전체' },
+              ] as { v: ScopeFilter; label: string }[]).map((s) => (
+                <Button key={s.v} size="sm" variant={scope === s.v ? 'default' : 'outline'} className="h-7"
+                  onClick={() => setScope(s.v)}>{s.label}</Button>
+              ))}
+            </div>
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="템플릿명 검색" className="pl-8 h-8" />
+            </div>
           </div>
           <p className="text-xs text-muted-foreground">
             결재선은 <b>로그인 사용자별</b>로 다를 수 있습니다. "내 전용" 템플릿은 본인만 사용·수정할 수 있고,
@@ -208,8 +251,11 @@ export default function SettingsApprovalRoutes() {
         <CardContent>
           {loading && <div className="text-center py-6"><Loader2 className="h-5 w-5 animate-spin inline" /></div>}
           {!loading && visibleTemplates.length === 0 && (
-            <div className="text-center py-8 text-sm text-muted-foreground">등록된 템플릿이 없습니다</div>
+            <div className="text-center py-8 text-sm text-muted-foreground">
+              {templates.length === 0 ? '등록된 템플릿이 없습니다' : '검색/필터 결과 없음'}
+            </div>
           )}
+
           <div className="space-y-2">
             {visibleTemplates.map((t) => {
               const isMine = t.owner_user_id === user?.id;
@@ -232,10 +278,14 @@ export default function SettingsApprovalRoutes() {
                   </div>
                   <div className="flex gap-1">
                     <Button size="sm" variant="outline" onClick={() => startEdit(t)} disabled={!canMutate}>편집</Button>
+                    <Button size="icon" variant="ghost" onClick={() => duplicate(t)} title="복사">
+                      <Copy className="h-4 w-4" />
+                    </Button>
                     <Button size="icon" variant="ghost" className="text-destructive" onClick={() => remove(t.id)} disabled={!canMutate}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
+
                 </div>
               );
             })}

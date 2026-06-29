@@ -26,8 +26,8 @@ const STATUS_VARIANT: Record<string, any> = {
 type Tab = 'pending' | 'done' | 'rejected' | 'all';
 
 export default function WorkStopRequests() {
-  const { selectedProject: projectId, role } = useProjectAccess();
-  const canHandle = ['master', 'project_admin', 'safety_manager'].includes(role || '');
+  const { selectedProject: projectId, isMaster, isProjectAdmin, isSafetyManager } = useProjectAccess();
+  const canHandle = isMaster || isProjectAdmin || isSafetyManager;
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);

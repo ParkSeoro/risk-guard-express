@@ -37,10 +37,41 @@ const SettingsAI = () => {
   const [showKey, setShowKey] = useState(false);
   const [hasExistingKey, setHasExistingKey] = useState(false);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [stats, setStats] = useState({ total: 0, success: 0, failed: 0, avgLatency: 0, today: 0 });
 
   useEffect(() => {
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    if (!projectId) return;
+    loadStats(projectId);
+    const ch = supabase
+      .channel(`ai_jobs:${projectId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_generation_jobs', filter: `project_id=eq.${projectId}` }, () => loadStats(projectId))
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId]);
+
+  const loadStats = async (pid: string) => {
+    const since7d = new Date(Date.now() - 7 * 86_400_000).toISOString();
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const [{ data: jobs }, { data: logs }] = await Promise.all([
+      supabase.from('ai_generation_jobs').select('id,status,created_at').eq('project_id', pid).gte('created_at', since7d),
+      supabase.from('ai_generation_logs').select('latency_ms,error,created_at').gte('created_at', since7d).limit(1000),
+    ]);
+    const j = jobs || [];
+    const l = logs || [];
+    const lat = l.map(x => x.latency_ms).filter((n): n is number => typeof n === 'number');
+    setStats({
+      total: j.length,
+      success: j.filter(x => x.status === 'completed').length,
+      failed: j.filter(x => x.status === 'failed').length,
+      avgLatency: lat.length ? Math.round(lat.reduce((a, b) => a + b, 0) / lat.length) : 0,
+      today: j.filter(x => new Date(x.created_at) >= todayStart).length,
+    });
+  };
+
 
   const loadSettings = async () => {
     try {

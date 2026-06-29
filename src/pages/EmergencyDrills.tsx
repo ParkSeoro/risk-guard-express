@@ -158,8 +158,15 @@ export default function EmergencyDrills() {
       <Card>
         <CardHeader><CardTitle className="text-base">훈련 이력</CardTitle></CardHeader>
         <CardContent>
-          {loading ? <div className="text-sm text-muted-foreground">로딩...</div> :
-            rows.length === 0 ? <div className="text-sm text-muted-foreground py-8 text-center">등록된 훈련 없음 — 연 1회 이상 실시 필요</div> :
+          {loading ? (
+            <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
+          ) : rows.length === 0 ? (
+            <div className="text-center py-10 space-y-3">
+              <Siren className="size-10 mx-auto text-orange-500" />
+              <div className="text-sm text-muted-foreground">등록된 훈련 없음 — 산안법 §52 연 1회 이상 실시 필요</div>
+              <Button onClick={openCreate}><Plus className="size-4 mr-1" /> 첫 훈련 등록</Button>
+            </div>
+          ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50">
@@ -191,16 +198,17 @@ export default function EmergencyDrills() {
                       </td>
                       <td className="p-2 space-x-1">
                         <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>수정</Button>
-                        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => softDelete(r)}>삭제</Button>
+                        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDelete(r)}>삭제</Button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          }
+          )}
         </CardContent>
       </Card>
+
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">

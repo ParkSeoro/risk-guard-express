@@ -299,13 +299,68 @@ const Approvals = () => {
         </Select>
       </div>
 
-      {entityPending.length > 0 && (
+      {/* KPI 카드 */}
+      {(() => {
+        const mineCount = user ? Object.values(grouped).filter((steps: any) =>
+          (steps as any[]).some(s => s.approver_id === user.id && s.status === '대기')
+        ).length + entityPending.length : 0;
+        const submittedCount = user ? Object.values(grouped).filter((steps: any) =>
+          (steps as any[]).some(s => s.approver_id === user.id && s.step === '작성')
+        ).length : 0;
+        const completedCount = Object.values(grouped).filter((steps: any) =>
+          (steps as any[]).every(s => s.status === '승인' || s.status === '반려' || s.status === '취소')
+        ).length;
+        const rejectedCount = Object.values(grouped).filter((steps: any) =>
+          (steps as any[]).some(s => s.status === '반려')
+        ).length;
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card><CardContent className="pt-4 flex items-center justify-between">
+              <div><div className="text-xs text-muted-foreground">내 대기</div><div className="text-2xl font-bold text-destructive">{mineCount}</div></div>
+              <Inbox className="h-6 w-6 text-destructive" />
+            </CardContent></Card>
+            <Card><CardContent className="pt-4 flex items-center justify-between">
+              <div><div className="text-xs text-muted-foreground">상신</div><div className="text-2xl font-bold">{submittedCount}</div></div>
+              <Send className="h-6 w-6 text-primary" />
+            </CardContent></Card>
+            <Card><CardContent className="pt-4 flex items-center justify-between">
+              <div><div className="text-xs text-muted-foreground">완료</div><div className="text-2xl font-bold text-success">{completedCount}</div></div>
+              <CheckCircle2 className="h-6 w-6 text-success" />
+            </CardContent></Card>
+            <Card><CardContent className="pt-4 flex items-center justify-between">
+              <div><div className="text-xs text-muted-foreground">반려</div><div className="text-2xl font-bold text-destructive">{rejectedCount}</div></div>
+              <AlertTriangle className="h-6 w-6 text-destructive" />
+            </CardContent></Card>
+          </div>
+        );
+      })()}
+
+      <Card>
+        <CardContent className="pt-4 flex gap-2 items-end flex-wrap">
+          <div className="flex-1 min-w-[240px]">
+            <div className="relative">
+              <Search className="h-4 w-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input className="pl-8" placeholder="제목·결재자·코멘트 검색" value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+          </div>
+          <Select value={entityTypeFilter} onValueChange={(v) => setEntityTypeFilter(v as any)}>
+            <SelectTrigger className="w-44 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체 유형</SelectItem>
+              <SelectItem value="work_plan">작업계획서</SelectItem>
+              <SelectItem value="work_permit">작업허가서</SelectItem>
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
+
+      {filteredEntityPending.length > 0 && (
         <Card className="border-primary/40 bg-primary/5">
           <CardContent className="p-3 space-y-2">
             <div className="text-sm font-bold flex items-center gap-2">
-              <FileCheck className="h-4 w-4" /> 작업계획서·작업허가서 결재 대기 ({entityPending.length})
+              <FileCheck className="h-4 w-4" /> 작업계획서·작업허가서 결재 대기 ({filteredEntityPending.length}/{entityPending.length})
             </div>
-            {entityPending.map((e: any) => (
+            {filteredEntityPending.map((e: any) => (
               <div key={e.approval_id} className="flex items-center gap-2 p-2 border rounded bg-background">
                 <Badge variant="outline" className="text-[10px]">
                   {e.entity_type === 'work_plan' ? '작업계획서' : '작업허가서'}
@@ -327,7 +382,7 @@ const Approvals = () => {
       )}
 
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList className="w-full">
+        <TabsList className="w-full flex-wrap h-auto">
           <TabsTrigger value="mine" className="flex-1 gap-1.5">
             내 결재 (대기)
             {(() => {
@@ -338,8 +393,11 @@ const Approvals = () => {
             })()}
           </TabsTrigger>
           <TabsTrigger value="submitted" className="flex-1">상신한 결재</TabsTrigger>
-          {isAdmin() && <TabsTrigger value="all" className="flex-1">전체 현황 (읽기전용)</TabsTrigger>}
+          <TabsTrigger value="completed" className="flex-1">완료</TabsTrigger>
+          <TabsTrigger value="rejected" className="flex-1">반려</TabsTrigger>
+          {isAdmin() && <TabsTrigger value="all" className="flex-1">전체 현황</TabsTrigger>}
         </TabsList>
+
 
         <TabsContent value={tab} className="space-y-3 mt-3">
           {loading ? (

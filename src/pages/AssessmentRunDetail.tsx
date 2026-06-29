@@ -1691,7 +1691,7 @@ const AssessmentRunDetail = () => {
           <Users className="h-3.5 w-3.5" /> 참여자
         </Button>
         <div className="flex-1" />
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={handlePrint}><Printer className="h-3.5 w-3.5" /> 인쇄</Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={handlePrint} title="팝업이 차단되면 주소창 아이콘에서 허용해 주세요"><Printer className="h-3.5 w-3.5" /> 인쇄</Button>
         <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportPDF}><FileText className="h-3.5 w-3.5" /> PDF</Button>
         <Button variant="outline" size="sm" className="gap-1.5" onClick={handleExportXLSX}><Download className="h-3.5 w-3.5" /> XLSX</Button>
       </div>

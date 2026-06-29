@@ -70,7 +70,10 @@ export default function SafetyInspections() {
   const [detailItems, setDetailItems] = useState<InspItem[]>([]);
   const [detailActions, setDetailActions] = useState<InspAction[]>([]);
   const [loading, setLoading] = useState(false);
+  const [listLoading, setListLoading] = useState(true);
   const [companyFilter, setCompanyFilter] = useState<string[]>([]);
+  const [q, setQ] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'in_progress' | 'completed'>('all');
 
   // create form
   const [form, setForm] = useState({

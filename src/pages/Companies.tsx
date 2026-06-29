@@ -56,7 +56,7 @@ export default function Companies() {
     const counts: Record<string, { m: number; d: number; w: number }> = {};
     const ciSet = new Set<string>();
     if (ids.length > 0) {
-      const mgrsP: any = supabase.from('company_managers' as any).select('company_id').in('company_id', ids).eq('is_deleted', false);
+      const mgrsP: any = (supabase.from('company_managers' as any) as any).select('company_id').in('company_id', ids).eq('is_deleted', false);
       const depsP: any = supabase.from('company_departments' as any).select('company_id').in('company_id', ids).eq('is_deleted', false);
       const wksP: any = supabase.from('workers').select('company_id').in('company_id', ids).eq('is_deleted', false);
       const cisP: any = supabase.from('company_construction_info' as any).select('company_id').in('company_id', ids);

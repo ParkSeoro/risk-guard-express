@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,18 +8,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
-import { Plus, ClipboardList, AlertTriangle } from "lucide-react";
+import { Plus, ClipboardList, AlertTriangle, Search, Trash2 } from "lucide-react";
 import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useSoftDelete } from "@/hooks/useSoftDelete";
 
 const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const CATEGORIES = ["소음", "분진", "화학물질", "물리적", "생물학적", "진동", "조명", "고온"];
 const ROUNDS = ["1차(상반기)", "2차(하반기)", "수시"];
 
+function daysUntil(d?: string | null) {
+  if (!d) return null;
+  const diff = Math.ceil((new Date(d).getTime() - Date.now()) / 86400000);
+  return diff;
+}
+
 export default function EnvMeasurements() {
   const handle = useToastError();
   const { applyCompanyFilter, userCompanyId } = useProjectAccess();
+  const { softDelete } = useSoftDelete();
   const [list, setList] = useState<any[]>([]);
   const [factors, setFactors] = useState<any[]>([]);
   const [openM, setOpenM] = useState(false);
@@ -27,6 +37,8 @@ export default function EnvMeasurements() {
   const [mf, setMf] = useState<any>({ round: "1차(상반기)" });
   const [ff, setFf] = useState<any>({ category: "소음" });
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"all" | "exceeded" | "due">("all");
+  const [search, setSearch] = useState("");
   const projectId = typeof window !== "undefined" ? localStorage.getItem(ACTIVE_PROJECT_KEY) : null;
 
   const load = async () => {
@@ -44,6 +56,31 @@ export default function EnvMeasurements() {
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, [projectId, userCompanyId]);
+
+  const counts = useMemo(() => {
+    const exceeded = list.filter(r => r.is_exceeded).length;
+    const due = list.filter(r => {
+      const d = daysUntil(r.next_due_date);
+      return d != null && d <= 30 && d >= 0;
+    }).length;
+    return { all: list.length, exceeded, due };
+  }, [list]);
+
+  const filtered = useMemo(() => {
+    let rows = list;
+    if (tab === "exceeded") rows = rows.filter(r => r.is_exceeded);
+    if (tab === "due") rows = rows.filter(r => {
+      const d = daysUntil(r.next_due_date);
+      return d != null && d <= 30 && d >= 0;
+    });
+    const q = search.trim().toLowerCase();
+    if (q) rows = rows.filter(r =>
+      (r.factor_name || "").toLowerCase().includes(q) ||
+      (r.location || "").toLowerCase().includes(q) ||
+      (r.agency || "").toLowerCase().includes(q)
+    );
+    return rows;
+  }, [list, tab, search]);
 
   const submitFactor = async () => {
     if (!projectId || !ff.name) { toast.error("인자명 필수"); return; }
@@ -88,11 +125,18 @@ export default function EnvMeasurements() {
     } catch (e) { handle(e, "측정 등록"); }
   };
 
+  const onDelete = async (row: any) => {
+    const res = await softDelete("work_env_measurements", row.id, {
+      projectId, label: `${row.factor_name} (${row.measure_date})`,
+    });
+    if (res.ok) await load();
+  };
+
   if (!projectId) return <div className="p-6 text-muted-foreground">프로젝트를 선택해주세요.</div>;
 
   return (
     <div className="p-6 space-y-4 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><ClipboardList className="h-6 w-6" />작업환경측정</h1>
           <p className="text-sm text-muted-foreground mt-1">유해인자 측정·노출기준 초과 관리 (산안법 제125조, 반기 1회)</p>
@@ -104,29 +148,66 @@ export default function EnvMeasurements() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle className="text-base">측정 기록 ({list.length})</CardTitle></CardHeader>
+        <CardHeader className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-base">측정 기록</CardTitle>
+            <div className="relative w-64">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="인자명·장소·기관 검색" className="pl-8 h-9" />
+            </div>
+          </div>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
+            <TabsList>
+              <TabsTrigger value="all">전체 <Badge variant="secondary" className="ml-2">{counts.all}</Badge></TabsTrigger>
+              <TabsTrigger value="exceeded">초과 <Badge variant="destructive" className="ml-2">{counts.exceeded}</Badge></TabsTrigger>
+              <TabsTrigger value="due">기한 30일 이내 <Badge variant="outline" className="ml-2">{counts.due}</Badge></TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </CardHeader>
         <CardContent>
-          {loading ? <div className="text-sm text-muted-foreground">로딩 중…</div> : (
+          {loading ? (
+            <div className="space-y-2">{[0,1,2].map(i => <Skeleton key={i} className="h-10 w-full" />)}</div>
+          ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader><TableRow>
                   <TableHead>측정일</TableHead><TableHead>회차</TableHead><TableHead>인자</TableHead>
-                  <TableHead>측정값</TableHead><TableHead>노출기준</TableHead><TableHead>판정</TableHead><TableHead>장소</TableHead><TableHead>기관</TableHead>
+                  <TableHead>측정값</TableHead><TableHead>노출기준</TableHead><TableHead>판정</TableHead>
+                  <TableHead>차회기한</TableHead><TableHead>장소</TableHead><TableHead>기관</TableHead><TableHead></TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
-                  {list.map(r => (
-                    <TableRow key={r.id} className={r.is_exceeded ? "bg-destructive/5" : ""}>
-                      <TableCell>{r.measure_date}</TableCell>
-                      <TableCell><Badge variant="outline">{r.round}</Badge></TableCell>
-                      <TableCell>{r.factor_name}</TableCell>
-                      <TableCell className="font-mono">{r.measured_value ?? "-"} {r.unit}</TableCell>
-                      <TableCell className="font-mono text-xs">{r.exposure_limit ?? "-"} {r.unit}</TableCell>
-                      <TableCell>{r.is_exceeded ? <Badge variant="destructive"><AlertTriangle className="h-3 w-3 mr-1" />초과</Badge> : <Badge>적합</Badge>}</TableCell>
-                      <TableCell className="text-xs">{r.location || "-"}</TableCell>
-                      <TableCell className="text-xs">{r.agency || "-"}</TableCell>
-                    </TableRow>
-                  ))}
-                  {list.length === 0 && <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-8">측정 기록이 없습니다.</TableCell></TableRow>}
+                  {filtered.map(r => {
+                    const dd = daysUntil(r.next_due_date);
+                    return (
+                      <TableRow key={r.id} className={r.is_exceeded ? "bg-destructive/5" : ""}>
+                        <TableCell>{r.measure_date}</TableCell>
+                        <TableCell><Badge variant="outline">{r.round}</Badge></TableCell>
+                        <TableCell>{r.factor_name}</TableCell>
+                        <TableCell className="font-mono">{r.measured_value ?? "-"} {r.unit}</TableCell>
+                        <TableCell className="font-mono text-xs">{r.exposure_limit ?? "-"} {r.unit}</TableCell>
+                        <TableCell>{r.is_exceeded ? <Badge variant="destructive"><AlertTriangle className="h-3 w-3 mr-1" />초과</Badge> : <Badge>적합</Badge>}</TableCell>
+                        <TableCell className="text-xs">
+                          {r.next_due_date ? (
+                            <span className={dd != null && dd <= 30 ? "text-destructive font-medium" : ""}>
+                              {r.next_due_date}{dd != null ? ` (D${dd >= 0 ? '-' : '+'}${Math.abs(dd)})` : ""}
+                            </span>
+                          ) : "-"}
+                        </TableCell>
+                        <TableCell className="text-xs">{r.location || "-"}</TableCell>
+                        <TableCell className="text-xs">{r.agency || "-"}</TableCell>
+                        <TableCell>
+                          <Button size="icon" variant="ghost" onClick={() => onDelete(r)}><Trash2 className="h-4 w-4" /></Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {filtered.length === 0 && (
+                    <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                      {list.length === 0
+                        ? <>측정 기록이 없습니다. <Button variant="link" className="p-0 h-auto" onClick={() => setOpenM(true)}>측정 등록</Button></>
+                        : "검색 결과가 없습니다."}
+                    </TableCell></TableRow>
+                  )}
                 </TableBody>
               </Table>
             </div>

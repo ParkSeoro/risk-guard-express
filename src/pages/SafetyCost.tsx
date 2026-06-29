@@ -85,6 +85,8 @@ const SafetyCost = () => {
   const [reportEditOpen, setReportEditOpen] = useState(false);
   const [editingReport, setEditingReport] = useState({ id: '', report_month: '', title: '' });
   const [itemEditOpen, setItemEditOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [itemSearch, setItemSearch] = useState('');
   const [editingItem, setEditingItem] = useState({ id: '', transaction_date: '', usage_date: '', category_code: '', category_name: '', item_name: '', specification: '', maker: '', quantity: '1', unit: '식', unit_price: '', supply_amount: '', vat_amount: '', amount: '', supplier_name: '', classification_status: 'review', ai_reason: '', legal_basis: '' });
 
   const selectedConstruction = constructions.find((c) => c.id === selectedConstructionId);

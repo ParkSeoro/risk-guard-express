@@ -104,6 +104,7 @@ export default function SettingsApprovalRoutes() {
     const payload = {
       project_id: projectId,
       entity_type: editing.entity_type,
+      owner_user_id: editing.owner_user_id || null,
       company_id: editing.company_id,
       name: editing.name,
       assessment_type: '정기',
@@ -119,6 +120,7 @@ export default function SettingsApprovalRoutes() {
     setEditing(null);
     load();
   };
+
 
   const remove = async (id: string) => {
     if (!confirm('이 템플릿을 삭제하시겠습니까?')) return;

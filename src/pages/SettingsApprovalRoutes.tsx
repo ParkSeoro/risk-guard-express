@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { ArrowLeft, GitBranch, Plus, Trash2, ArrowUp, ArrowDown, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, GitBranch, Plus, Trash2, ArrowUp, ArrowDown, Save, Loader2, Copy, Search, User, Building2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { ENTITY_LABELS, type ApprovalEntityType } from '@/components/approval/SubmitApprovalDialog';
 

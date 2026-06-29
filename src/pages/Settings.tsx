@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone } from 'lucide-react';
+import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch } from 'lucide-react';
 
 const settingsCards = [
   {
@@ -19,6 +19,15 @@ const settingsCards = [
     description: '사용자 승인, 역할 부여, 접근 권한을 관리합니다.',
     icon: Shield,
     path: '/settings/permissions',
+    requires: 'admin' as const,
+    badge: '관리자 전용',
+  },
+  {
+    id: 'approval-routes',
+    title: '결재선 관리',
+    description: '문서 유형별·회사별 기본 결재선 템플릿을 등록·관리합니다.',
+    icon: GitBranch,
+    path: '/settings/approval-routes',
     requires: 'admin' as const,
     badge: '관리자 전용',
   },

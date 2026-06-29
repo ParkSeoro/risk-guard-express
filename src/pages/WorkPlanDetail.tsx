@@ -27,6 +27,7 @@ import {
   Sparkles, Printer, Download, SendHorizontal, Loader2, Wrench, Copy, Eye,
   CalendarDays, MapPin, User, Shield, ClipboardList
 } from 'lucide-react';
+import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import { format, parseISO } from 'date-fns';
 
 const SLING_ANGLE_FACTORS: Record<string, number> = {
@@ -54,6 +55,7 @@ const WorkPlanDetail = () => {
   const [aiLoading, setAiLoading] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string[]>>({});
+  const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
   // Basic info fields
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -332,6 +334,10 @@ const WorkPlanDetail = () => {
       return;
     }
     await handleSave();
+    setApprovalDialogOpen(true);
+  };
+
+  const handleApprovalSubmitted = async () => {
     await supabase.from('work_plans').update({ status: '결재중' }).eq('id', planId);
     setPlan((prev: any) => ({ ...prev, status: '결재중' }));
     toast({ title: '결재 상신이 완료되었습니다.' });
@@ -770,6 +776,17 @@ const WorkPlanDetail = () => {
           </Card>
         </TabsContent>
       </Tabs>
+      {plan && (
+        <SubmitApprovalDialog
+          open={approvalDialogOpen}
+          onOpenChange={setApprovalDialogOpen}
+          entityType="work_plan"
+          entityId={plan.id}
+          projectId={plan.project_id}
+          submitterCompanyId={plan.company_id || null}
+          onSubmitted={handleApprovalSubmitted}
+        />
+      )}
     </div>
   );
 };

@@ -485,11 +485,13 @@ export type Database = {
       approval_route_templates: {
         Row: {
           assessment_type: string
+          company_id: string | null
           created_at: string
           created_by: string | null
           deleted_at: string | null
           deleted_by: string | null
           deleted_reason: string | null
+          entity_type: string
           id: string
           is_default: boolean
           is_deleted: boolean
@@ -500,11 +502,13 @@ export type Database = {
         }
         Insert: {
           assessment_type?: string
+          company_id?: string | null
           created_at?: string
           created_by?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           deleted_reason?: string | null
+          entity_type?: string
           id?: string
           is_default?: boolean
           is_deleted?: boolean
@@ -515,11 +519,13 @@ export type Database = {
         }
         Update: {
           assessment_type?: string
+          company_id?: string | null
           created_at?: string
           created_by?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           deleted_reason?: string | null
+          entity_type?: string
           id?: string
           is_default?: boolean
           is_deleted?: boolean
@@ -529,6 +535,20 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "approval_route_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "approval_route_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
           {
             foreignKeyName: "approval_route_templates_project_id_fkey"
             columns: ["project_id"]
@@ -8105,6 +8125,18 @@ export type Database = {
       }
       get_company_qr_by_token: { Args: { _token: string }; Returns: Json }
       get_daily_qr_status: { Args: { _token: string }; Returns: Json }
+      get_eligible_approvers: {
+        Args: { _project_id: string; _submitter_company_id: string }
+        Returns: {
+          out_company_id: string
+          out_company_name: string
+          out_company_type: string
+          out_display_name: string
+          out_position: string
+          out_role: string
+          out_user_id: string
+        }[]
+      }
       get_hazard_survey_public: { Args: { _qr_token: string }; Returns: Json }
       get_latest_app_release: {
         Args: { _channel?: string }
@@ -8234,6 +8266,17 @@ export type Database = {
       should_push_notify: {
         Args: { _type: string; _user_id: string }
         Returns: boolean
+      }
+      submit_approval: {
+        Args: {
+          _company_id: string
+          _entity_id: string
+          _entity_type: string
+          _project_id: string
+          _reason?: string
+          _steps: Json
+        }
+        Returns: number
       }
       submit_entity_for_approval: {
         Args: { _entity_id: string; _entity_type: string; _project_id: string }

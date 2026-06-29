@@ -29,6 +29,7 @@ import ResetPassword from "./pages/ResetPassword";
 import Settings from "./pages/Settings";
 import SettingsAccount from "./pages/SettingsAccount";
 import SettingsPermissions from "./pages/SettingsPermissions";
+import SettingsApprovalRoutes from "./pages/SettingsApprovalRoutes";
 import SettingsNotifications from "./pages/SettingsNotifications";
 import SettingsAI from "./pages/SettingsAI";
 import MobileReleases from "./pages/MobileReleases";
@@ -178,6 +179,7 @@ function ProtectedRoutes() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/settings/account" element={<SettingsAccount />} />
         <Route path="/settings/permissions" element={<SettingsPermissions />} />
+        <Route path="/settings/approval-routes" element={<SettingsApprovalRoutes />} />
         <Route path="/settings/notifications" element={<SettingsNotifications />} />
         <Route path="/settings/ai" element={<SettingsAI />} />
         <Route path="/settings/mobile-releases" element={<MobileReleases />} />

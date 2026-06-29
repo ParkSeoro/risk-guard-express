@@ -1,65 +1,69 @@
-## 목표
-Lovable AI Gateway 호출을 모두 **Google Gemini API 직접 호출**로 전환하여 비용을 대폭 절감합니다. (Gemini 2.5 Flash는 Lovable Gateway 대비 약 1/5~1/10 수준)
+# 통합 결재 시스템 (Unified Approval)
 
-## 사전 준비 (사용자 작업)
-1. https://aistudio.google.com/apikey 접속 → "Create API key" 클릭
-2. 발급된 키 복사 → Lovable에서 `GEMINI_API_KEY` 시크릿으로 저장 (제가 폼 띄워드림)
+현재 위험성평가·작업계획서·작업허가서·산안비·사고보고·비상훈련 등에 결재 로직이 분산돼 있어 UX가 제각각입니다. 공통 결재 엔진으로 묶고, "사전 결재선 + 상신 시 라인 선택/수정"을 모든 문서에 동일하게 제공합니다.
 
-## 변경 대상 엣지 함수 (총 7개)
+## 1. 데이터 모델 정비
 
-| 함수 | 현재 모델 | 전환 후 |
-|---|---|---|
-| `generate-risk-ai` | gemini-2.5-flash (via Lovable) | `gemini-2.5-flash` (직접) |
-| `risk-job-orchestrator` | 위와 동일 | 위와 동일 |
-| `safety-assistant` | 위와 동일 | 위와 동일 |
-| `generate-education-material` | 위와 동일 | 위와 동일 |
-| `analyze-safety-cost-document` | 위와 동일 + 이미지 분석 | `gemini-2.5-flash` (멀티모달) |
-| `analyze-worker-opinion` | 위와 동일 | 위와 동일 |
-| `check-ai-credits` | Lovable 잔액 확인용 | **Gemini 키 유효성 확인으로 변경** |
+- `approval_route_templates` 확장
+  - `entity_type` 컬럼 추가 (`assessment_run | work_plan | work_permit | safety_cost | incident | emergency_drill | tbm`)
+  - `company_id` 추가(시공사별 라인 가능, NULL=프로젝트 공용)
+  - `steps` JSONB 구조 표준화: `[{order, label, position, company_id?, user_id?, required:true}]`
+- `approvals` 테이블 그대로 사용 (이미 `entity_type/entity_id/step_order/approval_version` 존재)
+- `approval_lines`는 레거시(위험성평가 전용) → 신규 템플릿으로 마이그레이션, 호환을 위해 유지
 
-## 기술 변경 사항
+## 2. 공통 RPC (SECURITY DEFINER)
 
-### 1. 공통 헬퍼 신규 생성: `supabase/functions/_shared/gemini.ts`
-- Google Generative Language REST API (`https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`) 직접 호출
-- OpenAI 호환 포맷 → Gemini 네이티브 포맷 변환 (system/user/assistant → systemInstruction/contents, tools → functionDeclarations)
-- 429/quota/safety block 에러 한국어로 변환
-- JSON 출력 모드 (`responseMimeType: "application/json"`) 지원
-- 멀티모달 이미지 입력 (inlineData base64) 지원
+- `submit_approval(_entity_type, _entity_id, _project_id, _company_id, _steps jsonb, _reason text)`
+  - 권한: 작성자(소속 회사) 본인만 상신 가능
+  - 기존 PENDING 차수 자동 취소 후 새 `approval_version` 생성
+  - `steps` 인자에 따라 `approvals` 행 일괄 INSERT
+  - 결재자에게 알림 발송(첫 단계만)
+- `cancel_approval(_entity_type, _entity_id)` / `delegate_approval`(기존) 재사용
+- `get_eligible_approvers(_project_id, _submitter_company_id)` returns table
+  - 위계: CLIENT - GC - CONTRACTOR 트리에서 **본인 회사 + 상위 회사** 관리자만 반환
+  - 직책 필터: `project_admin / safety_manager / site_manager / supervisor`
+  - 마스터는 항상 포함
 
-### 2. 각 함수 수정
-- `fetch("https://ai.gateway.lovable.dev/...")` 호출 → `callGemini()` 헬퍼로 교체
-- 환경변수: `LOVABLE_API_KEY` → `GEMINI_API_KEY`
-- 응답 파싱: `data.choices[0].message.content` → `data.candidates[0].content.parts[0].text`
-- 에러 메시지: "AI 크레딧" → "Gemini API 한도/키" 로 안내 문구 수정
+## 3. 프론트엔드 공용 컴포넌트
 
-### 3. UI 변경
-- `AICreditBanner.tsx`: "AI 크레딧" → "Gemini API 상태"로 라벨 변경, 충전 URL 제거 (Google AI Studio는 무료 할당량 기반)
-- `riskAutoGenAI.ts`: 에러 메시지 한글화 ("Gemini API 키가 없거나 한도 초과" 등)
-- `Settings.tsx`: 마스터 전용 "Gemini API 키 관리" 섹션 추가 (키 등록 상태 표시 + 재등록 버튼)
+`src/components/approval/` 신설
+- `ApprovalRouteEditor.tsx` — 단계 추가/삭제/순서 변경, 각 단계에 회사·직책·담당자 선택. `get_eligible_approvers` 결과만 노출
+- `SubmitApprovalDialog.tsx` — 어떤 문서에서도 호출하는 공용 상신 다이얼로그
+  1) 기본 템플릿(entity_type+company) 자동 로드
+  2) 사용자가 그 자리에서 라인 수정 가능
+  3) "이번만 사용" / "내 기본으로 저장" 선택지
+- `ApprovalStatusTimeline.tsx` — 진행 단계 시각화(이미 부분 구현된 것 흡수)
+- `useApprovalSubmit(entityType)` 훅으로 RPC 호출 표준화
 
-### 4. 모델 선택 정책
-- **기본**: `gemini-2.5-flash` (Lovable Gateway의 google/gemini-2.5-flash와 동일 모델, 비용은 직접가)
-- **백업/대량용**: `gemini-2.5-flash-lite` (더 저렴, risk-job-orchestrator 배치에서 사용)
-- **이미지 분석**: `gemini-2.5-flash` (멀티모달 지원)
+## 4. 기존 문서 페이지 적용
 
-### 5. 마이그레이션 안전장치
-- `GEMINI_API_KEY` 미설정 시 명확한 에러 메시지 ("마스터가 설정 > AI에서 Gemini 키를 등록해야 합니다")
-- 첫 호출 시 자동 검증 후 결과 토스트
+다음 페이지의 결재 버튼을 `SubmitApprovalDialog`로 교체:
+- `AssessmentRunDetail.tsx`
+- `WorkPlanDetail.tsx`
+- `WorkPermits.tsx` (모바일 `MobilePermits.tsx`도)
+- `SafetyCost.tsx` (월별 보고서 결재)
+- `Incidents.tsx`, `EmergencyDrills.tsx`
+- `TbmLogs.tsx`
 
-## 영향받지 않는 부분
-- 결재/위험성평가 DB 스키마, RLS, 결재 워크플로우 — **건드리지 않음**
-- 프론트엔드 위험성평가 UI/플로우 — **그대로 유지** (내부 함수 호출만 바뀜)
-- 캐싱 (`ai_risk_cache`), 잡 큐 (`ai_generation_jobs`) — **그대로 유지**
+문서별 고유 사전조건(예: 위험성평가 검증 통과)은 기존 가드 유지.
 
-## 비용 예상 (월 1만 회 호출 기준)
-- 현재 Lovable Gateway: 약 $50~150
-- Gemini 직접 (2.5 Flash): 약 $5~15 + **무료 할당량 (분당 15회, 일 1500회)** 내에서는 $0
+## 5. 결재함 통합
 
-## 실행 순서
-1. `GEMINI_API_KEY` 시크릿 등록 요청 (폼 띄움)
-2. `_shared/gemini.ts` 헬퍼 작성
-3. 7개 엣지 함수 순차 교체
-4. 프론트 UI 라벨/에러 메시지 업데이트
-5. 위험성평가 1건 자동생성 테스트로 검증
+- `/approvals` 와 `/m/approvals` 가 entity_type 별로 탭/필터 표시 (현재는 assessment_run 위주)
+- 카드 클릭 시 entity_type에 맞는 상세 라우트로 이동 (라우팅 매핑 테이블 추가)
 
-승인하시면 진행합니다.
+## 6. 설정 화면
+
+- `Settings.tsx` → "결재선 관리" 항목 추가, `/settings/approval-routes` 페이지에서 entity_type/company별 템플릿 CRUD
+
+## 7. 기술 메모 (개발자용)
+
+- 마이그레이션 1건: ALTER `approval_route_templates` ADD entity_type, company_id + 인덱스, 기존 행은 `assessment_run`/NULL로 백필
+- RPC 3개 추가: `submit_approval`, `get_eligible_approvers`, (옵션)`save_my_default_route`
+- RLS: 신규 컬럼 정책은 `is_project_member` + `can_access_company_data`로 일관 유지
+- 회사 위계 조회는 `companies.parent_company_id`(있으면) 재귀 CTE, 없으면 `company_managers`/`project_members` 역할 기반 fallback
+
+## 확인 사항
+
+- "상위 회사"의 정의: 발주처(CLIENT) → 원청(GC) → 협력사(CONTRACTOR) 트리를 그대로 사용하는 것으로 가정했습니다. 다른 정의(예: 협력사가 또 하위 협력사 보유) 있으면 알려주세요.
+- 산안비 결재는 이미 자체 `safety_cost_approval_steps`가 있는데, 통합 엔진으로 흡수할지 / 별도로 두고 UI만 통일할지 선택 필요합니다 (기본은 "UI만 통일, 데이터는 별도 유지" 권장).

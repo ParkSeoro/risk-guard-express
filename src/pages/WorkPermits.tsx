@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature, Pencil, Trash2, Users } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialog';
+import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 
 const STATUS_COLOR: Record<string, string> = {
   '작성중': 'bg-muted text-muted-foreground',
@@ -42,6 +43,7 @@ export default function WorkPermits() {
   const [gateOpen, setGateOpen] = useState<any | null>(null);
   const [gateResult, setGateResult] = useState<any>(null);
   const [workersDialog, setWorkersDialog] = useState<any | null>(null);
+  const [approvalTarget, setApprovalTarget] = useState<any | null>(null);
 
   const blankForm = {
     permit_date: new Date().toISOString().slice(0, 10),
@@ -269,14 +271,7 @@ export default function WorkPermits() {
                 {p.status === '작성중' && (
                   <>
                     <Button size="sm" onClick={() => submit(p)} disabled={!p.gate_check_result?.all_ok}>상신</Button>
-                    <Button size="sm" variant="outline" onClick={async () => {
-                      const { data, error } = await supabase.rpc('submit_entity_for_approval', {
-                        _entity_type: 'work_permit', _entity_id: p.id, _project_id: projectId,
-                      });
-                      const r = data as any;
-                      if (error || r?.error) toast({ title: '결재 상신 실패', description: r?.error || error?.message, variant: 'destructive' });
-                      else { toast({ title: `결재 상신 (${r.steps}단계)` }); load(); }
-                    }}>결재라인 상신</Button>
+                    <Button size="sm" variant="outline" onClick={() => setApprovalTarget(p)}>결재상신(결재선 지정)</Button>
                   </>
                 )}
                 {p.status === '검토대기' && isAdmin && (
@@ -379,6 +374,17 @@ export default function WorkPermits() {
         open={!!workersDialog}
         onClose={() => setWorkersDialog(null)}
       />
+      {approvalTarget && (
+        <SubmitApprovalDialog
+          open={!!approvalTarget}
+          onOpenChange={(v) => !v && setApprovalTarget(null)}
+          entityType="work_permit"
+          entityId={approvalTarget.id}
+          projectId={projectId}
+          submitterCompanyId={approvalTarget.company_id || null}
+          onSubmitted={() => { setApprovalTarget(null); load(); }}
+        />
+      )}
     </div>
   );
 }

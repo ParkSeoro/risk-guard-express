@@ -1,0 +1,262 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { ArrowLeft, GitBranch, Plus, Trash2, ArrowUp, ArrowDown, Save, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { ENTITY_LABELS, type ApprovalEntityType } from '@/components/approval/SubmitApprovalDialog';
+
+const PROJECT_KEY = 'selected_project_id';
+
+interface Step { label: string; position: string; user_id: string; user_name: string; company_id: string | null; company_name: string }
+
+export default function SettingsApprovalRoutes() {
+  const navigate = useNavigate();
+  const { hasRole, user } = useAuth();
+  const canEdit = hasRole('master') || hasRole('project_admin');
+  const projectId = localStorage.getItem(PROJECT_KEY) || '';
+
+  const [entityType, setEntityType] = useState<ApprovalEntityType>('assessment_run');
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState<any | null>(null);
+  const [approvers, setApprovers] = useState<any[]>([]);
+
+  const load = async () => {
+    if (!projectId) return;
+    setLoading(true);
+    const [{ data: tpl }, { data: cos }] = await Promise.all([
+      supabase.from('approval_route_templates').select('*')
+        .eq('project_id', projectId).eq('entity_type', entityType).eq('is_deleted', false)
+        .order('is_default', { ascending: false }),
+      supabase.from('companies').select('id,name,type').eq('project_id', projectId).eq('is_deleted', false),
+    ]);
+    setTemplates(tpl || []);
+    setCompanies(cos || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId, entityType]);
+
+  const startCreate = () => setEditing({
+    id: null, name: '', entity_type: entityType, project_id: projectId,
+    company_id: null, is_default: false, steps: [],
+  });
+
+  const startEdit = async (t: any) => {
+    setEditing({ ...t, steps: Array.isArray(t.steps) ? t.steps : [] });
+    // load approvers for the company
+    const { data } = await supabase.rpc('get_eligible_approvers', {
+      _project_id: projectId, _submitter_company_id: t.company_id,
+    });
+    setApprovers((data as any) || []);
+  };
+
+  const onCompanyChange = async (cid: string) => {
+    setEditing((e: any) => ({ ...e, company_id: cid === '__none__' ? null : cid }));
+    const { data } = await supabase.rpc('get_eligible_approvers', {
+      _project_id: projectId, _submitter_company_id: cid === '__none__' ? null : cid,
+    });
+    setApprovers((data as any) || []);
+  };
+
+  const save = async () => {
+    if (!editing) return;
+    if (!editing.name) return toast.error('템플릿 이름을 입력하세요');
+    if (!Array.isArray(editing.steps) || editing.steps.length === 0) return toast.error('1단계 이상 추가하세요');
+    const payload = {
+      project_id: projectId,
+      entity_type: editing.entity_type,
+      company_id: editing.company_id,
+      name: editing.name,
+      assessment_type: '정기',
+      is_default: !!editing.is_default,
+      steps: editing.steps,
+      created_by: user?.id,
+    };
+    const { error } = editing.id
+      ? await supabase.from('approval_route_templates').update(payload).eq('id', editing.id)
+      : await supabase.from('approval_route_templates').insert(payload);
+    if (error) return toast.error(error.message);
+    toast.success('저장되었습니다');
+    setEditing(null);
+    load();
+  };
+
+  const remove = async (id: string) => {
+    if (!confirm('이 템플릿을 삭제하시겠습니까?')) return;
+    const { error } = await supabase.from('approval_route_templates')
+      .update({ is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: user?.id })
+      .eq('id', id);
+    if (error) return toast.error(error.message);
+    load();
+  };
+
+  const updateStep = (idx: number, patch: Partial<Step>) => {
+    setEditing((e: any) => ({ ...e, steps: e.steps.map((s: Step, i: number) => i === idx ? { ...s, ...patch } : s) }));
+  };
+  const moveStep = (idx: number, dir: -1 | 1) => {
+    setEditing((e: any) => {
+      const next = [...e.steps];
+      const j = idx + dir;
+      if (j < 0 || j >= next.length) return e;
+      [next[idx], next[j]] = [next[j], next[idx]];
+      return { ...e, steps: next };
+    });
+  };
+
+  if (!canEdit) {
+    return (
+      <div className="space-y-4 max-w-3xl">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/settings')}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-xl font-bold flex items-center gap-2"><GitBranch className="h-5 w-5" /> 결재선 관리</h1>
+        </div>
+        <Card><CardContent className="py-12 text-center text-muted-foreground">마스터 또는 프로젝트 관리자 권한이 필요합니다.</CardContent></Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/settings')}>
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <div className="flex items-center gap-2 text-muted-foreground text-xs">
+            <span>설정</span><span>/</span><span>결재선 관리</span>
+          </div>
+          <h1 className="text-xl font-bold flex items-center gap-2"><GitBranch className="h-5 w-5" /> 결재선 관리</h1>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-base">문서 유형</CardTitle>
+            <Select value={entityType} onValueChange={(v) => setEntityType(v as ApprovalEntityType)}>
+              <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(Object.keys(ENTITY_LABELS) as ApprovalEntityType[]).map((k) => (
+                  <SelectItem key={k} value={k}>{ENTITY_LABELS[k]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={startCreate}><Plus className="h-4 w-4 mr-1" /> 새 템플릿</Button>
+        </CardHeader>
+        <CardContent>
+          {loading && <div className="text-center py-6"><Loader2 className="h-5 w-5 animate-spin inline" /></div>}
+          {!loading && templates.length === 0 && (
+            <div className="text-center py-8 text-sm text-muted-foreground">등록된 템플릿이 없습니다</div>
+          )}
+          <div className="space-y-2">
+            {templates.map((t) => (
+              <div key={t.id} className="border rounded p-3 flex items-center justify-between">
+                <div className="space-y-1">
+                  <div className="font-medium flex items-center gap-2">
+                    {t.name}
+                    {t.is_default && <Badge variant="secondary">기본</Badge>}
+                    {t.company_id && <Badge variant="outline">{companies.find((c) => c.id === t.company_id)?.name || '회사전용'}</Badge>}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {(Array.isArray(t.steps) ? t.steps : []).map((s: any, i: number) => `${i + 1}. ${s.label || s.step_label} (${s.user_name || '-'})`).join(' → ')}
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  <Button size="sm" variant="outline" onClick={() => startEdit(t)}>편집</Button>
+                  <Button size="icon" variant="ghost" className="text-destructive" onClick={() => remove(t.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader><DialogTitle>{editing?.id ? '템플릿 편집' : '새 결재선 템플릿'}</DialogTitle></DialogHeader>
+          {editing && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs">템플릿 이름</label>
+                  <Input value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+                </div>
+                <div>
+                  <label className="text-xs">적용 회사 (선택 안하면 프로젝트 공용)</label>
+                  <Select value={editing.company_id || '__none__'} onValueChange={onCompanyChange}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">프로젝트 공용</SelectItem>
+                      {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={!!editing.is_default}
+                  onChange={(e) => setEditing({ ...editing, is_default: e.target.checked })} />
+                기본 템플릿으로 설정
+              </label>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">결재선 ({editing.steps.length}단계)</label>
+                  <Button size="sm" variant="outline" onClick={() => setEditing({
+                    ...editing,
+                    steps: [...editing.steps, { label: '결재', position: '', user_id: '', user_name: '', company_id: null, company_name: '' }],
+                  })}><Plus className="h-3.5 w-3.5 mr-1" /> 단계 추가</Button>
+                </div>
+                {editing.steps.map((s: Step, i: number) => (
+                  <div key={i} className="border rounded p-2 space-y-2 bg-muted/30">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">{i + 1}</Badge>
+                      <Input className="h-8 flex-1" value={s.label} onChange={(e) => updateStep(i, { label: e.target.value })} placeholder="단계명" />
+                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => moveStep(i, -1)} disabled={i === 0}><ArrowUp className="h-4 w-4" /></Button>
+                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => moveStep(i, 1)} disabled={i === editing.steps.length - 1}><ArrowDown className="h-4 w-4" /></Button>
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive"
+                        onClick={() => setEditing({ ...editing, steps: editing.steps.filter((_: any, idx: number) => idx !== i) })}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <Select value={s.user_id} onValueChange={(v) => {
+                      const a = approvers.find((x: any) => x.out_user_id === v);
+                      if (!a) return;
+                      updateStep(i, { user_id: a.out_user_id, user_name: a.out_display_name, company_id: a.out_company_id, company_name: a.out_company_name, position: s.position || a.out_position });
+                    }}>
+                      <SelectTrigger className="h-9"><SelectValue placeholder="결재자 선택 (회사를 먼저 지정)" /></SelectTrigger>
+                      <SelectContent>
+                        {approvers.length === 0 && <div className="px-3 py-2 text-xs text-muted-foreground">후보가 없습니다. 회사를 지정하세요.</div>}
+                        {approvers.map((a: any) => (
+                          <SelectItem key={a.out_user_id} value={a.out_user_id}>
+                            {a.out_display_name || '(이름없음)'} · {a.out_company_name} · {a.out_position || a.out_role}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)}>취소</Button>
+            <Button onClick={save}><Save className="h-4 w-4 mr-1" /> 저장</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

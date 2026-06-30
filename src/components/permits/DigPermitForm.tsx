@@ -1,5 +1,5 @@
 /**
- * DIG 안전작업허가서 (MD-000000-SF003 Rev.C) — 픽셀 단위 양식 매칭
+ * 안전작업허가서 (MD-000000-SF003 Rev.C) — 픽셀 단위 양식 매칭
  * 일반 / 밀폐공간 / 화기작업 3종 지원, 결재란 자동 입력, 인쇄 최적화.
  */
 import { useEffect, useRef, useState } from 'react';
@@ -93,7 +93,7 @@ export interface PermitSignatures {
   sm?: { name: string; signature: string; signed_at: string };              // 담당자(SM)
   site_director?: { name: string; signature: string; signed_at: string };   // 책임자(소장)
   site_supervisor?: { name: string; signature: string; signed_at: string }; // 현장감독자
-  dig_approver?: { name: string; signature: string; signed_at: string };    // 승인자(DIG)
+  
   reviewed_at?: string;
   approved_at?: string;
 }
@@ -221,7 +221,7 @@ export default function DigPermitForm({
               <tr>
                 <th className="hd w-[110px]">공사업체</th>
                 <td className="w-[160px]"><Inp value={data.contractor_company} onChangeText={(v: string) => update({ contractor_company: v })} /></td>
-                <th className="hd" colSpan={2}>승인업체 : DIG 에어가스(주)</th>
+                <th className="hd" colSpan={2}>승인업체 : 에어리퀴드</th>
                 <th className="hd w-[100px]">검토일</th>
                 <th className="hd w-[100px]">승인일</th>
               </tr>
@@ -317,8 +317,8 @@ export default function DigPermitForm({
               {/* === 위험작업허가 확인사항 === */}
               <tr><th className="hd" colSpan={6}>위험작업허가 확인사항(해당 작업에 ☑ 표시 후 세부 항목 확인)</th></tr>
               {([
-                { key: 'hz_confined', label: '밀폐공간', note: 'hz_confined_note', detail: 'hz_confined_detail', items: ['통신수단', '구명장비(로프·송기마스크 등)', '2인1조 작업', '밀폐작업 특별안전교육', '관리감독자 배치', 'DIG 밀폐공간 작업점검표', '밀폐작업허가서 첨부'] },
-                { key: 'hz_hot', label: '화기', note: 'hz_hot_note', detail: 'hz_hot_detail', items: ['불티방지포 설치', 'DIG 화기작업 작업점검표', '화재감시자 배치', '소화기 비치', '작업 후 30분 잔류 감시'] },
+                { key: 'hz_confined', label: '밀폐공간', note: 'hz_confined_note', detail: 'hz_confined_detail', items: ['통신수단', '구명장비(로프·송기마스크 등)', '2인1조 작업', '밀폐작업 특별안전교육', '관리감독자 배치', '밀폐공간 작업점검표', '밀폐작업허가서 첨부'] },
+                { key: 'hz_hot', label: '화기', note: 'hz_hot_note', detail: 'hz_hot_detail', items: ['불티방지포 설치', '화기작업 작업점검표', '화재감시자 배치', '소화기 비치', '작업 후 30분 잔류 감시'] },
                 { key: 'hz_loto', label: '정전(LOTO)', note: 'hz_loto_note', detail: 'hz_loto_detail', items: ['제어실: 스위치·차단기 내림', '제어실: 잠금장치 시건·표지', '현장: 스위치·차단기 내림', '현장: 잠금장치 시건·표지', '방전·접지 실시', '활선접근 경보장치 휴대'] },
                 { key: 'hz_excavation', label: '굴착', note: 'hz_excavation_note', detail: 'hz_excavation_detail', items: ['매설물 확인: 가스·기계·소방배관', '매설물 확인: 전기·통신', '굴착면 기울기 준수', '흙막이/지보공 설치', '주변 침하·균열 점검'] },
                 { key: 'hz_radiation', label: '방사선', note: 'hz_radiation_note', detail: 'hz_radiation_detail', items: ['비인가자 출입제한', '방사선 위험·경고 표지', '자격증 소지', '방사선 측정장비 휴대'] },
@@ -390,18 +390,18 @@ export default function DigPermitForm({
                 <td>시 분</td>
                 <th className="hd">현장감독자</th>
                 <td className="w-[120px]"><SigCell k="site_supervisor" /></td>
-                <th className="hd">승인자(DIG)</th>
+                <th className="hd">승인자</th>
               </tr>
               <tr>
                 <td colSpan={6} className="text-right">
-                  <SigCell k="dig_approver" label="DIG 승인 서명" />
+                  <SigCell k="site_director" label="승인 서명" />
                 </td>
               </tr>
               <tr>
                 <th className="hd">작업허가 연장</th>
                 <td colSpan={3}>{readOnly || printMode ? '' : <input type="datetime-local" className="text-xs border-0 bg-transparent" />} 까지</td>
                 <th className="hd">승인</th>
-                <td><SigCell k="dig_approver" label="연장 승인" /></td>
+                <td><SigCell k="site_director" label="연장 승인" /></td>
               </tr>
             </tbody>
           </table>
@@ -477,7 +477,7 @@ export default function DigPermitForm({
                 <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
                 <td><SigCell k="applicant" /></td>
               </tr>
-              <tr><th className="hd">승인자</th><td>{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : '년 월 일'} 성명 : {signatures.dig_approver?.name || ''}</td><td><SigCell k="dig_approver" /></td></tr>
+              <tr><th className="hd">승인자</th><td>{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : '년 월 일'} 성명 : {signatures.site_director?.name || ''}</td><td><SigCell k="site_director" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 밀폐공간 작업시간은 1일 최대 8시간을 넘지 않도록 하며 연장근무 발생 시 작업허가 연장 승인 필요</div>
@@ -532,7 +532,7 @@ export default function DigPermitForm({
               <tr><td className="text-center">기준</td><td>18%이상~23.5%미만</td><td>10ppm미만 / 30ppm미만</td><td>0% / 1.5%미만</td></tr>
               <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
               <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
-              <tr><th className="hd">승인자</th><td colSpan={2}>{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : '년 월 일'} 성명 : {signatures.dig_approver?.name || ''}</td><td><SigCell k="dig_approver" /></td></tr>
+              <tr><th className="hd">승인자</th><td colSpan={2}>{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : '년 월 일'} 성명 : {signatures.site_director?.name || ''}</td><td><SigCell k="site_director" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 연장근무 발생 시 작업허가 연장 승인 필요</div>
@@ -597,7 +597,7 @@ export default function DigPermitForm({
               </tr>
               <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
               <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
-              <tr><th className="hd">승인자</th><td colSpan={2}>{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : '년 월 일'} 성명 : {signatures.dig_approver?.name || ''}</td><td><SigCell k="dig_approver" /></td></tr>
+              <tr><th className="hd">승인자</th><td colSpan={2}>{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : '년 월 일'} 성명 : {signatures.site_director?.name || ''}</td><td><SigCell k="site_director" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 지하매설물 손상 시 즉시 작업중지 후 관리주체에 통보. 깊이 1.5m 이상 굴착 시 흙막이/지보공 의무.</div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,6 +35,7 @@ export default function WorkPermits() {
   const { toast } = useToast();
   const { user, isAdmin } = useAuth();
   const { log } = useAuditLog();
+  const navigate = useNavigate();
   const projectId = typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') || '' : '';
   const { userCompanyId } = useProjectAccess();
 
@@ -249,7 +251,7 @@ export default function WorkPermits() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge className={STATUS_COLOR[p.status] || ''}>{p.status}</Badge>
-                  <span className="font-semibold">{p.work_description}</span>
+                  <button className="font-semibold text-left hover:underline" onClick={() => navigate(`/work-permits/${p.id}`)}>{p.work_description}</button>
                   {(() => {
                     const today = new Date().toISOString().slice(0, 10);
                     if (!p.permit_date) return null;
@@ -297,6 +299,7 @@ export default function WorkPermits() {
                     <Button size="sm" variant="destructive" onClick={() => reject(p)}><XCircle className="h-3 w-3 mr-1" />반려</Button>
                   </>
                 )}
+                <Button size="sm" onClick={() => navigate(`/work-permits/${p.id}`)}><FileSignature className="h-3 w-3 mr-1" />양식 작성</Button>
                 <Button size="sm" variant="outline" onClick={() => setWorkersDialog(p)} title="근로자 배정"><Users className="h-3 w-3" /></Button>
                 <Button size="sm" variant="outline" onClick={() => openEdit(p)} title="수정"><Pencil className="h-3 w-3" /></Button>
                 {isAdmin && (

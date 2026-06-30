@@ -263,11 +263,12 @@ export default function WorkPermits() {
                 </div>
                 <p className="text-xs text-muted-foreground">{p.permit_date} · {p.location || '-'}</p>
                 {p.gate_check_result?.all_ok === false && (
-                  <p className="text-xs text-destructive mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />결재불가 - 위험성평가/작업계획서 조건 미충족</p>
+                  <p className="text-xs text-destructive mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />결재불가 - 연결된 위험성평가/작업계획서가 승인완료 상태가 아닙니다</p>
                 )}
                 {p.gate_check_result?.all_ok === true && (
-                  <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />결재 가능 (위험성평가·작업계획서 충족)</p>
+                  <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />결재 가능</p>
                 )}
+
                 {p.status === '승인' && (
                   p.gate_check_result?.exec_ok
                     ? <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />당일 TBM 완료 - 작업 실행 가능</p>

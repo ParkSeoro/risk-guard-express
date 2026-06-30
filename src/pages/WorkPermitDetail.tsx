@@ -16,6 +16,7 @@ import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck } from 'lucide-rea
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { printOverlay } from '@/lib/permitOverlayPrint';
 
 const PERMIT_TABS: { id: PermitType; label: string }[] = [
   { id: 'general', label: '일반' },

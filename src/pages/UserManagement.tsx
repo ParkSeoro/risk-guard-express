@@ -44,6 +44,15 @@ const positionLabels: Record<string, string> = {
   OWNER_HSE: '발주처 안전',
   SUPERVISOR: '감리',
 };
+// Positions available per company type.
+// 발주사(client)에는 '현장소장' 직책이 존재하지 않음 — 발주처 PM/안전/감리/임원만 노출.
+const POSITIONS_BY_COMPANY_TYPE: Record<string, string[]> = {
+  client: ['CEO', 'EXECUTIVE', 'OWNER_PM', 'OWNER_HSE', 'SUPERVISOR'],
+  gc: ['CEO', 'EXECUTIVE', 'SITE_MANAGER', 'HSE_MANAGER', 'CONSTRUCTION_MGR', 'FIELD_ENGINEER', 'FOREMAN', 'WORKER', 'SUPERVISOR'],
+  contractor: ['CEO', 'EXECUTIVE', 'SITE_MANAGER', 'HSE_MANAGER', 'CONSTRUCTION_MGR', 'FIELD_ENGINEER', 'FOREMAN', 'WORKER'],
+  vendor: ['CEO', 'EXECUTIVE', 'FIELD_ENGINEER', 'FOREMAN', 'WORKER'],
+};
+
 /** Map new project_role -> legacy app_role enum (for the role column).
  *  Unknown new values fall back to 'viewer'. */
 const projectRoleToLegacy = (r: string): string => {

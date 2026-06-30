@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,6 +35,7 @@ export default function WorkPermits() {
   const { toast } = useToast();
   const { user, isAdmin } = useAuth();
   const { log } = useAuditLog();
+  const navigate = useNavigate();
   const projectId = typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') || '' : '';
   const { userCompanyId } = useProjectAccess();
 

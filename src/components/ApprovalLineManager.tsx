@@ -51,6 +51,7 @@ const POSITION_LABELS: Record<string, string> = {
   project_admin: '프로젝트 관리자',
   worker: '작업자',
   viewer: '열람자',
+  cooperator: '협조',
   // new project_position enum (project_members.position_new)
   CEO: '대표이사',
   EXECUTIVE: '임원',
@@ -70,6 +71,7 @@ const STEP_TEMPLATES = [
   { step_label: '안전관리자 검토', position: 'safety_manager' },
   { step_label: '현장대리인 확인', position: 'site_manager' },
   { step_label: '최종승인', position: 'project_admin' },
+  { step_label: '협조', position: 'cooperator' },
 ];
 
 export default function ApprovalLineManager({ projectId, projectMembers, companies, readOnly, onLinesChanged }: Props) {

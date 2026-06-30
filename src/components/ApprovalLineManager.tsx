@@ -299,8 +299,11 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line, i) => (
+                {lines
+                  .filter(l => !(readOnly && l.position === 'cooperator' && !l.user_id))
+                  .map((line, i) => (
                   <tr key={i} className="hover:bg-muted/30">
+
                     <td className="border px-2 py-1 text-center font-medium">{i + 1}</td>
                     <td className="border px-2 py-1">
                       {readOnly ? (

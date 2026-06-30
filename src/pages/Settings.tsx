@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch } from 'lucide-react';
+import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature } from 'lucide-react';
 
 const settingsCards = [
   {
@@ -54,6 +54,15 @@ const settingsCards = [
     description: 'iOS·Android 앱에 OTA 업데이트 번들을 게시·관리합니다.',
     icon: Smartphone,
     path: '/settings/mobile-releases',
+    requires: 'master' as const,
+    badge: '마스터 전용',
+  },
+  {
+    id: 'permit-forms',
+    title: '허가서 양식 디자인',
+    description: 'SF003 표준양식 등 작업허가서 레이아웃(JSON)을 마스터 권한으로 직접 디자인합니다.',
+    icon: FileSignature,
+    path: '/settings/permit-forms',
     requires: 'master' as const,
     badge: '마스터 전용',
   },

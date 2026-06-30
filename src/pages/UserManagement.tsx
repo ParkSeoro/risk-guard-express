@@ -609,16 +609,31 @@ const UserManagement = () => {
             </div>
             <div className="space-y-1">
               <Label className="text-xs">직책 (선택)</Label>
-              <Select value={assignPosition || '_none'} onValueChange={(v) => setAssignPosition(v === '_none' ? '' : v)}>
-                <SelectTrigger className="text-xs"><SelectValue placeholder="직책 선택" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">없음</SelectItem>
-                  {Object.entries(positionLabels).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>{v}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {(() => {
+                const selectedCompany = projectCompanies.find(c => c.id === assignCompanyId);
+                const allowed = selectedCompany
+                  ? (POSITIONS_BY_COMPANY_TYPE[selectedCompany.type] || Object.keys(positionLabels))
+                  : Object.keys(positionLabels);
+                // 현재 선택값이 허용되지 않으면 표시는 하되 안내
+                return (
+                  <>
+                    <Select value={assignPosition || '_none'} onValueChange={(v) => setAssignPosition(v === '_none' ? '' : v)}>
+                      <SelectTrigger className="text-xs"><SelectValue placeholder="직책 선택" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="_none">없음</SelectItem>
+                        {allowed.map(k => (
+                          <SelectItem key={k} value={k}>{positionLabels[k]}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {selectedCompany?.type === 'client' && (
+                      <p className="text-[11px] text-muted-foreground">발주사에는 '현장소장' 직책이 없습니다. 발주처 PM/안전/감리만 선택 가능합니다.</p>
+                    )}
+                  </>
+                );
+              })()}
             </div>
+
             <Button onClick={handleAssignMembership} className="w-full" disabled={!assignUserId || !assignProjectId || !assignRole || assignSaving}>
               {assignSaving ? '처리 중...' : '소속 부여'}
             </Button>

@@ -3556,6 +3556,50 @@ export type Database = {
           },
         ]
       }
+      permit_form_template_versions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          layout_json: Json
+          original_pdf_url: string | null
+          print_overlay: Json
+          snapshot_reason: string | null
+          template_id: string
+          version_label: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          layout_json: Json
+          original_pdf_url?: string | null
+          print_overlay?: Json
+          snapshot_reason?: string | null
+          template_id: string
+          version_label: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          layout_json?: Json
+          original_pdf_url?: string | null
+          print_overlay?: Json
+          snapshot_reason?: string | null
+          template_id?: string
+          version_label?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "permit_form_template_versions_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "permit_form_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       permit_form_templates: {
         Row: {
           code: string
@@ -3567,6 +3611,8 @@ export type Database = {
           is_deleted: boolean
           layout_json: Json
           name: string
+          original_pdf_url: string | null
+          print_overlay: Json
           project_id: string | null
           updated_at: string
           version: string
@@ -3581,6 +3627,8 @@ export type Database = {
           is_deleted?: boolean
           layout_json?: Json
           name: string
+          original_pdf_url?: string | null
+          print_overlay?: Json
           project_id?: string | null
           updated_at?: string
           version?: string
@@ -3595,6 +3643,8 @@ export type Database = {
           is_deleted?: boolean
           layout_json?: Json
           name?: string
+          original_pdf_url?: string | null
+          print_overlay?: Json
           project_id?: string | null
           updated_at?: string
           version?: string

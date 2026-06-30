@@ -221,7 +221,7 @@ export default function DigPermitForm({
               <tr>
                 <th className="hd w-[110px]">공사업체</th>
                 <td className="w-[160px]"><Inp value={data.contractor_company} onChangeText={(v: string) => update({ contractor_company: v })} /></td>
-                <th className="hd" colSpan={2}>승인업체 : DIG 에어가스(주)</th>
+                <th className="hd" colSpan={2}>승인업체 : 에어리퀴드</th>
                 <th className="hd w-[100px]">검토일</th>
                 <th className="hd w-[100px]">승인일</th>
               </tr>
@@ -317,8 +317,8 @@ export default function DigPermitForm({
               {/* === 위험작업허가 확인사항 === */}
               <tr><th className="hd" colSpan={6}>위험작업허가 확인사항(해당 작업에 ☑ 표시 후 세부 항목 확인)</th></tr>
               {([
-                { key: 'hz_confined', label: '밀폐공간', note: 'hz_confined_note', detail: 'hz_confined_detail', items: ['통신수단', '구명장비(로프·송기마스크 등)', '2인1조 작업', '밀폐작업 특별안전교육', '관리감독자 배치', 'DIG 밀폐공간 작업점검표', '밀폐작업허가서 첨부'] },
-                { key: 'hz_hot', label: '화기', note: 'hz_hot_note', detail: 'hz_hot_detail', items: ['불티방지포 설치', 'DIG 화기작업 작업점검표', '화재감시자 배치', '소화기 비치', '작업 후 30분 잔류 감시'] },
+                { key: 'hz_confined', label: '밀폐공간', note: 'hz_confined_note', detail: 'hz_confined_detail', items: ['통신수단', '구명장비(로프·송기마스크 등)', '2인1조 작업', '밀폐작업 특별안전교육', '관리감독자 배치', '밀폐공간 작업점검표', '밀폐작업허가서 첨부'] },
+                { key: 'hz_hot', label: '화기', note: 'hz_hot_note', detail: 'hz_hot_detail', items: ['불티방지포 설치', '화기작업 작업점검표', '화재감시자 배치', '소화기 비치', '작업 후 30분 잔류 감시'] },
                 { key: 'hz_loto', label: '정전(LOTO)', note: 'hz_loto_note', detail: 'hz_loto_detail', items: ['제어실: 스위치·차단기 내림', '제어실: 잠금장치 시건·표지', '현장: 스위치·차단기 내림', '현장: 잠금장치 시건·표지', '방전·접지 실시', '활선접근 경보장치 휴대'] },
                 { key: 'hz_excavation', label: '굴착', note: 'hz_excavation_note', detail: 'hz_excavation_detail', items: ['매설물 확인: 가스·기계·소방배관', '매설물 확인: 전기·통신', '굴착면 기울기 준수', '흙막이/지보공 설치', '주변 침하·균열 점검'] },
                 { key: 'hz_radiation', label: '방사선', note: 'hz_radiation_note', detail: 'hz_radiation_detail', items: ['비인가자 출입제한', '방사선 위험·경고 표지', '자격증 소지', '방사선 측정장비 휴대'] },

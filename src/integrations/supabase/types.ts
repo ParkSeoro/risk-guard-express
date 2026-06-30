@@ -1353,6 +1353,7 @@ export type Database = {
           deleted_reason: string | null
           id: string
           is_deleted: boolean
+          legacy_name: string | null
           name: string
           parent_company_id: string | null
           period: string | null
@@ -1371,6 +1372,7 @@ export type Database = {
           deleted_reason?: string | null
           id?: string
           is_deleted?: boolean
+          legacy_name?: string | null
           name: string
           parent_company_id?: string | null
           period?: string | null
@@ -1389,6 +1391,7 @@ export type Database = {
           deleted_reason?: string | null
           id?: string
           is_deleted?: boolean
+          legacy_name?: string | null
           name?: string
           parent_company_id?: string | null
           period?: string | null
@@ -2671,6 +2674,94 @@ export type Database = {
         }
         Relationships: []
       }
+      hotwork_permits: {
+        Row: {
+          area_isolated: boolean | null
+          combustibles_removed: boolean | null
+          created_at: string
+          created_by: string | null
+          extinguisher_count: number | null
+          fire_watcher_contact: string | null
+          fire_watcher_name: string | null
+          form_data: Json
+          gas_test_lel: number | null
+          gas_test_oxygen: number | null
+          gas_test_time: string | null
+          hot_surface_cooled: boolean | null
+          hot_work_type: string | null
+          id: string
+          is_deleted: boolean
+          notes: string | null
+          project_id: string
+          updated_at: string
+          work_permit_id: string
+        }
+        Insert: {
+          area_isolated?: boolean | null
+          combustibles_removed?: boolean | null
+          created_at?: string
+          created_by?: string | null
+          extinguisher_count?: number | null
+          fire_watcher_contact?: string | null
+          fire_watcher_name?: string | null
+          form_data?: Json
+          gas_test_lel?: number | null
+          gas_test_oxygen?: number | null
+          gas_test_time?: string | null
+          hot_surface_cooled?: boolean | null
+          hot_work_type?: string | null
+          id?: string
+          is_deleted?: boolean
+          notes?: string | null
+          project_id: string
+          updated_at?: string
+          work_permit_id: string
+        }
+        Update: {
+          area_isolated?: boolean | null
+          combustibles_removed?: boolean | null
+          created_at?: string
+          created_by?: string | null
+          extinguisher_count?: number | null
+          fire_watcher_contact?: string | null
+          fire_watcher_name?: string | null
+          form_data?: Json
+          gas_test_lel?: number | null
+          gas_test_oxygen?: number | null
+          gas_test_time?: string | null
+          hot_surface_cooled?: boolean | null
+          hot_work_type?: string | null
+          id?: string
+          is_deleted?: boolean
+          notes?: string | null
+          project_id?: string
+          updated_at?: string
+          work_permit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hotwork_permits_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hotwork_permits_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "hotwork_permits_work_permit_id_fkey"
+            columns: ["work_permit_id"]
+            isOneToOne: false
+            referencedRelation: "work_permits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       incident_reports: {
         Row: {
           authority_report_no: string | null
@@ -3465,6 +3556,66 @@ export type Database = {
           },
         ]
       }
+      permit_form_templates: {
+        Row: {
+          code: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          is_default: boolean
+          is_deleted: boolean
+          layout_json: Json
+          name: string
+          project_id: string | null
+          updated_at: string
+          version: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          is_deleted?: boolean
+          layout_json?: Json
+          name: string
+          project_id?: string | null
+          updated_at?: string
+          version?: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          is_default?: boolean
+          is_deleted?: boolean
+          layout_json?: Json
+          name?: string
+          project_id?: string | null
+          updated_at?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "permit_form_templates_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "permit_form_templates_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+        ]
+      }
       pii_access_logs: {
         Row: {
           access_type: string
@@ -3652,6 +3803,87 @@ export type Database = {
           },
           {
             foreignKeyName: "project_join_requests_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+        ]
+      }
+      project_library_files: {
+        Row: {
+          category: string
+          created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
+          description: string | null
+          download_count: number
+          file_name: string
+          file_path: string
+          file_size: number | null
+          id: string
+          is_deleted: boolean
+          is_pinned: boolean
+          mime_type: string | null
+          project_id: string
+          title: string
+          updated_at: string
+          uploaded_by: string | null
+          uploaded_by_name: string | null
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
+          description?: string | null
+          download_count?: number
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id?: string
+          is_deleted?: boolean
+          is_pinned?: boolean
+          mime_type?: string | null
+          project_id: string
+          title: string
+          updated_at?: string
+          uploaded_by?: string | null
+          uploaded_by_name?: string | null
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
+          description?: string | null
+          download_count?: number
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: string
+          is_deleted?: boolean
+          is_pinned?: boolean
+          mime_type?: string | null
+          project_id?: string
+          title?: string
+          updated_at?: string
+          uploaded_by?: string | null
+          uploaded_by_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_library_files_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_library_files_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "v_contractor_safety_scorecard"
@@ -6811,11 +7043,14 @@ export type Database = {
           dig_company: string
           extension_until: string | null
           form_data: Json
+          form_version: string | null
           gate_check_result: Json
           id: string
           is_deleted: boolean
+          linked_assessment_run_ids: string[] | null
           location: string
           permit_date: string
+          permit_kinds: string[] | null
           permit_type: string
           personnel_count: number
           project_id: string
@@ -6854,11 +7089,14 @@ export type Database = {
           dig_company?: string
           extension_until?: string | null
           form_data?: Json
+          form_version?: string | null
           gate_check_result?: Json
           id?: string
           is_deleted?: boolean
+          linked_assessment_run_ids?: string[] | null
           location?: string
           permit_date?: string
+          permit_kinds?: string[] | null
           permit_type?: string
           personnel_count?: number
           project_id: string
@@ -6897,11 +7135,14 @@ export type Database = {
           dig_company?: string
           extension_until?: string | null
           form_data?: Json
+          form_version?: string | null
           gate_check_result?: Json
           id?: string
           is_deleted?: boolean
+          linked_assessment_run_ids?: string[] | null
           location?: string
           permit_date?: string
+          permit_kinds?: string[] | null
           permit_type?: string
           personnel_count?: number
           project_id?: string
@@ -8283,6 +8524,10 @@ export type Database = {
       is_global_admin: { Args: { _user_id: string }; Returns: boolean }
       is_master: { Args: { _user_id: string }; Returns: boolean }
       is_project_admin: {
+        Args: { _project_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_project_admin_or_safety: {
         Args: { _project_id: string; _user_id: string }
         Returns: boolean
       }

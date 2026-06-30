@@ -47,6 +47,7 @@ import InspectionMode from "./pages/InspectionMode";
 import SafetyInspections from "./pages/SafetyInspections";
 import SiteReadinessChecklist from "./pages/SiteReadinessChecklist";
 import EducationMaterials from "./pages/EducationMaterials";
+import ProjectLibrary from "./pages/ProjectLibrary";
 import WorkerManagement from "./pages/WorkerManagement";
 import WorkerDetail from "./pages/WorkerDetail";
 import LegalEducationMapping from "./pages/LegalEducationMapping";
@@ -205,6 +206,7 @@ function ProtectedRoutes() {
         <Route path="/safety-cost-validation" element={<SafetyCostValidation />} />
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="/education-materials" element={<EducationMaterials />} />
+        <Route path="/project-library" element={<ProjectLibrary />} />
         <Route path="/workers" element={<WorkerManagement />} />
         <Route path="/workers/legal-mapping" element={<LegalEducationMapping />} />
         <Route path="/workers/:id" element={<WorkerDetail />} />

@@ -51,6 +51,7 @@ const POSITION_LABELS: Record<string, string> = {
   project_admin: '프로젝트 관리자',
   worker: '작업자',
   viewer: '열람자',
+  cooperator: '협조',
   // new project_position enum (project_members.position_new)
   CEO: '대표이사',
   EXECUTIVE: '임원',
@@ -70,6 +71,7 @@ const STEP_TEMPLATES = [
   { step_label: '안전관리자 검토', position: 'safety_manager' },
   { step_label: '현장대리인 확인', position: 'site_manager' },
   { step_label: '최종승인', position: 'project_admin' },
+  { step_label: '협조', position: 'cooperator' },
 ];
 
 export default function ApprovalLineManager({ projectId, projectMembers, companies, readOnly, onLinesChanged }: Props) {
@@ -297,8 +299,11 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
                 </tr>
               </thead>
               <tbody>
-                {lines.map((line, i) => (
+                {lines
+                  .filter(l => !(readOnly && l.position === 'cooperator' && !l.user_id))
+                  .map((line, i) => (
                   <tr key={i} className="hover:bg-muted/30">
+
                     <td className="border px-2 py-1 text-center font-medium">{i + 1}</td>
                     <td className="border px-2 py-1">
                       {readOnly ? (

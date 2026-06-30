@@ -134,10 +134,10 @@ export default function WorkPermits() {
     setGateOpen(permit);
     setGateResult(null);
 
-    // 결재 게이트: 위험성평가 + 작업계획서 (TBM은 실행 단계 조건이므로 제외)
+    // 결재 게이트: 위험성평가/작업계획서는 선택. 연결된 경우에만 상태 검증.
     const checks: any = {
-      assessment: { ok: false, msg: '위험성평가 미연결' },
-      work_plan: { ok: false, msg: '작업계획서 미연결' },
+      assessment: { ok: true, msg: '위험성평가 미연결 (선택)' },
+      work_plan: { ok: true, msg: '작업계획서 미연결 (선택)' },
     };
     // TBM은 실행 조건(별도 표시)
     const exec: any = { tbm: { ok: false, msg: 'TBM 미실시 - 작업 실행 시 당일 TBM 필요' } };
@@ -170,9 +170,10 @@ export default function WorkPermits() {
       }
     }
 
-    const all_ok = Object.values(checks).every((c: any) => c.ok); // 결재용
+    const all_ok = Object.values(checks).every((c: any) => c.ok); // 결재용 (연결된 항목만 검증)
     const exec_ok = exec.tbm.ok; // 실행용
     setGateResult({ checks, exec, all_ok, exec_ok });
+
 
     await supabase.from('work_permits' as any).update({
       gate_check_result: { checks, exec, all_ok, exec_ok, checked_at: new Date().toISOString() },
@@ -262,11 +263,12 @@ export default function WorkPermits() {
                 </div>
                 <p className="text-xs text-muted-foreground">{p.permit_date} · {p.location || '-'}</p>
                 {p.gate_check_result?.all_ok === false && (
-                  <p className="text-xs text-destructive mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />결재불가 - 위험성평가/작업계획서 조건 미충족</p>
+                  <p className="text-xs text-destructive mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />결재불가 - 연결된 위험성평가/작업계획서가 승인완료 상태가 아닙니다</p>
                 )}
                 {p.gate_check_result?.all_ok === true && (
-                  <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />결재 가능 (위험성평가·작업계획서 충족)</p>
+                  <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />결재 가능</p>
                 )}
+
                 {p.status === '승인' && (
                   p.gate_check_result?.exec_ok
                     ? <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />당일 TBM 완료 - 작업 실행 가능</p>

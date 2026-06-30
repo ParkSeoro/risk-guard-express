@@ -64,7 +64,7 @@ export default function ProjectLibrary() {
   const [editing, setEditing] = useState<LibFile | null>(null);
   const [form, setForm] = useState({ title: '', description: '', category: 'etc', file: null as File | null });
 
-  const projectId = selectedProject?.id;
+  const projectId = selectedProject;
   const canUpload = !!projectId && isAdmin();
 
   const fetchFiles = useCallback(async () => {

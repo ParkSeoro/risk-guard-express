@@ -54,6 +54,7 @@ const groups: Group[] = [
       { title: "안전점검", url: "/safety-inspections", icon: ClipboardCheck },
       { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
       { title: "교육자료", url: "/education-materials", icon: FileText },
+      { title: "공개 자료실", url: "/project-library", icon: FolderOpen },
     ],
   },
   {

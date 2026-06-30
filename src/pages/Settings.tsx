@@ -57,6 +57,15 @@ const settingsCards = [
     requires: 'master' as const,
     badge: '마스터 전용',
   },
+  {
+    id: 'permit-forms',
+    title: '허가서 양식 디자인',
+    description: 'SF003 표준양식 등 작업허가서 레이아웃(JSON)을 마스터 권한으로 직접 디자인합니다.',
+    icon: FileSignature,
+    path: '/settings/permit-forms',
+    requires: 'master' as const,
+    badge: '마스터 전용',
+  },
 ];
 
 const Settings = () => {

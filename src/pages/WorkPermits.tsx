@@ -299,6 +299,7 @@ export default function WorkPermits() {
                     <Button size="sm" variant="destructive" onClick={() => reject(p)}><XCircle className="h-3 w-3 mr-1" />반려</Button>
                   </>
                 )}
+                <Button size="sm" onClick={() => navigate(`/work-permits/${p.id}`)}><FileSignature className="h-3 w-3 mr-1" />양식 작성</Button>
                 <Button size="sm" variant="outline" onClick={() => setWorkersDialog(p)} title="근로자 배정"><Users className="h-3 w-3" /></Button>
                 <Button size="sm" variant="outline" onClick={() => openEdit(p)} title="수정"><Pencil className="h-3 w-3" /></Button>
                 {isAdmin && (

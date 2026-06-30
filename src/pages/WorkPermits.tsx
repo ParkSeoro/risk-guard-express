@@ -251,7 +251,7 @@ export default function WorkPermits() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge className={STATUS_COLOR[p.status] || ''}>{p.status}</Badge>
-                  <span className="font-semibold">{p.work_description}</span>
+                  <button className="font-semibold text-left hover:underline" onClick={() => navigate(`/work-permits/${p.id}`)}>{p.work_description}</button>
                   {(() => {
                     const today = new Date().toISOString().slice(0, 10);
                     if (!p.permit_date) return null;

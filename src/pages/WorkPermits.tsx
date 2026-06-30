@@ -134,10 +134,10 @@ export default function WorkPermits() {
     setGateOpen(permit);
     setGateResult(null);
 
-    // 결재 게이트: 위험성평가 + 작업계획서 (TBM은 실행 단계 조건이므로 제외)
+    // 결재 게이트: 위험성평가/작업계획서는 선택. 연결된 경우에만 상태 검증.
     const checks: any = {
-      assessment: { ok: false, msg: '위험성평가 미연결' },
-      work_plan: { ok: false, msg: '작업계획서 미연결' },
+      assessment: { ok: true, msg: '위험성평가 미연결 (선택)' },
+      work_plan: { ok: true, msg: '작업계획서 미연결 (선택)' },
     };
     // TBM은 실행 조건(별도 표시)
     const exec: any = { tbm: { ok: false, msg: 'TBM 미실시 - 작업 실행 시 당일 TBM 필요' } };
@@ -170,9 +170,10 @@ export default function WorkPermits() {
       }
     }
 
-    const all_ok = Object.values(checks).every((c: any) => c.ok); // 결재용
+    const all_ok = Object.values(checks).every((c: any) => c.ok); // 결재용 (연결된 항목만 검증)
     const exec_ok = exec.tbm.ok; // 실행용
     setGateResult({ checks, exec, all_ok, exec_ok });
+
 
     await supabase.from('work_permits' as any).update({
       gate_check_result: { checks, exec, all_ok, exec_ok, checked_at: new Date().toISOString() },

@@ -206,6 +206,7 @@ function ProtectedRoutes() {
         <Route path="/safety-cost-validation" element={<SafetyCostValidation />} />
         <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
         <Route path="/education-materials" element={<EducationMaterials />} />
+        <Route path="/project-library" element={<ProjectLibrary />} />
         <Route path="/workers" element={<WorkerManagement />} />
         <Route path="/workers/legal-mapping" element={<LegalEducationMapping />} />
         <Route path="/workers/:id" element={<WorkerDetail />} />

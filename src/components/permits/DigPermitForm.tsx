@@ -93,7 +93,7 @@ export interface PermitSignatures {
   sm?: { name: string; signature: string; signed_at: string };              // 담당자(SM)
   site_director?: { name: string; signature: string; signed_at: string };   // 책임자(소장)
   site_supervisor?: { name: string; signature: string; signed_at: string }; // 현장감독자
-  site_director?: { name: string; signature: string; signed_at: string };    // 승인자
+  
   reviewed_at?: string;
   approved_at?: string;
 }

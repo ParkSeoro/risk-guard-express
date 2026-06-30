@@ -1,10 +1,14 @@
 /**
- * 허가서 양식 디자인 (마스터 전용)
- * - permit_form_templates 의 layout_json 을 직접 편집/버전관리.
- * - 코드/이름/버전/기본여부/활성여부를 관리하고, SF003 표준양식을 복제해 새 버전을 만들 수 있음.
+ * 허가서 양식 디자인 (마스터 전용) — 비주얼 빌더
+ * 좌측: 양식 목록 / 우측: 빌더(섹션·필드) | 미리보기 | 원본PDF 오버레이 | 고급(JSON) | 버전
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor,
+  useSensor, useSensors, DragEndEvent,
+} from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -15,8 +19,15 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { FileSignature, Plus, Copy, Trash2, Save, Eye } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+  FileSignature, Plus, Copy, Trash2, Save, Eye, History, FileText, MousePointer2,
+} from 'lucide-react';
+import SortableSectionCard from '@/components/permit-designer/SortableSectionCard';
+import PropertyPanel from '@/components/permit-designer/PropertyPanel';
+import LivePreview from '@/components/permit-designer/LivePreview';
+import OverlayEditor from '@/components/permit-designer/OverlayEditor';
+import { FormLayout, PrintOverlay, EMPTY_LAYOUT, EMPTY_OVERLAY, newSection } from '@/lib/permitFormTypes';
 
 type Tpl = {
   id: string;
@@ -24,11 +35,18 @@ type Tpl = {
   code: string;
   name: string;
   version: string;
-  layout_json: any;
+  layout_json: FormLayout;
+  print_overlay: PrintOverlay;
+  original_pdf_url: string | null;
   is_default: boolean;
   is_active: boolean;
   updated_at: string;
 };
+
+type SelectedRef =
+  | { kind: 'section'; sectionId: string }
+  | { kind: 'field'; sectionId: string; fieldKey: string }
+  | null;
 
 export default function SettingsPermitForms() {
   const { hasRole } = useAuth();
@@ -37,21 +55,46 @@ export default function SettingsPermitForms() {
   const [rows, setRows] = useState<Tpl[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Tpl | null>(null);
+  const [layout, setLayout] = useState<FormLayout>(EMPTY_LAYOUT);
+  const [overlay, setOverlay] = useState<PrintOverlay>(EMPTY_OVERLAY);
+  const [originalPdfUrl, setOriginalPdfUrl] = useState<string | null>(null);
+  const [selectedRef, setSelectedRef] = useState<SelectedRef>(null);
+  const [tab, setTab] = useState('builder');
+  const [versions, setVersions] = useState<any[]>([]);
+  const [showJson, setShowJson] = useState(false);
   const [jsonText, setJsonText] = useState('');
-  const [jsonErr, setJsonErr] = useState<string | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   const load = async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('permit_form_templates')
-      .select('id, project_id, code, name, version, layout_json, is_default, is_active, updated_at')
+      .select('id, project_id, code, name, version, layout_json, print_overlay, original_pdf_url, is_default, is_active, updated_at')
       .eq('is_deleted', false)
       .order('code')
       .order('version', { ascending: false });
     if (error) toast({ title: '불러오기 실패', description: error.message, variant: 'destructive' });
-    setRows((data || []) as Tpl[]);
+    const list = (data || []) as any[];
+    setRows(list.map((r) => ({
+      ...r,
+      layout_json: (r.layout_json && typeof r.layout_json === 'object' && (r.layout_json as any).sections) ? r.layout_json : EMPTY_LAYOUT,
+      print_overlay: (r.print_overlay && (r.print_overlay as any).pages) ? r.print_overlay : EMPTY_OVERLAY,
+    })));
     setLoading(false);
+  };
+
+  const loadVersions = async (templateId: string) => {
+    const { data } = await supabase
+      .from('permit_form_template_versions' as any)
+      .select('id, version_label, snapshot_reason, created_at')
+      .eq('template_id', templateId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    setVersions((data as any) || []);
   };
 
   useEffect(() => { if (isMaster) load(); }, [isMaster]);
@@ -60,36 +103,61 @@ export default function SettingsPermitForms() {
 
   const openEdit = (t: Tpl) => {
     setSelected(t);
-    setJsonText(JSON.stringify(t.layout_json ?? {}, null, 2));
-    setJsonErr(null);
+    setLayout(t.layout_json);
+    setOverlay(t.print_overlay);
+    setOriginalPdfUrl(t.original_pdf_url);
+    setSelectedRef(null);
+    setTab('builder');
+    setJsonText(JSON.stringify(t.layout_json, null, 2));
+    loadVersions(t.id);
   };
 
-  const validateJson = (text: string) => {
-    try { JSON.parse(text); setJsonErr(null); return true; }
-    catch (e: any) { setJsonErr(e.message); return false; }
-  };
-
-  const save = async () => {
+  const save = async (snapshotReason?: string) => {
     if (!selected) return;
-    if (!validateJson(jsonText)) return;
-    const payload = {
+    const payload: any = {
       code: selected.code.trim(),
       name: selected.name.trim(),
       version: selected.version.trim(),
       is_default: selected.is_default,
       is_active: selected.is_active,
-      layout_json: JSON.parse(jsonText),
+      layout_json: layout,
+      print_overlay: overlay,
+      original_pdf_url: originalPdfUrl,
     };
     const { error } = await supabase.from('permit_form_templates').update(payload).eq('id', selected.id);
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
+    // 버전 스냅샷
+    await supabase.from('permit_form_template_versions' as any).insert({
+      template_id: selected.id,
+      version_label: selected.version,
+      layout_json: layout,
+      print_overlay: overlay,
+      original_pdf_url: originalPdfUrl,
+      snapshot_reason: snapshotReason || '저장',
+    } as any);
     toast({ title: '양식이 저장되었습니다.' });
     await load();
+    await loadVersions(selected.id);
   };
 
   const createNew = async (clone?: Tpl) => {
     const base = clone
-      ? { code: clone.code, name: `${clone.name} (복제)`, version: 'v' + Date.now().toString().slice(-4), layout_json: clone.layout_json }
-      : { code: 'CUSTOM-' + Date.now().toString().slice(-4), name: '새 허가서 양식', version: 'v1', layout_json: { header: { title: '안전작업허가서' }, sections: [] } };
+      ? {
+          code: clone.code,
+          name: `${clone.name} (복제)`,
+          version: 'v' + Date.now().toString().slice(-4),
+          layout_json: clone.layout_json,
+          print_overlay: clone.print_overlay,
+          original_pdf_url: clone.original_pdf_url,
+        }
+      : {
+          code: 'CUSTOM-' + Date.now().toString().slice(-4),
+          name: '새 허가서 양식',
+          version: 'v1',
+          layout_json: EMPTY_LAYOUT,
+          print_overlay: EMPTY_OVERLAY,
+          original_pdf_url: null,
+        };
     const { data, error } = await supabase
       .from('permit_form_templates')
       .insert({ ...base, project_id: null, is_default: false, is_active: true } as any)
@@ -98,43 +166,74 @@ export default function SettingsPermitForms() {
     if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
     toast({ title: '새 양식이 생성되었습니다.' });
     await load();
-    openEdit(data as Tpl);
+    openEdit({
+      ...(data as any),
+      layout_json: base.layout_json,
+      print_overlay: base.print_overlay,
+    } as Tpl);
   };
 
   const remove = async (t: Tpl) => {
     if (!confirm(`"${t.name}" ${t.version} 양식을 삭제하시겠습니까? (소프트 삭제)`)) return;
-    const { error } = await supabase.from('permit_form_templates').update({ is_deleted: true }).eq('id', t.id);
+    const { error } = await supabase.from('permit_form_templates').update({ is_deleted: true } as any).eq('id', t.id);
     if (error) return toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
     if (selected?.id === t.id) setSelected(null);
     await load();
     toast({ title: '삭제되었습니다.' });
   };
 
-  const previewLayout = useMemo(() => {
-    try { return JSON.parse(jsonText); } catch { return null; }
-  }, [jsonText]);
+  // 섹션 정렬
+  const onDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const oldIndex = layout.sections.findIndex((s) => s.id === active.id);
+    const newIndex = layout.sections.findIndex((s) => s.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    setLayout({ ...layout, sections: arrayMove(layout.sections, oldIndex, newIndex) });
+  };
+
+  const addSection = () => {
+    const s = newSection(layout.sections.length);
+    setLayout({ ...layout, sections: [...layout.sections, s] });
+    setSelectedRef({ kind: 'section', sectionId: s.id });
+  };
+
+  const duplicateSection = (id: string) => {
+    const idx = layout.sections.findIndex((s) => s.id === id);
+    if (idx < 0) return;
+    const src = layout.sections[idx];
+    const copy = {
+      ...src,
+      id: `sec_${Date.now().toString(36)}`,
+      title: `${src.title} (복제)`,
+      fields: src.fields.map((f) => ({ ...f, key: `${f.key}_${Date.now().toString(36).slice(-3)}` })),
+    };
+    const next = [...layout.sections];
+    next.splice(idx + 1, 0, copy);
+    setLayout({ ...layout, sections: next });
+  };
 
   return (
-    <div className="space-y-4 animate-fade-in">
+    <div className="space-y-3 animate-fade-in p-3 md:p-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <FileSignature className="h-6 w-6" /> 허가서 양식 디자인
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            마스터 전용. SF003 표준양식을 포함한 모든 허가서 양식의 레이아웃(JSON)을 관리합니다.
+            마스터 전용. 드래그앤드롭 빌더와 원본 PDF 좌표 매핑으로 원본과 동일한 인쇄가 가능합니다.
           </p>
         </div>
         <Button size="sm" onClick={() => createNew()}><Plus className="h-4 w-4 mr-1" />새 양식</Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
         <Card>
           <CardHeader className="py-3"><CardTitle className="text-sm">양식 목록</CardTitle></CardHeader>
-          <CardContent className="p-2 space-y-1 max-h-[70vh] overflow-auto">
+          <CardContent className="p-2 space-y-1 max-h-[80vh] overflow-auto">
             {loading && <div className="text-xs text-muted-foreground p-2">불러오는 중...</div>}
             {!loading && rows.length === 0 && <div className="text-xs text-muted-foreground p-2">등록된 양식이 없습니다.</div>}
-            {rows.map(t => (
+            {rows.map((t) => (
               <div
                 key={t.id}
                 className={`p-2 rounded border cursor-pointer hover:bg-accent ${selected?.id === t.id ? 'border-primary bg-accent/40' : 'border-transparent'}`}
@@ -163,28 +262,25 @@ export default function SettingsPermitForms() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="py-3">
-            <CardTitle className="text-sm">
-              {selected ? `편집: ${selected.name}` : '양식을 선택하세요'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {!selected && <div className="text-sm text-muted-foreground">왼쪽에서 양식을 선택하거나 새 양식을 생성하세요.</div>}
-            {selected && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {!selected ? (
+          <Card><CardContent className="p-8 text-center text-muted-foreground text-sm">왼쪽에서 양식을 선택하거나 새 양식을 생성하세요.</CardContent></Card>
+        ) : (
+          <div className="space-y-3">
+            {/* 메타 정보 + 저장 */}
+            <Card>
+              <CardContent className="p-3 space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   <div><Label className="text-xs">코드</Label>
-                    <Input value={selected.code} onChange={(e) => setSelected({ ...selected, code: e.target.value })} />
+                    <Input className="h-8" value={selected.code} onChange={(e) => setSelected({ ...selected, code: e.target.value })} />
                   </div>
                   <div><Label className="text-xs">이름</Label>
-                    <Input value={selected.name} onChange={(e) => setSelected({ ...selected, name: e.target.value })} />
+                    <Input className="h-8" value={selected.name} onChange={(e) => setSelected({ ...selected, name: e.target.value })} />
                   </div>
                   <div><Label className="text-xs">버전</Label>
-                    <Input value={selected.version} onChange={(e) => setSelected({ ...selected, version: e.target.value })} />
+                    <Input className="h-8" value={selected.version} onChange={(e) => setSelected({ ...selected, version: e.target.value })} />
                   </div>
                 </div>
-                <div className="flex items-center gap-6">
+                <div className="flex items-center gap-6 flex-wrap">
                   <label className="flex items-center gap-2 text-sm">
                     <Switch checked={selected.is_default} onCheckedChange={(v) => setSelected({ ...selected, is_default: v })} />
                     기본 양식으로 사용
@@ -193,64 +289,116 @@ export default function SettingsPermitForms() {
                     <Switch checked={selected.is_active} onCheckedChange={(v) => setSelected({ ...selected, is_active: v })} />
                     활성
                   </label>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <Label className="text-xs">레이아웃 JSON</Label>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={() => setPreviewOpen(true)}><Eye className="h-4 w-4 mr-1" />미리보기</Button>
-                      <Button size="sm" onClick={save}><Save className="h-4 w-4 mr-1" />저장</Button>
-                    </div>
+                  <div className="ml-auto flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setShowJson(!showJson)}>{showJson ? '고급 닫기' : '고급 (JSON)'}</Button>
+                    <Button size="sm" onClick={() => save()}><Save className="h-4 w-4 mr-1" />저장</Button>
                   </div>
-                  <Textarea
-                    value={jsonText}
-                    onChange={(e) => { setJsonText(e.target.value); validateJson(e.target.value); }}
-                    rows={22}
-                    className="font-mono text-xs"
-                  />
-                  {jsonErr && <div className="text-xs text-destructive mt-1">JSON 오류: {jsonErr}</div>}
-                  <p className="text-[11px] text-muted-foreground mt-2">
-                    구조 예시: <code>{`{ header:{title,doc_no,rev}, sections:[{id,title,fields:[{key,label,type,required}]}] }`}</code>
-                  </p>
                 </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                {showJson && (
+                  <div className="pt-2">
+                    <Label className="text-xs">레이아웃 JSON (직접 편집)</Label>
+                    <Textarea
+                      rows={12}
+                      value={jsonText}
+                      onChange={(e) => setJsonText(e.target.value)}
+                      className="font-mono text-xs"
+                    />
+                    <Button size="sm" variant="outline" className="mt-2" onClick={() => {
+                      try {
+                        const parsed = JSON.parse(jsonText);
+                        setLayout(parsed);
+                        toast({ title: 'JSON이 빌더에 적용되었습니다.' });
+                      } catch (err: any) {
+                        toast({ title: 'JSON 오류', description: err.message, variant: 'destructive' });
+                      }
+                    }}>JSON → 빌더에 적용</Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader><DialogTitle>레이아웃 미리보기</DialogTitle></DialogHeader>
-          <div className="max-h-[70vh] overflow-auto border rounded p-4 bg-white">
-            {!previewLayout && <div className="text-sm text-destructive">JSON이 유효하지 않습니다.</div>}
-            {previewLayout && (
-              <div className="space-y-4 text-sm">
-                <div className="text-center border-b pb-2">
-                  <div className="text-lg font-bold">{previewLayout?.header?.title || '(제목 없음)'}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {previewLayout?.header?.doc_no} {previewLayout?.header?.rev}
-                  </div>
+            <Tabs value={tab} onValueChange={setTab}>
+              <TabsList>
+                <TabsTrigger value="builder"><MousePointer2 className="h-4 w-4 mr-1" />빌더</TabsTrigger>
+                <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />미리보기</TabsTrigger>
+                <TabsTrigger value="overlay"><FileText className="h-4 w-4 mr-1" />원본 PDF 오버레이</TabsTrigger>
+                <TabsTrigger value="versions"><History className="h-4 w-4 mr-1" />버전</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="builder">
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3">
+                  <Card>
+                    <CardHeader className="py-2 flex flex-row items-center justify-between">
+                      <CardTitle className="text-sm">섹션 / 필드</CardTitle>
+                      <Button size="sm" variant="outline" onClick={addSection}><Plus className="h-3.5 w-3.5 mr-1" />섹션 추가</Button>
+                    </CardHeader>
+                    <CardContent className="space-y-2 max-h-[70vh] overflow-auto" onClick={() => setSelectedRef(null)}>
+                      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+                        <SortableContext items={layout.sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                          {layout.sections.map((s) => (
+                            <SortableSectionCard
+                              key={s.id}
+                              section={s}
+                              selected={selectedRef}
+                              onSelect={setSelectedRef}
+                              onChange={(updated) => setLayout({ ...layout, sections: layout.sections.map((x) => (x.id === s.id ? updated : x)) })}
+                              onDelete={() => {
+                                setLayout({ ...layout, sections: layout.sections.filter((x) => x.id !== s.id) });
+                                if (selectedRef?.sectionId === s.id) setSelectedRef(null);
+                              }}
+                              onDuplicate={() => duplicateSection(s.id)}
+                            />
+                          ))}
+                        </SortableContext>
+                      </DndContext>
+                      {layout.sections.length === 0 && (
+                        <div className="text-center text-sm text-muted-foreground py-12 border-2 border-dashed rounded">
+                          섹션을 추가해 시작하세요.
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="py-2"><CardTitle className="text-sm">속성</CardTitle></CardHeader>
+                    <CardContent className="max-h-[70vh] overflow-auto">
+                      <PropertyPanel layout={layout} selected={selectedRef} onChange={setLayout} />
+                    </CardContent>
+                  </Card>
                 </div>
-                {(previewLayout?.sections || []).map((s: any) => (
-                  <div key={s.id || s.title}>
-                    <div className="font-semibold mb-1">{s.title}</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      {(s.fields || []).map((f: any) => (
-                        <div key={f.key} className="border rounded px-2 py-1">
-                          <div className="text-[11px] text-muted-foreground">{f.label} {f.required && <span className="text-destructive">*</span>}</div>
-                          <div className="text-xs">{f.type}</div>
+              </TabsContent>
+
+              <TabsContent value="preview">
+                <LivePreview layout={layout} />
+              </TabsContent>
+
+              <TabsContent value="overlay">
+                <OverlayEditor
+                  templateId={selected.id}
+                  layout={layout}
+                  overlay={overlay}
+                  originalPdfUrl={originalPdfUrl}
+                  onChange={(o, u) => { setOverlay(o); setOriginalPdfUrl(u); }}
+                />
+              </TabsContent>
+
+              <TabsContent value="versions">
+                <Card>
+                  <CardContent className="p-3">
+                    {versions.length === 0 && <div className="text-sm text-muted-foreground">저장된 버전이 없습니다.</div>}
+                    <div className="space-y-1">
+                      {versions.map((v) => (
+                        <div key={v.id} className="text-xs flex items-center justify-between border-b py-1">
+                          <span>{new Date(v.created_at).toLocaleString()} — {v.version_label} {v.snapshot_reason && `· ${v.snapshot_reason}`}</span>
                         </div>
                       ))}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setPreviewOpen(false)}>닫기</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+        )}
+      </div>
     </div>
   );
 }

@@ -85,11 +85,14 @@ export default function SettingsApprovalRoutes() {
   };
 
 
-  const startCreate = () => setEditing({
-    id: null, name: '', entity_type: entityType, project_id: projectId,
-    owner_user_id: user?.id, // 기본 "내 전용"
-    company_id: null, is_default: false, steps: [],
-  });
+  const startCreate = async () => {
+    setEditing({
+      id: null, name: '', entity_type: entityType, project_id: projectId,
+      owner_user_id: user?.id, // 기본 "내 전용"
+      company_id: null, is_default: false, steps: [],
+    });
+    await refreshApproversFor(myCompanyId);
+  };
 
   const refreshApproversFor = async (cid: string | null) => {
     const { data } = await supabase.rpc('get_eligible_approvers', {

@@ -216,11 +216,9 @@ export default function ProjectLibrary() {
           <div className="flex flex-wrap gap-2 items-center">
             <Select
               value={projectId || ''}
-              onValueChange={v => {
-                const p = projects.find(p => p.id === v);
-                if (p) setSelectedProject(p);
-              }}
+              onValueChange={v => setSelectedProject(v)}
             >
+
               <SelectTrigger className="w-[240px] h-9"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
               <SelectContent>
                 {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}

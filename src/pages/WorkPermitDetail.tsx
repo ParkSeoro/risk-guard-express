@@ -125,8 +125,43 @@ export default function WorkPermitDetail() {
     toast({ title: '허가서가 저장되었습니다.' });
   };
 
-  const print = () => {
+  const print = async () => {
     document.title = `안전작업허가서_${permit?.work_description || permit?.id || ''}`;
+    // 1) 활성 + 기본 양식에 원본 PDF + 오버레이 매핑이 있으면 원본양식으로 인쇄
+    try {
+      const { data: tpls } = await supabase
+        .from('permit_form_templates')
+        .select('id, name, original_pdf_url, print_overlay, is_default, is_active, is_deleted')
+        .eq('is_deleted', false)
+        .eq('is_active', true)
+        .order('is_default', { ascending: false })
+        .limit(5);
+      const tpl = (tpls || []).find((t: any) =>
+        t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0,
+      );
+      if (tpl) {
+        const path = (tpl as any).original_pdf_url.replace(/^.*permit-form-assets\//, '');
+        const { data: signed } = await supabase.storage.from('permit-form-assets').createSignedUrl(path, 600);
+        if (signed?.signedUrl) {
+          // signatures: role(=field_key) → image
+          const sigMap: Record<string, { signature?: string; name?: string }> = {};
+          Object.entries(signatures || {}).forEach(([role, val]: [string, any]) => {
+            if (val && typeof val === 'object') sigMap[role] = { signature: val.signature, name: val.name };
+          });
+          await printOverlay({
+            pdfUrl: signed.signedUrl,
+            overlay: (tpl as any).print_overlay,
+            values: { ...data, permit_date: permit.permit_date, work_description: permit.work_description },
+            signatures: sigMap,
+            title: document.title,
+          });
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('overlay print fallback', e);
+    }
+    // 2) 폴백: 기존 브라우저 인쇄
     window.print();
   };
 

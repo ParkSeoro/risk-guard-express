@@ -79,10 +79,39 @@ export default function SettingsPermitForms() {
       .order('version', { ascending: false });
     if (error) toast({ title: '불러오기 실패', description: error.message, variant: 'destructive' });
     const list = (data || []) as any[];
+    const normalizeLayout = (raw: any): FormLayout => {
+      if (!raw || typeof raw !== 'object') return EMPTY_LAYOUT;
+      const header = raw.header && typeof raw.header === 'object' ? raw.header : EMPTY_LAYOUT.header;
+      const secs = Array.isArray(raw.sections) ? raw.sections : [];
+      const sections = secs.map((s: any, i: number) => ({
+        id: s?.id || `sec_${i}`,
+        title: s?.title || `섹션 ${i + 1}`,
+        description: s?.description,
+        fields: Array.isArray(s?.fields)
+          ? s.fields.map((f: any, j: number) => ({
+              key: f?.key || `field_${i}_${j}`,
+              label: f?.label || '필드',
+              type: f?.type || 'text',
+              ...f,
+              options: Array.isArray(f?.options) ? f.options : undefined,
+              columns: Array.isArray(f?.columns) ? f.columns : undefined,
+            }))
+          : [],
+      }));
+      return { header, sections };
+    };
+    const normalizeOverlay = (raw: any): PrintOverlay => {
+      if (!raw || typeof raw !== 'object') return EMPTY_OVERLAY;
+      const pages = Array.isArray(raw.pages) ? raw.pages.map((p: any) => ({
+        page: Number(p?.page) || 1,
+        boxes: Array.isArray(p?.boxes) ? p.boxes : [],
+      })) : [];
+      return { pages };
+    };
     setRows(list.map((r) => ({
       ...r,
-      layout_json: (r.layout_json && typeof r.layout_json === 'object' && (r.layout_json as any).sections) ? r.layout_json : EMPTY_LAYOUT,
-      print_overlay: (r.print_overlay && (r.print_overlay as any).pages) ? r.print_overlay : EMPTY_OVERLAY,
+      layout_json: normalizeLayout(r.layout_json),
+      print_overlay: normalizeOverlay(r.print_overlay),
     })));
     setLoading(false);
   };

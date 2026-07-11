@@ -45,9 +45,9 @@ export default function OverlayEditor({ templateId, layout, overlay, originalPdf
 
   const allFieldKeys = useMemo(() => {
     const ks: { key: string; label: string }[] = [];
-    layout.sections.forEach((s) =>
-      s.fields.forEach((f) => {
-        if (f.type === 'checkbox_group' && f.options) {
+    (layout?.sections || []).forEach((s) =>
+      (s?.fields || []).forEach((f) => {
+        if (f.type === 'checkbox_group' && Array.isArray(f.options)) {
           f.options.forEach((o) => ks.push({ key: `${f.key}.${o.value}`, label: `${f.label} → ${o.label}` }));
         } else {
           ks.push({ key: f.key, label: f.label });

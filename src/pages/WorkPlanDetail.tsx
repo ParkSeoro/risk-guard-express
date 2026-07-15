@@ -8,6 +8,7 @@ import { WORK_PLAN_TYPES } from '@/lib/workPlanTemplates';
 import RiggingPlanForm from '@/components/rigging/RiggingPlanForm';
 import { generateAttachments, type AttachmentItem } from '@/lib/attachmentTemplates';
 import StructuredSectionForm, { validateSection } from '@/components/work-plan/StructuredSectionForm';
+import { fetchLatestApprovedRun, syncRaToWp, type LatestApprovedRun } from '@/lib/workPlanAttachments';
 import AttachmentChecklist from '@/components/work-plan/AttachmentChecklist';
 import LegalCalculatorPanel from '@/components/work-plan/LegalCalculatorPanel';
 import EquipmentManager from '@/components/equipment/EquipmentManager';
@@ -60,6 +61,8 @@ const WorkPlanDetail = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [checklist, setChecklist] = useState<{ label: string; checked: boolean }[]>([]);
+  const [latestApprovedRun, setLatestApprovedRun] = useState<LatestApprovedRun | null>(null);
+  const [raSyncing, setRaSyncing] = useState(false);
 
   useEffect(() => {
     if (planId) loadPlan();

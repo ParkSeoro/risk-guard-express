@@ -7091,6 +7091,7 @@ export type Database = {
           deleted_by: string | null
           deleted_reason: string | null
           dig_company: string
+          expiry_notified_at: string | null
           extension_until: string | null
           form_data: Json
           form_version: string | null
@@ -7116,6 +7117,7 @@ export type Database = {
           submitted_by_name: string | null
           tbm_session_id: string | null
           updated_at: string
+          valid_until: string | null
           weather_check_passed: boolean
           weather_snapshot: Json
           work_description: string
@@ -7137,6 +7139,7 @@ export type Database = {
           deleted_by?: string | null
           deleted_reason?: string | null
           dig_company?: string
+          expiry_notified_at?: string | null
           extension_until?: string | null
           form_data?: Json
           form_version?: string | null
@@ -7162,6 +7165,7 @@ export type Database = {
           submitted_by_name?: string | null
           tbm_session_id?: string | null
           updated_at?: string
+          valid_until?: string | null
           weather_check_passed?: boolean
           weather_snapshot?: Json
           work_description?: string
@@ -7183,6 +7187,7 @@ export type Database = {
           deleted_by?: string | null
           deleted_reason?: string | null
           dig_company?: string
+          expiry_notified_at?: string | null
           extension_until?: string | null
           form_data?: Json
           form_version?: string | null
@@ -7208,6 +7213,7 @@ export type Database = {
           submitted_by_name?: string | null
           tbm_session_id?: string | null
           updated_at?: string
+          valid_until?: string | null
           weather_check_passed?: boolean
           weather_snapshot?: Json
           work_description?: string
@@ -8599,6 +8605,18 @@ export type Database = {
           status: string
         }[]
       }
+      lookup_project_invite_by_code: {
+        Args: { _code: string }
+        Returns: {
+          default_role: string
+          expires_at: string
+          id: string
+          max_uses: number
+          project_id: string
+          project_name: string
+          use_count: number
+        }[]
+      }
       mark_required_items_overdue: { Args: never; Returns: number }
       migrate_legacy_to_ssot: { Args: { _project_id?: string }; Returns: Json }
       preview_required_education: {
@@ -8637,6 +8655,7 @@ export type Database = {
         Args: { _key: string; _response: Json }
         Returns: undefined
       }
+      scan_permit_expiries: { Args: never; Returns: number }
       shares_project_with: {
         Args: { _target: string; _viewer: string }
         Returns: boolean
@@ -8731,6 +8750,10 @@ export type Database = {
       worker_exit: {
         Args: { _no_accident: boolean; _signature: string; _token: string }
         Returns: Json
+      }
+      worker_has_tbm_today: {
+        Args: { _work_date?: string; _worker_id: string }
+        Returns: boolean
       }
     }
     Enums: {

@@ -125,8 +125,29 @@ export default function WorkPermitDetail() {
     toast({ title: '허가서가 저장되었습니다.' });
   };
 
+  const today = new Date().toISOString().slice(0, 10);
+  const isToday = permit?.permit_date === today;
+  const isApproved = permit?.status === '승인' || permit?.status === '승인완료' || permit?.status === 'approved';
+  const isExpired = permit?.valid_until ? new Date(permit.valid_until).getTime() < Date.now() : false;
+  const canPrint = isApproved && isToday && !isExpired;
+
   const print = async () => {
+    if (!canPrint) {
+      toast({
+        title: '인쇄 불가',
+        description: !isApproved ? '결재 승인 후 인쇄할 수 있습니다.' :
+                    !isToday ? '허가일자와 오늘 날짜가 일치해야 인쇄할 수 있습니다.' :
+                    '유효기간이 종료되었습니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
     document.title = `안전작업허가서_${permit?.work_description || permit?.id || ''}`;
+    // 폰트 로딩 보장 (한글 깨짐 방지)
+    try {
+      await (document as any).fonts?.load?.('16px "Noto Sans KR"');
+      await (document as any).fonts?.ready;
+    } catch {}
     // 1) 활성 + 기본 양식에 원본 PDF + 오버레이 매핑이 있으면 원본양식으로 인쇄
     try {
       const { data: tpls } = await supabase
@@ -143,7 +164,6 @@ export default function WorkPermitDetail() {
         const path = (tpl as any).original_pdf_url.replace(/^.*permit-form-assets\//, '');
         const { data: signed } = await supabase.storage.from('permit-form-assets').createSignedUrl(path, 600);
         if (signed?.signedUrl) {
-          // signatures: role(=field_key) → image
           const sigMap: Record<string, { signature?: string; name?: string }> = {};
           Object.entries(signatures || {}).forEach(([role, val]: [string, any]) => {
             if (val && typeof val === 'object') sigMap[role] = { signature: val.signature, name: val.name };

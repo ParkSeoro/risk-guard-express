@@ -210,3 +210,88 @@ async function upsertAuto(rows: any[]) {
 }
 
 export type { AttachmentItem };
+
+/* ============================================================
+ * RA(위험성평가) → WP(작업계획서) 자동 연계
+ * ============================================================ */
+
+export interface LatestApprovedRun {
+  id: string;
+  period_label: string;
+  start_date: string | null;
+  end_date: string | null;
+  approved_at?: string | null;
+}
+
+/** 프로젝트의 최신 승인완료 위험성평가 회차 1건 조회 */
+export async function fetchLatestApprovedRun(projectId: string): Promise<LatestApprovedRun | null> {
+  const { data } = await supabase
+    .from('assessment_runs')
+    .select('id, period_label, start_date, end_date, updated_at, status, is_deleted')
+    .eq('project_id', projectId)
+    .eq('is_deleted', false)
+    .in('status', ['approved', '승인완료', '승인'])
+    .order('updated_at', { ascending: false })
+    .limit(1);
+  const r = (data || [])[0] as any;
+  if (!r) return null;
+  return {
+    id: r.id,
+    period_label: r.period_label,
+    start_date: r.start_date,
+    end_date: r.end_date,
+    approved_at: r.updated_at,
+  };
+}
+
+/** 위험도 상(High) 항목의 hazard/improvement_measure 를 작업계획서 sections 배열에 upsert.
+ *  기존 사용자 편집 항목(manually_edited=true)은 보존한다.
+ */
+export async function syncRaToWp(opts: {
+  runId: string;
+  workPlanId: string;
+  existingSections: any[];
+}): Promise<{ imported: number; sections: any[] }> {
+  const { data: items } = await supabase
+    .from('risk_items')
+    .select('id, process, sub_task, hazard, improvement_measure, risk_grade')
+    .eq('run_id', opts.runId)
+    .eq('is_deleted', false);
+
+  const high = (items || []).filter((x: any) =>
+    ['상', 'high', 'H', '3'].includes(String(x.risk_grade || '').trim())
+  );
+
+  const sections = [...(opts.existingSections || [])];
+  const idx = sections.findIndex((s: any) => s.key === '_ra_high_risks');
+  const bulletLines = high.map((h: any) =>
+    `• [${h.process || '-'} / ${h.sub_task || '-'}] ${h.hazard || ''}\n   → ${h.improvement_measure || ''}`
+  ).join('\n');
+  const content = high.length === 0
+    ? '(연결된 위험성평가 회차에 위험도 상 항목이 없습니다.)'
+    : bulletLines;
+
+  const entry = {
+    key: '_ra_high_risks',
+    title: '위험성평가 연계 — 위험도 상 항목 및 대책',
+    type: 'text',
+    content,
+    source_run_id: opts.runId,
+    synced_at: new Date().toISOString(),
+  };
+  if (idx >= 0) {
+    // 사용자가 수기 편집한 흔적 보존
+    const prev: any = sections[idx];
+    if (prev.manually_edited) {
+      return { imported: 0, sections };
+    }
+    sections[idx] = { ...prev, ...entry };
+  } else {
+    sections.push(entry);
+  }
+
+  await supabase.from('work_plans').update({ sections, updated_at: new Date().toISOString() })
+    .eq('id', opts.workPlanId);
+
+  return { imported: high.length, sections };
+}

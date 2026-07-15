@@ -107,7 +107,7 @@ export async function printOverlay({ pdfUrl, overlay, values, signatures = {}, t
           });
         } else if (sig?.name) {
           ctx.fillStyle = '#000';
-          ctx.font = `${Math.max(10, h * 0.5)}px "Malgun Gothic"`;
+          ctx.font = `${Math.max(10, h * 0.5)}px "Noto Sans KR", "Malgun Gothic"`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(sig.name, x + w / 2, y + h / 2);
@@ -128,7 +128,7 @@ export async function printOverlay({ pdfUrl, overlay, values, signatures = {}, t
         if (text) {
           const fontPx = (b.font_size || 10) * 2; // scale 2와 일치
           ctx.fillStyle = '#000';
-          ctx.font = `${fontPx}px "Malgun Gothic"`;
+          ctx.font = `${fontPx}px "Noto Sans KR", "Malgun Gothic"`;
           ctx.textBaseline = 'middle';
           if (b.align === 'center') {
             ctx.textAlign = 'center';

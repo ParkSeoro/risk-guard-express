@@ -118,6 +118,18 @@ export default function WorkerPortal() {
     }
     if (action === "exit" && !noAccident) { toast.error("무재해 확인이 필요합니다"); return; }
 
+    // 실시간 TBM 참여 검증 (출근 전용)
+    if (action === "entry") {
+      const { data: hasTbm } = await supabase.rpc("worker_has_tbm_today", {
+        _worker_id: worker.id,
+        _work_date: daily.work_date,
+      });
+      if (hasTbm === false) {
+        window.alert("⛔ TBM 미참여 — 작업장 입장 불가\n\n오늘자 TBM에 서명하지 않았습니다.\n관리자에게 문의해 TBM에 참여 후 다시 시도하세요.");
+        return;
+      }
+    }
+
     const sig = sigRef.current!.toDataURL("image/png");
     setSubmitting(true);
     let { data, error } = await doScan(action, sig, false);

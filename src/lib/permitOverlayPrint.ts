@@ -25,6 +25,13 @@ function isChecked(value: any, when: any): boolean {
 }
 
 export async function printOverlay({ pdfUrl, overlay, values, signatures = {}, title }: RenderOptions) {
+  // 폰트 로딩 보장 (한글 깨짐 방지)
+  try {
+    await (document as any).fonts?.load?.('16px "Noto Sans KR"');
+    await (document as any).fonts?.load?.('bold 16px "Noto Sans KR"');
+    await (document as any).fonts?.ready;
+  } catch {}
+
   // 새 창 미리 열기(사용자 제스처 컨텍스트 유지)
   const win = window.open('', '_blank');
   if (!win) {
@@ -32,9 +39,12 @@ export async function printOverlay({ pdfUrl, overlay, values, signatures = {}, t
     return;
   }
   win.document.write(`<html><head><title>${title || '허가서 인쇄'}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" />
     <style>
       @page { size: A4; margin: 0; }
-      body { margin: 0; font-family: 'Malgun Gothic', sans-serif; }
+      body { margin: 0; font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕', sans-serif; }
       .page { page-break-after: always; display: block; width: 100%; }
       img { display:block; width:100%; height:auto; }
     </style>

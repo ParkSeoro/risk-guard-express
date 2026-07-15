@@ -105,6 +105,11 @@ const WorkPlanDetail = () => {
       }
     }
     setLoading(false);
+
+    // 최신 승인완료 위험성평가 자동 조회
+    if (data.project_id) {
+      fetchLatestApprovedRun(data.project_id).then(setLatestApprovedRun).catch(() => {});
+    }
   };
 
   const getDefaultChecklist = () => [

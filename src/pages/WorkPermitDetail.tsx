@@ -199,7 +199,14 @@ export default function WorkPermitDetail() {
         <div className="flex gap-2 flex-wrap">
           <Button size="sm" variant="outline" onClick={save} disabled={saving}><Save className="h-4 w-4 mr-1" />저장</Button>
           <Button size="sm" variant="outline" onClick={() => setApprovalOpen(true)}><ShieldCheck className="h-4 w-4 mr-1" />결재상신</Button>
-          <Button size="sm" onClick={print}><Printer className="h-4 w-4 mr-1" />인쇄</Button>
+          <Button
+            size="sm"
+            onClick={print}
+            disabled={!canPrint}
+            title={!isApproved ? '결재 승인 후 인쇄 가능' : !isToday ? '오늘 날짜 허가서만 인쇄 가능' : isExpired ? '유효기간 종료' : ''}
+          >
+            <Printer className="h-4 w-4 mr-1" />{canPrint ? '인쇄 / 작업시작' : '인쇄 불가'}
+          </Button>
         </div>
       </div>
 

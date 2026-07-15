@@ -519,6 +519,54 @@ const WorkPlanDetail = () => {
         )}
       </div>
 
+      {/* 위험성평가 자동 연계 (최신 승인완료 회차) */}
+      <Card className="border-primary/40">
+        <CardContent className="p-3 flex items-center gap-3 flex-wrap">
+          <Shield className="h-4 w-4 text-primary" />
+          <div className="flex-1 min-w-[240px]">
+            <div className="text-sm font-semibold">위험성평가 자동 연계</div>
+            {latestApprovedRun ? (
+              <div className="text-xs text-muted-foreground">
+                최신 승인완료 회차: <b>{latestApprovedRun.period_label}</b>
+                {latestApprovedRun.start_date && (
+                  <> ({latestApprovedRun.start_date} ~ {latestApprovedRun.end_date || '-'})</>
+                )}
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground">
+                프로젝트에 승인완료된 위험성평가 회차가 없습니다. 위험성평가 승인 후 이용하세요.
+              </div>
+            )}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!latestApprovedRun || raSyncing || !planId}
+            onClick={async () => {
+              if (!latestApprovedRun || !planId) return;
+              setRaSyncing(true);
+              try {
+                const { imported, sections: next } = await syncRaToWp({
+                  runId: latestApprovedRun.id,
+                  workPlanId: planId,
+                  existingSections: sections,
+                });
+                setSections(next);
+                toast({ title: `위험도 상 ${imported}건을 불러왔습니다.` });
+              } catch (e: any) {
+                toast({ title: '연계 실패', description: e?.message || '오류', variant: 'destructive' });
+              } finally {
+                setRaSyncing(false);
+              }
+            }}
+          >
+            {raSyncing ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
+            위험도 상 항목 불러오기
+          </Button>
+        </CardContent>
+      </Card>
+
+
       {/* AI Education Material Auto-Generation Toggle */}
       <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
         <div className="flex items-center gap-2">

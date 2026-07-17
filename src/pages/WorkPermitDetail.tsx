@@ -179,20 +179,25 @@ export default function WorkPermitDetail() {
       await (document as any).fonts?.load?.('16px "Noto Sans KR"');
       await (document as any).fonts?.ready;
     } catch {}
-    // 1) 활성 + 기본 양식에 원본 PDF + 오버레이 매핑이 있으면 원본양식으로 인쇄
+    // 1) 화면에 로드된 템플릿 우선. 없으면 활성+기본 순으로 탐색
     try {
-      const { data: tpls } = await supabase
-        .from('permit_form_templates')
-        .select('id, name, original_pdf_url, print_overlay, is_default, is_active, is_deleted')
-        .eq('is_deleted', false)
-        .eq('is_active', true)
-        .order('is_default', { ascending: false })
-        .limit(5);
-      const tpl = (tpls || []).find((t: any) =>
-        t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0,
-      );
+      let tpl: any = template && template.original_pdf_url ? template : null;
+      if (!tpl) {
+        const { data: tpls } = await supabase
+          .from('permit_form_templates')
+          .select('id, name, original_pdf_url, print_overlay, is_default, is_active, permit_type')
+          .eq('is_deleted', false)
+          .eq('is_active', true)
+          .order('is_default', { ascending: false })
+          .limit(10);
+        tpl = (tpls || []).find((t: any) =>
+          t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0 && (t.permit_type === tab || !t.permit_type),
+        ) || (tpls || []).find((t: any) =>
+          t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0,
+        );
+      }
       if (tpl) {
-        const path = (tpl as any).original_pdf_url.replace(/^.*permit-form-assets\//, '');
+        const path = (tpl.original_pdf_url as string).replace(/^.*permit-form-assets\//, '');
         const { data: signed } = await supabase.storage.from('permit-form-assets').createSignedUrl(path, 600);
         if (signed?.signedUrl) {
           const sigMap: Record<string, { signature?: string; name?: string }> = {};
@@ -201,7 +206,7 @@ export default function WorkPermitDetail() {
           });
           await printOverlay({
             pdfUrl: signed.signedUrl,
-            overlay: (tpl as any).print_overlay,
+            overlay: tpl.print_overlay,
             values: { ...data, permit_date: permit.permit_date, work_description: permit.work_description },
             signatures: sigMap,
             title: document.title,

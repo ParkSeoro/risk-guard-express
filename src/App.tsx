@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { AppLayout } from "@/components/AppLayout";
 import { useState, useEffect } from "react";
@@ -26,6 +26,7 @@ import Auth from "./pages/Auth";
 import Index from "./pages/Index";
 import Privacy from "./pages/Privacy";
 import ResetPassword from "./pages/ResetPassword";
+import OAuthConsent from "./pages/OAuthConsent";
 import Settings from "./pages/Settings";
 import SettingsAccount from "./pages/SettingsAccount";
 import SettingsPermissions from "./pages/SettingsPermissions";
@@ -241,8 +242,15 @@ function ProtectedRoutes() {
 
 function AuthRoute() {
   const { user, loading } = useAuth();
+  const [params] = useSearchParams();
   if (loading) return null;
-  if (user) return <Navigate to="/" replace />;
+  if (user) {
+    const next = params.get("next");
+    if (next && next.startsWith("/") && !next.startsWith("//")) {
+      return <Navigate to={next} replace />;
+    }
+    return <Navigate to="/" replace />;
+  }
   return <Auth />;
 }
 
@@ -258,6 +266,7 @@ const App = () => (
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/auth" element={<AuthRoute />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
             <Route path="/tbm/:token" element={<TbmParticipate />} />
             <Route path="/worker/register" element={<WorkerRegister />} />
             <Route path="/worker" element={<WorkerEntry />} />

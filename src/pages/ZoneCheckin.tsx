@@ -30,12 +30,8 @@ export default function ZoneCheckin() {
   useEffect(() => {
     if (!code) return;
     (async () => {
-      const { data: q } = await supabase
-        .from("zone_qr_codes")
-        .select("id,zone_id,project_id,direction,label,is_active")
-        .eq("code", code)
-        .eq("is_active", true)
-        .maybeSingle();
+      const { data: qrRows } = await supabase.rpc("lookup_zone_qr_by_code", { _code: code });
+      const q = Array.isArray(qrRows) ? qrRows[0] : (qrRows as any);
       if (!q) { setError("유효하지 않거나 비활성화된 QR입니다."); setLoading(false); return; }
       setQr(q as any);
       const { data: z } = await supabase

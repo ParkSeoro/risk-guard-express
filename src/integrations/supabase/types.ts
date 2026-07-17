@@ -8617,6 +8617,17 @@ export type Database = {
           use_count: number
         }[]
       }
+      lookup_zone_qr_by_code: {
+        Args: { _code: string }
+        Returns: {
+          code: string
+          direction: string
+          id: string
+          is_active: boolean
+          project_id: string
+          zone_id: string
+        }[]
+      }
       mark_required_items_overdue: { Args: never; Returns: number }
       migrate_legacy_to_ssot: { Args: { _project_id?: string }; Returns: Json }
       preview_required_education: {

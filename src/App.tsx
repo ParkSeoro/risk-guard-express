@@ -26,6 +26,7 @@ import Auth from "./pages/Auth";
 import Index from "./pages/Index";
 import Privacy from "./pages/Privacy";
 import ResetPassword from "./pages/ResetPassword";
+import OAuthConsent from "./pages/OAuthConsent";
 import Settings from "./pages/Settings";
 import SettingsAccount from "./pages/SettingsAccount";
 import SettingsPermissions from "./pages/SettingsPermissions";
@@ -258,6 +259,7 @@ const App = () => (
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/auth" element={<AuthRoute />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
             <Route path="/tbm/:token" element={<TbmParticipate />} />
             <Route path="/worker/register" element={<WorkerRegister />} />
             <Route path="/worker" element={<WorkerEntry />} />

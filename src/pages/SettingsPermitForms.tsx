@@ -40,8 +40,16 @@ type Tpl = {
   original_pdf_url: string | null;
   is_default: boolean;
   is_active: boolean;
+  permit_type: string | null;
   updated_at: string;
 };
+
+const PERMIT_TYPE_OPTIONS = [
+  { value: 'general', label: '일반' },
+  { value: 'confined_space', label: '밀폐공간' },
+  { value: 'hot_work', label: '화기' },
+  { value: 'excavation', label: '굴착·중장비' },
+];
 
 type SelectedRef =
   | { kind: 'section'; sectionId: string }
@@ -73,7 +81,7 @@ export default function SettingsPermitForms() {
     setLoading(true);
     const { data, error } = await supabase
       .from('permit_form_templates')
-      .select('id, project_id, code, name, version, layout_json, print_overlay, original_pdf_url, is_default, is_active, updated_at')
+      .select('id, project_id, code, name, version, layout_json, print_overlay, original_pdf_url, is_default, is_active, permit_type, updated_at')
       .eq('is_deleted', false)
       .order('code')
       .order('version', { ascending: false });

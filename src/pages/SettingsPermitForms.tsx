@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   FileSignature, Plus, Copy, Trash2, Save, Eye, History, FileText, MousePointer2,
 } from 'lucide-react';
@@ -157,6 +158,7 @@ export default function SettingsPermitForms() {
       version: selected.version.trim(),
       is_default: selected.is_default,
       is_active: selected.is_active,
+      permit_type: selected.permit_type || 'general',
       layout_json: layout,
       print_overlay: overlay,
       original_pdf_url: originalPdfUrl,

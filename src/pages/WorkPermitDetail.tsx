@@ -113,6 +113,34 @@ export default function WorkPermitDetail() {
 
   useEffect(() => { load(); }, [id]);
 
+  // 종류(tab)별 기본 양식 조회 — 있으면 OverlayFillForm으로 렌더
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: tpls } = await supabase
+          .from('permit_form_templates')
+          .select('id, layout_json, print_overlay, original_pdf_url, is_default, permit_type')
+          .eq('is_deleted', false)
+          .eq('is_active', true)
+          .order('is_default', { ascending: false })
+          .order('updated_at', { ascending: false });
+        const list = (tpls || []) as any[];
+        const match =
+          list.find((t) => t.permit_type === tab && t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0) ||
+          list.find((t) => (!t.permit_type || t.permit_type === 'general') && t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0);
+        setTemplate(match ? {
+          id: match.id,
+          layout_json: match.layout_json || { header: { title: '' }, sections: [] },
+          print_overlay: match.print_overlay || { pages: [] },
+          original_pdf_url: match.original_pdf_url,
+        } : null);
+      } catch (e) {
+        console.warn('template lookup failed', e);
+        setTemplate(null);
+      }
+    })();
+  }, [tab]);
+
   const save = async () => {
     if (!permit) return;
     setSaving(true);
@@ -230,14 +258,27 @@ export default function WorkPermitDetail() {
       </Tabs>
 
       <div className="bg-white border rounded shadow-sm p-3 md:p-6 print:border-0 print:shadow-none print:p-0">
-        <DigPermitForm
-          permitType={tab}
-          data={data}
-          signatures={signatures}
-          projectName={projectName}
-          onChange={(d) => setData(d)}
-          onSign={(k, v) => setSignatures({ ...signatures, [k]: v })}
-        />
+        {template && template.original_pdf_url ? (
+          <OverlayFillForm
+            pdfUrl={template.original_pdf_url}
+            layout={template.layout_json}
+            overlay={template.print_overlay}
+            values={data}
+            signatures={signatures as any}
+            onChange={(v) => setData(v)}
+            onSign={(role, sig) => setSignatures({ ...signatures, [role]: sig } as any)}
+            readOnly={isApproved}
+          />
+        ) : (
+          <DigPermitForm
+            permitType={tab}
+            data={data}
+            signatures={signatures}
+            projectName={projectName}
+            onChange={(d) => setData(d)}
+            onSign={(k, v) => setSignatures({ ...signatures, [k]: v })}
+          />
+        )}
       </div>
 
       {approvalOpen && (

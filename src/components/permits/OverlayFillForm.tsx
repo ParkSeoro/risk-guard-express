@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, PenLine, X } from 'lucide-react';
-import ResponsiveSignaturePad from '@/components/ResponsiveSignaturePad';
+import ResponsiveSignaturePad, { ResponsiveSignaturePadHandle } from '@/components/ResponsiveSignaturePad';
 import { FormField, FormLayout, PrintOverlay } from '@/lib/permitFormTypes';
 
 // @ts-ignore
@@ -40,6 +40,7 @@ export default function OverlayFillForm({
   const [pageSize, setPageSize] = useState({ w: 0, h: 0 });
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [sigOpenRole, setSigOpenRole] = useState<string | null>(null);
+  const sigPadRef = useRef<ResponsiveSignaturePadHandle>(null);
 
   const fieldMap = useMemo(() => {
     const m = new Map<string, FormField>();
@@ -264,16 +265,26 @@ export default function OverlayFillForm({
               defaultValue={signatures[sigOpenRole]?.name || ''}
               onChange={(e) => onSign(sigOpenRole, { ...signatures[sigOpenRole], name: e.target.value })}
             />
-            <ResponsiveSignaturePad
-              onSave={(dataUrl) => {
-                onSign(sigOpenRole, {
-                  ...signatures[sigOpenRole],
-                  signature: dataUrl,
-                  signed_at: new Date().toISOString(),
-                });
-                setSigOpenRole(null);
-              }}
-            />
+            <ResponsiveSignaturePad ref={sigPadRef} />
+            <div className="flex justify-end gap-2 mt-2">
+              <Button size="sm" variant="outline" onClick={() => sigPadRef.current?.clear()}>지우기</Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (!sigPadRef.current || sigPadRef.current.isEmpty()) {
+                    setSigOpenRole(null);
+                    return;
+                  }
+                  const dataUrl = sigPadRef.current.toDataURL('image/png');
+                  onSign(sigOpenRole, {
+                    ...signatures[sigOpenRole],
+                    signature: dataUrl,
+                    signed_at: new Date().toISOString(),
+                  });
+                  setSigOpenRole(null);
+                }}
+              >저장</Button>
+            </div>
           </div>
         </div>
       )}

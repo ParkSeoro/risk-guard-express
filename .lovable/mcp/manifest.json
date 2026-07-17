@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "sdk_version": "0.23.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://iqtiozscqwuacgzrlfzu.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "safenex-mcp",
+      "version": "0.1.0",
+      "title": "SafeNex 안전관리 MCP"
+    },
+    "tools": [
+      {
+        "name": "list_projects",
+        "title": "프로젝트 목록",
+        "description": "현재 로그인한 사용자가 접근 가능한 안전관리 프로젝트를 조회합니다.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_work_permits",
+        "title": "작업허가서 목록",
+        "description": "프로젝트의 작업허가서(상태/유형 필터 가능)를 최대 50건 조회합니다.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "프로젝트 UUID"
+            },
+            "status": {
+              "type": "string",
+              "description": "승인 상태 필터 (예: approved, pending)"
+            }
+          },
+          "required": [
+            "project_id"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_incidents",
+        "title": "사고 보고서 목록",
+        "description": "프로젝트의 사고(재해) 보고서를 최근 50건 조회합니다.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "프로젝트 UUID"
+            }
+          },
+          "required": [
+            "project_id"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_risk_assessments",
+        "title": "위험성평가 회차 목록",
+        "description": "프로젝트의 위험성평가 회차를 최근 50건 조회합니다.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid",
+              "description": "프로젝트 UUID"
+            }
+          },
+          "required": [
+            "project_id"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}

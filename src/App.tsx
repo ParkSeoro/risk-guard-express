@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { AppLayout } from "@/components/AppLayout";
 import { useState, useEffect } from "react";
@@ -242,8 +242,15 @@ function ProtectedRoutes() {
 
 function AuthRoute() {
   const { user, loading } = useAuth();
+  const [params] = useSearchParams();
   if (loading) return null;
-  if (user) return <Navigate to="/" replace />;
+  if (user) {
+    const next = params.get("next");
+    if (next && next.startsWith("/") && !next.startsWith("//")) {
+      return <Navigate to={next} replace />;
+    }
+    return <Navigate to="/" replace />;
+  }
   return <Auth />;
 }
 

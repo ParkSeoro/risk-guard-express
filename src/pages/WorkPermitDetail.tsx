@@ -53,6 +53,7 @@ export default function WorkPermitDetail() {
   const [linkedRuns, setLinkedRuns] = useState<any[]>([]);
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [template, setTemplate] = useState<{ id: string; layout_json: FormLayout; print_overlay: PrintOverlay; original_pdf_url: string | null } | null>(null);
 
   const load = async () => {
     if (!id) return;

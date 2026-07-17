@@ -1,86 +1,60 @@
-## 문제
+## 원인 확정
 
-지금은 두 갈래로 갈라져 있어요.
+문제는 마스터 권한 자체가 아니라 **소프트 삭제 방식과 조회 RLS 정책이 충돌**하는 구조입니다.
 
-- **양식 디자인 화면**: 마스터가 PDF를 업로드하고, 그 위에 "여기는 작업내용, 여기는 체크박스, 여기는 서명" 하고 좌표를 찍어둡니다. (`SettingsPermitForms` + `OverlayEditor`, `print_overlay` 저장)
-- **실제 허가서 작성 화면**(`WorkPermitDetail`): 이 오버레이는 **완전히 무시**하고, 코드에 하드코딩된 `DigPermitForm`(일반/밀폐/화기/굴착 4탭 고정 폼)을 띄웁니다. 인쇄 버튼을 눌러야만 그때 오버레이 PDF를 찾아서 합성합니다.
+현재 삭제 버튼은 실제 삭제가 아니라 다음처럼 `permit_form_templates.is_deleted = true`로 바꾸는 업데이트를 실행합니다.
 
-그래서 "내가 디자인한 양식이 작성 화면에 안 나온다"가 맞습니다. **디자인은 인쇄 전용**이고, **입력은 별도 하드코딩 폼**이라 두 개가 따로 놉니다.
-
-## 목표
-
-마스터가 만든 양식 하나로 **입력 화면도, 인쇄물도** 똑같이 나오게 합니다. 근로자·시공사는 "PDF 미리보기 위에 바로 타이핑/체크/서명" 하는 방식이 가장 빠르고 직관적입니다.
-
-## 해결안 — "PDF 위에 바로 쓰는" 단일 화면
-
-허가서 상세 페이지를 **"양식 위 입력 모드"** 로 통합합니다.
-
-```text
-┌─ 상단: 양식 선택 (일반/밀폐/화기/굴착, 기본 자동) ─┐
-│  [저장] [결재상신] [인쇄]                           │
-├──────────────────────────────────────────────────┤
-│                                                  │
-│   원본 PDF 배경 (반투명 회색)                       │
-│                                                  │
-│   ┌──────────┐  ← 오버레이 좌표에 그대로 겹쳐서      │
-│   │작업내용   │     입력 위젯을 띄움:                │
-│   └──────────┘     - text/number → <input>       │
-│           ☑        - checkbox → 클릭 토글          │
-│                    - signature → 서명 패드         │
-│                    - date/select → 그에 맞는 위젯   │
-└──────────────────────────────────────────────────┘
+```ts
+update({ is_deleted: true }).eq('id', t.id)
 ```
 
-핵심 아이디어: **`print_overlay`에 정의된 박스 = 인쇄 좌표 = 입력 위젯 좌표**. 한 번 디자인하면 입력·출력 모두 자동 생성.
+그런데 이 테이블의 조회 정책은 현재 다음 조건입니다.
 
-### 화면 흐름
+```sql
+is_deleted = false
+```
 
-1. 사용자가 허가서 종류(일반/밀폐/화기/굴착)를 고르면, 그 종류에 매칭된 **기본(default) 양식**을 자동 로드.
-2. PDF가 배경으로 렌더되고, 그 위에 오버레이 박스별로 실제 입력 위젯이 뜸.
-3. 값은 기존 `work_permits.form_data`(JSONB)에 `field_key → value` 그대로 저장.
-4. **결재 승인되면** 오버레이 박스 중 `signature` 종류가 자동으로 결재자 이름/시간으로 채워짐(이미 있는 `POSITION_TO_SIG` 로직 재사용).
-5. 인쇄는 지금과 동일 — 같은 오버레이·같은 값으로 `printOverlay()` 실행 → **화면과 인쇄물이 100% 일치**.
+PostgreSQL/Supabase RLS에서는 `UPDATE`가 실행될 때 `UPDATE` 정책만 보는 것이 아니라, 대상 row를 찾고 업데이트 후 결과 row를 처리하는 과정에서 `SELECT` 정책도 함께 영향을 줍니다. 그래서 `is_deleted`를 `true`로 바꾸는 순간 새 row가 `SELECT is_deleted = false` 정책을 만족하지 못해 `new row violates row-level security policy`가 발생합니다.
 
-### 양식 ↔ 허가서 종류 매칭
+공식 문서 및 유사 사례에서도 같은 패턴이 확인됩니다:
+- RLS 정책은 row가 조회/수정 가능한지를 명령마다 평가함
+- `UPDATE`는 `USING`, `WITH CHECK`, 그리고 관련 `SELECT` 정책과 함께 평가될 수 있음
+- soft delete 컬럼을 `SELECT` 정책에 직접 넣으면 삭제 업데이트가 막히는 대표적인 오류가 생김
 
-`permit_form_templates` 테이블에 이미 `is_default`가 있으니, 여기에 **`permit_type`(general/confined_space/hot_work/excavation)** 컬럼만 추가해서 "종류별 기본 양식"을 지정. 마스터가 SettingsPermitForms에서 드롭다운 한 번으로 매핑.
+## 수정 계획
 
-### 폴백
+1. **DB RLS 정책 재구성**
+   - `permit_form_templates`의 조회 정책을 마스터와 일반 사용자로 분리합니다.
+   - 일반 로그인 사용자는 기존처럼 삭제되지 않은 양식만 볼 수 있게 유지합니다.
+   - 마스터는 삭제된 row까지 정책상 조회 가능하게 하여 `is_deleted=true` 업데이트가 RLS에서 막히지 않게 합니다.
 
-디자인된 양식이 없거나 오버레이가 비어 있는 종류는 **지금의 `DigPermitForm`을 그대로 폴백**으로 표시. 마스터가 양식을 등록하는 순간부터 자동으로 새 화면으로 전환.
+2. **마스터 쓰기 정책 보강**
+   - 생성/수정/삭제 정책은 `public.is_master(auth.uid())` 기준으로 통일합니다.
+   - 정책 대상은 `authenticated`로 명확히 고정합니다.
+   - `WITH CHECK`도 동일하게 적용해 저장, 기본양식 지정, 비활성화, 소프트 삭제가 모두 같은 기준으로 통과하게 합니다.
 
-## 왜 이 방식이 사용자에게 빠른가
+3. **데이터 API 권한 명시 보강**
+   - `permit_form_templates`와 `permit_form_template_versions`에 로그인 사용자 및 서버용 명시 권한을 다시 부여합니다.
+   - 이 작업은 RLS를 우회하지 않고, RLS가 정상 평가될 수 있도록 기본 테이블 접근 권한만 보강합니다.
 
-- **학습 필요 없음**: 종이 양식을 화면에서 그대로 보고 그 자리에 씀. 탭·섹션 이동 없음.
-- **양식이 곧 UI**: 마스터가 양식만 바꾸면 입력 화면·인쇄물이 동시에 갱신. 개발자 개입 불필요.
-- **인쇄 미리보기 = 작성 화면**: "인쇄했더니 다르게 나온다" 문제 원천 차단.
-- **모바일에서도 유리**: pinch-zoom으로 필요한 칸만 확대해서 입력.
+4. **프론트 삭제 로직은 유지하되 결과 처리만 안정화**
+   - 현재 삭제 방식(`is_deleted=true`)은 프로젝트 메모리의 soft delete 정책과 맞으므로 유지합니다.
+   - 필요 시 삭제 후 선택 상태 초기화와 목록 재조회만 확인합니다.
 
-## 변경 범위 (기술)
+5. **검증**
+   - 적용 후 `pg_policies`로 실제 정책이 기대 상태인지 확인합니다.
+   - `permit_form_templates`의 `SELECT`/`UPDATE` 정책 조합이 더 이상 soft delete를 막지 않는지 확인합니다.
 
-1. **DB (마이그레이션 1개)**
-   - `permit_form_templates`에 `permit_type text` 컬럼 추가 (nullable, `general` 기본).
-   - 인덱스: `(permit_type, is_default) where is_active and not is_deleted`.
+## 예상 결과
 
-2. **신규 컴포넌트**: `src/components/permits/OverlayFillForm.tsx`
-   - props: `pdfUrl`, `overlay`, `values`, `signatures`, `onChange`, `onSign`, `readOnly?`
-   - 내부: pdfjs로 페이지 렌더 → 각 페이지 위에 `position: absolute`로 박스별 위젯 배치
-   - 위젯 타입은 오버레이 박스의 `render` + 원본 `FormField.type`에서 유도 (필요 시 `field_types` 매핑 캐시를 layout_json에서 가져옴)
+- 마스터가 허가서 양식 디자인 화면에서 등록 양식을 삭제해도 RLS 오류가 더 이상 발생하지 않습니다.
+- 일반 사용자는 계속 삭제되지 않은 활성 양식만 접근합니다.
+- 삭제된 양식은 목록에서 사라지지만 DB에는 복구 가능한 상태로 보존됩니다.
 
-3. **수정: `src/pages/WorkPermitDetail.tsx`**
-   - 로드 시 `permit_type`에 맞는 활성·기본 템플릿 조회
-   - 템플릿 + 오버레이 있으면 → `OverlayFillForm` 렌더
-   - 없으면 → 지금의 `DigPermitForm` 폴백
-   - 저장/결재/인쇄 로직은 그대로 (form_data·signatures 스키마 동일)
+<presentation-actions>
+  <presentation-open-history>View History</presentation-open-history>
+</presentation-actions>
 
-4. **수정: `src/pages/SettingsPermitForms.tsx`**
-   - 템플릿 카드에 "허가서 종류" 드롭다운 + "이 종류의 기본으로" 스위치 추가
-
-5. **수정 없음**: `printOverlay`, 결재 매핑, `work_permits` 테이블 스키마 — 그대로 재사용.
-
-## 마스터 체크리스트
-
-- [ ] 디자인 화면에서 오버레이 박스 하나를 옮기면 → 새로 만든 허가서의 입력칸 위치도 즉시 이동한다.
-- [ ] 체크박스 박스를 클릭하면 값이 저장되고, 인쇄물의 같은 위치에 체크가 찍힌다.
-- [ ] 서명 박스를 결재선에 매핑해 두면, 결재 승인 후 자동으로 이름/시간이 표시된다.
-- [ ] 디자인된 양식이 없는 종류는 기존 4탭 폼이 그대로 뜬다(무중단).
+<presentation-actions>
+<presentation-link url="https://docs.lovable.dev/tips-tricks/troubleshooting">Troubleshooting docs</presentation-link>
+</presentation-actions>

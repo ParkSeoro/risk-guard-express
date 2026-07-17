@@ -14,9 +14,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck } from 'lucide-react';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
+import OverlayFillForm from '@/components/permits/OverlayFillForm';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import { useProjectAccess } from '@/hooks/useProjectAccess';
 import { printOverlay } from '@/lib/permitOverlayPrint';
+import { FormLayout, PrintOverlay } from '@/lib/permitFormTypes';
 
 const PERMIT_TABS: { id: PermitType; label: string }[] = [
   { id: 'general', label: '일반' },

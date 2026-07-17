@@ -1,0 +1,2 @@
+ALTER TABLE public.permit_form_templates ADD COLUMN IF NOT EXISTS permit_type TEXT DEFAULT 'general';
+CREATE INDEX IF NOT EXISTS idx_permit_form_templates_type_default ON public.permit_form_templates (permit_type, is_default) WHERE is_active AND NOT is_deleted;

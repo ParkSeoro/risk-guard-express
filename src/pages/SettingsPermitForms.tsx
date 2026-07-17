@@ -319,15 +319,31 @@ export default function SettingsPermitForms() {
                     <Input className="h-8" value={selected.version} onChange={(e) => setSelected({ ...selected, version: e.target.value })} />
                   </div>
                 </div>
-                <div className="flex items-center gap-6 flex-wrap">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="min-w-[220px]">
+                    <Label className="text-xs">허가서 종류</Label>
+                    <Select
+                      value={selected.permit_type || 'general'}
+                      onValueChange={(v) => setSelected({ ...selected, permit_type: v })}
+                    >
+                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {PERMIT_TYPE_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-muted-foreground mt-1">이 종류의 허가서를 작성할 때 자동 로드됩니다.</p>
+                  </div>
                   <label className="flex items-center gap-2 text-sm">
                     <Switch checked={selected.is_default} onCheckedChange={(v) => setSelected({ ...selected, is_default: v })} />
-                    기본 양식으로 사용
+                    이 종류의 기본 양식으로 사용
                   </label>
                   <label className="flex items-center gap-2 text-sm">
                     <Switch checked={selected.is_active} onCheckedChange={(v) => setSelected({ ...selected, is_active: v })} />
                     활성
                   </label>
+                </div>
                   <div className="ml-auto flex gap-2">
                     <Button size="sm" variant="outline" onClick={() => setShowJson(!showJson)}>{showJson ? '고급 닫기' : '고급 (JSON)'}</Button>
                     <Button size="sm" onClick={() => save()}><Save className="h-4 w-4 mr-1" />저장</Button>

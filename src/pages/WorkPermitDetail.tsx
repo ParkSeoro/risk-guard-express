@@ -14,9 +14,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck } from 'lucide-react';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
+import OverlayFillForm from '@/components/permits/OverlayFillForm';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import { useProjectAccess } from '@/hooks/useProjectAccess';
 import { printOverlay } from '@/lib/permitOverlayPrint';
+import { FormLayout, PrintOverlay } from '@/lib/permitFormTypes';
 
 const PERMIT_TABS: { id: PermitType; label: string }[] = [
   { id: 'general', label: '일반' },
@@ -51,6 +53,7 @@ export default function WorkPermitDetail() {
   const [linkedRuns, setLinkedRuns] = useState<any[]>([]);
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [template, setTemplate] = useState<{ id: string; layout_json: FormLayout; print_overlay: PrintOverlay; original_pdf_url: string | null } | null>(null);
 
   const load = async () => {
     if (!id) return;
@@ -110,6 +113,34 @@ export default function WorkPermitDetail() {
 
   useEffect(() => { load(); }, [id]);
 
+  // 종류(tab)별 기본 양식 조회 — 있으면 OverlayFillForm으로 렌더
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: tpls } = await supabase
+          .from('permit_form_templates')
+          .select('id, layout_json, print_overlay, original_pdf_url, is_default, permit_type')
+          .eq('is_deleted', false)
+          .eq('is_active', true)
+          .order('is_default', { ascending: false })
+          .order('updated_at', { ascending: false });
+        const list = (tpls || []) as any[];
+        const match =
+          list.find((t) => t.permit_type === tab && t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0) ||
+          list.find((t) => (!t.permit_type || t.permit_type === 'general') && t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0);
+        setTemplate(match ? {
+          id: match.id,
+          layout_json: match.layout_json || { header: { title: '' }, sections: [] },
+          print_overlay: match.print_overlay || { pages: [] },
+          original_pdf_url: match.original_pdf_url,
+        } : null);
+      } catch (e) {
+        console.warn('template lookup failed', e);
+        setTemplate(null);
+      }
+    })();
+  }, [tab]);
+
   const save = async () => {
     if (!permit) return;
     setSaving(true);
@@ -148,20 +179,25 @@ export default function WorkPermitDetail() {
       await (document as any).fonts?.load?.('16px "Noto Sans KR"');
       await (document as any).fonts?.ready;
     } catch {}
-    // 1) 활성 + 기본 양식에 원본 PDF + 오버레이 매핑이 있으면 원본양식으로 인쇄
+    // 1) 화면에 로드된 템플릿 우선. 없으면 활성+기본 순으로 탐색
     try {
-      const { data: tpls } = await supabase
-        .from('permit_form_templates')
-        .select('id, name, original_pdf_url, print_overlay, is_default, is_active, is_deleted')
-        .eq('is_deleted', false)
-        .eq('is_active', true)
-        .order('is_default', { ascending: false })
-        .limit(5);
-      const tpl = (tpls || []).find((t: any) =>
-        t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0,
-      );
+      let tpl: any = template && template.original_pdf_url ? template : null;
+      if (!tpl) {
+        const { data: tpls } = await supabase
+          .from('permit_form_templates')
+          .select('id, name, original_pdf_url, print_overlay, is_default, is_active, permit_type')
+          .eq('is_deleted', false)
+          .eq('is_active', true)
+          .order('is_default', { ascending: false })
+          .limit(10);
+        tpl = (tpls || []).find((t: any) =>
+          t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0 && (t.permit_type === tab || !t.permit_type),
+        ) || (tpls || []).find((t: any) =>
+          t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0,
+        );
+      }
       if (tpl) {
-        const path = (tpl as any).original_pdf_url.replace(/^.*permit-form-assets\//, '');
+        const path = (tpl.original_pdf_url as string).replace(/^.*permit-form-assets\//, '');
         const { data: signed } = await supabase.storage.from('permit-form-assets').createSignedUrl(path, 600);
         if (signed?.signedUrl) {
           const sigMap: Record<string, { signature?: string; name?: string }> = {};
@@ -170,7 +206,7 @@ export default function WorkPermitDetail() {
           });
           await printOverlay({
             pdfUrl: signed.signedUrl,
-            overlay: (tpl as any).print_overlay,
+            overlay: tpl.print_overlay,
             values: { ...data, permit_date: permit.permit_date, work_description: permit.work_description },
             signatures: sigMap,
             title: document.title,
@@ -227,14 +263,27 @@ export default function WorkPermitDetail() {
       </Tabs>
 
       <div className="bg-white border rounded shadow-sm p-3 md:p-6 print:border-0 print:shadow-none print:p-0">
-        <DigPermitForm
-          permitType={tab}
-          data={data}
-          signatures={signatures}
-          projectName={projectName}
-          onChange={(d) => setData(d)}
-          onSign={(k, v) => setSignatures({ ...signatures, [k]: v })}
-        />
+        {template && template.original_pdf_url ? (
+          <OverlayFillForm
+            pdfUrl={template.original_pdf_url}
+            layout={template.layout_json}
+            overlay={template.print_overlay}
+            values={data}
+            signatures={signatures as any}
+            onChange={(v) => setData(v)}
+            onSign={(role, sig) => setSignatures({ ...signatures, [role]: sig } as any)}
+            readOnly={isApproved}
+          />
+        ) : (
+          <DigPermitForm
+            permitType={tab}
+            data={data}
+            signatures={signatures}
+            projectName={projectName}
+            onChange={(d) => setData(d)}
+            onSign={(k, v) => setSignatures({ ...signatures, [k]: v })}
+          />
+        )}
       </div>
 
       {approvalOpen && (

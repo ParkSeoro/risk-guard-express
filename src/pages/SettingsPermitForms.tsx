@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   FileSignature, Plus, Copy, Trash2, Save, Eye, History, FileText, MousePointer2,
 } from 'lucide-react';
@@ -40,8 +41,16 @@ type Tpl = {
   original_pdf_url: string | null;
   is_default: boolean;
   is_active: boolean;
+  permit_type: string | null;
   updated_at: string;
 };
+
+const PERMIT_TYPE_OPTIONS = [
+  { value: 'general', label: '일반' },
+  { value: 'confined_space', label: '밀폐공간' },
+  { value: 'hot_work', label: '화기' },
+  { value: 'excavation', label: '굴착·중장비' },
+];
 
 type SelectedRef =
   | { kind: 'section'; sectionId: string }
@@ -73,7 +82,7 @@ export default function SettingsPermitForms() {
     setLoading(true);
     const { data, error } = await supabase
       .from('permit_form_templates')
-      .select('id, project_id, code, name, version, layout_json, print_overlay, original_pdf_url, is_default, is_active, updated_at')
+      .select('id, project_id, code, name, version, layout_json, print_overlay, original_pdf_url, is_default, is_active, permit_type, updated_at')
       .eq('is_deleted', false)
       .order('code')
       .order('version', { ascending: false });
@@ -149,6 +158,7 @@ export default function SettingsPermitForms() {
       version: selected.version.trim(),
       is_default: selected.is_default,
       is_active: selected.is_active,
+      permit_type: selected.permit_type || 'general',
       layout_json: layout,
       print_overlay: overlay,
       original_pdf_url: originalPdfUrl,
@@ -309,10 +319,25 @@ export default function SettingsPermitForms() {
                     <Input className="h-8" value={selected.version} onChange={(e) => setSelected({ ...selected, version: e.target.value })} />
                   </div>
                 </div>
-                <div className="flex items-center gap-6 flex-wrap">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="min-w-[220px]">
+                    <Label className="text-xs">허가서 종류</Label>
+                    <Select
+                      value={selected.permit_type || 'general'}
+                      onValueChange={(v) => setSelected({ ...selected, permit_type: v })}
+                    >
+                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {PERMIT_TYPE_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-muted-foreground mt-1">이 종류의 허가서를 작성할 때 자동 로드됩니다.</p>
+                  </div>
                   <label className="flex items-center gap-2 text-sm">
                     <Switch checked={selected.is_default} onCheckedChange={(v) => setSelected({ ...selected, is_default: v })} />
-                    기본 양식으로 사용
+                    이 종류의 기본 양식으로 사용
                   </label>
                   <label className="flex items-center gap-2 text-sm">
                     <Switch checked={selected.is_active} onCheckedChange={(v) => setSelected({ ...selected, is_active: v })} />

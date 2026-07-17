@@ -1,87 +1,86 @@
-# 3단계 통합 안정화 · 연동 · 현장 가드 스프린트
+## 문제
 
-3개 단계를 순차 구현합니다. 각 단계는 독립 배포 가능하며, DB 스키마 변경 없이 기존 테이블(assessment_runs, risk_items, work_plans, work_permits, tbm_sessions, tbm_participations)을 그대로 활용합니다. 신규 RPC 2개(`sync_ra_to_wp`, `act_on_entity_approval` 보강)와 스케줄러 1개(`permit-expiry-notifier`)만 추가됩니다.
+지금은 두 갈래로 갈라져 있어요.
 
----
+- **양식 디자인 화면**: 마스터가 PDF를 업로드하고, 그 위에 "여기는 작업내용, 여기는 체크박스, 여기는 서명" 하고 좌표를 찍어둡니다. (`SettingsPermitForms` + `OverlayEditor`, `print_overlay` 저장)
+- **실제 허가서 작성 화면**(`WorkPermitDetail`): 이 오버레이는 **완전히 무시**하고, 코드에 하드코딩된 `DigPermitForm`(일반/밀폐/화기/굴착 4탭 고정 폼)을 띄웁니다. 인쇄 버튼을 눌러야만 그때 오버레이 PDF를 찾아서 합성합니다.
 
-## 1단계 — 한글 폰트 임베딩 & 용어 표준화
+그래서 "내가 디자인한 양식이 작성 화면에 안 나온다"가 맞습니다. **디자인은 인쇄 전용**이고, **입력은 별도 하드코딩 폼**이라 두 개가 따로 놉니다.
 
-**PDF/인쇄 한글 안정화**
-- `index.html` `<head>`에 Google Fonts로 **Noto Sans KR** preconnect + `<link>` 프리로드 추가 (400/500/700).
-- `src/index.css` 전역 `body` 및 `@media print` 규칙에 `font-family: 'Noto Sans KR','Malgun Gothic','맑은 고딕',sans-serif` 1순위 지정.
-- `src/lib/permitOverlayPrint.ts`:
-  - 새 창 `<head>`에 동일한 Noto Sans KR `<link>` 삽입, `@page`/`@media print` font-family 지정.
-  - canvas에 그리기 전 `await document.fonts.load('16px "Noto Sans KR"')` + `await document.fonts.ready` 가드.
-  - print 트리거 전 새 창 쪽에서도 `win.document.fonts.ready` 대기(가능한 경우).
-- `src/pages/WorkPermitDetail.tsx` 인쇄 버튼: `await document.fonts.ready` 후 `window.print()` / `printOverlay()` 호출.
-- `src/lib/pdfRender.ts`도 동일 폰트 대기 가드 추가(서버 PDF와 클라 미리보기 일치).
+## 목표
 
-**실시간 용어 표준화(IME 안전)**
-- `src/components/IMESafeInput.tsx`는 이미 `correctTerms` 커밋 적용. 추가 매핑을 `src/lib/termCorrection.ts`에 보강:
-  - `중장비 → 건설기계`, `굴삭 → 굴착`, `안전그물 → 안전방망`.
-- 주요 폼(위험성평가/작업계획서/점검표)에서 아직 `<Input>` 직접 사용 중인 한글 필드를 `IMESafeInput`으로 교체. 대상 파일:
-  - `src/pages/AssessmentRunDetail.tsx` (공정/위험요인/대책 컬럼)
-  - `src/pages/WorkPlanDetail.tsx` + `src/components/work-plan/StructuredSectionForm.tsx`
-  - `src/pages/SafetyInspections.tsx` (점검 항목 텍스트)
-- `IMESafeTextarea.tsx`에도 동일 termCorrection 옵션이 이미 있는지 확인해 없으면 동일 패턴 적용.
+마스터가 만든 양식 하나로 **입력 화면도, 인쇄물도** 똑같이 나오게 합니다. 근로자·시공사는 "PDF 미리보기 위에 바로 타이핑/체크/서명" 하는 방식이 가장 빠르고 직관적입니다.
 
----
+## 해결안 — "PDF 위에 바로 쓰는" 단일 화면
 
-## 2단계 — RA → WP → Permit 수직 데이터 연동
+허가서 상세 페이지를 **"양식 위 입력 모드"** 로 통합합니다.
 
-**RA→WP 자동 추천 + 동기화**
-- `src/pages/WorkPlanDetail.tsx` "위험성평가 연계" 탭:
-  - 같은 `project_id`의 `assessment_runs`에서 `status='approved'` AND `is_deleted=false` 최신 회차 자동 조회.
-  - 사용자에게 "최신 승인 회차 자동 연결" 배지 표시, 수동 변경 가능한 드롭다운 유지.
-- 신규 클라 헬퍼 `src/lib/workPlanAttachments.ts`에 `syncRaToWp(runId, workPlanId)`:
-  - `risk_items` where `risk_grade in ('상','high','H')` AND `is_deleted=false` 조회.
-  - `hazard` + `improvement_measure`를 `work_plans.risk_measures`(JSONB) 섹션에 `{source_run_id, item_id}` 키로 upsert. 사용자가 편집한 항목은 `manually_edited=true`로 보존.
+```text
+┌─ 상단: 양식 선택 (일반/밀폐/화기/굴착, 기본 자동) ─┐
+│  [저장] [결재상신] [인쇄]                           │
+├──────────────────────────────────────────────────┤
+│                                                  │
+│   원본 PDF 배경 (반투명 회색)                       │
+│                                                  │
+│   ┌──────────┐  ← 오버레이 좌표에 그대로 겹쳐서      │
+│   │작업내용   │     입력 위젯을 띄움:                │
+│   └──────────┘     - text/number → <input>       │
+│           ☑        - checkbox → 클릭 토글          │
+│                    - signature → 서명 패드         │
+│                    - date/select → 그에 맞는 위젯   │
+└──────────────────────────────────────────────────┘
+```
 
-**최종 승인 시 허가서 자동 잠금**
-- Supabase RPC `act_on_entity_approval` 보강(SECURITY DEFINER):
-  - 대상이 `work_plan`이고 최종 승인 처리 시, `work_permits where work_plan_id = ...` 로우도 `status='approved'`, `is_locked=true`, `approved_at=now()`로 UPDATE.
-  - 트랜잭션 내부에서 감사 로그(`audit_logs`)에 `action='cascade_lock'` 기록.
+핵심 아이디어: **`print_overlay`에 정의된 박스 = 인쇄 좌표 = 입력 위젯 좌표**. 한 번 디자인하면 입력·출력 모두 자동 생성.
 
----
+### 화면 흐름
 
-## 3단계 — 현장 실시간 가드 & 만료 알림
+1. 사용자가 허가서 종류(일반/밀폐/화기/굴착)를 고르면, 그 종류에 매칭된 **기본(default) 양식**을 자동 로드.
+2. PDF가 배경으로 렌더되고, 그 위에 오버레이 박스별로 실제 입력 위젯이 뜸.
+3. 값은 기존 `work_permits.form_data`(JSONB)에 `field_key → value` 그대로 저장.
+4. **결재 승인되면** 오버레이 박스 중 `signature` 종류가 자동으로 결재자 이름/시간으로 채워짐(이미 있는 `POSITION_TO_SIG` 로직 재사용).
+5. 인쇄는 지금과 동일 — 같은 오버레이·같은 값으로 `printOverlay()` 실행 → **화면과 인쇄물이 100% 일치**.
 
-**TBM 미참여 입장 차단**
-- `src/pages/MobileScan.tsx` (및 `WorkerPortal.tsx` 입장 처리부): QR 인식 → 서버 사이드로 검증.
-- 신규 Edge Function `verify-worker-entry` 또는 기존 진입 지점에서 아래 규칙 실행:
-  - 오늘 자 `tbm_sessions where project_id AND company_id AND session_date=today AND status='completed'` 존재하는지 확인.
-  - 해당 세션들에 대한 `tbm_participations where worker_id=... AND signed_at is not null` 존재 여부 확인.
-  - 없으면 `entry_denied` 반환 → 모바일에서 **"TBM 미참여 — 작업장 입장 불가"** 팝업 표시하고 `worker_entry_logs` INSERT 차단.
-- 마스터/안전관리자는 우회 허용(감사 로그에 override_reason 요구).
+### 양식 ↔ 허가서 종류 매칭
 
-**허가서 유효성 가드**
-- `src/pages/WorkPermitDetail.tsx`:
-  - `permit_date !== today` 또는 `status !== 'approved'`인 경우 **인쇄** / **작업 시작** 버튼 `disabled` + 툴팁("승인/당일 허가만 실행 가능").
-  - 시간 만료(`valid_until < now`) 시에도 동일 처리.
+`permit_form_templates` 테이블에 이미 `is_default`가 있으니, 여기에 **`permit_type`(general/confined_space/hot_work/excavation)** 컬럼만 추가해서 "종류별 기본 양식"을 지정. 마스터가 SettingsPermitForms에서 드롭다운 한 번으로 매핑.
 
-**만료 1시간 전 푸시 알림**
-- 신규 Edge Function `supabase/functions/permit-expiry-notifier/index.ts`:
-  - `work_permits where status='approved' AND valid_until BETWEEN now()+55min AND now()+65min AND expiry_notified_at IS NULL` 조회.
-  - 시공사 관리자(`company_managers`) 및 요청자에게 `sendNotification` + `send-push` 호출.
-  - `expiry_notified_at=now()` 마킹으로 중복 방지.
-- `pg_cron`으로 매 10분 스케줄 등록(`cron.schedule`).
+### 폴백
 
----
+디자인된 양식이 없거나 오버레이가 비어 있는 종류는 **지금의 `DigPermitForm`을 그대로 폴백**으로 표시. 마스터가 양식을 등록하는 순간부터 자동으로 새 화면으로 전환.
 
-## 완료 정의 (검증 시나리오)
+## 왜 이 방식이 사용자에게 빠른가
 
-1. **인쇄**: SF003 허가서 PDF 미리보기에서 "굴착기/안전난간" 텍스트가 Noto Sans KR로 선명하게 렌더.
-2. **연동**: 위험성평가 회차를 승인 → 새 작업계획서 작성 시 최신 회차 자동 표시 & "위험도 상 항목 자동 불러오기" 성공. 작업계획서 승인 시 연결된 허가서 자동 `잠금`.
-3. **차단**: TBM 미참여 근로자 QR 스캔 시 입장 거부 팝업. 만료 55분 전 관리자에게 푸시 도착.
+- **학습 필요 없음**: 종이 양식을 화면에서 그대로 보고 그 자리에 씀. 탭·섹션 이동 없음.
+- **양식이 곧 UI**: 마스터가 양식만 바꾸면 입력 화면·인쇄물이 동시에 갱신. 개발자 개입 불필요.
+- **인쇄 미리보기 = 작성 화면**: "인쇄했더니 다르게 나온다" 문제 원천 차단.
+- **모바일에서도 유리**: pinch-zoom으로 필요한 칸만 확대해서 입력.
 
----
+## 변경 범위 (기술)
 
-## 기술 상세 (개발자용)
+1. **DB (마이그레이션 1개)**
+   - `permit_form_templates`에 `permit_type text` 컬럼 추가 (nullable, `general` 기본).
+   - 인덱스: `(permit_type, is_default) where is_active and not is_deleted`.
 
-- **DB 변경**: 없음(스키마), RPC 1개 신규(`sync_ra_to_wp`는 클라 헬퍼로 처리 가능), `act_on_entity_approval` 보강, `work_permits.expiry_notified_at`(신규 컬럼) 추가.
-- **Edge Functions**: `verify-worker-entry`, `permit-expiry-notifier` 신규. 기존 `send-notification-email`/`send-push` 재사용.
-- **Cron**: `permit-expiry-notifier`를 10분 주기.
-- **폰트 로딩 실패 대비**: `Malgun Gothic` 폴백 유지, `document.fonts.ready`가 5초 초과 시 강제 진행.
-- **RLS**: 신규 컬럼/RPC 모두 기존 프로젝트 스코프 정책 준수.
+2. **신규 컴포넌트**: `src/components/permits/OverlayFillForm.tsx`
+   - props: `pdfUrl`, `overlay`, `values`, `signatures`, `onChange`, `onSign`, `readOnly?`
+   - 내부: pdfjs로 페이지 렌더 → 각 페이지 위에 `position: absolute`로 박스별 위젯 배치
+   - 위젯 타입은 오버레이 박스의 `render` + 원본 `FormField.type`에서 유도 (필요 시 `field_types` 매핑 캐시를 layout_json에서 가져옴)
 
-승인해 주시면 1→2→3 순서로 구현하고, 각 단계 완료 시 스크린샷/테스트 결과와 함께 보고드리겠습니다.
+3. **수정: `src/pages/WorkPermitDetail.tsx`**
+   - 로드 시 `permit_type`에 맞는 활성·기본 템플릿 조회
+   - 템플릿 + 오버레이 있으면 → `OverlayFillForm` 렌더
+   - 없으면 → 지금의 `DigPermitForm` 폴백
+   - 저장/결재/인쇄 로직은 그대로 (form_data·signatures 스키마 동일)
+
+4. **수정: `src/pages/SettingsPermitForms.tsx`**
+   - 템플릿 카드에 "허가서 종류" 드롭다운 + "이 종류의 기본으로" 스위치 추가
+
+5. **수정 없음**: `printOverlay`, 결재 매핑, `work_permits` 테이블 스키마 — 그대로 재사용.
+
+## 마스터 체크리스트
+
+- [ ] 디자인 화면에서 오버레이 박스 하나를 옮기면 → 새로 만든 허가서의 입력칸 위치도 즉시 이동한다.
+- [ ] 체크박스 박스를 클릭하면 값이 저장되고, 인쇄물의 같은 위치에 체크가 찍힌다.
+- [ ] 서명 박스를 결재선에 매핑해 두면, 결재 승인 후 자동으로 이름/시간이 표시된다.
+- [ ] 디자인된 양식이 없는 종류는 기존 4탭 폼이 그대로 뜬다(무중단).

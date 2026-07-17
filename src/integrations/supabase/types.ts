@@ -3612,6 +3612,7 @@ export type Database = {
           layout_json: Json
           name: string
           original_pdf_url: string | null
+          permit_type: string | null
           print_overlay: Json
           project_id: string | null
           updated_at: string
@@ -3628,6 +3629,7 @@ export type Database = {
           layout_json?: Json
           name: string
           original_pdf_url?: string | null
+          permit_type?: string | null
           print_overlay?: Json
           project_id?: string | null
           updated_at?: string
@@ -3644,6 +3646,7 @@ export type Database = {
           layout_json?: Json
           name?: string
           original_pdf_url?: string | null
+          permit_type?: string | null
           print_overlay?: Json
           project_id?: string | null
           updated_at?: string

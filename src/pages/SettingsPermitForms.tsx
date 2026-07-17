@@ -343,7 +343,6 @@ export default function SettingsPermitForms() {
                     <Switch checked={selected.is_active} onCheckedChange={(v) => setSelected({ ...selected, is_active: v })} />
                     활성
                   </label>
-                </div>
                   <div className="ml-auto flex gap-2">
                     <Button size="sm" variant="outline" onClick={() => setShowJson(!showJson)}>{showJson ? '고급 닫기' : '고급 (JSON)'}</Button>
                     <Button size="sm" onClick={() => save()}><Save className="h-4 w-4 mr-1" />저장</Button>

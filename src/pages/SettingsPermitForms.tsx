@@ -151,8 +151,9 @@ export default function SettingsPermitForms() {
     setLayout(t.layout_json);
     setOverlay(t.print_overlay);
     setOriginalPdfUrl(t.original_pdf_url);
+    setSignatureSlots(t.signature_slots || []);
     setSelectedRef(null);
-    setTab('builder');
+    setTab(t.ai_analyzed_at ? 'builder' : 'ai');
     setJsonText(JSON.stringify(t.layout_json, null, 2));
     loadVersions(t.id);
   };
@@ -169,10 +170,11 @@ export default function SettingsPermitForms() {
       layout_json: layout,
       print_overlay: overlay,
       original_pdf_url: originalPdfUrl,
+      signature_slots: signatureSlots,
+      suggested_approval_steps: signatureSlots.length || null,
     };
     const { error } = await supabase.from('permit_form_templates').update(payload).eq('id', selected.id);
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
-    // 버전 스냅샷
     await supabase.from('permit_form_template_versions' as any).insert({
       template_id: selected.id,
       version_label: selected.version,
@@ -185,6 +187,38 @@ export default function SettingsPermitForms() {
     await load();
     await loadVersions(selected.id);
   };
+
+  // AI 분석 결과 적용: AI가 만든 기존 박스는 교체, 사용자 수동 박스는 보존
+  const applyAIResult = (res: {
+    layout: FormLayout; overlay: PrintOverlay; signatureSlots: SignatureSlot[]; detectedTitle?: string;
+  }) => {
+    // overlay 병합
+    const mergedPages = new Map<number, any[]>();
+    (overlay.pages || []).forEach((p) => {
+      mergedPages.set(p.page, p.boxes.filter((b) => !b.ai_generated));
+    });
+    (res.overlay.pages || []).forEach((p) => {
+      const cur = mergedPages.get(p.page) || [];
+      mergedPages.set(p.page, [...cur, ...p.boxes]);
+    });
+    setOverlay({
+      pages: Array.from(mergedPages.entries()).map(([page, boxes]) => ({ page, boxes })),
+    });
+
+    // layout 병합: AI 자동 섹션은 교체, 사용자 섹션은 유지
+    const userSections = (layout.sections || []).filter((s) => !s.id.startsWith('sec_ai_'));
+    setLayout({
+      header: res.detectedTitle
+        ? { ...layout.header, title: res.detectedTitle }
+        : layout.header,
+      sections: [...userSections, ...(res.layout.sections || [])],
+    });
+
+    setSignatureSlots(res.signatureSlots);
+    setTab('builder');
+    toast({ title: 'AI 결과가 적용되었습니다. 검토 후 저장하세요.' });
+  };
+
 
   const createNew = async (clone?: Tpl) => {
     const base = clone

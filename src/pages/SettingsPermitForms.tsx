@@ -127,6 +127,7 @@ export default function SettingsPermitForms() {
       ...r,
       layout_json: normalizeLayout(r.layout_json),
       print_overlay: normalizeOverlay(r.print_overlay),
+      signature_slots: Array.isArray(r.signature_slots) ? r.signature_slots : [],
     })));
     setLoading(false);
   };

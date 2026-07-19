@@ -414,11 +414,39 @@ export default function SettingsPermitForms() {
 
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList>
+                <TabsTrigger value="ai"><Sparkles className="h-4 w-4 mr-1" />AI 자동 분석</TabsTrigger>
+                <TabsTrigger value="overlay"><FileText className="h-4 w-4 mr-1" />원본 PDF 오버레이</TabsTrigger>
+                <TabsTrigger value="signatures"><Signature className="h-4 w-4 mr-1" />서명·결재라인 ({signatureSlots.length})</TabsTrigger>
                 <TabsTrigger value="builder"><MousePointer2 className="h-4 w-4 mr-1" />빌더</TabsTrigger>
                 <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />미리보기</TabsTrigger>
-                <TabsTrigger value="overlay"><FileText className="h-4 w-4 mr-1" />원본 PDF 오버레이</TabsTrigger>
                 <TabsTrigger value="versions"><History className="h-4 w-4 mr-1" />버전</TabsTrigger>
               </TabsList>
+
+              <TabsContent value="ai">
+                <Card>
+                  <CardContent className="p-3 space-y-3">
+                    <AIAnalysisPanel
+                      templateId={selected.id}
+                      originalPdfUrl={originalPdfUrl}
+                      onApply={applyAIResult}
+                    />
+                    {selected.ai_analyzed_at && (
+                      <p className="text-[11px] text-muted-foreground">
+                        마지막 AI 분석: {new Date(selected.ai_analyzed_at).toLocaleString('ko-KR')}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              <TabsContent value="signatures">
+                <Card>
+                  <CardContent className="p-3">
+                    <SignatureSlotMapper slots={signatureSlots} onChange={setSignatureSlots} />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
 
               <TabsContent value="builder">
                 <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3">

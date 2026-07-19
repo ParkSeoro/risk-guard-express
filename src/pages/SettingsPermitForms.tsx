@@ -44,6 +44,9 @@ type Tpl = {
   is_default: boolean;
   is_active: boolean;
   permit_type: string | null;
+  signature_slots: SignatureSlot[];
+  suggested_approval_steps: number | null;
+  ai_analyzed_at: string | null;
   updated_at: string;
 };
 

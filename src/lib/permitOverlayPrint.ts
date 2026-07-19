@@ -226,9 +226,11 @@ function drawSignerAll(
   x: number, y: number, w: number, h: number,
 ) {
   const lines: string[] = [];
+  if (slot.render_position && signer.position) lines.push(signer.position);
   if (signer.name) lines.push(signer.name);
-  if (slot.render_date && signer.approvedAt) {
-    lines.push(new Date(signer.approvedAt).toLocaleDateString('ko-KR'));
+  if ((slot.render_date || slot.render_time) && signer.approvedAt) {
+    const fmt = slot.date_format || (slot.render_time ? 'YYYY-MM-DD HH:mm' : 'YYYY-MM-DD');
+    lines.push(formatDate(signer.approvedAt, fmt));
   }
   if (lines.length === 0) return;
   const fh = Math.min(h / lines.length, h * 0.5);
@@ -245,9 +247,11 @@ function drawSignerMeta(
   x: number, y: number, w: number, h: number,
 ) {
   const lines: string[] = [];
+  if (slot.render_position && signer.position) lines.push(signer.position);
   if (slot.render_name && signer.name) lines.push(signer.name);
-  if (slot.render_date && signer.approvedAt) {
-    lines.push(new Date(signer.approvedAt).toLocaleDateString('ko-KR'));
+  if ((slot.render_date || slot.render_time) && signer.approvedAt) {
+    const fmt = slot.date_format || (slot.render_time ? 'YYYY-MM-DD HH:mm' : 'YYYY-MM-DD');
+    lines.push(formatDate(signer.approvedAt, fmt));
   }
   if (!lines.length) return;
   const fh = Math.min(h / lines.length, h * 0.6);

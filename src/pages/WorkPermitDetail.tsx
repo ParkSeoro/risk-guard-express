@@ -185,7 +185,7 @@ export default function WorkPermitDetail() {
       if (!tpl) {
         const { data: tpls } = await supabase
           .from('permit_form_templates')
-          .select('id, name, original_pdf_url, print_overlay, is_default, is_active, permit_type')
+          .select('id, name, original_pdf_url, print_overlay, signature_slots, is_default, is_active, permit_type')
           .eq('is_deleted', false)
           .eq('is_active', true)
           .order('is_default', { ascending: false })
@@ -195,6 +195,14 @@ export default function WorkPermitDetail() {
         ) || (tpls || []).find((t: any) =>
           t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0,
         );
+      } else {
+        // template state에 signature_slots가 없을 수 있으니 재조회
+        const { data: full } = await supabase
+          .from('permit_form_templates')
+          .select('signature_slots')
+          .eq('id', tpl.id)
+          .maybeSingle();
+        tpl.signature_slots = full?.signature_slots || [];
       }
       if (tpl) {
         const path = (tpl.original_pdf_url as string).replace(/^.*permit-form-assets\//, '');
@@ -204,11 +212,44 @@ export default function WorkPermitDetail() {
           Object.entries(signatures || {}).forEach(([role, val]: [string, any]) => {
             if (val && typeof val === 'object') sigMap[role] = { signature: val.signature, name: val.name };
           });
+
+          // 결재라인 → approvedSigners 로 자동 매핑
+          const approvedSigners: any[] = [];
+          try {
+            const { data: appr } = await supabase
+              .from('approvals')
+              .select('id, status')
+              .eq('target_type', 'work_permit')
+              .eq('target_id', permit.id)
+              .order('created_at', { ascending: false })
+              .limit(1);
+            const apprId = appr?.[0]?.id;
+            if (apprId) {
+              const { data: steps } = await supabase
+                .from('approval_lines')
+                .select('step_order, role, approver_name, approver_position, signature_image, status, approved_at')
+                .eq('approval_id', apprId)
+                .order('step_order', { ascending: true });
+              (steps || []).forEach((s: any, idx: number) => {
+                approvedSigners.push({
+                  role: s.role || `step_${idx + 1}`,
+                  name: s.approver_name || '',
+                  position: s.approver_position || '',
+                  signatureImage: s.signature_image || '',
+                  approvedAt: s.approved_at || '',
+                  status: s.status === 'approved' ? 'approved' : s.status === 'rejected' ? 'rejected' : 'pending',
+                });
+              });
+            }
+          } catch (e) { console.warn('approval line fetch failed', e); }
+
           await printOverlay({
             pdfUrl: signed.signedUrl,
             overlay: tpl.print_overlay,
             values: { ...data, permit_date: permit.permit_date, work_description: permit.work_description },
             signatures: sigMap,
+            signatureSlots: tpl.signature_slots || [],
+            approvedSigners,
             title: document.title,
           });
           return;

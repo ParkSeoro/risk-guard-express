@@ -74,10 +74,10 @@ export class GeminiError extends Error {
  * Returns an OpenAI-style response object.
  */
 export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
-  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  const apiKey = Deno.env.get("GEMINI_API_KEY") || Deno.env.get("GOOGLE_API_KEY");
   if (!apiKey) {
     throw new GeminiError(
-      "GEMINI_API_KEY가 설정되지 않았습니다. 마스터가 설정 > 시크릿에서 등록해야 합니다.",
+      "GEMINI_API_KEY 또는 GOOGLE_API_KEY가 설정되지 않았습니다. 마스터가 설정 > 시크릿에서 등록해야 합니다.",
       500,
       "INVALID_KEY"
     );

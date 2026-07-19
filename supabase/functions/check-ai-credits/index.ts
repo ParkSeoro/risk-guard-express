@@ -9,7 +9,7 @@ const corsHeaders = {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  const key = Deno.env.get('GEMINI_API_KEY');
+  const key = Deno.env.get('GEMINI_API_KEY') || Deno.env.get('GOOGLE_API_KEY');
   if (!key) {
     return new Response(
       JSON.stringify({

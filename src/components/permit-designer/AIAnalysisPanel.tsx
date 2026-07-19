@@ -52,25 +52,49 @@ export default function AIAnalysisPanel({ templateId, originalPdfUrl, onApply }:
 
       const maxPages = Math.min(pdf.numPages, 6);
       const pageImages: string[] = [];
+      const MAX_PER_PAGE = 4_000_000; // ~4MB base64 상한
       for (let p = 1; p <= maxPages; p++) {
-        setProgress(`페이지 ${p}/${maxPages} 이미지화…`);
+        setProgress(`페이지 ${p}/${maxPages} 이미지화(고해상도)…`);
         const page = await pdf.getPage(p);
-        const viewport = page.getViewport({ scale: 1.4 });
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext('2d')!;
-        await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
-        // JPEG 60% — 토큰 절약
-        pageImages.push(canvas.toDataURL('image/jpeg', 0.6));
+        // 고해상도 우선 → 크기 초과 시 자동 축소 재시도
+        let dataUrl = '';
+        for (const [scale, quality] of [[2.2, 0.85], [1.8, 0.8], [1.4, 0.7]] as const) {
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const ctx = canvas.getContext('2d')!;
+          await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+          if (dataUrl.length <= MAX_PER_PAGE) break;
+        }
+        pageImages.push(dataUrl);
       }
 
-      setProgress('AI 분석 중… (10~30초)');
+      setProgress('AI 분석 중… (Gemini Pro, 15~40초)');
       const { data, error } = await supabase.functions.invoke('analyze-permit-template', {
         body: { templateId, pageImages },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+
+      const fCount = data.result?.fields?.length || 0;
+      const cCount = data.result?.checkboxes?.length || 0;
+      const sCount = data.result?.signatures?.length || 0;
+      const total = fCount + cCount + sCount;
+      const modelUsed = data.diagnostics?.model_used || '(unknown)';
+      // 진단 정보는 항상 콘솔에 남김
+      console.log('[AIAnalysisPanel] diagnostics:', data.diagnostics);
+
+      if (total === 0) {
+        toast({
+          title: 'AI가 요소를 인식하지 못했습니다',
+          description: `사용 모델: ${modelUsed}. PDF가 스캔 이미지이거나 텍스트 해상도가 낮을 수 있습니다. "원본 PDF 오버레이" 탭에서 수동으로 배치하거나, 더 선명한 PDF로 다시 시도해 주세요.`,
+          variant: 'destructive',
+        });
+        // 빌더로 이동 X — 기존 상태 유지
+        return;
+      }
 
       const detected = data.result?.detected_title;
       onApply({
@@ -81,7 +105,7 @@ export default function AIAnalysisPanel({ templateId, originalPdfUrl, onApply }:
       });
       toast({
         title: 'AI 분석 완료',
-        description: `필드 ${data.result?.fields?.length || 0}개, 체크박스 ${data.result?.checkboxes?.length || 0}개, 서명 ${data.result?.signatures?.length || 0}개를 인식했습니다.`,
+        description: `필드 ${fCount}개, 체크박스 ${cCount}개, 서명 ${sCount}개 인식 (모델: ${modelUsed}).`,
       });
     } catch (e: any) {
       console.error(e);

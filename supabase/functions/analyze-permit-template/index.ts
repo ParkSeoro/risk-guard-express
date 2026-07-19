@@ -60,11 +60,22 @@ const SYSTEM_PROMPT = `당신은 한국의 산업안전 관련 문서(작업허�
   ]
 }
 
-절대 규칙:
-- bbox 좌표는 0~1 범위의 페이지 상대 좌표. [x=좌상단X, y=좌상단Y, w=너비, h=높이].
-- 각 페이지마다 **최소 1개 이상**의 필드/체크박스/서명 후보를 반드시 찾아 나열할 것.
-  · 정말 아무 요소도 없는 백지/이미지-only 페이지라면 반드시 notes 배열에 이유를 남길 것.
-- 필드 라벨 옆의 "빈 입력칸" 위치만 bbox로 지정. 라벨 텍스트 자체는 포함하지 말 것.
+**bbox 좌표계 (매우 중요)**:
+- 0~1 정규화. x=좌상단X, y=좌상단Y, w=너비, h=높이.
+- **좌표 참조점**: 이미지의 좌상단이 (0,0), 우하단이 (1,1). x=0.9 는 페이지의 오른쪽 끝(90%) 위치.
+- **체크박스 좌표는 □ 기호가 위치한 네모 자체의 좌표**여야 함. 옆의 라벨 텍스트 영역이 아님.
+  · 예: "□ 화기작업" → bbox 는 □ 만 (보통 w≈0.015, h≈0.015 정도의 작은 정사각형).
+- **입력란 좌표는 값이 들어갈 빈 셀 자체의 사각형** (라벨이 아니라 그 옆의 입력 공간).
+- 좌표를 대충 추정하지 말고, 실제 이미지에서 해당 요소가 시작하는 픽셀을 정확히 관찰해 상대좌표로 환산할 것.
+
+**커버리지 필수 규칙 (누락 방지)**:
+- 페이지를 **좌상/우상/좌하/우하 4분면**으로 나눠 각 분면을 반드시 순차 스캔하고, 어느 분면도 건너뛰지 말 것.
+- **우측(x>0.5) 영역**에 체크박스·서명란이 많은 경우가 흔함. 좌측만 보고 끝내지 말 것.
+- **하단(y>0.7) 영역**의 서명란/체크박스/합의사항도 빠뜨리지 말 것.
+- 표 형식이라면 **모든 행·모든 열의 셀**을 순회하며 체크박스/입력란을 나열할 것.
+- 같은 라벨이 여러 곳에 반복되면 각각 별도 항목으로 등록.
+
+**타입 판정**:
 - "작업명/공사명/장소/일자/시간" 등 짧은 값 → text 또는 date/time.
 - "작업내용/특이사항/조치사항" 등 여러 줄 → textarea.
 - "□ ☐ ☑ ( ) [ ]" 근처 항목 → checkboxes.
@@ -73,7 +84,23 @@ const SYSTEM_PROMPT = `당신은 한국의 산업안전 관련 문서(작업허�
   · "안전관리자/안전담당" → sm, "현장대리인/현장소장" → site_director
   · "관리감독자/PM/공사팀장" → pm, "발주처/감리" → client
   · "최종/승인/사장/대표" → master, 그 외 → custom
-- 반드시 순수 JSON만 출력. 마크다운 코드블록·설명 금지.`;
+
+- 각 페이지 최소 1개 이상 요소를 찾을 것. 백지면 notes 에 사유 기재.
+- 반드시 순수 JSON만. 마크다운·설명 금지.`;
+
+const REFINE_PROMPT = `당신은 방금 위 이미지에 대해 아래 JSON 결과를 냈습니다.
+이제 **누락 탐지 + 좌표 보정** 을 수행하세요.
+
+<previous_result>
+{{PREV}}
+</previous_result>
+
+수행 지침:
+1) 이미지의 **우측(x>0.5) 영역**과 **하단(y>0.65) 영역**을 다시 정밀 스캔해, previous_result 에 **누락된 체크박스/입력란/서명란**을 모두 찾아 추가.
+2) previous_result 의 각 항목 bbox 가 실제 요소 위치와 어긋나면 **더 정확한 bbox 로 교체**.
+3) 중복(동일 라벨 + 거의 같은 위치)은 제거.
+4) 응답은 **최종 완성본 전체**를 원 스키마 그대로 반환 (fields/checkboxes/signatures 전체 배열).
+5) 순수 JSON만.`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -173,15 +200,43 @@ Deno.serve(async (req) => {
 
     let parsed: any = {};
     let parseError: string | undefined;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (pe) {
-      const stripped = raw.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
+    const tryParse = (s: string) => {
+      try { return JSON.parse(s); } catch {
+        try { return JSON.parse(s.replace(/^```json\s*/i, '').replace(/```$/, '').trim()); }
+        catch (e) { parseError = String(e); return null; }
+      }
+    };
+    parsed = tryParse(raw) || {};
+
+    // ==== 2차 검증 패스 (누락/좌표 보정) ====
+    let refined: any = null;
+    if (modelUsed.startsWith('lovable/') && (parsed?.fields || parsed?.checkboxes || parsed?.signatures)) {
       try {
-        parsed = JSON.parse(stripped);
-      } catch (pe2) {
-        parseError = String(pe2);
-        console.error('[analyze-permit-template] JSON parse fail:', raw.slice(0, 800));
+        const refineMessages = [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content },
+          { role: 'assistant', content: JSON.stringify(parsed) },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: REFINE_PROMPT.replace('{{PREV}}', JSON.stringify(parsed).slice(0, 6000)) },
+              ...pageImages.flatMap((url, i) => [
+                { type: 'text', text: `--- Page ${i + 1} 재검토 ---` },
+                { type: 'image_url', image_url: { url } },
+              ]),
+            ],
+          },
+        ];
+        // Flash 로 빠르게 검증 (Pro 는 비용 큼)
+        const rawRefined = await callLovableAIGateway(refineMessages, { model: 'google/gemini-2.5-flash' });
+        const rp = tryParse(rawRefined);
+        if (rp && (Array.isArray(rp.fields) || Array.isArray(rp.checkboxes) || Array.isArray(rp.signatures))) {
+          refined = rp;
+          parsed = rp;
+          console.log(`[analyze-permit-template] refine pass ok: f=${rp.fields?.length||0} c=${rp.checkboxes?.length||0} s=${rp.signatures?.length||0}`);
+        }
+      } catch (e) {
+        console.warn('[analyze-permit-template] refine pass skipped:', e instanceof Error ? e.message : e);
       }
     }
 
@@ -259,12 +314,19 @@ Deno.serve(async (req) => {
     };
 
     const totalDetected = result.fields.length + result.checkboxes.length + result.signatures.length;
+    // 우측/하단 커버리지 진단 (누락 힌트)
+    const allBoxes = [...result.fields, ...result.checkboxes, ...result.signatures];
+    const rightSide = allBoxes.filter((b: any) => Array.isArray(b.bbox) && b.bbox[0] > 0.5).length;
+    const bottom = allBoxes.filter((b: any) => Array.isArray(b.bbox) && b.bbox[1] > 0.65).length;
     const diagnostics = {
       model_used: modelUsed,
+      refine_applied: !!refined,
       raw_preview: raw.slice(0, 600),
       page_count: pageImages.length,
       image_bytes_total: totalBytes,
       total_detected: totalDetected,
+      right_side_count: rightSide,
+      bottom_count: bottom,
       reason: totalDetected === 0 ? 'no_elements_detected' : 'ok',
       notes: result.notes,
       parse_error: parseError,

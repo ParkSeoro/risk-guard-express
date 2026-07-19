@@ -16,9 +16,26 @@ export interface ApprovedSigner {
   role: string;               // signature_slots[i].role 와 매칭
   slotId?: string;            // 특정 슬롯에 고정하고 싶을 때
   name?: string;
+  position?: string;          // 직책 (예: "안전관리자")
   signatureImage?: string;    // data URL 또는 https
   approvedAt?: string;        // ISO
   status?: 'approved' | 'pending' | 'rejected';
+}
+
+function formatDate(iso: string | undefined, fmt?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const map: Record<string, string> = {
+    YYYY: String(d.getFullYear()),
+    MM: pad(d.getMonth() + 1),
+    DD: pad(d.getDate()),
+    HH: pad(d.getHours()),
+    mm: pad(d.getMinutes()),
+  };
+  const f = fmt || 'YYYY-MM-DD';
+  return f.replace(/YYYY|MM|DD|HH|mm/g, (k) => map[k] || k);
 }
 
 interface RenderOptions {

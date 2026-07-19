@@ -2,9 +2,14 @@
 // 입력란/체크박스/서명란의 라벨·위치를 자동 인식한다.
 // 요청: { templateId, pageImages: string[] (base64 data URL, 페이지 순) }
 // 응답: { result: AIAnalysisResult, layoutPatch: FormLayout, overlayPatch: PrintOverlay, signatureSlots: SignatureSlot[] }
-import { corsHeaders } from 'npm:@supabase/supabase-js@2/cors';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { callGeminiChat, GeminiError } from '../_shared/gemini.ts';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
 
 const SYSTEM_PROMPT = `당신은 한국의 산업안전 관련 문서(작업허가서, 점검표, 확인서 등) 양식 분석 전문가입니다.
 사용자가 제공한 각 페이지 이미지를 분석하여 다음 JSON 스키마로만 응답하세요.

@@ -200,15 +200,43 @@ Deno.serve(async (req) => {
 
     let parsed: any = {};
     let parseError: string | undefined;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (pe) {
-      const stripped = raw.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
+    const tryParse = (s: string) => {
+      try { return JSON.parse(s); } catch {
+        try { return JSON.parse(s.replace(/^```json\s*/i, '').replace(/```$/, '').trim()); }
+        catch (e) { parseError = String(e); return null; }
+      }
+    };
+    parsed = tryParse(raw) || {};
+
+    // ==== 2차 검증 패스 (누락/좌표 보정) ====
+    let refined: any = null;
+    if (modelUsed.startsWith('lovable/') && (parsed?.fields || parsed?.checkboxes || parsed?.signatures)) {
       try {
-        parsed = JSON.parse(stripped);
-      } catch (pe2) {
-        parseError = String(pe2);
-        console.error('[analyze-permit-template] JSON parse fail:', raw.slice(0, 800));
+        const refineMessages = [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content },
+          { role: 'assistant', content: JSON.stringify(parsed) },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: REFINE_PROMPT.replace('{{PREV}}', JSON.stringify(parsed).slice(0, 6000)) },
+              ...pageImages.flatMap((url, i) => [
+                { type: 'text', text: `--- Page ${i + 1} 재검토 ---` },
+                { type: 'image_url', image_url: { url } },
+              ]),
+            ],
+          },
+        ];
+        // Flash 로 빠르게 검증 (Pro 는 비용 큼)
+        const rawRefined = await callLovableAIGateway(refineMessages, { model: 'google/gemini-2.5-flash' });
+        const rp = tryParse(rawRefined);
+        if (rp && (Array.isArray(rp.fields) || Array.isArray(rp.checkboxes) || Array.isArray(rp.signatures))) {
+          refined = rp;
+          parsed = rp;
+          console.log(`[analyze-permit-template] refine pass ok: f=${rp.fields?.length||0} c=${rp.checkboxes?.length||0} s=${rp.signatures?.length||0}`);
+        }
+      } catch (e) {
+        console.warn('[analyze-permit-template] refine pass skipped:', e instanceof Error ? e.message : e);
       }
     }
 

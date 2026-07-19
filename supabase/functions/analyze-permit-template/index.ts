@@ -314,12 +314,19 @@ Deno.serve(async (req) => {
     };
 
     const totalDetected = result.fields.length + result.checkboxes.length + result.signatures.length;
+    // 우측/하단 커버리지 진단 (누락 힌트)
+    const allBoxes = [...result.fields, ...result.checkboxes, ...result.signatures];
+    const rightSide = allBoxes.filter((b: any) => Array.isArray(b.bbox) && b.bbox[0] > 0.5).length;
+    const bottom = allBoxes.filter((b: any) => Array.isArray(b.bbox) && b.bbox[1] > 0.65).length;
     const diagnostics = {
       model_used: modelUsed,
+      refine_applied: !!refined,
       raw_preview: raw.slice(0, 600),
       page_count: pageImages.length,
       image_bytes_total: totalBytes,
       total_detected: totalDetected,
+      right_side_count: rightSide,
+      bottom_count: bottom,
       reason: totalDetected === 0 ? 'no_elements_detected' : 'ok',
       notes: result.notes,
       parse_error: parseError,

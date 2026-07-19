@@ -5,6 +5,33 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { callGeminiChat, GeminiError } from '../_shared/gemini.ts';
 
+// Lovable AI Gateway 우선 사용 (사용자 GEMINI_API_KEY 무료 할당량 소진 대비)
+async function callLovableAIGateway(messages: any[], temperature = 0.1): Promise<string> {
+  const key = Deno.env.get('LOVABLE_API_KEY');
+  if (!key) throw new Error('LOVABLE_API_KEY 미설정');
+  const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: 'google/gemini-2.5-flash',
+      messages,
+      temperature,
+      response_format: { type: 'json_object' },
+    }),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    if (resp.status === 429) throw new GeminiError('AI 요청이 몰려 잠시 후 다시 시도해주세요.', 429, 'RATE_LIMIT');
+    if (resp.status === 402) throw new GeminiError('AI 크레딧이 부족합니다. 워크스페이스에서 충전이 필요합니다.', 402, 'QUOTA_EXHAUSTED');
+    throw new GeminiError(`AI 게이트웨이 오류 (${resp.status}): ${text.slice(0, 200)}`, resp.status, 'SERVER_ERROR');
+  }
+  const data = await resp.json();
+  return data.choices?.[0]?.message?.content || '{}';
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',

@@ -3602,6 +3602,8 @@ export type Database = {
       }
       permit_form_templates: {
         Row: {
+          ai_analysis_json: Json | null
+          ai_analyzed_at: string | null
           code: string
           created_at: string
           created_by: string | null
@@ -3615,10 +3617,14 @@ export type Database = {
           permit_type: string | null
           print_overlay: Json
           project_id: string | null
+          signature_slots: Json
+          suggested_approval_steps: number | null
           updated_at: string
           version: string
         }
         Insert: {
+          ai_analysis_json?: Json | null
+          ai_analyzed_at?: string | null
           code: string
           created_at?: string
           created_by?: string | null
@@ -3632,10 +3638,14 @@ export type Database = {
           permit_type?: string | null
           print_overlay?: Json
           project_id?: string | null
+          signature_slots?: Json
+          suggested_approval_steps?: number | null
           updated_at?: string
           version?: string
         }
         Update: {
+          ai_analysis_json?: Json | null
+          ai_analyzed_at?: string | null
           code?: string
           created_at?: string
           created_by?: string | null
@@ -3649,6 +3659,8 @@ export type Database = {
           permit_type?: string | null
           print_overlay?: Json
           project_id?: string | null
+          signature_slots?: Json
+          suggested_approval_steps?: number | null
           updated_at?: string
           version?: string
         }

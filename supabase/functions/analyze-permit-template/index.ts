@@ -72,7 +72,12 @@ const SYSTEM_PROMPT = `당신은 한국의 산업안전 관련 문서(작업허�
 - 페이지를 **좌상/우상/좌하/우하 4분면**으로 나눠 각 분면을 반드시 순차 스캔하고, 어느 분면도 건너뛰지 말 것.
 - **우측(x>0.5) 영역**에 체크박스·서명란이 많은 경우가 흔함. 좌측만 보고 끝내지 말 것.
 - **하단(y>0.7) 영역**의 서명란/체크박스/합의사항도 빠뜨리지 말 것.
-- 표 형식이라면 **모든 행·모든 열의 셀**을 순회하며 체크박스/입력란을 나열할 것.
+
+**표(테이블) 스캔 규칙 (매우 중요 — 우측 체크박스 누락 원인 1위)**:
+- 표 형식이면 **모든 행을 위→아래로 순회**하고, 각 행 안에서 **좌→우로 모든 셀을 스캔**할 것.
+- 각 행에 □ ☐ ▢ ○ 등 체크 마커가 **여러 개** 나열되어 있으면 **각 마커마다 개별 checkboxes 항목**으로 등록 (라벨 텍스트가 없어도 됨).
+  · 라벨이 없으면 좌측 행 라벨을 상속하여 "행라벨 - N번째" 로 지정.
+- 우측 컬럼(x > 0.55)에 □가 반복되어 나오는 "요구사항/확인/조치" 형태의 표는 특히 놓치기 쉬우니, **행 개수와 우측 □ 개수를 두 번 확인**한 뒤 응답할 것.
 - 같은 라벨이 여러 곳에 반복되면 각각 별도 항목으로 등록.
 
 **타입 판정**:
@@ -97,10 +102,27 @@ const REFINE_PROMPT = `당신은 방금 위 이미지에 대해 아래 JSON 결�
 
 수행 지침:
 1) 이미지의 **우측(x>0.5) 영역**과 **하단(y>0.65) 영역**을 다시 정밀 스캔해, previous_result 에 **누락된 체크박스/입력란/서명란**을 모두 찾아 추가.
-2) previous_result 의 각 항목 bbox 가 실제 요소 위치와 어긋나면 **더 정확한 bbox 로 교체**.
-3) 중복(동일 라벨 + 거의 같은 위치)은 제거.
-4) 응답은 **최종 완성본 전체**를 원 스키마 그대로 반환 (fields/checkboxes/signatures 전체 배열).
-5) 순수 JSON만.`;
+2) **표 각 행을 다시 확인**: 행별로 좌→우 셀을 훑으며 □ 개수를 세고, previous_result 의 해당 행 체크박스 수보다 실제가 많으면 부족분을 모두 추가.
+3) previous_result 의 각 항목 bbox 가 실제 요소 위치와 어긋나면 **더 정확한 bbox 로 교체**.
+4) 중복(동일 라벨 + 거의 같은 위치, IoU>0.5)은 제거.
+5) 응답은 **최종 완성본 전체**를 원 스키마 그대로 반환 (fields/checkboxes/signatures 전체 배열).
+6) 순수 JSON만.`;
+
+const SWEEP_PROMPT = `당신은 표 형식 문서의 **체크박스(□ ☐ ▢) 전용 스캐너**입니다.
+아래 이미지들에서 **□ 심볼 하나하나의 위치만** JSON 으로 반환하세요. 다른 요소는 무시합니다.
+
+이미 감지된 체크박스 중심점(중복 방지용):
+<already_detected>
+{{PREV_CHECKS}}
+</already_detected>
+
+지시:
+1) 페이지를 **표 행 단위로 위→아래**, 각 행 내에서 **좌→우** 로 모든 □ 를 찾을 것.
+2) 특히 표의 **우측(x > 0.55) 컬럼**에 반복되는 □ 를 빠짐없이 등록.
+3) already_detected 좌표와 중심점 거리가 0.02 이내면 응답에서 제외.
+4) 라벨을 모르면 좌측 행 라벨을 상속하거나 빈 문자열.
+5) 응답 스키마: { "checkboxes": [ { "label": "...", "page": 1, "bbox": [x,y,w,h] } ] }
+6) 순수 JSON만.`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -240,6 +262,48 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ==== 3차 체크박스 스윕 패스 (표 우측 컬럼 누락 보정) ====
+    // 조건: 체크박스 총 개수 < 15 OR 우측(x>0.5) 체크박스 < 5
+    let sweep_added = 0;
+    const existingChecks: any[] = Array.isArray(parsed.checkboxes) ? parsed.checkboxes : [];
+    const rightChecks = existingChecks.filter((c: any) => Array.isArray(c.bbox) && c.bbox[0] > 0.5).length;
+    if (modelUsed.startsWith('lovable/') && (existingChecks.length < 15 || rightChecks < 5)) {
+      try {
+        const prevCenters = existingChecks
+          .filter((c: any) => Array.isArray(c.bbox))
+          .map((c: any) => ({ page: Number(c.page) || 1, cx: c.bbox[0] + c.bbox[2] / 2, cy: c.bbox[1] + c.bbox[3] / 2 }));
+        const sweepMessages = [
+          { role: 'system', content: SWEEP_PROMPT.replace('{{PREV_CHECKS}}', JSON.stringify(prevCenters).slice(0, 4000)) },
+          {
+            role: 'user',
+            content: pageImages.flatMap((url, i) => [
+              { type: 'text', text: `--- Page ${i + 1} 체크박스 스윕 ---` },
+              { type: 'image_url', image_url: { url } },
+            ]),
+          },
+        ];
+        const rawSweep = await callLovableAIGateway(sweepMessages, { model: 'google/gemini-2.5-flash' });
+        const sp = tryParse(rawSweep);
+        const newChecks: any[] = Array.isArray(sp?.checkboxes) ? sp.checkboxes : [];
+        // dedupe: 중심점 거리 < 0.02
+        const toAdd = newChecks.filter((n: any) => {
+          if (!Array.isArray(n.bbox)) return false;
+          const ncx = n.bbox[0] + n.bbox[2] / 2;
+          const ncy = n.bbox[1] + n.bbox[3] / 2;
+          const np = Number(n.page) || 1;
+          return !prevCenters.some((p) => p.page === np && Math.abs(p.cx - ncx) < 0.02 && Math.abs(p.cy - ncy) < 0.02);
+        });
+        if (toAdd.length > 0) {
+          parsed.checkboxes = [...existingChecks, ...toAdd];
+          sweep_added = toAdd.length;
+          console.log(`[analyze-permit-template] sweep pass added ${sweep_added} checkboxes`);
+        }
+      } catch (e) {
+        console.warn('[analyze-permit-template] sweep pass skipped:', e instanceof Error ? e.message : e);
+      }
+    }
+
+
     const result = {
       detected_title: String(parsed.detected_title || ''),
       page_count: Number(parsed.page_count || pageImages.length),
@@ -321,6 +385,7 @@ Deno.serve(async (req) => {
     const diagnostics = {
       model_used: modelUsed,
       refine_applied: !!refined,
+      sweep_added,
       raw_preview: raw.slice(0, 600),
       page_count: pageImages.length,
       image_bytes_total: totalBytes,

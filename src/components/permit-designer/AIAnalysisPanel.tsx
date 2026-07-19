@@ -224,6 +224,9 @@ export default function AIAnalysisPanel({ templateId, originalPdfUrl, onApply }:
               {aiResult?.diagnostics?.refine_applied && (
                 <Badge className="bg-emerald-600">2차 검증 완료</Badge>
               )}
+              {(aiResult?.diagnostics?.sweep_added ?? 0) > 0 && (
+                <Badge className="bg-indigo-600">3차 스윕 +{aiResult?.diagnostics?.sweep_added}개</Badge>
+              )}
             </DialogTitle>
           </DialogHeader>
 

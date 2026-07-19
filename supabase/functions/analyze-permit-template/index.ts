@@ -124,17 +124,30 @@ Deno.serve(async (req) => {
       content.push({ type: 'image_url', image_url: { url } });
     });
 
-    const geminiRes = await callGeminiChat({
-      model: 'google/gemini-2.5-pro',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content },
-      ],
-      temperature: 0.1,
-      response_format: { type: 'json_object' },
-    });
+    // Lovable AI Gateway 우선, 실패 시 사용자 GEMINI_API_KEY로 폴백
+    let raw = '{}';
+    try {
+      raw = await callLovableAIGateway(
+        [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content },
+        ],
+        0.1,
+      );
+    } catch (gwErr) {
+      console.warn('[analyze-permit-template] Lovable Gateway 실패, GEMINI_API_KEY 폴백:', gwErr instanceof Error ? gwErr.message : gwErr);
+      const geminiRes = await callGeminiChat({
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content },
+        ],
+        temperature: 0.1,
+        response_format: { type: 'json_object' },
+      });
+      raw = geminiRes.choices[0]?.message?.content || '{}';
+    }
 
-    const raw = geminiRes.choices[0]?.message?.content || '{}';
     let parsed: any = {};
     try {
       parsed = JSON.parse(raw);

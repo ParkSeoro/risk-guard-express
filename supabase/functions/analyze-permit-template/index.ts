@@ -385,6 +385,7 @@ Deno.serve(async (req) => {
     const diagnostics = {
       model_used: modelUsed,
       refine_applied: !!refined,
+      sweep_added,
       raw_preview: raw.slice(0, 600),
       page_count: pageImages.length,
       image_bytes_total: totalBytes,

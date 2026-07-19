@@ -262,6 +262,48 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ==== 3차 체크박스 스윕 패스 (표 우측 컬럼 누락 보정) ====
+    // 조건: 체크박스 총 개수 < 15 OR 우측(x>0.5) 체크박스 < 5
+    let sweep_added = 0;
+    const existingChecks: any[] = Array.isArray(parsed.checkboxes) ? parsed.checkboxes : [];
+    const rightChecks = existingChecks.filter((c: any) => Array.isArray(c.bbox) && c.bbox[0] > 0.5).length;
+    if (modelUsed.startsWith('lovable/') && (existingChecks.length < 15 || rightChecks < 5)) {
+      try {
+        const prevCenters = existingChecks
+          .filter((c: any) => Array.isArray(c.bbox))
+          .map((c: any) => ({ page: Number(c.page) || 1, cx: c.bbox[0] + c.bbox[2] / 2, cy: c.bbox[1] + c.bbox[3] / 2 }));
+        const sweepMessages = [
+          { role: 'system', content: SWEEP_PROMPT.replace('{{PREV_CHECKS}}', JSON.stringify(prevCenters).slice(0, 4000)) },
+          {
+            role: 'user',
+            content: pageImages.flatMap((url, i) => [
+              { type: 'text', text: `--- Page ${i + 1} 체크박스 스윕 ---` },
+              { type: 'image_url', image_url: { url } },
+            ]),
+          },
+        ];
+        const rawSweep = await callLovableAIGateway(sweepMessages, { model: 'google/gemini-2.5-flash' });
+        const sp = tryParse(rawSweep);
+        const newChecks: any[] = Array.isArray(sp?.checkboxes) ? sp.checkboxes : [];
+        // dedupe: 중심점 거리 < 0.02
+        const toAdd = newChecks.filter((n: any) => {
+          if (!Array.isArray(n.bbox)) return false;
+          const ncx = n.bbox[0] + n.bbox[2] / 2;
+          const ncy = n.bbox[1] + n.bbox[3] / 2;
+          const np = Number(n.page) || 1;
+          return !prevCenters.some((p) => p.page === np && Math.abs(p.cx - ncx) < 0.02 && Math.abs(p.cy - ncy) < 0.02);
+        });
+        if (toAdd.length > 0) {
+          parsed.checkboxes = [...existingChecks, ...toAdd];
+          sweep_added = toAdd.length;
+          console.log(`[analyze-permit-template] sweep pass added ${sweep_added} checkboxes`);
+        }
+      } catch (e) {
+        console.warn('[analyze-permit-template] sweep pass skipped:', e instanceof Error ? e.message : e);
+      }
+    }
+
+
     const result = {
       detected_title: String(parsed.detected_title || ''),
       page_count: Number(parsed.page_count || pageImages.length),

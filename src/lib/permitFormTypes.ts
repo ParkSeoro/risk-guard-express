@@ -114,6 +114,9 @@ export interface SignatureSlot {
   order: number;          // 결재 순서 (1부터)
   render_name?: boolean;  // 이름도 함께 표시
   render_date?: boolean;  // 승인일 표시
+  render_time?: boolean;  // 승인 시각(HH:mm) 표시
+  render_position?: boolean; // 직책 표시
+  date_format?: string;   // 'YYYY-MM-DD' | 'YYYY.MM.DD' | 'YYYY-MM-DD HH:mm' 등
 }
 
 // ────────────────── AI 자동 분석 결과 ──────────────────

@@ -216,7 +216,7 @@ export default function WorkPermitDetail() {
           // 결재라인 → approvedSigners 로 자동 매핑
           const approvedSigners: any[] = [];
           try {
-            const { data: appr } = await supabase
+            const { data: appr } = await (supabase as any)
               .from('approvals')
               .select('id, status')
               .eq('target_type', 'work_permit')
@@ -225,7 +225,7 @@ export default function WorkPermitDetail() {
               .limit(1);
             const apprId = appr?.[0]?.id;
             if (apprId) {
-              const { data: steps } = await supabase
+              const { data: steps } = await (supabase as any)
                 .from('approval_lines')
                 .select('step_order, role, approver_name, approver_position, signature_image, status, approved_at')
                 .eq('approval_id', apprId)

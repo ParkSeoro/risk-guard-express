@@ -78,6 +78,7 @@ export interface OverlayBox {
   check_when?: string | boolean;
   ai_generated?: boolean; // AI가 자동 생성한 박스인지
   label_hint?: string; // AI가 인식한 원본 라벨 (툴팁용)
+  locked?: boolean; // 잠금: 선택은 되지만 이동/리사이즈 불가
 }
 
 export interface OverlayPage {

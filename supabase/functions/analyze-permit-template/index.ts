@@ -1,12 +1,15 @@
 // 허가서 양식 PDF를 Gemini(멀티모달)로 분석하여
 // 입력란/체크박스/서명란의 라벨·위치를 자동 인식한다.
 // 요청: { templateId, pageImages: string[] (base64 data URL, 페이지 순) }
-// 응답: { result: AIAnalysisResult, layoutPatch: FormLayout, overlayPatch: PrintOverlay, signatureSlots: SignatureSlot[] }
+// 응답: { result, layoutPatch, overlayPatch, signatureSlots, diagnostics }
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { callGeminiChat, GeminiError } from '../_shared/gemini.ts';
 
-// Lovable AI Gateway 우선 사용 (사용자 GEMINI_API_KEY 무료 할당량 소진 대비)
-async function callLovableAIGateway(messages: any[], temperature = 0.1): Promise<string> {
+// Lovable AI Gateway 호출 (모델 파라미터화)
+async function callLovableAIGateway(
+  messages: any[],
+  opts: { model: string; temperature?: number },
+): Promise<string> {
   const key = Deno.env.get('LOVABLE_API_KEY');
   if (!key) throw new Error('LOVABLE_API_KEY 미설정');
   const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -16,9 +19,9 @@ async function callLovableAIGateway(messages: any[], temperature = 0.1): Promise
       'Authorization': `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
+      model: opts.model,
       messages,
-      temperature,
+      temperature: opts.temperature ?? 0.1,
       response_format: { type: 'json_object' },
     }),
   });
@@ -26,7 +29,7 @@ async function callLovableAIGateway(messages: any[], temperature = 0.1): Promise
     const text = await resp.text();
     if (resp.status === 429) throw new GeminiError('AI 요청이 몰려 잠시 후 다시 시도해주세요.', 429, 'RATE_LIMIT');
     if (resp.status === 402) throw new GeminiError('AI 크레딧이 부족합니다. 워크스페이스에서 충전이 필요합니다.', 402, 'QUOTA_EXHAUSTED');
-    throw new GeminiError(`AI 게이트웨이 오류 (${resp.status}): ${text.slice(0, 200)}`, resp.status, 'SERVER_ERROR');
+    throw new GeminiError(`AI 게이트웨이 오류 (${resp.status}): ${text.slice(0, 300)}`, resp.status, 'SERVER_ERROR');
   }
   const data = await resp.json();
   return data.choices?.[0]?.message?.content || '{}';
@@ -39,11 +42,12 @@ const corsHeaders = {
 };
 
 const SYSTEM_PROMPT = `당신은 한국의 산업안전 관련 문서(작업허가서, 점검표, 확인서 등) 양식 분석 전문가입니다.
-사용자가 제공한 각 페이지 이미지를 분석하여 다음 JSON 스키마로만 응답하세요.
+사용자가 제공한 각 페이지 이미지를 정밀히 분석하여 아래 JSON 스키마로만 응답하세요.
 
 {
   "detected_title": "문서 최상단의 제목 (예: '화기작업허가서')",
   "page_count": <총 페이지 수>,
+  "notes": ["페이지별 관찰(예: 'p1 표 형식 양식', 'p2 백지')"],
   "fields": [
     { "label": "필드명(라벨)", "type": "text|textarea|number|date|time|select", "page": 1, "bbox": [x, y, w, h] }
   ],
@@ -51,25 +55,25 @@ const SYSTEM_PROMPT = `당신은 한국의 산업안전 관련 문서(작업허�
     { "label": "체크박스 옆 문구", "page": 1, "bbox": [x, y, w, h] }
   ],
   "signatures": [
-    { "label": "서명란 라벨 (예: 안전관리자, 현장대리인, 승인, 확인)",
-      "role_hint": "creator|contractor_pic|sm|site_director|pm|client|master|custom",
+    { "label": "서명란 라벨", "role_hint": "creator|contractor_pic|sm|site_director|pm|client|master|custom",
       "page": 1, "bbox": [x, y, w, h] }
   ]
 }
 
-규칙:
+절대 규칙:
 - bbox 좌표는 0~1 범위의 페이지 상대 좌표. [x=좌상단X, y=좌상단Y, w=너비, h=높이].
-- 필드 라벨 옆의 "빈 입력칸"만 bbox로 지정. 라벨 자체는 포함하지 말 것.
+- 각 페이지마다 **최소 1개 이상**의 필드/체크박스/서명 후보를 반드시 찾아 나열할 것.
+  · 정말 아무 요소도 없는 백지/이미지-only 페이지라면 반드시 notes 배열에 이유를 남길 것.
+- 필드 라벨 옆의 "빈 입력칸" 위치만 bbox로 지정. 라벨 텍스트 자체는 포함하지 말 것.
 - "작업명/공사명/장소/일자/시간" 등 짧은 값 → text 또는 date/time.
 - "작업내용/특이사항/조치사항" 등 여러 줄 → textarea.
-- "□ ☐ ☑ ( )" 근처의 항목 → checkboxes.
-- "서명/확인/승인/결재/검토" 셀 → signatures. 라벨 문구로 role_hint 추정.
+- "□ ☐ ☑ ( ) [ ]" 근처 항목 → checkboxes.
+- "서명/확인/승인/결재/검토/날인" 셀 → signatures. 라벨 문구로 role_hint 추정.
   · "작성/기안" → creator, "협력사/시공사" → contractor_pic
   · "안전관리자/안전담당" → sm, "현장대리인/현장소장" → site_director
   · "관리감독자/PM/공사팀장" → pm, "발주처/감리" → client
-  · "최종/승인/사장" → master, 그 외 → custom
-- 반드시 순수 JSON만 출력. 마크다운 코드블록·설명 금지.
-- 확실하지 않은 요소는 포함하지 말 것 (정밀도 > 재현율).`;
+  · "최종/승인/사장/대표" → master, 그 외 → custom
+- 반드시 순수 JSON만 출력. 마크다운 코드블록·설명 금지.`;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -106,6 +110,12 @@ Deno.serve(async (req) => {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    const totalBytes = pageImages.reduce((s, u) => s + u.length, 0);
+    if (totalBytes > 26_000_000) {
+      return new Response(JSON.stringify({ error: '이미지 총 용량이 너무 큽니다(약 25MB 초과). 페이지 수를 줄이거나 해상도를 낮춰 다시 시도하세요.' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // master 여부 검증
     const { data: isMaster } = await supabase.rpc('is_master', { _user_id: userRes.user.id });
@@ -115,7 +125,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Gemini 멀티모달 호출
+    // 멀티모달 메시지
     const content: any[] = [
       { type: 'text', text: `총 ${pageImages.length} 페이지입니다. 각 페이지를 순서대로 분석해 주세요.` },
     ];
@@ -123,101 +133,102 @@ Deno.serve(async (req) => {
       content.push({ type: 'text', text: `--- Page ${i + 1} ---` });
       content.push({ type: 'image_url', image_url: { url } });
     });
+    const messages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content },
+    ];
 
-    // Lovable AI Gateway 우선, 실패 시 사용자 GEMINI_API_KEY로 폴백
+    // 3단 폴백: Gateway Pro → Gateway Flash → GEMINI_API_KEY Pro
     let raw = '{}';
-    try {
-      raw = await callLovableAIGateway(
-        [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content },
-        ],
-        0.1,
-      );
-    } catch (gwErr) {
-      console.warn('[analyze-permit-template] Lovable Gateway 실패, GEMINI_API_KEY 폴백:', gwErr instanceof Error ? gwErr.message : gwErr);
-      const geminiRes = await callGeminiChat({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content },
-        ],
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-      });
-      raw = geminiRes.choices[0]?.message?.content || '{}';
+    let modelUsed = '';
+    const attempts: Array<{ label: string; run: () => Promise<string> }> = [
+      { label: 'lovable/google/gemini-2.5-pro', run: () => callLovableAIGateway(messages, { model: 'google/gemini-2.5-pro' }) },
+      { label: 'lovable/google/gemini-2.5-flash', run: () => callLovableAIGateway(messages, { model: 'google/gemini-2.5-flash' }) },
+      {
+        label: 'gemini_api_key/gemini-2.5-pro',
+        run: async () => {
+          const r = await callGeminiChat({
+            model: 'google/gemini-2.5-pro',
+            messages,
+            temperature: 0.1,
+            response_format: { type: 'json_object' },
+          });
+          return r.choices[0]?.message?.content || '{}';
+        },
+      },
+    ];
+    let lastErr: any = null;
+    for (const a of attempts) {
+      try {
+        raw = await a.run();
+        modelUsed = a.label;
+        console.log(`[analyze-permit-template] model=${a.label} raw_len=${raw.length} preview=${raw.slice(0, 400)}`);
+        break;
+      } catch (e) {
+        lastErr = e;
+        console.warn(`[analyze-permit-template] ${a.label} 실패:`, e instanceof Error ? e.message : e);
+      }
     }
+    if (!modelUsed) throw lastErr || new Error('모든 AI 호출 실패');
 
     let parsed: any = {};
+    let parseError: string | undefined;
     try {
       parsed = JSON.parse(raw);
-    } catch {
-      // 마크다운 fence 제거 재시도
+    } catch (pe) {
       const stripped = raw.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
-      parsed = JSON.parse(stripped);
+      try {
+        parsed = JSON.parse(stripped);
+      } catch (pe2) {
+        parseError = String(pe2);
+        console.error('[analyze-permit-template] JSON parse fail:', raw.slice(0, 800));
+      }
     }
 
     const result = {
       detected_title: String(parsed.detected_title || ''),
       page_count: Number(parsed.page_count || pageImages.length),
+      notes: Array.isArray(parsed.notes) ? parsed.notes.map(String) : [],
       fields: Array.isArray(parsed.fields) ? parsed.fields : [],
       checkboxes: Array.isArray(parsed.checkboxes) ? parsed.checkboxes : [],
       signatures: Array.isArray(parsed.signatures) ? parsed.signatures : [],
     };
 
-    // 결과 → layout / overlay / signature_slots 로 변환
     const now = Date.now();
     const rand = () => Math.random().toString(36).slice(2, 6);
-
     const layoutFields: any[] = [];
     const overlayBoxes: any[] = [];
 
-    // 일반 필드
     result.fields.forEach((f: any, i: number) => {
       const key = `ai_f_${now}_${i}_${rand()}`;
       const bbox = normalizeBbox(f.bbox);
       layoutFields.push({
-        key,
-        label: String(f.label || `필드 ${i + 1}`),
+        key, label: String(f.label || `필드 ${i + 1}`),
         type: allowedFieldType(f.type),
         width: f.type === 'textarea' ? 4 : 2,
       });
       overlayBoxes.push({
-        id: `box_${now}_${i}_${rand()}`,
-        field_key: key,
+        id: `box_${now}_${i}_${rand()}`, field_key: key,
         page: Number(f.page) || 1,
         x: bbox[0], y: bbox[1], w: bbox[2], h: bbox[3],
-        render: 'text',
-        font_size: 10,
-        align: 'left',
-        ai_generated: true,
-        label_hint: String(f.label || ''),
+        render: 'text', font_size: 10, align: 'left',
+        ai_generated: true, label_hint: String(f.label || ''),
       });
     });
 
-    // 체크박스
     result.checkboxes.forEach((c: any, i: number) => {
       const key = `ai_c_${now}_${i}_${rand()}`;
       const bbox = normalizeBbox(c.bbox);
-      layoutFields.push({
-        key,
-        label: String(c.label || `체크 ${i + 1}`),
-        type: 'checkbox',
-        width: 2,
-      });
+      layoutFields.push({ key, label: String(c.label || `체크 ${i + 1}`), type: 'checkbox', width: 2 });
       overlayBoxes.push({
-        id: `chk_${now}_${i}_${rand()}`,
-        field_key: key,
+        id: `chk_${now}_${i}_${rand()}`, field_key: key,
         page: Number(c.page) || 1,
         x: bbox[0], y: bbox[1], w: bbox[2], h: bbox[3],
-        render: 'check',
-        check_when: 'true',
-        ai_generated: true,
-        label_hint: String(c.label || ''),
+        render: 'check', check_when: 'true',
+        ai_generated: true, label_hint: String(c.label || ''),
       });
     });
 
-    // 서명 슬롯
     const signatureSlots: any[] = [];
     result.signatures.forEach((s: any, i: number) => {
       const bbox = normalizeBbox(s.bbox);
@@ -227,9 +238,7 @@ Deno.serve(async (req) => {
         label: String(s.label || `서명 ${i + 1}`),
         page: Number(s.page) || 1,
         x: bbox[0], y: bbox[1], w: bbox[2], h: bbox[3],
-        order: i + 1,
-        render_name: true,
-        render_date: true,
+        order: i + 1, render_name: true, render_date: true,
       });
     });
 
@@ -240,7 +249,6 @@ Deno.serve(async (req) => {
         : [],
     };
 
-    // overlay: 페이지별로 묶기
     const overlayPages: Record<number, any[]> = {};
     overlayBoxes.forEach((b) => {
       if (!overlayPages[b.page]) overlayPages[b.page] = [];
@@ -250,11 +258,22 @@ Deno.serve(async (req) => {
       pages: Object.entries(overlayPages).map(([p, boxes]) => ({ page: Number(p), boxes })),
     };
 
-    // DB 저장
+    const totalDetected = result.fields.length + result.checkboxes.length + result.signatures.length;
+    const diagnostics = {
+      model_used: modelUsed,
+      raw_preview: raw.slice(0, 600),
+      page_count: pageImages.length,
+      image_bytes_total: totalBytes,
+      total_detected: totalDetected,
+      reason: totalDetected === 0 ? 'no_elements_detected' : 'ok',
+      notes: result.notes,
+      parse_error: parseError,
+    };
+
     await supabase
       .from('permit_form_templates')
       .update({
-        ai_analysis_json: result,
+        ai_analysis_json: { ...result, diagnostics },
         ai_analyzed_at: new Date().toISOString(),
         signature_slots: signatureSlots,
         suggested_approval_steps: signatureSlots.length,
@@ -262,7 +281,7 @@ Deno.serve(async (req) => {
       .eq('id', templateId);
 
     return new Response(
-      JSON.stringify({ result, layoutPatch, overlayPatch, signatureSlots }),
+      JSON.stringify({ result, layoutPatch, overlayPatch, signatureSlots, diagnostics }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   } catch (e) {

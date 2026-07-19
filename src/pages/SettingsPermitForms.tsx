@@ -192,6 +192,18 @@ export default function SettingsPermitForms() {
   const applyAIResult = (res: {
     layout: FormLayout; overlay: PrintOverlay; signatureSlots: SignatureSlot[]; detectedTitle?: string;
   }) => {
+    const hasSections = (res.layout?.sections?.length || 0) > 0;
+    const hasOverlay = (res.overlay?.pages || []).some((p) => (p.boxes?.length || 0) > 0);
+    const hasSigs = (res.signatureSlots?.length || 0) > 0;
+    if (!hasSections && !hasOverlay && !hasSigs) {
+      toast({
+        title: '적용할 AI 결과가 없습니다',
+        description: 'AI가 인식한 요소가 없어 빌더/오버레이를 변경하지 않았습니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     // overlay 병합
     const mergedPages = new Map<number, any[]>();
     (overlay.pages || []).forEach((p) => {

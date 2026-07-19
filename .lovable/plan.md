@@ -1,124 +1,46 @@
+## 문제 진단
 
-# 허가서 시스템 개선 계획 (AI 분석 + 자동 매핑 + UX 개선)
+첨부 상태: "AI 분석 완료 · 필드 0개, 체크박스 0개, 서명 0개"
 
-## 핵심 원칙
-- **원본 그대로 인쇄**: 업로드한 PDF를 배경으로 사용, 그 위에 데이터만 오버레이 (현재 방식 유지·강화)
-- **AI가 80% 자동, 마스터가 20% 손보기**: 마스터가 매번 수십 개 박스를 손으로 그리지 않게
+즉 엣지 함수 호출은 성공했지만 **AI가 이미지에서 아무 요소도 인식하지 못한 채 빈 JSON을 반환**하고 있습니다. 원인 후보:
 
----
+1. **저해상도 렌더링** — 현재 `AIAnalysisPanel`은 PDF를 `scale: 1.4` + JPEG 60%로 렌더링. 한국어 허가서의 얇은 표선/작은 라벨은 이 화질에서 Gemini Flash가 못 읽는 경우가 많음.
+2. **모델 선택** — Lovable Gateway `google/gemini-2.5-flash`는 속도 우선이라 표·체크박스 OCR이 약함. Gemini 2.5 **Pro**가 한국어 양식 인식률이 훨씬 높음.
+3. **원시 응답 미로깅** — 함수가 raw response를 안 찍어서 "모델이 뭐라 답했는지"를 볼 수 없어 사일런트 실패.
+4. **결과 0개인데도 빌더로 강제 이동** — 사용자 입장에서 "기능 안 됨"으로 보임. `sec_ai_*` 섹션이 아예 안 만들어져서 빌더에 아무것도 없어 보이는 것.
 
-## 단계 1 — AI 양식 자동 분석 (신규)
+## 수정 계획
 
-### 흐름
-1. 마스터가 PDF 업로드 → `analyze-permit-template` 엣지 함수 호출
-2. 함수가 PDF 각 페이지를 이미지로 변환(pdfjs) → Gemini(멀티모달)에 "이 안전 허가서의 입력란/체크박스/서명란을 JSON으로 반환" 프롬프트
-3. 반환 JSON:
-   ```
-   { fields:[{label,type,page,bbox:[x,y,w,h]}], signatures:[{role_hint,page,bbox}], checkboxes:[{label,page,bbox}] }
-   ```
-4. 서버가 `layout_json`(필드 정의) + `print_overlay`(좌표 박스)를 자동 생성해 `permit_form_templates`에 저장
-5. 마스터는 "AI 초안 검토" 화면에서 라벨 수정/필드 타입 변경/불필요 박스 삭제만 하면 됨
+### 1) `supabase/functions/analyze-permit-template/index.ts`
+- **모델을 `google/gemini-2.5-pro`로 승격** (Gateway 우선). 실패 시 `gemini-2.5-flash` → 사용자 `GEMINI_API_KEY`의 `gemini-2.5-pro` 순 3단 폴백.
+- Gateway 호출 함수에 `model` 파라미터화, `response_format: json_object` 유지.
+- **원시 응답 로깅**: `console.log('[analyze] raw:', raw.slice(0, 800))` 및 파싱 실패 시 전문 로그.
+- **응답에 진단 필드 추가**: `{ result, layoutPatch, overlayPatch, signatureSlots, diagnostics: { model_used, raw_preview, page_count, image_bytes_total } }`.
+- 프롬프트 강화: "각 페이지에 최소 1개 이상의 필드/체크박스/서명 후보를 반드시 나열하라. 아무것도 인식되지 않으면 그 페이지의 이유(예: 백지·이미지 없음)를 `notes`에 기록하라." + `notes: string[]` 필드 추가.
+- 안전장치: 파싱 결과 총합이 0이면 400이 아닌 200 반환하되 `diagnostics.reason = 'no_elements_detected'` 세팅.
 
-### 필드 타입 자동 추정 규칙 (AI 프롬프트 내장)
-- "작업명/공사명/장소" → text
-- "작업내용/특이사항" → textarea
-- "일자/시간" → date/time
-- "□/☐/☑" 근처 텍스트 → checkbox
-- "서명/확인/승인/결재" 셀 → signature (role_hint: contractor_pic/sm/site_director/pm/master)
-- 표 안 서명란 개수 = 결재라인 단계 수 힌트
+### 2) `src/components/permit-designer/AIAnalysisPanel.tsx`
+- **렌더링 해상도 상향**: `scale: 1.4 → 2.2`, JPEG `0.6 → 0.85`.
+- 페이지당 base64 크기가 4MB 초과 시 자동으로 스케일 낮춰 재시도 (Gateway 페이로드 한도 안전).
+- 결과 0개 케이스 처리:
+  - `onApply` 호출 **안 함** (빌더로 이동 X, 기존 layout 유지)
+  - 대신 경고 토스트 + 진단 정보 표시:  
+    "인식 실패 — 사용한 모델: {model_used}. PDF 스캔 품질이 낮거나 텍스트가 아닌 이미지 위주일 수 있습니다. 원본 PDF 오버레이 탭에서 수동 배치를 이용하세요."
+  - 디버그용으로 콘솔에 `diagnostics` 전문 출력.
+- 진행 표시에 현재 사용 중인 모델명 노출.
 
-### DB 변경
-- `permit_form_templates`에 컬럼 추가:
-  - `ai_analysis_json jsonb` (AI 원본 응답 보관 - 재적용용)
-  - `ai_analyzed_at timestamptz`
-  - `signature_slots jsonb` (감지된 서명 슬롯 리스트: `[{role, page, bbox, label}]`)
-  - `suggested_approval_steps int` (기본 결재 단계 힌트)
+### 3) `src/pages/SettingsPermitForms.tsx` — `applyAIResult`
+- 방어 로직: `res.layout.sections`와 `res.overlay.pages`가 모두 비어있으면 setTab('builder')로 이동하지 않고 no-op + 토스트.
+- 결과가 있을 때만 기존처럼 병합·이동.
 
----
+### 4) 검증
+- 사용자가 다시 "AI 자동 분석 실행" 클릭 → 엣지 로그에서 `[analyze] raw:` 확인 → 실제 Gemini 응답 내용으로 다음 조치 판단 가능.
+- Pro 모델로도 0개면 원인은 PDF 자체(스캔 이미지 품질/한글 폰트 임베딩 없음)임이 확인되므로, 사용자에게 명확히 안내.
 
-## 단계 2 — 결재라인 자동 연동
+## 기술 세부 (참고)
 
-### 로직
-1. AI가 감지한 `signature_slots` 개수/라벨로 **양식별 권장 결재 라인** 자동 제안
-   - 예: "작성자 / 안전관리자 / 현장대리인 / 발주처" 4칸 감지 → 4단계 결재 루트 자동 프리셋
-2. 마스터는 `SettingsPermitForms`에서 각 서명 슬롯을 **역할**(작성자/안전관리자/현장대리인/PM/발주처/협력사대표)에 드롭다운으로 매핑
-3. 허가서 작성 시 `derive_permit_approval_line` RPC가:
-   - 양식의 `signature_slots.role` → 해당 프로젝트의 `company_managers`/`project_members`에서 사람 자동 지정
-   - 사용자는 이름만 확인/변경 (초보자도 3초 컷)
-4. 결재 진행/완료 시 각 결재자의 서명 이미지(profile.signature_url) + 이름 + 승인일시가 지정된 서명 슬롯에 자동 렌더링
+- Gateway 호출 함수 시그니처를 `callLovableAIGateway(messages, { model, temperature })`로 변경.
+- `pageImages` 총 바이트 수를 계산해 25MB 초과 시 400 반환(현재는 페이지 수만 6장 제한).
+- `permit_form_templates.ai_analysis_json`에 `diagnostics`도 함께 저장하여 재현 분석 가능.
 
-### UX
-- 허가서 작성 다이얼로그 상단: "이 양식은 서명 4칸입니다. 결재라인 자동 지정됨 ✓" 배지
-- 각 서명 슬롯 옆 [사람 선택] 버튼 하나만
-
----
-
-## 단계 3 — 오버레이 편집기 UX 재설계
-
-### 현재 문제
-- 박스가 다른 박스를 침범해도 경고 없음
-- 서명/체크박스 지정이 세부 옵션 안에 숨어있어 헷갈림
-- 박스 크기 조절/이동을 마우스로 못 함 (그리기만 가능)
-
-### 개선
-1. **박스 리사이즈 & 드래그 이동** (react-moveable 또는 자체 구현)
-   - 8방향 리사이즈 핸들
-   - 화살표 키로 1px 미세조정
-2. **박스 타입별 색상**:
-   - 텍스트=파랑, 체크박스=초록, 서명=주황
-   - AI 자동 생성 박스는 점선 테두리("AI 초안" 뱃지)
-3. **겹침 감지**: 다른 박스와 20% 이상 겹치면 빨간 경고 아이콘
-4. **툴바 재배치** (편집기 상단):
-   - [텍스트][체크박스][서명] 3개 큰 버튼 → 선택 후 드래그하면 해당 타입으로 바로 생성
-   - 필드 매핑은 우측 패널 대신 박스 위 인라인 드롭다운
-5. **스냅**: Alt 누르면 인접 박스 가장자리에 자동 정렬
-6. **정밀도**: 좌표 0~1 비율은 유지하되 편집 시 px 표시도 병기
-7. **미리보기 토글**: "샘플 데이터 채워보기" 버튼 → 실제 인쇄 결과 즉시 확인
-
----
-
-## 단계 4 — 인쇄 파이프라인 강화 (`permitOverlayPrint.ts`)
-
-- 서명 슬롯: 결재 승인 시 저장된 서명 이미지 + 이름 + 승인시각을 3줄로 자동 배치
-- 미승인 슬롯: 회색 "미결" 워터마크
-- 한글 폰트(Noto Sans KR) 이미 임베드됨 - 유지
-- PDF 다운로드 파일명 = `[프로젝트]_[허가서제목]_[일자].pdf`
-
----
-
-## 단계 5 — 마이그레이션 & 안전장치
-
-- 기존 수동 오버레이 데이터 100% 호환 (컬럼 추가만, 기존 필드 유지)
-- AI 분석은 옵션(마스터가 "AI 자동 분석" 버튼 누를 때만)
-- AI 실패 시 현재 수동 편집기로 폴백
-- `ai_analysis_json` 저장으로 재분석 없이 필드 재적용 가능
-
----
-
-## 기술 세부 (개발자용)
-
-**신규 파일**
-- `supabase/functions/analyze-permit-template/index.ts` — Gemini 2.5 Flash 멀티모달 호출
-- `src/components/permit-designer/AIAnalysisPanel.tsx` — 분석 트리거 + 진행률 + 결과 검토
-- `src/components/permit-designer/SignatureSlotMapper.tsx` — 서명 슬롯 → 역할 매핑 UI
-- `src/lib/permitApprovalDeriver.ts` — 서명 슬롯 → 결재라인 자동 생성
-
-**수정 파일**
-- `src/components/permit-designer/OverlayEditor.tsx` — 리사이즈/드래그/툴바/겹침감지 (~700줄로 확장)
-- `src/pages/SettingsPermitForms.tsx` — AI 분석 버튼, 서명 슬롯 탭 추가
-- `src/lib/permitOverlayPrint.ts` — 서명 슬롯 자동 렌더 로직
-- `src/pages/WorkPermitDetail.tsx` — 결재라인 자동 프리셋 표시
-- `src/lib/permitFormTypes.ts` — SignatureSlot 타입 추가
-
-**DB 마이그레이션**: `permit_form_templates`에 4개 컬럼 추가 + `derive_permit_approval_line` RPC 추가
-
-**AI 비용**: 양식당 1회 분석(≈1-2 크레딧), 결과는 DB에 캐시하여 재분석 불필요
-
----
-
-## 산출물 체크리스트
-- [ ] AI 자동 분석으로 신규 양식 등록 5분 → 30초
-- [ ] 서명 슬롯 개수와 결재라인 단계 자동 일치
-- [ ] 오버레이 편집기에서 박스 드래그/리사이즈/겹침감지
-- [ ] 결재 완료 시 모든 서명이 원본 양식 서명란에 정확히 표시
-- [ ] 기존 수동 양식 100% 호환
+이 계획을 승인해 주시면 위 3개 파일을 수정하고, 실제 재실행 시 나오는 raw 로그로 후속 조치까지 이어가겠습니다.

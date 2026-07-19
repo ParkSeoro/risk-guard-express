@@ -78,6 +78,7 @@ export interface OverlayBox {
   check_when?: string | boolean;
   ai_generated?: boolean; // AI가 자동 생성한 박스인지
   label_hint?: string; // AI가 인식한 원본 라벨 (툴팁용)
+  locked?: boolean; // 잠금: 선택은 되지만 이동/리사이즈 불가
 }
 
 export interface OverlayPage {
@@ -113,6 +114,9 @@ export interface SignatureSlot {
   order: number;          // 결재 순서 (1부터)
   render_name?: boolean;  // 이름도 함께 표시
   render_date?: boolean;  // 승인일 표시
+  render_time?: boolean;  // 승인 시각(HH:mm) 표시
+  render_position?: boolean; // 직책 표시
+  date_format?: string;   // 'YYYY-MM-DD' | 'YYYY.MM.DD' | 'YYYY-MM-DD HH:mm' 등
 }
 
 // ────────────────── AI 자동 분석 결과 ──────────────────

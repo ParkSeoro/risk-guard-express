@@ -190,12 +190,13 @@ Deno.serve(async (req) => {
       { role: 'user', content },
     ];
 
-    // 3단 폴백: Gateway Pro → Gateway Flash → GEMINI_API_KEY Pro
+    // 3단 폴백: Gateway Flash(빠름) → Gateway Pro → GEMINI_API_KEY Pro
+    // Pro 는 단독 실행 시 60~120초 소요되어 클라이언트 타임아웃(150s) 위험이 커서 Flash 를 1순위로 사용
     let raw = '{}';
     let modelUsed = '';
     const attempts: Array<{ label: string; run: () => Promise<string> }> = [
-      { label: 'lovable/google/gemini-2.5-pro', run: () => callLovableAIGateway(messages, { model: 'google/gemini-2.5-pro' }) },
       { label: 'lovable/google/gemini-2.5-flash', run: () => callLovableAIGateway(messages, { model: 'google/gemini-2.5-flash' }) },
+      { label: 'lovable/google/gemini-2.5-pro', run: () => callLovableAIGateway(messages, { model: 'google/gemini-2.5-pro' }) },
       {
         label: 'gemini_api_key/gemini-2.5-pro',
         run: async () => {

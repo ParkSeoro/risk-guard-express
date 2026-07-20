@@ -47,9 +47,6 @@ type Tpl = {
   signature_slots: SignatureSlot[];
   suggested_approval_steps: number | null;
   ai_analyzed_at: string | null;
-  grid_snapshot: GridBook | null;
-  input_cells: InputCell[];
-  source_xlsx_url: string | null;
   updated_at: string;
 };
 

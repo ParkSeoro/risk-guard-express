@@ -326,29 +326,18 @@ export default function WorkPermitDetail() {
               <SelectContent>
                 {templates.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
-                    {t.grid_snapshot?.sheets?.length > 0 ? '📊 ' : '📄 '}{t.name} · {t.version}
+                    📄 {t.name} · {t.version}
                     {t.is_default ? ' (기본)' : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
-          {template?.grid_snapshot?.sheets?.length > 0 && (
-            <Badge variant="outline" className="ml-1"><Table2 className="h-3 w-3 mr-1" />엑셀 그리드</Badge>
-          )}
         </CardContent>
       </Card>
 
       <div className="bg-white border rounded shadow-sm p-3 md:p-6 print:border-0 print:shadow-none print:p-0">
-        {template && template.grid_snapshot?.sheets?.length > 0 ? (
-          <GridFillForm
-            book={template.grid_snapshot as GridBook}
-            inputCells={(template.input_cells || []) as InputCell[]}
-            values={data}
-            onChange={(v) => setData(v)}
-            readOnly={isApproved}
-          />
-        ) : template && template.original_pdf_url ? (
+        {template && template.original_pdf_url ? (
           <OverlayFillForm
             pdfUrl={template.original_pdf_url}
             layout={template.layout_json}

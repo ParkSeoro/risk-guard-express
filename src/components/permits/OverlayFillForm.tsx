@@ -13,7 +13,35 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, PenLine, X } from 'lucide-react';
 import ResponsiveSignaturePad, { ResponsiveSignaturePadHandle } from '@/components/ResponsiveSignaturePad';
-import { FormField, FormLayout, PrintOverlay } from '@/lib/permitFormTypes';
+import { FormField, FormLayout, PrintOverlay, DataBinding } from '@/lib/permitFormTypes';
+
+export interface OverlayFillContext {
+  company?: { name?: string; representative?: string; business_no?: string; address?: string };
+  author?: { name?: string; position?: string; phone?: string };
+  project?: { name?: string; site_address?: string };
+  permit?: { date?: string; work_description?: string; work_location?: string; work_period?: string };
+}
+
+function resolveBinding(b: DataBinding, ctx: OverlayFillContext): string | undefined {
+  const today = new Date().toISOString().slice(0, 10);
+  switch (b) {
+    case 'company.name': return ctx.company?.name;
+    case 'company.representative': return ctx.company?.representative;
+    case 'company.business_no': return ctx.company?.business_no;
+    case 'company.address': return ctx.company?.address;
+    case 'author.name': return ctx.author?.name;
+    case 'author.position': return ctx.author?.position;
+    case 'author.phone': return ctx.author?.phone;
+    case 'project.name': return ctx.project?.name;
+    case 'project.site_address': return ctx.project?.site_address;
+    case 'permit.date': return ctx.permit?.date || today;
+    case 'permit.work_description': return ctx.permit?.work_description;
+    case 'permit.work_location': return ctx.permit?.work_location;
+    case 'permit.work_period': return ctx.permit?.work_period;
+    case 'today': return today;
+    default: return undefined;
+  }
+}
 
 // @ts-ignore
 pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -28,10 +56,11 @@ interface Props {
   onChange: (values: Record<string, any>) => void;
   onSign: (role: string, sig: { name?: string; signature?: string; signed_at?: string }) => void;
   readOnly?: boolean;
+  autoFillContext?: OverlayFillContext;
 }
 
 export default function OverlayFillForm({
-  pdfUrl, layout, overlay, values, signatures, onChange, onSign, readOnly,
+  pdfUrl, layout, overlay, values, signatures, onChange, onSign, readOnly, autoFillContext,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -49,6 +78,26 @@ export default function OverlayFillForm({
     );
     return m;
   }, [layout]);
+
+  // 최초 1회: data_binding 이 지정된 텍스트 박스 자동 채움 (사용자 입력이 없을 때만)
+  const autoFilledRef = useRef(false);
+  useEffect(() => {
+    if (autoFilledRef.current || !autoFillContext) return;
+    const patch: Record<string, any> = {};
+    let touched = false;
+    (overlay?.pages || []).forEach((p) => {
+      (p.boxes || []).forEach((b) => {
+        if (b.render !== 'text' || !b.data_binding) return;
+        const [baseKey] = b.field_key.split('.');
+        if (values[baseKey] != null && values[baseKey] !== '') return;
+        const v = resolveBinding(b.data_binding, autoFillContext);
+        if (v != null && v !== '') { patch[baseKey] = v; touched = true; }
+      });
+    });
+    if (touched) { onChange({ ...values, ...patch }); autoFilledRef.current = true; }
+    else if (overlay?.pages?.length) autoFilledRef.current = true;
+  }, [overlay, autoFillContext]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // Signed URL 확보 (private bucket) — 절대 URL이면 그대로 사용
   useEffect(() => {
@@ -160,9 +209,9 @@ export default function OverlayFillForm({
             height: b.h * pageSize.h,
           };
 
-          // 서명 박스
+          // 서명 박스 — signature_role 이 있으면 그 역할키를 사용 (결재라인 매핑용)
           if (b.render === 'signature') {
-            const role = baseKey;
+            const role = b.signature_role || baseKey;
             const sig = signatures[role];
             return (
               <div key={b.id} style={style} className="border border-dashed border-primary/40">

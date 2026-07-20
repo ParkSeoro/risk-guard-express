@@ -318,8 +318,42 @@ export default function WorkPermitDetail() {
         </TabsList>
       </Tabs>
 
+      {/* 양식 선택 드롭다운 */}
+      <Card className="print:hidden">
+        <CardContent className="p-3 flex items-center gap-2 text-sm flex-wrap">
+          <FileSignature className="h-4 w-4" />
+          <span className="font-semibold">허가서 양식:</span>
+          {templates.length === 0 ? (
+            <span className="text-muted-foreground">이 종류에 사용 가능한 양식이 없습니다. (시스템 › 허가서 양식 디자인에서 등록)</span>
+          ) : (
+            <Select value={templateId} onValueChange={setTemplateId}>
+              <SelectTrigger className="h-8 max-w-[420px]"><SelectValue placeholder="양식 선택" /></SelectTrigger>
+              <SelectContent>
+                {templates.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.grid_snapshot?.sheets?.length > 0 ? '📊 ' : '📄 '}{t.name} · {t.version}
+                    {t.is_default ? ' (기본)' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {template?.grid_snapshot?.sheets?.length > 0 && (
+            <Badge variant="outline" className="ml-1"><Table2 className="h-3 w-3 mr-1" />엑셀 그리드</Badge>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="bg-white border rounded shadow-sm p-3 md:p-6 print:border-0 print:shadow-none print:p-0">
-        {template && template.original_pdf_url ? (
+        {template && template.grid_snapshot?.sheets?.length > 0 ? (
+          <GridFillForm
+            book={template.grid_snapshot as GridBook}
+            inputCells={(template.input_cells || []) as InputCell[]}
+            values={data}
+            onChange={(v) => setData(v)}
+            readOnly={isApproved}
+          />
+        ) : template && template.original_pdf_url ? (
           <OverlayFillForm
             pdfUrl={template.original_pdf_url}
             layout={template.layout_json}
@@ -341,6 +375,7 @@ export default function WorkPermitDetail() {
           />
         )}
       </div>
+
 
       {approvalOpen && (
         <SubmitApprovalDialog

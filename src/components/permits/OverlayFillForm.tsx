@@ -13,7 +13,35 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, PenLine, X } from 'lucide-react';
 import ResponsiveSignaturePad, { ResponsiveSignaturePadHandle } from '@/components/ResponsiveSignaturePad';
-import { FormField, FormLayout, PrintOverlay } from '@/lib/permitFormTypes';
+import { FormField, FormLayout, PrintOverlay, DataBinding } from '@/lib/permitFormTypes';
+
+export interface OverlayFillContext {
+  company?: { name?: string; representative?: string; business_no?: string; address?: string };
+  author?: { name?: string; position?: string; phone?: string };
+  project?: { name?: string; site_address?: string };
+  permit?: { date?: string; work_description?: string; work_location?: string; work_period?: string };
+}
+
+function resolveBinding(b: DataBinding, ctx: OverlayFillContext): string | undefined {
+  const today = new Date().toISOString().slice(0, 10);
+  switch (b) {
+    case 'company.name': return ctx.company?.name;
+    case 'company.representative': return ctx.company?.representative;
+    case 'company.business_no': return ctx.company?.business_no;
+    case 'company.address': return ctx.company?.address;
+    case 'author.name': return ctx.author?.name;
+    case 'author.position': return ctx.author?.position;
+    case 'author.phone': return ctx.author?.phone;
+    case 'project.name': return ctx.project?.name;
+    case 'project.site_address': return ctx.project?.site_address;
+    case 'permit.date': return ctx.permit?.date || today;
+    case 'permit.work_description': return ctx.permit?.work_description;
+    case 'permit.work_location': return ctx.permit?.work_location;
+    case 'permit.work_period': return ctx.permit?.work_period;
+    case 'today': return today;
+    default: return undefined;
+  }
+}
 
 // @ts-ignore
 pdfjsLib.GlobalWorkerOptions.workerSrc =

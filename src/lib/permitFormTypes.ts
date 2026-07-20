@@ -207,14 +207,41 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
 };
 
 export const SIGNATURE_ROLE_LABELS: Record<SignatureRole, string> = {
-  creator: '작성자',
-  contractor_pic: '협력사 담당자',
+  contractor_creator: '시공사 작성자',
   sm: '안전관리자',
-  site_director: '현장대리인',
-  pm: '프로젝트 관리자',
-  client: '발주처',
-  master: '최종승인',
+  site_director: '현장소장',
+  client_cm: '발주자 CM 담당',
+  client_sm: '발주자 SM 담당',
+  cooperator: '협조',
+  // 레거시
+  creator: '작성자(레거시)',
+  contractor_pic: '협력사 담당(레거시)',
+  pm: '프로젝트 관리자(레거시)',
+  client: '발주처(레거시)',
+  master: '최종승인(레거시)',
   custom: '직접지정',
+};
+
+/** 서명 자동채움에 쓸 기본 결재 역할 순서 */
+export const DEFAULT_SIGNATURE_ROLE_ORDER: SignatureRole[] = [
+  'contractor_creator', 'sm', 'site_director', 'client_cm', 'client_sm', 'cooperator',
+];
+
+export const DATA_BINDING_LABELS: Record<DataBinding, string> = {
+  'company.name': '자동 · 작성 회사명',
+  'company.representative': '자동 · 회사 대표자',
+  'company.business_no': '자동 · 사업자등록번호',
+  'company.address': '자동 · 회사 주소',
+  'author.name': '자동 · 작성자 이름',
+  'author.position': '자동 · 작성자 직책',
+  'author.phone': '자동 · 작성자 연락처',
+  'project.name': '자동 · 프로젝트/현장명',
+  'project.site_address': '자동 · 현장 주소',
+  'permit.date': '자동 · 허가일자',
+  'permit.work_description': '자동 · 작업 내용',
+  'permit.work_location': '자동 · 작업 위치',
+  'permit.work_period': '자동 · 작업 기간',
+  'today': '자동 · 오늘 날짜',
 };
 
 // 오버레이 박스 렌더 종류 → 편집기 색상

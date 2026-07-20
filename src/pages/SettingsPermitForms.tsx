@@ -78,9 +78,6 @@ export default function SettingsPermitForms() {
   const [showJson, setShowJson] = useState(false);
   const [jsonText, setJsonText] = useState('');
   const [signatureSlots, setSignatureSlots] = useState<SignatureSlot[]>([]);
-  const [gridSnapshot, setGridSnapshot] = useState<GridBook | null>(null);
-  const [inputCells, setInputCells] = useState<InputCell[]>([]);
-  const [sourceXlsxUrl, setSourceXlsxUrl] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),

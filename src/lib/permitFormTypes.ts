@@ -64,6 +64,27 @@ export interface FormLayout {
 
 export type OverlayRenderKind = 'text' | 'check' | 'signature' | 'image';
 
+/**
+ * dataBinding: 텍스트 박스 값을 자동으로 채우는 시스템 바인딩 키.
+ * 지정 시 OverlayFillForm이 로드될 때 해당 값을 초기값으로 주입한다.
+ */
+export type DataBinding =
+  | 'company.name'
+  | 'company.representative'
+  | 'company.business_no'
+  | 'company.address'
+  | 'author.name'
+  | 'author.position'
+  | 'author.phone'
+  | 'project.name'
+  | 'project.site_address'
+  | 'permit.date'
+  | 'permit.work_description'
+  | 'permit.work_location'
+  | 'permit.work_period'
+  | 'today';
+
+/** 서명 박스에 붙는 역할 — 결재라인 자동 매핑용. 텍스트 박스에도 role_binding 으로 활용 */
 export interface OverlayBox {
   id: string;
   field_key: string;
@@ -79,6 +100,8 @@ export interface OverlayBox {
   ai_generated?: boolean; // AI가 자동 생성한 박스인지
   label_hint?: string; // AI가 인식한 원본 라벨 (툴팁용)
   locked?: boolean; // 잠금: 선택은 되지만 이동/리사이즈 불가
+  data_binding?: DataBinding; // 텍스트 박스 자동채움
+  signature_role?: SignatureRole; // signature 박스: 어떤 결재라인 단계와 매칭할지
 }
 
 export interface OverlayPage {

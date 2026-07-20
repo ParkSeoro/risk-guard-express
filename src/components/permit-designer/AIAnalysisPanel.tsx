@@ -49,7 +49,7 @@ export default function AIAnalysisPanel({ templateId, originalPdfUrl, onApply }:
   const [imgSize, setImgSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const imgRef = useRef<HTMLImageElement>(null);
 
-  const runAnalysis = async (): Promise<{ imgs: string[]; res: AIResult } | null> => {
+  const runAnalysis = async (opts?: { refine?: boolean }): Promise<{ imgs: string[]; res: AIResult } | null> => {
     if (!originalPdfUrl) {
       toast({ title: '원본 PDF를 먼저 업로드하세요.', variant: 'destructive' });
       return null;
@@ -84,9 +84,14 @@ export default function AIAnalysisPanel({ templateId, originalPdfUrl, onApply }:
       imgs.push(dataUrl);
     }
 
-    setProgress('AI 1차 감지 + 2차 검증 중… (30~60초)');
+    setProgress(opts?.refine ? 'AI 정밀 분석 중… (60~120초)' : 'AI 1차 감지 중… (20~40초)');
     const { data, error } = await supabase.functions.invoke('analyze-permit-template', {
-      body: { templateId, pageImages: imgs },
+      body: {
+        templateId,
+        pageImages: imgs,
+        enableRefine: !!opts?.refine,
+        enableSweep: !!opts?.refine,
+      },
     });
     if (error) {
       // Supabase invoke throws generic "non-2xx" — try to surface real message from response body
@@ -142,11 +147,11 @@ export default function AIAnalysisPanel({ templateId, originalPdfUrl, onApply }:
   const reAnalyze = async () => {
     setBusy(true);
     try {
-      const out = await runAnalysis();
+      const out = await runAnalysis({ refine: true });
       if (out) {
         setPageImages(out.imgs);
         setAiResult(out.res);
-        toast({ title: '재분석 완료', description: '박스 위치가 갱신되었습니다.' });
+        toast({ title: '정밀 재분석 완료', description: '2·3차 검증으로 우측/누락 요소를 보정했습니다.' });
       }
     } catch (e: any) {
       toast({ title: '재분석 실패', description: e.message || String(e), variant: 'destructive' });

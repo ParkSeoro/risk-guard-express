@@ -149,6 +149,9 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const templateId = String(body?.templateId || '');
     const pageImages: string[] = Array.isArray(body?.pageImages) ? body.pageImages : [];
+    // 성능/타임아웃 대응: 기본은 1차만. 클라이언트가 명시적으로 켤 때만 refine/sweep 실행
+    const enableRefine = body?.enableRefine === true;
+    const enableSweep = body?.enableSweep === true;
     if (!templateId || pageImages.length === 0) {
       return new Response(JSON.stringify({ error: 'templateId와 pageImages가 필요합니다.' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -187,12 +190,13 @@ Deno.serve(async (req) => {
       { role: 'user', content },
     ];
 
-    // 3단 폴백: Gateway Pro → Gateway Flash → GEMINI_API_KEY Pro
+    // 3단 폴백: Gateway Flash(빠름) → Gateway Pro → GEMINI_API_KEY Pro
+    // Pro 는 단독 실행 시 60~120초 소요되어 클라이언트 타임아웃(150s) 위험이 커서 Flash 를 1순위로 사용
     let raw = '{}';
     let modelUsed = '';
     const attempts: Array<{ label: string; run: () => Promise<string> }> = [
-      { label: 'lovable/google/gemini-2.5-pro', run: () => callLovableAIGateway(messages, { model: 'google/gemini-2.5-pro' }) },
       { label: 'lovable/google/gemini-2.5-flash', run: () => callLovableAIGateway(messages, { model: 'google/gemini-2.5-flash' }) },
+      { label: 'lovable/google/gemini-2.5-pro', run: () => callLovableAIGateway(messages, { model: 'google/gemini-2.5-pro' }) },
       {
         label: 'gemini_api_key/gemini-2.5-pro',
         run: async () => {
@@ -230,9 +234,9 @@ Deno.serve(async (req) => {
     };
     parsed = tryParse(raw) || {};
 
-    // ==== 2차 검증 패스 (누락/좌표 보정) ====
+    // ==== 2차 검증 패스 (누락/좌표 보정) — 옵션 ====
     let refined: any = null;
-    if (modelUsed.startsWith('lovable/') && (parsed?.fields || parsed?.checkboxes || parsed?.signatures)) {
+    if (enableRefine && modelUsed.startsWith('lovable/') && (parsed?.fields || parsed?.checkboxes || parsed?.signatures)) {
       try {
         const refineMessages = [
           { role: 'system', content: SYSTEM_PROMPT },
@@ -267,7 +271,7 @@ Deno.serve(async (req) => {
     let sweep_added = 0;
     const existingChecks: any[] = Array.isArray(parsed.checkboxes) ? parsed.checkboxes : [];
     const rightChecks = existingChecks.filter((c: any) => Array.isArray(c.bbox) && c.bbox[0] > 0.5).length;
-    if (modelUsed.startsWith('lovable/') && (existingChecks.length < 15 || rightChecks < 5)) {
+    if (enableSweep && modelUsed.startsWith('lovable/') && (existingChecks.length < 15 || rightChecks < 5)) {
       try {
         const prevCenters = existingChecks
           .filter((c: any) => Array.isArray(c.bbox))

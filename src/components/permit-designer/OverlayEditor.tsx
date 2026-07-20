@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import {
   FormLayout, PrintOverlay, OverlayBox, OverlayRenderKind, RENDER_COLORS, overlapRatio,
+  DATA_BINDING_LABELS, SIGNATURE_ROLE_LABELS,
 } from '@/lib/permitFormTypes';
 
 // @ts-ignore

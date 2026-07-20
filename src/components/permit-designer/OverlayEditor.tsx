@@ -200,6 +200,56 @@ export default function OverlayEditor({ templateId, layout, overlay, originalPdf
     commit(pageBoxes.map((b) => (b.id === id ? { ...b, ...patch } : b)));
   };
 
+  /** 선택된 체크박스를 원본 PDF의 가장 가까운 사각형(테두리)에 맞춰 스냅 */
+  const snapSelectedToRect = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !selected) return;
+    const W = canvas.width, H = canvas.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    let img: ImageData;
+    try { img = ctx.getImageData(0, 0, W, H); }
+    catch { toast({ title: '캔버스 접근 실패', variant: 'destructive' }); return; }
+
+    const cxN = selected.x + selected.w / 2;
+    const cyN = selected.y + selected.h / 2;
+    const cx = Math.round(cxN * W), cy = Math.round(cyN * H);
+    // 검색 반경: 박스 크기의 3배 (최소 30px)
+    const R = Math.max(30, Math.round(Math.max(selected.w * W, selected.h * H) * 3));
+    const x0 = Math.max(0, cx - R), x1 = Math.min(W - 1, cx + R);
+    const y0 = Math.max(0, cy - R), y1 = Math.min(H - 1, cy + R);
+
+    const isDark = (x: number, y: number) => {
+      const i = (y * W + x) * 4;
+      const r = img.data[i], g = img.data[i + 1], b = img.data[i + 2];
+      return (r + g + b) / 3 < 160;
+    };
+
+    // 중심에서 4방향으로 어두운 선(테두리)을 찾음
+    const findEdge = (dx: number, dy: number) => {
+      for (let d = 1; d < R; d++) {
+        const x = cx + dx * d, y = cy + dy * d;
+        if (x < x0 || x > x1 || y < y0 || y > y1) return null;
+        if (isDark(x, y)) return d;
+      }
+      return null;
+    };
+    const l = findEdge(-1, 0), r = findEdge(1, 0);
+    const t = findEdge(0, -1), b = findEdge(0, 1);
+    if (l == null || r == null || t == null || b == null) {
+      toast({ title: '주변에서 네모칸을 찾지 못했습니다.', description: '체크박스를 사각형 안쪽으로 옮긴 뒤 다시 시도하세요.', variant: 'destructive' });
+      return;
+    }
+    // 테두리 픽셀 위치를 안쪽으로 1px 여유
+    const left = (cx - l + 1) / W;
+    const right = (cx + r - 1) / W;
+    const top = (cy - t + 1) / H;
+    const bot = (cy + b - 1) / H;
+    const nx = left, ny = top, nw = Math.max(0.005, right - left), nh = Math.max(0.005, bot - top);
+    updateBoxProps(selected.id, { x: nx, y: ny, w: nw, h: nh });
+    toast({ title: '네모칸에 스냅했습니다.' });
+  };
+
   // ─────────── 드래그 상태 (ref로 관리해 리렌더 최소화) ───────────
   type Drag =
     | { mode: 'create'; kind: OverlayRenderKind; x0: number; y0: number; x1: number; y1: number; pointerId: number }

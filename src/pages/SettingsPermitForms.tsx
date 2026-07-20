@@ -88,7 +88,7 @@ export default function SettingsPermitForms() {
     setLoading(true);
     const { data, error } = await supabase
       .from('permit_form_templates')
-      .select('id, project_id, code, name, version, layout_json, print_overlay, original_pdf_url, is_default, is_active, permit_type, signature_slots, suggested_approval_steps, ai_analyzed_at, grid_snapshot, input_cells, source_xlsx_url, updated_at')
+      .select('id, project_id, code, name, version, layout_json, print_overlay, original_pdf_url, is_default, is_active, permit_type, signature_slots, suggested_approval_steps, ai_analyzed_at, updated_at')
       .eq('is_deleted', false)
       .order('code')
       .order('version', { ascending: false });

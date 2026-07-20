@@ -147,11 +147,11 @@ export default function AIAnalysisPanel({ templateId, originalPdfUrl, onApply }:
   const reAnalyze = async () => {
     setBusy(true);
     try {
-      const out = await runAnalysis();
+      const out = await runAnalysis({ refine: true });
       if (out) {
         setPageImages(out.imgs);
         setAiResult(out.res);
-        toast({ title: '재분석 완료', description: '박스 위치가 갱신되었습니다.' });
+        toast({ title: '정밀 재분석 완료', description: '2·3차 검증으로 우측/누락 요소를 보정했습니다.' });
       }
     } catch (e: any) {
       toast({ title: '재분석 실패', description: e.message || String(e), variant: 'destructive' });

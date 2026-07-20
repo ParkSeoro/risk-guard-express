@@ -668,11 +668,16 @@ export default function OverlayEditor({ templateId, layout, overlay, originalPdf
               </div>
             )}
             {selected.render === 'check' && (
-              <div>
+              <div className="space-y-1">
                 <Label className="text-[10px]">체크 조건 (이 값일 때 ✓)</Label>
                 <Input className="h-7 text-xs" placeholder="true 또는 값"
                   value={String(selected.check_when ?? 'true')}
                   onChange={(e) => updateBoxProps(selected.id, { check_when: e.target.value })} />
+                <Button size="sm" variant="outline" className="w-full h-7"
+                  onClick={() => snapSelectedToRect()}>
+                  🎯 원본 네모칸에 스냅
+                </Button>
+                <p className="text-[10px] text-muted-foreground">현재 위치 주변에서 가장 가까운 사각형을 찾아 정확히 맞춥니다.</p>
               </div>
             )}
             <div className="grid grid-cols-4 gap-1 text-[10px] text-muted-foreground">

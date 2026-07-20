@@ -115,14 +115,25 @@ export interface PrintOverlay {
 
 // ────────────────── 서명 슬롯 (결재라인 자동 매핑용) ──────────────────
 
+/**
+ * 결재라인 역할 코드 (회사 표준: 시공사 작성자 / 안전관리자 / 현장소장 /
+ * 발주자 CM 담당 / 발주자 SM 담당 · 예외 협조자).
+ * 레거시 호환을 위해 이전 코드도 유지한다.
+ */
 export type SignatureRole =
-  | 'creator'        // 작성자
-  | 'contractor_pic' // 협력사 담당
-  | 'sm'             // 안전관리자
-  | 'site_director'  // 현장대리인
-  | 'pm'             // 프로젝트 관리자
-  | 'client'         // 발주처
-  | 'master'         // 최종승인
+  // 표준 5 + 협조
+  | 'contractor_creator' // 시공사 작성자
+  | 'sm'                 // 안전관리자
+  | 'site_director'      // 현장소장
+  | 'client_cm'          // 발주자 CM 담당
+  | 'client_sm'          // 발주자 SM 담당
+  | 'cooperator'         // 협조 (예외)
+  // 레거시 호환
+  | 'creator'
+  | 'contractor_pic'
+  | 'pm'
+  | 'client'
+  | 'master'
   | 'custom';
 
 export interface SignatureSlot {

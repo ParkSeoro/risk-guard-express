@@ -56,10 +56,11 @@ interface Props {
   onChange: (values: Record<string, any>) => void;
   onSign: (role: string, sig: { name?: string; signature?: string; signed_at?: string }) => void;
   readOnly?: boolean;
+  autoFillContext?: OverlayFillContext;
 }
 
 export default function OverlayFillForm({
-  pdfUrl, layout, overlay, values, signatures, onChange, onSign, readOnly,
+  pdfUrl, layout, overlay, values, signatures, onChange, onSign, readOnly, autoFillContext,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);

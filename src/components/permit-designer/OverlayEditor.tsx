@@ -660,7 +660,7 @@ export default function OverlayEditor({ templateId, layout, overlay, originalPdf
                   <SelectContent>
                     <SelectItem value="__none__">사용 안함</SelectItem>
                     {Object.entries(SIGNATURE_ROLE_LABELS).map(([k, l]) => (
-                      <SelectItem key={k} value={k}>{l}</SelectItem>
+                      <SelectItem key={k} value={k}>{String(l)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

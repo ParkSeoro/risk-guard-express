@@ -49,7 +49,7 @@ function GridSheetView({
   );
 
   return (
-    <div className="overflow-auto border rounded bg-white">
+    <div className="w-full max-w-full overflow-auto border rounded bg-white" style={{ maxHeight: '75vh' }}>
       <table
         className="border-collapse text-[13px]"
         style={{ tableLayout: 'fixed', minWidth: sheet.colWidths.reduce((a, b) => a + b, 0) }}

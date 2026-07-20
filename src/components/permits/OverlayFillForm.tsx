@@ -79,6 +79,26 @@ export default function OverlayFillForm({
     return m;
   }, [layout]);
 
+  // 최초 1회: data_binding 이 지정된 텍스트 박스 자동 채움 (사용자 입력이 없을 때만)
+  const autoFilledRef = useRef(false);
+  useEffect(() => {
+    if (autoFilledRef.current || !autoFillContext) return;
+    const patch: Record<string, any> = {};
+    let touched = false;
+    (overlay?.pages || []).forEach((p) => {
+      (p.boxes || []).forEach((b) => {
+        if (b.render !== 'text' || !b.data_binding) return;
+        const [baseKey] = b.field_key.split('.');
+        if (values[baseKey] != null && values[baseKey] !== '') return;
+        const v = resolveBinding(b.data_binding, autoFillContext);
+        if (v != null && v !== '') { patch[baseKey] = v; touched = true; }
+      });
+    });
+    if (touched) { onChange({ ...values, ...patch }); autoFilledRef.current = true; }
+    else if (overlay?.pages?.length) autoFilledRef.current = true;
+  }, [overlay, autoFillContext]); // eslint-disable-line react-hooks/exhaustive-deps
+
+
   // Signed URL 확보 (private bucket) — 절대 URL이면 그대로 사용
   useEffect(() => {
     let cancelled = false;

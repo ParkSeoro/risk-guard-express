@@ -121,7 +121,7 @@ export default function WorkPermitDetail() {
       try {
         const { data: tpls } = await supabase
           .from('permit_form_templates')
-          .select('id, name, code, version, layout_json, print_overlay, original_pdf_url, is_default, permit_type, grid_snapshot, input_cells, source_xlsx_url')
+          .select('id, name, code, version, layout_json, print_overlay, original_pdf_url, is_default, permit_type')
           .eq('is_deleted', false)
           .eq('is_active', true)
           .order('is_default', { ascending: false })
@@ -130,9 +130,8 @@ export default function WorkPermitDetail() {
         // 이 종류(tab)에 해당하거나 general인 양식 + 실제로 렌더 가능한 것만
         const usable = list.filter((t) => {
           const typeOk = !t.permit_type || t.permit_type === tab || t.permit_type === 'general';
-          const hasGrid = t.grid_snapshot?.sheets?.length > 0;
           const hasOverlay = t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0;
-          return typeOk && (hasGrid || hasOverlay);
+          return typeOk && hasOverlay;
         });
         setTemplates(usable);
         // 저장된 template_id가 있으면 사용, 아니면 이 종류의 기본을 자동 선택

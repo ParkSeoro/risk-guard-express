@@ -209,9 +209,9 @@ export default function OverlayFillForm({
             height: b.h * pageSize.h,
           };
 
-          // 서명 박스
+          // 서명 박스 — signature_role 이 있으면 그 역할키를 사용 (결재라인 매핑용)
           if (b.render === 'signature') {
-            const role = baseKey;
+            const role = b.signature_role || baseKey;
             const sig = signatures[role];
             return (
               <div key={b.id} style={style} className="border border-dashed border-primary/40">

@@ -1,57 +1,66 @@
-## 목표
-마스터가 **기존 허가서 엑셀 파일(.xlsx)을 업로드** → 웹 스프레드시트로 열어 **셀 병합·서식·표 그대로 유지**한 채 편집 → **입력/서명 셀만 지정**하면 사용자가 그 양식으로 허가서를 작성·인쇄. PDF 오버레이는 "고급" 보조 기능으로 강등.
+## 결정 및 근거
 
-## 핵심 전제
-- **처음부터 새로 그리지 않는다.** 마스터가 이미 가진 엑셀 양식을 그대로 불러와서 최소한의 조작(입력 셀 지정)만 추가한다.
-- 스프레드시트 엔진은 **Univer (MIT)**: xlsx import/export 지원, 셀 병합·서식·이미지·인쇄영역 보존, 한글 IME 정상 동작.
+### 1) 엑셀 그리드 = 제거
 
-## 현재 상태
-- `permit_form_templates`에 `layout_json`, `print_overlay`, `original_pdf_url`, `signature_slots`, `permit_type`, `is_active`, `is_default` 존재.
-- `WorkPermitDetail.tsx`는 `permit_type` 자동 매칭 1건만 로드 — 드롭다운 선택 UI 없음(확인됨).
-- 스프레드시트 엔진 미도입.
+- 브라우저에서 진짜 스프레드시트(Excel 100% 렌더링·수식·병합·서식·차트·이미지)를 구현하는 것은 SheetJS + 자체 렌더러로는 사실상 불가능합니다. 상용 엔진(Handsontable, Univer, LuckySheet, SpreadJS)을 붙여도 "업로드한 엑셀 원본과 시각적으로 완전히 동일"은 보장되지 않고, 라이선스·용량·유지비용 부담이 큽니다.
+- 사용자의 유일한 취지("내가 올린 양식 그대로")는 **PDF 오버레이 단일화**가 가장 확실합니다.
+- 따라서 엑셀 그리드 관련 기능/파일/DB 컬럼을 완전히 제거하고, 허가서 양식은 PDF 업로드만 허용합니다.  
+· 엑셀만 있는 경우 → 사용자에게 "PDF로 저장 후 업로드" 안내(변환 서버 도입은 별건으로 뒤로 미룸).
 
-## 계획
+### 2) 원본 PDF 오버레이 — 사용성 강화 (핵심 작업)
 
-### 1. DB 마이그레이션 (1건)
-`permit_form_templates`에 추가:
-- `grid_snapshot jsonb` — Univer workbook JSON (업로드된 xlsx를 파싱한 결과)
-- `input_cells jsonb` — `[{sheet, row, col, field_key, kind:'text'|'check'|'sign'|'date', role?}]`
-- `source_xlsx_url text` — 원본 xlsx 파일(감사/재편집용)
+#### A. 체크박스 크기·위치 정확도 개선
 
-### 2. Univer 도입
-- `@univerjs/presets` + `@univerjs/preset-sheets-core` 설치.
-- xlsx 파싱: `@univerjs/preset-sheets-core`의 import 플러그인(또는 `xlsx` → Univer JSON 변환기) 사용.
+- AI 분석 결과(`analyze-permit-template`)의 체크박스 좌표를 PDF 실제 페이지 크기 기준으로 재계산해 항상 정확히 겹치도록 정규화.
+- 오버레이 에디터에서 체크박스에 **"PDF 사각형에 스냅"** 기능 추가: 클릭한 위치 근처의 PDF 벡터 사각형(체크칸)을 감지해 자동으로 크기·위치를 딱 맞춤.
+- 체크박스 기본 사이즈 프리셋(소/중/대)과 일괄 리사이즈 버튼 제공.
 
-### 3. 마스터: 양식 디자이너 (신규 기본 탭)
-`SettingsPermitForms.tsx`에 **"스프레드시트 양식"** 탭 신설(기본):
-1. **xlsx 업로드** → Univer로 즉시 렌더 (병합·서식·이미지·행높이 그대로).
-2. 마스터는 필요 시 텍스트/서식 미세 수정.
-3. **툴바 "입력 셀 지정"**: 셀 선택 후 kind(text/check/sign/date) + field_key(예: `work_desc`, `sign_pm`) 부여.
-   - 지정된 셀은 배경색으로 시각 표시(입력=연노랑, 서명=주황, 체크=연녹).
-   - 서명 셀은 role 선택(결재선 role과 매핑; 기존 `signature_slots` 규약 재사용).
-4. **저장**: `source_xlsx_url`(Storage 업로드), `grid_snapshot`, `input_cells` 저장. 버전은 기존 `permit_form_template_versions` 활용.
-5. **재편집**: 저장된 `grid_snapshot`을 다시 열어 편집. 원본 xlsx로 롤백 버튼 제공.
+#### B. 서명란 → 결재라인 자동 연동
 
-### 4. 사용자: 허가서 작성 (`WorkPermitDetail.tsx`)
-- **양식 선택 드롭다운(신규)** 헤더 배치: `is_active=true, is_deleted=false` 전 양식 표시. 기본값은 `permit_type` 매칭 + `is_default=true`. 변경 시 field_key 기준으로 기존 입력값 최대한 이관.
-- **탭1 "양식 작성"(기본)**: Univer 그리드를 read-only + `input_cells` 셀만 편집 가능 모드로 렌더.
-  - 텍스트/날짜 셀 → 인라인 입력, 체크 셀 → 클릭 토글, 서명 셀 → 서명패드 팝업.
-  - 값은 `work_permits.form_data = {field_key: value}`로 저장.
-- **탭2 "고급 (PDF 오버레이)"**: 기존 `OverlayFillForm` 이동 — 오버레이 양식이 지정된 경우에만 활성.
+- 서명 슬롯 위쪽/왼쪽의 텍스트 라벨(예: "작성자", "검토자", "안전관리자", "현장소장", "승인")을 AI가 이미 뽑고 있으므로, 이를 결재 단계 역할 코드로 매핑하는 사전 사전(dictionary)을 만들어 자동 매칭.
+- 허가서 작성 화면에서 결재라인이 확정되면 각 서명 슬롯에 해당 결재자 이름·직위·서명 이미지·결재일이 **자동으로 그려짐**(승인 완료된 단계만 표시).
+- 오버레이 에디터에서는 각 서명 슬롯에 "역할(작성/검토/승인 등)"을 드롭다운으로 직접 지정/수정 가능하도록 UI 추가.
 
-### 5. 인쇄 / PDF
-- 인쇄 시 `form_data`를 `input_cells` 위치에 채우고, 결재라인의 승인자 이름·서명 이미지·승인 일시를 서명 셀에 렌더.
-- Univer의 print/export PDF로 **원본 엑셀 레이아웃 그대로** 출력. 기존 `printOverlay()`는 고급 탭 전용 유지.
+#### C. 기본값 자동 채움 (사용자가 매번 안 쳐도 되게)
 
-### 6. 마이그레이션 정리
-- `OverlayEditor.tsx`, `AIAnalysisPanel.tsx`는 유지하되 진입점은 설정 > 양식 상세의 "고급 오버레이" 탭에서만.
+- 오버레이 필드에 `dataBinding` 속성 추가. 저장된 바인딩을 `OverlayFillForm`이 열릴 때 자동으로 초기값으로 채움.
+- 기본 제공 바인딩:
+· `company.name` = 로그인 사용자 소속 회사(작성 업체)  
+· `company.representative` / `company.business_no` = 회사 대표자·사업자번호  
+· `author.name` / `author.position` / `author.phone` = 작성자 본인  
+· `project.name` / `project.site_address` = 현재 프로젝트  
+· `today` = 작성일  
+· `permit.type` / `permit.work_location` / `permit.work_period` = 허가서 폼 값
+- AI 분석 시 라벨 텍스트("업체명", "작성자", "현장", "일자", "공사명" 등)를 감지해 위 바인딩을 자동 제안. 마스터는 오버레이 에디터에서 필드 선택 후 드롭다운으로 바인딩을 수정.
 
-## 기술 세부
-- 파일: `SettingsPermitForms.tsx`(탭 재구성), `WorkPermitDetail.tsx`(드롭다운+그리드 렌더), 신규 `components/permit-grid/GridDesigner.tsx`, `GridFillForm.tsx`, `lib/permitGridExport.ts`, `lib/xlsxToUniver.ts`.
-- Storage: 기존 `permit-form-assets` 버킷에 원본 xlsx 저장.
-- 라이브러리: `@univerjs/presets`, `@univerjs/preset-sheets-core`, 기존 `xlsx` 재사용.
+#### D. 오버레이 에디터 QoL
 
-## 검증
-1. 마스터가 실제 회사 엑셀 허가서 업로드 → 병합·서식 유지 확인 → 입력/서명 셀 지정 → 저장.
-2. 사용자가 작성 화면 드롭다운에서 해당 양식 선택 → 값 입력 → 결재 → PDF 인쇄 시 원본 레이아웃 + 서명·일시 자동 표기 확인.
-3. 고급 탭 PDF 오버레이 회귀 확인.
+- 필드 목록 사이드바(라벨·타입·바인딩·역할 한눈에 보기, 클릭 시 하이라이트).
+- 다중 선택 → 정렬(좌/우/상/하 정렬, 균등 배치), 동일 크기 맞추기.
+- "AI 재분석" 버튼과 함께 기존 사용자 수정본을 보존하는 병합 모드.
+
+### 3) 데이터/스토리지 정리
+
+- `permit_form_templates`에서 엑셀 그리드 관련 컬럼(`grid_json`, `xlsx_url` 등이 있다면) 사용 중단 표시 후 제거 마이그레이션.
+- `permit_form_templates.layout.fields[*]`에 `role`(서명용), `dataBinding`(자동채움용) 필드 추가. 기존 레코드는 마이그레이션에서 기본값으로 채움.
+
+## 구현 체크리스트
+
+1. 엑셀 그리드 제거
+  - 삭제: `src/components/permit-grid/*`, `src/lib/permitGridTypes.ts`
+  - `SettingsPermitForms.tsx`, `WorkPermitDetail.tsx`에서 그리드 탭/분기 로직 제거, PDF 오버레이 단일 경로로 통합
+  - DB: 그리드 관련 컬럼 드롭 마이그레이션
+2. `analyze-permit-template` 개선
+  - 좌표 정규화(PDF 페이지 크기 기준), 체크박스·서명 라벨 근접 텍스트 추출, 역할·바인딩 자동 제안 리턴
+3. `OverlayEditor.tsx`
+  - 필드 사이드바, 스냅-투-사각형, 일괄 리사이즈/정렬, 역할·바인딩 드롭다운
+4. `OverlayFillForm.tsx`
+  - `dataBinding` 자동 채움, 결재라인 확정 후 서명 슬롯에 결재자 정보/서명 이미지 렌더링
+5. 인쇄 파이프라인(`permitOverlayPrint.ts`)
+  - 자동 채움 값 + 결재 서명 이미지가 정확 위치에 찍히도록 반영
+6. 회귀 테스트: 샘플 SF003 PDF로 (a) 체크박스 정확도 (b) 서명 자동 매핑 (c) 자동채움 (d) 인쇄 결과 확인
+
+## 확인 요청
+
+1. 엑셀 그리드 기능을 완전히 삭제하는 방향으로 진행해도 될까요? (기존에 엑셀로 등록한 양식이 있다면 사용 불가) 좋아
+2. 서명 슬롯 자동 매핑 기본 사전은 한국 건설현장 표준(작성자/검토자/안전관리자/현장소장/원청 승인)으로 잡을 예정입니다. 추가/변경할 역할이 있나요? 우리 기준은 시공사 작성자, 안전관리자, 현장소장 그리고 승인업체(발주자) 담당자(CM), 담당자(SM) 이렇게 있어. 예외적으로 협조라는 결재라인이 추가될수있어.

@@ -271,7 +271,7 @@ Deno.serve(async (req) => {
     let sweep_added = 0;
     const existingChecks: any[] = Array.isArray(parsed.checkboxes) ? parsed.checkboxes : [];
     const rightChecks = existingChecks.filter((c: any) => Array.isArray(c.bbox) && c.bbox[0] > 0.5).length;
-    if (modelUsed.startsWith('lovable/') && (existingChecks.length < 15 || rightChecks < 5)) {
+    if (enableSweep && modelUsed.startsWith('lovable/') && (existingChecks.length < 15 || rightChecks < 5)) {
       try {
         const prevCenters = existingChecks
           .filter((c: any) => Array.isArray(c.bbox))

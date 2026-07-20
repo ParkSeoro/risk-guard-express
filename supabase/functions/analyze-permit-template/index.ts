@@ -234,9 +234,9 @@ Deno.serve(async (req) => {
     };
     parsed = tryParse(raw) || {};
 
-    // ==== 2차 검증 패스 (누락/좌표 보정) ====
+    // ==== 2차 검증 패스 (누락/좌표 보정) — 옵션 ====
     let refined: any = null;
-    if (modelUsed.startsWith('lovable/') && (parsed?.fields || parsed?.checkboxes || parsed?.signatures)) {
+    if (enableRefine && modelUsed.startsWith('lovable/') && (parsed?.fields || parsed?.checkboxes || parsed?.signatures)) {
       try {
         const refineMessages = [
           { role: 'system', content: SYSTEM_PROMPT },

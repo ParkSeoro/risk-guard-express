@@ -2,7 +2,7 @@
  * 사용자 — 마스터가 지정한 셀만 입력할 수 있는 그리드 폼.
  * 결재/서명 이미지가 있으면 서명 셀에 자동 반영된다.
  */
-import { useRef, useState } from 'react';
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';

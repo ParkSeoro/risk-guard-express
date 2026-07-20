@@ -3607,7 +3607,9 @@ export type Database = {
           code: string
           created_at: string
           created_by: string | null
+          grid_snapshot: Json | null
           id: string
+          input_cells: Json
           is_active: boolean
           is_default: boolean
           is_deleted: boolean
@@ -3618,6 +3620,7 @@ export type Database = {
           print_overlay: Json
           project_id: string | null
           signature_slots: Json
+          source_xlsx_url: string | null
           suggested_approval_steps: number | null
           updated_at: string
           version: string
@@ -3628,7 +3631,9 @@ export type Database = {
           code: string
           created_at?: string
           created_by?: string | null
+          grid_snapshot?: Json | null
           id?: string
+          input_cells?: Json
           is_active?: boolean
           is_default?: boolean
           is_deleted?: boolean
@@ -3639,6 +3644,7 @@ export type Database = {
           print_overlay?: Json
           project_id?: string | null
           signature_slots?: Json
+          source_xlsx_url?: string | null
           suggested_approval_steps?: number | null
           updated_at?: string
           version?: string
@@ -3649,7 +3655,9 @@ export type Database = {
           code?: string
           created_at?: string
           created_by?: string | null
+          grid_snapshot?: Json | null
           id?: string
+          input_cells?: Json
           is_active?: boolean
           is_default?: boolean
           is_deleted?: boolean
@@ -3660,6 +3668,7 @@ export type Database = {
           print_overlay?: Json
           project_id?: string | null
           signature_slots?: Json
+          source_xlsx_url?: string | null
           suggested_approval_steps?: number | null
           updated_at?: string
           version?: string

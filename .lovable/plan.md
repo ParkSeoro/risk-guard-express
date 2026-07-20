@@ -1,39 +1,57 @@
 ## 목표
-표준허가서 양식(복제)에서 우측 "요구사항" 열의 누락된 체크박스를 AI 재분석으로 자동 채우고, 기존 사용자가 배치한 박스는 보존한다.
+마스터가 **기존 허가서 엑셀 파일(.xlsx)을 업로드** → 웹 스프레드시트로 열어 **셀 병합·서식·표 그대로 유지**한 채 편집 → **입력/서명 셀만 지정**하면 사용자가 그 양식으로 허가서를 작성·인쇄. PDF 오버레이는 "고급" 보조 기능으로 강등.
 
-## 원인 분석
-현재 `analyze-permit-template` 엣지 함수는 2단계(감지 → 검증) 패스를 돌리지만, 우측 컬럼(라벨 오른쪽에 나열된 □ 마커)을 놓치는 경우가 반복된다. 이는:
-- Gemini 비전이 표 내부의 반복 □ 마커를 "장식"으로 오인
-- 2차 검증 프롬프트가 "누락 보정"을 강조하지만 표 행 단위 스캔은 강제하지 않음
-- AI 결과가 편집기에 병합될 때 겹침 검사가 새 체크박스를 기존 서명/텍스트 박스와 겹친다고 판단해 드롭할 수 있음
+## 핵심 전제
+- **처음부터 새로 그리지 않는다.** 마스터가 이미 가진 엑셀 양식을 그대로 불러와서 최소한의 조작(입력 셀 지정)만 추가한다.
+- 스프레드시트 엔진은 **Univer (MIT)**: xlsx import/export 지원, 셀 병합·서식·이미지·인쇄영역 보존, 한글 IME 정상 동작.
+
+## 현재 상태
+- `permit_form_templates`에 `layout_json`, `print_overlay`, `original_pdf_url`, `signature_slots`, `permit_type`, `is_active`, `is_default` 존재.
+- `WorkPermitDetail.tsx`는 `permit_type` 자동 매칭 1건만 로드 — 드롭다운 선택 UI 없음(확인됨).
+- 스프레드시트 엔진 미도입.
 
 ## 계획
 
-### 1. 엣지 함수 프롬프트 강화 (`supabase/functions/analyze-permit-template/index.ts`)
-- 시스템 프롬프트에 "표(테이블) 구조 우선 스캔" 규칙 추가:
-  - 각 행의 좌측 라벨 셀 옆에 나열된 모든 □ 마커를 개별 체크박스로 감지
-  - 우측 컬럼(x > 0.55) 체크박스는 라벨 텍스트 없어도 반드시 반환 (라벨은 좌측 행 라벨 계승)
-- 2차 검증 패스에서 "표 각 행별 체크박스 개수 재확인" 지시 추가
-- 진단(diagnostics)에 `table_rows_scanned`, `checkboxes_per_row` 통계 노출
+### 1. DB 마이그레이션 (1건)
+`permit_form_templates`에 추가:
+- `grid_snapshot jsonb` — Univer workbook JSON (업로드된 xlsx를 파싱한 결과)
+- `input_cells jsonb` — `[{sheet, row, col, field_key, kind:'text'|'check'|'sign'|'date', role?}]`
+- `source_xlsx_url text` — 원본 xlsx 파일(감사/재편집용)
 
-### 2. 3차 "table sweep" 패스 추가
-1차/2차 후 체크박스 총 개수가 15개 미만이거나 우측(x>0.5) 체크박스가 5개 미만이면 3차 패스 자동 실행:
-- Gemini Flash에게 "표 각 행 좌→우 스캔, □ 심볼만 좌표로 반환" 전용 프롬프트
-- 결과를 기존 체크박스와 IoU < 0.3 조건으로 dedupe 후 병합
+### 2. Univer 도입
+- `@univerjs/presets` + `@univerjs/preset-sheets-core` 설치.
+- xlsx 파싱: `@univerjs/preset-sheets-core`의 import 플러그인(또는 `xlsx` → Univer JSON 변환기) 사용.
 
-### 3. 프론트 병합 로직 개선 (`src/pages/SettingsPermitForms.tsx`의 `applyAIResult`)
-- 사용자 수동 박스: 그대로 보존
-- 이전 AI 박스: 새 AI 결과로 교체
-- 신규 AI 체크박스가 기존 서명/텍스트 박스와 겹치는 경우 → 드롭하지 말고 z-order를 위로 올려 유지 (겹침 경고만 표시)
+### 3. 마스터: 양식 디자이너 (신규 기본 탭)
+`SettingsPermitForms.tsx`에 **"스프레드시트 양식"** 탭 신설(기본):
+1. **xlsx 업로드** → Univer로 즉시 렌더 (병합·서식·이미지·행높이 그대로).
+2. 마스터는 필요 시 텍스트/서식 미세 수정.
+3. **툴바 "입력 셀 지정"**: 셀 선택 후 kind(text/check/sign/date) + field_key(예: `work_desc`, `sign_pm`) 부여.
+   - 지정된 셀은 배경색으로 시각 표시(입력=연노랑, 서명=주황, 체크=연녹).
+   - 서명 셀은 role 선택(결재선 role과 매핑; 기존 `signature_slots` 규약 재사용).
+4. **저장**: `source_xlsx_url`(Storage 업로드), `grid_snapshot`, `input_cells` 저장. 버전은 기존 `permit_form_template_versions` 활용.
+5. **재편집**: 저장된 `grid_snapshot`을 다시 열어 편집. 원본 xlsx로 롤백 버튼 제공.
 
-### 4. 재분석 UX (`AIAnalysisPanel.tsx`)
-- 미리보기 다이얼로그에 "우측 컬럼 체크박스 개수" 배지 추가
-- 5개 미만이면 자동으로 3차 sweep 실행 표시
+### 4. 사용자: 허가서 작성 (`WorkPermitDetail.tsx`)
+- **양식 선택 드롭다운(신규)** 헤더 배치: `is_active=true, is_deleted=false` 전 양식 표시. 기본값은 `permit_type` 매칭 + `is_default=true`. 변경 시 field_key 기준으로 기존 입력값 최대한 이관.
+- **탭1 "양식 작성"(기본)**: Univer 그리드를 read-only + `input_cells` 셀만 편집 가능 모드로 렌더.
+  - 텍스트/날짜 셀 → 인라인 입력, 체크 셀 → 클릭 토글, 서명 셀 → 서명패드 팝업.
+  - 값은 `work_permits.form_data = {field_key: value}`로 저장.
+- **탭2 "고급 (PDF 오버레이)"**: 기존 `OverlayFillForm` 이동 — 오버레이 양식이 지정된 경우에만 활성.
 
-### 5. 검증
-- 사용자가 대상 템플릿 열고 "AI 자동 분석 실행" → 미리보기에서 우측 체크박스 채워졌는지 확인 → 적용
-- diagnostics 로그로 각 패스별 감지 개수 콘솔에 출력
+### 5. 인쇄 / PDF
+- 인쇄 시 `form_data`를 `input_cells` 위치에 채우고, 결재라인의 승인자 이름·서명 이미지·승인 일시를 서명 셀에 렌더.
+- Univer의 print/export PDF로 **원본 엑셀 레이아웃 그대로** 출력. 기존 `printOverlay()`는 고급 탭 전용 유지.
+
+### 6. 마이그레이션 정리
+- `OverlayEditor.tsx`, `AIAnalysisPanel.tsx`는 유지하되 진입점은 설정 > 양식 상세의 "고급 오버레이" 탭에서만.
 
 ## 기술 세부
-- 파일 수정: `supabase/functions/analyze-permit-template/index.ts`, `src/pages/SettingsPermitForms.tsx` (`applyAIResult` 병합 로직), `src/components/permit-designer/AIAnalysisPanel.tsx` (진단 배지)
-- 대상 템플릿을 사용자가 특정하지 않았으므로, 개선은 **모든 양식에 적용**되고 사용자는 해당 (복제) 양식을 열어 "AI 자동 분석 실행" 버튼만 누르면 된다.
+- 파일: `SettingsPermitForms.tsx`(탭 재구성), `WorkPermitDetail.tsx`(드롭다운+그리드 렌더), 신규 `components/permit-grid/GridDesigner.tsx`, `GridFillForm.tsx`, `lib/permitGridExport.ts`, `lib/xlsxToUniver.ts`.
+- Storage: 기존 `permit-form-assets` 버킷에 원본 xlsx 저장.
+- 라이브러리: `@univerjs/presets`, `@univerjs/preset-sheets-core`, 기존 `xlsx` 재사용.
+
+## 검증
+1. 마스터가 실제 회사 엑셀 허가서 업로드 → 병합·서식 유지 확인 → 입력/서명 셀 지정 → 저장.
+2. 사용자가 작성 화면 드롭다운에서 해당 양식 선택 → 값 입력 → 결재 → PDF 인쇄 시 원본 레이아웃 + 서명·일시 자동 표기 확인.
+3. 고급 탭 PDF 오버레이 회귀 확인.

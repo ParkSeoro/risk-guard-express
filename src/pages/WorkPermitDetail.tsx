@@ -112,6 +112,27 @@ export default function WorkPermitDetail() {
     });
     if (lastApproved) merged.approved_at = lastApproved;
     setSignatures(merged);
+
+    // 자동 채움 컨텍스트(작성자/회사/프로젝트/permit_date) 구성
+    try {
+      const companyId = (p as any).company_id || userCompanyId;
+      const [{ data: prof }, { data: comp }, { data: proj2 }] = await Promise.all([
+        user?.id ? supabase.from('profiles').select('full_name, position, phone').eq('id', user.id).maybeSingle() : Promise.resolve({ data: null } as any),
+        companyId ? supabase.from('companies').select('name, representative, business_no, address').eq('id', companyId).maybeSingle() : Promise.resolve({ data: null } as any),
+        (p as any).project_id ? supabase.from('projects').select('name, site_address').eq('id', (p as any).project_id).maybeSingle() : Promise.resolve({ data: null } as any),
+      ]);
+      setAutoCtx({
+        company: comp || undefined,
+        author: prof ? { name: (prof as any).full_name, position: (prof as any).position, phone: (prof as any).phone } : undefined,
+        project: proj2 || undefined,
+        permit: {
+          date: (p as any).permit_date,
+          work_description: (p as any).work_description,
+          work_location: (p as any).work_location,
+          work_period: (p as any).work_period,
+        },
+      });
+    } catch (e) { console.warn('autoCtx build failed', e); }
   };
 
   useEffect(() => { load(); }, [id]);

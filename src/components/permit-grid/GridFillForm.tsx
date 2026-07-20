@@ -85,12 +85,12 @@ function InlineSignaturePad({
 
   const getCtx = () => canvasRef.current?.getContext('2d') || null;
 
-  const pos = (e: React.PointerEvent) => {
+  const pos = (e: ReactPointerEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  const start = (e: React.PointerEvent) => {
+  const start = (e: ReactPointerEvent) => {
     const ctx = getCtx();
     if (!ctx) return;
     drawing.current = true;
@@ -99,7 +99,7 @@ function InlineSignaturePad({
     ctx.moveTo(x, y);
     (e.target as Element).setPointerCapture?.(e.pointerId);
   };
-  const move = (e: React.PointerEvent) => {
+  const move = (e: ReactPointerEvent) => {
     if (!drawing.current) return;
     const ctx = getCtx();
     if (!ctx) return;

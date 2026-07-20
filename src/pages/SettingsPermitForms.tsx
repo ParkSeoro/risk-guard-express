@@ -152,11 +152,8 @@ export default function SettingsPermitForms() {
     setOverlay(t.print_overlay);
     setOriginalPdfUrl(t.original_pdf_url);
     setSignatureSlots(t.signature_slots || []);
-    setGridSnapshot(t.grid_snapshot || null);
-    setInputCells(t.input_cells || []);
-    setSourceXlsxUrl(t.source_xlsx_url || null);
     setSelectedRef(null);
-    setTab(t.grid_snapshot ? 'grid' : t.ai_analyzed_at ? 'builder' : 'ai');
+    setTab(t.ai_analyzed_at ? 'builder' : 'ai');
     setJsonText(JSON.stringify(t.layout_json, null, 2));
     loadVersions(t.id);
   };
@@ -175,9 +172,6 @@ export default function SettingsPermitForms() {
       original_pdf_url: originalPdfUrl,
       signature_slots: signatureSlots,
       suggested_approval_steps: signatureSlots.length || null,
-      grid_snapshot: gridSnapshot,
-      input_cells: inputCells,
-      source_xlsx_url: sourceXlsxUrl,
     };
     const { error } = await supabase.from('permit_form_templates').update(payload).eq('id', selected.id);
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });

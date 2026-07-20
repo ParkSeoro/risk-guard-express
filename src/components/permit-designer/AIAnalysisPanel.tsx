@@ -88,7 +88,21 @@ export default function AIAnalysisPanel({ templateId, originalPdfUrl, onApply }:
     const { data, error } = await supabase.functions.invoke('analyze-permit-template', {
       body: { templateId, pageImages: imgs },
     });
-    if (error) throw error;
+    if (error) {
+      // Supabase invoke throws generic "non-2xx" — try to surface real message from response body
+      let detail = error.message || String(error);
+      try {
+        const ctx: any = (error as any).context;
+        if (ctx && typeof ctx.json === 'function') {
+          const body = await ctx.json();
+          if (body?.error) detail = body.error;
+        } else if (ctx && typeof ctx.text === 'function') {
+          const t = await ctx.text();
+          if (t) detail = t.slice(0, 400);
+        }
+      } catch { /* ignore */ }
+      throw new Error(detail);
+    }
     if (data?.error) throw new Error(data.error);
     console.log('[AIAnalysisPanel] diagnostics:', data.diagnostics);
     return { imgs, res: data as AIResult };

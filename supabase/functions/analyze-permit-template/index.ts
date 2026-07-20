@@ -149,6 +149,9 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const templateId = String(body?.templateId || '');
     const pageImages: string[] = Array.isArray(body?.pageImages) ? body.pageImages : [];
+    // 성능/타임아웃 대응: 기본은 1차만. 클라이언트가 명시적으로 켤 때만 refine/sweep 실행
+    const enableRefine = body?.enableRefine === true;
+    const enableSweep = body?.enableSweep === true;
     if (!templateId || pageImages.length === 0) {
       return new Response(JSON.stringify({ error: 'templateId와 pageImages가 필요합니다.' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

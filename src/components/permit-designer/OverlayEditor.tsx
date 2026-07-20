@@ -636,7 +636,36 @@ export default function OverlayEditor({ templateId, layout, overlay, originalPdf
                 </div>
               </div>
             )}
-            {selected.render === 'check' && (
+            {selected.render === 'text' && (
+              <div>
+                <Label className="text-[10px]">자동 채움 (data binding)</Label>
+                <Select value={selected.data_binding || '__none__'} onValueChange={(v) => updateBoxProps(selected.id, { data_binding: v === '__none__' ? undefined : v as any })}>
+                  <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="없음" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">사용 안함</SelectItem>
+                    {Object.entries(DATA_BINDING_LABELS).map(([k, l]) => (
+                      <SelectItem key={k} value={k}>{l}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground mt-1">지정 시 작성 화면에서 로그인 사용자/회사/프로젝트 값을 자동 입력합니다.</p>
+              </div>
+            )}
+            {selected.render === 'signature' && (
+              <div>
+                <Label className="text-[10px]">서명 역할 (결재라인 자동 매핑)</Label>
+                <Select value={selected.signature_role || '__none__'} onValueChange={(v) => updateBoxProps(selected.id, { signature_role: v === '__none__' ? undefined : v as any })}>
+                  <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="없음" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">사용 안함</SelectItem>
+                    {Object.entries(SIGNATURE_ROLE_LABELS).map(([k, l]) => (
+                      <SelectItem key={k} value={k}>{l}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground mt-1">결재 완료 시 해당 단계의 서명/이름/시간이 자동 표시됩니다.</p>
+              </div>
+            )}
               <div>
                 <Label className="text-[10px]">체크 조건 (이 값일 때 ✓)</Label>
                 <Input className="h-7 text-xs" placeholder="true 또는 값"

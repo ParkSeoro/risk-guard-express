@@ -455,7 +455,8 @@ export default function SettingsPermitForms() {
 
               <TabsContent value="grid">
                 <Card>
-                  <CardContent className="p-3">
+                  <CardContent className="p-3 min-w-0 overflow-hidden">
+
                     <GridDesigner
                       templateId={selected.id}
                       gridSnapshot={gridSnapshot}

@@ -366,6 +366,7 @@ export default function WorkPermitDetail() {
             overlay={template.print_overlay}
             values={data}
             signatures={signatures as any}
+            autoFillContext={autoCtx}
             onChange={(v) => setData(v)}
             onSign={(role, sig) => setSignatures({ ...signatures, [role]: sig } as any)}
             readOnly={isApproved}

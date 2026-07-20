@@ -7118,6 +7118,7 @@ export type Database = {
           expiry_notified_at: string | null
           extension_until: string | null
           form_data: Json
+          form_template_id: string | null
           form_version: string | null
           gate_check_result: Json
           id: string
@@ -7166,6 +7167,7 @@ export type Database = {
           expiry_notified_at?: string | null
           extension_until?: string | null
           form_data?: Json
+          form_template_id?: string | null
           form_version?: string | null
           gate_check_result?: Json
           id?: string
@@ -7214,6 +7216,7 @@ export type Database = {
           expiry_notified_at?: string | null
           extension_until?: string | null
           form_data?: Json
+          form_template_id?: string | null
           form_version?: string | null
           gate_check_result?: Json
           id?: string
@@ -7246,7 +7249,15 @@ export type Database = {
           work_plan_id?: string | null
           work_start_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "work_permits_form_template_id_fkey"
+            columns: ["form_template_id"]
+            isOneToOne: false
+            referencedRelation: "permit_form_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       work_plan_attachments: {
         Row: {

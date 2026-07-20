@@ -20,7 +20,6 @@ import GridFillForm from '@/components/permit-grid/GridFillForm';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import { useProjectAccess } from '@/hooks/useProjectAccess';
 import { printOverlay } from '@/lib/permitOverlayPrint';
-import { FormLayout, PrintOverlay } from '@/lib/permitFormTypes';
 import type { GridBook } from '@/lib/xlsxGrid';
 import type { InputCell } from '@/lib/permitGridTypes';
 

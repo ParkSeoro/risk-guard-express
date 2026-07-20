@@ -665,6 +665,7 @@ export default function OverlayEditor({ templateId, layout, overlay, originalPdf
                 </Select>
                 <p className="text-[10px] text-muted-foreground mt-1">결재 완료 시 해당 단계의 서명/이름/시간이 자동 표시됩니다.</p>
               </div>
+            )}
             {selected.render === 'check' && (
               <div>
                 <Label className="text-[10px]">체크 조건 (이 값일 때 ✓)</Label>

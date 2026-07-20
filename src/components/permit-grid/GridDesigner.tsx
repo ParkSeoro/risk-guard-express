@@ -103,10 +103,21 @@ export default function GridDesigner({
       const book = parseXlsxToGrid(buf);
       if (!book.sheets.length) throw new Error('시트를 찾지 못했습니다');
 
-      const path = `permit-form-xlsx/${templateId}/${Date.now()}_${file.name}`;
+      // Supabase Storage keys must be ASCII-safe (no Korean, spaces, or special chars).
+      const ext = (file.name.match(/\.[a-zA-Z0-9]+$/)?.[0] || '.xlsx').toLowerCase();
+      const safeBase = file.name
+        .replace(/\.[a-zA-Z0-9]+$/, '')
+        .replace(/[^a-zA-Z0-9._-]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '')
+        .slice(0, 60) || 'template';
+      const path = `permit-form-xlsx/${templateId}/${Date.now()}_${safeBase}${ext}`;
       const { error: upErr } = await supabase.storage
         .from('permit-form-assets')
-        .upload(path, file, { upsert: true, contentType: file.type });
+        .upload(path, file, {
+          upsert: true,
+          contentType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
       if (upErr) throw upErr;
 
       onChange({

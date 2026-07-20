@@ -1,0 +1,1 @@
+ALTER TABLE public.work_permits ADD COLUMN IF NOT EXISTS form_template_id UUID REFERENCES public.permit_form_templates(id) ON DELETE SET NULL;

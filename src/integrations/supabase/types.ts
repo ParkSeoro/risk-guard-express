@@ -3607,7 +3607,9 @@ export type Database = {
           code: string
           created_at: string
           created_by: string | null
+          grid_snapshot: Json | null
           id: string
+          input_cells: Json
           is_active: boolean
           is_default: boolean
           is_deleted: boolean
@@ -3618,6 +3620,7 @@ export type Database = {
           print_overlay: Json
           project_id: string | null
           signature_slots: Json
+          source_xlsx_url: string | null
           suggested_approval_steps: number | null
           updated_at: string
           version: string
@@ -3628,7 +3631,9 @@ export type Database = {
           code: string
           created_at?: string
           created_by?: string | null
+          grid_snapshot?: Json | null
           id?: string
+          input_cells?: Json
           is_active?: boolean
           is_default?: boolean
           is_deleted?: boolean
@@ -3639,6 +3644,7 @@ export type Database = {
           print_overlay?: Json
           project_id?: string | null
           signature_slots?: Json
+          source_xlsx_url?: string | null
           suggested_approval_steps?: number | null
           updated_at?: string
           version?: string
@@ -3649,7 +3655,9 @@ export type Database = {
           code?: string
           created_at?: string
           created_by?: string | null
+          grid_snapshot?: Json | null
           id?: string
+          input_cells?: Json
           is_active?: boolean
           is_default?: boolean
           is_deleted?: boolean
@@ -3660,6 +3668,7 @@ export type Database = {
           print_overlay?: Json
           project_id?: string | null
           signature_slots?: Json
+          source_xlsx_url?: string | null
           suggested_approval_steps?: number | null
           updated_at?: string
           version?: string
@@ -7109,6 +7118,7 @@ export type Database = {
           expiry_notified_at: string | null
           extension_until: string | null
           form_data: Json
+          form_template_id: string | null
           form_version: string | null
           gate_check_result: Json
           id: string
@@ -7157,6 +7167,7 @@ export type Database = {
           expiry_notified_at?: string | null
           extension_until?: string | null
           form_data?: Json
+          form_template_id?: string | null
           form_version?: string | null
           gate_check_result?: Json
           id?: string
@@ -7205,6 +7216,7 @@ export type Database = {
           expiry_notified_at?: string | null
           extension_until?: string | null
           form_data?: Json
+          form_template_id?: string | null
           form_version?: string | null
           gate_check_result?: Json
           id?: string
@@ -7237,7 +7249,15 @@ export type Database = {
           work_plan_id?: string | null
           work_start_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "work_permits_form_template_id_fkey"
+            columns: ["form_template_id"]
+            isOneToOne: false
+            referencedRelation: "permit_form_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       work_plan_attachments: {
         Row: {

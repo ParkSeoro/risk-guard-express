@@ -12,13 +12,16 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Table2 } from 'lucide-react';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import OverlayFillForm from '@/components/permits/OverlayFillForm';
+import GridFillForm from '@/components/permit-grid/GridFillForm';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import { useProjectAccess } from '@/hooks/useProjectAccess';
 import { printOverlay } from '@/lib/permitOverlayPrint';
-import { FormLayout, PrintOverlay } from '@/lib/permitFormTypes';
+import type { GridBook } from '@/lib/xlsxGrid';
+import type { InputCell } from '@/lib/permitGridTypes';
 
 const PERMIT_TABS: { id: PermitType; label: string }[] = [
   { id: 'general', label: '일반' },
@@ -53,7 +56,9 @@ export default function WorkPermitDetail() {
   const [linkedRuns, setLinkedRuns] = useState<any[]>([]);
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [template, setTemplate] = useState<{ id: string; layout_json: FormLayout; print_overlay: PrintOverlay; original_pdf_url: string | null } | null>(null);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [templateId, setTemplateId] = useState<string>('');
+  const template = useMemo(() => templates.find((t) => t.id === templateId) || null, [templates, templateId]);
 
   const load = async () => {
     if (!id) return;
@@ -113,33 +118,41 @@ export default function WorkPermitDetail() {
 
   useEffect(() => { load(); }, [id]);
 
-  // 종류(tab)별 기본 양식 조회 — 있으면 OverlayFillForm으로 렌더
+  // 종류(tab)별 사용 가능한 양식 목록을 모두 조회 — 사용자가 드롭다운으로 선택
   useEffect(() => {
     (async () => {
       try {
         const { data: tpls } = await supabase
           .from('permit_form_templates')
-          .select('id, layout_json, print_overlay, original_pdf_url, is_default, permit_type')
+          .select('id, name, code, version, layout_json, print_overlay, original_pdf_url, is_default, permit_type, grid_snapshot, input_cells, source_xlsx_url')
           .eq('is_deleted', false)
           .eq('is_active', true)
           .order('is_default', { ascending: false })
           .order('updated_at', { ascending: false });
         const list = (tpls || []) as any[];
-        const match =
-          list.find((t) => t.permit_type === tab && t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0) ||
-          list.find((t) => (!t.permit_type || t.permit_type === 'general') && t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0);
-        setTemplate(match ? {
-          id: match.id,
-          layout_json: match.layout_json || { header: { title: '' }, sections: [] },
-          print_overlay: match.print_overlay || { pages: [] },
-          original_pdf_url: match.original_pdf_url,
-        } : null);
+        // 이 종류(tab)에 해당하거나 general인 양식 + 실제로 렌더 가능한 것만
+        const usable = list.filter((t) => {
+          const typeOk = !t.permit_type || t.permit_type === tab || t.permit_type === 'general';
+          const hasGrid = t.grid_snapshot?.sheets?.length > 0;
+          const hasOverlay = t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0;
+          return typeOk && (hasGrid || hasOverlay);
+        });
+        setTemplates(usable);
+        // 저장된 template_id가 있으면 사용, 아니면 이 종류의 기본을 자동 선택
+        const saved = (permit as any)?.form_template_id;
+        const preferred =
+          usable.find((t) => t.id === saved) ||
+          usable.find((t) => t.permit_type === tab && t.is_default) ||
+          usable.find((t) => t.permit_type === tab) ||
+          usable[0];
+        setTemplateId(preferred?.id || '');
       } catch (e) {
         console.warn('template lookup failed', e);
-        setTemplate(null);
+        setTemplates([]);
+        setTemplateId('');
       }
     })();
-  }, [tab]);
+  }, [tab, permit?.id]);
 
   const save = async () => {
     if (!permit) return;
@@ -150,6 +163,7 @@ export default function WorkPermitDetail() {
       signatures,
       linked_assessment_run_ids: linkedRuns.map(r => r.id),
       form_version: 'SF003-Rev1',
+      form_template_id: templateId || null,
     }).eq('id', permit.id);
     setSaving(false);
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
@@ -303,8 +317,42 @@ export default function WorkPermitDetail() {
         </TabsList>
       </Tabs>
 
+      {/* 양식 선택 드롭다운 */}
+      <Card className="print:hidden">
+        <CardContent className="p-3 flex items-center gap-2 text-sm flex-wrap">
+          <FileSignature className="h-4 w-4" />
+          <span className="font-semibold">허가서 양식:</span>
+          {templates.length === 0 ? (
+            <span className="text-muted-foreground">이 종류에 사용 가능한 양식이 없습니다. (시스템 › 허가서 양식 디자인에서 등록)</span>
+          ) : (
+            <Select value={templateId} onValueChange={setTemplateId}>
+              <SelectTrigger className="h-8 max-w-[420px]"><SelectValue placeholder="양식 선택" /></SelectTrigger>
+              <SelectContent>
+                {templates.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.grid_snapshot?.sheets?.length > 0 ? '📊 ' : '📄 '}{t.name} · {t.version}
+                    {t.is_default ? ' (기본)' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {template?.grid_snapshot?.sheets?.length > 0 && (
+            <Badge variant="outline" className="ml-1"><Table2 className="h-3 w-3 mr-1" />엑셀 그리드</Badge>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="bg-white border rounded shadow-sm p-3 md:p-6 print:border-0 print:shadow-none print:p-0">
-        {template && template.original_pdf_url ? (
+        {template && template.grid_snapshot?.sheets?.length > 0 ? (
+          <GridFillForm
+            book={template.grid_snapshot as GridBook}
+            inputCells={(template.input_cells || []) as InputCell[]}
+            values={data}
+            onChange={(v) => setData(v)}
+            readOnly={isApproved}
+          />
+        ) : template && template.original_pdf_url ? (
           <OverlayFillForm
             pdfUrl={template.original_pdf_url}
             layout={template.layout_json}
@@ -326,6 +374,7 @@ export default function WorkPermitDetail() {
           />
         )}
       </div>
+
 
       {approvalOpen && (
         <SubmitApprovalDialog

@@ -22,7 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-  FileSignature, Plus, Copy, Trash2, Save, Eye, History, FileText, MousePointer2, Sparkles, Signature,
+  FileSignature, Plus, Copy, Trash2, Save, Eye, History, FileText, MousePointer2, Sparkles, Signature, Table2,
 } from 'lucide-react';
 import SortableSectionCard from '@/components/permit-designer/SortableSectionCard';
 import PropertyPanel from '@/components/permit-designer/PropertyPanel';
@@ -30,6 +30,9 @@ import LivePreview from '@/components/permit-designer/LivePreview';
 import OverlayEditor from '@/components/permit-designer/OverlayEditor';
 import AIAnalysisPanel from '@/components/permit-designer/AIAnalysisPanel';
 import SignatureSlotMapper from '@/components/permit-designer/SignatureSlotMapper';
+import GridDesigner from '@/components/permit-grid/GridDesigner';
+import type { GridBook } from '@/lib/xlsxGrid';
+import type { InputCell } from '@/lib/permitGridTypes';
 import { FormLayout, PrintOverlay, SignatureSlot, EMPTY_LAYOUT, EMPTY_OVERLAY, newSection } from '@/lib/permitFormTypes';
 
 type Tpl = {
@@ -47,6 +50,9 @@ type Tpl = {
   signature_slots: SignatureSlot[];
   suggested_approval_steps: number | null;
   ai_analyzed_at: string | null;
+  grid_snapshot: GridBook | null;
+  input_cells: InputCell[];
+  source_xlsx_url: string | null;
   updated_at: string;
 };
 
@@ -78,6 +84,9 @@ export default function SettingsPermitForms() {
   const [showJson, setShowJson] = useState(false);
   const [jsonText, setJsonText] = useState('');
   const [signatureSlots, setSignatureSlots] = useState<SignatureSlot[]>([]);
+  const [gridSnapshot, setGridSnapshot] = useState<GridBook | null>(null);
+  const [inputCells, setInputCells] = useState<InputCell[]>([]);
+  const [sourceXlsxUrl, setSourceXlsxUrl] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -88,7 +97,7 @@ export default function SettingsPermitForms() {
     setLoading(true);
     const { data, error } = await supabase
       .from('permit_form_templates')
-      .select('id, project_id, code, name, version, layout_json, print_overlay, original_pdf_url, is_default, is_active, permit_type, signature_slots, suggested_approval_steps, ai_analyzed_at, updated_at')
+      .select('id, project_id, code, name, version, layout_json, print_overlay, original_pdf_url, is_default, is_active, permit_type, signature_slots, suggested_approval_steps, ai_analyzed_at, grid_snapshot, input_cells, source_xlsx_url, updated_at')
       .eq('is_deleted', false)
       .order('code')
       .order('version', { ascending: false });
@@ -128,6 +137,9 @@ export default function SettingsPermitForms() {
       layout_json: normalizeLayout(r.layout_json),
       print_overlay: normalizeOverlay(r.print_overlay),
       signature_slots: Array.isArray(r.signature_slots) ? r.signature_slots : [],
+      grid_snapshot: r.grid_snapshot && Array.isArray(r.grid_snapshot?.sheets) ? r.grid_snapshot : null,
+      input_cells: Array.isArray(r.input_cells) ? r.input_cells : [],
+      source_xlsx_url: r.source_xlsx_url || null,
     })));
     setLoading(false);
   };
@@ -152,8 +164,11 @@ export default function SettingsPermitForms() {
     setOverlay(t.print_overlay);
     setOriginalPdfUrl(t.original_pdf_url);
     setSignatureSlots(t.signature_slots || []);
+    setGridSnapshot(t.grid_snapshot || null);
+    setInputCells(t.input_cells || []);
+    setSourceXlsxUrl(t.source_xlsx_url || null);
     setSelectedRef(null);
-    setTab(t.ai_analyzed_at ? 'builder' : 'ai');
+    setTab(t.grid_snapshot ? 'grid' : t.ai_analyzed_at ? 'builder' : 'ai');
     setJsonText(JSON.stringify(t.layout_json, null, 2));
     loadVersions(t.id);
   };
@@ -172,6 +187,9 @@ export default function SettingsPermitForms() {
       original_pdf_url: originalPdfUrl,
       signature_slots: signatureSlots,
       suggested_approval_steps: signatureSlots.length || null,
+      grid_snapshot: gridSnapshot,
+      input_cells: inputCells,
+      source_xlsx_url: sourceXlsxUrl,
     };
     const { error } = await supabase.from('permit_form_templates').update(payload).eq('id', selected.id);
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
@@ -426,13 +444,33 @@ export default function SettingsPermitForms() {
 
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList>
+                <TabsTrigger value="grid"><Table2 className="h-4 w-4 mr-1" />엑셀 그리드{gridSnapshot ? ` (${inputCells.length})` : ''}</TabsTrigger>
+                <TabsTrigger value="signatures"><Signature className="h-4 w-4 mr-1" />서명·결재라인 ({signatureSlots.length})</TabsTrigger>
                 <TabsTrigger value="ai"><Sparkles className="h-4 w-4 mr-1" />AI 자동 분석</TabsTrigger>
                 <TabsTrigger value="overlay"><FileText className="h-4 w-4 mr-1" />원본 PDF 오버레이</TabsTrigger>
-                <TabsTrigger value="signatures"><Signature className="h-4 w-4 mr-1" />서명·결재라인 ({signatureSlots.length})</TabsTrigger>
                 <TabsTrigger value="builder"><MousePointer2 className="h-4 w-4 mr-1" />빌더</TabsTrigger>
                 <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />미리보기</TabsTrigger>
                 <TabsTrigger value="versions"><History className="h-4 w-4 mr-1" />버전</TabsTrigger>
               </TabsList>
+
+              <TabsContent value="grid">
+                <Card>
+                  <CardContent className="p-3">
+                    <GridDesigner
+                      templateId={selected.id}
+                      gridSnapshot={gridSnapshot}
+                      inputCells={inputCells}
+                      sourceXlsxUrl={sourceXlsxUrl}
+                      onChange={(patch) => {
+                        if ('grid_snapshot' in patch) setGridSnapshot(patch.grid_snapshot ?? null);
+                        if ('input_cells' in patch) setInputCells(patch.input_cells ?? []);
+                        if ('source_xlsx_url' in patch) setSourceXlsxUrl(patch.source_xlsx_url ?? null);
+                      }}
+                    />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
 
               <TabsContent value="ai">
                 <Card>

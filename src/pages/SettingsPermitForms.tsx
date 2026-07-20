@@ -128,9 +128,6 @@ export default function SettingsPermitForms() {
       layout_json: normalizeLayout(r.layout_json),
       print_overlay: normalizeOverlay(r.print_overlay),
       signature_slots: Array.isArray(r.signature_slots) ? r.signature_slots : [],
-      grid_snapshot: r.grid_snapshot && Array.isArray(r.grid_snapshot?.sheets) ? r.grid_snapshot : null,
-      input_cells: Array.isArray(r.input_cells) ? r.input_cells : [],
-      source_xlsx_url: r.source_xlsx_url || null,
     })));
     setLoading(false);
   };

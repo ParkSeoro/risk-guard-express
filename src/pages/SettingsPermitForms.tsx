@@ -22,7 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-  FileSignature, Plus, Copy, Trash2, Save, Eye, History, FileText, MousePointer2, Sparkles, Signature,
+  FileSignature, Plus, Copy, Trash2, Save, Eye, History, FileText, MousePointer2, Sparkles, Signature, Table2,
 } from 'lucide-react';
 import SortableSectionCard from '@/components/permit-designer/SortableSectionCard';
 import PropertyPanel from '@/components/permit-designer/PropertyPanel';
@@ -30,6 +30,9 @@ import LivePreview from '@/components/permit-designer/LivePreview';
 import OverlayEditor from '@/components/permit-designer/OverlayEditor';
 import AIAnalysisPanel from '@/components/permit-designer/AIAnalysisPanel';
 import SignatureSlotMapper from '@/components/permit-designer/SignatureSlotMapper';
+import GridDesigner from '@/components/permit-grid/GridDesigner';
+import type { GridBook } from '@/lib/xlsxGrid';
+import type { InputCell } from '@/lib/permitGridTypes';
 import { FormLayout, PrintOverlay, SignatureSlot, EMPTY_LAYOUT, EMPTY_OVERLAY, newSection } from '@/lib/permitFormTypes';
 
 type Tpl = {

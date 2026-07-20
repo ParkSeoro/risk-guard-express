@@ -55,6 +55,7 @@ export default function WorkPermitDetail() {
   const [saving, setSaving] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
   const [templateId, setTemplateId] = useState<string>('');
+  const [autoCtx, setAutoCtx] = useState<any>({});
   const template = useMemo(() => templates.find((t) => t.id === templateId) || null, [templates, templateId]);
 
   const load = async () => {

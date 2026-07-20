@@ -444,13 +444,33 @@ export default function SettingsPermitForms() {
 
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList>
+                <TabsTrigger value="grid"><Table2 className="h-4 w-4 mr-1" />엑셀 그리드{gridSnapshot ? ` (${inputCells.length})` : ''}</TabsTrigger>
+                <TabsTrigger value="signatures"><Signature className="h-4 w-4 mr-1" />서명·결재라인 ({signatureSlots.length})</TabsTrigger>
                 <TabsTrigger value="ai"><Sparkles className="h-4 w-4 mr-1" />AI 자동 분석</TabsTrigger>
                 <TabsTrigger value="overlay"><FileText className="h-4 w-4 mr-1" />원본 PDF 오버레이</TabsTrigger>
-                <TabsTrigger value="signatures"><Signature className="h-4 w-4 mr-1" />서명·결재라인 ({signatureSlots.length})</TabsTrigger>
                 <TabsTrigger value="builder"><MousePointer2 className="h-4 w-4 mr-1" />빌더</TabsTrigger>
                 <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />미리보기</TabsTrigger>
                 <TabsTrigger value="versions"><History className="h-4 w-4 mr-1" />버전</TabsTrigger>
               </TabsList>
+
+              <TabsContent value="grid">
+                <Card>
+                  <CardContent className="p-3">
+                    <GridDesigner
+                      templateId={selected.id}
+                      gridSnapshot={gridSnapshot}
+                      inputCells={inputCells}
+                      sourceXlsxUrl={sourceXlsxUrl}
+                      onChange={(patch) => {
+                        if ('grid_snapshot' in patch) setGridSnapshot(patch.grid_snapshot ?? null);
+                        if ('input_cells' in patch) setInputCells(patch.input_cells ?? []);
+                        if ('source_xlsx_url' in patch) setSourceXlsxUrl(patch.source_xlsx_url ?? null);
+                      }}
+                    />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
 
               <TabsContent value="ai">
                 <Card>

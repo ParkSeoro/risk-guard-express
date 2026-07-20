@@ -86,7 +86,7 @@ export default function WorkPermitDetail() {
       setLinkedRuns(runs || []);
     }
 
-    // approvals → 서명/시간 자동 매핑
+    // approvals → 서명/시간 자동 매핑 (레거시 position 기반)
     const { data: aps } = await supabase
       .from('approvals')
       .select('position, approver_name, status, approved_at, comment')
@@ -101,7 +101,6 @@ export default function WorkPermitDetail() {
       if (!sigKey) return;
       const existing = (merged as any)[sigKey];
       if (!existing?.signature) {
-        // 손서명이 없는 경우 텍스트 도장 처리
         (merged as any)[sigKey] = {
           name: a.approver_name || '',
           signature: '',
@@ -110,6 +109,39 @@ export default function WorkPermitDetail() {
       }
       if (a.approved_at) lastApproved = a.approved_at;
     });
+
+    // 신규 approval_lines(role 기반) → signature_role 키로 오버레이 미리보기 자동 표시
+    try {
+      const { data: appr } = await (supabase as any)
+        .from('approvals')
+        .select('id')
+        .eq('target_type', 'work_permit')
+        .eq('target_id', id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      const apprId = appr?.[0]?.id;
+      if (apprId) {
+        const { data: steps } = await (supabase as any)
+          .from('approval_lines')
+          .select('role, approver_name, approver_position, signature_image, status, approved_at')
+          .eq('approval_id', apprId)
+          .order('step_order', { ascending: true });
+        (steps || []).forEach((s: any) => {
+          if (!s.role || s.status !== 'approved') return;
+          const existing = (merged as any)[s.role];
+          if (!existing?.signature) {
+            (merged as any)[s.role] = {
+              name: s.approver_name || '',
+              position: s.approver_position || '',
+              signature: s.signature_image || '',
+              signed_at: s.approved_at || '',
+            };
+          }
+          if (s.approved_at && (!lastApproved || s.approved_at > lastApproved)) lastApproved = s.approved_at;
+        });
+      }
+    } catch (e) { console.warn('approval_lines merge failed', e); }
+
     if (lastApproved) merged.approved_at = lastApproved;
     setSignatures(merged);
 

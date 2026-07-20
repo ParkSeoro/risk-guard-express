@@ -13,15 +13,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Table2 } from 'lucide-react';
+import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck } from 'lucide-react';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import OverlayFillForm from '@/components/permits/OverlayFillForm';
-import GridFillForm from '@/components/permit-grid/GridFillForm';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import { useProjectAccess } from '@/hooks/useProjectAccess';
 import { printOverlay } from '@/lib/permitOverlayPrint';
-import type { GridBook } from '@/lib/xlsxGrid';
-import type { InputCell } from '@/lib/permitGridTypes';
 
 const PERMIT_TABS: { id: PermitType; label: string }[] = [
   { id: 'general', label: '일반' },
@@ -124,7 +121,7 @@ export default function WorkPermitDetail() {
       try {
         const { data: tpls } = await supabase
           .from('permit_form_templates')
-          .select('id, name, code, version, layout_json, print_overlay, original_pdf_url, is_default, permit_type, grid_snapshot, input_cells, source_xlsx_url')
+          .select('id, name, code, version, layout_json, print_overlay, original_pdf_url, is_default, permit_type')
           .eq('is_deleted', false)
           .eq('is_active', true)
           .order('is_default', { ascending: false })
@@ -133,9 +130,8 @@ export default function WorkPermitDetail() {
         // 이 종류(tab)에 해당하거나 general인 양식 + 실제로 렌더 가능한 것만
         const usable = list.filter((t) => {
           const typeOk = !t.permit_type || t.permit_type === tab || t.permit_type === 'general';
-          const hasGrid = t.grid_snapshot?.sheets?.length > 0;
           const hasOverlay = t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0;
-          return typeOk && (hasGrid || hasOverlay);
+          return typeOk && hasOverlay;
         });
         setTemplates(usable);
         // 저장된 template_id가 있으면 사용, 아니면 이 종류의 기본을 자동 선택
@@ -330,29 +326,18 @@ export default function WorkPermitDetail() {
               <SelectContent>
                 {templates.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
-                    {t.grid_snapshot?.sheets?.length > 0 ? '📊 ' : '📄 '}{t.name} · {t.version}
+                    📄 {t.name} · {t.version}
                     {t.is_default ? ' (기본)' : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
-          {template?.grid_snapshot?.sheets?.length > 0 && (
-            <Badge variant="outline" className="ml-1"><Table2 className="h-3 w-3 mr-1" />엑셀 그리드</Badge>
-          )}
         </CardContent>
       </Card>
 
       <div className="bg-white border rounded shadow-sm p-3 md:p-6 print:border-0 print:shadow-none print:p-0">
-        {template && template.grid_snapshot?.sheets?.length > 0 ? (
-          <GridFillForm
-            book={template.grid_snapshot as GridBook}
-            inputCells={(template.input_cells || []) as InputCell[]}
-            values={data}
-            onChange={(v) => setData(v)}
-            readOnly={isApproved}
-          />
-        ) : template && template.original_pdf_url ? (
+        {template && template.original_pdf_url ? (
           <OverlayFillForm
             pdfUrl={template.original_pdf_url}
             layout={template.layout_json}

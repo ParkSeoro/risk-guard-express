@@ -431,11 +431,26 @@ export default function DigPermitForm({
               </tr>
               <tr>
                 <th rowSpan={3} className="hd">작업개요</th>
-                <td colSpan={5}>작업명 : <Inp value={data.work_name} onChangeText={(v: string) => update({ work_name: v })} /></td>
+                <td colSpan={5}>
+                  <div className="flex items-center gap-1">
+                    <span className="shrink-0 whitespace-nowrap">작업명 :</span>
+                    <Inp className="flex-1" value={data.work_name} onChangeText={(v: string) => update({ work_name: v })} />
+                  </div>
+                </td>
               </tr>
-              <tr><td colSpan={5}>작업내용 : <Inp value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} /></td></tr>
+              <tr><td colSpan={5}>
+                <div className="flex items-center gap-1">
+                  <span className="shrink-0 whitespace-nowrap">작업내용 :</span>
+                  <Inp className="flex-1" value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} />
+                </div>
+              </td></tr>
               <tr>
-                <td colSpan={2}>작업지역(장소) : <Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td>
+                <td colSpan={2}>
+                  <div className="flex items-center gap-1">
+                    <span className="shrink-0 whitespace-nowrap">작업지역(장소) :</span>
+                    <Inp className="flex-1" value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} />
+                  </div>
+                </td>
                 <td colSpan={3}>작업인원 : {readOnly || printMode ? data.personnel_count : <input type="number" className="w-16 text-xs border-0 bg-transparent" value={data.personnel_count || ''} onChange={(e) => update({ personnel_count: Number(e.target.value) })} />} 명</td>
               </tr>
               <tr>

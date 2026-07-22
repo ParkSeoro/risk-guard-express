@@ -11,11 +11,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature, Pencil, Trash2, Users } from 'lucide-react';
+import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature, Pencil, Trash2, Users, Copy } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialog';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import { useProjectAccess } from '@/hooks/useProjectAccess';
+import type { PermitType } from '@/components/permits/DigPermitForm';
 
 
 const STATUS_COLOR: Record<string, string> = {
@@ -30,6 +31,49 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 const userLabel = (u: any) => u?.user_metadata?.display_name || u?.email || '';
+const PERMIT_TYPES: { id: PermitType; label: string }[] = [
+  { id: 'general', label: '일반 안전작업허가서' },
+  { id: 'confined_space', label: '밀폐공간 작업허가서' },
+  { id: 'hot_work', label: '화기작업허가서' },
+  { id: 'excavation', label: '굴착·중장비 작업허가서' },
+];
+
+const makeBlankForm = (companyName = '') => ({
+  permit_date: new Date().toISOString().slice(0, 10),
+  permit_type: 'general' as PermitType,
+  work_name: '',
+  work_description: '',
+  location: '',
+  work_location: '',
+  contractor_company: companyName,
+  applicant_company: companyName,
+  personnel_count: '',
+  work_start: '',
+  work_end: '',
+  work_plan_id: '',
+  assessment_run_id: '',
+  tbm_session_id: '',
+});
+
+function toDbTimestamp(value?: string | null) {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function toLocalInput(value?: string | null) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function cleanCloneData(src: any) {
+  const formData = { ...(src?.form_data || {}) };
+  ['approved_at', 'reviewed_at', 'work_extend_until'].forEach((k) => delete formData[k]);
+  return formData;
+}
 
 export default function WorkPermits() {
   const { toast } = useToast();
@@ -50,13 +94,11 @@ export default function WorkPermits() {
   const [gateResult, setGateResult] = useState<any>(null);
   const [workersDialog, setWorkersDialog] = useState<any | null>(null);
   const [approvalTarget, setApprovalTarget] = useState<any | null>(null);
+  const [companyName, setCompanyName] = useState('');
+  const [previousPermits, setPreviousPermits] = useState<any[]>([]);
+  const [loadingPrevious, setLoadingPrevious] = useState(false);
 
-  const blankForm = {
-    permit_date: new Date().toISOString().slice(0, 10),
-    work_description: '', location: '',
-    work_plan_id: '', assessment_run_id: '', tbm_session_id: '',
-  };
-  const [form, setForm] = useState<any>(blankForm);
+  const [form, setForm] = useState<any>(() => makeBlankForm());
 
   const load = async () => {
     if (!projectId) return;
@@ -74,13 +116,86 @@ export default function WorkPermits() {
 
   useEffect(() => { load(); }, [projectId]);
 
+  useEffect(() => {
+    if (!userCompanyId) { setCompanyName(''); return; }
+    (async () => {
+      const { data } = await supabase.from('companies').select('name').eq('id', userCompanyId).maybeSingle();
+      const name = (data as any)?.name || '';
+      setCompanyName(name);
+      setForm((current: any) => ({
+        ...current,
+        contractor_company: current.contractor_company || name,
+        applicant_company: current.applicant_company || name,
+      }));
+    })();
+  }, [userCompanyId]);
+
+  useEffect(() => {
+    if (!showCreate || !projectId) { setPreviousPermits([]); return; }
+    (async () => {
+      setLoadingPrevious(true);
+      const { data } = await supabase
+        .from('work_permits' as any)
+        .select('id, permit_date, permit_type, work_name, work_description, location, contractor_company, personnel_count, work_start_at, work_end_at, form_data')
+        .eq('project_id', projectId)
+        .eq('is_deleted', false)
+        .eq('permit_type', form.permit_type || 'general')
+        .order('permit_date', { ascending: false })
+        .limit(10);
+      setPreviousPermits((data as any[]) || []);
+      setLoadingPrevious(false);
+    })();
+  }, [showCreate, projectId, form.permit_type]);
+
+  const resetForm = () => setForm(makeBlankForm(companyName));
+
+  const applyPreviousPermit = (src: any) => {
+    const cloned = cleanCloneData(src);
+    const location = cloned.work_location || src.location || '';
+    setForm((current: any) => ({
+      ...current,
+      ...cloned,
+      permit_date: current.permit_date,
+      permit_type: current.permit_type,
+      work_plan_id: current.work_plan_id,
+      assessment_run_id: current.assessment_run_id,
+      tbm_session_id: current.tbm_session_id,
+      work_name: cloned.work_name || src.work_name || '',
+      work_description: cloned.work_description || src.work_description || '',
+      location,
+      work_location: location,
+      contractor_company: companyName || cloned.contractor_company || src.contractor_company || '',
+      applicant_company: companyName || cloned.applicant_company || '',
+      personnel_count: cloned.personnel_count || src.personnel_count || '',
+      work_start: toLocalInput(src.work_start_at) || cloned.work_start || '',
+      work_end: toLocalInput(src.work_end_at) || cloned.work_end || '',
+    }));
+    toast({ title: '전회차 내용을 생성 양식에 반영했습니다.' });
+  };
+
   const save = async () => {
     if (!projectId) return toast({ title: '프로젝트를 먼저 선택하세요.', variant: 'destructive' });
     if (!form.work_description.trim()) return toast({ title: '작업 내용을 입력하세요.', variant: 'destructive' });
+    const formData = {
+      ...form,
+      contractor_company: form.contractor_company || companyName,
+      applicant_company: form.applicant_company || form.contractor_company || companyName,
+      work_location: form.work_location || form.location,
+      work_description: form.work_description,
+      work_name: form.work_name || form.work_description,
+      personnel_count: Number(form.personnel_count || 0),
+    };
     const payload: any = {
       permit_date: form.permit_date,
+      permit_type: form.permit_type || 'general',
+      form_data: formData,
+      work_name: formData.work_name,
       work_description: form.work_description,
-      location: form.location,
+      location: formData.work_location || form.location,
+      contractor_company: formData.contractor_company,
+      personnel_count: formData.personnel_count,
+      work_start_at: toDbTimestamp(form.work_start),
+      work_end_at: toDbTimestamp(form.work_end),
       work_plan_id: form.work_plan_id || null,
       assessment_run_id: form.assessment_run_id || null,
       tbm_session_id: form.tbm_session_id || null,
@@ -91,12 +206,12 @@ export default function WorkPermits() {
       toast({ title: '작업허가서가 수정되었습니다.' });
     } else {
       const { error } = await supabase.from('work_permits' as any).insert({
-        ...payload, project_id: projectId, created_by: user?.id, status: '작성중',
+        ...payload, project_id: projectId, company_id: userCompanyId || null, created_by: user?.id, status: '작성중',
       });
       if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
       toast({ title: '작업허가서가 생성되었습니다.' });
     }
-    setShowCreate(false); setEditing(null); setForm(blankForm);
+    setShowCreate(false); setEditing(null); resetForm();
     load();
   };
 
@@ -107,8 +222,16 @@ export default function WorkPermits() {
     setEditing(p);
     setForm({
       permit_date: p.permit_date || new Date().toISOString().slice(0, 10),
+      permit_type: p.permit_type || 'general',
+      work_name: p.work_name || p.form_data?.work_name || '',
       work_description: p.work_description || '',
-      location: p.location || '',
+      location: p.location || p.form_data?.work_location || '',
+      work_location: p.form_data?.work_location || p.location || '',
+      contractor_company: p.contractor_company || p.form_data?.contractor_company || companyName,
+      applicant_company: p.form_data?.applicant_company || p.contractor_company || companyName,
+      personnel_count: p.personnel_count || p.form_data?.personnel_count || '',
+      work_start: p.form_data?.work_start || toLocalInput(p.work_start_at),
+      work_end: p.form_data?.work_end || toLocalInput(p.work_end_at),
       work_plan_id: p.work_plan_id || '',
       assessment_run_id: p.assessment_run_id || '',
       tbm_session_id: p.tbm_session_id || '',
@@ -313,15 +436,48 @@ export default function WorkPermits() {
         ))}
       </div>
 
-      <Dialog open={showCreate || !!editing} onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditing(null); setForm(blankForm); } }}>
+      <Dialog open={showCreate || !!editing} onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditing(null); resetForm(); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>{editing ? '작업허가서 수정' : '작업허가서 생성'}</DialogTitle></DialogHeader>
           <div className="space-y-3">
+            <div>
+              <Label>허가서 종류</Label>
+              <Select value={form.permit_type} onValueChange={(v) => setForm({ ...form, permit_type: v })} disabled={!!editing}>
+                <SelectTrigger><SelectValue placeholder="허가서 종류 선택" /></SelectTrigger>
+                <SelectContent>{PERMIT_TYPES.map((t) => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <div><Label>일자</Label><Input type="date" value={form.permit_date} onChange={(e) => setForm({ ...form, permit_date: e.target.value })} /></div>
               <div><Label>장소</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>
             </div>
+            <div><Label>공사업체</Label><Input value={form.contractor_company} onChange={(e) => setForm({ ...form, contractor_company: e.target.value, applicant_company: e.target.value })} placeholder="작성자 소속 회사 자동 입력" /></div>
+            <div><Label>작업명</Label><Input value={form.work_name} onChange={(e) => setForm({ ...form, work_name: e.target.value })} /></div>
             <div><Label>작업 내용 *</Label><Textarea value={form.work_description} onChange={(e) => setForm({ ...form, work_description: e.target.value })} rows={3} /></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><Label>작업 시작</Label><Input type="datetime-local" value={form.work_start} onChange={(e) => setForm({ ...form, work_start: e.target.value })} /></div>
+              <div><Label>작업 종료</Label><Input type="datetime-local" value={form.work_end} onChange={(e) => setForm({ ...form, work_end: e.target.value })} /></div>
+            </div>
+            <div><Label>작업 인원</Label><Input type="number" value={form.personnel_count} onChange={(e) => setForm({ ...form, personnel_count: e.target.value })} /></div>
+            {!editing && (
+              <div className="rounded border p-3 space-y-2">
+                <div className="flex items-center gap-2 text-sm font-semibold"><Copy className="h-4 w-4" />전회차 복사</div>
+                {loadingPrevious ? (
+                  <p className="text-xs text-muted-foreground">이전 허가서를 불러오는 중...</p>
+                ) : previousPermits.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">같은 종류의 이전 허가서가 없습니다.</p>
+                ) : (
+                  <div className="space-y-1 max-h-36 overflow-y-auto">
+                    {previousPermits.map((p) => (
+                      <button key={p.id} type="button" onClick={() => applyPreviousPermit(p)} className="w-full text-left rounded border px-2 py-1.5 hover:bg-muted text-xs">
+                        <span className="font-medium">{p.work_name || p.form_data?.work_name || p.work_description || '(제목 없음)'}</span>
+                        <span className="text-muted-foreground"> · {p.permit_date} · {p.location || p.form_data?.work_location || '-'}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <Label>위험성평가 회차</Label>
               <Select value={form.assessment_run_id} onValueChange={(v) => setForm({ ...form, assessment_run_id: v })}>

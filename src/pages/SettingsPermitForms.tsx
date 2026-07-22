@@ -155,7 +155,7 @@ export default function SettingsPermitForms() {
     setOriginalPdfUrl(t.original_pdf_url);
     setSignatureSlots(t.signature_slots || []);
     setSelectedRef(null);
-    setTab(t.ai_analyzed_at ? 'builder' : 'ai');
+    setTab('standard');
     setJsonText(JSON.stringify(t.layout_json, null, 2));
     loadVersions(t.id);
   };

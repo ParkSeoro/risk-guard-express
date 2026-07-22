@@ -195,18 +195,14 @@ export default function WorkPermitDetail() {
           return typeOk && hasOverlay;
         });
         setTemplates(usable);
-        // 저장된 template_id가 있으면 사용, 아니면 이 종류의 기본을 자동 선택
+        // 저장된 template_id가 있으면 그 오버레이 사용, 없으면 표준 양식(내장) 기본
         const saved = (permit as any)?.form_template_id;
-        const preferred =
-          usable.find((t) => t.id === saved) ||
-          usable.find((t) => t.permit_type === tab && t.is_default) ||
-          usable.find((t) => t.permit_type === tab) ||
-          usable[0];
-        setTemplateId(preferred?.id || '');
+        const matched = saved ? usable.find((t) => t.id === saved) : null;
+        setTemplateId(matched?.id || STANDARD_FORM_VALUE);
       } catch (e) {
         console.warn('template lookup failed', e);
         setTemplates([]);
-        setTemplateId('');
+        setTemplateId(STANDARD_FORM_VALUE);
       }
     })();
   }, [tab, permit?.id]);

@@ -10,25 +10,17 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Plus, Trash2, ArrowUp, ArrowDown, Send, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import {
+  ENTITY_LABELS as SSOT_ENTITY_LABELS,
+  POSITION_LABELS as SSOT_POSITION_LABELS,
+  APPROVAL_POLICY,
+  buildDefaultSteps,
+  type ApprovalEntityType as SSOTApprovalEntityType,
+} from '@/lib/approvalRules';
 
-export type ApprovalEntityType =
-  | 'assessment_run'
-  | 'work_plan'
-  | 'work_permit'
-  | 'safety_cost'
-  | 'incident'
-  | 'emergency_drill'
-  | 'tbm';
-
-export const ENTITY_LABELS: Record<ApprovalEntityType, string> = {
-  assessment_run: '위험성평가',
-  work_plan: '작업계획서',
-  work_permit: '작업허가서',
-  safety_cost: '산업안전보건관리비',
-  incident: '사고보고',
-  emergency_drill: '비상대피훈련',
-  tbm: 'TBM 일지',
-};
+// Re-export SSOT types/labels so existing imports keep working.
+export type ApprovalEntityType = SSOTApprovalEntityType;
+export const ENTITY_LABELS = SSOT_ENTITY_LABELS;
 
 interface ApproverOption {
   out_user_id: string;
@@ -62,14 +54,7 @@ interface Props {
   title?: string;
 }
 
-const POSITION_LABELS: Record<string, string> = {
-  project_admin: '프로젝트 관리자',
-  safety_manager: '안전관리자',
-  site_manager: '현장대리인',
-  supervisor: '관리감독자',
-  contractor: '시공사',
-  master: '마스터',
-};
+const POSITION_LABELS = SSOT_POSITION_LABELS;
 
 export default function SubmitApprovalDialog({
   open, onOpenChange, entityType, entityId, projectId, submitterCompanyId, onSubmitted, title,
@@ -121,18 +106,8 @@ export default function SubmitApprovalDialog({
           setSteps(normalizeSteps(def.steps));
         } else {
           setSelectedTemplateId('');
-          // 작업허가서 기본 5단계 결재선 (담당자(시공)→담당자(안전)→책임자(소장)→담당자(CM)→담당자(SM))
-          if (entityType === 'work_permit') {
-            setSteps([
-              { label: '담당자(시공)', position: 'contractor_pic', user_id: '', user_name: '', company_id: null, company_name: '' },
-              { label: '담당자(안전)', position: 'safety_pic', user_id: '', user_name: '', company_id: null, company_name: '' },
-              { label: '책임자(소장)', position: 'site_director', user_id: '', user_name: '', company_id: null, company_name: '' },
-              { label: '담당자(CM)', position: 'cm', user_id: '', user_name: '', company_id: null, company_name: '' },
-              { label: '담당자(SM)', position: 'sm', user_id: '', user_name: '', company_id: null, company_name: '' },
-            ]);
-          } else {
-            setSteps([{ label: '검토', position: 'safety_manager', user_id: '', user_name: '', company_id: null, company_name: '' }]);
-          }
+          // 전자결재 SSOT(approvalRules.ts)의 엔티티별 기본 결재선 사용
+          setSteps(buildDefaultSteps(entityType));
         }
 
 

@@ -23,7 +23,7 @@ export const MOBILE_ROUTES: Array<{
   { path: "/m/inspect", label: "안전점검", requires: { kind: "table", name: "safety_inspections", project_scoped: true } },
   { path: "/m/alerts", label: "알림", requires: { kind: "table", name: "notifications" } },
   { path: "/m/actions", label: "조치 관리", requires: { kind: "table", name: "safety_inspection_actions", project_scoped: true } },
-  { path: "/m/approvals", label: "결재함", requires: { kind: "table", name: "approvals" } },
+  { path: "/m/approvals", label: "전자결재", requires: { kind: "table", name: "approvals" } },
   { path: "/m/workers", label: "근로자 QR", requires: { kind: "table", name: "workers", project_scoped: true } },
   { path: "/m/risk-assessment", label: "위험성평가", requires: { kind: "table", name: "assessment_runs", project_scoped: true } },
   { path: "/m/work-plans", label: "작업계획", requires: { kind: "table", name: "work_plans", project_scoped: true } },

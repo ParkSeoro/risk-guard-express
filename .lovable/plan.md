@@ -1,58 +1,68 @@
-## 목표
-작업허가서 기능을 데스크탑/모바일에서 같은 데이터 기준으로 보이게 하고, 승인 상태/공사업체/연장란/전회차 복사 흐름을 현장 사용 방식에 맞게 정리합니다.
+## 1) 사용자 3인 소속/이메일 정정
 
-## 확인된 현재 문제
-- 모바일 작업허가서 목록은 `work_permits` 조회 시 `is_deleted = false` 필터가 없어 삭제된 허가서가 표시될 수 있습니다.
-- 데스크탑 생성 화면과 상세 작성 화면이 서로 다른 필드(`location` vs `work_location`, `contractor_company` vs `form_data.contractor_company` 등)를 사용하고 있어 내용 불일치가 발생할 수 있습니다.
-- 상세 작성 화면은 승인 완료 상태에서도 `결재상신` 버튼을 항상 보여줍니다.
-- 표준 허가서의 `작업허가 연장` 칸은 현재 datetime 입력으로 되어 있어, 수기 작성용 “년 월 일 시 분” 양식과 맞지 않습니다.
-- 전회차 복사는 상세 작성 화면에서 기존 허가서에 덮어쓰는 방식인데, 사용자가 말한 흐름은 “허가서 생성 시 이전 내용을 선택해 새 허가서 초안에 반영”입니다.
+현재 DB 확인 결과:
 
-## 구현 계획
+- 박서로: 소속 `에어리퀴드 코리아` (이미 반영, 표기만 `에어리퀴드코리아`로 통일)
+- 정재선, 박종훈: 소속 `디아이지에어가스` → `에어리퀴드코리아`로 변경
+- 세 명 모두 이메일 도메인 `@dig-airgas.com` → `@airliquide.com`
 
-### 1. 모바일/데스크탑 작업허가서 목록 데이터 기준 통일
-- `MobilePermits.tsx` 조회 조건에 `is_deleted = false`를 추가합니다.
-- 모바일 목록/상세 표시 필드를 데스크탑과 동일한 우선순위로 정리합니다.
-  - 작업명: `work_name` → `form_data.work_name` → `work_description`
-  - 장소: `location` → `work_location` → `form_data.work_location`
-  - 업체: `contractor_company` → `form_data.contractor_company`
-- 모바일에서 승인/반려 가능한 대상은 실제 결재 대기 건 또는 승인 전 상태만 보이도록 정리합니다.
+작업
 
-### 2. 승인 완료 허가서에서 결재상신 제거
-- `WorkPermitDetail.tsx`에서 `승인`, `승인완료`, `approved` 상태면 `결재상신` 버튼을 숨기거나 비활성화합니다.
-- `WorkPermits.tsx` 목록에서도 승인 완료 문서에는 `상신`, `결재상신(결재선 지정)` 액션이 나오지 않도록 상태 조건을 명확히 합니다.
+- `profiles.company`를 3인 모두 `에어리퀴드코리아`로 UPDATE
+- 필요 시 `company_id`를 기존 `에어리퀴드`(companies 테이블) 레코드로 매핑
+- `auth.users.email`을 `local-part@airliquide.com`으로 UPDATE (Admin API 또는 마이그레이션 SQL로 관리자 권한 변경)
+- 로그인 이메일 변경 사실을 본인에게 안내(별도 알림 없이 완료 토스트만)
 
-### 3. 작업허가 연장칸을 수기 작성용으로 변경
-- `DigPermitForm.tsx`의 `작업허가 연장` 영역에서 datetime 입력을 제거합니다.
-- 화면/인쇄 모두 다음처럼 빈 칸만 표시되게 변경합니다.
-  - `____ 년 ____ 월 ____ 일 ____ 시 ____ 분 까지`
-  - `작업허가 연장 승인` 서명칸도 자동 전자결재 서명 대신 수기 서명/확인용 빈 칸 형태로 표시합니다.
-- 기존 저장 데이터(`work_extend_until`)는 더 이상 입력 UI에서 사용하지 않되, 과거 데이터가 있더라도 새 수기 양식 표시를 우선합니다.
+## 2) "결재함" → "전자결재" 리네이밍 (UI만)
 
-### 4. 공사업체 자동 매핑 강화
-- 허가서 생성 시 작성자의 `company_id` 기준으로 회사명을 조회해 `contractor_company`와 `form_data.contractor_company`에 자동 저장합니다.
-- 상세 작성 화면 로드 시에도 공사업체가 비어 있으면 작성자 소속 회사명으로 자동 채움합니다.
-- 밀폐/화기 양식의 신청인 소속(`applicant_company`)도 같은 회사명으로 기본값을 넣어 사용자가 다시 입력하지 않게 합니다.
+교체 대상(라벨/문자열):
 
-### 5. 전회차 복사를 생성 흐름으로 이동
-- 허가서 생성 다이얼로그에 “전회차 복사” 선택 영역을 추가합니다.
-- 같은 프로젝트, 같은 허가서 종류, 삭제되지 않은 최근 허가서를 불러와 생성 전에 선택할 수 있게 합니다.
-- 선택 시 이전 허가서의 작업명/작업내용/장소/인원/체크 항목/form_data만 새 생성 폼에 반영합니다.
-- 서명, 결재 상태, 승인일, 검토일, 게이트 체크, 유효기간, 문서번호성 데이터는 복사하지 않습니다.
-- 상세 작성 화면의 “전회차 복제” 버튼은 혼란을 줄이기 위해 제거하거나 생성 화면으로 안내되게 정리합니다.
+- `src/components/AppSidebar.tsx` (사이드바 메뉴)
+- `src/pages/Approvals.tsx` (헤더 h1)
+- `src/pages/MobileApprovals.tsx` (헤더/주석)
+- `src/pages/MobileHome.tsx` (카드 라벨)
+- `src/pages/PermissionTest.tsx`
+- `src/pages/ConsistencyAudit.tsx`
+- `src/lib/mobileMenuPrefs.ts`
+- `src/lib/helpDictionary.ts`
+- `src/lib/systemTest/mobileScenarios.ts`
 
-### 6. 저장 시 필드 동기화
-- 상세 작성 화면 저장 시 `form_data`뿐 아니라 목록/모바일에서 쓰는 대표 컬럼도 함께 갱신합니다.
-  - `work_name`
-  - `work_description`
-  - `location`
-  - `contractor_company`
-  - `personnel_count`
-  - `work_start_at`, `work_end_at` 가능 범위 내 동기화
-- 생성 시에도 같은 대표 컬럼과 `form_data`를 같이 저장해 모바일/데스크탑 표시가 어긋나지 않게 합니다.
+라우트/코드 심볼(`/approvals`, `MobileApprovals` 등)은 그대로 유지 — 표시 문자열만 변경.
 
-### 7. 검증
-- 코드 레벨로 모바일/데스크탑 목록 조회 조건이 일치하는지 확인합니다.
-- 허가서 생성 → 전회차 복사 선택 → 상세 작성 → 저장 → 모바일 목록 표시 흐름을 브라우저에서 확인합니다.
-- 승인 완료 상태 허가서에서 결재상신 버튼이 사라지는지 확인합니다.
-- 표준 허가서 인쇄 화면에서 연장칸이 수기 작성 형태로 유지되는지 확인합니다.
+## 3) 전자결재 규칙 SSOT 정립
+
+현재 상태 요약(파악 결과)
+
+- 규칙 자체는 이미 상당 부분 공용화되어 있음: 모든 모듈이 `SubmitApprovalDialog` + `approval_route_templates` + RPC(`submit_approval`, `act_on_approval`, `get_eligible_approvers`, `get_my_pending_entity_approvals`)를 공유.
+- 다만 다음 3가지가 흩어져 있어 “규칙이 모듈마다 다르다”는 인상이 남음:
+  1. **기본 결재선(default steps)** 이 `SubmitApprovalDialog` 내부에 하드코딩 (작업허가서만 5단계, 나머지는 `검토` 1단계).
+  2. **엔티티 라벨/아이콘** 이 `ENTITY_LABELS`에만 있고, 각 모듈에서 별도 문구를 다시 씀.
+  3. **결재선 템플릿 관리(SettingsApprovalRoutes)** 는 있지만, "전자결재 모듈에서 전체 규칙(엔티티 목록/기본 단계/역할 라벨/재상신·위임 정책)을 한 곳에서 볼 수 있는 허브 화면"이 없음.
+
+리팩토링 계획
+
+- **신규 SSOT 파일: `src/lib/approvalRules.ts**`
+  - `ENTITY_LABELS`, `POSITION_LABELS`, `DEFAULT_STEPS_BY_ENTITY`(작업허가서 5단계 포함 전 엔티티), `RESUBMIT_POLICY`(사유 필수 여부), `DELEGATE_POLICY`를 단일 export.
+  - `SubmitApprovalDialog`, `SettingsApprovalRoutes`, `MobileApprovals`, `Approvals`, `WorkPermitDetail` 등이 모두 이 파일만 참조하도록 수정.
+  - `SubmitApprovalDialog` 내부 하드코딩(작업허가서 5단계 등) 제거 → `DEFAULT_STEPS_BY_ENTITY[entityType]` 사용.
+- **전자결재 허브 화면 강화: `/approvals` (기존 Approvals.tsx)**
+  - 상단에 탭 2개: `결재 대기함` / `규칙(전자결재 정책)`.
+  - “규칙” 탭에 다음을 노출/편집(Master/PA만 편집):
+    - 엔티티별 기본 결재선(위 SSOT 값, project 단위 override 가능 → `approval_route_templates`의 project-default 로 저장)
+    - 재상신 시 사유 필수 여부, 최종 승인자 알림 정책, 위임 허용 여부(existing `delegate_approval` RPC와 연동)
+    - `SettingsApprovalRoutes` 로 이동하는 링크 유지
+- **각 모듈 정리**
+  - 작업허가서/작업계획서/위험성평가/안전보건관리비/사고/훈련/TBM 모두 “기본 결재선/사유/알림/위임”을 자체 로직으로 재정의하지 않도록 확인, 발견 시 SSOT 호출로 치환.
+
+## 확인 필요 (1가지만)
+
+`에어리퀴드코리아` 명칭 통일 시, `companies` 테이블의 기존 `에어리퀴드` 레코드 이름도 `에어리퀴드코리아`로 변경할까요, 아니면 `profiles.company` 텍스트만 `에어리퀴드코리아`로 갱신하고 회사 매핑은 그대로 둘까요? (동일 이름 회사 레코드가 2건 존재)
+
+`companies` 테이블의 기존 `에어리퀴드` 레코드 이름도 `에어리퀴드코리아`로 변경
+
+## 기술 세부
+
+- 이메일 변경은 `auth.admin.updateUserById`를 서버(Edge Function `admin-update-email`)를 통해 수행하거나, 임시로 마이그레이션 내 `UPDATE auth.users SET email = ...`(관리자 SQL) 사용. 후자를 우선 채택.
+- `profiles` 갱신은 `supabase--insert` 툴로 UPDATE 실행.
+- 리브랜드는 문자열 치환 위주라 로직/타입 영향 없음.
+- SSOT 리팩토링은 신규 파일 1개, 기존 파일 ~6개 수정.

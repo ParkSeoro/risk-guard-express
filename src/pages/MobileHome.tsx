@@ -270,7 +270,7 @@ const TILE_DEFS: Record<MobileTileKey, { icon: any; label: string; sub: string; 
   permits: { icon: FileCheck2, label: "허가서 결재", sub: "대기 결재", to: "/m/permits" },
   actions: { icon: Wrench, label: "조치 관리", sub: "진행중/완료", to: "/m/actions" },
   alerts: { icon: Bell, label: "알림", sub: "미확인", to: "/m/alerts" },
-  approvals: { icon: FileCheck2, label: "결재함", sub: "위험성평가", to: "/m/approvals" },
+  approvals: { icon: FileCheck2, label: "전자결재", sub: "결재 대기", to: "/m/approvals" },
   risk: { icon: ShieldAlert, label: "위험성평가", sub: "요약 보기", to: "/m/risk-assessment" },
   "work-plans": { icon: ClipboardList, label: "작업계획", sub: "목록/상태", to: "/m/work-plans" },
   workers: { icon: QrCode, label: "근로자 QR", sub: "발급/조회", to: "/m/workers" },

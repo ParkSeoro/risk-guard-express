@@ -101,7 +101,7 @@ export const HELP: Record<string, HelpEntry> = {
     ],
   },
   "/approvals": {
-    title: "결재함",
+    title: "전자결재",
     steps: [
       "결재 대기/진행/완료 문서 일괄 조회",
       "결재선은 직책 기반 5단계 순차 진행",

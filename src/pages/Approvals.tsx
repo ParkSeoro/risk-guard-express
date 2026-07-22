@@ -290,7 +290,7 @@ const Approvals = () => {
     <div className="space-y-4 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><FileCheck className="h-6 w-6" /> 결재함</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><FileCheck className="h-6 w-6" /> 전자결재</h1>
           <p className="text-sm text-muted-foreground mt-1">직책 기반 순차 결재: 작성(관리감독자) → 안전관리자 검토 → 현장대리인 확인 → 최종승인</p>
         </div>
         <Select value={selectedProject} onValueChange={setSelectedProject}>

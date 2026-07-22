@@ -341,6 +341,9 @@ export default function WorkPermitDetail() {
           <Badge variant="outline">{permit.permit_date}</Badge>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button size="sm" variant="outline" onClick={() => setCloneOpen(true)} disabled={isApproved} title={isApproved ? '승인된 문서는 복제 대상이 될 뿐, 이 문서에는 덮어쓸 수 없습니다.' : '같은 종류의 전회차 허가서 내용을 복사합니다.'}>
+            <Copy className="h-4 w-4 mr-1" />전회차 복제
+          </Button>
           <Button size="sm" variant="outline" onClick={save} disabled={saving}><Save className="h-4 w-4 mr-1" />저장</Button>
           <Button size="sm" variant="outline" onClick={() => setApprovalOpen(true)}><ShieldCheck className="h-4 w-4 mr-1" />결재상신</Button>
           <Button

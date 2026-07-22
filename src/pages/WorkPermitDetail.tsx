@@ -59,6 +59,8 @@ export default function WorkPermitDetail() {
   const [saving, setSaving] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
   const [templateId, setTemplateId] = useState<string>(STANDARD_FORM_VALUE);
+  const [standardStyle, setStandardStyle] = useState<Partial<StandardStyle> | null>(null);
+  const [standardLabels, setStandardLabels] = useState<Partial<StandardLabels> | null>(null);
   const [autoCtx, setAutoCtx] = useState<any>({});
   const [cloneOpen, setCloneOpen] = useState(false);
   const template = useMemo(

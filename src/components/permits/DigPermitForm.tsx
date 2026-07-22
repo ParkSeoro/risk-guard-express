@@ -42,7 +42,13 @@ const PermitInput = React.memo(function PermitInput({
       className={`w-full text-xs bg-transparent outline-none px-1 ${className}`}
       value={local}
       placeholder={placeholder}
-      onChange={(e) => setLocal(e.target.value)}
+      onChange={(e) => {
+        const v = e.target.value;
+        setLocal(v);
+        // 한글 IME composition 중에는 부모 state 흔들지 않음 → 나머지는 실시간 반영해서
+        // 저장 시 최신값 손실 방지
+        if (!composingRef.current) onCommit(v);
+      }}
       onCompositionStart={() => { composingRef.current = true; }}
       onCompositionEnd={(e) => {
         composingRef.current = false;
@@ -56,6 +62,7 @@ const PermitInput = React.memo(function PermitInput({
     />
   );
 });
+
 
 /** readOnly 상태를 하위 PermitInput 로 공유하기 위한 컨텍스트 (매 호출 prop-drilling 방지) */
 const PermitFormReadOnlyCtx = React.createContext<boolean>(false);

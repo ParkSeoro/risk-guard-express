@@ -547,7 +547,7 @@ export default function DigPermitForm({
               </tr>
               <tr>
                 <th className="hd">작업허가 연장</th>
-                <td colSpan={3}>{readOnly || printMode ? '' : <input type="datetime-local" className="text-xs border-0 bg-transparent" />} 까지</td>
+                <td colSpan={3}>{readOnly || printMode ? (data.work_extend_until ? new Date(data.work_extend_until).toLocaleString('ko-KR') : '') : <input type="datetime-local" className="text-xs border-0 bg-transparent" value={data.work_extend_until || ''} onChange={(e) => update({ work_extend_until: e.target.value })} />} 까지</td>
                 <th className="hd">승인</th>
                 <td><SigCell k="site_director" label="연장 승인" /></td>
               </tr>

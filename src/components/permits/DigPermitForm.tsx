@@ -535,7 +535,7 @@ export default function DigPermitForm({
               </tr>
               <tr>
                 <th className="hd">작업완료 확인<br/>(정리정돈, 서류회수)</th>
-                <td>시 분</td>
+                <td><Inp value={data.work_complete_time} onChangeText={(v: string) => update({ work_complete_time: v })} placeholder="시 분" /></td>
                 <th className="hd">현장감독자</th>
                 <td className="w-[120px]"><SigCell k="site_supervisor" /></td>
                 <th className="hd">승인자</th>

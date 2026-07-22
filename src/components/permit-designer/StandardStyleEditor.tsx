@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { RotateCcw, ImagePlus, X } from 'lucide-react';
 import DigPermitForm, { PermitFormData, PermitSignatures } from '@/components/permits/DigPermitForm';
+import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
 import {
   DEFAULT_STANDARD_STYLE, DEFAULT_STANDARD_LABELS, DEFAULT_TYPE_STYLE,
   mergeStandardStyle, mergeStandardLabels, mergeTypeStyle,
@@ -37,6 +38,15 @@ const DEMO_DATA: PermitFormData = {
   applicant_name: '홍길동',
 };
 const DEMO_SIGS: PermitSignatures = {};
+const APPROVED_DEMO_SIGS: PermitSignatures = {
+  contractor_pic: { name: '김시공', signature: '', signed_at: '2026-07-21T09:00:00.000Z' },
+  safety_pic: { name: '박안전', signature: '', signed_at: '2026-07-21T10:00:00.000Z' },
+  site_director: { name: '이소장', signature: '', signed_at: '2026-07-22T08:30:00.000Z' },
+  cm: { name: '최CM', signature: '', signed_at: '2026-07-22T09:10:00.000Z' },
+  sm: { name: '정SM', signature: '', signed_at: '2026-07-22T09:30:00.000Z' },
+  approved_at: '2026-07-22T09:30:00.000Z',
+  reviewed_at: '2026-07-21T09:30:00.000Z',
+};
 
 export default function StandardStyleEditor({ style, labels, onChange }: Props) {
   const merged = useMemo(() => mergeStandardStyle(style || null), [style]);
@@ -208,18 +218,18 @@ export default function StandardStyleEditor({ style, labels, onChange }: Props) 
           </div>
         </CardHeader>
         <CardContent className="overflow-auto max-h-[80vh] p-2 bg-muted/30">
-          <div style={previewMode === 'print' ? { width: '210mm', minHeight: '297mm', margin: '0 auto', background: '#fff', padding: '12mm', boxShadow: '0 0 8px rgba(0,0,0,0.15)' } : { background: '#fff', padding: 8 }}>
+          <StandardPermitSheet mode={previewMode}>
             <DigPermitForm
               permitType={activeType as any}
               data={DEMO_DATA}
-              signatures={DEMO_SIGS}
+              signatures={previewMode === 'print' ? APPROVED_DEMO_SIGS : DEMO_SIGS}
               readOnly
               printMode={previewMode === 'print'}
               projectName="샘플 프로젝트"
               standardStyle={merged}
               standardLabels={mergedLabels}
             />
-          </div>
+          </StandardPermitSheet>
         </CardContent>
       </Card>
     </div>

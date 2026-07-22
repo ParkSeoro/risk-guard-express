@@ -42,6 +42,36 @@ const POSITION_TO_SIG: Record<string, keyof PermitSignatures> = {
   // 협조(cooperator)는 별도 서명칸 없음 — 표시는 결재선 화면에서 처리
 };
 
+// approval_lines.role / position 문자열의 다양한 별칭을 SF003 서명 슬롯 키로 매핑
+const ROLE_ALIAS_TO_SIG: Record<string, keyof PermitSignatures> = {
+  // 시공 담당자
+  contractor_pic: 'contractor_pic', applicant: 'contractor_pic', requester: 'contractor_pic',
+  '담당자(시공)': 'contractor_pic', '시공담당': 'contractor_pic', '시공': 'contractor_pic',
+  // CM
+  cm: 'cm', construction_manager: 'cm', '담당자(CM)': 'cm', 'CM': 'cm',
+  // 안전 담당자
+  safety_pic: 'safety_pic', safety_manager: 'safety_pic', safety: 'safety_pic',
+  '담당자(안전)': 'safety_pic', '안전담당': 'safety_pic', '안전관리자': 'safety_pic',
+  // SM
+  sm: 'sm', safety_management: 'sm', '담당자(SM)': 'sm', 'SM': 'sm',
+  // 소장
+  site_director: 'site_director', site_manager: 'site_director', director: 'site_director',
+  '책임자(소장)': 'site_director', '소장': 'site_director', '현장소장': 'site_director',
+  // 현장감독자
+  site_supervisor: 'site_supervisor', supervisor: 'site_supervisor', '현장감독자': 'site_supervisor',
+};
+
+function resolveSigKey(role?: string | null, position?: string | null): keyof PermitSignatures | null {
+  const keys = [role, position].filter(Boolean) as string[];
+  for (const k of keys) {
+    if (ROLE_ALIAS_TO_SIG[k]) return ROLE_ALIAS_TO_SIG[k];
+    const lower = k.toLowerCase();
+    if (ROLE_ALIAS_TO_SIG[lower]) return ROLE_ALIAS_TO_SIG[lower];
+  }
+  return null;
+}
+
+
 export default function WorkPermitDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();

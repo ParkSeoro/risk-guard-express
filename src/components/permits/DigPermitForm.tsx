@@ -286,10 +286,9 @@ export default function DigPermitForm({
       className={`dig-permit-form ${printMode ? 'print-mode' : ''} bg-white text-foreground text-xs`}
       style={{
         fontFamily: '"Malgun Gothic","Apple SD Gothic Neo",sans-serif',
-        // @ts-expect-error CSS custom properties
-        '--dpf-body': `${style.bodyFontPt}pt`,
-        '--dpf-title': `${style.titleFontPt}pt`,
-        '--dpf-small': `${style.smallFontPt}pt`,
+        ['--dpf-body' as any]: `${style.bodyFontPt}pt`,
+        ['--dpf-title' as any]: `${style.titleFontPt}pt`,
+        ['--dpf-small' as any]: `${style.smallFontPt}pt`,
       } as React.CSSProperties}
     >
       <style>{`

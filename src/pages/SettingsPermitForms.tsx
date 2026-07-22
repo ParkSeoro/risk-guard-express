@@ -31,6 +31,8 @@ import OverlayEditor from '@/components/permit-designer/OverlayEditor';
 import AIAnalysisPanel from '@/components/permit-designer/AIAnalysisPanel';
 import SignatureSlotMapper from '@/components/permit-designer/SignatureSlotMapper';
 import StandardStyleEditor from '@/components/permit-designer/StandardStyleEditor';
+import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
+import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
 import { FormLayout, PrintOverlay, SignatureSlot, EMPTY_LAYOUT, EMPTY_OVERLAY, newSection } from '@/lib/permitFormTypes';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
 
@@ -58,6 +60,26 @@ const PERMIT_TYPE_OPTIONS = [
   { value: 'hot_work', label: '화기' },
   { value: 'excavation', label: '굴착·중장비' },
 ];
+
+const STANDARD_PREVIEW_DATA: PermitFormData = {
+  contractor_company: '(주)샘플건설',
+  work_name: '배관 용접 작업',
+  work_description: '냉각탑 상부 배관 T-이음 용접',
+  work_location: '냉각탑 3F 배관 랙',
+  personnel_count: 4,
+  applicant_company: '(주)샘플건설',
+  applicant_name: '홍길동',
+};
+
+const STANDARD_PREVIEW_SIGS: PermitSignatures = {
+  contractor_pic: { name: '김시공', signature: '', signed_at: '2026-07-21T09:00:00.000Z' },
+  safety_pic: { name: '박안전', signature: '', signed_at: '2026-07-21T10:00:00.000Z' },
+  site_director: { name: '이소장', signature: '', signed_at: '2026-07-22T08:30:00.000Z' },
+  cm: { name: '최CM', signature: '', signed_at: '2026-07-22T09:10:00.000Z' },
+  sm: { name: '정SM', signature: '', signed_at: '2026-07-22T09:30:00.000Z' },
+  approved_at: '2026-07-22T09:30:00.000Z',
+  reviewed_at: '2026-07-21T09:30:00.000Z',
+};
 
 type SelectedRef =
   | { kind: 'section'; sectionId: string }
@@ -440,7 +462,7 @@ export default function SettingsPermitForms() {
                 <TabsTrigger value="overlay"><FileText className="h-4 w-4 mr-1" />원본 PDF 오버레이</TabsTrigger>
                 <TabsTrigger value="ai"><Sparkles className="h-4 w-4 mr-1" />AI 자동 분석</TabsTrigger>
                 <TabsTrigger value="builder"><MousePointer2 className="h-4 w-4 mr-1" />자유 빌더</TabsTrigger>
-                <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />자유 빌더 미리보기</TabsTrigger>
+                <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />표준 미리보기</TabsTrigger>
               </TabsList>
 
               <TabsContent value="standard">
@@ -532,7 +554,23 @@ export default function SettingsPermitForms() {
               </TabsContent>
 
               <TabsContent value="preview">
-                <LivePreview layout={layout} />
+                <Card>
+                  <CardHeader className="py-2"><CardTitle className="text-sm">표준양식 스타일 기준 미리보기</CardTitle></CardHeader>
+                  <CardContent className="p-2 bg-muted/30 overflow-auto max-h-[80vh]">
+                    <StandardPermitSheet mode="print">
+                      <DigPermitForm
+                        permitType={(selected.permit_type || 'general') as PermitType}
+                        data={STANDARD_PREVIEW_DATA}
+                        signatures={STANDARD_PREVIEW_SIGS}
+                        readOnly
+                        printMode
+                        projectName="샘플 프로젝트"
+                        standardStyle={(layout as any).standard_style || null}
+                        standardLabels={(layout as any).standard_labels || null}
+                      />
+                    </StandardPermitSheet>
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               <TabsContent value="overlay">

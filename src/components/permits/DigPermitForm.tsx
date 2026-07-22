@@ -514,15 +514,16 @@ export default function DigPermitForm({
 
       {permitType === 'confined_space' && (
         <>
-          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {docNo}</div></div>
+          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {effectiveDocNo}</div></div>
           <h2 className="title">밀폐공간 작업허가서</h2>
           <table>
+            <ColGroup widths={applicantCols} />
             <tbody>
               <tr>
-                <th className="hd w-[100px]">신청인</th>
+                <th className="hd">신청인</th>
                 <td>소속(업체명) : <Inp value={data.applicant_company} onChangeText={(v: string) => update({ applicant_company: v })} /></td>
                 <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
-                <td className="w-[120px]"><SigCell k="applicant" /></td>
+                <td><SigCell k="applicant" /></td>
               </tr>
               <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
               <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>
@@ -584,15 +585,16 @@ export default function DigPermitForm({
 
       {permitType === 'hot_work' && (
         <>
-          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {docNo}</div></div>
+          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {effectiveDocNo}</div></div>
           <h2 className="title">화기작업허가서</h2>
           <table>
+            <ColGroup widths={applicantCols} />
             <tbody>
               <tr>
-                <th className="hd w-[100px]">신청인</th>
+                <th className="hd">신청인</th>
                 <td>소속 : <Inp value={data.applicant_company} onChangeText={(v: string) => update({ applicant_company: v })} /></td>
                 <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
-                <td className="w-[120px]"><SigCell k="applicant" /></td>
+                <td><SigCell k="applicant" /></td>
               </tr>
               <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
               <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>
@@ -639,15 +641,16 @@ export default function DigPermitForm({
 
       {permitType === 'excavation' && (
         <>
-          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {docNo}</div></div>
+          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {effectiveDocNo}</div></div>
           <h2 className="title">굴착·중장비 작업허가서</h2>
           <table>
+            <ColGroup widths={applicantCols} />
             <tbody>
               <tr>
-                <th className="hd w-[100px]">신청인</th>
+                <th className="hd">신청인</th>
                 <td>소속 : <Inp value={data.applicant_company} onChangeText={(v: string) => update({ applicant_company: v })} /></td>
                 <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
-                <td className="w-[120px]"><SigCell k="applicant" /></td>
+                <td><SigCell k="applicant" /></td>
               </tr>
               <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
               <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>

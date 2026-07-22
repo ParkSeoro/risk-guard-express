@@ -206,6 +206,22 @@ const Box = ({ checked }: { checked?: boolean }) => (
   </span>
 );
 
+const ManualDateTimeBlank = () => (
+  <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px]">
+    <span className="inline-block min-w-8 border-b border-foreground/80">&nbsp;</span>년
+    <span className="inline-block min-w-6 border-b border-foreground/80">&nbsp;</span>월
+    <span className="inline-block min-w-6 border-b border-foreground/80">&nbsp;</span>일
+    <span className="inline-block min-w-6 border-b border-foreground/80">&nbsp;</span>시
+    <span className="inline-block min-w-6 border-b border-foreground/80">&nbsp;</span>분
+  </span>
+);
+
+const ManualSignatureBlank = () => (
+  <div className="min-h-7 flex items-end justify-center text-[10px] text-muted-foreground">
+    <span className="inline-block w-20 border-b border-foreground/80">&nbsp;</span>
+  </div>
+);
+
 /** 표준 스타일 → <colgroup> 렌더 */
 function ColGroup({ widths }: { widths?: (number | 'auto')[] }) {
   if (!widths || widths.length === 0) return null;
@@ -547,9 +563,9 @@ export default function DigPermitForm({
               </tr>
               <tr>
                 <th className="hd">작업허가 연장</th>
-                <td colSpan={3}>{readOnly || printMode ? (data.work_extend_until ? new Date(data.work_extend_until).toLocaleString('ko-KR') : '') : <input type="datetime-local" className="text-xs border-0 bg-transparent" value={data.work_extend_until || ''} onChange={(e) => update({ work_extend_until: e.target.value })} />} 까지</td>
-                <th className="hd">승인</th>
-                <td><SigCell k="site_director" label="연장 승인" /></td>
+                <td colSpan={3}><ManualDateTimeBlank /> 까지</td>
+                <th className="hd">작업허가<br/>연장 승인</th>
+                <td><ManualSignatureBlank /></td>
               </tr>
             </tbody>
           </table>

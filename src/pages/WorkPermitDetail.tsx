@@ -13,13 +13,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Copy } from 'lucide-react';
+import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck } from 'lucide-react';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
 import OverlayFillForm from '@/components/permits/OverlayFillForm';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
-import ClonePreviousPermitDialog from '@/components/permits/ClonePreviousPermitDialog';
 import { useProjectAccess } from '@/hooks/useProjectAccess';
 import { printOverlay } from '@/lib/permitOverlayPrint';
 
@@ -88,6 +87,20 @@ function resolveSigKey(role?: string | null, position?: string | null): keyof Pe
   return null;
 }
 
+function toDbTimestamp(value?: string | null) {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function toLocalInput(value?: string | null) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 
 export default function WorkPermitDetail() {
   const { id } = useParams<{ id: string }>();
@@ -109,7 +122,6 @@ export default function WorkPermitDetail() {
   const [standardStyle, setStandardStyle] = useState<Partial<StandardStyle> | null>(null);
   const [standardLabels, setStandardLabels] = useState<Partial<StandardLabels> | null>(null);
   const [autoCtx, setAutoCtx] = useState<any>({});
-  const [cloneOpen, setCloneOpen] = useState(false);
   const template = useMemo(
     () => (templateId && templateId !== STANDARD_FORM_VALUE ? templates.find((t) => t.id === templateId) || null : null),
     [templates, templateId]
@@ -121,7 +133,17 @@ export default function WorkPermitDetail() {
     if (error || !p) { toast({ title: '허가서를 불러오지 못했습니다.', variant: 'destructive' }); return; }
     setPermit(p);
     setTab(((p as any).permit_type || 'general') as PermitType);
-    setData((p as any).form_data || {});
+    setData({
+      ...((p as any).form_data || {}),
+      contractor_company: ((p as any).form_data || {}).contractor_company || (p as any).contractor_company || '',
+      applicant_company: ((p as any).form_data || {}).applicant_company || (p as any).contractor_company || '',
+      work_name: ((p as any).form_data || {}).work_name || (p as any).work_name || '',
+      work_description: ((p as any).form_data || {}).work_description || (p as any).work_description || '',
+      work_location: ((p as any).form_data || {}).work_location || (p as any).location || '',
+      personnel_count: ((p as any).form_data || {}).personnel_count ?? (p as any).personnel_count ?? 0,
+      work_start: ((p as any).form_data || {}).work_start || toLocalInput((p as any).work_start_at),
+      work_end: ((p as any).form_data || {}).work_end || toLocalInput((p as any).work_end_at),
+    });
     const baseSig: PermitSignatures = (p as any).signatures || {};
 
     // 프로젝트명
@@ -227,6 +249,14 @@ export default function WorkPermitDetail() {
           work_period: (p as any).work_period,
         },
       });
+      const companyName = (comp as any)?.name || '';
+      if (companyName) {
+        setData((current) => ({
+          ...current,
+          contractor_company: current.contractor_company || companyName,
+          applicant_company: current.applicant_company || companyName,
+        }));
+      }
     } catch (e) { console.warn('autoCtx build failed', e); }
   };
 
@@ -273,13 +303,24 @@ export default function WorkPermitDetail() {
   const save = async () => {
     if (!permit) return;
     setSaving(true);
+    const syncedData: PermitFormData = { ...data };
+    const workDescription = syncedData.work_description || permit.work_description || '';
+    const workLocation = syncedData.work_location || permit.location || permit.work_location || '';
+    const contractorCompany = syncedData.contractor_company || permit.contractor_company || '';
     const { error } = await supabase.from('work_permits' as any).update({
       permit_type: tab,
-      form_data: data,
+      form_data: syncedData,
       signatures,
       linked_assessment_run_ids: linkedRuns.map(r => r.id),
       form_version: 'SF003-Rev1',
       form_template_id: templateId && templateId !== STANDARD_FORM_VALUE ? templateId : null,
+      work_name: syncedData.work_name || permit.work_name || workDescription,
+      work_description: workDescription,
+      location: workLocation,
+      contractor_company: contractorCompany,
+      personnel_count: Number(syncedData.personnel_count || permit.personnel_count || 0),
+      work_start_at: toDbTimestamp(syncedData.work_start) || permit.work_start_at || null,
+      work_end_at: toDbTimestamp(syncedData.work_end) || permit.work_end_at || null,
     }).eq('id', permit.id);
     setSaving(false);
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
@@ -392,11 +433,10 @@ export default function WorkPermitDetail() {
           <Badge variant="outline">{permit.permit_date}</Badge>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button size="sm" variant="outline" onClick={() => setCloneOpen(true)} disabled={isApproved} title={isApproved ? '승인된 문서는 복제 대상이 될 뿐, 이 문서에는 덮어쓸 수 없습니다.' : '같은 종류의 전회차 허가서 내용을 복사합니다.'}>
-            <Copy className="h-4 w-4 mr-1" />전회차 복제
-          </Button>
           <Button size="sm" variant="outline" onClick={save} disabled={saving}><Save className="h-4 w-4 mr-1" />저장</Button>
-          <Button size="sm" variant="outline" onClick={() => setApprovalOpen(true)}><ShieldCheck className="h-4 w-4 mr-1" />결재상신</Button>
+          {!isApproved && (
+            <Button size="sm" variant="outline" onClick={() => setApprovalOpen(true)}><ShieldCheck className="h-4 w-4 mr-1" />결재상신</Button>
+          )}
           <Button
             size="sm"
             onClick={print}
@@ -490,14 +530,6 @@ export default function WorkPermitDetail() {
           onSubmitted={() => { setApprovalOpen(false); load(); }}
         />
       )}
-      <ClonePreviousPermitDialog
-        open={cloneOpen}
-        onOpenChange={setCloneOpen}
-        projectId={permit.project_id}
-        permitType={tab}
-        currentPermitId={permit.id}
-        onCloned={load}
-      />
     </div>
   );
 }

@@ -7108,6 +7108,7 @@ export type Database = {
           approved_by: string | null
           approved_by_name: string
           assessment_run_id: string | null
+          company_id: string | null
           contractor_company: string
           created_at: string
           created_by: string | null
@@ -7157,6 +7158,7 @@ export type Database = {
           approved_by?: string | null
           approved_by_name?: string
           assessment_run_id?: string | null
+          company_id?: string | null
           contractor_company?: string
           created_at?: string
           created_by?: string | null
@@ -7206,6 +7208,7 @@ export type Database = {
           approved_by?: string | null
           approved_by_name?: string
           assessment_run_id?: string | null
+          company_id?: string | null
           contractor_company?: string
           created_at?: string
           created_by?: string | null
@@ -7250,6 +7253,20 @@ export type Database = {
           work_start_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "work_permits_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_permits_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
           {
             foreignKeyName: "work_permits_form_template_id_fkey"
             columns: ["form_template_id"]

@@ -81,7 +81,7 @@ export default function MobileApprovals() {
         <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => navigate("/m")}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div className="font-bold text-lg flex-1">결재함</div>
+        <div className="font-bold text-lg flex-1">전자결재</div>
         <Badge variant="secondary">{rows.length}건</Badge>
       </header>
 

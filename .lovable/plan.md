@@ -1,100 +1,48 @@
-## 배경 (현재 상태 진단)
+## 문제 진단
 
-허가서 양식 관련 코드/기능이 여러 개로 분산되어 서로 연동이 안 됩니다.
+첨부 두 이미지를 비교해 원인 확인:
 
-- `DigPermitForm.tsx` — 내장 SF003 표준 폼 (일반/밀폐/화기/굴착)
-- `StandardStyleEditor.tsx` — 열 너비/폰트/라벨만 조정 (셀 색상·행 높이·로고 불가, 폼 종류 탭 없이 "일반" 미리보기 1개만 노출)
-- `OverlayEditor.tsx` — 원본 PDF 위에 필드 박스 배치
-- `LivePreview.tsx` — 빌더 섹션 미리보기 (실제 인쇄 결과와 다름)
-- 등록된 기본 SF003 양식이 첨부 파일(Rev.C, Air Liquide 로고, 파란 헤더/라벨 배경, 화기·밀폐 하단 결재 포함)과 다른 구버전
+1. **폭이 늘어짐** — 미리보기는 A4(210mm) 컨테이너 안에서 렌더되지만, 허가서 작성 화면(`WorkPermitDetail.tsx` 413줄)은 폼을 `p-3 md:p-6` 전체폭 카드에 감싸서 렌더 → `table-layout: fixed` + `colgroup` 픽셀 너비를 쓰는 데스크톱에서 남는 공간이 뒷 열로 쏠려 "공사업체" 값 셀, 승인업체 셀이 비정상적으로 넓어짐.
+2. **작업일시/일부 텍스트 미입력**
+  - `DigPermitForm.tsx` 525줄 `작업허가 연장` `<input type="datetime-local">` 에 `value`/`onChange` 바인딩이 아예 없어 입력해도 반영 안 됨.
+  - 512줄 `작업완료 확인 (시 분)` 은 그냥 텍스트 라벨 뿐 입력칸이 없음.
+  - `PermitInput` 은 `onBlur/compositionEnd` 에만 commit → 한글 외 일반 입력은 되지만 blur 안 하고 저장 버튼 클릭 시 최신값이 안 올라감(포커스 유지 상태에서 저장 시 손실).
+3. **서명 자동 표기 미흡** — 결재라인이 `approved` 여도 `signature_image` 가 비면 SigCell 은 "서명" 버튼만 표시. 이름/승인시각 텍스트 폴백이 없음. 또한 첫 결재 요청이 `POSITION_TO_SIG` 매핑에만 의존해 신규 `approval_lines.role` 이 SF003 슬롯키(`contractor_pic`, `cm`, `safety_pic`, `sm`, `site_director`)와 다르면 자동 매핑 실패.
+4. **검토일/승인일** — 355~357줄이 `signatures.reviewed_at` / `signatures.approved_at` 를 참조하지만 `reviewed_at` 을 세팅하는 코드가 없어 항상 빈칸. 사용자 요구: 검토일 = 승인일 - 1일, 승인일 = 결재 최종 승인 일자.
 
-## 목표
+## 수정 계획
 
-**"허가서 양식 디자인 = 표준양식 스타일 편집기 하나로 통일"** — 오버레이는 옵션(선택 기능)으로 격하하고, 표준 폼을 시각적으로 편집→실시간 미리보기→그대로 허가서 작성 화면에 반영.
+### A. 폭 정렬 (`src/pages/WorkPermitDetail.tsx`)
 
----
+- 413줄 렌더 컨테이너를 A4 상당(`max-w-[210mm] mx-auto`) 로 래핑해서 미리보기와 동일한 폭에서 렌더. 오버레이 폼(`OverlayFillForm`) 은 기존대로 유지.
 
-## 실행 순서
+### B. 입력 결함 (`src/components/permits/DigPermitForm.tsx`)
 
-### 1) 표준양식 스타일 편집기 확장 (핵심)
+- 525줄 "작업허가 연장" datetime-local 에 `value={data.work_extend_until}` / `onChange` 바인딩 추가 (`PermitFormData` 에 `work_extend_until?: string` 필드 추가).
+- 512줄 "작업완료 확인" 라벨을 `<Inp value={data.work_complete_time}/>` 로 교체 (필드 추가).
+- 379~384줄 `작업일시` 컨테이너 스타일 축소 조정 — datetime-local input 이 좁은 셀에서 잘리는 문제 완화 (`w-[48%]` 지정).
+- `PermitInput` 에 실시간 반영을 위해 `onChange` 에서 `!composingRef.current` 일 때 즉시 `onCommit(v)` 도 호출 (한글 IME 는 여전히 compositionEnd 로만 commit). 저장 시 손실 방지.
 
-`permitStandardStyle.ts` 스키마에 다음을 추가:
+### C. 서명/결재 자동 표시 (`src/pages/WorkPermitDetail.tsx` + `DigPermitForm.tsx`)
 
-- `colors`: 헤더 배경, 라벨 셀 배경, 값 셀 배경, 테두리, 강조 텍스트 색 (허가서 종류별 개별 설정)
-- `rowHeights`: 섹션별 최소 행 높이 (px)
-- `logo`: 좌상단 로고 (project_library에 업로드된 이미지 URL 또는 base64)
-- `titleAlign`, `titleColor` — 제목 스타일
-- `sectionVisibility`: 특정 섹션 on/off (예: 굴착 폼의 특정 체크 항목)
+- WorkPermitDetail `load()` 의 `approval_lines` 병합부에 role alias 매핑 추가 — 예: `applicant→contractor_pic`, `safety_manager→safety_pic`, `construction_manager→cm`, `safety_management→sm`, `site_manager|director→site_director`. 대소문자/영문/한글 별칭도 매핑 테이블로.
+- `reviewed_at` 계산: 최종 `approved_at` 이 있으면 그 전날 자정 기준(`YYYY-MM-DD`) 을 `signatures.reviewed_at` 로 저장(파생값 — DB 는 그대로).
+- `SigCell` (238줄) 리팩토링: `signature` 없어도 `name` 또는 `signed_at` 이 있으면 "성명 + 승인일시" 텍스트로 자동 표기. 서명 이미지가 있으면 이미지 + 이름. 아직 미결재면 "(대기)" 로 표시(편집 가능 시 "서명" 버튼 유지).
+- 추가로 결재 라인은 담당자(시공) →담당자(안전)→책임자(소장)→담당자(CM)→담당자(SM) 으로 고정시켜주고 실제 결재라인도 이렇게 되게 해줘.(특정상황시 대리결재할수도 있으니까 이부분도 감안해주고)
 
-`StandardStyleEditor.tsx`:
-- **폼 종류 탭 추가**: 일반 / 밀폐공간 / 화기 / 굴착 — 각각 독립적으로 열너비·색상·라벨 편집
-- 색상 피커(shadcn), 로고 업로드, 행 높이 슬라이더 추가
-- 우측 미리보기를 선택된 탭의 폼으로 동기화(현재는 "일반" 고정)
+### D. 검토일/승인일 셀 (`DigPermitForm.tsx` 355~357)
 
-### 2) DigPermitForm 렌더링 업그레이드
+- 승인일: `signatures.approved_at` 을 그대로 사용 (WorkPermitDetail 에서 이미 최종 `approved_at` 을 세팅).
+- 검토일: `signatures.reviewed_at` 이 없으면 `approved_at - 1일` 을 그 자리에서 계산해 표시 (fallback). 승인 전이면 공란.
 
-- `standardStyle.colors` / `rowHeights` / `logo` 를 CSS 변수 + inline style 로 주입
-- 첨부 원본(Rev.C)과 동일한 레이아웃으로 셀 구조 정비:
-  - 상단 로고 + 제목 + Doc.No 우측 정렬
-  - 공사업체/승인업체 2×2 그리드 (담당자(CM)/담당자(SM), 김토임/승인원 등 파란 배경)
-  - 안전조치 요구사항 3열 체크 매트릭스
-  - 화기/밀폐 하단 결재란 (안전관리자·관리감독자·현장당일확인·승인자)
-  - 가스농도 측정 표 (O₂/H₂S/CO/H·C/CO₂ 기준값 포함)
-- 인쇄 CSS에서도 색상·행높이·로고 동일 적용 (WYSIWYG)
+### E. 회귀 확인
 
-### 3) 기본 등록 양식 최신화 (Rev.C)
+- `tsgo` 로 타입 확인.
+- 저장/재조회 시 신규 필드(`work_extend_until`, `work_complete_time`) 가 `form_data` JSON 에 그대로 보존되는지 코드로 확인 (별도 DB 변경 없음).
 
-마이그레이션으로 `permit_form_templates` 의 기본 SF003 템플릿(project_id NULL, is_default true) 을 다음 값으로 upsert:
+## 기술 세부
 
-- `layout_json.standard_style` = 첨부와 동일한 색상(파란 #DCE6F1 라벨 배경, 빨간 강조), 열 너비, 로고 URL
-- `layout_json.standard_labels` = 승인업체명 "Air Liquide Korea", docNoPrefix "GEN-000000-SF003" (기존 예시 유지, 프로젝트별 오버라이드 가능)
-- 각 permit type(general/confined_space/hot_work/excavation) 별 스타일 프리셋
-
-### 4) 미리보기 실효화
-
-- `StandardStyleEditor` 우측 미리보기가 편집한 permit type 을 그대로 `DigPermitForm readOnly` 로 렌더 (실제 인쇄 화면과 동일 컴포넌트)
-- "인쇄 미리보기(A4)" 토글 추가 — 실제 print CSS 를 적용해 인쇄 결과 그대로 확인
-- 빌더용 `LivePreview.tsx` 는 커스텀 양식(오버레이 외 사용자 정의) 전용으로만 남김
-
-### 5) 기능 정리 (혼란 제거)
-
-`SettingsPermitForms.tsx` 탭 재구성:
-
-```text
-[표준 양식 디자인]  ← 기본 (표준 스타일 편집기 = 대부분 사용자)
-[원본 PDF 오버레이] ← 고급 옵션 (특수 양식이 있는 경우만)
-[템플릿 목록]       ← 저장된 프로젝트별/전역 템플릿 관리
-```
-
-- 엑셀 그리드 잔재 완전 제거 확인
-- 빌더(섹션/필드 자유편집)는 표준 스타일로 커버되므로 숨김 처리(코드 유지, UI 진입점만 제거)
-
-### 6) 허가서 작성 모듈 연동 확인
-
-`WorkPermitDetail.tsx` 는 이미 프로젝트별 `standard_style` / `standard_labels` 를 로드하여 `DigPermitForm` 에 전달 중. 여기에:
-- 로고/색상/행높이도 함께 전달
-- 프로젝트별 오버라이드가 없으면 전역 기본 템플릿(3단계에서 심은 Rev.C) 사용
-- 편집 → 저장 → 작성 화면 재진입 시 즉시 반영되는지 E2E 확인
-
----
-
-## 기술 세부사항
-
-- `permit_form_templates.layout_json` 은 JSONB — 스키마 마이그레이션 없이 필드만 추가
-- 색상 저장은 HSL 문자열(디자인 토큰 호환), 기본값은 index.css 토큰으로 폴백
-- 로고는 project_library_files 에 업로드 후 URL 저장 (base64 지양)
-- IME 안정성 유지: `Inp` 컴포넌트는 이미 모듈 스코프
-
-## 범위 밖 (하지 않는 것)
-
-- 오버레이 편집기(`OverlayEditor.tsx`) 기능 수정 — 그대로 보존, 진입 경로만 "고급"으로 이동
-- 결재 라인 로직 변경 — 이미 `signature_role` 매핑 완료
-- AI 자동 분석 — 오버레이 전용이므로 그대로 유지
-
-## 검증
-
-1. 표준 스타일 편집기에서 화기 탭 → 라벨 배경색 변경 → 미리보기 즉시 반영
-2. 로고 업로드 → 저장 → 새 허가서 작성 화면에서 로고 표시
-3. 프린트(Ctrl+P) 시 색상·로고·행높이 모두 유지
-4. 프로젝트별 오버라이드 없는 경우 전역 Rev.C 기본값 사용
-5. tsgo 통과 및 기존 오버레이 워크플로 무회귀
+- 변경 파일: `src/pages/WorkPermitDetail.tsx`, `src/components/permits/DigPermitForm.tsx`. DB/마이그레이션 없음.
+- role 매핑은 `WorkPermitDetail.tsx` 내부 상수 `ROLE_TO_SIG` 로 추가 (`POSITION_TO_SIG` 와 병합).
+- `reviewed_at` 계산: `new Date(new Date(approved_at).getTime() - 86400000).toISOString()`.
+- A4 폭: `210mm` (약 794px). 데스크톱에서 좌우 여백은 컨테이너가 자동 처리(`mx-auto`), 모바일은 `w-full` 로 유지.

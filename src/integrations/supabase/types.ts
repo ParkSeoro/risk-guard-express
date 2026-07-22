@@ -6074,6 +6074,9 @@ export type Database = {
         Row: {
           color: string | null
           created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
           description: string | null
           geo_polygon: Json | null
           id: string
@@ -6089,6 +6092,9 @@ export type Database = {
         Insert: {
           color?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           description?: string | null
           geo_polygon?: Json | null
           id?: string
@@ -6104,6 +6110,9 @@ export type Database = {
         Update: {
           color?: string | null
           created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
           description?: string | null
           geo_polygon?: Json | null
           id?: string

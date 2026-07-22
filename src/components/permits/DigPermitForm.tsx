@@ -763,9 +763,14 @@ export default function DigPermitForm({
               <tr>
                 <th className="hd">굴착 제원</th>
                 <td colSpan={3}>
-                  깊이 : <Inp value={data.ex_depth} onChangeText={(v: string) => update({ ex_depth: v })} placeholder="m" /> ·
-                  폭 : <Inp value={data.ex_width} onChangeText={(v: string) => update({ ex_width: v })} placeholder="m" /> ·
-                  공법 : <Inp value={data.ex_method} onChangeText={(v: string) => update({ ex_method: v })} placeholder="인력/기계/혼합" />
+                  <div className="flex items-center gap-1 whitespace-nowrap">
+                    <span className="shrink-0">깊이 :</span>
+                    <Inp className="flex-1 min-w-0" value={data.ex_depth} onChangeText={(v: string) => update({ ex_depth: v })} placeholder="m" />
+                    <span className="shrink-0">· 폭 :</span>
+                    <Inp className="flex-1 min-w-0" value={data.ex_width} onChangeText={(v: string) => update({ ex_width: v })} placeholder="m" />
+                    <span className="shrink-0">· 공법 :</span>
+                    <Inp className="flex-1 min-w-0" value={data.ex_method} onChangeText={(v: string) => update({ ex_method: v })} placeholder="인력/기계/혼합" />
+                  </div>
                 </td>
               </tr>
               <tr>

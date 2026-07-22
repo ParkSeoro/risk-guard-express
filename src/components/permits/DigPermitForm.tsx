@@ -539,7 +539,10 @@ export default function DigPermitForm({
                           </label>
                         ))}
                       </div>
-                      <div className="mt-1">비고 : <Inp value={(data as any)[cat.note]} onChangeText={(v: string) => update({ [cat.note]: v } as any)} /></div>
+                      <div className="mt-1 flex items-center gap-1">
+                        <span className="shrink-0 whitespace-nowrap">비고 :</span>
+                        <Inp className="flex-1" value={(data as any)[cat.note]} onChangeText={(v: string) => update({ [cat.note]: v } as any)} />
+                      </div>
                     </td>
                   </tr>
                 );

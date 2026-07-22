@@ -311,7 +311,10 @@ export default function DigPermitForm({
           ))}
         </div>
         <div className="pt-1 border-t border-dashed border-muted-foreground/30">
-          비고/세부사항: <Inp value={(data as any)[noteKey]} onChangeText={(v: string) => update({ [noteKey]: v } as any)} />
+          <div className="flex items-center gap-1">
+            <span className="shrink-0 whitespace-nowrap">비고/세부사항:</span>
+            <Inp className="flex-1" value={(data as any)[noteKey]} onChangeText={(v: string) => update({ [noteKey]: v } as any)} />
+          </div>
         </div>
       </div>
     );
@@ -428,11 +431,26 @@ export default function DigPermitForm({
               </tr>
               <tr>
                 <th rowSpan={3} className="hd">작업개요</th>
-                <td colSpan={5}>작업명 : <Inp value={data.work_name} onChangeText={(v: string) => update({ work_name: v })} /></td>
+                <td colSpan={5}>
+                  <div className="flex items-center gap-1">
+                    <span className="shrink-0 whitespace-nowrap">작업명 :</span>
+                    <Inp className="flex-1" value={data.work_name} onChangeText={(v: string) => update({ work_name: v })} />
+                  </div>
+                </td>
               </tr>
-              <tr><td colSpan={5}>작업내용 : <Inp value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} /></td></tr>
+              <tr><td colSpan={5}>
+                <div className="flex items-center gap-1">
+                  <span className="shrink-0 whitespace-nowrap">작업내용 :</span>
+                  <Inp className="flex-1" value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} />
+                </div>
+              </td></tr>
               <tr>
-                <td colSpan={2}>작업지역(장소) : <Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td>
+                <td colSpan={2}>
+                  <div className="flex items-center gap-1">
+                    <span className="shrink-0 whitespace-nowrap">작업지역(장소) :</span>
+                    <Inp className="flex-1" value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} />
+                  </div>
+                </td>
                 <td colSpan={3}>작업인원 : {readOnly || printMode ? data.personnel_count : <input type="number" className="w-16 text-xs border-0 bg-transparent" value={data.personnel_count || ''} onChange={(e) => update({ personnel_count: Number(e.target.value) })} />} 명</td>
               </tr>
               <tr>
@@ -443,7 +461,9 @@ export default function DigPermitForm({
                   <label className="mr-3 inline-flex items-center"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.att_tbm_log} onChange={(e) => update({ att_tbm_log: e.target.checked })} className="mr-1" />TBM 일지</label>
                   <label className="mr-3 inline-flex items-center"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.att_heavy_eq} onChange={(e) => update({ att_heavy_eq: e.target.checked })} className="mr-1" />중장비 서류</label>
                   <label className="mr-3 inline-flex items-center"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.att_work_plan} onChange={(e) => update({ att_work_plan: e.target.checked })} className="mr-1" />작업계획서</label>
-                  <label className="inline-flex items-center">기타 (<Inp value={data.att_other} onChangeText={(v: string) => update({ att_other: v })} />)</label>
+                  <span className="inline-flex items-center gap-1 align-middle" style={{ minWidth: 180 }}>
+                    기타 (<Inp className="flex-1" value={data.att_other} onChangeText={(v: string) => update({ att_other: v })} />)
+                  </span>
                 </td>
               </tr>
               <tr><th className="hd" colSpan={6}>안전조치 요구사항(필요한 부분에 대해 현장 확인 후 ☑ 표시)</th></tr>
@@ -504,7 +524,10 @@ export default function DigPermitForm({
                     </td>
                     <td colSpan={5} className="text-[11px] leading-5">
                       {cat.key === 'hz_heavy' && (
-                        <div className="mb-1">투입장비 : <Inp value={data.hz_heavy_equipment_name} onChangeText={(v: string) => update({ hz_heavy_equipment_name: v })} /></div>
+                        <div className="mb-1 flex items-center gap-1">
+                          <span className="shrink-0 whitespace-nowrap">투입장비 :</span>
+                          <Inp className="flex-1" value={data.hz_heavy_equipment_name} onChangeText={(v: string) => update({ hz_heavy_equipment_name: v })} />
+                        </div>
                       )}
                       <div className="flex flex-wrap gap-x-3 gap-y-1">
                         {cat.items.map((it) => (
@@ -516,7 +539,10 @@ export default function DigPermitForm({
                           </label>
                         ))}
                       </div>
-                      <div className="mt-1">비고 : <Inp value={(data as any)[cat.note]} onChangeText={(v: string) => update({ [cat.note]: v } as any)} /></div>
+                      <div className="mt-1 flex items-center gap-1">
+                        <span className="shrink-0 whitespace-nowrap">비고 :</span>
+                        <Inp className="flex-1" value={(data as any)[cat.note]} onChangeText={(v: string) => update({ [cat.note]: v } as any)} />
+                      </div>
                     </td>
                   </tr>
                 );

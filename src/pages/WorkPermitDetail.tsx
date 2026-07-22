@@ -309,23 +309,11 @@ export default function WorkPermitDetail() {
       await (document as any).fonts?.load?.('16px "Noto Sans KR"');
       await (document as any).fonts?.ready;
     } catch {}
-    // 1) 화면에 로드된 템플릿 우선. 없으면 활성+기본 순으로 탐색
+    // 1) 사용자가 원본 PDF 오버레이 양식을 명시 선택한 경우에만 PDF 오버레이 출력.
+    // 표준 SF003 선택 시에는 화면의 표준양식 스타일 그대로 브라우저 인쇄한다.
     try {
       let tpl: any = template && template.original_pdf_url ? template : null;
-      if (!tpl) {
-        const { data: tpls } = await supabase
-          .from('permit_form_templates')
-          .select('id, name, original_pdf_url, print_overlay, signature_slots, is_default, is_active, permit_type')
-          .eq('is_deleted', false)
-          .eq('is_active', true)
-          .order('is_default', { ascending: false })
-          .limit(10);
-        tpl = (tpls || []).find((t: any) =>
-          t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0 && (t.permit_type === tab || !t.permit_type),
-        ) || (tpls || []).find((t: any) =>
-          t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0,
-        );
-      } else {
+      if (tpl) {
         // template state에 signature_slots가 없을 수 있으니 재조회
         const { data: full } = await supabase
           .from('permit_form_templates')

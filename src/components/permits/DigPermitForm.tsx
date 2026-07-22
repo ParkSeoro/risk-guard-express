@@ -374,8 +374,12 @@ export default function DigPermitForm({
                 <td><SigCell k="contractor_pic" /></td>
                 <th className="hd">담당자(CM)</th>
                 <td><SigCell k="cm" /></td>
-                <td rowSpan={3} className="text-center text-[10px]">{signatures.reviewed_at ? new Date(signatures.reviewed_at).toLocaleDateString('ko-KR') : ''}</td>
+                <td rowSpan={3} className="text-center text-[10px]">{(() => {
+                  const rv = signatures.reviewed_at || (signatures.approved_at ? new Date(new Date(signatures.approved_at).getTime() - 86400000).toISOString() : '');
+                  return rv ? new Date(rv).toLocaleDateString('ko-KR') : '';
+                })()}</td>
                 <td rowSpan={3} className="text-center text-[10px]">{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : ''}</td>
+
               </tr>
               <tr>
                 <th className="hd">담당자(안전)</th>

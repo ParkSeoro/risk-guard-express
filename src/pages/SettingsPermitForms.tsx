@@ -26,7 +26,6 @@ import {
 } from 'lucide-react';
 import SortableSectionCard from '@/components/permit-designer/SortableSectionCard';
 import PropertyPanel from '@/components/permit-designer/PropertyPanel';
-import LivePreview from '@/components/permit-designer/LivePreview';
 import OverlayEditor from '@/components/permit-designer/OverlayEditor';
 import AIAnalysisPanel from '@/components/permit-designer/AIAnalysisPanel';
 import SignatureSlotMapper from '@/components/permit-designer/SignatureSlotMapper';

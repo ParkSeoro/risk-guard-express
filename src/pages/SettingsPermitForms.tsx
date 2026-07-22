@@ -427,14 +427,15 @@ export default function SettingsPermitForms() {
             </Card>
 
             <Tabs value={tab} onValueChange={setTab}>
-              <TabsList>
-                <TabsTrigger value="signatures"><Signature className="h-4 w-4 mr-1" />서명·결재라인 ({signatureSlots.length})</TabsTrigger>
-                <TabsTrigger value="ai"><Sparkles className="h-4 w-4 mr-1" />AI 자동 분석</TabsTrigger>
-                <TabsTrigger value="overlay"><FileText className="h-4 w-4 mr-1" />원본 PDF 오버레이</TabsTrigger>
-                <TabsTrigger value="builder"><MousePointer2 className="h-4 w-4 mr-1" />빌더</TabsTrigger>
+              <TabsList className="flex-wrap h-auto">
                 <TabsTrigger value="standard"><LayoutGrid className="h-4 w-4 mr-1" />표준양식 스타일</TabsTrigger>
-                <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />미리보기</TabsTrigger>
+                <TabsTrigger value="signatures"><Signature className="h-4 w-4 mr-1" />서명·결재라인 ({signatureSlots.length})</TabsTrigger>
                 <TabsTrigger value="versions"><History className="h-4 w-4 mr-1" />버전</TabsTrigger>
+                <span className="mx-2 text-[10px] text-muted-foreground self-center">— 고급 —</span>
+                <TabsTrigger value="overlay"><FileText className="h-4 w-4 mr-1" />원본 PDF 오버레이</TabsTrigger>
+                <TabsTrigger value="ai"><Sparkles className="h-4 w-4 mr-1" />AI 자동 분석</TabsTrigger>
+                <TabsTrigger value="builder"><MousePointer2 className="h-4 w-4 mr-1" />자유 빌더</TabsTrigger>
+                <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />빌더 미리보기</TabsTrigger>
               </TabsList>
 
               <TabsContent value="standard">

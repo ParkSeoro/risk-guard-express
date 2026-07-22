@@ -444,16 +444,3 @@ export default function WorkPermitDetail() {
     </div>
   );
 }
-        <SubmitApprovalDialog
-          open={approvalOpen}
-          onOpenChange={setApprovalOpen}
-          entityType="work_permit"
-          entityId={permit.id}
-          projectId={permit.project_id}
-          submitterCompanyId={permit.company_id || userCompanyId || null}
-          onSubmitted={() => { setApprovalOpen(false); load(); }}
-        />
-      )}
-    </div>
-  );
-}

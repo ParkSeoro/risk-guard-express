@@ -216,7 +216,7 @@ export default function WorkPermitDetail() {
       signatures,
       linked_assessment_run_ids: linkedRuns.map(r => r.id),
       form_version: 'SF003-Rev1',
-      form_template_id: templateId || null,
+      form_template_id: templateId && templateId !== STANDARD_FORM_VALUE ? templateId : null,
     }).eq('id', permit.id);
     setSaving(false);
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });

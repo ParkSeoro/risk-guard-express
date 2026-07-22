@@ -460,18 +460,22 @@ export default function WorkPermitDetail() {
             readOnly={isApproved}
           />
         ) : (
-          <DigPermitForm
-            permitType={tab}
-            data={data}
-            signatures={signatures}
-            projectName={projectName}
-            standardStyle={standardStyle}
-            standardLabels={standardLabels}
-            onChange={(d) => setData(d)}
-            onSign={(k, v) => setSignatures({ ...signatures, [k]: v })}
-          />
+          // 미리보기(A4 210mm)와 동일 폭으로 렌더해 열 너비 왜곡 방지
+          <div className="mx-auto w-full max-w-[210mm]">
+            <DigPermitForm
+              permitType={tab}
+              data={data}
+              signatures={signatures}
+              projectName={projectName}
+              standardStyle={standardStyle}
+              standardLabels={standardLabels}
+              onChange={(d) => setData(d)}
+              onSign={(k, v) => setSignatures({ ...signatures, [k]: v })}
+            />
+          </div>
         )}
       </div>
+
 
 
       {approvalOpen && (

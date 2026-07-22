@@ -488,13 +488,17 @@ export default function DigPermitForm({
               {/* 기타 안전조치 */}
               <tr>
                 <td colSpan={6} className="text-[11px]">
-                  <label className="inline-flex items-center mr-2">
-                    {readOnly || printMode
-                      ? <Box checked={!!data.chk_etc} />
-                      : <input type="checkbox" checked={!!data.chk_etc} onChange={(e) => update({ chk_etc: e.target.checked })} className="mr-1" />}
-                    기타
-                  </label>
-                  (<Inp value={data.chk_etc_note} onChangeText={(v: string) => update({ chk_etc_note: v })} />)
+                  <div className="flex items-center gap-1 whitespace-nowrap">
+                    <label className="inline-flex items-center shrink-0">
+                      {readOnly || printMode
+                        ? <Box checked={!!data.chk_etc} />
+                        : <input type="checkbox" checked={!!data.chk_etc} onChange={(e) => update({ chk_etc: e.target.checked })} className="mr-1" />}
+                      기타
+                    </label>
+                    <span className="shrink-0">(</span>
+                    <Inp className="flex-1 min-w-0" value={data.chk_etc_note} onChangeText={(v: string) => update({ chk_etc_note: v })} />
+                    <span className="shrink-0">)</span>
+                  </div>
                 </td>
               </tr>
 

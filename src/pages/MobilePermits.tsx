@@ -18,6 +18,13 @@ const STATUS_BADGE: Record<string, string> = {
   반려: "bg-destructive/20 text-destructive",
 };
 
+const getForm = (p: any) => (p?.form_data && typeof p.form_data === "object" ? p.form_data : {});
+const permitTitle = (p: any) => p?.work_name || getForm(p).work_name || p?.work_description || "(제목 없음)";
+const permitLocation = (p: any) => p?.location || p?.work_location || getForm(p).work_location || "-";
+const permitCompany = (p: any) => p?.contractor_company || getForm(p).contractor_company || getForm(p).applicant_company || "-";
+const permitPersonnel = (p: any) => p?.personnel_count || getForm(p).personnel_count || 0;
+const isApprovedStatus = (status?: string) => ["승인", "승인완료", "approved"].includes(status || "");
+
 export default function MobilePermits() {
   const navigate = useNavigate();
   const { profile } = useAuth();
@@ -32,7 +39,7 @@ export default function MobilePermits() {
   const load = async () => {
     if (!projectId) { setLoading(false); return; }
     setLoading(true);
-    let q: any = supabase.from("work_permits" as any).select("*").eq("project_id", projectId);
+    let q: any = supabase.from("work_permits" as any).select("*").eq("project_id", projectId).eq("is_deleted", false);
     q = applyCompanyFilter(q);
     const { data, error } = await q
       .order("permit_date", { ascending: false }).limit(100);
@@ -114,11 +121,11 @@ export default function MobilePermits() {
               <div className="flex items-start gap-2">
                 <FileCheck2 className="h-5 w-5 text-primary shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-sm">{p.work_name || p.work_description || "(제목 없음)"}</div>
+                  <div className="font-semibold text-sm">{permitTitle(p)}</div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    {p.permit_type} · {p.location || "-"} · {p.contractor_company}
+                    {p.permit_type} · {permitLocation(p)} · {permitCompany(p)}
                   </div>
-                  <div className="text-xs mt-1">{p.permit_date} · 인원 {p.personnel_count}명</div>
+                  <div className="text-xs mt-1">{p.permit_date} · 인원 {permitPersonnel(p)}명</div>
                 </div>
                 <span className={`text-xs px-2 py-1 rounded ${STATUS_BADGE[p.status] || "bg-muted"}`}>{p.status}</span>
               </div>
@@ -130,13 +137,13 @@ export default function MobilePermits() {
           <>
             <Card>
               <CardContent className="pt-4 space-y-2">
-                <div className="font-bold text-base">{active.work_name || active.work_description}</div>
+                <div className="font-bold text-base">{permitTitle(active)}</div>
                 <div className="text-xs text-muted-foreground space-y-0.5">
                   <div>유형: {active.permit_type}</div>
                   <div>일자: {active.permit_date}</div>
-                  <div>장소: {active.location}</div>
-                  <div>업체: {active.contractor_company}</div>
-                  <div>인원: {active.personnel_count}명</div>
+                  <div>장소: {permitLocation(active)}</div>
+                  <div>업체: {permitCompany(active)}</div>
+                  <div>인원: {permitPersonnel(active)}명</div>
                   {active.work_start_at && <div>작업시간: {new Date(active.work_start_at).toLocaleString("ko-KR")} ~ {active.work_end_at ? new Date(active.work_end_at).toLocaleString("ko-KR") : "-"}</div>}
                 </div>
                 {active.work_description && (
@@ -145,6 +152,7 @@ export default function MobilePermits() {
               </CardContent>
             </Card>
 
+            {!isApprovedStatus(active.status) && (
             <Card>
               <CardContent className="pt-4 space-y-3">
                 <IMESafeTextarea rows={3} defaultValue={comment} onCommit={setComment}
@@ -162,6 +170,7 @@ export default function MobilePermits() {
                 </Button>
               </CardContent>
             </Card>
+            )}
           </>
         )}
       </main>

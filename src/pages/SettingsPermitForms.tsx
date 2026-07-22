@@ -185,6 +185,11 @@ export default function SettingsPermitForms() {
       original_pdf_url: originalPdfUrl,
       snapshot_reason: snapshotReason || '저장',
     } as any);
+    setSelected({ ...selected, ...payload } as Tpl);
+    setLayout(payload.layout_json);
+    setOverlay(payload.print_overlay);
+    setOriginalPdfUrl(payload.original_pdf_url);
+    setSignatureSlots(payload.signature_slots);
     toast({ title: '양식이 저장되었습니다.' });
     await load();
     await loadVersions(selected.id);
@@ -315,7 +320,7 @@ export default function SettingsPermitForms() {
             <FileSignature className="h-6 w-6" /> 허가서 양식 디자인
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            마스터 전용. 대부분의 경우 <strong>표준양식 스타일</strong> 탭에서 색상·열 너비·로고만 조정하면 됩니다. 원본 PDF 를 그대로 인쇄해야 하는 특수 양식은 <em>고급 → 원본 PDF 오버레이</em>를 사용하세요.
+            마스터 전용. 작업허가서 작성 화면의 기준은 <strong>표준양식 스타일</strong>입니다. 원본 PDF 오버레이와 자유 빌더는 특수 양식용 고급 기능입니다.
           </p>
         </div>
         <Button size="sm" onClick={() => createNew()}><Plus className="h-4 w-4 mr-1" />새 양식</Button>
@@ -429,13 +434,13 @@ export default function SettingsPermitForms() {
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList className="flex-wrap h-auto">
                 <TabsTrigger value="standard"><LayoutGrid className="h-4 w-4 mr-1" />표준양식 스타일</TabsTrigger>
-                <TabsTrigger value="signatures"><Signature className="h-4 w-4 mr-1" />서명·결재라인 ({signatureSlots.length})</TabsTrigger>
+                <TabsTrigger value="signatures"><Signature className="h-4 w-4 mr-1" />표준 결재·서명 ({signatureSlots.length})</TabsTrigger>
                 <TabsTrigger value="versions"><History className="h-4 w-4 mr-1" />버전</TabsTrigger>
                 <span className="mx-2 text-[10px] text-muted-foreground self-center">— 고급 —</span>
                 <TabsTrigger value="overlay"><FileText className="h-4 w-4 mr-1" />원본 PDF 오버레이</TabsTrigger>
                 <TabsTrigger value="ai"><Sparkles className="h-4 w-4 mr-1" />AI 자동 분석</TabsTrigger>
                 <TabsTrigger value="builder"><MousePointer2 className="h-4 w-4 mr-1" />자유 빌더</TabsTrigger>
-                <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />빌더 미리보기</TabsTrigger>
+                <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />자유 빌더 미리보기</TabsTrigger>
               </TabsList>
 
               <TabsContent value="standard">
@@ -449,7 +454,7 @@ export default function SettingsPermitForms() {
                       }
                     />
                     <p className="text-[11px] text-muted-foreground mt-2">
-                      이 양식이 permit_type = '{selected.permit_type || 'general'}' 로 저장되어 있으면, 허가서 작성 화면의 표준 양식(내장)에 위 열 너비 / 폰트 / 라벨이 자동 반영됩니다.
+                      이 양식이 permit_type = '{selected.permit_type || 'general'}' 로 저장되어 있으면, 허가서 작성 화면의 표준 SF003 양식에 위 열 너비 / 색상 / 로고 / 라벨이 자동 반영됩니다.
                     </p>
                   </CardContent>
                 </Card>
@@ -531,6 +536,9 @@ export default function SettingsPermitForms() {
               </TabsContent>
 
               <TabsContent value="overlay">
+                <p className="text-xs text-muted-foreground mb-2">
+                  원본 PDF 오버레이는 표준양식 스타일과 별개인 고급 출력 방식입니다. PDF 자체가 배경 기준이며, 작성 화면 드롭다운에서 원본 PDF 오버레이 양식을 선택한 경우에만 사용됩니다.
+                </p>
                 <OverlayEditor
                   templateId={selected.id}
                   layout={layout}

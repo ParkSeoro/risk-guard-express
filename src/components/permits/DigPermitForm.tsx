@@ -309,18 +309,19 @@ export default function DigPermitForm({
         <>
           <div className="flex justify-between items-end mb-1 px-2">
             <div className="text-xs">Project : {projectName}</div>
-            <div className="text-xs">Doc. No : {docNo}</div>
+            <div className="text-xs">Doc. No : {effectiveDocNo}</div>
           </div>
           <h2 className="title">안전작업허가서</h2>
 
           <table>
+            <ColGroup widths={generalCols} />
             <tbody>
               <tr>
-                <th className="hd w-[110px]">공사업체</th>
-                <td className="w-[160px]"><Inp value={data.contractor_company} onChangeText={(v: string) => update({ contractor_company: v })} /></td>
-                <th className="hd" colSpan={2}>승인업체 : 에어리퀴드</th>
-                <th className="hd w-[100px]">검토일</th>
-                <th className="hd w-[100px]">승인일</th>
+                <th className="hd">공사업체</th>
+                <td><Inp value={data.contractor_company} onChangeText={(v: string) => update({ contractor_company: v })} /></td>
+                <th className="hd" colSpan={2}>승인업체 : {labels.approverCompany}</th>
+                <th className="hd">검토일</th>
+                <th className="hd">승인일</th>
               </tr>
               <tr>
                 <th className="hd">담당자(시공)</th>

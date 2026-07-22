@@ -167,14 +167,15 @@ export default function WorkPermitDetail() {
           .eq('approval_id', apprId)
           .order('step_order', { ascending: true });
         (steps || []).forEach((s: any) => {
-          if (!s.role || s.status !== 'approved') return;
-          const existing = (merged as any)[s.role];
+          const sigKey = resolveSigKey(s.role, s.approver_position);
+          if (!sigKey || s.status !== 'approved') return;
+          const existing = (merged as any)[sigKey];
           if (!existing?.signature) {
-            (merged as any)[s.role] = {
-              name: s.approver_name || '',
+            (merged as any)[sigKey] = {
+              name: s.approver_name || existing?.name || '',
               position: s.approver_position || '',
-              signature: s.signature_image || '',
-              signed_at: s.approved_at || '',
+              signature: s.signature_image || existing?.signature || '',
+              signed_at: s.approved_at || existing?.signed_at || '',
             };
           }
           if (s.approved_at && (!lastApproved || s.approved_at > lastApproved)) lastApproved = s.approved_at;
@@ -182,8 +183,13 @@ export default function WorkPermitDetail() {
       }
     } catch (e) { console.warn('approval_lines merge failed', e); }
 
-    if (lastApproved) merged.approved_at = lastApproved;
+    if (lastApproved) {
+      merged.approved_at = lastApproved;
+      // 검토일 = 승인일 하루 전 (사용자 요구사항)
+      merged.reviewed_at = new Date(new Date(lastApproved).getTime() - 86400000).toISOString();
+    }
     setSignatures(merged);
+
 
     // 자동 채움 컨텍스트(작성자/회사/프로젝트/permit_date) 구성
     try {

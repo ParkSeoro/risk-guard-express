@@ -27,7 +27,7 @@ const menuPermissions: { menu: string; roles: string[]; description: string }[] 
   { menu: '프로젝트', roles: ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer'], description: '프로젝트 멤버만 조회' },
   { menu: '위험성평가', roles: ['master', 'project_admin', 'safety_manager', 'contractor'], description: '열람자는 조회만' },
   { menu: '검증센터', roles: ['master', 'project_admin', 'safety_manager'], description: '안전관리자 이상만 검증 실행' },
-  { menu: '결재함', roles: ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer'], description: '열람 가능, 결재는 권한별' },
+  { menu: '전자결재', roles: ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer'], description: '열람 가능, 결재는 권한별' },
   { menu: 'TBM 기록', roles: ['master', 'project_admin', 'safety_manager', 'contractor'], description: '협력사 이상 작성' },
   { menu: '사용자 관리', roles: ['master', 'project_admin'], description: '마스터/프로젝트 관리자' },
   { menu: '기준정보', roles: ['master', 'project_admin', 'safety_manager'], description: '안전관리자 이상' },

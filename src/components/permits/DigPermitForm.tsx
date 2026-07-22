@@ -524,7 +524,10 @@ export default function DigPermitForm({
                     </td>
                     <td colSpan={5} className="text-[11px] leading-5">
                       {cat.key === 'hz_heavy' && (
-                        <div className="mb-1">투입장비 : <Inp value={data.hz_heavy_equipment_name} onChangeText={(v: string) => update({ hz_heavy_equipment_name: v })} /></div>
+                        <div className="mb-1 flex items-center gap-1">
+                          <span className="shrink-0 whitespace-nowrap">투입장비 :</span>
+                          <Inp className="flex-1" value={data.hz_heavy_equipment_name} onChangeText={(v: string) => update({ hz_heavy_equipment_name: v })} />
+                        </div>
                       )}
                       <div className="flex flex-wrap gap-x-3 gap-y-1">
                         {cat.items.map((it) => (

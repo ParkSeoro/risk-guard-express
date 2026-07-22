@@ -34,7 +34,7 @@ export default function MobilePermits() {
     setLoading(true);
     let q: any = supabase.from("work_permits" as any).select("*").eq("project_id", projectId);
     q = applyCompanyFilter(q);
-    const { data, error } = await q.in("status", ["대기", "검토중"])
+    const { data, error } = await q
       .order("permit_date", { ascending: false }).limit(100);
     if (error) toast.error("로드 실패: " + error.message);
     setList((data as any) || []);
@@ -47,16 +47,31 @@ export default function MobilePermits() {
     if (status === "반려" && !comment.trim()) return toast.error("반려 사유를 입력하세요");
     setActing(true);
     try {
-      const update: any = {
-        status,
-        approval_comment: comment,
-        approved_by: profile?.user_id,
-        approved_by_name: profile?.display_name || "",
-        approved_at: new Date().toISOString(),
-      };
-      if (status === "반려") update.rejection_reason = comment;
-      const { error } = await supabase.from("work_permits" as any).update(update).eq("id", active.id);
-      if (error) throw error;
+      // 결재 라인이 있는 문서는 act_on_approval RPC로 처리 → 최종 승인 알림/자동 상태 반영
+      const { data: myAp } = await supabase.from("approvals").select("id")
+        .eq("entity_type", "work_permit").eq("entity_id", active.id)
+        .eq("approver_id", profile?.user_id || "")
+        .eq("status", "진행중").limit(1).maybeSingle();
+      if (myAp?.id) {
+        const { data, error } = await supabase.rpc("act_on_approval", {
+          _approval_id: myAp.id,
+          _action: status === "승인" ? "approve" : "reject",
+          _comment: comment || "",
+        });
+        if (error) throw error;
+        const r: any = data;
+        if (r?.error) throw new Error(r.error);
+      } else {
+        const update: any = {
+          status, approval_comment: comment,
+          approved_by: profile?.user_id,
+          approved_by_name: profile?.display_name || "",
+          approved_at: new Date().toISOString(),
+        };
+        if (status === "반려") update.rejection_reason = comment;
+        const { error } = await supabase.from("work_permits" as any).update(update).eq("id", active.id);
+        if (error) throw error;
+      }
       await logAudit(status === "승인" ? 'approve' : 'reject', 'work_permit', active.id, projectId, { comment });
       toast.success(status === "승인" ? "승인 완료" : "반려 처리됨");
       setActive(null); setComment("");

@@ -26,11 +26,12 @@ import {
 } from 'lucide-react';
 import SortableSectionCard from '@/components/permit-designer/SortableSectionCard';
 import PropertyPanel from '@/components/permit-designer/PropertyPanel';
-import LivePreview from '@/components/permit-designer/LivePreview';
 import OverlayEditor from '@/components/permit-designer/OverlayEditor';
 import AIAnalysisPanel from '@/components/permit-designer/AIAnalysisPanel';
 import SignatureSlotMapper from '@/components/permit-designer/SignatureSlotMapper';
 import StandardStyleEditor from '@/components/permit-designer/StandardStyleEditor';
+import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
+import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
 import { FormLayout, PrintOverlay, SignatureSlot, EMPTY_LAYOUT, EMPTY_OVERLAY, newSection } from '@/lib/permitFormTypes';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
 
@@ -58,6 +59,26 @@ const PERMIT_TYPE_OPTIONS = [
   { value: 'hot_work', label: '화기' },
   { value: 'excavation', label: '굴착·중장비' },
 ];
+
+const STANDARD_PREVIEW_DATA: PermitFormData = {
+  contractor_company: '(주)샘플건설',
+  work_name: '배관 용접 작업',
+  work_description: '냉각탑 상부 배관 T-이음 용접',
+  work_location: '냉각탑 3F 배관 랙',
+  personnel_count: 4,
+  applicant_company: '(주)샘플건설',
+  applicant_name: '홍길동',
+};
+
+const STANDARD_PREVIEW_SIGS: PermitSignatures = {
+  contractor_pic: { name: '김시공', signature: '', signed_at: '2026-07-21T09:00:00.000Z' },
+  safety_pic: { name: '박안전', signature: '', signed_at: '2026-07-21T10:00:00.000Z' },
+  site_director: { name: '이소장', signature: '', signed_at: '2026-07-22T08:30:00.000Z' },
+  cm: { name: '최CM', signature: '', signed_at: '2026-07-22T09:10:00.000Z' },
+  sm: { name: '정SM', signature: '', signed_at: '2026-07-22T09:30:00.000Z' },
+  approved_at: '2026-07-22T09:30:00.000Z',
+  reviewed_at: '2026-07-21T09:30:00.000Z',
+};
 
 type SelectedRef =
   | { kind: 'section'; sectionId: string }
@@ -185,6 +206,11 @@ export default function SettingsPermitForms() {
       original_pdf_url: originalPdfUrl,
       snapshot_reason: snapshotReason || '저장',
     } as any);
+    setSelected({ ...selected, ...payload } as Tpl);
+    setLayout(payload.layout_json);
+    setOverlay(payload.print_overlay);
+    setOriginalPdfUrl(payload.original_pdf_url);
+    setSignatureSlots(payload.signature_slots);
     toast({ title: '양식이 저장되었습니다.' });
     await load();
     await loadVersions(selected.id);
@@ -315,7 +341,7 @@ export default function SettingsPermitForms() {
             <FileSignature className="h-6 w-6" /> 허가서 양식 디자인
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            마스터 전용. 대부분의 경우 <strong>표준양식 스타일</strong> 탭에서 색상·열 너비·로고만 조정하면 됩니다. 원본 PDF 를 그대로 인쇄해야 하는 특수 양식은 <em>고급 → 원본 PDF 오버레이</em>를 사용하세요.
+            마스터 전용. 작업허가서 작성 화면의 기준은 <strong>표준양식 스타일</strong>입니다. 원본 PDF 오버레이와 자유 빌더는 특수 양식용 고급 기능입니다.
           </p>
         </div>
         <Button size="sm" onClick={() => createNew()}><Plus className="h-4 w-4 mr-1" />새 양식</Button>
@@ -429,13 +455,13 @@ export default function SettingsPermitForms() {
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList className="flex-wrap h-auto">
                 <TabsTrigger value="standard"><LayoutGrid className="h-4 w-4 mr-1" />표준양식 스타일</TabsTrigger>
-                <TabsTrigger value="signatures"><Signature className="h-4 w-4 mr-1" />서명·결재라인 ({signatureSlots.length})</TabsTrigger>
+                <TabsTrigger value="signatures"><Signature className="h-4 w-4 mr-1" />표준 결재·서명 ({signatureSlots.length})</TabsTrigger>
                 <TabsTrigger value="versions"><History className="h-4 w-4 mr-1" />버전</TabsTrigger>
                 <span className="mx-2 text-[10px] text-muted-foreground self-center">— 고급 —</span>
                 <TabsTrigger value="overlay"><FileText className="h-4 w-4 mr-1" />원본 PDF 오버레이</TabsTrigger>
                 <TabsTrigger value="ai"><Sparkles className="h-4 w-4 mr-1" />AI 자동 분석</TabsTrigger>
                 <TabsTrigger value="builder"><MousePointer2 className="h-4 w-4 mr-1" />자유 빌더</TabsTrigger>
-                <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />빌더 미리보기</TabsTrigger>
+                <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />표준 미리보기</TabsTrigger>
               </TabsList>
 
               <TabsContent value="standard">
@@ -449,7 +475,7 @@ export default function SettingsPermitForms() {
                       }
                     />
                     <p className="text-[11px] text-muted-foreground mt-2">
-                      이 양식이 permit_type = '{selected.permit_type || 'general'}' 로 저장되어 있으면, 허가서 작성 화면의 표준 양식(내장)에 위 열 너비 / 폰트 / 라벨이 자동 반영됩니다.
+                      이 양식이 permit_type = '{selected.permit_type || 'general'}' 로 저장되어 있으면, 허가서 작성 화면의 표준 SF003 양식에 위 열 너비 / 색상 / 로고 / 라벨이 자동 반영됩니다.
                     </p>
                   </CardContent>
                 </Card>
@@ -527,10 +553,29 @@ export default function SettingsPermitForms() {
               </TabsContent>
 
               <TabsContent value="preview">
-                <LivePreview layout={layout} />
+                <Card>
+                  <CardHeader className="py-2"><CardTitle className="text-sm">표준양식 스타일 기준 미리보기</CardTitle></CardHeader>
+                  <CardContent className="p-2 bg-muted/30 overflow-auto max-h-[80vh]">
+                    <StandardPermitSheet mode="print">
+                      <DigPermitForm
+                        permitType={(selected.permit_type || 'general') as PermitType}
+                        data={STANDARD_PREVIEW_DATA}
+                        signatures={STANDARD_PREVIEW_SIGS}
+                        readOnly
+                        printMode
+                        projectName="샘플 프로젝트"
+                        standardStyle={(layout as any).standard_style || null}
+                        standardLabels={(layout as any).standard_labels || null}
+                      />
+                    </StandardPermitSheet>
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               <TabsContent value="overlay">
+                <p className="text-xs text-muted-foreground mb-2">
+                  원본 PDF 오버레이는 표준양식 스타일과 별개인 고급 출력 방식입니다. PDF 자체가 배경 기준이며, 작성 화면 드롭다운에서 원본 PDF 오버레이 양식을 선택한 경우에만 사용됩니다.
+                </p>
                 <OverlayEditor
                   templateId={selected.id}
                   layout={layout}

@@ -13,12 +13,15 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Copy } from 'lucide-react';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import OverlayFillForm from '@/components/permits/OverlayFillForm';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
+import ClonePreviousPermitDialog from '@/components/permits/ClonePreviousPermitDialog';
 import { useProjectAccess } from '@/hooks/useProjectAccess';
 import { printOverlay } from '@/lib/permitOverlayPrint';
+
+const STANDARD_FORM_VALUE = '__standard__';
 
 const PERMIT_TABS: { id: PermitType; label: string }[] = [
   { id: 'general', label: '일반' },
@@ -54,9 +57,13 @@ export default function WorkPermitDetail() {
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
-  const [templateId, setTemplateId] = useState<string>('');
+  const [templateId, setTemplateId] = useState<string>(STANDARD_FORM_VALUE);
   const [autoCtx, setAutoCtx] = useState<any>({});
-  const template = useMemo(() => templates.find((t) => t.id === templateId) || null, [templates, templateId]);
+  const [cloneOpen, setCloneOpen] = useState(false);
+  const template = useMemo(
+    () => (templateId && templateId !== STANDARD_FORM_VALUE ? templates.find((t) => t.id === templateId) || null : null),
+    [templates, templateId]
+  );
 
   const load = async () => {
     if (!id) return;
@@ -188,18 +195,14 @@ export default function WorkPermitDetail() {
           return typeOk && hasOverlay;
         });
         setTemplates(usable);
-        // 저장된 template_id가 있으면 사용, 아니면 이 종류의 기본을 자동 선택
+        // 저장된 template_id가 있으면 그 오버레이 사용, 없으면 표준 양식(내장) 기본
         const saved = (permit as any)?.form_template_id;
-        const preferred =
-          usable.find((t) => t.id === saved) ||
-          usable.find((t) => t.permit_type === tab && t.is_default) ||
-          usable.find((t) => t.permit_type === tab) ||
-          usable[0];
-        setTemplateId(preferred?.id || '');
+        const matched = saved ? usable.find((t) => t.id === saved) : null;
+        setTemplateId(matched?.id || STANDARD_FORM_VALUE);
       } catch (e) {
         console.warn('template lookup failed', e);
         setTemplates([]);
-        setTemplateId('');
+        setTemplateId(STANDARD_FORM_VALUE);
       }
     })();
   }, [tab, permit?.id]);
@@ -213,7 +216,7 @@ export default function WorkPermitDetail() {
       signatures,
       linked_assessment_run_ids: linkedRuns.map(r => r.id),
       form_version: 'SF003-Rev1',
-      form_template_id: templateId || null,
+      form_template_id: templateId && templateId !== STANDARD_FORM_VALUE ? templateId : null,
     }).eq('id', permit.id);
     setSaving(false);
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
@@ -338,6 +341,9 @@ export default function WorkPermitDetail() {
           <Badge variant="outline">{permit.permit_date}</Badge>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button size="sm" variant="outline" onClick={() => setCloneOpen(true)} disabled={isApproved} title={isApproved ? '승인된 문서는 복제 대상이 될 뿐, 이 문서에는 덮어쓸 수 없습니다.' : '같은 종류의 전회차 허가서 내용을 복사합니다.'}>
+            <Copy className="h-4 w-4 mr-1" />전회차 복제
+          </Button>
           <Button size="sm" variant="outline" onClick={save} disabled={saving}><Save className="h-4 w-4 mr-1" />저장</Button>
           <Button size="sm" variant="outline" onClick={() => setApprovalOpen(true)}><ShieldCheck className="h-4 w-4 mr-1" />결재상신</Button>
           <Button
@@ -372,20 +378,20 @@ export default function WorkPermitDetail() {
         <CardContent className="p-3 flex items-center gap-2 text-sm flex-wrap">
           <FileSignature className="h-4 w-4" />
           <span className="font-semibold">허가서 양식:</span>
-          {templates.length === 0 ? (
-            <span className="text-muted-foreground">이 종류에 사용 가능한 양식이 없습니다. (시스템 › 허가서 양식 디자인에서 등록)</span>
-          ) : (
-            <Select value={templateId} onValueChange={setTemplateId}>
-              <SelectTrigger className="h-8 max-w-[420px]"><SelectValue placeholder="양식 선택" /></SelectTrigger>
-              <SelectContent>
-                {templates.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    📄 {t.name} · {t.version}
-                    {t.is_default ? ' (기본)' : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <Select value={templateId} onValueChange={setTemplateId}>
+            <SelectTrigger className="h-8 max-w-[460px]"><SelectValue placeholder="양식 선택" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={STANDARD_FORM_VALUE}>⭐ 표준 양식(내장) — 시스템 제공 SF003</SelectItem>
+              {templates.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  📄 {t.name} · {t.version}
+                  {t.is_default ? ' (기본)' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {templates.length === 0 && (
+            <span className="text-xs text-muted-foreground">(추가 양식은 시스템 › 허가서 양식 디자인에서 등록 가능)</span>
           )}
         </CardContent>
       </Card>
@@ -427,6 +433,14 @@ export default function WorkPermitDetail() {
           onSubmitted={() => { setApprovalOpen(false); load(); }}
         />
       )}
+      <ClonePreviousPermitDialog
+        open={cloneOpen}
+        onOpenChange={setCloneOpen}
+        projectId={permit.project_id}
+        permitType={tab}
+        currentPermitId={permit.id}
+        onCloned={load}
+      />
     </div>
   );
 }

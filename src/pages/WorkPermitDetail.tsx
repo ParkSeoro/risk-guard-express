@@ -93,6 +93,14 @@ function toDbTimestamp(value?: string | null) {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+function toLocalInput(value?: string | null) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 
 export default function WorkPermitDetail() {
   const { id } = useParams<{ id: string }>();
@@ -125,7 +133,17 @@ export default function WorkPermitDetail() {
     if (error || !p) { toast({ title: '허가서를 불러오지 못했습니다.', variant: 'destructive' }); return; }
     setPermit(p);
     setTab(((p as any).permit_type || 'general') as PermitType);
-    setData((p as any).form_data || {});
+    setData({
+      ...((p as any).form_data || {}),
+      contractor_company: ((p as any).form_data || {}).contractor_company || (p as any).contractor_company || '',
+      applicant_company: ((p as any).form_data || {}).applicant_company || (p as any).contractor_company || '',
+      work_name: ((p as any).form_data || {}).work_name || (p as any).work_name || '',
+      work_description: ((p as any).form_data || {}).work_description || (p as any).work_description || '',
+      work_location: ((p as any).form_data || {}).work_location || (p as any).location || '',
+      personnel_count: ((p as any).form_data || {}).personnel_count ?? (p as any).personnel_count ?? 0,
+      work_start: ((p as any).form_data || {}).work_start || toLocalInput((p as any).work_start_at),
+      work_end: ((p as any).form_data || {}).work_end || toLocalInput((p as any).work_end_at),
+    });
     const baseSig: PermitSignatures = (p as any).signatures || {};
 
     // 프로젝트명
@@ -301,8 +319,8 @@ export default function WorkPermitDetail() {
       location: workLocation,
       contractor_company: contractorCompany,
       personnel_count: Number(syncedData.personnel_count || permit.personnel_count || 0),
-      work_start_at: toDbTimestamp(syncedData.work_start),
-      work_end_at: toDbTimestamp(syncedData.work_end),
+      work_start_at: toDbTimestamp(syncedData.work_start) || permit.work_start_at || null,
+      work_end_at: toDbTimestamp(syncedData.work_end) || permit.work_end_at || null,
     }).eq('id', permit.id);
     setSaving(false);
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });

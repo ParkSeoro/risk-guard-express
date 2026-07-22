@@ -719,5 +719,7 @@ export default function DigPermitForm({
         </DialogContent>
       </Dialog>
     </div>
+    </PermitFormReadOnlyCtx.Provider>
   );
 }
+

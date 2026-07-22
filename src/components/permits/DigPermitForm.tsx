@@ -311,9 +311,10 @@ export default function DigPermitForm({
           ))}
         </div>
         <div className="pt-1 border-t border-dashed border-muted-foreground/30">
-          <div className="flex items-center gap-1">
-            <span className="shrink-0 whitespace-nowrap">비고/세부사항:</span>
-            <Inp className="flex-1" value={(data as any)[noteKey]} onChangeText={(v: string) => update({ [noteKey]: v } as any)} />
+          <div className="flex items-center gap-1 whitespace-nowrap">
+            <span className="shrink-0">비고/세부사항: (</span>
+            <Inp className="flex-1 min-w-0" value={(data as any)[noteKey]} onChangeText={(v: string) => update({ [noteKey]: v } as any)} />
+            <span className="shrink-0">)</span>
           </div>
         </div>
       </div>

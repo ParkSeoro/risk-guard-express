@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Copy } from 'lucide-react';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
+import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
 import OverlayFillForm from '@/components/permits/OverlayFillForm';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
@@ -30,6 +31,22 @@ const PERMIT_TABS: { id: PermitType; label: string }[] = [
   { id: 'hot_work', label: '화기' },
   { id: 'excavation', label: '굴착·중장비' },
 ];
+
+function hasStandardStyle(t: any) {
+  return !!(t?.layout_json && typeof t.layout_json === 'object' && (t.layout_json as any).standard_style);
+}
+
+function pickStandardStyleHolder(list: any[], permitType: PermitType) {
+  const candidates = list.filter((t) => t?.is_active !== false && hasStandardStyle(t));
+  return (
+    candidates.find((t) => t.permit_type === permitType && t.is_default) ||
+    candidates.find((t) => t.permit_type === permitType) ||
+    candidates.find((t) => t.permit_type === 'general' && t.is_default) ||
+    candidates.find((t) => t.permit_type === 'general') ||
+    candidates.find((t) => t.is_default) ||
+    candidates[0]
+  );
+}
 
 // approvals.position → DigPermitForm 서명 키 매핑 (회사가 합의한 5단계 결재선)
 const POSITION_TO_SIG: Record<string, keyof PermitSignatures> = {
@@ -227,22 +244,18 @@ export default function WorkPermitDetail() {
           .order('is_default', { ascending: false })
           .order('updated_at', { ascending: false });
         const list = (tpls || []) as any[];
-        // 이 종류(tab)에 해당하거나 general인 양식 + 실제로 렌더 가능한 것만
+        // 이 종류(tab)에 해당하거나 general인 원본 PDF 오버레이 양식만 별도 노출
         const usable = list.filter((t) => {
           const typeOk = !t.permit_type || t.permit_type === tab || t.permit_type === 'general';
           const hasOverlay = t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0;
           return typeOk && hasOverlay;
         });
         setTemplates(usable);
-        // 표준 양식(내장) 의 열 너비/라벨 스타일 오버라이드 —
-        // 이 프로젝트/현재 탭 에 해당하는 layout_json.standard_style 이 있으면 사용
-        const styleHolder =
-          list.find((t) => (t.permit_type === tab) && (t.layout_json as any)?.standard_style) ||
-          list.find((t) => t.permit_type === 'general' && (t.layout_json as any)?.standard_style) ||
-          list.find((t) => (t.layout_json as any)?.standard_style);
+        // 표준 양식 스타일은 작성 화면의 기본값이며, 현재 허가서 종류의 기본 양식을 우선 적용
+        const styleHolder = pickStandardStyleHolder(list, tab);
         setStandardStyle((styleHolder?.layout_json as any)?.standard_style ?? null);
         setStandardLabels((styleHolder?.layout_json as any)?.standard_labels ?? null);
-        // 저장된 template_id가 있으면 그 오버레이 사용, 없으면 표준 양식(내장) 기본
+        // 저장된 template_id가 원본 PDF 오버레이일 때만 고급 양식으로 진입. 기본은 표준 SF003.
         const saved = (permit as any)?.form_template_id;
         const matched = saved ? usable.find((t) => t.id === saved) : null;
         setTemplateId(matched?.id || STANDARD_FORM_VALUE);
@@ -431,10 +444,10 @@ export default function WorkPermitDetail() {
           <Select value={templateId} onValueChange={setTemplateId}>
             <SelectTrigger className="h-8 max-w-[460px]"><SelectValue placeholder="양식 선택" /></SelectTrigger>
             <SelectContent>
-              <SelectItem value={STANDARD_FORM_VALUE}>⭐ 표준 양식(내장) — 시스템 제공 SF003</SelectItem>
+              <SelectItem value={STANDARD_FORM_VALUE}>표준 SF003 양식 — 표준양식 스타일 적용</SelectItem>
               {templates.map((t) => (
                 <SelectItem key={t.id} value={t.id}>
-                  📄 {t.name} · {t.version}
+                  원본 PDF 오버레이 · {t.name} · {t.version}
                   {t.is_default ? ' (기본)' : ''}
                 </SelectItem>
               ))}
@@ -460,8 +473,8 @@ export default function WorkPermitDetail() {
             readOnly={isApproved}
           />
         ) : (
-          // 미리보기(A4 210mm)와 동일 폭으로 렌더해 열 너비 왜곡 방지
-          <div className="mx-auto w-full max-w-[210mm]">
+          // 디자인 미리보기와 동일한 표준 A4 시트에서 렌더해 셀 폭/로고/인쇄 조건 통일
+          <StandardPermitSheet>
             <DigPermitForm
               permitType={tab}
               data={data}
@@ -472,7 +485,7 @@ export default function WorkPermitDetail() {
               onChange={(d) => setData(d)}
               onSign={(k, v) => setSignatures({ ...signatures, [k]: v })}
             />
-          </div>
+          </StandardPermitSheet>
         )}
       </div>
 

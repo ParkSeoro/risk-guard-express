@@ -280,6 +280,16 @@ export default function DigPermitForm({
     );
   };
 
+  const typeStyle = style.perType?.[permitType as PermitTypeKey] || {};
+  const labelBg = typeStyle.labelBg || '#DCE6F1';
+  const valueBg = typeStyle.valueBg || '#FFFFFF';
+  const borderColor = typeStyle.borderColor || '#000000';
+  const emphasisColor = typeStyle.emphasisColor || '#C00000';
+  const rowHeight = typeStyle.rowHeightPx || 24;
+  const titleAlign = style.titleAlign || 'center';
+  const titleColor = style.titleColor || '#000000';
+  const logoUrl = style.logoUrl || '';
+
   return (
     <PermitFormReadOnlyCtx.Provider value={roCtx}>
     <div
@@ -289,29 +299,44 @@ export default function DigPermitForm({
         ['--dpf-body' as any]: `${style.bodyFontPt}pt`,
         ['--dpf-title' as any]: `${style.titleFontPt}pt`,
         ['--dpf-small' as any]: `${style.smallFontPt}pt`,
+        ['--dpf-label-bg' as any]: labelBg,
+        ['--dpf-value-bg' as any]: valueBg,
+        ['--dpf-border' as any]: borderColor,
+        ['--dpf-emphasis' as any]: emphasisColor,
+        ['--dpf-row-h' as any]: `${rowHeight}px`,
+        ['--dpf-title-color' as any]: titleColor,
       } as React.CSSProperties}
     >
       <style>{`
         .dig-permit-form { font-size: var(--dpf-body, 10pt); }
         .dig-permit-form table { border-collapse: collapse; width: 100%; table-layout: fixed; }
-        .dig-permit-form td, .dig-permit-form th { border: 1px solid #000; padding: 3px 4px; vertical-align: middle; word-break: break-word; }
-        .dig-permit-form .hd { background: #c1e1c1; font-weight: 600; text-align: center; }
-        .dig-permit-form h2.title { text-align:center; font-size: var(--dpf-title, 18pt); font-weight: 800; margin: 8px 0; letter-spacing: 4px; }
-        .dig-permit-form .small { font-size: var(--dpf-small, 9pt); }
+        .dig-permit-form td, .dig-permit-form th { border: 1px solid var(--dpf-border, #000); padding: 3px 4px; vertical-align: middle; word-break: break-word; background: var(--dpf-value-bg, #fff); }
+        .dig-permit-form tr { min-height: var(--dpf-row-h, 24px); }
+        .dig-permit-form td { height: var(--dpf-row-h, 24px); }
+        .dig-permit-form .hd { background: var(--dpf-label-bg, #DCE6F1) !important; font-weight: 600; text-align: center; }
+        .dig-permit-form .emph { color: var(--dpf-emphasis, #C00000); font-weight: 600; }
+        .dig-permit-form h2.title { text-align: ${titleAlign}; font-size: var(--dpf-title, 18pt); font-weight: 800; margin: 8px 0; letter-spacing: 4px; color: var(--dpf-title-color, #000); }
+        .dig-permit-form .form-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; padding: 0 4px; gap: 12px; }
+        .dig-permit-form .form-header .logo { max-height: 48px; max-width: 160px; object-fit: contain; }
+        .dig-permit-form .form-header .title-wrap { flex: 1; text-align: ${titleAlign}; }
+        .dig-permit-form .form-header .doc-meta { text-align: right; font-size: 10pt; color: #333; }
         @media print {
           .page-break { page-break-after: always; }
         }
       `}</style>
 
 
-      {/* Header: project + doc */}
+      {/* Header: logo + title + doc */}
       {permitType === 'general' && (
         <>
-          <div className="flex justify-between items-end mb-1 px-2">
-            <div className="text-xs">Project : {projectName}</div>
-            <div className="text-xs">Doc. No : {effectiveDocNo}</div>
+          <div className="form-header">
+            {logoUrl ? <img src={logoUrl} alt="logo" className="logo" /> : <div style={{ width: 160 }} />}
+            <div className="title-wrap">
+              <h2 className="title" style={{ margin: 0 }}>안전작업허가서</h2>
+              {projectName && <div className="text-[10px] text-muted-foreground mt-0.5">Project : {projectName}</div>}
+            </div>
+            <div className="doc-meta">Doc. No<br/>{effectiveDocNo}</div>
           </div>
-          <h2 className="title">안전작업허가서</h2>
 
           <table>
             <ColGroup widths={generalCols} />

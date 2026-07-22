@@ -1,13 +1,61 @@
 /**
  * 안전작업허가서 (MD-000000-SF003 Rev.C) — 픽셀 단위 양식 매칭
  * 일반 / 밀폐공간 / 화기작업 3종 지원, 결재란 자동 입력, 인쇄 최적화.
+ * - 한글 IME 안전: PermitInput 모듈-스코프 컴포넌트로 composition 보호
+ * - 열 너비/폰트/라벨은 standardStyle/standardLabels props 로 마스터가 조정
  */
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ResponsiveSignaturePad, { ResponsiveSignaturePadHandle } from '@/components/ResponsiveSignaturePad';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  DEFAULT_STANDARD_STYLE, DEFAULT_STANDARD_LABELS, mergeStandardStyle, mergeStandardLabels,
+  colWidthCss, type StandardStyle, type StandardLabels, type PermitTypeKey,
+} from '@/lib/permitStandardStyle';
 
 export type PermitType = 'general' | 'confined_space' | 'hot_work' | 'excavation';
+
+/**
+ * 모듈-스코프 IME 안전 텍스트 입력.
+ * (예전엔 `Inp` 를 DigPermitForm 안에서 재정의 → 렌더마다 새 함수 → React 가
+ *  <input> 을 unmount/remount 하며 composition 이 끊겨 한글 입력이 깨졌음)
+ */
+const PermitInput = React.memo(function PermitInput({
+  value, onCommit, placeholder, className = '', readOnly,
+}: {
+  value?: string;
+  onCommit: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+  readOnly?: boolean;
+}) {
+  const composingRef = useRef(false);
+  const [local, setLocal] = useState<string>(value || '');
+  // 외부에서 값이 바뀌면(clone 등) composition 중이 아닐 때만 동기화
+  useEffect(() => {
+    if (!composingRef.current) setLocal(value || '');
+  }, [value]);
+
+  if (readOnly) return <span className="text-xs px-1">{value || ''}</span>;
+  return (
+    <input
+      className={`w-full text-xs bg-transparent outline-none px-1 ${className}`}
+      value={local}
+      placeholder={placeholder}
+      onChange={(e) => setLocal(e.target.value)}
+      onCompositionStart={() => { composingRef.current = true; }}
+      onCompositionEnd={(e) => {
+        composingRef.current = false;
+        const v = (e.target as HTMLInputElement).value;
+        setLocal(v);
+        onCommit(v);
+      }}
+      onBlur={(e) => {
+        if (!composingRef.current) onCommit(e.target.value);
+      }}
+    />
+  );
+});
 
 export interface PermitFormData {
   // common

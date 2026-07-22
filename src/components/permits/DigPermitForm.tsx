@@ -252,7 +252,16 @@ export default function DigPermitForm({
       return (
         <div className="text-center">
           <img src={s.signature} alt="서명" className="inline-block h-7 max-w-[80px] object-contain" />
-          <div className="text-[9px] text-muted-foreground">{s.name}</div>
+          <div className="text-[9px] text-muted-foreground">{s.name}{s.signed_at ? ` · ${new Date(s.signed_at).toLocaleDateString('ko-KR')}` : ''}</div>
+        </div>
+      );
+    }
+    // 결재는 됐지만 이미지가 없을 때 (전자결재 승인만 완료) → 이름+승인일자 텍스트 자동 표기
+    if (s?.name || s?.signed_at) {
+      return (
+        <div className="text-center">
+          <div className="text-[11px] font-semibold">{s?.name || ''}</div>
+          {s?.signed_at && <div className="text-[9px] text-muted-foreground">{new Date(s.signed_at).toLocaleDateString('ko-KR')}</div>}
         </div>
       );
     }
@@ -263,6 +272,7 @@ export default function DigPermitForm({
       </Button>
     );
   };
+
 
   // 내부 Inp 는 삭제됨 — 모듈-스코프 <Inp/>(PermitInput 래퍼) 를 그대로 사용 (IME 안전)
 

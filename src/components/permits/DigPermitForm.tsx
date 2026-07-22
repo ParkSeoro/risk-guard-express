@@ -42,7 +42,13 @@ const PermitInput = React.memo(function PermitInput({
       className={`w-full text-xs bg-transparent outline-none px-1 ${className}`}
       value={local}
       placeholder={placeholder}
-      onChange={(e) => setLocal(e.target.value)}
+      onChange={(e) => {
+        const v = e.target.value;
+        setLocal(v);
+        // 한글 IME composition 중에는 부모 state 흔들지 않음 → 나머지는 실시간 반영해서
+        // 저장 시 최신값 손실 방지
+        if (!composingRef.current) onCommit(v);
+      }}
       onCompositionStart={() => { composingRef.current = true; }}
       onCompositionEnd={(e) => {
         composingRef.current = false;
@@ -56,6 +62,7 @@ const PermitInput = React.memo(function PermitInput({
     />
   );
 });
+
 
 /** readOnly 상태를 하위 PermitInput 로 공유하기 위한 컨텍스트 (매 호출 prop-drilling 방지) */
 const PermitFormReadOnlyCtx = React.createContext<boolean>(false);
@@ -152,7 +159,11 @@ export interface PermitFormData {
   // 기타 안전조치
   chk_etc?: boolean;
   chk_etc_note?: string;
+  // 작업허가 연장 · 작업완료 시각
+  work_extend_until?: string;   // datetime-local
+  work_complete_time?: string;  // "HH:MM" 자유 입력
 }
+
 
 export interface PermitSignatures {
   applicant?: { name: string; signature: string; signed_at: string };
@@ -241,7 +252,16 @@ export default function DigPermitForm({
       return (
         <div className="text-center">
           <img src={s.signature} alt="서명" className="inline-block h-7 max-w-[80px] object-contain" />
-          <div className="text-[9px] text-muted-foreground">{s.name}</div>
+          <div className="text-[9px] text-muted-foreground">{s.name}{s.signed_at ? ` · ${new Date(s.signed_at).toLocaleDateString('ko-KR')}` : ''}</div>
+        </div>
+      );
+    }
+    // 결재는 됐지만 이미지가 없을 때 (전자결재 승인만 완료) → 이름+승인일자 텍스트 자동 표기
+    if (s?.name || s?.signed_at) {
+      return (
+        <div className="text-center">
+          <div className="text-[11px] font-semibold">{s?.name || ''}</div>
+          {s?.signed_at && <div className="text-[9px] text-muted-foreground">{new Date(s.signed_at).toLocaleDateString('ko-KR')}</div>}
         </div>
       );
     }
@@ -252,6 +272,7 @@ export default function DigPermitForm({
       </Button>
     );
   };
+
 
   // 내부 Inp 는 삭제됨 — 모듈-스코프 <Inp/>(PermitInput 래퍼) 를 그대로 사용 (IME 안전)
 
@@ -353,8 +374,12 @@ export default function DigPermitForm({
                 <td><SigCell k="contractor_pic" /></td>
                 <th className="hd">담당자(CM)</th>
                 <td><SigCell k="cm" /></td>
-                <td rowSpan={3} className="text-center text-[10px]">{signatures.reviewed_at ? new Date(signatures.reviewed_at).toLocaleDateString('ko-KR') : ''}</td>
+                <td rowSpan={3} className="text-center text-[10px]">{(() => {
+                  const rv = signatures.reviewed_at || (signatures.approved_at ? new Date(new Date(signatures.approved_at).getTime() - 86400000).toISOString() : '');
+                  return rv ? new Date(rv).toLocaleDateString('ko-KR') : '';
+                })()}</td>
                 <td rowSpan={3} className="text-center text-[10px]">{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : ''}</td>
+
               </tr>
               <tr>
                 <th className="hd">담당자(안전)</th>
@@ -510,7 +535,7 @@ export default function DigPermitForm({
               </tr>
               <tr>
                 <th className="hd">작업완료 확인<br/>(정리정돈, 서류회수)</th>
-                <td>시 분</td>
+                <td><Inp value={data.work_complete_time} onChangeText={(v: string) => update({ work_complete_time: v })} placeholder="시 분" /></td>
                 <th className="hd">현장감독자</th>
                 <td className="w-[120px]"><SigCell k="site_supervisor" /></td>
                 <th className="hd">승인자</th>
@@ -522,7 +547,7 @@ export default function DigPermitForm({
               </tr>
               <tr>
                 <th className="hd">작업허가 연장</th>
-                <td colSpan={3}>{readOnly || printMode ? '' : <input type="datetime-local" className="text-xs border-0 bg-transparent" />} 까지</td>
+                <td colSpan={3}>{readOnly || printMode ? (data.work_extend_until ? new Date(data.work_extend_until).toLocaleString('ko-KR') : '') : <input type="datetime-local" className="text-xs border-0 bg-transparent" value={data.work_extend_until || ''} onChange={(e) => update({ work_extend_until: e.target.value })} />} 까지</td>
                 <th className="hd">승인</th>
                 <td><SigCell k="site_director" label="연장 승인" /></td>
               </tr>

@@ -121,8 +121,20 @@ export default function SubmitApprovalDialog({
           setSteps(normalizeSteps(def.steps));
         } else {
           setSelectedTemplateId('');
-          setSteps([{ label: '검토', position: 'safety_manager', user_id: '', user_name: '', company_id: null, company_name: '' }]);
+          // 작업허가서 기본 5단계 결재선 (담당자(시공)→담당자(안전)→책임자(소장)→담당자(CM)→담당자(SM))
+          if (entityType === 'work_permit') {
+            setSteps([
+              { label: '담당자(시공)', position: 'contractor_pic', user_id: '', user_name: '', company_id: null, company_name: '' },
+              { label: '담당자(안전)', position: 'safety_pic', user_id: '', user_name: '', company_id: null, company_name: '' },
+              { label: '책임자(소장)', position: 'site_director', user_id: '', user_name: '', company_id: null, company_name: '' },
+              { label: '담당자(CM)', position: 'cm', user_id: '', user_name: '', company_id: null, company_name: '' },
+              { label: '담당자(SM)', position: 'sm', user_id: '', user_name: '', company_id: null, company_name: '' },
+            ]);
+          } else {
+            setSteps([{ label: '검토', position: 'safety_manager', user_id: '', user_name: '', company_id: null, company_name: '' }]);
+          }
         }
+
 
       } catch (e: any) {
         toast.error('결재선 정보를 불러오지 못했습니다: ' + (e.message || e));

@@ -42,6 +42,36 @@ const POSITION_TO_SIG: Record<string, keyof PermitSignatures> = {
   // 협조(cooperator)는 별도 서명칸 없음 — 표시는 결재선 화면에서 처리
 };
 
+// approval_lines.role / position 문자열의 다양한 별칭을 SF003 서명 슬롯 키로 매핑
+const ROLE_ALIAS_TO_SIG: Record<string, keyof PermitSignatures> = {
+  // 시공 담당자
+  contractor_pic: 'contractor_pic', applicant: 'contractor_pic', requester: 'contractor_pic',
+  '담당자(시공)': 'contractor_pic', '시공담당': 'contractor_pic', '시공': 'contractor_pic',
+  // CM
+  cm: 'cm', construction_manager: 'cm', '담당자(CM)': 'cm', 'CM': 'cm',
+  // 안전 담당자
+  safety_pic: 'safety_pic', safety_manager: 'safety_pic', safety: 'safety_pic',
+  '담당자(안전)': 'safety_pic', '안전담당': 'safety_pic', '안전관리자': 'safety_pic',
+  // SM
+  sm: 'sm', safety_management: 'sm', '담당자(SM)': 'sm', 'SM': 'sm',
+  // 소장
+  site_director: 'site_director', site_manager: 'site_director', director: 'site_director',
+  '책임자(소장)': 'site_director', '소장': 'site_director', '현장소장': 'site_director',
+  // 현장감독자
+  site_supervisor: 'site_supervisor', supervisor: 'site_supervisor', '현장감독자': 'site_supervisor',
+};
+
+function resolveSigKey(role?: string | null, position?: string | null): keyof PermitSignatures | null {
+  const keys = [role, position].filter(Boolean) as string[];
+  for (const k of keys) {
+    if (ROLE_ALIAS_TO_SIG[k]) return ROLE_ALIAS_TO_SIG[k];
+    const lower = k.toLowerCase();
+    if (ROLE_ALIAS_TO_SIG[lower]) return ROLE_ALIAS_TO_SIG[lower];
+  }
+  return null;
+}
+
+
 export default function WorkPermitDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -137,14 +167,15 @@ export default function WorkPermitDetail() {
           .eq('approval_id', apprId)
           .order('step_order', { ascending: true });
         (steps || []).forEach((s: any) => {
-          if (!s.role || s.status !== 'approved') return;
-          const existing = (merged as any)[s.role];
+          const sigKey = resolveSigKey(s.role, s.approver_position);
+          if (!sigKey || s.status !== 'approved') return;
+          const existing = (merged as any)[sigKey];
           if (!existing?.signature) {
-            (merged as any)[s.role] = {
-              name: s.approver_name || '',
+            (merged as any)[sigKey] = {
+              name: s.approver_name || existing?.name || '',
               position: s.approver_position || '',
-              signature: s.signature_image || '',
-              signed_at: s.approved_at || '',
+              signature: s.signature_image || existing?.signature || '',
+              signed_at: s.approved_at || existing?.signed_at || '',
             };
           }
           if (s.approved_at && (!lastApproved || s.approved_at > lastApproved)) lastApproved = s.approved_at;
@@ -152,8 +183,13 @@ export default function WorkPermitDetail() {
       }
     } catch (e) { console.warn('approval_lines merge failed', e); }
 
-    if (lastApproved) merged.approved_at = lastApproved;
+    if (lastApproved) {
+      merged.approved_at = lastApproved;
+      // 검토일 = 승인일 하루 전 (사용자 요구사항)
+      merged.reviewed_at = new Date(new Date(lastApproved).getTime() - 86400000).toISOString();
+    }
     setSignatures(merged);
+
 
     // 자동 채움 컨텍스트(작성자/회사/프로젝트/permit_date) 구성
     try {
@@ -424,18 +460,22 @@ export default function WorkPermitDetail() {
             readOnly={isApproved}
           />
         ) : (
-          <DigPermitForm
-            permitType={tab}
-            data={data}
-            signatures={signatures}
-            projectName={projectName}
-            standardStyle={standardStyle}
-            standardLabels={standardLabels}
-            onChange={(d) => setData(d)}
-            onSign={(k, v) => setSignatures({ ...signatures, [k]: v })}
-          />
+          // 미리보기(A4 210mm)와 동일 폭으로 렌더해 열 너비 왜곡 방지
+          <div className="mx-auto w-full max-w-[210mm]">
+            <DigPermitForm
+              permitType={tab}
+              data={data}
+              signatures={signatures}
+              projectName={projectName}
+              standardStyle={standardStyle}
+              standardLabels={standardLabels}
+              onChange={(d) => setData(d)}
+              onSign={(k, v) => setSignatures({ ...signatures, [k]: v })}
+            />
+          </div>
         )}
       </div>
+
 
 
       {approvalOpen && (

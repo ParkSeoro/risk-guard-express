@@ -111,7 +111,7 @@ const groups: Group[] = [
     label: "운영", key: "ops",
     items: [
       { title: "할 일", url: "/todo", icon: ListTodo },
-      { title: "결재함", url: "/approvals", icon: FileCheck, badgeKey: 'approvals' },
+      { title: "전자결재", url: "/approvals", icon: FileCheck, badgeKey: 'approvals' },
       { title: "프로젝트", url: "/projects", icon: FolderKanban },
       { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
     ],

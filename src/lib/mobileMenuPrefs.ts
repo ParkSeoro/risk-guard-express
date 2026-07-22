@@ -15,7 +15,7 @@ export const ALL_TILES: { key: MobileTileKey; label: string }[] = [
   { key: "permits", label: "허가서 결재" },
   { key: "actions", label: "조치 관리" },
   { key: "alerts", label: "알림" },
-  { key: "approvals", label: "결재함" },
+  { key: "approvals", label: "전자결재" },
   { key: "risk", label: "위험성평가" },
   { key: "work-plans", label: "작업계획" },
   { key: "workers", label: "근로자 QR" },

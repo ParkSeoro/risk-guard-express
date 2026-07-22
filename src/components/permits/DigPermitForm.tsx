@@ -177,6 +177,10 @@ interface Props {
   printMode?: boolean;
   docNo?: string;
   projectName?: string;
+  /** 마스터가 디자이너에서 저장한 열 너비/폰트 스타일 (없으면 default) */
+  standardStyle?: Partial<StandardStyle> | null;
+  /** 마스터가 디자이너에서 저장한 라벨 오버라이드 (승인업체명 등) */
+  standardLabels?: Partial<StandardLabels> | null;
 }
 
 const Cell = ({ children, className = '' }: any) => (
@@ -191,9 +195,29 @@ const Box = ({ checked }: { checked?: boolean }) => (
   </span>
 );
 
+/** 표준 스타일 → <colgroup> 렌더 */
+function ColGroup({ widths }: { widths?: (number | 'auto')[] }) {
+  if (!widths || widths.length === 0) return null;
+  return (
+    <colgroup>
+      {widths.map((w, i) => (
+        <col key={i} style={{ width: colWidthCss(w) }} />
+      ))}
+    </colgroup>
+  );
+}
+
 export default function DigPermitForm({
-  permitType, data, signatures, onChange, onSign, readOnly, printMode, docNo = 'MD-000000-SF003', projectName = '',
+  permitType, data, signatures, onChange, onSign, readOnly, printMode,
+  docNo, projectName = '',
+  standardStyle, standardLabels,
 }: Props) {
+  const style = mergeStandardStyle(standardStyle || null);
+  const labels = mergeStandardLabels(standardLabels || null);
+  const effectiveDocNo = docNo || labels.docNoPrefix || DEFAULT_STANDARD_LABELS.docNoPrefix!;
+  const roCtx = !!(readOnly || printMode);
+  const generalCols = style.columns.general;
+  const applicantCols = style.columns[permitType as PermitTypeKey] || DEFAULT_STANDARD_STYLE.columns[permitType as PermitTypeKey];
   const update = (patch: Partial<PermitFormData>) => onChange?.({ ...data, ...patch });
   const [signTarget, setSignTarget] = useState<keyof PermitSignatures | null>(null);
   const [signName, setSignName] = useState('');

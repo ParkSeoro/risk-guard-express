@@ -672,8 +672,11 @@ export default function DigPermitForm({
 
       {permitType === 'excavation' && (
         <>
-          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {effectiveDocNo}</div></div>
-          <h2 className="title">굴착·중장비 작업허가서</h2>
+          <div className="form-header">
+            {logoUrl ? <img src={logoUrl} alt="logo" className="logo" /> : <div style={{ width: 160 }} />}
+            <div className="title-wrap"><h2 className="title" style={{ margin: 0 }}>굴착·중장비 작업허가서</h2></div>
+            <div className="doc-meta">Doc. No<br/>{effectiveDocNo}</div>
+          </div>
           <table>
             <ColGroup widths={applicantCols} />
             <tbody>

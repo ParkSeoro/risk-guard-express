@@ -315,7 +315,7 @@ export default function SettingsPermitForms() {
             <FileSignature className="h-6 w-6" /> 허가서 양식 디자인
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            마스터 전용. 드래그앤드롭 빌더와 원본 PDF 좌표 매핑으로 원본과 동일한 인쇄가 가능합니다.
+            마스터 전용. 대부분의 경우 <strong>표준양식 스타일</strong> 탭에서 색상·열 너비·로고만 조정하면 됩니다. 원본 PDF 를 그대로 인쇄해야 하는 특수 양식은 <em>고급 → 원본 PDF 오버레이</em>를 사용하세요.
           </p>
         </div>
         <Button size="sm" onClick={() => createNew()}><Plus className="h-4 w-4 mr-1" />새 양식</Button>

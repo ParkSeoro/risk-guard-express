@@ -433,6 +433,27 @@ export default function WorkPermitDetail() {
           onSubmitted={() => { setApprovalOpen(false); load(); }}
         />
       )}
+      <ClonePreviousPermitDialog
+        open={cloneOpen}
+        onOpenChange={setCloneOpen}
+        projectId={permit.project_id}
+        permitType={tab}
+        currentPermitId={permit.id}
+        onCloned={load}
+      />
+    </div>
+  );
+}
+        <SubmitApprovalDialog
+          open={approvalOpen}
+          onOpenChange={setApprovalOpen}
+          entityType="work_permit"
+          entityId={permit.id}
+          projectId={permit.project_id}
+          submitterCompanyId={permit.company_id || userCompanyId || null}
+          onSubmitted={() => { setApprovalOpen(false); load(); }}
+        />
+      )}
     </div>
   );
 }

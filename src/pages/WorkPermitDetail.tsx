@@ -378,20 +378,20 @@ export default function WorkPermitDetail() {
         <CardContent className="p-3 flex items-center gap-2 text-sm flex-wrap">
           <FileSignature className="h-4 w-4" />
           <span className="font-semibold">허가서 양식:</span>
-          {templates.length === 0 ? (
-            <span className="text-muted-foreground">이 종류에 사용 가능한 양식이 없습니다. (시스템 › 허가서 양식 디자인에서 등록)</span>
-          ) : (
-            <Select value={templateId} onValueChange={setTemplateId}>
-              <SelectTrigger className="h-8 max-w-[420px]"><SelectValue placeholder="양식 선택" /></SelectTrigger>
-              <SelectContent>
-                {templates.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    📄 {t.name} · {t.version}
-                    {t.is_default ? ' (기본)' : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <Select value={templateId} onValueChange={setTemplateId}>
+            <SelectTrigger className="h-8 max-w-[460px]"><SelectValue placeholder="양식 선택" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={STANDARD_FORM_VALUE}>⭐ 표준 양식(내장) — 시스템 제공 SF003</SelectItem>
+              {templates.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  📄 {t.name} · {t.version}
+                  {t.is_default ? ' (기본)' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {templates.length === 0 && (
+            <span className="text-xs text-muted-foreground">(추가 양식은 시스템 › 허가서 양식 디자인에서 등록 가능)</span>
           )}
         </CardContent>
       </Card>

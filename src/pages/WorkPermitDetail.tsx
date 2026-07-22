@@ -429,6 +429,8 @@ export default function WorkPermitDetail() {
             data={data}
             signatures={signatures}
             projectName={projectName}
+            standardStyle={standardStyle}
+            standardLabels={standardLabels}
             onChange={(d) => setData(d)}
             onSign={(k, v) => setSignatures({ ...signatures, [k]: v })}
           />

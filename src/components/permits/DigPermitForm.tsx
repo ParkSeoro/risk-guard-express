@@ -1,13 +1,82 @@
 /**
  * 안전작업허가서 (MD-000000-SF003 Rev.C) — 픽셀 단위 양식 매칭
  * 일반 / 밀폐공간 / 화기작업 3종 지원, 결재란 자동 입력, 인쇄 최적화.
+ * - 한글 IME 안전: PermitInput 모듈-스코프 컴포넌트로 composition 보호
+ * - 열 너비/폰트/라벨은 standardStyle/standardLabels props 로 마스터가 조정
  */
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import ResponsiveSignaturePad, { ResponsiveSignaturePadHandle } from '@/components/ResponsiveSignaturePad';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  DEFAULT_STANDARD_STYLE, DEFAULT_STANDARD_LABELS, mergeStandardStyle, mergeStandardLabels,
+  colWidthCss, type StandardStyle, type StandardLabels, type PermitTypeKey,
+} from '@/lib/permitStandardStyle';
 
 export type PermitType = 'general' | 'confined_space' | 'hot_work' | 'excavation';
+
+/**
+ * 모듈-스코프 IME 안전 텍스트 입력.
+ * (예전엔 `Inp` 를 DigPermitForm 안에서 재정의 → 렌더마다 새 함수 → React 가
+ *  <input> 을 unmount/remount 하며 composition 이 끊겨 한글 입력이 깨졌음)
+ */
+const PermitInput = React.memo(function PermitInput({
+  value, onCommit, placeholder, className = '', readOnly,
+}: {
+  value?: string;
+  onCommit: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+  readOnly?: boolean;
+}) {
+  const composingRef = useRef(false);
+  const [local, setLocal] = useState<string>(value || '');
+  // 외부에서 값이 바뀌면(clone 등) composition 중이 아닐 때만 동기화
+  useEffect(() => {
+    if (!composingRef.current) setLocal(value || '');
+  }, [value]);
+
+  if (readOnly) return <span className="text-xs px-1">{value || ''}</span>;
+  return (
+    <input
+      className={`w-full text-xs bg-transparent outline-none px-1 ${className}`}
+      value={local}
+      placeholder={placeholder}
+      onChange={(e) => setLocal(e.target.value)}
+      onCompositionStart={() => { composingRef.current = true; }}
+      onCompositionEnd={(e) => {
+        composingRef.current = false;
+        const v = (e.target as HTMLInputElement).value;
+        setLocal(v);
+        onCommit(v);
+      }}
+      onBlur={(e) => {
+        if (!composingRef.current) onCommit(e.target.value);
+      }}
+    />
+  );
+});
+
+/** readOnly 상태를 하위 PermitInput 로 공유하기 위한 컨텍스트 (매 호출 prop-drilling 방지) */
+const PermitFormReadOnlyCtx = React.createContext<boolean>(false);
+
+/** readOnly 를 컨텍스트에서 자동으로 받아 쓰는 래퍼 — 기존 <Inp/> 자리 대체 */
+const Inp = React.memo(function Inp(props: {
+  value?: string; onCommit?: (v: string) => void; onChangeText?: (v: string) => void;
+  placeholder?: string; className?: string;
+}) {
+  const readOnly = React.useContext(PermitFormReadOnlyCtx);
+  const handle = props.onCommit || props.onChangeText || (() => {});
+  return (
+    <PermitInput
+      value={props.value}
+      onCommit={handle}
+      placeholder={props.placeholder}
+      className={props.className}
+      readOnly={readOnly}
+    />
+  );
+});
 
 export interface PermitFormData {
   // common
@@ -108,6 +177,10 @@ interface Props {
   printMode?: boolean;
   docNo?: string;
   projectName?: string;
+  /** 마스터가 디자이너에서 저장한 열 너비/폰트 스타일 (없으면 default) */
+  standardStyle?: Partial<StandardStyle> | null;
+  /** 마스터가 디자이너에서 저장한 라벨 오버라이드 (승인업체명 등) */
+  standardLabels?: Partial<StandardLabels> | null;
 }
 
 const Cell = ({ children, className = '' }: any) => (
@@ -122,9 +195,29 @@ const Box = ({ checked }: { checked?: boolean }) => (
   </span>
 );
 
+/** 표준 스타일 → <colgroup> 렌더 */
+function ColGroup({ widths }: { widths?: (number | 'auto')[] }) {
+  if (!widths || widths.length === 0) return null;
+  return (
+    <colgroup>
+      {widths.map((w, i) => (
+        <col key={i} style={{ width: colWidthCss(w) }} />
+      ))}
+    </colgroup>
+  );
+}
+
 export default function DigPermitForm({
-  permitType, data, signatures, onChange, onSign, readOnly, printMode, docNo = 'MD-000000-SF003', projectName = '',
+  permitType, data, signatures, onChange, onSign, readOnly, printMode,
+  docNo, projectName = '',
+  standardStyle, standardLabels,
 }: Props) {
+  const style = mergeStandardStyle(standardStyle || null);
+  const labels = mergeStandardLabels(standardLabels || null);
+  const effectiveDocNo = docNo || labels.docNoPrefix || DEFAULT_STANDARD_LABELS.docNoPrefix!;
+  const roCtx = !!(readOnly || printMode);
+  const generalCols = style.columns.general;
+  const applicantCols = style.columns[permitType as PermitTypeKey] || DEFAULT_STANDARD_STYLE.columns[permitType as PermitTypeKey];
   const update = (patch: Partial<PermitFormData>) => onChange?.({ ...data, ...patch });
   const [signTarget, setSignTarget] = useState<keyof PermitSignatures | null>(null);
   const [signName, setSignName] = useState('');
@@ -160,16 +253,9 @@ export default function DigPermitForm({
     );
   };
 
-  const Inp = ({ value, onChangeText, placeholder, className = '' }: any) => (
-    readOnly || printMode
-      ? <span className="text-xs px-1">{value || ''}</span>
-      : <input
-          className={`w-full text-xs bg-transparent outline-none px-1 ${className}`}
-          value={value || ''}
-          onChange={(e) => onChangeText(e.target.value)}
-          placeholder={placeholder}
-        />
-  );
+  // 내부 Inp 는 삭제됨 — 모듈-스코프 <Inp/>(PermitInput 래퍼) 를 그대로 사용 (IME 안전)
+
+
 
   // 체크박스 + 노트 묶음 (밀폐/화기/굴착 안전조치 공통)
   const SafetyChecklist = ({ items, mapKey, noteKey }: { items: string[]; mapKey: keyof PermitFormData; noteKey: keyof PermitFormData }) => {
@@ -195,35 +281,47 @@ export default function DigPermitForm({
   };
 
   return (
-    <div className={`dig-permit-form ${printMode ? 'print-mode' : ''} bg-white text-foreground text-xs`} style={{ fontFamily: '"Malgun Gothic","Apple SD Gothic Neo",sans-serif' }}>
+    <PermitFormReadOnlyCtx.Provider value={roCtx}>
+    <div
+      className={`dig-permit-form ${printMode ? 'print-mode' : ''} bg-white text-foreground text-xs`}
+      style={{
+        fontFamily: '"Malgun Gothic","Apple SD Gothic Neo",sans-serif',
+        ['--dpf-body' as any]: `${style.bodyFontPt}pt`,
+        ['--dpf-title' as any]: `${style.titleFontPt}pt`,
+        ['--dpf-small' as any]: `${style.smallFontPt}pt`,
+      } as React.CSSProperties}
+    >
       <style>{`
-        .dig-permit-form table { border-collapse: collapse; width: 100%; }
-        .dig-permit-form td, .dig-permit-form th { border: 1px solid #000; padding: 3px 4px; vertical-align: middle; }
+        .dig-permit-form { font-size: var(--dpf-body, 10pt); }
+        .dig-permit-form table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+        .dig-permit-form td, .dig-permit-form th { border: 1px solid #000; padding: 3px 4px; vertical-align: middle; word-break: break-word; }
         .dig-permit-form .hd { background: #c1e1c1; font-weight: 600; text-align: center; }
-        .dig-permit-form h2.title { text-align:center; font-size: 18pt; font-weight: 800; margin: 8px 0; letter-spacing: 4px; }
+        .dig-permit-form h2.title { text-align:center; font-size: var(--dpf-title, 18pt); font-weight: 800; margin: 8px 0; letter-spacing: 4px; }
+        .dig-permit-form .small { font-size: var(--dpf-small, 9pt); }
         @media print {
-          .dig-permit-form { font-size: 9pt; }
           .page-break { page-break-after: always; }
         }
       `}</style>
+
 
       {/* Header: project + doc */}
       {permitType === 'general' && (
         <>
           <div className="flex justify-between items-end mb-1 px-2">
             <div className="text-xs">Project : {projectName}</div>
-            <div className="text-xs">Doc. No : {docNo}</div>
+            <div className="text-xs">Doc. No : {effectiveDocNo}</div>
           </div>
           <h2 className="title">안전작업허가서</h2>
 
           <table>
+            <ColGroup widths={generalCols} />
             <tbody>
               <tr>
-                <th className="hd w-[110px]">공사업체</th>
-                <td className="w-[160px]"><Inp value={data.contractor_company} onChangeText={(v: string) => update({ contractor_company: v })} /></td>
-                <th className="hd" colSpan={2}>승인업체 : 에어리퀴드</th>
-                <th className="hd w-[100px]">검토일</th>
-                <th className="hd w-[100px]">승인일</th>
+                <th className="hd">공사업체</th>
+                <td><Inp value={data.contractor_company} onChangeText={(v: string) => update({ contractor_company: v })} /></td>
+                <th className="hd" colSpan={2}>승인업체 : {labels.approverCompany}</th>
+                <th className="hd">검토일</th>
+                <th className="hd">승인일</th>
               </tr>
               <tr>
                 <th className="hd">담당자(시공)</th>
@@ -416,15 +514,16 @@ export default function DigPermitForm({
 
       {permitType === 'confined_space' && (
         <>
-          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {docNo}</div></div>
+          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {effectiveDocNo}</div></div>
           <h2 className="title">밀폐공간 작업허가서</h2>
           <table>
+            <ColGroup widths={applicantCols} />
             <tbody>
               <tr>
-                <th className="hd w-[100px]">신청인</th>
+                <th className="hd">신청인</th>
                 <td>소속(업체명) : <Inp value={data.applicant_company} onChangeText={(v: string) => update({ applicant_company: v })} /></td>
                 <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
-                <td className="w-[120px]"><SigCell k="applicant" /></td>
+                <td><SigCell k="applicant" /></td>
               </tr>
               <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
               <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>
@@ -486,15 +585,16 @@ export default function DigPermitForm({
 
       {permitType === 'hot_work' && (
         <>
-          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {docNo}</div></div>
+          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {effectiveDocNo}</div></div>
           <h2 className="title">화기작업허가서</h2>
           <table>
+            <ColGroup widths={applicantCols} />
             <tbody>
               <tr>
-                <th className="hd w-[100px]">신청인</th>
+                <th className="hd">신청인</th>
                 <td>소속 : <Inp value={data.applicant_company} onChangeText={(v: string) => update({ applicant_company: v })} /></td>
                 <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
-                <td className="w-[120px]"><SigCell k="applicant" /></td>
+                <td><SigCell k="applicant" /></td>
               </tr>
               <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
               <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>
@@ -541,15 +641,16 @@ export default function DigPermitForm({
 
       {permitType === 'excavation' && (
         <>
-          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {docNo}</div></div>
+          <div className="flex justify-end mb-1 px-2"><div className="text-xs">Doc. No : {effectiveDocNo}</div></div>
           <h2 className="title">굴착·중장비 작업허가서</h2>
           <table>
+            <ColGroup widths={applicantCols} />
             <tbody>
               <tr>
-                <th className="hd w-[100px]">신청인</th>
+                <th className="hd">신청인</th>
                 <td>소속 : <Inp value={data.applicant_company} onChangeText={(v: string) => update({ applicant_company: v })} /></td>
                 <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
-                <td className="w-[120px]"><SigCell k="applicant" /></td>
+                <td><SigCell k="applicant" /></td>
               </tr>
               <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
               <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>
@@ -621,5 +722,7 @@ export default function DigPermitForm({
         </DialogContent>
       </Dialog>
     </div>
+    </PermitFormReadOnlyCtx.Provider>
   );
 }
+

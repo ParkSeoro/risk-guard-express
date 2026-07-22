@@ -22,7 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-  FileSignature, Plus, Copy, Trash2, Save, Eye, History, FileText, MousePointer2, Sparkles, Signature,
+  FileSignature, Plus, Copy, Trash2, Save, Eye, History, FileText, MousePointer2, Sparkles, Signature, LayoutGrid,
 } from 'lucide-react';
 import SortableSectionCard from '@/components/permit-designer/SortableSectionCard';
 import PropertyPanel from '@/components/permit-designer/PropertyPanel';
@@ -30,7 +30,9 @@ import LivePreview from '@/components/permit-designer/LivePreview';
 import OverlayEditor from '@/components/permit-designer/OverlayEditor';
 import AIAnalysisPanel from '@/components/permit-designer/AIAnalysisPanel';
 import SignatureSlotMapper from '@/components/permit-designer/SignatureSlotMapper';
+import StandardStyleEditor from '@/components/permit-designer/StandardStyleEditor';
 import { FormLayout, PrintOverlay, SignatureSlot, EMPTY_LAYOUT, EMPTY_OVERLAY, newSection } from '@/lib/permitFormTypes';
+import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
 
 type Tpl = {
   id: string;
@@ -430,9 +432,28 @@ export default function SettingsPermitForms() {
                 <TabsTrigger value="ai"><Sparkles className="h-4 w-4 mr-1" />AI 자동 분석</TabsTrigger>
                 <TabsTrigger value="overlay"><FileText className="h-4 w-4 mr-1" />원본 PDF 오버레이</TabsTrigger>
                 <TabsTrigger value="builder"><MousePointer2 className="h-4 w-4 mr-1" />빌더</TabsTrigger>
+                <TabsTrigger value="standard"><LayoutGrid className="h-4 w-4 mr-1" />표준양식 스타일</TabsTrigger>
                 <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />미리보기</TabsTrigger>
                 <TabsTrigger value="versions"><History className="h-4 w-4 mr-1" />버전</TabsTrigger>
               </TabsList>
+
+              <TabsContent value="standard">
+                <Card>
+                  <CardContent className="p-3">
+                    <StandardStyleEditor
+                      style={(layout as any).standard_style || null}
+                      labels={(layout as any).standard_labels || null}
+                      onChange={(style: StandardStyle, labels: StandardLabels) =>
+                        setLayout({ ...layout, ...( { standard_style: style, standard_labels: labels } as any) })
+                      }
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-2">
+                      이 양식이 permit_type = '{selected.permit_type || 'general'}' 로 저장되어 있으면, 허가서 작성 화면의 표준 양식(내장)에 위 열 너비 / 폰트 / 라벨이 자동 반영됩니다.
+                    </p>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
 
 
 

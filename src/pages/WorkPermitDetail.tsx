@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Copy } from 'lucide-react';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
+import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
 import OverlayFillForm from '@/components/permits/OverlayFillForm';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import ClonePreviousPermitDialog from '@/components/permits/ClonePreviousPermitDialog';
@@ -58,6 +59,8 @@ export default function WorkPermitDetail() {
   const [saving, setSaving] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
   const [templateId, setTemplateId] = useState<string>(STANDARD_FORM_VALUE);
+  const [standardStyle, setStandardStyle] = useState<Partial<StandardStyle> | null>(null);
+  const [standardLabels, setStandardLabels] = useState<Partial<StandardLabels> | null>(null);
   const [autoCtx, setAutoCtx] = useState<any>({});
   const [cloneOpen, setCloneOpen] = useState(false);
   const template = useMemo(
@@ -195,6 +198,14 @@ export default function WorkPermitDetail() {
           return typeOk && hasOverlay;
         });
         setTemplates(usable);
+        // 표준 양식(내장) 의 열 너비/라벨 스타일 오버라이드 —
+        // 이 프로젝트/현재 탭 에 해당하는 layout_json.standard_style 이 있으면 사용
+        const styleHolder =
+          list.find((t) => (t.permit_type === tab) && (t.layout_json as any)?.standard_style) ||
+          list.find((t) => t.permit_type === 'general' && (t.layout_json as any)?.standard_style) ||
+          list.find((t) => (t.layout_json as any)?.standard_style);
+        setStandardStyle((styleHolder?.layout_json as any)?.standard_style ?? null);
+        setStandardLabels((styleHolder?.layout_json as any)?.standard_labels ?? null);
         // 저장된 template_id가 있으면 그 오버레이 사용, 없으면 표준 양식(내장) 기본
         const saved = (permit as any)?.form_template_id;
         const matched = saved ? usable.find((t) => t.id === saved) : null;
@@ -202,10 +213,13 @@ export default function WorkPermitDetail() {
       } catch (e) {
         console.warn('template lookup failed', e);
         setTemplates([]);
+        setStandardStyle(null);
+        setStandardLabels(null);
         setTemplateId(STANDARD_FORM_VALUE);
       }
     })();
   }, [tab, permit?.id]);
+
 
   const save = async () => {
     if (!permit) return;
@@ -415,6 +429,8 @@ export default function WorkPermitDetail() {
             data={data}
             signatures={signatures}
             projectName={projectName}
+            standardStyle={standardStyle}
+            standardLabels={standardLabels}
             onChange={(d) => setData(d)}
             onSign={(k, v) => setSignatures({ ...signatures, [k]: v })}
           />

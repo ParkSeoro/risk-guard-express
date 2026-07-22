@@ -75,7 +75,7 @@ export default function SettingsPermitForms() {
   const [overlay, setOverlay] = useState<PrintOverlay>(EMPTY_OVERLAY);
   const [originalPdfUrl, setOriginalPdfUrl] = useState<string | null>(null);
   const [selectedRef, setSelectedRef] = useState<SelectedRef>(null);
-  const [tab, setTab] = useState('ai');
+  const [tab, setTab] = useState('standard');
   const [versions, setVersions] = useState<any[]>([]);
   const [showJson, setShowJson] = useState(false);
   const [jsonText, setJsonText] = useState('');

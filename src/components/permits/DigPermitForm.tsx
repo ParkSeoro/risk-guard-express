@@ -57,6 +57,27 @@ const PermitInput = React.memo(function PermitInput({
   );
 });
 
+/** readOnly 상태를 하위 PermitInput 로 공유하기 위한 컨텍스트 (매 호출 prop-drilling 방지) */
+const PermitFormReadOnlyCtx = React.createContext<boolean>(false);
+
+/** readOnly 를 컨텍스트에서 자동으로 받아 쓰는 래퍼 — 기존 <Inp/> 자리 대체 */
+const Inp = React.memo(function Inp(props: {
+  value?: string; onCommit?: (v: string) => void; onChangeText?: (v: string) => void;
+  placeholder?: string; className?: string;
+}) {
+  const readOnly = React.useContext(PermitFormReadOnlyCtx);
+  const handle = props.onCommit || props.onChangeText || (() => {});
+  return (
+    <PermitInput
+      value={props.value}
+      onCommit={handle}
+      placeholder={props.placeholder}
+      className={props.className}
+      readOnly={readOnly}
+    />
+  );
+});
+
 export interface PermitFormData {
   // common
   contractor_company?: string;

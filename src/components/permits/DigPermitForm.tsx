@@ -253,16 +253,9 @@ export default function DigPermitForm({
     );
   };
 
-  const Inp = ({ value, onChangeText, placeholder, className = '' }: any) => (
-    readOnly || printMode
-      ? <span className="text-xs px-1">{value || ''}</span>
-      : <input
-          className={`w-full text-xs bg-transparent outline-none px-1 ${className}`}
-          value={value || ''}
-          onChange={(e) => onChangeText(e.target.value)}
-          placeholder={placeholder}
-        />
-  );
+  // 내부 Inp 는 삭제됨 — 모듈-스코프 <Inp/>(PermitInput 래퍼) 를 그대로 사용 (IME 안전)
+
+
 
   // 체크박스 + 노트 묶음 (밀폐/화기/굴착 안전조치 공통)
   const SafetyChecklist = ({ items, mapKey, noteKey }: { items: string[]; mapKey: keyof PermitFormData; noteKey: keyof PermitFormData }) => {
@@ -288,17 +281,29 @@ export default function DigPermitForm({
   };
 
   return (
-    <div className={`dig-permit-form ${printMode ? 'print-mode' : ''} bg-white text-foreground text-xs`} style={{ fontFamily: '"Malgun Gothic","Apple SD Gothic Neo",sans-serif' }}>
+    <PermitFormReadOnlyCtx.Provider value={roCtx}>
+    <div
+      className={`dig-permit-form ${printMode ? 'print-mode' : ''} bg-white text-foreground text-xs`}
+      style={{
+        fontFamily: '"Malgun Gothic","Apple SD Gothic Neo",sans-serif',
+        // @ts-expect-error CSS custom properties
+        '--dpf-body': `${style.bodyFontPt}pt`,
+        '--dpf-title': `${style.titleFontPt}pt`,
+        '--dpf-small': `${style.smallFontPt}pt`,
+      } as React.CSSProperties}
+    >
       <style>{`
-        .dig-permit-form table { border-collapse: collapse; width: 100%; }
-        .dig-permit-form td, .dig-permit-form th { border: 1px solid #000; padding: 3px 4px; vertical-align: middle; }
+        .dig-permit-form { font-size: var(--dpf-body, 10pt); }
+        .dig-permit-form table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+        .dig-permit-form td, .dig-permit-form th { border: 1px solid #000; padding: 3px 4px; vertical-align: middle; word-break: break-word; }
         .dig-permit-form .hd { background: #c1e1c1; font-weight: 600; text-align: center; }
-        .dig-permit-form h2.title { text-align:center; font-size: 18pt; font-weight: 800; margin: 8px 0; letter-spacing: 4px; }
+        .dig-permit-form h2.title { text-align:center; font-size: var(--dpf-title, 18pt); font-weight: 800; margin: 8px 0; letter-spacing: 4px; }
+        .dig-permit-form .small { font-size: var(--dpf-small, 9pt); }
         @media print {
-          .dig-permit-form { font-size: 9pt; }
           .page-break { page-break-after: always; }
         }
       `}</style>
+
 
       {/* Header: project + doc */}
       {permitType === 'general' && (

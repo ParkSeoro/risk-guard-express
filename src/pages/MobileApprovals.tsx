@@ -32,7 +32,7 @@ const ENTITY_LINK = (t: string, id: string) => {
   }
 };
 
-// 모바일 통합 결재함 (모든 문서 타입: 허가서/계획서/위평/사고/훈련/TBM/안관비)
+// 모바일 통합 전자결재 (모든 문서 타입: 허가서/계획서/위평/사고/훈련/TBM/안관비)
 export default function MobileApprovals() {
   const navigate = useNavigate();
   const { user } = useAuth();

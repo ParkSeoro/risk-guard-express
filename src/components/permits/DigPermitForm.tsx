@@ -311,9 +311,10 @@ export default function DigPermitForm({
           ))}
         </div>
         <div className="pt-1 border-t border-dashed border-muted-foreground/30">
-          <div className="flex items-center gap-1">
-            <span className="shrink-0 whitespace-nowrap">비고/세부사항:</span>
-            <Inp className="flex-1" value={(data as any)[noteKey]} onChangeText={(v: string) => update({ [noteKey]: v } as any)} />
+          <div className="flex items-center gap-1 whitespace-nowrap">
+            <span className="shrink-0">비고/세부사항: (</span>
+            <Inp className="flex-1 min-w-0" value={(data as any)[noteKey]} onChangeText={(v: string) => update({ [noteKey]: v } as any)} />
+            <span className="shrink-0">)</span>
           </div>
         </div>
       </div>
@@ -635,7 +636,7 @@ export default function DigPermitForm({
                     </label>
                   ))}
                   {data.cs_type === '기타' && (
-                    <span className="ml-2">→ <Inp value={data.cs_type_other} onChangeText={(v: string) => update({ cs_type_other: v })} placeholder="기타 작업 종류" /></span>
+                    <span className="ml-2 inline-flex items-center gap-1 whitespace-nowrap align-middle" style={{ minWidth: 180 }}>→ <Inp className="flex-1 min-w-0" value={data.cs_type_other} onChangeText={(v: string) => update({ cs_type_other: v })} placeholder="기타 작업 종류" /></span>
                   )}
                 </td>
               </tr>
@@ -709,7 +710,7 @@ export default function DigPermitForm({
                     </label>
                   ))}
                   {data.hw_type === '기타' && (
-                    <span className="ml-2">→ <Inp value={data.hw_type_other} onChangeText={(v: string) => update({ hw_type_other: v })} placeholder="기타 화기 종류" /></span>
+                    <span className="ml-2 inline-flex items-center gap-1 whitespace-nowrap align-middle" style={{ minWidth: 180 }}>→ <Inp className="flex-1 min-w-0" value={data.hw_type_other} onChangeText={(v: string) => update({ hw_type_other: v })} placeholder="기타 화기 종류" /></span>
                   )}
                 </td>
               </tr>
@@ -762,9 +763,14 @@ export default function DigPermitForm({
               <tr>
                 <th className="hd">굴착 제원</th>
                 <td colSpan={3}>
-                  깊이 : <Inp value={data.ex_depth} onChangeText={(v: string) => update({ ex_depth: v })} placeholder="m" /> ·
-                  폭 : <Inp value={data.ex_width} onChangeText={(v: string) => update({ ex_width: v })} placeholder="m" /> ·
-                  공법 : <Inp value={data.ex_method} onChangeText={(v: string) => update({ ex_method: v })} placeholder="인력/기계/혼합" />
+                  <div className="flex items-center gap-1 whitespace-nowrap">
+                    <span className="shrink-0">깊이 :</span>
+                    <Inp className="flex-1 min-w-0" value={data.ex_depth} onChangeText={(v: string) => update({ ex_depth: v })} placeholder="m" />
+                    <span className="shrink-0">· 폭 :</span>
+                    <Inp className="flex-1 min-w-0" value={data.ex_width} onChangeText={(v: string) => update({ ex_width: v })} placeholder="m" />
+                    <span className="shrink-0">· 공법 :</span>
+                    <Inp className="flex-1 min-w-0" value={data.ex_method} onChangeText={(v: string) => update({ ex_method: v })} placeholder="인력/기계/혼합" />
+                  </div>
                 </td>
               </tr>
               <tr>

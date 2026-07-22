@@ -710,7 +710,7 @@ export default function DigPermitForm({
                     </label>
                   ))}
                   {data.hw_type === '기타' && (
-                    <span className="ml-2">→ <Inp value={data.hw_type_other} onChangeText={(v: string) => update({ hw_type_other: v })} placeholder="기타 화기 종류" /></span>
+                    <span className="ml-2 inline-flex items-center gap-1 whitespace-nowrap align-middle" style={{ minWidth: 180 }}>→ <Inp className="flex-1 min-w-0" value={data.hw_type_other} onChangeText={(v: string) => update({ hw_type_other: v })} placeholder="기타 화기 종류" /></span>
                   )}
                 </td>
               </tr>

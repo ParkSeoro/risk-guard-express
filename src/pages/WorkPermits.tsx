@@ -460,22 +460,31 @@ export default function WorkPermits() {
             </div>
             <div><Label>작업 인원</Label><Input type="number" value={form.personnel_count} onChange={(e) => setForm({ ...form, personnel_count: e.target.value })} /></div>
             {!editing && (
-              <div className="rounded border p-3 space-y-2">
-                <div className="flex items-center gap-2 text-sm font-semibold"><Copy className="h-4 w-4" />전회차 복사</div>
-                {loadingPrevious ? (
-                  <p className="text-xs text-muted-foreground">이전 허가서를 불러오는 중...</p>
-                ) : previousPermits.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">같은 종류의 이전 허가서가 없습니다.</p>
-                ) : (
-                  <div className="space-y-1 max-h-36 overflow-y-auto">
+              <div>
+                <Label className="flex items-center gap-1"><Copy className="h-3 w-3" />전회차 복사</Label>
+                <Select
+                  value=""
+                  onValueChange={(v) => {
+                    const src = previousPermits.find((p) => p.id === v);
+                    if (src) applyPreviousPermit(src);
+                  }}
+                  disabled={loadingPrevious || previousPermits.length === 0}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={
+                      loadingPrevious ? '이전 허가서를 불러오는 중...'
+                        : previousPermits.length === 0 ? '같은 종류의 이전 허가서가 없습니다'
+                        : '최신 회차부터 선택하여 내용 복사'
+                    } />
+                  </SelectTrigger>
+                  <SelectContent>
                     {previousPermits.map((p) => (
-                      <button key={p.id} type="button" onClick={() => applyPreviousPermit(p)} className="w-full text-left rounded border px-2 py-1.5 hover:bg-muted text-xs">
-                        <span className="font-medium">{p.work_name || p.form_data?.work_name || p.work_description || '(제목 없음)'}</span>
-                        <span className="text-muted-foreground"> · {p.permit_date} · {p.location || p.form_data?.work_location || '-'}</span>
-                      </button>
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.permit_date} · {p.work_name || p.form_data?.work_name || p.work_description || '(제목 없음)'} · {p.location || p.form_data?.work_location || '-'}
+                      </SelectItem>
                     ))}
-                  </div>
-                )}
+                  </SelectContent>
+                </Select>
               </div>
             )}
             <div>

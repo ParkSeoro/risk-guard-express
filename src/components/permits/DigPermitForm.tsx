@@ -461,7 +461,9 @@ export default function DigPermitForm({
                   <label className="mr-3 inline-flex items-center"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.att_tbm_log} onChange={(e) => update({ att_tbm_log: e.target.checked })} className="mr-1" />TBM 일지</label>
                   <label className="mr-3 inline-flex items-center"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.att_heavy_eq} onChange={(e) => update({ att_heavy_eq: e.target.checked })} className="mr-1" />중장비 서류</label>
                   <label className="mr-3 inline-flex items-center"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.att_work_plan} onChange={(e) => update({ att_work_plan: e.target.checked })} className="mr-1" />작업계획서</label>
-                  <label className="inline-flex items-center">기타 (<Inp value={data.att_other} onChangeText={(v: string) => update({ att_other: v })} />)</label>
+                  <span className="inline-flex items-center gap-1 align-middle" style={{ minWidth: 180 }}>
+                    기타 (<Inp className="flex-1" value={data.att_other} onChangeText={(v: string) => update({ att_other: v })} />)
+                  </span>
                 </td>
               </tr>
               <tr><th className="hd" colSpan={6}>안전조치 요구사항(필요한 부분에 대해 현장 확인 후 ☑ 표시)</th></tr>

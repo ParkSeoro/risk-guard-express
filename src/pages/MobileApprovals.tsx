@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,13 +9,34 @@ import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { ArrowLeft, CheckCircle2, XCircle, Loader2, FileCheck2 } from "lucide-react";
 import { toast } from "sonner";
 
-// 모바일 결재함: 내 차례 대기 결재 → 승인/반려
+const ENTITY_LABEL: Record<string, string> = {
+  work_plan: "작업계획서",
+  work_permit: "작업허가서",
+  assessment_run: "위험성평가",
+  safety_cost: "산업안전보건관리비",
+  incident: "사고보고",
+  emergency_drill: "비상대피훈련",
+  tbm: "TBM 일지",
+};
+
+const ENTITY_LINK = (t: string, id: string) => {
+  switch (t) {
+    case "assessment_run": return `/assessment-run/${id}`;
+    case "work_plan": return "/work-plans";
+    case "work_permit": return "/work-permits";
+    case "safety_cost": return "/safety-cost";
+    case "incident": return "/incidents";
+    case "emergency_drill": return "/emergency-drills";
+    case "tbm": return "/tbm";
+    default: return "/approvals";
+  }
+};
+
+// 모바일 통합 결재함 (모든 문서 타입: 허가서/계획서/위평/사고/훈련/TBM/안관비)
 export default function MobileApprovals() {
   const navigate = useNavigate();
-  const { user, profile } = useAuth();
-  const { log: logAudit } = useAuditLog();
+  const { user } = useAuth();
   const [rows, setRows] = useState<any[]>([]);
-  const [runs, setRuns] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [comment, setComment] = useState("");
@@ -25,60 +45,27 @@ export default function MobileApprovals() {
   const load = async () => {
     if (!user) return;
     setLoading(true);
-    const { data: ap, error } = await supabase.from("approvals").select("*")
-      .eq("approver_id", user.id).order("created_at", { ascending: false }).limit(100);
-    if (error) { toast.error("결재 목록 로드 실패: " + error.message); setLoading(false); return; }
-    const list = (ap || []).filter((a: any) => a.status === "대기");
-    setRows(list);
-
-    const runIds = Array.from(new Set(list.map((a: any) => a.run_id).filter(Boolean)));
-    if (runIds.length) {
-      const { data: r } = await supabase.from("assessment_runs")
-        .select("id, period_label, status, type, project_id").in("id", runIds);
-      const map: Record<string, any> = {};
-      (r || []).forEach((x: any) => { map[x.id] = x; });
-      setRuns(map);
-    }
+    const { data, error } = await supabase.rpc("get_my_pending_entity_approvals");
+    if (error) toast.error("결재 목록 로드 실패: " + error.message);
+    setRows((data as any[]) || []);
     setLoading(false);
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [user]);
 
-  const decide = async (ap: any, action: "승인" | "반려") => {
-    if (action === "반려" && !comment.trim()) return toast.error("반려 사유를 입력하세요");
+  const decide = async (r: any, action: "approve" | "reject") => {
+    if (action === "reject" && !comment.trim()) return toast.error("반려 사유를 입력하세요");
     setSubmitting(true);
     try {
-      const { data: all, error: e1 } = await supabase.from("approvals").select("*")
-        .eq("run_id", ap.run_id).eq("approval_version", ap.approval_version || 1);
-      if (e1) throw e1;
-      const sorted = (all || []).filter((a: any) => a.status !== "취소")
-        .sort((a: any, b: any) => (a.step_order || 0) - (b.step_order || 0));
-      const idx = sorted.findIndex((a: any) => a.id === ap.id);
-      if (idx > 0 && sorted.slice(0, idx).some((a: any) => a.status !== "승인")) {
-        toast.error("이전 결재가 완료되지 않았습니다");
-        setSubmitting(false);
-        return;
-      }
-      const { error: e2 } = await supabase.from("approvals").update({
-        status: action,
-        approver_id: user!.id,
-        approver_name: profile?.display_name || "",
-        comment: comment || "",
-        approved_at: new Date().toISOString(),
-      }).eq("id", ap.id);
-      if (e2) throw e2;
-
-      if (action === "승인") {
-        const allApproved = sorted.every((a: any) => a.status === "승인" || a.id === ap.id);
-        if (allApproved) {
-          await supabase.from("assessment_runs").update({ status: "승인완료" }).eq("id", ap.run_id);
-        }
-      } else {
-        await supabase.from("assessment_runs").update({ status: "보완중" }).eq("id", ap.run_id);
-      }
-      await logAudit(action === "승인" ? 'approve' : 'reject', 'assessment_run', ap.run_id, runs[ap.run_id]?.project_id, { step: ap.step, comment });
-
-      toast.success(action === "승인" ? "승인 완료" : "반려 처리됨");
+      const { data, error } = await supabase.rpc("act_on_approval", {
+        _approval_id: r.approval_id,
+        _action: action,
+        _comment: comment || "",
+      });
+      if (error) throw error;
+      const result: any = data;
+      if (result?.error) throw new Error(result.error);
+      toast.success(action === "approve" ? "승인 완료" : "반려 처리됨");
       setOpenId(null); setComment("");
       load();
     } catch (e: any) {
@@ -106,45 +93,44 @@ export default function MobileApprovals() {
             <div className="text-sm mt-2">대기 중인 결재가 없습니다</div>
           </div>
         )}
-        {rows.map(r => {
-          const run = runs[r.run_id];
-          return (
-            <Card key={r.id}>
-              <CardContent className="pt-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">{r.step || "결재"}</Badge>
-                  {run?.type && <Badge variant="secondary" className="text-xs">{run.type}</Badge>}
-                </div>
-                <div className="font-medium text-sm">{run?.period_label || "(기간 미지정)"}</div>
-                <div className="text-xs text-muted-foreground">
-                  요청 {new Date(r.created_at).toLocaleString("ko-KR")}
-                </div>
+        {rows.map((r: any) => (
+          <Card key={r.approval_id}>
+            <CardContent className="pt-4 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="secondary" className="text-xs">{ENTITY_LABEL[r.entity_type] || r.entity_type}</Badge>
+                <Badge variant="outline" className="text-xs">{r.step || "결재"}</Badge>
+                {r.step_order && <Badge variant="outline" className="text-xs">{r.step_order}단계</Badge>}
+              </div>
+              <div className="font-medium text-sm">{r.entity_title || "(제목 없음)"}</div>
+              <div className="text-xs text-muted-foreground">
+                {r.entity_date && <>일자 {r.entity_date} · </>}
+                요청 {new Date(r.created_at).toLocaleString("ko-KR")}
+              </div>
 
-                {openId === r.id ? (
-                  <div className="space-y-2 pt-2 border-t">
-                    <IMESafeTextarea rows={2} placeholder="의견/사유 (반려 시 필수)" defaultValue={comment} onCommit={setComment} />
-                    <div className="grid grid-cols-3 gap-2">
-                      <Button variant="outline" onClick={() => { setOpenId(null); setComment(""); }}>취소</Button>
-                      <Button variant="destructive" onClick={() => decide(r, "반려")} disabled={submitting}>
-                        <XCircle className="h-4 w-4 mr-1" /> 반려
-                      </Button>
-                      <Button onClick={() => decide(r, "승인")} disabled={submitting}>
-                        {submitting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />} 승인
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2 pt-2">
-                    <Button variant="outline" onClick={() => navigate(r.run_id ? `/assessment-run/${r.run_id}` : "/approvals")}>
-                      문서 보기
+              {openId === r.approval_id ? (
+                <div className="space-y-2 pt-2 border-t">
+                  <IMESafeTextarea rows={2} placeholder="의견/사유 (반려 시 필수)" defaultValue={comment} onCommit={setComment} />
+                  <div className="grid grid-cols-3 gap-2">
+                    <Button variant="outline" onClick={() => { setOpenId(null); setComment(""); }}>취소</Button>
+                    <Button variant="destructive" onClick={() => decide(r, "reject")} disabled={submitting}>
+                      <XCircle className="h-4 w-4 mr-1" /> 반려
                     </Button>
-                    <Button onClick={() => setOpenId(r.id)}>결재 처리</Button>
+                    <Button onClick={() => decide(r, "approve")} disabled={submitting}>
+                      {submitting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />} 승인
+                    </Button>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <Button variant="outline" onClick={() => navigate(ENTITY_LINK(r.entity_type, r.entity_id))}>
+                    문서 보기
+                  </Button>
+                  <Button onClick={() => setOpenId(r.approval_id)}>결재 처리</Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ))}
       </main>
     </div>
   );

@@ -159,7 +159,11 @@ export interface PermitFormData {
   // 기타 안전조치
   chk_etc?: boolean;
   chk_etc_note?: string;
+  // 작업허가 연장 · 작업완료 시각
+  work_extend_until?: string;   // datetime-local
+  work_complete_time?: string;  // "HH:MM" 자유 입력
 }
+
 
 export interface PermitSignatures {
   applicant?: { name: string; signature: string; signed_at: string };

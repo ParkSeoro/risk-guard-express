@@ -983,7 +983,65 @@ const ProjectDetail = () => {
         <DialogContent>
           <DialogHeader><DialogTitle>업체 등록</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <Input placeholder="업체명" value={companyForm.name} onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })} />
+            {/* Search-first: pick from global directory to avoid duplicates */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">업체명 <span className="text-muted-foreground font-normal">(전체 업체에서 검색)</span></Label>
+              <Popover open={companySearchOpen} onOpenChange={setCompanySearchOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                    <span className={companyForm.name ? '' : 'text-muted-foreground'}>
+                      {companyForm.name || '업체 검색 또는 신규 입력...'}
+                    </span>
+                    <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput
+                      placeholder="회사명·사업자번호로 검색..."
+                      value={companyForm.name}
+                      onValueChange={(v) => setCompanyForm({ ...companyForm, name: v, source_company_id: '' })}
+                    />
+                    <CommandList>
+                      <CommandEmpty>
+                        <div className="p-2 text-xs text-muted-foreground">
+                          일치하는 업체가 없습니다. 위 입력값 그대로 <b>신규 업체</b>로 등록됩니다.
+                        </div>
+                      </CommandEmpty>
+                      <CommandGroup heading="전체 업체">
+                        {globalCompanies.slice(0, 200).map((g) => (
+                          <CommandItem
+                            key={g.id}
+                            value={`${g.name} ${g.business_no || ''}`}
+                            onSelect={() => {
+                              setCompanyForm({
+                                ...companyForm,
+                                name: g.name,
+                                business_no: g.business_no || '',
+                                contact: g.contact || '',
+                                source_company_id: g.id,
+                                type: companyForm.type || g.type || 'contractor',
+                              });
+                              setCompanySearchOpen(false);
+                            }}
+                          >
+                            <div className="flex items-center gap-2 w-full">
+                              <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="flex-1 truncate">{g.name}</span>
+                              {g.business_no && <span className="text-[10px] text-muted-foreground">{g.business_no}</span>}
+                              <Badge variant="outline" className="text-[9px]">{companyTypes[g.type] || g.type}</Badge>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {companyForm.source_company_id && (
+                <p className="text-[10px] text-primary">✓ 시스템 업체 마스터에서 선택됨 (프로젝트에 연결됩니다)</p>
+              )}
+            </div>
             <div className="space-y-1.5">
               <Label className="text-xs">업체 구분</Label>
               <Select value={companyForm.type} onValueChange={v => setCompanyForm({ ...companyForm, type: v, parent_company_id: '' })}>

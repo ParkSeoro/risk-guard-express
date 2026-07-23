@@ -127,6 +127,29 @@ const Auth = () => {
     return () => clearTimeout(timer);
   }, [inviteCode, mode]);
 
+  // Load public directory for signup
+  useEffect(() => {
+    if (mode !== 'signup' || signupMethod !== 'directory') return;
+    (async () => {
+      const { data } = await (supabase as any)
+        .from('signup_company_directory')
+        .select('*')
+        .order('project_name')
+        .order('company_name');
+      setDirectory((data as DirectoryRow[]) || []);
+    })();
+  }, [mode, signupMethod]);
+
+  const projectOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    directory.forEach(d => { if (!map.has(d.project_id)) map.set(d.project_id, d.project_name); });
+    return Array.from(map, ([id, name]) => ({ id, name }));
+  }, [directory]);
+  const companyOptions = useMemo(
+    () => directory.filter(d => d.project_id === selectedProject),
+    [directory, selectedProject]
+  );
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -141,8 +164,13 @@ const Auth = () => {
       toast({ title: '비밀번호는 8자 이상이어야 합니다.', variant: 'destructive' });
       return;
     }
+    if (signupMethod === 'directory' && (!selectedProject || !selectedCompany)) {
+      toast({ title: '참여할 프로젝트와 소속 업체를 선택해주세요.', variant: 'destructive' });
+      return;
+    }
     setLoading(true);
     try {
+      const selectedCompanyName = directory.find(d => d.company_id === selectedCompany)?.company_name || company;
       const { data: signUpData, error } = await supabase.auth.signUp({
         email,
         password,
@@ -150,8 +178,11 @@ const Auth = () => {
           emailRedirectTo: window.location.origin,
           data: {
             display_name: displayName,
-            company,
-            invite_code: inviteCode.trim() || undefined,
+            company: selectedCompanyName,
+            invite_code: signupMethod === 'invite' ? (inviteCode.trim() || undefined) : undefined,
+            signup_project_id: signupMethod === 'directory' ? selectedProject : undefined,
+            signup_company_id: signupMethod === 'directory' ? selectedCompany : undefined,
+            signup_position: signupMethod === 'directory' ? selectedPosition : undefined,
           },
         },
       });
@@ -161,23 +192,34 @@ const Auth = () => {
         return;
       }
 
-      // If invite code provided AND user was auto-confirmed (session exists), process it immediately
-      if (inviteCode.trim() && signUpData.user) {
-        const { data: result } = await supabase.rpc('process_invite_code', {
-          _user_id: signUpData.user.id,
-          _invite_code: inviteCode.trim(),
-        });
-        if (result && (result as any).error) {
-          const errMap: Record<string, string> = {
-            INVALID_CODE: '유효하지 않은 초대코드입니다.',
-            EXPIRED: '만료된 초대코드입니다.',
-            MAX_USES_EXCEEDED: '사용 횟수가 초과되었습니다.',
-          };
-          toast({ title: errMap[(result as any).error] || '초대코드 처리 실패', variant: 'destructive' });
+      if (signUpData.user) {
+        if (signupMethod === 'invite' && inviteCode.trim()) {
+          const { data: result } = await supabase.rpc('process_invite_code', {
+            _user_id: signUpData.user.id,
+            _invite_code: inviteCode.trim(),
+          });
+          if (result && (result as any).error) {
+            const errMap: Record<string, string> = {
+              INVALID_CODE: '유효하지 않은 초대코드입니다.',
+              EXPIRED: '만료된 초대코드입니다.',
+              MAX_USES_EXCEEDED: '사용 횟수가 초과되었습니다.',
+            };
+            toast({ title: errMap[(result as any).error] || '초대코드 처리 실패', variant: 'destructive' });
+          }
+        } else if (signupMethod === 'directory') {
+          const { error: rpcErr } = await (supabase as any).rpc('process_signup_company_selection', {
+            _user_id: signUpData.user.id,
+            _project_id: selectedProject,
+            _company_id: selectedCompany,
+            _position: selectedPosition,
+          });
+          if (rpcErr) {
+            toast({ title: '업체 연결 실패', description: rpcErr.message, variant: 'destructive' });
+          }
         }
       }
 
-      toast({ title: '회원가입 완료', description: '이메일을 확인하여 인증을 완료해주세요.' });
+      toast({ title: '회원가입 완료', description: '이메일을 확인해주세요. 관리자 승인 후 이용 가능합니다.' });
       setMode('login');
     } finally {
       setLoading(false);

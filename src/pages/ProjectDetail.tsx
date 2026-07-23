@@ -773,8 +773,10 @@ const ProjectDetail = () => {
                 <div className="space-y-1">
                   {/* Render tree: top-level (no parent) sorted by type */}
                   {(() => {
+                    const idSet = new Set(companies.map(c => c.id));
+                    // Top-level = no parent OR parent not linked to this project
                     const topLevel = companies
-                      .filter(c => !c.parent_company_id)
+                      .filter(c => !c.parent_company_id || !idSet.has(c.parent_company_id))
                       .sort((a, b) => (companyTypeOrder[a.type] || 99) - (companyTypeOrder[b.type] || 99));
                     const getChildren = (parentId: string) =>
                       companies.filter(c => c.parent_company_id === parentId)

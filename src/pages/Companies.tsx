@@ -141,6 +141,7 @@ export default function Companies() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: '전체 회사', value: kpis.total, icon: Building2, color: 'text-foreground' },
+          { label: '원도급', value: kpis.gc, icon: HardHat, color: 'text-warning' },
           { label: '시공사', value: kpis.contractor, icon: HardHat, color: 'text-success' },
           { label: '협력사', value: kpis.vendor, icon: Network, color: 'text-muted-foreground' },
           { label: '공사정보 미등록', value: kpis.missingInfo, icon: AlertCircle, color: 'text-destructive' },

@@ -120,11 +120,13 @@ const ProjectDetail = () => {
   const fetchAll = async () => {
     if (!projectId || !user) return;
 
-    const [projRes, membersRes, profilesRes, companiesRes, invitesRes, requestsRes, templatesRes, tagsRes] = await Promise.all([
+    const [projRes, membersRes, profilesRes, projCompaniesRes, invitesRes, requestsRes, templatesRes, tagsRes] = await Promise.all([
       supabase.from('projects').select('*').eq('id', projectId).single(),
       supabase.from('project_members').select('*').eq('project_id', projectId),
       supabase.from('profiles').select('user_id, display_name, company, phone, position'),
-      supabase.from('companies').select('*').eq('project_id', projectId).eq('is_deleted', false).order('name'),
+      (supabase as any).from('project_companies')
+        .select('company_id, role_in_project, companies:company_id(*)')
+        .eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('project_invites').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_join_requests').select('*, profiles:user_id(display_name, company)').eq('project_id', projectId).eq('status', 'pending'),
       supabase.from('approval_route_templates' as any).select('*').eq('project_id', projectId).order('created_at'),
@@ -135,7 +137,11 @@ const ProjectDetail = () => {
     setMembers(membersRes.data || []);
     setProfiles(profilesRes.data || []);
     setAllProfiles((profilesRes.data || []) as any);
-    setCompanies(companiesRes.data || []);
+    const projCompanies = (projCompaniesRes.data || [])
+      .map((l: any) => l.companies ? { ...l.companies, type: l.companies.type || l.role_in_project } : null)
+      .filter((c: any) => c && c.is_deleted === false);
+    setCompanies(projCompanies);
+
     setInvites(invitesRes.data || []);
     setJoinRequests(requestsRes.data || []);
     setApprovalTemplates((templatesRes.data || []) as any);

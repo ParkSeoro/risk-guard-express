@@ -35,6 +35,7 @@ import SettingsNotifications from "./pages/SettingsNotifications";
 import SettingsAI from "./pages/SettingsAI";
 import MobileReleases from "./pages/MobileReleases";
 import SettingsPermitForms from "./pages/SettingsPermitForms";
+import SettingsCompanies from "./pages/SettingsCompanies";
 import WorkPlans from "./pages/WorkPlans";
 import WorkPlanDetail from "./pages/WorkPlanDetail";
 import LegalDuties from "./pages/LegalDuties";
@@ -189,6 +190,7 @@ function ProtectedRoutes() {
         <Route path="/settings/ai" element={<SettingsAI />} />
         <Route path="/settings/mobile-releases" element={<MobileReleases />} />
         <Route path="/settings/permit-forms" element={<SettingsPermitForms />} />
+        <Route path="/settings/companies" element={<SettingsCompanies />} />
         <Route path="/work-plans" element={<WorkPlans />} />
         <Route path="/work-plan/:planId" element={<WorkPlanDetail />} />
         <Route path="/legal-duties" element={<LegalDuties />} />

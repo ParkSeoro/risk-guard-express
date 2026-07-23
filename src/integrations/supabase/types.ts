@@ -9247,6 +9247,13 @@ export type Database = {
         Args: { _measurement_id: string }
         Returns: number
       }
+      approve_pending_user: {
+        Args: {
+          _override_role?: Database["public"]["Enums"]["project_role"]
+          _user_id: string
+        }
+        Returns: Json
+      }
       attachment_path_belongs_to_member: {
         Args: { _path: string; _uid: string }
         Returns: boolean
@@ -9549,6 +9556,10 @@ export type Database = {
           _phone: string
           _project_id: string
         }
+        Returns: Json
+      }
+      reject_pending_user: {
+        Args: { _reason: string; _user_id: string }
         Returns: Json
       }
       request_worker_otp: { Args: { _phone: string }; Returns: Json }

@@ -247,9 +247,12 @@ const ProjectDetail = () => {
   };
 
   const handleAddMember = async () => {
-    if (!projectId || !memberUserId) return;
-    if (['site_manager', 'supervisor', 'worker'].includes(memberRole) && !memberCompanyId) {
-      toast({ title: '현장/감독/작업자 역할은 소속 업체를 선택해야 합니다.', variant: 'destructive' });
+    if (!projectId || !memberUserId) {
+      toast({ title: '사용자를 선택해주세요.', variant: 'destructive' });
+      return;
+    }
+    if (['site_manager', 'supervisor', 'worker', 'contractor'].includes(memberRole) && !memberCompanyId) {
+      toast({ title: '소속 업체를 선택해주세요.', description: '현장/감독/작업자/협력사 역할은 소속 업체가 필요합니다.', variant: 'destructive' });
       return;
     }
     const { error } = await supabase.from('project_members').insert([{
@@ -1029,7 +1032,15 @@ const ProjectDetail = () => {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>사용자 선택</Label>
-              <Select onValueChange={setMemberUserId}>
+              <Select onValueChange={(v) => {
+                setMemberUserId(v);
+                // Auto-fill company from user's profile company name → match to project companies
+                const p = allProfiles.find(x => x.user_id === v);
+                if (p?.company) {
+                  const match = companies.find(c => (c.name || '').trim() === (p.company || '').trim());
+                  if (match) setMemberCompanyId(match.id);
+                }
+              }}>
                 <SelectTrigger><SelectValue placeholder="사용자 선택" /></SelectTrigger>
                 <SelectContent>
                   {allProfiles.filter(p => !members.some(m => m.user_id === p.user_id)).map(p => (
@@ -1049,17 +1060,23 @@ const ProjectDetail = () => {
                 </SelectContent>
               </Select>
             </div>
-            {memberRole === 'contractor' && (
-              <div className="space-y-2">
-                <Label>소속 업체</Label>
-                <Select onValueChange={setMemberCompanyId}>
-                  <SelectTrigger><SelectValue placeholder="업체 선택" /></SelectTrigger>
-                  <SelectContent>
-                    {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div className="space-y-2">
+              <Label>
+                소속 업체
+                {['site_manager', 'supervisor', 'worker', 'contractor'].includes(memberRole) && (
+                  <span className="text-destructive ml-1">*</span>
+                )}
+              </Label>
+              <Select value={memberCompanyId} onValueChange={setMemberCompanyId}>
+                <SelectTrigger><SelectValue placeholder="업체 선택 (선택 사항)" /></SelectTrigger>
+                <SelectContent>
+                  {companies.length === 0 && (
+                    <div className="p-2 text-xs text-muted-foreground">이 프로젝트에 등록된 업체가 없습니다. 먼저 "업체 관리" 탭에서 등록하세요.</div>
+                  )}
+                  {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <Button onClick={handleAddMember} className="w-full">추가</Button>
           </div>
         </DialogContent>

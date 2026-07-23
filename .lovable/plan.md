@@ -1,50 +1,86 @@
+## 문제 진단
 
-## 문제 원인 분석
+### 1) 멤버 추가 다이얼로그 오류 원인
+`ProjectDetail.tsx` 멤버 추가 유효성 검사는 `site_manager / supervisor / worker` 역할 선택 시 소속 업체가 필수인데, **다이얼로그 UI는 `contractor` 역할일 때만 업체 선택 셀렉트를 렌더**합니다. 그래서 "관리감독자"를 고른 순간 업체 필드가 나타나지 않고 저장을 누르면 빨간 토스트가 뜹니다. (`src/pages/ProjectDetail.tsx` L1052)
 
-`src/pages/ProjectDetail.tsx` "업체 관리" 탭을 확인한 결과, 네 가지 문제 모두 **한 뿌리**에서 나옵니다: 부모-자식 관계(`parent_company_id`)와 삭제 처리가 **프로젝트 단위**가 아니라 **글로벌 companies 테이블**에 저장/실행되고 있습니다.
+### 2) 신규 사용자 온보딩이 복잡한 이유
+현재 흐름:
+- 회원가입 시 프로젝트/업체/직종을 이미 선택 → `process_signup_company_selection` RPC가 **project_members에 이미 삽입**함.
+- 그러나 계정은 `pending` 상태이고, 마스터가 승인 후에도 UI상에서는 별도 "멤버 추가"·"업체 등록"을 다시 해야 하는 것처럼 보임.
+- 원인:
+  a. 승인 화면에 "가입 시 선택한 프로젝트/업체/직종" 요약이 표시되지 않아 이미 연결되어 있다는 사실이 숨겨짐.
+  b. 가입 시 프로젝트에 원하는 업체가 없으면 가입 자체가 불가능(수동 등록 필요) → 마스터가 사전에 회사관리+프로젝트 링크를 해두어야 함.
+  c. 관리자(예: 안전관리자) 지정을 위한 role 승격이 별도 화면에서 이뤄져야 함.
 
-1. **청원산기만 발주처 아래로 들어감**  
-   글로벌 `companies.parent_company_id`에 값이 있는 업체는 청원산기 1건뿐. 다른 시공사들은 시스템 마스터에서 검색해서 프로젝트에 연결(`project_companies`)만 되었기 때문에 부모 정보가 없어서 최상위로 렌더링됨.
+---
 
-2. **발주처 밑에 시공사로 등록해도 위로 올라감** (핵심 원인)  
-   `handleAddCompany` (라인 361-406): `source_company_id`(마스터에서 선택)가 있으면 새 companies 행을 만들지 않아 `parent_company_id` 저장 로직 자체를 **건너뜀**. `project_companies` upsert에도 부모 필드가 없음.
+## 개선 계획
 
-3. **마스터/PM이 목록 수정 불가**  
-   현재 편집 UI가 아예 없음 (삭제 버튼만 존재).
+### A. 멤버 추가 다이얼로그 UX 정리 (버그 수정)
+`src/pages/ProjectDetail.tsx`
+- 업체 선택 필드를 `contractor` 뿐 아니라 `site_manager / supervisor / worker / safety_manager` 등 **업체 소속이 의미 있는 모든 역할에서 노출**. 실무상 대부분 필요하므로 기본은 "항상 표시(선택 사항)"로 전환하고, 검증 규칙과 동일한 역할만 필수(*) 표시.
+- 사용자 선택 시 해당 사용자의 프로필 company 를 기본값으로 자동 채움 → 대부분 클릭 한 번으로 완료.
+- 추가 실패 토스트에 어떤 필드가 비었는지 명시.
 
-4. **프로젝트에서 삭제 시 설정의 업체관리에서도 사라짐**  
-   `handleDeleteCompany` (라인 409-416)가 `softDelete('companies', id)`를 호출 → 마스터 테이블 자체를 소프트 삭제. 프로젝트 연결(`project_companies`)만 해제해야 함.
+### B. 원클릭 승인 = 자동 온보딩
+`src/pages/UserManagement.tsx` (승인 화면)
+- pending 사용자 카드에 **가입 시 선택한 프로젝트 / 업체 / 직종**을 배지로 노출.
+- "승인" 버튼 하나로:
+  1. `profiles.account_status = 'active'`
+  2. `project_members` 에 이미 존재하는 행 확인/보정 (position, company)
+  3. 기본 `role_new`를 가입 시 선택한 직종에 따라 자동 매핑
+     - `site_manager / safety_manager` → `safety_manager` 권한
+     - `supervisor / foreman` → `user`
+     - `worker` → `user` (열람 위주)
+  4. 승인 시 관리자가 원하면 드롭다운으로 즉시 권한 격상(예: 프로젝트 관리자) 선택 가능.
+- 신규 SECURITY DEFINER RPC `approve_pending_user(_user_id, _override_role?)` 로 위 처리를 트랜잭션화하고 audit log 남김.
 
-## 해결안
+### C. 회사관리 수동 등록 제거 — 셀프서비스 업체 요청
+가입 화면(`Auth.tsx`)에서 원하는 업체가 목록에 없을 때 **"내 업체 신규 요청"** 옵션 추가:
+- 사용자가 회사명·사업자번호·전화 입력 → 새 RPC `request_new_company_at_signup` 이 `companies` 는 만들지 않고 `project_join_requests`(또는 신규 경량 테이블 `company_join_requests`) 에 요청만 저장.
+- 마스터의 승인 화면에서 "회사 신규 요청" 배지가 표시되며 **승인 클릭 시**:
+  1. `companies` upsert (normalized 이름으로 중복 방지)
+  2. `project_companies` 링크 자동 생성 (필요 시 상위 시공사 지정 UI 노출)
+  3. B단계의 `project_members` 자동 연결까지 함께 수행
+- 결과: 마스터가 별도로 "회사관리"에 들어가 등록할 필요 없음. 승인 한 번이 곧 회사 등록 + 프로젝트 등록 + 멤버 추가.
 
-### DB 마이그레이션
-- `project_companies`에 `parent_company_id UUID NULL` 컬럼 추가 (프로젝트-스코프 계층).
-- 기존 데이터 백필: 각 프로젝트에서 자식·부모가 모두 그 프로젝트에 연결되어 있으면 `companies.parent_company_id` 값을 `project_companies.parent_company_id`로 복사.
-- `project_companies` UPDATE 정책이 master / project_admin에게 허용되어 있는지 확인하고, 없으면 추가.
+### D. 승인 화면 UX 강화
+`UserManagement.tsx` 또는 신규 `PendingApprovals` 섹션
+- KPI: 신규 사용자, 신규 업체 요청, 총 대기.
+- 각 카드에 가입 시 정보 요약, "일괄 승인" 다중 선택.
+- 반려 시 사유 필수(기존 audit 패턴 유지).
 
-### `src/pages/ProjectDetail.tsx` 수정
+### E. 알림 & 감사
+- 승인/반려 시 신청자에게 인앱 알림 및 이메일(기존 Resend 파이프라인 재활용).
+- 모든 액션 `audit_logs` 기록 (`가입승인`, `회사요청승인`, `멤버자동연결`).
 
-**fetchAll**: `project_companies`에서 `parent_company_id`도 함께 가져와 각 company 객체의 `parent_company_id`를 **글로벌이 아닌 project_companies 값**으로 덮어씀. 트리 렌더링은 그대로 동작.
+---
 
-**handleAddCompany**:
-- 마스터에서 선택한 경우(`source_company_id` 있음)에도 사용자가 지정한 `parent_company_id`를 `project_companies` upsert 페이로드에 포함.
-- 새로 만드는 경우에도 부모는 `companies`가 아니라 `project_companies`에 저장 (글로벌은 오염시키지 않음).
+## 기술 세부사항 (기술자용)
 
-**handleDeleteCompany → handleUnlinkCompany**:
-- `softDelete('companies', ...)` 호출 제거.
-- `project_companies`에서 해당 링크만 DELETE (자식들의 `parent_company_id`도 함께 정리).
-- 확인 다이얼로그 문구를 "이 프로젝트에서 제외" 로 변경. 마스터 업체 자체는 그대로 유지된다는 안내 추가.
+**DB 마이그레이션**
+- `create table public.company_join_requests` (id, requester_user_id, project_id, requested_name, business_no, phone, parent_company_id nullable, status, note, created_at) + RLS + GRANT + service_role. 마스터만 SELECT/UPDATE, 요청자는 본인 것 SELECT/INSERT.
+- 함수:
+  - `approve_pending_user(_user_id uuid, _override_role project_role default null)` — profiles active, project_members backfill/upsert, role 매핑, audit.
+  - `approve_company_request(_request_id uuid, _parent_company_id uuid default null)` — companies upsert (normalized), project_companies insert, request status='approved', audit.
+  - `request_new_company_at_signup(_project_id, _name, _business_no, _phone)` — anon 호출 가능(SECURITY DEFINER), rate limit(같은 이메일/IP 5분 1회).
+- 기존 `process_signup_company_selection` 은 유지하되, 업체 미선택+요청 병행 케이스 처리 분기 추가.
 
-**신규 편집 다이얼로그** (master / project_admin만):
-- 편집 가능: `type`(발주처/시공사/협력사/공급사), `parent_company_id`, `scope`, `period`, `contact` → `project_companies`에 저장 (프로젝트별로 다를 수 있는 필드).
-- 편집 가능 (master만): `name`, `business_no` → 글로벌 `companies` 업데이트. 중복명 에러 시 안내.
-- 목록 각 행 오른쪽에 연필 아이콘 추가, 권한 없는 사용자에겐 숨김.
+**프런트엔드 변경 파일**
+- `src/pages/Auth.tsx` — 업체 목록 하단 "내 업체가 없어요 → 새 업체 요청" 링크 및 폼.
+- `src/pages/UserManagement.tsx` — 승인 카드 요약, 원클릭 승인, 회사 요청 탭.
+- `src/pages/ProjectDetail.tsx` — 멤버 추가 다이얼로그 업체 필드 상시 노출, 자동 기본값.
+- 신규 컴포넌트 `PendingCompanyRequests.tsx` (SettingsCompanies 상단 배너 + 상세).
 
-### 검증
-- 발주처 A 아래에 마스터 선택 시공사 B 등록 → 트리에서 A 밑으로 들어가는지.
-- 프로젝트에서 B 제외 → `공사업체 리스트` (설정)에는 B가 그대로 남는지.
-- PM 계정으로 편집 아이콘 노출/수정 반영 확인.
+**롤아웃 순서**
+1. A(버그 수정) — 즉시 반영.
+2. B(원클릭 승인) — 마이그레이션 + UM 개편.
+3. C+D(셀프 업체 요청) — 마이그레이션 + Auth/UM UI.
+4. E(알림) — Resend 템플릿 추가.
 
-## 기술 메모
-- `parent_company_id`의 진짜 소유자를 `project_companies`로 옮기는 것이 SSOT 원칙에 맞음. 글로벌 `companies.parent_company_id`는 하위 호환용으로 남기되 앞으로 신규 저장은 하지 않음.
-- 백필 SQL은 idempotent하게 작성 (`WHERE project_companies.parent_company_id IS NULL`).
+---
+
+## 산출물
+- 마이그레이션 3건, 신규 RPC 3건.
+- 수정 파일 3개, 신규 컴포넌트 1개.
+- 승인 1클릭 = 회사 등록 + 프로젝트 링크 + 멤버 자동 배정 완료.

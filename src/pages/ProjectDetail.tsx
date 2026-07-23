@@ -247,9 +247,12 @@ const ProjectDetail = () => {
   };
 
   const handleAddMember = async () => {
-    if (!projectId || !memberUserId) return;
-    if (['site_manager', 'supervisor', 'worker'].includes(memberRole) && !memberCompanyId) {
-      toast({ title: '현장/감독/작업자 역할은 소속 업체를 선택해야 합니다.', variant: 'destructive' });
+    if (!projectId || !memberUserId) {
+      toast({ title: '사용자를 선택해주세요.', variant: 'destructive' });
+      return;
+    }
+    if (['site_manager', 'supervisor', 'worker', 'contractor'].includes(memberRole) && !memberCompanyId) {
+      toast({ title: '소속 업체를 선택해주세요.', description: '현장/감독/작업자/협력사 역할은 소속 업체가 필요합니다.', variant: 'destructive' });
       return;
     }
     const { error } = await supabase.from('project_members').insert([{

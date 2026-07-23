@@ -373,14 +373,21 @@ const ProjectDetail = () => {
     if (companyForm.parent_company_id) {
       insertData.parent_company_id = companyForm.parent_company_id;
     }
-    const { error } = await supabase.from('companies').insert([insertData]);
-    if (error) toast({ title: '추가 실패', description: error.message, variant: 'destructive' });
-    else {
-      toast({ title: '업체가 등록되었습니다.' });
-      setShowAddCompany(false);
-      setCompanyForm({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
-      fetchAll();
+    const { data: inserted, error } = await supabase.from('companies').insert([insertData]).select('id').single();
+    if (error) { toast({ title: '추가 실패', description: error.message, variant: 'destructive' }); return; }
+    // Also link to project_companies (join). Link the SOURCE global id when picked from directory,
+    // otherwise link the newly-created row itself so it becomes a reusable directory entry.
+    const linkCompanyId = companyForm.source_company_id || inserted?.id;
+    if (linkCompanyId) {
+      await (supabase as any).from('project_companies').upsert(
+        { project_id: projectId, company_id: linkCompanyId, role_in_project: companyForm.type },
+        { onConflict: 'project_id,company_id' }
+      );
     }
+    toast({ title: '업체가 등록되었습니다.' });
+    setShowAddCompany(false);
+    setCompanyForm({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
+    fetchAll();
   };
 
   const { softDelete } = useSoftDelete();

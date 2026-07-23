@@ -367,28 +367,37 @@ const ProjectDetail = () => {
         return;
       }
     }
-    const insertData: any = {
-      project_id: projectId,
-      name: companyForm.name,
-      type: companyForm.type,
-      business_no: companyForm.business_no,
-      contact: companyForm.contact,
-      scope: companyForm.scope,
-      period: companyForm.period,
-    };
-    if (companyForm.parent_company_id) {
-      insertData.parent_company_id = companyForm.parent_company_id;
+    let linkCompanyId = companyForm.source_company_id || '';
+    // Only create a NEW company row when the user did NOT pick one from the directory.
+    if (!linkCompanyId) {
+      const insertData: any = {
+        project_id: projectId,
+        name: companyForm.name,
+        type: companyForm.type,
+        business_no: companyForm.business_no,
+        contact: companyForm.contact,
+        scope: companyForm.scope,
+        period: companyForm.period,
+      };
+      if (companyForm.parent_company_id) {
+        insertData.parent_company_id = companyForm.parent_company_id;
+      }
+      const { data: inserted, error } = await supabase.from('companies').insert([insertData]).select('id').single();
+      if (error) {
+        const msg = /companies_norm_name_uidx|duplicate key/i.test(error.message)
+          ? '동일한 이름의 업체가 이미 시스템에 등록되어 있습니다. 업체명 검색에서 기존 업체를 선택해 주세요.'
+          : error.message;
+        toast({ title: '추가 실패', description: msg, variant: 'destructive' });
+        return;
+      }
+      linkCompanyId = inserted?.id || '';
     }
-    const { data: inserted, error } = await supabase.from('companies').insert([insertData]).select('id').single();
-    if (error) { toast({ title: '추가 실패', description: error.message, variant: 'destructive' }); return; }
-    // Also link to project_companies (join). Link the SOURCE global id when picked from directory,
-    // otherwise link the newly-created row itself so it becomes a reusable directory entry.
-    const linkCompanyId = companyForm.source_company_id || inserted?.id;
     if (linkCompanyId) {
-      await (supabase as any).from('project_companies').upsert(
+      const { error: linkErr } = await (supabase as any).from('project_companies').upsert(
         { project_id: projectId, company_id: linkCompanyId, role_in_project: companyForm.type },
         { onConflict: 'project_id,company_id' }
       );
+      if (linkErr) { toast({ title: '프로젝트 연결 실패', description: linkErr.message, variant: 'destructive' }); return; }
     }
     toast({ title: '업체가 등록되었습니다.' });
     setShowAddCompany(false);

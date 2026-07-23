@@ -189,12 +189,32 @@ const UserManagement = () => {
       return;
     }
     setSaving(userId);
-    const { error } = await supabase.from('profiles').update({ account_status: parsed.data }).eq('user_id', userId);
-    if (error) {
-      toast({ title: '상태 변경 실패', description: error.message, variant: 'destructive' });
+    // Pending → Active: use RPC that auto-onboards (fills role from signup position, audits)
+    const target = users.find(u => u.user_id === userId);
+    if (target?.account_status === 'pending' && parsed.data === 'active') {
+      const { data, error } = await (supabase as any).rpc('approve_pending_user', { _user_id: userId });
+      if (error) {
+        toast({ title: '승인 실패', description: error.message, variant: 'destructive' });
+      } else {
+        toast({
+          title: '가입 승인 완료',
+          description: `프로젝트 멤버 ${data?.memberships_updated ?? 0}건이 자동 연결/권한 부여되었습니다.`,
+        });
+      }
+    } else if (parsed.data === 'inactive' && target?.account_status === 'pending') {
+      const reason = prompt('반려 사유를 입력하세요. (필수)');
+      if (!reason || !reason.trim()) { setSaving(null); return; }
+      const { error } = await (supabase as any).rpc('reject_pending_user', { _user_id: userId, _reason: reason.trim() });
+      if (error) toast({ title: '반려 실패', description: error.message, variant: 'destructive' });
+      else toast({ title: '가입이 반려되었습니다.' });
     } else {
-      toast({ title: `사용자 상태가 '${statusLabels[status]?.label}'(으)로 변경되었습니다.` });
-      log('사용자상태변경', 'profile', userId, undefined, { status });
+      const { error } = await supabase.from('profiles').update({ account_status: parsed.data }).eq('user_id', userId);
+      if (error) {
+        toast({ title: '상태 변경 실패', description: error.message, variant: 'destructive' });
+      } else {
+        toast({ title: `사용자 상태가 '${statusLabels[status]?.label}'(으)로 변경되었습니다.` });
+        log('사용자상태변경', 'profile', userId, undefined, { status });
+      }
     }
     setSaving(null);
     fetchUsers();

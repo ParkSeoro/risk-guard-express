@@ -125,7 +125,7 @@ const ProjectDetail = () => {
       supabase.from('project_members').select('*').eq('project_id', projectId),
       supabase.from('profiles').select('user_id, display_name, company, phone, position'),
       (supabase as any).from('project_companies')
-        .select('company_id, role_in_project, companies:company_id(*)')
+        .select('company_id, role_in_project, parent_company_id, companies:company_id(*)')
         .eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('project_invites').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_join_requests').select('*, profiles:user_id(display_name, company)').eq('project_id', projectId).eq('status', 'pending'),
@@ -138,7 +138,12 @@ const ProjectDetail = () => {
     setProfiles(profilesRes.data || []);
     setAllProfiles((profilesRes.data || []) as any);
     const projCompanies = (projCompaniesRes.data || [])
-      .map((l: any) => l.companies ? { ...l.companies, type: l.companies.type || l.role_in_project } : null)
+      .map((l: any) => l.companies ? {
+        ...l.companies,
+        type: l.role_in_project || l.companies.type,
+        // Project-scoped parent overrides global companies.parent_company_id
+        parent_company_id: l.parent_company_id ?? null,
+      } : null)
       .filter((c: any) => c && c.is_deleted === false);
     setCompanies(projCompanies);
 

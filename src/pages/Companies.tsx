@@ -44,14 +44,17 @@ export default function Companies() {
   const fetchAll = async () => {
     if (!selectedProject) return;
     setLoading(true);
-    const { data } = await supabase
-      .from('companies')
-      .select('id, name, type, scope')
+    // Read via project_companies (SSOT) so global companies linked to this project appear once.
+    const { data: links } = await (supabase as any)
+      .from('project_companies')
+      .select('company_id, role_in_project, companies:company_id(id, name, type, scope, is_deleted)')
       .eq('project_id', selectedProject)
-      .eq('is_deleted', false)
-      .order('type')
-      .order('name');
-    const list = data || [];
+      .eq('is_deleted', false);
+    const list = (links || [])
+      .map((l: any) => l.companies ? { ...l.companies, type: l.companies.type || l.role_in_project } : null)
+      .filter((c: any) => c && c.is_deleted === false)
+      .sort((a: any, b: any) => (a.type || '').localeCompare(b.type || '') || (a.name || '').localeCompare(b.name || ''));
+
     const ids = list.map(c => c.id);
     const counts: Record<string, { m: number; d: number; w: number }> = {};
     const ciSet = new Set<string>();

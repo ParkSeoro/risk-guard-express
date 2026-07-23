@@ -739,7 +739,12 @@ const ProjectDetail = () => {
         <TabsContent value="companies" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm">업체 목록 (발주처 → 시공사 → 협력사)</CardTitle>
+              <div className="space-y-0.5">
+                <CardTitle className="text-sm">업체 목록 (발주처 → 시공사 → 협력사)</CardTitle>
+                <p className="text-[10px] text-muted-foreground">
+                  이 프로젝트에 <b>참여</b>하는 업체입니다. 신규 등록 시 <b>설정 &gt; 업체 관리</b>의 전역 마스터에서 검색해 선택하세요.
+                </p>
+              </div>
               {canManage && (
                 <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowAddCompany(true)}>
                   <Plus className="h-3.5 w-3.5" /> 업체 등록

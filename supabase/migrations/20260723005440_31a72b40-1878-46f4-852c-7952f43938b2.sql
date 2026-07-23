@@ -1,0 +1,1 @@
+ALTER VIEW public.signup_company_directory SET (security_invoker = on);

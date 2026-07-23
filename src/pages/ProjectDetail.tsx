@@ -11,8 +11,10 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import {
-  ArrowLeft, Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck, Tag, X, Settings2
+  ArrowLeft, Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck, Tag, X, Settings2, Search, ChevronsUpDown
 } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
@@ -68,7 +70,9 @@ const ProjectDetail = () => {
   const [memberRole, setMemberRole] = useState('viewer');
   const [memberCompanyId, setMemberCompanyId] = useState('');
   const [showAddCompany, setShowAddCompany] = useState(false);
-  const [companyForm, setCompanyForm] = useState({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '' });
+  const [companyForm, setCompanyForm] = useState({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
+  const [globalCompanies, setGlobalCompanies] = useState<any[]>([]);
+  const [companySearchOpen, setCompanySearchOpen] = useState(false);
   const [copiedCode, setCopiedCode] = useState('');
   const [savingProject, setSavingProject] = useState(false);
   const [projectForm, setProjectForm] = useState({
@@ -145,6 +149,26 @@ const ProjectDetail = () => {
       setProjectRole(myMembership?.role_new || null);
     }
   };
+
+  // Load global company directory (system-wide, deduped by name) for search-based registration
+  useEffect(() => {
+    (async () => {
+      const { data } = await (supabase as any)
+        .from('companies')
+        .select('id, name, type, business_no, contact, address')
+        .eq('is_deleted', false)
+        .order('name');
+      const seen = new Set<string>();
+      const deduped: any[] = [];
+      (data || []).forEach((c: any) => {
+        const key = (c.name || '').trim().toLowerCase();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        deduped.push(c);
+      });
+      setGlobalCompanies(deduped);
+    })();
+  }, [showAddCompany]);
 
   const getProfileName = (userId: string) => {
     const p = profiles.find(pr => pr.user_id === userId);
@@ -349,14 +373,21 @@ const ProjectDetail = () => {
     if (companyForm.parent_company_id) {
       insertData.parent_company_id = companyForm.parent_company_id;
     }
-    const { error } = await supabase.from('companies').insert([insertData]);
-    if (error) toast({ title: '추가 실패', description: error.message, variant: 'destructive' });
-    else {
-      toast({ title: '업체가 등록되었습니다.' });
-      setShowAddCompany(false);
-      setCompanyForm({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '' });
-      fetchAll();
+    const { data: inserted, error } = await supabase.from('companies').insert([insertData]).select('id').single();
+    if (error) { toast({ title: '추가 실패', description: error.message, variant: 'destructive' }); return; }
+    // Also link to project_companies (join). Link the SOURCE global id when picked from directory,
+    // otherwise link the newly-created row itself so it becomes a reusable directory entry.
+    const linkCompanyId = companyForm.source_company_id || inserted?.id;
+    if (linkCompanyId) {
+      await (supabase as any).from('project_companies').upsert(
+        { project_id: projectId, company_id: linkCompanyId, role_in_project: companyForm.type },
+        { onConflict: 'project_id,company_id' }
+      );
     }
+    toast({ title: '업체가 등록되었습니다.' });
+    setShowAddCompany(false);
+    setCompanyForm({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
+    fetchAll();
   };
 
   const { softDelete } = useSoftDelete();
@@ -708,7 +739,12 @@ const ProjectDetail = () => {
         <TabsContent value="companies" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm">업체 목록 (발주처 → 시공사 → 협력사)</CardTitle>
+              <div className="space-y-0.5">
+                <CardTitle className="text-sm">업체 목록 (발주처 → 시공사 → 협력사)</CardTitle>
+                <p className="text-[10px] text-muted-foreground">
+                  이 프로젝트에 <b>참여</b>하는 업체입니다. 신규 등록 시 <b>설정 &gt; 업체 관리</b>의 전역 마스터에서 검색해 선택하세요.
+                </p>
+              </div>
               {canManage && (
                 <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowAddCompany(true)}>
                   <Plus className="h-3.5 w-3.5" /> 업체 등록
@@ -952,7 +988,65 @@ const ProjectDetail = () => {
         <DialogContent>
           <DialogHeader><DialogTitle>업체 등록</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <Input placeholder="업체명" value={companyForm.name} onChange={e => setCompanyForm({ ...companyForm, name: e.target.value })} />
+            {/* Search-first: pick from global directory to avoid duplicates */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">업체명 <span className="text-muted-foreground font-normal">(전체 업체에서 검색)</span></Label>
+              <Popover open={companySearchOpen} onOpenChange={setCompanySearchOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                    <span className={companyForm.name ? '' : 'text-muted-foreground'}>
+                      {companyForm.name || '업체 검색 또는 신규 입력...'}
+                    </span>
+                    <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput
+                      placeholder="회사명·사업자번호로 검색..."
+                      value={companyForm.name}
+                      onValueChange={(v) => setCompanyForm({ ...companyForm, name: v, source_company_id: '' })}
+                    />
+                    <CommandList>
+                      <CommandEmpty>
+                        <div className="p-2 text-xs text-muted-foreground">
+                          일치하는 업체가 없습니다. 위 입력값 그대로 <b>신규 업체</b>로 등록됩니다.
+                        </div>
+                      </CommandEmpty>
+                      <CommandGroup heading="전체 업체">
+                        {globalCompanies.slice(0, 200).map((g) => (
+                          <CommandItem
+                            key={g.id}
+                            value={`${g.name} ${g.business_no || ''}`}
+                            onSelect={() => {
+                              setCompanyForm({
+                                ...companyForm,
+                                name: g.name,
+                                business_no: g.business_no || '',
+                                contact: g.contact || '',
+                                source_company_id: g.id,
+                                type: companyForm.type || g.type || 'contractor',
+                              });
+                              setCompanySearchOpen(false);
+                            }}
+                          >
+                            <div className="flex items-center gap-2 w-full">
+                              <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span className="flex-1 truncate">{g.name}</span>
+                              {g.business_no && <span className="text-[10px] text-muted-foreground">{g.business_no}</span>}
+                              <Badge variant="outline" className="text-[9px]">{companyTypes[g.type] || g.type}</Badge>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              {companyForm.source_company_id && (
+                <p className="text-[10px] text-primary">✓ 시스템 업체 마스터에서 선택됨 (프로젝트에 연결됩니다)</p>
+              )}
+            </div>
             <div className="space-y-1.5">
               <Label className="text-xs">업체 구분</Label>
               <Select value={companyForm.type} onValueChange={v => setCompanyForm({ ...companyForm, type: v, parent_company_id: '' })}>

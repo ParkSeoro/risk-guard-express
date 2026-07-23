@@ -263,40 +263,91 @@ const Auth = () => {
                   <Label>이름</Label>
                   <Input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="홍길동" required />
                 </div>
-                <div className="space-y-1.5">
-                  <Label>소속 회사</Label>
-                  <Input value={company} onChange={e => setCompany(e.target.value)} placeholder="(주)한국건설" />
+
+                {/* Signup method toggle */}
+                <div className="flex gap-1 rounded-lg border p-1 bg-muted/30">
+                  <button type="button"
+                    onClick={() => setSignupMethod('directory')}
+                    className={`flex-1 text-xs py-1.5 rounded-md transition ${signupMethod === 'directory' ? 'bg-background shadow font-medium' : 'text-muted-foreground'}`}>
+                    업체 조회로 가입
+                  </button>
+                  <button type="button"
+                    onClick={() => setSignupMethod('invite')}
+                    className={`flex-1 text-xs py-1.5 rounded-md transition ${signupMethod === 'invite' ? 'bg-background shadow font-medium' : 'text-muted-foreground'}`}>
+                    초대코드로 가입
+                  </button>
                 </div>
-                <div className="space-y-1.5">
-                  <Label>초대코드 <span className="text-muted-foreground font-normal">(선택)</span></Label>
-                  <div className="relative">
-                    <Input
-                      value={inviteCode}
-                      onChange={e => setInviteCode(e.target.value)}
-                      placeholder="초대코드 입력"
-                      className="pr-8"
-                    />
-                    {validatingCode && <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />}
-                    {!validatingCode && invitePreview?.valid && <CheckCircle2 className="absolute right-2.5 top-2.5 h-4 w-4 text-emerald-500" />}
-                    {!validatingCode && invitePreview && !invitePreview.valid && <AlertCircle className="absolute right-2.5 top-2.5 h-4 w-4 text-destructive" />}
-                  </div>
-                  {invitePreview && !invitePreview.valid && (
-                    <p className="text-xs text-destructive">{invitePreview.error}</p>
-                  )}
-                  {invitePreview?.valid && (
-                    <div className="rounded-lg border bg-muted/30 p-3 space-y-1.5 mt-1">
-                      <p className="text-xs font-medium text-foreground">초대 정보 미리보기</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        <Badge variant="outline" className="text-[11px]">프로젝트: {invitePreview.project_name}</Badge>
-                        {invitePreview.company_name && (
-                          <Badge variant="secondary" className="text-[11px]">업체: {invitePreview.company_name}</Badge>
-                        )}
-                        <Badge className="text-[11px]">{roleLabels[invitePreview.role] || invitePreview.role}</Badge>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground">가입 완료 시 자동으로 연결됩니다.</p>
+
+                {signupMethod === 'directory' && (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label>참여 프로젝트 *</Label>
+                      <Select value={selectedProject} onValueChange={v => { setSelectedProject(v); setSelectedCompany(''); }}>
+                        <SelectTrigger><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
+                        <SelectContent>
+                          {projectOptions.length === 0 && <div className="p-2 text-xs text-muted-foreground">등록된 프로젝트가 없습니다.</div>}
+                          {projectOptions.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
                     </div>
-                  )}
-                </div>
+                    <div className="space-y-1.5">
+                      <Label>소속 업체 *</Label>
+                      <Select value={selectedCompany} onValueChange={setSelectedCompany} disabled={!selectedProject}>
+                        <SelectTrigger><SelectValue placeholder={selectedProject ? '업체 선택' : '프로젝트를 먼저 선택'} /></SelectTrigger>
+                        <SelectContent>
+                          {companyOptions.length === 0 && selectedProject && (
+                            <div className="p-2 text-xs text-muted-foreground">이 프로젝트에 등록된 업체가 없습니다.</div>
+                          )}
+                          {companyOptions.map(c => (
+                            <SelectItem key={c.company_id} value={c.company_id}>{c.company_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>직종 *</Label>
+                      <Select value={selectedPosition} onValueChange={setSelectedPosition}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {POSITION_OPTIONS.map(o => <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-muted-foreground">관리자 승인 후 이용 가능합니다.</p>
+                    </div>
+                  </>
+                )}
+
+                {signupMethod === 'invite' && (
+                  <div className="space-y-1.5">
+                    <Label>초대코드</Label>
+                    <div className="relative">
+                      <Input
+                        value={inviteCode}
+                        onChange={e => setInviteCode(e.target.value)}
+                        placeholder="초대코드 입력"
+                        className="pr-8"
+                      />
+                      {validatingCode && <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />}
+                      {!validatingCode && invitePreview?.valid && <CheckCircle2 className="absolute right-2.5 top-2.5 h-4 w-4 text-emerald-500" />}
+                      {!validatingCode && invitePreview && !invitePreview.valid && <AlertCircle className="absolute right-2.5 top-2.5 h-4 w-4 text-destructive" />}
+                    </div>
+                    {invitePreview && !invitePreview.valid && (
+                      <p className="text-xs text-destructive">{invitePreview.error}</p>
+                    )}
+                    {invitePreview?.valid && (
+                      <div className="rounded-lg border bg-muted/30 p-3 space-y-1.5 mt-1">
+                        <p className="text-xs font-medium text-foreground">초대 정보 미리보기</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <Badge variant="outline" className="text-[11px]">프로젝트: {invitePreview.project_name}</Badge>
+                          {invitePreview.company_name && (
+                            <Badge variant="secondary" className="text-[11px]">업체: {invitePreview.company_name}</Badge>
+                          )}
+                          <Badge className="text-[11px]">{roleLabels[invitePreview.role] || invitePreview.role}</Badge>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
             <div className="space-y-1.5">

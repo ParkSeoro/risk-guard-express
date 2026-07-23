@@ -126,7 +126,10 @@ export default function Companies() {
           <Building2 className="h-6 w-6" /> 회사 관리
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          시공사·협력사별 공사 개요, 조직도, 관리자 정보를 등록·관리합니다. 등록된 관리자는 위험성평가·TBM 등 모든 메뉴의 담당자 후보로 자동 노출됩니다.
+          이 프로젝트에 참여하는 시공사·협력사의 <b>공사 개요·조직도·관리자</b>를 관리합니다. 등록된 관리자는 위험성평가·TBM 등 모든 메뉴의 담당자 후보로 자동 노출됩니다.
+        </p>
+        <p className="text-[11px] text-muted-foreground/80 mt-1">
+          ※ 시스템 전역 업체 마스터(중복 방지·병합)는 <b>설정 &gt; 업체 관리</b>에서 관리합니다. 여기는 <b>이 프로젝트에 참여한 업체의 세부 정보</b> 화면입니다.
         </p>
       </div>
 

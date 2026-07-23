@@ -98,9 +98,10 @@ export default function Companies() {
 
   const kpis = useMemo(() => ({
     total: companies.length,
+    gc: companies.filter(c => c.type === 'gc').length,
     contractor: companies.filter(c => c.type === 'contractor').length,
     vendor: companies.filter(c => c.type === 'vendor').length,
-    missingInfo: companies.filter(c => !c.has_construction_info && (c.type === 'contractor' || c.type === 'vendor')).length,
+    missingInfo: companies.filter(c => !c.has_construction_info && (c.type === 'gc' || c.type === 'contractor' || c.type === 'vendor')).length,
   }), [companies]);
 
   const typeCounts = useMemo(() => {

@@ -131,13 +131,10 @@ const Auth = () => {
   useEffect(() => {
     if (mode !== 'signup' || signupMethod !== 'directory') return;
     (async () => {
-      const { data } = await (supabase as any)
-        .from('signup_company_directory')
-        .select('*')
-        .order('project_name')
-        .order('company_name');
+      const { data } = await (supabase as any).rpc('get_signup_company_directory');
       setDirectory((data as DirectoryRow[]) || []);
     })();
+
   }, [mode, signupMethod]);
 
   const projectOptions = useMemo(() => {

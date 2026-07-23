@@ -9401,6 +9401,16 @@ export type Database = {
         Args: { _project_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["project_role"]
       }
+      get_signup_company_directory: {
+        Args: never
+        Returns: {
+          company_id: string
+          company_name: string
+          company_type: string
+          project_id: string
+          project_name: string
+        }[]
+      }
       get_tbm_by_token: { Args: { _token: string }; Returns: Json }
       get_user_company_id: {
         Args: { _project_id: string; _user_id: string }

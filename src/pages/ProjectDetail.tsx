@@ -861,9 +861,14 @@ const ProjectDetail = () => {
                             )}
                           </div>
                           {canManage && (
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteCompany(c.id)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            <div className="flex items-center gap-0.5">
+                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditCompany(c)} title="수정">
+                                <Settings2 className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleUnlinkCompany(c.id)} title="프로젝트에서 제외">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
                           )}
                         </div>
                         {getChildren(c.id).map(child => renderCompany(child, depth + 1))}

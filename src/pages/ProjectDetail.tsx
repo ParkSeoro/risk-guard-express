@@ -150,6 +150,26 @@ const ProjectDetail = () => {
     }
   };
 
+  // Load global company directory (system-wide, deduped by name) for search-based registration
+  useEffect(() => {
+    (async () => {
+      const { data } = await (supabase as any)
+        .from('companies')
+        .select('id, name, type, business_no, contact, address')
+        .eq('is_deleted', false)
+        .order('name');
+      const seen = new Set<string>();
+      const deduped: any[] = [];
+      (data || []).forEach((c: any) => {
+        const key = (c.name || '').trim().toLowerCase();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        deduped.push(c);
+      });
+      setGlobalCompanies(deduped);
+    })();
+  }, [showAddCompany]);
+
   const getProfileName = (userId: string) => {
     const p = profiles.find(pr => pr.user_id === userId);
     return p?.display_name || userId.slice(0, 8);

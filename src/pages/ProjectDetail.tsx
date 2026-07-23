@@ -1178,6 +1178,58 @@ const ProjectDetail = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Edit Company Dialog */}
+      <Dialog open={!!editingCompany} onOpenChange={(o) => !o && setEditingCompany(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>업체 정보 수정</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">업체명 {!isMaster && <span className="text-muted-foreground">(마스터만 수정 가능)</span>}</Label>
+              <Input value={editForm.name} disabled={!isMaster} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">사업자번호 {!isMaster && <span className="text-muted-foreground">(마스터만)</span>}</Label>
+                <Input value={editForm.business_no} disabled={!isMaster} onChange={e => setEditForm({ ...editForm, business_no: e.target.value })} />
+              </div>
+              <div>
+                <Label className="text-xs">연락처 {!isMaster && <span className="text-muted-foreground">(마스터만)</span>}</Label>
+                <Input value={editForm.contact} disabled={!isMaster} onChange={e => setEditForm({ ...editForm, contact: e.target.value })} />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">유형 (이 프로젝트 기준)</Label>
+              <Select value={editForm.type} onValueChange={v => setEditForm({ ...editForm, type: v, parent_company_id: '' })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="client">발주처</SelectItem>
+                  <SelectItem value="gc">시공사</SelectItem>
+                  <SelectItem value="contractor">협력사</SelectItem>
+                  <SelectItem value="vendor">공급사</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {(editForm.type === 'gc' || editForm.type === 'contractor' || editForm.type === 'vendor') && (
+              <div>
+                <Label className="text-xs">상위 업체 (선택)</Label>
+                <Select value={editForm.parent_company_id || '__none__'} onValueChange={v => setEditForm({ ...editForm, parent_company_id: v === '__none__' ? '' : v })}>
+                  <SelectTrigger><SelectValue placeholder="없음" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">없음 (최상위)</SelectItem>
+                    {companies
+                      .filter(c => c.id !== editingCompany?.id)
+                      .filter(c => editForm.type === 'gc' ? c.type === 'client' : (c.type === 'client' || c.type === 'gc'))
+                      .map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({companyTypes[c.type] || c.type})</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <Button onClick={handleUpdateCompany} className="w-full">저장</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+
       {/* Create Invite Dialog */}
       <Dialog open={showCreateInvite} onOpenChange={setShowCreateInvite}>
         <DialogContent>

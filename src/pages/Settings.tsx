@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature } from 'lucide-react';
+import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature, Building2 } from 'lucide-react';
 
 const settingsCards = [
   {
@@ -19,6 +19,15 @@ const settingsCards = [
     description: '사용자 승인, 역할 부여, 접근 권한을 관리합니다.',
     icon: Shield,
     path: '/settings/permissions',
+    requires: 'admin' as const,
+    badge: '관리자 전용',
+  },
+  {
+    id: 'companies',
+    title: '업체 관리 (시스템)',
+    description: '시스템 전역 업체(시공사·협력사·발주처) 정보를 관리합니다. 여기서 등록된 업체는 프로젝트별로 참여 지정할 수 있습니다.',
+    icon: Building2,
+    path: '/settings/companies',
     requires: 'admin' as const,
     badge: '관리자 전용',
   },

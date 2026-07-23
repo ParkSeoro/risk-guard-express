@@ -4117,6 +4117,7 @@ export type Database = {
           created_by: string | null
           id: string
           is_deleted: boolean
+          parent_company_id: string | null
           project_id: string
           role_in_project: string
           updated_at: string
@@ -4127,6 +4128,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_deleted?: boolean
+          parent_company_id?: string | null
           project_id: string
           role_in_project?: string
           updated_at?: string
@@ -4137,6 +4139,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           is_deleted?: boolean
+          parent_company_id?: string | null
           project_id?: string
           role_in_project?: string
           updated_at?: string
@@ -4159,6 +4162,27 @@ export type Database = {
           {
             foreignKeyName: "project_companies_company_id_fkey"
             columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "project_companies_parent_company_id_fkey"
+            columns: ["parent_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_companies_parent_company_id_fkey"
+            columns: ["parent_company_id"]
+            isOneToOne: false
+            referencedRelation: "signup_company_directory"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "project_companies_parent_company_id_fkey"
+            columns: ["parent_company_id"]
             isOneToOne: false
             referencedRelation: "v_contractor_safety_scorecard"
             referencedColumns: ["company_id"]

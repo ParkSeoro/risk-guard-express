@@ -125,7 +125,7 @@ const ProjectDetail = () => {
       supabase.from('project_members').select('*').eq('project_id', projectId),
       supabase.from('profiles').select('user_id, display_name, company, phone, position'),
       (supabase as any).from('project_companies')
-        .select('company_id, role_in_project, companies:company_id(*)')
+        .select('company_id, role_in_project, parent_company_id, companies:company_id(*)')
         .eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('project_invites').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_join_requests').select('*, profiles:user_id(display_name, company)').eq('project_id', projectId).eq('status', 'pending'),
@@ -138,7 +138,12 @@ const ProjectDetail = () => {
     setProfiles(profilesRes.data || []);
     setAllProfiles((profilesRes.data || []) as any);
     const projCompanies = (projCompaniesRes.data || [])
-      .map((l: any) => l.companies ? { ...l.companies, type: l.companies.type || l.role_in_project } : null)
+      .map((l: any) => l.companies ? {
+        ...l.companies,
+        type: l.role_in_project || l.companies.type,
+        // Project-scoped parent overrides global companies.parent_company_id
+        parent_company_id: l.parent_company_id ?? null,
+      } : null)
       .filter((c: any) => c && c.is_deleted === false);
     setCompanies(projCompanies);
 
@@ -368,20 +373,15 @@ const ProjectDetail = () => {
       }
     }
     let linkCompanyId = companyForm.source_company_id || '';
-    // Only create a NEW company row when the user did NOT pick one from the directory.
+    // Only create a NEW row in the GLOBAL companies master when the user did NOT pick one from the directory.
     if (!linkCompanyId) {
       const insertData: any = {
-        project_id: projectId,
         name: companyForm.name,
         type: companyForm.type,
         business_no: companyForm.business_no,
         contact: companyForm.contact,
-        scope: companyForm.scope,
-        period: companyForm.period,
+        // Note: parent/scope/period are per-project — stored on project_companies below
       };
-      if (companyForm.parent_company_id) {
-        insertData.parent_company_id = companyForm.parent_company_id;
-      }
       const { data: inserted, error } = await supabase.from('companies').insert([insertData]).select('id').single();
       if (error) {
         const msg = /companies_norm_name_uidx|duplicate key/i.test(error.message)
@@ -393,27 +393,87 @@ const ProjectDetail = () => {
       linkCompanyId = inserted?.id || '';
     }
     if (linkCompanyId) {
+      const linkPayload: any = {
+        project_id: projectId,
+        company_id: linkCompanyId,
+        role_in_project: companyForm.type,
+        parent_company_id: companyForm.parent_company_id || null,
+      };
       const { error: linkErr } = await (supabase as any).from('project_companies').upsert(
-        { project_id: projectId, company_id: linkCompanyId, role_in_project: companyForm.type },
+        linkPayload,
         { onConflict: 'project_id,company_id' }
       );
       if (linkErr) { toast({ title: '프로젝트 연결 실패', description: linkErr.message, variant: 'destructive' }); return; }
     }
-    toast({ title: '업체가 등록되었습니다.' });
+    toast({ title: '업체가 프로젝트에 등록되었습니다.' });
     setShowAddCompany(false);
     setCompanyForm({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
     fetchAll();
   };
 
   const { softDelete } = useSoftDelete();
-  const handleDeleteCompany = async (id: string) => {
+  // Remove company from this project ONLY. Does NOT touch the global companies master.
+  const handleUnlinkCompany = async (id: string) => {
+    if (!projectId) return;
     const target = companies.find(c => c.id === id);
-    const r = await softDelete('companies', id, {
-      label: `협력사 "${target?.name || ''}"`,
-      projectId: projectId || undefined,
-    });
-    if (r.ok) fetchAll();
+    if (!confirm(`"${target?.name || ''}" 업체를 이 프로젝트에서 제외하시겠습니까?\n\n※ 설정 > 업체 관리의 전역 마스터 목록에서는 삭제되지 않습니다.`)) return;
+    // Clear children pointing to this company within this project
+    await (supabase as any).from('project_companies')
+      .update({ parent_company_id: null })
+      .eq('project_id', projectId).eq('parent_company_id', id);
+    const { error } = await (supabase as any).from('project_companies')
+      .delete().eq('project_id', projectId).eq('company_id', id);
+    if (error) { toast({ title: '제외 실패', description: error.message, variant: 'destructive' }); return; }
+    toast({ title: '프로젝트에서 제외되었습니다.' });
+    await log('업체 프로젝트 제외', 'project_company', id, projectId);
+    fetchAll();
   };
+
+  // Edit dialog state
+  const [editingCompany, setEditingCompany] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', business_no: '', contact: '', type: 'contractor', parent_company_id: '', scope: '', period: '' });
+  const openEditCompany = (c: any) => {
+    setEditingCompany(c);
+    setEditForm({
+      name: c.name || '',
+      business_no: c.business_no || '',
+      contact: c.contact || '',
+      type: c.type || 'contractor',
+      parent_company_id: c.parent_company_id || '',
+      scope: c.scope || '',
+      period: c.period || '',
+    });
+  };
+  const handleUpdateCompany = async () => {
+    if (!editingCompany || !projectId) return;
+    // Project-scoped fields
+    const { error: linkErr } = await (supabase as any).from('project_companies')
+      .update({
+        role_in_project: editForm.type,
+        parent_company_id: editForm.parent_company_id || null,
+      })
+      .eq('project_id', projectId)
+      .eq('company_id', editingCompany.id);
+    if (linkErr) { toast({ title: '수정 실패', description: linkErr.message, variant: 'destructive' }); return; }
+    // Global master fields (name / business_no / contact) — master only
+    if (isMaster) {
+      const { error: gErr } = await (supabase as any).from('companies')
+        .update({ name: editForm.name, business_no: editForm.business_no, contact: editForm.contact })
+        .eq('id', editingCompany.id);
+      if (gErr) {
+        const msg = /companies_norm_name_uidx|duplicate key/i.test(gErr.message)
+          ? '동일한 이름의 업체가 이미 존재합니다.'
+          : gErr.message;
+        toast({ title: '마스터 업데이트 실패', description: msg, variant: 'destructive' });
+        return;
+      }
+    }
+    toast({ title: '업체 정보가 수정되었습니다.' });
+    await log('업체 수정', 'project_company', editingCompany.id, projectId);
+    setEditingCompany(null);
+    fetchAll();
+  };
+
 
   const STEP_LABEL_OPTIONS = [
     { label: '작성', position: 'supervisor' },
@@ -801,9 +861,14 @@ const ProjectDetail = () => {
                             )}
                           </div>
                           {canManage && (
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteCompany(c.id)}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                            <div className="flex items-center gap-0.5">
+                              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditCompany(c)} title="수정">
+                                <Settings2 className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleUnlinkCompany(c.id)} title="프로젝트에서 제외">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
                           )}
                         </div>
                         {getChildren(c.id).map(child => renderCompany(child, depth + 1))}
@@ -1112,6 +1177,58 @@ const ProjectDetail = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Company Dialog */}
+      <Dialog open={!!editingCompany} onOpenChange={(o) => !o && setEditingCompany(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>업체 정보 수정</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">업체명 {!isMaster && <span className="text-muted-foreground">(마스터만 수정 가능)</span>}</Label>
+              <Input value={editForm.name} disabled={!isMaster} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">사업자번호 {!isMaster && <span className="text-muted-foreground">(마스터만)</span>}</Label>
+                <Input value={editForm.business_no} disabled={!isMaster} onChange={e => setEditForm({ ...editForm, business_no: e.target.value })} />
+              </div>
+              <div>
+                <Label className="text-xs">연락처 {!isMaster && <span className="text-muted-foreground">(마스터만)</span>}</Label>
+                <Input value={editForm.contact} disabled={!isMaster} onChange={e => setEditForm({ ...editForm, contact: e.target.value })} />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">유형 (이 프로젝트 기준)</Label>
+              <Select value={editForm.type} onValueChange={v => setEditForm({ ...editForm, type: v, parent_company_id: '' })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="client">발주처</SelectItem>
+                  <SelectItem value="gc">시공사</SelectItem>
+                  <SelectItem value="contractor">협력사</SelectItem>
+                  <SelectItem value="vendor">공급사</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {(editForm.type === 'gc' || editForm.type === 'contractor' || editForm.type === 'vendor') && (
+              <div>
+                <Label className="text-xs">상위 업체 (선택)</Label>
+                <Select value={editForm.parent_company_id || '__none__'} onValueChange={v => setEditForm({ ...editForm, parent_company_id: v === '__none__' ? '' : v })}>
+                  <SelectTrigger><SelectValue placeholder="없음" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">없음 (최상위)</SelectItem>
+                    {companies
+                      .filter(c => c.id !== editingCompany?.id)
+                      .filter(c => editForm.type === 'gc' ? c.type === 'client' : (c.type === 'client' || c.type === 'gc'))
+                      .map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({companyTypes[c.type] || c.type})</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <Button onClick={handleUpdateCompany} className="w-full">저장</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
 
       {/* Create Invite Dialog */}
       <Dialog open={showCreateInvite} onOpenChange={setShowCreateInvite}>

@@ -358,7 +358,7 @@ const ProjectDetail = () => {
     else {
       toast({ title: '업체가 등록되었습니다.' });
       setShowAddCompany(false);
-      setCompanyForm({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '' });
+      setCompanyForm({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
       fetchAll();
     }
   };

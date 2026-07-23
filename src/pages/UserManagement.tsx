@@ -534,12 +534,19 @@ const UserManagement = () => {
                     )}
                   </td>
                   <td className="text-center">
-                    <div className="flex items-center gap-1 justify-center">
+                    <div className="flex items-center gap-1 justify-center flex-wrap">
                       {u.account_status === 'pending' && (
-                        <Button size="sm" variant="outline" className="h-6 text-xs gap-1 text-success" disabled={saving === u.user_id}
-                          onClick={() => handleStatusChange(u.user_id, 'active')}>
-                          <UserCheck className="h-3 w-3" /> 승인
-                        </Button>
+                        <>
+                          <Button size="sm" variant="outline" className="h-6 text-xs gap-1 text-success" disabled={saving === u.user_id}
+                            onClick={() => handleStatusChange(u.user_id, 'active')}
+                            title="가입 시 선택한 프로젝트·업체·직종을 기반으로 권한을 자동 부여합니다.">
+                            <UserCheck className="h-3 w-3" /> 승인
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-6 text-xs gap-1 text-destructive" disabled={saving === u.user_id}
+                            onClick={() => handleStatusChange(u.user_id, 'inactive')}>
+                            반려
+                          </Button>
+                        </>
                       )}
                       {u.account_status === 'active' && (
                         <Button size="sm" variant="outline" className="h-6 text-xs gap-1 text-destructive" disabled={saving === u.user_id}

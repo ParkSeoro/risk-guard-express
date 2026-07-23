@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,10 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { HardHat, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 
 type Mode = 'login' | 'signup' | 'forgot';
+type SignupMethod = 'directory' | 'invite';
 
 interface InvitePreview {
   project_name: string;
@@ -17,6 +19,14 @@ interface InvitePreview {
   role: string;
   valid: boolean;
   error?: string;
+}
+
+interface DirectoryRow {
+  project_id: string;
+  project_name: string;
+  company_id: string;
+  company_name: string;
+  company_type: string;
 }
 
 const roleLabels: Record<string, string> = {
@@ -27,9 +37,20 @@ const roleLabels: Record<string, string> = {
   viewer: '열람자',
 };
 
+const POSITION_OPTIONS = [
+  { v: 'site_manager', label: '현장소장' },
+  { v: 'safety_manager', label: '안전관리자' },
+  { v: 'supervisor', label: '관리감독자' },
+  { v: 'foreman', label: '작업반장' },
+  { v: 'worker', label: '작업자' },
+  { v: 'inspector', label: '감리' },
+  { v: 'other', label: '기타' },
+];
+
 const Auth = () => {
   const [searchParams] = useSearchParams();
   const [mode, setMode] = useState<Mode>('login');
+  const [signupMethod, setSignupMethod] = useState<SignupMethod>('directory');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -38,6 +59,11 @@ const Auth = () => {
   const [invitePreview, setInvitePreview] = useState<InvitePreview | null>(null);
   const [validatingCode, setValidatingCode] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Directory-based signup state
+  const [directory, setDirectory] = useState<DirectoryRow[]>([]);
+  const [selectedProject, setSelectedProject] = useState<string>('');
+  const [selectedCompany, setSelectedCompany] = useState<string>('');
+  const [selectedPosition, setSelectedPosition] = useState<string>('worker');
   const { toast } = useToast();
 
   // Auto-switch to signup if invite param present

@@ -22,29 +22,34 @@ const roleLabels: Record<string, string> = {
   site_manager: '현장소장', supervisor: '감리/감독', contractor: '협력사 담당자', worker: '작업자', viewer: '열람자',
 };
 
+// SSOT: useProjectAccess.PERMISSION_MATRIX 와 일치
+const ALL_PROJECT_ROLES = ['master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor', 'worker', 'contractor', 'viewer'];
+const OPERATOR_ROLES = ['master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor', 'worker', 'contractor'];
+const ADMIN_ROLES = ['master', 'project_admin', 'safety_manager'];
+
 const menuPermissions: { menu: string; roles: string[]; description: string }[] = [
-  { menu: '대시보드', roles: ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer'], description: '모든 역할 접근 가능' },
-  { menu: '프로젝트', roles: ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer'], description: '프로젝트 멤버만 조회' },
-  { menu: '위험성평가', roles: ['master', 'project_admin', 'safety_manager', 'contractor'], description: '열람자는 조회만' },
-  { menu: '검증센터', roles: ['master', 'project_admin', 'safety_manager'], description: '안전관리자 이상만 검증 실행' },
-  { menu: '전자결재', roles: ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer'], description: '열람 가능, 결재는 권한별' },
-  { menu: 'TBM 기록', roles: ['master', 'project_admin', 'safety_manager', 'contractor'], description: '협력사 이상 작성' },
+  { menu: '대시보드', roles: ALL_PROJECT_ROLES, description: '모든 역할 접근 가능' },
+  { menu: '프로젝트', roles: ALL_PROJECT_ROLES, description: '프로젝트 멤버만 조회' },
+  { menu: '위험성평가', roles: OPERATOR_ROLES.concat(['viewer']), description: '열람자는 조회만' },
+  { menu: '검증센터', roles: ADMIN_ROLES, description: '안전관리자 이상만 검증 실행' },
+  { menu: '전자결재', roles: ALL_PROJECT_ROLES, description: '열람 가능, 결재는 권한별' },
+  { menu: 'TBM 기록', roles: OPERATOR_ROLES.concat(['viewer']), description: '전 멤버 조회 · 협력사 이상 작성' },
   { menu: '사용자 관리', roles: ['master', 'project_admin'], description: '마스터/프로젝트 관리자' },
-  { menu: '기준정보', roles: ['master', 'project_admin', 'safety_manager'], description: '안전관리자 이상' },
-  { menu: '감사 로그', roles: ['master', 'project_admin', 'safety_manager'], description: '안전관리자 이상' },
+  { menu: '기준정보', roles: ADMIN_ROLES, description: '안전관리자 이상' },
+  { menu: '감사 로그', roles: ADMIN_ROLES, description: '안전관리자 이상' },
   { menu: '권한 점검', roles: ['master'], description: '마스터 전용' },
 ];
 
 const actionPermissions: { action: string; roles: string[] }[] = [
-  { action: '위험성평가 항목 수정', roles: ['master', 'project_admin', 'safety_manager', 'contractor'] },
-  { action: '위험성평가 제출', roles: ['master', 'project_admin', 'safety_manager', 'contractor'] },
-  { action: '검증 실행', roles: ['master', 'project_admin', 'safety_manager'] },
-  { action: '결재 상신', roles: ['master', 'project_admin', 'safety_manager'] },
-  { action: '결재 승인/반려', roles: ['master', 'project_admin', 'safety_manager'] },
+  { action: '위험성평가 항목 수정', roles: OPERATOR_ROLES },
+  { action: '위험성평가 제출', roles: OPERATOR_ROLES },
+  { action: '검증 실행', roles: ADMIN_ROLES },
+  { action: '결재 상신', roles: OPERATOR_ROLES },
+  { action: '결재 승인/반려', roles: ['master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor'] },
   { action: '사용자 승인/역할 변경', roles: ['master', 'project_admin'] },
   { action: '프로젝트 생성/삭제', roles: ['master', 'project_admin'] },
-  { action: '기준정보 수정', roles: ['master', 'project_admin', 'safety_manager'] },
-  { action: 'PDF/XLSX 다운로드', roles: ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer'] },
+  { action: '기준정보 수정', roles: ADMIN_ROLES },
+  { action: 'PDF/XLSX 다운로드', roles: ALL_PROJECT_ROLES },
 ];
 
 const normalizeRole = (role: string | null | undefined) => {

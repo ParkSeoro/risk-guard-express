@@ -808,9 +808,7 @@ const WorkPlanDetail = () => {
                 <div key={section.key} className="space-y-1">
                   <h3 className="text-sm font-semibold">{section.title}</h3>
                   <div className="text-xs text-muted-foreground whitespace-pre-wrap bg-muted/30 p-3 rounded">
-                    {typeof section.content === 'string' && section.content.startsWith('[')
-                      ? JSON.stringify(JSON.parse(section.content), null, 2)
-                      : section.content}
+                    {formatSectionContent(section.content)}
                   </div>
                 </div>
               ))}

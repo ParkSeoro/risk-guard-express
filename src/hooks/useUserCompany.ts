@@ -1,21 +1,22 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useGlobalProjectAccess } from '@/components/AppLayout';
+import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
 
 /**
  * Returns the logged-in user's company for the currently selected project.
  * Used to auto-map "소속 업체" on documents (permits, work plans, TBM, etc.).
+ *
+ * AppLayout 밖에서도 렌더될 수 있으므로 ProjectAccessContext를 null-safe로 읽고,
+ * 없으면 localStorage에 저장된 선택 프로젝트로 fallback 한다.
  */
 export function useUserCompany() {
   const { user } = useAuth();
-  // AppLayout 밖에서 호출되면 selectedProject 없이 동작 (fallback: null)
-  let selectedProject: string | null = null;
-  try {
-    selectedProject = useGlobalProjectAccess().selectedProject;
-  } catch {
-    selectedProject = typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') : null;
-  }
+  const access = useGlobalProjectAccessOptional();
+  const selectedProject =
+    access?.selectedProject ??
+    (typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') : null);
+
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

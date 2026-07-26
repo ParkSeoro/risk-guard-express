@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 
 /**
  * Returns the logged-in user's company for the currently selected project.
@@ -9,7 +9,13 @@ import { useProjectAccess } from '@/hooks/useProjectAccess';
  */
 export function useUserCompany() {
   const { user } = useAuth();
-  const { selectedProject } = useProjectAccess();
+  // AppLayout 밖에서 호출되면 selectedProject 없이 동작 (fallback: null)
+  let selectedProject: string | null = null;
+  try {
+    selectedProject = useGlobalProjectAccess().selectedProject;
+  } catch {
+    selectedProject = typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') : null;
+  }
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

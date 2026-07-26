@@ -11,6 +11,7 @@ import StructuredSectionForm, { validateSection } from '@/components/work-plan/S
 import { fetchLatestApprovedRun, syncRaToWp, type LatestApprovedRun } from '@/lib/workPlanAttachments';
 import AttachmentChecklist from '@/components/work-plan/AttachmentChecklist';
 import LegalCalculatorPanel from '@/components/work-plan/LegalCalculatorPanel';
+import { formatSectionContent } from '@/lib/formatSectionContent';
 import EquipmentManager from '@/components/equipment/EquipmentManager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';

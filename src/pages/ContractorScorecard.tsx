@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BarChart3, AlertTriangle, CheckCircle2 } from "lucide-react";
@@ -27,7 +27,7 @@ function scoreOf(r: Row): { score: number; grade: string; color: string } {
 }
 
 export default function ContractorScorecard() {
-  const { selectedProject: projectId } = useProjectAccess();
+  const { selectedProject: projectId } = useGlobalProjectAccess();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
 

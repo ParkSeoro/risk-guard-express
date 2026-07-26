@@ -11,14 +11,14 @@ import { Badge } from "@/components/ui/badge";
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
 import { Plus, ClipboardList, Copy } from "lucide-react";
-import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 
 const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const TYPES = ["근골격계", "뇌심혈관", "직무스트레스", "감정노동"];
 
 export default function HazardSurveys() {
   const handle = useToastError();
-  const { applyCompanyFilter, userCompanyId } = useProjectAccess();
+  const { applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
   const [list, setList] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<any>({ type: "근골격계", survey_date: new Date().toISOString().slice(0, 10) });

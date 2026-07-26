@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToastError } from "@/hooks/useToastError";
-import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { toast } from "sonner";
 import { Plus, FlaskConical, FileText, CalendarRange } from "lucide-react";
 
@@ -35,7 +35,7 @@ type UsagePlan = {
 export default function Chemicals() {
   const handle = useToastError();
   const { userCompanyId, applyCompanyFilter, isMaster, isProjectAdmin, isSafetyManager } =
-    useProjectAccess();
+    useGlobalProjectAccess();
   const canSeeAllCompanies = isMaster || isProjectAdmin || isSafetyManager;
 
   const projectId = typeof window !== "undefined" ? localStorage.getItem(ACTIVE_PROJECT_KEY) : null;

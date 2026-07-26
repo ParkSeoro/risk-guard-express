@@ -29,7 +29,7 @@ import { validateRiskItems, saveValidationResults, validateImportedItems, type V
 import { generateRemediationActions, applyRemediationActions, buildRemediationSummaryText, executeAutoRemediation, type RemediationAction } from '@/lib/remediationEngine';
 import type { Database } from '@/integrations/supabase/types';
 import IMESafeInput from '@/components/IMESafeInput';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { Checkbox } from '@/components/ui/checkbox';
 import FeedbackPanel from '@/components/FeedbackPanel';
 import ApprovalLineManager, { type ApprovalLine } from '@/components/ApprovalLineManager';
@@ -56,7 +56,7 @@ const AssessmentRunDetail = () => {
   const { runId } = useParams();
   const navigate = useNavigate();
   const { user, profile, isAdmin, roles } = useAuth();
-  const { userRole, userCompanyId, isMaster } = useProjectAccess();
+  const { userRole, userCompanyId, isMaster } = useGlobalProjectAccess();
   const { log } = useAuditLog();
   const { toast } = useToast();
 

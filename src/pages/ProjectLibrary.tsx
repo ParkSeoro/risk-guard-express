@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,7 +49,7 @@ const fmtSize = (b: number | null) => {
 
 export default function ProjectLibrary() {
   const { user, isAdmin, hasRole } = useAuth();
-  const { selectedProject, projects, setSelectedProject } = useProjectAccess();
+  const { selectedProject, projects, setSelectedProject } = useGlobalProjectAccess();
   const { toast } = useToast();
   const isMaster = hasRole('master');
 

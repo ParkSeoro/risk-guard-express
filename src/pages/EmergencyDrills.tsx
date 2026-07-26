@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useSoftDelete } from "@/hooks/useSoftDelete";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,7 +44,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export default function EmergencyDrills() {
-  const { selectedProject: projectId } = useProjectAccess();
+  const { selectedProject: projectId } = useGlobalProjectAccess();
   const { softDelete } = useSoftDelete();
   const [rows, setRows] = useState<Drill[]>([]);
   const [loading, setLoading] = useState(true);

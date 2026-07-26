@@ -19,7 +19,7 @@ import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
 import OverlayFillForm from '@/components/permits/OverlayFillForm';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { printOverlay } from '@/lib/permitOverlayPrint';
 
 const STANDARD_FORM_VALUE = '__standard__';
@@ -107,7 +107,7 @@ export default function WorkPermitDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
-  const { userCompanyId } = useProjectAccess();
+  const { userCompanyId } = useGlobalProjectAccess();
 
   const [permit, setPermit] = useState<any>(null);
   const [projectName, setProjectName] = useState('');

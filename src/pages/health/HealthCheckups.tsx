@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
 import { Plus, Stethoscope, Search, Trash2 } from "lucide-react";
-import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useSoftDelete } from "@/hooks/useSoftDelete";
 
 const ACTIVE_PROJECT_KEY = "selectedProjectId";
@@ -27,7 +27,7 @@ function daysUntil(d?: string | null) {
 
 export default function HealthCheckups() {
   const handle = useToastError();
-  const { applyCompanyFilter, userCompanyId } = useProjectAccess();
+  const { applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
   const { softDelete } = useSoftDelete();
   const [list, setList] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);

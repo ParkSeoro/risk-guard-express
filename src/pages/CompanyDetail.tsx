@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -33,7 +33,7 @@ const positionLabel = (v: string) => POSITION_OPTIONS.find(p => p.value === v)?.
 export default function CompanyDetail() {
   const { id: companyId } = useParams<{ id: string }>();
   const { toast } = useToast();
-  const { isMaster, isProjectAdmin, isSafetyManager, userCompanyId } = useProjectAccess();
+  const { isMaster, isProjectAdmin, isSafetyManager, userCompanyId } = useGlobalProjectAccess();
   const { user } = useAuth();
   const [company, setCompany] = useState<Company | null>(null);
   const [loading, setLoading] = useState(true);

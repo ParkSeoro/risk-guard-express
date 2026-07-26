@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useToast } from '@/hooks/use-toast';
@@ -60,7 +60,7 @@ function getLabel(table: SoftDeleteTable, row: DeletedRow): string {
 
 export default function Trash() {
   const { user } = useAuth();
-  const { isMaster, isProjectAdmin, selectedProject, userRole, userCompanyId, loading } = useProjectAccess();
+  const { isMaster, isProjectAdmin, selectedProject, userRole, userCompanyId, loading } = useGlobalProjectAccess();
   const { restore } = useSoftDelete();
   const { log } = useAuditLog();
   const { toast } = useToast();

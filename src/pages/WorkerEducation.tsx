@@ -26,7 +26,7 @@ type Worker = { id: string; name: string; company_id: string | null };
 const TYPES = ['정기', '채용시', '작업변경시', '특별', '관리감독자', '기초안전보건'];
 
 export default function WorkerEducation() {
-  const { selectedProject: projectId, isMaster, isProjectAdmin, isSafetyManager, profile } = useGlobalProjectAccess() as any;
+  const { selectedProject: projectId, isMaster, isProjectAdmin, isSafetyManager, userCompanyId } = useGlobalProjectAccess();
   const { softDelete } = useSoftDelete();
   const [rows, setRows] = useState<Row[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
@@ -41,7 +41,7 @@ export default function WorkerEducation() {
   });
 
   const canSeeAllCompanies = !!(isMaster || isProjectAdmin || isSafetyManager);
-  const myCompanyId: string | null = profile?.company_id ?? null;
+  const myCompanyId: string | null = userCompanyId ?? null;
 
   async function load() {
     if (!projectId) return;

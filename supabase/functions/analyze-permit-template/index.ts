@@ -198,7 +198,7 @@ Deno.serve(async (req) => {
 
     // ==== 2차 검증 패스 (누락/좌표 보정) — 옵션 ====
     let refined: any = null;
-    if (enableRefine && modelUsed.startsWith('lovable/') && (parsed?.fields || parsed?.checkboxes || parsed?.signatures)) {
+    if (enableRefine && (parsed?.fields || parsed?.checkboxes || parsed?.signatures)) {
       try {
         const refineMessages = [
           { role: 'system', content: SYSTEM_PROMPT },
@@ -215,8 +215,8 @@ Deno.serve(async (req) => {
             ],
           },
         ];
-        // Flash 로 빠르게 검증 (Pro 는 비용 큼)
-        const rawRefined = await callLovableAIGateway(refineMessages, { model: 'google/gemini-2.5-flash' });
+        const rawRefined = await callAI(refineMessages, { temperature: 0.1 });
+
         const rp = tryParse(rawRefined);
         if (rp && (Array.isArray(rp.fields) || Array.isArray(rp.checkboxes) || Array.isArray(rp.signatures))) {
           refined = rp;

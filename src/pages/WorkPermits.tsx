@@ -80,8 +80,7 @@ export default function WorkPermits() {
   const { user, isAdmin } = useAuth();
   const { log } = useAuditLog();
   const navigate = useNavigate();
-  const projectId = typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') || '' : '';
-  const { userCompanyId } = useProjectAccess();
+  const { selectedProject: projectId, userCompanyId } = useGlobalProjectAccess();
 
 
   const [permits, setPermits] = useState<any[]>([]);

@@ -105,6 +105,7 @@ import Companies from "./pages/Companies";
 import CompanyDetail from "./pages/CompanyDetail";
 import InstallPrompt from "./components/InstallPrompt";
 import MobileRedirectGuard from "./components/MobileRedirectGuard";
+import ContractorGate from "./components/ContractorGate";
 import { useOfflineSync } from "./hooks/useOfflineSync";
 import NotFound from "./pages/NotFound";
 
@@ -165,6 +166,7 @@ function ProtectedRoutes() {
 
   return (
     <AppLayout>
+      <ContractorGate>
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/projects" element={<Projects />} />
@@ -238,6 +240,7 @@ function ProtectedRoutes() {
         <Route path="/companies/:id" element={<CompanyDetail />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
+      </ContractorGate>
     </AppLayout>
   );
 }

@@ -15,6 +15,7 @@ import {
   POSITION_LABELS as SSOT_POSITION_LABELS,
   APPROVAL_POLICY,
   buildDefaultSteps,
+  filterApproversForStep,
   type ApprovalEntityType as SSOTApprovalEntityType,
 } from '@/lib/approvalRules';
 
@@ -269,23 +270,30 @@ export default function SubmitApprovalDialog({
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-                  <Select value={s.user_id} onValueChange={(v) => setApprover(i, v)}>
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder="결재자 선택" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {sortedApprovers.length === 0 && (
-                        <div className="px-3 py-2 text-xs text-muted-foreground">
-                          상위 회사 관리자가 등록되어 있지 않습니다
-                        </div>
-                      )}
-                      {sortedApprovers.map((a) => (
-                        <SelectItem key={a.out_user_id} value={a.out_user_id}>
-                          {a.out_display_name || '(이름없음)'} · {a.out_company_name} · {POSITION_LABELS[a.out_position] || a.out_position || a.out_role}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  {(() => {
+                    const filtered = s.position
+                      ? filterApproversForStep(sortedApprovers as any, s.position)
+                      : sortedApprovers;
+                    return (
+                      <Select value={s.user_id} onValueChange={(v) => setApprover(i, v)}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder={`결재자 선택 · ${POSITION_LABELS[s.position] || s.position || '직책 미지정'}`} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {filtered.length === 0 && (
+                            <div className="px-3 py-2 text-xs text-muted-foreground">
+                              해당 직책({POSITION_LABELS[s.position] || s.position || '-'})의 결재자가 없습니다
+                            </div>
+                          )}
+                          {filtered.map((a) => (
+                            <SelectItem key={a.out_user_id} value={a.out_user_id}>
+                              {a.out_display_name || '(이름없음)'} · {a.out_company_name} · {POSITION_LABELS[a.out_position] || a.out_position || a.out_role}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    );
+                  })()}
                 </div>
               ))}
             </div>

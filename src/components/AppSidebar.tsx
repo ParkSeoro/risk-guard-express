@@ -12,6 +12,7 @@ import { useLocation } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 
 import { useAuth } from "@/contexts/AuthContext";
+import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { usePendingApprovalsCount } from "@/hooks/usePendingApprovalsCount";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
@@ -139,11 +140,31 @@ export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed";
   const { profile, signOut, hasRole } = useAuth();
+  const access = useGlobalProjectAccessOptional();
   const isMaster = hasRole('master');
+  const isContractorCo = !!access && !access.isMaster &&
+    (access.userCompanyType === 'contractor' || access.userCompanyType === 'vendor');
   const location = useLocation();
   const pendingApprovals = usePendingApprovalsCount();
 
   const adminFinal = isMaster ? [...adminItems, ...masterOnlyItems] : adminItems;
+
+  // 협력사(Foolproof UI): 복잡한 통계·설정·비용·법적·시스템 메뉴 완전 숨김
+  const CONTRACTOR_GROUP_KEYS = new Set(['home', 'field', 'risk', 'incident', 'workers']);
+  const CONTRACTOR_ALLOWED_URLS = new Set<string>([
+    '/', '/work-plans', '/work-permits', '/tbm-logs',
+    '/risk-assessment', '/ai-assistant',
+    '/incidents', '/work-stop',
+    '/workers', '/workers?tab=attendance',
+    '/project-library', '/education-materials',
+    '/approvals', '/profile', '/manual',
+  ]);
+  const visibleGroups = isContractorCo
+    ? groups
+        .filter((g) => CONTRACTOR_GROUP_KEYS.has(g.key))
+        .map((g) => ({ ...g, items: g.items.filter((i) => CONTRACTOR_ALLOWED_URLS.has(i.url)) }))
+        .filter((g) => g.items.length > 0)
+    : groups;
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem('sidebar:groups') || '{"home":true,"field":true,"risk":true,"inspect":true,"ops_mgmt":true,"ops":true,"admin":false}'); }

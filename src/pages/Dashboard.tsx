@@ -79,7 +79,8 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const {
     projects, selectedProject, setSelectedProject,
-    userCompanyId, isMaster, isProjectAdmin, isContractor, applyCompanyFilter, loading: accessLoading
+    userCompanyId, isMaster, isProjectAdmin, isContractor, isWorker,
+    applyCompanyFilter, loading: accessLoading
   } = useGlobalProjectAccess();
   const [data, setData] = useState<DashboardData>(EMPTY);
   const [loading, setLoading] = useState(true);
@@ -344,7 +345,7 @@ const Dashboard = () => {
         isMaster={isMaster}
         isProjectAdmin={isProjectAdmin}
         isContractor={isContractor}
-        isWorker={data ? (!isMaster && !isProjectAdmin && !isContractor) : false}
+        isWorker={isWorker}
       />
 
       <div className="space-y-6">

@@ -11,14 +11,14 @@ import { Badge } from "@/components/ui/badge";
 import { useToastError } from "@/hooks/useToastError";
 import { toast } from "sonner";
 import { Plus, GraduationCap } from "lucide-react";
-import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 
 const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const TYPES = ["정기", "특별", "관리감독자", "MSDS", "신규채용", "작업변경"];
 
 export default function HealthEducation() {
   const handle = useToastError();
-  const { applyCompanyFilter, userCompanyId } = useProjectAccess();
+  const { applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
   const [list, setList] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
   const [open, setOpen] = useState(false);

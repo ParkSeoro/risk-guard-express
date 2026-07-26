@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ClipboardList, Download, Search, AlertTriangle, CheckCircle2, LogIn } from "lucide-react";
 import { toast } from "sonner";
-import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 
 type EntryLog = {
   id: string;
@@ -35,7 +35,7 @@ export default function WorkerAttendance() {
   const [search, setSearch] = useState("");
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
-  const { isMaster, isProjectAdmin, isSafetyManager, userCompanyId } = useProjectAccess();
+  const { isMaster, isProjectAdmin, isSafetyManager, userCompanyId } = useGlobalProjectAccess();
 
   useEffect(() => {
     supabase.from("projects").select("id,name").then(({ data }) => setProjects(data || []));

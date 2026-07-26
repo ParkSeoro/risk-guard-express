@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,7 +26,7 @@ const STATUS_VARIANT: Record<string, any> = {
 type Tab = 'pending' | 'done' | 'rejected' | 'all';
 
 export default function WorkStopRequests() {
-  const { selectedProject: projectId, isMaster, isProjectAdmin, isSafetyManager } = useProjectAccess();
+  const { selectedProject: projectId, isMaster, isProjectAdmin, isSafetyManager } = useGlobalProjectAccess();
   const canHandle = isMaster || isProjectAdmin || isSafetyManager;
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);

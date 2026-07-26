@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useAuth } from "@/contexts/AuthContext";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,7 +36,7 @@ function reportBadge(appointed_at: string, reported_to_authority_at: string | nu
 }
 
 export default function SafetyAppointments() {
-  const { selectedProject: projectId, canEdit, canDelete } = useProjectAccess();
+  const { selectedProject: projectId, canEdit, canDelete } = useGlobalProjectAccess();
   const { user } = useAuth();
   const { log } = useAuditLog();
   const [rows, setRows] = useState<Row[]>([]);

@@ -118,10 +118,6 @@ async function fetchRAGContext(
 
 // ── Generate a single batch of items ──
 async function generateBatch(
-  apiUrl: string,
-  apiKey: string,
-  useOpenAI: boolean,
-  model: string,
   processName: string,
   equipText: string,
   descText: string,
@@ -176,30 +172,13 @@ ${ragContext}
   }
 ]`;
 
-  const response = useOpenAI
-    ? await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          temperature: 0.4 + batchIndex * 0.05,
-        }),
-      })
-    : await geminiChatFetch({
-        model: "gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.4 + batchIndex * 0.05,
-      });
+  const response = await geminiChatFetch({
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.4 + batchIndex * 0.05,
+  });
 
   if (!response.ok) {
     const status = response.status;
@@ -207,10 +186,6 @@ ${ragContext}
     console.error(`[Batch ${batchIndex}] AI error:`, status, text);
     if (status === 429) throw new Error("RATE_LIMIT");
     if (status === 402) throw new Error("CREDITS_EXHAUSTED");
-    // Lovable AI Gateway returns 403 with credit_limit_reached when workspace limit is hit
-    if (status === 403 && /credit_limit_reached|credit limit/i.test(text)) {
-      throw new Error("CREDITS_EXHAUSTED");
-    }
     throw new Error(`AI_ERROR_${status}`);
   }
 

@@ -283,34 +283,13 @@ serve(async (req) => {
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
     }
-
-
-    const apiUrl = useOpenAI
-      ? "https://api.openai.com/v1/chat/completions"
-      : ""; // Gemini path uses geminiChatFetch helper directly
-    const apiKey = useOpenAI ? openaiKey : (Deno.env.get("GEMINI_API_KEY") || "");
-
-    if (useOpenAI && !apiKey) {
-      return new Response(
-        JSON.stringify({ error: "OpenAI API Key가 설정되지 않았습니다." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    if (!useOpenAI && !apiKey) {
-      return new Response(
-        JSON.stringify({
-          error: "Gemini API 키가 설정되지 않았습니다. 마스터가 설정 > 시크릿에서 GEMINI_API_KEY를 등록해야 합니다.",
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     if (!process_name) {
       return new Response(
         JSON.stringify({ error: "공종명이 필요합니다." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
 
     // ============ Work Plan Section Mode ============
     if (mode === "work_plan_section") {

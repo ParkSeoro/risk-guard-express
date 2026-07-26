@@ -329,13 +329,17 @@ serve(async (req) => {
       }
 
       const result = await response.json();
-      const content = result.choices?.[0]?.message?.content || "";
+      const rawContent = result.choices?.[0]?.message?.content || "";
+      // Defensive: strip any residual ```json fences.
+      const content = rawContent.replace(/```json/gi, "").replace(/```/g, "").trim();
 
       try {
         const jsonMatch = content.match(/[\[{][\s\S]*[\]}]/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
-          return new Response(JSON.stringify({ structured: parsed }), {
+          // Also produce a Korean-readable text form for preview/plain-text consumers.
+          const koreanText = formatStructuredToKorean(section_key || "", parsed);
+          return new Response(JSON.stringify({ structured: parsed, content: koreanText }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
@@ -344,7 +348,7 @@ serve(async (req) => {
       }
 
       return new Response(
-        JSON.stringify({ content: content.replace(/```[\s\S]*?```/g, "").trim() }),
+        JSON.stringify({ content }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

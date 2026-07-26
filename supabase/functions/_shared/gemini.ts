@@ -77,10 +77,13 @@ function hasImageInput(messages: OAIMessage[]): boolean {
 
 // Strip markdown code fences (```json ... ```), then JSON.parse defensively.
 // Kept as an exported helper so callers can drop their own ad-hoc regex.
+export function stripCodeFences(raw: string): string {
+  // Remove any ```json / ``` fences anywhere in the string, then trim.
+  return (raw || "").replace(/```json/gi, "").replace(/```/g, "").trim();
+}
+
 export function parseJsonLoose<T = unknown>(raw: string): T {
-  let text = (raw || "").trim();
-  // Remove leading ```json / ``` and trailing ```
-  text = text.replace(/^\s*```(?:json|JSON)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  let text = stripCodeFences(raw);
   // If model wrapped output in prose, try to extract the first {...} or [...] block.
   if (!/^[\[{]/.test(text)) {
     const match = text.match(/[\[{][\s\S]*[\]}]/);
@@ -89,18 +92,34 @@ export function parseJsonLoose<T = unknown>(raw: string): T {
   return JSON.parse(text) as T;
 }
 
+// [필수 지침: 대한민국 건설현장 표준 안전 용어 사용]
+const KOREAN_STYLE_SUFFIX = `
+
+[필수 지침: 대한민국 건설현장 표준 안전 용어 사용]
+1. 언어 제한: JSON 키 값을 제외한 모든 출력(제목, 설명, 절차, 내용)은 100% 한국어로만 작성한다. 단 하나의 영단어(Choosing, Inspection, Operation, Pre-operation, Post-operation, Training, Method, Signal 등)도 포함해서는 안 된다. 불가피한 고유명사(TBM, KOSHA 등)만 영문 표기를 허용한다.
+2. 표준 용어 사용: 대한민국 「산업안전보건기준에 관한 규칙」과 KOSHA GUIDE에 명시된 현장 용어를 사용한다.
+   - "Choosing and Inspection" → "장비 선정 및 사전 점검"
+   - "Operating Training" → "운전원 및 작업자 안전교육"
+   - "Pre-operation Inspection" → "작업 개시 전 점검"
+   - "Operation" → "본 작업 수행 및 신호수 통제"
+   - "Post-operation Inspection and Maintenance" → "작업 종료 후 점검 및 정비"
+   - "Method Statement" → "작업방법"
+   - "Emergency Response" → "비상시 조치"
+3. 현장 어투: 건설현장 실무자가 즉시 이해할 수 있도록 명확한 단정형 어조(~함, ~할 것, ~을 준수할 것)로 작성한다. 번역투 문장(피동형, 영어식 어순)을 사용하지 않는다.`;
+
 const FORCE_JSON_SUFFIX =
   "\n\nYou MUST respond ONLY with valid JSON. Do not include any markdown formatting like ```json or explanatory text.";
 
-function injectJsonInstruction(messages: OAIMessage[]): OAIMessage[] {
+function injectSystemRules(messages: OAIMessage[], wantsJson: boolean): OAIMessage[] {
+  const suffix = KOREAN_STYLE_SUFFIX + (wantsJson ? FORCE_JSON_SUFFIX : "");
   const out = messages.map((m) => ({ ...m }));
   const sysIdx = out.findIndex((m) => m.role === "system");
   if (sysIdx >= 0) {
     const cur = out[sysIdx];
     const asText = typeof cur.content === "string" ? cur.content : flattenContent(cur.content);
-    out[sysIdx] = { role: "system", content: asText + FORCE_JSON_SUFFIX };
+    out[sysIdx] = { role: "system", content: asText + suffix };
   } else {
-    out.unshift({ role: "system", content: FORCE_JSON_SUFFIX.trim() });
+    out.unshift({ role: "system", content: suffix.trim() });
   }
   return out;
 }

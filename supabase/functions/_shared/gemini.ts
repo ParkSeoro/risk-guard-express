@@ -120,7 +120,29 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
     );
   }
 
-  const messages = req.messages.map((m) => ({
+  const wantsJson = req.response_format?.type === "json_object";
+  const imagePresent = hasImageInput(req.messages);
+
+  // If caller explicitly needs vision (image is the primary payload) — signal clearly.
+  // Heuristic: image present AND user text is short/empty (< 40 chars of real text).
+  if (imagePresent) {
+    const totalText = req.messages
+      .filter((m) => m.role === "user")
+      .map((m) => flattenContent(m.content).replace(/\[image omitted[^\]]*\]/g, "").trim())
+      .join(" ")
+      .trim();
+    if (totalText.length < 40) {
+      throw new GeminiError(
+        "현재 AI 모델은 이미지(사진) 분석을 지원하지 않습니다. 텍스트로 직접 입력해 주세요.",
+        400,
+        "BAD_REQUEST",
+      );
+    }
+    // Otherwise strip images silently and continue with text.
+  }
+
+  const preparedMessages = wantsJson ? injectJsonInstruction(req.messages) : req.messages;
+  const messages = preparedMessages.map((m) => ({
     role: m.role,
     content: flattenContent(m.content),
   }));
@@ -132,9 +154,8 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
     max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 2048,
     stream: false,
   };
-  if (req.response_format?.type === "json_object") {
-    body.response_format = { type: "json_object" };
-  }
+  // NVIDIA NIM may not honor response_format reliably; rely on prompt injection instead.
+
 
   const resp = await fetch(NVIDIA_ENDPOINT, {
     method: "POST",

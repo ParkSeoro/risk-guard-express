@@ -5,35 +5,19 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { callGeminiChat, GeminiError } from '../_shared/gemini.ts';
 
-// Lovable AI Gateway 호출 (모델 파라미터화)
-async function callLovableAIGateway(
+// 통합 AI 호출 (NVIDIA NIM 어댑터 경유)
+async function callAI(
   messages: any[],
-  opts: { model: string; temperature?: number },
+  opts: { temperature?: number } = {},
 ): Promise<string> {
-  const key = Deno.env.get('LOVABLE_API_KEY');
-  if (!key) throw new Error('LOVABLE_API_KEY 미설정');
-  const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: opts.model,
-      messages,
-      temperature: opts.temperature ?? 0.1,
-      response_format: { type: 'json_object' },
-    }),
+  const r = await callGeminiChat({
+    messages,
+    temperature: opts.temperature ?? 0.1,
+    response_format: { type: 'json_object' },
   });
-  if (!resp.ok) {
-    const text = await resp.text();
-    if (resp.status === 429) throw new GeminiError('AI 요청이 몰려 잠시 후 다시 시도해주세요.', 429, 'RATE_LIMIT');
-    if (resp.status === 402) throw new GeminiError('AI 크레딧이 부족합니다. 워크스페이스에서 충전이 필요합니다.', 402, 'QUOTA_EXHAUSTED');
-    throw new GeminiError(`AI 게이트웨이 오류 (${resp.status}): ${text.slice(0, 300)}`, resp.status, 'SERVER_ERROR');
-  }
-  const data = await resp.json();
-  return data.choices?.[0]?.message?.content || '{}';
+  return r.choices?.[0]?.message?.content || '{}';
 }
+
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -190,39 +174,17 @@ Deno.serve(async (req) => {
       { role: 'user', content },
     ];
 
-    // 3단 폴백: Gateway Flash(빠름) → Gateway Pro → GEMINI_API_KEY Pro
-    // Pro 는 단독 실행 시 60~120초 소요되어 클라이언트 타임아웃(150s) 위험이 커서 Flash 를 1순위로 사용
+    // NVIDIA NIM 어댑터로 직접 호출 (게이트웨이 우회)
     let raw = '{}';
-    let modelUsed = '';
-    const attempts: Array<{ label: string; run: () => Promise<string> }> = [
-      { label: 'lovable/google/gemini-2.5-flash', run: () => callLovableAIGateway(messages, { model: 'google/gemini-2.5-flash' }) },
-      { label: 'lovable/google/gemini-2.5-pro', run: () => callLovableAIGateway(messages, { model: 'google/gemini-2.5-pro' }) },
-      {
-        label: 'gemini_api_key/gemini-2.5-pro',
-        run: async () => {
-          const r = await callGeminiChat({
-            model: 'google/gemini-2.5-pro',
-            messages,
-            temperature: 0.1,
-            response_format: { type: 'json_object' },
-          });
-          return r.choices[0]?.message?.content || '{}';
-        },
-      },
-    ];
-    let lastErr: any = null;
-    for (const a of attempts) {
-      try {
-        raw = await a.run();
-        modelUsed = a.label;
-        console.log(`[analyze-permit-template] model=${a.label} raw_len=${raw.length} preview=${raw.slice(0, 400)}`);
-        break;
-      } catch (e) {
-        lastErr = e;
-        console.warn(`[analyze-permit-template] ${a.label} 실패:`, e instanceof Error ? e.message : e);
-      }
+    let modelUsed = 'nvidia/mixtral-8x7b-instruct-v0.1';
+    try {
+      raw = await callAI(messages, { temperature: 0.1 });
+      console.log(`[analyze-permit-template] model=${modelUsed} raw_len=${raw.length} preview=${raw.slice(0, 400)}`);
+    } catch (e) {
+      console.error('[analyze-permit-template] NVIDIA 호출 실패:', e instanceof Error ? e.message : e);
+      throw e;
     }
-    if (!modelUsed) throw lastErr || new Error('모든 AI 호출 실패');
+
 
     let parsed: any = {};
     let parseError: string | undefined;
@@ -236,7 +198,7 @@ Deno.serve(async (req) => {
 
     // ==== 2차 검증 패스 (누락/좌표 보정) — 옵션 ====
     let refined: any = null;
-    if (enableRefine && modelUsed.startsWith('lovable/') && (parsed?.fields || parsed?.checkboxes || parsed?.signatures)) {
+    if (enableRefine && (parsed?.fields || parsed?.checkboxes || parsed?.signatures)) {
       try {
         const refineMessages = [
           { role: 'system', content: SYSTEM_PROMPT },
@@ -253,8 +215,8 @@ Deno.serve(async (req) => {
             ],
           },
         ];
-        // Flash 로 빠르게 검증 (Pro 는 비용 큼)
-        const rawRefined = await callLovableAIGateway(refineMessages, { model: 'google/gemini-2.5-flash' });
+        const rawRefined = await callAI(refineMessages, { temperature: 0.1 });
+
         const rp = tryParse(rawRefined);
         if (rp && (Array.isArray(rp.fields) || Array.isArray(rp.checkboxes) || Array.isArray(rp.signatures))) {
           refined = rp;
@@ -271,7 +233,7 @@ Deno.serve(async (req) => {
     let sweep_added = 0;
     const existingChecks: any[] = Array.isArray(parsed.checkboxes) ? parsed.checkboxes : [];
     const rightChecks = existingChecks.filter((c: any) => Array.isArray(c.bbox) && c.bbox[0] > 0.5).length;
-    if (enableSweep && modelUsed.startsWith('lovable/') && (existingChecks.length < 15 || rightChecks < 5)) {
+    if (enableSweep && (existingChecks.length < 15 || rightChecks < 5)) {
       try {
         const prevCenters = existingChecks
           .filter((c: any) => Array.isArray(c.bbox))
@@ -286,7 +248,7 @@ Deno.serve(async (req) => {
             ]),
           },
         ];
-        const rawSweep = await callLovableAIGateway(sweepMessages, { model: 'google/gemini-2.5-flash' });
+        const rawSweep = await callAI(sweepMessages, { temperature: 0.1 });
         const sp = tryParse(rawSweep);
         const newChecks: any[] = Array.isArray(sp?.checkboxes) ? sp.checkboxes : [];
         // dedupe: 중심점 거리 < 0.02

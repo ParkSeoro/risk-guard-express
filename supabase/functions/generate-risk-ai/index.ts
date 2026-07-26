@@ -118,10 +118,6 @@ async function fetchRAGContext(
 
 // ── Generate a single batch of items ──
 async function generateBatch(
-  apiUrl: string,
-  apiKey: string,
-  useOpenAI: boolean,
-  model: string,
   processName: string,
   equipText: string,
   descText: string,
@@ -176,30 +172,13 @@ ${ragContext}
   }
 ]`;
 
-  const response = useOpenAI
-    ? await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          temperature: 0.4 + batchIndex * 0.05,
-        }),
-      })
-    : await geminiChatFetch({
-        model: "gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.4 + batchIndex * 0.05,
-      });
+  const response = await geminiChatFetch({
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.4 + batchIndex * 0.05,
+  });
 
   if (!response.ok) {
     const status = response.status;
@@ -207,10 +186,6 @@ ${ragContext}
     console.error(`[Batch ${batchIndex}] AI error:`, status, text);
     if (status === 429) throw new Error("RATE_LIMIT");
     if (status === 402) throw new Error("CREDITS_EXHAUSTED");
-    // Lovable AI Gateway returns 403 with credit_limit_reached when workspace limit is hit
-    if (status === 403 && /credit_limit_reached|credit limit/i.test(text)) {
-      throw new Error("CREDITS_EXHAUSTED");
-    }
     throw new Error(`AI_ERROR_${status}`);
   }
 
@@ -308,53 +283,13 @@ serve(async (req) => {
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
     }
-
-
-    // ── Resolve AI settings ──
-    let useOpenAI = false;
-    let openaiKey = "";
-    let openaiModel = "gpt-4o";
-
-    if (project_id) {
-      const { data: aiSettings } = await adminClient
-        .from("ai_settings")
-        .select("*")
-        .eq("project_id", project_id)
-        .maybeSingle();
-
-      if (aiSettings && aiSettings.is_enabled && aiSettings.api_key_encrypted) {
-        useOpenAI = true;
-        openaiKey = aiSettings.api_key_encrypted;
-        openaiModel = aiSettings.model || "gpt-4o";
-      }
-    }
-
-    const apiUrl = useOpenAI
-      ? "https://api.openai.com/v1/chat/completions"
-      : ""; // Gemini path uses geminiChatFetch helper directly
-    const apiKey = useOpenAI ? openaiKey : (Deno.env.get("GEMINI_API_KEY") || "");
-
-    if (useOpenAI && !apiKey) {
-      return new Response(
-        JSON.stringify({ error: "OpenAI API Key가 설정되지 않았습니다." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-    if (!useOpenAI && !apiKey) {
-      return new Response(
-        JSON.stringify({
-          error: "Gemini API 키가 설정되지 않았습니다. 마스터가 설정 > 시크릿에서 GEMINI_API_KEY를 등록해야 합니다.",
-        }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
     if (!process_name) {
       return new Response(
         JSON.stringify({ error: "공종명이 필요합니다." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
 
     // ============ Work Plan Section Mode ============
     if (mode === "work_plan_section") {
@@ -375,27 +310,14 @@ serve(async (req) => {
 
       const sysPrompt = `너는 대한민국 건설현장 20년 경력의 안전관리 전문가다.\n산업안전보건법, KOSHA GUIDE 기준으로 실제 현장에서 사용 가능한 수준의 작업계획서를 작성한다.\n반드시 요청된 JSON 형식으로만 출력하라.`;
 
-      const response = useOpenAI
-        ? await fetch(apiUrl, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: openaiModel,
-              messages: [
-                { role: "system", content: sysPrompt },
-                { role: "user", content: prompt },
-              ],
-              temperature: 0.3,
-            }),
-          })
-        : await geminiChatFetch({
-            model: "gemini-2.5-flash",
-            messages: [
-              { role: "system", content: sysPrompt },
-              { role: "user", content: prompt },
-            ],
-            temperature: 0.3,
-          });
+      const response = await geminiChatFetch({
+        messages: [
+          { role: "system", content: sysPrompt },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.3,
+      });
+
 
       if (!response.ok) {
         const status = response.status;
@@ -497,15 +419,9 @@ serve(async (req) => {
       );
     }
 
-    const defaultModel = useOpenAI ? openaiModel : "google/gemini-3-flash-preview";
-
     console.log(`[AI Engine] Generating batch ${currentBatchIndex + 1}/${totalBatches} (${currentBatchSize} items)`);
 
     const rawItems = await generateBatch(
-      apiUrl,
-      apiKey!,
-      useOpenAI,
-      defaultModel,
       process_name,
       equipText,
       descText,
@@ -515,6 +431,7 @@ serve(async (req) => {
       ragContext,
       currentBatchIndex
     );
+
 
     const existingKeys = new Set<string>();
     const deduped = mapAndDedupe(rawItems, process_name, existingKeys);

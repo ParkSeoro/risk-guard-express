@@ -46,7 +46,7 @@ function deadlineLabel(iso: string | null): { text: string; tone: "ok" | "warn" 
 }
 
 export default function Incidents() {
-  const { selectedProject: projectId } = useProjectAccess();
+  const { selectedProject: projectId } = useGlobalProjectAccess();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);

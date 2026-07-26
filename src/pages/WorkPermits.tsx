@@ -15,7 +15,7 @@ import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature,
 import { useAuditLog } from '@/hooks/useAuditLog';
 import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialog';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import type { PermitType } from '@/components/permits/DigPermitForm';
 
 

@@ -23,7 +23,7 @@ const APPROVAL_STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리
 const Approvals = () => {
   const navigate = useNavigate();
   const { user, profile, isAdmin, hasRole } = useAuth();
-  const { projects, selectedProject, setSelectedProject, isMaster, isProjectAdmin, userCompanyId } = useProjectAccess();
+  const { projects, selectedProject, setSelectedProject, isMaster, isProjectAdmin, userCompanyId } = useGlobalProjectAccess();
   const { toast } = useToast();
   const { log } = useAuditLog();
   const [approvals, setApprovals] = useState<any[]>([]);

@@ -160,7 +160,7 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
     // Otherwise strip images silently and continue with text.
   }
 
-  const preparedMessages = wantsJson ? injectJsonInstruction(req.messages) : req.messages;
+  const preparedMessages = injectSystemRules(req.messages, wantsJson);
   const messages = preparedMessages.map((m) => ({
     role: m.role,
     content: flattenContent(m.content),

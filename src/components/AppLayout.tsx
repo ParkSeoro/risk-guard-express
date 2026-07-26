@@ -14,12 +14,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { createContext, useContext } from "react";
 import type { ProjectAccess } from "@/hooks/useProjectAccess";
 
-const ProjectAccessContext = createContext<ProjectAccess | null>(null);
+export const ProjectAccessContext = createContext<ProjectAccess | null>(null);
 export const useGlobalProjectAccess = () => {
   const ctx = useContext(ProjectAccessContext);
   if (!ctx) throw new Error("useGlobalProjectAccess must be used within AppLayout");
   return ctx;
 };
+/** Null-safe variant for hooks/components that may render outside AppLayout. */
+export const useGlobalProjectAccessOptional = () => useContext(ProjectAccessContext);
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { profile, signOut, roles } = useAuth();

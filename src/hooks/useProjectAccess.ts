@@ -283,7 +283,10 @@ export function useProjectAccess(): ProjectAccess {
     isSiteManager,
     isSupervisor,
     isWorker,
-    isContractor: isWorker, // legacy alias for compatibility
+    isContractor: userCompanyType === 'contractor' && (
+      userRole === 'project_admin' || userRole === 'safety_manager' ||
+      userRole === 'site_manager' || userRole === 'supervisor'
+    ),
     loading,
     applyCompanyFilter,
     canCreate: (f) => getPermissions(f).create,

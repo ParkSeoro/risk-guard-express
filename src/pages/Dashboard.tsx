@@ -88,24 +88,28 @@ const Dashboard = () => {
     if (!selectedProject) return;
     setLoading(true);
 
-    // Fetch runs (excluding soft-deleted AND archived)
-    const { data: runs } = await supabase
+    // Fetch runs (excluding soft-deleted AND archived) — with company filter
+    let runsQuery = supabase
       .from("assessment_runs")
-      .select("id, status, validation_verdict, validation_score")
+      .select("id, status, validation_verdict, validation_score, company_id")
       .eq("project_id", selectedProject)
       .eq("is_deleted", false)
       .neq("status", "폐기");
+    runsQuery = applyCompanyFilter(runsQuery);
+    const { data: runs } = await runsQuery;
 
     const activeRuns = runs || [];
     const runIds = activeRuns.map((r) => r.id);
 
-    // Fetch risk items ONLY from active runs
+    // Fetch risk items ONLY from active runs — with company filter
     let items: any[] = [];
     if (runIds.length > 0) {
-      const { data: riskItems } = await supabase
+      let riskQuery = supabase
         .from("risk_items")
-        .select("id, process, sub_task, hazard, risk_grade, improved_risk_grade, status, department")
+        .select("id, process, sub_task, hazard, risk_grade, improved_risk_grade, status, department, company_id")
         .in("run_id", runIds);
+      riskQuery = applyCompanyFilter(riskQuery);
+      const { data: riskItems } = await riskQuery;
       items = riskItems || [];
     }
 
@@ -267,9 +271,12 @@ const Dashboard = () => {
       legalDutyMonthly,
     });
     setLoading(false);
-  }, [selectedProject, userCompanyId, isMaster, isProjectAdmin]);
+  }, [selectedProject, userCompanyId, isMaster, isProjectAdmin, isContractor, applyCompanyFilter]);
 
-  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+  useEffect(() => {
+    if (accessLoading) return;
+    fetchDashboard();
+  }, [fetchDashboard, accessLoading]);
 
   // Refetch on window focus
   useEffect(() => {
@@ -339,6 +346,7 @@ const Dashboard = () => {
         isMaster={isMaster}
         isProjectAdmin={isProjectAdmin}
         isContractor={isContractor}
+        isWorker={data ? (!isMaster && !isProjectAdmin && !isContractor) : false}
       />
 
       <div className="space-y-6">

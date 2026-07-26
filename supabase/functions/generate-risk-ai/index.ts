@@ -310,27 +310,14 @@ serve(async (req) => {
 
       const sysPrompt = `너는 대한민국 건설현장 20년 경력의 안전관리 전문가다.\n산업안전보건법, KOSHA GUIDE 기준으로 실제 현장에서 사용 가능한 수준의 작업계획서를 작성한다.\n반드시 요청된 JSON 형식으로만 출력하라.`;
 
-      const response = useOpenAI
-        ? await fetch(apiUrl, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: openaiModel,
-              messages: [
-                { role: "system", content: sysPrompt },
-                { role: "user", content: prompt },
-              ],
-              temperature: 0.3,
-            }),
-          })
-        : await geminiChatFetch({
-            model: "gemini-2.5-flash",
-            messages: [
-              { role: "system", content: sysPrompt },
-              { role: "user", content: prompt },
-            ],
-            temperature: 0.3,
-          });
+      const response = await geminiChatFetch({
+        messages: [
+          { role: "system", content: sysPrompt },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.3,
+      });
+
 
       if (!response.ok) {
         const status = response.status;

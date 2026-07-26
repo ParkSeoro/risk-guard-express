@@ -88,28 +88,26 @@ const Dashboard = () => {
     if (!selectedProject) return;
     setLoading(true);
 
-    // Fetch runs (excluding soft-deleted AND archived) — with company filter
-    let runsQuery = supabase
+    // Fetch runs (excluding soft-deleted AND archived).
+    // Note: assessment_runs/risk_items are scoped via RLS + run_id chain; they
+    // do not carry company_id, so applyCompanyFilter is not applicable here.
+    const { data: runs } = await supabase
       .from("assessment_runs")
-      .select("id, status, validation_verdict, validation_score, company_id")
+      .select("id, status, validation_verdict, validation_score")
       .eq("project_id", selectedProject)
       .eq("is_deleted", false)
       .neq("status", "폐기");
-    runsQuery = applyCompanyFilter(runsQuery);
-    const { data: runs } = await runsQuery;
 
     const activeRuns = runs || [];
     const runIds = activeRuns.map((r) => r.id);
 
-    // Fetch risk items ONLY from active runs — with company filter
+    // Fetch risk items ONLY from active runs
     let items: any[] = [];
     if (runIds.length > 0) {
-      let riskQuery = supabase
+      const { data: riskItems } = await supabase
         .from("risk_items")
-        .select("id, process, sub_task, hazard, risk_grade, improved_risk_grade, status, department, company_id")
+        .select("id, process, sub_task, hazard, risk_grade, improved_risk_grade, status, department")
         .in("run_id", runIds);
-      riskQuery = applyCompanyFilter(riskQuery);
-      const { data: riskItems } = await riskQuery;
       items = riskItems || [];
     }
 
@@ -821,6 +819,7 @@ interface QuickStartCardsProps {
   isMaster: boolean;
   isProjectAdmin: boolean;
   isContractor: boolean;
+  isWorker: boolean;
 }
 
 function QuickStartCards({ navigate, isMaster, isProjectAdmin, isContractor }: QuickStartCardsProps) {

@@ -206,7 +206,9 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
 
   const data = await resp.json();
   const choice = data.choices?.[0];
-  const content: string = choice?.message?.content || "";
+  const rawContent: string = choice?.message?.content || "";
+  // Defensive: strip any ```json / ``` fences before returning to callers.
+  const content = wantsJson ? stripCodeFences(rawContent) : rawContent;
 
   return {
     choices: [

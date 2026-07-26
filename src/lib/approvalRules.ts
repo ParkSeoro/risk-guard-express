@@ -1,13 +1,18 @@
 /**
  * 전자결재 SSOT (Single Source of Truth)
  * ------------------------------------------------------------------
- * 전자결재가 필요한 모든 모듈(작업허가서, 작업계획서, 위험성평가,
- * 산업안전보건관리비, 사고보고, 비상대피훈련, TBM 일지 등)은
- * 이 파일의 규칙(엔티티 정의 / 기본 결재선 / 라벨 / 정책)을 따른다.
+ * 모든 안전 서류(작업허가서, 위험성평가, 작업계획서, 산업안전보건관리비,
+ * 사고보고, 비상대피훈련, TBM 일지 등)는 아래 5단계 고정 결재선을
+ * 강제 사용한다.
  *
- * 각 모듈은 자체적으로 결재 로직을 재정의하지 않고, 여기의
- * `ENTITY_LABELS`, `POSITION_LABELS`, `DEFAULT_STEPS_BY_ENTITY`,
- * `APPROVAL_POLICY` 만 참조한다.
+ * Step 1. 협력사 관리감독자     (작성/상신)   position = contractor_supervisor
+ * Step 2. 협력사 안전관리자     (검토)        position = contractor_safety_manager
+ * Step 3. 협력사 현장소장       (협력사 최종) position = contractor_site_director
+ * Step 4. 발주처 CM             (공사관리)    position = owner_cm
+ * Step 5. 발주처 SM             (안전 최종)   position = owner_sm
+ *
+ * 확장: Step 5 이후 협조(Cooperation) 단계를 순차/병렬로 추가 가능하다.
+ *      position = cooperator (또는 회사 정책에 맞춰 세분화)
  */
 
 export type ApprovalEntityType =
@@ -29,7 +34,24 @@ export const ENTITY_LABELS: Record<ApprovalEntityType, string> = {
   tbm: 'TBM 일지',
 };
 
+/** 5단계 고정 결재선 포지션 키 + 협조 슬롯 */
+export type ApprovalPositionKey =
+  | 'contractor_supervisor'
+  | 'contractor_safety_manager'
+  | 'contractor_site_director'
+  | 'owner_cm'
+  | 'owner_sm'
+  | 'cooperator';
+
 export const POSITION_LABELS: Record<string, string> = {
+  contractor_supervisor: '협력사 관리감독자',
+  contractor_safety_manager: '협력사 안전관리자',
+  contractor_site_director: '협력사 현장소장',
+  owner_cm: '발주처 CM (공사관리)',
+  owner_sm: '발주처 SM (안전관리)',
+  cooperator: '협조',
+
+  // legacy — 옛 데이터가 남아있을 수 있어 라벨만 유지 (신규 사용 금지)
   project_admin: '프로젝트 관리자',
   safety_manager: '안전관리자',
   site_manager: '현장대리인',
@@ -45,61 +67,39 @@ export const POSITION_LABELS: Record<string, string> = {
 
 export interface DefaultStep {
   label: string;
-  position: string;
+  position: ApprovalPositionKey | string;
 }
 
-/**
- * 엔티티별 기본 결재선. 프로젝트/회사/개인 템플릿이 없을 때 사용된다.
- * 작업허가서는 회사 정책(시공→안전→소장→CM→SM)에 따라 5단계가 기본.
- * 나머지는 안전관리자 1단계 검토가 기본이며, Settings > 결재선 관리에서
- * 프로젝트/회사 단위로 오버라이드 가능하다.
- */
+/** 모든 엔티티에 강제 적용되는 5단계 고정 결재선 */
+export const FIXED_APPROVAL_STEPS: DefaultStep[] = [
+  { label: '협력사 관리감독자 (상신)', position: 'contractor_supervisor' },
+  { label: '협력사 안전관리자 (검토)', position: 'contractor_safety_manager' },
+  { label: '협력사 현장소장 (승인)', position: 'contractor_site_director' },
+  { label: '발주처 CM (공사관리)', position: 'owner_cm' },
+  { label: '발주처 SM (안전 최종승인)', position: 'owner_sm' },
+];
+
+/** 엔티티 → 기본 결재선 (모두 동일한 5단계 고정) */
 export const DEFAULT_STEPS_BY_ENTITY: Record<ApprovalEntityType, DefaultStep[]> = {
-  work_permit: [
-    { label: '담당자(시공)', position: 'contractor_pic' },
-    { label: '담당자(안전)', position: 'safety_pic' },
-    { label: '책임자(소장)', position: 'site_director' },
-    { label: '담당자(CM)', position: 'cm' },
-    { label: '담당자(SM)', position: 'sm' },
-  ],
-  work_plan: [
-    { label: '안전관리자 검토', position: 'safety_manager' },
-    { label: '현장대리인 승인', position: 'site_manager' },
-  ],
-  assessment_run: [
-    { label: '안전관리자 검토', position: 'safety_manager' },
-    { label: '현장대리인 승인', position: 'site_manager' },
-  ],
-  safety_cost: [
-    { label: '안전관리자 검토', position: 'safety_manager' },
-    { label: '현장대리인 승인', position: 'site_manager' },
-  ],
-  incident: [
-    { label: '안전관리자 검토', position: 'safety_manager' },
-  ],
-  emergency_drill: [
-    { label: '안전관리자 검토', position: 'safety_manager' },
-  ],
-  tbm: [
-    { label: '안전관리자 검토', position: 'safety_manager' },
-  ],
+  work_permit: FIXED_APPROVAL_STEPS,
+  work_plan: FIXED_APPROVAL_STEPS,
+  assessment_run: FIXED_APPROVAL_STEPS,
+  safety_cost: FIXED_APPROVAL_STEPS,
+  incident: FIXED_APPROVAL_STEPS,
+  emergency_drill: FIXED_APPROVAL_STEPS,
+  tbm: FIXED_APPROVAL_STEPS,
 };
 
-/**
- * 전자결재 공통 정책.
- * 개별 모듈은 이 값을 참조해서 상신/재상신/위임/알림 동작을 결정한다.
- */
 export const APPROVAL_POLICY = {
-  /** 재상신 시 사유 입력 필수 여부 */
   requireResubmitReason: true,
-  /** 반려 시 사유 입력 필수 여부 */
   requireRejectComment: true,
-  /** 최종 승인 완료 시 작성자에게 알림 발송 */
   notifyAuthorOnFinalApproval: true,
-  /** 위임(delegate_approval) 기본 허용 여부 */
   allowDelegation: true,
-  /** 상신 후 대기 중 결재선 취소 후 재상신 허용 */
   allowCancelAndResubmit: true,
+  /** 5단계 순서 강제 (드롭다운 필터링) */
+  enforceFixedOrder: true,
+  /** Step 5 이후 협조 단계 추가 허용 */
+  allowCooperationAfterFinal: true,
 } as const;
 
 export const buildDefaultSteps = (entityType: ApprovalEntityType) =>
@@ -111,3 +111,53 @@ export const buildDefaultSteps = (entityType: ApprovalEntityType) =>
     company_id: null as string | null,
     company_name: '',
   }));
+
+/**
+ * 단계별 결재자 후보 필터.
+ * get_eligible_approvers RPC 가 돌려주는 { out_company_type, out_position, out_role }
+ * 를 기준으로 UI 드롭다운을 좁힌다.
+ */
+export interface EligibleApprover {
+  out_user_id: string;
+  out_display_name: string;
+  out_company_id: string | null;
+  out_company_name: string;
+  out_company_type: string; // client|gc|contractor|vendor
+  out_position: string;     // e.g. SITE_MANAGER, HSE_MANAGER, OWNER_PM ...
+  out_role: string;
+}
+
+const CONTRACTOR_TYPES = new Set(['contractor', 'vendor']);
+const OWNER_TYPES = new Set(['client', 'gc']);
+
+const POS = (p: string) => (p || '').toUpperCase();
+
+export function filterApproversForStep(
+  approvers: EligibleApprover[],
+  stepPosition: string,
+): EligibleApprover[] {
+  const key = (stepPosition || '').toLowerCase();
+  return approvers.filter((a) => {
+    const t = (a.out_company_type || '').toLowerCase();
+    const p = POS(a.out_position);
+    const isContractorCo = CONTRACTOR_TYPES.has(t);
+    const isOwnerCo = OWNER_TYPES.has(t);
+    switch (key) {
+      case 'contractor_supervisor':
+        return isContractorCo && ['SUPERVISOR', 'FOREMAN', 'FIELD_ENGINEER', 'CONSTRUCTION_MGR'].includes(p);
+      case 'contractor_safety_manager':
+        return isContractorCo && ['HSE_MANAGER'].includes(p);
+      case 'contractor_site_director':
+        return isContractorCo && ['SITE_MANAGER', 'CEO', 'EXECUTIVE'].includes(p);
+      case 'owner_cm':
+        return isOwnerCo && ['OWNER_PM', 'CONSTRUCTION_MGR', 'SITE_MANAGER'].includes(p);
+      case 'owner_sm':
+        return isOwnerCo && ['OWNER_HSE', 'HSE_MANAGER'].includes(p);
+      case 'cooperator':
+        return true;
+      default:
+        // 알려지지 않은 position → 전체 노출 (수동 지정 가능)
+        return true;
+    }
+  });
+}

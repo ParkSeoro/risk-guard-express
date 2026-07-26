@@ -241,6 +241,7 @@ export type Database = {
           hit_count: number | null
           id: string
           process_name: string
+          project_id: string | null
           updated_at: string
           work_description: string | null
           work_environment: string[] | null
@@ -255,6 +256,7 @@ export type Database = {
           hit_count?: number | null
           id?: string
           process_name: string
+          project_id?: string | null
           updated_at?: string
           work_description?: string | null
           work_environment?: string[] | null
@@ -269,12 +271,35 @@ export type Database = {
           hit_count?: number | null
           id?: string
           process_name?: string
+          project_id?: string | null
           updated_at?: string
           work_description?: string | null
           work_environment?: string[] | null
           work_location?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "ai_risk_cache_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_risk_cache_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "signup_company_directory"
+            referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "ai_risk_cache_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "v_contractor_safety_scorecard"
+            referencedColumns: ["project_id"]
+          },
+        ]
       }
       ai_settings: {
         Row: {
@@ -9461,6 +9486,10 @@ export type Database = {
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_company_project_member: {
         Args: { _company_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_contractor_user: {
+        Args: { _project_id: string; _user_id: string }
         Returns: boolean
       }
       is_global_admin: { Args: { _user_id: string }; Returns: boolean }

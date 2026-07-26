@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useGlobalProjectAccess } from "@/components/AppLayout";
+import ContractorDashboard from "@/components/ContractorDashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -79,9 +80,10 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const {
     projects, selectedProject, setSelectedProject,
-    userCompanyId, isMaster, isProjectAdmin, isContractor, isWorker,
+    userCompanyId, userCompanyType, isMaster, isProjectAdmin, isContractor, isWorker,
     applyCompanyFilter, loading: accessLoading
   } = useGlobalProjectAccess();
+  const isContractorCo = !isMaster && (userCompanyType === 'contractor' || userCompanyType === 'vendor');
   const [data, setData] = useState<DashboardData>(EMPTY);
   const [loading, setLoading] = useState(true);
 
@@ -319,6 +321,15 @@ const Dashboard = () => {
       <div className="flex items-center justify-center py-20">
         <p className="text-sm text-muted-foreground">데이터 로딩 중...</p>
       </div>
+    );
+  }
+
+  // 협력사 계정: 단순화된 CTA 대시보드
+  if (isContractorCo) {
+    return (
+      <ContractorDashboard
+        siteLabel={currentProject ? `${currentProject.site_name} · ${currentProject.name}` : undefined}
+      />
     );
   }
 

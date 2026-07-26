@@ -12,6 +12,7 @@ import { useLocation } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 
 import { useAuth } from "@/contexts/AuthContext";
+import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { usePendingApprovalsCount } from "@/hooks/usePendingApprovalsCount";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
@@ -139,11 +140,31 @@ export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed";
   const { profile, signOut, hasRole } = useAuth();
+  const access = useGlobalProjectAccessOptional();
   const isMaster = hasRole('master');
+  const isContractorCo = !!access && !access.isMaster &&
+    (access.userCompanyType === 'contractor' || access.userCompanyType === 'vendor');
   const location = useLocation();
   const pendingApprovals = usePendingApprovalsCount();
 
   const adminFinal = isMaster ? [...adminItems, ...masterOnlyItems] : adminItems;
+
+  // 협력사(Foolproof UI): 복잡한 통계·설정·비용·법적·시스템 메뉴 완전 숨김
+  const CONTRACTOR_GROUP_KEYS = new Set(['home', 'field', 'risk', 'incident', 'workers']);
+  const CONTRACTOR_ALLOWED_URLS = new Set<string>([
+    '/', '/work-plans', '/work-permits', '/tbm-logs',
+    '/risk-assessment', '/ai-assistant',
+    '/incidents', '/work-stop',
+    '/workers', '/workers?tab=attendance',
+    '/project-library', '/education-materials',
+    '/approvals', '/profile', '/manual',
+  ]);
+  const visibleGroups = isContractorCo
+    ? groups
+        .filter((g) => CONTRACTOR_GROUP_KEYS.has(g.key))
+        .map((g) => ({ ...g, items: g.items.filter((i) => CONTRACTOR_ALLOWED_URLS.has(i.url)) }))
+        .filter((g) => g.items.length > 0)
+    : groups;
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem('sidebar:groups') || '{"home":true,"field":true,"risk":true,"inspect":true,"ops_mgmt":true,"ops":true,"admin":false}'); }
@@ -223,7 +244,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="gap-2">
-        {groups.map(g => (
+        {visibleGroups.map(g => (
           <SidebarGroup key={g.key} className="pb-2">
             {!collapsed ? (
               <Collapsible open={openGroups[g.key] ?? true} onOpenChange={() => toggleGroup(g.key)}>
@@ -247,27 +268,29 @@ export function AppSidebar() {
           </SidebarGroup>
         ))}
 
-        <SidebarGroup className="pb-2">
-          {!collapsed ? (
-            <Collapsible open={openGroups['admin'] ?? false} onOpenChange={() => toggleGroup('admin')}>
-              <CollapsibleTrigger className="w-full">
-                <SidebarGroupLabel className="text-sidebar-primary text-base font-bold tracking-tight flex items-center justify-between cursor-pointer hover:text-sidebar-foreground py-2 h-auto">
-                  <span>시스템</span>
-                  <ChevronDown className={`h-4 w-4 transition-transform ${openGroups['admin'] === false ? '-rotate-90' : ''}`} />
-                </SidebarGroupLabel>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu>{adminFinal.map(renderItem)}</SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </Collapsible>
-          ) : (
-            <SidebarGroupContent>
-              <SidebarMenu>{adminFinal.map(renderItem)}</SidebarMenu>
-            </SidebarGroupContent>
-          )}
-        </SidebarGroup>
+        {!isContractorCo && (
+          <SidebarGroup className="pb-2">
+            {!collapsed ? (
+              <Collapsible open={openGroups['admin'] ?? false} onOpenChange={() => toggleGroup('admin')}>
+                <CollapsibleTrigger className="w-full">
+                  <SidebarGroupLabel className="text-sidebar-primary text-base font-bold tracking-tight flex items-center justify-between cursor-pointer hover:text-sidebar-foreground py-2 h-auto">
+                    <span>시스템</span>
+                    <ChevronDown className={`h-4 w-4 transition-transform ${openGroups['admin'] === false ? '-rotate-90' : ''}`} />
+                  </SidebarGroupLabel>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarGroupContent>
+                    <SidebarMenu>{adminFinal.map(renderItem)}</SidebarMenu>
+                  </SidebarGroupContent>
+                </CollapsibleContent>
+              </Collapsible>
+            ) : (
+              <SidebarGroupContent>
+                <SidebarMenu>{adminFinal.map(renderItem)}</SidebarMenu>
+              </SidebarGroupContent>
+            )}
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-2 space-y-1">

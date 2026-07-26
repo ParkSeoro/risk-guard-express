@@ -167,7 +167,7 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
     model: NVIDIA_MODEL, // forced
     messages,
     temperature: typeof req.temperature === "number" ? req.temperature : 0.4,
-    max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 2048,
+    max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 4096,
     stream: false,
   };
   // NVIDIA NIM may not honor response_format reliably; rely on prompt injection instead.

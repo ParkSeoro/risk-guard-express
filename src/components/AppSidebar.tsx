@@ -244,7 +244,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="gap-2">
-        {groups.map(g => (
+        {visibleGroups.map(g => (
           <SidebarGroup key={g.key} className="pb-2">
             {!collapsed ? (
               <Collapsible open={openGroups[g.key] ?? true} onOpenChange={() => toggleGroup(g.key)}>
@@ -268,27 +268,29 @@ export function AppSidebar() {
           </SidebarGroup>
         ))}
 
-        <SidebarGroup className="pb-2">
-          {!collapsed ? (
-            <Collapsible open={openGroups['admin'] ?? false} onOpenChange={() => toggleGroup('admin')}>
-              <CollapsibleTrigger className="w-full">
-                <SidebarGroupLabel className="text-sidebar-primary text-base font-bold tracking-tight flex items-center justify-between cursor-pointer hover:text-sidebar-foreground py-2 h-auto">
-                  <span>시스템</span>
-                  <ChevronDown className={`h-4 w-4 transition-transform ${openGroups['admin'] === false ? '-rotate-90' : ''}`} />
-                </SidebarGroupLabel>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu>{adminFinal.map(renderItem)}</SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </Collapsible>
-          ) : (
-            <SidebarGroupContent>
-              <SidebarMenu>{adminFinal.map(renderItem)}</SidebarMenu>
-            </SidebarGroupContent>
-          )}
-        </SidebarGroup>
+        {!isContractorCo && (
+          <SidebarGroup className="pb-2">
+            {!collapsed ? (
+              <Collapsible open={openGroups['admin'] ?? false} onOpenChange={() => toggleGroup('admin')}>
+                <CollapsibleTrigger className="w-full">
+                  <SidebarGroupLabel className="text-sidebar-primary text-base font-bold tracking-tight flex items-center justify-between cursor-pointer hover:text-sidebar-foreground py-2 h-auto">
+                    <span>시스템</span>
+                    <ChevronDown className={`h-4 w-4 transition-transform ${openGroups['admin'] === false ? '-rotate-90' : ''}`} />
+                  </SidebarGroupLabel>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarGroupContent>
+                    <SidebarMenu>{adminFinal.map(renderItem)}</SidebarMenu>
+                  </SidebarGroupContent>
+                </CollapsibleContent>
+              </Collapsible>
+            ) : (
+              <SidebarGroupContent>
+                <SidebarMenu>{adminFinal.map(renderItem)}</SidebarMenu>
+              </SidebarGroupContent>
+            )}
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-2 space-y-1">

@@ -60,6 +60,52 @@ function flattenContent(content: OAIMessage["content"]): string {
     .join("\n");
 }
 
+// Detect whether a request carries image inputs (image_url block or base64 image data URL).
+function hasImageInput(messages: OAIMessage[]): boolean {
+  for (const m of messages) {
+    if (typeof m.content === "string") {
+      if (/data:image\/[a-zA-Z0-9.+-]+;base64,/.test(m.content)) return true;
+      continue;
+    }
+    for (const block of m.content) {
+      if (block.type === "image_url") return true;
+      if (block.type === "text" && /data:image\/[a-zA-Z0-9.+-]+;base64,/.test(block.text)) return true;
+    }
+  }
+  return false;
+}
+
+// Strip markdown code fences (```json ... ```), then JSON.parse defensively.
+// Kept as an exported helper so callers can drop their own ad-hoc regex.
+export function parseJsonLoose<T = unknown>(raw: string): T {
+  let text = (raw || "").trim();
+  // Remove leading ```json / ``` and trailing ```
+  text = text.replace(/^\s*```(?:json|JSON)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  // If model wrapped output in prose, try to extract the first {...} or [...] block.
+  if (!/^[\[{]/.test(text)) {
+    const match = text.match(/[\[{][\s\S]*[\]}]/);
+    if (match) text = match[0];
+  }
+  return JSON.parse(text) as T;
+}
+
+const FORCE_JSON_SUFFIX =
+  "\n\nYou MUST respond ONLY with valid JSON. Do not include any markdown formatting like ```json or explanatory text.";
+
+function injectJsonInstruction(messages: OAIMessage[]): OAIMessage[] {
+  const out = messages.map((m) => ({ ...m }));
+  const sysIdx = out.findIndex((m) => m.role === "system");
+  if (sysIdx >= 0) {
+    const cur = out[sysIdx];
+    const asText = typeof cur.content === "string" ? cur.content : flattenContent(cur.content);
+    out[sysIdx] = { role: "system", content: asText + FORCE_JSON_SUFFIX };
+  } else {
+    out.unshift({ role: "system", content: FORCE_JSON_SUFFIX.trim() });
+  }
+  return out;
+}
+
+
 /**
  * Call NVIDIA NIM using an OpenAI-style chat body.
  * Returns an OpenAI-style response object.

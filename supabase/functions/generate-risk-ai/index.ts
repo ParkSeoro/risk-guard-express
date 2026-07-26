@@ -285,25 +285,6 @@ serve(async (req) => {
     }
 
 
-    // ── Resolve AI settings ──
-    let useOpenAI = false;
-    let openaiKey = "";
-    let openaiModel = "gpt-4o";
-
-    if (project_id) {
-      const { data: aiSettings } = await adminClient
-        .from("ai_settings")
-        .select("*")
-        .eq("project_id", project_id)
-        .maybeSingle();
-
-      if (aiSettings && aiSettings.is_enabled && aiSettings.api_key_encrypted) {
-        useOpenAI = true;
-        openaiKey = aiSettings.api_key_encrypted;
-        openaiModel = aiSettings.model || "gpt-4o";
-      }
-    }
-
     const apiUrl = useOpenAI
       ? "https://api.openai.com/v1/chat/completions"
       : ""; // Gemini path uses geminiChatFetch helper directly

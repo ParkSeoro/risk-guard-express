@@ -92,20 +92,17 @@ export function parseJsonLoose<T = unknown>(raw: string): T {
   return JSON.parse(text) as T;
 }
 
-// [필수 지침: 대한민국 건설현장 표준 안전 용어 사용]
+// [필수 지침: 대한민국 산업안전보건법 및 KOSHA GUIDE 준수]
 const KOREAN_STYLE_SUFFIX = `
 
-[필수 지침: 대한민국 건설현장 표준 안전 용어 사용]
-1. 언어 제한: JSON 키 값을 제외한 모든 출력(제목, 설명, 절차, 내용)은 100% 한국어로만 작성한다. 단 하나의 영단어(Choosing, Inspection, Operation, Pre-operation, Post-operation, Training, Method, Signal 등)도 포함해서는 안 된다. 불가피한 고유명사(TBM, KOSHA 등)만 영문 표기를 허용한다.
-2. 표준 용어 사용: 대한민국 「산업안전보건기준에 관한 규칙」과 KOSHA GUIDE에 명시된 현장 용어를 사용한다.
-   - "Choosing and Inspection" → "장비 선정 및 사전 점검"
-   - "Operating Training" → "운전원 및 작업자 안전교육"
-   - "Pre-operation Inspection" → "작업 개시 전 점검"
-   - "Operation" → "본 작업 수행 및 신호수 통제"
-   - "Post-operation Inspection and Maintenance" → "작업 종료 후 점검 및 정비"
-   - "Method Statement" → "작업방법"
-   - "Emergency Response" → "비상시 조치"
-3. 현장 어투: 건설현장 실무자가 즉시 이해할 수 있도록 명확한 단정형 어조(~함, ~할 것, ~을 준수할 것)로 작성한다. 번역투 문장(피동형, 영어식 어순)을 사용하지 않는다.`;
+[필수 지침: 대한민국 건설현장 표준 안전 용어 및 법령 준수]
+1. 언어 제한: JSON 키 값을 제외한 모든 출력(제목, 설명, 절차, 내용)은 100% 한국어로만 작성한다. 단 하나의 영단어도 포함해서는 안 된다. 불가피한 고유명사(TBM, KOSHA, PPE 등)만 괄호 병기로 허용한다.
+2. 법령 근거: 최신 「산업안전보건법」, 「산업안전보건기준에 관한 규칙」, 「건설기술진흥법」, 「중대재해처벌법」, KOSHA GUIDE(C, G, M 시리즈)를 근거로 작성한다. 위험성평가는 최초·정기·수시 평가 기준을 따른다.
+3. 유해·위험요인 도출: 추락, 낙하·비래, 협착·끼임, 감전, 화재·폭발, 붕괴·도괴, 질식, 유해물질 노출, 근골격계 부담, 소음·진동 등 해당 공종에서 발생 가능한 위험을 누락 없이 상세히 도출한다.
+4. 감소 대책 우선순위: 반드시 (1) 본질안전(제거·대체) → (2) 공학적 대책(방호장치·격리·환기) → (3) 관리적 대책(작업허가·교육·표지) → (4) 개인보호구(PPE) 순서로 실효성 있게 작성한다. PPE만 나열하는 것은 금지한다.
+5. 표준 용어 사용: "굴착기", "이동식 크레인", "고소작업대", "안전대", "안전방망", "작업 개시 전 점검", "본 작업 수행 및 신호수 통제", "작업 종료 후 점검 및 정비", "비상시 조치" 등 현장 표준 용어만 사용한다.
+6. 현장 어투: 실무자가 즉시 이해할 수 있는 명확한 단정형 어조(~함, ~할 것, ~을 준수할 것)로 작성한다. 번역투·피동형·영어식 어순 금지.
+7. 수량 준수: 요청된 개수(target_count / batchCount 등)를 정확히 채워서 완전한 JSON 배열로 반환한다. 중간에 끊거나 축약하지 않는다.`;
 
 const FORCE_JSON_SUFFIX =
   "\n\nYou MUST respond ONLY with valid JSON. Do not include any markdown formatting like ```json or explanatory text.";
@@ -170,7 +167,7 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
     model: NVIDIA_MODEL, // forced
     messages,
     temperature: typeof req.temperature === "number" ? req.temperature : 0.4,
-    max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 2048,
+    max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 4096,
     stream: false,
   };
   // NVIDIA NIM may not honor response_format reliably; rely on prompt injection instead.

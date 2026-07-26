@@ -419,15 +419,9 @@ serve(async (req) => {
       );
     }
 
-    const defaultModel = useOpenAI ? openaiModel : "google/gemini-3-flash-preview";
-
     console.log(`[AI Engine] Generating batch ${currentBatchIndex + 1}/${totalBatches} (${currentBatchSize} items)`);
 
     const rawItems = await generateBatch(
-      apiUrl,
-      apiKey!,
-      useOpenAI,
-      defaultModel,
       process_name,
       equipText,
       descText,
@@ -437,6 +431,7 @@ serve(async (req) => {
       ragContext,
       currentBatchIndex
     );
+
 
     const existingKeys = new Set<string>();
     const deduped = mapAndDedupe(rawItems, process_name, existingKeys);

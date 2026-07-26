@@ -50,6 +50,48 @@ function normalizeEquipment(input: string): string {
   return input.trim();
 }
 
+// ── Format structured JSON into a Korean-readable paragraph ──
+// Used so downstream text consumers (preview, plain-text sections) never
+// see raw JSON like {"workPlan":...} or English keys.
+const KO_LABELS: Record<string, string> = {
+  work_name: "작업명", work_date: "작업일시", work_location: "작업위치",
+  work_content: "작업내용", supervisor: "현장감독자", workers_count: "투입인원",
+  name: "장비명", model: "모델명", capacity: "정격하중", manufacturer: "제조사",
+  inspection_date: "검사일", order: "순서", description: "작업단계",
+  safety_measure: "안전조치", hazard: "위험요인", situation: "발생상황",
+  measure: "안전대책", severity: "위험도", signal_person: "신호수",
+  signal_method: "신호방식", radio_channel: "무전 채널", hand_signals: "수신호",
+  emergency_signal: "비상정지 신호", emergency_contact: "비상연락처",
+  hospital: "인근병원", evacuation_route: "대피경로", assembly_point: "집결장소",
+  first_aid: "응급처치", reporting_procedure: "보고체계",
+  workPlan: "작업계획", workAreaName: "작업장소", workPathName: "운행경로",
+};
+function formatStructuredToKorean(_sectionKey: string, data: any): string {
+  const render = (val: any): string => {
+    if (val === null || val === undefined || val === "") return "";
+    if (typeof val === "string" || typeof val === "number") return String(val);
+    if (Array.isArray(val)) {
+      return val.map((item, i) => {
+        if (typeof item === "object" && item !== null) {
+          const parts = Object.entries(item)
+            .filter(([, v]) => v !== null && v !== undefined && v !== "")
+            .map(([k, v]) => `${KO_LABELS[k] || k}: ${render(v)}`);
+          return `${i + 1}. ${parts.join(" / ")}`;
+        }
+        return `${i + 1}. ${render(item)}`;
+      }).join("\n");
+    }
+    if (typeof val === "object") {
+      return Object.entries(val)
+        .filter(([, v]) => v !== null && v !== undefined && v !== "")
+        .map(([k, v]) => `• ${KO_LABELS[k] || k}: ${render(v)}`)
+        .join("\n");
+    }
+    return "";
+  };
+  return render(data);
+}
+
 // ── RAG: fetch similar items from existing data ──
 async function fetchRAGContext(
   adminClient: any,
@@ -329,13 +371,17 @@ serve(async (req) => {
       }
 
       const result = await response.json();
-      const content = result.choices?.[0]?.message?.content || "";
+      const rawContent = result.choices?.[0]?.message?.content || "";
+      // Defensive: strip any residual ```json fences.
+      const content = rawContent.replace(/```json/gi, "").replace(/```/g, "").trim();
 
       try {
         const jsonMatch = content.match(/[\[{][\s\S]*[\]}]/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
-          return new Response(JSON.stringify({ structured: parsed }), {
+          // Also produce a Korean-readable text form for preview/plain-text consumers.
+          const koreanText = formatStructuredToKorean(section_key || "", parsed);
+          return new Response(JSON.stringify({ structured: parsed, content: koreanText }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
@@ -344,7 +390,7 @@ serve(async (req) => {
       }
 
       return new Response(
-        JSON.stringify({ content: content.replace(/```[\s\S]*?```/g, "").trim() }),
+        JSON.stringify({ content }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

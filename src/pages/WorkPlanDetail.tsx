@@ -11,6 +11,7 @@ import StructuredSectionForm, { validateSection } from '@/components/work-plan/S
 import { fetchLatestApprovedRun, syncRaToWp, type LatestApprovedRun } from '@/lib/workPlanAttachments';
 import AttachmentChecklist from '@/components/work-plan/AttachmentChecklist';
 import LegalCalculatorPanel from '@/components/work-plan/LegalCalculatorPanel';
+import { formatSectionContent } from '@/lib/formatSectionContent';
 import EquipmentManager from '@/components/equipment/EquipmentManager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -807,9 +808,7 @@ const WorkPlanDetail = () => {
                 <div key={section.key} className="space-y-1">
                   <h3 className="text-sm font-semibold">{section.title}</h3>
                   <div className="text-xs text-muted-foreground whitespace-pre-wrap bg-muted/30 p-3 rounded">
-                    {typeof section.content === 'string' && section.content.startsWith('[')
-                      ? JSON.stringify(JSON.parse(section.content), null, 2)
-                      : section.content}
+                    {formatSectionContent(section.content)}
                   </div>
                 </div>
               ))}

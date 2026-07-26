@@ -233,7 +233,7 @@ Deno.serve(async (req) => {
     let sweep_added = 0;
     const existingChecks: any[] = Array.isArray(parsed.checkboxes) ? parsed.checkboxes : [];
     const rightChecks = existingChecks.filter((c: any) => Array.isArray(c.bbox) && c.bbox[0] > 0.5).length;
-    if (enableSweep && modelUsed.startsWith('lovable/') && (existingChecks.length < 15 || rightChecks < 5)) {
+    if (enableSweep && (existingChecks.length < 15 || rightChecks < 5)) {
       try {
         const prevCenters = existingChecks
           .filter((c: any) => Array.isArray(c.bbox))
@@ -248,7 +248,7 @@ Deno.serve(async (req) => {
             ]),
           },
         ];
-        const rawSweep = await callLovableAIGateway(sweepMessages, { model: 'google/gemini-2.5-flash' });
+        const rawSweep = await callAI(sweepMessages, { temperature: 0.1 });
         const sp = tryParse(rawSweep);
         const newChecks: any[] = Array.isArray(sp?.checkboxes) ? sp.checkboxes : [];
         // dedupe: 중심점 거리 < 0.02

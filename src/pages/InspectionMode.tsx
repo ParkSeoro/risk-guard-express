@@ -5,12 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { ShieldAlert, CheckCircle2, XCircle, Printer, Loader2, Eye } from 'lucide-react';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 
 type Finding = { key: string; label: string; ok: boolean; detail: string };
 
 export default function InspectionMode() {
   const { toast } = useToast();
-  const projectId = typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') || '' : '';
+  const { selectedProject: projectId } = useGlobalProjectAccess();
   const [findings, setFindings] = useState<Finding[]>([]);
   const [running, setRunning] = useState(false);
   const [history, setHistory] = useState<any[]>([]);

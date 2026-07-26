@@ -8,9 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { GraduationCap, Plus, Trash2 } from "lucide-react";
 import { JOB_TYPE_LABELS, REQ_TYPE_LABELS } from "@/hooks/useWorker";
+import { useGlobalProjectAccess } from "@/components/AppLayout";
 
 export default function LegalEducationMapping() {
-  const [projectId] = useState(() => localStorage.getItem("selectedProjectId") || localStorage.getItem("currentProjectId") || "");
+  const { selectedProject: projectId } = useGlobalProjectAccess();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [newRow, setNewRow] = useState({ job_type: "general", education_type: "regular", interval_months: 3, first_due_days: 90, required_hours: 6, legal_basis: "" });

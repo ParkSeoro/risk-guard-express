@@ -1,9 +1,9 @@
 import TbmManager from '@/components/tbm/TbmManager';
 import { ClipboardList } from 'lucide-react';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 
 export default function TbmLogs() {
-  const { selectedProject: projectId, loading } = useProjectAccess();
+  const { selectedProject: projectId, loading } = useGlobalProjectAccess();
 
   if (loading) {
     return <div className="p-6 text-sm text-muted-foreground">로딩 중...</div>;

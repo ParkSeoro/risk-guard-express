@@ -15,7 +15,7 @@ import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature,
 import { useAuditLog } from '@/hooks/useAuditLog';
 import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialog';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
-import { useProjectAccess } from '@/hooks/useProjectAccess';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import type { PermitType } from '@/components/permits/DigPermitForm';
 
 
@@ -80,8 +80,7 @@ export default function WorkPermits() {
   const { user, isAdmin } = useAuth();
   const { log } = useAuditLog();
   const navigate = useNavigate();
-  const projectId = typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') || '' : '';
-  const { userCompanyId } = useProjectAccess();
+  const { selectedProject: projectId, userCompanyId } = useGlobalProjectAccess();
 
 
   const [permits, setPermits] = useState<any[]>([]);

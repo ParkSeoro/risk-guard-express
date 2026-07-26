@@ -79,7 +79,8 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const {
     projects, selectedProject, setSelectedProject,
-    userCompanyId, isMaster, isProjectAdmin, isContractor, applyCompanyFilter, loading: accessLoading
+    userCompanyId, isMaster, isProjectAdmin, isContractor, isWorker,
+    applyCompanyFilter, loading: accessLoading
   } = useGlobalProjectAccess();
   const [data, setData] = useState<DashboardData>(EMPTY);
   const [loading, setLoading] = useState(true);
@@ -88,7 +89,9 @@ const Dashboard = () => {
     if (!selectedProject) return;
     setLoading(true);
 
-    // Fetch runs (excluding soft-deleted AND archived)
+    // Fetch runs (excluding soft-deleted AND archived).
+    // Note: assessment_runs/risk_items are scoped via RLS + run_id chain; they
+    // do not carry company_id, so applyCompanyFilter is not applicable here.
     const { data: runs } = await supabase
       .from("assessment_runs")
       .select("id, status, validation_verdict, validation_score")
@@ -267,9 +270,12 @@ const Dashboard = () => {
       legalDutyMonthly,
     });
     setLoading(false);
-  }, [selectedProject, userCompanyId, isMaster, isProjectAdmin]);
+  }, [selectedProject, userCompanyId, isMaster, isProjectAdmin, isContractor, applyCompanyFilter]);
 
-  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+  useEffect(() => {
+    if (accessLoading) return;
+    fetchDashboard();
+  }, [fetchDashboard, accessLoading]);
 
   // Refetch on window focus
   useEffect(() => {
@@ -339,6 +345,7 @@ const Dashboard = () => {
         isMaster={isMaster}
         isProjectAdmin={isProjectAdmin}
         isContractor={isContractor}
+        isWorker={isWorker}
       />
 
       <div className="space-y-6">
@@ -813,9 +820,10 @@ interface QuickStartCardsProps {
   isMaster: boolean;
   isProjectAdmin: boolean;
   isContractor: boolean;
+  isWorker: boolean;
 }
 
-function QuickStartCards({ navigate, isMaster, isProjectAdmin, isContractor }: QuickStartCardsProps) {
+function QuickStartCards({ navigate, isMaster, isProjectAdmin, isContractor, isWorker }: QuickStartCardsProps) {
   type QSItem = { title: string; desc: string; icon: any; path: string; tone: 'primary' | 'warning' | 'success' | 'destructive' };
 
   let items: QSItem[];
@@ -826,20 +834,37 @@ function QuickStartCards({ navigate, isMaster, isProjectAdmin, isContractor }: Q
       { title: "감사 로그", desc: "전체 시스템 활동 점검", icon: History, path: "/audit-logs", tone: 'warning' },
       { title: "일관성 감사", desc: "공통 법칙 적용 현황", icon: ShieldCheck, path: "/admin/consistency-audit", tone: 'destructive' },
     ];
+  } else if (isProjectAdmin) {
+    // project_admin / safety_manager
+    items = [
+      { title: "결재 대기 확인", desc: "내가 결재할 문서", icon: FileCheck, path: "/approvals", tone: 'warning' },
+      { title: "위험성평가", desc: "회차 생성 및 검토", icon: ShieldAlert, path: "/risk-assessment", tone: 'destructive' },
+      { title: "작업계획서", desc: "오늘의 작업 계획", icon: FileText, path: "/work-plans", tone: 'primary' },
+      { title: "안전점검", desc: "정기 점검 수행", icon: ClipboardCheckIcon, path: "/safety-inspections", tone: 'success' },
+    ];
   } else if (isContractor) {
+    // 협력사 관리자: 작성/제출 권한 보유
     items = [
       { title: "위험성평가 작성", desc: "내 회사 평가 회차 만들기", icon: ShieldAlert, path: "/risk-assessment", tone: 'destructive' },
       { title: "작업허가서 신청", desc: "허가 필요 작업 신청", icon: FileSignature, path: "/work-permits", tone: 'warning' },
       { title: "TBM 일지 작성", desc: "오늘 TBM 기록", icon: ClipboardList, path: "/tbm-logs", tone: 'primary' },
       { title: "AI 어시스턴트", desc: "위험요소 빠르게 검색", icon: Bot, path: "/ai-assistant", tone: 'success' },
     ];
-  } else {
-    // project_admin / safety_manager / user (default)
+  } else if (isWorker) {
+    // 일반 근로자: 조회·교육 이수·서명만
     items = [
-      { title: "결재 대기 확인", desc: "내가 결재할 문서", icon: FileCheck, path: "/approvals", tone: 'warning' },
-      { title: "위험성평가", desc: "회차 생성 및 검토", icon: ShieldAlert, path: "/risk-assessment", tone: 'destructive' },
-      { title: "작업계획서", desc: "오늘의 작업 계획", icon: FileText, path: "/work-plans", tone: 'primary' },
-      { title: "안전점검", desc: "정기 점검 수행", icon: ClipboardCheckIcon, path: "/safety-inspections", tone: 'success' },
+      { title: "TBM 참여/서명", desc: "오늘 TBM 서명하기", icon: FileSignature, path: "/tbm-logs", tone: 'primary' },
+      { title: "내 교육 이수", desc: "필수 교육 확인", icon: ClipboardList, path: "/worker-education", tone: 'success' },
+      { title: "위험성평가 조회", desc: "승인된 평가 열람", icon: ShieldAlert, path: "/risk-assessment", tone: 'warning' },
+      { title: "AI 어시스턴트", desc: "안전 정보 검색", icon: Bot, path: "/ai-assistant", tone: 'primary' },
+    ];
+  } else {
+    // viewer (default)
+    items = [
+      { title: "위험성평가 조회", desc: "승인된 평가 열람", icon: ShieldAlert, path: "/risk-assessment", tone: 'warning' },
+      { title: "작업계획서 조회", desc: "오늘의 작업 계획", icon: FileText, path: "/work-plans", tone: 'primary' },
+      { title: "TBM 일지 조회", desc: "TBM 기록 보기", icon: ClipboardList, path: "/tbm-logs", tone: 'success' },
+      { title: "AI 어시스턴트", desc: "안전 정보 검색", icon: Bot, path: "/ai-assistant", tone: 'primary' },
     ];
   }
 

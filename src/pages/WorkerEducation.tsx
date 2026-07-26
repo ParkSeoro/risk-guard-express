@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useProjectAccess } from "@/hooks/useProjectAccess";
+import { useGlobalProjectAccess } from "@/components/AppLayout";
 import { useSoftDelete } from "@/hooks/useSoftDelete";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,7 @@ type Worker = { id: string; name: string; company_id: string | null };
 const TYPES = ['정기', '채용시', '작업변경시', '특별', '관리감독자', '기초안전보건'];
 
 export default function WorkerEducation() {
-  const { selectedProject: projectId, isMaster, isProjectAdmin, isSafetyManager, profile } = useProjectAccess() as any;
+  const { selectedProject: projectId, isMaster, isProjectAdmin, isSafetyManager, profile } = useGlobalProjectAccess() as any;
   const { softDelete } = useSoftDelete();
   const [rows, setRows] = useState<Row[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);

@@ -170,10 +170,16 @@ async function generateBatch(
   batchIndex: number
 ): Promise<any[]> {
   const systemPrompt = `너는 대한민국 건설/플랜트 현장에서 20년 이상 근무한 안전관리 총괄 책임자이며,
-특히 터널공사, 쉴드공법(Semi Shield, TBM 포함), 굴착공사에 대한 전문지식을 보유하고 있다.
-또한 산업안전보건법, 건설기술진흥법, KOSHA GUIDE, 중대재해처벌법 기준을 모두 이해하고 있으며,
-실제 현장에서 승인 가능한 수준의 위험성평가만 작성해야 한다.
-JSON 배열만 출력하고, 다른 텍스트는 절대 포함하지 마라.`;
+터널공사, 쉴드공법(Semi Shield, TBM 포함), 굴착공사, 고소작업, 양중작업 전반에 대한 전문지식을 보유하고 있다.
+반드시 최신 「산업안전보건법」, 「산업안전보건기준에 관한 규칙」, 「건설기술진흥법」, 「중대재해처벌법」, KOSHA GUIDE를 근거로
+'위험성평가(최초·정기·수시)' 기준에 따라 실제 현장에서 승인 가능한 수준의 평가만 작성한다.
+
+절대 규칙:
+- 출력은 오직 JSON 배열 하나뿐. 코드펜스(\`\`\`), 설명문, 머리말/꼬리말 금지.
+- 100% 한국어. 단 하나의 영단어도 허용하지 않는다(고유명사 TBM/KOSHA/PPE만 병기 허용).
+- 요청된 개수를 정확히 채우며, 중간에 배열을 끊지 않는다. 반드시 ']' 로 완결한다.
+- 유해·위험요인은 추락, 낙하·비래, 협착·끼임, 감전, 화재·폭발, 붕괴·도괴, 질식, 유해물질 노출, 근골격계 부담, 소음·진동 등을 누락 없이 도출한다.
+- 감소 대책(개선대책)은 반드시 (1) 본질안전 → (2) 공학적 대책 → (3) 관리적 대책 → (4) 개인보호구 순으로 실효성 있게 서술한다. PPE만 단독 나열 금지.`;
 
   const userPrompt = `[입력 정보]
 공종: ${processName}
@@ -185,18 +191,18 @@ JSON 배열만 출력하고, 다른 텍스트는 절대 포함하지 마라.`;
 ${ragContext}
 
 [핵심 요구사항]
-1. 입력된 장비가 생소하더라도 반드시 "공법/용도"를 추론하라
-2. 반드시 해당 공종의 "핵심 사고 유형"을 포함하라
-3. 위험요인은 반드시 "원인 + 사고결과" 구조로 작성
-4. 발생상황은 실제 작업 순서를 반영
-5. 개선대책은 반드시 "현장 실행 가능한 수준"으로 작성
-6. 법적근거는 실제 관련 항목만 선택
-7. 위험도는 실제 사고 가능성 기준으로 배분 (상 20-30%, 중 40-60%, 하 10-30%)
-8. 작업위치(${locationText})와 작업환경(${envText})을 반영
-9. 참고 사례가 있으면 반드시 참고하되, 동일한 내용은 금지
-10. 반드시 ${batchCount}개 항목을 작성
+1. 입력된 장비가 생소하더라도 반드시 "공법/용도"를 추론하라.
+2. 반드시 해당 공종의 "핵심 사고 유형"을 포함하라(추락/낙하/협착/감전/화재/붕괴/질식 등).
+3. 위험요인은 반드시 "원인 + 사고결과" 구조로 작성.
+4. 발생상황은 실제 작업 순서(준비 → 본작업 → 마무리)를 반영.
+5. 개선대책은 본질안전 → 공학적 → 관리적 → PPE 순으로 구체적으로 작성.
+6. 법적근거는 산업안전보건기준에 관한 규칙 조항 번호 또는 KOSHA GUIDE 코드로 실제 관련 항목만 기입.
+7. 위험도 분포: 상 20~30%, 중 40~60%, 하 10~30%로 자연스럽게 배분.
+8. 작업위치(${locationText})와 작업환경(${envText})을 반드시 반영.
+9. 참고 사례가 있으면 참고하되, 동일한 내용은 금지.
+10. 반드시 정확히 ${batchCount}개 항목을 완결된 JSON 배열로 작성한다.
 
-[출력 형식 - JSON 배열만 출력]
+[출력 형식 - JSON 배열만 출력, 총 ${batchCount}개]
 [
   {
     "공정": "${processName}",
@@ -205,10 +211,10 @@ ${ragContext}
     "발생상황": "",
     "기존대책": "",
     "개선대책": "",
-    "위험도": "상/중/하 중 하나",
-    "심각도": "상/중/하 중 하나",
-    "개선후위험도": "상/중/하 중 하나",
-    "개선후심각도": "상/중/하 중 하나",
+    "위험도": "상|중|하",
+    "심각도": "상|중|하",
+    "개선후위험도": "상|중|하",
+    "개선후심각도": "상|중|하",
     "보호구": [],
     "법적근거": ""
   }
@@ -220,6 +226,8 @@ ${ragContext}
       { role: "user", content: userPrompt },
     ],
     temperature: 0.4 + batchIndex * 0.05,
+    max_tokens: 6144,
+    response_format: { type: "json_object" },
   });
 
   if (!response.ok) {
@@ -232,14 +240,44 @@ ${ragContext}
   }
 
   const result = await response.json();
-  const content = result.choices?.[0]?.message?.content || "";
+  const raw = result.choices?.[0]?.message?.content || "";
+  // Defensive: strip any residual markdown fences before parsing.
+  const content = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
 
-  try {
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
-    if (jsonMatch) return JSON.parse(jsonMatch[0]);
-  } catch (parseErr) {
-    console.error(`[Batch ${batchIndex}] Parse error:`, parseErr);
+  // Try full parse first, then extract the largest [ ... ] block, then repair a
+  // truncated tail by trimming to the last complete object.
+  const tryParse = (s: string): any[] | null => {
+    try {
+      const v = JSON.parse(s);
+      return Array.isArray(v) ? v : null;
+    } catch { return null; }
+  };
+
+  const direct = tryParse(content);
+  if (direct) return direct;
+
+  const arrMatch = content.match(/\[[\s\S]*\]/);
+  if (arrMatch) {
+    const parsed = tryParse(arrMatch[0]);
+    if (parsed) return parsed;
   }
+
+  // Repair truncated array: find last '},' and close the array there.
+  const start = content.indexOf("[");
+  if (start >= 0) {
+    const tail = content.slice(start);
+    const lastObjEnd = tail.lastIndexOf("},");
+    if (lastObjEnd > 0) {
+      const repaired = tail.slice(0, lastObjEnd + 1) + "]";
+      const parsed = tryParse(repaired);
+      if (parsed) {
+        console.warn(`[Batch ${batchIndex}] Repaired truncated JSON (${parsed.length} items)`);
+        return parsed;
+      }
+    }
+  }
+
+  console.error(`[Batch ${batchIndex}] JSON parse failed. Head:`, content.slice(0, 300));
   return [];
 }
 

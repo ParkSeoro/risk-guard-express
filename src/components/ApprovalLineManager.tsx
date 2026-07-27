@@ -7,6 +7,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, ArrowUp, ArrowDown, RefreshCw, Users, Save } from 'lucide-react';
+import {
+  FIXED_APPROVAL_STEPS,
+  POSITION_LABELS as SSOT_POSITION_LABELS,
+  SSOT_STEP_KEYS,
+} from '@/lib/approvalRules';
+
 
 interface ApprovalLine {
   id?: string;

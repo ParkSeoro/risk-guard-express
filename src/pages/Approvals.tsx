@@ -18,7 +18,19 @@ import { exportToPDF } from "@/lib/exportUtils";
 import { useMemo } from "react";
 
 
-const APPROVAL_STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };
+const ENTITY_LINK = (t?: string | null, id?: string | null): string | null => {
+  if (!t || !id) return null;
+  switch (t) {
+    case 'assessment_run': return `/assessment-run/${id}`;
+    case 'work_plan': return `/work-plan/${id}`;
+    case 'work_permit': return `/work-permits/${id}`;
+    case 'safety_cost': return `/safety-cost`;
+    case 'incident': return `/incidents`;
+    case 'emergency_drill': return `/emergency-drills`;
+    case 'tbm': return `/tbm`;
+    default: return null;
+  }
+};
 
 const Approvals = () => {
   const navigate = useNavigate();
@@ -289,10 +301,11 @@ const Approvals = () => {
         </Select>
       </div>
 
-      {/* KPI 카드 */}
+      {/* KPI 카드 (중복 제거: entityPending 은 approvals 테이블에 이미 존재하므로 approval_id 기준 dedupe) */}
       {(() => {
+        const pendingIds = new Set(entityPending.map((e: any) => e.approval_id));
         const mineCount = user ? Object.values(grouped).filter((steps: any) =>
-          (steps as any[]).some(s => s.approver_id === user.id && s.status === '진행중')
+          (steps as any[]).some(s => s.approver_id === user.id && s.status === '진행중' && !pendingIds.has(s.id))
         ).length + entityPending.length : 0;
         const submittedCount = user ? Object.values(grouped).filter((steps: any) =>
           (steps as any[]).some(s => s.approver_id === user.id && s.step === '작성')
@@ -359,6 +372,14 @@ const Approvals = () => {
                   <div className="text-sm font-medium truncate">{e.entity_title || '-'}</div>
                   <div className="text-xs text-muted-foreground">{e.entity_date || ''} · {e.step}</div>
                 </div>
+                {(() => {
+                  const href = ENTITY_LINK(e.entity_type, e.entity_id);
+                  return href ? (
+                    <Button size="sm" variant="outline" onClick={() => navigate(href)}>
+                      <ExternalLink className="h-3 w-3 mr-1" />문서 보기
+                    </Button>
+                  ) : null;
+                })()}
                 <Button size="sm" onClick={() => actOnEntity(e.approval_id, 'approve')}>
                   <CheckCircle2 className="h-3 w-3 mr-1" />승인
                 </Button>
@@ -376,8 +397,9 @@ const Approvals = () => {
           <TabsTrigger value="mine" className="flex-1 gap-1.5">
             내 결재 (대기)
             {(() => {
+              const pendingIds = new Set(entityPending.map((e: any) => e.approval_id));
               const mineCount = user ? Object.values(grouped).filter((steps: any) =>
-                (steps as any[]).some(s => s.approver_id === user.id && s.status === '진행중')
+                (steps as any[]).some(s => s.approver_id === user.id && s.status === '진행중' && !pendingIds.has(s.id))
               ).length + entityPending.length : 0;
               return mineCount > 0 ? <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">{mineCount}</Badge> : null;
             })()}
@@ -439,11 +461,20 @@ const Approvals = () => {
                             </Button>
                           </>
                         )}
+                        {!run && (() => {
+                          const first = (steps as any[])[0];
+                          const href = ENTITY_LINK(first?.entity_type, first?.entity_id);
+                          return href ? (
+                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate(href)}>
+                              <ExternalLink className="h-3 w-3" /> 문서 보기
+                            </Button>
+                          ) : null;
+                        })()}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      {(steps as any[]).sort((a, b) => {
-                        return (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99);
+                      {(steps as any[]).slice().sort((a, b) => {
+                        return (a.step_order ?? 99) - (b.step_order ?? 99);
                       }).map((step: any, i: number) => (
                         <div key={step.id} className="flex items-center gap-2">
                           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium ${

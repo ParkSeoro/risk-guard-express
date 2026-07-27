@@ -7,7 +7,7 @@
 -- 5) notifications INSERT → pg_net → dispatch-notification-push Edge Function
 -- =============================================================================
 
-CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS pg_net;
 
 -- ---------------------------------------------------------------------------
 -- 1) notifications 중앙 테이블

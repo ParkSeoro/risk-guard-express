@@ -139,17 +139,21 @@ const masterOnlyItems: Item[] = [
 export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
   const collapsed = state === "collapsed";
-  const { profile, signOut, hasRole } = useAuth();
+  const { profile, signOut, hasRole, roles } = useAuth();
   const access = useGlobalProjectAccessOptional();
   const isMaster = hasRole('master');
   const isContractorCo = !!access && !access.isMaster &&
     (access.userCompanyType === 'contractor' || access.userCompanyType === 'vendor');
+  // Low-privilege = only contractor/worker/viewer/user roles (no admin/manager role)
+  const LOW = new Set(['contractor', 'worker', 'viewer', 'user']);
+  const isLowPriv = !isMaster && (roles.length === 0 || roles.every((r) => LOW.has(r as string)));
+  const restrictToContractorUI = isContractorCo || isLowPriv;
   const location = useLocation();
   const pendingApprovals = usePendingApprovalsCount();
 
   const adminFinal = isMaster ? [...adminItems, ...masterOnlyItems] : adminItems;
 
-  // 협력사(Foolproof UI): 복잡한 통계·설정·비용·법적·시스템 메뉴 완전 숨김
+  // 협력사/근로자(Foolproof UI): 복잡한 통계·설정·비용·법적·시스템 메뉴 완전 숨김
   const CONTRACTOR_GROUP_KEYS = new Set(['home', 'field', 'risk', 'incident', 'workers']);
   const CONTRACTOR_ALLOWED_URLS = new Set<string>([
     '/', '/work-plans', '/work-permits', '/tbm-logs',
@@ -159,7 +163,7 @@ export function AppSidebar() {
     '/project-library', '/education-materials',
     '/approvals', '/profile', '/manual',
   ]);
-  const visibleGroups = isContractorCo
+  const visibleGroups = restrictToContractorUI
     ? groups
         .filter((g) => CONTRACTOR_GROUP_KEYS.has(g.key))
         .map((g) => ({ ...g, items: g.items.filter((i) => CONTRACTOR_ALLOWED_URLS.has(i.url)) }))
@@ -268,7 +272,7 @@ export function AppSidebar() {
           </SidebarGroup>
         ))}
 
-        {!isContractorCo && (
+        {!restrictToContractorUI && (
           <SidebarGroup className="pb-2">
             {!collapsed ? (
               <Collapsible open={openGroups['admin'] ?? false} onOpenChange={() => toggleGroup('admin')}>

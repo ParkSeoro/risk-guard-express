@@ -21,14 +21,31 @@ import type { PermitType } from '@/components/permits/DigPermitForm';
 
 const STATUS_COLOR: Record<string, string> = {
   '작성중': 'bg-muted text-muted-foreground',
+  '임시저장': 'bg-muted text-muted-foreground',
+  '결재중': 'bg-primary/10 text-primary',
+  '결재진행': 'bg-primary/10 text-primary',
   '검토대기': 'bg-warning/10 text-warning',
   '검토완료': 'bg-primary/10 text-primary',
   '대기': 'bg-muted text-muted-foreground',
   '승인': 'bg-success/10 text-success',
+  '발행완료': 'bg-success/10 text-success',
+  '승인완료': 'bg-success/10 text-success',
   '반려': 'bg-destructive/10 text-destructive',
   '작업중': 'bg-primary/10 text-primary',
   '완료': 'bg-accent/10 text-accent',
 };
+
+const EDITABLE_PERMIT_STATUSES = new Set(['작성중', '반려', '임시저장']);
+const APPROVED_PERMIT_STATUSES = new Set(['승인', '승인완료', '발행완료', 'approved']);
+
+function permitStatusLabel(status?: string | null) {
+  if (APPROVED_PERMIT_STATUSES.has(status || '')) return '발행 완료';
+  if (status === '결재중' || status === '결재진행') return '결재 진행중';
+  return status || '-';
+}
+function isPermitEditable(status?: string | null) {
+  return EDITABLE_PERMIT_STATUSES.has(status || '');
+}
 
 const userLabel = (u: any) => u?.user_metadata?.display_name || u?.email || '';
 const PERMIT_TYPES: { id: PermitType; label: string }[] = [
@@ -200,6 +217,9 @@ export default function WorkPermits() {
       tbm_session_id: form.tbm_session_id || null,
     };
     if (editing) {
+      if (!isPermitEditable(editing.status)) {
+        return toast({ title: '수정 불가', description: '결재 진행중/완료 문서는 수정할 수 없습니다.', variant: 'destructive' });
+      }
       const { error } = await supabase.from('work_permits' as any).update(payload).eq('id', editing.id);
       if (error) return toast({ title: '수정 실패', description: error.message, variant: 'destructive' });
       toast({ title: '작업허가서가 수정되었습니다.' });
@@ -215,8 +235,9 @@ export default function WorkPermits() {
   };
 
   const openEdit = (p: any) => {
-    if (p.status === '승인') {
-      if (!confirm('승인된 허가서입니다. 수정하면 추적이 남습니다. 계속하시겠습니까?')) return;
+    if (!isPermitEditable(p.status)) {
+      toast({ title: '수정 불가', description: '결재 진행중/완료 문서는 수정할 수 없습니다.', variant: 'destructive' });
+      return;
     }
     setEditing(p);
     setForm({
@@ -373,7 +394,7 @@ export default function WorkPermits() {
             <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Badge className={STATUS_COLOR[p.status] || ''}>{p.status}</Badge>
+                  <Badge className={STATUS_COLOR[p.status] || ''}>{permitStatusLabel(p.status)}</Badge>
                   <button className="font-semibold text-left hover:underline" onClick={() => navigate(`/work-permits/${p.id}`)}>{p.work_description}</button>
                   {(() => {
                     const today = new Date().toISOString().slice(0, 10);
@@ -391,7 +412,7 @@ export default function WorkPermits() {
                   <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />결재 가능</p>
                 )}
 
-                {p.status === '승인' && (
+                {APPROVED_PERMIT_STATUSES.has(p.status) && (
                   p.gate_check_result?.exec_ok
                     ? <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />당일 TBM 완료 - 작업 실행 가능</p>
                     : <p className="text-xs text-warning mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />작업 불가 - 당일 TBM 미실시</p>
@@ -405,7 +426,7 @@ export default function WorkPermits() {
               </div>
               <div className="flex gap-1 flex-wrap">
                 <Button size="sm" variant="outline" onClick={() => runGateCheck(p)}><ShieldCheck className="h-3 w-3 mr-1" />게이트체크</Button>
-                {p.status === '작성중' && (
+                {isPermitEditable(p.status) && (
                   <>
                     <Button size="sm" onClick={() => submit(p)} disabled={!p.gate_check_result?.all_ok}>상신</Button>
                     <Button size="sm" variant="outline" onClick={() => setApprovalTarget(p)}>결재상신(결재선 지정)</Button>
@@ -423,9 +444,11 @@ export default function WorkPermits() {
                     <Button size="sm" variant="destructive" onClick={() => reject(p)}><XCircle className="h-3 w-3 mr-1" />반려</Button>
                   </>
                 )}
-                <Button size="sm" onClick={() => navigate(`/work-permits/${p.id}`)}><FileSignature className="h-3 w-3 mr-1" />양식 작성</Button>
+                <Button size="sm" onClick={() => navigate(`/work-permits/${p.id}`)}><FileSignature className="h-3 w-3 mr-1" />{isPermitEditable(p.status) ? '양식 작성' : '양식 조회'}</Button>
                 <Button size="sm" variant="outline" onClick={() => setWorkersDialog(p)} title="근로자 배정"><Users className="h-3 w-3" /></Button>
-                <Button size="sm" variant="outline" onClick={() => openEdit(p)} title="수정"><Pencil className="h-3 w-3" /></Button>
+                {isPermitEditable(p.status) && (
+                  <Button size="sm" variant="outline" onClick={() => openEdit(p)} title="수정"><Pencil className="h-3 w-3" /></Button>
+                )}
                 {isAdmin && (
                   <Button size="sm" variant="outline" onClick={() => remove(p)} title="삭제"><Trash2 className="h-3 w-3 text-destructive" /></Button>
                 )}

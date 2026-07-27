@@ -16,8 +16,11 @@ import {
   APPROVAL_POLICY,
   buildDefaultSteps,
   filterApproversForStep,
+  sortStepsByHierarchy,
+  validateStepsHierarchy,
   type ApprovalEntityType as SSOTApprovalEntityType,
 } from '@/lib/approvalRules';
+
 
 // Re-export SSOT types/labels so existing imports keep working.
 export type ApprovalEntityType = SSOTApprovalEntityType;

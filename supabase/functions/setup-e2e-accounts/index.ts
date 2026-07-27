@@ -31,8 +31,9 @@ Deno.serve(async (req) => {
 
     const authHeader = req.headers.get("Authorization") ?? "";
     const token = authHeader.replace(/^Bearer\s+/i, "");
+    console.log("[setup-e2e] auth header present:", !!authHeader, "token len:", token.length);
     if (!token) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
+      return new Response(JSON.stringify({ error: "unauthorized", detail: "missing bearer token" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

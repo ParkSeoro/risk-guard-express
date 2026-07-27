@@ -372,6 +372,14 @@ const Approvals = () => {
                   <div className="text-sm font-medium truncate">{e.entity_title || '-'}</div>
                   <div className="text-xs text-muted-foreground">{e.entity_date || ''} · {e.step}</div>
                 </div>
+                {(() => {
+                  const href = ENTITY_LINK(e.entity_type, e.entity_id);
+                  return href ? (
+                    <Button size="sm" variant="outline" onClick={() => navigate(href)}>
+                      <ExternalLink className="h-3 w-3 mr-1" />문서 보기
+                    </Button>
+                  ) : null;
+                })()}
                 <Button size="sm" onClick={() => actOnEntity(e.approval_id, 'approve')}>
                   <CheckCircle2 className="h-3 w-3 mr-1" />승인
                 </Button>

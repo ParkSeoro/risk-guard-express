@@ -128,22 +128,43 @@ export interface EligibleApprover {
 }
 
 const CONTRACTOR_TYPES = new Set(['contractor', 'vendor']);
+const CLIENT_TYPES = new Set(['client']);
+const GC_TYPES = new Set(['gc']);
+// 발주처(넓은 의미) — legacy 매핑 용도로만 남겨둠. 필터에는 직접 사용하지 않는다.
 const OWNER_TYPES = new Set(['client', 'gc']);
 
 const POS = (p: string) => (p || '').toUpperCase();
 
-/** SSOT 결재 단계 키 화이트리스트 */
+/**
+ * SSOT 결재 단계 키 화이트리스트.
+ * 실제 위계: 발주처(client) → 시공사(gc) → 협력사(contractor)
+ *   - contractor_*  : 협력사 (작성자 회사 = 정확한 company_id 일치자만)
+ *   - gc / gc_*     : 시공사 (해당 프로젝트에 등록된 GC 전원)
+ *   - owner_cm, owner_sm : 발주처 (company.type='client' 인 사람만)
+ *   - cooperator    : 협조 슬롯 (Step 5 이후)
+ */
 export const SSOT_STEP_KEYS = new Set<string>([
   'contractor_supervisor',
   'contractor_safety_manager',
   'contractor_site_director',
+  'gc',
+  'gc_manager',
+  'gc_pm',
   'owner_cm',
   'owner_sm',
   'cooperator',
 ]);
 
+const CONTRACTOR_STEP_KEYS = new Set<string>([
+  'contractor_supervisor',
+  'contractor_safety_manager',
+  'contractor_site_director',
+]);
+const GC_STEP_KEYS = new Set<string>(['gc', 'gc_manager', 'gc_pm']);
+const CLIENT_STEP_KEYS = new Set<string>(['owner_cm', 'owner_sm']);
+
 /**
- * 레거시 단계 키(구형 project_role/position)를 SSOT 5단계 키로 매핑.
+ * 레거시 단계 키(구형 project_role/position)를 SSOT 단계 키로 매핑.
  * 회사 타입을 알 수 없어 분기가 불가능한 경우 null을 돌려 상위에서 차단한다.
  */
 export function remapLegacyStepKey(
@@ -153,7 +174,8 @@ export function remapLegacyStepKey(
   const k = (legacyKey || '').toLowerCase();
   if (SSOT_STEP_KEYS.has(k)) return k;
   const t = (ctx?.companyType || '').toLowerCase();
-  const isOwner = OWNER_TYPES.has(t);
+  const isClient = CLIENT_TYPES.has(t);
+  const isGc = GC_TYPES.has(t);
   const isContractor = CONTRACTOR_TYPES.has(t);
   switch (k) {
     case 'supervisor':
@@ -161,16 +183,20 @@ export function remapLegacyStepKey(
       return 'contractor_supervisor';
     case 'safety_manager':
     case 'hse_manager':
-      if (isOwner) return 'owner_sm';
+      if (isClient) return 'owner_sm';
+      if (isGc) return 'gc_manager';
       if (isContractor) return 'contractor_safety_manager';
-      return null; // 회사 불명 → 차단
+      return null;
     case 'site_manager':
     case 'site_director':
-      if (isOwner) return 'owner_cm';
+      if (isClient) return 'owner_cm';
+      if (isGc) return 'gc_manager';
       if (isContractor) return 'contractor_site_director';
       return null;
     case 'project_admin':
     case 'cm':
+      if (isGc) return 'gc_manager';
+      return 'owner_cm';
     case 'owner_pm':
       return 'owner_cm';
     case 'sm':
@@ -183,36 +209,70 @@ export function remapLegacyStepKey(
   }
 }
 
+/**
+ * 단계별 결재자 후보 필터 (실제 위계 반영 최종 버전).
+ *
+ * 규칙:
+ *  1. contractor_* : 반드시 `ctx.authorCompanyId` 와 정확히 일치하는 협력사 소속자만.
+ *                    (작성자 회사의 관리감독자/안전관리자/소장 노출 누락 문제 해결)
+ *                    authorCompanyId 가 없거나 후보 회사와 다르면 제외한다.
+ *  2. gc / gc_*    : 해당 프로젝트에 등록된 시공사(company_type='gc') 소속 전원 노출.
+ *                    직급/포지션 필터를 걸지 않는다.
+ *  3. owner_cm / owner_sm : 반드시 company_type='client' 인 사람만 노출.
+ *                    (하청/시공사 소속 인원 진입 금지)
+ *  4. cooperator   : 협조 슬롯 — 프로젝트 소속이면 전원.
+ *  5. 그 외(알 수 없는 step_key) : 무조건 빈 배열 반환 (기본 통과 로직 폐기).
+ */
+export interface ApproverFilterContext {
+  /** 문서 기안자(또는 대상 협력사)의 company_id */
+  authorCompanyId?: string | null;
+}
+
 export function filterApproversForStep(
   approvers: EligibleApprover[],
   stepPosition: string,
+  ctx?: ApproverFilterContext,
 ): EligibleApprover[] {
   const key = (stepPosition || '').toLowerCase();
-  // SSOT 키가 아니면 전원 노출 금지 — 명시적으로 빈 배열
+  // 방어벽: SSOT 키가 아니면 무조건 빈 배열
   if (!SSOT_STEP_KEYS.has(key)) return [];
+
+  const authorCompanyId = ctx?.authorCompanyId ?? null;
+
   return approvers.filter((a) => {
     const t = (a.out_company_type || '').toLowerCase();
-    const p = POS(a.out_position);
     const isContractorCo = CONTRACTOR_TYPES.has(t);
-    const isOwnerCo = OWNER_TYPES.has(t);
-    switch (key) {
-      case 'contractor_supervisor':
-        return isContractorCo && ['SUPERVISOR', 'FOREMAN', 'FIELD_ENGINEER', 'CONSTRUCTION_MGR'].includes(p);
-      case 'contractor_safety_manager':
-        return isContractorCo && ['HSE_MANAGER'].includes(p);
-      case 'contractor_site_director':
-        return isContractorCo && ['SITE_MANAGER', 'CEO', 'EXECUTIVE'].includes(p);
-      case 'owner_cm':
-        return isOwnerCo && ['OWNER_PM', 'CONSTRUCTION_MGR', 'SITE_MANAGER'].includes(p);
-      case 'owner_sm':
-        return isOwnerCo && ['OWNER_HSE', 'HSE_MANAGER'].includes(p);
-      case 'cooperator':
-        return true;
-      default:
-        return false;
+    const isClientCo = CLIENT_TYPES.has(t);
+    const isGcCo = GC_TYPES.has(t);
+
+    // 1) 협력사 3개 단계 → 반드시 작성자 회사와 동일한 company_id
+    if (CONTRACTOR_STEP_KEYS.has(key)) {
+      if (!isContractorCo) return false;
+      if (!authorCompanyId) return false; // 컨텍스트 미제공 시 안전하게 차단
+      if (!a.out_company_id || a.out_company_id !== authorCompanyId) return false;
+      return true; // 회사 일치 시 직급 무관 전원 노출 (누락 방지)
     }
+
+    // 2) 시공사(GC) 단계 → GC 소속 전원 개방 (직급 무관)
+    if (GC_STEP_KEYS.has(key)) {
+      return isGcCo;
+    }
+
+    // 3) 발주처(client) 단계 → 반드시 client 소속만
+    if (CLIENT_STEP_KEYS.has(key)) {
+      return isClientCo;
+    }
+
+    // 4) 협조 단계 → 프로젝트 소속이면 전원
+    if (key === 'cooperator') {
+      return true;
+    }
+
+    // 5) 그 외 (도달 불가) → 차단
+    return false;
   });
 }
+
 
 /** 결재선 전체 검증 — 하나라도 비-SSOT 키가 있으면 실패 사유 반환 */
 export function validateApprovalLinesSSOT(

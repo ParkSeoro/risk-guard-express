@@ -179,21 +179,21 @@ function ProtectedRoutes() {
         <Route path="/schedule-upload/:projectId" element={<ScheduleUpload />} />
         <Route path="/verification" element={<Verification />} />
         <Route path="/verification-center" element={<VerificationCenter />} />
-        <Route path="/master-data" element={<MasterData />} />
+        <Route path="/master-data" element={<RoleGuard><MasterData /></RoleGuard>} />
         <Route path="/approvals" element={<Approvals />} />
-        <Route path="/audit-logs" element={<AuditLogs />} />
+        <Route path="/audit-logs" element={<RoleGuard><AuditLogs /></RoleGuard>} />
         <Route path="/user-management" element={<Navigate to="/settings/permissions" replace />} />
-        <Route path="/permission-test" element={<PermissionTest />} />
+        <Route path="/permission-test" element={<RoleGuard><PermissionTest /></RoleGuard>} />
         <Route path="/profile" element={<Profile />} />
-        <Route path="/settings" element={<Settings />} />
+        <Route path="/settings" element={<RoleGuard><Settings /></RoleGuard>} />
         <Route path="/settings/account" element={<SettingsAccount />} />
-        <Route path="/settings/permissions" element={<SettingsPermissions />} />
-        <Route path="/settings/approval-routes" element={<SettingsApprovalRoutes />} />
-        <Route path="/settings/notifications" element={<SettingsNotifications />} />
-        <Route path="/settings/ai" element={<SettingsAI />} />
-        <Route path="/settings/mobile-releases" element={<MobileReleases />} />
-        <Route path="/settings/permit-forms" element={<SettingsPermitForms />} />
-        <Route path="/settings/companies" element={<SettingsCompanies />} />
+        <Route path="/settings/permissions" element={<RoleGuard><SettingsPermissions /></RoleGuard>} />
+        <Route path="/settings/approval-routes" element={<RoleGuard><SettingsApprovalRoutes /></RoleGuard>} />
+        <Route path="/settings/notifications" element={<RoleGuard><SettingsNotifications /></RoleGuard>} />
+        <Route path="/settings/ai" element={<RoleGuard><SettingsAI /></RoleGuard>} />
+        <Route path="/settings/mobile-releases" element={<RoleGuard masterOnly><MobileReleases /></RoleGuard>} />
+        <Route path="/settings/permit-forms" element={<RoleGuard><SettingsPermitForms /></RoleGuard>} />
+        <Route path="/settings/companies" element={<RoleGuard><SettingsCompanies /></RoleGuard>} />
         <Route path="/work-plans" element={<WorkPlans />} />
         <Route path="/work-plan/:planId" element={<WorkPlanDetail />} />
         <Route path="/legal-duties" element={<LegalDuties />} />

@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Safenex</string>
+    <string name="title_activity_main">Safenex</string>
+    <string name="package_name">org.safenex.app</string>
+    <string name="custom_url_scheme">org.safenex.app</string>
+
+    <!-- @capacitor-community/background-geolocation FG 알림 채널 -->
+    <string name="capacitor_background_geolocation_notification_channel_name">
+        위치 추적
+    </string>
+</resources>

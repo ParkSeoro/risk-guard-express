@@ -7,25 +7,49 @@ const devUrl = process.env.CAP_DEV_URL;
 const config: CapacitorConfig = {
   appId: 'org.safenex.app',
   appName: 'Safenex',
+  // Vite 빌드 산출물 — OTA(@capgo/capacitor-updater)도 이 경로 기준
   webDir: 'dist',
   ...(devUrl
     ? { server: { url: devUrl, cleartext: true } }
     : { server: { androidScheme: 'https' } }),
+
+  // 백그라운드 위치 추적이 약 5분 후 멈추는 Capacitor 브리지 이슈 방지
+  // @see https://github.com/capacitor-community/background-geolocation/issues/89
+  android: {
+    useLegacyBridge: true,
+  },
+
   plugins: {
+    // 화면 꺼짐/백그라운드에서 WebView fetch 가 스로틀되는 것을 우회
+    // supabase.functions.invoke → fetch 가 네이티브 HTTP 로 라우팅됨
+    CapacitorHttp: {
+      enabled: true,
+    },
+
     Geolocation: {
       // iOS: Always-Allow 권한을 요청해 잠금/백그라운드에서도 위치 추적
       permissions: ['location'],
     },
+
+    // @capacitor-community/background-geolocation
+    // 실제 알림 채널명은 android/.../strings.xml 의
+    // capacitor_background_geolocation_notification_channel_name 으로 설정.
+    // 런타임 옵션(backgroundMessage/Title)은 locationTracker.ts 에서 전달.
     BackgroundGeolocation: {
-      // Android 알림 채널 ID
       notificationChannelName: '위치 추적',
     },
+
+    // @capgo/capacitor-updater — OTA 는 initOtaUpdater()에서 수동 제어
     CapacitorUpdater: {
-      // OTA 자동 시작 끄고, 우리 코드(`initOtaUpdater`)에서 통제
       autoUpdate: false,
-      // 새 번들이 안정적이지 않으면 5초 후 이전 번들로 롤백
-      appReadyTimeout: 5000,
+      // notifyAppReady() 미호출 시 이 시간 후 이전 번들로 롤백
+      appReadyTimeout: 10_000,
+      responseTimeout: 20,
+      autoDeleteFailed: true,
+      autoDeletePrevious: true,
+      resetWhenUpdate: true,
     },
+
     PushNotifications: {
       presentationOptions: ['badge', 'sound', 'alert'],
     },

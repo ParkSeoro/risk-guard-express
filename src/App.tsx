@@ -236,7 +236,7 @@ function ProtectedRoutes() {
         <Route path="/site-maps" element={<SiteMaps />} />
         <Route path="/zone-events" element={<ZoneEvents />} />
         <Route path="/worker-distribution" element={<WorkerDistribution />} />
-        <Route path="/admin/tracking-health" element={<AdminTrackingHealth />} />
+        <Route path="/admin/tracking-health" element={<RoleGuard><AdminTrackingHealth /></RoleGuard>} />
         <Route path="/companies" element={<Companies />} />
         <Route path="/companies/:id" element={<CompanyDetail />} />
         <Route path="*" element={<NotFound />} />

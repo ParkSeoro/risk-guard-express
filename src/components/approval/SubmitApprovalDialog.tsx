@@ -107,12 +107,13 @@ export default function SubmitApprovalDialog({
           shared.find((t) => t.is_default) || shared[0];
         if (def) {
           setSelectedTemplateId(def.id);
-          setSteps(normalizeSteps(def.steps));
+          setSteps(sortStepsByHierarchy(normalizeSteps(def.steps)));
         } else {
           setSelectedTemplateId('');
           // 전자결재 SSOT(approvalRules.ts)의 엔티티별 기본 결재선 사용
-          setSteps(buildDefaultSteps(entityType));
+          setSteps(sortStepsByHierarchy(buildDefaultSteps(entityType)));
         }
+
 
 
       } catch (e: any) {

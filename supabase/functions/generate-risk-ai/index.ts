@@ -343,11 +343,12 @@ serve(async (req) => {
       work_description,
       work_location,
       work_environment,
-      target_count,
+      detail_level,
       project_id,
-      batch_index,
-      batch_size,
     } = body;
+    // detail_level: 'core' | 'comprehensive' — replaces the removed target_count.
+    const detailLevel: 'core' | 'comprehensive' =
+      detail_level === 'core' ? 'core' : 'comprehensive';
 
     // Verify project membership for non-internal callers
     if (!isInternal && project_id) {

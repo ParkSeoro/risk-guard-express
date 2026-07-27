@@ -27,22 +27,24 @@ Lovable Cloud 프로젝트 `iqtiozscqwuacgzrlfzu` 는 **삭제·수정하지 않
 
 ## 1) 새 프로젝트 만들기 (직접)
 
-1. https://supabase.com/dashboard 로그인 (본인 계정)
-2. **New project** → 이름 예: `safenex-prod`
-3. 리전: 한국 사용자면 `Northeast Asia (Seoul)` 권장
-4. DB 비밀번호 저장
-5. 프로젝트 생성 후 **Settings → API** 에서 복사:
-   - Project URL (`https://XXXX.supabase.co`)
-   - `anon` `public` key
-   - `service_role` key (비밀, 레포에 커밋 금지)
-   - Project ref (`XXXX`)
+### 이미 만든 대상 프로젝트
 
-6. **Settings → Database** 에서:
-   - Database password
-   - (선택) Connection string (URI) — `db push` 에 필요할 수 있음
+| | 값 |
+|--|--|
+| Ref | `qhntxmggacorqjjmjqgo` |
+| URL | `https://qhntxmggacorqjjmjqgo.supabase.co` |
+| Publishable key | 로컬 `.env.local` 에만 보관 (커밋 안 함) |
+| Lovable (백업) | `iqtiozscqwuacgzrlfzu` — **수정 금지** |
 
-> 이 값들을 Cursor 채팅에 붙여 주시면, 에이전트가 link / push / env 전환까지 이어서 진행합니다.  
-> `service_role` 은 채팅에 넣기 부담되면 로컬에서만 `scripts/migrate-own-supabase/provision-new-project.sh` 실행해도 됩니다.
+### 스키마 push에 아직 필요한 것
+
+CLI `supabase link` / `db push` 는 아래가 있어야 합니다 (채팅에 붙여 주세요):
+
+1. **Access Token** — https://supabase.com/dashboard/account/tokens → Generate  
+2. **Database password** — 프로젝트 만들 때 설정한 DB 비밀번호  
+   (Settings → Database 에서 reset 가능)
+
+`service_role` / `sb_secret_...` 은 Functions·데이터 이전 단계에서만 필요합니다.
 
 ---
 

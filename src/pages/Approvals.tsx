@@ -263,7 +263,7 @@ const Approvals = () => {
       {/* KPI 카드 */}
       {(() => {
         const mineCount = user ? Object.values(grouped).filter((steps: any) =>
-          (steps as any[]).some(s => s.approver_id === user.id && s.status === '대기')
+          (steps as any[]).some(s => s.approver_id === user.id && s.status === '진행중')
         ).length + entityPending.length : 0;
         const submittedCount = user ? Object.values(grouped).filter((steps: any) =>
           (steps as any[]).some(s => s.approver_id === user.id && s.step === '작성')

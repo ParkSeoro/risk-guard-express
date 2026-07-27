@@ -9,28 +9,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
-
-// related_type → 라우트 매핑 (SSOT)
-const ROUTE_MAP: Record<string, (id?: string) => string> = {
-  assessment_run: (id) => (id ? `/assessment-run/${id}` : '/assessment-runs'),
-  approval: () => '/approvals',
-  work_permit: (id) => (id ? `/work-permits/${id}` : '/work-permits'),
-  work_plan: (id) => (id ? `/work-plans/${id}` : '/work-plans'),
-  safety_inspection: () => '/safety-inspections',
-  incident_report: () => '/incidents',
-  emergency_drill: () => '/emergency-drills',
-  todo: () => '/todo',
-  work_stop: () => '/work-stop',
-  safety_cost_report: () => '/safety-cost',
-  education: () => '/worker-education',
-  worker: () => '/workers',
-  chemical: () => '/health/chemicals',
-};
-
-const resolveRoute = (n: any): string | null => {
-  const fn = ROUTE_MAP[n.related_type];
-  return fn ? fn(n.related_id) : null;
-};
+import { resolveNotificationRoute } from '@/lib/notificationRoutes';
 
 export function NotificationBell() {
   const { user } = useAuth();
@@ -93,7 +72,7 @@ export function NotificationBell() {
 
   const handleClick = (n: any) => {
     markRead(n.id);
-    const route = resolveRoute(n);
+    const route = resolveNotificationRoute(n);
     if (route) {
       navigate(route);
       setOpen(false);
@@ -152,7 +131,7 @@ export function NotificationBell() {
             </div>
           ) : (
             visible.map(n => {
-              const hasLink = !!resolveRoute(n);
+              const hasLink = !!resolveNotificationRoute(n);
               return (
                 <div
                   key={n.id}

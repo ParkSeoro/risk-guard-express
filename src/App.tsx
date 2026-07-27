@@ -103,6 +103,7 @@ import Companies from "./pages/Companies";
 import CompanyDetail from "./pages/CompanyDetail";
 import InstallPrompt from "./components/InstallPrompt";
 import MobileRedirectGuard from "./components/MobileRedirectGuard";
+import PushNotificationBridge from "./components/PushNotificationBridge";
 import ContractorGate from "./components/ContractorGate";
 import RoleGuard from "./components/RoleGuard";
 import { useOfflineSync } from "./hooks/useOfflineSync";
@@ -296,6 +297,7 @@ const App = () => (
             <Route path="/m/work-stop" element={<MobileWorkStop />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
+          <PushNotificationBridge />
           <MobileRedirectGuard />
           <InstallPrompt />
           <OfflineSyncMount />

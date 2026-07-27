@@ -442,47 +442,38 @@ serve(async (req) => {
         : "일반 작업 환경";
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
-    const totalCount = target_count || 30;
 
-    // ── Cache check ──
-    const cacheKey = `${process_name}|${equipText}|${descText}|${locationText}|${envText}`
+    // ── Cache check (keyed by inputs + detail level) ──
+    const cacheKey = `${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
       .toLowerCase()
       .trim();
 
-    // Cache hit only when stored set is large enough for the request.
-    // Older code cached just the last batch (4-6 items), starving subsequent
-    // requests for the same key. Require >= max(8, target-2).
-    if (batch_index === undefined || batch_index === null) {
-      const minCacheItems = Math.max(8, totalCount - 2);
-      const { data: cached } = await adminClient
+    const { data: cached } = await adminClient
+      .from("ai_risk_cache")
+      .select("*")
+      .eq("cache_key", cacheKey)
+      .maybeSingle();
+
+    const cachedItems = (cached?.generated_items as any[]) || [];
+    const cacheMin = detailLevel === 'core' ? 8 : 15;
+    if (cached && Array.isArray(cachedItems) && cachedItems.length >= cacheMin) {
+      console.log(`[AI Engine] Cache hit: ${cachedItems.length} items (detail=${detailLevel})`);
+      await adminClient
         .from("ai_risk_cache")
-        .select("*")
-        .eq("cache_key", cacheKey)
-        .maybeSingle();
+        .update({ hit_count: (cached.hit_count || 0) + 1 })
+        .eq("id", cached.id);
 
-      const cachedItems = (cached?.generated_items as any[]) || [];
-      if (cached && Array.isArray(cachedItems) && cachedItems.length >= minCacheItems) {
-        console.log(`[AI Engine] Cache hit: ${cachedItems.length} items`);
-        await adminClient
-          .from("ai_risk_cache")
-          .update({ hit_count: (cached.hit_count || 0) + 1 })
-          .eq("id", cached.id);
-
-        return new Response(
-          JSON.stringify({
-            items: cachedItems.slice(0, totalCount),
-            source: "cache",
-            count: Math.min(cachedItems.length, totalCount),
-            normalized_equipment: normalizedEquipment,
-            total_batches: 1,
-            batch_index: 0,
-            is_complete: true,
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      } else if (cached) {
-        console.log(`[AI Engine] Stale cache (${cachedItems.length} < ${minCacheItems}), regenerating`);
-      }
+      return new Response(
+        JSON.stringify({
+          items: cachedItems,
+          source: "cache",
+          count: cachedItems.length,
+          normalized_equipment: normalizedEquipment,
+          detail_level: detailLevel,
+          is_complete: true,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // ── RAG context ──
@@ -490,42 +481,21 @@ serve(async (req) => {
     const ragContext = await fetchRAGContext(adminClient, process_name, equipText);
     console.log(`[AI Engine] RAG context: ${ragContext ? ragContext.split("\n").length - 1 : 0} items`);
 
-    // ── Chunked generation ──
-    const currentBatchIndex = batch_index ?? 0;
-    const batchSizeVal = batch_size ?? Math.min(8, totalCount);
-    const totalBatches = Math.ceil(totalCount / batchSizeVal);
-    const currentBatchSize = Math.min(batchSizeVal, totalCount - currentBatchIndex * batchSizeVal);
-
-    if (currentBatchSize <= 0) {
-      return new Response(
-        JSON.stringify({ items: [], source: "ai", count: 0, is_complete: true, batch_index: currentBatchIndex, total_batches: totalBatches }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log(`[AI Engine] Generating batch ${currentBatchIndex + 1}/${totalBatches} (${currentBatchSize} items)`);
-
-    const rawItems = await generateBatch(
+    console.log(`[AI Engine] Generating risk assessment (detail=${detailLevel})`);
+    const rawItems = await generateRiskAssessment(
       process_name,
       equipText,
       descText,
       locationText,
       envText,
-      currentBatchSize,
+      detailLevel,
       ragContext,
-      currentBatchIndex
     );
-
 
     const existingKeys = new Set<string>();
     const deduped = mapAndDedupe(rawItems, process_name, existingKeys);
 
-    const isComplete = currentBatchIndex + 1 >= totalBatches;
-
-    // Cache only when the entire response is in a single batch (no batch_index sent
-    // and totalBatches === 1). Caching the final batch of a multi-batch run would
-    // store only that last batch's items and poison future cache hits.
-    if (isComplete && deduped.length > 0 && totalBatches === 1 && (batch_index === undefined || batch_index === null)) {
+    if (deduped.length > 0) {
       await adminClient.from("ai_risk_cache").upsert(
         {
           cache_key: cacheKey,
@@ -548,9 +518,8 @@ serve(async (req) => {
         source: "ai",
         count: deduped.length,
         normalized_equipment: normalizedEquipment,
-        batch_index: currentBatchIndex,
-        total_batches: totalBatches,
-        is_complete: isComplete,
+        detail_level: detailLevel,
+        is_complete: true,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

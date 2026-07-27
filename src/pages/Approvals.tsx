@@ -301,10 +301,11 @@ const Approvals = () => {
         </Select>
       </div>
 
-      {/* KPI 카드 */}
+      {/* KPI 카드 (중복 제거: entityPending 은 approvals 테이블에 이미 존재하므로 approval_id 기준 dedupe) */}
       {(() => {
+        const pendingIds = new Set(entityPending.map((e: any) => e.approval_id));
         const mineCount = user ? Object.values(grouped).filter((steps: any) =>
-          (steps as any[]).some(s => s.approver_id === user.id && s.status === '진행중')
+          (steps as any[]).some(s => s.approver_id === user.id && s.status === '진행중' && !pendingIds.has(s.id))
         ).length + entityPending.length : 0;
         const submittedCount = user ? Object.values(grouped).filter((steps: any) =>
           (steps as any[]).some(s => s.approver_id === user.id && s.step === '작성')

@@ -142,8 +142,9 @@ const Approvals = () => {
     if (tab === 'mine' && user) {
       const filtered: Record<string, any[]> = {};
       for (const [runId, steps] of Object.entries(grouped)) {
-        const myPending = (steps as any[]).filter(s => s.approver_id === user.id && s.status === '대기');
-        if (myPending.length > 0) filtered[runId] = steps as any[];
+        // 순차 결재: 오직 현재 활성(진행중) 단계 담당자에게만 노출
+        const myActive = (steps as any[]).filter(s => s.approver_id === user.id && s.status === '진행중');
+        if (myActive.length > 0) filtered[runId] = steps as any[];
       }
       return applySearch(filtered);
     }

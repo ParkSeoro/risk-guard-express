@@ -132,11 +132,64 @@ const OWNER_TYPES = new Set(['client', 'gc']);
 
 const POS = (p: string) => (p || '').toUpperCase();
 
+/** SSOT 결재 단계 키 화이트리스트 */
+export const SSOT_STEP_KEYS = new Set<string>([
+  'contractor_supervisor',
+  'contractor_safety_manager',
+  'contractor_site_director',
+  'owner_cm',
+  'owner_sm',
+  'cooperator',
+]);
+
+/**
+ * 레거시 단계 키(구형 project_role/position)를 SSOT 5단계 키로 매핑.
+ * 회사 타입을 알 수 없어 분기가 불가능한 경우 null을 돌려 상위에서 차단한다.
+ */
+export function remapLegacyStepKey(
+  legacyKey: string,
+  ctx?: { companyType?: string | null },
+): string | null {
+  const k = (legacyKey || '').toLowerCase();
+  if (SSOT_STEP_KEYS.has(k)) return k;
+  const t = (ctx?.companyType || '').toLowerCase();
+  const isOwner = OWNER_TYPES.has(t);
+  const isContractor = CONTRACTOR_TYPES.has(t);
+  switch (k) {
+    case 'supervisor':
+    case 'contractor_pic':
+      return 'contractor_supervisor';
+    case 'safety_manager':
+    case 'hse_manager':
+      if (isOwner) return 'owner_sm';
+      if (isContractor) return 'contractor_safety_manager';
+      return null; // 회사 불명 → 차단
+    case 'site_manager':
+    case 'site_director':
+      if (isOwner) return 'owner_cm';
+      if (isContractor) return 'contractor_site_director';
+      return null;
+    case 'project_admin':
+    case 'cm':
+    case 'owner_pm':
+      return 'owner_cm';
+    case 'sm':
+    case 'owner_hse':
+      return 'owner_sm';
+    case 'cooperator':
+      return 'cooperator';
+    default:
+      return null;
+  }
+}
+
 export function filterApproversForStep(
   approvers: EligibleApprover[],
   stepPosition: string,
 ): EligibleApprover[] {
   const key = (stepPosition || '').toLowerCase();
+  // SSOT 키가 아니면 전원 노출 금지 — 명시적으로 빈 배열
+  if (!SSOT_STEP_KEYS.has(key)) return [];
   return approvers.filter((a) => {
     const t = (a.out_company_type || '').toLowerCase();
     const p = POS(a.out_position);
@@ -156,8 +209,18 @@ export function filterApproversForStep(
       case 'cooperator':
         return true;
       default:
-        // 알려지지 않은 position → 전체 노출 (수동 지정 가능)
-        return true;
+        return false;
     }
   });
 }
+
+/** 결재선 전체 검증 — 하나라도 비-SSOT 키가 있으면 실패 사유 반환 */
+export function validateApprovalLinesSSOT(
+  lines: Array<{ position?: string | null; step_label?: string | null }>,
+): { ok: boolean; invalid: string[] } {
+  const invalid = lines
+    .map((l) => (l.position || '').toLowerCase())
+    .filter((p) => !SSOT_STEP_KEYS.has(p));
+  return { ok: invalid.length === 0, invalid };
+}
+

@@ -43,13 +43,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data) setProfile(data as Profile);
   };
 
-  const normalizeRole = (role: string | null | undefined): AppRole | null => {
+  const KNOWN_ROLES = new Set([
+    'master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor',
+    'contractor', 'worker', 'viewer', 'user',
+  ]);
+
+  const normalizeRole = (role: string | null | undefined): AppRole | 'access_blocked' | null => {
     if (!role) return null;
-    if (role === 'worker') return 'contractor';
-    if (['master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor', 'contractor', 'viewer', 'user'].includes(role)) {
-      return role as AppRole;
-    }
-    return null;
+    const r = role.toLowerCase();
+    // 레거시 통칭 'contractor' / 'user' → worker (회사 타입 분기는 useProjectAccess에서)
+    if (r === 'contractor' || r === 'user') return 'worker';
+    if (KNOWN_ROLES.has(r)) return r as AppRole;
+    // 알 수 없는 구형 값 → silent viewer 승격 금지, 명시적 차단 마커
+    return 'access_blocked';
   };
 
   const fetchRoles = async (userId: string) => {
@@ -64,13 +70,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('user_id', userId),
     ]);
 
-    const combined = [
+    const raw = [
       ...(systemRoles || []).map((r: any) => normalizeRole(r.role)),
       ...(projectRoles || []).map((m: any) => normalizeRole(m.role_new)),
     ].filter(Boolean) as AppRole[];
 
+    const combined = raw.length === 0
+      ? []
+      : raw.every((v) => v === 'access_blocked')
+        ? (['access_blocked'] as AppRole[])
+        : raw.filter((v) => v !== 'access_blocked');
+
     setRoles(Array.from(new Set(combined)));
   };
+
 
   const refreshProfile = async () => {
     if (user) {

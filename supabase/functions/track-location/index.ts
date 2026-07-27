@@ -282,7 +282,9 @@ async function dispatchDangerZonePush(
     related_type: "zone_event",
     related_id: ctx.zone_id,
     is_read: false,
-    priority: "high",
+    severity: "high",
+    link: url,
+
   }));
   try {
     await supabase.from("notifications").insert(notiRows);

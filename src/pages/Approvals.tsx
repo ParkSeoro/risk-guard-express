@@ -51,6 +51,35 @@ const Approvals = () => {
     else { toast({ title: action === 'approve' ? '승인 완료' : '반려 완료' }); fetchEntityPending(); }
   };
 
+  const handleWithdraw = async (steps: any[]) => {
+    const first = steps?.[0];
+    if (!first?.entity_type || !first?.entity_id) {
+      toast({ title: '회수 불가', description: '이 결재는 회수를 지원하지 않습니다.', variant: 'destructive' });
+      return;
+    }
+    if (steps.some((s: any) => s.status === '승인' || s.status === '반려')) {
+      toast({ title: '회수 불가', description: '이미 처리된 결재 단계가 있어 회수할 수 없습니다.', variant: 'destructive' });
+      return;
+    }
+    if (!confirm('정말 이 결재를 회수하시겠습니까? 문서가 작성중 상태로 돌아갑니다.')) return;
+    const reason = prompt('회수 사유 (선택)') ?? '';
+    const { data, error } = await supabase.rpc('withdraw_approval', {
+      _entity_type: first.entity_type, _entity_id: first.entity_id, _reason: reason,
+    });
+    const r: any = data;
+    if (error || r?.error) {
+      const code = r?.error || error?.message || '';
+      const msg = code === 'ALREADY_DECIDED' ? '이미 승인/반려된 단계가 있어 회수할 수 없습니다.'
+        : code === 'NOT_SUBMITTER' ? '상신자 본인만 회수할 수 있습니다.'
+        : code === 'NO_APPROVAL' ? '결재 정보를 찾을 수 없습니다.'
+        : code;
+      toast({ title: '회수 실패', description: msg, variant: 'destructive' });
+      return;
+    }
+    toast({ title: '결재 회수 완료', description: '문서가 작성중 상태로 되돌아갔습니다.' });
+    fetchData(); fetchEntityPending();
+  };
+
   const fetchData = async () => {
     if (!selectedProject) { setLoading(false); return; }
     setLoading(true);
@@ -384,6 +413,22 @@ const Approvals = () => {
                         {run && <p className="text-xs text-muted-foreground">상태: {run.status}</p>}
                       </div>
                       <div className="flex items-center gap-2">
+                        {(() => {
+                          const arr = steps as any[];
+                          const first = arr[0];
+                          const canWithdraw = !!user && !isAllTab
+                            && first?.entity_type && first?.entity_id
+                            && arr.every(s => s.status === '진행중' || s.status === '대기')
+                            && arr.some(s => s.status === '진행중')
+                            // 상신자(=문서 작성자) 또는 마스터/프로젝트 관리자만 UI 노출
+                            && (isMaster || isProjectAdmin
+                                || arr.some(s => s.approver_id === user.id && s.step_order === 1));
+                          return canWithdraw ? (
+                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1 text-destructive" onClick={() => handleWithdraw(arr)}>
+                              <XCircle className="h-3 w-3" /> 회수
+                            </Button>
+                          ) : null;
+                        })()}
                         {run && (
                           <>
                             <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleDownloadRunPDF(runId)}>

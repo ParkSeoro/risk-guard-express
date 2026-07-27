@@ -86,13 +86,13 @@ const ScheduleUpload = () => {
 
       if (useAI && processes.length > 0) {
         // AI-first: generate per process using hybrid engine
-        const perProcess = Math.max(5, Math.ceil(targetCount / processes.length));
+        const detailLevel: 'core' | 'comprehensive' = targetCount <= 50 ? 'core' : 'comprehensive';
         const allItems: GeneratedRiskItem[] = [];
 
         for (const p of processes) {
           try {
             const result = await generateRiskItemsHybrid(
-              { processName: p.processName, targetCount: perProcess, projectId, deduplicate: true },
+              { processName: p.processName, detailLevel, projectId, deduplicate: true },
               (progress) => setAiProgress(progress),
             );
             allItems.push(...result.items);

@@ -2,7 +2,7 @@ import {
   LayoutDashboard, FolderKanban, ShieldAlert, Database, 
   FileCheck, HardHat, ChevronLeft, LogOut, User,
   Shield, SearchCheck, Settings,
-  FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
+  FileText, Scale, ListTodo, Bot, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
   ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, GitCompare, Trash2,
   Stethoscope, GraduationCap, HeartPulse, Map, Users, AlertOctagon, Siren, OctagonAlert, UserCheck, BarChart3, Megaphone,
   Building2, FolderOpen,
@@ -25,80 +25,80 @@ import { Button } from "@/components/ui/button";
 type Item = { title: string; url: string; icon: any; badgeKey?: 'approvals' };
 type Group = { label: string; key: string; items: Item[] };
 
+/**
+ * 사이드바 그룹 (1차 스프린트 재배치)
+ * 1) 핵심 — 전자결재 / 위험성평가 / 작업허가서 최상단 승격
+ * 2) 현장 · 위험/검증 · 점검/사고 · 사람 · 운영 · 보건 · 시스템
+ * 3) 법정 이행 해체 → 교육/산안비/운영으로 재배치
+ * 4) 현장 일기예보 메뉴 제거 (라우트는 유지, 대시보드 위젯 사용)
+ */
 const groups: Group[] = [
   {
-    label: "홈", key: "home",
+    label: "핵심", key: "priority",
     items: [
+      { title: "전자결재", url: "/approvals", icon: FileCheck, badgeKey: 'approvals' },
+      { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
+      { title: "작업허가서", url: "/work-permits", icon: FileSignature },
       { title: "대시보드", url: "/", icon: LayoutDashboard },
     ],
   },
   {
-    label: "현장 작업", key: "field",
+    label: "현장", key: "field",
     items: [
       { title: "작업계획서", url: "/work-plans", icon: FileText },
-      { title: "작업허가서", url: "/work-permits", icon: FileSignature },
       { title: "TBM 일지", url: "/tbm-logs", icon: QrCode },
       { title: "현장 적용 체크", url: "/site-readiness", icon: ClipboardList },
     ],
   },
   {
-    label: "위험관리", key: "risk",
+    label: "위험/검증", key: "risk",
     items: [
-      { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
       { title: "검증센터", url: "/verification-center", icon: SearchCheck },
       { title: "AI 어시스턴트", url: "/ai-assistant", icon: Bot },
+      { title: "위험성평가 공지", url: "/assessment-notices", icon: Megaphone },
     ],
   },
   {
-    label: "안전점검", key: "inspect",
+    label: "점검/사고", key: "inspect_incident",
     items: [
       { title: "안전점검", url: "/safety-inspections", icon: ClipboardCheck },
       { title: "감독 대응(점검모드)", url: "/inspection-mode", icon: SearchX },
-      { title: "교육자료", url: "/education-materials", icon: FileText },
-      { title: "공개 자료실", url: "/project-library", icon: FolderOpen },
-    ],
-  },
-  {
-    label: "사고·비상", key: "incident",
-    items: [
       { title: "사고 관리", url: "/incidents", icon: AlertOctagon },
       { title: "비상대피훈련", url: "/emergency-drills", icon: Siren },
       { title: "작업중지권", url: "/work-stop", icon: OctagonAlert },
     ],
   },
   {
-    label: "법정 이행", key: "legal_compliance",
-    items: [
-      { title: "안전보건교육 이수", url: "/worker-education", icon: GraduationCap },
-      { title: "안전관리자 선임", url: "/safety-appointments", icon: UserCheck },
-      { title: "협력사 안전성적표", url: "/contractor-scorecard", icon: BarChart3 },
-      { title: "위험성평가 공지", url: "/assessment-notices", icon: Megaphone },
-      { title: "산안비 검증", url: "/safety-cost-validation", icon: ShieldAlert },
-    ],
-  },
-  {
-    label: "근로자 관리", key: "workers",
+    label: "사람", key: "people",
     items: [
       { title: "근로자 명부", url: "/workers", icon: HardHat },
       { title: "입퇴장 현황", url: "/workers?tab=attendance", icon: ClipboardList },
       { title: "근로자별 일일 QR", url: "/workers?tab=daily-qr", icon: QrCode },
       { title: "시공사 게시판 QR", url: "/workers?tab=company-qr", icon: QrCode },
+      { title: "안전보건교육 이수", url: "/worker-education", icon: GraduationCap },
+      { title: "교육자료", url: "/education-materials", icon: FileText },
+      { title: "공개 자료실", url: "/project-library", icon: FolderOpen },
+      { title: "안전관리자 선임", url: "/safety-appointments", icon: UserCheck },
       { title: "현장 사이트맵/구역", url: "/site-maps", icon: Map },
       { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
-      { title: "근로자 분포 대시보드", url: "/worker-distribution", icon: Users },
-      { title: "위치 추적 상태 점검", url: "/admin/tracking-health", icon: Users },
+      { title: "근로자 분포", url: "/worker-distribution", icon: Users },
+      { title: "위치 추적 점검", url: "/admin/tracking-health", icon: Users },
     ],
   },
   {
-    label: "비용·법적", key: "ops_mgmt",
+    label: "운영", key: "ops",
     items: [
+      { title: "할 일", url: "/todo", icon: ListTodo },
+      { title: "프로젝트", url: "/projects", icon: FolderKanban },
       { title: "회사 관리", url: "/companies", icon: Building2 },
       { title: "산업안전보건관리비", url: "/safety-cost", icon: ReceiptText },
+      { title: "산안비 검증", url: "/safety-cost-validation", icon: ShieldAlert },
       { title: "법적업무", url: "/legal-duties", icon: Scale },
+      { title: "협력사 안전성적표", url: "/contractor-scorecard", icon: BarChart3 },
     ],
   },
   {
-    label: "보건관리", key: "health",
+    label: "보건", key: "health",
     items: [
       { title: "보건 대시보드", url: "/health", icon: HeartPulse },
       { title: "건강진단", url: "/health/checkups", icon: Stethoscope },
@@ -106,15 +106,6 @@ const groups: Group[] = [
       { title: "화학물질/MSDS", url: "/health/chemicals", icon: FlaskConical },
       { title: "보건교육", url: "/health/education", icon: GraduationCap },
       { title: "유해요인조사", url: "/health/hazard-surveys", icon: ClipboardList },
-    ],
-  },
-  {
-    label: "운영", key: "ops",
-    items: [
-      { title: "할 일", url: "/todo", icon: ListTodo },
-      { title: "전자결재", url: "/approvals", icon: FileCheck, badgeKey: 'approvals' },
-      { title: "프로젝트", url: "/projects", icon: FolderKanban },
-      { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
     ],
   },
 ];
@@ -128,9 +119,9 @@ const adminItems: Item[] = [
 ];
 
 const masterOnlyItems: Item[] = [
- { title: "일관성 감사", url: "/admin/consistency-audit", icon: GitCompare },
- { title: "데이터 정합성 (SSOT)", url: "/admin/data-audit", icon: Database },
- { title: "휴지통", url: "/admin/trash", icon: Trash2 },
+  { title: "일관성 감사", url: "/admin/consistency-audit", icon: GitCompare },
+  { title: "데이터 정합성 (SSOT)", url: "/admin/data-audit", icon: Database },
+  { title: "휴지통", url: "/admin/trash", icon: Trash2 },
   { title: "AI 테스트 엔진", url: "/admin/ai-test", icon: Beaker },
   { title: "AI 로그", url: "/admin/ai-logs", icon: Activity },
   { title: "시스템 테스트 엔진", url: "/admin/system-test", icon: FlaskConical },
@@ -153,15 +144,16 @@ export function AppSidebar() {
 
   const adminFinal = isMaster ? [...adminItems, ...masterOnlyItems] : adminItems;
 
-  // 협력사/근로자(Foolproof UI): 복잡한 통계·설정·비용·법적·시스템 메뉴 완전 숨김
-  const CONTRACTOR_GROUP_KEYS = new Set(['home', 'field', 'risk', 'incident', 'workers']);
+  // 협력사/근로자: 핵심·현장·위험/검증·점검/사고·사람만
+  const CONTRACTOR_GROUP_KEYS = new Set(['priority', 'field', 'risk', 'inspect_incident', 'people']);
   const CONTRACTOR_ALLOWED_URLS = new Set<string>([
-    '/', '/work-plans', '/work-permits', '/tbm-logs',
-    '/risk-assessment', '/ai-assistant',
+    '/', '/approvals',
+    '/work-plans', '/work-permits', '/tbm-logs',
+    '/risk-assessment', '/ai-assistant', '/verification-center',
     '/incidents', '/work-stop',
     '/workers', '/workers?tab=attendance',
-    '/project-library', '/education-materials',
-    '/approvals', '/profile', '/manual',
+    '/project-library', '/education-materials', '/worker-education',
+    '/profile', '/manual',
   ]);
   const visibleGroups = restrictToContractorUI
     ? groups
@@ -171,8 +163,17 @@ export function AppSidebar() {
     : groups;
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
-    try { return JSON.parse(localStorage.getItem('sidebar:groups') || '{"home":true,"field":true,"risk":true,"inspect":true,"ops_mgmt":true,"ops":true,"admin":false}'); }
-    catch { return { home: true, field: true, risk: true, inspect: true, ops_mgmt: true, ops: true, admin: false }; }
+    try {
+      return JSON.parse(
+        localStorage.getItem('sidebar:groups') ||
+          '{"priority":true,"field":true,"risk":true,"inspect_incident":true,"people":true,"ops":true,"health":true,"admin":false}',
+      );
+    } catch {
+      return {
+        priority: true, field: true, risk: true, inspect_incident: true,
+        people: true, ops: true, health: true, admin: false,
+      };
+    }
   });
   useEffect(() => {
     localStorage.setItem('sidebar:groups', JSON.stringify(openGroups));

@@ -52,9 +52,8 @@ export default function Chemicals() {
 
   const loadCompanies = async () => {
     if (!projectId) return;
-    const { data } = await supabase.from("companies")
-      .select("id,name").eq("project_id", projectId).eq("is_deleted", false).order("name");
-    setCompanies((data || []) as Company[]);
+    const rows = await (await import("@/lib/projectCompanies")).fetchProjectCompanies(projectId);
+    setCompanies(rows.map(c => ({ id: c.id, name: c.name })) as Company[]);
   };
 
   const loadChemicals = async () => {

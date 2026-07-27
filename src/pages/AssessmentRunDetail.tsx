@@ -229,23 +229,23 @@ const AssessmentRunDetail = () => {
     setLoading(true);
     const [runRes, itemsRes, partRes, profilesRes] = await Promise.all([
       supabase.from('assessment_runs').select('*').eq('id', runId).single(),
-      supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order'),
+      supabase.from('risk_items').select('*').eq('run_id', runId).eq('is_deleted', false).order('sort_order'),
       supabase.from('assessment_run_participants').select('*').eq('run_id', runId).order('created_at'),
       supabase.from('profiles').select('user_id, display_name, company, position'),
     ]);
     if (runRes.data) {
       setRun(runRes.data);
       const projectId = runRes.data.project_id;
-      const [projRes, companiesRes, deptAssigneeRes, poolRes, envTagsRes] = await Promise.all([
+      const { fetchProjectCompanies } = await import('@/lib/projectCompanies');
+      const [projRes, companies, deptAssigneeRes, poolRes, envTagsRes] = await Promise.all([
         supabase.from('projects').select('*').eq('id', projectId).single(),
-        supabase.from('companies').select('id, name, type').eq('project_id', projectId).eq('is_deleted', false),
+        fetchProjectCompanies(projectId),
         supabase.from('department_assignees').select('department_id, default_user_id').eq('project_id', projectId),
         supabase.from('project_assignee_pool' as any).select('source, source_id, user_id, display_name, position, company_id, company_name, department_id, department_name').eq('project_id', projectId),
         supabase.from('environment_tags' as any).select('id, name, category').or(`project_id.eq.${projectId},project_id.is.null`).order('sort_order'),
       ]);
       setProject(projRes.data);
-      const companies = (companiesRes.data || []) as any[];
-      setProjectCompanies(companies);
+      setProjectCompanies(companies as any[]);
       setEnvironmentTags((envTagsRes.data || []) as any);
       setDeptAssignees(deptAssigneeRes.data || []);
 
@@ -706,7 +706,7 @@ const AssessmentRunDetail = () => {
       await supabase.from('assessment_runs').update({ status: '검증중' }).eq('id', runId);
       setRun((prev: any) => ({ ...prev, status: '검증중' }));
       
-      const { data: freshItems } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+      const { data: freshItems } = await supabase.from('risk_items').select('*').eq('run_id', runId).eq('is_deleted', false).order('sort_order');
       const currentItems = (freshItems || items).filter((i: any) => !i.is_excluded);
       if (freshItems) setItems(freshItems);
 
@@ -911,7 +911,7 @@ const AssessmentRunDetail = () => {
       );
       const summaryText = buildRemediationSummaryText(selected);
       log('자동보완적용', 'assessment_run', runId!, run.project_id, { appliedCount, newItemCount });
-      const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+      const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).eq('is_deleted', false).order('sort_order');
       if (refreshed) setItems(refreshed);
       toast({ title: `${appliedCount}건 보완 적용 완료${newItemCount > 0 ? ` (신규 ${newItemCount}건)` : ''}` });
 
@@ -1007,7 +1007,7 @@ const AssessmentRunDetail = () => {
       }
 
       // Refresh data
-      const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+      const { data: refreshed } = await supabase.from('risk_items').select('*').eq('run_id', runId).eq('is_deleted', false).order('sort_order');
       if (refreshed) setItems(refreshed);
       setShowBatchApply(false);
       setSelectedRowIds(new Set());
@@ -1081,7 +1081,7 @@ const AssessmentRunDetail = () => {
       created_by: user.id, notes: `원본: ${run.period_label}`,
     }]).select().single();
     if (!newRun) { toast({ title: '생성 실패', variant: 'destructive' }); return; }
-    const { data: srcItems } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
+    const { data: srcItems } = await supabase.from('risk_items').select('*').eq('run_id', runId).eq('is_deleted', false).order('sort_order');
     if (srcItems && srcItems.length > 0) {
       const copies = srcItems.map(({ id, created_at, updated_at, risk, improved_risk, is_locked, submitted_at, submitted_by, version_number, batch_id, ...rest }) => ({
         ...rest, run_id: newRun.id, status: '미착수', is_locked: false, created_by: user.id,

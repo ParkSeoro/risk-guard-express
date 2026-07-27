@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Building2, X } from 'lucide-react';
+import { fetchProjectCompanies } from '@/lib/projectCompanies';
 
 interface Company { id: string; name: string; type?: string | null; }
 
@@ -28,12 +28,8 @@ export default function MultiCompanyFilter({ projectId, value, onChange, label =
     let cancelled = false;
     const load = async () => {
       if (!projectId) { setCompanies([]); return; }
-      const { data } = await supabase
-        .from('companies')
-        .select('id, name, type')
-        .eq('project_id', projectId)
-        .order('name');
-      if (!cancelled) setCompanies((data as Company[]) || []);
+      const rows = await fetchProjectCompanies(projectId);
+      if (!cancelled) setCompanies(rows.map(c => ({ id: c.id, name: c.name, type: c.type })));
     };
     load();
     return () => { cancelled = true; };

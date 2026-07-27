@@ -136,16 +136,12 @@ const UserManagement = () => {
     setProjects(data || []);
   };
 
-  const fetchProjectCompanies = async (projectId: string) => {
+  const loadProjectCompanies = async (projectId: string) => {
     if (!projectId) { setProjectCompanies([]); return; }
     try {
-      const { data, error } = await supabase.from('companies').select('id, name, type').eq('project_id', projectId).order('name');
-      if (error) {
-        console.warn('Failed to fetch companies:', error.message);
-        setProjectCompanies([]);
-      } else {
-        setProjectCompanies(data || []);
-      }
+      const { fetchProjectCompanies } = await import('@/lib/projectCompanies');
+      const rows = await fetchProjectCompanies(projectId);
+      setProjectCompanies(rows.map(c => ({ id: c.id, name: c.name, type: c.type })));
     } catch (err) {
       console.warn('Companies fetch error:', err);
       setProjectCompanies([]);
@@ -166,7 +162,7 @@ const UserManagement = () => {
   }, []);
 
   useEffect(() => {
-    if (assignProjectId) fetchProjectCompanies(assignProjectId);
+    if (assignProjectId) loadProjectCompanies(assignProjectId);
     else setProjectCompanies([]);
   }, [assignProjectId]);
 

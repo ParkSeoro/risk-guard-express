@@ -66,8 +66,9 @@ const WorkPlans = () => {
 
   const loadCompanies = async () => {
     if (!access.selectedProject) return;
-    const { data } = await supabase.from('companies').select('id, name, type').eq('project_id', access.selectedProject).order('name');
-    setCompanies(data || []);
+    const { fetchProjectCompanies } = await import('@/lib/projectCompanies');
+    const rows = await fetchProjectCompanies(access.selectedProject);
+    setCompanies(rows.map(c => ({ id: c.id, name: c.name, type: c.type })));
   };
 
   const loadPlans = async () => {

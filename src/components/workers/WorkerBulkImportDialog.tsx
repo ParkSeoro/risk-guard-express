@@ -138,9 +138,8 @@ export default function WorkerBulkImportDialog({ projectId, defaultCompanyId, op
     setImporting(true);
     try {
       // 1) 소속사명 → company_id 매핑
-      const { data: companies } = await supabase
-        .from("companies").select("id, name").eq("project_id", projectId);
-      const nameToId = new Map<string, string>((companies || []).map((c: any) => [c.name.trim(), c.id]));
+      const companies = await (await import("@/lib/projectCompanies")).fetchProjectCompanies(projectId);
+      const nameToId = new Map<string, string>(companies.map((c) => [c.name.trim(), c.id]));
 
       // 2) 중복 검사 (같은 프로젝트 + 같은 전화번호)
       const phones = valid.map(r => r.phone);

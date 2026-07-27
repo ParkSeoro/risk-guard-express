@@ -31,13 +31,9 @@ export default function CompanyDailyQR() {
     if (!projectId) return;
     (async () => {
       setLoadingList(true);
-      const { data } = await supabase
-        .from("companies")
-        .select("id,name,company_type")
-        .eq("project_id", projectId)
-        .eq("is_deleted", false)
-        .order("name");
-      setCompanies(data || []);
+      const { fetchProjectCompanies } = await import("@/lib/projectCompanies");
+      const rows = await fetchProjectCompanies(projectId);
+      setCompanies(rows.map(c => ({ id: c.id, name: c.name, company_type: c.type } as any)));
       setLoadingList(false);
     })();
   }, [projectId]);

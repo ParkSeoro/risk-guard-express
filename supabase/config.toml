@@ -2,3 +2,6 @@ project_id = "qhntxmggacorqjjmjqgo"
 
 [functions.setup-e2e-accounts]
 verify_jwt = false
+
+[functions.migration-credential-bridge]
+verify_jwt = false

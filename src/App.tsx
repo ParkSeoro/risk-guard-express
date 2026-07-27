@@ -106,6 +106,7 @@ import CompanyDetail from "./pages/CompanyDetail";
 import InstallPrompt from "./components/InstallPrompt";
 import MobileRedirectGuard from "./components/MobileRedirectGuard";
 import ContractorGate from "./components/ContractorGate";
+import RoleGuard from "./components/RoleGuard";
 import { useOfflineSync } from "./hooks/useOfflineSync";
 import NotFound from "./pages/NotFound";
 

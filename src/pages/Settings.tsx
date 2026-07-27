@@ -131,6 +131,9 @@ const Settings = () => {
           );
         })}
       </div>
+
+      {/* Master-only: E2E test account one-click setup. Rendered at the very bottom. */}
+      <E2ETestAccountsSetup />
     </div>
   );
 };

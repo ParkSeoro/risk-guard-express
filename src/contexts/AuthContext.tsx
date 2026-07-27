@@ -1,8 +1,12 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
+import {
+  assessRoleAccess,
+  type CanonicalProjectRole,
+} from '@/lib/legacyRoleMapping';
 
-type AppRole = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor' | 'contractor' | 'worker' | 'viewer' | 'user';
+type AppRole = CanonicalProjectRole;
 
 interface Profile {
   id: string;
@@ -18,6 +22,10 @@ interface AuthContextType {
   session: Session | null;
   profile: Profile | null;
   roles: AppRole[];
+  /** 매핑 불가 레거시 권한만 있을 때 true — 앱 접근 차단용 */
+  roleAccessBlocked: boolean;
+  roleAccessBlockReason: string | null;
+  unknownLegacyRoles: string[];
   loading: boolean;
   signOut: () => Promise<void>;
   hasRole: (role: AppRole) => boolean;
@@ -32,6 +40,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
+  const [roleAccessBlocked, setRoleAccessBlocked] = useState(false);
+  const [roleAccessBlockReason, setRoleAccessBlockReason] = useState<string | null>(null);
+  const [unknownLegacyRoles, setUnknownLegacyRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = async (userId: string) => {
@@ -41,15 +52,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .eq('user_id', userId)
       .single();
     if (data) setProfile(data as Profile);
-  };
-
-  const normalizeRole = (role: string | null | undefined): AppRole | null => {
-    if (!role) return null;
-    if (role === 'worker') return 'contractor';
-    if (['master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor', 'contractor', 'viewer', 'user'].includes(role)) {
-      return role as AppRole;
-    }
-    return null;
   };
 
   const fetchRoles = async (userId: string) => {
@@ -64,12 +66,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('user_id', userId),
     ]);
 
-    const combined = [
-      ...(systemRoles || []).map((r: any) => normalizeRole(r.role)),
-      ...(projectRoles || []).map((m: any) => normalizeRole(m.role_new)),
-    ].filter(Boolean) as AppRole[];
+    const raw = [
+      ...(systemRoles || []).map((r: any) => r.role as string),
+      ...(projectRoles || []).map((m: any) => m.role_new as string),
+    ];
 
-    setRoles(Array.from(new Set(combined)));
+    const assessment = assessRoleAccess(raw);
+    setRoles(assessment.normalizedRoles);
+    setUnknownLegacyRoles(assessment.unknownRaw);
+    setRoleAccessBlocked(assessment.blocked);
+    setRoleAccessBlockReason(assessment.blockReason);
+
+    const legacyHits = raw.filter((r) => {
+      const key = String(r || '').toLowerCase();
+      return key === 'contractor' || key === 'user';
+    });
+    if (legacyHits.length > 0) {
+      console.warn('[legacyRole] mapped legacy role aliases:', legacyHits);
+    }
+    if (assessment.unknownRaw.length > 0) {
+      console.error('[legacyRole] unmapped roles:', assessment.unknownRaw);
+    }
   };
 
   const refreshProfile = async () => {
@@ -81,8 +98,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const syncMasterAllowlist = async (userId: string) => {
     try {
       await supabase.rpc('ensure_master_allowlist', { _user_id: userId });
-    } catch (e) {
-      // non-critical – allowlist enforced server-side anyway
+    } catch {
+      // non-critical
     }
   };
 
@@ -92,7 +109,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          // Process invite code if stored in user metadata (post-email-verification)
           const inviteCode = session.user.user_metadata?.invite_code;
           if (inviteCode) {
             try {
@@ -100,9 +116,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 _user_id: session.user.id,
                 _invite_code: inviteCode,
               });
-              // Clear invite_code from metadata after processing
               await supabase.auth.updateUser({ data: { invite_code: null } });
-            } catch (e) {
+            } catch {
               // non-critical
             }
           }
@@ -114,6 +129,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           setProfile(null);
           setRoles([]);
+          setRoleAccessBlocked(false);
+          setRoleAccessBlockReason(null);
+          setUnknownLegacyRoles([]);
         }
         setLoading(false);
       }
@@ -139,13 +157,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
     setProfile(null);
     setRoles([]);
+    setRoleAccessBlocked(false);
+    setRoleAccessBlockReason(null);
+    setUnknownLegacyRoles([]);
   };
 
   const hasRole = (role: AppRole) => roles.includes(role);
-  const isAdmin = () => roles.includes('master') || roles.includes('project_admin') || roles.includes('safety_manager');
+  // worker←contractor 별칭 제거 후 정규화된 role 기준
+  const isAdmin = () =>
+    roles.includes('master') || roles.includes('project_admin') || roles.includes('safety_manager');
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, roles, loading, signOut, hasRole, isAdmin, refreshProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        session,
+        profile,
+        roles,
+        roleAccessBlocked,
+        roleAccessBlockReason,
+        unknownLegacyRoles,
+        loading,
+        signOut,
+        hasRole,
+        isAdmin,
+        refreshProfile,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

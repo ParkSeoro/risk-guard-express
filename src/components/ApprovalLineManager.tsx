@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, ArrowUp, ArrowDown, RefreshCw, Users, Save } from 'lucide-react';
+import { FIXED_APPROVAL_STEPS, POSITION_LABELS as APPROVAL_POSITION_LABELS } from '@/lib/approvalRules';
+import { mapLegacyApprovalPosition } from '@/lib/legacyRoleMapping';
 
 interface ApprovalLine {
   id?: string;
@@ -44,15 +46,8 @@ interface Props {
 }
 
 const POSITION_LABELS: Record<string, string> = {
-  // legacy project_role values stored in approval_lines.position
-  supervisor: '관리감독자',
-  safety_manager: '안전관리자',
-  site_manager: '현장대리인',
-  project_admin: '프로젝트 관리자',
-  worker: '작업자',
-  viewer: '열람자',
-  cooperator: '협조',
-  // new project_position enum (project_members.position_new)
+  ...APPROVAL_POSITION_LABELS,
+  // project_position enum labels
   CEO: '대표이사',
   EXECUTIVE: '임원',
   SITE_MANAGER: '현장소장',
@@ -64,13 +59,13 @@ const POSITION_LABELS: Record<string, string> = {
   OWNER_PM: '발주처PM',
   OWNER_HSE: '발주처안전',
   SUPERVISOR: '감리원',
+  worker: '작업자',
+  viewer: '열람자',
 };
 
+/** 최신 5단계 SSOT — 레거시 supervisor/safety_manager 템플릿 폐기 */
 const STEP_TEMPLATES = [
-  { step_label: '작성', position: 'supervisor' },
-  { step_label: '안전관리자 검토', position: 'safety_manager' },
-  { step_label: '현장대리인 확인', position: 'site_manager' },
-  { step_label: '최종승인', position: 'project_admin' },
+  ...FIXED_APPROVAL_STEPS.map((s) => ({ step_label: s.label, position: s.position })),
   { step_label: '협조', position: 'cooperator' },
 ];
 
@@ -99,16 +94,28 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
       .eq('project_id', projectId)
       .order('step_order');
     if (data && data.length > 0) {
-      setLines(data as ApprovalLine[]);
+      // 레거시 position 키를 SSOT 키로 정규화 (저장 전 미리보기)
+      const normalized = (data as ApprovalLine[]).map((line) => {
+        const co = companies.find((c) => c.id === line.company_id);
+        const mapped = mapLegacyApprovalPosition(line.position, (co?.type as any) || null);
+        return mapped && mapped !== line.position ? { ...line, position: mapped } : line;
+      });
+      setLines(normalized);
     } else {
-      // No lines saved yet — don't auto-generate, leave empty
       setLines([]);
     }
     setLoading(false);
-  }, [projectId]);
+  }, [projectId, companies]);
 
   useEffect(() => { fetchLines(); }, [fetchLines]);
   useEffect(() => { onLinesChanged?.(lines); }, [lines]);
+
+  const companyTypeOf = (companyId: string | null | undefined) => {
+    const co = companies.find((c) => c.id === companyId);
+    return (co?.type || '').toLowerCase();
+  };
+
+  const posOf = (m: ProjectMember) => (m.position || '').toUpperCase();
 
   const autoGenerate = () => {
     if (!user) return;
@@ -116,54 +123,75 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
     const authorCompanyId = currentMember?.company_id || null;
     const newLines: ApprovalLine[] = [];
 
-    // Step 1: 작성자 (current user)
-    newLines.push({
-      project_id: projectId, step_order: 0, step_label: '작성',
-      position: 'supervisor', company_id: authorCompanyId,
-      user_id: user.id, user_name: currentMember?.display_name || '',
-      company_name: currentMember?.company || '',
-    });
+    const pick = (
+      pred: (m: ProjectMember) => boolean,
+      preferCompanyId?: string | null,
+    ): ProjectMember | undefined => {
+      if (preferCompanyId) {
+        const same = projectMembers.find((m) => pred(m) && m.company_id === preferCompanyId);
+        if (same) return same;
+      }
+      return projectMembers.find(pred);
+    };
 
-    // Step 2: 안전관리자 — same company first, then any
-    const safetyMgr = projectMembers.find(m =>
-      m.position === 'safety_manager' && (authorCompanyId ? m.company_id === authorCompanyId : true)
-    ) || projectMembers.find(m => m.position === 'safety_manager');
-    if (safetyMgr) {
-      newLines.push({
-        project_id: projectId, step_order: 1, step_label: '안전관리자 검토',
-        position: 'safety_manager', company_id: safetyMgr.company_id || null,
-        user_id: safetyMgr.user_id, user_name: safetyMgr.display_name,
-        company_name: safetyMgr.company || '',
-      });
-    }
+    for (let i = 0; i < FIXED_APPROVAL_STEPS.length; i++) {
+      const step = FIXED_APPROVAL_STEPS[i];
+      let member: ProjectMember | undefined;
 
-    // Step 3: 현장대리인 — same company first, then any
-    const siteMgr = projectMembers.find(m =>
-      m.position === 'site_manager' && (authorCompanyId ? m.company_id === authorCompanyId : true)
-    ) || projectMembers.find(m => m.position === 'site_manager');
-    if (siteMgr) {
-      newLines.push({
-        project_id: projectId, step_order: 2, step_label: '현장대리인 확인',
-        position: 'site_manager', company_id: siteMgr.company_id || null,
-        user_id: siteMgr.user_id, user_name: siteMgr.display_name,
-        company_name: siteMgr.company || '',
-      });
-    }
+      switch (step.position) {
+        case 'contractor_supervisor':
+          member = i === 0 && currentMember
+            ? currentMember
+            : pick(
+              (m) => ['SUPERVISOR', 'FOREMAN', 'FIELD_ENGINEER', 'CONSTRUCTION_MGR'].includes(posOf(m))
+                && ['contractor', 'vendor'].includes(companyTypeOf(m.company_id)),
+              authorCompanyId,
+            );
+          break;
+        case 'contractor_safety_manager':
+          member = pick(
+            (m) => posOf(m) === 'HSE_MANAGER' && ['contractor', 'vendor'].includes(companyTypeOf(m.company_id)),
+            authorCompanyId,
+          );
+          break;
+        case 'contractor_site_director':
+          member = pick(
+            (m) => ['SITE_MANAGER', 'CEO', 'EXECUTIVE'].includes(posOf(m))
+              && ['contractor', 'vendor'].includes(companyTypeOf(m.company_id)),
+            authorCompanyId,
+          );
+          break;
+        case 'owner_cm':
+          member = pick(
+            (m) => ['OWNER_PM', 'CONSTRUCTION_MGR', 'SITE_MANAGER'].includes(posOf(m))
+              && ['client', 'gc'].includes(companyTypeOf(m.company_id)),
+          );
+          break;
+        case 'owner_sm':
+          member = pick(
+            (m) => ['OWNER_HSE', 'HSE_MANAGER'].includes(posOf(m))
+              && ['client', 'gc'].includes(companyTypeOf(m.company_id)),
+          );
+          break;
+        default:
+          break;
+      }
 
-    // Step 4: 최종승인 — project_admin/master
-    const adminMember = projectMembers.find(m => m.role === 'project_admin' || m.role === 'master');
-    if (adminMember) {
       newLines.push({
-        project_id: projectId, step_order: 3, step_label: '최종승인',
-        position: 'project_admin', company_id: adminMember.company_id || null,
-        user_id: adminMember.user_id, user_name: adminMember.display_name,
-        company_name: adminMember.company || '',
+        project_id: projectId,
+        step_order: i,
+        step_label: step.label,
+        position: step.position,
+        company_id: member?.company_id || null,
+        user_id: member?.user_id || null,
+        user_name: member?.display_name || '',
+        company_name: member?.company || '',
       });
     }
 
     setLines(newLines);
     setDirty(true);
-    toast({ title: `결재라인 ${newLines.length}단계 자동 생성` });
+    toast({ title: `결재라인 ${newLines.length}단계 자동 생성 (SSOT)` });
   };
 
   const handleSave = async () => {

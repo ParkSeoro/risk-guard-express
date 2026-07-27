@@ -281,8 +281,18 @@ export default function SubmitApprovalDialog({
                         </SelectTrigger>
                         <SelectContent>
                           {filtered.length === 0 && (
-                            <div className="px-3 py-2 text-xs text-muted-foreground">
-                              해당 직책({POSITION_LABELS[s.position] || s.position || '-'})의 결재자가 없습니다
+                            <div className="px-3 py-2 text-xs text-destructive">
+                              해당 직책({POSITION_LABELS[s.position] || s.position || '-'})의 결재자가 없습니다.
+                              {![
+                                'contractor_supervisor',
+                                'contractor_safety_manager',
+                                'contractor_site_director',
+                                'owner_cm',
+                                'owner_sm',
+                                'cooperator',
+                              ].includes(String(s.position || '').toLowerCase()) && (
+                                <> 레거시 결재 직책키는 차단됩니다. 고정 5단계 결재선을 사용하세요.</>
+                              )}
                             </div>
                           )}
                           {filtered.map((a) => (

@@ -15,6 +15,8 @@
  *      position = cooperator (또는 회사 정책에 맞춰 세분화)
  */
 
+import { mapLegacyApprovalPosition } from '@/lib/legacyRoleMapping';
+
 export type ApprovalEntityType =
   | 'assessment_run'
   | 'work_plan'
@@ -136,7 +138,25 @@ export function filterApproversForStep(
   approvers: EligibleApprover[],
   stepPosition: string,
 ): EligibleApprover[] {
-  const key = (stepPosition || '').toLowerCase();
+  // 레거시 결재 position → SSOT 키. 매핑 불가면 빈 배열 (전체 노출 금지)
+  const mapped = mapLegacyApprovalPosition(stepPosition) ?? (stepPosition || '').toLowerCase();
+  const key = mapped.toLowerCase();
+
+  const FIXED = new Set([
+    'contractor_supervisor',
+    'contractor_safety_manager',
+    'contractor_site_director',
+    'owner_cm',
+    'owner_sm',
+    'cooperator',
+  ]);
+
+  // 알 수 없는/미매핑 레거시 키 → 결재선 오염 방지 (safety_manager 전체 노출 버그 차단)
+  if (!FIXED.has(key)) {
+    console.warn('[approvalRules] unknown step position blocked:', stepPosition);
+    return [];
+  }
+
   return approvers.filter((a) => {
     const t = (a.out_company_type || '').toLowerCase();
     const p = POS(a.out_position);
@@ -156,8 +176,7 @@ export function filterApproversForStep(
       case 'cooperator':
         return true;
       default:
-        // 알려지지 않은 position → 전체 노출 (수동 지정 가능)
-        return true;
+        return false;
     }
   });
 }

@@ -113,7 +113,7 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 function ProtectedRoutes() {
-  const { user, loading, profile, hasRole } = useAuth();
+  const { user, loading, profile, hasRole, roleAccessBlocked, roleAccessBlockReason, unknownLegacyRoles, signOut } = useAuth();
   const isMaster = hasRole('master');
   const [hasProject, setHasProject] = useState<boolean | null>(null);
 
@@ -131,6 +131,29 @@ function ProtectedRoutes() {
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">로딩 중...</div>;
   if (!user) return <Navigate to="/landing" replace />;
+
+  // 레거시 권한만 있고 최신 체계로 매핑 불가 → 결재선 오염 방지 위해 접근 차단
+  if (roleAccessBlocked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center space-y-4 max-w-md">
+          <h2 className="text-xl font-bold text-destructive">권한 없음 (레거시 권한)</h2>
+          <p className="text-sm text-muted-foreground">
+            {roleAccessBlockReason || '계정 권한이 최신 체계와 맞지 않아 접근이 차단되었습니다.'}
+          </p>
+          {unknownLegacyRoles.length > 0 && (
+            <p className="text-xs font-mono text-muted-foreground break-all">
+              raw: {unknownLegacyRoles.join(', ')}
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            관리자에게 프로젝트 멤버 권한(role_new / position_new) 재설정을 요청한 뒤 다시 로그인해 주세요.
+          </p>
+          <button onClick={() => signOut()} className="text-sm text-accent hover:underline">로그아웃</button>
+        </div>
+      </div>
+    );
+  }
 
   if (profile && (profile as any).account_status === 'pending') {
     return (

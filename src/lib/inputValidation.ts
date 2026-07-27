@@ -7,7 +7,18 @@ const MAX_LONG_TEXT = 2000;
 
 // Legacy app_role enum values (still accepted during the transition).
 // New project_role/global_role enums are validated separately below.
-const VALID_ROLES = ['master', 'project_admin', 'safety_manager', 'contractor', 'viewer', 'user'] as const;
+const VALID_ROLES = [
+  'master',
+  'project_admin',
+  'safety_manager',
+  'site_manager',
+  'supervisor',
+  'worker',
+  'viewer',
+  // legacy aliases (accepted then mapped by legacyRoleMapping)
+  'contractor',
+  'user',
+] as const;
 
 // New project-scoped role (6 tiers)
 export const VALID_PROJECT_ROLES = [

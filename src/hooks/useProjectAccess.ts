@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { normalizeProjectRole } from '@/lib/legacyRoleMapping';
 
 /**
  * Project-scoped role (new model).
@@ -106,20 +107,16 @@ const PERMISSION_MATRIX: Record<ProjectRole, Record<FeatureKey, Perm>> = {
 
 /** Map any legacy role string to a canonical ProjectRole. */
 function normalizeRole(input: string | null | undefined): ProjectRole {
-  switch ((input || '').toLowerCase()) {
-    case 'master': return 'master';
-    case 'project_admin': return 'project_admin';
-    case 'safety_manager': return 'safety_manager';
-    case 'site_manager': return 'site_manager';
-    case 'supervisor': return 'supervisor';
-    case 'worker':
-    case 'contractor': // legacy
-    case 'user':       // legacy
-      return 'worker';
-    case 'viewer':
-    default:
-      return 'viewer';
+  const r = normalizeProjectRole(input);
+  if (r.ok) {
+    return r.role === 'master' ? 'master' : r.role;
   }
+  // 알 수 없는 레거시 → viewer 로 조용히 승격하지 않음.
+  // 호출부에서 멤버십이 있으면 최소 viewer, 단 콘솔에 남김.
+  if (r.reason === 'unknown') {
+    console.error('[legacyRole] unmapped project role_new:', r.raw);
+  }
+  return 'viewer';
 }
 
 export interface ProjectAccess {

@@ -231,9 +231,9 @@
     print-color-adjust: exact;
   }
   
-  /* Force A4 landscape */
+  /* Default A4; pages that need landscape set @page in their own print window/styles */
   @page {
-    size: A4 landscape;
+    size: A4;
     margin: 12mm;
   }
   

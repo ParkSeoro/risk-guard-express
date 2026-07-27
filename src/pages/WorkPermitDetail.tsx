@@ -47,44 +47,117 @@ function pickStandardStyleHolder(list: any[], permitType: PermitType) {
   );
 }
 
-// approvals.position → DigPermitForm 서명 키 매핑 (회사가 합의한 5단계 결재선)
-const POSITION_TO_SIG: Record<string, keyof PermitSignatures> = {
-  contractor_pic: 'contractor_pic',
-  cm: 'cm',
-  safety_pic: 'safety_pic',
-  sm: 'sm',
-  site_director: 'site_director',
-  site_supervisor: 'site_supervisor',
-  // 협조(cooperator)는 별도 서명칸 없음 — 표시는 결재선 화면에서 처리
-};
-
-// approval_lines.role / position 문자열의 다양한 별칭을 SF003 서명 슬롯 키로 매핑
+// approvals.position / step 라벨 → DigPermitForm 서명 키
+// SSOT(approvalRules) + 레거시 키 모두 수용
 const ROLE_ALIAS_TO_SIG: Record<string, keyof PermitSignatures> = {
-  // 시공 담당자
+  // SSOT 5단계
+  contractor_supervisor: 'contractor_pic',
+  contractor_safety_manager: 'safety_pic',
+  contractor_site_director: 'site_director',
+  owner_cm: 'cm',
+  owner_sm: 'sm',
+  // 레거시 / 별칭
   contractor_pic: 'contractor_pic', applicant: 'contractor_pic', requester: 'contractor_pic',
   '담당자(시공)': 'contractor_pic', '시공담당': 'contractor_pic', '시공': 'contractor_pic',
-  // CM
-  cm: 'cm', construction_manager: 'cm', '담당자(CM)': 'cm', 'CM': 'cm',
-  // 안전 담당자
+  '협력사 관리감독자': 'contractor_pic', '관리감독자': 'contractor_pic',
+  cm: 'cm', construction_manager: 'cm', '담당자(CM)': 'cm', CM: 'cm',
+  '발주처 CM': 'cm', '공사관리': 'cm',
   safety_pic: 'safety_pic', safety_manager: 'safety_pic', safety: 'safety_pic',
   '담당자(안전)': 'safety_pic', '안전담당': 'safety_pic', '안전관리자': 'safety_pic',
-  // SM
-  sm: 'sm', safety_management: 'sm', '담당자(SM)': 'sm', 'SM': 'sm',
-  // 소장
+  '협력사 안전관리자': 'safety_pic',
+  sm: 'sm', safety_management: 'sm', '담당자(SM)': 'sm', SM: 'sm',
+  '발주처 SM': 'sm',
   site_director: 'site_director', site_manager: 'site_director', director: 'site_director',
   '책임자(소장)': 'site_director', '소장': 'site_director', '현장소장': 'site_director',
-  // 현장감독자
+  '협력사 현장소장': 'site_director',
   site_supervisor: 'site_supervisor', supervisor: 'site_supervisor', '현장감독자': 'site_supervisor',
 };
 
-function resolveSigKey(role?: string | null, position?: string | null): keyof PermitSignatures | null {
-  const keys = [role, position].filter(Boolean) as string[];
-  for (const k of keys) {
+function resolveSigKey(...hints: Array<string | null | undefined>): keyof PermitSignatures | null {
+  for (const k of hints) {
+    if (!k) continue;
     if (ROLE_ALIAS_TO_SIG[k]) return ROLE_ALIAS_TO_SIG[k];
     const lower = k.toLowerCase();
     if (ROLE_ALIAS_TO_SIG[lower]) return ROLE_ALIAS_TO_SIG[lower];
   }
   return null;
+}
+
+/** Asia/Seoul 기준 YYYY-MM-DD (UTC slice 오차 방지) */
+function todayKst(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+type ApprovedStep = {
+  position?: string | null;
+  step?: string | null;
+  step_order?: number | null;
+  approver_name?: string | null;
+  status: string;
+  approved_at?: string | null;
+};
+
+/** 전자결재 approvals 행 → 양식 서명칸 / 오버레이 결재자 */
+function mergeApprovalsIntoSignatures(
+  base: PermitSignatures,
+  steps: ApprovedStep[],
+): { signatures: PermitSignatures; approvedSigners: Array<{
+  role: string;
+  name: string;
+  position: string;
+  signatureImage: string;
+  approvedAt: string;
+  status: 'approved' | 'pending' | 'rejected';
+}> } {
+  const merged: PermitSignatures = { ...base };
+  const approvedSigners: Array<{
+    role: string;
+    name: string;
+    position: string;
+    signatureImage: string;
+    approvedAt: string;
+    status: 'approved' | 'pending' | 'rejected';
+  }> = [];
+  let lastApproved: string | undefined;
+
+  for (const a of steps) {
+    const done = a.status === '승인' || a.status === 'approved';
+    const sigKey = resolveSigKey(a.position, a.step);
+    const role = sigKey || a.position || a.step || `step_${a.step_order ?? approvedSigners.length + 1}`;
+    const existing = sigKey ? (merged as any)[sigKey] : null;
+
+    approvedSigners.push({
+      role: String(role),
+      name: a.approver_name || existing?.name || '',
+      position: a.position || a.step || '',
+      signatureImage: existing?.signature || '',
+      approvedAt: a.approved_at || existing?.signed_at || '',
+      status: done ? 'approved' : a.status === '반려' || a.status === 'rejected' ? 'rejected' : 'pending',
+    });
+
+    if (!done || !sigKey) continue;
+    if (!existing?.signature) {
+      (merged as any)[sigKey] = {
+        name: a.approver_name || existing?.name || '',
+        signature: existing?.signature || '',
+        signed_at: a.approved_at || existing?.signed_at || '',
+      };
+    } else if (!existing.name && a.approver_name) {
+      (merged as any)[sigKey] = { ...existing, name: a.approver_name, signed_at: a.approved_at || existing.signed_at };
+    }
+    if (a.approved_at) lastApproved = a.approved_at;
+  }
+
+  if (lastApproved) {
+    merged.approved_at = lastApproved;
+    merged.reviewed_at = new Date(new Date(lastApproved).getTime() - 86400000).toISOString();
+  }
+  return { signatures: merged, approvedSigners };
 }
 
 function toDbTimestamp(value?: string | null) {
@@ -165,68 +238,15 @@ export default function WorkPermitDetail() {
       setLinkedRuns(runs || []);
     }
 
-    // approvals → 서명/시간 자동 매핑 (레거시 position 기반)
+    // 전자결재 approvals → 서명칸/승인일 자동 매핑 (entity_type/entity_id SSOT)
     const { data: aps } = await supabase
       .from('approvals')
-      .select('position, approver_name, status, approved_at, comment')
+      .select('position, step, step_order, approver_name, status, approved_at')
       .eq('entity_type', 'work_permit')
       .eq('entity_id', id)
-      .eq('status', '승인')
+      .in('status', ['승인', 'approved'])
       .order('step_order', { ascending: true });
-    const merged: PermitSignatures = { ...baseSig };
-    let lastApproved: string | undefined;
-    (aps || []).forEach((a: any) => {
-      const sigKey = POSITION_TO_SIG[a.position as string];
-      if (!sigKey) return;
-      const existing = (merged as any)[sigKey];
-      if (!existing?.signature) {
-        (merged as any)[sigKey] = {
-          name: a.approver_name || '',
-          signature: '',
-          signed_at: a.approved_at || '',
-        };
-      }
-      if (a.approved_at) lastApproved = a.approved_at;
-    });
-
-    // 신규 approval_lines(role 기반) → signature_role 키로 오버레이 미리보기 자동 표시
-    try {
-      const { data: appr } = await (supabase as any)
-        .from('approvals')
-        .select('id')
-        .eq('target_type', 'work_permit')
-        .eq('target_id', id)
-        .order('created_at', { ascending: false })
-        .limit(1);
-      const apprId = appr?.[0]?.id;
-      if (apprId) {
-        const { data: steps } = await (supabase as any)
-          .from('approval_lines')
-          .select('role, approver_name, approver_position, signature_image, status, approved_at')
-          .eq('approval_id', apprId)
-          .order('step_order', { ascending: true });
-        (steps || []).forEach((s: any) => {
-          const sigKey = resolveSigKey(s.role, s.approver_position);
-          if (!sigKey || s.status !== 'approved') return;
-          const existing = (merged as any)[sigKey];
-          if (!existing?.signature) {
-            (merged as any)[sigKey] = {
-              name: s.approver_name || existing?.name || '',
-              position: s.approver_position || '',
-              signature: s.signature_image || existing?.signature || '',
-              signed_at: s.approved_at || existing?.signed_at || '',
-            };
-          }
-          if (s.approved_at && (!lastApproved || s.approved_at > lastApproved)) lastApproved = s.approved_at;
-        });
-      }
-    } catch (e) { console.warn('approval_lines merge failed', e); }
-
-    if (lastApproved) {
-      merged.approved_at = lastApproved;
-      // 검토일 = 승인일 하루 전 (사용자 요구사항)
-      merged.reviewed_at = new Date(new Date(lastApproved).getTime() - 86400000).toISOString();
-    }
+    const { signatures: merged } = mergeApprovalsIntoSignatures(baseSig, (aps || []) as ApprovedStep[]);
     setSignatures(merged);
 
 
@@ -327,35 +347,51 @@ export default function WorkPermitDetail() {
     toast({ title: '허가서가 저장되었습니다.' });
   };
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKst();
   const isToday = permit?.permit_date === today;
   const isApproved = permit?.status === '승인' || permit?.status === '승인완료' || permit?.status === 'approved';
   const isExpired = permit?.valid_until ? new Date(permit.valid_until).getTime() < Date.now() : false;
-  const canPrint = isApproved && isToday && !isExpired;
+  // 최종 승인 완료 후 PDF 저장/인쇄 가능 (허가일=오늘 강제 제거 — 아카이브·증빙용)
+  const canPrint = isApproved && !isExpired;
 
   const print = async () => {
     if (!canPrint) {
       toast({
         title: '인쇄 불가',
-        description: !isApproved ? '결재 승인 후 인쇄할 수 있습니다.' :
-                    !isToday ? '허가일자와 오늘 날짜가 일치해야 인쇄할 수 있습니다.' :
-                    '유효기간이 종료되었습니다.',
+        description: !isApproved
+          ? '결재 승인 후 인쇄할 수 있습니다.'
+          : '유효기간이 종료되었습니다.',
         variant: 'destructive',
       });
       return;
     }
     document.title = `안전작업허가서_${permit?.work_description || permit?.id || ''}`;
-    // 폰트 로딩 보장 (한글 깨짐 방지)
     try {
       await (document as any).fonts?.load?.('16px "Noto Sans KR"');
       await (document as any).fonts?.ready;
-    } catch {}
-    // 1) 사용자가 원본 PDF 오버레이 양식을 명시 선택한 경우에만 PDF 오버레이 출력.
-    // 표준 SF003 선택 시에는 화면의 표준양식 스타일 그대로 브라우저 인쇄한다.
+    } catch { /* ignore */ }
+
+    // 결재 완료 스텝 → 오버레이 도장/성명용
+    let approvedSigners: ReturnType<typeof mergeApprovalsIntoSignatures>['approvedSigners'] = [];
+    let printSignatures = signatures;
+    try {
+      const { data: aps } = await supabase
+        .from('approvals')
+        .select('position, step, step_order, approver_name, status, approved_at')
+        .eq('entity_type', 'work_permit')
+        .eq('entity_id', permit.id)
+        .order('step_order', { ascending: true });
+      const merged = mergeApprovalsIntoSignatures(signatures, (aps || []) as ApprovedStep[]);
+      approvedSigners = merged.approvedSigners;
+      printSignatures = merged.signatures;
+      setSignatures(merged.signatures);
+    } catch (e) {
+      console.warn('approval fetch for print failed', e);
+    }
+
     try {
       let tpl: any = template && template.original_pdf_url ? template : null;
       if (tpl) {
-        // template state에 signature_slots가 없을 수 있으니 재조회
         const { data: full } = await supabase
           .from('permit_form_templates')
           .select('signature_slots')
@@ -368,39 +404,11 @@ export default function WorkPermitDetail() {
         const { data: signed } = await supabase.storage.from('permit-form-assets').createSignedUrl(path, 600);
         if (signed?.signedUrl) {
           const sigMap: Record<string, { signature?: string; name?: string }> = {};
-          Object.entries(signatures || {}).forEach(([role, val]: [string, any]) => {
-            if (val && typeof val === 'object') sigMap[role] = { signature: val.signature, name: val.name };
-          });
-
-          // 결재라인 → approvedSigners 로 자동 매핑
-          const approvedSigners: any[] = [];
-          try {
-            const { data: appr } = await (supabase as any)
-              .from('approvals')
-              .select('id, status')
-              .eq('target_type', 'work_permit')
-              .eq('target_id', permit.id)
-              .order('created_at', { ascending: false })
-              .limit(1);
-            const apprId = appr?.[0]?.id;
-            if (apprId) {
-              const { data: steps } = await (supabase as any)
-                .from('approval_lines')
-                .select('step_order, role, approver_name, approver_position, signature_image, status, approved_at')
-                .eq('approval_id', apprId)
-                .order('step_order', { ascending: true });
-              (steps || []).forEach((s: any, idx: number) => {
-                approvedSigners.push({
-                  role: s.role || `step_${idx + 1}`,
-                  name: s.approver_name || '',
-                  position: s.approver_position || '',
-                  signatureImage: s.signature_image || '',
-                  approvedAt: s.approved_at || '',
-                  status: s.status === 'approved' ? 'approved' : s.status === 'rejected' ? 'rejected' : 'pending',
-                });
-              });
+          Object.entries(printSignatures || {}).forEach(([role, val]: [string, any]) => {
+            if (val && typeof val === 'object' && (val.signature || val.name)) {
+              sigMap[role] = { signature: val.signature, name: val.name };
             }
-          } catch (e) { console.warn('approval line fetch failed', e); }
+          });
 
           await printOverlay({
             pdfUrl: signed.signedUrl,
@@ -417,7 +425,8 @@ export default function WorkPermitDetail() {
     } catch (e) {
       console.warn('overlay print fallback', e);
     }
-    // 2) 폴백: 기존 브라우저 인쇄
+    // 표준 SF003: 브라우저 인쇄 → PDF로 저장 (결재 성명·일자가 폼에 반영된 뒤)
+    await new Promise((r) => setTimeout(r, 50));
     window.print();
   };
 
@@ -441,9 +450,17 @@ export default function WorkPermitDetail() {
             size="sm"
             onClick={print}
             disabled={!canPrint}
-            title={!isApproved ? '결재 승인 후 인쇄 가능' : !isToday ? '오늘 날짜 허가서만 인쇄 가능' : isExpired ? '유효기간 종료' : ''}
+            title={
+              !isApproved
+                ? '결재 승인 후 인쇄 가능'
+                : isExpired
+                ? '유효기간 종료'
+                : !isToday
+                ? '허가일과 오늘이 다릅니다(증빙용 인쇄는 가능)'
+                : '인쇄 / PDF로 저장'
+            }
           >
-            <Printer className="h-4 w-4 mr-1" />{canPrint ? '인쇄 / 작업시작' : '인쇄 불가'}
+            <Printer className="h-4 w-4 mr-1" />{canPrint ? '인쇄 / PDF 저장' : '인쇄 불가'}
           </Button>
         </div>
       </div>
@@ -512,6 +529,8 @@ export default function WorkPermitDetail() {
               standardLabels={standardLabels}
               onChange={(d) => setData(d)}
               onSign={(k, v) => setSignatures({ ...signatures, [k]: v })}
+              readOnly={isApproved}
+              printMode={isApproved}
             />
           </StandardPermitSheet>
         )}

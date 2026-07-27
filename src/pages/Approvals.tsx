@@ -461,6 +461,15 @@ const Approvals = () => {
                             </Button>
                           </>
                         )}
+                        {!run && (() => {
+                          const first = (steps as any[])[0];
+                          const href = ENTITY_LINK(first?.entity_type, first?.entity_id);
+                          return href ? (
+                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate(href)}>
+                              <ExternalLink className="h-3 w-3" /> 문서 보기
+                            </Button>
+                          ) : null;
+                        })()}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">

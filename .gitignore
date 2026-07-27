@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Env secrets (keep tracked .env only if historically committed; prefer .env.local)
+.env.local
+.env.*.local
+.env.lovable.backup
+.env.own
+.env.e2e
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

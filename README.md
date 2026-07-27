@@ -71,3 +71,12 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Own Supabase (Lovable Cloud 유지)
+
+현재 운영 DB/Storage는 Lovable Cloud (`iqtiozscqwuacgzrlfzu`) 입니다. 대시보드에 안 보이는 것이 정상입니다.
+
+내 계정 Supabase로 이전하려면 (Lovable는 백업으로 유지):
+
+→ [`docs/migrate-own-supabase.md`](docs/migrate-own-supabase.md)
+

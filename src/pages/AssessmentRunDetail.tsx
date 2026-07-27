@@ -776,6 +776,19 @@ const AssessmentRunDetail = () => {
       return;
     }
 
+    // SSOT 방어: 레거시 결재 키(safety_manager 등) 상신 차단
+    const { validateApprovalLinesSSOT } = await import('@/lib/approvalRules');
+    const ssot = validateApprovalLinesSSOT(linesToUse as any);
+    if (!ssot.ok) {
+      toast({
+        title: '레거시 결재선입니다.',
+        description: `구형 단계 키(${Array.from(new Set(ssot.invalid)).join(', ')})가 감지되었습니다. [자동 생성]으로 새 5단계 결재선을 만든 뒤 [저장]하고 다시 상신하세요.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+
     // Unified approval engine: pass approver steps only (skip author at index 0)
     const approverSteps = linesToUse.slice(1).map((line: any) => ({
       label: line.step_label,

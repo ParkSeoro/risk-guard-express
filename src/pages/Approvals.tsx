@@ -396,9 +396,6 @@ const Approvals = () => {
               return mineCount > 0 ? <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">{mineCount}</Badge> : null;
             })()}
           </TabsTrigger>
-              return mineCount > 0 ? <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">{mineCount}</Badge> : null;
-            })()}
-          </TabsTrigger>
           <TabsTrigger value="submitted" className="flex-1">상신한 결재</TabsTrigger>
           <TabsTrigger value="completed" className="flex-1">완료</TabsTrigger>
           <TabsTrigger value="rejected" className="flex-1">반려</TabsTrigger>

@@ -479,7 +479,7 @@ const AssessmentRunDetail = () => {
     }
 
     setLoading(false);
-  }, [runId]);
+  }, [runId, isMaster, navigate, toast]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 

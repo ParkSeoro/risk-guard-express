@@ -19,12 +19,12 @@ const ROUTE_MAP: Record<string, (id?: string) => string> = {
   safety_inspection: () => '/safety-inspections',
   incident_report: () => '/incidents',
   emergency_drill: () => '/emergency-drills',
-  todo: () => '/todos',
+  todo: () => '/todo',
   work_stop: () => '/work-stop',
   safety_cost_report: () => '/safety-cost',
   education: () => '/worker-education',
-  worker: () => '/worker-management',
-  chemical: () => '/chemicals',
+  worker: () => '/workers',
+  chemical: () => '/health/chemicals',
 };
 
 const resolveRoute = (n: any): string | null => {

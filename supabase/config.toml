@@ -1,4 +1,4 @@
-project_id = "iqtiozscqwuacgzrlfzu"
+project_id = "qhntxmggacorqjjmjqgo"
 
 [functions.setup-e2e-accounts]
 verify_jwt = false

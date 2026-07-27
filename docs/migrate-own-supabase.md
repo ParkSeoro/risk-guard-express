@@ -34,17 +34,21 @@ Lovable Cloud 프로젝트 `iqtiozscqwuacgzrlfzu` 는 **삭제·수정하지 않
 | Ref | `qhntxmggacorqjjmjqgo` |
 | URL | `https://qhntxmggacorqjjmjqgo.supabase.co` |
 | Publishable key | 로컬 `.env.local` 에만 보관 (커밋 안 함) |
+| Schema | ✅ `db push` 완료 (orphan bootstrap 포함) |
+| Storage buckets | ✅ attachments / project-library / permit-form-assets / app-updates |
 | Lovable (백업) | `iqtiozscqwuacgzrlfzu` — **수정 금지** |
 
-### 스키마 push에 아직 필요한 것
+### 남은 cutover
 
-CLI `supabase link` / `db push` 는 아래가 있어야 합니다 (채팅에 붙여 주세요):
+1. 새 프로젝트에서 회원가입 → 첫 유저가 master 자동 부여 (`handle_new_user`)
+2. Vercel env 를 새 URL/publishable key 로 교체 후 Redeploy
+3. (선택) Lovable 데이터/파일 복사 — 당분간 Lovable을 읽기 백업으로 유지 가능
+4. Edge Functions / Secrets (AI·푸시 키 등) 재설정
+5. **채팅에 노출된 Access Token·DB 비밀번호는 즉시 재발급/변경** 권장
 
-1. **Access Token** — https://supabase.com/dashboard/account/tokens → Generate  
-2. **Database password** — 프로젝트 만들 때 설정한 DB 비밀번호  
-   (Settings → Database 에서 reset 가능)
+### 스키마 push에 필요했던 것 (완료)
 
-`service_role` / `sb_secret_...` 은 Functions·데이터 이전 단계에서만 필요합니다.
+CLI `supabase link` / `db push` 는 Access Token + Database password 로 완료했습니다.
 
 ---
 

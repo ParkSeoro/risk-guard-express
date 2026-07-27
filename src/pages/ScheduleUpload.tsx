@@ -86,13 +86,13 @@ const ScheduleUpload = () => {
 
       if (useAI && processes.length > 0) {
         // AI-first: generate per process using hybrid engine
-        const perProcess = Math.max(5, Math.ceil(targetCount / processes.length));
+        const detailLevel: 'core' | 'comprehensive' = targetCount <= 50 ? 'core' : 'comprehensive';
         const allItems: GeneratedRiskItem[] = [];
 
         for (const p of processes) {
           try {
             const result = await generateRiskItemsHybrid(
-              { processName: p.processName, targetCount: perProcess, projectId, deduplicate: true },
+              { processName: p.processName, detailLevel, projectId, deduplicate: true },
               (progress) => setAiProgress(progress),
             );
             allItems.push(...result.items);
@@ -343,10 +343,10 @@ const ScheduleUpload = () => {
             <p className="text-lg font-medium">AI가 위험성평가를 생성하고 있습니다...</p>
             {aiProgress && (
               <div className="space-y-2 max-w-md mx-auto">
-                <Progress value={aiProgress.totalTarget > 0 ? (aiProgress.itemsSoFar / aiProgress.totalTarget) * 100 : 0} className="h-2" />
+                <Progress value={aiProgress.phase === 'complete' ? 100 : aiProgress.phase === 'generating' ? 60 : 30} className="h-2" />
                 <p className="text-sm text-muted-foreground">
                   {aiProgress.phase === 'cache_check' && '캐시 확인 중...'}
-                  {aiProgress.phase === 'generating' && `생성 중: ${aiProgress.itemsSoFar}/${aiProgress.totalTarget}건`}
+                  {aiProgress.phase === 'generating' && `생성 중: ${aiProgress.itemsSoFar}건`}
                   {aiProgress.phase === 'fallback' && '라이브러리 검색 중...'}
                   {aiProgress.phase === 'complete' && '완료!'}
                 </p>

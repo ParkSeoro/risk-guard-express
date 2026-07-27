@@ -73,7 +73,7 @@ const AssessmentRunDetail = () => {
   const [showAutoGen, setShowAutoGen] = useState(false);
   const [autoGenProcesses, setAutoGenProcesses] = useState<string[]>([]);
   const [autoGenProcessInput, setAutoGenProcessInput] = useState('');
-  const [autoGenTargetCount, setAutoGenTargetCount] = useState(20);
+  const [autoGenDetailLevel, setAutoGenDetailLevel] = useState<'core' | 'comprehensive'>('comprehensive');
   const [autoGenTags, setAutoGenTags] = useState<string[]>([]);
   const [autoGenLoading, setAutoGenLoading] = useState(false);
   const [autoGenConditionText, setAutoGenConditionText] = useState('');
@@ -647,7 +647,7 @@ const AssessmentRunDetail = () => {
           workLocation: autoGenWorkLocation || undefined,
           workEnvironment: autoGenWorkEnv.length > 0 ? autoGenWorkEnv : undefined,
           tags: autoGenTags,
-          targetCount: autoGenTargetCount,
+          detailLevel: autoGenDetailLevel,
           deduplicate: true,
           projectId: run.project_id,
         };
@@ -2050,17 +2050,17 @@ const AssessmentRunDetail = () => {
               <Input value={autoGenConditionText} onChange={e => setAutoGenConditionText(e.target.value)} placeholder="작업 위치, 특이사항, 동시작업 등..." />
             </div>
             <div className="space-y-1.5">
-              <Label>공종별 생성 개수</Label>
-              <Select value={String(autoGenTargetCount)} onValueChange={v => setAutoGenTargetCount(Number(v))}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {[30, 50, 100, 150, 300].map(n => <SelectItem key={n} value={String(n)}>{n}개</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label>평가 수준</Label>
+              <div className="flex gap-2">
+                <Button type="button" variant={autoGenDetailLevel === 'core' ? 'default' : 'outline'} size="sm" className="flex-1"
+                  onClick={() => setAutoGenDetailLevel('core')}>핵심 위주 (10~15개)</Button>
+                <Button type="button" variant={autoGenDetailLevel === 'comprehensive' ? 'default' : 'outline'} size="sm" className="flex-1"
+                  onClick={() => setAutoGenDetailLevel('comprehensive')}>작업 순서별 상세</Button>
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">🤖 AI가 공종·장비·작업환경을 분석하여 전문 위험성평가를 자동 생성합니다. 결과는 캐시되어 재사용됩니다.</p>
+            <p className="text-xs text-muted-foreground">🤖 AI가 공종을 시공 순서로 분해하고 4M(사람·기계·물질/환경·관리) 관점에서 실효성 있는 위험요인과 대책을 도출합니다.</p>
             <Button onClick={handleAutoGenerate} disabled={autoGenProcesses.length === 0 || autoGenLoading} className="w-full">
-              {autoGenLoading ? 'AI 생성 중... (30초~1분 소요)' : `AI 자동작성 ${autoGenProcesses.length}개 공종 × ${autoGenTargetCount}개 생성`}
+              {autoGenLoading ? 'AI 생성 중... (30초~1분 소요)' : `AI 자동작성 · ${autoGenProcesses.length}개 공종 (${autoGenDetailLevel === 'core' ? '핵심 위주' : '상세 도출'})`}
             </Button>
           </div>
         </DialogContent>

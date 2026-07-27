@@ -158,28 +158,40 @@ async function fetchRAGContext(
   return `\n[참고 사례 - 유사 공종/장비 기존 데이터]\n${lines.join("\n")}`;
 }
 
-// ── Generate a single batch of items ──
-async function generateBatch(
+// ── Generate risk items using detail_level (no forced count) ──
+async function generateRiskAssessment(
   processName: string,
   equipText: string,
   descText: string,
   locationText: string,
   envText: string,
-  batchCount: number,
+  detailLevel: 'core' | 'comprehensive',
   ragContext: string,
-  batchIndex: number
 ): Promise<any[]> {
-  const systemPrompt = `너는 대한민국 건설/플랜트 현장에서 20년 이상 근무한 안전관리 총괄 책임자이며,
-터널공사, 쉴드공법(Semi Shield, TBM 포함), 굴착공사, 고소작업, 양중작업 전반에 대한 전문지식을 보유하고 있다.
-반드시 최신 「산업안전보건법」, 「산업안전보건기준에 관한 규칙」, 「건설기술진흥법」, 「중대재해처벌법」, KOSHA GUIDE를 근거로
-'위험성평가(최초·정기·수시)' 기준에 따라 실제 현장에서 승인 가능한 수준의 평가만 작성한다.
+  const systemPrompt = `당신은 대한민국 30년 차 건설 현장 안전관리자이자 「산업안전보건법」·「산업안전보건기준에 관한 규칙」·「건설기술진흥법」·「중대재해처벌법」·KOSHA GUIDE에 정통한 전문가다. 무의미한 항목 나열을 엄격히 금지한다.
 
-절대 규칙:
-- 출력은 오직 JSON 배열 하나뿐. 코드펜스(\`\`\`), 설명문, 머리말/꼬리말 금지.
-- 100% 한국어. 단 하나의 영단어도 허용하지 않는다(고유명사 TBM/KOSHA/PPE만 병기 허용).
-- 요청된 개수를 정확히 채우며, 중간에 배열을 끊지 않는다. 반드시 ']' 로 완결한다.
-- 유해·위험요인은 추락, 낙하·비래, 협착·끼임, 감전, 화재·폭발, 붕괴·도괴, 질식, 유해물질 노출, 근골격계 부담, 소음·진동 등을 누락 없이 도출한다.
-- 감소 대책(개선대책)은 반드시 (1) 본질안전 → (2) 공학적 대책 → (3) 관리적 대책 → (4) 개인보호구 순으로 실효성 있게 서술한다. PPE만 단독 나열 금지.`;
+[작성 원칙]
+- 입력된 공종을 실제 시공 순서(사전준비 → 본작업 → 마무리)로 분해하라.
+- 각 단계에서 4M(사람 Man, 기계 Machine, 물질/환경 Media, 관리 Management) 관점의 유해·위험요인을 식별하라.
+- 실제 현장에서 중대재해(추락·낙하·협착·감전·화재·폭발·붕괴·질식 등)를 유발할 수 있는 실효성 있는 항목만 선별하라.
+- 감소대책은 반드시 (1) 본질안전(제거·대체) → (2) 공학적(방호장치·격리·환기) → (3) 관리적(작업허가·교육·표지) → (4) 개인보호구 순으로 구체적으로 서술하라. PPE만 단독 나열 금지.
+- 위험도 분포: 상 20~30%, 중 40~60%, 하 10~30% 자연스럽게 배분.
+- 법적근거는 산업안전보건기준에 관한 규칙 조항 또는 KOSHA GUIDE 코드로 실제 관련 항목만 기재.
+
+[출력 규칙]
+- 출력은 오직 JSON 배열 하나뿐. 코드펜스(\`\`\`), 설명문, 머리말/꼬리말 절대 금지.
+- 100% 한국어. 단 하나의 영단어도 허용하지 않는다(고유명사 TBM/KOSHA/PPE 병기만 허용).
+- 반드시 완결된 배열(']'로 종료)을 반환하라. 중간에 끊지 말라.
+- 어투는 단정형(~함, ~할 것, ~을 준수할 것).`;
+
+  const levelInstruction = detailLevel === 'core'
+    ? `[요청 수준: 핵심 위주]
+- 해당 공종에서 가장 중요한 핵심 위험요인 10~15개만 선별하라.
+- 각 항목은 실제 중대재해 유발 가능성이 높은 것으로 한정하라.`
+    : `[요청 수준: 작업 순서별 상세 도출]
+- 시공 순서(사전준비 → 본작업 → 마무리)의 각 단계별로 4M 관점에서 위험요인을 빠짐없이 도출하라.
+- 세부작업 단위를 명확히 나누어 실제 현장 작업순서를 반영하라.
+- 항목 수는 공종 특성에 맞게 자율적으로 판단하되(대략 20~40개 범위), 실효성 없는 항목으로 개수를 부풀리지 말라.`;
 
   const userPrompt = `[입력 정보]
 공종: ${processName}
@@ -187,36 +199,25 @@ async function generateBatch(
 작업내용: ${descText}
 작업위치: ${locationText}
 작업환경: ${envText}
-배치번호: ${batchIndex + 1} (중복 방지를 위해 이전 배치와 다른 세부작업을 작성)
 ${ragContext}
 
-[핵심 요구사항]
-1. 입력된 장비가 생소하더라도 반드시 "공법/용도"를 추론하라.
-2. 반드시 해당 공종의 "핵심 사고 유형"을 포함하라(추락/낙하/협착/감전/화재/붕괴/질식 등).
-3. 위험요인은 반드시 "원인 + 사고결과" 구조로 작성.
-4. 발생상황은 실제 작업 순서(준비 → 본작업 → 마무리)를 반영.
-5. 개선대책은 본질안전 → 공학적 → 관리적 → PPE 순으로 구체적으로 작성.
-6. 법적근거는 산업안전보건기준에 관한 규칙 조항 번호 또는 KOSHA GUIDE 코드로 실제 관련 항목만 기입.
-7. 위험도 분포: 상 20~30%, 중 40~60%, 하 10~30%로 자연스럽게 배분.
-8. 작업위치(${locationText})와 작업환경(${envText})을 반드시 반영.
-9. 참고 사례가 있으면 참고하되, 동일한 내용은 금지.
-10. 반드시 정확히 ${batchCount}개 항목을 완결된 JSON 배열로 작성한다.
+${levelInstruction}
 
-[출력 형식 - JSON 배열만 출력, 총 ${batchCount}개]
+[출력 형식 - JSON 배열만]
 [
   {
     "공정": "${processName}",
-    "세부작업": "",
-    "위험요인": "",
-    "발생상황": "",
-    "기존대책": "",
-    "개선대책": "",
+    "세부작업": "시공 순서상의 세부 작업 단계",
+    "위험요인": "원인 + 사고결과 구조",
+    "발생상황": "실제 작업 단계에서의 발생 시나리오",
+    "기존대책": "현재 통상 적용되는 대책",
+    "개선대책": "본질안전 → 공학적 → 관리적 → PPE 순의 구체 대책",
     "위험도": "상|중|하",
     "심각도": "상|중|하",
     "개선후위험도": "상|중|하",
     "개선후심각도": "상|중|하",
-    "보호구": [],
-    "법적근거": ""
+    "보호구": ["안전모", "안전대"],
+    "법적근거": "산업안전보건기준에 관한 규칙 제OO조 또는 KOSHA GUIDE C-OO"
   }
 ]`;
 
@@ -225,7 +226,7 @@ ${ragContext}
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    temperature: 0.4 + batchIndex * 0.05,
+    temperature: 0.4,
     max_tokens: 6144,
     response_format: { type: "json_object" },
   });
@@ -233,7 +234,7 @@ ${ragContext}
   if (!response.ok) {
     const status = response.status;
     const text = await response.text();
-    console.error(`[Batch ${batchIndex}] AI error:`, status, text);
+    console.error(`[RiskGen] AI error:`, status, text);
     if (status === 429) throw new Error("RATE_LIMIT");
     if (status === 402) throw new Error("CREDITS_EXHAUSTED");
     throw new Error(`AI_ERROR_${status}`);
@@ -244,8 +245,6 @@ ${ragContext}
   // Defensive: strip any residual markdown fences before parsing.
   const content = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
 
-  // Try full parse first, then extract the largest [ ... ] block, then repair a
-  // truncated tail by trimming to the last complete object.
   const tryParse = (s: string): any[] | null => {
     try {
       const v = JSON.parse(s);
@@ -262,7 +261,7 @@ ${ragContext}
     if (parsed) return parsed;
   }
 
-  // Repair truncated array: find last '},' and close the array there.
+  // Repair truncated array: find last '},' and close there.
   const start = content.indexOf("[");
   if (start >= 0) {
     const tail = content.slice(start);
@@ -271,13 +270,13 @@ ${ragContext}
       const repaired = tail.slice(0, lastObjEnd + 1) + "]";
       const parsed = tryParse(repaired);
       if (parsed) {
-        console.warn(`[Batch ${batchIndex}] Repaired truncated JSON (${parsed.length} items)`);
+        console.warn(`[RiskGen] Repaired truncated JSON (${parsed.length} items)`);
         return parsed;
       }
     }
   }
 
-  console.error(`[Batch ${batchIndex}] JSON parse failed. Head:`, content.slice(0, 300));
+  console.error(`[RiskGen] JSON parse failed. Head:`, content.slice(0, 300));
   return [];
 }
 
@@ -344,11 +343,12 @@ serve(async (req) => {
       work_description,
       work_location,
       work_environment,
-      target_count,
+      detail_level,
       project_id,
-      batch_index,
-      batch_size,
     } = body;
+    // detail_level: 'core' | 'comprehensive' — replaces the removed target_count.
+    const detailLevel: 'core' | 'comprehensive' =
+      detail_level === 'core' ? 'core' : 'comprehensive';
 
     // Verify project membership for non-internal callers
     if (!isInternal && project_id) {
@@ -442,47 +442,38 @@ serve(async (req) => {
         : "일반 작업 환경";
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
-    const totalCount = target_count || 30;
 
-    // ── Cache check ──
-    const cacheKey = `${process_name}|${equipText}|${descText}|${locationText}|${envText}`
+    // ── Cache check (keyed by inputs + detail level) ──
+    const cacheKey = `${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
       .toLowerCase()
       .trim();
 
-    // Cache hit only when stored set is large enough for the request.
-    // Older code cached just the last batch (4-6 items), starving subsequent
-    // requests for the same key. Require >= max(8, target-2).
-    if (batch_index === undefined || batch_index === null) {
-      const minCacheItems = Math.max(8, totalCount - 2);
-      const { data: cached } = await adminClient
+    const { data: cached } = await adminClient
+      .from("ai_risk_cache")
+      .select("*")
+      .eq("cache_key", cacheKey)
+      .maybeSingle();
+
+    const cachedItems = (cached?.generated_items as any[]) || [];
+    const cacheMin = detailLevel === 'core' ? 8 : 15;
+    if (cached && Array.isArray(cachedItems) && cachedItems.length >= cacheMin) {
+      console.log(`[AI Engine] Cache hit: ${cachedItems.length} items (detail=${detailLevel})`);
+      await adminClient
         .from("ai_risk_cache")
-        .select("*")
-        .eq("cache_key", cacheKey)
-        .maybeSingle();
+        .update({ hit_count: (cached.hit_count || 0) + 1 })
+        .eq("id", cached.id);
 
-      const cachedItems = (cached?.generated_items as any[]) || [];
-      if (cached && Array.isArray(cachedItems) && cachedItems.length >= minCacheItems) {
-        console.log(`[AI Engine] Cache hit: ${cachedItems.length} items`);
-        await adminClient
-          .from("ai_risk_cache")
-          .update({ hit_count: (cached.hit_count || 0) + 1 })
-          .eq("id", cached.id);
-
-        return new Response(
-          JSON.stringify({
-            items: cachedItems.slice(0, totalCount),
-            source: "cache",
-            count: Math.min(cachedItems.length, totalCount),
-            normalized_equipment: normalizedEquipment,
-            total_batches: 1,
-            batch_index: 0,
-            is_complete: true,
-          }),
-          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      } else if (cached) {
-        console.log(`[AI Engine] Stale cache (${cachedItems.length} < ${minCacheItems}), regenerating`);
-      }
+      return new Response(
+        JSON.stringify({
+          items: cachedItems,
+          source: "cache",
+          count: cachedItems.length,
+          normalized_equipment: normalizedEquipment,
+          detail_level: detailLevel,
+          is_complete: true,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // ── RAG context ──
@@ -490,42 +481,21 @@ serve(async (req) => {
     const ragContext = await fetchRAGContext(adminClient, process_name, equipText);
     console.log(`[AI Engine] RAG context: ${ragContext ? ragContext.split("\n").length - 1 : 0} items`);
 
-    // ── Chunked generation ──
-    const currentBatchIndex = batch_index ?? 0;
-    const batchSizeVal = batch_size ?? Math.min(8, totalCount);
-    const totalBatches = Math.ceil(totalCount / batchSizeVal);
-    const currentBatchSize = Math.min(batchSizeVal, totalCount - currentBatchIndex * batchSizeVal);
-
-    if (currentBatchSize <= 0) {
-      return new Response(
-        JSON.stringify({ items: [], source: "ai", count: 0, is_complete: true, batch_index: currentBatchIndex, total_batches: totalBatches }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log(`[AI Engine] Generating batch ${currentBatchIndex + 1}/${totalBatches} (${currentBatchSize} items)`);
-
-    const rawItems = await generateBatch(
+    console.log(`[AI Engine] Generating risk assessment (detail=${detailLevel})`);
+    const rawItems = await generateRiskAssessment(
       process_name,
       equipText,
       descText,
       locationText,
       envText,
-      currentBatchSize,
+      detailLevel,
       ragContext,
-      currentBatchIndex
     );
-
 
     const existingKeys = new Set<string>();
     const deduped = mapAndDedupe(rawItems, process_name, existingKeys);
 
-    const isComplete = currentBatchIndex + 1 >= totalBatches;
-
-    // Cache only when the entire response is in a single batch (no batch_index sent
-    // and totalBatches === 1). Caching the final batch of a multi-batch run would
-    // store only that last batch's items and poison future cache hits.
-    if (isComplete && deduped.length > 0 && totalBatches === 1 && (batch_index === undefined || batch_index === null)) {
+    if (deduped.length > 0) {
       await adminClient.from("ai_risk_cache").upsert(
         {
           cache_key: cacheKey,
@@ -548,9 +518,8 @@ serve(async (req) => {
         source: "ai",
         count: deduped.length,
         normalized_equipment: normalizedEquipment,
-        batch_index: currentBatchIndex,
-        total_batches: totalBatches,
-        is_complete: isComplete,
+        detail_level: detailLevel,
+        is_complete: true,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

@@ -30,11 +30,8 @@ export default function RoleGuard({
   // Hard block: contractor/vendor company accounts, or contractor/worker/viewer-only roles
   const companyType = ctx?.userCompanyType;
   const isContractorCo = companyType === 'contractor' || companyType === 'vendor';
-  const isLowPriv =
-    hasRole('contractor') ||
-    hasRole('worker' as any) ||
-    hasRole('viewer') ||
-    (roles.length > 0 && roles.every((r) => ['contractor', 'worker', 'viewer', 'user'].includes(r as string)));
+  const LOW = new Set(['contractor', 'worker', 'viewer', 'user']);
+  const isLowPriv = roles.length === 0 || roles.every((r) => LOW.has(r as string));
 
   if (isContractorCo || isLowPriv) return <Navigate to="/" replace />;
 

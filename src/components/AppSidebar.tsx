@@ -2,7 +2,7 @@ import {
   LayoutDashboard, FolderKanban, ShieldAlert, Database, 
   FileCheck, HardHat, ChevronLeft, LogOut, User,
   Shield, SearchCheck, Settings,
-  FileText, Scale, ListTodo, Bot, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
+  FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
   ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, GitCompare, Trash2,
   Stethoscope, GraduationCap, HeartPulse, Map, Users, AlertOctagon, Siren, OctagonAlert, UserCheck, BarChart3, Megaphone,
   Building2, FolderOpen,
@@ -30,7 +30,7 @@ type Group = { label: string; key: string; items: Item[] };
  * 1) 핵심 — 전자결재 / 위험성평가 / 작업허가서 최상단 승격
  * 2) 현장 · 위험/검증 · 점검/사고 · 사람 · 운영 · 보건 · 시스템
  * 3) 법정 이행 해체 → 교육/산안비/운영으로 재배치
- * 4) 현장 일기예보 메뉴 제거 (라우트는 유지, 대시보드 위젯 사용)
+ * 4) 현장 일기예보는 운영 그룹에 유지
  */
 const groups: Group[] = [
   {
@@ -90,6 +90,7 @@ const groups: Group[] = [
     items: [
       { title: "할 일", url: "/todo", icon: ListTodo },
       { title: "프로젝트", url: "/projects", icon: FolderKanban },
+      { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
       { title: "회사 관리", url: "/companies", icon: Building2 },
       { title: "산업안전보건관리비", url: "/safety-cost", icon: ReceiptText },
       { title: "산안비 검증", url: "/safety-cost-validation", icon: ShieldAlert },

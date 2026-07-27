@@ -51,9 +51,8 @@ Deno.serve(async (req) => {
     }
 
     // Re-check master role server-side (defense in depth)
-    const { data: isMaster, error: roleErr } = await admin.rpc("has_role", {
+    const { data: isMaster, error: roleErr } = await admin.rpc("is_master", {
       _user_id: userData.user.id,
-      _role: "master",
     });
     if (roleErr || !isMaster) {
       return new Response(JSON.stringify({ error: "forbidden", detail: "master role required" }), {

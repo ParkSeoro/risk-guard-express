@@ -518,6 +518,16 @@ const SafetyCost = () => {
     }
     const { data: lines } = await supabase.from('approval_lines').select('*').eq('project_id', selectedReport.project_id).order('step_order');
     if (!lines?.length || lines.some((l: any) => !l.user_id)) { toast({ title: '프로젝트 결재라인을 먼저 설정하세요.', variant: 'destructive' }); return; }
+    const { validateApprovalLinesSSOT } = await import('@/lib/approvalRules');
+    const ssot = validateApprovalLinesSSOT(lines as any);
+    if (!ssot.ok) {
+      toast({
+        title: '레거시 결재선입니다.',
+        description: `구형 단계 키(${Array.from(new Set(ssot.invalid)).join(', ')})가 감지되었습니다. 결재선을 새 5단계 SSOT로 재생성 후 다시 상신하세요.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     const inserts = lines.map((line: any, idx: number) => ({ report_id: selectedReport.id, construction_id: selectedConstruction.id, project_id: selectedReport.project_id, company_id: selectedReport.company_id, step_order: idx, step_label: line.step_label, position: line.position, approver_id: line.user_id, approver_name: line.user_name || '', company_name: line.company_name || '', status: idx === 0 ? 'approved' : 'pending', approved_at: idx === 0 ? new Date().toISOString() : null }));
     await supabase.from('safety_cost_approval_steps' as any).delete().eq('report_id', selectedReport.id);
     const { error } = await supabase.from('safety_cost_approval_steps' as any).insert(inserts);

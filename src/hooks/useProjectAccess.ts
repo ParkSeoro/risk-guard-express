@@ -104,8 +104,8 @@ const PERMISSION_MATRIX: Record<ProjectRole, Record<FeatureKey, Perm>> = {
   },
 };
 
-/** Map any legacy role string to a canonical ProjectRole. */
-function normalizeRole(input: string | null | undefined): ProjectRole {
+/** Map any legacy role string to a canonical ProjectRole. Unknown → null (차단). */
+function normalizeRole(input: string | null | undefined): ProjectRole | null {
   switch ((input || '').toLowerCase()) {
     case 'master': return 'master';
     case 'project_admin': return 'project_admin';
@@ -113,14 +113,21 @@ function normalizeRole(input: string | null | undefined): ProjectRole {
     case 'site_manager': return 'site_manager';
     case 'supervisor': return 'supervisor';
     case 'worker':
-    case 'contractor': // legacy
+    case 'contractor': // legacy 통칭 → worker
     case 'user':       // legacy
       return 'worker';
     case 'viewer':
-    default:
       return 'viewer';
+    case '':
+    case null as any:
+    case undefined as any:
+      return null;
+    default:
+      // 알 수 없는 구형 값 → silent viewer 승격 금지
+      return null;
   }
 }
+
 
 export interface ProjectAccess {
   projects: { id: string; name: string; site_name: string }[];
@@ -148,11 +155,12 @@ export interface ProjectAccess {
 }
 
 interface MemberInfo {
-  role: ProjectRole;
+  role: ProjectRole | null;
   position: ProjectPosition;
   company_id: string | null;
   company_type: CompanyType;
 }
+
 
 export function useProjectAccess(): ProjectAccess {
   const { user, hasRole } = useAuth();

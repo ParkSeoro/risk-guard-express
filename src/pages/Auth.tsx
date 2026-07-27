@@ -37,14 +37,15 @@ const roleLabels: Record<string, string> = {
   viewer: '열람자',
 };
 
+/** Values must match public.project_position (mapped in process_signup_company_selection). */
 const POSITION_OPTIONS = [
-  { v: 'site_manager', label: '현장소장' },
-  { v: 'safety_manager', label: '안전관리자' },
-  { v: 'supervisor', label: '관리감독자' },
-  { v: 'foreman', label: '작업반장' },
-  { v: 'worker', label: '작업자' },
-  { v: 'inspector', label: '감리' },
-  { v: 'other', label: '기타' },
+  { v: 'SITE_MANAGER', label: '현장소장' },
+  { v: 'HSE_MANAGER', label: '안전관리자' },
+  { v: 'SUPERVISOR', label: '감리/관리감독' },
+  { v: 'FOREMAN', label: '작업반장' },
+  { v: 'WORKER', label: '작업자' },
+  { v: 'OWNER_PM', label: '발주처 PM' },
+  { v: 'OWNER_HSE', label: '발주처 안전' },
 ];
 
 const Auth = () => {
@@ -63,7 +64,7 @@ const Auth = () => {
   const [directory, setDirectory] = useState<DirectoryRow[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [selectedCompany, setSelectedCompany] = useState<string>('');
-  const [selectedPosition, setSelectedPosition] = useState<string>('worker');
+  const [selectedPosition, setSelectedPosition] = useState<string>('WORKER');
   const { toast } = useToast();
 
   // Auto-switch to signup if invite param present

@@ -26,7 +26,7 @@ export default function SiteReadinessChecklist() {
       supabase.from('assessment_runs').select('id, status, start_date, end_date').eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('tbm_sessions' as any).select('id, qr_token, is_active, tbm_date').eq('project_id', projectId),
       supabase.from('tbm_participations' as any).select('id, tbm_session_id, briefing_confirmed, signature_data').limit(1000),
-      supabase.from('work_permits' as any).select('id, status').eq('project_id', projectId),
+      supabase.from('work_permits' as any).select('id, status').eq('project_id', projectId).eq('is_deleted', false),
       (supabase.from('safety_costs' as any).select('id').eq('project_id', projectId).limit(1) as any).then((r: any) => r, () => ({ data: [] })),
       supabase.from('inspection_responses' as any).select('id').eq('project_id', projectId),
       supabase.from('assessment_accidents').select('id').eq('project_id', projectId),

@@ -129,10 +129,16 @@ const AssessmentRuns = () => {
   const fetchRuns = async () => {
     if (!selectedProject) return;
     setLoading(true);
-    const { data } = await supabase.from('assessment_runs')
+    let query = supabase.from('assessment_runs')
       .select('*')
       .eq('project_id', selectedProject)
       .order('created_at', { ascending: false });
+    if (showDeleted && isMaster) {
+      query = query.eq('is_deleted', true);
+    } else {
+      query = query.eq('is_deleted', false).neq('status', '폐기');
+    }
+    const { data } = await query;
     setRuns(data || []);
 
     if (data && data.length > 0) {
@@ -154,7 +160,7 @@ const AssessmentRuns = () => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchProjectRole(); fetchRuns(); fetchContractors(); }, [selectedProject]);
+  useEffect(() => { fetchProjectRole(); fetchRuns(); fetchContractors(); }, [selectedProject, showDeleted]);
 
   const toggleContractor = (id: string) => {
     setForm(prev => ({

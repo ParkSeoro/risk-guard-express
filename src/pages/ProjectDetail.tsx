@@ -64,7 +64,7 @@ const ProjectDetail = () => {
   const [invites, setInvites] = useState<any[]>([]);
   const [joinRequests, setJoinRequests] = useState<any[]>([]);
   const [showCreateInvite, setShowCreateInvite] = useState(false);
-  const [inviteForm, setInviteForm] = useState({ role: 'contractor' as string, company_id: '' as string, max_uses: 50, expires_days: 7 });
+  const [inviteForm, setInviteForm] = useState({ role: 'worker' as string, company_id: '' as string, max_uses: 50, expires_days: 7 });
   const [showAddMember, setShowAddMember] = useState(false);
   const [memberUserId, setMemberUserId] = useState('');
   const [memberRole, setMemberRole] = useState('viewer');
@@ -1271,8 +1271,10 @@ const ProjectDetail = () => {
                   <SelectItem value="__none__">(업체 연결 안 함)</SelectItem>
                   {companies
                     .filter(c => {
-                      if (inviteForm.role === 'contractor') return c.type === 'contractor';
-                      if (inviteForm.role === 'safety_manager' || inviteForm.role === 'project_admin') return c.type === 'gc';
+                      if (inviteForm.role === 'worker' || inviteForm.role === 'site_manager' || inviteForm.role === 'supervisor') {
+                        return c.type === 'contractor' || c.type === 'gc' || c.type === 'vendor';
+                      }
+                      if (inviteForm.role === 'safety_manager' || inviteForm.role === 'project_admin') return c.type === 'gc' || c.type === 'client';
                       return true;
                     })
                     .map(c => (

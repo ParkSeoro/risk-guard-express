@@ -19,7 +19,8 @@ import { useMobileAccess } from "@/hooks/useMobileAccess";
 
 export default function MobileRiskAssessment() {
   const navigate = useNavigate();
-  const { projectId, applyCompanyFilter } = useMobileAccess();
+  // assessment_runs has no company_id — do NOT use applyCompanyFilter.
+  const { projectId, role, companyId } = useMobileAccess();
   const [rows, setRows] = useState<any[]>([]);
   const [counts, setCounts] = useState<Record<string, { high: number; medium: number; low: number; total: number }>>({});
   const [q, setQ] = useState("");
@@ -28,15 +29,23 @@ export default function MobileRiskAssessment() {
   const load = async () => {
     if (!projectId) return;
     setLoading(true);
-    let query: any = supabase.from("assessment_runs").select("*")
-      .eq("project_id", projectId).eq("is_deleted", false);
-    query = applyCompanyFilter(query);
-    const { data, error } = await query.order("updated_at", { ascending: false }).limit(50);
+    const { data, error } = await supabase.from("assessment_runs").select("*")
+      .eq("project_id", projectId)
+      .eq("is_deleted", false)
+      .neq("status", "폐기")
+      .order("updated_at", { ascending: false })
+      .limit(50);
     if (error) toast.error("로드 실패: " + error.message);
-    setRows(data || []);
+    const scoped = (data || []).filter((r: any) => {
+      if (role !== "worker" && role !== "viewer" && role !== "contractor") return true;
+      if (!companyId) return false;
+      const targets: string[] = r.target_company_ids || [];
+      return targets.length === 0 || targets.includes(companyId);
+    });
+    setRows(scoped);
 
-    if (data && data.length) {
-      const ids = data.map((r: any) => r.id);
+    if (scoped.length) {
+      const ids = scoped.map((r: any) => r.id);
       const { data: items, error: iErr } = await supabase.from("risk_items").select("run_id, risk_grade")
         .in("run_id", ids);
       if (iErr) toast.error("위험항목 로드 실패: " + iErr.message);
@@ -51,10 +60,12 @@ export default function MobileRiskAssessment() {
         else c[it.run_id].low++;
       });
       setCounts(c);
+    } else {
+      setCounts({});
     }
     setLoading(false);
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId, role, companyId]);
 
   const filtered = rows.filter(r => !q || r.period_label?.includes(q) || r.notes?.includes(q));
 

@@ -62,7 +62,12 @@ const VerificationCenter = () => {
 
   useEffect(() => {
     if (!selectedProject) return;
-    supabase.from('assessment_runs').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false }).then(({ data }) => {
+    supabase.from('assessment_runs').select('*')
+      .eq('project_id', selectedProject)
+      .eq('is_deleted', false)
+      .neq('status', '폐기')
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
       setRuns(data || []);
       if (data && data.length > 0) setSelectedRun(data[0].id);
       else setSelectedRun('');

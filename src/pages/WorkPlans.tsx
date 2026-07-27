@@ -56,7 +56,7 @@ const WorkPlans = () => {
   const loadRuns = async () => {
     if (!access.selectedProject) return;
     const { data } = await supabase.from('assessment_runs')
-      .select('id, title, period_label, status')
+      .select('id, period_label, type, status')
       .eq('project_id', access.selectedProject)
       .eq('is_deleted', false)
       .eq('status', '승인완료')
@@ -272,7 +272,7 @@ const WorkPlans = () => {
                       <SelectContent>
                         {runs.length === 0
                           ? <SelectItem value="__none__" disabled>승인완료된 위험성평가가 없습니다</SelectItem>
-                          : runs.map(r => <SelectItem key={r.id} value={r.id}>{r.title || r.period_label}</SelectItem>)}
+                          : runs.map(r => <SelectItem key={r.id} value={r.id}>{r.period_label || r.type || r.id}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>

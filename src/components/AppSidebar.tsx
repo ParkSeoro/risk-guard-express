@@ -272,7 +272,7 @@ export function AppSidebar() {
           </SidebarGroup>
         ))}
 
-        {!isContractorCo && (
+        {!restrictToContractorUI && (
           <SidebarGroup className="pb-2">
             {!collapsed ? (
               <Collapsible open={openGroups['admin'] ?? false} onOpenChange={() => toggleGroup('admin')}>

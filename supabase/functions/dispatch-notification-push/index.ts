@@ -63,8 +63,14 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+  // Accept either: (a) service_role Bearer (internal callers) or
+  // (b) X-Push-Trigger-Secret header matching PUSH_TRIGGER_SECRET (DB trigger via pg_net).
   const authHeader = req.headers.get("Authorization") || "";
-  if (!authHeader.startsWith("Bearer ") || authHeader.slice(7) !== serviceRoleKey) {
+  const triggerSecretHeader = req.headers.get("X-Push-Trigger-Secret") || "";
+  const triggerSecret = Deno.env.get("PUSH_TRIGGER_SECRET") || "";
+  const bearerOk = authHeader.startsWith("Bearer ") && authHeader.slice(7) === serviceRoleKey;
+  const secretOk = !!triggerSecret && triggerSecretHeader === triggerSecret;
+  if (!bearerOk && !secretOk) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

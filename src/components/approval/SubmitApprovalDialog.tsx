@@ -183,6 +183,14 @@ export default function SubmitApprovalDialog({
   const submit = async () => {
     if (steps.length === 0) return toast.error('결재선을 1단계 이상 지정하세요');
     if (steps.some((s) => !s.user_id)) return toast.error('각 단계의 결재자를 지정하세요');
+
+    // 위계(협력사 → 시공사 → 발주처) 강제 정렬 & 검증
+    const orderedSteps = sortStepsByHierarchy(steps);
+    const v = validateStepsHierarchy(orderedSteps);
+    if (!v.ok) return toast.error(v.message || '결재 단계 순서가 위계에 어긋납니다');
+    // 정렬된 결과를 화면에도 반영하여 사용자에게 최종 순서를 보여준다.
+    if (orderedSteps.some((s, i) => s !== steps[i])) setSteps(orderedSteps);
+
     setSubmitting(true);
     try {
       const { error } = await supabase.rpc('submit_approval', {
@@ -190,10 +198,11 @@ export default function SubmitApprovalDialog({
         _entity_id: entityId,
         _project_id: projectId,
         _company_id: submitterCompanyId,
-        _steps: steps as any,
+        _steps: orderedSteps as any,
         _reason: reason || null,
       });
       if (error) throw error;
+
 
       if (saveAsDefault) {
         await supabase.from('approval_route_templates').insert({

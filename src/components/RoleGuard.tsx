@@ -27,12 +27,16 @@ export default function RoleGuard({
   if (isMaster) return <>{children}</>;
   if (masterOnly) return <Navigate to="/" replace />;
 
-  // Hard block: contractor/vendor company accounts and worker role
+  // Hard block: contractor/vendor company accounts, or contractor/worker/viewer-only roles
   const companyType = ctx?.userCompanyType;
   const isContractorCo = companyType === 'contractor' || companyType === 'vendor';
-  const isWorker = hasRole('worker') || (roles.length > 0 && roles.every((r) => r === 'worker' || r === 'viewer' || r === 'contractor'));
+  const isLowPriv =
+    hasRole('contractor') ||
+    hasRole('worker' as any) ||
+    hasRole('viewer') ||
+    (roles.length > 0 && roles.every((r) => ['contractor', 'worker', 'viewer', 'user'].includes(r as string)));
 
-  if (isContractorCo || isWorker) return <Navigate to="/" replace />;
+  if (isContractorCo || isLowPriv) return <Navigate to="/" replace />;
 
   const ok = allowed.some((r) => hasRole(r as any));
   if (!ok) return <Navigate to="/" replace />;

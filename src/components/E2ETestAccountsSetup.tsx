@@ -31,7 +31,12 @@ export function E2ETestAccountsSetup() {
   const handleSetup = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("setup-e2e-accounts", { body: {} });
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("로그인 세션이 만료되었습니다. 다시 로그인해주세요.");
+      const { data, error } = await supabase.functions.invoke("setup-e2e-accounts", {
+        body: {},
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       setResults((data as any)?.accounts ?? []);

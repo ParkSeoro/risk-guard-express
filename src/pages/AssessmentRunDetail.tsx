@@ -647,7 +647,7 @@ const AssessmentRunDetail = () => {
           workLocation: autoGenWorkLocation || undefined,
           workEnvironment: autoGenWorkEnv.length > 0 ? autoGenWorkEnv : undefined,
           tags: autoGenTags,
-          targetCount: autoGenTargetCount,
+          detailLevel: autoGenDetailLevel,
           deduplicate: true,
           projectId: run.project_id,
         };

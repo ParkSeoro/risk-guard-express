@@ -98,18 +98,28 @@ const Approvals = () => {
     try {
       const [a, r] = await Promise.all([
         supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false }),
-        supabase.from('assessment_runs').select('*').eq('project_id', selectedProject),
+        supabase.from('assessment_runs').select('*').eq('project_id', selectedProject).eq('is_deleted', false).neq('status', '폐기'),
       ]);
       let approvalsData = a.data || [];
       let runsData = r.data || [];
+      const activeRunIds = new Set(runsData.map((run: any) => run.id));
+
+      // Drop approvals whose assessment_run target was soft-deleted / archived
+      approvalsData = approvalsData.filter((ap: any) => {
+        const isAssessmentApproval =
+          ap.entity_type === 'assessment_run' || (!ap.entity_type && !!ap.run_id);
+        if (!isAssessmentApproval) return true;
+        const targetId = ap.entity_id || ap.run_id;
+        return !targetId || activeRunIds.has(targetId);
+      });
 
       // 업체 기반 필터링: 발주사/관리자가 아닌 경우 본인 회사 관련 결재만 표시
       if (!isMaster && !isProjectAdmin && userCompanyId) {
         approvalsData = approvalsData.filter((ap: any) =>
           ap.approver_id === user?.id || ap.company_id === userCompanyId
         );
-        runsData = runsData.filter((r: any) =>
-          !r.target_company_ids || r.target_company_ids.length === 0 || r.target_company_ids.includes(userCompanyId)
+        runsData = runsData.filter((run: any) =>
+          !run.target_company_ids || run.target_company_ids.length === 0 || run.target_company_ids.includes(userCompanyId)
         );
       }
 

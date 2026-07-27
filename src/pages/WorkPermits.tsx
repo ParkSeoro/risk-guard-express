@@ -103,8 +103,8 @@ export default function WorkPermits() {
     if (!projectId) return;
     const [{ data: p }, { data: wp }, { data: ar }, { data: tb }] = await Promise.all([
       supabase.from('work_permits' as any).select('*').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }),
-      supabase.from('work_plans' as any).select('id, title, status').eq('project_id', projectId).order('created_at', { ascending: false }).limit(100),
-      supabase.from('assessment_runs').select('id, period_label, status').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }).limit(100),
+      supabase.from('work_plans' as any).select('id, title, status').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }).limit(100),
+      supabase.from('assessment_runs').select('id, period_label, status').eq('project_id', projectId).eq('is_deleted', false).neq('status', '폐기').order('created_at', { ascending: false }).limit(100),
       supabase.from('tbm_sessions' as any).select('id, title, tbm_date, is_active').eq('project_id', projectId).order('created_at', { ascending: false }).limit(50),
     ]);
     setPermits((p as any) || []);

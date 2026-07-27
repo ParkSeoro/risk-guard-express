@@ -131,6 +131,11 @@ export default function WorkPermitDetail() {
     if (!id) return;
     const { data: p, error } = await supabase.from('work_permits' as any).select('*').eq('id', id).single();
     if (error || !p) { toast({ title: '허가서를 불러오지 못했습니다.', variant: 'destructive' }); return; }
+    if ((p as any).is_deleted) {
+      toast({ title: '삭제된 작업허가서입니다.', variant: 'destructive' });
+      navigate('/work-permits');
+      return;
+    }
     setPermit(p);
     setTab(((p as any).permit_type || 'general') as PermitType);
     setData({

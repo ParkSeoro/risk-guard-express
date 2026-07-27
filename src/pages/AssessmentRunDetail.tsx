@@ -234,6 +234,15 @@ const AssessmentRunDetail = () => {
       supabase.from('profiles').select('user_id, display_name, company, position'),
     ]);
     if (runRes.data) {
+      // Soft-deleted / archived runs should not be editable via deep link (master trash can still open)
+      if (runRes.data.is_deleted || runRes.data.status === '폐기') {
+        if (!isMaster) {
+          toast({ title: '삭제되었거나 폐기된 회차입니다.', variant: 'destructive' });
+          navigate('/assessment-runs');
+          setLoading(false);
+          return;
+        }
+      }
       setRun(runRes.data);
       const projectId = runRes.data.project_id;
       const [projRes, companiesRes, deptAssigneeRes, poolRes, envTagsRes] = await Promise.all([

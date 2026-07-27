@@ -101,7 +101,7 @@ const AssessmentRuns = () => {
   const fetchContractors = async () => {
     if (!selectedProject) { setContractors([]); setAllProjectCompanies([]); return; }
     // Fetch all companies for the project to give better diagnostics
-    const { data: allData } = await supabase.from('companies').select('id, name, type').eq('project_id', selectedProject).order('name');
+    const { data: allData } = await supabase.from('companies').select('id, name, type, is_deleted').eq('project_id', selectedProject).eq('is_deleted', false).order('name');
     setAllProjectCompanies(allData || []);
     // Filter to contractor-type companies (contractor, vendor)
     const filtered = (allData || []).filter(c => c.type === 'contractor' || c.type === 'vendor');
@@ -129,10 +129,18 @@ const AssessmentRuns = () => {
   const fetchRuns = async () => {
     if (!selectedProject) return;
     setLoading(true);
-    const { data } = await supabase.from('assessment_runs')
+    let query = supabase.from('assessment_runs')
       .select('*')
       .eq('project_id', selectedProject)
       .order('created_at', { ascending: false });
+    // Soft-delete at query level so deleted/archived rows never leak into the list by default.
+    // Master "휴지통" (showDeleted) loads only deleted rows.
+    if (showDeleted && isMaster) {
+      query = query.eq('is_deleted', true);
+    } else {
+      query = query.eq('is_deleted', false).neq('status', '폐기');
+    }
+    const { data } = await query;
     setRuns(data || []);
 
     if (data && data.length > 0) {
@@ -150,11 +158,13 @@ const AssessmentRuns = () => {
         else stats[item.run_id].low++;
       });
       setRunStats(stats);
+    } else {
+      setRunStats({});
     }
     setLoading(false);
   };
 
-  useEffect(() => { fetchProjectRole(); fetchRuns(); fetchContractors(); }, [selectedProject]);
+  useEffect(() => { fetchProjectRole(); fetchRuns(); fetchContractors(); }, [selectedProject, showDeleted]);
 
   const toggleContractor = (id: string) => {
     setForm(prev => ({

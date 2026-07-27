@@ -221,12 +221,12 @@ function ProtectedRoutes() {
         <Route path="/workers/legal-mapping" element={<LegalEducationMapping />} />
         <Route path="/workers/:id" element={<WorkerDetail />} />
         <Route path="/worker-attendance" element={<Navigate to="/workers?tab=attendance" replace />} />
-        <Route path="/admin/ai-test" element={<AITestEngine />} />
-        <Route path="/admin/ai-logs" element={<AILogs />} />
-        <Route path="/admin/system-test" element={<SystemTestEngine />} />
-        <Route path="/admin/consistency-audit" element={<ConsistencyAudit />} />
-        <Route path="/admin/data-audit" element={<DataAudit />} />
-        <Route path="/admin/trash" element={<Trash />} />
+        <Route path="/admin/ai-test" element={<RoleGuard masterOnly><AITestEngine /></RoleGuard>} />
+        <Route path="/admin/ai-logs" element={<RoleGuard masterOnly><AILogs /></RoleGuard>} />
+        <Route path="/admin/system-test" element={<RoleGuard masterOnly><SystemTestEngine /></RoleGuard>} />
+        <Route path="/admin/consistency-audit" element={<RoleGuard masterOnly><ConsistencyAudit /></RoleGuard>} />
+        <Route path="/admin/data-audit" element={<RoleGuard masterOnly><DataAudit /></RoleGuard>} />
+        <Route path="/admin/trash" element={<RoleGuard masterOnly><Trash /></RoleGuard>} />
         <Route path="/health" element={<HealthDashboard />} />
         <Route path="/health/checkups" element={<HealthCheckups />} />
         <Route path="/health/chemicals" element={<Chemicals />} />

@@ -8,7 +8,7 @@ name: Mobile Release (OTA bundle)
 #
 # 자동 게시(/settings/mobile-releases 등재)를 위해 필요한 GitHub Secrets:
 #   - OTA_PUBLISH_URL    예) https://iqtiozscqwuacgzrlfzu.supabase.co/functions/v1/publish-ota-release
-#   - OTA_PUBLISH_TOKEN  Lovable Cloud 시크릿과 동일 값(마스터가 워크스페이스 시크릿에서 복사)
+#   - OTA_PUBLISH_TOKEN  Supabase / GitHub Secrets 에 등록한 publish 토큰
 #   - OTA_CHANNEL        기본 stable. beta 채널로 보내려면 beta
 # 시크릿이 없으면 zip 만 Artifact 로 남기고 업로드 단계는 건너뜁니다.
 # ----------------------------------------------------------------

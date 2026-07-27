@@ -404,16 +404,21 @@ const Approvals = () => {
                           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium ${
                             step.status === '승인' ? 'bg-success/10 text-success' :
                             step.status === '반려' ? 'bg-destructive/10 text-destructive' :
-                            'bg-muted text-muted-foreground'
+                            step.status === '진행중' ? 'bg-primary/10 text-primary ring-1 ring-primary/40' :
+                            step.status === '취소' ? 'bg-muted/50 text-muted-foreground line-through' :
+                            'bg-muted/40 text-muted-foreground opacity-60'
                           }`}>
                             {step.status === '승인' ? <CheckCircle2 className="h-3.5 w-3.5" /> :
                              step.status === '반려' ? <XCircle className="h-3.5 w-3.5" /> :
-                             <Clock className="h-3.5 w-3.5" />}
+                             step.status === '진행중' ? <Clock className="h-3.5 w-3.5" /> :
+                             <Clock className="h-3.5 w-3.5 opacity-50" />}
                             <span>{step.step}</span>
                             <span className="opacity-70">({step.approver_name || '미지정'}{step.company_name ? ` · ${step.company_name}` : ''})</span>
+                            {step.status === '대기' && <span className="text-[10px] opacity-70">· 순번대기</span>}
+                            {step.status === '진행중' && <span className="text-[10px] font-bold">· 결재중</span>}
                           </div>
-                          {/* Only show action buttons to the ASSIGNED approver, not admins in 'all' tab */}
-                          {step.status === '대기' && !isAllTab && user && step.approver_id === user.id && (
+                          {/* 오직 활성(진행중) 단계의 지정 결재자에게만 버튼 노출 */}
+                          {step.status === '진행중' && !isAllTab && user && step.approver_id === user.id && (
                             <div className="flex gap-1">
                               <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => handleApprovalAction(step.id, '승인')}>승인</Button>
                               <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-destructive" onClick={() => setRejectingId(step.id)}>반려</Button>

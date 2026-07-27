@@ -200,7 +200,7 @@ function ProtectedRoutes() {
         <Route path="/todo" element={<TodoDashboard />} />
         <Route path="/ai-assistant" element={<AIAssistant />} />
         <Route path="/site-weather" element={<SiteWeather />} />
-        <Route path="/safety-cost" element={<SafetyCost />} />
+        <Route path="/safety-cost" element={<RoleGuard><SafetyCost /></RoleGuard>} />
         <Route path="/work-permits" element={<WorkPermits />} />
         <Route path="/work-permits/:id" element={<WorkPermitDetail />} />
         <Route path="/tbm-logs" element={<TbmLogs />} />

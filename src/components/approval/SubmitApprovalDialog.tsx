@@ -272,7 +272,9 @@ export default function SubmitApprovalDialog({
                   </div>
                   {(() => {
                     const filtered = s.position
-                      ? filterApproversForStep(sortedApprovers as any, s.position)
+                      ? filterApproversForStep(sortedApprovers as any, s.position, {
+                          authorCompanyId: submitterCompanyId,
+                        })
                       : sortedApprovers;
                     return (
                       <Select value={s.user_id} onValueChange={(v) => setApprover(i, v)}>

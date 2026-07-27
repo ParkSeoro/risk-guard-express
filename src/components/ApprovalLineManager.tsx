@@ -50,15 +50,8 @@ interface Props {
 }
 
 const POSITION_LABELS: Record<string, string> = {
-  // legacy project_role values stored in approval_lines.position
-  supervisor: '관리감독자',
-  safety_manager: '안전관리자',
-  site_manager: '현장대리인',
-  project_admin: '프로젝트 관리자',
-  worker: '작업자',
-  viewer: '열람자',
-  cooperator: '협조',
-  // new project_position enum (project_members.position_new)
+  ...SSOT_POSITION_LABELS,
+  // new project_position enum (project_members.position_new) — 참고용
   CEO: '대표이사',
   EXECUTIVE: '임원',
   SITE_MANAGER: '현장소장',
@@ -72,13 +65,12 @@ const POSITION_LABELS: Record<string, string> = {
   SUPERVISOR: '감리원',
 };
 
-const STEP_TEMPLATES = [
-  { step_label: '작성', position: 'supervisor' },
-  { step_label: '안전관리자 검토', position: 'safety_manager' },
-  { step_label: '현장대리인 확인', position: 'site_manager' },
-  { step_label: '최종승인', position: 'project_admin' },
-  { step_label: '협조', position: 'cooperator' },
-];
+// SSOT: 5단계 고정 결재선 템플릿 (approvalRules.ts FIXED_APPROVAL_STEPS)
+const STEP_TEMPLATES = FIXED_APPROVAL_STEPS.map(s => ({
+  step_label: s.label,
+  position: s.position,
+}));
+
 
 export default function ApprovalLineManager({ projectId, projectMembers, companies, readOnly, onLinesChanged }: Props) {
   const { user, isAdmin } = useAuth();

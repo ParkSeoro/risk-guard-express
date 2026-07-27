@@ -413,6 +413,22 @@ const Approvals = () => {
                         {run && <p className="text-xs text-muted-foreground">상태: {run.status}</p>}
                       </div>
                       <div className="flex items-center gap-2">
+                        {(() => {
+                          const arr = steps as any[];
+                          const first = arr[0];
+                          const canWithdraw = !!user && !isAllTab
+                            && first?.entity_type && first?.entity_id
+                            && arr.every(s => s.status === '진행중' || s.status === '대기')
+                            && arr.some(s => s.status === '진행중')
+                            // 상신자(=문서 작성자) 또는 마스터/프로젝트 관리자만 UI 노출
+                            && (isMaster || isProjectAdmin
+                                || arr.some(s => s.approver_id === user.id && s.step_order === 1));
+                          return canWithdraw ? (
+                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1 text-destructive" onClick={() => handleWithdraw(arr)}>
+                              <XCircle className="h-3 w-3" /> 회수
+                            </Button>
+                          ) : null;
+                        })()}
                         {run && (
                           <>
                             <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleDownloadRunPDF(runId)}>

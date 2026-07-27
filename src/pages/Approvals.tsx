@@ -142,8 +142,9 @@ const Approvals = () => {
     if (tab === 'mine' && user) {
       const filtered: Record<string, any[]> = {};
       for (const [runId, steps] of Object.entries(grouped)) {
-        const myPending = (steps as any[]).filter(s => s.approver_id === user.id && s.status === '대기');
-        if (myPending.length > 0) filtered[runId] = steps as any[];
+        // 순차 결재: 오직 현재 활성(진행중) 단계 담당자에게만 노출
+        const myActive = (steps as any[]).filter(s => s.approver_id === user.id && s.status === '진행중');
+        if (myActive.length > 0) filtered[runId] = steps as any[];
       }
       return applySearch(filtered);
     }
@@ -180,88 +181,48 @@ const Approvals = () => {
 
   const handleApprovalAction = async (approvalId: string, action: '승인' | '반려', comment?: string) => {
     if (!user || !profile) return;
-    
     const ap = approvals.find(a => a.id === approvalId);
     if (!ap) { toast({ title: '결재 정보를 찾을 수 없습니다.', variant: 'destructive' }); return; }
     if (ap.approver_id !== user.id) {
       toast({ title: '결재 권한이 없습니다.', description: '해당 단계의 지정된 결재자만 승인/반려할 수 있습니다.', variant: 'destructive' });
       return;
     }
-
-    // Sequential approval enforcement: check all prior steps are approved
-    if (ap.run_id) {
-      const runApprovals = approvals.filter(a => a.run_id === ap.run_id && (a.approval_version || 1) === (ap.approval_version || 1) && a.status !== '취소');
-      const sorted = runApprovals.sort((a, b) => (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99));
-      const myIndex = sorted.findIndex(a => a.id === ap.id);
-      const priorNotApproved = sorted.slice(0, myIndex).some(a => a.status !== '승인');
-      if (priorNotApproved) {
-        toast({ title: '이전 단계 결재가 완료되지 않았습니다.', description: '순차 결재 방식으로, 앞 단계가 먼저 승인되어야 합니다.', variant: 'destructive' });
-        return;
-      }
+    if (ap.status !== '진행중') {
+      toast({ title: '아직 결재 순번이 아닙니다.', description: '앞 단계가 먼저 승인되어야 결재할 수 있습니다.', variant: 'destructive' });
+      return;
+    }
+    if (action === '반려' && !(comment || '').trim()) {
+      toast({ title: '반려 사유를 입력하세요.', variant: 'destructive' }); return;
     }
 
-    await supabase.from('approvals').update({
-      status: action, approver_id: user.id, approver_name: profile.display_name, comment: comment || '',
-      approved_at: action === '승인' ? new Date().toISOString() : null,
-    }).eq('id', approvalId);
-
-    if (action === '승인' && ap?.run_id) {
-      const { data: allAp } = await supabase.from('approvals').select('*')
-        .eq('run_id', ap.run_id).eq('approval_version', ap.approval_version || 1);
-      const allApproved = (allAp || []).filter((a: any) => a.status !== '취소').every((a: any) => a.status === '승인' || a.id === approvalId);
-      if (allApproved) {
-        await supabase.from('assessment_runs').update({ status: '승인완료' }).eq('id', ap.run_id);
-        await supabase.from('risk_items').update({ is_locked: true }).eq('run_id', ap.run_id);
-        const run = runs.find(r => r.id === ap.run_id);
-        const authorStep = (allAp || []).find((a: any) => a.step === '작성');
-        if (authorStep?.approver_id) {
-          await sendNotification({
-            user_id: authorStep.approver_id, title: '결재 최종 승인',
-            message: `[${run?.type || ''}] ${run?.period_label || ''} 회차가 최종 승인되었습니다.`,
-            type: 'approval_approved', related_id: ap.run_id, related_type: 'assessment_run', project_id: ap.project_id,
-          });
-        }
-        toast({ title: '최종 승인 완료!' });
-      } else {
-        // Notify next pending
-        const sortedPending = (allAp || [])
-          .filter((a: any) => a.status === '대기' && a.id !== approvalId)
-          .sort((a: any, b: any) => {
-            return (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99);
-          });
-        const nextPending = sortedPending[0];
-        if (nextPending?.approver_id) {
-          const run = runs.find(r => r.id === ap.run_id);
-          await sendNotification({
-            user_id: nextPending.approver_id, title: '결재 요청',
-            message: `[${run?.type || ''}] ${run?.period_label || ''} - ${ap.step} 승인 완료. ${nextPending.step} 결재를 진행해주세요.`,
-            type: 'approval_request', related_id: ap.run_id, related_type: 'assessment_run', project_id: ap.project_id,
-          });
-        }
-        toast({ title: `${ap.step} 단계가 승인되었습니다.` });
-      }
-    } else if (action === '반려' && ap?.run_id) {
-      await supabase.from('assessment_runs').update({ status: '보완중' }).eq('id', ap.run_id);
-      const run = runs.find(r => r.id === ap.run_id);
-      const { data: authorData } = await supabase.from('approvals').select('*')
-        .eq('run_id', ap.run_id).eq('step', '작성').eq('approval_version', ap.approval_version || 1).limit(1);
-      const authorStep = authorData?.[0];
-      if (authorStep?.approver_id) {
-        await sendNotification({
-          user_id: authorStep.approver_id, title: '결재 반려',
-          message: `[${run?.type || ''}] ${run?.period_label || ''} 반려됨. 사유: ${comment || '(없음)'}`,
-          type: 'approval_rejected', related_id: ap.run_id, related_type: 'assessment_run', project_id: ap.project_id,
-        });
-      }
-      toast({ title: '반려되었습니다.', variant: 'destructive' });
-    } else {
-      toast({ title: `${action} 처리되었습니다.` });
+    // 순차 결재/다음 단계 자동 활성화/알림은 DB RPC(SSOT)가 처리
+    const { data, error } = await supabase.rpc('act_on_entity_approval', {
+      _approval_id: approvalId,
+      _action: action === '승인' ? 'approve' : 'reject',
+      _comment: comment || '',
+    });
+    const res: any = data;
+    if (error || res?.error) {
+      const code = res?.error || error?.message || '';
+      const msg = code === 'PRIOR_STEP_NOT_APPROVED' ? '이전 단계 결재가 완료되지 않았습니다.'
+        : code === 'NOT_ACTIVE_STEP' ? '아직 결재 순번이 아닙니다.'
+        : code === 'NOT_AUTHORIZED' ? '결재 권한이 없습니다.'
+        : code;
+      toast({ title: '처리 실패', description: msg, variant: 'destructive' });
+      return;
     }
+    toast({
+      title: action === '승인'
+        ? (res?.action === 'forwarded' ? `${ap.step} 승인 완료 → 다음 단계로 이관` : '최종 승인 완료')
+        : '반려되었습니다.',
+      variant: action === '반려' ? 'destructive' : undefined,
+    });
 
     log(action, 'approval', approvalId, selectedProject);
     setRejectingId(null);
     setRejectComment('');
     fetchData();
+    fetchEntityPending();
   };
 
   const handleDownloadRunPDF = async (runId: string) => {
@@ -302,7 +263,7 @@ const Approvals = () => {
       {/* KPI 카드 */}
       {(() => {
         const mineCount = user ? Object.values(grouped).filter((steps: any) =>
-          (steps as any[]).some(s => s.approver_id === user.id && s.status === '대기')
+          (steps as any[]).some(s => s.approver_id === user.id && s.status === '진행중')
         ).length + entityPending.length : 0;
         const submittedCount = user ? Object.values(grouped).filter((steps: any) =>
           (steps as any[]).some(s => s.approver_id === user.id && s.step === '작성')
@@ -387,7 +348,7 @@ const Approvals = () => {
             내 결재 (대기)
             {(() => {
               const mineCount = user ? Object.values(grouped).filter((steps: any) =>
-                (steps as any[]).some(s => s.approver_id === user.id && s.status === '대기')
+                (steps as any[]).some(s => s.approver_id === user.id && s.status === '진행중')
               ).length + entityPending.length : 0;
               return mineCount > 0 ? <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">{mineCount}</Badge> : null;
             })()}
@@ -443,16 +404,21 @@ const Approvals = () => {
                           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium ${
                             step.status === '승인' ? 'bg-success/10 text-success' :
                             step.status === '반려' ? 'bg-destructive/10 text-destructive' :
-                            'bg-muted text-muted-foreground'
+                            step.status === '진행중' ? 'bg-primary/10 text-primary ring-1 ring-primary/40' :
+                            step.status === '취소' ? 'bg-muted/50 text-muted-foreground line-through' :
+                            'bg-muted/40 text-muted-foreground opacity-60'
                           }`}>
                             {step.status === '승인' ? <CheckCircle2 className="h-3.5 w-3.5" /> :
                              step.status === '반려' ? <XCircle className="h-3.5 w-3.5" /> :
-                             <Clock className="h-3.5 w-3.5" />}
+                             step.status === '진행중' ? <Clock className="h-3.5 w-3.5" /> :
+                             <Clock className="h-3.5 w-3.5 opacity-50" />}
                             <span>{step.step}</span>
                             <span className="opacity-70">({step.approver_name || '미지정'}{step.company_name ? ` · ${step.company_name}` : ''})</span>
+                            {step.status === '대기' && <span className="text-[10px] opacity-70">· 순번대기</span>}
+                            {step.status === '진행중' && <span className="text-[10px] font-bold">· 결재중</span>}
                           </div>
-                          {/* Only show action buttons to the ASSIGNED approver, not admins in 'all' tab */}
-                          {step.status === '대기' && !isAllTab && user && step.approver_id === user.id && (
+                          {/* 오직 활성(진행중) 단계의 지정 결재자에게만 버튼 노출 */}
+                          {step.status === '진행중' && !isAllTab && user && step.approver_id === user.id && (
                             <div className="flex gap-1">
                               <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => handleApprovalAction(step.id, '승인')}>승인</Button>
                               <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-destructive" onClick={() => setRejectingId(step.id)}>반려</Button>

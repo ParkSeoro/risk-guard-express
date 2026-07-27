@@ -245,9 +245,11 @@ export function filterApproversForStep(
     const isClientCo = CLIENT_TYPES.has(t);
     const isGcCo = GC_TYPES.has(t);
 
-    // 1) 협력사 3개 단계 → 반드시 작성자 회사와 동일한 company_id
+    // 1) 협력사(=상신자 회사 내부) 3개 단계
+    //    - 상신자 회사가 contractor/vendor 뿐 아니라 gc 인 경우도 있으므로
+    //      회사 타입은 검사하지 않고, 오직 company_id 일치만 요구한다.
+    //      (예: GC 소속 안전관리자가 허가서를 상신하는 실제 케이스)
     if (CONTRACTOR_STEP_KEYS.has(key)) {
-      if (!isContractorCo) return false;
       if (!authorCompanyId) return false; // 컨텍스트 미제공 시 안전하게 차단
       if (!a.out_company_id || a.out_company_id !== authorCompanyId) return false;
       return true; // 회사 일치 시 직급 무관 전원 노출 (누락 방지)

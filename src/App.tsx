@@ -196,6 +196,7 @@ function ProtectedRoutes() {
         <Route path="/work-plan/:planId" element={<WorkPlanDetail />} />
         <Route path="/legal-duties" element={<LegalDuties />} />
         <Route path="/todo" element={<TodoDashboard />} />
+        <Route path="/todos" element={<Navigate to="/todo" replace />} />
         <Route path="/ai-assistant" element={<AIAssistant />} />
         <Route path="/site-weather" element={<SiteWeather />} />
         <Route path="/safety-cost" element={<RoleGuard><SafetyCost /></RoleGuard>} />

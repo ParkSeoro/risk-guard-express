@@ -169,7 +169,25 @@ Deno.serve(async (req) => {
         lng: body.lng,
         accuracy_m: body.accuracy_m,
       });
+
+      // 위험/제한구역 무단진입 시 실시간 푸시 알람 발송
+      if (eventType === "unauthorized_entry") {
+        try {
+          await dispatchDangerZonePush(supabase, {
+            project_id: body.project_id,
+            zone_name: zoneMeta?.name ?? "위험구역",
+            zone_type: zoneMeta?.zone_type ?? "danger",
+            worker_name: body.worker_name ?? null,
+            worker_phone: body.worker_phone ?? null,
+            worker_qr_id: body.worker_qr_id ?? null,
+            zone_id: matchedZoneId,
+          });
+        } catch (pushErr) {
+          console.warn("[track-location] push dispatch failed", pushErr);
+        }
+      }
     }
+
 
     return new Response(
       JSON.stringify({ zone_id: matchedZoneId, source, event_type: eventType }),

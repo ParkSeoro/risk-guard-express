@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "supabase:provision": "scripts/migrate-own-supabase/provision-new-project.sh"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

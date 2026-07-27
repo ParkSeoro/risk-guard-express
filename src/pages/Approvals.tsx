@@ -389,9 +389,13 @@ const Approvals = () => {
           <TabsTrigger value="mine" className="flex-1 gap-1.5">
             내 결재 (대기)
             {(() => {
+              const pendingIds = new Set(entityPending.map((e: any) => e.approval_id));
               const mineCount = user ? Object.values(grouped).filter((steps: any) =>
-                (steps as any[]).some(s => s.approver_id === user.id && s.status === '진행중')
+                (steps as any[]).some(s => s.approver_id === user.id && s.status === '진행중' && !pendingIds.has(s.id))
               ).length + entityPending.length : 0;
+              return mineCount > 0 ? <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">{mineCount}</Badge> : null;
+            })()}
+          </TabsTrigger>
               return mineCount > 0 ? <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">{mineCount}</Badge> : null;
             })()}
           </TabsTrigger>

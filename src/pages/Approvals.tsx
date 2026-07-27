@@ -454,8 +454,8 @@ const Approvals = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      {(steps as any[]).sort((a, b) => {
-                        return (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99);
+                      {(steps as any[]).slice().sort((a, b) => {
+                        return (a.step_order ?? 99) - (b.step_order ?? 99);
                       }).map((step: any, i: number) => (
                         <div key={step.id} className="flex items-center gap-2">
                           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium ${

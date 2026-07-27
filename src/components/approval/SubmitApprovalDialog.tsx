@@ -16,8 +16,11 @@ import {
   APPROVAL_POLICY,
   buildDefaultSteps,
   filterApproversForStep,
+  sortStepsByHierarchy,
+  validateStepsHierarchy,
   type ApprovalEntityType as SSOTApprovalEntityType,
 } from '@/lib/approvalRules';
+
 
 // Re-export SSOT types/labels so existing imports keep working.
 export type ApprovalEntityType = SSOTApprovalEntityType;
@@ -104,12 +107,13 @@ export default function SubmitApprovalDialog({
           shared.find((t) => t.is_default) || shared[0];
         if (def) {
           setSelectedTemplateId(def.id);
-          setSteps(normalizeSteps(def.steps));
+          setSteps(sortStepsByHierarchy(normalizeSteps(def.steps)));
         } else {
           setSelectedTemplateId('');
           // 전자결재 SSOT(approvalRules.ts)의 엔티티별 기본 결재선 사용
-          setSteps(buildDefaultSteps(entityType));
+          setSteps(sortStepsByHierarchy(buildDefaultSteps(entityType)));
         }
+
 
 
       } catch (e: any) {
@@ -135,21 +139,23 @@ export default function SubmitApprovalDialog({
   const onPickTemplate = (id: string) => {
     setSelectedTemplateId(id);
     const t = templates.find((x) => x.id === id);
-    if (t) setSteps(normalizeSteps(t.steps));
+    if (t) setSteps(sortStepsByHierarchy(normalizeSteps(t.steps)));
   };
 
   const addStep = () =>
-    setSteps((s) => [...s, { label: '결재', position: '', user_id: '', user_name: '', company_id: null, company_name: '' }]);
+    setSteps((s) => sortStepsByHierarchy([...s, { label: '결재', position: '', user_id: '', user_name: '', company_id: null, company_name: '' }]));
   const removeStep = (i: number) => setSteps((s) => s.filter((_, idx) => idx !== i));
+  // 위계 자동 정렬 정책상 수동 이동 후에도 재정렬한다.
   const move = (i: number, dir: -1 | 1) => {
     setSteps((s) => {
       const next = [...s];
       const j = i + dir;
       if (j < 0 || j >= next.length) return s;
       [next[i], next[j]] = [next[j], next[i]];
-      return next;
+      return sortStepsByHierarchy(next);
     });
   };
+
   const setApprover = (i: number, userId: string) => {
     const a = approvers.find((x) => x.out_user_id === userId);
     if (!a) return;
@@ -177,6 +183,14 @@ export default function SubmitApprovalDialog({
   const submit = async () => {
     if (steps.length === 0) return toast.error('결재선을 1단계 이상 지정하세요');
     if (steps.some((s) => !s.user_id)) return toast.error('각 단계의 결재자를 지정하세요');
+
+    // 위계(협력사 → 시공사 → 발주처) 강제 정렬 & 검증
+    const orderedSteps = sortStepsByHierarchy(steps);
+    const v = validateStepsHierarchy(orderedSteps);
+    if (!v.ok) return toast.error(v.message || '결재 단계 순서가 위계에 어긋납니다');
+    // 정렬된 결과를 화면에도 반영하여 사용자에게 최종 순서를 보여준다.
+    if (orderedSteps.some((s, i) => s !== steps[i])) setSteps(orderedSteps);
+
     setSubmitting(true);
     try {
       const { error } = await supabase.rpc('submit_approval', {
@@ -184,10 +198,11 @@ export default function SubmitApprovalDialog({
         _entity_id: entityId,
         _project_id: projectId,
         _company_id: submitterCompanyId,
-        _steps: steps as any,
+        _steps: orderedSteps as any,
         _reason: reason || null,
       });
       if (error) throw error;
+
 
       if (saveAsDefault) {
         await supabase.from('approval_route_templates').insert({

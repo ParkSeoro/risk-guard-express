@@ -139,21 +139,23 @@ export default function SubmitApprovalDialog({
   const onPickTemplate = (id: string) => {
     setSelectedTemplateId(id);
     const t = templates.find((x) => x.id === id);
-    if (t) setSteps(normalizeSteps(t.steps));
+    if (t) setSteps(sortStepsByHierarchy(normalizeSteps(t.steps)));
   };
 
   const addStep = () =>
-    setSteps((s) => [...s, { label: '결재', position: '', user_id: '', user_name: '', company_id: null, company_name: '' }]);
+    setSteps((s) => sortStepsByHierarchy([...s, { label: '결재', position: '', user_id: '', user_name: '', company_id: null, company_name: '' }]));
   const removeStep = (i: number) => setSteps((s) => s.filter((_, idx) => idx !== i));
+  // 위계 자동 정렬 정책상 수동 이동 후에도 재정렬한다.
   const move = (i: number, dir: -1 | 1) => {
     setSteps((s) => {
       const next = [...s];
       const j = i + dir;
       if (j < 0 || j >= next.length) return s;
       [next[i], next[j]] = [next[j], next[i]];
-      return next;
+      return sortStepsByHierarchy(next);
     });
   };
+
   const setApprover = (i: number, userId: string) => {
     const a = approvers.find((x) => x.out_user_id === userId);
     if (!a) return;

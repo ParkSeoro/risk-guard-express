@@ -139,14 +139,15 @@ export function AppSidebar() {
   const adminFinal = isMaster ? [...adminItems, ...masterOnlyItems] : adminItems;
 
   // 협력사/근로자(Foolproof UI): 복잡한 통계·설정·비용·법적·시스템 메뉴 완전 숨김
-  const CONTRACTOR_GROUP_KEYS = new Set(['home', 'field', 'risk', 'incident', 'workers']);
+  const CONTRACTOR_GROUP_KEYS = new Set(['priority', 'field', 'risk', 'inspect_incident', 'people']);
   const CONTRACTOR_ALLOWED_URLS = new Set<string>([
-    '/', '/work-plans', '/work-permits', '/tbm-logs',
-    '/risk-assessment', '/ai-assistant',
+    '/', '/approvals',
+    '/work-plans', '/work-permits', '/tbm-logs',
+    '/risk-assessment', '/ai-assistant', '/verification-center',
     '/incidents', '/work-stop',
     '/workers', '/workers?tab=attendance',
-    '/project-library', '/education-materials',
-    '/approvals', '/profile', '/manual',
+    '/project-library', '/education-materials', '/worker-education',
+    '/profile', '/manual',
   ]);
   const visibleGroups = restrictToContractorUI
     ? groups
@@ -155,9 +156,10 @@ export function AppSidebar() {
         .filter((g) => g.items.length > 0)
     : groups;
 
+  const DEFAULT_OPEN = { priority: true, field: true, risk: true, inspect_incident: true, people: true, ops: true, health: true, admin: false };
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
-    try { return JSON.parse(localStorage.getItem('sidebar:groups') || '{"home":true,"field":true,"risk":true,"inspect":true,"ops_mgmt":true,"ops":true,"admin":false}'); }
-    catch { return { home: true, field: true, risk: true, inspect: true, ops_mgmt: true, ops: true, admin: false }; }
+    try { return JSON.parse(localStorage.getItem('sidebar:groups') || JSON.stringify(DEFAULT_OPEN)); }
+    catch { return DEFAULT_OPEN; }
   });
   useEffect(() => {
     localStorage.setItem('sidebar:groups', JSON.stringify(openGroups));

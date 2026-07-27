@@ -348,7 +348,7 @@ const Approvals = () => {
             내 결재 (대기)
             {(() => {
               const mineCount = user ? Object.values(grouped).filter((steps: any) =>
-                (steps as any[]).some(s => s.approver_id === user.id && s.status === '대기')
+                (steps as any[]).some(s => s.approver_id === user.id && s.status === '진행중')
               ).length + entityPending.length : 0;
               return mineCount > 0 ? <Badge variant="destructive" className="h-4 px-1.5 text-[10px]">{mineCount}</Badge> : null;
             })()}

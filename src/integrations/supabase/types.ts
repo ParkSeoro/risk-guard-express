@@ -9683,6 +9683,10 @@ export type Database = {
         Args: { _code: string; _phone: string }
         Returns: Json
       }
+      withdraw_approval: {
+        Args: { _entity_id: string; _entity_type: string; _reason?: string }
+        Returns: Json
+      }
       worker_daily_scan:
         | {
             Args: {

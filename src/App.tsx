@@ -15,11 +15,9 @@ import AssessmentRuns from "./pages/AssessmentRuns";
 import AssessmentRunDetail from "./pages/AssessmentRunDetail";
 import MasterData from "./pages/MasterData";
 import Approvals from "./pages/Approvals";
-import Verification from "./pages/Verification";
 import VerificationCenter from "./pages/VerificationCenter";
 import ScheduleUpload from "./pages/ScheduleUpload";
 import AuditLogs from "./pages/AuditLogs";
-import UserManagement from "./pages/UserManagement";
 import PermissionTest from "./pages/PermissionTest";
 import Profile from "./pages/Profile";
 import Auth from "./pages/Auth";
@@ -177,7 +175,7 @@ function ProtectedRoutes() {
         <Route path="/assessment-run/:runId" element={<AssessmentRunDetail />} />
         <Route path="/schedule-upload" element={<ScheduleUpload />} />
         <Route path="/schedule-upload/:projectId" element={<ScheduleUpload />} />
-        <Route path="/verification" element={<Verification />} />
+        <Route path="/verification" element={<Navigate to="/verification-center" replace />} />
         <Route path="/verification-center" element={<VerificationCenter />} />
         <Route path="/master-data" element={<RoleGuard><MasterData /></RoleGuard>} />
         <Route path="/approvals" element={<Approvals />} />
@@ -198,6 +196,7 @@ function ProtectedRoutes() {
         <Route path="/work-plan/:planId" element={<WorkPlanDetail />} />
         <Route path="/legal-duties" element={<LegalDuties />} />
         <Route path="/todo" element={<TodoDashboard />} />
+        <Route path="/todos" element={<Navigate to="/todo" replace />} />
         <Route path="/ai-assistant" element={<AIAssistant />} />
         <Route path="/site-weather" element={<SiteWeather />} />
         <Route path="/safety-cost" element={<RoleGuard><SafetyCost /></RoleGuard>} />

@@ -175,7 +175,7 @@ function ProtectedRoutes() {
         <Route path="/assessment-run/:runId" element={<AssessmentRunDetail />} />
         <Route path="/schedule-upload" element={<ScheduleUpload />} />
         <Route path="/schedule-upload/:projectId" element={<ScheduleUpload />} />
-        <Route path="/verification" element={<Verification />} />
+        <Route path="/verification" element={<Navigate to="/verification-center" replace />} />
         <Route path="/verification-center" element={<VerificationCenter />} />
         <Route path="/master-data" element={<RoleGuard><MasterData /></RoleGuard>} />
         <Route path="/approvals" element={<Approvals />} />

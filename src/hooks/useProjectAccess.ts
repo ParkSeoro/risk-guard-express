@@ -155,11 +155,12 @@ export interface ProjectAccess {
 }
 
 interface MemberInfo {
-  role: ProjectRole;
+  role: ProjectRole | null;
   position: ProjectPosition;
   company_id: string | null;
   company_type: CompanyType;
 }
+
 
 export function useProjectAccess(): ProjectAccess {
   const { user, hasRole } = useAuth();

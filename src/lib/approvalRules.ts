@@ -286,3 +286,66 @@ export function validateApprovalLinesSSOT(
   return { ok: invalid.length === 0, invalid };
 }
 
+/**
+ * 위계(발주처-시공사-협력사) 강제 정렬용 랭크.
+ * 실제 프로세스 순서: 협력사 → 시공사(GC) → 발주처(Client) → 협조.
+ * 값이 작을수록 앞 단계. 알 수 없는 키는 99(맨 뒤)로 취급하지만 UI/RPC에서 차단된다.
+ */
+export const POSITION_RANK: Record<string, number> = {
+  contractor_supervisor: 10,
+  contractor_safety_manager: 11,
+  contractor_site_director: 12,
+  gc: 20,
+  gc_manager: 21,
+  gc_pm: 22,
+  owner_cm: 30,
+  owner_sm: 31,
+  cooperator: 40,
+};
+
+export function positionRank(pos?: string | null): number {
+  const k = (pos || '').toLowerCase();
+  return POSITION_RANK[k] ?? 99;
+}
+
+/**
+ * 결재선을 위계(협력사 → 시공사 → 발주처 → 협조) 순으로 안정 정렬한다.
+ * 동일 랭크(예: contractor_supervisor 3명) 내에서는 입력 순서 유지.
+ * 발주처 SM(owner_sm)은 항상 마지막 단계로 밀린다.
+ */
+export function sortStepsByHierarchy<T extends { position?: string | null }>(steps: T[]): T[] {
+  return steps
+    .map((s, idx) => ({ s, idx, r: positionRank(s.position) }))
+    .sort((a, b) => (a.r - b.r) || (a.idx - b.idx))
+    .map((x) => x.s);
+}
+
+/**
+ * 결재선 위계 검증. 랭크가 감소하는 순간(발주처 뒤에 협력사 등)이 있으면 fail.
+ */
+export function validateStepsHierarchy<T extends { position?: string | null; label?: string | null }>(
+  steps: T[],
+): { ok: boolean; message?: string } {
+  let prev = -Infinity;
+  for (let i = 0; i < steps.length; i++) {
+    const r = positionRank(steps[i].position);
+    if (r === 99) {
+      return {
+        ok: false,
+        message: `${i + 1}단계(${steps[i].label || steps[i].position || '-'}): 알 수 없는 결재 직책입니다.`,
+      };
+    }
+    if (r < prev) {
+      return {
+        ok: false,
+        message:
+          `결재 단계 순서가 위계(협력사 → 시공사 → 발주처)를 어기고 있습니다. ` +
+          `${i + 1}단계(${steps[i].label || steps[i].position})가 이전 단계보다 상위입니다.`,
+      };
+    }
+    prev = r;
+  }
+  return { ok: true };
+}
+
+

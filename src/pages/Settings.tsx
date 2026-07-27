@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature, Building2 } from 'lucide-react';
+import { E2ETestAccountsSetup } from '@/components/E2ETestAccountsSetup';
 
 const settingsCards = [
   {
@@ -130,6 +131,9 @@ const Settings = () => {
           );
         })}
       </div>
+
+      {/* Master-only: E2E test account one-click setup. Rendered at the very bottom. */}
+      <E2ETestAccountsSetup />
     </div>
   );
 };

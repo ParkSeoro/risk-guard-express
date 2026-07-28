@@ -73,6 +73,7 @@ const groups: Group[] = [
       { title: "공개 자료실", url: "/project-library", icon: FolderOpen },
       { title: "안전관리자 선임", url: "/safety-appointments", icon: UserCheck },
       { title: "현장 사이트맵/구역", url: "/site-maps", icon: Map },
+      { title: "위험구역 Geofencing", url: "/restricted-zones", icon: ShieldAlert },
       { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
       { title: "근로자 분포", url: "/worker-distribution", icon: Users },
       { title: "위치 추적 점검", url: "/admin/tracking-health", icon: Users },

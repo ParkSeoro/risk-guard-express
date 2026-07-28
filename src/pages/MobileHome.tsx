@@ -10,6 +10,7 @@ import { Building2, ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, Bo
 import { isOnline, listQueue } from "@/lib/offlineQueue";
 import { isPushSupported, registerSW, subscribeToPush } from "@/lib/pushSubscription";
 import { setForceDesktop } from "@/components/MobileRedirectGuard";
+import GeofenceAlertBridge from "@/components/geofence/GeofenceAlertBridge";
 import { toast } from "sonner";
 import { ALL_TILES, MobileTileKey, getMobileTiles, setMobileTiles, resetMobileTiles, detectRole } from "@/lib/mobileMenuPrefs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -105,6 +106,9 @@ export default function MobileHome() {
 
   return (
     <div className="min-h-screen bg-muted/30 pb-24">
+      {user && selectedProjectId && (
+        <GeofenceAlertBridge projectId={selectedProjectId} autoStart />
+      )}
       <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
         <div className="h-10 w-10 rounded-lg bg-primary-foreground/10 flex items-center justify-center">
           <HardHat className="h-6 w-6" />

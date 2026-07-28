@@ -4,6 +4,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { isForceDesktop } from '@/components/MobileRedirectGuard';
+import MobileWorkPlanViewer from '@/pages/MobileWorkPlanViewer';
 import { WORK_PLAN_TYPES } from '@/lib/workPlanTemplates';
 import RiggingPlanForm from '@/components/rigging/RiggingPlanForm';
 import { generateAttachments, type AttachmentItem } from '@/lib/attachmentTemplates';
@@ -46,6 +49,7 @@ const WorkPlanDetail = () => {
   const { user } = useAuth();
   const access = useGlobalProjectAccess();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [plan, setPlan] = useState<any>(null);
   const [sections, setSections] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
@@ -447,6 +451,11 @@ const WorkPlanDetail = () => {
 
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
   if (!plan) return null;
+
+  // Mobile: never render authoring UI — approved viewer only
+  if (isMobile && !isForceDesktop()) {
+    return <MobileWorkPlanViewer planId={planId} />;
+  }
 
   const wpType = WORK_PLAN_TYPES.find(t => t.id === plan.work_type);
   const statusColor = {

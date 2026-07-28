@@ -4,6 +4,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useToast } from '@/hooks/use-toast';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { isForceDesktop } from '@/components/MobileRedirectGuard';
+import MobileAssessmentViewer from '@/pages/MobileAssessmentViewer';
 import { validateRiskItemField } from '@/lib/inputValidation';
 import { sendNotification } from '@/lib/notificationService';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
@@ -58,6 +61,7 @@ const AssessmentRunDetail = () => {
   const navigate = useNavigate();
   const { user, profile, isAdmin, roles } = useAuth();
   const { userRole, userCompanyId, isMaster } = useGlobalProjectAccess();
+  const isMobile = useIsMobile();
   const { log } = useAuditLog();
   const { toast } = useToast();
 
@@ -1419,6 +1423,11 @@ const AssessmentRunDetail = () => {
 
   if (loading && !run) return <div className="py-12 text-center text-muted-foreground">로딩 중...</div>;
   if (!run) return <div className="py-12 text-center text-muted-foreground">회차를 찾을 수 없습니다.</div>;
+
+  // Mobile: never render authoring UI — approved viewer only
+  if (isMobile && !isForceDesktop()) {
+    return <MobileAssessmentViewer runId={runId} />;
+  }
 
   // ===== CTA conditions (strict state machine) =====
   const isDraft = run.status === '작성중';

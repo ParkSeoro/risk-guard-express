@@ -11,6 +11,7 @@ import {
   setTrackingConsent,
   type TrackingIdentity,
 } from "@/lib/tracking/locationTracker";
+import DangerZoneAlertModal from "@/components/geofence/DangerZoneAlertModal";
 
 type MyLog = { id: string; zone_id: string | null; event_type: string; source: string | null; created_at: string };
 
@@ -20,6 +21,7 @@ export default function WorkerTrackingCard({ identity }: { identity: TrackingIde
   const [info, setInfo] = useState<{ acc: number; zone: string | null; source: string } | null>(null);
   const [logs, setLogs] = useState<MyLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
+  const [danger, setDanger] = useState<{ name: string } | null>(null);
   const stopRef = useRef<null | (() => void)>(null);
 
   const loadLogs = async () => {
@@ -43,8 +45,18 @@ export default function WorkerTrackingCard({ identity }: { identity: TrackingIde
     try {
       const stop = await startTracking({
         identity,
-        onUpdate: (u) =>
-          setInfo({ acc: Math.round(u.accuracy), zone: u.zone_id, source: u.source }),
+        onUpdate: (u) => {
+          setInfo({ acc: Math.round(u.accuracy), zone: u.zone_id, source: u.source });
+          const anyU = u as any;
+          if (
+            anyU.event_type === "unauthorized_entry" ||
+            anyU.restricted_zone_id ||
+            anyU.zone_type === "danger" ||
+            anyU.zone_type === "restricted"
+          ) {
+            setDanger({ name: anyU.zone_name || "위험 구역" });
+          }
+        },
         onError: (e) => toast.error("위치 추적 오류: " + e.message),
       });
       stopRef.current = stop;
@@ -68,82 +80,90 @@ export default function WorkerTrackingCard({ identity }: { identity: TrackingIde
   };
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base flex items-center gap-2">
-          <MapPin className="h-4 w-4 text-primary" /> 현장 위치 자동 기록
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {!consented ? (
-          <div className="space-y-2 text-sm">
-            <p className="text-muted-foreground leading-relaxed">
-              안전 관리를 위해 작업 중 위치를 GPS로 자동 기록합니다.
-              위험·제한구역 무단진입 시 자동 경보가 발송되며,
-              위치 기록은 <b>90일</b> 후 자동으로 익명화됩니다. 언제든 중단할 수 있습니다.
-            </p>
-            <Button size="sm" onClick={accept}>
-              <ShieldCheck className="h-4 w-4 mr-1" /> 동의하고 사용
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex gap-2">
-              {!running ? (
-                <Button size="sm" onClick={start}>
-                  <Play className="h-4 w-4 mr-1" /> 추적 시작
-                </Button>
-              ) : (
-                <Button size="sm" variant="outline" onClick={stop}>
-                  <Square className="h-4 w-4 mr-1" /> 추적 중지
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setTrackingConsent(false);
-                  stop();
-                  setConsented(false);
-                }}
-              >
-                동의 철회
+    <>
+      <DangerZoneAlertModal
+        open={!!danger}
+        zoneName={danger?.name}
+        workerName={identity.worker_name}
+        onDismiss={() => setDanger(null)}
+      />
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <MapPin className="h-4 w-4 text-primary" /> 현장 위치 자동 기록
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!consented ? (
+            <div className="space-y-2 text-sm">
+              <p className="text-muted-foreground leading-relaxed">
+                안전 관리를 위해 작업 중 위치를 GPS로 자동 기록합니다.
+                위험·제한구역 무단진입 시 음성 경보와 관리자 푸시가 발송되며,
+                위치 기록은 <b>90일</b> 후 자동으로 익명화됩니다. 언제든 중단할 수 있습니다.
+              </p>
+              <Button size="sm" onClick={accept}>
+                <ShieldCheck className="h-4 w-4 mr-1" /> 동의하고 사용
               </Button>
             </div>
-            {info && (
-              <div className="text-xs text-muted-foreground flex flex-wrap gap-2 items-center">
-                <Badge variant="outline">정확도 ±{info.acc}m</Badge>
-                <Badge variant="outline">소스: {info.source}</Badge>
-                <Badge variant={info.zone ? "default" : "secondary"}>
-                  {info.zone ? "구역 내" : "구역 외"}
-                </Badge>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                {!running ? (
+                  <Button size="sm" onClick={start}>
+                    <Play className="h-4 w-4 mr-1" /> 추적 시작
+                  </Button>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={stop}>
+                    <Square className="h-4 w-4 mr-1" /> 추적 중지
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setTrackingConsent(false);
+                    stop();
+                    setConsented(false);
+                  }}
+                >
+                  동의 철회
+                </Button>
               </div>
-            )}
-            {!info && running && (
-              <div className="text-xs text-muted-foreground">위치 신호 수신 중…</div>
-            )}
-            <button
-              type="button"
-              onClick={() => setShowLogs((s) => !s)}
-              className="text-xs text-primary flex items-center gap-1 mt-1"
-            >
-              <History className="h-3 w-3" /> {showLogs ? "내 위치 로그 닫기" : "오늘 내 위치 로그 보기"}
-            </button>
-            {showLogs && (
-              <div className="text-xs space-y-1 max-h-40 overflow-auto border rounded p-2">
-                {logs.length === 0 ? (
-                  <div className="text-muted-foreground">기록 없음</div>
-                ) : logs.map((l) => (
-                  <div key={l.id} className="flex justify-between">
-                    <span>{l.event_type === "exit" ? "🚪 퇴장" : l.event_type === "unauthorized_entry" ? "⚠️ 무단진입" : "🟢 진입"} · {l.source || "-"}</span>
-                    <span className="text-muted-foreground">{new Date(l.created_at).toLocaleTimeString("ko-KR")}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              {info && (
+                <div className="text-xs text-muted-foreground flex flex-wrap gap-2 items-center">
+                  <Badge variant="outline">정확도 ±{info.acc}m</Badge>
+                  <Badge variant="outline">소스: {info.source}</Badge>
+                  <Badge variant={info.zone ? "default" : "secondary"}>
+                    {info.zone ? "구역 내" : "구역 외"}
+                  </Badge>
+                </div>
+              )}
+              {!info && running && (
+                <div className="text-xs text-muted-foreground">위치 신호 수신 중…</div>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowLogs((s) => !s)}
+                className="text-xs text-primary flex items-center gap-1 mt-1"
+              >
+                <History className="h-3 w-3" /> {showLogs ? "내 위치 로그 닫기" : "오늘 내 위치 로그 보기"}
+              </button>
+              {showLogs && (
+                <div className="text-xs space-y-1 max-h-40 overflow-auto border rounded p-2">
+                  {logs.length === 0 ? (
+                    <div className="text-muted-foreground">기록 없음</div>
+                  ) : logs.map((l) => (
+                    <div key={l.id} className="flex justify-between">
+                      <span>{l.event_type === "exit" ? "🚪 퇴장" : l.event_type === "unauthorized_entry" ? "⚠️ 무단진입" : "🟢 진입"} · {l.source || "-"}</span>
+                      <span className="text-muted-foreground">{new Date(l.created_at).toLocaleTimeString("ko-KR")}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </>
   );
 }

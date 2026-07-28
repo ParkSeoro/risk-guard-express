@@ -6757,6 +6757,84 @@ export type Database = {
           },
         ]
       }
+
+      restricted_zones: {
+        Row: {
+          banned_company_ids: string[]
+          banned_job_types: string[]
+          banned_worker_ids: string[]
+          center_lat: number | null
+          center_lng: number | null
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          deleted_by: string | null
+          deleted_reason: string | null
+          description: string | null
+          geo_polygon: Json | null
+          geometry_type: string
+          id: string
+          is_active: boolean
+          is_deleted: boolean
+          name: string
+          project_id: string
+          radius_m: number | null
+          updated_at: string
+        }
+        Insert: {
+          banned_company_ids?: string[]
+          banned_job_types?: string[]
+          banned_worker_ids?: string[]
+          center_lat?: number | null
+          center_lng?: number | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
+          description?: string | null
+          geo_polygon?: Json | null
+          geometry_type?: string
+          id?: string
+          is_active?: boolean
+          is_deleted?: boolean
+          name: string
+          project_id: string
+          radius_m?: number | null
+          updated_at?: string
+        }
+        Update: {
+          banned_company_ids?: string[]
+          banned_job_types?: string[]
+          banned_worker_ids?: string[]
+          center_lat?: number | null
+          center_lng?: number | null
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
+          deleted_reason?: string | null
+          description?: string | null
+          geo_polygon?: Json | null
+          geometry_type?: string
+          id?: string
+          is_active?: boolean
+          is_deleted?: boolean
+          name?: string
+          project_id?: string
+          radius_m?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "restricted_zones_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       site_zones: {
         Row: {
           color: string | null
@@ -8975,6 +9053,7 @@ export type Database = {
           position_x: number | null
           position_y: number | null
           project_id: string
+          restricted_zone_id: string | null
           source: string
           worker_name: string | null
           worker_phone: string | null
@@ -8995,6 +9074,7 @@ export type Database = {
           position_x?: number | null
           position_y?: number | null
           project_id: string
+          restricted_zone_id?: string | null
           source?: string
           worker_name?: string | null
           worker_phone?: string | null
@@ -9015,6 +9095,7 @@ export type Database = {
           position_x?: number | null
           position_y?: number | null
           project_id?: string
+          restricted_zone_id?: string | null
           source?: string
           worker_name?: string | null
           worker_phone?: string | null

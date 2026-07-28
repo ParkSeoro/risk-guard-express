@@ -137,6 +137,7 @@ export const SOFT_DELETE_TABLES = [
   'emergency_drills',
   'site_maps',
   'site_zones',
+  'restricted_zones',
 ] as const;
 
 
@@ -176,5 +177,6 @@ export const TABLE_LABELS: Record<SoftDeleteTable, string> = {
   emergency_drills: '비상대피훈련',
   site_maps: '현장 사이트맵',
   site_zones: '사이트 구역',
+  restricted_zones: '위험/진입금지 구역',
 };
 

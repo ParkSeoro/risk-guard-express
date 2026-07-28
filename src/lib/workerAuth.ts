@@ -3,6 +3,8 @@
  * Supabase Email/Password에 가상 이메일(`{phone}@worker.local`)을 태운다.
  */
 import { z } from "zod";
+import type { AuthError, Session, User } from "@supabase/supabase-js";
+import { supabase } from "@/integrations/supabase/client";
 
 export const WORKER_EMAIL_DOMAIN = "worker.local";
 
@@ -50,3 +52,50 @@ export const workerPhoneSchema = z
   .refine((v) => /^01[016789]\d{7,8}$/.test(v), {
     message: "올바른 휴대전화 번호를 입력하세요",
   });
+
+export type WorkerSignInResult = {
+  data: { user: User | null; session: Session | null };
+  error: AuthError | null;
+  /** 변환에 사용된 가상 이메일 (디버그/로그용) */
+  loginEmail: string;
+};
+
+/**
+ * 근로자 간편 로그인: 전화번호 → `{digits}@worker.local` 랩핑 후 signInWithPassword.
+ */
+export async function signInWorkerWithPhone(
+  phoneInput: string,
+  pinPassword: string,
+): Promise<WorkerSignInResult> {
+  const phoneParsed = workerPhoneSchema.safeParse(phoneInput);
+  if (!phoneParsed.success) {
+    return {
+      data: { user: null, session: null },
+      error: {
+        name: "AuthApiError",
+        message: phoneParsed.error.errors[0]?.message || "전화번호가 올바르지 않습니다",
+        status: 400,
+      } as AuthError,
+      loginEmail: "",
+    };
+  }
+  const pinParsed = workerPinSchema.safeParse(pinPassword);
+  if (!pinParsed.success) {
+    return {
+      data: { user: null, session: null },
+      error: {
+        name: "AuthApiError",
+        message: pinParsed.error.errors[0]?.message || "PIN이 올바르지 않습니다",
+        status: 400,
+      } as AuthError,
+      loginEmail: "",
+    };
+  }
+
+  const loginEmail = phoneToWorkerEmail(phoneParsed.data);
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: loginEmail,
+    password: pinParsed.data,
+  });
+  return { data, error, loginEmail };
+}

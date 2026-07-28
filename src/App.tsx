@@ -78,6 +78,7 @@ import MobileInspect from "./pages/MobileInspect";
 import MobileAlerts from "./pages/MobileAlerts";
 import MobileActions from "./pages/MobileActions";
 import MobileApprovals from "./pages/MobileApprovals";
+import MobileApprovalDetail from "./pages/MobileApprovalDetail";
 import MobileWorkers from "./pages/MobileWorkers";
 import MobileRiskAssessment from "./pages/MobileRiskAssessment";
 import MobileWorkPlans from "./pages/MobileWorkPlans";
@@ -298,6 +299,7 @@ const App = () => (
             <Route path="/m/alerts" element={<MobileAlerts />} />
             <Route path="/m/actions" element={<MobileActions />} />
             <Route path="/m/approvals" element={<MobileApprovals />} />
+            <Route path="/m/approvals/:approvalId" element={<MobileApprovalDetail />} />
             <Route path="/m/workers" element={<MobileWorkers />} />
             <Route path="/m/risk-assessment" element={<MobileRiskAssessment />} />
             <Route path="/m/risk-assessment/:runId" element={<MobileAssessmentViewer />} />

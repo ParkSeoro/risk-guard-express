@@ -60,6 +60,7 @@ const POSITION_TO_SIG: Record<string, keyof PermitSignatures> = {
   cm: 'cm',
   owner_sm: 'sm',
   sm: 'sm',
+  closure_sm: 'closure_approver',
   // GC는 양식 서명칸이 없어 결재 이력만 유지
 };
 
@@ -103,16 +104,20 @@ function toLocalInput(value?: string | null) {
 
 const EDITABLE_PERMIT_STATUSES = new Set(['작성중', '반려', '임시저장']);
 const APPROVED_PERMIT_STATUSES = new Set(['승인', '승인완료', '발행완료', 'approved', 'ISSUED', 'APPROVED']);
+const CLOSURE_PENDING_STATUSES = new Set(['종료대기', 'CLOSURE_PENDING']);
+const CLOSED_PERMIT_STATUSES = new Set(['종료완료', 'CLOSED', '마감']);
 const IN_APPROVAL_PERMIT_STATUSES = new Set(['결재중', '결재진행', '검토대기', '검토완료']);
 
 function isPermitEditable(status?: string | null) {
   return EDITABLE_PERMIT_STATUSES.has(status || '');
 }
 function isPermitApproved(status?: string | null) {
-  return APPROVED_PERMIT_STATUSES.has(status || '');
+  return APPROVED_PERMIT_STATUSES.has(status || '') || CLOSURE_PENDING_STATUSES.has(status || '') || CLOSED_PERMIT_STATUSES.has(status || '');
 }
 function permitStatusLabel(status?: string | null) {
-  if (isPermitApproved(status)) return '발행 완료';
+  if (CLOSED_PERMIT_STATUSES.has(status || '')) return '종료 완료';
+  if (CLOSURE_PENDING_STATUSES.has(status || '')) return '작업 완료 확인 대기';
+  if (APPROVED_PERMIT_STATUSES.has(status || '')) return '발행 완료';
   if (status === '결재중' || status === '결재진행') return '결재 진행중';
   return status || '-';
 }
@@ -124,6 +129,7 @@ function mergeApprovalSignatures(
   const merged: PermitSignatures = { ...baseSig };
   let cmAt: string | undefined;
   let smAt: string | undefined;
+  let closedAt: string | undefined;
 
   for (const a of approvals) {
     if (a.status && a.status !== '승인' && a.status !== 'approved') continue;
@@ -137,19 +143,28 @@ function mergeApprovalSignatures(
           signature: existing?.signature || '',
           signed_at: a.approved_at || existing?.signed_at || '',
         };
+      } else if (sigKey === 'closure_approver' && a.approved_at) {
+        (merged as any)[sigKey] = {
+          ...existing,
+          name: a.approver_name || existing?.name || '',
+          signed_at: a.approved_at,
+        };
       }
     }
-    // CM / SM 은 별도 결재 단계 — 각자 approved_at 을 검토일·승인일에 매핑
     if (pos === 'owner_cm' || pos === 'cm') {
       if (a.approved_at) cmAt = a.approved_at;
     }
     if (pos === 'owner_sm' || pos === 'sm') {
       if (a.approved_at) smAt = a.approved_at;
     }
+    if (pos === 'closure_sm') {
+      if (a.approved_at) closedAt = a.approved_at;
+    }
   }
 
-  if (cmAt) merged.reviewed_at = cmAt; // 검토일 = CM 실제 결재 시각
-  if (smAt) merged.approved_at = smAt; // 승인일 = SM 실제 결재 시각
+  if (cmAt) merged.reviewed_at = cmAt;
+  if (smAt) merged.approved_at = smAt;
+  if (closedAt) merged.closed_at = closedAt;
   return merged;
 }
 

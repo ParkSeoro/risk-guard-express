@@ -50,17 +50,25 @@ const Approvals = () => {
 
 
   const fetchEntityPending = async () => {
+    try { await (supabase as any).rpc('promote_permits_to_closure_pending'); } catch { /* ignore */ }
     const { data } = await supabase.rpc('get_my_pending_entity_approvals');
     setEntityPending((data as any[]) || []);
   };
 
-  const actOnEntity = async (id: string, action: 'approve'|'reject') => {
+  const actOnEntity = async (id: string, action: 'approve'|'reject', isClosure = false) => {
     const comment = action === 'reject' ? (prompt('반려 사유') || '') : '';
     if (action === 'reject' && !comment) return;
     const { data, error } = await supabase.rpc('act_on_entity_approval', { _approval_id: id, _action: action, _comment: comment });
     const r = data as any;
     if (error || r?.error) toast({ title: '처리 실패', description: r?.error || error?.message, variant: 'destructive' });
-    else { toast({ title: action === 'approve' ? '승인 완료' : '반려 완료' }); fetchEntityPending(); }
+    else {
+      toast({
+        title: isClosure
+          ? (action === 'approve' ? '작업 완료 및 종료 처리됨' : '종료 확인 반려')
+          : (action === 'approve' ? '승인 완료' : '반려 완료'),
+      });
+      fetchEntityPending();
+    }
   };
 
   const handleWithdraw = async (steps: any[]) => {
@@ -363,11 +371,18 @@ const Approvals = () => {
             <div className="text-sm font-bold flex items-center gap-2">
               <FileCheck className="h-4 w-4" /> 작업계획서·작업허가서 결재 대기 ({filteredEntityPending.length}/{entityPending.length})
             </div>
-            {filteredEntityPending.map((e: any) => (
+            {filteredEntityPending.map((e: any) => {
+              const isClosure = (e.step_position || '').toLowerCase() === 'closure_sm';
+              return (
               <div key={e.approval_id} className="flex items-center gap-2 p-2 border rounded bg-background">
                 <Badge variant="outline" className="text-[10px]">
                   {e.entity_type === 'work_plan' ? '작업계획서' : '작업허가서'}
                 </Badge>
+                {isClosure && (
+                  <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-700">
+                    작업 완료 확인 요망
+                  </Badge>
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{e.entity_title || '-'}</div>
                   <div className="text-xs text-muted-foreground">{e.entity_date || ''} · {e.step}</div>
@@ -380,14 +395,15 @@ const Approvals = () => {
                     </Button>
                   ) : null;
                 })()}
-                <Button size="sm" onClick={() => actOnEntity(e.approval_id, 'approve')}>
-                  <CheckCircle2 className="h-3 w-3 mr-1" />승인
+                <Button size="sm" onClick={() => actOnEntity(e.approval_id, 'approve', isClosure)}>
+                  <CheckCircle2 className="h-3 w-3 mr-1" />{isClosure ? '작업 완료 및 종료' : '승인'}
                 </Button>
-                <Button size="sm" variant="destructive" onClick={() => actOnEntity(e.approval_id, 'reject')}>
+                <Button size="sm" variant="destructive" onClick={() => actOnEntity(e.approval_id, 'reject', isClosure)}>
                   <XCircle className="h-3 w-3 mr-1" />반려
                 </Button>
               </div>
-            ))}
+              );
+            })}
           </CardContent>
         </Card>
       )}

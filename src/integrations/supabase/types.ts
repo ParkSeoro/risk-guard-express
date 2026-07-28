@@ -9855,8 +9855,11 @@ export type Database = {
         | "FOREMAN"
         | "WORKER"
         | "OWNER_PM"
+        | "OWNER_CM"
+        | "OWNER_SM"
         | "OWNER_HSE"
         | "SUPERVISOR"
+        | "SITE_SUPERVISOR"
       project_role:
         | "project_admin"
         | "safety_manager"
@@ -10031,8 +10034,11 @@ export const Constants = {
         "FOREMAN",
         "WORKER",
         "OWNER_PM",
+        "OWNER_CM",
+        "OWNER_SM",
         "OWNER_HSE",
         "SUPERVISOR",
+        "SITE_SUPERVISOR",
       ],
       project_role: [
         "project_admin",

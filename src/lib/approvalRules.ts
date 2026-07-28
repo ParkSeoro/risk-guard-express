@@ -211,10 +211,14 @@ export function remapLegacyStepKey(
       if (isGc) return 'gc_manager';
       return 'owner_cm';
     case 'owner_pm':
+    case 'owner_cm':
       return 'owner_cm';
     case 'sm':
     case 'owner_hse':
+    case 'owner_sm':
       return 'owner_sm';
+    case 'site_supervisor':
+      return 'contractor_supervisor';
     case 'cooperator':
       return 'cooperator';
     default:

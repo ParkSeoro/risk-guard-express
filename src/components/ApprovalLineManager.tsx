@@ -60,9 +60,12 @@ const POSITION_LABELS: Record<string, string> = {
   FIELD_ENGINEER: '현장기사',
   FOREMAN: '작업반장',
   WORKER: '작업자',
-  OWNER_PM: '발주처PM',
-  OWNER_HSE: '발주처안전',
-  SUPERVISOR: '감리원',
+  OWNER_PM: '발주처 PM',
+  OWNER_CM: '발주처 CM',
+  OWNER_SM: '발주처 SM',
+  OWNER_HSE: '발주처 SM',
+  SUPERVISOR: '감리',
+  SITE_SUPERVISOR: '관리감독자',
 };
 
 // SSOT: 5단계 고정 결재선 템플릿 (approvalRules.ts FIXED_APPROVAL_STEPS)
@@ -119,9 +122,9 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
       const t = id ? companyTypeById.get(id) : '';
       return t === 'contractor' || t === 'vendor';
     };
-    const isOwnerCo = (id: string | null) => {
+    const isClientCo = (id: string | null) => {
       const t = id ? companyTypeById.get(id) : '';
-      return t === 'client' || t === 'gc';
+      return t === 'client';
     };
 
     const POS = (p: string) => (p || '').toUpperCase();
@@ -149,19 +152,20 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
     const newLines: ApprovalLine[] = [];
     const steps = FIXED_APPROVAL_STEPS;
 
-    // Step 1: 협력사 관리감독자 — 작성자 우선(협력사인 경우), 아니면 협력사 감독자
+    // Step 1: 협력사 관리감독자 — SITE_SUPERVISOR 우선 (감리 SUPERVISOR와 분리)
+    const contractorSupervisorPos = ['SITE_SUPERVISOR', 'SUPERVISOR', 'FOREMAN', 'FIELD_ENGINEER', 'CONSTRUCTION_MGR'];
     const s1Author =
       authorMember && isContractorCo(authorMember.company_id) &&
-      ['SUPERVISOR', 'FOREMAN', 'FIELD_ENGINEER', 'CONSTRUCTION_MGR'].includes(POS(authorMember.position))
+      contractorSupervisorPos.includes(POS(authorMember.position))
         ? authorMember
         : undefined;
     const s1 = s1Author || findMember(m =>
       isContractorCo(m.company_id) &&
-      ['SUPERVISOR', 'FOREMAN', 'FIELD_ENGINEER', 'CONSTRUCTION_MGR'].includes(POS(m.position)) &&
+      contractorSupervisorPos.includes(POS(m.position)) &&
       (authorCompanyId ? m.company_id === authorCompanyId : true),
     ) || findMember(m =>
       isContractorCo(m.company_id) &&
-      ['SUPERVISOR', 'FOREMAN', 'FIELD_ENGINEER', 'CONSTRUCTION_MGR'].includes(POS(m.position)),
+      contractorSupervisorPos.includes(POS(m.position)),
     );
     pushStep(0, steps[0].label, steps[0].position, s1);
 
@@ -181,15 +185,15 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
     );
     pushStep(2, steps[2].label, steps[2].position, s3);
 
-    // Step 4: 발주처 CM
+    // Step 4: 발주처 CM (OWNER_CM / OWNER_PM)
     const s4 = findMember(m =>
-      isOwnerCo(m.company_id) && ['OWNER_PM', 'CONSTRUCTION_MGR', 'SITE_MANAGER'].includes(POS(m.position)),
+      isClientCo(m.company_id) && ['OWNER_CM', 'OWNER_PM', 'CONSTRUCTION_MGR'].includes(POS(m.position)),
     );
     pushStep(3, steps[3].label, steps[3].position, s4);
 
-    // Step 5: 발주처 SM
+    // Step 5: 발주처 SM (OWNER_SM / legacy OWNER_HSE)
     const s5 = findMember(m =>
-      isOwnerCo(m.company_id) && ['OWNER_HSE', 'HSE_MANAGER'].includes(POS(m.position)),
+      isClientCo(m.company_id) && ['OWNER_SM', 'OWNER_HSE'].includes(POS(m.position)),
     );
     pushStep(4, steps[4].label, steps[4].position, s5);
 

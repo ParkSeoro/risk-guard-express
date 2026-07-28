@@ -10,6 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { HardHat, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 
+import {
+  positionsForCompanyType,
+  positionLabel,
+} from '@/lib/projectPositions';
+import { normalizeCompanyType } from '@/lib/companyTypes';
+
 type Mode = 'login' | 'signup' | 'forgot';
 type SignupMethod = 'directory' | 'invite';
 
@@ -37,17 +43,6 @@ const roleLabels: Record<string, string> = {
   viewer: '열람자',
 };
 
-/** Values must match public.project_position (mapped in process_signup_company_selection). */
-const POSITION_OPTIONS = [
-  { v: 'SITE_MANAGER', label: '현장소장' },
-  { v: 'HSE_MANAGER', label: '안전관리자' },
-  { v: 'SUPERVISOR', label: '감리/관리감독' },
-  { v: 'FOREMAN', label: '작업반장' },
-  { v: 'WORKER', label: '작업자' },
-  { v: 'OWNER_PM', label: '발주처 PM' },
-  { v: 'OWNER_HSE', label: '발주처 안전' },
-];
-
 const Auth = () => {
   const [searchParams] = useSearchParams();
   const [mode, setMode] = useState<Mode>('login');
@@ -64,7 +59,7 @@ const Auth = () => {
   const [directory, setDirectory] = useState<DirectoryRow[]>([]);
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [selectedCompany, setSelectedCompany] = useState<string>('');
-  const [selectedPosition, setSelectedPosition] = useState<string>('WORKER');
+  const [selectedPosition, setSelectedPosition] = useState<string>('');
   const { toast } = useToast();
 
   // Auto-switch to signup if invite param present
@@ -147,6 +142,14 @@ const Auth = () => {
     () => directory.filter(d => d.project_id === selectedProject),
     [directory, selectedProject]
   );
+  const selectedCompanyRow = useMemo(
+    () => directory.find(d => d.company_id === selectedCompany) || null,
+    [directory, selectedCompany],
+  );
+  const signupPositionOptions = useMemo(
+    () => positionsForCompanyType(selectedCompanyRow?.company_type),
+    [selectedCompanyRow?.company_type],
+  );
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,8 +165,8 @@ const Auth = () => {
       toast({ title: '비밀번호는 8자 이상이어야 합니다.', variant: 'destructive' });
       return;
     }
-    if (signupMethod === 'directory' && (!selectedProject || !selectedCompany)) {
-      toast({ title: '참여할 프로젝트와 소속 업체를 선택해주세요.', variant: 'destructive' });
+    if (signupMethod === 'directory' && (!selectedProject || !selectedCompany || !selectedPosition)) {
+      toast({ title: '참여할 프로젝트·소속 업체·직책을 선택해주세요.', variant: 'destructive' });
       return;
     }
     setLoading(true);
@@ -290,7 +293,14 @@ const Auth = () => {
                     </div>
                     <div className="space-y-1.5">
                       <Label>소속 업체 *</Label>
-                      <Select value={selectedCompany} onValueChange={setSelectedCompany} disabled={!selectedProject}>
+                      <Select
+                        value={selectedCompany}
+                        onValueChange={(v) => {
+                          setSelectedCompany(v);
+                          setSelectedPosition('');
+                        }}
+                        disabled={!selectedProject}
+                      >
                         <SelectTrigger><SelectValue placeholder={selectedProject ? '업체 선택' : '프로젝트를 먼저 선택'} /></SelectTrigger>
                         <SelectContent>
                           {companyOptions.length === 0 && selectedProject && (
@@ -303,13 +313,30 @@ const Auth = () => {
                       </Select>
                     </div>
                     <div className="space-y-1.5">
-                      <Label>직종 *</Label>
-                      <Select value={selectedPosition} onValueChange={setSelectedPosition}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                      <Label>직책 *</Label>
+                      <Select
+                        value={selectedPosition}
+                        onValueChange={setSelectedPosition}
+                        disabled={!selectedCompany}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={selectedCompany ? '직책 선택' : '업체를 먼저 선택'} />
+                        </SelectTrigger>
                         <SelectContent>
-                          {POSITION_OPTIONS.map(o => <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>)}
+                          {signupPositionOptions.map((p) => (
+                            <SelectItem key={p} value={p}>{positionLabel(p)}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
+                      {selectedCompanyRow?.company_type && (() => {
+                        const t = normalizeCompanyType(selectedCompanyRow.company_type);
+                        if (t === 'client') return <p className="text-[10px] text-muted-foreground">발주처: PM / CM / SM</p>;
+                        if (t === 'gc') return <p className="text-[10px] text-muted-foreground">시공사: 감리 · 관리감독자 분리</p>;
+                        if (t === 'contractor' || t === 'vendor') {
+                          return <p className="text-[10px] text-muted-foreground">협력사/공급사: 관리감독자 · 현장소장 · 근로자 등</p>;
+                        }
+                        return null;
+                      })()}
                       <p className="text-[10px] text-muted-foreground">관리자 승인 후 이용 가능합니다.</p>
                     </div>
                   </>

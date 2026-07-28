@@ -15,10 +15,17 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Users, Search, UserCheck, UserX, Shield, Plus, Building2, AlertCircle, Trash2, Crown } from 'lucide-react';
 
+import {
+  POSITION_LABELS as SSOT_POSITION_LABELS,
+  POSITIONS_BY_COMPANY_TYPE as SSOT_POSITIONS_BY_TYPE,
+  defaultRoleForPosition,
+} from '@/lib/projectPositions';
+import { companyTypeLabel, normalizeCompanyType } from '@/lib/companyTypes';
+
 // === New permission model ===
 // Global role: only `master` is meaningful (system-wide admin).
 // Project role: 6-tier project-scoped role.
-// Position: 11 formal job titles used for approval routing.
+// Position: formal job titles by company type (발주처 PM/CM/SM, 시공사 감리≠관리감독자).
 const globalRoleLabels: Record<string, string> = {
   master: '마스터 (시스템 관리자)',
   none: '일반 사용자',
@@ -27,31 +34,12 @@ const projectRoleLabels: Record<string, string> = {
   project_admin: '프로젝트 관리자',
   safety_manager: '안전관리자',
   site_manager: '현장소장',
-  supervisor: '감리/감독',
+  supervisor: '감리·관리감독',
   worker: '작업자',
   viewer: '열람자',
 };
-const positionLabels: Record<string, string> = {
-  CEO: '대표이사',
-  EXECUTIVE: '임원',
-  SITE_MANAGER: '현장소장',
-  HSE_MANAGER: '안전관리자',
-  CONSTRUCTION_MGR: '공사부장',
-  FIELD_ENGINEER: '공사담당',
-  FOREMAN: '직장/조장',
-  WORKER: '작업자',
-  OWNER_PM: '발주처 PM',
-  OWNER_HSE: '발주처 안전',
-  SUPERVISOR: '감리',
-};
-// Positions available per company type.
-// 발주사(client)에는 '현장소장' 직책이 존재하지 않음 — 발주처 PM/안전/감리/임원만 노출.
-const POSITIONS_BY_COMPANY_TYPE: Record<string, string[]> = {
-  client: ['CEO', 'EXECUTIVE', 'OWNER_PM', 'OWNER_HSE', 'SUPERVISOR'],
-  gc: ['CEO', 'EXECUTIVE', 'SITE_MANAGER', 'HSE_MANAGER', 'CONSTRUCTION_MGR', 'FIELD_ENGINEER', 'FOREMAN', 'WORKER', 'SUPERVISOR'],
-  contractor: ['CEO', 'EXECUTIVE', 'SITE_MANAGER', 'HSE_MANAGER', 'CONSTRUCTION_MGR', 'FIELD_ENGINEER', 'FOREMAN', 'WORKER'],
-  vendor: ['CEO', 'EXECUTIVE', 'FIELD_ENGINEER', 'FOREMAN', 'WORKER'],
-};
+const positionLabels: Record<string, string> = { ...SSOT_POSITION_LABELS };
+const POSITIONS_BY_COMPANY_TYPE: Record<string, string[]> = SSOT_POSITIONS_BY_TYPE as any;
 
 /** Map new project_role -> legacy app_role enum (for the role column).
  *  Unknown new values fall back to 'viewer'. */
@@ -300,16 +288,19 @@ const UserManagement = () => {
       return;
     }
     if (COMPANY_REQUIRED_ROLES.includes(assignRole) && !assignCompanyId) {
-      setAssignError('작업자/현장소장/감리는 소속 업체를 반드시 선택해야 합니다.');
+      setAssignError('작업자/현장소장/감리·관리감독자는 소속 업체를 반드시 선택해야 합니다.');
       return;
     }
     setAssignSaving(true);
     try {
       const companyName = assignCompanyId ? projectCompanies.find(c => c.id === assignCompanyId)?.name || '' : '';
+      const roleToSave = assignPosition
+        ? defaultRoleForPosition(assignPosition)
+        : assignRole;
       const { error } = await supabase.from('project_members').insert([{
         project_id: assignProjectId,
         user_id: assignUserId,
-        role_new: assignRole as any,
+        role_new: roleToSave as any,
         company_id: assignCompanyId || null,
         company: companyName,
         position_new: (assignPosition || null) as any,
@@ -509,12 +500,22 @@ const UserManagement = () => {
                                 </SelectContent>
                               </Select>
                               <Select value={m.position_new || '_none'} onValueChange={(v) => handleUpdateMembership(m.id, 'position_new', v === '_none' ? null : v)}>
-                                <SelectTrigger className="h-5 w-24 text-[10px] border-dashed"><SelectValue placeholder="직책" /></SelectTrigger>
+                                <SelectTrigger className="h-5 w-28 text-[10px] border-dashed"><SelectValue placeholder="직책" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="_none" className="text-[10px]">직책 없음</SelectItem>
-                                  {Object.entries(positionLabels).map(([k, v]) => (
-                                    <SelectItem key={k} value={k} className="text-[10px]">{v}</SelectItem>
-                                  ))}
+                                  {(() => {
+                                    const co = projectCompanies.find((c) => c.id === m.company_id);
+                                    const companyType = normalizeCompanyType(co?.type) || co?.type;
+                                    const allowed = companyType
+                                      ? (POSITIONS_BY_COMPANY_TYPE[companyType] || Object.keys(positionLabels).filter((k) => k !== 'OWNER_HSE'))
+                                      : Object.keys(positionLabels).filter((k) => k !== 'OWNER_HSE');
+                                    // Always include current value so legacy codes remain visible
+                                    const keys = [...allowed];
+                                    if (m.position_new && !keys.includes(m.position_new)) keys.unshift(m.position_new);
+                                    return keys.map((k) => (
+                                      <SelectItem key={k} value={k} className="text-[10px]">{positionLabels[k] || k}</SelectItem>
+                                    ));
+                                  })()}
                                 </SelectContent>
                               </Select>
                               {m.company && <span className="text-muted-foreground">({m.company})</span>}
@@ -614,12 +615,12 @@ const UserManagement = () => {
               <Label className="text-xs">소속 업체 {COMPANY_REQUIRED_ROLES.includes(assignRole) ? '*' : '(선택)'}</Label>
               {assignProjectId ? (
                 projectCompanies.length > 0 ? (
-                  <Select value={assignCompanyId || '_none'} onValueChange={(v) => { setAssignCompanyId(v === '_none' ? '' : v); setAssignError(''); }}>
+                  <Select value={assignCompanyId || '_none'} onValueChange={(v) => { setAssignCompanyId(v === '_none' ? '' : v); setAssignPosition(''); setAssignError(''); }}>
                     <SelectTrigger className="text-xs"><SelectValue placeholder="업체 선택" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="_none">없음</SelectItem>
                       {projectCompanies.map(c => (
-                        <SelectItem key={c.id} value={c.id}>{c.name} ({c.type})</SelectItem>
+                        <SelectItem key={c.id} value={c.id}>{c.name} ({companyTypeLabel(c.type)})</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -634,13 +635,21 @@ const UserManagement = () => {
               <Label className="text-xs">직책 (선택)</Label>
               {(() => {
                 const selectedCompany = projectCompanies.find(c => c.id === assignCompanyId);
-                const allowed = selectedCompany
-                  ? (POSITIONS_BY_COMPANY_TYPE[selectedCompany.type] || Object.keys(positionLabels))
-                  : Object.keys(positionLabels);
+                const companyType = normalizeCompanyType(selectedCompany?.type) || selectedCompany?.type;
+                const allowed = companyType
+                  ? (POSITIONS_BY_COMPANY_TYPE[companyType] || Object.keys(positionLabels).filter((k) => k !== 'OWNER_HSE'))
+                  : Object.keys(positionLabels).filter((k) => k !== 'OWNER_HSE');
                 // 현재 선택값이 허용되지 않으면 표시는 하되 안내
                 return (
                   <>
-                    <Select value={assignPosition || '_none'} onValueChange={(v) => setAssignPosition(v === '_none' ? '' : v)}>
+                    <Select
+                      value={assignPosition || '_none'}
+                      onValueChange={(v) => {
+                        const pos = v === '_none' ? '' : v;
+                        setAssignPosition(pos);
+                        if (pos) setAssignRole(defaultRoleForPosition(pos));
+                      }}
+                    >
                       <SelectTrigger className="text-xs"><SelectValue placeholder="직책 선택" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="_none">없음</SelectItem>
@@ -649,8 +658,14 @@ const UserManagement = () => {
                         ))}
                       </SelectContent>
                     </Select>
-                    {selectedCompany?.type === 'client' && (
-                      <p className="text-[11px] text-muted-foreground">발주사에는 '현장소장' 직책이 없습니다. 발주처 PM/안전/감리만 선택 가능합니다.</p>
+                    {companyType === 'client' && (
+                      <p className="text-[11px] text-muted-foreground">발주처 직책: PM / CM / SM</p>
+                    )}
+                    {companyType === 'gc' && (
+                      <p className="text-[11px] text-muted-foreground">시공사: 감리와 관리감독자를 구분해 선택하세요.</p>
+                    )}
+                    {(companyType === 'contractor' || companyType === 'vendor') && (
+                      <p className="text-[11px] text-muted-foreground">협력사: 관리감독자·현장소장·안전관리자 등</p>
                     )}
                   </>
                 );

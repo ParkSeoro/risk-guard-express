@@ -180,11 +180,61 @@ const ProjectDetail = () => {
         const key = (c.name || '').trim().toLowerCase();
         if (!key || seen.has(key)) return;
         seen.add(key);
-        deduped.push(c);
+        deduped.push({ ...c, type: normalizeCompanyType(c.type) || c.type });
       });
       setGlobalCompanies(deduped);
     })();
-  }, [showAddCompany]);
+  }, [showAddCompany, editingCompany]);
+
+  /** Allowed parent types for a child company type in this project */
+  const parentTypesFor = (childType: string): string[] => {
+    const t = normalizeCompanyType(childType) || childType;
+    if (t === 'gc') return ['client'];
+    if (t === 'contractor') return ['gc'];
+    if (t === 'vendor') return ['client', 'gc'];
+    return [];
+  };
+
+  /**
+   * Parent candidates = already-linked project companies + Settings(global) masters.
+   * Global-only rows are marked so we can auto-link them on save.
+   */
+  const getParentCandidates = (childType: string, excludeId?: string) => {
+    const allowed = new Set(parentTypesFor(childType));
+    if (allowed.size === 0) return [] as { id: string; name: string; type: string; inProject: boolean }[];
+    const projectIds = new Set(companies.map((c) => c.id));
+    const byId = new Map<string, { id: string; name: string; type: string; inProject: boolean }>();
+    companies.forEach((c) => {
+      const t = normalizeCompanyType(c.type) || c.type;
+      if (!allowed.has(t) || c.id === excludeId) return;
+      byId.set(c.id, { id: c.id, name: c.name, type: t, inProject: true });
+    });
+    globalCompanies.forEach((g) => {
+      const t = normalizeCompanyType(g.type) || g.type;
+      if (!allowed.has(t) || g.id === excludeId || byId.has(g.id)) return;
+      byId.set(g.id, { id: g.id, name: g.name, type: t, inProject: projectIds.has(g.id) });
+    });
+    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+  };
+
+  /** If parent is only in Settings, also link it into this project so hierarchy stays consistent */
+  const ensureParentLinkedToProject = async (parentId: string | null | undefined, childType: string) => {
+    if (!projectId || !parentId) return null as string | null;
+    const already = companies.some((c) => c.id === parentId);
+    if (already) return null;
+    const g = globalCompanies.find((c) => c.id === parentId);
+    const role = normalizeCompanyType(g?.type) || parentTypesFor(childType)[0] || 'client';
+    const { error } = await (supabase as any).from('project_companies').upsert({
+      project_id: projectId,
+      company_id: parentId,
+      role_in_project: role,
+      is_deleted: false,
+      deleted_at: null,
+      parent_company_id: null,
+    }, { onConflict: 'project_id,company_id' });
+    if (error) return error.message as string;
+    return null;
+  };
 
   const getProfileName = (userId: string) => {
     const p = profiles.find(pr => pr.user_id === userId);
@@ -374,11 +424,16 @@ const ProjectDetail = () => {
     if (!projectId) return;
     // Enforce hierarchy: contractor must have a parent GC
     if (companyForm.type === 'contractor' && !companyForm.parent_company_id) {
-      const gcCompanies = companies.filter(c => c.type === 'gc');
-      if (gcCompanies.length > 0) {
+      const gcParents = getParentCandidates('contractor');
+      if (gcParents.length > 0) {
         toast({ title: '협력사는 반드시 상위 시공사를 선택해야 합니다.', variant: 'destructive' });
         return;
       }
+    }
+    const parentLinkErr = await ensureParentLinkedToProject(companyForm.parent_company_id, companyForm.type);
+    if (parentLinkErr) {
+      toast({ title: '상위 업체 연결 실패', description: parentLinkErr, variant: 'destructive' });
+      return;
     }
     let linkCompanyId = companyForm.source_company_id || '';
     // Only create a NEW row in the GLOBAL companies master when the user did NOT pick one from the directory.
@@ -406,6 +461,8 @@ const ProjectDetail = () => {
         company_id: linkCompanyId,
         role_in_project: companyForm.type,
         parent_company_id: companyForm.parent_company_id || null,
+        is_deleted: false,
+        deleted_at: null,
       };
       const { error: linkErr } = await (supabase as any).from('project_companies').upsert(
         linkPayload,
@@ -454,6 +511,11 @@ const ProjectDetail = () => {
   };
   const handleUpdateCompany = async () => {
     if (!editingCompany || !projectId) return;
+    const parentLinkErr = await ensureParentLinkedToProject(editForm.parent_company_id, editForm.type);
+    if (parentLinkErr) {
+      toast({ title: '상위 업체 연결 실패', description: parentLinkErr, variant: 'destructive' });
+      return;
+    }
     // Project-scoped fields
     const { error: linkErr } = await (supabase as any).from('project_companies')
       .update({
@@ -1171,13 +1233,15 @@ const ProjectDetail = () => {
                   <SelectTrigger><SelectValue placeholder="상위 업체 선택" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">(선택 안 함)</SelectItem>
-                    {companies.filter(c => c.type === 'gc').map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.name} (시공사)</SelectItem>
+                    {getParentCandidates('contractor').map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} (시공사){!c.inProject ? ' · 설정에서 연결' : ''}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {companies.filter(c => c.type === 'gc').length === 0 && (
-                  <p className="text-[10px] text-warning">시공사가 없습니다. 먼저 시공사를 등록하세요.</p>
+                {getParentCandidates('contractor').length === 0 && (
+                  <p className="text-[10px] text-warning">시공사가 없습니다. 설정에서 시공사를 등록하거나 이 프로젝트에 먼저 추가하세요.</p>
                 )}
               </div>
             )}
@@ -1188,11 +1252,16 @@ const ProjectDetail = () => {
                   <SelectTrigger><SelectValue placeholder="상위 업체 선택" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">(선택 안 함)</SelectItem>
-                    {companies.filter(c => c.type === 'client').map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.name} (발주처)</SelectItem>
+                    {getParentCandidates('gc').map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} (발주처){!c.inProject ? ' · 설정에서 연결' : ''}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {getParentCandidates('gc').length === 0 && (
+                  <p className="text-[10px] text-muted-foreground">설정 &gt; 업체 관리에 발주처를 등록하면 여기서 선택할 수 있습니다.</p>
+                )}
               </div>
             )}
             <Input placeholder="사업자등록번호 (선택)" value={companyForm.business_no} onChange={e => setCompanyForm({ ...companyForm, business_no: e.target.value })} />
@@ -1238,12 +1307,18 @@ const ProjectDetail = () => {
                   <SelectTrigger><SelectValue placeholder="없음" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">없음 (최상위)</SelectItem>
-                    {companies
-                      .filter(c => c.id !== editingCompany?.id)
-                      .filter(c => editForm.type === 'gc' ? c.type === 'client' : (c.type === 'client' || c.type === 'gc'))
-                      .map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({companyTypes[c.type] || c.type})</SelectItem>)}
+                    {getParentCandidates(editForm.type, editingCompany?.id).map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} ({companyTypes[c.type] || c.type}){!c.inProject ? ' · 설정에서 연결' : ''}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
+                {getParentCandidates(editForm.type, editingCompany?.id).length === 0 && (
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    설정 &gt; 업체 관리에 상위 유형(발주처/시공사)을 등록하면 여기서 선택할 수 있습니다. 선택 시 이 프로젝트에도 자동 연결됩니다.
+                  </p>
+                )}
               </div>
             )}
             <Button onClick={handleUpdateCompany} className="w-full">저장</Button>

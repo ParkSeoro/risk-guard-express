@@ -169,17 +169,78 @@ async function fetchRAGContext(
 
 const HSE_SYSTEM_PROMPT = `/no_think
 너는 20년 경력의 대한민국 건설현장 최고 안전보건전문가(HSE)다.
-목적: 위험성평가 테이블(행) 데이터만 순수 생성. 사고사례·설명문·프롬프트 지시어 누수 금지.
+목적: 위험성평가 테이블(행) 데이터만 순수 생성. 사고사례·설명문·프롬프트/스키마 지시어 누수 절대 금지.
+
+[CRITICAL WARNING — Anti-Macro]
+절대로 '[OOO] 단계에서 관리·장비·환경 요인이 겹치며 [OOO]로 이어질 수 있음'과 같은 기계적 템플릿(매크로) 문장을 반복 사용하지 마라.
+각 위험발생상황은 해당 세부작업의 실제 물리적·환경적 특성(높이, 하중, 전원, 가스, 동선, 지반, 기상 등)을 반영해 **완전히 다른 문장 구조**로 개별 창작하라.
+'기본 점검 준수', '작업전 TBM', '표준작업절차(SOP)에 따른 일상점검'처럼 모든 행에 복붙되는 무의미한 기존대책도 금지.
 
 [절대 규칙]
-1. 해당 공종의 잠재 위험 요인을 가혹할 정도로 최대한(Exhaustive) 도출. 사용자가 나중에 지우더라도 과하게 뽑을 것.
-2. 문체: 서술형(~할 것, ~합니다, ~해야 한다) 절대 금지. 현장 개조식(명사형 종결)만 허용. 예: '~함', '~우려', '~조치', '~미흡', '~위험'.
-3. 위험발생상황·기존대책·개선대책은 짧고 굵게. 빈칸(null,'-','없음','') 금지.
-4. 치명 위험(추락·협착·감전·질식·붕괴·화재·폭발·중장비 충돌 등)은 위험도·심각도 '상'을 엄격 부여. 무조건 '하' 금지.
-5. 상투어('추락 위험 있음') 금지. 원인·상황·결과가 드러나는 개조식 구로 작성.
+1. 해당 공종의 잠재 위험 요인을 가혹할 정도로 최대한(Exhaustive) 도출.
+2. 문체: 서술형(~할 것, ~합니다, ~해야 한다, ~서술할 것, ~작성할 것) 절대 금지. 개조식(명사형)만 허용. 종결 예: '~음', '~함', '~발생 우려', '~미흡', '~조치'.
+3. 위험발생상황·기존대책·개선대책은 짧고 굵게. 빈칸(null,'-','없음','') 금지. 스키마 description·프롬프트 문장을 값으로 복사하지 말 것.
+4. 치명 위험(추락·협착·감전·질식·붕괴·화재·폭발·중장비 충돌 등)은 위험도·심각도 '상'. 무조건 '하' 금지.
+5. 기존대책: 현장에서 실제로 취하는 구체적 물리적/관리적 조치로 작성. 예: "안전조끼 착용, 반경 5m 접근 통제선 설치", "절연장갑·절연장화 착용, 활선접근경보기 휴대".
 6. 개선대책: 본질안전(제거·대체)→공학적(방호·격리·환기)→관리적(작업허가·교육·표지)→PPE 순. PPE만 나열 금지.
-7. 법적근거는 산안법·산안기준규칙 조항 또는 KOSHA GUIDE 코드만.
-8. 출력은 오직 JSON. 코드펜스·설명문·사고사례 필드 금지.`;
+7. 포맷: 쉼표(,) 뒤에는 반드시 공백 1칸. 한자(漢字)·한중 혼용(예: 미실施) 금지. 100% 자연스러운 한국어 표준어만.
+8. 법적근거는 산안법·산안기준규칙 조항 또는 KOSHA GUIDE 코드만.
+9. 출력은 오직 JSON. 코드펜스·설명문·사고사례 필드 금지.`;
+
+/** Noun-only field definitions — never put imperative instructions here (prevents prompt leak into values). */
+const RISK_ITEM_FIELD_SCHEMA: Record<string, string> = {
+  공정: "공종명",
+  세부작업: "세부 작업 명칭",
+  위험요인: "발생 가능한 유해·위험 요인",
+  발생상황: "발생 가능한 위험 상황",
+  기존대책: "현재 현장의 구체적 안전 조치",
+  개선대책: "추가 감소 대책",
+  위험도: "가능성 등급(상|중|하)",
+  심각도: "중대성 등급(상|중|하)",
+  개선후위험도: "개선 후 가능성 등급",
+  개선후심각도: "개선 후 중대성 등급",
+  보호구: "필요 보호구 목록",
+  법적근거: "관련 법령·가이드 코드",
+};
+
+const LEAK_INSTRUCTION_RE =
+  /(서술할\s*것|작성할\s*것|기재할\s*것|포함할\s*것|도출할\s*것|준수할\s*것|특정해\s*서술|개조식으로\s*작성|빈칸\s*금지)/g;
+const MACRO_SITUATION_RE =
+  /단계에서\s*관리[·・,]?\s*장비[·・,]?\s*환경\s*요인이\s*겹치며/;
+const VAGUE_MEASURE_RE =
+  /^(기본\s*점검\s*준수|일상\s*점검|표준작업절차\(SOP\)에\s*따른\s*일상점검.*|작업전\s*TBM\s*및\s*위험성\s*고지.*)$/;
+
+function normalizeCommaSpacing(text: string): string {
+  return text
+    .replace(/,(?!\s)/g, ", ")
+    .replace(/，/g, ", ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/** Strip schema/prompt instruction leaks and reject macro templates. */
+function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other"): string | null {
+  let s = String(raw ?? "").trim();
+  if (!s || s === "-" || s === "없음" || s.toLowerCase() === "null") return null;
+
+  s = s.replace(LEAK_INSTRUCTION_RE, "").trim();
+  s = s.replace(/[.。]+\s*$/, "").trim();
+  s = normalizeCommaSpacing(s);
+
+  // Drop leftover imperative endings that leaked from prompts
+  if (/(할\s*것|합니다|해야\s*한다)\s*$/.test(s)) {
+    s = s.replace(/(할\s*것|합니다|해야\s*한다)\s*$/g, "").trim();
+  }
+
+  if (!s) return null;
+  if (kind === "situation" && MACRO_SITUATION_RE.test(s)) return null;
+  if (kind === "measure" && VAGUE_MEASURE_RE.test(s)) return null;
+
+  // Reject if still looks like a schema placeholder / instruction echo
+  if (/^(원인\+결과|짧은\s*개조식|현장\s*통상\s*조치|본질안전→|개조식)/.test(s)) return null;
+
+  return s;
+}
 
 type PhaseDef = {
   id: string;
@@ -290,32 +351,30 @@ function extractCompletedObjects(buffer: string, alreadyEmitted: number): { obje
 }
 
 function mapRawItem(item: any, processName: string): any | null {
-  const blank = (v: any) => {
-    const s = String(v ?? "").trim();
-    return !s || s === "-" || s === "없음" || s.toLowerCase() === "null";
-  };
-
-  const sub_task = String(item["세부작업"] || item.sub_task || "").trim();
-  const hazard = String(item["위험요인"] || item.hazard || "").trim();
-  let hazard_situation = String(item["발생상황"] || item.hazard_situation || "").trim();
-  let existing_measure = String(item["기존대책"] || item.existing_measure || "").trim();
-  let improvement_measure = String(item["개선대책"] || item.improvement_measure || "").trim();
-
+  const sub_task = sanitizeFieldText(
+    String(item["세부작업"] || item.sub_task || ""),
+    "other",
+  );
+  const hazard = sanitizeFieldText(
+    String(item["위험요인"] || item.hazard || ""),
+    "other",
+  );
   if (!sub_task || !hazard) return null;
 
-  // Soft-fill blanks rather than dropping high-value hazards
-  if (blank(hazard_situation)) {
-    hazard_situation =
-      `${sub_task} 단계에서 관리·장비·환경 요인이 겹치며 '${hazard}'로 이어질 수 있음. 작업자 위치·동선·방호 상태를 특정해 서술할 것.`;
-  }
-  if (blank(existing_measure)) {
-    existing_measure =
-      "작업전 TBM 및 위험성 고지, 관리감독자 배치, 해당 공종 표준작업절차(SOP)에 따른 일상점검·보호구 착용";
-  }
-  if (blank(improvement_measure)) {
-    improvement_measure =
-      "위험원 제거·대체 우선 검토 → 방호장치·격리·환기 등 공학적 통제 → 작업허가·전담감시·교육 → 작업 적합 PPE 지급·착용 확인";
-  }
+  // Never soft-fill with instructional macros — incomplete rows are dropped.
+  const hazard_situation = sanitizeFieldText(
+    String(item["발생상황"] || item.hazard_situation || ""),
+    "situation",
+  );
+  const existing_measure = sanitizeFieldText(
+    String(item["기존대책"] || item.existing_measure || ""),
+    "measure",
+  );
+  const improvement_measure = sanitizeFieldText(
+    String(item["개선대책"] || item.improvement_measure || ""),
+    "measure",
+  );
+  if (!hazard_situation || !existing_measure || !improvement_measure) return null;
 
   let likelihood = String(item["위험도"] || item.likelihood_grade || "중").trim();
   let severity = String(item["심각도"] || item.severity_grade || "중").trim();
@@ -330,7 +389,9 @@ function mapRawItem(item: any, processName: string): any | null {
   }
 
   const ppeRaw = item["보호구"] ?? item.ppe ?? [];
-  const ppe = Array.isArray(ppeRaw) ? ppeRaw.map(String).filter(Boolean) : String(ppeRaw).split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+  const ppe = Array.isArray(ppeRaw)
+    ? ppeRaw.map(String).map((s) => s.trim()).filter(Boolean)
+    : String(ppeRaw).split(/[,，]/).map((s) => s.trim()).filter(Boolean);
   const legalRaw = item["법적근거"] ?? item.legal_basis ?? "";
   const legal_basis = Array.isArray(legalRaw)
     ? legalRaw.map(String).filter(Boolean)
@@ -339,7 +400,7 @@ function mapRawItem(item: any, processName: string): any | null {
     : [];
 
   return {
-    process: String(item["공정"] || item.process || processName),
+    process: sanitizeFieldText(String(item["공정"] || item.process || processName), "other") || processName,
     sub_task,
     hazard,
     hazard_situation,
@@ -385,6 +446,10 @@ async function streamPhaseItems(
   phase: PhaseDef,
   onDeltaItem: (raw: any) => void,
 ): Promise<{ rawItems: any[] }> {
+  const fieldSchemaLines = Object.entries(RISK_ITEM_FIELD_SCHEMA)
+    .map(([k, v]) => `- ${k}: ${v}`)
+    .join("\n");
+
   const userPrompt = `[입력]
 공종: ${processName}
 장비: ${equipText}
@@ -395,13 +460,16 @@ ${ragContext}
 
 [이번 배치 — ${phase.title}]
 초점: ${phase.focus}
-위험성평가 items만 최소 ${phase.targetCount}개 이상, 가능하면 ${phase.targetCount + 2}개까지 Exhaustive 도출.
-발생상황·기존대책·개선대책은 짧고 굵은 개조식(명사형). 서술형(~합니다/~할 것) 금지. 빈칸 금지.
+items를 최소 ${phase.targetCount}개 이상, 가능하면 ${phase.targetCount + 2}개까지 Exhaustive 도출.
+각 행의 발생상황·기존대책·개선대책은 서로 다른 구체 내용(매크로 복붙 금지).
 치명 재해(추락·협착·감전·질식·붕괴 등)는 위험도/심각도 '상'.
-사고사례·accident_cases·설명문 출력 금지.
+사고사례·accident_cases·설명문·스키마 지시문 출력 금지.
 
-[출력 JSON]
-{"items":[{"공정":"${processName}","세부작업":"${phase.title} 관련 세부작업명","위험요인":"원인+결과 개조식","발생상황":"짧은 개조식 시나리오","기존대책":"현장 통상 조치 개조식","개선대책":"본질안전→공학적→관리적→PPE 개조식","위험도":"상|중|하","심각도":"상|중|하","개선후위험도":"하","개선후심각도":"하","보호구":["안전모","안전화"],"법적근거":"산안기준규칙 제OO조 또는 KOSHA GUIDE"}]}`;
+[필드 정의 — 명사형만. 이 문구를 값으로 복사하지 말 것]
+${fieldSchemaLines}
+
+[출력 JSON 예시 — 값은 예시일 뿐, 그대로 복제 금지]
+{"items":[{"공정":"${processName}","세부작업":"용접부 가우징","위험요인":"용접흄·아크광 흡입 및 안면 화상","발생상황":"밀폐 배관 내부 가우징 시 환기 부족으로 흄 체류, 아크 반사광에 안면 노출 우려","기존대책":"송기마스크 착용, 국소배기 가동, 차광면 착용","개선대책":"강제환기 덕트 설치, 연속 작업 시 교대 휴식, 용접면 자동차광 렌즈 사용","위험도":"상","심각도":"상","개선후위험도":"하","개선후심각도":"중","보호구":["송기마스크","차광면","가죽앞치마"],"법적근거":"산안기준규칙 제429조"}]}`;
 
   let buffer = "";
   let emitted = 0;
@@ -412,7 +480,7 @@ ${ragContext}
       { role: "system", content: HSE_SYSTEM_PROMPT },
       { role: "user", content: userPrompt },
     ],
-    temperature: 0.4,
+    temperature: 0.55,
     max_tokens: 4000,
     response_format: { type: "json_object" },
     compact: true,
@@ -606,8 +674,8 @@ serve(async (req) => {
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
 
-    // v4: rich HSE prompt + multi-phase streaming
-    const cacheKey = `v4|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
+    // v5: anti-macro + noun-only field schema (no instructional soft-fill)
+    const cacheKey = `v5|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
       .toLowerCase()
       .trim();
 

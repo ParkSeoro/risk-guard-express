@@ -18,6 +18,13 @@ import {
 } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
+import {
+  COMPANY_TYPE_LABELS,
+  COMPANY_TYPE_OPTIONS,
+  companyTypeLabel,
+  normalizeCompanyType,
+  resolveProjectCompanyType,
+} from '@/lib/companyTypes';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
@@ -40,9 +47,7 @@ const positionLabels: Record<string, string> = {
 };
 
 
-const companyTypes: Record<string, string> = {
-  client: '발주처', gc: '시공사', contractor: '협력사', vendor: '공급사',
-};
+const companyTypes: Record<string, string> = { ...COMPANY_TYPE_LABELS };
 
 const companyTypeOrder: Record<string, number> = {
   client: 0, gc: 1, contractor: 2, vendor: 3,
@@ -70,7 +75,7 @@ const ProjectDetail = () => {
   const [memberRole, setMemberRole] = useState('viewer');
   const [memberCompanyId, setMemberCompanyId] = useState('');
   const [showAddCompany, setShowAddCompany] = useState(false);
-  const [companyForm, setCompanyForm] = useState({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
+  const [companyForm, setCompanyForm] = useState({ name: '', type: 'gc', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
   const [globalCompanies, setGlobalCompanies] = useState<any[]>([]);
   const [companySearchOpen, setCompanySearchOpen] = useState(false);
   const [copiedCode, setCopiedCode] = useState('');
@@ -140,7 +145,7 @@ const ProjectDetail = () => {
     const projCompanies = (projCompaniesRes.data || [])
       .map((l: any) => l.companies ? {
         ...l.companies,
-        type: l.role_in_project || l.companies.type,
+        type: resolveProjectCompanyType(l.role_in_project, l.companies.type),
         // Project-scoped parent overrides global companies.parent_company_id
         parent_company_id: l.parent_company_id ?? null,
       } : null)
@@ -410,7 +415,7 @@ const ProjectDetail = () => {
     }
     toast({ title: '업체가 프로젝트에 등록되었습니다.' });
     setShowAddCompany(false);
-    setCompanyForm({ name: '', type: 'contractor', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
+    setCompanyForm({ name: '', type: 'gc', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
     fetchAll();
   };
 
@@ -441,7 +446,7 @@ const ProjectDetail = () => {
       name: c.name || '',
       business_no: c.business_no || '',
       contact: c.contact || '',
-      type: c.type || 'contractor',
+      type: normalizeCompanyType(c.type) || 'gc',
       parent_company_id: c.parent_company_id || '',
       scope: c.scope || '',
       period: c.period || '',
@@ -1118,13 +1123,16 @@ const ProjectDetail = () => {
                             key={g.id}
                             value={`${g.name} ${g.business_no || ''}`}
                             onSelect={() => {
+                              const pickedType = normalizeCompanyType(g.type) || 'gc';
                               setCompanyForm({
                                 ...companyForm,
                                 name: g.name,
                                 business_no: g.business_no || '',
                                 contact: g.contact || '',
                                 source_company_id: g.id,
-                                type: companyForm.type || g.type || 'contractor',
+                                // Always adopt master type when picking from directory
+                                type: pickedType,
+                                parent_company_id: '',
                               });
                               setCompanySearchOpen(false);
                             }}
@@ -1133,7 +1141,7 @@ const ProjectDetail = () => {
                               <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
                               <span className="flex-1 truncate">{g.name}</span>
                               {g.business_no && <span className="text-[10px] text-muted-foreground">{g.business_no}</span>}
-                              <Badge variant="outline" className="text-[9px]">{companyTypes[g.type] || g.type}</Badge>
+                              <Badge variant="outline" className="text-[9px]">{companyTypeLabel(g.type)}</Badge>
                             </div>
                           </CommandItem>
                         ))}
@@ -1151,7 +1159,7 @@ const ProjectDetail = () => {
               <Select value={companyForm.type} onValueChange={v => setCompanyForm({ ...companyForm, type: v, parent_company_id: '' })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {Object.entries(companyTypes).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                  {COMPANY_TYPE_OPTIONS.map((o) => <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -1219,10 +1227,7 @@ const ProjectDetail = () => {
               <Select value={editForm.type} onValueChange={v => setEditForm({ ...editForm, type: v, parent_company_id: '' })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="client">발주처</SelectItem>
-                  <SelectItem value="gc">시공사</SelectItem>
-                  <SelectItem value="contractor">협력사</SelectItem>
-                  <SelectItem value="vendor">공급사</SelectItem>
+                  {COMPANY_TYPE_OPTIONS.map((o) => <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

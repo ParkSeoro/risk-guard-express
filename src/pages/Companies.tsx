@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Building2, Users, ChevronRight, Search, Network, HardHat, AlertCircle } from 'lucide-react';
+import { COMPANY_TYPE_LABELS, resolveProjectCompanyType } from '@/lib/companyTypes';
 
 interface CompanyRow {
   id: string;
@@ -20,12 +21,7 @@ interface CompanyRow {
   has_construction_info: boolean;
 }
 
-const TYPE_LABEL: Record<string, string> = {
-  client: '발주처',
-  gc: '원도급',
-  contractor: '시공사',
-  vendor: '협력사',
-};
+const TYPE_LABEL = COMPANY_TYPE_LABELS as Record<string, string>;
 
 const TYPE_COLOR: Record<string, string> = {
   client: 'bg-primary/10 text-primary border-primary/30',
@@ -51,7 +47,7 @@ export default function Companies() {
       .eq('project_id', selectedProject)
       .eq('is_deleted', false);
     const list = (links || [])
-      .map((l: any) => l.companies ? { ...l.companies, type: l.companies.type || l.role_in_project } : null)
+      .map((l: any) => l.companies ? { ...l.companies, type: resolveProjectCompanyType(l.role_in_project, l.companies.type) } : null)
       .filter((c: any) => c && c.is_deleted === false)
       .sort((a: any, b: any) => (a.type || '').localeCompare(b.type || '') || (a.name || '').localeCompare(b.name || ''));
 
@@ -140,13 +136,13 @@ export default function Companies() {
       {/* KPI */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
-          { label: '전체 회사', value: kpis.total, icon: Building2, color: 'text-foreground' },
-          { label: '원도급', value: kpis.gc, icon: HardHat, color: 'text-warning' },
-          { label: '시공사', value: kpis.contractor, icon: HardHat, color: 'text-success' },
-          { label: '협력사', value: kpis.vendor, icon: Network, color: 'text-muted-foreground' },
-          { label: '공사정보 미등록', value: kpis.missingInfo, icon: AlertCircle, color: 'text-destructive' },
+          { key: 'total', label: '전체 회사', value: kpis.total, icon: Building2, color: 'text-foreground' },
+          { key: 'gc', label: '시공사', value: kpis.gc, icon: HardHat, color: 'text-warning' },
+          { key: 'contractor', label: '협력사', value: kpis.contractor, icon: HardHat, color: 'text-success' },
+          { key: 'vendor', label: '공급사', value: kpis.vendor, icon: Network, color: 'text-muted-foreground' },
+          { key: 'missing', label: '공사정보 미등록', value: kpis.missingInfo, icon: AlertCircle, color: 'text-destructive' },
         ].map(k => (
-          <Card key={k.label}>
+          <Card key={k.key}>
             <CardContent className="py-3 flex items-center justify-between">
               <div>
                 <div className="text-[11px] text-muted-foreground">{k.label}</div>
@@ -163,9 +159,9 @@ export default function Companies() {
         <TabsList>
           <TabsTrigger value="all" className="text-xs">전체 ({typeCounts.all})</TabsTrigger>
           <TabsTrigger value="client" className="text-xs">발주처 ({typeCounts.client || 0})</TabsTrigger>
-          <TabsTrigger value="gc" className="text-xs">원도급 ({typeCounts.gc || 0})</TabsTrigger>
-          <TabsTrigger value="contractor" className="text-xs">시공사 ({typeCounts.contractor || 0})</TabsTrigger>
-          <TabsTrigger value="vendor" className="text-xs">협력사 ({typeCounts.vendor || 0})</TabsTrigger>
+          <TabsTrigger value="gc" className="text-xs">시공사 ({typeCounts.gc || 0})</TabsTrigger>
+          <TabsTrigger value="contractor" className="text-xs">협력사 ({typeCounts.contractor || 0})</TabsTrigger>
+          <TabsTrigger value="vendor" className="text-xs">공급사 ({typeCounts.vendor || 0})</TabsTrigger>
         </TabsList>
       </Tabs>
 

@@ -751,6 +751,8 @@ export type Database = {
           run_id: string
           source_type: string
           updated_at: string
+          location: string | null
+          accident_summary: string | null
         }
         Insert: {
           accident_type?: string | null
@@ -769,6 +771,8 @@ export type Database = {
           run_id: string
           source_type?: string
           updated_at?: string
+          location?: string | null
+          accident_summary?: string | null
         }
         Update: {
           accident_type?: string | null
@@ -787,6 +791,8 @@ export type Database = {
           run_id?: string
           source_type?: string
           updated_at?: string
+          location?: string | null
+          accident_summary?: string | null
         }
         Relationships: []
       }

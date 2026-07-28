@@ -673,7 +673,6 @@ const AssessmentRunDetail = () => {
       let insertedTotal = 0;
       let sortCursor = items.length;
       let sourceLabel = 'ai';
-      const allAccidents: { title: string; cause: string; result: string }[] = [];
       const equipJoined = autoGenEquipmentTags.join(', ');
       const insertSeen = new Set<string>();
 
@@ -764,16 +763,10 @@ const AssessmentRunDetail = () => {
               setItems((prev) => [...prev, saved]);
             }
           },
-          onAccident: (a) => {
-            if (a.title || a.cause) allAccidents.push(a);
-          },
         });
 
         console.log(`[AutoGen] 스트림 완료: ${result.items.length}건 (source: ${result.source})`);
         sourceLabel = result.source;
-        if (result.accidentCases?.length) {
-          allAccidents.push(...result.accidentCases.slice(0, 3));
-        }
       }
 
       if (insertedTotal === 0) {
@@ -786,25 +779,6 @@ const AssessmentRunDetail = () => {
         return;
       }
 
-      const uniqueAccidents = allAccidents
-        .filter((a, i, arr) => a.title && arr.findIndex((x) => x.title === a.title) === i)
-        .slice(0, 3);
-      if (uniqueAccidents.length > 0 && runId) {
-        await supabase.from('assessment_accidents' as any).insert(
-          uniqueAccidents.map((a) => ({
-            run_id: runId,
-            project_id: run.project_id,
-            process: autoGenProcesses[0] || '',
-            accident_type: a.title,
-            cause: a.cause || '',
-            result: a.result || '',
-            description: `${a.cause || ''} / ${a.result || ''}`.trim(),
-            source_type: 'ai_autogen',
-            created_by: user.id,
-          })),
-        );
-      }
-
       const sourceMap: Record<string, string> = {
         library: '라이브러리',
         cache: '캐시',
@@ -812,10 +786,8 @@ const AssessmentRunDetail = () => {
         hybrid: '하이브리드',
       };
       toast({
-        title: '생성이 완료되었습니다. 불필요한 항목을 삭제하거나 수정해 주세요.',
-        description: `${insertedTotal}건 등록 (${sourceMap[sourceLabel] || sourceLabel})${
-          uniqueAccidents.length > 0 ? ` · 사고사례 ${uniqueAccidents.length}건` : ''
-        }`,
+        title: '위험성평가 생성이 완료되었습니다. 불필요한 항목을 삭제하거나 수정해 주세요.',
+        description: `${insertedTotal}건 등록 (${sourceMap[sourceLabel] || sourceLabel}) · 사고사례는 하단 [사고사례 AI 작성]에서 별도 생성`,
       });
       setShowAutoGen(false);
       setAutoGenProcesses([]);
@@ -2229,14 +2201,14 @@ const AssessmentRunDetail = () => {
                   onClick={() => setAutoGenDetailLevel('comprehensive')}>작업순서 상세 (15+)</Button>
               </div>
               <p className="text-[10px] text-muted-foreground leading-snug">
-                세부 작업 3~5단계로 분해 · 단계별 구체 시나리오 · 관련 사고사례 2~3건
+                위험성평가 데이터만 생성 · 세부 작업 단계별 시나리오 · 사고사례는 별도 버튼에서 생성
               </p>
             </div>
 
             <Button onClick={handleAutoGenerate} disabled={autoGenProcesses.length === 0 || autoGenLoading} className="w-full h-11">
               {autoGenLoading
-                ? `AI 생성 중… ${autoGenStreamCount}건${autoGenPhaseLabel ? ` · ${autoGenPhaseLabel}` : ''}`
-                : `자동작성 · ${autoGenProcesses.length || 0}개 공종`}
+                ? `위험성평가 생성 중… ${autoGenStreamCount}건${autoGenPhaseLabel ? ` · ${autoGenPhaseLabel}` : ''}`
+                : `공종 자동작성 · ${autoGenProcesses.length || 0}개 공종`}
             </Button>
             {autoGenLoading && (
               <p className="text-[11px] text-center text-muted-foreground">

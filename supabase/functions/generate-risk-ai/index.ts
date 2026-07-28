@@ -169,26 +169,28 @@ async function fetchRAGContext(
 
 const HSE_SYSTEM_PROMPT = `/no_think
 너는 20년 경력의 대한민국 건설현장 최고 안전보건전문가(HSE)다.
-공정별 위험성평가를 작성할 때, 사용자가 나중에 불필요한 것을 지우더라도 **최대한 가혹하고 디테일하게 모든 잠재적 위험 요인을 도출**해야 한다.
+목적: 위험성평가 테이블(행) 데이터만 순수 생성. 사고사례·설명문·프롬프트 지시어 누수 금지.
 
 [절대 규칙]
-1. [위험발생상황]·[기존대책]·[개선대책]은 절대 빈칸(null, '-', '없음', '')으로 두지 말고 구체 시나리오와 실행 가능한 방안을 서술할 것.
-2. [위험도(가능성)]와 [심각도(중대성)]는 무조건 '하'로 주지 말 것. 추락·협착·감전·질식·붕괴·화재·중장비 충돌 등 치명 재해는 반드시 '상' 또는 '중'으로 엄격 평가.
-3. '추락 위험 있음' 같은 상투어 금지. 원인·상황·결과가 드러나는 구체 문장으로 작성.
-4. 개선대책은 본질안전(제거·대체) → 공학적(방호·격리·환기) → 관리적(작업허가·교육·표지) → PPE 순. PPE만 나열 금지.
-5. 법적근거는 산안법·산안기준규칙 조항 또는 KOSHA GUIDE 코드 등 실제 근거만.
-6. 출력은 오직 JSON. 코드펜스·설명문 금지. 100% 한국어 단정형(~함, ~할 것).`;
+1. 해당 공종의 잠재 위험 요인을 가혹할 정도로 최대한(Exhaustive) 도출. 사용자가 나중에 지우더라도 과하게 뽑을 것.
+2. 문체: 서술형(~할 것, ~합니다, ~해야 한다) 절대 금지. 현장 개조식(명사형 종결)만 허용. 예: '~함', '~우려', '~조치', '~미흡', '~위험'.
+3. 위험발생상황·기존대책·개선대책은 짧고 굵게. 빈칸(null,'-','없음','') 금지.
+4. 치명 위험(추락·협착·감전·질식·붕괴·화재·폭발·중장비 충돌 등)은 위험도·심각도 '상'을 엄격 부여. 무조건 '하' 금지.
+5. 상투어('추락 위험 있음') 금지. 원인·상황·결과가 드러나는 개조식 구로 작성.
+6. 개선대책: 본질안전(제거·대체)→공학적(방호·격리·환기)→관리적(작업허가·교육·표지)→PPE 순. PPE만 나열 금지.
+7. 법적근거는 산안법·산안기준규칙 조항 또는 KOSHA GUIDE 코드만.
+8. 출력은 오직 JSON. 코드펜스·설명문·사고사례 필드 금지.`;
 
 type PhaseDef = {
   id: string;
   title: string;
   focus: string;
   targetCount: number;
-  includeAccidents?: boolean;
 };
 
 function buildPhases(detailLevel: "core" | "comprehensive"): PhaseDef[] {
   // Client orchestrates one phase per HTTP request so each stays under ~150s.
+  // Accidents are intentionally excluded — use generate-accident-ai.
   if (detailLevel === "core") {
     return [
       {
@@ -202,7 +204,6 @@ function buildPhases(detailLevel: "core" | "comprehensive"): PhaseDef[] {
         title: "마무리·비상",
         focus: "철수·정리·잔여위험·비상조치·복구",
         targetCount: 6,
-        includeAccidents: true,
       },
     ];
   }
@@ -224,7 +225,6 @@ function buildPhases(detailLevel: "core" | "comprehensive"): PhaseDef[] {
       title: "마무리·해체·비상",
       focus: "해체·되메우기·잔재처리·점검·비상연락·대피",
       targetCount: 8,
-      includeAccidents: true,
     },
   ];
 }
@@ -237,7 +237,6 @@ function tryParse(s: string): any {
   }
 }
 
-/** Extract newly completed JSON objects from a growing `items` array buffer. */
 function extractCompletedObjects(buffer: string, alreadyEmitted: number): { objects: any[]; nextIndex: number } {
   const cleaned = buffer.replace(/```json/gi, "").replace(/```/g, "");
   const itemsKey = cleaned.search(/"items"\s*:/);
@@ -288,19 +287,6 @@ function extractCompletedObjects(buffer: string, alreadyEmitted: number): { obje
     }
   }
   return { objects, nextIndex: alreadyEmitted + objects.length };
-}
-
-function extractAccidentCases(buffer: string): any[] {
-  const cleaned = buffer.replace(/```json/gi, "").replace(/```/g, "");
-  const m = cleaned.match(/"accident_cases"\s*:\s*(\[[\s\S]*?\])/);
-  if (!m) {
-    const m2 = cleaned.match(/"사고사례"\s*:\s*(\[[\s\S]*?\])/);
-    if (!m2) return [];
-    const arr = tryParse(m2[1]);
-    return Array.isArray(arr) ? arr : [];
-  }
-  const arr = tryParse(m[1]);
-  return Array.isArray(arr) ? arr : [];
 }
 
 function mapRawItem(item: any, processName: string): any | null {
@@ -385,17 +371,6 @@ function mapAndDedupe(items: any[], processName: string, existingKeys: Set<strin
   return out;
 }
 
-function normalizeAccidents(raw: any[]): any[] {
-  return raw
-    .slice(0, 3)
-    .map((c: any) => ({
-      title: c.title || c["제목"] || c["사고명"] || "",
-      cause: c.cause || c["원인"] || c["발생원인"] || "",
-      result: c.result || c["결과"] || c["피해"] || "",
-    }))
-    .filter((c) => c.title || c.cause);
-}
-
 function sseEncode(encoder: TextEncoder, payload: Record<string, unknown>): Uint8Array {
   return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
 }
@@ -409,11 +384,7 @@ async function streamPhaseItems(
   ragContext: string,
   phase: PhaseDef,
   onDeltaItem: (raw: any) => void,
-): Promise<{ rawItems: any[]; accidents: any[] }> {
-  const accidentClause = phase.includeAccidents
-    ? `\n또한 accident_cases에 관련 치명 사고사례를 정확히 2~3개(title/cause/result) 짧게 포함.`
-    : `\naccident_cases는 빈 배열 [].`;
-
+): Promise<{ rawItems: any[] }> {
   const userPrompt = `[입력]
 공종: ${processName}
 장비: ${equipText}
@@ -424,13 +395,13 @@ ${ragContext}
 
 [이번 배치 — ${phase.title}]
 초점: ${phase.focus}
-items를 최소 ${phase.targetCount}개 이상, 가능하면 ${phase.targetCount + 2}개까지 과하게라도 디테일하게 도출.
-각 항목의 발생상황·기존대책·개선대책은 2문장 수준으로 구체 서술. 빈칸 금지.
-치명 재해(추락·협착·감전·질식·붕괴 등)는 위험도/심각도를 상 또는 중으로.
-${accidentClause}
+위험성평가 items만 최소 ${phase.targetCount}개 이상, 가능하면 ${phase.targetCount + 2}개까지 Exhaustive 도출.
+발생상황·기존대책·개선대책은 짧고 굵은 개조식(명사형). 서술형(~합니다/~할 것) 금지. 빈칸 금지.
+치명 재해(추락·협착·감전·질식·붕괴 등)는 위험도/심각도 '상'.
+사고사례·accident_cases·설명문 출력 금지.
 
 [출력 JSON]
-{"items":[{"공정":"${processName}","세부작업":"${phase.title} 관련 세부작업명","위험요인":"원인+결과 구체 문장","발생상황":"구체 시나리오","기존대책":"현재 통상 대책","개선대책":"본질안전→공학적→관리적→PPE","위험도":"상|중|하","심각도":"상|중|하","개선후위험도":"하","개선후심각도":"하","보호구":["안전모","안전화"],"법적근거":"산안기준규칙 제OO조 또는 KOSHA GUIDE"}],"accident_cases":[{"title":"","cause":"","result":""}]}`;
+{"items":[{"공정":"${processName}","세부작업":"${phase.title} 관련 세부작업명","위험요인":"원인+결과 개조식","발생상황":"짧은 개조식 시나리오","기존대책":"현장 통상 조치 개조식","개선대책":"본질안전→공학적→관리적→PPE 개조식","위험도":"상|중|하","심각도":"상|중|하","개선후위험도":"하","개선후심각도":"하","보호구":["안전모","안전화"],"법적근거":"산안기준규칙 제OO조 또는 KOSHA GUIDE"}]}`;
 
   let buffer = "";
   let emitted = 0;
@@ -444,7 +415,7 @@ ${accidentClause}
     temperature: 0.4,
     max_tokens: 4000,
     response_format: { type: "json_object" },
-    compact: true, // HSE prompt already embeds full rules
+    compact: true,
   })) {
     buffer += chunk;
     const { objects, nextIndex } = extractCompletedObjects(buffer, emitted);
@@ -455,7 +426,6 @@ ${accidentClause}
     emitted = nextIndex;
   }
 
-  // Final parse pass for any remaining complete JSON
   const finalParsed = tryParse(buffer.replace(/```json/gi, "").replace(/```/g, "").trim()) ||
     (() => {
       const m = buffer.match(/\{[\s\S]*\}/);
@@ -469,15 +439,7 @@ ${accidentClause}
     }
   }
 
-  const accidents = phase.includeAccidents
-    ? normalizeAccidents(
-      Array.isArray(finalParsed?.accident_cases)
-        ? finalParsed.accident_cases
-        : extractAccidentCases(buffer),
-    )
-    : [];
-
-  return { rawItems: collected.length ? collected : (finalParsed?.items || []), accidents };
+  return { rawItems: collected.length ? collected : (finalParsed?.items || []) };
 }
 
 serve(async (req) => {
@@ -687,8 +649,8 @@ serve(async (req) => {
           type: "done",
           source: "cache",
           count: cachedItems.length,
-          accident_cases: [],
           is_complete: true,
+          mode: "risk",
         });
         return;
       }
@@ -697,7 +659,6 @@ serve(async (req) => {
       const phases = selectedPhases;
       const existingKeys = new Set<string>();
       const allMapped: any[] = [];
-      const allAccidents: any[] = [];
 
       send({
         type: "meta",
@@ -706,12 +667,13 @@ serve(async (req) => {
         detail_level: detailLevel,
         phases: phases.map((p) => p.id),
         phase_mode: phaseIdBody ? "single" : "all",
+        mode: "risk",
       });
 
       for (const phase of phases) {
         send({ type: "phase", phase: phase.id, title: phase.title });
         try {
-          const { rawItems, accidents } = await streamPhaseItems(
+          const { rawItems } = await streamPhaseItems(
             process_name,
             equipText,
             descText,
@@ -727,15 +689,10 @@ serve(async (req) => {
               }
             },
           );
-          // Ensure any items not emitted mid-stream are still mapped
           const leftover = mapAndDedupe(rawItems, process_name, existingKeys);
           for (const item of leftover) {
             allMapped.push(item);
             send({ type: "item", item, phase: phase.id });
-          }
-          for (const a of accidents) {
-            allAccidents.push(a);
-            send({ type: "accident", accident: a });
           }
         } catch (phaseErr) {
           console.error(`[AI Engine] phase ${phase.id} error:`, phaseErr);
@@ -744,7 +701,6 @@ serve(async (req) => {
             if (phaseErr.code === "QUOTA_EXHAUSTED") throw new Error("CREDITS_EXHAUSTED");
             if (phaseErr.code === "INVALID_KEY") throw new Error("INVALID_KEY");
           }
-          // Continue other phases if one fails mid-way — partial results still useful
           send({
             type: "phase_error",
             phase: phase.id,
@@ -761,7 +717,6 @@ serve(async (req) => {
         return;
       }
 
-      // Only write full-run cache when all phases ran in this request
       if (!phaseIdBody) {
         const { error: cacheErr } = await adminClient.from("ai_risk_cache").upsert(
           {
@@ -784,11 +739,11 @@ serve(async (req) => {
         type: "done",
         source: "ai",
         count: allMapped.length,
-        accident_cases: allAccidents.slice(0, 3),
         is_complete: true,
         normalized_equipment: normalizedEquipment,
         detail_level: detailLevel,
         phase_id: phaseIdBody || null,
+        mode: "risk",
       });
     };
 
@@ -829,11 +784,9 @@ serve(async (req) => {
 
     // Non-stream JSON fallback (orchestrator / legacy)
     const collectedItems: any[] = [];
-    const collectedAccidents: any[] = [];
     let source = "ai";
     await emitCachedOrGenerate((payload) => {
       if (payload.type === "item" && payload.item) collectedItems.push(payload.item);
-      if (payload.type === "accident" && payload.accident) collectedAccidents.push(payload.accident);
       if (payload.type === "done") source = String(payload.source || "ai");
       if (payload.type === "error") throw new Error(String(payload.error));
     });
@@ -841,12 +794,12 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         items: collectedItems,
-        accident_cases: collectedAccidents.slice(0, 3),
         source,
         count: collectedItems.length,
         normalized_equipment: normalizedEquipment,
         detail_level: detailLevel,
         is_complete: true,
+        mode: "risk",
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
     );

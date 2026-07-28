@@ -1,11 +1,11 @@
 // Shared AI client — NVIDIA NIM (OpenAI-compatible) adapter.
-// Filename kept for backward compatibility; internal logic now targets
-// NVIDIA integrate.api.nvidia.com with a fixed mixtral-8x7b-instruct model.
+// Filename kept for backward compatibility; internal logic targets
+// NVIDIA integrate.api.nvidia.com with Nemotron Super (reasoning off via /no_think).
 // All request/response shapes remain OpenAI chat-completions compatible so
 // existing callers keep working unchanged.
 
 const NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions";
-const NVIDIA_MODEL = "mistralai/mixtral-8x7b-instruct-v0.1";
+const NVIDIA_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1.5";
 
 // Retained exports (values unused now — model is forced) so imports don't break.
 export const GEMINI_DEFAULT_MODEL = NVIDIA_MODEL;
@@ -45,7 +45,7 @@ export class GeminiError extends Error {
   }
 }
 
-// mixtral-8x7b-instruct is text-only. Flatten any multimodal blocks to text
+// Current default model is text-only. Flatten any multimodal blocks to text
 // so callers that used to pass images (e.g. permit template analysis) keep
 // working without a hard crash.
 function flattenContent(content: OAIMessage["content"]): string {
@@ -108,15 +108,18 @@ const FORCE_JSON_SUFFIX =
   "\n\nYou MUST respond ONLY with valid JSON. Do not include any markdown formatting like ```json or explanatory text.";
 
 function injectSystemRules(messages: OAIMessage[], wantsJson: boolean): OAIMessage[] {
+  // Nemotron Super defaults to reasoning ON; /no_think forces concise content
+  // into message.content (otherwise content may be null and only reasoning is filled).
   const suffix = KOREAN_STYLE_SUFFIX + (wantsJson ? FORCE_JSON_SUFFIX : "");
   const out = messages.map((m) => ({ ...m }));
   const sysIdx = out.findIndex((m) => m.role === "system");
   if (sysIdx >= 0) {
     const cur = out[sysIdx];
     const asText = typeof cur.content === "string" ? cur.content : flattenContent(cur.content);
-    out[sysIdx] = { role: "system", content: asText + suffix };
+    const withNoThink = asText.includes("/no_think") ? asText : `/no_think\n${asText}`;
+    out[sysIdx] = { role: "system", content: withNoThink + suffix };
   } else {
-    out.unshift({ role: "system", content: suffix.trim() });
+    out.unshift({ role: "system", content: `/no_think\n${suffix.trim()}` });
   }
   return out;
 }
@@ -166,9 +169,11 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
   const body: Record<string, unknown> = {
     model: NVIDIA_MODEL, // forced
     messages,
-    temperature: typeof req.temperature === "number" ? req.temperature : 0.4,
+    // Reasoning OFF: greedy decoding recommended by NVIDIA for /no_think
+    temperature: typeof req.temperature === "number" ? req.temperature : 0,
     max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 4096,
     stream: false,
+    chat_template_kwargs: { enable_thinking: false },
   };
   // NVIDIA NIM may not honor response_format reliably; rely on prompt injection instead.
 
@@ -203,7 +208,16 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
 
   const data = await resp.json();
   const choice = data.choices?.[0];
-  const rawContent: string = choice?.message?.content || "";
+  const msg = choice?.message || {};
+  // Prefer content; if the model still only returned reasoning, fall back carefully.
+  let rawContent: string = (msg.content || "").trim();
+  if (!rawContent) {
+    const reasoning = String(msg.reasoning_content || msg.reasoning || "").trim();
+    if (reasoning) {
+      const extracted = reasoning.match(/[\[{][\s\S]*[\]}]/);
+      rawContent = extracted ? extracted[0] : reasoning;
+    }
+  }
   // Defensive: strip any ```json / ``` fences before returning to callers.
   const content = wantsJson ? stripCodeFences(rawContent) : rawContent;
 

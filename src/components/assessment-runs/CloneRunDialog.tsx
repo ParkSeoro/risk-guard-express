@@ -103,7 +103,18 @@ const CloneRunDialog = ({ open, onOpenChange, run, onCloned }: CloneRunDialogPro
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (!next) {
+          import('@/lib/unlockBodyPointerEvents').then(({ unlockBodyPointerEvents }) => {
+            unlockBodyPointerEvents();
+            window.setTimeout(() => unlockBodyPointerEvents(), 50);
+          });
+        }
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>개정 회차 생성 (복제)</AlertDialogTitle>

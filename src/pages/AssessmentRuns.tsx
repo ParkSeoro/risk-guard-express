@@ -520,7 +520,16 @@ const AssessmentRuns = () => {
       </Dialog>
 
       <EditRunDialog open={!!editRun} onOpenChange={(open) => !open && setEditRun(null)} run={editRun} onSaved={fetchRuns} />
-      <DeleteRunDialog open={!!deleteRun} onOpenChange={(open) => !open && setDeleteRun(null)} run={deleteRun} onDeleted={fetchRuns} />
+      <DeleteRunDialog
+        open={!!deleteRun}
+        onOpenChange={(open) => {
+          if (!open) setDeleteRun(null);
+        }}
+        run={deleteRun}
+        onDeleted={() => {
+          fetchRuns();
+        }}
+      />
       <CloneRunDialog open={!!cloneRun} onOpenChange={(open) => !open && setCloneRun(null)} run={cloneRun} onCloned={fetchRuns} />
     </div>
   );

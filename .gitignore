@@ -31,3 +31,7 @@ dist-ssr
 *.sw?
 .env.e2e
 supabase/.temp/
+
+# Capacitor native (generated locally)
+android/
+ios/

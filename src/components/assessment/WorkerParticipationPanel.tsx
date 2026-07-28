@@ -9,9 +9,10 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Trash2, Sparkles, Loader2, Upload, MessageSquare, HeartPulse, AlertTriangle, Users, Wand2 } from 'lucide-react';
+import { Plus, Trash2, Sparkles, Loader2, Upload, MessageSquare, HeartPulse, AlertTriangle, Users, Wand2, MapPin, Calendar } from 'lucide-react';
 import { detectHighRiskCategories, type RiskItemLike } from '@/lib/highRiskDetection';
 import { autoGenerateAccidentCases } from '@/lib/autoAccidentGeneration';
+import { generateAccidentCasesStreaming } from '@/lib/riskAutoGenAI';
 
 interface Props {
   runId: string;
@@ -55,9 +56,20 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
 
   const [newOpinion, setNewOpinion] = useState({ opinion_text: '', worker_name: '', worker_company: '', worker_position: '', signature_url: '' });
   const [healthDraft, setHealthDraft] = useState({ category: '분진', description: '', exposure_level: '보통', countermeasure: '', legal_basis: '', process: '' });
-  const [accidentDraft, setAccidentDraft] = useState({ accident_type: '', cause: '', result: '', prevention: '', description: '', occurrence_date: '', process: '' });
+  const [accidentDraft, setAccidentDraft] = useState({
+    accident_type: '',
+    cause: '',
+    result: '',
+    prevention: '',
+    description: '',
+    occurrence_date: '',
+    location: '',
+    accident_summary: '',
+    process: '',
+  });
   const [aiProcess, setAiProcess] = useState('');
   const [aiEquipment, setAiEquipment] = useState('');
+  const [accidentAICount, setAccidentAICount] = useState(0);
 
   // 고위험 작업 자동 사고사례 생성
   const [autoAccidentEnabled, setAutoAccidentEnabled] = useState(true);
@@ -233,10 +245,19 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
   // ---------- Accident ----------
   const addAccident = async () => {
     if (!accidentDraft.accident_type.trim()) { toast({ title: '사고유형을 입력하세요.', variant: 'destructive' }); return; }
-    const payload: any = { run_id: runId, project_id: projectId, ...accidentDraft, source_type: 'manual', created_by: userId };
+    const payload: any = {
+      run_id: runId,
+      project_id: projectId,
+      ...accidentDraft,
+      source_type: 'manual',
+      created_by: userId,
+    };
     if (!payload.occurrence_date) delete payload.occurrence_date;
     await supabase.from('assessment_accidents' as any).insert(payload);
-    setAccidentDraft({ accident_type: '', cause: '', result: '', prevention: '', description: '', occurrence_date: '', process: '' });
+    setAccidentDraft({
+      accident_type: '', cause: '', result: '', prevention: '', description: '',
+      occurrence_date: '', location: '', accident_summary: '', process: '',
+    });
     await reload(); onChanged?.();
   };
   const deleteAccident = async (id: string) => {
@@ -244,22 +265,50 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
     await reload(); onChanged?.();
   };
   const generateAccidentAI = async () => {
+    if (!aiProcess.trim()) {
+      toast({ title: '공종을 입력하세요.', description: '사고사례 AI 작성에는 공종이 필요합니다.', variant: 'destructive' });
+      return;
+    }
     setAccidentAILoading(true);
+    setAccidentAICount(0);
     try {
-      const { data, error } = await supabase.functions.invoke('analyze-worker-opinion', { body: { mode: 'accident', process: aiProcess, equipment: aiEquipment } });
-      if (error) throw new Error(await edgeFnErrorMessage(error, data));
-      if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : data.error.message || 'AI 생성 실패');
-      const inserts = (data.items || []).map((a: any) => ({
-        run_id: runId, project_id: projectId, process: aiProcess,
-        accident_type: a.accident_type, cause: a.cause, result: a.result || '',
-        prevention: a.prevention, description: a.description || '',
-        source_type: 'ai', created_by: userId,
+      const { accidents } = await generateAccidentCasesStreaming(
+        {
+          processName: aiProcess.trim(),
+          equipment: aiEquipment.trim() || undefined,
+          projectId,
+        },
+        {
+          onProgress: (n) => setAccidentAICount(n),
+        },
+      );
+
+      const inserts = accidents.map((a) => ({
+        run_id: runId,
+        project_id: projectId,
+        process: aiProcess.trim(),
+        accident_type: a.title,
+        cause: a.cause || '',
+        result: a.result || '',
+        prevention: a.prevention || '',
+        description: a.accident_summary || `${a.cause || ''} / ${a.result || ''}`.trim(),
+        accident_summary: a.accident_summary || '',
+        location: a.location || '',
+        occurrence_date: a.occurrence_date || null,
+        source_type: 'ai',
+        created_by: userId,
       }));
+
       if (inserts.length) await supabase.from('assessment_accidents' as any).insert(inserts);
-      await reload(); onChanged?.();
-      toast({ title: `사고사례 ${inserts.length}건 생성` });
-    } catch (e: any) { toast({ title: 'AI 생성 실패', description: e.message, variant: 'destructive' }); }
-    finally { setAccidentAILoading(false); }
+      await reload();
+      onChanged?.();
+      toast({ title: `사고사례 ${inserts.length}건 생성`, description: '발생일자·장소가 상단에 표시됩니다.' });
+    } catch (e: any) {
+      toast({ title: 'AI 생성 실패', description: e.message, variant: 'destructive' });
+    } finally {
+      setAccidentAILoading(false);
+      setAccidentAICount(0);
+    }
   };
 
   const photoUpload = async (e: React.ChangeEvent<HTMLInputElement>, accidentId: string) => {
@@ -385,7 +434,7 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
         </CardContent>
       </Card>
 
-      {/* AI 일괄 생성 도우미 */}
+      {/* AI 일괄 생성 도우미 — 보건만 (사고사례는 하단 전용 버튼) */}
       {canEdit && (
         <Card>
           <CardContent className="py-3 flex items-end gap-2">
@@ -393,9 +442,6 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
             <div className="flex-1"><Label className="text-[10px]">장비</Label><Input placeholder="예: 고소작업대" value={aiEquipment} onChange={e => setAiEquipment(e.target.value)} className="h-8" /></div>
             <Button size="sm" variant="outline" onClick={generateHealthAI} disabled={healthAILoading} className="gap-1">
               {healthAILoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <HeartPulse className="h-3 w-3" />} 보건 AI 생성
-            </Button>
-            <Button size="sm" variant="outline" onClick={generateAccidentAI} disabled={accidentAILoading} className="gap-1">
-              {accidentAILoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <AlertTriangle className="h-3 w-3" />} 사고사례 AI
             </Button>
           </CardContent>
         </Card>
@@ -461,6 +507,46 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
+          {/* 사고사례 AI 전용 트리거 (위험성평가와 완전 분리) */}
+          {canEdit && (
+            <div className="rounded border border-destructive/30 bg-destructive/5 p-3 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+                <div className="flex-1 space-y-1">
+                  <Label className="text-[10px]">공종 (필수)</Label>
+                  <Input
+                    className="h-8"
+                    placeholder="예: 용접, 비계, 굴착"
+                    value={aiProcess}
+                    onChange={(e) => setAiProcess(e.target.value)}
+                  />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <Label className="text-[10px]">장비 (선택)</Label>
+                  <Input
+                    className="h-8"
+                    placeholder="예: 고소작업대"
+                    value={aiEquipment}
+                    onChange={(e) => setAiEquipment(e.target.value)}
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  className="h-9 gap-1.5 shrink-0 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  disabled={accidentAILoading || !aiProcess.trim()}
+                  onClick={generateAccidentAI}
+                >
+                  {accidentAILoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                  {accidentAILoading
+                    ? `사고사례 생성 중… ${accidentAICount}건`
+                    : '🚨 사고사례 AI 작성'}
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-snug">
+                KOSHA 중대재해 보고서 스타일로 치명 사례 3~4건만 엄선 생성합니다. 위험성평가 자동작성과 분리된 전용 API입니다.
+              </p>
+            </div>
+          )}
+
           {/* 고위험 작업 자동 사고사례 패널 */}
           {canEdit && (
             <div className="rounded border p-2 bg-muted/20 space-y-2">
@@ -503,24 +589,47 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
             <div className="grid grid-cols-2 gap-2 p-2 border rounded bg-muted/30">
               <Input className="h-8" placeholder="사고유형" value={accidentDraft.accident_type} onChange={e => setAccidentDraft(p => ({ ...p, accident_type: e.target.value }))} />
               <Input className="h-8" placeholder="공종" value={accidentDraft.process} onChange={e => setAccidentDraft(p => ({ ...p, process: e.target.value }))} />
+              <Input className="h-8" type="date" placeholder="발생일자" value={accidentDraft.occurrence_date} onChange={e => setAccidentDraft(p => ({ ...p, occurrence_date: e.target.value }))} />
+              <Input className="h-8" placeholder="발생장소" value={accidentDraft.location} onChange={e => setAccidentDraft(p => ({ ...p, location: e.target.value }))} />
               <Input className="h-8" placeholder="원인" value={accidentDraft.cause} onChange={e => setAccidentDraft(p => ({ ...p, cause: e.target.value }))} />
               <Input className="h-8" placeholder="결과" value={accidentDraft.result} onChange={e => setAccidentDraft(p => ({ ...p, result: e.target.value }))} />
               <Input className="h-8 col-span-2" placeholder="예방대책" value={accidentDraft.prevention} onChange={e => setAccidentDraft(p => ({ ...p, prevention: e.target.value }))} />
-              <Textarea className="col-span-2 text-xs" rows={2} placeholder="설명" value={accidentDraft.description} onChange={e => setAccidentDraft(p => ({ ...p, description: e.target.value }))} />
+              <Textarea className="col-span-2 text-xs" rows={2} placeholder="사고개요" value={accidentDraft.accident_summary || accidentDraft.description} onChange={e => setAccidentDraft(p => ({ ...p, accident_summary: e.target.value, description: e.target.value }))} />
               <Button size="sm" onClick={addAccident} className="gap-1 col-span-2"><Plus className="h-3 w-3" />사고사례 등록</Button>
             </div>
           )}
           {accidents.length === 0 && <p className="text-center text-xs text-muted-foreground py-3">등록된 사고사례가 없습니다.</p>}
           {accidents.map(a => (
-            <div key={a.id} className="p-2 border rounded space-y-1">
+            <div key={a.id} className="p-2.5 border rounded space-y-1.5">
+              {/* 일자·장소 최상단 강조 */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-foreground border-b pb-1.5 mb-0.5">
+                <span className="inline-flex items-center gap-1">
+                  <Calendar className="h-3 w-3 text-destructive" />
+                  {a.occurrence_date || '일자 미상'}
+                </span>
+                <span className="inline-flex items-center gap-1 min-w-0">
+                  <MapPin className="h-3 w-3 text-destructive shrink-0" />
+                  <span className="truncate">{a.location || '장소 미상'}</span>
+                </span>
+              </div>
               <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 text-xs">
+                <div className="flex-1 text-xs space-y-0.5">
                   <p className="font-medium">[{a.accident_type}] {a.process && <span className="text-muted-foreground">· {a.process}</span>}</p>
+                  {(a.accident_summary || a.description) && (
+                    <p className="text-[11px] leading-snug">{a.accident_summary || a.description}</p>
+                  )}
                   <p className="text-[11px]">원인: {a.cause}</p>
                   {a.result && <p className="text-[11px]">결과: {a.result}</p>}
                   <p className="text-[11px]">예방: {a.prevention}</p>
-                  {a.description && <p className="text-[10px] text-muted-foreground">{a.description}</p>}
-                  <Badge variant="outline" className="text-[9px] mt-1">{a.source_type === 'ai' ? '🤖 AI' : a.source_type === 'auto' ? '⚡ 자동(고위험)' : a.source_type === 'recommended' ? '📋 추천' : '✍️ 수동'}</Badge>
+                  <Badge variant="outline" className="text-[9px] mt-1">
+                    {a.source_type === 'ai' || a.source_type === 'ai_autogen'
+                      ? '🤖 AI'
+                      : a.source_type === 'auto'
+                        ? '⚡ 자동(고위험)'
+                        : a.source_type === 'recommended'
+                          ? '📋 추천'
+                          : '✍️ 수동'}
+                  </Badge>
                 </div>
                 {canEdit && <div className="flex gap-1">
                   <label className="cursor-pointer">

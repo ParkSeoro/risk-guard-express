@@ -5,10 +5,15 @@ import { generateRiskItems, type GeneratedRiskItem } from './riskAutoGen';
 
 export type DetailLevel = 'core' | 'comprehensive';
 
+/** KOSHA-style accident case from generate-accident-ai */
 export interface AIAccidentCase {
   title: string;
   cause: string;
   result: string;
+  prevention?: string;
+  occurrence_date?: string;
+  location?: string;
+  accident_summary?: string;
 }
 
 export interface AIGenerateOptions {
@@ -103,39 +108,33 @@ async function getAccessToken(): Promise<string> {
   return token;
 }
 
-async function consumeRiskSse(
-  opts: AIGenerateOptions & { phaseId: string; phaseTitle: string },
+function mapAccidentPayload(raw: any): AIAccidentCase | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const a: AIAccidentCase = {
+    title: raw.title || raw.accident_type || '',
+    cause: raw.cause || '',
+    result: raw.result || '',
+    prevention: raw.prevention || '',
+    occurrence_date: raw.occurrence_date || '',
+    location: raw.location || '',
+    accident_summary: raw.accident_summary || raw.description || '',
+  };
+  if (!(a.title || a.cause || a.accident_summary)) return null;
+  return a;
+}
+
+async function consumeSse(
+  url: string,
+  body: Record<string, unknown>,
   handlers: {
-    onProgress?: (progress: AIGenerateProgress, partialItems: GeneratedRiskItem[]) => void;
-    onItem?: (item: GeneratedRiskItem, itemsSoFar: GeneratedRiskItem[]) => void | Promise<void>;
-    onAccident?: (accident: AIAccidentCase) => void;
-    signal?: AbortSignal;
+    onEvent?: (payload: any) => void | Promise<void>;
   },
-  bag: {
-    items: GeneratedRiskItem[];
-    accidentCases: AIAccidentCase[];
-    seen: Set<string>;
-    source: { value: 'library' | 'cache' | 'ai' | 'hybrid' };
-    normalizedEquipment: { value?: string };
-  },
+  signal?: AbortSignal,
 ): Promise<void> {
-  const detailLevel: DetailLevel = opts.detailLevel || 'comprehensive';
   const token = await getAccessToken();
-  const baseUrl = import.meta.env.VITE_SUPABASE_URL as string;
   const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
-  handlers.onProgress?.(
-    {
-      phase: 'phase',
-      itemsSoFar: bag.items.length,
-      phaseId: opts.phaseId,
-      phaseTitle: opts.phaseTitle,
-      normalizedEquipment: bag.normalizedEquipment.value,
-    },
-    bag.items,
-  );
-
-  const resp = await fetch(`${baseUrl}/functions/v1/generate-risk-ai`, {
+  const resp = await fetch(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -143,18 +142,8 @@ async function consumeRiskSse(
       'Content-Type': 'application/json; charset=utf-8',
       Accept: 'text/event-stream',
     },
-    body: JSON.stringify({
-      process_name: opts.processName,
-      equipment: opts.equipment || '',
-      work_description: opts.workDescription || '',
-      work_location: opts.workLocation || '일반',
-      work_environment: opts.workEnvironment || [],
-      detail_level: detailLevel,
-      project_id: opts.projectId || '',
-      stream: true,
-      phase_id: opts.phaseId,
-    }),
-    signal: handlers.signal,
+    body: JSON.stringify(body),
+    signal,
   });
 
   if (!resp.ok) {
@@ -172,79 +161,17 @@ async function consumeRiskSse(
   if (!resp.body) throw new Error('AI 스트림 응답이 비어 있습니다.');
 
   const reader = resp.body.getReader();
-  const decoder = new TextDecoder('utf-8', { stream: true });
+  // stream:true keeps multi-byte Hangul across chunk boundaries
+  const decoder = new TextDecoder('utf-8', { stream: true } as TextDecoderOptions);
   let carry = '';
   let streamError: string | null = null;
-  const itemsBefore = bag.items.length;
 
   const handleEvent = async (payload: any) => {
     if (!payload || typeof payload !== 'object') return;
-    const type = payload.type;
-
-    if (type === 'meta') {
-      if (payload.normalized_equipment) bag.normalizedEquipment.value = payload.normalized_equipment;
-      if (payload.source === 'cache' || payload.source === 'ai') bag.source.value = payload.source;
-      return;
-    }
-
-    if (type === 'phase') {
-      handlers.onProgress?.(
-        {
-          phase: 'phase',
-          itemsSoFar: bag.items.length,
-          phaseId: payload.phase || opts.phaseId,
-          phaseTitle: payload.title || opts.phaseTitle,
-          normalizedEquipment: bag.normalizedEquipment.value,
-        },
-        bag.items,
-      );
-      return;
-    }
-
-    if (type === 'item' && payload.item) {
-      const mapped = mapAIItemToGenerated(payload.item, opts.processName);
-      const key = `${mapped.sub_task}|${mapped.hazard}`;
-      if (opts.deduplicate !== false && bag.seen.has(key)) return;
-      bag.seen.add(key);
-      bag.items.push(mapped);
-      await handlers.onItem?.(mapped, bag.items);
-      handlers.onProgress?.(
-        { phase: 'generating', itemsSoFar: bag.items.length, normalizedEquipment: bag.normalizedEquipment.value },
-        bag.items,
-      );
-      return;
-    }
-
-    if (type === 'accident' && payload.accident) {
-      const a: AIAccidentCase = {
-        title: payload.accident.title || '',
-        cause: payload.accident.cause || '',
-        result: payload.accident.result || '',
-      };
-      if (a.title || a.cause) {
-        bag.accidentCases.push(a);
-        handlers.onAccident?.(a);
-      }
-      return;
-    }
-
-    if (type === 'done') {
-      if (payload.source === 'cache' || payload.source === 'ai') bag.source.value = payload.source;
-      if (payload.normalized_equipment) bag.normalizedEquipment.value = payload.normalized_equipment;
-      if (Array.isArray(payload.accident_cases)) {
-        for (const c of payload.accident_cases) {
-          const a: AIAccidentCase = { title: c.title || '', cause: c.cause || '', result: c.result || '' };
-          if ((a.title || a.cause) && !bag.accidentCases.some((x) => x.title === a.title)) {
-            bag.accidentCases.push(a);
-          }
-        }
-      }
-      return;
-    }
-
-    if (type === 'error') {
+    if (payload.type === 'error') {
       streamError = String(payload.error || 'AI 생성 실패');
     }
+    await handlers.onEvent?.(payload);
   };
 
   while (true) {
@@ -280,34 +207,136 @@ async function consumeRiskSse(
     }
   }
 
-  // Phase produced nothing and reported error → fail this phase
-  if (streamError && bag.items.length === itemsBefore) {
-    throw new Error(mapErrorMessage(streamError));
+  if (streamError) throw new Error(mapErrorMessage(streamError));
+}
+
+async function consumeRiskSse(
+  opts: AIGenerateOptions & { phaseId: string; phaseTitle: string },
+  handlers: {
+    onProgress?: (progress: AIGenerateProgress, partialItems: GeneratedRiskItem[]) => void;
+    onItem?: (item: GeneratedRiskItem, itemsSoFar: GeneratedRiskItem[]) => void | Promise<void>;
+    signal?: AbortSignal;
+  },
+  bag: {
+    items: GeneratedRiskItem[];
+    seen: Set<string>;
+    source: { value: 'library' | 'cache' | 'ai' | 'hybrid' };
+    normalizedEquipment: { value?: string };
+  },
+): Promise<void> {
+  const detailLevel: DetailLevel = opts.detailLevel || 'comprehensive';
+  const baseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const itemsBefore = bag.items.length;
+  let phaseHadError = false;
+
+  handlers.onProgress?.(
+    {
+      phase: 'phase',
+      itemsSoFar: bag.items.length,
+      phaseId: opts.phaseId,
+      phaseTitle: opts.phaseTitle,
+      normalizedEquipment: bag.normalizedEquipment.value,
+    },
+    bag.items,
+  );
+
+  try {
+    await consumeSse(
+      `${baseUrl}/functions/v1/generate-risk-ai`,
+      {
+        process_name: opts.processName,
+        equipment: opts.equipment || '',
+        work_description: opts.workDescription || '',
+        work_location: opts.workLocation || '일반',
+        work_environment: opts.workEnvironment || [],
+        detail_level: detailLevel,
+        project_id: opts.projectId || '',
+        stream: true,
+        phase_id: opts.phaseId,
+        mode: 'risk',
+      },
+      {
+        onEvent: async (payload) => {
+          const type = payload.type;
+
+          if (type === 'meta') {
+            if (payload.normalized_equipment) bag.normalizedEquipment.value = payload.normalized_equipment;
+            if (payload.source === 'cache' || payload.source === 'ai') bag.source.value = payload.source;
+            return;
+          }
+
+          if (type === 'phase') {
+            handlers.onProgress?.(
+              {
+                phase: 'phase',
+                itemsSoFar: bag.items.length,
+                phaseId: payload.phase || opts.phaseId,
+                phaseTitle: payload.title || opts.phaseTitle,
+                normalizedEquipment: bag.normalizedEquipment.value,
+              },
+              bag.items,
+            );
+            return;
+          }
+
+          if (type === 'item' && payload.item) {
+            const mapped = mapAIItemToGenerated(payload.item, opts.processName);
+            const key = `${mapped.sub_task}|${mapped.hazard}`;
+            if (opts.deduplicate !== false && bag.seen.has(key)) return;
+            bag.seen.add(key);
+            bag.items.push(mapped);
+            await handlers.onItem?.(mapped, bag.items);
+            handlers.onProgress?.(
+              { phase: 'generating', itemsSoFar: bag.items.length, normalizedEquipment: bag.normalizedEquipment.value },
+              bag.items,
+            );
+            return;
+          }
+
+          if (type === 'done') {
+            if (payload.source === 'cache' || payload.source === 'ai') bag.source.value = payload.source;
+            if (payload.normalized_equipment) bag.normalizedEquipment.value = payload.normalized_equipment;
+            return;
+          }
+
+          if (type === 'error' || type === 'phase_error') {
+            phaseHadError = true;
+          }
+        },
+      },
+      handlers.signal,
+    );
+  } catch (err) {
+    if (bag.items.length === itemsBefore) throw err;
+    // Partial phase success — keep items
+    console.warn('[AI Engine] phase ended with partial items:', err);
+    return;
+  }
+
+  if (phaseHadError && bag.items.length === itemsBefore) {
+    throw new Error('AI 생성에 실패했습니다.');
   }
 }
 
 /**
  * Stream risk items from generate-risk-ai (SSE), one phase per request.
- * Uses TextDecoder('utf-8', { stream: true }) so Korean chunks never corrupt.
+ * Risk-only — accidents are generated via generateAccidentCasesStreaming.
  */
 export async function generateRiskItemsStreaming(
   opts: AIGenerateOptions,
   handlers?: {
     onProgress?: (progress: AIGenerateProgress, partialItems: GeneratedRiskItem[]) => void;
     onItem?: (item: GeneratedRiskItem, itemsSoFar: GeneratedRiskItem[]) => void | Promise<void>;
-    onAccident?: (accident: AIAccidentCase) => void;
     signal?: AbortSignal;
   },
 ): Promise<{
   items: GeneratedRiskItem[];
   source: 'library' | 'cache' | 'ai' | 'hybrid';
   normalizedEquipment?: string;
-  accidentCases?: AIAccidentCase[];
 }> {
   const detailLevel: DetailLevel = opts.detailLevel || 'comprehensive';
   const bag = {
     items: [] as GeneratedRiskItem[],
-    accidentCases: [] as AIAccidentCase[],
     seen: new Set<string>(),
     source: { value: 'ai' as 'library' | 'cache' | 'ai' | 'hybrid' },
     normalizedEquipment: { value: undefined as string | undefined },
@@ -336,8 +365,77 @@ export async function generateRiskItemsStreaming(
     items: bag.items,
     source: bag.source.value,
     normalizedEquipment: bag.normalizedEquipment.value,
-    accidentCases: bag.accidentCases.slice(0, 3),
   };
+}
+
+/**
+ * Stream KOSHA-style accident cases from generate-accident-ai (SSE).
+ * Uses TextDecoder('utf-8', { stream: true }) so Korean chunks never corrupt.
+ */
+export async function generateAccidentCasesStreaming(
+  opts: {
+    processName: string;
+    equipment?: string;
+    workDescription?: string;
+    workLocation?: string;
+    projectId?: string;
+  },
+  handlers?: {
+    onAccident?: (accident: AIAccidentCase, soFar: AIAccidentCase[]) => void | Promise<void>;
+    onProgress?: (count: number) => void;
+    signal?: AbortSignal;
+  },
+): Promise<{ accidents: AIAccidentCase[]; source: 'ai' }> {
+  const baseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const accidents: AIAccidentCase[] = [];
+  const seen = new Set<string>();
+
+  await consumeSse(
+    `${baseUrl}/functions/v1/generate-accident-ai`,
+    {
+      process_name: opts.processName,
+      equipment: opts.equipment || '',
+      work_description: opts.workDescription || '',
+      work_location: opts.workLocation || '',
+      project_id: opts.projectId || '',
+      stream: true,
+      mode: 'accident',
+    },
+    {
+      onEvent: async (payload) => {
+        if (payload.type === 'accident' && payload.accident) {
+          const a = mapAccidentPayload(payload.accident);
+          if (!a) return;
+          if (a.title && seen.has(a.title)) return;
+          if (a.title) seen.add(a.title);
+          if (accidents.length >= 4) return;
+          accidents.push(a);
+          await handlers?.onAccident?.(a, accidents);
+          handlers?.onProgress?.(accidents.length);
+          return;
+        }
+        if (payload.type === 'done' && Array.isArray(payload.accident_cases)) {
+          for (const c of payload.accident_cases) {
+            const a = mapAccidentPayload(c);
+            if (!a) continue;
+            if (a.title && seen.has(a.title)) continue;
+            if (a.title) seen.add(a.title);
+            if (accidents.length >= 4) break;
+            accidents.push(a);
+            await handlers?.onAccident?.(a, accidents);
+          }
+          handlers?.onProgress?.(accidents.length);
+        }
+      },
+    },
+    handlers?.signal,
+  );
+
+  if (accidents.length === 0) {
+    throw new Error('AI가 유효한 사고사례를 반환하지 않았습니다.');
+  }
+
+  return { accidents: accidents.slice(0, 4), source: 'ai' };
 }
 
 /**
@@ -351,7 +449,6 @@ export async function generateRiskItemsHybrid(
   items: GeneratedRiskItem[];
   source: 'library' | 'cache' | 'ai' | 'hybrid';
   normalizedEquipment?: string;
-  accidentCases?: AIAccidentCase[];
 }> {
   const detailLevel: DetailLevel = opts.detailLevel || 'comprehensive';
 
@@ -380,7 +477,7 @@ export async function generateRiskItemsHybrid(
 
     if (libraryItems.length > 0) {
       onProgress?.({ phase: 'complete', itemsSoFar: libraryItems.length }, libraryItems);
-      return { items: libraryItems, source: 'library', accidentCases: [] };
+      return { items: libraryItems, source: 'library' };
     }
 
     throw new Error(mapped || 'AI 생성에 실패했습니다. 표준 위험성평가 라이브러리가 비어 있어 대체 생성도 불가합니다.');

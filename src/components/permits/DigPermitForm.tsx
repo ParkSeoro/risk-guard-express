@@ -395,11 +395,9 @@ export default function DigPermitForm({
                 <th className="hd">담당자(CM)</th>
                 <td><SigCell k="cm" /></td>
                 <td rowSpan={3} className="text-center text-[10px] align-top pt-2">{(() => {
-                  // 현장 규칙: 검토일 = 승인일(SM) 하루 전
-                  const av = signatures.approved_at || '';
-                  const rv = signatures.reviewed_at
-                    || (av ? new Date(new Date(av).getTime() - 86400000).toISOString() : '');
+                  // 검토일 = CM 결재 단계(owner_cm)의 실제 approved_at
                   const cm = signatures.cm as any;
+                  const rv = signatures.reviewed_at || cm?.signed_at || '';
                   return (
                     <>
                       <div className="font-semibold">{rv ? new Date(rv).toLocaleDateString('ko-KR') : ''}</div>
@@ -408,11 +406,12 @@ export default function DigPermitForm({
                   );
                 })()}</td>
                 <td rowSpan={3} className="text-center text-[10px] align-top pt-2">{(() => {
-                  const av = signatures.approved_at || '';
+                  // 승인일 = SM 결재 단계(owner_sm)의 실제 approved_at
                   const sm = signatures.sm as any;
+                  const av = signatures.approved_at || sm?.signed_at || '';
                   return (
                     <>
-                      <div className="font-semibold">{av ? new Date(av).toLocaleDateString('ko-KR') : (sm?.signed_at ? new Date(sm.signed_at).toLocaleDateString('ko-KR') : '')}</div>
+                      <div className="font-semibold">{av ? new Date(av).toLocaleDateString('ko-KR') : ''}</div>
                       {sm?.name && <div className="text-[9px] text-muted-foreground mt-1">{sm.name}</div>}
                     </>
                   );

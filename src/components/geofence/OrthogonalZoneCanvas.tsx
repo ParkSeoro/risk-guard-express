@@ -34,8 +34,8 @@ type Props = {
   imageUrl: string;
   corners: GeoCorners;
   zones: OrthogonalZone[];
-  pendingGeoShape: GeoDrawnShape | null;
-  onGeoShapeCreated: (shape: GeoDrawnShape) => void;
+  pendingGeoShape: DrawnShape | null;
+  onGeoShapeCreated: (shape: DrawnShape) => void;
   onFocusZone?: (id: string) => void;
   className?: string;
 };

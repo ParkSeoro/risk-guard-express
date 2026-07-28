@@ -132,7 +132,7 @@ const UserManagement = () => {
   };
 
   const fetchProjects = async () => {
-    const { data } = await supabase.from('projects').select('id, name').order('name');
+    const { data } = await supabase.from('projects').select('id, name').eq('is_deleted', false).order('name');
     setProjects(data || []);
   };
 

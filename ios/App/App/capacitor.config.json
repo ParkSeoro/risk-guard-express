@@ -1,0 +1,36 @@
+{
+	"appId": "org.safenex.app",
+	"appName": "Safenex",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	},
+	"plugins": {
+		"Geolocation": {
+			"permissions": [
+				"location"
+			]
+		},
+		"BackgroundGeolocation": {
+			"notificationChannelName": "위치 추적"
+		},
+		"CapacitorUpdater": {
+			"autoUpdate": false,
+			"appReadyTimeout": 5000
+		},
+		"PushNotifications": {
+			"presentationOptions": [
+				"badge",
+				"sound",
+				"alert"
+			]
+		}
+	},
+	"packageClassList": [
+		"BackgroundGeolocation",
+		"AppPlugin",
+		"GeolocationPlugin",
+		"PushNotificationsPlugin",
+		"CapacitorUpdaterPlugin"
+	]
+}

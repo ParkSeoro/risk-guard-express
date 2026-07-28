@@ -60,7 +60,7 @@ export default function WorkerDistribution() {
   const [nowTick, setNowTick] = useState(Date.now());
 
   useEffect(() => {
-    supabase.from("projects").select("id,name").then(({ data }) => setProjects(data || []));
+    supabase.from("projects").select("id,name").eq('is_deleted', false).then(({ data }) => setProjects(data || []));
   }, []);
 
   useEffect(() => {

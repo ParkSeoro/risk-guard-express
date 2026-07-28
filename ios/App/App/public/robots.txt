@@ -1,0 +1,22 @@
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Twitterbot
+Allow: /
+
+User-agent: facebookexternalhit
+Allow: /
+
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /m/
+Disallow: /settings/
+Disallow: /worker/portal/
+Disallow: /tbm/
+Disallow: /health/survey/
+
+Sitemap: https://safenex.org/sitemap.xml

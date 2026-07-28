@@ -66,14 +66,20 @@ export default function MobileHome() {
     (async () => {
       let list: { id: string; name: string; site_name: string }[] = [];
       if (isMaster) {
-        const { data } = await supabase.from("projects").select("id, name, site_name").order("created_at", { ascending: false });
+        const { data } = await supabase
+          .from("projects")
+          .select("id, name, site_name")
+          .eq("is_deleted", false)
+          .order("created_at", { ascending: false });
         list = data || [];
       } else {
         const { data } = await supabase
           .from("project_members")
-          .select("projects(id, name, site_name)")
+          .select("projects(id, name, site_name, is_deleted)")
           .eq("user_id", user.id);
-        list = (data || []).map((m: any) => m.projects).filter(Boolean);
+        list = (data || [])
+          .map((m: any) => m.projects)
+          .filter((p: any) => p && !p.is_deleted);
       }
       setProjects(list);
       const cur = localStorage.getItem("selectedProjectId");

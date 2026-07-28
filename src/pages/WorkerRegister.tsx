@@ -7,8 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Loader2, HardHat, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
-import { JOB_TYPE_LABELS } from "@/hooks/useWorker";
 import RequiredEducationPanel from "@/components/worker/RequiredEducationPanel";
+import JobTypeSelect from "@/components/JobTypeSelect";
+import {
+  jobTypeSchema,
+  toLegalEducationJobType,
+  type StandardJobType,
+} from "@/lib/jobCategories";
+import { zodErrorMessage } from "@/lib/commonSchemas";
 
 export default function WorkerRegister() {
   const [params] = useSearchParams();
@@ -21,7 +27,7 @@ export default function WorkerRegister() {
   const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
   const [birthDate, setBirthDate] = useState("");
-  const [jobType, setJobType] = useState("general");
+  const [jobType, setJobType] = useState<StandardJobType | "">("");
   const [hireDate, setHireDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [doneToken, setDoneToken] = useState<string | null>(null);
@@ -39,6 +45,12 @@ export default function WorkerRegister() {
   const submit = async () => {
     if (!projectId) { toast.error("잘못된 링크입니다"); return; }
     if (!name.trim() || phone.trim().length < 8) { toast.error("이름과 전화번호를 정확히 입력해주세요"); return; }
+    const jobParsed = jobTypeSchema.safeParse(jobType);
+    if (!jobParsed.success) {
+      toast.error(zodErrorMessage(jobParsed.error));
+      return;
+    }
+    const validatedJobType = jobParsed.data;
     setSubmitting(true);
     const { data, error } = await supabase.rpc("register_worker", {
       _project_id: projectId,
@@ -52,10 +64,10 @@ export default function WorkerRegister() {
     const result = data as any;
     if (result?.error) { toast.error("등록 실패: " + result.error); return; }
     // 신규 정보(생년월일/직종/입사일) 동기화 → 트리거가 의무사항 자동 생성
-    if (result.worker_id && (birthDate || jobType || hireDate)) {
+    if (result.worker_id && (birthDate || validatedJobType || hireDate)) {
       await supabase.from("workers").update({
         birth_date: birthDate || null,
-        job_type: jobType,
+        job_type: validatedJobType,
         hire_date: hireDate || new Date().toISOString().slice(0, 10),
       }).eq("id", result.worker_id);
     }
@@ -105,6 +117,8 @@ export default function WorkerRegister() {
     );
   }
 
+  const educationPreviewJobType = jobType ? toLegalEducationJobType(jobType) : "";
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
       <Card className="w-full max-w-md">
@@ -151,17 +165,20 @@ export default function WorkerRegister() {
             </div>
           </div>
           <div>
-            <Label className="text-base">직종</Label>
-            <select className="w-full h-12 text-base border rounded-md px-3 bg-background" value={jobType} onChange={e => setJobType(e.target.value)}>
-              {Object.entries(JOB_TYPE_LABELS).map(([v, label]) => (
-                <option key={v} value={v}>{label}</option>
-              ))}
-            </select>
-            <div className="text-[11px] text-muted-foreground mt-1">직종에 따라 필수 법정 교육·건진이 자동 등록됩니다</div>
+            <Label className="text-base">직종 *</Label>
+            <JobTypeSelect
+              value={jobType}
+              onValueChange={setJobType}
+              placeholder="표준 직종 선택"
+              triggerClassName="h-12 text-base"
+            />
+            <div className="text-[11px] text-muted-foreground mt-1">
+              플랜트/건설 표준 직종만 선택 가능합니다. 주관식·기타 입력은 불가합니다.
+            </div>
           </div>
 
-          {projectId && jobType && (
-            <RequiredEducationPanel mode="preview" projectId={projectId} jobType={jobType} />
+          {projectId && educationPreviewJobType && (
+            <RequiredEducationPanel mode="preview" projectId={projectId} jobType={educationPreviewJobType} />
           )}
 
           <Button className="w-full h-14 text-lg" onClick={submit} disabled={submitting}>

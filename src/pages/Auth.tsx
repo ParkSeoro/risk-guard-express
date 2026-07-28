@@ -15,6 +15,9 @@ import {
   positionLabel,
 } from '@/lib/projectPositions';
 import { normalizeCompanyType } from '@/lib/companyTypes';
+import JobTypeSelect from '@/components/JobTypeSelect';
+import { jobTypeSchema, type StandardJobType } from '@/lib/jobCategories';
+import { zodErrorMessage } from '@/lib/commonSchemas';
 
 type Mode = 'login' | 'signup';
 type SignupMethod = 'directory' | 'invite';
@@ -60,6 +63,7 @@ const Auth = () => {
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [selectedCompany, setSelectedCompany] = useState<string>('');
   const [selectedPosition, setSelectedPosition] = useState<string>('');
+  const [selectedJobType, setSelectedJobType] = useState<StandardJobType | ''>('');
   const { toast } = useToast();
 
   // Auto-switch to signup if invite param present
@@ -169,6 +173,13 @@ const Auth = () => {
       toast({ title: '참여할 프로젝트·소속 업체·직책을 선택해주세요.', variant: 'destructive' });
       return;
     }
+    if (signupMethod === 'directory') {
+      const jobParsed = jobTypeSchema.safeParse(selectedJobType);
+      if (!jobParsed.success) {
+        toast({ title: zodErrorMessage(jobParsed.error), variant: 'destructive' });
+        return;
+      }
+    }
     setLoading(true);
     try {
       const selectedCompanyName = directory.find(d => d.company_id === selectedCompany)?.company_name || company;
@@ -184,6 +195,7 @@ const Auth = () => {
             signup_project_id: signupMethod === 'directory' ? selectedProject : undefined,
             signup_company_id: signupMethod === 'directory' ? selectedCompany : undefined,
             signup_position: signupMethod === 'directory' ? selectedPosition : undefined,
+            signup_job_type: signupMethod === 'directory' ? selectedJobType || undefined : undefined,
           },
         },
       });
@@ -324,6 +336,18 @@ const Auth = () => {
                         return null;
                       })()}
                       <p className="text-[10px] text-muted-foreground">관리자 승인 후 이용 가능합니다.</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>직종 *</Label>
+                      <JobTypeSelect
+                        value={selectedJobType}
+                        onValueChange={setSelectedJobType}
+                        placeholder="표준 직종 선택"
+                        disabled={!selectedCompany}
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        플랜트/건설 표준 직종만 선택 가능합니다. 주관식·기타 입력은 불가합니다.
+                      </p>
                     </div>
                   </>
                 )}

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Download, Upload, FileSpreadsheet, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { isStandardJobType } from "@/lib/jobCategories";
 
 type Props = {
   projectId: string;
@@ -93,7 +94,8 @@ export default function WorkerBulkImportDialog({ projectId, defaultCompanyId, op
       ["근로자 일괄 등록 양식 — 안내"],
       [],
       ["1. '근로자' 시트에 한 줄에 한 명씩 입력하세요."],
-      ["2. 필수: 이름, 전화번호, 소속사명. 선택: 직종, 생년월일, 입사일."],
+      ["2. 필수: 이름, 전화번호, 소속사명. 선택: 직종(표준 직종명만), 생년월일, 입사일."],
+      ["3. 직종은 용접공·배관공·전기공 등 표준명만 허용. 주관식·기타 불가."],
       ["3. 전화번호는 숫자만 입력해도 자동 변환됩니다 (예: 01012345678 → 010-1234-5678)."],
       ["4. 날짜 형식: YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD 모두 허용."],
       ["5. 소속사명은 현장에 등록된 회사명과 일치해야 자동 연결됩니다 (일치하지 않으면 이름만 저장)."],
@@ -126,6 +128,9 @@ export default function WorkerBulkImportDialog({ projectId, defaultCompanyId, op
       if (!name) _error = "이름 필수";
       else if (!phone || phone.replace(/\D/g, "").length < 9) _error = "전화번호 형식 오류";
       else if (!company_name) _error = "소속사명 필수";
+      else if (job_type && !isStandardJobType(job_type)) {
+        _error = "직종은 표준 목록만 허용 (주관식·기타 불가)";
+      }
       return { name, phone, company_name, job_type, birth_date, hire_date, _row: i + 2, _error };
     });
     setRows(parsed);
@@ -222,8 +227,8 @@ export default function WorkerBulkImportDialog({ projectId, defaultCompanyId, op
           </div>
 
           <div className="text-xs text-muted-foreground bg-muted/40 p-3 rounded">
-            <strong>입력 컬럼:</strong> 이름 · 전화번호 · 소속사명 · 직종 · 생년월일 · 입사일<br />
-            전화번호와 날짜는 자동 정규화됩니다. 같은 현장 + 같은 전화번호는 중복으로 인식되어 건너뜁니다.
+            <strong>입력 컬럼:</strong> 이름 · 전화번호 · 소속사명 · 직종(표준명) · 생년월일 · 입사일<br />
+            직종은 표준 목록만 허용됩니다(주관식·기타 불가). 전화번호와 날짜는 자동 정규화됩니다.
           </div>
 
           {rows.length > 0 && (

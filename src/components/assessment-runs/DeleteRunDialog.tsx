@@ -15,12 +15,18 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useAuth } from '@/contexts/AuthContext';
+import { unlockBodyPointerEvents } from '@/lib/unlockBodyPointerEvents';
 
 interface DeleteRunDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   run: any;
   onDeleted: () => void;
+}
+
+function scheduleUnlock() {
+  window.setTimeout(() => unlockBodyPointerEvents(), 0);
+  window.setTimeout(() => unlockBodyPointerEvents(), 50);
 }
 
 const DeleteRunDialog = ({ open, onOpenChange, run, onDeleted }: DeleteRunDialogProps) => {
@@ -63,12 +69,24 @@ const DeleteRunDialog = ({ open, onOpenChange, run, onDeleted }: DeleteRunDialog
     setReason('');
     setDeleting(false);
     onOpenChange(false);
+    scheduleUnlock();
     onDeleted();
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (!next) scheduleUnlock();
+      }}
+    >
+      <AlertDialogContent
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          unlockBodyPointerEvents();
+        }}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>회차 삭제</AlertDialogTitle>
           <AlertDialogDescription>
@@ -87,7 +105,7 @@ const DeleteRunDialog = ({ open, onOpenChange, run, onDeleted }: DeleteRunDialog
           />
         </div>
         <AlertDialogFooter>
-          <AlertDialogCancel>취소</AlertDialogCancel>
+          <AlertDialogCancel onClick={() => scheduleUnlock()}>취소</AlertDialogCancel>
           <Button
             variant="destructive"
             onClick={handleDelete}

@@ -1212,10 +1212,13 @@ const AssessmentRunDetail = () => {
     await supabase.from('assessment_runs').update({
       status: '폐기', is_deleted: true, deleted_by: user.id, deleted_at: new Date().toISOString(), deleted_reason: archiveReason,
     }).eq('id', runId);
-    setRun((prev: any) => ({ ...prev, status: '폐기' }));
     setShowArchive(false);
     log('폐기', 'assessment_run', runId!, run.project_id, { reason: archiveReason });
     toast({ title: '회차가 폐기되었습니다.' });
+    // Leave the deleted detail route — empty list is interactive after unlock.
+    const { unlockBodyPointerEvents } = await import('@/lib/unlockBodyPointerEvents');
+    unlockBodyPointerEvents();
+    navigate('/risk-assessment', { replace: true });
   };
 
   const handleCreateRevision = async () => {

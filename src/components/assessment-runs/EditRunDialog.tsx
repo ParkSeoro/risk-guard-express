@@ -102,7 +102,18 @@ const EditRunDialog = ({ open, onOpenChange, run, onSaved }: EditRunDialogProps)
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (!next) {
+          import('@/lib/unlockBodyPointerEvents').then(({ unlockBodyPointerEvents }) => {
+            unlockBodyPointerEvents();
+            window.setTimeout(() => unlockBodyPointerEvents(), 50);
+          });
+        }
+      }}
+    >
       <DialogContent className="max-w-lg" onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>

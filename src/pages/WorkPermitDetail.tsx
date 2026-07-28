@@ -101,6 +101,23 @@ function toLocalInput(value?: string | null) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** Editable only before submit or after reject */
+const EDITABLE_PERMIT_STATUSES = new Set(['작성중', '반려', '임시저장']);
+const APPROVED_PERMIT_STATUSES = new Set(['승인', '승인완료', '발행완료', 'approved', 'ISSUED', 'APPROVED']);
+const IN_APPROVAL_PERMIT_STATUSES = new Set(['결재중', '결재진행', '검토대기', '검토완료']);
+
+function isPermitEditable(status?: string | null) {
+  return EDITABLE_PERMIT_STATUSES.has(status || '');
+}
+function isPermitApproved(status?: string | null) {
+  return APPROVED_PERMIT_STATUSES.has(status || '');
+}
+function permitStatusLabel(status?: string | null) {
+  if (isPermitApproved(status)) return '발행 완료';
+  if (status === '결재중' || status === '결재진행') return '결재 진행중';
+  return status || '-';
+}
+
 
 export default function WorkPermitDetail() {
   const { id } = useParams<{ id: string }>();
@@ -302,6 +319,10 @@ export default function WorkPermitDetail() {
 
   const save = async () => {
     if (!permit) return;
+    if (!isPermitEditable(permit.status)) {
+      toast({ title: '수정 불가', description: '결재 진행중/완료 문서는 수정할 수 없습니다.', variant: 'destructive' });
+      return;
+    }
     setSaving(true);
     const syncedData: PermitFormData = { ...data };
     const workDescription = syncedData.work_description || permit.work_description || '';
@@ -329,7 +350,13 @@ export default function WorkPermitDetail() {
 
   const today = new Date().toISOString().slice(0, 10);
   const isToday = permit?.permit_date === today;
-  const isApproved = permit?.status === '승인' || permit?.status === '승인완료' || permit?.status === 'approved';
+  const isApproved = isPermitApproved(permit?.status);
+  const isAuthor = !permit?.created_by || permit?.created_by === user?.id;
+  /** Forms locked unless draft/rejected */
+  const readOnly = !isPermitEditable(permit?.status);
+  /** Save/submit only for author while editable */
+  const canSave = !readOnly && isAuthor;
+  const canSubmit = !readOnly && isAuthor;
   const isExpired = permit?.valid_until ? new Date(permit.valid_until).getTime() < Date.now() : false;
   const canPrint = isApproved && isToday && !isExpired;
 
@@ -429,12 +456,14 @@ export default function WorkPermitDetail() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => navigate('/work-permits')}><ArrowLeft className="h-4 w-4 mr-1" />목록</Button>
           <h1 className="text-lg md:text-xl font-bold flex items-center gap-2"><FileSignature className="h-5 w-5" />안전작업허가서</h1>
-          <Badge variant="outline">{permit.status}</Badge>
+          <Badge variant="outline">{permitStatusLabel(permit.status)}</Badge>
           <Badge variant="outline">{permit.permit_date}</Badge>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button size="sm" variant="outline" onClick={save} disabled={saving}><Save className="h-4 w-4 mr-1" />저장</Button>
-          {!isApproved && (
+          {canSave && (
+            <Button size="sm" variant="outline" onClick={save} disabled={saving}><Save className="h-4 w-4 mr-1" />저장</Button>
+          )}
+          {canSubmit && (
             <Button size="sm" variant="outline" onClick={() => setApprovalOpen(true)}><ShieldCheck className="h-4 w-4 mr-1" />결재상신</Button>
           )}
           <Button
@@ -458,9 +487,9 @@ export default function WorkPermitDetail() {
         </CardContent>
       </Card>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as PermitType)} className="print:hidden">
+      <Tabs value={tab} onValueChange={(v) => { if (!readOnly) setTab(v as PermitType); }} className="print:hidden">
         <TabsList>
-          {PERMIT_TABS.map(t => <TabsTrigger key={t.id} value={t.id}>{t.label}</TabsTrigger>)}
+          {PERMIT_TABS.map(t => <TabsTrigger key={t.id} value={t.id} disabled={readOnly}>{t.label}</TabsTrigger>)}
         </TabsList>
       </Tabs>
 
@@ -469,7 +498,7 @@ export default function WorkPermitDetail() {
         <CardContent className="p-3 flex items-center gap-2 text-sm flex-wrap">
           <FileSignature className="h-4 w-4" />
           <span className="font-semibold">허가서 양식:</span>
-          <Select value={templateId} onValueChange={setTemplateId}>
+          <Select value={templateId} onValueChange={setTemplateId} disabled={readOnly}>
             <SelectTrigger className="h-8 max-w-[460px]"><SelectValue placeholder="양식 선택" /></SelectTrigger>
             <SelectContent>
               <SelectItem value={STANDARD_FORM_VALUE}>표준 SF003 양식 — 표준양식 스타일 적용</SelectItem>
@@ -484,6 +513,11 @@ export default function WorkPermitDetail() {
           {templates.length === 0 && (
             <span className="text-xs text-muted-foreground">(추가 양식은 시스템 › 허가서 양식 디자인에서 등록 가능)</span>
           )}
+          {readOnly && (
+            <span className="text-xs text-muted-foreground">
+              {isApproved ? '발행 완료 — 수정 불가' : IN_APPROVAL_PERMIT_STATUSES.has(permit.status) ? '결재 진행중 — 수정 불가' : '수정 잠금'}
+            </span>
+          )}
         </CardContent>
       </Card>
 
@@ -496,9 +530,9 @@ export default function WorkPermitDetail() {
             values={data}
             signatures={signatures as any}
             autoFillContext={autoCtx}
-            onChange={(v) => setData(v)}
-            onSign={(role, sig) => setSignatures({ ...signatures, [role]: sig } as any)}
-            readOnly={isApproved}
+            onChange={(v) => { if (!readOnly) setData(v); }}
+            onSign={(role, sig) => { if (!readOnly) setSignatures({ ...signatures, [role]: sig } as any); }}
+            readOnly={readOnly}
           />
         ) : (
           // 디자인 미리보기와 동일한 표준 A4 시트에서 렌더해 셀 폭/로고/인쇄 조건 통일
@@ -510,8 +544,9 @@ export default function WorkPermitDetail() {
               projectName={projectName}
               standardStyle={standardStyle}
               standardLabels={standardLabels}
-              onChange={(d) => setData(d)}
-              onSign={(k, v) => setSignatures({ ...signatures, [k]: v })}
+              readOnly={readOnly}
+              onChange={(d) => { if (!readOnly) setData(d); }}
+              onSign={(k, v) => { if (!readOnly) setSignatures({ ...signatures, [k]: v }); }}
             />
           </StandardPermitSheet>
         )}

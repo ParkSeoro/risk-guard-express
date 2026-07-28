@@ -59,7 +59,7 @@ export default function SettingsCompanies() {
         .select('id, name, type, business_no, contact, address, is_deleted')
         .order('is_deleted')
         .order('name'),
-      supabase.from('projects').select('id, name').order('name'),
+      supabase.from('projects').select('id, name').eq('is_deleted', false).order('name'),
     ]);
     setProjects(projectRows || []);
     const list = companies || [];

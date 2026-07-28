@@ -38,7 +38,7 @@ export default function WorkerAttendance() {
   const { isMaster, isProjectAdmin, isSafetyManager, userCompanyId } = useGlobalProjectAccess();
 
   useEffect(() => {
-    supabase.from("projects").select("id,name").then(({ data }) => setProjects(data || []));
+    supabase.from("projects").select("id,name").eq('is_deleted', false).then(({ data }) => setProjects(data || []));
   }, []);
 
   useEffect(() => {

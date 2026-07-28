@@ -22,7 +22,7 @@ export default defineTool({
     const sb = supabaseForUser(ctx);
     const { data, error } = await sb
       .from("projects")
-      .select("id,name,client_name,status,start_date,end_date")
+      .select("id,name,client_name,status,start_date,end_date").eq('is_deleted', false)
       .order("created_at", { ascending: false })
       .limit(50);
     if (error) return { content: [{ type: "text", text: error.message }], isError: true };

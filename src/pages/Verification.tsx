@@ -23,7 +23,7 @@ const Verification = () => {
   const [pastResults, setPastResults] = useState<any[]>([]);
 
   useEffect(() => {
-    supabase.from('projects').select('id, name, site_name, client, contractor, period_start, period_end').then(({ data }) => {
+    supabase.from('projects').select('id, name, site_name, client, contractor, period_start, period_end').eq('is_deleted', false).then(({ data }) => {
       if (data && data.length > 0) {
         setProjects(data);
         setSelectedProject(data[0].id);

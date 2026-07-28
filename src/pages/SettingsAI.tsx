@@ -86,7 +86,7 @@ const SettingsAI = () => {
         // Try to get any project for master
         const { data: project } = await supabase
           .from('projects')
-          .select('id')
+          .select('id').eq('is_deleted', false)
           .limit(1)
           .maybeSingle();
         if (project) setProjectId(project.id);

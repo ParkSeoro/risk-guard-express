@@ -74,7 +74,7 @@ const PermissionTest = () => {
       const { data: members } = await supabase
         .from('project_members')
         .select('user_id, project_id, role_new' as any);
-      const { data: projects } = await supabase.from('projects').select('id, name');
+      const { data: projects } = await supabase.from('projects').select('id, name').eq('is_deleted', false);
 
       const projectMap = new Map((projects || []).map(p => [p.id, p.name]));
 

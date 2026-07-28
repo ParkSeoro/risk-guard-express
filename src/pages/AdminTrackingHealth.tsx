@@ -14,7 +14,7 @@ export default function AdminTrackingHealth() {
   const [zonesMissingFp, setZonesMissingFp] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
-    supabase.from("projects").select("id,name").then(({ data }) => setProjects(data || []));
+    supabase.from("projects").select("id,name").eq('is_deleted', false).then(({ data }) => setProjects(data || []));
   }, []);
 
   useEffect(() => {

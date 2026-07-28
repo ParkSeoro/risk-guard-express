@@ -151,7 +151,7 @@ const MasterData = () => {
   const DeptMappingTab = () => {
     const [dp, setDp] = useState<{id:string;name:string}[]>([]);
     const [sp, setSp] = useState('');
-    useEffect(() => { supabase.from('projects').select('id, name').order('name').then(({data}) => { if (data?.length) { setDp(data); setSp(data[0].id); } }); }, []);
+    useEffect(() => { supabase.from('projects').select('id, name').eq('is_deleted', false).order('name').then(({data}) => { if (data?.length) { setDp(data); setSp(data[0].id); } }); }, []);
     return (<div className="space-y-4"><Select value={sp} onValueChange={setSp}><SelectTrigger className="w-60 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger><SelectContent>{dp.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select>{sp && <DepartmentAssigneeMapping projectId={sp} />}</div>);
   };
 

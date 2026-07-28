@@ -271,7 +271,7 @@ export async function runPermissionScenario(ctx: TestContext): Promise<StepResul
 
   out.push(
     await runStep("perm", "rls_select_projects", async () => {
-      const { data, error } = await supabase.from("projects").select("id").limit(1);
+      const { data, error } = await supabase.from("projects").select("id").eq('is_deleted', false).limit(1);
       return { pass: !error && Array.isArray(data), error_location: error?.message };
     })
   );

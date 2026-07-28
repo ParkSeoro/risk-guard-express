@@ -39,7 +39,7 @@ const AITestEngine = () => {
 
   useEffect(() => {
     if (!isMaster) return;
-    supabase.from('projects').select('id, name').order('name').then(({ data }) => {
+    supabase.from('projects').select('id, name').eq('is_deleted', false).order('name').then(({ data }) => {
       if (data) {
         setProjects(data);
         if (!projectId && data.length > 0) setProjectId(data[0].id);

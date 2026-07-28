@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,10 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import {
-  ArrowLeft, Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck, Tag, X, Settings2, Search, ChevronsUpDown
+  ArrowLeft, Users, Building2, KeyRound, Plus, Trash2, Copy, Check, UserPlus, Shield, FileCheck, Tag, X, Settings2, Search
 } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
@@ -77,7 +75,6 @@ const ProjectDetail = () => {
   const [showAddCompany, setShowAddCompany] = useState(false);
   const [companyForm, setCompanyForm] = useState({ name: '', type: 'gc', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
   const [globalCompanies, setGlobalCompanies] = useState<any[]>([]);
-  const [companySearchOpen, setCompanySearchOpen] = useState(false);
   const [copiedCode, setCopiedCode] = useState('');
   const [savingProject, setSavingProject] = useState(false);
   const [projectForm, setProjectForm] = useState({
@@ -234,6 +231,32 @@ const ProjectDetail = () => {
     }, { onConflict: 'project_id,company_id' });
     if (error) return error.message as string;
     return null;
+  };
+
+  const filteredGlobalCompanies = useMemo(() => {
+    const q = (companyForm.name || '').trim().toLowerCase();
+    const list = globalCompanies;
+    if (!q) return list.slice(0, 30);
+    return list
+      .filter((g) => {
+        const name = (g.name || '').toLowerCase();
+        const biz = (g.business_no || '').toLowerCase();
+        return name.includes(q) || biz.includes(q);
+      })
+      .slice(0, 30);
+  }, [globalCompanies, companyForm.name]);
+
+  const pickGlobalCompany = (g: any) => {
+    const pickedType = normalizeCompanyType(g.type) || 'gc';
+    setCompanyForm({
+      ...companyForm,
+      name: g.name,
+      business_no: g.business_no || '',
+      contact: g.contact || '',
+      source_company_id: g.id,
+      type: pickedType,
+      parent_company_id: '',
+    });
   };
 
   const getProfileName = (userId: string) => {
@@ -1149,72 +1172,73 @@ const ProjectDetail = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Add Company Dialog */}
+      {/* Add Company Dialog — inline search (no Popover) to avoid Dialog outside-click close */}
       <Dialog open={showAddCompany} onOpenChange={setShowAddCompany}>
-        <DialogContent>
+        <DialogContent
+          className="max-h-[90vh] overflow-y-auto"
+          onPointerDownOutside={(e) => {
+            // Keep dialog open when interacting with portaled Select menus
+            const t = e.target as HTMLElement | null;
+            if (t?.closest('[data-radix-select-content]')) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            const t = e.target as HTMLElement | null;
+            if (t?.closest('[data-radix-select-content]')) e.preventDefault();
+          }}
+        >
           <DialogHeader><DialogTitle>업체 등록</DialogTitle></DialogHeader>
           <div className="space-y-4">
             {/* Search-first: pick from global directory to avoid duplicates */}
             <div className="space-y-1.5">
               <Label className="text-xs">업체명 <span className="text-muted-foreground font-normal">(전체 업체에서 검색)</span></Label>
-              <Popover open={companySearchOpen} onOpenChange={setCompanySearchOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
-                    <span className={companyForm.name ? '' : 'text-muted-foreground'}>
-                      {companyForm.name || '업체 검색 또는 신규 입력...'}
-                    </span>
-                    <ChevronsUpDown className="h-3.5 w-3.5 opacity-50" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                  <Command>
-                    <CommandInput
-                      placeholder="회사명·사업자번호로 검색..."
-                      value={companyForm.name}
-                      onValueChange={(v) => setCompanyForm({ ...companyForm, name: v, source_company_id: '' })}
-                    />
-                    <CommandList>
-                      <CommandEmpty>
-                        <div className="p-2 text-xs text-muted-foreground">
-                          일치하는 업체가 없습니다. 위 입력값 그대로 <b>신규 업체</b>로 등록됩니다.
-                        </div>
-                      </CommandEmpty>
-                      <CommandGroup heading="전체 업체">
-                        {globalCompanies.slice(0, 200).map((g) => (
-                          <CommandItem
-                            key={g.id}
-                            value={`${g.name} ${g.business_no || ''}`}
-                            onSelect={() => {
-                              const pickedType = normalizeCompanyType(g.type) || 'gc';
-                              setCompanyForm({
-                                ...companyForm,
-                                name: g.name,
-                                business_no: g.business_no || '',
-                                contact: g.contact || '',
-                                source_company_id: g.id,
-                                // Always adopt master type when picking from directory
-                                type: pickedType,
-                                parent_company_id: '',
-                              });
-                              setCompanySearchOpen(false);
-                            }}
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  className="pl-8"
+                  placeholder="회사명·사업자번호로 검색 또는 신규 입력..."
+                  value={companyForm.name}
+                  onChange={(e) => setCompanyForm({
+                    ...companyForm,
+                    name: e.target.value,
+                    source_company_id: '',
+                  })}
+                  autoComplete="off"
+                />
+              </div>
+              <div className="rounded-md border max-h-44 overflow-y-auto">
+                {filteredGlobalCompanies.length === 0 ? (
+                  <div className="p-3 text-xs text-muted-foreground">
+                    {companyForm.name.trim()
+                      ? <>일치하는 업체가 없습니다. 입력한 이름으로 <b>신규 업체</b>로 등록됩니다.</>
+                      : '설정에 등록된 업체가 여기에 표시됩니다.'}
+                  </div>
+                ) : (
+                  <ul className="py-1">
+                    {filteredGlobalCompanies.map((g) => {
+                      const selected = companyForm.source_company_id === g.id;
+                      return (
+                        <li key={g.id}>
+                          <button
+                            type="button"
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted/60 ${selected ? 'bg-primary/10' : ''}`}
+                            onClick={() => pickGlobalCompany(g)}
                           >
-                            <div className="flex items-center gap-2 w-full">
-                              <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                              <span className="flex-1 truncate">{g.name}</span>
-                              {g.business_no && <span className="text-[10px] text-muted-foreground">{g.business_no}</span>}
-                              <Badge variant="outline" className="text-[9px]">{companyTypeLabel(g.type)}</Badge>
-                            </div>
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              {companyForm.source_company_id && (
+                            <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <span className="flex-1 truncate">{g.name}</span>
+                            {g.business_no && <span className="text-[10px] text-muted-foreground shrink-0">{g.business_no}</span>}
+                            <Badge variant="outline" className="text-[9px] shrink-0">{companyTypeLabel(g.type)}</Badge>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+              {companyForm.source_company_id ? (
                 <p className="text-[10px] text-primary">✓ 시스템 업체 마스터에서 선택됨 (프로젝트에 연결됩니다)</p>
-              )}
+              ) : companyForm.name.trim() ? (
+                <p className="text-[10px] text-muted-foreground">목록에서 고르지 않으면 신규 업체로 등록됩니다.</p>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">업체 구분</Label>

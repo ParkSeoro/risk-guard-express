@@ -516,6 +516,16 @@ const AssessmentRunDetail = () => {
     excluded: excludedItems.length,
   }), [activeItems, excludedItems]);
 
+  // Must stay above early returns (React hooks order / error #310)
+  const conditionTagSuggestions = useMemo(() => {
+    const fromDb = environmentTags.filter(t => t.category === 'environment' || !t.category).map(t => t.name);
+    return Array.from(new Set([...DEFAULT_CONDITION_TAGS, ...fromDb]));
+  }, [environmentTags]);
+  const equipmentSuggestions = useMemo(() => {
+    const fromDb = environmentTags.filter(t => t.category === 'equipment').map(t => t.name);
+    return Array.from(new Set([...DEFAULT_EQUIPMENT_SUGGESTIONS, ...fromDb]));
+  }, [environmentTags]);
+
   // Cell edit
   const handleCellEdit = async (id: string, field: string, value: any) => {
     if (!canEdit && !canForceEdit) { toast({ title: '현재 상태에서는 수정할 수 없습니다.', variant: 'destructive' }); return; }
@@ -1448,16 +1458,6 @@ const AssessmentRunDetail = () => {
     : isInApproval ? '결재 진행 중입니다.'
     : isApproved ? '최종 승인 완료. 잠금 상태입니다.'
     : '';
-
-  // Auto-gen tag suggestions (DB tags merge into defaults)
-  const conditionTagSuggestions = useMemo(() => {
-    const fromDb = environmentTags.filter(t => t.category === 'environment' || !t.category).map(t => t.name);
-    return Array.from(new Set([...DEFAULT_CONDITION_TAGS, ...fromDb]));
-  }, [environmentTags]);
-  const equipmentSuggestions = useMemo(() => {
-    const fromDb = environmentTags.filter(t => t.category === 'equipment').map(t => t.name);
-    return Array.from(new Set([...DEFAULT_EQUIPMENT_SUGGESTIONS, ...fromDb]));
-  }, [environmentTags]);
 
   return (
     <div className="space-y-4 animate-fade-in print:space-y-2">

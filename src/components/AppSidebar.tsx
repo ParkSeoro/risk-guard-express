@@ -147,7 +147,7 @@ export function AppSidebar() {
     '/incidents', '/work-stop',
     '/workers', '/workers?tab=attendance',
     '/project-library', '/education-materials', '/worker-education',
-    '/profile', '/manual',
+    '/profile', '/settings/account', '/manual',
   ]);
   const visibleGroups = restrictToContractorUI
     ? groups
@@ -286,7 +286,7 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border p-2 space-y-1">
         {!collapsed && profile && (
-          <NavLink to="/profile" className="flex items-center gap-2 px-2 py-1 text-xs text-sidebar-foreground hover:bg-sidebar-accent rounded-md" activeClassName="bg-sidebar-accent font-semibold">
+          <NavLink to="/settings/account" className="flex items-center gap-2 px-2 py-1 text-xs text-sidebar-foreground hover:bg-sidebar-accent rounded-md" activeClassName="bg-sidebar-accent font-semibold">
             <User className="h-3.5 w-3.5" />
             <span className="truncate">{profile.display_name}</span>
           </NavLink>

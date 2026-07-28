@@ -19,6 +19,7 @@ const CONTRACTOR_ALLOWED_PREFIXES = [
   '/incidents',
   '/workers',
   '/profile',
+  '/settings/account',
   '/project-library',
   '/education-materials',
   '/manual',

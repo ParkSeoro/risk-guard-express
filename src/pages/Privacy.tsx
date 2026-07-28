@@ -56,7 +56,7 @@ const Privacy = () => {
         <h2 className="mt-6 text-lg font-semibold">6. 정보주체의 권리</h2>
         <p>
           열람·정정·삭제·처리정지 요구를 언제든지 행사할 수 있으며, 앱 내{" "}
-          <Link to="/settings/profile" className="underline">설정 → 프로필</Link>{" "}
+          <Link to="/settings/account" className="underline">설정 → 계정 정보</Link>{" "}
           또는 아래 연락처로 요청 가능합니다.
         </p>
 

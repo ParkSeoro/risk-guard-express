@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Users, Search, UserCheck, UserX, Shield, Plus, Building2, AlertCircle, Trash2, Crown, KeyRound } from 'lucide-react';
+import { Users, Search, UserCheck, UserX, Shield, Plus, Building2, AlertCircle, Trash2, Crown, KeyRound, Mail } from 'lucide-react';
 
 import {
   POSITION_LABELS as SSOT_POSITION_LABELS,
@@ -66,6 +66,8 @@ interface UserWithRole {
   account_status: string;
   created_at: string;
   roles: string[];
+  email?: string;
+  last_sign_in_at?: string | null;
 }
 
 const UserManagement = () => {
@@ -103,15 +105,28 @@ const UserManagement = () => {
 
   const fetchUsers = async () => {
     setLoading(true);
-    const [{ data: profiles }, { data: allRoles }, { data: allMembers }] = await Promise.all([
+    const [{ data: profiles }, { data: allRoles }, { data: allMembers }, authInfoRes] = await Promise.all([
       supabase.from('profiles').select('*').order('created_at', { ascending: false }),
       supabase.from('user_roles').select('user_id, role'),
       supabase.from('project_members').select('id, user_id, project_id, role_new, company_id, company, position_new'),
+      (supabase as any).rpc('list_manageable_user_auth_info'),
     ]);
+    const authMap = new Map<string, { email: string; last_sign_in_at: string | null }>();
+    ((authInfoRes?.data as any[]) || []).forEach((row: any) => {
+      authMap.set(row.out_user_id, {
+        email: row.out_email || '',
+        last_sign_in_at: row.out_last_sign_in_at || null,
+      });
+    });
+    if (authInfoRes?.error) {
+      console.warn('list_manageable_user_auth_info:', authInfoRes.error.message);
+    }
     const enriched: UserWithRole[] = (profiles || []).map((p: any) => ({
       ...p,
       account_status: p.account_status || 'active',
       roles: (allRoles || []).filter((r: any) => r.user_id === p.user_id).map((r: any) => r.role),
+      email: authMap.get(p.user_id)?.email || '',
+      last_sign_in_at: authMap.get(p.user_id)?.last_sign_in_at || null,
     }));
     setUsers(enriched);
     // Build memberships lookup
@@ -175,6 +190,33 @@ const UserManagement = () => {
     setPwdResetUser(u);
     setPwdNew('');
     setPwdConfirm('');
+  };
+
+  const handleSendResetEmail = async (u: UserWithRole) => {
+    if (!u.email) {
+      toast({ title: '이메일이 없어 재설정 메일을 보낼 수 없습니다.', variant: 'destructive' });
+      return;
+    }
+    setSaving(u.user_id);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(u.email, {
+        redirectTo: `${window.location.origin}/update-password`,
+      });
+      if (error) throw error;
+      toast({
+        title: '비밀번호 재설정 메일을 발송했습니다.',
+        description: u.email,
+      });
+      await log('비밀번호재설정메일', 'auth_user', u.user_id, undefined, { email: u.email });
+    } catch (e: any) {
+      toast({
+        title: '메일 발송 실패',
+        description: e?.message || '알 수 없는 오류',
+        variant: 'destructive',
+      });
+    } finally {
+      setSaving(null);
+    }
   };
 
   const extractInvokeError = async (error: any, data: any): Promise<string> => {
@@ -432,7 +474,8 @@ const UserManagement = () => {
       return (
         u.display_name?.toLowerCase().includes(term) ||
         u.company?.toLowerCase().includes(term) ||
-        u.phone?.toLowerCase().includes(term)
+        u.phone?.toLowerCase().includes(term) ||
+        u.email?.toLowerCase().includes(term)
       );
     }
     return true;
@@ -515,7 +558,7 @@ const UserManagement = () => {
             </Select>
             <div className="flex-1 relative min-w-[200px]">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input placeholder="이름, 회사, 연락처 검색..." className="h-8 pl-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="이름, 이메일, 회사, 연락처 검색..." className="h-8 pl-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <span className="text-xs text-muted-foreground">{filtered.length}명</span>
           </div>
@@ -527,14 +570,14 @@ const UserManagement = () => {
           <table className="w-full data-table text-sm">
             <thead>
               <tr>
-                <th>이름</th>
+                <th>이름 / 이메일</th>
                 <th>회사/소속</th>
                 <th>직위</th>
                 <th>연락처</th>
                 <th className="text-center">상태</th>
                 <th className="text-center">전역 역할</th>
                 <th>프로젝트 소속</th>
-                <th className="text-center w-52">작업</th>
+                <th className="text-center w-56">작업</th>
               </tr>
             </thead>
             <tbody>
@@ -554,7 +597,15 @@ const UserManagement = () => {
                 const memberships = userMemberships[u.user_id] || [];
                 return (
                 <tr key={u.id}>
-                  <td className="font-medium">{u.display_name}</td>
+                  <td>
+                    <div className="font-medium">{u.display_name}</div>
+                    <div className="text-[11px] text-muted-foreground break-all">{u.email || '이메일 없음'}</div>
+                    {u.last_sign_in_at && (
+                      <div className="text-[10px] text-muted-foreground">
+                        최근 로그인 {new Date(u.last_sign_in_at).toLocaleString('ko-KR')}
+                      </div>
+                    )}
+                  </td>
                   <td className="text-muted-foreground">{u.company || '—'}</td>
                   <td>{u.position || '—'}</td>
                   <td className="text-muted-foreground">{u.phone || '—'}</td>
@@ -655,15 +706,27 @@ const UserManagement = () => {
                         </Button>
                       )}
                       {isMaster && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-6 text-xs gap-1"
-                          onClick={() => openPasswordReset(u)}
-                          title="마스터 전용: 임시 비밀번호 강제 설정"
-                        >
-                          <KeyRound className="h-3 w-3" /> 비밀번호 변경
-                        </Button>
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-xs gap-1"
+                            onClick={() => openPasswordReset(u)}
+                            title="마스터 전용: 임시 비밀번호 강제 설정"
+                          >
+                            <KeyRound className="h-3 w-3" /> 비밀번호 변경
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs gap-1"
+                            disabled={saving === u.user_id || !u.email}
+                            onClick={() => handleSendResetEmail(u)}
+                            title="비밀번호 재설정 메일 발송"
+                          >
+                            <Mail className="h-3 w-3" /> 재설정 메일
+                          </Button>
+                        </>
                       )}
                     </div>
                   </td>

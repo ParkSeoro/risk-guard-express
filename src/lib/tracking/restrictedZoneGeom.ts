@@ -1,4 +1,5 @@
 import { pointInPolygon } from "./geofence";
+import { isAccessForbidden } from "./accessRules";
 
 export type GeoPoint = { lat: number; lng: number };
 
@@ -13,6 +14,8 @@ export type RestrictedZoneGeom = {
   banned_worker_ids: string[] | null;
   banned_company_ids: string[] | null;
   banned_job_types: string[] | null;
+  access_rules?: unknown;
+  zone_category?: string | null;
   is_active?: boolean;
 };
 
@@ -46,21 +49,15 @@ export type BanSubject = {
 };
 
 /**
- * Entry is forbidden when the subject matches any configured ban list.
- * Empty ban lists ⇒ everyone is banned (zone is a full no-entry danger zone).
+ * Entry is forbidden when access_rules (or legacy ban lists) say so.
+ * access_rules.mode=deny_all → everyone; allow_* → not in allow-list.
  */
 export function isSubjectBanned(zone: RestrictedZoneGeom, subject: BanSubject): boolean {
-  const workers = zone.banned_worker_ids || [];
-  const companies = zone.banned_company_ids || [];
-  const jobs = (zone.banned_job_types || []).map((j) => j.trim().toLowerCase()).filter(Boolean);
-
-  if (workers.length === 0 && companies.length === 0 && jobs.length === 0) {
-    return true;
-  }
-  if (subject.worker_id && workers.includes(subject.worker_id)) return true;
-  if (subject.company_id && companies.includes(subject.company_id)) return true;
-  if (subject.job_type && jobs.includes(subject.job_type.trim().toLowerCase())) return true;
-  return false;
+  return isAccessForbidden(zone.access_rules, subject, {
+    banned_worker_ids: zone.banned_worker_ids,
+    banned_company_ids: zone.banned_company_ids,
+    banned_job_types: zone.banned_job_types,
+  });
 }
 
 export function findViolatingRestrictedZone(

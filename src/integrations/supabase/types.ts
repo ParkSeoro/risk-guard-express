@@ -6789,6 +6789,8 @@ export type Database = {
           project_id: string
           radius_m: number | null
           updated_at: string
+          zone_category: string
+          access_rules: Json
         }
         Insert: {
           banned_company_ids?: string[]
@@ -6811,6 +6813,8 @@ export type Database = {
           project_id: string
           radius_m?: number | null
           updated_at?: string
+          zone_category?: string
+          access_rules?: Json
         }
         Update: {
           banned_company_ids?: string[]
@@ -6833,6 +6837,8 @@ export type Database = {
           project_id?: string
           radius_m?: number | null
           updated_at?: string
+          zone_category?: string
+          access_rules?: Json
         }
         Relationships: [
           {

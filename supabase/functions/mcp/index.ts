@@ -25,7 +25,7 @@ var list_projects_default = defineTool({
       return { content: [{ type: "text", text: "\uC778\uC99D\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4." }], isError: true };
     }
     const sb = supabaseForUser(ctx);
-    const { data, error } = await sb.from("projects").select("id,name,client_name,status,start_date,end_date").eq("is_deleted", false).order("created_at", { ascending: false }).limit(50);
+    const { data, error } = await sb.from("projects").select("id,name,client_name,status,start_date,end_date").order("created_at", { ascending: false }).limit(50);
     if (error) return { content: [{ type: "text", text: error.message }], isError: true };
     return {
       content: [{ type: "text", text: JSON.stringify(data ?? [], null, 2) }],
@@ -134,7 +134,7 @@ var list_risk_assessments_default = defineTool4({
 });
 
 // src/lib/mcp/index.ts
-var projectRef = "iqtiozscqwuacgzrlfzu";
+var projectRef = "qhntxmggacorqjjmjqgo";
 var mcp_default = defineMcp({
   name: "safenex-mcp",
   title: "SafeNex \uC548\uC804\uAD00\uB9AC MCP",

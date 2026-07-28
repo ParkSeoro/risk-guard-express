@@ -19,7 +19,7 @@ import CompanyDailyQR from "./CompanyDailyQR";
 import WorkerBulkImportDialog from "@/components/workers/WorkerBulkImportDialog";
 import { useAuditLog } from "@/hooks/useAuditLog";
 
-const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "worker"]);
+const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "site_supervisor", "worker"]);
 
 export default function WorkerManagement() {
   const [searchParams, setSearchParams] = useSearchParams();

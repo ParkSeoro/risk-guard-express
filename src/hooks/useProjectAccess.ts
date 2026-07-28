@@ -13,6 +13,7 @@ export type ProjectRole =
   | 'safety_manager'
   | 'site_manager'
   | 'supervisor'
+  | 'site_supervisor'
   | 'worker'
   | 'viewer';
 
@@ -93,6 +94,13 @@ const PERMISSION_MATRIX: Record<ProjectRole, Record<FeatureKey, Perm>> = {
     safety_cost: RO, legal_duty: RO, todo: CRU_NO_APPROVE,
     approval: APPROVE_ONLY, company: RO, member: RO, master_data: RO, audit_log: RO,
   },
+  // 관리감독자 — ACL은 감리(supervisor)와 동일, 직책/역할만 분리
+  site_supervisor: {
+    risk_assessment: RO, work_plan: RO, work_permit: APPROVE_ONLY,
+    safety_inspection: CRU_NO_APPROVE, tbm: RO, incident: CRU_NO_APPROVE,
+    safety_cost: RO, legal_duty: RO, todo: CRU_NO_APPROVE,
+    approval: APPROVE_ONLY, company: RO, member: RO, master_data: RO, audit_log: RO,
+  },
   worker: {
     risk_assessment: CRU_NO_APPROVE, work_plan: CRU_NO_APPROVE, work_permit: RO,
     safety_inspection: RO, tbm: RO, incident: CRU_NO_APPROVE,
@@ -115,6 +123,7 @@ function normalizeRole(input: string | null | undefined): ProjectRole | null {
     case 'safety_manager': return 'safety_manager';
     case 'site_manager': return 'site_manager';
     case 'supervisor': return 'supervisor';
+    case 'site_supervisor': return 'site_supervisor';
     case 'worker':
     case 'contractor': // legacy 통칭 → worker
     case 'user':       // legacy
@@ -265,7 +274,7 @@ export function useProjectAccess(): ProjectAccess {
   const isProjectAdmin = userRole === 'project_admin' || userRole === 'master' || userRole === 'safety_manager';
   const isSafetyManager = userRole === 'safety_manager';
   const isSiteManager = userRole === 'site_manager';
-  const isSupervisor = userRole === 'supervisor';
+  const isSupervisor = userRole === 'supervisor' || userRole === 'site_supervisor';
   const isWorker = userRole === 'worker';
 
   const userCompanyId = isMaster ? null : (memberInfo?.company_id || null);

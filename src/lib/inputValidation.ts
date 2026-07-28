@@ -11,7 +11,8 @@ const VALID_ROLES = ['master', 'project_admin', 'safety_manager', 'contractor', 
 
 // New project-scoped role (6 tiers)
 export const VALID_PROJECT_ROLES = [
-  'project_admin', 'safety_manager', 'site_manager', 'supervisor', 'worker', 'viewer',
+  'project_admin', 'safety_manager', 'site_manager',
+  'supervisor', 'site_supervisor', 'worker', 'viewer',
 ] as const;
 export const projectRoleSchema = z.enum(VALID_PROJECT_ROLES, {
   errorMap: () => ({ message: '유효하지 않은 프로젝트 역할입니다.' }),

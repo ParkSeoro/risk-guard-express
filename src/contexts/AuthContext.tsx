@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
 
-type AppRole = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor' | 'contractor' | 'worker' | 'viewer' | 'user' | 'access_blocked';
+type AppRole = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor' | 'site_supervisor' | 'contractor' | 'worker' | 'viewer' | 'user' | 'access_blocked';
 
 interface Profile {
   id: string;
@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const KNOWN_ROLES = new Set([
     'master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor',
-    'contractor', 'worker', 'viewer', 'user',
+    'site_supervisor', 'contractor', 'worker', 'viewer', 'user',
   ]);
 
   const normalizeRole = (role: string | null | undefined): AppRole | 'access_blocked' | null => {

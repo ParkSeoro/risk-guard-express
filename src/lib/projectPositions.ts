@@ -86,7 +86,7 @@ export function defaultRoleForPosition(position: string | null | undefined): str
     case 'SUPERVISOR': // 감리
       return 'supervisor';
     case 'SITE_SUPERVISOR': // 관리감독자
-      return 'supervisor';
+      return 'site_supervisor';
     case 'FOREMAN':
     case 'FIELD_ENGINEER':
     case 'WORKER':

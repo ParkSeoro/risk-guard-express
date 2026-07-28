@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
 
-type Allowed = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor';
+type Allowed = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor' | 'site_supervisor';
 
 /**
  * Blocks worker / contractor / vendor accounts from admin-only routes.

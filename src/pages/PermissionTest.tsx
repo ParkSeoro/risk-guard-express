@@ -19,12 +19,12 @@ interface UserInfo {
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자', safety_manager: '안전관리자',
-  site_manager: '현장소장', supervisor: '감리/감독', contractor: '협력사 담당자', worker: '작업자', viewer: '열람자',
+  site_manager: '현장소장', supervisor: '감리', site_supervisor: '관리감독자', contractor: '협력사 담당자', worker: '작업자', viewer: '열람자',
 };
 
 // SSOT: useProjectAccess.PERMISSION_MATRIX 와 일치
-const ALL_PROJECT_ROLES = ['master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor', 'worker', 'contractor', 'viewer'];
-const OPERATOR_ROLES = ['master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor', 'worker', 'contractor'];
+const ALL_PROJECT_ROLES = ['master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor', 'site_supervisor', 'worker', 'contractor', 'viewer'];
+const OPERATOR_ROLES = ['master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor', 'site_supervisor', 'worker', 'contractor'];
 const ADMIN_ROLES = ['master', 'project_admin', 'safety_manager'];
 
 const menuPermissions: { menu: string; roles: string[]; description: string }[] = [
@@ -45,7 +45,7 @@ const actionPermissions: { action: string; roles: string[] }[] = [
   { action: '위험성평가 제출', roles: OPERATOR_ROLES },
   { action: '검증 실행', roles: ADMIN_ROLES },
   { action: '결재 상신', roles: OPERATOR_ROLES },
-  { action: '결재 승인/반려', roles: ['master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor'] },
+  { action: '결재 승인/반려', roles: ['master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor', 'site_supervisor'] },
   { action: '사용자 승인/역할 변경', roles: ['master', 'project_admin'] },
   { action: '프로젝트 생성/삭제', roles: ['master', 'project_admin'] },
   { action: '기준정보 수정', roles: ADMIN_ROLES },

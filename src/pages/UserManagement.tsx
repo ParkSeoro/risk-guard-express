@@ -177,6 +177,28 @@ const UserManagement = () => {
     setPwdConfirm('');
   };
 
+  const extractInvokeError = async (error: any, data: any): Promise<string> => {
+    if (data?.message) return String(data.message);
+    if (data?.detail) return String(data.detail);
+    if (data?.error) return String(data.error);
+    // supabase-js hides non-2xx bodies behind FunctionsHttpError.context
+    try {
+      if (error?.context && typeof error.context.json === 'function') {
+        const body = await error.context.json();
+        if (body?.message) return String(body.message);
+        if (body?.detail) return String(body.detail);
+        if (body?.error) return String(body.error);
+      }
+    } catch {
+      /* ignore parse errors */
+    }
+    const msg = error?.message || '알 수 없는 오류';
+    if (/non-2xx/i.test(msg)) {
+      return '서버에서 요청을 거부했습니다. 비밀번호 강도(8자 이상·유추 불가)를 확인하고 다시 시도하세요.';
+    }
+    return msg;
+  };
+
   const handleAdminPasswordReset = async () => {
     if (!isMaster || !pwdResetUser) return;
     if (pwdNew.length < 8) {
@@ -189,17 +211,24 @@ const UserManagement = () => {
     }
     setPwdSaving(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+      const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+      if (refreshErr) console.warn('refreshSession', refreshErr.message);
+      const accessToken =
+        refreshed.session?.access_token ||
+        (await supabase.auth.getSession()).data.session?.access_token;
+      if (!accessToken) throw new Error('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+
       const { data, error } = await supabase.functions.invoke('admin-reset-password', {
         body: { user_id: pwdResetUser.user_id, new_password: pwdNew },
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
-      if (error) throw error;
-      if ((data as any)?.error) {
-        const detail = (data as any)?.detail || (data as any).error;
-        throw new Error(typeof detail === 'string' ? detail : (data as any).error);
+
+      if (data && (data as any).ok === false) {
+        throw new Error(await extractInvokeError(null, data));
       }
+      if (error) throw new Error(await extractInvokeError(error, data));
+      if ((data as any)?.error) throw new Error(await extractInvokeError(null, data));
+
       toast({
         title: '임시 비밀번호가 설정되었습니다.',
         description: `${pwdResetUser.display_name || '사용자'}의 비밀번호를 강제 변경했습니다.`,
@@ -767,6 +796,9 @@ const UserManagement = () => {
             <p className="text-xs text-muted-foreground">
               <span className="font-medium text-foreground">{pwdResetUser?.display_name || '사용자'}</span>
               의 비밀번호를 마스터 권한으로 즉시 덮어씁니다. 기존 비밀번호 확인 없이 Admin API로 적용됩니다.
+            </p>
+            <p className="text-[11px] text-muted-foreground rounded-md border border-border/60 bg-muted/30 px-2 py-1.5">
+              8자 이상, 유추가 어려운 조합을 사용하세요. (단순 숫자·흔한 비밀번호는 Auth 보안 정책으로 거부될 수 있습니다.)
             </p>
             <div className="space-y-1">
               <Label className="text-xs">새 임시 비밀번호</Label>

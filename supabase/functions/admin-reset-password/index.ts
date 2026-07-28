@@ -3,7 +3,7 @@
 //
 // IMPORTANT: Expected failures return HTTP 200 with `{ ok: false, error, detail, message }`
 // so supabase-js exposes the body (non-2xx collapses to a generic FunctionsHttpError).
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -42,6 +42,7 @@ Deno.serve(async (req) => {
 
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
     const authHeader = req.headers.get("Authorization") ?? "";
     const token = authHeader.replace(/^Bearer\s+/i, "").trim();
@@ -53,17 +54,31 @@ Deno.serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // 1) Verify caller JWT
-    const { data: userData, error: userErr } = await admin.auth.getUser(token);
-    if (userErr || !userData?.user) {
-      console.error("[admin-reset-password] getUser failed:", userErr?.message);
+    // 1) Verify caller JWT via getClaims (signature check).
+    // Do NOT use auth.getUser(jwt) — it requires an active session row and fails with
+    // "Session from session_id claim in JWT does not exist" after password changes.
+    const userSb = createClient(SUPABASE_URL, ANON_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+    const { data: claimsData, error: claimErr } = await userSb.auth.getClaims(token);
+    const callerId = claimsData?.claims?.sub as string | undefined;
+    if (claimErr || !callerId) {
+      console.error("[admin-reset-password] getClaims failed:", claimErr?.message);
       return fail(
         "unauthorized",
-        userErr?.message ?? "invalid token",
-        "인증에 실패했습니다. 새로고침 후 다시 로그인해 주세요.",
+        claimErr?.message ?? "invalid token",
+        "로그인 세션이 만료되었거나 무효입니다. 로그아웃 후 다시 로그인해 주세요.",
       );
     }
-    const callerId = userData.user.id;
+
+    // Optional: resolve email for audit (best-effort; never block)
+    let callerEmail = "";
+    try {
+      const { data: adminUser } = await admin.auth.admin.getUserById(callerId);
+      callerEmail = adminUser?.user?.email || "";
+    } catch {
+      /* ignore */
+    }
 
     // 2) Defense in depth: require MASTER via RPC (user_roles)
     const { data: isMaster, error: roleErr } = await admin.rpc("is_master", {
@@ -127,7 +142,7 @@ Deno.serve(async (req) => {
         .maybeSingle();
       const { error: auditErr } = await admin.from("audit_logs").insert({
         user_id: callerId,
-        user_name: callerProfile?.display_name || userData.user.email || "",
+        user_name: callerProfile?.display_name || callerEmail || "",
         action: "비밀번호강제초기화",
         target_type: "auth_user",
         target_id: targetUserId,

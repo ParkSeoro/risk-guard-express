@@ -193,6 +193,9 @@ const UserManagement = () => {
       /* ignore parse errors */
     }
     const msg = error?.message || '알 수 없는 오류';
+    if (/session_id claim|session.*does not exist|Invalid Refresh Token|refresh_token/i.test(msg)) {
+      return '로그인 세션이 만료되었습니다. 로그아웃 후 다시 로그인한 뒤 시도해 주세요.';
+    }
     if (/non-2xx/i.test(msg)) {
       return '서버에서 요청을 거부했습니다. 비밀번호 강도(8자 이상·유추 불가)를 확인하고 다시 시도하세요.';
     }
@@ -211,12 +214,22 @@ const UserManagement = () => {
     }
     setPwdSaving(true);
     try {
+      // Prefer a fresh access token; if refresh fails the browser session is dead — force re-login.
       const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
-      if (refreshErr) console.warn('refreshSession', refreshErr.message);
+      if (refreshErr || !refreshed.session?.access_token) {
+        const detail = refreshErr?.message || 'no session';
+        if (/session_id|does not exist|Invalid Refresh Token|refresh_token|Auth session missing/i.test(detail)) {
+          await supabase.auth.signOut();
+          throw new Error('로그인 세션이 만료되었습니다. 다시 로그인한 뒤 비밀번호를 변경해 주세요.');
+        }
+      }
       const accessToken =
         refreshed.session?.access_token ||
         (await supabase.auth.getSession()).data.session?.access_token;
-      if (!accessToken) throw new Error('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+      if (!accessToken) {
+        await supabase.auth.signOut();
+        throw new Error('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+      }
 
       const { data, error } = await supabase.functions.invoke('admin-reset-password', {
         body: { user_id: pwdResetUser.user_id, new_password: pwdNew },

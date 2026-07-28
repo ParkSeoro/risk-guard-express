@@ -195,6 +195,7 @@ export function useProjectAccess(): ProjectAccess {
       const { data } = await supabase
         .from('projects')
         .select('id, name, site_name')
+        .eq('is_deleted', false)
         .order('created_at', { ascending: false });
       if (data && data.length > 0) {
         setProjects(data);
@@ -203,20 +204,29 @@ export function useProjectAccess(): ProjectAccess {
         if (!selectedProject || !data.some(p => p.id === selectedProject)) {
           setSelectedProject(validSaved ? saved! : data[0].id);
         }
+      } else {
+        setProjects([]);
+        if (selectedProject) setSelectedProject('');
       }
     } else {
       const { data: members } = await supabase
         .from('project_members')
-        .select('project_id, projects(id, name, site_name)')
+        .select('project_id, projects(id, name, site_name, is_deleted)')
         .eq('user_id', user.id);
       if (members && members.length > 0) {
-        const projs = members.map(m => (m as any).projects).filter(Boolean);
+        const projs = members
+          .map(m => (m as any).projects)
+          .filter((p: any) => p && p.is_deleted !== true)
+          .map((p: any) => ({ id: p.id, name: p.name, site_name: p.site_name }));
         setProjects(projs);
         const saved = localStorage.getItem('selectedProjectId');
         const validSaved = saved && projs.some((p: any) => p.id === saved);
         if (!selectedProject || !projs.some((p: any) => p.id === selectedProject)) {
-          setSelectedProject(validSaved ? saved! : projs[0].id);
+          setSelectedProject(validSaved ? saved! : (projs[0]?.id || ''));
         }
+      } else {
+        setProjects([]);
+        if (selectedProject) setSelectedProject('');
       }
     }
     setLoading(false);

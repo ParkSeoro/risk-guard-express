@@ -97,6 +97,10 @@ const ProjectDetail = () => {
   const [newTag, setNewTag] = useState('');
   const [tagTab, setTagTab] = useState('environment');
 
+  // Must be declared before effects that reference it (TDZ / "Cannot access before initialization")
+  const [editingCompany, setEditingCompany] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', business_no: '', contact: '', type: 'gc', parent_company_id: '', scope: '', period: '' });
+
   const canManage = isMaster || projectRole === 'project_admin';
 
   useEffect(() => {
@@ -517,9 +521,7 @@ const ProjectDetail = () => {
     fetchAll();
   };
 
-  // Edit dialog state
-  const [editingCompany, setEditingCompany] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState({ name: '', business_no: '', contact: '', type: 'contractor', parent_company_id: '', scope: '', period: '' });
+  // Edit dialog helpers (state declared above to avoid TDZ with useEffect deps)
   const openEditCompany = (c: any) => {
     setEditingCompany(c);
     setEditForm({

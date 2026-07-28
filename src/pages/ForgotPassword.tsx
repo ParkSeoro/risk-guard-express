@@ -77,7 +77,7 @@ const ForgotPassword = () => {
             </form>
           )}
           <div className="mt-4 text-center text-sm">
-            <Link to="/auth" className="text-muted-foreground hover:underline">
+            <Link to="/login" className="text-muted-foreground hover:underline">
               ← 로그인으로 돌아가기
             </Link>
           </div>

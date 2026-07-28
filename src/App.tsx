@@ -284,6 +284,8 @@ const App = () => (
             <Route path="/landing" element={<Index />} />
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/auth" element={<AuthRoute />} />
+            <Route path="/login" element={<AuthRoute />} />
+            <Route path="/register" element={<AuthRoute />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/update-password" element={<UpdatePassword />} />
             <Route path="/reset-password" element={<UpdatePassword />} />

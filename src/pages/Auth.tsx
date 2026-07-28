@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,10 +17,18 @@ import {
 import { normalizeCompanyType } from '@/lib/companyTypes';
 import JobTypeSelect from '@/components/JobTypeSelect';
 import { jobTypeSchema, type StandardJobType } from '@/lib/jobCategories';
-import { zodErrorMessage } from '@/lib/commonSchemas';
+import { koreanName, zodErrorMessage } from '@/lib/commonSchemas';
+import {
+  formatPhoneMask,
+  phoneToWorkerEmail,
+  workerPhoneSchema,
+  workerPinSchema,
+} from '@/lib/workerAuth';
 
 type Mode = 'login' | 'signup';
+type SignupAudience = 'worker' | 'manager';
 type SignupMethod = 'directory' | 'invite';
+type LoginMethod = 'phone' | 'email';
 
 interface InvitePreview {
   project_name: string;
@@ -46,36 +54,54 @@ const roleLabels: Record<string, string> = {
   viewer: '열람자',
 };
 
+function modeFromPath(pathname: string, invitePresent: boolean): Mode {
+  if (pathname === '/register' || invitePresent) return 'signup';
+  if (pathname === '/login') return 'login';
+  return invitePresent ? 'signup' : 'login';
+}
+
 const Auth = () => {
   const [searchParams] = useSearchParams();
-  const [mode, setMode] = useState<Mode>('login');
+  const location = useLocation();
+  const inviteParam = searchParams.get('invite') || '';
+
+  const [mode, setMode] = useState<Mode>(() => modeFromPath(location.pathname, !!inviteParam));
+  const [signupAudience, setSignupAudience] = useState<SignupAudience>('worker');
   const [signupMethod, setSignupMethod] = useState<SignupMethod>('directory');
+  const [loginMethod, setLoginMethod] = useState<LoginMethod>('phone');
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [company, setCompany] = useState('');
-  const [inviteCode, setInviteCode] = useState(searchParams.get('invite') || '');
+  const [phone, setPhone] = useState('');
+  const [pin, setPin] = useState('');
+  const [inviteCode, setInviteCode] = useState(inviteParam);
   const [invitePreview, setInvitePreview] = useState<InvitePreview | null>(null);
   const [validatingCode, setValidatingCode] = useState(false);
   const [loading, setLoading] = useState(false);
-  // Directory-based signup state
+
   const [directory, setDirectory] = useState<DirectoryRow[]>([]);
-  const [selectedProject, setSelectedProject] = useState<string>('');
-  const [selectedCompany, setSelectedCompany] = useState<string>('');
-  const [selectedPosition, setSelectedPosition] = useState<string>('');
+  const [selectedProject, setSelectedProject] = useState('');
+  const [selectedCompany, setSelectedCompany] = useState('');
+  const [selectedPosition, setSelectedPosition] = useState('');
   const [selectedJobType, setSelectedJobType] = useState<StandardJobType | ''>('');
   const { toast } = useToast();
 
-  // Auto-switch to signup if invite param present
+  useEffect(() => {
+    setMode(modeFromPath(location.pathname, !!searchParams.get('invite')));
+  }, [location.pathname, searchParams]);
+
   useEffect(() => {
     if (searchParams.get('invite')) {
       setMode('signup');
+      setSignupAudience('manager');
+      setSignupMethod('invite');
     }
   }, [searchParams]);
 
-  // Validate invite code with debounce
+  // Invite validation
   useEffect(() => {
-    if (!inviteCode.trim() || mode !== 'signup') {
+    if (!inviteCode.trim() || mode !== 'signup' || signupAudience !== 'manager' || signupMethod !== 'invite') {
       setInvitePreview(null);
       return;
     }
@@ -101,7 +127,6 @@ const Auth = () => {
           return;
         }
 
-        // Get company name if company_id exists
         let companyName = '';
         if ((invite as any).company_id) {
           const { data: comp } = await supabase
@@ -125,29 +150,39 @@ const Auth = () => {
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [inviteCode, mode]);
+  }, [inviteCode, mode, signupAudience, signupMethod]);
 
-  // Load public directory for signup
+  // Directory for signup
   useEffect(() => {
-    if (mode !== 'signup' || signupMethod !== 'directory') return;
+    if (mode !== 'signup') return;
+    if (signupAudience === 'manager' && signupMethod === 'invite') return;
     (async () => {
       const { data } = await (supabase as any).rpc('get_signup_company_directory');
       setDirectory((data as DirectoryRow[]) || []);
     })();
-
-  }, [mode, signupMethod]);
+  }, [mode, signupAudience, signupMethod]);
 
   const projectOptions = useMemo(() => {
     const map = new Map<string, string>();
-    directory.forEach(d => { if (!map.has(d.project_id)) map.set(d.project_id, d.project_name); });
+    directory.forEach((d) => {
+      if (!map.has(d.project_id)) map.set(d.project_id, d.project_name);
+    });
     return Array.from(map, ([id, name]) => ({ id, name }));
   }, [directory]);
-  const companyOptions = useMemo(
-    () => directory.filter(d => d.project_id === selectedProject),
-    [directory, selectedProject]
-  );
+
+  /** 근로자: 협력사/공급사 우선, 없으면 전체 */
+  const companyOptions = useMemo(() => {
+    const inProject = directory.filter((d) => d.project_id === selectedProject);
+    if (signupAudience !== 'worker') return inProject;
+    const contractors = inProject.filter((d) => {
+      const t = normalizeCompanyType(d.company_type);
+      return t === 'contractor' || t === 'vendor';
+    });
+    return contractors.length > 0 ? contractors : inProject;
+  }, [directory, selectedProject, signupAudience]);
+
   const selectedCompanyRow = useMemo(
-    () => directory.find(d => d.company_id === selectedCompany) || null,
+    () => directory.find((d) => d.company_id === selectedCompany) || null,
     [directory, selectedCompany],
   );
   const signupPositionOptions = useMemo(
@@ -158,13 +193,117 @@ const Auth = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) toast({ title: '로그인 실패', description: error.message, variant: 'destructive' });
-    setLoading(false);
+    try {
+      if (loginMethod === 'phone') {
+        const phoneParsed = workerPhoneSchema.safeParse(phone);
+        const pinParsed = workerPinSchema.safeParse(pin);
+        if (!phoneParsed.success) {
+          toast({ title: zodErrorMessage(phoneParsed.error), variant: 'destructive' });
+          return;
+        }
+        if (!pinParsed.success) {
+          toast({ title: zodErrorMessage(pinParsed.error), variant: 'destructive' });
+          return;
+        }
+        const dummyEmail = phoneToWorkerEmail(phoneParsed.data);
+        const { error } = await supabase.auth.signInWithPassword({
+          email: dummyEmail,
+          password: pinParsed.data,
+        });
+        if (error) {
+          toast({ title: '로그인 실패', description: error.message, variant: 'destructive' });
+        }
+        return;
+      }
+
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) toast({ title: '로그인 실패', description: error.message, variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleWorkerSignup = async () => {
+    const nameParsed = koreanName.safeParse(displayName);
+    const phoneParsed = workerPhoneSchema.safeParse(phone);
+    const pinParsed = workerPinSchema.safeParse(pin);
+    const jobParsed = jobTypeSchema.safeParse(selectedJobType);
+
+    if (!nameParsed.success) {
+      toast({ title: zodErrorMessage(nameParsed.error), variant: 'destructive' });
+      return;
+    }
+    if (!phoneParsed.success) {
+      toast({ title: zodErrorMessage(phoneParsed.error), variant: 'destructive' });
+      return;
+    }
+    if (!pinParsed.success) {
+      toast({ title: zodErrorMessage(pinParsed.error), variant: 'destructive' });
+      return;
+    }
+    if (!selectedProject || !selectedCompany) {
+      toast({ title: '참여 프로젝트와 소속(협력사)을 선택해주세요.', variant: 'destructive' });
+      return;
+    }
+    if (!jobParsed.success) {
+      toast({ title: zodErrorMessage(jobParsed.error), variant: 'destructive' });
+      return;
+    }
+
+    const digits = phoneParsed.data;
+    const dummyEmail = phoneToWorkerEmail(digits);
+    const companyName = directory.find((d) => d.company_id === selectedCompany)?.company_name || '';
+
+    setLoading(true);
+    try {
+      const { data: signUpData, error } = await supabase.auth.signUp({
+        email: dummyEmail,
+        password: pinParsed.data,
+        options: {
+          emailRedirectTo: window.location.origin,
+          data: {
+            display_name: nameParsed.data,
+            phone: digits,
+            company: companyName,
+            account_kind: 'worker',
+            signup_project_id: selectedProject,
+            signup_company_id: selectedCompany,
+            signup_position: 'WORKER',
+            signup_job_type: jobParsed.data,
+          },
+        },
+      });
+
+      if (error) {
+        toast({ title: '회원가입 실패', description: error.message, variant: 'destructive' });
+        return;
+      }
+
+      if (signUpData.user) {
+        const { error: rpcErr } = await (supabase as any).rpc('process_signup_company_selection', {
+          _user_id: signUpData.user.id,
+          _project_id: selectedProject,
+          _company_id: selectedCompany,
+          _position: 'WORKER',
+        });
+        if (rpcErr) {
+          toast({ title: '업체 연결 실패', description: rpcErr.message, variant: 'destructive' });
+        }
+      }
+
+      toast({
+        title: '근로자 가입 완료',
+        description: '전화번호와 PIN으로 로그인하세요. 관리자 승인 후 이용 가능합니다.',
+      });
+      setMode('login');
+      setLoginMethod('phone');
+      setPin('');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleManagerSignup = async () => {
     if (password.length < 8) {
       toast({ title: '비밀번호는 8자 이상이어야 합니다.', variant: 'destructive' });
       return;
@@ -173,16 +312,11 @@ const Auth = () => {
       toast({ title: '참여할 프로젝트·소속 업체·직책을 선택해주세요.', variant: 'destructive' });
       return;
     }
-    if (signupMethod === 'directory') {
-      const jobParsed = jobTypeSchema.safeParse(selectedJobType);
-      if (!jobParsed.success) {
-        toast({ title: zodErrorMessage(jobParsed.error), variant: 'destructive' });
-        return;
-      }
-    }
+
     setLoading(true);
     try {
-      const selectedCompanyName = directory.find(d => d.company_id === selectedCompany)?.company_name || company;
+      const selectedCompanyName =
+        directory.find((d) => d.company_id === selectedCompany)?.company_name || '';
       const { data: signUpData, error } = await supabase.auth.signUp({
         email,
         password,
@@ -191,11 +325,11 @@ const Auth = () => {
           data: {
             display_name: displayName,
             company: selectedCompanyName,
-            invite_code: signupMethod === 'invite' ? (inviteCode.trim() || undefined) : undefined,
+            account_kind: 'manager',
+            invite_code: signupMethod === 'invite' ? inviteCode.trim() || undefined : undefined,
             signup_project_id: signupMethod === 'directory' ? selectedProject : undefined,
             signup_company_id: signupMethod === 'directory' ? selectedCompany : undefined,
             signup_position: signupMethod === 'directory' ? selectedPosition : undefined,
-            signup_job_type: signupMethod === 'directory' ? selectedJobType || undefined : undefined,
           },
         },
       });
@@ -234,9 +368,25 @@ const Auth = () => {
 
       toast({ title: '회원가입 완료', description: '이메일을 확인해주세요. 관리자 승인 후 이용 가능합니다.' });
       setMode('login');
+      setLoginMethod('email');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (signupAudience === 'worker') {
+      await handleWorkerSignup();
+    } else {
+      await handleManagerSignup();
+    }
+  };
+
+  const resetCompanySelection = () => {
+    setSelectedCompany('');
+    setSelectedPosition('');
+    setSelectedJobType('');
   };
 
   return (
@@ -255,24 +405,185 @@ const Auth = () => {
           <p className="text-xs text-muted-foreground">Safety Management System</p>
         </CardHeader>
         <CardContent>
+          {mode === 'signup' && (
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setSignupAudience('worker');
+                  resetCompanySelection();
+                }}
+                className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
+                  signupAudience === 'worker'
+                    ? 'border-primary bg-primary/10 text-foreground shadow-sm'
+                    : 'border-border bg-muted/20 text-muted-foreground'
+                }`}
+              >
+                <span className="block text-lg leading-none mb-1">👷</span>
+                근로자 가입
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSignupAudience('manager');
+                  resetCompanySelection();
+                }}
+                className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
+                  signupAudience === 'manager'
+                    ? 'border-primary bg-primary/10 text-foreground shadow-sm'
+                    : 'border-border bg-muted/20 text-muted-foreground'
+                }`}
+              >
+                <span className="block text-lg leading-none mb-1">👔</span>
+                관리자 가입
+              </button>
+            </div>
+          )}
+
+          {mode === 'login' && (
+            <div className="flex gap-1 rounded-lg border p-1 bg-muted/30 mb-4">
+              <button
+                type="button"
+                onClick={() => setLoginMethod('phone')}
+                className={`flex-1 text-xs py-2 rounded-md transition ${
+                  loginMethod === 'phone' ? 'bg-background shadow font-medium' : 'text-muted-foreground'
+                }`}
+              >
+                전화번호 로그인
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoginMethod('email')}
+                className={`flex-1 text-xs py-2 rounded-md transition ${
+                  loginMethod === 'email' ? 'bg-background shadow font-medium' : 'text-muted-foreground'
+                }`}
+              >
+                이메일 로그인
+              </button>
+            </div>
+          )}
+
           <form onSubmit={mode === 'login' ? handleLogin : handleSignup} className="space-y-4">
-            {mode === 'signup' && (
+            {/* ── 근로자 가입 ── */}
+            {mode === 'signup' && signupAudience === 'worker' && (
               <>
                 <div className="space-y-1.5">
-                  <Label>이름</Label>
-                  <Input value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="홍길동" required />
+                  <Label>이름 *</Label>
+                  <Input
+                    className="h-12 text-base"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="홍길동"
+                    autoComplete="name"
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>전화번호 *</Label>
+                  <Input
+                    className="h-12 text-lg tracking-wide"
+                    value={phone}
+                    onChange={(e) => setPhone(formatPhoneMask(e.target.value))}
+                    placeholder="010-1234-5678"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    required
+                  />
+                  <p className="text-[10px] text-muted-foreground">숫자만 입력하면 자동으로 하이픈이 붙습니다.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>참여 프로젝트 *</Label>
+                  <Select
+                    value={selectedProject}
+                    onValueChange={(v) => {
+                      setSelectedProject(v);
+                      resetCompanySelection();
+                    }}
+                  >
+                    <SelectTrigger className="h-12"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
+                    <SelectContent>
+                      {projectOptions.length === 0 && (
+                        <div className="p-2 text-xs text-muted-foreground">등록된 프로젝트가 없습니다.</div>
+                      )}
+                      {projectOptions.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>소속(협력사) *</Label>
+                  <Select
+                    value={selectedCompany}
+                    onValueChange={setSelectedCompany}
+                    disabled={!selectedProject}
+                  >
+                    <SelectTrigger className="h-12">
+                      <SelectValue placeholder={selectedProject ? '협력사 선택' : '프로젝트를 먼저 선택'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {companyOptions.length === 0 && selectedProject && (
+                        <div className="p-2 text-xs text-muted-foreground">이 프로젝트에 등록된 업체가 없습니다.</div>
+                      )}
+                      {companyOptions.map((c) => (
+                        <SelectItem key={c.company_id} value={c.company_id}>{c.company_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>직종 *</Label>
+                  <JobTypeSelect
+                    value={selectedJobType}
+                    onValueChange={setSelectedJobType}
+                    placeholder="표준 직종 선택"
+                    disabled={!selectedCompany}
+                    triggerClassName="h-12 text-base"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>PIN 비밀번호 (숫자 4~6자리) *</Label>
+                  <Input
+                    className="h-12 text-lg tracking-[0.3em]"
+                    type="password"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="••••"
+                    autoComplete="new-password"
+                    required
+                  />
+                </div>
+              </>
+            )}
+
+            {/* ── 관리자 가입 ── */}
+            {mode === 'signup' && signupAudience === 'manager' && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>이름 *</Label>
+                  <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="홍길동" required />
                 </div>
 
-                {/* Signup method toggle */}
                 <div className="flex gap-1 rounded-lg border p-1 bg-muted/30">
-                  <button type="button"
+                  <button
+                    type="button"
                     onClick={() => setSignupMethod('directory')}
-                    className={`flex-1 text-xs py-1.5 rounded-md transition ${signupMethod === 'directory' ? 'bg-background shadow font-medium' : 'text-muted-foreground'}`}>
+                    className={`flex-1 text-xs py-1.5 rounded-md transition ${
+                      signupMethod === 'directory' ? 'bg-background shadow font-medium' : 'text-muted-foreground'
+                    }`}
+                  >
                     업체 조회로 가입
                   </button>
-                  <button type="button"
+                  <button
+                    type="button"
                     onClick={() => setSignupMethod('invite')}
-                    className={`flex-1 text-xs py-1.5 rounded-md transition ${signupMethod === 'invite' ? 'bg-background shadow font-medium' : 'text-muted-foreground'}`}>
+                    className={`flex-1 text-xs py-1.5 rounded-md transition ${
+                      signupMethod === 'invite' ? 'bg-background shadow font-medium' : 'text-muted-foreground'
+                    }`}
+                  >
                     초대코드로 가입
                   </button>
                 </div>
@@ -281,11 +592,21 @@ const Auth = () => {
                   <>
                     <div className="space-y-1.5">
                       <Label>참여 프로젝트 *</Label>
-                      <Select value={selectedProject} onValueChange={v => { setSelectedProject(v); setSelectedCompany(''); }}>
+                      <Select
+                        value={selectedProject}
+                        onValueChange={(v) => {
+                          setSelectedProject(v);
+                          resetCompanySelection();
+                        }}
+                      >
                         <SelectTrigger><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
                         <SelectContent>
-                          {projectOptions.length === 0 && <div className="p-2 text-xs text-muted-foreground">등록된 프로젝트가 없습니다.</div>}
-                          {projectOptions.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                          {projectOptions.length === 0 && (
+                            <div className="p-2 text-xs text-muted-foreground">등록된 프로젝트가 없습니다.</div>
+                          )}
+                          {projectOptions.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
@@ -299,12 +620,14 @@ const Auth = () => {
                         }}
                         disabled={!selectedProject}
                       >
-                        <SelectTrigger><SelectValue placeholder={selectedProject ? '업체 선택' : '프로젝트를 먼저 선택'} /></SelectTrigger>
+                        <SelectTrigger>
+                          <SelectValue placeholder={selectedProject ? '업체 선택' : '프로젝트를 먼저 선택'} />
+                        </SelectTrigger>
                         <SelectContent>
                           {companyOptions.length === 0 && selectedProject && (
                             <div className="p-2 text-xs text-muted-foreground">이 프로젝트에 등록된 업체가 없습니다.</div>
                           )}
-                          {companyOptions.map(c => (
+                          {companyOptions.map((c) => (
                             <SelectItem key={c.company_id} value={c.company_id}>{c.company_name}</SelectItem>
                           ))}
                         </SelectContent>
@@ -331,23 +654,11 @@ const Auth = () => {
                         if (t === 'client') return <p className="text-[10px] text-muted-foreground">발주처: PM / CM / SM</p>;
                         if (t === 'gc') return <p className="text-[10px] text-muted-foreground">시공사: 감리 · 관리감독자 분리</p>;
                         if (t === 'contractor' || t === 'vendor') {
-                          return <p className="text-[10px] text-muted-foreground">협력사/공급사: 관리감독자 · 현장소장 · 근로자 등</p>;
+                          return <p className="text-[10px] text-muted-foreground">협력사/공급사: 관리감독자 · 현장소장 등</p>;
                         }
                         return null;
                       })()}
                       <p className="text-[10px] text-muted-foreground">관리자 승인 후 이용 가능합니다.</p>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label>직종 *</Label>
-                      <JobTypeSelect
-                        value={selectedJobType}
-                        onValueChange={setSelectedJobType}
-                        placeholder="표준 직종 선택"
-                        disabled={!selectedCompany}
-                      />
-                      <p className="text-[10px] text-muted-foreground">
-                        플랜트/건설 표준 직종만 선택 가능합니다. 주관식·기타 입력은 불가합니다.
-                      </p>
                     </div>
                   </>
                 )}
@@ -358,13 +669,15 @@ const Auth = () => {
                     <div className="relative">
                       <Input
                         value={inviteCode}
-                        onChange={e => setInviteCode(e.target.value)}
+                        onChange={(e) => setInviteCode(e.target.value)}
                         placeholder="초대코드 입력"
                         className="pr-8"
                       />
                       {validatingCode && <Loader2 className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />}
                       {!validatingCode && invitePreview?.valid && <CheckCircle2 className="absolute right-2.5 top-2.5 h-4 w-4 text-emerald-500" />}
-                      {!validatingCode && invitePreview && !invitePreview.valid && <AlertCircle className="absolute right-2.5 top-2.5 h-4 w-4 text-destructive" />}
+                      {!validatingCode && invitePreview && !invitePreview.valid && (
+                        <AlertCircle className="absolute right-2.5 top-2.5 h-4 w-4 text-destructive" />
+                      )}
                     </div>
                     {invitePreview && !invitePreview.valid && (
                       <p className="text-xs text-destructive">{invitePreview.error}</p>
@@ -383,41 +696,118 @@ const Auth = () => {
                     )}
                   </div>
                 )}
+
+                <div className="space-y-1.5">
+                  <Label>이메일 *</Label>
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="user@company.com"
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>비밀번호 (8자 이상) *</Label>
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    minLength={8}
+                  />
+                </div>
               </>
             )}
-            <div className="space-y-1.5">
-              <Label>이메일</Label>
-              <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="user@company.com" required />
-            </div>
-            <div className="space-y-1.5">
-              <Label>비밀번호</Label>
-              <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required minLength={8} />
-            </div>
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? '처리 중...' : mode === 'login' ? '로그인' : '회원가입'}
+
+            {/* ── 로그인 ── */}
+            {mode === 'login' && loginMethod === 'phone' && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>전화번호</Label>
+                  <Input
+                    className="h-12 text-lg tracking-wide"
+                    value={phone}
+                    onChange={(e) => setPhone(formatPhoneMask(e.target.value))}
+                    placeholder="010-1234-5678"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>PIN 비밀번호</Label>
+                  <Input
+                    className="h-12 text-lg tracking-[0.3em]"
+                    type="password"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="••••"
+                    autoComplete="current-password"
+                    required
+                  />
+                </div>
+              </>
+            )}
+
+            {mode === 'login' && loginMethod === 'email' && (
+              <>
+                <div className="space-y-1.5">
+                  <Label>이메일</Label>
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="user@company.com"
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>비밀번호</Label>
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    minLength={8}
+                  />
+                </div>
+              </>
+            )}
+
+            <Button type="submit" className="w-full h-12 text-base" disabled={loading}>
+              {loading ? '처리 중...' : mode === 'login' ? '로그인' : signupAudience === 'worker' ? '근로자 가입' : '관리자 가입'}
             </Button>
           </form>
+
           <div className="mt-4 text-center text-sm space-y-1">
             {mode === 'login' && (
               <>
-                <Link to="/forgot-password" className="text-accent hover:underline block w-full">
-                  비밀번호를 잊으셨나요?
-                </Link>
-                <button type="button" onClick={() => setMode('signup')} className="text-muted-foreground hover:underline block w-full">
+                {loginMethod === 'email' && (
+                  <Link to="/forgot-password" className="text-accent hover:underline block w-full">
+                    비밀번호를 잊으셨나요?
+                  </Link>
+                )}
+                <Link to="/register" className="text-muted-foreground hover:underline block w-full" onClick={() => setMode('signup')}>
                   계정이 없으신가요? 회원가입
-                </button>
+                </Link>
               </>
             )}
             {mode !== 'login' && (
-              <button type="button" onClick={() => setMode('login')} className="text-muted-foreground hover:underline">
+              <Link to="/login" className="text-muted-foreground hover:underline" onClick={() => setMode('login')}>
                 ← 로그인으로 돌아가기
-              </button>
+              </Link>
             )}
           </div>
-         </CardContent>
+        </CardContent>
       </Card>
       <a href="/manual" className="mt-4 text-xs text-muted-foreground hover:text-foreground hover:underline">
-        📖 사용 설명서 보기 (관리자 & 근로자용)
+        사용 설명서 보기 (관리자 & 근로자용)
       </a>
     </div>
   );

@@ -161,7 +161,8 @@ async function consumeSse(
   if (!resp.body) throw new Error('AI 스트림 응답이 비어 있습니다.');
 
   const reader = resp.body.getReader();
-  const decoder = new TextDecoder('utf-8', { stream: true });
+  // stream:true keeps multi-byte Hangul across chunk boundaries
+  const decoder = new TextDecoder('utf-8', { stream: true } as TextDecoderOptions);
   let carry = '';
   let streamError: string | null = null;
 

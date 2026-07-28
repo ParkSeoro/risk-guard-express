@@ -24,6 +24,23 @@ interface Props {
 
 const HEALTH_CATEGORIES = ['분진', '소음', '화학물질', '고온/저온', '밀폐공간', '진동', '기타'];
 
+/** Surface Edge Function JSON error body instead of generic "non-2xx status code". */
+async function edgeFnErrorMessage(error: unknown, data?: { error?: string | { message?: string } } | null): Promise<string> {
+  if (data?.error) {
+    return typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
+  }
+  const ctx = (error as { context?: Response })?.context;
+  if (ctx && typeof ctx.json === 'function') {
+    try {
+      const body = await ctx.clone().json();
+      if (body?.error) {
+        return typeof body.error === 'string' ? body.error : (body.error.message || JSON.stringify(body.error));
+      }
+    } catch { /* ignore */ }
+  }
+  return (error as Error)?.message || '알 수 없는 오류';
+}
+
 export default function WorkerParticipationPanel({ runId, projectId, userId, canEdit, onChanged, riskItems = [] }: Props) {
   const { toast } = useToast();
   const [opinions, setOpinions] = useState<any[]>([]);
@@ -132,7 +149,8 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
       const { data, error } = await supabase.functions.invoke('analyze-worker-opinion', {
         body: { mode: 'opinion', opinion: op.opinion_text, process: op.worker_position || '', worker_name: op.worker_name },
       });
-      if (error) throw error;
+      if (error) throw new Error(await edgeFnErrorMessage(error, data));
+      if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : data.error.message || '분석 실패');
       await supabase.from('worker_opinions' as any).update({ analysis_status: 'done', analysis_result: data }).eq('id', op.id);
       setAiSuggestions({ opinionId: op.id, result: data });
       // 기본 모두 선택
@@ -197,7 +215,8 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
     setHealthAILoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('analyze-worker-opinion', { body: { mode: 'health', process: aiProcess, equipment: aiEquipment } });
-      if (error) throw error;
+      if (error) throw new Error(await edgeFnErrorMessage(error, data));
+      if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : data.error.message || 'AI 생성 실패');
       const inserts = (data.items || []).map((h: any) => ({
         run_id: runId, project_id: projectId, process: aiProcess,
         category: h.category, description: h.description, exposure_level: h.exposure_level || '보통',
@@ -228,7 +247,8 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
     setAccidentAILoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('analyze-worker-opinion', { body: { mode: 'accident', process: aiProcess, equipment: aiEquipment } });
-      if (error) throw error;
+      if (error) throw new Error(await edgeFnErrorMessage(error, data));
+      if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : data.error.message || 'AI 생성 실패');
       const inserts = (data.items || []).map((a: any) => ({
         run_id: runId, project_id: projectId, process: aiProcess,
         accident_type: a.accident_type, cause: a.cause, result: a.result || '',

@@ -25,6 +25,8 @@ interface OAIRequest {
   temperature?: number;
   max_tokens?: number;
   response_format?: { type: "json_object" | "text" };
+  /** Skip the long Korean style appendix when the caller already embeds full instructions. */
+  compact?: boolean;
 }
 
 interface OAIResponse {
@@ -107,10 +109,12 @@ const KOREAN_STYLE_SUFFIX = `
 const FORCE_JSON_SUFFIX =
   "\n\nYou MUST respond ONLY with valid JSON. Do not include any markdown formatting like ```json or explanatory text.";
 
-function injectSystemRules(messages: OAIMessage[], wantsJson: boolean): OAIMessage[] {
+function injectSystemRules(messages: OAIMessage[], wantsJson: boolean, compact = false): OAIMessage[] {
   // Nemotron Super defaults to reasoning ON; /no_think forces concise content
   // into message.content (otherwise content may be null and only reasoning is filled).
-  const suffix = KOREAN_STYLE_SUFFIX + (wantsJson ? FORCE_JSON_SUFFIX : "");
+  const suffix = compact
+    ? (wantsJson ? FORCE_JSON_SUFFIX : "")
+    : (KOREAN_STYLE_SUFFIX + (wantsJson ? FORCE_JSON_SUFFIX : ""));
   const out = messages.map((m) => ({ ...m }));
   const sysIdx = out.findIndex((m) => m.role === "system");
   if (sysIdx >= 0) {
@@ -141,6 +145,7 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
 
   const wantsJson = req.response_format?.type === "json_object";
   const imagePresent = hasImageInput(req.messages);
+  const compact = !!req.compact;
 
   // If caller explicitly needs vision (image is the primary payload) — signal clearly.
   // Heuristic: image present AND user text is short/empty (< 40 chars of real text).
@@ -160,7 +165,7 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
     // Otherwise strip images silently and continue with text.
   }
 
-  const preparedMessages = injectSystemRules(req.messages, wantsJson);
+  const preparedMessages = injectSystemRules(req.messages, wantsJson, compact);
   const messages = preparedMessages.map((m) => ({
     role: m.role,
     content: flattenContent(m.content),

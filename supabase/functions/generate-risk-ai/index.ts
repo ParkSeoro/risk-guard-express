@@ -92,54 +92,62 @@ function formatStructuredToKorean(_sectionKey: string, data: any): string {
   return render(data);
 }
 
-// ── RAG: fetch similar items from existing data ──
+// ── RAG: fetch similar items from existing data (parallel, capped) ──
+// Keep this cheap — sequential multi-query RAG previously burned wall-clock
+// before the LLM call and contributed to WORKER_RESOURCE_LIMIT (HTTP 546).
 async function fetchRAGContext(
   adminClient: any,
   processName: string,
   equipment: string,
-  limit = 10
+  limit = 5
 ): Promise<string> {
-  // Search standard_risk_library by keyword match
   const keywords = processName
     .split(/[\s,/·]+/)
-    .filter((w: string) => w.length >= 2);
+    .filter((w: string) => w.length >= 2)
+    .slice(0, 2);
 
-  let ragItems: any[] = [];
+  const primaryKw = keywords[0] || processName;
+  const queries: PromiseLike<{ data: any[] | null }>[] = [];
 
-  // 1. Search standard_risk_library
-  for (const kw of keywords.slice(0, 3)) {
-    const { data } = await adminClient
-      .from("standard_risk_library")
-      .select("category_large, sub_task, hazard, hazard_situation, existing_measure, improvement_measure, recommended_ppe")
-      .or(`category_large.ilike.%${kw}%,category_medium.ilike.%${kw}%,sub_task.ilike.%${kw}%,keywords.cs.{${kw}}`)
-      .eq("is_active", true)
-      .limit(5);
-    if (data) ragItems.push(...data);
+  if (primaryKw) {
+    queries.push(
+      adminClient
+        .from("standard_risk_library")
+        .select("sub_task, hazard, hazard_situation, existing_measure, improvement_measure")
+        .or(`category_large.ilike.%${primaryKw}%,sub_task.ilike.%${primaryKw}%`)
+        .eq("is_active", true)
+        .limit(5),
+    );
+    queries.push(
+      adminClient
+        .from("risk_items")
+        .select("sub_task, hazard, hazard_situation, existing_measure, improvement_measure")
+        .ilike("process", `%${primaryKw}%`)
+        .limit(5),
+    );
   }
 
-  // 2. Search existing risk_items for similar processes
-  const { data: existingItems } = await adminClient
-    .from("risk_items")
-    .select("process, sub_task, hazard, hazard_situation, existing_measure, improvement_measure, ppe")
-    .ilike("process", `%${keywords[0] || processName}%`)
-    .limit(5);
-  if (existingItems) ragItems.push(...existingItems);
-
-  // 3. Search by equipment
   if (equipment) {
     const normEquip = normalizeEquipment(equipment);
     const equipKw = normEquip.split(/[()/\s]+/).filter((w: string) => w.length >= 2)[0];
     if (equipKw) {
-      const { data: equipItems } = await adminClient
-        .from("standard_risk_library")
-        .select("sub_task, hazard, hazard_situation, existing_measure, improvement_measure")
-        .contains("equipment", [equipKw])
-        .limit(5);
-      if (equipItems) ragItems.push(...equipItems);
+      queries.push(
+        adminClient
+          .from("standard_risk_library")
+          .select("sub_task, hazard, hazard_situation, existing_measure, improvement_measure")
+          .contains("equipment", [equipKw])
+          .eq("is_active", true)
+          .limit(3),
+      );
     }
   }
 
-  // Deduplicate
+  const results = await Promise.all(queries);
+  const ragItems: any[] = [];
+  for (const r of results) {
+    if (r?.data) ragItems.push(...r.data);
+  }
+
   const seen = new Set<string>();
   const unique = ragItems.filter((item: any) => {
     const key = `${item.sub_task || ""}|${item.hazard || ""}`;
@@ -152,13 +160,15 @@ async function fetchRAGContext(
 
   const lines = unique.map(
     (item: any, i: number) =>
-      `${i + 1}. 세부작업: ${item.sub_task || ""}, 위험요인: ${item.hazard || ""}, 발생상황: ${item.hazard_situation || ""}, 기존대책: ${item.existing_measure || ""}, 개선대책: ${item.improvement_measure || ""}`
+      `${i + 1}. 세부작업: ${item.sub_task || ""}, 위험요인: ${item.hazard || ""}, 발생상황: ${item.hazard_situation || ""}, 개선대책: ${item.improvement_measure || item.existing_measure || ""}`
   );
 
-  return `\n[참고 사례 - 유사 공종/장비 기존 데이터]\n${lines.join("\n")}`;
+  return `\n[참고 사례]\n${lines.join("\n")}`;
 }
 
 // ── Generate risk items using detail_level (no forced count) ──
+// Token budget is intentionally capped: Edge workers hit WORKER_RESOURCE_LIMIT
+// (~150s wall) when asking for 20~35 long items with max_tokens=8192.
 async function generateRiskAssessment(
   processName: string,
   equipText: string,
@@ -168,37 +178,24 @@ async function generateRiskAssessment(
   detailLevel: 'core' | 'comprehensive',
   ragContext: string,
 ): Promise<{ items: any[]; accident_cases: any[] }> {
-  const systemPrompt = `당신은 대한민국 1군 건설사 및 최고 수준의 발주처(안전관리자) 관점의 위험성평가 전문가입니다.
-최근 개정된 산업안전보건법 위험성평가 지침과 「산업안전보건기준에 관한 규칙」·KOSHA GUIDE·중대재해처벌법을 기준으로,
-입력된 공종에 대해 매우 디테일하고 실질적인 유해·위험요인을 도출해야 합니다.
+  const targetCount = detailLevel === 'core' ? 15 : 18;
+  const maxTokens = detailLevel === 'core' ? 3600 : 4500;
 
-[핵심 작성 지시]
-1. 단순히 뭉뚱그려 평가하지 말고, 해당 공종을 3~5개의 세부 작업 순서(예: 작업 전 준비 → 본 작업 → 마무리, 필요 시 반입·양중·해체 등)로 쪼갠 뒤, 각 단계별로 발생할 수 있는 구체적인 위험요인과 개선대책을 작성하십시오.
-2. 항목 수는 최소 15개 이상 촘촘하게 작성하십시오. (핵심 모드도 15개 전후, 상세 모드는 20~35개)
-3. '추락 위험 있음' 같은 뻔한 문구 금지. 반드시 '비계 단부에서 자재 인양 중 작업자 안전대 미체결로 인한 추락'처럼 원인·상황·결과가 드러나는 구체 시나리오로 명시하십시오.
-4. 개선대책은 본질안전(제거·대체) → 공학적(방호·격리·환기) → 관리적(작업허가·교육·표지) → PPE 순으로 실행 가능하게 서술. PPE만 단독 나열 금지.
-5. 위험도 분포는 상 20~30% / 중 40~60% / 하 10~30%로 자연스럽게 배분.
-6. 법적근거는 산안기준규칙 조항 또는 KOSHA GUIDE 코드 등 실제 관련 근거만.
-
-[사고사례 출력 제한]
-과거 사고사례는 사용자에게 경각심을 주되 너무 길어지면 안 됩니다.
-입력된 공종·장비·환경과 가장 밀접한 치명적인 실제 사고사례를 딱 2~3개만, 발생원인과 결과 위주로 짧게 요약해 제공하십시오.
-
-[출력 규칙]
-- 출력은 오직 JSON 객체 하나뿐. 코드펜스·설명문 절대 금지.
-- 100% 한국어. (TBM/KOSHA/PPE 등 고유명사 병기만 허용)
-- 반드시 완결된 JSON을 반환. 중간에 끊지 말 것.
-- 어투는 단정형(~함, ~할 것).`;
+  const systemPrompt = `/no_think
+당신은 건설현장 위험성평가 전문가다. 산안법·산안기준규칙·KOSHA GUIDE 기준으로 작성한다.
+[작성 규칙]
+1. 공종을 준비→본작업→마무리(필요 시 반입·양중) 등 3단계 이상으로 쪼갠 뒤 단계별 위험요인을 작성.
+2. 항목 수는 정확히 ${targetCount}개. 중복·상투어 금지. 각 문장은 짧게(위험요인·발생상황·대책 각 1문장).
+3. '추락 위험 있음' 금지. 원인·상황·결과가 드러나는 구체 시나리오.
+4. 개선대책: 본질안전→공학적→관리적→PPE 순. PPE만 나열 금지.
+5. 위험도 분포: 상 20~30% / 중 40~60% / 하 10~30%.
+6. 법적근거는 관련 조항·KOSHA 코드만. 출력은 JSON 객체 하나뿐. 한국어 단정형.`;
 
   const levelInstruction = detailLevel === 'core'
-    ? `[요청 수준: 핵심]
-- 중대재해 유발 가능성이 높은 핵심 항목 중심으로 최소 15개 작성.
-- 세부 작업 단계는 3개 이상(준비·본작업·마무리)으로 나누고 단계마다 항목을 배치.`
-    : `[요청 수준: 작업 순서별 상세]
-- 세부 작업 순서 3~5단계로 분해한 뒤, 단계별·4M(사람·기계·물질/환경·관리) 관점으로 최소 15개 이상(권장 20~35개) 촘촘히 작성.
-- 실효성 없는 중복·상투어로 개수를 부풀리지 말 것.`;
+    ? `[요청 수준: 핵심] 중대재해 가능성이 높은 항목 ${targetCount}개.`
+    : `[요청 수준: 상세] 단계별·4M 관점으로 ${targetCount}개. 문장은 짧게 유지.`;
 
-  const userPrompt = `[입력 정보]
+  const userPrompt = `[입력]
 공종: ${processName}
 장비: ${equipText}
 작업내용: ${descText}
@@ -208,42 +205,19 @@ ${ragContext}
 
 ${levelInstruction}
 
-[출력 형식 - JSON 객체만]
-{
-  "items": [
-    {
-      "공정": "${processName}",
-      "세부작업": "시공 순서상의 세부 작업 단계명",
-      "위험요인": "원인 + 사고결과가 드러나는 구체 문장",
-      "발생상황": "실제 작업 단계에서의 구체 시나리오",
-      "기존대책": "현재 통상 적용되는 대책",
-      "개선대책": "본질안전 → 공학적 → 관리적 → PPE 순의 구체 대책",
-      "위험도": "상|중|하",
-      "심각도": "상|중|하",
-      "개선후위험도": "상|중|하",
-      "개선후심각도": "상|중|하",
-      "보호구": ["안전모", "안전대"],
-      "법적근거": "산업안전보건기준에 관한 규칙 제OO조 또는 KOSHA GUIDE C-OO"
-    }
-  ],
-  "accident_cases": [
-    {
-      "title": "사고 한줄 제목",
-      "cause": "발생원인 요약",
-      "result": "결과(사상·피해) 요약"
-    }
-  ]
-}
-※ items는 최소 15개. accident_cases는 정확히 2~3개만.`;
+[출력 JSON]
+{"items":[{"공정":"${processName}","세부작업":"","위험요인":"","발생상황":"","기존대책":"","개선대책":"","위험도":"중","심각도":"중","개선후위험도":"하","개선후심각도":"하","보호구":["안전모"],"법적근거":""}],"accident_cases":[{"title":"","cause":"","result":""}]}
+※ items 정확히 ${targetCount}개, accident_cases 2개. 완결된 JSON만.`;
 
   const response = await geminiChatFetch({
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    temperature: 0.35,
-    max_tokens: 8192,
+    temperature: 0.3,
+    max_tokens: maxTokens,
     response_format: { type: "json_object" },
+    compact: true,
   });
 
   if (!response.ok) {
@@ -252,6 +226,7 @@ ${levelInstruction}
     console.error(`[RiskGen] AI error:`, status, text);
     if (status === 429) throw new Error("RATE_LIMIT");
     if (status === 402) throw new Error("CREDITS_EXHAUSTED");
+    if (status === 403) throw new Error("INVALID_KEY");
     throw new Error(`AI_ERROR_${status}`);
   }
 
@@ -484,7 +459,8 @@ serve(async (req) => {
     const descText = work_description || process_name + " 관련 작업";
 
     // ── Cache check (keyed by inputs + detail level + prompt version) ──
-    const cacheKey = `v2|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
+    // v3: lighter prompt / capped item count (avoids WORKER_RESOURCE_LIMIT)
+    const cacheKey = `v3|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
       .toLowerCase()
       .trim();
 
@@ -498,7 +474,7 @@ serve(async (req) => {
     const cachedAccidents = Array.isArray((cached as any)?.accident_cases)
       ? (cached as any).accident_cases
       : [];
-    const cacheMin = 15;
+    const cacheMin = detailLevel === 'core' ? 12 : 15;
     if (cached && Array.isArray(cachedItems) && cachedItems.length >= cacheMin) {
       console.log(`[AI Engine] Cache hit: ${cachedItems.length} items (detail=${detailLevel})`);
       await adminClient
@@ -520,9 +496,9 @@ serve(async (req) => {
       );
     }
 
-    // ── RAG context ──
+    // ── RAG context (budgeted) ──
     console.log("[AI Engine] Fetching RAG context...");
-    const ragContext = await fetchRAGContext(adminClient, process_name, equipText);
+    const ragContext = await fetchRAGContext(adminClient, process_name, equipText, 5);
     console.log(`[AI Engine] RAG context: ${ragContext ? ragContext.split("\n").length - 1 : 0} items`);
 
     console.log(`[AI Engine] Generating risk assessment (detail=${detailLevel})`);
@@ -540,21 +516,34 @@ serve(async (req) => {
     const deduped = mapAndDedupe(generated.items || [], process_name, existingKeys);
     const accidentCases = (generated.accident_cases || []).slice(0, 3);
 
-    if (deduped.length > 0) {
-      await adminClient.from("ai_risk_cache").upsert(
-        {
-          cache_key: cacheKey,
-          process_name,
-          equipment: equipText,
-          work_description: descText,
-          work_location: locationText,
-          work_environment: work_environment || [],
-          generated_items: deduped,
-          hit_count: 0,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "cache_key" }
+    if (deduped.length === 0) {
+      return new Response(
+        JSON.stringify({
+          error: "AI가 유효한 위험성평가 항목을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.",
+          items: [],
+          count: 0,
+        }),
+        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
+    }
+
+    // Cache write is best-effort — never fail the response because of it
+    const { error: cacheErr } = await adminClient.from("ai_risk_cache").upsert(
+      {
+        cache_key: cacheKey,
+        process_name,
+        equipment: equipText,
+        work_description: descText,
+        work_location: locationText,
+        work_environment: work_environment || [],
+        generated_items: deduped,
+        hit_count: 0,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "cache_key" }
+    );
+    if (cacheErr) {
+      console.warn("[AI Engine] cache upsert skipped:", cacheErr.message || cacheErr);
     }
 
     return new Response(
@@ -578,8 +567,11 @@ serve(async (req) => {
     if (msg === "CREDITS_EXHAUSTED") {
       return new Response(JSON.stringify({ error: "AI 크레딧이 부족합니다. 워크스페이스 크레딧을 충전해주세요." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+    if (msg === "INVALID_KEY") {
+      return new Response(JSON.stringify({ error: "AI API 키가 유효하지 않습니다. 마스터가 설정 > 시크릿에서 확인해야 합니다." }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     return new Response(
-      JSON.stringify({ error: msg }),
+      JSON.stringify({ error: msg.startsWith("AI_ERROR_") ? "AI 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요." : msg }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

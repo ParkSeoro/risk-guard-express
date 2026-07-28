@@ -188,25 +188,20 @@ type PhaseDef = {
 };
 
 function buildPhases(detailLevel: "core" | "comprehensive"): PhaseDef[] {
+  // Client orchestrates one phase per HTTP request so each stays under ~150s.
   if (detailLevel === "core") {
     return [
       {
-        id: "prep",
-        title: "작업 전 준비",
-        focus: "작업허가·장비점검·지장물·환기·보호구·신호체계·작업구역 통제",
-        targetCount: 6,
-      },
-      {
-        id: "main",
-        title: "본 작업",
-        focus: "본작업 중 추락·협착·붕괴·감전·충돌·유해물질 등 4M 관점 치명 위험",
-        targetCount: 8,
+        id: "prep_main",
+        title: "준비·본작업",
+        focus: "작업허가·장비점검·본작업 중 추락·협착·붕괴·감전·충돌·유해물질 등 4M 치명 위험",
+        targetCount: 10,
       },
       {
         id: "finish",
         title: "마무리·비상",
         focus: "철수·정리·잔여위험·비상조치·복구",
-        targetCount: 5,
+        targetCount: 6,
         includeAccidents: true,
       },
     ];
@@ -216,7 +211,7 @@ function buildPhases(detailLevel: "core" | "comprehensive"): PhaseDef[] {
       id: "prep",
       title: "작업 전 준비·반입",
       focus: "사전조사·작업허가·장비반입·양중·지장물·환기측정·보호구·신호수·구역통제",
-      targetCount: 8,
+      targetCount: 9,
     },
     {
       id: "main",
@@ -324,14 +319,16 @@ function mapRawItem(item: any, processName: string): any | null {
 
   // Soft-fill blanks rather than dropping high-value hazards
   if (blank(hazard_situation)) {
-    hazard_situation = `${sub_task} 수행 중 ${hazard}이(가) 발생할 수 있는 구체 상황`;
+    hazard_situation =
+      `${sub_task} 단계에서 관리·장비·환경 요인이 겹치며 '${hazard}'로 이어질 수 있음. 작업자 위치·동선·방호 상태를 특정해 서술할 것.`;
   }
   if (blank(existing_measure)) {
-    existing_measure = "작업전 TBM·개인보호구 착용·관리감독자 순회점검 등 통상 조치";
+    existing_measure =
+      "작업전 TBM 및 위험성 고지, 관리감독자 배치, 해당 공종 표준작업절차(SOP)에 따른 일상점검·보호구 착용";
   }
   if (blank(improvement_measure)) {
     improvement_measure =
-      "위험원 제거·대체 검토 → 방호·격리 등 공학적 조치 → 작업허가·전담감시 → 적합 PPE 착용 및 교육";
+      "위험원 제거·대체 우선 검토 → 방호장치·격리·환기 등 공학적 통제 → 작업허가·전담감시·교육 → 작업 적합 PPE 지급·착용 확인";
   }
 
   let likelihood = String(item["위험도"] || item.likelihood_grade || "중").trim();
@@ -445,7 +442,7 @@ ${accidentClause}
       { role: "user", content: userPrompt },
     ],
     temperature: 0.4,
-    max_tokens: 4500,
+    max_tokens: 4000,
     response_format: { type: "json_object" },
     compact: true, // HSE prompt already embeds full rules
   })) {
@@ -527,11 +524,22 @@ serve(async (req) => {
       detail_level,
       project_id,
       stream: streamFlag,
+      phase_id: phaseIdBody,
     } = body;
 
     const detailLevel: "core" | "comprehensive" =
       detail_level === "core" ? "core" : "comprehensive";
     const wantStream = streamFlag !== false; // default ON for risk mode
+    const allPhases = buildPhases(detailLevel);
+    const selectedPhases = phaseIdBody
+      ? allPhases.filter((p) => p.id === phaseIdBody)
+      : allPhases;
+    if (phaseIdBody && selectedPhases.length === 0) {
+      return new Response(JSON.stringify({ error: `Unknown phase_id: ${phaseIdBody}` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+      });
+    }
 
     if (!isInternal && project_id) {
       const userSb = createClient(supabaseUrl, anonKey, {
@@ -653,7 +661,13 @@ serve(async (req) => {
     const emitCachedOrGenerate = async (
       send: (payload: Record<string, unknown>) => void,
     ) => {
-      if (cached && Array.isArray(cachedItems) && cachedItems.length >= cacheMin) {
+      // Full-result cache only when generating all phases in one request
+      if (
+        !phaseIdBody &&
+        cached &&
+        Array.isArray(cachedItems) &&
+        cachedItems.length >= cacheMin
+      ) {
         console.log(`[AI Engine] Cache hit (stream): ${cachedItems.length}`);
         await adminClient
           .from("ai_risk_cache")
@@ -680,7 +694,7 @@ serve(async (req) => {
       }
 
       const ragContext = await fetchRAGContext(adminClient, process_name, equipText, 5);
-      const phases = buildPhases(detailLevel);
+      const phases = selectedPhases;
       const existingKeys = new Set<string>();
       const allMapped: any[] = [];
       const allAccidents: any[] = [];
@@ -691,6 +705,7 @@ serve(async (req) => {
         normalized_equipment: normalizedEquipment,
         detail_level: detailLevel,
         phases: phases.map((p) => p.id),
+        phase_mode: phaseIdBody ? "single" : "all",
       });
 
       for (const phase of phases) {
@@ -746,21 +761,24 @@ serve(async (req) => {
         return;
       }
 
-      const { error: cacheErr } = await adminClient.from("ai_risk_cache").upsert(
-        {
-          cache_key: cacheKey,
-          process_name,
-          equipment: equipText,
-          work_description: descText,
-          work_location: locationText,
-          work_environment: work_environment || [],
-          generated_items: allMapped,
-          hit_count: 0,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "cache_key" },
-      );
-      if (cacheErr) console.warn("[AI Engine] cache upsert skipped:", cacheErr.message);
+      // Only write full-run cache when all phases ran in this request
+      if (!phaseIdBody) {
+        const { error: cacheErr } = await adminClient.from("ai_risk_cache").upsert(
+          {
+            cache_key: cacheKey,
+            process_name,
+            equipment: equipText,
+            work_description: descText,
+            work_location: locationText,
+            work_environment: work_environment || [],
+            generated_items: allMapped,
+            hit_count: 0,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "cache_key" },
+        );
+        if (cacheErr) console.warn("[AI Engine] cache upsert skipped:", cacheErr.message);
+      }
 
       send({
         type: "done",
@@ -770,6 +788,7 @@ serve(async (req) => {
         is_complete: true,
         normalized_equipment: normalizedEquipment,
         detail_level: detailLevel,
+        phase_id: phaseIdBody || null,
       });
     };
 

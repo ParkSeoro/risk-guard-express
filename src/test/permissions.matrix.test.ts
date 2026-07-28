@@ -15,7 +15,7 @@ import { describe, it, expect } from "vitest";
 type Action = "create" | "edit" | "delete" | "approve";
 type Role =
   | "master" | "project_admin" | "safety_manager"
-  | "site_manager" | "supervisor" | "worker" | "viewer";
+  | "site_manager" | "supervisor" | "site_supervisor" | "worker" | "viewer";
 type Feature =
   | "risk_assessment" | "work_plan" | "work_permit" | "safety_inspection"
   | "tbm" | "incident" | "safety_cost" | "legal_duty" | "todo"
@@ -53,6 +53,12 @@ const EXPECTED: Record<Role, Record<Feature, Perm>> = {
     approval: APPROVE_ONLY, company: RO, member: RO, master_data: RO, audit_log: RO,
   },
   supervisor: {
+    risk_assessment: RO, work_plan: RO, work_permit: APPROVE_ONLY,
+    safety_inspection: CRU_NO_APPROVE, tbm: RO, incident: CRU_NO_APPROVE,
+    safety_cost: RO, legal_duty: RO, todo: CRU_NO_APPROVE,
+    approval: APPROVE_ONLY, company: RO, member: RO, master_data: RO, audit_log: RO,
+  },
+  site_supervisor: {
     risk_assessment: RO, work_plan: RO, work_permit: APPROVE_ONLY,
     safety_inspection: CRU_NO_APPROVE, tbm: RO, incident: CRU_NO_APPROVE,
     safety_cost: RO, legal_duty: RO, todo: CRU_NO_APPROVE,

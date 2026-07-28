@@ -28,7 +28,8 @@ import { POSITION_LABELS, positionsForCompanyType } from '@/lib/projectPositions
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
   safety_manager: '안전관리자', site_manager: '현장대리인',
-  supervisor: '감리·관리감독', worker: '작업자', viewer: '열람자',
+  supervisor: '감리', site_supervisor: '관리감독자',
+  worker: '작업자', viewer: '열람자',
 };
 
 const positionLabels: Record<string, string> = { ...POSITION_LABELS };
@@ -322,7 +323,7 @@ const ProjectDetail = () => {
       toast({ title: '사용자를 선택해주세요.', variant: 'destructive' });
       return;
     }
-    if (['site_manager', 'supervisor', 'worker', 'contractor'].includes(memberRole) && !memberCompanyId) {
+    if (['site_manager', 'supervisor', 'site_supervisor', 'worker', 'contractor'].includes(memberRole) && !memberCompanyId) {
       toast({ title: '소속 업체를 선택해주세요.', description: '현장/감독/작업자/협력사 역할은 소속 업체가 필요합니다.', variant: 'destructive' });
       return;
     }
@@ -1150,7 +1151,7 @@ const ProjectDetail = () => {
             <div className="space-y-2">
               <Label>
                 소속 업체
-                {['site_manager', 'supervisor', 'worker', 'contractor'].includes(memberRole) && (
+                {['site_manager', 'supervisor', 'site_supervisor', 'worker', 'contractor'].includes(memberRole) && (
                   <span className="text-destructive ml-1">*</span>
                 )}
               </Label>
@@ -1372,7 +1373,7 @@ const ProjectDetail = () => {
                   <SelectItem value="__none__">(업체 연결 안 함)</SelectItem>
                   {companies
                     .filter(c => {
-                      if (inviteForm.role === 'worker' || inviteForm.role === 'site_manager' || inviteForm.role === 'supervisor') {
+                      if (inviteForm.role === 'worker' || inviteForm.role === 'site_manager' || inviteForm.role === 'supervisor' || inviteForm.role === 'site_supervisor') {
                         return c.type === 'contractor' || c.type === 'gc' || c.type === 'vendor';
                       }
                       if (inviteForm.role === 'safety_manager' || inviteForm.role === 'project_admin') return c.type === 'gc' || c.type === 'client';

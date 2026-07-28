@@ -29,7 +29,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const ROLE_LABEL: Record<string, string> = {
     master: '마스터', project_admin: '프로젝트관리자', safety_manager: '안전관리자',
-    site_manager: '현장소장', supervisor: '감리', worker: '작업자', viewer: '열람자',
+    site_manager: '현장소장', supervisor: '감리', site_supervisor: '관리감독자',
+    worker: '작업자', viewer: '열람자',
     contractor: '협력사', // legacy
   };
   // Prefer current project role (new model); fall back to global role.

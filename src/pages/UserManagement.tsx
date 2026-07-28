@@ -34,7 +34,8 @@ const projectRoleLabels: Record<string, string> = {
   project_admin: '프로젝트 관리자',
   safety_manager: '안전관리자',
   site_manager: '현장소장',
-  supervisor: '감리·관리감독',
+  supervisor: '감리',
+  site_supervisor: '관리감독자',
   worker: '작업자',
   viewer: '열람자',
 };
@@ -44,7 +45,7 @@ const POSITIONS_BY_COMPANY_TYPE: Record<string, string[]> = SSOT_POSITIONS_BY_TY
 /** Map new project_role -> legacy app_role enum (for the role column).
  *  Unknown new values fall back to 'viewer'. */
 const projectRoleToLegacy = (r: string): string => {
-  if (r === 'site_manager' || r === 'supervisor' || r === 'worker') return 'contractor';
+  if (r === 'site_manager' || r === 'supervisor' || r === 'site_supervisor' || r === 'worker') return 'contractor';
   if (['project_admin', 'safety_manager', 'viewer'].includes(r)) return r;
   return 'viewer';
 };
@@ -279,7 +280,7 @@ const UserManagement = () => {
     }
   };
 
-  const COMPANY_REQUIRED_ROLES = ['worker', 'site_manager', 'supervisor'];
+  const COMPANY_REQUIRED_ROLES = ['worker', 'site_manager', 'supervisor', 'site_supervisor'];
 
   const handleAssignMembership = async () => {
     setAssignError('');
@@ -288,7 +289,7 @@ const UserManagement = () => {
       return;
     }
     if (COMPANY_REQUIRED_ROLES.includes(assignRole) && !assignCompanyId) {
-      setAssignError('작업자/현장소장/감리·관리감독자는 소속 업체를 반드시 선택해야 합니다.');
+      setAssignError('작업자/현장소장/감리/관리감독자는 소속 업체를 반드시 선택해야 합니다.');
       return;
     }
     setAssignSaving(true);

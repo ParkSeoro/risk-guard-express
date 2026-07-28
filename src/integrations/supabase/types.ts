@@ -9865,6 +9865,7 @@ export type Database = {
         | "safety_manager"
         | "site_manager"
         | "supervisor"
+        | "site_supervisor"
         | "worker"
         | "viewer"
     }
@@ -10045,6 +10046,7 @@ export const Constants = {
         "safety_manager",
         "site_manager",
         "supervisor",
+        "site_supervisor",
         "worker",
         "viewer",
       ],

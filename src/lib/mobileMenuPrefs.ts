@@ -58,6 +58,6 @@ export function resetMobileTiles() {
 
 export function detectRole(hasRole: (r: string) => boolean): "worker" | "supervisor" | "safety" {
   if (hasRole("master") || hasRole("safety_manager")) return "safety";
-  if (hasRole("project_admin") || hasRole("site_manager") || hasRole("supervisor")) return "supervisor";
+  if (hasRole("project_admin") || hasRole("site_manager") || hasRole("supervisor") || hasRole("site_supervisor")) return "supervisor";
   return "worker";
 }

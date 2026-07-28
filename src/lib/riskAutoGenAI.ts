@@ -5,6 +5,12 @@ import { generateRiskItems, type GeneratedRiskItem } from './riskAutoGen';
 
 export type DetailLevel = 'core' | 'comprehensive';
 
+export interface AIAccidentCase {
+  title: string;
+  cause: string;
+  result: string;
+}
+
 export interface AIGenerateOptions {
   processName: string;
   equipment?: string;
@@ -59,8 +65,7 @@ function mapAIItemToGenerated(item: any, processName: string): GeneratedRiskItem
 
 /**
  * AI-first risk item generation.
- * Sends a single request with detail_level instead of a fixed target count —
- * the AI decides how many items to return based on the requested depth.
+ * Returns detailed items (15+) plus 2~3 related accident case briefs.
  */
 export async function generateRiskItemsHybrid(
   opts: AIGenerateOptions,
@@ -69,6 +74,7 @@ export async function generateRiskItemsHybrid(
   items: GeneratedRiskItem[];
   source: 'library' | 'cache' | 'ai' | 'hybrid';
   normalizedEquipment?: string;
+  accidentCases?: AIAccidentCase[];
 }> {
   const detailLevel: DetailLevel = opts.detailLevel || 'comprehensive';
   let normalizedEquipment: string | undefined;
@@ -94,9 +100,17 @@ export async function generateRiskItemsHybrid(
     normalizedEquipment = result?.normalized_equipment;
     const source = result?.source || 'ai';
     const items = (result?.items || []).map((item: any) => mapAIItemToGenerated(item, opts.processName));
+    const accidentCases: AIAccidentCase[] = (result?.accident_cases || [])
+      .slice(0, 3)
+      .map((c: any) => ({
+        title: c.title || '',
+        cause: c.cause || '',
+        result: c.result || '',
+      }))
+      .filter((c: AIAccidentCase) => c.title || c.cause);
 
     onProgress?.({ phase: 'complete', itemsSoFar: items.length, normalizedEquipment }, items);
-    return { items, source, normalizedEquipment };
+    return { items, source, normalizedEquipment, accidentCases };
   } catch (err: any) {
     const rawMsg = err?.message || '';
     console.error('[AI Engine] AI 호출 실패:', rawMsg);
@@ -123,7 +137,7 @@ export async function generateRiskItemsHybrid(
 
     if (libraryItems.length > 0) {
       onProgress?.({ phase: 'complete', itemsSoFar: libraryItems.length }, libraryItems);
-      return { items: libraryItems, source: 'library' };
+      return { items: libraryItems, source: 'library', accidentCases: [] };
     }
 
     throw new Error(rawMsg || 'AI 생성에 실패했습니다.');

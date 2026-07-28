@@ -167,67 +167,82 @@ async function generateRiskAssessment(
   envText: string,
   detailLevel: 'core' | 'comprehensive',
   ragContext: string,
-): Promise<any[]> {
-  const systemPrompt = `당신은 대한민국 30년 차 건설 현장 안전관리자이자 「산업안전보건법」·「산업안전보건기준에 관한 규칙」·「건설기술진흥법」·「중대재해처벌법」·KOSHA GUIDE에 정통한 전문가다. 무의미한 항목 나열을 엄격히 금지한다.
+): Promise<{ items: any[]; accident_cases: any[] }> {
+  const systemPrompt = `당신은 대한민국 1군 건설사 및 최고 수준의 발주처(안전관리자) 관점의 위험성평가 전문가입니다.
+최근 개정된 산업안전보건법 위험성평가 지침과 「산업안전보건기준에 관한 규칙」·KOSHA GUIDE·중대재해처벌법을 기준으로,
+입력된 공종에 대해 매우 디테일하고 실질적인 유해·위험요인을 도출해야 합니다.
 
-[작성 원칙]
-- 입력된 공종을 실제 시공 순서(사전준비 → 본작업 → 마무리)로 분해하라.
-- 각 단계에서 4M(사람 Man, 기계 Machine, 물질/환경 Media, 관리 Management) 관점의 유해·위험요인을 식별하라.
-- 실제 현장에서 중대재해(추락·낙하·협착·감전·화재·폭발·붕괴·질식 등)를 유발할 수 있는 실효성 있는 항목만 선별하라.
-- 감소대책은 반드시 (1) 본질안전(제거·대체) → (2) 공학적(방호장치·격리·환기) → (3) 관리적(작업허가·교육·표지) → (4) 개인보호구 순으로 구체적으로 서술하라. PPE만 단독 나열 금지.
-- 위험도 분포: 상 20~30%, 중 40~60%, 하 10~30% 자연스럽게 배분.
-- 법적근거는 산업안전보건기준에 관한 규칙 조항 또는 KOSHA GUIDE 코드로 실제 관련 항목만 기재.
+[핵심 작성 지시]
+1. 단순히 뭉뚱그려 평가하지 말고, 해당 공종을 3~5개의 세부 작업 순서(예: 작업 전 준비 → 본 작업 → 마무리, 필요 시 반입·양중·해체 등)로 쪼갠 뒤, 각 단계별로 발생할 수 있는 구체적인 위험요인과 개선대책을 작성하십시오.
+2. 항목 수는 최소 15개 이상 촘촘하게 작성하십시오. (핵심 모드도 15개 전후, 상세 모드는 20~35개)
+3. '추락 위험 있음' 같은 뻔한 문구 금지. 반드시 '비계 단부에서 자재 인양 중 작업자 안전대 미체결로 인한 추락'처럼 원인·상황·결과가 드러나는 구체 시나리오로 명시하십시오.
+4. 개선대책은 본질안전(제거·대체) → 공학적(방호·격리·환기) → 관리적(작업허가·교육·표지) → PPE 순으로 실행 가능하게 서술. PPE만 단독 나열 금지.
+5. 위험도 분포는 상 20~30% / 중 40~60% / 하 10~30%로 자연스럽게 배분.
+6. 법적근거는 산안기준규칙 조항 또는 KOSHA GUIDE 코드 등 실제 관련 근거만.
+
+[사고사례 출력 제한]
+과거 사고사례는 사용자에게 경각심을 주되 너무 길어지면 안 됩니다.
+입력된 공종·장비·환경과 가장 밀접한 치명적인 실제 사고사례를 딱 2~3개만, 발생원인과 결과 위주로 짧게 요약해 제공하십시오.
 
 [출력 규칙]
-- 출력은 오직 JSON 배열 하나뿐. 코드펜스(\`\`\`), 설명문, 머리말/꼬리말 절대 금지.
-- 100% 한국어. 단 하나의 영단어도 허용하지 않는다(고유명사 TBM/KOSHA/PPE 병기만 허용).
-- 반드시 완결된 배열(']'로 종료)을 반환하라. 중간에 끊지 말라.
-- 어투는 단정형(~함, ~할 것, ~을 준수할 것).`;
+- 출력은 오직 JSON 객체 하나뿐. 코드펜스·설명문 절대 금지.
+- 100% 한국어. (TBM/KOSHA/PPE 등 고유명사 병기만 허용)
+- 반드시 완결된 JSON을 반환. 중간에 끊지 말 것.
+- 어투는 단정형(~함, ~할 것).`;
 
   const levelInstruction = detailLevel === 'core'
-    ? `[요청 수준: 핵심 위주]
-- 해당 공종에서 가장 중요한 핵심 위험요인 10~15개만 선별하라.
-- 각 항목은 실제 중대재해 유발 가능성이 높은 것으로 한정하라.`
-    : `[요청 수준: 작업 순서별 상세 도출]
-- 시공 순서(사전준비 → 본작업 → 마무리)의 각 단계별로 4M 관점에서 위험요인을 빠짐없이 도출하라.
-- 세부작업 단위를 명확히 나누어 실제 현장 작업순서를 반영하라.
-- 항목 수는 공종 특성에 맞게 자율적으로 판단하되(대략 20~40개 범위), 실효성 없는 항목으로 개수를 부풀리지 말라.`;
+    ? `[요청 수준: 핵심]
+- 중대재해 유발 가능성이 높은 핵심 항목 중심으로 최소 15개 작성.
+- 세부 작업 단계는 3개 이상(준비·본작업·마무리)으로 나누고 단계마다 항목을 배치.`
+    : `[요청 수준: 작업 순서별 상세]
+- 세부 작업 순서 3~5단계로 분해한 뒤, 단계별·4M(사람·기계·물질/환경·관리) 관점으로 최소 15개 이상(권장 20~35개) 촘촘히 작성.
+- 실효성 없는 중복·상투어로 개수를 부풀리지 말 것.`;
 
   const userPrompt = `[입력 정보]
 공종: ${processName}
 장비: ${equipText}
 작업내용: ${descText}
 작업위치: ${locationText}
-작업환경: ${envText}
+작업조건/환경: ${envText}
 ${ragContext}
 
 ${levelInstruction}
 
-[출력 형식 - JSON 배열만]
-[
-  {
-    "공정": "${processName}",
-    "세부작업": "시공 순서상의 세부 작업 단계",
-    "위험요인": "원인 + 사고결과 구조",
-    "발생상황": "실제 작업 단계에서의 발생 시나리오",
-    "기존대책": "현재 통상 적용되는 대책",
-    "개선대책": "본질안전 → 공학적 → 관리적 → PPE 순의 구체 대책",
-    "위험도": "상|중|하",
-    "심각도": "상|중|하",
-    "개선후위험도": "상|중|하",
-    "개선후심각도": "상|중|하",
-    "보호구": ["안전모", "안전대"],
-    "법적근거": "산업안전보건기준에 관한 규칙 제OO조 또는 KOSHA GUIDE C-OO"
-  }
-]`;
+[출력 형식 - JSON 객체만]
+{
+  "items": [
+    {
+      "공정": "${processName}",
+      "세부작업": "시공 순서상의 세부 작업 단계명",
+      "위험요인": "원인 + 사고결과가 드러나는 구체 문장",
+      "발생상황": "실제 작업 단계에서의 구체 시나리오",
+      "기존대책": "현재 통상 적용되는 대책",
+      "개선대책": "본질안전 → 공학적 → 관리적 → PPE 순의 구체 대책",
+      "위험도": "상|중|하",
+      "심각도": "상|중|하",
+      "개선후위험도": "상|중|하",
+      "개선후심각도": "상|중|하",
+      "보호구": ["안전모", "안전대"],
+      "법적근거": "산업안전보건기준에 관한 규칙 제OO조 또는 KOSHA GUIDE C-OO"
+    }
+  ],
+  "accident_cases": [
+    {
+      "title": "사고 한줄 제목",
+      "cause": "발생원인 요약",
+      "result": "결과(사상·피해) 요약"
+    }
+  ]
+}
+※ items는 최소 15개. accident_cases는 정확히 2~3개만.`;
 
   const response = await geminiChatFetch({
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
     ],
-    temperature: 0.4,
-    max_tokens: 6144,
+    temperature: 0.35,
+    max_tokens: 8192,
     response_format: { type: "json_object" },
   });
 
@@ -242,42 +257,67 @@ ${levelInstruction}
 
   const result = await response.json();
   const raw = result.choices?.[0]?.message?.content || "";
-  // Defensive: strip any residual markdown fences before parsing.
   const content = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
 
-  const tryParse = (s: string): any[] | null => {
-    try {
-      const v = JSON.parse(s);
-      return Array.isArray(v) ? v : null;
-    } catch { return null; }
+  const tryParse = (s: string): any => {
+    try { return JSON.parse(s); } catch { return null; }
   };
 
-  const direct = tryParse(content);
-  if (direct) return direct;
-
-  const arrMatch = content.match(/\[[\s\S]*\]/);
-  if (arrMatch) {
-    const parsed = tryParse(arrMatch[0]);
-    if (parsed) return parsed;
+  let parsed = tryParse(content);
+  if (!parsed) {
+    const objMatch = content.match(/\{[\s\S]*\}/);
+    if (objMatch) parsed = tryParse(objMatch[0]);
+  }
+  if (!parsed) {
+    const arrMatch = content.match(/\[[\s\S]*\]/);
+    if (arrMatch) {
+      const arr = tryParse(arrMatch[0]);
+      if (Array.isArray(arr)) return { items: arr, accident_cases: [] };
+    }
   }
 
-  // Repair truncated array: find last '},' and close there.
-  const start = content.indexOf("[");
-  if (start >= 0) {
-    const tail = content.slice(start);
-    const lastObjEnd = tail.lastIndexOf("},");
-    if (lastObjEnd > 0) {
-      const repaired = tail.slice(0, lastObjEnd + 1) + "]";
-      const parsed = tryParse(repaired);
-      if (parsed) {
-        console.warn(`[RiskGen] Repaired truncated JSON (${parsed.length} items)`);
-        return parsed;
+  if (Array.isArray(parsed)) {
+    return { items: parsed, accident_cases: [] };
+  }
+
+  if (parsed && typeof parsed === "object") {
+    const items = Array.isArray(parsed.items)
+      ? parsed.items
+      : (Array.isArray(parsed["위험요인목록"]) ? parsed["위험요인목록"] : []);
+    let accident_cases = Array.isArray(parsed.accident_cases)
+      ? parsed.accident_cases
+      : (Array.isArray(parsed["사고사례"]) ? parsed["사고사례"] : []);
+    // Normalize accident case keys (KO/EN)
+    accident_cases = accident_cases.slice(0, 3).map((c: any) => ({
+      title: c.title || c["제목"] || c["사고명"] || "",
+      cause: c.cause || c["원인"] || c["발생원인"] || "",
+      result: c.result || c["결과"] || c["피해"] || "",
+    })).filter((c: any) => c.title || c.cause);
+    if (accident_cases.length > 3) accident_cases = accident_cases.slice(0, 3);
+    if (items.length > 0) return { items, accident_cases };
+
+    // Repair truncated items array inside object
+    const itemsStart = content.indexOf('"items"');
+    if (itemsStart >= 0) {
+      const fromItems = content.slice(itemsStart);
+      const bracket = fromItems.indexOf("[");
+      if (bracket >= 0) {
+        const tail = fromItems.slice(bracket);
+        const lastObjEnd = tail.lastIndexOf("},");
+        if (lastObjEnd > 0) {
+          const repaired = tail.slice(0, lastObjEnd + 1) + "]";
+          const repairedArr = tryParse(repaired);
+          if (Array.isArray(repairedArr) && repairedArr.length > 0) {
+            console.warn(`[RiskGen] Repaired truncated items (${repairedArr.length})`);
+            return { items: repairedArr, accident_cases };
+          }
+        }
       }
     }
   }
 
   console.error(`[RiskGen] JSON parse failed. Head:`, content.slice(0, 300));
-  return [];
+  return { items: [], accident_cases: [] };
 }
 
 function mapAndDedupe(items: any[], processName: string, existingKeys: Set<string>): any[] {
@@ -443,8 +483,8 @@ serve(async (req) => {
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
 
-    // ── Cache check (keyed by inputs + detail level) ──
-    const cacheKey = `${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
+    // ── Cache check (keyed by inputs + detail level + prompt version) ──
+    const cacheKey = `v2|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
       .toLowerCase()
       .trim();
 
@@ -455,7 +495,10 @@ serve(async (req) => {
       .maybeSingle();
 
     const cachedItems = (cached?.generated_items as any[]) || [];
-    const cacheMin = detailLevel === 'core' ? 8 : 15;
+    const cachedAccidents = Array.isArray((cached as any)?.accident_cases)
+      ? (cached as any).accident_cases
+      : [];
+    const cacheMin = 15;
     if (cached && Array.isArray(cachedItems) && cachedItems.length >= cacheMin) {
       console.log(`[AI Engine] Cache hit: ${cachedItems.length} items (detail=${detailLevel})`);
       await adminClient
@@ -466,6 +509,7 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           items: cachedItems,
+          accident_cases: cachedAccidents.slice(0, 3),
           source: "cache",
           count: cachedItems.length,
           normalized_equipment: normalizedEquipment,
@@ -482,7 +526,7 @@ serve(async (req) => {
     console.log(`[AI Engine] RAG context: ${ragContext ? ragContext.split("\n").length - 1 : 0} items`);
 
     console.log(`[AI Engine] Generating risk assessment (detail=${detailLevel})`);
-    const rawItems = await generateRiskAssessment(
+    const generated = await generateRiskAssessment(
       process_name,
       equipText,
       descText,
@@ -493,7 +537,8 @@ serve(async (req) => {
     );
 
     const existingKeys = new Set<string>();
-    const deduped = mapAndDedupe(rawItems, process_name, existingKeys);
+    const deduped = mapAndDedupe(generated.items || [], process_name, existingKeys);
+    const accidentCases = (generated.accident_cases || []).slice(0, 3);
 
     if (deduped.length > 0) {
       await adminClient.from("ai_risk_cache").upsert(
@@ -515,6 +560,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         items: deduped,
+        accident_cases: accidentCases,
         source: "ai",
         count: deduped.length,
         normalized_equipment: normalizedEquipment,

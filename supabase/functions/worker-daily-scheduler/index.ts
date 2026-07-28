@@ -104,8 +104,17 @@ Deno.serve(async (req) => {
     const { data: ldCount } = await supabase.rpc("generate_legal_duty_todos");
     legalDutyTodos = (ldCount as number) || 0;
 
+    // 5) 작업허가서: 작업일 다음날 → 종료대기 + SM 완료확인 결재 큐
+    let closurePromoted = 0;
+    try {
+      const { data: cCount } = await supabase.rpc("promote_permits_to_closure_pending");
+      closurePromoted = (cCount as number) || 0;
+    } catch (e) {
+      console.warn("promote_permits_to_closure_pending", e);
+    }
+
     return new Response(
-      JSON.stringify({ ok: true, overdue, dailyLogsCreated, notified, legalDutyTodos, date: todayStr }),
+      JSON.stringify({ ok: true, overdue, dailyLogsCreated, notified, legalDutyTodos, closurePromoted, date: todayStr }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e: any) {

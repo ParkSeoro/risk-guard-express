@@ -34,7 +34,8 @@ const ENTITY_LINK = (t: string, id: string) => {
   }
 };
 
-// 모바일 통합 전자결재 (모든 문서 타입: 허가서/계획서/위평/사고/훈련/TBM/안관비)
+const isClosureStep = (r: any) => (r.step_position || "").toLowerCase() === "closure_sm";
+
 export default function MobileApprovals() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -49,6 +50,7 @@ export default function MobileApprovals() {
   const load = async () => {
     if (!user) return;
     setLoading(true);
+    try { await (supabase as any).rpc("promote_permits_to_closure_pending"); } catch { /* non-fatal */ }
     const { data, error } = await supabase.rpc("get_my_pending_entity_approvals");
     if (error) toast.error("결재 목록 로드 실패: " + error.message);
     setRows((data as any[]) || []);
@@ -58,25 +60,12 @@ export default function MobileApprovals() {
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [user]);
 
   const openRow = async (r: any) => {
-    setOpenId(r.approval_id);
-    if (r.entity_type !== "work_permit") return;
-    if (briefings[r.entity_id] !== undefined) return;
-    setBriefingLoading(r.entity_id);
-    try {
-      const { data } = await supabase
-        .from("work_permits" as any)
-        .select("ai_briefing, permit_kinds, permit_type, work_name, work_description, location")
-        .eq("id", r.entity_id)
-        .maybeSingle();
-      setBriefings((prev) => ({
-        ...prev,
-        [r.entity_id]: ((data as any)?.ai_briefing as PermitAiBriefing) || null,
-      }));
-    } catch {
-      setBriefings((prev) => ({ ...prev, [r.entity_id]: null }));
-    } finally {
-      setBriefingLoading(null);
+    if (r.entity_type === "work_permit") {
+      navigate(`/m/approvals/${r.approval_id}`);
+      return;
     }
+    setOpenId(r.approval_id);
+    if (briefings[r.entity_id] !== undefined) return;
   };
 
   const decide = async (r: any, action: "approve" | "reject") => {
@@ -91,7 +80,11 @@ export default function MobileApprovals() {
       if (error) throw error;
       const result: any = data;
       if (result?.error) throw new Error(result.error);
-      toast.success(action === "approve" ? "승인 완료" : "반려 처리됨");
+      toast.success(
+        isClosureStep(r)
+          ? (action === "approve" ? "작업 완료 및 종료 처리됨" : "종료 확인 반려")
+          : (action === "approve" ? "승인 완료" : "반려 처리됨"),
+      );
       setOpenId(null); setComment("");
       load();
     } catch (e: any) {
@@ -124,6 +117,11 @@ export default function MobileApprovals() {
             <CardContent className="pt-4 space-y-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="secondary" className="text-xs">{ENTITY_LABEL[r.entity_type] || r.entity_type}</Badge>
+                {isClosureStep(r) && (
+                  <Badge className="text-xs bg-amber-500/15 text-amber-700 border-amber-500/30" variant="outline">
+                    작업 완료 확인 요망
+                  </Badge>
+                )}
                 <Badge variant="outline" className="text-xs">{r.step || "결재"}</Badge>
                 {r.step_order && <Badge variant="outline" className="text-xs">{r.step_order}단계</Badge>}
               </div>
@@ -137,7 +135,7 @@ export default function MobileApprovals() {
                 <div className="space-y-2 pt-2 border-t">
                   {r.entity_type === "work_permit" && (
                     briefingLoading === r.entity_id
-                      ? <div className="text-xs text-muted-foreground py-2"><Loader2 className="h-3 w-3 animate-spin inline mr-1" />AI 브리핑 불러오는 중…</div>
+                      ? <div className="text-xs text-muted-foreground py-2"><Loader2 className="h-3 w-3 animate-spin inline mr-1" />AI 브리핑…</div>
                       : <PermitAiBriefingCard briefing={briefings[r.entity_id]} compact />
                   )}
                   <IMESafeTextarea rows={2} placeholder="의견/사유 (반려 시 필수)" defaultValue={comment} onCommit={setComment} />
@@ -147,7 +145,8 @@ export default function MobileApprovals() {
                       <XCircle className="h-4 w-4 mr-1" /> 반려
                     </Button>
                     <Button onClick={() => decide(r, "approve")} disabled={submitting}>
-                      {submitting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />} 승인
+                      {submitting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+                      {isClosureStep(r) ? "종료" : "승인"}
                     </Button>
                   </div>
                 </div>
@@ -156,7 +155,9 @@ export default function MobileApprovals() {
                   <Button variant="outline" onClick={() => navigate(ENTITY_LINK(r.entity_type, r.entity_id))}>
                     문서 보기
                   </Button>
-                  <Button onClick={() => openRow(r)}>결재 처리</Button>
+                  <Button onClick={() => openRow(r)}>
+                    {isClosureStep(r) ? "완료 확인" : "결재 처리"}
+                  </Button>
                 </div>
               )}
             </CardContent>

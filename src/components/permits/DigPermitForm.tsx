@@ -12,6 +12,7 @@ import {
   DEFAULT_STANDARD_STYLE, DEFAULT_STANDARD_LABELS, mergeStandardStyle, mergeStandardLabels,
   colWidthCss, type StandardStyle, type StandardLabels, type PermitTypeKey,
 } from '@/lib/permitStandardStyle';
+import { formatPermitStamp } from '@/lib/permitDateFormat';
 
 export type PermitType = 'general' | 'confined_space' | 'hot_work' | 'excavation';
 
@@ -173,9 +174,12 @@ export interface PermitSignatures {
   sm?: { name: string; signature: string; signed_at: string };              // 담당자(SM)
   site_director?: { name: string; signature: string; signed_at: string };   // 책임자(소장)
   site_supervisor?: { name: string; signature: string; signed_at: string }; // 현장감독자
-  
+  /** SM 작업 완료(Closure) 최종 서명 — 하단 승인자 칸 */
+  closure_approver?: { name: string; signature: string; signed_at: string };
+
   reviewed_at?: string;
   approved_at?: string;
+  closed_at?: string;
 }
 
 interface Props {
@@ -268,7 +272,7 @@ export default function DigPermitForm({
       return (
         <div className="text-center">
           <img src={s.signature} alt="서명" className="inline-block h-7 max-w-[80px] object-contain" />
-          <div className="text-[9px] text-muted-foreground">{s.name}{s.signed_at ? ` · ${new Date(s.signed_at).toLocaleDateString('ko-KR')}` : ''}</div>
+          <div className="text-[9px] text-muted-foreground">{s.name}{s.signed_at ? ` · ${formatPermitStamp(s.signed_at)}` : ''}</div>
         </div>
       );
     }
@@ -277,7 +281,7 @@ export default function DigPermitForm({
       return (
         <div className="text-center">
           <div className="text-[11px] font-semibold">{s?.name || ''}</div>
-          {s?.signed_at && <div className="text-[9px] text-muted-foreground">{new Date(s.signed_at).toLocaleDateString('ko-KR')}</div>}
+          {s?.signed_at && <div className="text-[9px] text-muted-foreground">{formatPermitStamp(s.signed_at)}</div>}
         </div>
       );
     }
@@ -288,6 +292,19 @@ export default function DigPermitForm({
       </Button>
     );
   };
+
+  const StampCell = ({ iso, name }: { iso?: string; name?: string }) => (
+    <td className="text-center text-[10px] align-middle px-1">
+      {iso ? (
+        <>
+          <div className="font-semibold whitespace-nowrap">{formatPermitStamp(iso)}</div>
+          {name && <div className="text-[9px] text-muted-foreground mt-0.5">{name}</div>}
+        </>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      )}
+    </td>
+  );
 
 
   // 내부 Inp 는 삭제됨 — 모듈-스코프 <Inp/>(PermitInput 래퍼) 를 그대로 사용 (IME 안전)
@@ -386,48 +403,37 @@ export default function DigPermitForm({
                 <th className="hd">공사업체</th>
                 <td><Inp value={data.contractor_company} onChangeText={(v: string) => update({ contractor_company: v })} /></td>
                 <th className="hd" colSpan={2}>승인업체 : {labels.approverCompany}</th>
-                <th className="hd">검토일<br/><span className="text-[9px] font-normal">(CM)</span></th>
-                <th className="hd">승인일<br/><span className="text-[9px] font-normal">(SM)</span></th>
+                <th className="hd">검토일</th>
+                <th className="hd">승인일</th>
               </tr>
               <tr>
                 <th className="hd">담당자(시공)</th>
                 <td><SigCell k="contractor_pic" /></td>
                 <th className="hd">담당자(CM)</th>
                 <td><SigCell k="cm" /></td>
-                <td rowSpan={3} className="text-center text-[10px] align-top pt-2">{(() => {
-                  // 검토일 = CM 결재 단계(owner_cm)의 실제 approved_at
-                  const cm = signatures.cm as any;
-                  const rv = signatures.reviewed_at || cm?.signed_at || '';
-                  return (
-                    <>
-                      <div className="font-semibold">{rv ? new Date(rv).toLocaleDateString('ko-KR') : ''}</div>
-                      {cm?.name && <div className="text-[9px] text-muted-foreground mt-1">{cm.name}</div>}
-                    </>
-                  );
-                })()}</td>
-                <td rowSpan={3} className="text-center text-[10px] align-top pt-2">{(() => {
-                  // 승인일 = SM 결재 단계(owner_sm)의 실제 approved_at
-                  const sm = signatures.sm as any;
-                  const av = signatures.approved_at || sm?.signed_at || '';
-                  return (
-                    <>
-                      <div className="font-semibold">{av ? new Date(av).toLocaleDateString('ko-KR') : ''}</div>
-                      {sm?.name && <div className="text-[9px] text-muted-foreground mt-1">{sm.name}</div>}
-                    </>
-                  );
-                })()}</td>
-
+                <StampCell
+                  iso={signatures.reviewed_at || (signatures.cm as any)?.signed_at}
+                  name={(signatures.cm as any)?.name}
+                />
+                <td className="text-center text-muted-foreground text-[10px]">—</td>
               </tr>
               <tr>
                 <th className="hd">담당자(안전)</th>
                 <td><SigCell k="safety_pic" /></td>
                 <th className="hd">담당자(SM)</th>
                 <td><SigCell k="sm" /></td>
+                <td className="text-center text-muted-foreground text-[10px]">—</td>
+                <StampCell
+                  iso={signatures.approved_at || (signatures.sm as any)?.signed_at}
+                  name={(signatures.sm as any)?.name}
+                />
               </tr>
               <tr>
                 <th className="hd">책임자(소장)</th>
                 <td><SigCell k="site_director" /></td>
                 <th className="hd"></th>
+                <td></td>
+                <td></td>
                 <td></td>
               </tr>
               <tr>
@@ -605,8 +611,13 @@ export default function DigPermitForm({
                 <th className="hd">승인자</th>
               </tr>
               <tr>
-                <td colSpan={6} className="text-right">
-                  <SigCell k="site_director" label="승인 서명" />
+                <td colSpan={5} className="text-right text-[10px] text-muted-foreground pr-2">
+                  {signatures.closed_at || (signatures.closure_approver as any)?.signed_at
+                    ? `종료 확인 ${formatPermitStamp(signatures.closed_at || (signatures.closure_approver as any)?.signed_at)}`
+                    : '작업 종료 후 발주처 SM 확인'}
+                </td>
+                <td className="text-right">
+                  <SigCell k="closure_approver" label="승인 서명" />
                 </td>
               </tr>
               <tr>
@@ -693,7 +704,7 @@ export default function DigPermitForm({
                 <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
                 <td><SigCell k="applicant" /></td>
               </tr>
-              <tr><th className="hd">승인자</th><td>{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : '년 월 일'} 성명 : {signatures.site_director?.name || ''}</td><td><SigCell k="site_director" /></td></tr>
+              <tr><th className="hd">승인자</th><td>{(signatures.closed_at || signatures.closure_approver?.signed_at) ? formatPermitStamp(signatures.closed_at || signatures.closure_approver?.signed_at) : '년 월 일 시 분'} 성명 : {signatures.closure_approver?.name || ''}</td><td><SigCell k="closure_approver" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 밀폐공간 작업시간은 1일 최대 8시간을 넘지 않도록 하며 연장근무 발생 시 작업허가 연장 승인 필요</div>
@@ -752,7 +763,7 @@ export default function DigPermitForm({
               <tr><td className="text-center">기준</td><td>18%이상~23.5%미만</td><td>10ppm미만 / 30ppm미만</td><td>0% / 1.5%미만</td></tr>
               <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
               <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
-              <tr><th className="hd">승인자</th><td colSpan={2}>{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : '년 월 일'} 성명 : {signatures.site_director?.name || ''}</td><td><SigCell k="site_director" /></td></tr>
+              <tr><th className="hd">승인자</th><td colSpan={2}>{(signatures.closed_at || signatures.closure_approver?.signed_at) ? formatPermitStamp(signatures.closed_at || signatures.closure_approver?.signed_at) : '년 월 일 시 분'} 성명 : {signatures.closure_approver?.name || ''}</td><td><SigCell k="closure_approver" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 연장근무 발생 시 작업허가 연장 승인 필요</div>
@@ -826,7 +837,7 @@ export default function DigPermitForm({
               </tr>
               <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
               <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
-              <tr><th className="hd">승인자</th><td colSpan={2}>{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : '년 월 일'} 성명 : {signatures.site_director?.name || ''}</td><td><SigCell k="site_director" /></td></tr>
+              <tr><th className="hd">승인자</th><td colSpan={2}>{(signatures.closed_at || signatures.closure_approver?.signed_at) ? formatPermitStamp(signatures.closed_at || signatures.closure_approver?.signed_at) : '년 월 일 시 분'} 성명 : {signatures.closure_approver?.name || ''}</td><td><SigCell k="closure_approver" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 지하매설물 손상 시 즉시 작업중지 후 관리주체에 통보. 깊이 1.5m 이상 굴착 시 흙막이/지보공 의무.</div>

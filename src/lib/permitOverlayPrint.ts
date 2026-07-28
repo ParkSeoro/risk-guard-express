@@ -34,7 +34,7 @@ function formatDate(iso: string | undefined, fmt?: string): string {
     HH: pad(d.getHours()),
     mm: pad(d.getMinutes()),
   };
-  const f = fmt || 'YYYY-MM-DD';
+  const f = fmt || 'YYYY. MM. DD. HH:mm';
   return f.replace(/YYYY|MM|DD|HH|mm/g, (k) => map[k] || k);
 }
 
@@ -229,7 +229,7 @@ function drawSignerAll(
   if (slot.render_position && signer.position) lines.push(signer.position);
   if (signer.name) lines.push(signer.name);
   if ((slot.render_date || slot.render_time) && signer.approvedAt) {
-    const fmt = slot.date_format || (slot.render_time ? 'YYYY-MM-DD HH:mm' : 'YYYY-MM-DD');
+    const fmt = slot.date_format || (slot.render_time ? 'YYYY. MM. DD. HH:mm' : 'YYYY. MM. DD. HH:mm');
     lines.push(formatDate(signer.approvedAt, fmt));
   }
   if (lines.length === 0) return;
@@ -250,7 +250,7 @@ function drawSignerMeta(
   if (slot.render_position && signer.position) lines.push(signer.position);
   if (slot.render_name && signer.name) lines.push(signer.name);
   if ((slot.render_date || slot.render_time) && signer.approvedAt) {
-    const fmt = slot.date_format || (slot.render_time ? 'YYYY-MM-DD HH:mm' : 'YYYY-MM-DD');
+    const fmt = slot.date_format || (slot.render_time ? 'YYYY. MM. DD. HH:mm' : 'YYYY. MM. DD. HH:mm');
     lines.push(formatDate(signer.approvedAt, fmt));
   }
   if (!lines.length) return;

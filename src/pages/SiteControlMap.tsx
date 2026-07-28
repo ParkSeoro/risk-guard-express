@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
   TileLayer,
-  ImageOverlay,
   Polygon,
   Circle,
   Marker,
@@ -20,21 +19,29 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
   Map, Upload, Save, Loader2, Layers, Satellite, Image as ImageIcon, ShieldAlert, Trash2,
+  RotateCcw, RotateCw, Move, ZoomIn, ZoomOut, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import LeafletDrawControl from "@/components/geofence/LeafletDrawControl";
+import RotatedImageOverlay from "@/components/geofence/RotatedImageOverlay";
 import {
-  anchorsToSwNe,
-  normalizeSwNe,
-  swNeToAnchorPayload,
-  swNeToLeafletBounds,
-  viewportCenterBounds,
-  type SwNeBounds,
+  bottomRight,
+  cornersCenter,
+  cornersToLeafletBounds,
+  cornersToPersistPayload,
+  loadCornersFromMap,
+  parseGeoTransform,
+  rotateCorners,
+  scaleCorners,
+  translateCorners,
+  viewportCenterCorners,
+  type GeoCorners,
 } from "@/lib/mapBounds";
 
 type SiteMap = {
@@ -46,6 +53,7 @@ type SiteMap = {
   geo_anchor_nw_lng: number | null;
   geo_anchor_se_lat: number | null;
   geo_anchor_se_lng: number | null;
+  geo_transform?: unknown;
 };
 
 type Zone = {
@@ -64,7 +72,7 @@ type LayerState = {
   zones: boolean;
 };
 
-function boundsMarkerIcon(label: string, color: string) {
+function cornerIcon(label: string, color: string) {
   return L.divIcon({
     className: "site-control-bounds-marker",
     html: `<div style="
@@ -85,10 +93,10 @@ function boundsMarkerIcon(label: string, color: string) {
   });
 }
 
-const SW_ICON = boundsMarkerIcon("SW · 남서", "#2563eb");
-const NE_ICON = boundsMarkerIcon("NE · 북동", "#dc2626");
+const TL_ICON = cornerIcon("TL · 좌상", "#2563eb");
+const TR_ICON = cornerIcon("TR · 우상", "#dc2626");
+const BL_ICON = cornerIcon("BL · 좌하", "#059669");
 
-// Neutralize leaflet-div-icon chrome around our custom HTML labels
 if (typeof document !== "undefined" && !document.getElementById("site-control-bounds-css")) {
   const style = document.createElement("style");
   style.id = "site-control-bounds-css";
@@ -98,7 +106,6 @@ if (typeof document !== "undefined" && !document.getElementById("site-control-bo
   document.head.appendChild(style);
 }
 
-/** Auto-zoom camera to image or zone extents — only when `token` changes (not while dragging). */
 function FitToTargets({
   imageBounds,
   zones,
@@ -140,15 +147,14 @@ function FitToTargets({
   return null;
 }
 
-/** Expose map instance + seed viewport bounds after drone upload. */
 function MapBridge({
   onMap,
   seedRequest,
-  onSeedBounds,
+  onSeedCorners,
 }: {
   onMap: (map: L.Map) => void;
   seedRequest: number;
-  onSeedBounds: (b: SwNeBounds) => void;
+  onSeedCorners: (c: GeoCorners) => void;
 }) {
   const map = useMap();
   useEffect(() => {
@@ -157,64 +163,80 @@ function MapBridge({
 
   useEffect(() => {
     if (!seedRequest) return;
-    onSeedBounds(viewportCenterBounds(map));
-  }, [seedRequest, map, onSeedBounds]);
+    onSeedCorners(viewportCenterCorners(map));
+  }, [seedRequest, map, onSeedCorners]);
 
   useMapEvents({});
   return null;
 }
 
-/** Draggable SW / NE markers → live ImageOverlay resize. */
-function VisualBoundsMarkers({
-  bounds,
+/** 3 draggable corners → live rotated/skewed overlay. */
+function VisualCornerMarkers({
+  corners,
   onChange,
   visible,
 }: {
-  bounds: SwNeBounds;
-  onChange: (b: SwNeBounds) => void;
+  corners: GeoCorners;
+  onChange: (c: GeoCorners) => void;
   visible: boolean;
 }) {
   if (!visible) return null;
+  const br = bottomRight(corners);
 
   return (
     <>
       <Polyline
         positions={[
-          [bounds.sw.lat, bounds.sw.lng],
-          [bounds.sw.lat, bounds.ne.lng],
-          [bounds.ne.lat, bounds.ne.lng],
-          [bounds.ne.lat, bounds.sw.lng],
-          [bounds.sw.lat, bounds.sw.lng],
+          [corners.tl.lat, corners.tl.lng],
+          [corners.tr.lat, corners.tr.lng],
+          [br.lat, br.lng],
+          [corners.bl.lat, corners.bl.lng],
+          [corners.tl.lat, corners.tl.lng],
         ]}
         pathOptions={{ color: "#38bdf8", weight: 1.5, dashArray: "4 4", opacity: 0.9 }}
       />
       <Marker
-        position={[bounds.sw.lat, bounds.sw.lng]}
+        position={[corners.tl.lat, corners.tl.lng]}
         draggable
-        icon={SW_ICON}
+        icon={TL_ICON}
         eventHandlers={{
           drag: (e) => {
             const ll = (e.target as L.Marker).getLatLng();
-            onChange(normalizeSwNe({ lat: ll.lat, lng: ll.lng }, bounds.ne));
+            onChange({ ...corners, tl: { lat: ll.lat, lng: ll.lng } });
           },
           dragend: (e) => {
             const ll = (e.target as L.Marker).getLatLng();
-            onChange(normalizeSwNe({ lat: ll.lat, lng: ll.lng }, bounds.ne));
+            onChange({ ...corners, tl: { lat: ll.lat, lng: ll.lng } });
           },
         }}
       />
       <Marker
-        position={[bounds.ne.lat, bounds.ne.lng]}
+        position={[corners.tr.lat, corners.tr.lng]}
         draggable
-        icon={NE_ICON}
+        icon={TR_ICON}
         eventHandlers={{
           drag: (e) => {
             const ll = (e.target as L.Marker).getLatLng();
-            onChange(normalizeSwNe(bounds.sw, { lat: ll.lat, lng: ll.lng }));
+            onChange({ ...corners, tr: { lat: ll.lat, lng: ll.lng } });
           },
           dragend: (e) => {
             const ll = (e.target as L.Marker).getLatLng();
-            onChange(normalizeSwNe(bounds.sw, { lat: ll.lat, lng: ll.lng }));
+            onChange({ ...corners, tr: { lat: ll.lat, lng: ll.lng } });
+          },
+        }}
+      />
+      <Marker
+        position={[corners.bl.lat, corners.bl.lng]}
+        draggable
+        icon={BL_ICON}
+        eventHandlers={{
+          drag: (e) => {
+            const ll = (e.target as L.Marker).getLatLng();
+            onChange({ ...corners, bl: { lat: ll.lat, lng: ll.lng } });
+          },
+          dragend: (e) => {
+            const ll = (e.target as L.Marker).getLatLng();
+            onChange({ ...corners, bl: { lat: ll.lat, lng: ll.lng } });
           },
         }}
       />
@@ -223,8 +245,7 @@ function VisualBoundsMarkers({
 }
 
 /**
- * 통합 현장 관제맵 — 위성 + 드론 오버레이 + 위험구역 (레이어 토글).
- * Visual georef: SW/NE 드래그 마커로 ImageOverlay bounds 실시간 조정.
+ * 통합 현장 관제맵 — 위성 + 회전 가능 드론 오버레이 + 위험구역.
  */
 export default function SiteControlMap() {
   const [projectId, setProjectId] = useState(() => localStorage.getItem("currentProjectId") || "");
@@ -238,7 +259,9 @@ export default function SiteControlMap() {
   const [uploading, setUploading] = useState(false);
   const [savingBounds, setSavingBounds] = useState(false);
 
-  const [draftBounds, setDraftBounds] = useState<SwNeBounds | null>(null);
+  const [draftCorners, setDraftCorners] = useState<GeoCorners | null>(null);
+  const [opacity, setOpacity] = useState(0.85);
+  const [rotateStep, setRotateStep] = useState(1); // degrees per click / slider nudge
   const [layers, setLayers] = useState<LayerState>({
     satellite: true,
     drone: true,
@@ -263,28 +286,30 @@ export default function SiteControlMap() {
     void loadZones();
   }, [projectId]);
 
-  // Sync draft bounds when switching maps
   useEffect(() => {
     if (!activeMap) {
-      setDraftBounds(null);
+      setDraftCorners(null);
       return;
     }
-    const existing = anchorsToSwNe(activeMap);
+    const existing = loadCornersFromMap(activeMap);
+    const tf = parseGeoTransform(activeMap.geo_transform);
+    if (tf?.opacity != null) setOpacity(tf.opacity);
     if (existing) {
-      setDraftBounds(existing);
+      setDraftCorners(existing);
       setFitToken(`map-${activeMap.id}-${Date.now()}`);
     } else if (activeMap.image_url) {
-      // No anchors yet → seed from current viewport once map is ready
       setSeedRequest((n) => n + 1);
     } else {
-      setDraftBounds(null);
+      setDraftCorners(null);
     }
   }, [activeMap?.id]);
 
   const loadMaps = async () => {
     const { data } = await supabase
       .from("site_maps")
-      .select("id,name,image_url,project_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng")
+      .select(
+        "id,name,image_url,project_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng,geo_transform",
+      )
       .eq("project_id", projectId)
       .eq("is_deleted", false)
       .order("created_at", { ascending: false });
@@ -309,16 +334,16 @@ export default function SiteControlMap() {
   };
 
   const leafletBounds = useMemo(
-    () => (draftBounds ? swNeToLeafletBounds(draftBounds) : null),
-    [draftBounds],
+    () => (draftCorners ? cornersToLeafletBounds(draftCorners) : null),
+    [draftCorners],
   );
 
   const onMapReady = useCallback((map: L.Map) => {
     mapRef.current = map;
   }, []);
 
-  const onSeedBounds = useCallback((b: SwNeBounds) => {
-    setDraftBounds(b);
+  const onSeedCorners = useCallback((c: GeoCorners) => {
+    setDraftCorners(c);
     setFitToken(`seed-${Date.now()}`);
   }, []);
 
@@ -348,32 +373,33 @@ export default function SiteControlMap() {
         image_url: pub.publicUrl,
         created_by: (await supabase.auth.getUser()).data.user?.id,
       } as any)
-      .select("id,name,image_url,project_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng")
+      .select(
+        "id,name,image_url,project_id,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng,geo_transform",
+      )
       .single();
     setUploading(false);
     if (error) {
       toast.error("맵 등록 실패: " + error.message);
       return;
     }
-    toast.success("드론 사진 업로드 완료 — SW/NE 마커를 드래그해 위치를 맞추세요");
+    toast.success("업로드 완료 — TL/TR/BL 마커·회전으로 위성에 맞춰 주세요");
     setLayers((l) => ({ ...l, drone: true }));
     setActiveMap(data as SiteMap);
-    // Seed markers at viewport center (MapBridge reacts to seedRequest)
     setSeedRequest((n) => n + 1);
     void loadMaps();
   };
 
   const saveBounds = async () => {
-    if (!activeMap || !draftBounds) return;
+    if (!activeMap || !draftCorners) return;
     setSavingBounds(true);
-    const payload = swNeToAnchorPayload(draftBounds);
-    const { error } = await supabase.from("site_maps").update(payload).eq("id", activeMap.id);
+    const payload = cornersToPersistPayload(draftCorners, opacity);
+    const { error } = await supabase.from("site_maps").update(payload as any).eq("id", activeMap.id);
     setSavingBounds(false);
     if (error) {
-      toast.error("Bounds 저장 실패: " + error.message);
+      toast.error("저장 실패: " + error.message + " (geo_transform 마이그레이션 적용 여부 확인)");
       return;
     }
-    toast.success("드론 사진 Bounds가 저장되었습니다");
+    toast.success("드론 오버레이(회전 포함)가 저장되었습니다");
     setActiveMap({ ...activeMap, ...payload });
     setFitToken(`saved-${Date.now()}`);
     void loadMaps();
@@ -428,11 +454,19 @@ export default function SiteControlMap() {
     void loadZones();
   };
 
-  const center: [number, number] = draftBounds
-    ? [
-        (draftBounds.sw.lat + draftBounds.ne.lat) / 2,
-        (draftBounds.sw.lng + draftBounds.ne.lng) / 2,
-      ]
+  const nudgeStep = useMemo(() => {
+    if (!draftCorners) return 0.00005;
+    const c = cornersCenter(draftCorners);
+    // ~ relative to overlay size
+    const dLat = Math.abs(draftCorners.tl.lat - draftCorners.bl.lat) || 0.001;
+    return Math.max(dLat * 0.02, 0.00002);
+  }, [draftCorners]);
+
+  const center: [number, number] = draftCorners
+    ? (() => {
+        const c = cornersCenter(draftCorners);
+        return [c.lat, c.lng] as [number, number];
+      })()
     : [37.5665, 126.978];
 
   return (
@@ -444,7 +478,7 @@ export default function SiteControlMap() {
             통합 현장 관제맵
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            위성 · 드론 오버레이 · 위험구역을 한 화면에서 제어합니다. SW/NE 마커를 드래그해 사진을 맞추세요.
+            TL/TR/BL 마커 드래그 · 회전 · 이동 · 확대/축소로 드론 사진을 위성에 세밀하게 맞춥니다.
           </p>
         </div>
         <Select value={projectId} onValueChange={setProjectId}>
@@ -459,7 +493,7 @@ export default function SiteControlMap() {
         </Select>
       </div>
 
-      <div className="grid lg:grid-cols-[300px_1fr] gap-4">
+      <div className="grid lg:grid-cols-[320px_1fr] gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">드론 · 위험구역</CardTitle>
@@ -495,19 +529,105 @@ export default function SiteControlMap() {
               />
             </label>
 
-            {draftBounds && activeMap?.image_url && (
-              <div className="rounded-md border bg-muted/40 p-2.5 space-y-2">
+            {draftCorners && activeMap?.image_url && (
+              <div className="rounded-md border bg-muted/40 p-2.5 space-y-3">
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  지도 위 <b>SW·NE 마커</b>를 드래그하면 드론 사진이 실시간으로 리사이즈됩니다.
-                  좌표 수동 입력은 없습니다.
+                  <b>TL·TR·BL</b> 마커를 드래그하면 회전·왜곡까지 반영됩니다.
+                  아래 버튼으로 미세 조정하세요.
                 </p>
-                <div className="grid grid-cols-2 gap-1 text-[10px] font-mono text-muted-foreground">
-                  <span>SW {draftBounds.sw.lat.toFixed(5)}, {draftBounds.sw.lng.toFixed(5)}</span>
-                  <span className="text-right">NE {draftBounds.ne.lat.toFixed(5)}, {draftBounds.ne.lng.toFixed(5)}</span>
+
+                {/* Rotation */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs flex items-center gap-1">
+                      <RotateCw className="h-3 w-3" /> 회전
+                    </Label>
+                    <span className="text-[10px] text-muted-foreground">±{rotateStep}°</span>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 h-8"
+                      onClick={() => setDraftCorners(rotateCorners(draftCorners, -rotateStep))}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5 mr-1" /> 반시계
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 h-8"
+                      onClick={() => setDraftCorners(rotateCorners(draftCorners, rotateStep))}
+                    >
+                      <RotateCw className="h-3.5 w-3.5 mr-1" /> 시계
+                    </Button>
+                  </div>
+                  <Slider
+                    value={[rotateStep]}
+                    min={0.25}
+                    max={15}
+                    step={0.25}
+                    onValueChange={(v) => setRotateStep(v[0] ?? 1)}
+                  />
+                  <p className="text-[10px] text-muted-foreground">슬라이더 = 1회 회전 각도 (정밀 0.25° ~ 거친 15°)</p>
                 </div>
+
+                {/* Nudge */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs flex items-center gap-1">
+                    <Move className="h-3 w-3" /> 미세 이동
+                  </Label>
+                  <div className="grid grid-cols-3 gap-1 w-28 mx-auto">
+                    <span />
+                    <Button type="button" size="icon" variant="outline" className="h-8 w-8"
+                      onClick={() => setDraftCorners(translateCorners(draftCorners, nudgeStep, 0))}>
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </Button>
+                    <span />
+                    <Button type="button" size="icon" variant="outline" className="h-8 w-8"
+                      onClick={() => setDraftCorners(translateCorners(draftCorners, 0, -nudgeStep))}>
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button type="button" size="icon" variant="outline" className="h-8 w-8"
+                      onClick={() => setDraftCorners(translateCorners(draftCorners, -nudgeStep, 0))}>
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button type="button" size="icon" variant="outline" className="h-8 w-8"
+                      onClick={() => setDraftCorners(translateCorners(draftCorners, 0, nudgeStep))}>
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Scale */}
+                <div className="flex gap-1">
+                  <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
+                    onClick={() => setDraftCorners(scaleCorners(draftCorners, 0.97))}>
+                    <ZoomOut className="h-3.5 w-3.5 mr-1" /> 축소
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
+                    onClick={() => setDraftCorners(scaleCorners(draftCorners, 1.03))}>
+                    <ZoomIn className="h-3.5 w-3.5 mr-1" /> 확대
+                  </Button>
+                </div>
+
+                {/* Opacity */}
+                <div className="space-y-1">
+                  <Label className="text-xs">투명도 {Math.round(opacity * 100)}%</Label>
+                  <Slider
+                    value={[opacity]}
+                    min={0.2}
+                    max={1}
+                    step={0.05}
+                    onValueChange={(v) => setOpacity(v[0] ?? 0.85)}
+                  />
+                </div>
+
                 <Button className="w-full" size="sm" onClick={() => void saveBounds()} disabled={savingBounds}>
                   {savingBounds ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-                  Bounds 저장
+                  오버레이 저장 (회전 포함)
                 </Button>
               </div>
             )}
@@ -522,12 +642,9 @@ export default function SiteControlMap() {
                 {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
                 위험구역 저장
               </Button>
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                지도 좌측 상단 다각형 도구로 구역을 그린 뒤 저장하세요.
-              </p>
             </div>
 
-            <div className="text-xs text-muted-foreground space-y-1 max-h-48 overflow-auto">
+            <div className="text-xs text-muted-foreground space-y-1 max-h-40 overflow-auto">
               <div className="font-medium text-foreground">등록 구역 {zones.length}</div>
               {zones.map((z) => (
                 <div key={z.id} className="flex items-center justify-between gap-2 py-0.5">
@@ -555,7 +672,6 @@ export default function SiteControlMap() {
         <Card className="overflow-hidden">
           <CardContent className="p-0">
             <div className="h-[70vh] min-h-[420px] w-full relative z-0">
-              {/* Layer control — top right */}
               <div className="absolute top-3 right-3 z-[1000] w-52 rounded-lg border bg-background/95 shadow-md p-3 space-y-2.5 backdrop-blur-sm">
                 <div className="flex items-center gap-1.5 text-xs font-semibold">
                   <Layers className="h-3.5 w-3.5" /> 레이어
@@ -589,43 +705,33 @@ export default function SiteControlMap() {
                 </label>
               </div>
 
-              <MapContainer
-                center={center}
-                zoom={17}
-                className="h-full w-full"
-                scrollWheelZoom
-              >
+              <MapContainer center={center} zoom={17} className="h-full w-full" scrollWheelZoom>
                 {layers.satellite ? (
                   <TileLayer
-                    attribution='&copy; Esri'
+                    attribution="&copy; Esri"
                     url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
                   />
                 ) : (
                   <TileLayer
-                    attribution='&copy; OpenStreetMap'
+                    attribution="&copy; OpenStreetMap"
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
                 )}
 
-                <MapBridge
-                  onMap={onMapReady}
-                  seedRequest={seedRequest}
-                  onSeedBounds={onSeedBounds}
-                />
+                <MapBridge onMap={onMapReady} seedRequest={seedRequest} onSeedCorners={onSeedCorners} />
 
-                {layers.drone && activeMap?.image_url && leafletBounds && (
-                  <ImageOverlay
+                {layers.drone && activeMap?.image_url && draftCorners && (
+                  <RotatedImageOverlay
                     url={activeMap.image_url}
-                    bounds={leafletBounds}
-                    opacity={0.85}
-                    zIndex={200}
+                    corners={draftCorners}
+                    opacity={opacity}
                   />
                 )}
 
-                {layers.drone && draftBounds && activeMap?.image_url && (
-                  <VisualBoundsMarkers
-                    bounds={draftBounds}
-                    onChange={setDraftBounds}
+                {layers.drone && draftCorners && activeMap?.image_url && (
+                  <VisualCornerMarkers
+                    corners={draftCorners}
+                    onChange={setDraftCorners}
                     visible
                   />
                 )}
@@ -670,9 +776,9 @@ export default function SiteControlMap() {
                   )}
               </MapContainer>
 
-              {activeMap?.image_url && !draftBounds && (
+              {activeMap?.image_url && !draftCorners && (
                 <div className="absolute inset-x-0 bottom-3 mx-auto max-w-md rounded-lg bg-background/95 border p-3 text-xs text-center shadow z-[500]">
-                  뷰포트 중앙에 SW/NE 마커를 배치하는 중…
+                  뷰포트 중앙에 TL/TR/BL 마커를 배치하는 중…
                 </div>
               )}
             </div>

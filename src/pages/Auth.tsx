@@ -21,14 +21,14 @@ import { koreanName, zodErrorMessage } from '@/lib/commonSchemas';
 import {
   formatPhoneMask,
   phoneToWorkerEmail,
+  signInWorkerWithPhone,
   workerPhoneSchema,
   workerPinSchema,
 } from '@/lib/workerAuth';
 
 type Mode = 'login' | 'signup';
-type SignupAudience = 'worker' | 'manager';
+type Audience = 'worker' | 'manager';
 type SignupMethod = 'directory' | 'invite';
-type LoginMethod = 'phone' | 'email';
 
 interface InvitePreview {
   project_name: string;
@@ -66,9 +66,9 @@ const Auth = () => {
   const inviteParam = searchParams.get('invite') || '';
 
   const [mode, setMode] = useState<Mode>(() => modeFromPath(location.pathname, !!inviteParam));
-  const [signupAudience, setSignupAudience] = useState<SignupAudience>('worker');
+  const [signupAudience, setSignupAudience] = useState<Audience>('worker');
+  const [loginAudience, setLoginAudience] = useState<Audience>('worker');
   const [signupMethod, setSignupMethod] = useState<SignupMethod>('directory');
-  const [loginMethod, setLoginMethod] = useState<LoginMethod>('phone');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -194,28 +194,16 @@ const Auth = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      if (loginMethod === 'phone') {
-        const phoneParsed = workerPhoneSchema.safeParse(phone);
-        const pinParsed = workerPinSchema.safeParse(pin);
-        if (!phoneParsed.success) {
-          toast({ title: zodErrorMessage(phoneParsed.error), variant: 'destructive' });
-          return;
-        }
-        if (!pinParsed.success) {
-          toast({ title: zodErrorMessage(pinParsed.error), variant: 'destructive' });
-          return;
-        }
-        const dummyEmail = phoneToWorkerEmail(phoneParsed.data);
-        const { error } = await supabase.auth.signInWithPassword({
-          email: dummyEmail,
-          password: pinParsed.data,
-        });
+      // 근로자: 전화번호 → 가상 이메일 랩핑 후 signIn
+      if (loginAudience === 'worker') {
+        const { error } = await signInWorkerWithPhone(phone, pin);
         if (error) {
           toast({ title: '로그인 실패', description: error.message, variant: 'destructive' });
         }
         return;
       }
 
+      // 관리자: 표준 이메일/비밀번호
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) toast({ title: '로그인 실패', description: error.message, variant: 'destructive' });
     } finally {
@@ -296,7 +284,7 @@ const Auth = () => {
         description: '전화번호와 PIN으로 로그인하세요. 관리자 승인 후 이용 가능합니다.',
       });
       setMode('login');
-      setLoginMethod('phone');
+      setLoginAudience('worker');
       setPin('');
     } finally {
       setLoading(false);
@@ -368,7 +356,7 @@ const Auth = () => {
 
       toast({ title: '회원가입 완료', description: '이메일을 확인해주세요. 관리자 승인 후 이용 가능합니다.' });
       setMode('login');
-      setLoginMethod('email');
+      setLoginAudience('manager');
     } finally {
       setLoading(false);
     }
@@ -441,24 +429,30 @@ const Auth = () => {
           )}
 
           {mode === 'login' && (
-            <div className="flex gap-1 rounded-lg border p-1 bg-muted/30 mb-4">
+            <div className="grid grid-cols-2 gap-2 mb-4">
               <button
                 type="button"
-                onClick={() => setLoginMethod('phone')}
-                className={`flex-1 text-xs py-2 rounded-md transition ${
-                  loginMethod === 'phone' ? 'bg-background shadow font-medium' : 'text-muted-foreground'
+                onClick={() => setLoginAudience('worker')}
+                className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
+                  loginAudience === 'worker'
+                    ? 'border-primary bg-primary/10 text-foreground shadow-sm'
+                    : 'border-border bg-muted/20 text-muted-foreground'
                 }`}
               >
-                전화번호 로그인
+                <span className="block text-lg leading-none mb-1">👷</span>
+                근로자 로그인
               </button>
               <button
                 type="button"
-                onClick={() => setLoginMethod('email')}
-                className={`flex-1 text-xs py-2 rounded-md transition ${
-                  loginMethod === 'email' ? 'bg-background shadow font-medium' : 'text-muted-foreground'
+                onClick={() => setLoginAudience('manager')}
+                className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
+                  loginAudience === 'manager'
+                    ? 'border-primary bg-primary/10 text-foreground shadow-sm'
+                    : 'border-border bg-muted/20 text-muted-foreground'
                 }`}
               >
-                이메일 로그인
+                <span className="block text-lg leading-none mb-1">👔</span>
+                관리자 로그인
               </button>
             </div>
           )}
@@ -721,8 +715,8 @@ const Auth = () => {
               </>
             )}
 
-            {/* ── 로그인 ── */}
-            {mode === 'login' && loginMethod === 'phone' && (
+            {/* ── 근로자 로그인 (전화 → 가상 이메일) ── */}
+            {mode === 'login' && loginAudience === 'worker' && (
               <>
                 <div className="space-y-1.5">
                   <Label>전화번호</Label>
@@ -730,14 +724,15 @@ const Auth = () => {
                     className="h-12 text-lg tracking-wide"
                     value={phone}
                     onChange={(e) => setPhone(formatPhoneMask(e.target.value))}
-                    placeholder="010-1234-5678"
+                    placeholder="전화번호 (예: 01012345678)"
                     inputMode="numeric"
                     autoComplete="tel"
                     required
                   />
+                  <p className="text-[10px] text-muted-foreground">숫자만 입력됩니다. 로그인 시 자동으로 계정에 연결됩니다.</p>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>PIN 비밀번호</Label>
+                  <Label>PIN 비밀번호 (숫자 4~6자리)</Label>
                   <Input
                     className="h-12 text-lg tracking-[0.3em]"
                     type="password"
@@ -746,7 +741,7 @@ const Auth = () => {
                     maxLength={6}
                     value={pin}
                     onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    placeholder="••••"
+                    placeholder="숫자 PIN"
                     autoComplete="current-password"
                     required
                   />
@@ -754,7 +749,8 @@ const Auth = () => {
               </>
             )}
 
-            {mode === 'login' && loginMethod === 'email' && (
+            {/* ── 관리자 로그인 (이메일/비밀번호) ── */}
+            {mode === 'login' && loginAudience === 'manager' && (
               <>
                 <div className="space-y-1.5">
                   <Label>이메일</Label>
@@ -781,14 +777,18 @@ const Auth = () => {
             )}
 
             <Button type="submit" className="w-full h-12 text-base" disabled={loading}>
-              {loading ? '처리 중...' : mode === 'login' ? '로그인' : signupAudience === 'worker' ? '근로자 가입' : '관리자 가입'}
+              {loading
+                ? '처리 중...'
+                : mode === 'login'
+                  ? (loginAudience === 'worker' ? '근로자 로그인' : '관리자 로그인')
+                  : (signupAudience === 'worker' ? '근로자 가입' : '관리자 가입')}
             </Button>
           </form>
 
           <div className="mt-4 text-center text-sm space-y-1">
             {mode === 'login' && (
               <>
-                {loginMethod === 'email' && (
+                {loginAudience === 'manager' && (
                   <Link to="/forgot-password" className="text-accent hover:underline block w-full">
                     비밀번호를 잊으셨나요?
                   </Link>

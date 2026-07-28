@@ -1,11 +1,19 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { geminiChatFetch } from "../_shared/gemini.ts";
+import { geminiChatFetch, streamGeminiChatText, GeminiError } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+const sseHeaders = {
+  ...corsHeaders,
+  "Content-Type": "text/event-stream; charset=utf-8",
+  "Cache-Control": "no-cache, no-transform",
+  "Connection": "keep-alive",
+  "X-Content-Type-Options": "nosniff",
 };
 
 // ── Equipment normalization map ──
@@ -50,9 +58,6 @@ function normalizeEquipment(input: string): string {
   return input.trim();
 }
 
-// ── Format structured JSON into a Korean-readable paragraph ──
-// Used so downstream text consumers (preview, plain-text sections) never
-// see raw JSON like {"workPlan":...} or English keys.
 const KO_LABELS: Record<string, string> = {
   work_name: "작업명", work_date: "작업일시", work_location: "작업위치",
   work_content: "작업내용", supervisor: "현장감독자", workers_count: "투입인원",
@@ -66,6 +71,7 @@ const KO_LABELS: Record<string, string> = {
   first_aid: "응급처치", reporting_procedure: "보고체계",
   workPlan: "작업계획", workAreaName: "작업장소", workPathName: "운행경로",
 };
+
 function formatStructuredToKorean(_sectionKey: string, data: any): string {
   const render = (val: any): string => {
     if (val === null || val === undefined || val === "") return "";
@@ -92,20 +98,16 @@ function formatStructuredToKorean(_sectionKey: string, data: any): string {
   return render(data);
 }
 
-// ── RAG: fetch similar items from existing data (parallel, capped) ──
-// Keep this cheap — sequential multi-query RAG previously burned wall-clock
-// before the LLM call and contributed to WORKER_RESOURCE_LIMIT (HTTP 546).
 async function fetchRAGContext(
   adminClient: any,
   processName: string,
   equipment: string,
-  limit = 5
+  limit = 5,
 ): Promise<string> {
   const keywords = processName
     .split(/[\s,/·]+/)
     .filter((w: string) => w.length >= 2)
     .slice(0, 2);
-
   const primaryKw = keywords[0] || processName;
   const queries: PromiseLike<{ data: any[] | null }>[] = [];
 
@@ -160,40 +162,257 @@ async function fetchRAGContext(
 
   const lines = unique.map(
     (item: any, i: number) =>
-      `${i + 1}. 세부작업: ${item.sub_task || ""}, 위험요인: ${item.hazard || ""}, 발생상황: ${item.hazard_situation || ""}, 개선대책: ${item.improvement_measure || item.existing_measure || ""}`
+      `${i + 1}. 세부작업: ${item.sub_task || ""}, 위험요인: ${item.hazard || ""}, 발생상황: ${item.hazard_situation || ""}, 개선대책: ${item.improvement_measure || item.existing_measure || ""}`,
   );
-
   return `\n[참고 사례]\n${lines.join("\n")}`;
 }
 
-// ── Generate risk items using detail_level (no forced count) ──
-// Token budget is intentionally capped: Edge workers hit WORKER_RESOURCE_LIMIT
-// (~150s wall) when asking for 20~35 long items with max_tokens=8192.
-async function generateRiskAssessment(
+const HSE_SYSTEM_PROMPT = `/no_think
+너는 20년 경력의 대한민국 건설현장 최고 안전보건전문가(HSE)다.
+공정별 위험성평가를 작성할 때, 사용자가 나중에 불필요한 것을 지우더라도 **최대한 가혹하고 디테일하게 모든 잠재적 위험 요인을 도출**해야 한다.
+
+[절대 규칙]
+1. [위험발생상황]·[기존대책]·[개선대책]은 절대 빈칸(null, '-', '없음', '')으로 두지 말고 구체 시나리오와 실행 가능한 방안을 서술할 것.
+2. [위험도(가능성)]와 [심각도(중대성)]는 무조건 '하'로 주지 말 것. 추락·협착·감전·질식·붕괴·화재·중장비 충돌 등 치명 재해는 반드시 '상' 또는 '중'으로 엄격 평가.
+3. '추락 위험 있음' 같은 상투어 금지. 원인·상황·결과가 드러나는 구체 문장으로 작성.
+4. 개선대책은 본질안전(제거·대체) → 공학적(방호·격리·환기) → 관리적(작업허가·교육·표지) → PPE 순. PPE만 나열 금지.
+5. 법적근거는 산안법·산안기준규칙 조항 또는 KOSHA GUIDE 코드 등 실제 근거만.
+6. 출력은 오직 JSON. 코드펜스·설명문 금지. 100% 한국어 단정형(~함, ~할 것).`;
+
+type PhaseDef = {
+  id: string;
+  title: string;
+  focus: string;
+  targetCount: number;
+  includeAccidents?: boolean;
+};
+
+function buildPhases(detailLevel: "core" | "comprehensive"): PhaseDef[] {
+  // Client orchestrates one phase per HTTP request so each stays under ~150s.
+  if (detailLevel === "core") {
+    return [
+      {
+        id: "prep_main",
+        title: "준비·본작업",
+        focus: "작업허가·장비점검·본작업 중 추락·협착·붕괴·감전·충돌·유해물질 등 4M 치명 위험",
+        targetCount: 10,
+      },
+      {
+        id: "finish",
+        title: "마무리·비상",
+        focus: "철수·정리·잔여위험·비상조치·복구",
+        targetCount: 6,
+        includeAccidents: true,
+      },
+    ];
+  }
+  return [
+    {
+      id: "prep",
+      title: "작업 전 준비·반입",
+      focus: "사전조사·작업허가·장비반입·양중·지장물·환기측정·보호구·신호수·구역통제",
+      targetCount: 9,
+    },
+    {
+      id: "main",
+      title: "본 작업",
+      focus: "단계별 본작업·장비운용·인력교차·구조적 위험·환경·관리 미비",
+      targetCount: 12,
+    },
+    {
+      id: "finish",
+      title: "마무리·해체·비상",
+      focus: "해체·되메우기·잔재처리·점검·비상연락·대피",
+      targetCount: 8,
+      includeAccidents: true,
+    },
+  ];
+}
+
+function tryParse(s: string): any {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+/** Extract newly completed JSON objects from a growing `items` array buffer. */
+function extractCompletedObjects(buffer: string, alreadyEmitted: number): { objects: any[]; nextIndex: number } {
+  const cleaned = buffer.replace(/```json/gi, "").replace(/```/g, "");
+  const itemsKey = cleaned.search(/"items"\s*:/);
+  let arrStart = -1;
+  if (itemsKey >= 0) {
+    arrStart = cleaned.indexOf("[", itemsKey);
+  } else {
+    arrStart = cleaned.indexOf("[");
+  }
+  if (arrStart < 0) return { objects: [], nextIndex: alreadyEmitted };
+
+  const arrBody = cleaned.slice(arrStart + 1);
+  const objects: any[] = [];
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let objStart = -1;
+  let completed = 0;
+
+  for (let i = 0; i < arrBody.length; i++) {
+    const ch = arrBody[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      if (depth === 0) objStart = i;
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0 && objStart >= 0) {
+        completed++;
+        if (completed > alreadyEmitted) {
+          const rawObj = arrBody.slice(objStart, i + 1);
+          const parsed = tryParse(rawObj);
+          if (parsed && typeof parsed === "object") objects.push(parsed);
+        }
+        objStart = -1;
+      }
+    } else if (ch === "]" && depth === 0) {
+      break;
+    }
+  }
+  return { objects, nextIndex: alreadyEmitted + objects.length };
+}
+
+function extractAccidentCases(buffer: string): any[] {
+  const cleaned = buffer.replace(/```json/gi, "").replace(/```/g, "");
+  const m = cleaned.match(/"accident_cases"\s*:\s*(\[[\s\S]*?\])/);
+  if (!m) {
+    const m2 = cleaned.match(/"사고사례"\s*:\s*(\[[\s\S]*?\])/);
+    if (!m2) return [];
+    const arr = tryParse(m2[1]);
+    return Array.isArray(arr) ? arr : [];
+  }
+  const arr = tryParse(m[1]);
+  return Array.isArray(arr) ? arr : [];
+}
+
+function mapRawItem(item: any, processName: string): any | null {
+  const blank = (v: any) => {
+    const s = String(v ?? "").trim();
+    return !s || s === "-" || s === "없음" || s.toLowerCase() === "null";
+  };
+
+  const sub_task = String(item["세부작업"] || item.sub_task || "").trim();
+  const hazard = String(item["위험요인"] || item.hazard || "").trim();
+  let hazard_situation = String(item["발생상황"] || item.hazard_situation || "").trim();
+  let existing_measure = String(item["기존대책"] || item.existing_measure || "").trim();
+  let improvement_measure = String(item["개선대책"] || item.improvement_measure || "").trim();
+
+  if (!sub_task || !hazard) return null;
+
+  // Soft-fill blanks rather than dropping high-value hazards
+  if (blank(hazard_situation)) {
+    hazard_situation =
+      `${sub_task} 단계에서 관리·장비·환경 요인이 겹치며 '${hazard}'로 이어질 수 있음. 작업자 위치·동선·방호 상태를 특정해 서술할 것.`;
+  }
+  if (blank(existing_measure)) {
+    existing_measure =
+      "작업전 TBM 및 위험성 고지, 관리감독자 배치, 해당 공종 표준작업절차(SOP)에 따른 일상점검·보호구 착용";
+  }
+  if (blank(improvement_measure)) {
+    improvement_measure =
+      "위험원 제거·대체 우선 검토 → 방호장치·격리·환기 등 공학적 통제 → 작업허가·전담감시·교육 → 작업 적합 PPE 지급·착용 확인";
+  }
+
+  let likelihood = String(item["위험도"] || item.likelihood_grade || "중").trim();
+  let severity = String(item["심각도"] || item.severity_grade || "중").trim();
+  if (!["상", "중", "하"].includes(likelihood)) likelihood = "중";
+  if (!["상", "중", "하"].includes(severity)) severity = "중";
+
+  // Fatal keywords must not stay at 하
+  const fatalRe = /추락|협착|끼임|감전|질식|붕괴|도괴|화재|폭발|중장비|충돌|낙하|비래/;
+  if (fatalRe.test(hazard) || fatalRe.test(hazard_situation)) {
+    if (likelihood === "하") likelihood = "중";
+    if (severity === "하") severity = "상";
+  }
+
+  const ppeRaw = item["보호구"] ?? item.ppe ?? [];
+  const ppe = Array.isArray(ppeRaw) ? ppeRaw.map(String).filter(Boolean) : String(ppeRaw).split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+  const legalRaw = item["법적근거"] ?? item.legal_basis ?? "";
+  const legal_basis = Array.isArray(legalRaw)
+    ? legalRaw.map(String).filter(Boolean)
+    : String(legalRaw).trim()
+    ? [String(legalRaw).trim()]
+    : [];
+
+  return {
+    process: String(item["공정"] || item.process || processName),
+    sub_task,
+    hazard,
+    hazard_situation,
+    existing_measure,
+    improvement_measure,
+    likelihood_grade: likelihood,
+    severity_grade: severity,
+    improved_likelihood_grade: ["상", "중", "하"].includes(item["개선후위험도"] || item.improved_likelihood_grade)
+      ? (item["개선후위험도"] || item.improved_likelihood_grade)
+      : "하",
+    improved_severity_grade: ["상", "중", "하"].includes(item["개선후심각도"] || item.improved_severity_grade)
+      ? (item["개선후심각도"] || item.improved_severity_grade)
+      : "하",
+    ppe: ppe.length ? ppe : ["안전모", "안전화"],
+    legal_basis,
+  };
+}
+
+function mapAndDedupe(items: any[], processName: string, existingKeys: Set<string>): any[] {
+  const out: any[] = [];
+  for (const raw of items) {
+    const mapped = mapRawItem(raw, processName);
+    if (!mapped) continue;
+    const key = `${mapped.sub_task}|${mapped.hazard}`;
+    if (existingKeys.has(key)) continue;
+    existingKeys.add(key);
+    out.push(mapped);
+  }
+  return out;
+}
+
+function normalizeAccidents(raw: any[]): any[] {
+  return raw
+    .slice(0, 3)
+    .map((c: any) => ({
+      title: c.title || c["제목"] || c["사고명"] || "",
+      cause: c.cause || c["원인"] || c["발생원인"] || "",
+      result: c.result || c["결과"] || c["피해"] || "",
+    }))
+    .filter((c) => c.title || c.cause);
+}
+
+function sseEncode(encoder: TextEncoder, payload: Record<string, unknown>): Uint8Array {
+  return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+async function streamPhaseItems(
   processName: string,
   equipText: string,
   descText: string,
   locationText: string,
   envText: string,
-  detailLevel: 'core' | 'comprehensive',
   ragContext: string,
-): Promise<{ items: any[]; accident_cases: any[] }> {
-  const targetCount = detailLevel === 'core' ? 15 : 16;
-  const maxTokens = detailLevel === 'core' ? 3200 : 4000;
-
-  const systemPrompt = `/no_think
-당신은 건설현장 위험성평가 전문가다. 산안법·산안기준규칙·KOSHA GUIDE 기준으로 작성한다.
-[작성 규칙]
-1. 공종을 준비→본작업→마무리(필요 시 반입·양중) 등 3단계 이상으로 쪼갠 뒤 단계별 위험요인을 작성.
-2. 항목 수는 정확히 ${targetCount}개. 중복·상투어 금지. 각 문장은 짧게(위험요인·발생상황·대책 각 1문장).
-3. '추락 위험 있음' 금지. 원인·상황·결과가 드러나는 구체 시나리오.
-4. 개선대책: 본질안전→공학적→관리적→PPE 순. PPE만 나열 금지.
-5. 위험도 분포: 상 20~30% / 중 40~60% / 하 10~30%.
-6. 법적근거는 관련 조항·KOSHA 코드만. 출력은 JSON 객체 하나뿐. 한국어 단정형.`;
-
-  const levelInstruction = detailLevel === 'core'
-    ? `[요청 수준: 핵심] 중대재해 가능성이 높은 항목 ${targetCount}개.`
-    : `[요청 수준: 상세] 단계별·4M 관점으로 ${targetCount}개. 문장은 짧게 유지.`;
+  phase: PhaseDef,
+  onDeltaItem: (raw: any) => void,
+): Promise<{ rawItems: any[]; accidents: any[] }> {
+  const accidentClause = phase.includeAccidents
+    ? `\n또한 accident_cases에 관련 치명 사고사례를 정확히 2~3개(title/cause/result) 짧게 포함.`
+    : `\naccident_cases는 빈 배열 [].`;
 
   const userPrompt = `[입력]
 공종: ${processName}
@@ -203,139 +422,81 @@ async function generateRiskAssessment(
 작업조건/환경: ${envText}
 ${ragContext}
 
-${levelInstruction}
+[이번 배치 — ${phase.title}]
+초점: ${phase.focus}
+items를 최소 ${phase.targetCount}개 이상, 가능하면 ${phase.targetCount + 2}개까지 과하게라도 디테일하게 도출.
+각 항목의 발생상황·기존대책·개선대책은 2문장 수준으로 구체 서술. 빈칸 금지.
+치명 재해(추락·협착·감전·질식·붕괴 등)는 위험도/심각도를 상 또는 중으로.
+${accidentClause}
 
 [출력 JSON]
-{"items":[{"공정":"${processName}","세부작업":"","위험요인":"","발생상황":"","기존대책":"","개선대책":"","위험도":"중","심각도":"중","개선후위험도":"하","개선후심각도":"하","보호구":["안전모"],"법적근거":""}],"accident_cases":[{"title":"","cause":"","result":""}]}
-※ items 정확히 ${targetCount}개, accident_cases 2개. 완결된 JSON만.`;
+{"items":[{"공정":"${processName}","세부작업":"${phase.title} 관련 세부작업명","위험요인":"원인+결과 구체 문장","발생상황":"구체 시나리오","기존대책":"현재 통상 대책","개선대책":"본질안전→공학적→관리적→PPE","위험도":"상|중|하","심각도":"상|중|하","개선후위험도":"하","개선후심각도":"하","보호구":["안전모","안전화"],"법적근거":"산안기준규칙 제OO조 또는 KOSHA GUIDE"}],"accident_cases":[{"title":"","cause":"","result":""}]}`;
 
-  const response = await geminiChatFetch({
+  let buffer = "";
+  let emitted = 0;
+  const collected: any[] = [];
+
+  for await (const chunk of streamGeminiChatText({
     messages: [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: HSE_SYSTEM_PROMPT },
       { role: "user", content: userPrompt },
     ],
-    temperature: 0.3,
-    max_tokens: maxTokens,
+    temperature: 0.4,
+    max_tokens: 4000,
     response_format: { type: "json_object" },
-    compact: true,
-  });
-
-  if (!response.ok) {
-    const status = response.status;
-    const text = await response.text();
-    console.error(`[RiskGen] AI error:`, status, text);
-    if (status === 429) throw new Error("RATE_LIMIT");
-    if (status === 402) throw new Error("CREDITS_EXHAUSTED");
-    if (status === 403) throw new Error("INVALID_KEY");
-    throw new Error(`AI_ERROR_${status}`);
+    compact: true, // HSE prompt already embeds full rules
+  })) {
+    buffer += chunk;
+    const { objects, nextIndex } = extractCompletedObjects(buffer, emitted);
+    for (const obj of objects) {
+      collected.push(obj);
+      onDeltaItem(obj);
+    }
+    emitted = nextIndex;
   }
 
-  const result = await response.json();
-  const raw = result.choices?.[0]?.message?.content || "";
-  const content = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+  // Final parse pass for any remaining complete JSON
+  const finalParsed = tryParse(buffer.replace(/```json/gi, "").replace(/```/g, "").trim()) ||
+    (() => {
+      const m = buffer.match(/\{[\s\S]*\}/);
+      return m ? tryParse(m[0]) : null;
+    })();
 
-  const tryParse = (s: string): any => {
-    try { return JSON.parse(s); } catch { return null; }
-  };
-
-  let parsed = tryParse(content);
-  if (!parsed) {
-    const objMatch = content.match(/\{[\s\S]*\}/);
-    if (objMatch) parsed = tryParse(objMatch[0]);
-  }
-  if (!parsed) {
-    const arrMatch = content.match(/\[[\s\S]*\]/);
-    if (arrMatch) {
-      const arr = tryParse(arrMatch[0]);
-      if (Array.isArray(arr)) return { items: arr, accident_cases: [] };
+  if (finalParsed?.items && Array.isArray(finalParsed.items)) {
+    for (let i = emitted; i < finalParsed.items.length; i++) {
+      collected.push(finalParsed.items[i]);
+      onDeltaItem(finalParsed.items[i]);
     }
   }
 
-  if (Array.isArray(parsed)) {
-    return { items: parsed, accident_cases: [] };
-  }
+  const accidents = phase.includeAccidents
+    ? normalizeAccidents(
+      Array.isArray(finalParsed?.accident_cases)
+        ? finalParsed.accident_cases
+        : extractAccidentCases(buffer),
+    )
+    : [];
 
-  if (parsed && typeof parsed === "object") {
-    const items = Array.isArray(parsed.items)
-      ? parsed.items
-      : (Array.isArray(parsed["위험요인목록"]) ? parsed["위험요인목록"] : []);
-    let accident_cases = Array.isArray(parsed.accident_cases)
-      ? parsed.accident_cases
-      : (Array.isArray(parsed["사고사례"]) ? parsed["사고사례"] : []);
-    // Normalize accident case keys (KO/EN)
-    accident_cases = accident_cases.slice(0, 3).map((c: any) => ({
-      title: c.title || c["제목"] || c["사고명"] || "",
-      cause: c.cause || c["원인"] || c["발생원인"] || "",
-      result: c.result || c["결과"] || c["피해"] || "",
-    })).filter((c: any) => c.title || c.cause);
-    if (accident_cases.length > 3) accident_cases = accident_cases.slice(0, 3);
-    if (items.length > 0) return { items, accident_cases };
-
-    // Repair truncated items array inside object
-    const itemsStart = content.indexOf('"items"');
-    if (itemsStart >= 0) {
-      const fromItems = content.slice(itemsStart);
-      const bracket = fromItems.indexOf("[");
-      if (bracket >= 0) {
-        const tail = fromItems.slice(bracket);
-        const lastObjEnd = tail.lastIndexOf("},");
-        if (lastObjEnd > 0) {
-          const repaired = tail.slice(0, lastObjEnd + 1) + "]";
-          const repairedArr = tryParse(repaired);
-          if (Array.isArray(repairedArr) && repairedArr.length > 0) {
-            console.warn(`[RiskGen] Repaired truncated items (${repairedArr.length})`);
-            return { items: repairedArr, accident_cases };
-          }
-        }
-      }
-    }
-  }
-
-  console.error(`[RiskGen] JSON parse failed. Head:`, content.slice(0, 300));
-  return { items: [], accident_cases: [] };
-}
-
-function mapAndDedupe(items: any[], processName: string, existingKeys: Set<string>): any[] {
-  const mapped = items.map((item: any) => ({
-    process: item["공정"] || processName,
-    sub_task: item["세부작업"] || "",
-    hazard: item["위험요인"] || "",
-    hazard_situation: item["발생상황"] || "",
-    existing_measure: item["기존대책"] || "",
-    improvement_measure: item["개선대책"] || "",
-    likelihood_grade: item["위험도"] || "중",
-    severity_grade: item["심각도"] || "중",
-    improved_likelihood_grade: item["개선후위험도"] || "하",
-    improved_severity_grade: item["개선후심각도"] || "하",
-    ppe: item["보호구"] || [],
-    legal_basis: item["법적근거"] ? [item["법적근거"]] : [],
-  }));
-
-  return mapped.filter((item: any) => {
-    if (!item.sub_task || !item.hazard) return false;
-    const key = `${item.sub_task}|${item.hazard}`;
-    if (existingKeys.has(key)) return false;
-    existingKeys.add(key);
-    return true;
-  });
+  return { rawItems: collected.length ? collected : (finalParsed?.items || []), accidents };
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS")
+  if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
 
   try {
-    // GEMINI_API_KEY is read inside callGeminiChat helper; no local cache needed.
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const adminClient = createClient(supabaseUrl, supabaseKey);
 
-    // Auth: allow service-role (internal orchestrator) OR validate user JWT
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+      });
     }
     const token = authHeader.slice(7);
     const isInternal = token === supabaseKey;
@@ -343,8 +504,10 @@ serve(async (req) => {
       const userSb = createClient(supabaseUrl, anonKey);
       const { data: claims, error: claimErr } = await userSb.auth.getClaims(token);
       if (claimErr || !claims?.claims?.sub) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+        });
       }
     }
 
@@ -360,36 +523,50 @@ serve(async (req) => {
       work_environment,
       detail_level,
       project_id,
+      stream: streamFlag,
+      phase_id: phaseIdBody,
     } = body;
-    // detail_level: 'core' | 'comprehensive' — replaces the removed target_count.
-    const detailLevel: 'core' | 'comprehensive' =
-      detail_level === 'core' ? 'core' : 'comprehensive';
 
-    // Verify project membership for non-internal callers
+    const detailLevel: "core" | "comprehensive" =
+      detail_level === "core" ? "core" : "comprehensive";
+    const wantStream = streamFlag !== false; // default ON for risk mode
+    const allPhases = buildPhases(detailLevel);
+    const selectedPhases = phaseIdBody
+      ? allPhases.filter((p) => p.id === phaseIdBody)
+      : allPhases;
+    if (phaseIdBody && selectedPhases.length === 0) {
+      return new Response(JSON.stringify({ error: `Unknown phase_id: ${phaseIdBody}` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+      });
+    }
+
     if (!isInternal && project_id) {
-      const userSb = createClient(supabaseUrl, anonKey,
-        { global: { headers: { Authorization: authHeader } } });
-      const { data: isMember } = await userSb.rpc('is_project_member', {
-        _user_id: (await userSb.auth.getClaims(token)).data!.claims.sub,
+      const userSb = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: claimsData } = await userSb.auth.getClaims(token);
+      const { data: isMember } = await userSb.rpc("is_project_member", {
+        _user_id: claimsData!.claims.sub,
         _project_id: project_id,
       });
       if (!isMember) {
-        return new Response(JSON.stringify({ error: 'Forbidden' }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+        });
       }
     }
+
     if (!process_name) {
-      return new Response(
-        JSON.stringify({ error: "공종명이 필요합니다." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "공종명이 필요합니다." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+      });
     }
 
-
-    // ============ Work Plan Section Mode ============
+    // ============ Work Plan Section Mode (non-stream JSON) ============
     if (mode === "work_plan_section") {
-      console.log("[WorkPlan AI] Section mode:", section_key, section_title);
-
       const sectionPrompts: Record<string, string> = {
         overview: `다음 공종에 대한 작업 개요를 JSON으로 작성해라:\n공종: ${process_name}\n출력 형식: {"work_name":"","work_date":"","work_location":"","work_content":"상세 작업내용","supervisor":"","workers_count":""}`,
         method: `다음 공종의 작업 절차를 단계별로 JSON 배열로 작성해라:\n공종: ${process_name}\n각 단계에 안전조치를 반드시 포함해라.\n출력 형식: [{"order":1,"description":"작업단계","safety_measure":"안전조치"}]\n최소 5단계 이상 작성.`,
@@ -403,7 +580,8 @@ serve(async (req) => {
         sectionPrompts[section_key || ""] ||
         `다음 공종의 "${section_title}" 내용을 전문적으로 작성해라:\n공종: ${process_name}\nJSON으로 출력 불가 시 텍스트로 작성.`;
 
-      const sysPrompt = `너는 대한민국 건설현장 20년 경력의 안전관리 전문가다.\n산업안전보건법, KOSHA GUIDE 기준으로 실제 현장에서 사용 가능한 수준의 작업계획서를 작성한다.\n반드시 요청된 JSON 형식으로만 출력하라.`;
+      const sysPrompt =
+        `너는 대한민국 건설현장 20년 경력의 안전관리 전문가다.\n산업안전보건법, KOSHA GUIDE 기준으로 실제 현장에서 사용 가능한 수준의 작업계획서를 작성한다.\n반드시 요청된 JSON 형식으로만 출력하라.`;
 
       const response = await geminiChatFetch({
         messages: [
@@ -413,39 +591,47 @@ serve(async (req) => {
         temperature: 0.3,
       });
 
-
       if (!response.ok) {
         const status = response.status;
         const text = await response.text();
-        console.error("[WorkPlan AI] Gateway error:", status, text);
-        if (status === 429) return new Response(JSON.stringify({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        if (status === 402) return new Response(JSON.stringify({ error: "AI 크레딧이 부족합니다." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        return new Response(JSON.stringify({ error: "AI 생성 오류", detail: text }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (status === 429) {
+          return new Response(JSON.stringify({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }), {
+            status: 429,
+            headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+          });
+        }
+        if (status === 402) {
+          return new Response(JSON.stringify({ error: "AI 크레딧이 부족합니다." }), {
+            status: 402,
+            headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+          });
+        }
+        return new Response(JSON.stringify({ error: "AI 생성 오류", detail: text }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+        });
       }
 
       const result = await response.json();
       const rawContent = result.choices?.[0]?.message?.content || "";
-      // Defensive: strip any residual ```json fences.
       const content = rawContent.replace(/```json/gi, "").replace(/```/g, "").trim();
 
       try {
         const jsonMatch = content.match(/[\[{][\s\S]*[\]}]/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
-          // Also produce a Korean-readable text form for preview/plain-text consumers.
           const koreanText = formatStructuredToKorean(section_key || "", parsed);
           return new Response(JSON.stringify({ structured: parsed, content: koreanText }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
           });
         }
       } catch {
         console.log("[WorkPlan AI] JSON parse failed, returning as text");
       }
 
-      return new Response(
-        JSON.stringify({ content }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ content }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+      });
     }
 
     // ============ Risk Assessment Mode ============
@@ -458,9 +644,8 @@ serve(async (req) => {
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
 
-    // ── Cache check (keyed by inputs + detail level + prompt version) ──
-    // v3: lighter prompt / capped item count (avoids WORKER_RESOURCE_LIMIT)
-    const cacheKey = `v3|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
+    // v4: rich HSE prompt + multi-phase streaming
+    const cacheKey = `v4|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
       .toLowerCase()
       .trim();
 
@@ -471,108 +656,228 @@ serve(async (req) => {
       .maybeSingle();
 
     const cachedItems = (cached?.generated_items as any[]) || [];
-    const cachedAccidents = Array.isArray((cached as any)?.accident_cases)
-      ? (cached as any).accident_cases
-      : [];
-    const cacheMin = detailLevel === 'core' ? 12 : 15;
-    if (cached && Array.isArray(cachedItems) && cachedItems.length >= cacheMin) {
-      console.log(`[AI Engine] Cache hit: ${cachedItems.length} items (detail=${detailLevel})`);
-      await adminClient
-        .from("ai_risk_cache")
-        .update({ hit_count: (cached.hit_count || 0) + 1 })
-        .eq("id", cached.id);
+    const cacheMin = detailLevel === "core" ? 15 : 20;
 
-      return new Response(
-        JSON.stringify({
-          items: cachedItems,
-          accident_cases: cachedAccidents.slice(0, 3),
+    const emitCachedOrGenerate = async (
+      send: (payload: Record<string, unknown>) => void,
+    ) => {
+      // Full-result cache only when generating all phases in one request
+      if (
+        !phaseIdBody &&
+        cached &&
+        Array.isArray(cachedItems) &&
+        cachedItems.length >= cacheMin
+      ) {
+        console.log(`[AI Engine] Cache hit (stream): ${cachedItems.length}`);
+        await adminClient
+          .from("ai_risk_cache")
+          .update({ hit_count: (cached.hit_count || 0) + 1 })
+          .eq("id", cached.id);
+
+        send({
+          type: "meta",
           source: "cache",
-          count: cachedItems.length,
           normalized_equipment: normalizedEquipment,
           detail_level: detailLevel,
+        });
+        for (const item of cachedItems) {
+          send({ type: "item", item });
+        }
+        send({
+          type: "done",
+          source: "cache",
+          count: cachedItems.length,
+          accident_cases: [],
           is_complete: true,
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+        });
+        return;
+      }
 
-    // ── RAG context (budgeted) ──
-    console.log("[AI Engine] Fetching RAG context...");
-    const ragContext = await fetchRAGContext(adminClient, process_name, equipText, 5);
-    console.log(`[AI Engine] RAG context: ${ragContext ? ragContext.split("\n").length - 1 : 0} items`);
+      const ragContext = await fetchRAGContext(adminClient, process_name, equipText, 5);
+      const phases = selectedPhases;
+      const existingKeys = new Set<string>();
+      const allMapped: any[] = [];
+      const allAccidents: any[] = [];
 
-    console.log(`[AI Engine] Generating risk assessment (detail=${detailLevel})`);
-    const generated = await generateRiskAssessment(
-      process_name,
-      equipText,
-      descText,
-      locationText,
-      envText,
-      detailLevel,
-      ragContext,
-    );
+      send({
+        type: "meta",
+        source: "ai",
+        normalized_equipment: normalizedEquipment,
+        detail_level: detailLevel,
+        phases: phases.map((p) => p.id),
+        phase_mode: phaseIdBody ? "single" : "all",
+      });
 
-    const existingKeys = new Set<string>();
-    const deduped = mapAndDedupe(generated.items || [], process_name, existingKeys);
-    const accidentCases = (generated.accident_cases || []).slice(0, 3);
+      for (const phase of phases) {
+        send({ type: "phase", phase: phase.id, title: phase.title });
+        try {
+          const { rawItems, accidents } = await streamPhaseItems(
+            process_name,
+            equipText,
+            descText,
+            locationText,
+            envText,
+            ragContext,
+            phase,
+            (raw) => {
+              const mapped = mapAndDedupe([raw], process_name, existingKeys);
+              for (const item of mapped) {
+                allMapped.push(item);
+                send({ type: "item", item, phase: phase.id });
+              }
+            },
+          );
+          // Ensure any items not emitted mid-stream are still mapped
+          const leftover = mapAndDedupe(rawItems, process_name, existingKeys);
+          for (const item of leftover) {
+            allMapped.push(item);
+            send({ type: "item", item, phase: phase.id });
+          }
+          for (const a of accidents) {
+            allAccidents.push(a);
+            send({ type: "accident", accident: a });
+          }
+        } catch (phaseErr) {
+          console.error(`[AI Engine] phase ${phase.id} error:`, phaseErr);
+          if (phaseErr instanceof GeminiError) {
+            if (phaseErr.code === "RATE_LIMIT") throw new Error("RATE_LIMIT");
+            if (phaseErr.code === "QUOTA_EXHAUSTED") throw new Error("CREDITS_EXHAUSTED");
+            if (phaseErr.code === "INVALID_KEY") throw new Error("INVALID_KEY");
+          }
+          // Continue other phases if one fails mid-way — partial results still useful
+          send({
+            type: "phase_error",
+            phase: phase.id,
+            error: phaseErr instanceof Error ? phaseErr.message : String(phaseErr),
+          });
+        }
+      }
 
-    if (deduped.length === 0) {
-      return new Response(
-        JSON.stringify({
+      if (allMapped.length === 0) {
+        send({
+          type: "error",
           error: "AI가 유효한 위험성평가 항목을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.",
-          items: [],
-          count: 0,
-        }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
+        });
+        return;
+      }
+
+      // Only write full-run cache when all phases ran in this request
+      if (!phaseIdBody) {
+        const { error: cacheErr } = await adminClient.from("ai_risk_cache").upsert(
+          {
+            cache_key: cacheKey,
+            process_name,
+            equipment: equipText,
+            work_description: descText,
+            work_location: locationText,
+            work_environment: work_environment || [],
+            generated_items: allMapped,
+            hit_count: 0,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "cache_key" },
+        );
+        if (cacheErr) console.warn("[AI Engine] cache upsert skipped:", cacheErr.message);
+      }
+
+      send({
+        type: "done",
+        source: "ai",
+        count: allMapped.length,
+        accident_cases: allAccidents.slice(0, 3),
+        is_complete: true,
+        normalized_equipment: normalizedEquipment,
+        detail_level: detailLevel,
+        phase_id: phaseIdBody || null,
+      });
+    };
+
+    if (wantStream) {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          const send = (payload: Record<string, unknown>) => {
+            controller.enqueue(sseEncode(encoder, payload));
+          };
+          try {
+            // heartbeat so proxies keep the connection
+            controller.enqueue(encoder.encode(`: connected\n\n`));
+            await emitCachedOrGenerate(send);
+          } catch (e) {
+            console.error("generate-risk-ai stream error:", e);
+            const msg = e instanceof Error ? e.message : "Unknown error";
+            let error = msg;
+            if (msg === "RATE_LIMIT") error = "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
+            else if (msg === "CREDITS_EXHAUSTED") {
+              error = "AI 크레딧이 부족합니다. 워크스페이스 크레딧을 충전해주세요.";
+            } else if (msg === "INVALID_KEY") {
+              error = "AI API 키가 유효하지 않습니다. 마스터가 설정 > 시크릿에서 확인해야 합니다.";
+            }
+            try {
+              send({ type: "error", error });
+            } catch { /* controller may be closed */ }
+          } finally {
+            try {
+              controller.close();
+            } catch { /* ignore */ }
+          }
+        },
+      });
+
+      return new Response(stream, { headers: sseHeaders });
     }
 
-    // Cache write is best-effort — never fail the response because of it
-    const { error: cacheErr } = await adminClient.from("ai_risk_cache").upsert(
-      {
-        cache_key: cacheKey,
-        process_name,
-        equipment: equipText,
-        work_description: descText,
-        work_location: locationText,
-        work_environment: work_environment || [],
-        generated_items: deduped,
-        hit_count: 0,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "cache_key" }
-    );
-    if (cacheErr) {
-      console.warn("[AI Engine] cache upsert skipped:", cacheErr.message || cacheErr);
-    }
+    // Non-stream JSON fallback (orchestrator / legacy)
+    const collectedItems: any[] = [];
+    const collectedAccidents: any[] = [];
+    let source = "ai";
+    await emitCachedOrGenerate((payload) => {
+      if (payload.type === "item" && payload.item) collectedItems.push(payload.item);
+      if (payload.type === "accident" && payload.accident) collectedAccidents.push(payload.accident);
+      if (payload.type === "done") source = String(payload.source || "ai");
+      if (payload.type === "error") throw new Error(String(payload.error));
+    });
 
     return new Response(
       JSON.stringify({
-        items: deduped,
-        accident_cases: accidentCases,
-        source: "ai",
-        count: deduped.length,
+        items: collectedItems,
+        accident_cases: collectedAccidents.slice(0, 3),
+        source,
+        count: collectedItems.length,
         normalized_equipment: normalizedEquipment,
         detail_level: detailLevel,
         is_complete: true,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
     );
   } catch (e) {
     console.error("generate-risk-ai error:", e);
     const msg = e instanceof Error ? e.message : "Unknown error";
     if (msg === "RATE_LIMIT") {
-      return new Response(JSON.stringify({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+      });
     }
     if (msg === "CREDITS_EXHAUSTED") {
-      return new Response(JSON.stringify({ error: "AI 크레딧이 부족합니다. 워크스페이스 크레딧을 충전해주세요." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({ error: "AI 크레딧이 부족합니다. 워크스페이스 크레딧을 충전해주세요." }),
+        { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+      );
     }
     if (msg === "INVALID_KEY") {
-      return new Response(JSON.stringify({ error: "AI API 키가 유효하지 않습니다. 마스터가 설정 > 시크릿에서 확인해야 합니다." }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({ error: "AI API 키가 유효하지 않습니다. 마스터가 설정 > 시크릿에서 확인해야 합니다." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+      );
     }
     return new Response(
-      JSON.stringify({ error: msg.startsWith("AI_ERROR_") ? "AI 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요." : msg }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({
+        error: msg.startsWith("AI_ERROR_")
+          ? "AI 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+          : msg,
+      }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
     );
   }
 });

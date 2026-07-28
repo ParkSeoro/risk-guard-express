@@ -17,6 +17,8 @@ const BodySchema = z.object({
   worker_qr_id: z.string().uuid().optional().nullable(),
   worker_name: z.string().max(120).optional().nullable(),
   worker_phone: z.string().max(40).optional().nullable(),
+  /** Optional role code for alarm honorific (master / project_admin / worker …) */
+  worker_role: z.string().max(64).optional().nullable(),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   accuracy_m: z.number().min(0).max(5000).optional().default(0),
@@ -28,6 +30,25 @@ const BodySchema = z.object({
   restricted_zone_id: z.string().uuid().optional().nullable(),
   force_restricted_check: z.boolean().optional().default(false),
 });
+
+function roleHonorific(role: string | null | undefined): string {
+  const r = String(role || "").trim().toLowerCase();
+  if (r === "admin" || r === "manager" || r === "master" || r === "project_admin") return "관리자님";
+  if (r === "safety_manager") return "안전관리자님";
+  if (r === "site_manager") return "현장소장님";
+  if (r === "supervisor") return "감리님";
+  if (r === "site_supervisor") return "관리감독자님";
+  if (r === "viewer") return "열람자";
+  if (r === "worker" || r === "contractor" || r === "user") return "근로자";
+  return "";
+}
+
+function notesWithRole(base: string | null | undefined, role: string | null | undefined): string | null {
+  const label = roleHonorific(role);
+  const cleaned = String(base || "").replace(/\s*\|?\s*role_label=[^\s|]*/g, "").trim();
+  if (!label) return cleaned || null;
+  return cleaned ? `${cleaned} | role_label=${label}` : `role_label=${label}`;
+}
 
 function pointInPolygon(lng: number, lat: number, poly: { lat: number; lng: number }[]) {
   if (!poly || poly.length < 3) return false;
@@ -285,6 +306,7 @@ Deno.serve(async (req) => {
         worker_phone: body.worker_phone ?? null,
         event_type: eventType,
         source,
+        notes: notesWithRole(null, body.worker_role),
         lat: body.lat,
         lng: body.lng,
         accuracy_m: body.accuracy_m,

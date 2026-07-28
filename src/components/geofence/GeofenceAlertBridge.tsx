@@ -19,6 +19,8 @@ type Subject = {
   worker_name?: string | null;
   worker_phone?: string | null;
   worker_qr_id?: string | null;
+  /** project_role / app role for alarm honorific */
+  worker_role?: string | null;
 };
 
 type Props = {
@@ -92,6 +94,7 @@ export default function GeofenceAlertBridge({ projectId, subject, autoStart }: P
           worker_qr_id: sub.worker_qr_id,
           worker_name: sub.worker_name,
           worker_phone: sub.worker_phone,
+          worker_role: sub.worker_role,
           lat,
           lng,
           accuracy_m: 10,
@@ -155,6 +158,7 @@ export default function GeofenceAlertBridge({ projectId, subject, autoStart }: P
       open={!!alertZone}
       zoneName={alertZone?.name}
       workerName={subject?.worker_name}
+      workerRole={subject?.worker_role}
       onDismiss={() => setAlertZone(null)}
     />
   );

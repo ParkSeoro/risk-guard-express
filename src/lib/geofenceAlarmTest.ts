@@ -1,21 +1,25 @@
 import { supabase } from "@/integrations/supabase/client";
-import { speakDangerAlert, DANGER_MESSAGE } from "@/lib/tts";
+import {
+  encodeRoleLabelInNotes,
+  formatAlarmSubject,
+  type AlarmRoleInput,
+} from "@/lib/alarmRoleLabel";
 
 /**
  * Master-only alarm simulator: skip GPS, force full alert cycle.
- * - Local: TTS + caller shows fullscreen modal
- * - Server: insert unauthorized_entry → trg_zone_event_notify → FCM push to safety managers
+ * - Local TTS/siren: caller opens DangerZoneAlertModal (single playback owner)
+ * - Server: insert unauthorized_entry → trg_zone_event_notify → FCM push
  */
 export async function simulateDangerZoneAlert(opts: {
   projectId: string;
   workerName?: string | null;
+  workerRole?: AlarmRoleInput;
   zoneName?: string | null;
 }): Promise<{ ok: boolean; error?: string; eventId?: string }> {
-  const displayName = opts.workerName?.trim() || "테스트 근로자(마스터)";
+  const displayName = opts.workerName?.trim() || "테스트 사용자";
+  const role = opts.workerRole || "master";
+  const subject = formatAlarmSubject(displayName, role);
   const zoneLabel = opts.zoneName?.trim() || "시뮬레이션 위험구역";
-
-  // Always fire local TTS immediately (user-gesture → speechSynthesis allowed)
-  speakDangerAlert(DANGER_MESSAGE);
 
   try {
     const { data, error } = await supabase
@@ -29,7 +33,7 @@ export async function simulateDangerZoneAlert(opts: {
         worker_qr_id: null,
         event_type: "unauthorized_entry",
         source: "alarm_sim",
-        notes: `[ALARM_SIM] ${zoneLabel}`,
+        notes: encodeRoleLabelInNotes(`[ALARM_SIM] ${zoneLabel}`, role),
         lat: null,
         lng: null,
       } as any)
@@ -37,7 +41,6 @@ export async function simulateDangerZoneAlert(opts: {
       .single();
 
     if (error) {
-      // Fallback: direct notification to current user so push path still demonstrable
       const { data: auth } = await supabase.auth.getUser();
       const uid = auth.user?.id;
       if (uid) {
@@ -45,9 +48,9 @@ export async function simulateDangerZoneAlert(opts: {
           user_id: uid,
           project_id: opts.projectId,
           type: "danger_zone_entry",
-          title: `🚨 긴급: ${displayName} 근로자 위험 구역 진입`,
-          message: `${displayName} 근로자가 ${zoneLabel}에 진입했습니다. (시뮬레이션)`,
-          body: `${displayName} 근로자가 ${zoneLabel}에 진입했습니다. (시뮬레이션)`,
+          title: `🚨 긴급: ${subject} 위험 구역 진입`,
+          message: `${subject}이(가) ${zoneLabel}에 진입했습니다. (시뮬레이션)`,
+          body: `${subject}이(가) ${zoneLabel}에 진입했습니다. (시뮬레이션)`,
           related_type: "zone_event",
           related_id: null,
           link: `/zone-events?project=${opts.projectId}`,

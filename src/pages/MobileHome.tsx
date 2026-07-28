@@ -20,7 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 // 모바일 통합 홈 — 로그인 사용자(관리자) / 비로그인(근로자 안내)
 export default function MobileHome() {
   const navigate = useNavigate();
-  const { user, profile, loading, hasRole } = useAuth();
+  const { user, profile, loading, hasRole, roles } = useAuth();
   const isMaster = hasRole('master');
   const role = detectRole(hasRole);
   const [unread, setUnread] = useState(0);
@@ -114,7 +114,20 @@ export default function MobileHome() {
   return (
     <div className="min-h-screen bg-muted/30 pb-24">
       {user && selectedProjectId && (
-        <GeofenceAlertBridge projectId={selectedProjectId} autoStart />
+        <GeofenceAlertBridge
+          projectId={selectedProjectId}
+          autoStart
+          subject={{
+            worker_name: profile?.display_name || null,
+            worker_phone: profile?.phone || null,
+            worker_role:
+              (roles || []).find((r) => r === "master") ||
+              (roles || []).find((r) =>
+                ["project_admin", "safety_manager", "site_manager", "supervisor", "site_supervisor", "worker"].includes(r),
+              ) ||
+              (isMaster ? "master" : "worker"),
+          }}
+        />
       )}
       <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
         <div className="h-10 w-10 rounded-lg bg-primary-foreground/10 flex items-center justify-center">

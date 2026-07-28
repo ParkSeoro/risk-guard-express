@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Users, Search, UserCheck, UserX, Shield, Plus, Building2, AlertCircle, Trash2, Crown } from 'lucide-react';
+import { Users, Search, UserCheck, UserX, Shield, Plus, Building2, AlertCircle, Trash2, Crown, KeyRound } from 'lucide-react';
 
 import {
   POSITION_LABELS as SSOT_POSITION_LABELS,
@@ -92,7 +92,11 @@ const UserManagement = () => {
   const [assignSaving, setAssignSaving] = useState(false);
   // Existing memberships for inline editing
   const [userMemberships, setUserMemberships] = useState<Record<string, any[]>>({});
-
+  // Master-only temporary password override
+  const [pwdResetUser, setPwdResetUser] = useState<UserWithRole | null>(null);
+  const [pwdNew, setPwdNew] = useState('');
+  const [pwdConfirm, setPwdConfirm] = useState('');
+  const [pwdSaving, setPwdSaving] = useState(false);
 
   const isMaster = hasRole('master');
   const canManagePermissions = isMaster || hasRole('project_admin');
@@ -164,6 +168,56 @@ const UserManagement = () => {
       toast({ title: '프로젝트 소속이 제거되었습니다.' });
       log('멤버십삭제', 'project_member', membershipId);
       fetchUsers();
+    }
+  };
+
+  const openPasswordReset = (u: UserWithRole) => {
+    setPwdResetUser(u);
+    setPwdNew('');
+    setPwdConfirm('');
+  };
+
+  const handleAdminPasswordReset = async () => {
+    if (!isMaster || !pwdResetUser) return;
+    if (pwdNew.length < 8) {
+      toast({ title: '비밀번호는 8자 이상이어야 합니다.', variant: 'destructive' });
+      return;
+    }
+    if (pwdNew !== pwdConfirm) {
+      toast({ title: '비밀번호 확인이 일치하지 않습니다.', variant: 'destructive' });
+      return;
+    }
+    setPwdSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+      const { data, error } = await supabase.functions.invoke('admin-reset-password', {
+        body: { user_id: pwdResetUser.user_id, new_password: pwdNew },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) {
+        const detail = (data as any)?.detail || (data as any).error;
+        throw new Error(typeof detail === 'string' ? detail : (data as any).error);
+      }
+      toast({
+        title: '임시 비밀번호가 설정되었습니다.',
+        description: `${pwdResetUser.display_name || '사용자'}의 비밀번호를 강제 변경했습니다.`,
+      });
+      await log('비밀번호강제초기화', 'auth_user', pwdResetUser.user_id, undefined, {
+        display_name: pwdResetUser.display_name,
+      });
+      setPwdResetUser(null);
+      setPwdNew('');
+      setPwdConfirm('');
+    } catch (e: any) {
+      toast({
+        title: '비밀번호 변경 실패',
+        description: e?.message ?? '알 수 없는 오류',
+        variant: 'destructive',
+      });
+    } finally {
+      setPwdSaving(false);
     }
   };
 
@@ -438,7 +492,7 @@ const UserManagement = () => {
                 <th className="text-center">상태</th>
                 <th className="text-center">전역 역할</th>
                 <th>프로젝트 소속</th>
-                <th className="text-center w-40">작업</th>
+                <th className="text-center w-52">작업</th>
               </tr>
             </thead>
             <tbody>
@@ -558,6 +612,17 @@ const UserManagement = () => {
                           <UserCheck className="h-3 w-3" /> 활성화
                         </Button>
                       )}
+                      {isMaster && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-xs gap-1"
+                          onClick={() => openPasswordReset(u)}
+                          title="마스터 전용: 임시 비밀번호 강제 설정"
+                        >
+                          <KeyRound className="h-3 w-3" /> 비밀번호 변경
+                        </Button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -675,6 +740,61 @@ const UserManagement = () => {
 
             <Button onClick={handleAssignMembership} className="w-full" disabled={!assignUserId || !assignProjectId || !assignRole || assignSaving}>
               {assignSaving ? '처리 중...' : '소속 부여'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Master-only temporary password override */}
+      <Dialog
+        open={!!pwdResetUser}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPwdResetUser(null);
+            setPwdNew('');
+            setPwdConfirm('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-4 w-4" />
+              임시 비밀번호 설정
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{pwdResetUser?.display_name || '사용자'}</span>
+              의 비밀번호를 마스터 권한으로 즉시 덮어씁니다. 기존 비밀번호 확인 없이 Admin API로 적용됩니다.
+            </p>
+            <div className="space-y-1">
+              <Label className="text-xs">새 임시 비밀번호</Label>
+              <Input
+                type="password"
+                value={pwdNew}
+                onChange={(e) => setPwdNew(e.target.value)}
+                minLength={8}
+                placeholder="8자 이상"
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">비밀번호 확인</Label>
+              <Input
+                type="password"
+                value={pwdConfirm}
+                onChange={(e) => setPwdConfirm(e.target.value)}
+                minLength={8}
+                autoComplete="new-password"
+              />
+            </div>
+            <Button
+              className="w-full"
+              disabled={pwdSaving || !pwdNew || !pwdConfirm}
+              onClick={handleAdminPasswordReset}
+            >
+              {pwdSaving ? '저장 중...' : '임시 비밀번호 저장'}
             </Button>
           </div>
         </DialogContent>

@@ -2,3 +2,7 @@ project_id = "iqtiozscqwuacgzrlfzu"
 
 [functions.setup-e2e-accounts]
 verify_jwt = false
+
+# Manual JWT verify + is_master RPC inside the function (service role Admin API).
+[functions.admin-reset-password]
+verify_jwt = false

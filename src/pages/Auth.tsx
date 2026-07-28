@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,7 @@ import {
 } from '@/lib/projectPositions';
 import { normalizeCompanyType } from '@/lib/companyTypes';
 
-type Mode = 'login' | 'signup' | 'forgot';
+type Mode = 'login' | 'signup';
 type SignupMethod = 'directory' | 'invite';
 
 interface InvitePreview {
@@ -227,20 +227,6 @@ const Auth = () => {
     }
   };
 
-  const handleForgot = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-    if (error) {
-      toast({ title: '오류', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: '비밀번호 재설정 이메일이 발송되었습니다.' });
-    }
-    setLoading(false);
-  };
-
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
       <Card className="w-full max-w-md">
@@ -251,13 +237,13 @@ const Auth = () => {
             </div>
           </div>
           <CardTitle className="text-xl">
-            {mode === 'login' ? '로그인' : mode === 'signup' ? '회원가입' : '비밀번호 재설정'}
+            {mode === 'login' ? '로그인' : '회원가입'}
           </CardTitle>
           <p className="text-sm font-semibold text-foreground">안전관리시스템</p>
           <p className="text-xs text-muted-foreground">Safety Management System</p>
         </CardHeader>
         <CardContent>
-          <form onSubmit={mode === 'login' ? handleLogin : mode === 'signup' ? handleSignup : handleForgot} className="space-y-4">
+          <form onSubmit={mode === 'login' ? handleLogin : handleSignup} className="space-y-4">
             {mode === 'signup' && (
               <>
                 <div className="space-y-1.5">
@@ -379,25 +365,29 @@ const Auth = () => {
               <Label>이메일</Label>
               <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="user@company.com" required />
             </div>
-            {mode !== 'forgot' && (
-              <div className="space-y-1.5">
-                <Label>비밀번호</Label>
-                <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required minLength={8} />
-              </div>
-            )}
+            <div className="space-y-1.5">
+              <Label>비밀번호</Label>
+              <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required minLength={8} />
+            </div>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? '처리 중...' : mode === 'login' ? '로그인' : mode === 'signup' ? '회원가입' : '재설정 링크 발송'}
+              {loading ? '처리 중...' : mode === 'login' ? '로그인' : '회원가입'}
             </Button>
           </form>
           <div className="mt-4 text-center text-sm space-y-1">
             {mode === 'login' && (
               <>
-                <button onClick={() => setMode('forgot')} className="text-accent hover:underline block w-full">비밀번호를 잊으셨나요?</button>
-                <button onClick={() => setMode('signup')} className="text-muted-foreground hover:underline block w-full">계정이 없으신가요? 회원가입</button>
+                <Link to="/forgot-password" className="text-accent hover:underline block w-full">
+                  비밀번호를 잊으셨나요?
+                </Link>
+                <button type="button" onClick={() => setMode('signup')} className="text-muted-foreground hover:underline block w-full">
+                  계정이 없으신가요? 회원가입
+                </button>
               </>
             )}
             {mode !== 'login' && (
-              <button onClick={() => setMode('login')} className="text-muted-foreground hover:underline">← 로그인으로 돌아가기</button>
+              <button type="button" onClick={() => setMode('login')} className="text-muted-foreground hover:underline">
+                ← 로그인으로 돌아가기
+              </button>
             )}
           </div>
          </CardContent>

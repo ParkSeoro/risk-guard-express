@@ -10,6 +10,8 @@ const FORCE_DESKTOP_KEY = "forceDesktopUI";
 const MOBILE_EXCLUDE = [
   /^\/m(\/|$)/,
   /^\/auth/,
+  /^\/forgot-password/,
+  /^\/update-password/,
   /^\/reset-password/,
   /^\/worker\//,
   /^\/tbm\//,

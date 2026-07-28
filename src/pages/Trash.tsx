@@ -48,7 +48,27 @@ const NAME_COLUMNS: Record<string, string[]> = {
   master_assignees: ['name'],
   master_departments: ['name'],
   master_ppe: ['name'],
+  projects: ['name', 'site_name'],
+  companies: ['name'],
+  site_maps: ['name'],
+  site_zones: ['name'],
+  restricted_zones: ['name'],
 };
+
+/** Tables that are soft-deleted but have no project_id column (or are not project-scoped). */
+const TABLES_WITHOUT_PROJECT_ID = new Set<SoftDeleteTable>([
+  'projects',
+  'master_processes',
+  'master_assignees',
+  'master_departments',
+  'master_ppe',
+]);
+
+function tableHasProjectId(table: SoftDeleteTable): boolean {
+  if (TABLES_WITHOUT_PROJECT_ID.has(table)) return false;
+  if (table.startsWith('master_')) return false;
+  return true;
+}
 
 function getLabel(table: SoftDeleteTable, row: DeletedRow): string {
   const cols = NAME_COLUMNS[table] || [];
@@ -71,11 +91,14 @@ export default function Trash() {
   const canAccess = isMaster || isProjectAdmin;
 
   const fetchDeleted = async (table: SoftDeleteTable) => {
-    if (!selectedProject) { setRows([]); return; }
+    const scoped = tableHasProjectId(table);
+    if (scoped && !selectedProject) {
+      setRows([]);
+      return;
+    }
     setBusy(true);
     let q: any = supabase.from(table).select('*').eq('is_deleted', true);
-    // master_* 테이블은 project_id 없음
-    if (!table.startsWith('master_')) {
+    if (scoped) {
       q = q.eq('project_id', selectedProject);
     }
     q = q.order('deleted_at', { ascending: false }).limit(200);
@@ -95,7 +118,7 @@ export default function Trash() {
 
   const handleRestore = async (row: DeletedRow) => {
     const r = await restore(activeTable, row.id, {
-      projectId: row.project_id ?? selectedProject,
+      projectId: row.project_id ?? (activeTable === 'projects' ? row.id : selectedProject),
       label: getLabel(activeTable, row),
     });
     if (r.ok) fetchDeleted(activeTable);
@@ -112,10 +135,16 @@ export default function Trash() {
       toast({ title: `영구 삭제 실패: ${error.message}`, variant: 'destructive' });
       return;
     }
-    await log('hard_delete', activeTable, row.id, row.project_id ?? selectedProject ?? undefined, {
-      label,
-      original_reason: row.deleted_reason,
-    });
+    await log(
+      'hard_delete',
+      activeTable,
+      row.id,
+      row.project_id ?? (activeTable === 'projects' ? row.id : selectedProject) ?? undefined,
+      {
+        label,
+        original_reason: row.deleted_reason,
+      },
+    );
     toast({ title: `${label} 영구 삭제됨` });
     fetchDeleted(activeTable);
   };

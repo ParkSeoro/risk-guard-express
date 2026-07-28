@@ -15,11 +15,16 @@ import {
   POSITION_LABELS as SSOT_POSITION_LABELS,
   APPROVAL_POLICY,
   buildDefaultSteps,
+  buildDefaultStepsForAuthor,
+  adaptStepsForAuthor,
   filterApproversForStep,
   sortStepsByHierarchy,
   validateStepsHierarchy,
+  stepLabelForAuthor,
   type ApprovalEntityType as SSOTApprovalEntityType,
 } from '@/lib/approvalRules';
+import { positionLabel } from '@/lib/projectPositions';
+import { normalizeCompanyType } from '@/lib/companyTypes';
 import {
   generatePermitAiBriefing,
   buildLocalPermitBriefing,
@@ -89,12 +94,25 @@ export default function SubmitApprovalDialog({
   const [steps, setSteps] = useState<Step[]>([]);
   const [reason, setReason] = useState('');
   const [saveAsDefault, setSaveAsDefault] = useState(false);
+  const [authorCompanyType, setAuthorCompanyType] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     (async () => {
       setLoading(true);
       try {
+        // Resolve author company type for dynamic filters / labels
+        let authorType: string | null = null;
+        if (submitterCompanyId) {
+          const { data: co } = await supabase
+            .from('companies')
+            .select('type')
+            .eq('id', submitterCompanyId)
+            .maybeSingle();
+          authorType = normalizeCompanyType(co?.type) || co?.type || null;
+        }
+        setAuthorCompanyType(authorType);
+
         const [{ data: ap, error: apErr }, { data: tpl }] = await Promise.all([
           supabase.rpc('get_eligible_approvers', {
             _project_id: projectId,
@@ -112,7 +130,6 @@ export default function SubmitApprovalDialog({
         setApprovers((ap as any) || []);
         setTemplates(tpl || []);
 
-        // 우선순위: 1) 본인 전용 기본 2) 본인 전용 3) 회사 기본 4) 회사 5) 프로젝트 기본 6) 첫 항목
         const list = (tpl || []) as any[];
         const uid = (await supabase.auth.getUser()).data.user?.id;
         const mine = list.filter((t) => t.owner_user_id === uid);
@@ -124,15 +141,11 @@ export default function SubmitApprovalDialog({
           shared.find((t) => t.is_default) || shared[0];
         if (def) {
           setSelectedTemplateId(def.id);
-          setSteps(sortStepsByHierarchy(normalizeSteps(def.steps)));
+          setSteps(sortStepsByHierarchy(adaptStepsForAuthor(normalizeSteps(def.steps), authorType)));
         } else {
           setSelectedTemplateId('');
-          // 전자결재 SSOT(approvalRules.ts)의 엔티티별 기본 결재선 사용
-          setSteps(sortStepsByHierarchy(buildDefaultSteps(entityType)));
+          setSteps(sortStepsByHierarchy(buildDefaultStepsForAuthor(entityType, authorType)));
         }
-
-
-
       } catch (e: any) {
         toast.error('결재선 정보를 불러오지 못했습니다: ' + (e.message || e));
       } finally {
@@ -156,13 +169,12 @@ export default function SubmitApprovalDialog({
   const onPickTemplate = (id: string) => {
     setSelectedTemplateId(id);
     const t = templates.find((x) => x.id === id);
-    if (t) setSteps(sortStepsByHierarchy(normalizeSteps(t.steps)));
+    if (t) setSteps(sortStepsByHierarchy(adaptStepsForAuthor(normalizeSteps(t.steps), authorCompanyType)));
   };
 
   const addStep = () =>
     setSteps((s) => sortStepsByHierarchy([...s, { label: '결재', position: '', user_id: '', user_name: '', company_id: null, company_name: '' }]));
   const removeStep = (i: number) => setSteps((s) => s.filter((_, idx) => idx !== i));
-  // 위계 자동 정렬 정책상 수동 이동 후에도 재정렬한다.
   const move = (i: number, dir: -1 | 1) => {
     setSteps((s) => {
       const next = [...s];
@@ -182,12 +194,19 @@ export default function SubmitApprovalDialog({
       user_name: a.out_display_name,
       company_id: a.out_company_id,
       company_name: a.out_company_name,
-      position: st.position || a.out_position,
+      // Keep SSOT step key — never overwrite with member position enum
     } : st));
   };
 
+  const filterCtx = useMemo(
+    () => ({
+      authorCompanyId: submitterCompanyId,
+      authorCompanyType,
+    }),
+    [submitterCompanyId, authorCompanyType],
+  );
+
   const sortedApprovers = useMemo(() => {
-    // 상위 회사 우선, 그 다음 직책
     const order = ['client', 'gc', 'contractor', 'master'];
     return [...approvers].sort((a, b) => {
       const oa = order.indexOf((a.out_company_type || '').toLowerCase());
@@ -196,6 +215,14 @@ export default function SubmitApprovalDialog({
       return (a.out_display_name || '').localeCompare(b.out_display_name || '');
     });
   }, [approvers]);
+
+  const anyStepMissingApprovers = useMemo(() => {
+    return steps.some((s) => {
+      if (!s.position) return true;
+      const filtered = filterApproversForStep(sortedApprovers as any, s.position, filterCtx);
+      return filtered.length === 0;
+    });
+  }, [steps, sortedApprovers, filterCtx]);
 
   const submit = async () => {
     if (steps.length === 0) return toast.error('결재선을 1단계 이상 지정하세요');
@@ -329,25 +356,42 @@ export default function SubmitApprovalDialog({
                     </Button>
                   </div>
                   {(() => {
-                    const filtered = s.position
-                      ? filterApproversForStep(sortedApprovers as any, s.position, {
-                          authorCompanyId: submitterCompanyId,
-                        })
-                      : sortedApprovers;
+                    const stepKey = s.position || '';
+                    const filtered = stepKey
+                      ? filterApproversForStep(sortedApprovers as any, stepKey, filterCtx)
+                      : [];
+                    const stepTitle = stepLabelForAuthor(stepKey, authorCompanyType)
+                      || POSITION_LABELS[stepKey]
+                      || stepKey
+                      || '직책 미지정';
+                    const empty = filtered.length === 0;
                     return (
-                      <Select value={s.user_id} onValueChange={(v) => setApprover(i, v)}>
+                      <Select
+                        value={s.user_id || undefined}
+                        onValueChange={(v) => setApprover(i, v)}
+                        disabled={empty || !stepKey}
+                      >
                         <SelectTrigger className="h-9">
-                          <SelectValue placeholder={`결재자 선택 · ${POSITION_LABELS[s.position] || s.position || '직책 미지정'}`} />
+                          <SelectValue
+                            placeholder={
+                              empty
+                                ? '해당 직책의 결재자가 등록되지 않았습니다.'
+                                : `결재자 선택 · ${stepTitle}`
+                            }
+                          />
                         </SelectTrigger>
                         <SelectContent>
-                          {filtered.length === 0 && (
+                          {empty && (
                             <div className="px-3 py-2 text-xs text-muted-foreground">
-                              해당 직책({POSITION_LABELS[s.position] || s.position || '-'})의 결재자가 없습니다
+                              해당 직책의 결재자가 등록되지 않았습니다.
                             </div>
                           )}
                           {filtered.map((a) => (
                             <SelectItem key={a.out_user_id} value={a.out_user_id}>
-                              {a.out_display_name || '(이름없음)'} · {a.out_company_name} · {POSITION_LABELS[a.out_position] || a.out_position || a.out_role}
+                              {a.out_display_name || '(이름없음)'} · {a.out_company_name}{' '}
+                              <Badge variant="outline" className="ml-1 text-[10px] align-middle">
+                                {positionLabel(a.out_position) || a.out_position || a.out_role || '-'}
+                              </Badge>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -372,7 +416,7 @@ export default function SubmitApprovalDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>취소</Button>
-          <Button onClick={submit} disabled={submitting || loading}>
+          <Button onClick={submit} disabled={submitting || loading || anyStepMissingApprovers || steps.some((s) => !s.user_id)}>
             {submitting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Send className="h-4 w-4 mr-1" />}
             결재 상신
           </Button>

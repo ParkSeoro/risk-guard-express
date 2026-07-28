@@ -179,9 +179,27 @@ const SiteWeather = () => {
         },
       });
 
-      if (error) throw error;
-      if (data?.error) {
-        setErrorMsg(data.error);
+      // Prefer JSON error body over generic FunctionsHttpError message
+      let detail = "";
+      if (data?.error) detail = typeof data.error === "string" ? data.error : data.error.message || "";
+      if (!detail && error) {
+        const ctx = (error as { context?: Response })?.context;
+        if (ctx && typeof ctx.json === "function") {
+          try {
+            const body = await ctx.clone().json();
+            detail = body?.error || body?.message || "";
+          } catch { /* ignore */ }
+        }
+        if (!detail) detail = error.message || "";
+      }
+      if (/non-2xx/i.test(detail)) {
+        detail = "날씨 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+      }
+      if (detail) {
+        setErrorMsg(detail);
+        if (!source) {
+          toast({ title: "날씨 데이터 로드 실패", description: detail, variant: "destructive" });
+        }
         return;
       }
 
@@ -194,8 +212,11 @@ const SiteWeather = () => {
     } catch (err: any) {
       console.error("Weather fetch error:", err);
       if (!source) {
-        setErrorMsg(err.message || "날씨 데이터 로드 실패");
-        toast({ title: "날씨 데이터 로드 실패", description: err.message, variant: "destructive" });
+        const msg = /non-2xx/i.test(err?.message || "")
+          ? "날씨 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+          : (err?.message || "날씨 데이터 로드 실패");
+        setErrorMsg(msg);
+        toast({ title: "날씨 데이터 로드 실패", description: msg, variant: "destructive" });
       }
     } finally {
       if (!source) setLoading(false);

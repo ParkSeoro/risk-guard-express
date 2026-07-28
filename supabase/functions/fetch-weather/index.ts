@@ -325,6 +325,130 @@ function parseKmaItems(items: any[]) {
   return { current, hourly, daily };
 }
 
+async function fetchOpenMeteo(lat: number, lng: number) {
+  // Free, no API key. Wind in m/s for construction safety thresholds.
+  const url =
+    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}` +
+    `&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m,wind_gusts_10m` +
+    `&hourly=temperature_2m,precipitation,weather_code,wind_speed_10m,relative_humidity_2m,precipitation_probability` +
+    `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,precipitation_probability_max` +
+    `&timezone=Asia%2FSeoul&forecast_days=5&wind_speed_unit=ms`;
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    console.error("Open-Meteo HTTP", res.status, await res.text());
+    return null;
+  }
+  const data = await res.json();
+  const cur = data.current;
+  if (!cur) return null;
+
+  const code = Number(cur.weather_code ?? 0);
+  const { main, description, icon } = mapWmoCode(code);
+  const rain1h = Number(cur.precipitation ?? 0);
+
+  const current = {
+    temp: Math.round(Number(cur.temperature_2m ?? 0)),
+    feels_like: Math.round(Number(cur.apparent_temperature ?? cur.temperature_2m ?? 0)),
+    humidity: Math.round(Number(cur.relative_humidity_2m ?? 0)),
+    wind_speed: Number(cur.wind_speed_10m ?? 0),
+    wind_deg: Number(cur.wind_direction_10m ?? 0),
+    wind_gust: Number(cur.wind_gusts_10m ?? 0),
+    description,
+    icon,
+    main,
+    rain_1h: rain1h,
+    snow_1h: code >= 71 && code <= 77 ? rain1h : 0,
+    visibility: 10000,
+    clouds: Math.round(Number(cur.cloud_cover ?? 0)),
+    pressure: Math.round(Number(cur.pressure_msl ?? 0)),
+    dt: Math.floor(new Date(cur.time).getTime() / 1000) || Math.floor(Date.now() / 1000),
+    city: "",
+    sunrise: 0,
+    sunset: 0,
+    lat,
+    lng,
+  };
+
+  const times: string[] = data.hourly?.time || [];
+  const hourly = times.slice(0, 24).map((t: string, i: number) => {
+    const hCode = Number(data.hourly.weather_code?.[i] ?? 0);
+    const mapped = mapWmoCode(hCode);
+    const precip = Number(data.hourly.precipitation?.[i] ?? 0);
+    return {
+      dt: Math.floor(new Date(t).getTime() / 1000),
+      temp: Math.round(Number(data.hourly.temperature_2m?.[i] ?? 0)),
+      feels_like: Math.round(Number(data.hourly.temperature_2m?.[i] ?? 0)),
+      humidity: Math.round(Number(data.hourly.relative_humidity_2m?.[i] ?? 0)),
+      wind_speed: Number(data.hourly.wind_speed_10m?.[i] ?? 0),
+      wind_gust: 0,
+      rain: precip,
+      snow: hCode >= 71 && hCode <= 77 ? precip : 0,
+      description: mapped.description,
+      icon: mapped.icon,
+      main: mapped.main,
+      pop: Number(data.hourly.precipitation_probability?.[i] ?? 0) / 100,
+    };
+  });
+
+  const days: string[] = data.daily?.time || [];
+  const daily = days.map((date: string, i: number) => {
+    const dCode = Number(data.daily.weather_code?.[i] ?? 0);
+    const mapped = mapWmoCode(dCode);
+    return {
+      date,
+      temp_min: Math.round(Number(data.daily.temperature_2m_min?.[i] ?? 0)),
+      temp_max: Math.round(Number(data.daily.temperature_2m_max?.[i] ?? 0)),
+      wind_max: Number(data.daily.wind_speed_10m_max?.[i] ?? 0),
+      wind_gust_max: 0,
+      rain_total: Math.round(Number(data.daily.precipitation_sum?.[i] ?? 0) * 10) / 10,
+      snow_total: 0,
+      pop_max: Math.round(Number(data.daily.precipitation_probability_max?.[i] ?? 0)),
+      icon: mapped.icon,
+      main: mapped.main,
+      description: mapped.description,
+    };
+  });
+
+  return { current, hourly, daily };
+}
+
+function mapWmoCode(code: number): { main: string; description: string; icon: string } {
+  if (code === 0) return { main: "Clear", description: "맑음", icon: "01d" };
+  if (code <= 3) return { main: "Clouds", description: code === 1 ? "대체로 맑음" : code === 2 ? "구름조금" : "흐림", icon: code === 3 ? "04d" : "02d" };
+  if (code <= 48) return { main: "Fog", description: "안개", icon: "50d" };
+  if (code <= 57) return { main: "Drizzle", description: "이슬비", icon: "09d" };
+  if (code <= 67) return { main: "Rain", description: code >= 65 ? "강한 비" : "비", icon: "10d" };
+  if (code <= 77) return { main: "Snow", description: "눈", icon: "13d" };
+  if (code <= 82) return { main: "Rain", description: "소나기", icon: "09d" };
+  if (code <= 86) return { main: "Snow", description: "눈 소나기", icon: "13d" };
+  if (code >= 95) return { main: "Thunderstorm", description: "뇌우", icon: "11d" };
+  return { main: "Clouds", description: "흐림", icon: "04d" };
+}
+
+async function geocodeNominatimOnly(address: string): Promise<{ lat: number; lng: number; city: string } | null> {
+  const variants = simplifyKoreanAddress(address);
+  for (const variant of variants.slice(0, 4)) {
+    try {
+      const nominatimRes = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(variant)}&countrycodes=kr&format=json&limit=1&accept-language=ko`,
+        { headers: { "User-Agent": "SafetyManagementSystem/1.0" } },
+      );
+      const nominatimData = await nominatimRes.json();
+      if (nominatimData && nominatimData.length > 0) {
+        return {
+          lat: parseFloat(nominatimData[0].lat),
+          lng: parseFloat(nominatimData[0].lon),
+          city: nominatimData[0].display_name?.split(",")[0] || "",
+        };
+      }
+    } catch (e) {
+      console.error(`Nominatim error for "${variant}":`, e);
+    }
+  }
+  return null;
+}
+
 async function fetchOpenWeather(lat: number, lng: number, owKey: string) {
   const currentUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lng}&appid=${owKey}&units=metric&lang=kr`;
   const currentRes = await fetch(currentUrl);
@@ -405,38 +529,33 @@ serve(async (req) => {
     const kmaKey = Deno.env.get("KMA_API_KEY");
 
     // Geocode-only mode (for project creation/edit)
-    if (geocode_only && address && owKey) {
-      const geo = await geocodeAddress(address, owKey);
+    if (geocode_only && address) {
+      let geo = owKey ? await geocodeAddress(address, owKey) : null;
+      if (!geo) geo = await geocodeNominatimOnly(address);
       if (geo) {
         return new Response(JSON.stringify(geo), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
         });
       }
-      // Return suggestions on failure
       const suggestions = suggestAddresses(address);
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         error: "주소를 찾을 수 없습니다",
         suggestions: suggestions.length > 0 ? suggestions : undefined,
-        message: suggestions.length > 0 
+        message: suggestions.length > 0
           ? `"${address}" 검색 실패. 다음 주소를 시도해보세요: ${suggestions.join(', ')}`
-          : `"${address}" 검색 실패. 도시명만 입력해보세요 (예: 여수, 평택, 울산)`
+          : `"${address}" 검색 실패. 도시명만 입력해보세요 (예: 여수, 평택, 울산)`,
       }), {
-        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 404, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
       });
     }
 
     if (!project_id) {
       return new Response(JSON.stringify({ error: "Missing project_id" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
       });
     }
 
-    if (!kmaKey && !owKey) {
-      return new Response(JSON.stringify({ error: "날씨 API 키가 설정되지 않았습니다" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
+    // Keys are optional — Open-Meteo is a free no-key fallback.
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -447,8 +566,9 @@ serve(async (req) => {
     let resolvedCity = "";
 
     // Geocode address if needed
-    if (address && (!resolvedLat || !resolvedLng) && owKey) {
-      const geo = await geocodeAddress(address, owKey);
+    if (address && (!resolvedLat || !resolvedLng)) {
+      let geo = owKey ? await geocodeAddress(address, owKey) : null;
+      if (!geo) geo = await geocodeNominatimOnly(address);
       if (geo) {
         resolvedLat = geo.lat;
         resolvedLng = geo.lng;
@@ -468,6 +588,17 @@ serve(async (req) => {
     if (!resolvedCity && owKey) {
       resolvedCity = await reverseGeocode(resolvedLat, resolvedLng, owKey);
     }
+    if (!resolvedCity) {
+      // Best-effort reverse via Nominatim
+      try {
+        const rev = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${resolvedLat}&lon=${resolvedLng}&format=json&accept-language=ko`,
+          { headers: { "User-Agent": "SafetyManagementSystem/1.0" } },
+        );
+        const revData = await rev.json();
+        resolvedCity = revData?.address?.city || revData?.address?.town || revData?.address?.county || revData?.name || "";
+      } catch { /* ignore */ }
+    }
 
     // Determine which source to fetch based on request
     const requestedSource = source || "kma";
@@ -480,14 +611,14 @@ serve(async (req) => {
       .eq("cache_type", requestedSource)
       .order("fetched_at", { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (cached && cached.data && (cached.data as any)?.current?.temp !== undefined) {
       const age = Date.now() - new Date(cached.fetched_at).getTime();
       if (age < CACHE_DURATION_MS) {
         console.log(`Returning cached ${requestedSource} weather data`);
         return new Response(JSON.stringify(cached.data), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
         });
       }
     }
@@ -496,21 +627,32 @@ serve(async (req) => {
     let sourceLabel = "";
     let sourceKey = "";
 
-    if (requestedSource === "openweather" && owKey) {
-      weatherData = await fetchOpenWeather(resolvedLat, resolvedLng, owKey).catch(e => { console.error("OW error:", e); return null; });
-      sourceLabel = "OpenWeather (보조)";
-      sourceKey = "openweather";
+    if (requestedSource === "openweather") {
+      if (owKey) {
+        weatherData = await fetchOpenWeather(resolvedLat, resolvedLng, owKey).catch((e) => {
+          console.error("OW error:", e);
+          return null;
+        });
+        sourceLabel = "OpenWeather (보조)";
+        sourceKey = "openweather";
+      }
+      if (!weatherData) {
+        weatherData = await fetchOpenMeteo(resolvedLat, resolvedLng).catch((e) => {
+          console.error("Open-Meteo error:", e);
+          return null;
+        });
+        sourceLabel = owKey ? "Open-Meteo (OpenWeather 장애 시 대체)" : "Open-Meteo";
+        sourceKey = "openmeteo";
+      }
     } else {
       if (kmaKey) {
-        weatherData = await fetchKmaWeather(resolvedLat, resolvedLng, kmaKey).catch(e => { console.error("KMA error:", e); return null; });
+        weatherData = await fetchKmaWeather(resolvedLat, resolvedLng, kmaKey).catch((e) => {
+          console.error("KMA error:", e);
+          return null;
+        });
       }
-      
-      if (!weatherData && owKey) {
-        console.log("KMA failed, falling back to OpenWeather");
-        weatherData = await fetchOpenWeather(resolvedLat, resolvedLng, owKey).catch(e => { console.error("OW error:", e); return null; });
-        sourceLabel = "OpenWeather (기상청 장애 시 대체)";
-        sourceKey = "openweather_fallback";
-      } else if (weatherData) {
+
+      if (weatherData) {
         sourceLabel = "기상청 (날씨누리)";
         sourceKey = "kma";
 
@@ -531,12 +673,30 @@ serve(async (req) => {
             console.error("OW supplementary fetch error (non-critical):", e);
           }
         }
+      } else if (owKey) {
+        console.log("KMA unavailable, falling back to OpenWeather");
+        weatherData = await fetchOpenWeather(resolvedLat, resolvedLng, owKey).catch((e) => {
+          console.error("OW error:", e);
+          return null;
+        });
+        sourceLabel = "OpenWeather (기상청 장애 시 대체)";
+        sourceKey = "openweather_fallback";
+      }
+
+      if (!weatherData) {
+        console.log("Using Open-Meteo free fallback");
+        weatherData = await fetchOpenMeteo(resolvedLat, resolvedLng).catch((e) => {
+          console.error("Open-Meteo error:", e);
+          return null;
+        });
+        sourceLabel = kmaKey || owKey ? "Open-Meteo (대체)" : "Open-Meteo";
+        sourceKey = "openmeteo";
       }
     }
 
     if (!weatherData) {
-      return new Response(JSON.stringify({ error: "날씨 데이터를 가져올 수 없습니다" }), {
-        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      return new Response(JSON.stringify({ error: "날씨 데이터를 가져올 수 없습니다. 잠시 후 다시 시도해주세요." }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
       });
     }
 
@@ -563,23 +723,24 @@ serve(async (req) => {
       fetched_at: new Date().toISOString(),
     };
 
-    // Cache
+    // Cache under the requested tab key so fallbacks still warm the UI source.
     if (result.current.temp !== 0 || result.current.description !== "") {
       await supabase
         .from("weather_cache")
         .upsert(
-          { project_id, cache_type: sourceKey, data: result, fetched_at: new Date().toISOString() },
+          { project_id, cache_type: requestedSource, data: result, fetched_at: new Date().toISOString() },
           { onConflict: "project_id,cache_type" }
         );
     }
 
     return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
     });
   } catch (error) {
     console.error("Weather fetch error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const msg = error instanceof Error ? error.message : String(error);
+    return new Response(JSON.stringify({ error: msg || "날씨 조회 중 오류가 발생했습니다." }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
     });
   }
 });

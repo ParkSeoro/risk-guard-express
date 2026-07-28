@@ -47,6 +47,9 @@ export const POSITION_LABELS: Record<string, string> = {
   contractor_supervisor: '협력사 관리감독자',
   contractor_safety_manager: '협력사 안전관리자',
   contractor_site_director: '협력사 현장소장',
+  gc: '시공사',
+  gc_manager: '시공사 관리자',
+  gc_pm: '시공사 PM',
   owner_cm: '발주처 CM (공사관리)',
   owner_sm: '발주처 SM (안전관리)',
   cooperator: '협조',
@@ -70,7 +73,7 @@ export interface DefaultStep {
   position: ApprovalPositionKey | string;
 }
 
-/** 모든 엔티티에 강제 적용되는 5단계 고정 결재선 */
+/** 기본 5단계 고정 결재선 (위평/계획서 등) */
 export const FIXED_APPROVAL_STEPS: DefaultStep[] = [
   { label: '협력사 관리감독자 (상신)', position: 'contractor_supervisor' },
   { label: '협력사 안전관리자 (검토)', position: 'contractor_safety_manager' },
@@ -79,9 +82,19 @@ export const FIXED_APPROVAL_STEPS: DefaultStep[] = [
   { label: '발주처 SM (안전 최종승인)', position: 'owner_sm' },
 ];
 
-/** 엔티티 → 기본 결재선 (모두 동일한 5단계 고정) */
+/** 작업허가서: 협력사 → 시공사(GC) → 발주처(CM/SM) 위계 */
+export const WORK_PERMIT_APPROVAL_STEPS: DefaultStep[] = [
+  { label: '협력사 관리감독자 (상신)', position: 'contractor_supervisor' },
+  { label: '협력사 안전관리자 (검토)', position: 'contractor_safety_manager' },
+  { label: '협력사 현장소장 (승인)', position: 'contractor_site_director' },
+  { label: '시공사 관리자', position: 'gc_manager' },
+  { label: '발주처 CM (검토)', position: 'owner_cm' },
+  { label: '발주처 SM (승인)', position: 'owner_sm' },
+];
+
+/** 엔티티 → 기본 결재선 */
 export const DEFAULT_STEPS_BY_ENTITY: Record<ApprovalEntityType, DefaultStep[]> = {
-  work_permit: FIXED_APPROVAL_STEPS,
+  work_permit: WORK_PERMIT_APPROVAL_STEPS,
   work_plan: FIXED_APPROVAL_STEPS,
   assessment_run: FIXED_APPROVAL_STEPS,
   safety_cost: FIXED_APPROVAL_STEPS,

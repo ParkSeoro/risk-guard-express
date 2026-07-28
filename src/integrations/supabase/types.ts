@@ -7890,6 +7890,7 @@ export type Database = {
           is_deleted: boolean
           linked_assessment_run_ids: string[] | null
           location: string
+          ai_briefing: Json | null
           permit_date: string
           permit_kinds: string[] | null
           permit_type: string
@@ -7940,6 +7941,7 @@ export type Database = {
           is_deleted?: boolean
           linked_assessment_run_ids?: string[] | null
           location?: string
+          ai_briefing?: Json | null
           permit_date?: string
           permit_kinds?: string[] | null
           permit_type?: string
@@ -7990,6 +7992,7 @@ export type Database = {
           is_deleted?: boolean
           linked_assessment_run_ids?: string[] | null
           location?: string
+          ai_briefing?: Json | null
           permit_date?: string
           permit_kinds?: string[] | null
           permit_type?: string

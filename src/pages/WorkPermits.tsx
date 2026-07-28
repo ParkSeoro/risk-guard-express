@@ -17,6 +17,8 @@ import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialo
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import type { PermitType } from '@/components/permits/DigPermitForm';
+import PermitKindSelector from '@/components/permits/PermitKindSelector';
+import { normalizePermitKinds, primaryPermitKind, type PermitKindId, PERMIT_KIND_LABEL } from '@/lib/permitKinds';
 
 
 const STATUS_COLOR: Record<string, string> = {
@@ -58,6 +60,7 @@ const PERMIT_TYPES: { id: PermitType; label: string }[] = [
 const makeBlankForm = (companyName = '') => ({
   permit_date: new Date().toISOString().slice(0, 10),
   permit_type: 'general' as PermitType,
+  permit_kinds: ['general'] as PermitKindId[],
   work_name: '',
   work_description: '',
   location: '',
@@ -192,8 +195,11 @@ export default function WorkPermits() {
   const save = async () => {
     if (!projectId) return toast({ title: '프로젝트를 먼저 선택하세요.', variant: 'destructive' });
     if (!form.work_description.trim()) return toast({ title: '작업 내용을 입력하세요.', variant: 'destructive' });
+    const kinds = normalizePermitKinds(form.permit_kinds, (form.permit_type || 'general') as PermitKindId);
+    const primary = primaryPermitKind(kinds);
     const formData = {
       ...form,
+      permit_kinds: kinds,
       contractor_company: form.contractor_company || companyName,
       applicant_company: form.applicant_company || form.contractor_company || companyName,
       work_location: form.work_location || form.location,
@@ -203,7 +209,8 @@ export default function WorkPermits() {
     };
     const payload: any = {
       permit_date: form.permit_date,
-      permit_type: form.permit_type || 'general',
+      permit_type: primary,
+      permit_kinds: kinds,
       form_data: formData,
       work_name: formData.work_name,
       work_description: form.work_description,
@@ -243,6 +250,7 @@ export default function WorkPermits() {
     setForm({
       permit_date: p.permit_date || new Date().toISOString().slice(0, 10),
       permit_type: p.permit_type || 'general',
+      permit_kinds: normalizePermitKinds(p.permit_kinds, (p.permit_type || 'general') as PermitKindId),
       work_name: p.work_name || p.form_data?.work_name || '',
       work_description: p.work_description || '',
       location: p.location || p.form_data?.work_location || '',
@@ -404,7 +412,13 @@ export default function WorkPermits() {
                     return <Badge variant="outline" className="text-muted-foreground">예정 ({p.permit_date})</Badge>;
                   })()}
                 </div>
-                <p className="text-xs text-muted-foreground">{p.permit_date} · {p.location || '-'}</p>
+                <p className="text-xs text-muted-foreground">
+                  {p.permit_date} · {p.location || '-'}
+                  {' · '}
+                  {normalizePermitKinds(p.permit_kinds, (p.permit_type || 'general') as PermitKindId)
+                    .map((k) => PERMIT_KIND_LABEL[k])
+                    .join(' · ')}
+                </p>
                 {p.gate_check_result?.all_ok === false && (
                   <p className="text-xs text-destructive mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />결재불가 - 연결된 위험성평가/작업계획서가 승인완료 상태가 아닙니다</p>
                 )}
@@ -463,11 +477,15 @@ export default function WorkPermits() {
           <DialogHeader><DialogTitle>{editing ? '작업허가서 수정' : '작업허가서 생성'}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>허가서 종류</Label>
-              <Select value={form.permit_type} onValueChange={(v) => setForm({ ...form, permit_type: v })} disabled={!!editing}>
-                <SelectTrigger><SelectValue placeholder="허가서 종류 선택" /></SelectTrigger>
-                <SelectContent>{PERMIT_TYPES.map((t) => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}</SelectContent>
-              </Select>
+              <PermitKindSelector
+                value={normalizePermitKinds(form.permit_kinds, (form.permit_type || 'general') as PermitKindId)}
+                onChange={(kinds) => setForm({
+                  ...form,
+                  permit_kinds: kinds,
+                  permit_type: primaryPermitKind(kinds),
+                })}
+                disabled={!!editing}
+              />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div><Label>일자</Label><Input type="date" value={form.permit_date} onChange={(e) => setForm({ ...form, permit_date: e.target.value })} /></div>

@@ -386,19 +386,34 @@ export default function DigPermitForm({
                 <th className="hd">공사업체</th>
                 <td><Inp value={data.contractor_company} onChangeText={(v: string) => update({ contractor_company: v })} /></td>
                 <th className="hd" colSpan={2}>승인업체 : {labels.approverCompany}</th>
-                <th className="hd">검토일</th>
-                <th className="hd">승인일</th>
+                <th className="hd">검토일<br/><span className="text-[9px] font-normal">(CM)</span></th>
+                <th className="hd">승인일<br/><span className="text-[9px] font-normal">(SM)</span></th>
               </tr>
               <tr>
                 <th className="hd">담당자(시공)</th>
                 <td><SigCell k="contractor_pic" /></td>
                 <th className="hd">담당자(CM)</th>
                 <td><SigCell k="cm" /></td>
-                <td rowSpan={3} className="text-center text-[10px]">{(() => {
-                  const rv = signatures.reviewed_at || (signatures.approved_at ? new Date(new Date(signatures.approved_at).getTime() - 86400000).toISOString() : '');
-                  return rv ? new Date(rv).toLocaleDateString('ko-KR') : '';
+                <td rowSpan={3} className="text-center text-[10px] align-top pt-2">{(() => {
+                  const rv = signatures.reviewed_at || '';
+                  const cm = signatures.cm as any;
+                  return (
+                    <>
+                      <div className="font-semibold">{rv ? new Date(rv).toLocaleDateString('ko-KR') : (cm?.signed_at ? new Date(cm.signed_at).toLocaleDateString('ko-KR') : '')}</div>
+                      {cm?.name && <div className="text-[9px] text-muted-foreground mt-1">{cm.name}</div>}
+                    </>
+                  );
                 })()}</td>
-                <td rowSpan={3} className="text-center text-[10px]">{signatures.approved_at ? new Date(signatures.approved_at).toLocaleDateString('ko-KR') : ''}</td>
+                <td rowSpan={3} className="text-center text-[10px] align-top pt-2">{(() => {
+                  const av = signatures.approved_at || '';
+                  const sm = signatures.sm as any;
+                  return (
+                    <>
+                      <div className="font-semibold">{av ? new Date(av).toLocaleDateString('ko-KR') : (sm?.signed_at ? new Date(sm.signed_at).toLocaleDateString('ko-KR') : '')}</div>
+                      {sm?.name && <div className="text-[9px] text-muted-foreground mt-1">{sm.name}</div>}
+                    </>
+                  );
+                })()}</td>
 
               </tr>
               <tr>

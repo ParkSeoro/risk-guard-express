@@ -12,7 +12,7 @@ import {
   DEFAULT_STANDARD_STYLE, DEFAULT_STANDARD_LABELS, mergeStandardStyle, mergeStandardLabels,
   colWidthCss, type StandardStyle, type StandardLabels, type PermitTypeKey,
 } from '@/lib/permitStandardStyle';
-import { formatPermitStamp } from '@/lib/permitDateFormat';
+import { formatPermitStamp, formatPermitReviewDate } from '@/lib/permitDateFormat';
 
 export type PermitType = 'general' | 'confined_space' | 'hot_work' | 'excavation';
 
@@ -293,13 +293,22 @@ export default function DigPermitForm({
     );
   };
 
-  const StampCell = ({ iso, name }: { iso?: string; name?: string }) => (
-    <td className="text-center text-[10px] align-middle px-1">
-      {iso ? (
-        <>
-          <div className="font-semibold whitespace-nowrap">{formatPermitStamp(iso)}</div>
-          {name && <div className="text-[9px] text-muted-foreground mt-0.5">{name}</div>}
-        </>
+  /** 발주처 검토일 = 전자결재 완료일시 − 1일 (날짜만) */
+  const ReviewDateCell = ({ approvedAt }: { approvedAt?: string }) => (
+    <td className="text-center text-[10px] align-middle px-1 whitespace-nowrap">
+      {approvedAt ? (
+        <div className="font-semibold">{formatPermitReviewDate(approvedAt)}</div>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      )}
+    </td>
+  );
+
+  /** 발주처 승인일 = 실제 전자결재 완료일시 (시·분 포함) */
+  const ApprovalDateCell = ({ approvedAt }: { approvedAt?: string }) => (
+    <td className="text-center text-[10px] align-middle px-1 whitespace-nowrap">
+      {approvedAt ? (
+        <div className="font-semibold">{formatPermitStamp(approvedAt)}</div>
       ) : (
         <span className="text-muted-foreground">—</span>
       )}
@@ -399,10 +408,12 @@ export default function DigPermitForm({
           <table>
             <ColGroup widths={generalCols} />
             <tbody>
+              {/* 발주처 결재란 매트릭스 (오프라인 원본): 검토일|승인일 × CM|SM|협조 */}
               <tr>
                 <th className="hd">공사업체</th>
                 <td><Inp value={data.contractor_company} onChangeText={(v: string) => update({ contractor_company: v })} /></td>
-                <th className="hd" colSpan={2}>승인업체 : {labels.approverCompany}</th>
+                <th className="hd" />
+                <th className="hd">승인업체 : {labels.approverCompany}</th>
                 <th className="hd">검토일</th>
                 <th className="hd">승인일</th>
               </tr>
@@ -411,30 +422,26 @@ export default function DigPermitForm({
                 <td><SigCell k="contractor_pic" /></td>
                 <th className="hd">담당자(CM)</th>
                 <td><SigCell k="cm" /></td>
-                <StampCell
-                  iso={signatures.reviewed_at || (signatures.cm as any)?.signed_at}
-                  name={(signatures.cm as any)?.name}
-                />
-                <td className="text-center text-muted-foreground text-[10px]">—</td>
+                {/* CM 검토일 = CM 결재일시 − 1일 / CM 승인일 = CM 결재일시 */}
+                <ReviewDateCell approvedAt={(signatures.cm as any)?.signed_at || signatures.reviewed_at} />
+                <ApprovalDateCell approvedAt={(signatures.cm as any)?.signed_at || signatures.reviewed_at} />
               </tr>
               <tr>
                 <th className="hd">담당자(안전)</th>
                 <td><SigCell k="safety_pic" /></td>
                 <th className="hd">담당자(SM)</th>
                 <td><SigCell k="sm" /></td>
-                <td className="text-center text-muted-foreground text-[10px]">—</td>
-                <StampCell
-                  iso={signatures.approved_at || (signatures.sm as any)?.signed_at}
-                  name={(signatures.sm as any)?.name}
-                />
+                {/* SM 검토일/승인일 — CM과 독립 바인딩 */}
+                <ReviewDateCell approvedAt={(signatures.sm as any)?.signed_at || signatures.approved_at} />
+                <ApprovalDateCell approvedAt={(signatures.sm as any)?.signed_at || signatures.approved_at} />
               </tr>
               <tr>
                 <th className="hd">책임자(소장)</th>
                 <td><SigCell k="site_director" /></td>
-                <th className="hd"></th>
-                <td></td>
-                <td></td>
-                <td></td>
+                <th className="hd">협조부서</th>
+                <td />
+                <td />
+                <td />
               </tr>
               <tr>
                 <td colSpan={6} className="text-right text-[10px]">※ 전일 검토, 당일 작업 전 승인</td>

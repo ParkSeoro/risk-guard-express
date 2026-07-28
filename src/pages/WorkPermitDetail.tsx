@@ -137,17 +137,18 @@ function mergeApprovalSignatures(
     const sigKey = POSITION_TO_SIG[pos] || resolveSigKey(null, a.position);
     if (sigKey) {
       const existing = (merged as any)[sigKey];
-      if (!existing?.signature) {
+      // CM/SM/closure: always bind approver name + approved_at independently (do not mix rows)
+      if (sigKey === 'cm' || sigKey === 'sm' || sigKey === 'closure_approver') {
         (merged as any)[sigKey] = {
           name: a.approver_name || existing?.name || '',
           signature: existing?.signature || '',
           signed_at: a.approved_at || existing?.signed_at || '',
         };
-      } else if (sigKey === 'closure_approver' && a.approved_at) {
+      } else if (!existing?.signature) {
         (merged as any)[sigKey] = {
-          ...existing,
           name: a.approver_name || existing?.name || '',
-          signed_at: a.approved_at,
+          signature: existing?.signature || '',
+          signed_at: a.approved_at || existing?.signed_at || '',
         };
       }
     }

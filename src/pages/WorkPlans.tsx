@@ -56,7 +56,7 @@ const WorkPlans = () => {
   const loadRuns = async () => {
     if (!access.selectedProject) return;
     const { data } = await supabase.from('assessment_runs')
-      .select('id, title, period_label, status')
+      .select('id, period_label, type, status')
       .eq('project_id', access.selectedProject)
       .eq('is_deleted', false)
       .eq('status', '승인완료')
@@ -66,8 +66,9 @@ const WorkPlans = () => {
 
   const loadCompanies = async () => {
     if (!access.selectedProject) return;
-    const { data } = await supabase.from('companies').select('id, name, type').eq('project_id', access.selectedProject).order('name');
-    setCompanies(data || []);
+    const { fetchProjectCompanies } = await import('@/lib/projectCompanies');
+    const rows = await fetchProjectCompanies(access.selectedProject);
+    setCompanies(rows.map(c => ({ id: c.id, name: c.name, type: c.type })));
   };
 
   const loadPlans = async () => {
@@ -272,7 +273,7 @@ const WorkPlans = () => {
                       <SelectContent>
                         {runs.length === 0
                           ? <SelectItem value="__none__" disabled>승인완료된 위험성평가가 없습니다</SelectItem>
-                          : runs.map(r => <SelectItem key={r.id} value={r.id}>{r.title || r.period_label}</SelectItem>)}
+                          : runs.map(r => <SelectItem key={r.id} value={r.id}>{r.period_label || r.type || r.id}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>

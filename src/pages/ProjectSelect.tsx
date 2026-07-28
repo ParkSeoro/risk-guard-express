@@ -76,28 +76,24 @@ const ProjectSelect = () => {
         return;
       }
 
-      const { error: memberErr } = await supabase
-        .from('project_members')
-        .insert([{
-          project_id: invite.project_id,
-          user_id: user.id,
-          role: invite.default_role,
-          company: requestCompany || profile?.company || '',
-        }]);
-
-      if (memberErr) {
-        if (memberErr.message.includes('duplicate') || memberErr.message.includes('unique')) {
-          toast({ title: '이미 해당 프로젝트의 멤버입니다.' });
-        } else {
-          toast({ title: '가입 실패', description: memberErr.message, variant: 'destructive' });
-        }
+      const { data: inviteResult, error: inviteRpcErr } = await supabase.rpc('process_invite_code', {
+        _user_id: user.id,
+        _invite_code: inviteCode.trim(),
+      });
+      if (inviteRpcErr) {
+        toast({ title: '가입 실패', description: inviteRpcErr.message, variant: 'destructive' });
         return;
       }
-
-      await supabase
-        .from('project_invites')
-        .update({ use_count: invite.use_count + 1 })
-        .eq('id', invite.id);
+      const inviteErr = (inviteResult as any)?.error;
+      if (inviteErr) {
+        const errMap: Record<string, string> = {
+          INVALID_CODE: '유효하지 않은 초대코드입니다.',
+          EXPIRED: '만료된 초대코드입니다.',
+          MAX_USES_EXCEEDED: '사용 횟수가 초과되었습니다.',
+        };
+        toast({ title: errMap[inviteErr] || '가입 실패', variant: 'destructive' });
+        return;
+      }
 
       toast({ title: '프로젝트에 가입되었습니다!' });
       window.location.reload();
@@ -157,7 +153,8 @@ const ProjectSelect = () => {
         const { error: memberError } = await supabase.from('project_members').insert([{
           project_id: data.id,
           user_id: user.id,
-          role: 'project_admin' as any,
+          role_new: 'project_admin' as any,
+          position_new: 'OWNER_HSE' as any,
           company: profile?.company || '',
         }]);
 

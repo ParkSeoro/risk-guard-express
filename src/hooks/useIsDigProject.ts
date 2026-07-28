@@ -15,13 +15,14 @@ export function useIsDigProject(projectId?: string | null) {
     let cancel = false;
     (async () => {
       if (!projectId) { setEnabled(false); setLoading(false); return; }
-      const [{ data: project }, { data: companies }] = await Promise.all([
+      const { fetchProjectCompanies } = await import('@/lib/projectCompanies');
+      const [{ data: project }, companies] = await Promise.all([
         supabase.from('projects').select('client, contractor, name, site_name').eq('id', projectId).maybeSingle(),
-        supabase.from('companies').select('name, type').eq('project_id', projectId),
+        fetchProjectCompanies(projectId),
       ]);
       const haystacks: string[] = [];
       if (project) haystacks.push(project.client || '', project.contractor || '', project.name || '', project.site_name || '');
-      (companies || []).forEach((c: any) => haystacks.push(c.name || ''));
+      companies.forEach((c: any) => haystacks.push(c.name || ''));
       const match = haystacks.some(h => DIG_KEYWORDS.some(k => h.toUpperCase().includes(k.toUpperCase())));
       if (!cancel) { setEnabled(match); setLoading(false); }
     })();

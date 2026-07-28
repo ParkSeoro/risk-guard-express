@@ -114,7 +114,10 @@ const Projects = () => {
       if (data) {
         // Add creator as project_admin
         const { error: memberError } = await supabase.from('project_members').insert([{
-          project_id: data.id, user_id: user.id, role: 'project_admin' as any,
+          project_id: data.id,
+          user_id: user.id,
+          role_new: 'project_admin' as any,
+          position_new: 'OWNER_HSE' as any,
         }]);
         if (memberError) {
           console.error('Project member insert error:', memberError);

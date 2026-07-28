@@ -30,8 +30,9 @@ export default function WorkerDailyQR() {
   useEffect(() => {
     if (!projectId) return;
     localStorage.setItem("currentProjectId", projectId);
-    supabase.from("companies").select("id,name").eq("project_id", projectId).eq("is_deleted", false).order("name")
-      .then(({ data }) => setCompanies(data || []));
+    import("@/lib/projectCompanies").then(({ fetchProjectCompanies }) =>
+      fetchProjectCompanies(projectId).then((rows) => setCompanies(rows.map(c => ({ id: c.id, name: c.name }))))
+    );
     loadWorkers();
   }, [projectId]);
 

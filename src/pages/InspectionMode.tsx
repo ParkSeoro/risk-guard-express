@@ -33,7 +33,7 @@ export default function InspectionMode() {
       supabase.from('assessment_runs').select('id, status').eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('tbm_sessions' as any).select('id').eq('project_id', projectId),
       supabase.from('tbm_participations' as any).select('id', { count: 'exact', head: true }),
-      supabase.from('work_permits' as any).select('id, status').eq('project_id', projectId),
+      supabase.from('work_permits' as any).select('id, status').eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('safety_cost_items' as any).select('id', { count: 'exact', head: true }).eq('project_id', projectId).limit(1),
       supabase.from('legal_duties' as any).select('id, is_active').eq('project_id', projectId),
     ]);

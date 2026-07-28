@@ -33,15 +33,12 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
   }, [projectId]);
 
   const fetchData = async () => {
-    // 1. Companies for this project
-    const { data: companies } = await supabase
-      .from('companies')
-      .select('id, name')
-      .eq('project_id', projectId)
-      .eq('is_deleted', false);
+    // 1. Companies for this project (SSOT: project_companies)
+    const { fetchProjectCompanies } = await import('@/lib/projectCompanies');
+    const companies = await fetchProjectCompanies(projectId);
 
-    const companyIds = (companies || []).map((c) => c.id);
-    const companyName = new Map((companies || []).map((c) => [c.id, c.name as string]));
+    const companyIds = companies.map((c) => c.id);
+    const companyName = new Map(companies.map((c) => [c.id, c.name as string]));
 
     // 2. company_departments for those companies
     let deptList: DeptRow[] = [];

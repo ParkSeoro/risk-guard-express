@@ -98,7 +98,7 @@ const Approvals = () => {
     try {
       const [a, r] = await Promise.all([
         supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false }),
-        supabase.from('assessment_runs').select('*').eq('project_id', selectedProject),
+        supabase.from('assessment_runs').select('*').eq('project_id', selectedProject).eq('is_deleted', false).neq('status', '폐기'),
       ]);
       let approvalsData = a.data || [];
       let runsData = r.data || [];

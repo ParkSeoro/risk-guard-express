@@ -71,7 +71,7 @@ export const FEATURE_COVERAGE: Record<string, string[]> = {
 // 컬럼이 사라지거나 이름이 바뀌면 schema_drift 시나리오에서 FAIL.
 export const REQUIRED_COLUMNS: Record<string, string[]> = {
   projects: ["id", "name", "status"],
-  project_members: ["project_id", "user_id", "role", "company_id"],
+  project_members: ["project_id", "user_id", "role_new", "company_id"],
   user_roles: ["user_id", "role"],
   profiles: ["user_id", "account_status", "display_name"],
   companies: ["id", "project_id", "name"],

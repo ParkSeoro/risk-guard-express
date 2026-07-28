@@ -34,7 +34,7 @@ const sevLabel: Record<string, string> = { high: "높음", medium: "보통", low
 export default function MobileActions() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const { projectId, applyCompanyFilter } = useMobileAccess();
+  const { projectId } = useMobileAccess();
   const { log: logAudit } = useAuditLog();
   const [tab, setTab] = useState<"pending" | "completed">("pending");
   const [rows, setRows] = useState<ActionRow[]>([]);
@@ -48,7 +48,7 @@ export default function MobileActions() {
     if (!projectId) return;
     setLoading(true);
     let q: any = supabase.from("safety_inspection_actions" as any).select("*").eq("project_id", projectId);
-    q = applyCompanyFilter(q);
+    // safety_inspection_actions has no company_id — do not applyCompanyFilter
     const { data, error } = await q.in("status", tab === "pending" ? ["pending", "in_progress"] : ["completed"])
       .order("created_at", { ascending: false }).limit(50);
     if (error) toast.error(error.message);

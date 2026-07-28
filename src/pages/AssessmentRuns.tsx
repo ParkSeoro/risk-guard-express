@@ -100,15 +100,13 @@ const AssessmentRuns = () => {
   const [allProjectCompanies, setAllProjectCompanies] = useState<{ id: string; name: string; type: string }[]>([]);
   const fetchContractors = async () => {
     if (!selectedProject) { setContractors([]); setAllProjectCompanies([]); return; }
-    // Fetch all companies for the project to give better diagnostics
-    const { data: allData } = await supabase.from('companies').select('id, name, type').eq('project_id', selectedProject).order('name');
-    setAllProjectCompanies(allData || []);
-    // Filter to contractor-type companies (contractor, vendor)
-    const filtered = (allData || []).filter(c => c.type === 'contractor' || c.type === 'vendor');
-    setContractors(filtered);
-    // Build name map for all companies
+    const { fetchProjectCompanies } = await import('@/lib/projectCompanies');
+    const allData = await fetchProjectCompanies(selectedProject);
+    setAllProjectCompanies(allData.map(c => ({ id: c.id, name: c.name, type: c.type || '' })));
+    const filtered = allData.filter(c => c.type === 'contractor' || c.type === 'vendor');
+    setContractors(filtered.map(c => ({ id: c.id, name: c.name, type: c.type || '' })));
     const map: Record<string, string> = {};
-    (allData || []).forEach(c => { map[c.id] = c.name; });
+    allData.forEach(c => { map[c.id] = c.name; });
     setCompanyNameMap(prev => ({ ...prev, ...map }));
   };
 
@@ -129,10 +127,16 @@ const AssessmentRuns = () => {
   const fetchRuns = async () => {
     if (!selectedProject) return;
     setLoading(true);
-    const { data } = await supabase.from('assessment_runs')
+    let query = supabase.from('assessment_runs')
       .select('*')
       .eq('project_id', selectedProject)
       .order('created_at', { ascending: false });
+    if (showDeleted && isMaster) {
+      query = query.eq('is_deleted', true);
+    } else {
+      query = query.eq('is_deleted', false).neq('status', '폐기');
+    }
+    const { data } = await query;
     setRuns(data || []);
 
     if (data && data.length > 0) {
@@ -154,7 +158,7 @@ const AssessmentRuns = () => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchProjectRole(); fetchRuns(); fetchContractors(); }, [selectedProject]);
+  useEffect(() => { fetchProjectRole(); fetchRuns(); fetchContractors(); }, [selectedProject, showDeleted]);
 
   const toggleContractor = (id: string) => {
     setForm(prev => ({

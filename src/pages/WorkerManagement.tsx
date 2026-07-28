@@ -72,8 +72,9 @@ export default function WorkerManagement() {
     localStorage.setItem("currentProjectId", projectId);
     setCompanyId("");
     setCompanyLocked(false);
-    supabase.from("companies").select("id,name").eq("project_id", projectId).order("name")
-      .then(({ data }) => setCompanies(data || []));
+    import("@/lib/projectCompanies").then(({ fetchProjectCompanies }) =>
+      fetchProjectCompanies(projectId).then((rows) => setCompanies(rows.map(c => ({ id: c.id, name: c.name }))))
+    );
     // 관리자 소속사 자동 지정 — 협력사 권한이면 잠금, 전체권한이면 기본값만 채우고 변경 가능
     (async () => {
       const { data: auth } = await supabase.auth.getUser();

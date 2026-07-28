@@ -104,8 +104,9 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     } else {
       setParticipantCounts({});
     }
-    const { data: cs } = await supabase.from('companies').select('id, name, type').eq('project_id', projectId).order('name');
-    setCompanies(cs || []);
+    const { fetchProjectCompanies } = await import('@/lib/projectCompanies');
+    const cs = await fetchProjectCompanies(projectId);
+    setCompanies(cs.map(c => ({ id: c.id, name: c.name, type: c.type })));
     setLoading(false);
   };
 

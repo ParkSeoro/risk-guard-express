@@ -39,15 +39,15 @@ export default function SettingsApprovalRoutes() {
   const load = async () => {
     if (!projectId) return;
     setLoading(true);
-    const [{ data: tpl }, { data: cos }] = await Promise.all([
+    const [{ data: tpl }, cos] = await Promise.all([
       supabase.from('approval_route_templates').select('*')
         .eq('project_id', projectId).eq('entity_type', entityType).eq('is_deleted', false)
         .order('owner_user_id', { ascending: false, nullsFirst: false })
         .order('is_default', { ascending: false }),
-      supabase.from('companies').select('id,name,type').eq('project_id', projectId).eq('is_deleted', false),
+      (await import('@/lib/projectCompanies')).fetchProjectCompanies(projectId),
     ]);
     setTemplates(tpl || []);
-    setCompanies(cos || []);
+    setCompanies(cos.map(c => ({ id: c.id, name: c.name, type: c.type })));
     setLoading(false);
   };
   useEffect(() => {

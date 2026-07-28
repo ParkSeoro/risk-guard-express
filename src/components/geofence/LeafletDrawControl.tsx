@@ -5,12 +5,14 @@ import "leaflet-draw";
 
 type Props = {
   onPolygonCreated: (latlngs: { lat: number; lng: number }[]) => void;
+  /** leaflet-draw control position. Default topleft (topright reserved for layer panel). */
+  position?: "topleft" | "topright" | "bottomleft" | "bottomright";
 };
 
 /**
  * leaflet-draw polygon control bound to the react-leaflet map instance.
  */
-export default function LeafletDrawControl({ onPolygonCreated }: Props) {
+export default function LeafletDrawControl({ onPolygonCreated, position = "topleft" }: Props) {
   const map = useMap();
 
   useEffect(() => {
@@ -20,7 +22,7 @@ export default function LeafletDrawControl({ onPolygonCreated }: Props) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const DrawControl = (L as any).Control.Draw;
     const drawControl = new DrawControl({
-      position: "topright",
+      position,
       draw: {
         polygon: {
           allowIntersection: false,
@@ -60,7 +62,7 @@ export default function LeafletDrawControl({ onPolygonCreated }: Props) {
       map.removeControl(drawControl);
       map.removeLayer(drawnItems);
     };
-  }, [map, onPolygonCreated]);
+  }, [map, onPolygonCreated, position]);
 
   return null;
 }

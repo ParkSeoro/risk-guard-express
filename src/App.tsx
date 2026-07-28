@@ -94,9 +94,7 @@ import SafetyCostValidation from "./pages/SafetyCostValidation";
 import MobileWorkStop from "./pages/MobileWorkStop";
 import MobileScan from "./pages/MobileScan";
 import MobileDailyHealthLog from "./pages/MobileDailyHealthLog";
-import SiteMaps from "./pages/SiteMaps";
-import RestrictedZones from "./pages/RestrictedZones";
-import GeorefMapControl from "./pages/GeorefMapControl";
+import SiteControlMap from "./pages/SiteControlMap";
 import ZoneCheckin from "./pages/ZoneCheckin";
 import MobileGeofenceDrop from "./pages/MobileGeofenceDrop";
 import ZoneEvents from "./pages/ZoneEvents";
@@ -241,9 +239,10 @@ function ProtectedRoutes() {
         <Route path="/health/measurements" element={<EnvMeasurements />} />
         <Route path="/health/education" element={<HealthEducation />} />
         <Route path="/health/hazard-surveys" element={<HazardSurveys />} />
-        <Route path="/site-maps" element={<SiteMaps />} />
-        <Route path="/restricted-zones" element={<RestrictedZones />} />
-        <Route path="/georef-map" element={<GeorefMapControl />} />
+        <Route path="/site-control-map" element={<SiteControlMap />} />
+        <Route path="/site-maps" element={<Navigate to="/site-control-map" replace />} />
+        <Route path="/restricted-zones" element={<Navigate to="/site-control-map" replace />} />
+        <Route path="/georef-map" element={<Navigate to="/site-control-map" replace />} />
         <Route path="/zone-events" element={<ZoneEvents />} />
         <Route path="/worker-distribution" element={<WorkerDistribution />} />
         <Route path="/admin/tracking-health" element={<RoleGuard><AdminTrackingHealth /></RoleGuard>} />

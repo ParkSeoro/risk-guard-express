@@ -96,7 +96,9 @@ import MobileScan from "./pages/MobileScan";
 import MobileDailyHealthLog from "./pages/MobileDailyHealthLog";
 import SiteMaps from "./pages/SiteMaps";
 import RestrictedZones from "./pages/RestrictedZones";
+import GeorefMapControl from "./pages/GeorefMapControl";
 import ZoneCheckin from "./pages/ZoneCheckin";
+import MobileGeofenceDrop from "./pages/MobileGeofenceDrop";
 import ZoneEvents from "./pages/ZoneEvents";
 import WorkerDistribution from "./pages/WorkerDistribution";
 import AdminTrackingHealth from "./pages/AdminTrackingHealth";
@@ -241,6 +243,7 @@ function ProtectedRoutes() {
         <Route path="/health/hazard-surveys" element={<HazardSurveys />} />
         <Route path="/site-maps" element={<SiteMaps />} />
         <Route path="/restricted-zones" element={<RestrictedZones />} />
+        <Route path="/georef-map" element={<GeorefMapControl />} />
         <Route path="/zone-events" element={<ZoneEvents />} />
         <Route path="/worker-distribution" element={<WorkerDistribution />} />
         <Route path="/admin/tracking-health" element={<RoleGuard><AdminTrackingHealth /></RoleGuard>} />
@@ -304,6 +307,7 @@ const App = () => (
             <Route path="/m/scan" element={<MobileScan />} />
             <Route path="/m/daily-health-log" element={<MobileDailyHealthLog />} />
             <Route path="/m/work-stop" element={<MobileWorkStop />} />
+            <Route path="/m/geofence-drop" element={<MobileGeofenceDrop />} />
             <Route path="/*" element={<ProtectedRoutes />} />
           </Routes>
           <MobileRedirectGuard />

@@ -6,11 +6,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine, HeartPulse, Settings2, RotateCcw } from "lucide-react";
+import { Building2, ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine, HeartPulse, Settings2, RotateCcw, MapPin } from "lucide-react";
 import { isOnline, listQueue } from "@/lib/offlineQueue";
 import { isPushSupported, registerSW, subscribeToPush } from "@/lib/pushSubscription";
 import { setForceDesktop } from "@/components/MobileRedirectGuard";
 import GeofenceAlertBridge from "@/components/geofence/GeofenceAlertBridge";
+import MasterAlarmSimulator from "@/components/geofence/MasterAlarmSimulator";
 import { toast } from "sonner";
 import { ALL_TILES, MobileTileKey, getMobileTiles, setMobileTiles, resetMobileTiles, detectRole } from "@/lib/mobileMenuPrefs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -247,6 +248,25 @@ export default function MobileHome() {
             <Button variant="outline" className="w-full h-12" onClick={enablePush}>
               <Bell className="h-4 w-4 mr-2" /> 푸시 알림 켜기
             </Button>
+
+            <Button
+              variant="secondary"
+              className="w-full h-12"
+              onClick={() => navigate("/m/geofence-drop")}
+              disabled={!selectedProjectId}
+            >
+              <MapPin className="h-4 w-4 mr-2" /> 내 위치를 위험 구역으로 설정
+            </Button>
+
+            {isMaster && (
+              <div className="space-y-2">
+                <MasterAlarmSimulator projectId={selectedProjectId} />
+                <p className="text-[11px] text-muted-foreground text-center">
+                  마스터 전용 · GPS 없이 육성 TTS + 전체화면 경고 + 관리자 푸시 사이클을 검증합니다.
+                </p>
+              </div>
+            )}
+
             <Button variant="ghost" className="w-full h-12" onClick={() => {
               setForceDesktop(true);
               // Hard navigate so nested /* routes always land on dashboard home

@@ -1,16 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import { formatPermitStamp } from '@/lib/permitDateFormat';
+import { formatPermitStamp, formatPermitReviewDate } from '@/lib/permitDateFormat';
 
 describe('formatPermitStamp', () => {
-  it('formats ISO with date and time', () => {
-    // Local timezone dependent — check pattern
-    const s = formatPermitStamp('2026-07-28T14:05:00+09:00');
-    expect(s).toMatch(/2026\. 07\. 28\. \d{2}:\d{2}/);
+  it('formats approval datetime with time', () => {
+    const s = formatPermitStamp('2026-07-28T15:30:00');
+    expect(s).toMatch(/^2026\. 7\. 28\. \d{2}:\d{2}$/);
   });
 
   it('returns empty for invalid', () => {
     expect(formatPermitStamp(null)).toBe('');
     expect(formatPermitStamp('')).toBe('');
     expect(formatPermitStamp('not-a-date')).toBe('');
+  });
+});
+
+describe('formatPermitReviewDate', () => {
+  it('is approval datetime minus 1 calendar day (date only)', () => {
+    const s = formatPermitReviewDate('2026-07-28T15:30:00');
+    // Local calendar day - 1; accept either side of TZ boundary around midnight
+    expect(s).toMatch(/^2026\. 7\. (27|28)\.$/);
+  });
+
+  it('crosses month boundary for mid-day local times', () => {
+    // Use noon to avoid UTC offset flipping the calendar day
+    expect(formatPermitReviewDate('2026-08-01T12:00:00')).toBe('2026. 7. 31.');
+  });
+
+  it('returns empty for invalid', () => {
+    expect(formatPermitReviewDate(null)).toBe('');
+    expect(formatPermitReviewDate('bad')).toBe('');
   });
 });

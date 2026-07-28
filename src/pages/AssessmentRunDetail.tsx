@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -68,6 +68,7 @@ const AssessmentRunDetail = () => {
   const [filterRiskGrade, setFilterRiskGrade] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
+  const hasLoadedRef = useRef(false);
 
   // Auto-gen
   const [showAutoGen, setShowAutoGen] = useState(false);
@@ -226,7 +227,8 @@ const AssessmentRunDetail = () => {
 
   const fetchAll = useCallback(async () => {
     if (!runId) return;
-    setLoading(true);
+    // First load only — background refresh must not unmount the page/dialogs.
+    if (!hasLoadedRef.current) setLoading(true);
     const [runRes, itemsRes, partRes, profilesRes] = await Promise.all([
       supabase.from('assessment_runs').select('*').eq('id', runId).single(),
       supabase.from('risk_items').select('*').eq('run_id', runId).eq('is_deleted', false).order('sort_order'),
@@ -408,6 +410,7 @@ const AssessmentRunDetail = () => {
                 setParticipants(newParts);
                 setItems(itemsRes.data || []);
                 setUserDirectory((profilesRes.data || []) as any);
+                hasLoadedRef.current = true;
                 setLoading(false);
                 return;
               }
@@ -469,6 +472,7 @@ const AssessmentRunDetail = () => {
       }
     }
 
+    hasLoadedRef.current = true;
     setLoading(false);
   }, [runId]);
 
@@ -1362,7 +1366,7 @@ const AssessmentRunDetail = () => {
     );
   };
 
-  if (loading) return <div className="py-12 text-center text-muted-foreground">로딩 중...</div>;
+  if (loading && !run) return <div className="py-12 text-center text-muted-foreground">로딩 중...</div>;
   if (!run) return <div className="py-12 text-center text-muted-foreground">회차를 찾을 수 없습니다.</div>;
 
   // ===== CTA conditions (strict state machine) =====
@@ -1972,8 +1976,17 @@ const AssessmentRunDetail = () => {
       </Tabs>
 
       {/* Auto Generate Dialog */}
-      <Dialog open={showAutoGen} onOpenChange={setShowAutoGen}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()}>
+      <Dialog open={showAutoGen} onOpenChange={(open) => {
+        // Keep dialog open while AI is generating
+        if (!open && autoGenLoading) return;
+        setShowAutoGen(open);
+      }}>
+        <DialogContent
+          className="max-w-lg max-h-[85vh] overflow-y-auto"
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+          onFocusOutside={(e) => e.preventDefault()}
+        >
           <DialogHeader><DialogTitle>공종명으로 위험성평가 자동작성</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="flex items-center gap-2 p-2 rounded-lg bg-accent/10 border border-accent/20">

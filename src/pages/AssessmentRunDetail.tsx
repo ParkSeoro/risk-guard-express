@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
 import { generateRiskItemsHybrid, type AIGenerateOptions } from '@/lib/riskAutoGenAI';
+import { ConditionTagPicker, SmartEquipmentTagInput, DEFAULT_CONDITION_TAGS, DEFAULT_EQUIPMENT_SUGGESTIONS } from '@/components/assessment/RiskAutoGenFields';
 import { exportToXLSX, exportToPDF, exportToPDFServer, printRiskAssessment } from '@/lib/exportUtils';
 import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue } from '@/lib/validationEngine';
 import { generateRemediationActions, applyRemediationActions, buildRemediationSummaryText, executeAutoRemediation, type RemediationAction } from '@/lib/remediationEngine';
@@ -75,12 +76,11 @@ const AssessmentRunDetail = () => {
   const [autoGenProcesses, setAutoGenProcesses] = useState<string[]>([]);
   const [autoGenProcessInput, setAutoGenProcessInput] = useState('');
   const [autoGenDetailLevel, setAutoGenDetailLevel] = useState<'core' | 'comprehensive'>('comprehensive');
-  const [autoGenTags, setAutoGenTags] = useState<string[]>([]);
+  const [autoGenConditionTags, setAutoGenConditionTags] = useState<string[]>([]);
   const [autoGenLoading, setAutoGenLoading] = useState(false);
   const [autoGenConditionText, setAutoGenConditionText] = useState('');
   const [autoGenWorkLocation, setAutoGenWorkLocation] = useState('');
-  const [autoGenWorkEnv, setAutoGenWorkEnv] = useState<string[]>([]);
-  const [autoGenEquipment, setAutoGenEquipment] = useState('');
+  const [autoGenEquipmentTags, setAutoGenEquipmentTags] = useState<string[]>([]);
   const [autoGenUseAI, setAutoGenUseAI] = useState(true);
   const [environmentTags, setEnvironmentTags] = useState<{ id: string; name: string; category: string }[]>([]);
 
@@ -641,16 +641,29 @@ const AssessmentRunDetail = () => {
     try {
       let allGenerated: any[] = [];
       let sourceLabel = '';
+      const allAccidents: { title: string; cause: string; result: string }[] = [];
+      const equipJoined = autoGenEquipmentTags.join(', ');
       for (const proc of autoGenProcesses) {
-        // AI-first: always call AI engine directly
-        console.log(`[AutoGen] AI 엔진 호출 시작 (공종: ${proc.trim()}, 장비: ${autoGenEquipment})`);
+        console.log(`[AutoGen] AI 엔진 호출 시작 (공종: ${proc.trim()}, 장비: ${equipJoined})`);
+        if (!autoGenUseAI) {
+          const { generateRiskItems } = await import('@/lib/riskAutoGen');
+          const libraryItems = await generateRiskItems({
+            processName: proc.trim(),
+            tags: autoGenConditionTags,
+            targetCount: autoGenDetailLevel === 'core' ? 15 : 30,
+            deduplicate: true,
+          });
+          allGenerated.push(...libraryItems);
+          sourceLabel = 'library';
+          continue;
+        }
         const opts: AIGenerateOptions = {
           processName: proc.trim(),
-          equipment: autoGenEquipment,
+          equipment: equipJoined,
           workDescription: autoGenConditionText,
           workLocation: autoGenWorkLocation || undefined,
-          workEnvironment: autoGenWorkEnv.length > 0 ? autoGenWorkEnv : undefined,
-          tags: autoGenTags,
+          workEnvironment: autoGenConditionTags.length > 0 ? autoGenConditionTags : undefined,
+          tags: autoGenConditionTags,
           detailLevel: autoGenDetailLevel,
           deduplicate: true,
           projectId: run.project_id,
@@ -659,6 +672,9 @@ const AssessmentRunDetail = () => {
         console.log(`[AutoGen] 결과 수신: ${result.items.length}건 (source: ${result.source})`);
         allGenerated.push(...result.items);
         sourceLabel = result.source;
+        if (result.accidentCases?.length) {
+          allAccidents.push(...result.accidentCases.slice(0, 3));
+        }
       }
       if (allGenerated.length === 0) { toast({ title: 'AI 생성 실패 - 다시 시도해주세요.', description: '결과를 생성하지 못했습니다. 공종명과 장비를 확인해주세요.', variant: 'destructive' }); setAutoGenLoading(false); return; }
       // Deduplicate across processes
@@ -684,9 +700,34 @@ const AssessmentRunDetail = () => {
       const sourceMap: Record<string, string> = { library: '라이브러리', cache: '캐시', ai: 'AI', hybrid: '하이브리드' };
       if (!data || data.length === 0) throw new Error('자동작성 결과가 저장되지 않았습니다. 권한 또는 프로젝트 설정을 확인해주세요.');
       setItems(prev => [...prev, ...data]);
-      toast({ title: `${data.length}건 자동 생성 완료 (${sourceMap[sourceLabel] || sourceLabel})` });
-      setShowAutoGen(false); setAutoGenProcesses([]); setAutoGenProcessInput(''); setAutoGenTags([]);
-      setAutoGenWorkLocation(''); setAutoGenWorkEnv([]); setAutoGenEquipment(''); setAutoGenConditionText('');
+
+      // Persist 2~3 related accident briefs (cap)
+      const uniqueAccidents = allAccidents
+        .filter((a, i, arr) => a.title && arr.findIndex((x) => x.title === a.title) === i)
+        .slice(0, 3);
+      if (uniqueAccidents.length > 0 && runId) {
+        await supabase.from('assessment_accidents' as any).insert(
+          uniqueAccidents.map((a) => ({
+            run_id: runId,
+            project_id: run.project_id,
+            process: autoGenProcesses[0] || '',
+            accident_type: a.title,
+            cause: a.cause || '',
+            result: a.result || '',
+            description: `${a.cause || ''} / ${a.result || ''}`.trim(),
+            source_type: 'ai_autogen',
+            created_by: user.id,
+          })),
+        );
+      }
+
+      toast({
+        title: `${data.length}건 자동 생성 완료 (${sourceMap[sourceLabel] || sourceLabel})`,
+        description: uniqueAccidents.length > 0 ? `관련 사고사례 ${uniqueAccidents.length}건도 함께 등록되었습니다.` : undefined,
+      });
+      setShowAutoGen(false); setAutoGenProcesses([]); setAutoGenProcessInput('');
+      setAutoGenConditionTags([]); setAutoGenWorkLocation('');
+      setAutoGenEquipmentTags([]); setAutoGenConditionText('');
     } catch (err: any) { toast({ title: err?.message || '자동 생성 실패', variant: 'destructive' }); }
     setAutoGenLoading(false);
   };
@@ -1408,13 +1449,15 @@ const AssessmentRunDetail = () => {
     : isApproved ? '최종 승인 완료. 잠금 상태입니다.'
     : '';
 
-  // Default tags (hardcoded fallback + DB tags)
-  const defaultEnvTags = ['고소','야간','밀폐','화기','양중','굴착','전기','분진','소음','고온','해상','화학'];
-  const defaultEquipTags = ['크레인','지게차','고소작업대','굴착기','용접기','그라인더','펌프카'];
-  const envTagNames = environmentTags.filter(t => t.category === 'environment').map(t => t.name);
-  const equipTagNames = environmentTags.filter(t => t.category === 'equipment').map(t => t.name);
-  const allEnvTags = envTagNames.length > 0 ? envTagNames : defaultEnvTags;
-  const allEquipTags = equipTagNames.length > 0 ? equipTagNames : defaultEquipTags;
+  // Auto-gen tag suggestions (DB tags merge into defaults)
+  const conditionTagSuggestions = useMemo(() => {
+    const fromDb = environmentTags.filter(t => t.category === 'environment' || !t.category).map(t => t.name);
+    return Array.from(new Set([...DEFAULT_CONDITION_TAGS, ...fromDb]));
+  }, [environmentTags]);
+  const equipmentSuggestions = useMemo(() => {
+    const fromDb = environmentTags.filter(t => t.category === 'equipment').map(t => t.name);
+    return Array.from(new Set([...DEFAULT_EQUIPMENT_SUGGESTIONS, ...fromDb]));
+  }, [environmentTags]);
 
   return (
     <div className="space-y-4 animate-fade-in print:space-y-2">
@@ -1975,39 +2018,48 @@ const AssessmentRunDetail = () => {
         </TabsContent>
       </Tabs>
 
-      {/* Auto Generate Dialog */}
+      {/* Auto Generate Dialog — compact field-card layout */}
       <Dialog open={showAutoGen} onOpenChange={(open) => {
-        // Keep dialog open while AI is generating
         if (!open && autoGenLoading) return;
         setShowAutoGen(open);
       }}>
         <DialogContent
-          className="max-w-lg max-h-[85vh] overflow-y-auto"
+          className="max-w-md sm:max-w-lg max-h-[90vh] overflow-y-auto p-4 sm:p-5 gap-3"
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
           onFocusOutside={(e) => e.preventDefault()}
         >
-          <DialogHeader><DialogTitle>공종명으로 위험성평가 자동작성</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 p-2 rounded-lg bg-accent/10 border border-accent/20">
+          <DialogHeader className="space-y-1 pb-1">
+            <DialogTitle className="text-base">공종명으로 위험성평가 자동작성</DialogTitle>
+            <p className="text-[11px] text-muted-foreground leading-snug">
+              작업 순서로 쪼갠 뒤 단계별 위험요인·대책을 촘촘히 도출합니다. (산안법 위험성평가 지침)
+            </p>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2">
               <Switch checked={autoGenUseAI} onCheckedChange={setAutoGenUseAI} />
               <Label className="text-xs font-medium">
-                {autoGenUseAI ? '🤖 AI 하이브리드 모드 (라이브러리 + AI)' : '📚 라이브러리 전용 모드'}
+                {autoGenUseAI ? 'AI 하이브리드 (라이브러리 + AI)' : '라이브러리 전용'}
               </Label>
             </div>
-            <div className="space-y-1.5">
-              <Label>공종명 입력 (다중 입력: 쉼표로 구분)</Label>
+
+            <div className="rounded-lg border bg-card p-3 space-y-2">
+              <Label className="text-xs font-semibold">공종명 <span className="font-normal text-muted-foreground">(다중 · 쉼표/Enter)</span></Label>
               <div className="flex gap-2">
-                <Input value={autoGenProcessInput} onChange={e => setAutoGenProcessInput(e.target.value)}
-                  placeholder="예: 배관, 용접, 비계..."
+                <Input
+                  className="h-9"
+                  value={autoGenProcessInput}
+                  onChange={e => setAutoGenProcessInput(e.target.value)}
+                  placeholder="예: 굴착, 배관, 용접..."
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddProcessTag(); } }}
                 />
-                <Button size="sm" variant="outline" onClick={handleAddProcessTag}>추가</Button>
+                <Button size="sm" variant="outline" className="h-9 shrink-0" onClick={handleAddProcessTag}>추가</Button>
               </div>
               {autoGenProcesses.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-1">
+                <div className="flex flex-wrap gap-1.5">
                   {autoGenProcesses.map(p => (
-                    <Badge key={p} variant="default" className="cursor-pointer text-[11px] gap-1" onClick={() => setAutoGenProcesses(prev => prev.filter(x => x !== p))}>
+                    <Badge key={p} variant="default" className="cursor-pointer text-[11px] h-7 gap-1" onClick={() => setAutoGenProcesses(prev => prev.filter(x => x !== p))}>
                       {p} ×
                     </Badge>
                   ))}
@@ -2016,12 +2068,13 @@ const AssessmentRunDetail = () => {
             </div>
 
             {autoGenUseAI && (
-              <>
+              <div className="rounded-lg border bg-card p-3 space-y-3">
                 <div className="space-y-1.5">
-                  <Label>작업위치</Label>
-                  <Select value={autoGenWorkLocation} onValueChange={setAutoGenWorkLocation}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="선택 (미선택 시 일반)" /></SelectTrigger>
+                  <Label className="text-xs font-semibold">작업위치</Label>
+                  <Select value={autoGenWorkLocation || '__none__'} onValueChange={v => setAutoGenWorkLocation(v === '__none__' ? '' : v)}>
+                    <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="선택 (미선택 시 일반)" /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__none__">일반</SelectItem>
                       <SelectItem value="고소">고소작업</SelectItem>
                       <SelectItem value="지상">지상작업</SelectItem>
                       <SelectItem value="밀폐">밀폐공간</SelectItem>
@@ -2032,61 +2085,57 @@ const AssessmentRunDetail = () => {
                   </Select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label>작업환경 (복수 선택 가능)</Label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {['협소', '야간', '습기', '고온', '저온', '분진', '소음', '진동', '유해물질'].map(env => (
-                      <Badge key={env} variant={autoGenWorkEnv.includes(env) ? 'default' : 'outline'}
-                        className="cursor-pointer text-[11px]"
-                        onClick={() => setAutoGenWorkEnv(prev => prev.includes(env) ? prev.filter(e => e !== env) : [...prev, env])}>
-                        {env}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
+                <ConditionTagPicker
+                  value={autoGenConditionTags}
+                  onChange={setAutoGenConditionTags}
+                  suggestions={conditionTagSuggestions}
+                />
+
+                <SmartEquipmentTagInput
+                  value={autoGenEquipmentTags}
+                  onChange={setAutoGenEquipmentTags}
+                  suggestions={equipmentSuggestions}
+                />
 
                 <div className="space-y-1.5">
-                  <Label>장비 (선택)</Label>
-                  <Input value={autoGenEquipment} onChange={e => setAutoGenEquipment(e.target.value)}
-                    placeholder="예: 크레인, 굴착기, 용접기..." />
+                  <Label className="text-xs font-semibold">현장 특이사항 <span className="font-normal text-muted-foreground">(선택)</span></Label>
+                  <Input
+                    className="h-9 text-sm"
+                    value={autoGenConditionText}
+                    onChange={e => setAutoGenConditionText(e.target.value)}
+                    placeholder="동시작업, 야간 교대, 인접 공사 등"
+                  />
                 </div>
-              </>
+              </div>
             )}
 
-            <div className="space-y-1.5">
-              <Label>환경 태그 (선택)</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {allEnvTags.map(tag => (
-                  <Badge key={tag} variant={autoGenTags.includes(tag) ? 'default' : 'outline'} className="cursor-pointer text-[11px]"
-                    onClick={() => setAutoGenTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}>{tag}</Badge>
-                ))}
+            {!autoGenUseAI && (
+              <div className="rounded-lg border bg-card p-3">
+                <ConditionTagPicker
+                  value={autoGenConditionTags}
+                  onChange={setAutoGenConditionTags}
+                  suggestions={conditionTagSuggestions}
+                />
               </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>장비 태그 (선택)</Label>
-              <div className="flex flex-wrap gap-1.5">
-                {allEquipTags.map(tag => (
-                  <Badge key={tag} variant={autoGenTags.includes(tag) ? 'default' : 'outline'} className="cursor-pointer text-[11px]"
-                    onClick={() => setAutoGenTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}>{tag}</Badge>
-                ))}
+            )}
+
+            <div className="rounded-lg border bg-card p-3 space-y-2">
+              <Label className="text-xs font-semibold">평가 수준</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Button type="button" variant={autoGenDetailLevel === 'core' ? 'default' : 'outline'} size="sm" className="h-10 text-xs"
+                  onClick={() => setAutoGenDetailLevel('core')}>핵심 (15개±)</Button>
+                <Button type="button" variant={autoGenDetailLevel === 'comprehensive' ? 'default' : 'outline'} size="sm" className="h-10 text-xs"
+                  onClick={() => setAutoGenDetailLevel('comprehensive')}>작업순서 상세 (15+)</Button>
               </div>
+              <p className="text-[10px] text-muted-foreground leading-snug">
+                세부 작업 3~5단계로 분해 · 단계별 구체 시나리오 · 관련 사고사례 2~3건
+              </p>
             </div>
-            <div className="space-y-1.5">
-              <Label>현장 조건 / 작업내용 (선택, 자유 텍스트)</Label>
-              <Input value={autoGenConditionText} onChange={e => setAutoGenConditionText(e.target.value)} placeholder="작업 위치, 특이사항, 동시작업 등..." />
-            </div>
-            <div className="space-y-1.5">
-              <Label>평가 수준</Label>
-              <div className="flex gap-2">
-                <Button type="button" variant={autoGenDetailLevel === 'core' ? 'default' : 'outline'} size="sm" className="flex-1"
-                  onClick={() => setAutoGenDetailLevel('core')}>핵심 위주 (10~15개)</Button>
-                <Button type="button" variant={autoGenDetailLevel === 'comprehensive' ? 'default' : 'outline'} size="sm" className="flex-1"
-                  onClick={() => setAutoGenDetailLevel('comprehensive')}>작업 순서별 상세</Button>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">🤖 AI가 공종을 시공 순서로 분해하고 4M(사람·기계·물질/환경·관리) 관점에서 실효성 있는 위험요인과 대책을 도출합니다.</p>
-            <Button onClick={handleAutoGenerate} disabled={autoGenProcesses.length === 0 || autoGenLoading} className="w-full">
-              {autoGenLoading ? 'AI 생성 중... (30초~1분 소요)' : `AI 자동작성 · ${autoGenProcesses.length}개 공종 (${autoGenDetailLevel === 'core' ? '핵심 위주' : '상세 도출'})`}
+
+            <Button onClick={handleAutoGenerate} disabled={autoGenProcesses.length === 0 || autoGenLoading} className="w-full h-11">
+              {autoGenLoading
+                ? 'AI 생성 중… (30초~1분)'
+                : `자동작성 · ${autoGenProcesses.length || 0}개 공종`}
             </Button>
           </div>
         </DialogContent>

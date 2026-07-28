@@ -251,19 +251,128 @@ export async function geminiChatFetch(body: OAIRequest): Promise<Response> {
     const result = await callGeminiChat(body);
     return new Response(JSON.stringify(result), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json; charset=utf-8" },
     });
   } catch (e) {
     if (e instanceof GeminiError) {
       return new Response(JSON.stringify({ error: { message: e.message, code: e.code } }), {
         status: e.status,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json; charset=utf-8" },
       });
     }
     const msg = e instanceof Error ? e.message : String(e);
     return new Response(JSON.stringify({ error: { message: msg } }), {
       status: 500,
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json; charset=utf-8" },
     });
+  }
+}
+
+/**
+ * Stream NVIDIA chat completions as UTF-8 text deltas (OpenAI SSE compatible).
+ * Yields content string chunks; does not buffer the full response.
+ */
+export async function* streamGeminiChatText(req: OAIRequest): AsyncGenerator<string, void, unknown> {
+  const apiKey = Deno.env.get("NVIDIA_API_KEY");
+  if (!apiKey) {
+    throw new GeminiError(
+      "NVIDIA_API_KEY가 설정되지 않았습니다. 마스터가 설정 > 시크릿에서 등록해야 합니다.",
+      500,
+      "INVALID_KEY",
+    );
+  }
+
+  const wantsJson = req.response_format?.type === "json_object";
+  const compact = !!req.compact;
+  const preparedMessages = injectSystemRules(req.messages, wantsJson, compact);
+  const messages = preparedMessages.map((m) => ({
+    role: m.role,
+    content: flattenContent(m.content),
+  }));
+
+  const body: Record<string, unknown> = {
+    model: NVIDIA_MODEL,
+    messages,
+    temperature: typeof req.temperature === "number" ? req.temperature : 0.35,
+    max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 4096,
+    stream: true,
+    chat_template_kwargs: { enable_thinking: false },
+  };
+
+  const resp = await fetch(NVIDIA_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Authorization": `Bearer ${apiKey}`,
+      "Accept": "text/event-stream",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    console.error(`[NVIDIA stream] ${resp.status}:`, text.slice(0, 500));
+    if (resp.status === 429) {
+      throw new GeminiError("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", 429, "RATE_LIMIT");
+    }
+    if (resp.status === 401 || resp.status === 403) {
+      if (/quota|exceed|exhausted|credit/i.test(text)) {
+        throw new GeminiError("NVIDIA API 할당량이 소진되었습니다. 사용량을 확인해주세요.", 402, "QUOTA_EXHAUSTED");
+      }
+      throw new GeminiError("NVIDIA API 키가 유효하지 않습니다. 키를 다시 등록해주세요.", 403, "INVALID_KEY");
+    }
+    throw new GeminiError(`NVIDIA 서버 오류 (${resp.status})`, resp.status, "SERVER_ERROR");
+  }
+
+  if (!resp.body) {
+    throw new GeminiError("NVIDIA 스트림 응답이 비어 있습니다.", 500, "SERVER_ERROR");
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let carry = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    carry += decoder.decode(value, { stream: true });
+    const parts = carry.split("\n");
+    carry = parts.pop() || "";
+    for (const line of parts) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith(":")) continue;
+      if (!trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      try {
+        const parsed = JSON.parse(payload);
+        const delta =
+          parsed?.choices?.[0]?.delta?.content ??
+          parsed?.choices?.[0]?.message?.content ??
+          "";
+        if (typeof delta === "string" && delta.length > 0) {
+          yield delta;
+        }
+      } catch {
+        // partial JSON line — ignore
+      }
+    }
+  }
+
+  // Flush decoder
+  const tail = decoder.decode();
+  if (tail) {
+    carry += tail;
+    for (const line of carry.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const payload = trimmed.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      try {
+        const parsed = JSON.parse(payload);
+        const delta = parsed?.choices?.[0]?.delta?.content ?? "";
+        if (typeof delta === "string" && delta.length > 0) yield delta;
+      } catch { /* ignore */ }
+    }
   }
 }

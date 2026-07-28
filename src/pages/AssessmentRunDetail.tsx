@@ -26,7 +26,7 @@ import {
   Edit3, Archive, Clock, Pencil, Ban, Camera,
 } from 'lucide-react';
 import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
-import { generateRiskItemsHybrid, type AIGenerateOptions } from '@/lib/riskAutoGenAI';
+import { generateRiskItemsStreaming, type AIGenerateOptions } from '@/lib/riskAutoGenAI';
 import { ConditionTagPicker, SmartEquipmentTagInput, DEFAULT_CONDITION_TAGS, DEFAULT_EQUIPMENT_SUGGESTIONS } from '@/components/assessment/RiskAutoGenFields';
 import { exportToXLSX, exportToPDF, exportToPDFServer, printRiskAssessment } from '@/lib/exportUtils';
 import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue } from '@/lib/validationEngine';
@@ -82,6 +82,8 @@ const AssessmentRunDetail = () => {
   const [autoGenDetailLevel, setAutoGenDetailLevel] = useState<'core' | 'comprehensive'>('comprehensive');
   const [autoGenConditionTags, setAutoGenConditionTags] = useState<string[]>([]);
   const [autoGenLoading, setAutoGenLoading] = useState(false);
+  const [autoGenStreamCount, setAutoGenStreamCount] = useState(0);
+  const [autoGenPhaseLabel, setAutoGenPhaseLabel] = useState('');
   const [autoGenConditionText, setAutoGenConditionText] = useState('');
   const [autoGenWorkLocation, setAutoGenWorkLocation] = useState('');
   const [autoGenEquipmentTags, setAutoGenEquipmentTags] = useState<string[]>([]);
@@ -482,6 +484,18 @@ const AssessmentRunDetail = () => {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  // Prevent accidental leave while AI streaming is in progress
+  useEffect(() => {
+    if (!autoGenLoading) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '위험성평가 AI 생성이 진행 중입니다. 페이지를 나가면 생성이 중단될 수 있습니다.';
+      return e.returnValue;
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [autoGenLoading]);
+
   // Auto-refresh to sync approval status changes from other pages
   useEffect(() => {
     if (!runId || !run) return;
@@ -648,17 +662,62 @@ const AssessmentRunDetail = () => {
     toast({ title: '제외 해제됨' });
   };
 
-  // Auto-generate with multi-process support (AI-first engine)
+  // Auto-generate with multi-process support (AI streaming engine)
   const handleAutoGenerate = async () => {
     if (autoGenProcesses.length === 0 || !run || !user) return;
     setAutoGenLoading(true);
+    setAutoGenStreamCount(0);
+    setAutoGenPhaseLabel('');
+    const abort = new AbortController();
     try {
-      let allGenerated: any[] = [];
-      let sourceLabel = '';
+      let insertedTotal = 0;
+      let sortCursor = items.length;
+      let sourceLabel = 'ai';
       const allAccidents: { title: string; cause: string; result: string }[] = [];
       const equipJoined = autoGenEquipmentTags.join(', ');
+      const insertSeen = new Set<string>();
+
+      const persistOne = async (g: any) => {
+        const key = `${g.sub_task}|${g.hazard}`;
+        if (insertSeen.has(key)) return null;
+        insertSeen.add(key);
+        const row = {
+          project_id: run.project_id,
+          run_id: runId,
+          process: g.process,
+          sub_task: g.sub_task,
+          hazard: g.hazard,
+          hazard_situation: g.hazard_situation,
+          existing_measure: g.existing_measure,
+          improvement_measure: g.improvement_measure,
+          frequency: g.frequency,
+          severity: g.severity,
+          improved_frequency: g.improved_frequency,
+          improved_severity: g.improved_severity,
+          likelihood_grade: g.likelihood_grade,
+          severity_grade: g.severity_grade,
+          risk_grade: g.risk_grade,
+          improved_likelihood_grade: g.improved_likelihood_grade,
+          improved_severity_grade: g.improved_severity_grade,
+          improved_risk_grade: g.improved_risk_grade,
+          status: '초안' as const,
+          ppe: g.ppe,
+          legal_basis: g.legal_basis,
+          department: g.department,
+          assignee: g.assignee,
+          created_by: user.id,
+          sort_order: sortCursor++,
+        };
+        const { data, error } = await supabase.from('risk_items').insert(row).select().single();
+        if (error) {
+          console.warn('[AutoGen] row insert failed:', error.message);
+          return null;
+        }
+        return data;
+      };
+
       for (const proc of autoGenProcesses) {
-        console.log(`[AutoGen] AI 엔진 호출 시작 (공종: ${proc.trim()}, 장비: ${equipJoined})`);
+        console.log(`[AutoGen] AI 스트림 호출 시작 (공종: ${proc.trim()}, 장비: ${equipJoined})`);
         if (!autoGenUseAI) {
           const { generateRiskItems } = await import('@/lib/riskAutoGen');
           const libraryItems = await generateRiskItems({
@@ -667,10 +726,18 @@ const AssessmentRunDetail = () => {
             targetCount: autoGenDetailLevel === 'core' ? 15 : 30,
             deduplicate: true,
           });
-          allGenerated.push(...libraryItems);
+          for (const g of libraryItems) {
+            const saved = await persistOne(g);
+            if (saved) {
+              insertedTotal += 1;
+              setAutoGenStreamCount(insertedTotal);
+              setItems((prev) => [...prev, saved]);
+            }
+          }
           sourceLabel = 'library';
           continue;
         }
+
         const opts: AIGenerateOptions = {
           processName: proc.trim(),
           equipment: equipJoined,
@@ -682,40 +749,43 @@ const AssessmentRunDetail = () => {
           deduplicate: true,
           projectId: run.project_id,
         };
-        const result = await generateRiskItemsHybrid(opts);
-        console.log(`[AutoGen] 결과 수신: ${result.items.length}건 (source: ${result.source})`);
-        allGenerated.push(...result.items);
+
+        const result = await generateRiskItemsStreaming(opts, {
+          signal: abort.signal,
+          onProgress: (progress) => {
+            if (progress.phaseTitle) setAutoGenPhaseLabel(String(progress.phaseTitle));
+            setAutoGenStreamCount(progress.itemsSoFar + insertedTotal);
+          },
+          onItem: async (g) => {
+            const saved = await persistOne(g);
+            if (saved) {
+              insertedTotal += 1;
+              setAutoGenStreamCount(insertedTotal);
+              setItems((prev) => [...prev, saved]);
+            }
+          },
+          onAccident: (a) => {
+            if (a.title || a.cause) allAccidents.push(a);
+          },
+        });
+
+        console.log(`[AutoGen] 스트림 완료: ${result.items.length}건 (source: ${result.source})`);
         sourceLabel = result.source;
         if (result.accidentCases?.length) {
           allAccidents.push(...result.accidentCases.slice(0, 3));
         }
       }
-      if (allGenerated.length === 0) { toast({ title: 'AI 생성 실패 - 다시 시도해주세요.', description: '결과를 생성하지 못했습니다. 공종명과 장비를 확인해주세요.', variant: 'destructive' }); setAutoGenLoading(false); return; }
-      // Deduplicate across processes
-      const seen = new Set<string>();
-      allGenerated = allGenerated.filter(g => {
-        const key = `${g.sub_task}|${g.hazard}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-      const inserts = allGenerated.map((g, i) => ({
-        project_id: run.project_id, run_id: runId,
-        process: g.process, sub_task: g.sub_task, hazard: g.hazard, hazard_situation: g.hazard_situation,
-        existing_measure: g.existing_measure, improvement_measure: g.improvement_measure,
-        frequency: g.frequency, severity: g.severity, improved_frequency: g.improved_frequency, improved_severity: g.improved_severity,
-        likelihood_grade: g.likelihood_grade, severity_grade: g.severity_grade, risk_grade: g.risk_grade,
-        improved_likelihood_grade: g.improved_likelihood_grade, improved_severity_grade: g.improved_severity_grade, improved_risk_grade: g.improved_risk_grade,
-        status: '초안', ppe: g.ppe, legal_basis: g.legal_basis, department: g.department, assignee: g.assignee,
-        created_by: user.id, sort_order: items.length + i,
-      }));
-      const { data, error } = await supabase.from('risk_items').insert(inserts).select();
-      if (error) throw new Error(error.message || '자동작성 항목 저장 실패');
-      const sourceMap: Record<string, string> = { library: '라이브러리', cache: '캐시', ai: 'AI', hybrid: '하이브리드' };
-      if (!data || data.length === 0) throw new Error('자동작성 결과가 저장되지 않았습니다. 권한 또는 프로젝트 설정을 확인해주세요.');
-      setItems(prev => [...prev, ...data]);
 
-      // Persist 2~3 related accident briefs (cap)
+      if (insertedTotal === 0) {
+        toast({
+          title: 'AI 생성 실패 - 다시 시도해주세요.',
+          description: '결과를 생성하지 못했습니다. 공종명과 장비를 확인해주세요.',
+          variant: 'destructive',
+        });
+        setAutoGenLoading(false);
+        return;
+      }
+
       const uniqueAccidents = allAccidents
         .filter((a, i, arr) => a.title && arr.findIndex((x) => x.title === a.title) === i)
         .slice(0, 3);
@@ -735,14 +805,30 @@ const AssessmentRunDetail = () => {
         );
       }
 
+      const sourceMap: Record<string, string> = {
+        library: '라이브러리',
+        cache: '캐시',
+        ai: 'AI',
+        hybrid: '하이브리드',
+      };
       toast({
-        title: `${data.length}건 자동 생성 완료 (${sourceMap[sourceLabel] || sourceLabel})`,
-        description: uniqueAccidents.length > 0 ? `관련 사고사례 ${uniqueAccidents.length}건도 함께 등록되었습니다.` : undefined,
+        title: '생성이 완료되었습니다. 불필요한 항목을 삭제하거나 수정해 주세요.',
+        description: `${insertedTotal}건 등록 (${sourceMap[sourceLabel] || sourceLabel})${
+          uniqueAccidents.length > 0 ? ` · 사고사례 ${uniqueAccidents.length}건` : ''
+        }`,
       });
-      setShowAutoGen(false); setAutoGenProcesses([]); setAutoGenProcessInput('');
-      setAutoGenConditionTags([]); setAutoGenWorkLocation('');
-      setAutoGenEquipmentTags([]); setAutoGenConditionText('');
-    } catch (err: any) { toast({ title: err?.message || '자동 생성 실패', variant: 'destructive' }); }
+      setShowAutoGen(false);
+      setAutoGenProcesses([]);
+      setAutoGenProcessInput('');
+      setAutoGenConditionTags([]);
+      setAutoGenWorkLocation('');
+      setAutoGenEquipmentTags([]);
+      setAutoGenConditionText('');
+      setAutoGenPhaseLabel('');
+      setAutoGenStreamCount(0);
+    } catch (err: any) {
+      toast({ title: err?.message || '자동 생성 실패', variant: 'destructive' });
+    }
     setAutoGenLoading(false);
   };
 
@@ -2037,6 +2123,9 @@ const AssessmentRunDetail = () => {
           onPointerDownOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
           onFocusOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => {
+            if (autoGenLoading) e.preventDefault();
+          }}
         >
           <DialogHeader className="space-y-1 pb-1">
             <DialogTitle className="text-base">공종명으로 위험성평가 자동작성</DialogTitle>
@@ -2143,9 +2232,14 @@ const AssessmentRunDetail = () => {
 
             <Button onClick={handleAutoGenerate} disabled={autoGenProcesses.length === 0 || autoGenLoading} className="w-full h-11">
               {autoGenLoading
-                ? 'AI 생성 중… (30초~1분)'
+                ? `AI 생성 중… ${autoGenStreamCount}건${autoGenPhaseLabel ? ` · ${autoGenPhaseLabel}` : ''}`
                 : `자동작성 · ${autoGenProcesses.length || 0}개 공종`}
             </Button>
+            {autoGenLoading && (
+              <p className="text-[11px] text-center text-muted-foreground">
+                생성 중에는 화면을 나가지 마세요. 항목이 테이블에 실시간으로 추가됩니다.
+              </p>
+            )}
           </div>
         </DialogContent>
       </Dialog>

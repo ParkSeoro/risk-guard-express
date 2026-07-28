@@ -117,7 +117,10 @@ function ProtectedRoutes() {
   const [hasProject, setHasProject] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (!user) { setHasProject(null); return; }
+    if (!user) {
+      // Don't reset to loading on transient auth blips; clear only when logged out.
+      return;
+    }
     if (isMaster) { setHasProject(true); return; }
     supabase
       .from('project_members')
@@ -126,7 +129,7 @@ function ProtectedRoutes() {
       .then(({ count }) => {
         setHasProject((count || 0) > 0);
       });
-  }, [user, isMaster]);
+  }, [user?.id, isMaster]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">로딩 중...</div>;
   if (!user) return <Navigate to="/landing" replace />;

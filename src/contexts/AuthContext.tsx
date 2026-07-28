@@ -101,7 +101,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
+        // Avoid full-app "로딩 중" flashes on token refresh / user update.
+        if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+          setSession(session);
+          if (session?.user) setUser(session.user);
+          return;
+        }
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
@@ -124,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             fetchProfile(session.user.id);
             fetchRoles(session.user.id);
           }, 0);
-        } else {
+        } else if (event === 'SIGNED_OUT') {
           setProfile(null);
           setRoles([]);
         }

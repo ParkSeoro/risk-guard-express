@@ -6683,6 +6683,7 @@ export type Database = {
           geo_anchor_nw_lng: number | null
           geo_anchor_se_lat: number | null
           geo_anchor_se_lng: number | null
+          geo_transform: Json | null
           height_m: number | null
           height_px: number | null
           id: string
@@ -6702,6 +6703,7 @@ export type Database = {
           geo_anchor_nw_lng?: number | null
           geo_anchor_se_lat?: number | null
           geo_anchor_se_lng?: number | null
+          geo_transform?: Json | null
           height_m?: number | null
           height_px?: number | null
           id?: string
@@ -6721,6 +6723,7 @@ export type Database = {
           geo_anchor_nw_lng?: number | null
           geo_anchor_se_lat?: number | null
           geo_anchor_se_lng?: number | null
+          geo_transform?: Json | null
           height_m?: number | null
           height_px?: number | null
           id?: string

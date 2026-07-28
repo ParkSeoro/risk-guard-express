@@ -59,7 +59,7 @@ export default function GeofenceAlertBridge({ projectId, subject, autoStart }: P
       const { data } = await supabase
         .from("restricted_zones")
         .select(
-          "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, banned_worker_ids, banned_company_ids, banned_job_types, is_active"
+          "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, banned_worker_ids, banned_company_ids, banned_job_types, access_rules, zone_category, is_active"
         )
         .eq("project_id", projectId)
         .eq("is_deleted", false)

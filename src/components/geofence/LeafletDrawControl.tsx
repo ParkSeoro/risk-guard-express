@@ -3,19 +3,42 @@ import { useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet-draw";
 
+export type DrawnPolygon = {
+  kind: "polygon";
+  latlngs: { lat: number; lng: number }[];
+};
+
+export type DrawnCircle = {
+  kind: "circle";
+  center: { lat: number; lng: number };
+  radius_m: number;
+};
+
+export type DrawnShape = DrawnPolygon | DrawnCircle;
+
 type Props = {
-  onPolygonCreated: (latlngs: { lat: number; lng: number }[]) => void;
-  /** leaflet-draw control position. Default topleft (topright reserved for layer panel). */
+  onShapeCreated?: (shape: DrawnShape) => void;
+  /** @deprecated prefer onShapeCreated — still works for polygon-only callers */
+  onPolygonCreated?: (latlngs: { lat: number; lng: number }[]) => void;
   position?: "topleft" | "topright" | "bottomleft" | "bottomright";
+  enabled?: boolean;
 };
 
 /**
- * leaflet-draw polygon control bound to the react-leaflet map instance.
+ * leaflet-draw polygon + circle control bound to the react-leaflet map instance.
  */
-export default function LeafletDrawControl({ onPolygonCreated, position = "topleft" }: Props) {
+export default function LeafletDrawControl({
+  onShapeCreated,
+  onPolygonCreated,
+  position = "topleft",
+  enabled = true,
+}: Props) {
   const map = useMap();
 
   useEffect(() => {
+    if (!enabled) return;
+    if (!onShapeCreated && !onPolygonCreated) return;
+
     const drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
 
@@ -29,9 +52,11 @@ export default function LeafletDrawControl({ onPolygonCreated, position = "tople
           showArea: true,
           shapeOptions: { color: "#ef4444", weight: 2, fillOpacity: 0.25 },
         },
+        circle: {
+          shapeOptions: { color: "#ef4444", weight: 2, fillOpacity: 0.25 },
+        },
         polyline: false,
         rectangle: false,
-        circle: false,
         marker: false,
         circlemarker: false,
       },
@@ -47,10 +72,28 @@ export default function LeafletDrawControl({ onPolygonCreated, position = "tople
       const layer = e.layer;
       drawnItems.clearLayers();
       drawnItems.addLayer(layer);
+
+      if (layer instanceof L.Circle || e.layerType === "circle") {
+        const c = layer.getLatLng();
+        const r = typeof layer.getRadius === "function" ? layer.getRadius() : 0;
+        if (r > 0) {
+          const shape: DrawnCircle = {
+            kind: "circle",
+            center: { lat: c.lat, lng: c.lng },
+            radius_m: Math.round(r * 10) / 10,
+          };
+          onShapeCreated?.(shape);
+        }
+        return;
+      }
+
       const rings = layer.getLatLngs();
       const ring = Array.isArray(rings[0]) ? rings[0] : rings;
       const latlngs = (ring as L.LatLng[]).map((p) => ({ lat: p.lat, lng: p.lng }));
-      if (latlngs.length >= 3) onPolygonCreated(latlngs);
+      if (latlngs.length >= 3) {
+        onShapeCreated?.({ kind: "polygon", latlngs });
+        onPolygonCreated?.(latlngs);
+      }
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -62,7 +105,7 @@ export default function LeafletDrawControl({ onPolygonCreated, position = "tople
       map.removeControl(drawControl);
       map.removeLayer(drawnItems);
     };
-  }, [map, onPolygonCreated, position]);
+  }, [map, onShapeCreated, onPolygonCreated, position, enabled]);
 
   return null;
 }

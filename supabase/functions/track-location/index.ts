@@ -4,6 +4,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { z } from "https://esm.sh/zod@3.23.8";
+import { isAccessForbidden } from "../_shared/accessRules.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -95,20 +96,18 @@ function cosineSimilarity(
 
 function isBanned(
   zone: {
+    access_rules?: unknown;
     banned_worker_ids?: string[] | null;
     banned_company_ids?: string[] | null;
     banned_job_types?: string[] | null;
   },
   subject: { worker_id?: string | null; company_id?: string | null; job_type?: string | null }
 ) {
-  const workers = zone.banned_worker_ids || [];
-  const companies = zone.banned_company_ids || [];
-  const jobs = (zone.banned_job_types || []).map((j) => j.trim().toLowerCase()).filter(Boolean);
-  if (workers.length === 0 && companies.length === 0 && jobs.length === 0) return true;
-  if (subject.worker_id && workers.includes(subject.worker_id)) return true;
-  if (subject.company_id && companies.includes(subject.company_id)) return true;
-  if (subject.job_type && jobs.includes(subject.job_type.trim().toLowerCase())) return true;
-  return false;
+  return isAccessForbidden(zone.access_rules, subject, {
+    banned_worker_ids: zone.banned_worker_ids,
+    banned_company_ids: zone.banned_company_ids,
+    banned_job_types: zone.banned_job_types,
+  });
 }
 
 Deno.serve(async (req) => {
@@ -173,7 +172,7 @@ Deno.serve(async (req) => {
     const { data: rZones } = await supabase
       .from("restricted_zones")
       .select(
-        "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, banned_worker_ids, banned_company_ids, banned_job_types"
+        "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, banned_worker_ids, banned_company_ids, banned_job_types, access_rules, zone_category"
       )
       .eq("project_id", body.project_id)
       .eq("is_deleted", false)

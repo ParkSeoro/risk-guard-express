@@ -28,8 +28,12 @@ import {
   RotateCcw, RotateCw, Move, ZoomIn, ZoomOut, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
 } from "lucide-react";
 import { toast } from "sonner";
-import LeafletDrawControl from "@/components/geofence/LeafletDrawControl";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import LeafletDrawControl, { type DrawnShape } from "@/components/geofence/LeafletDrawControl";
+import ZoneAccessRulesDialog, { type ZoneDraftPayload } from "@/components/geofence/ZoneAccessRulesDialog";
 import RotatedImageOverlay from "@/components/geofence/RotatedImageOverlay";
+import { fetchProjectCompanies } from "@/lib/projectCompanies";
+import { accessRulesSummary } from "@/lib/tracking/accessRules";
 import {
   bottomRight,
   cornersCenter,
@@ -64,6 +68,8 @@ type Zone = {
   center_lat: number | null;
   center_lng: number | null;
   radius_m: number | null;
+  zone_category?: string | null;
+  access_rules?: unknown;
 };
 
 type LayerState = {
@@ -71,6 +77,8 @@ type LayerState = {
   drone: boolean;
   zones: boolean;
 };
+
+type PanelTab = "mapping" | "zones";
 
 function cornerIcon(label: string, color: string) {
   return L.divIcon({
@@ -253,15 +261,17 @@ export default function SiteControlMap() {
   const [maps, setMaps] = useState<SiteMap[]>([]);
   const [activeMap, setActiveMap] = useState<SiteMap | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
-  const [draftName, setDraftName] = useState("위험구역");
-  const [pendingPoly, setPendingPoly] = useState<{ lat: number; lng: number }[] | null>(null);
+  const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
+  const [panelTab, setPanelTab] = useState<PanelTab>("mapping");
+  const [pendingShape, setPendingShape] = useState<DrawnShape | null>(null);
+  const [zoneModalOpen, setZoneModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [savingBounds, setSavingBounds] = useState(false);
 
   const [draftCorners, setDraftCorners] = useState<GeoCorners | null>(null);
   const [opacity, setOpacity] = useState(0.85);
-  const [rotateStep, setRotateStep] = useState(1); // degrees per click / slider nudge
+  const [rotateStep, setRotateStep] = useState(1);
   const [layers, setLayers] = useState<LayerState>({
     satellite: true,
     drone: true,
@@ -284,7 +294,17 @@ export default function SiteControlMap() {
     localStorage.setItem("currentProjectId", projectId);
     void loadMaps();
     void loadZones();
+    void fetchProjectCompanies(projectId).then((rows) =>
+      setCompanies(rows.map((c) => ({ id: c.id, name: c.name }))),
+    );
   }, [projectId]);
+
+  // Tab switch: map tools vs zone tools — keep shared map/layer state, toggle tool visibility only
+  useEffect(() => {
+    if (panelTab === "zones") {
+      setLayers((l) => ({ ...l, zones: true }));
+    }
+  }, [panelTab]);
 
   useEffect(() => {
     if (!activeMap) {
@@ -324,7 +344,9 @@ export default function SiteControlMap() {
   const loadZones = async () => {
     const { data } = await supabase
       .from("restricted_zones")
-      .select("id,name,geometry_type,geo_polygon,center_lat,center_lng,radius_m")
+      .select(
+        "id,name,geometry_type,geo_polygon,center_lat,center_lng,radius_m,zone_category,access_rules",
+      )
       .eq("project_id", projectId)
       .eq("is_deleted", false)
       .eq("is_active", true);
@@ -405,40 +427,76 @@ export default function SiteControlMap() {
     void loadMaps();
   };
 
-  const onPolygonCreated = useCallback((latlngs: { lat: number; lng: number }[]) => {
-    setPendingPoly(latlngs);
+  const onShapeCreated = useCallback((shape: DrawnShape) => {
+    setPendingShape(shape);
+    setZoneModalOpen(true);
     setLayers((l) => ({ ...l, zones: true }));
-    toast.message(`다각형 ${latlngs.length}점 — 이름 확인 후 저장하세요`);
+    setPanelTab("zones");
   }, []);
 
-  const savePolygonZone = async () => {
-    if (!projectId || !pendingPoly || pendingPoly.length < 3) {
-      toast.error("먼저 지도에서 다각형을 그려주세요");
+  const saveZoneFromModal = async (payload: ZoneDraftPayload) => {
+    if (!projectId) {
+      toast.error("프로젝트를 먼저 선택하세요");
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from("restricted_zones").insert({
+    const base = {
       project_id: projectId,
-      name: draftName.trim() || "위험구역",
-      geometry_type: "polygon",
-      geo_polygon: pendingPoly,
-      center_lat: null,
-      center_lng: null,
-      radius_m: null,
-      banned_worker_ids: [],
-      banned_company_ids: [],
-      banned_job_types: [],
+      name: payload.name,
+      zone_category: payload.zone_category,
+      access_rules: payload.access_rules,
+      banned_worker_ids: [] as string[],
+      banned_company_ids: [] as string[],
+      banned_job_types: [] as string[],
       is_active: true,
       created_by: (await supabase.auth.getUser()).data.user?.id,
-    } as any);
+    };
+
+    const row =
+      payload.shape.kind === "circle"
+        ? {
+            ...base,
+            geometry_type: "radius" as const,
+            center_lat: payload.shape.center.lat,
+            center_lng: payload.shape.center.lng,
+            radius_m: payload.shape.radius_m,
+            geo_polygon: null,
+          }
+        : {
+            ...base,
+            geometry_type: "polygon" as const,
+            geo_polygon: payload.shape.latlngs,
+            center_lat: null,
+            center_lng: null,
+            radius_m: null,
+          };
+
+    const { error } = await supabase.from("restricted_zones").insert(row as any);
     setSaving(false);
     if (error) {
       toast.error("저장 실패: " + error.message);
       return;
     }
     toast.success("위험 구역이 저장되었습니다");
-    setPendingPoly(null);
+    setZoneModalOpen(false);
+    setPendingShape(null);
     void loadZones();
+  };
+
+  const focusZone = (z: Zone) => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (z.geometry_type === "radius" && z.center_lat != null && z.center_lng != null && z.radius_m) {
+      const c = L.latLng(z.center_lat, z.center_lng);
+      map.fitBounds(c.toBounds(Number(z.radius_m) * 2.4), { padding: [40, 40], maxZoom: 19 });
+      return;
+    }
+    if (z.geo_polygon && z.geo_polygon.length >= 3) {
+      map.fitBounds(
+        L.latLngBounds(z.geo_polygon.map((p) => [p.lat, p.lng] as [number, number])),
+        { padding: [40, 40], maxZoom: 19 },
+      );
+    }
   };
 
   const deleteZone = async (id: string) => {
@@ -478,7 +536,7 @@ export default function SiteControlMap() {
             통합 현장 관제맵
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            TL/TR/BL 마커 드래그 · 회전 · 이동 · 확대/축소로 드론 사진을 위성에 세밀하게 맞춥니다.
+            맵핑 탭에서 드론 도면을 맞추고, 위험구역 탭에서 출입 통제 구역을 그립니다.
           </p>
         </div>
         <Select value={projectId} onValueChange={setProjectId}>
@@ -493,179 +551,194 @@ export default function SiteControlMap() {
         </Select>
       </div>
 
-      <div className="grid lg:grid-cols-[320px_1fr] gap-4">
+      <div className="grid lg:grid-cols-[340px_1fr] gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">드론 · 위험구역</CardTitle>
+            <CardTitle className="text-base">현장 관제 도구</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div>
-              <Label className="text-xs">맵 선택</Label>
-              <Select
-                value={activeMap?.id || ""}
-                onValueChange={(id) => setActiveMap(maps.find((m) => m.id === id) || null)}
-              >
-                <SelectTrigger><SelectValue placeholder="맵 선택" /></SelectTrigger>
-                <SelectContent>
-                  {maps.map((m) => (
-                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <CardContent className="pt-0">
+            <Tabs
+              value={panelTab}
+              onValueChange={(v) => setPanelTab(v as PanelTab)}
+              className="w-full"
+            >
+              <TabsList className="grid w-full grid-cols-2 h-auto">
+                <TabsTrigger value="mapping" className="text-[11px] px-1 py-2 whitespace-normal leading-tight">
+                  [1] 드론/도면 맵핑
+                </TabsTrigger>
+                <TabsTrigger value="zones" className="text-[11px] px-1 py-2 whitespace-normal leading-tight">
+                  [2] 위험구역 설정
+                </TabsTrigger>
+              </TabsList>
 
-            <label className="flex items-center justify-center gap-2 h-11 border border-dashed rounded-md cursor-pointer text-sm hover:bg-muted/50">
-              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              드론 사진 업로드
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void onUploadDrone(f);
-                  e.target.value = "";
-                }}
-              />
-            </label>
+              <TabsContent value="mapping" className="mt-3 space-y-3 focus-visible:outline-none">
+                <div>
+                  <Label className="text-xs">맵 선택</Label>
+                  <Select
+                    value={activeMap?.id || ""}
+                    onValueChange={(id) => setActiveMap(maps.find((m) => m.id === id) || null)}
+                  >
+                    <SelectTrigger><SelectValue placeholder="맵 선택" /></SelectTrigger>
+                    <SelectContent>
+                      {maps.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {draftCorners && activeMap?.image_url && (
-              <div className="rounded-md border bg-muted/40 p-2.5 space-y-3">
+                <label className="flex items-center justify-center gap-2 h-11 border border-dashed rounded-md cursor-pointer text-sm hover:bg-muted/50">
+                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  드론 사진 업로드
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) void onUploadDrone(f);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+
+                {draftCorners && activeMap?.image_url ? (
+                  <div className="rounded-md border bg-muted/40 p-2.5 space-y-3">
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      <b>TL·TR·BL</b> 마커를 드래그하면 회전·왜곡까지 반영됩니다.
+                    </p>
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-xs flex items-center gap-1">
+                          <RotateCw className="h-3 w-3" /> 회전
+                        </Label>
+                        <span className="text-[10px] text-muted-foreground">±{rotateStep}°</span>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
+                          onClick={() => setDraftCorners(rotateCorners(draftCorners, -rotateStep))}>
+                          <RotateCcw className="h-3.5 w-3.5 mr-1" /> 반시계
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
+                          onClick={() => setDraftCorners(rotateCorners(draftCorners, rotateStep))}>
+                          <RotateCw className="h-3.5 w-3.5 mr-1" /> 시계
+                        </Button>
+                      </div>
+                      <Slider value={[rotateStep]} min={0.25} max={15} step={0.25}
+                        onValueChange={(v) => setRotateStep(v[0] ?? 1)} />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-xs flex items-center gap-1">
+                        <Move className="h-3 w-3" /> 미세 이동
+                      </Label>
+                      <div className="grid grid-cols-3 gap-1 w-28 mx-auto">
+                        <span />
+                        <Button type="button" size="icon" variant="outline" className="h-8 w-8"
+                          onClick={() => setDraftCorners(translateCorners(draftCorners, nudgeStep, 0))}>
+                          <ArrowUp className="h-3.5 w-3.5" />
+                        </Button>
+                        <span />
+                        <Button type="button" size="icon" variant="outline" className="h-8 w-8"
+                          onClick={() => setDraftCorners(translateCorners(draftCorners, 0, -nudgeStep))}>
+                          <ArrowLeft className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button type="button" size="icon" variant="outline" className="h-8 w-8"
+                          onClick={() => setDraftCorners(translateCorners(draftCorners, -nudgeStep, 0))}>
+                          <ArrowDown className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button type="button" size="icon" variant="outline" className="h-8 w-8"
+                          onClick={() => setDraftCorners(translateCorners(draftCorners, 0, nudgeStep))}>
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-1">
+                      <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
+                        onClick={() => setDraftCorners(scaleCorners(draftCorners, 0.97))}>
+                        <ZoomOut className="h-3.5 w-3.5 mr-1" /> 축소
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
+                        onClick={() => setDraftCorners(scaleCorners(draftCorners, 1.03))}>
+                        <ZoomIn className="h-3.5 w-3.5 mr-1" /> 확대
+                      </Button>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs">투명도 {Math.round(opacity * 100)}%</Label>
+                      <Slider value={[opacity]} min={0.2} max={1} step={0.05}
+                        onValueChange={(v) => setOpacity(v[0] ?? 0.85)} />
+                    </div>
+
+                    <Button className="w-full" size="sm" onClick={() => void saveBounds()} disabled={savingBounds}>
+                      {savingBounds ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+                      오버레이 저장 (회전 포함)
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    드론 사진을 업로드하면 TL/TR/BL 정렬 도구가 나타납니다.
+                  </p>
+                )}
+              </TabsContent>
+
+              <TabsContent value="zones" className="mt-3 space-y-3 focus-visible:outline-none">
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  <b>TL·TR·BL</b> 마커를 드래그하면 회전·왜곡까지 반영됩니다.
-                  아래 버튼으로 미세 조정하세요.
+                  지도 좌측 그리기 도구로 <b>다각형</b> 또는 <b>원형</b>을 완성하면 출입 통제 설정 창이 열립니다.
                 </p>
 
-                {/* Rotation */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs flex items-center gap-1">
-                      <RotateCw className="h-3 w-3" /> 회전
-                    </Label>
-                    <span className="text-[10px] text-muted-foreground">±{rotateStep}°</span>
+                <div className="text-xs space-y-1.5 max-h-[52vh] overflow-auto">
+                  <div className="font-medium text-foreground flex items-center gap-1.5">
+                    <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
+                    등록 구역 {zones.length}
                   </div>
-                  <div className="flex gap-1">
-                    <Button
+                  {zones.length === 0 && (
+                    <div className="text-muted-foreground text-center py-6 border rounded-md">
+                      등록된 위험구역이 없습니다.
+                    </div>
+                  )}
+                  {zones.map((z) => (
+                    <button
+                      key={z.id}
                       type="button"
-                      size="sm"
-                      variant="outline"
-                      className="flex-1 h-8"
-                      onClick={() => setDraftCorners(rotateCorners(draftCorners, -rotateStep))}
+                      className="w-full text-left rounded-md border p-2 hover:bg-muted/50 transition-colors"
+                      onClick={() => focusZone(z)}
                     >
-                      <RotateCcw className="h-3.5 w-3.5 mr-1" /> 반시계
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="flex-1 h-8"
-                      onClick={() => setDraftCorners(rotateCorners(draftCorners, rotateStep))}
-                    >
-                      <RotateCw className="h-3.5 w-3.5 mr-1" /> 시계
-                    </Button>
-                  </div>
-                  <Slider
-                    value={[rotateStep]}
-                    min={0.25}
-                    max={15}
-                    step={0.25}
-                    onValueChange={(v) => setRotateStep(v[0] ?? 1)}
-                  />
-                  <p className="text-[10px] text-muted-foreground">슬라이더 = 1회 회전 각도 (정밀 0.25° ~ 거친 15°)</p>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="font-medium truncate text-foreground">{z.name}</div>
+                          <div className="flex flex-wrap gap-1">
+                            {z.zone_category && (
+                              <Badge variant="outline" className="text-[10px]">{z.zone_category}</Badge>
+                            )}
+                            <Badge variant="secondary" className="text-[10px]">
+                              {z.geometry_type === "radius" ? `원 ${z.radius_m}m` : "폴리곤"}
+                            </Badge>
+                            <Badge variant="outline" className="text-[10px]">
+                              {accessRulesSummary(z.access_rules)}
+                            </Badge>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void deleteZone(z.id);
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </button>
+                  ))}
                 </div>
-
-                {/* Nudge */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs flex items-center gap-1">
-                    <Move className="h-3 w-3" /> 미세 이동
-                  </Label>
-                  <div className="grid grid-cols-3 gap-1 w-28 mx-auto">
-                    <span />
-                    <Button type="button" size="icon" variant="outline" className="h-8 w-8"
-                      onClick={() => setDraftCorners(translateCorners(draftCorners, nudgeStep, 0))}>
-                      <ArrowUp className="h-3.5 w-3.5" />
-                    </Button>
-                    <span />
-                    <Button type="button" size="icon" variant="outline" className="h-8 w-8"
-                      onClick={() => setDraftCorners(translateCorners(draftCorners, 0, -nudgeStep))}>
-                      <ArrowLeft className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button type="button" size="icon" variant="outline" className="h-8 w-8"
-                      onClick={() => setDraftCorners(translateCorners(draftCorners, -nudgeStep, 0))}>
-                      <ArrowDown className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button type="button" size="icon" variant="outline" className="h-8 w-8"
-                      onClick={() => setDraftCorners(translateCorners(draftCorners, 0, nudgeStep))}>
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Scale */}
-                <div className="flex gap-1">
-                  <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
-                    onClick={() => setDraftCorners(scaleCorners(draftCorners, 0.97))}>
-                    <ZoomOut className="h-3.5 w-3.5 mr-1" /> 축소
-                  </Button>
-                  <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
-                    onClick={() => setDraftCorners(scaleCorners(draftCorners, 1.03))}>
-                    <ZoomIn className="h-3.5 w-3.5 mr-1" /> 확대
-                  </Button>
-                </div>
-
-                {/* Opacity */}
-                <div className="space-y-1">
-                  <Label className="text-xs">투명도 {Math.round(opacity * 100)}%</Label>
-                  <Slider
-                    value={[opacity]}
-                    min={0.2}
-                    max={1}
-                    step={0.05}
-                    onValueChange={(v) => setOpacity(v[0] ?? 0.85)}
-                  />
-                </div>
-
-                <Button className="w-full" size="sm" onClick={() => void saveBounds()} disabled={savingBounds}>
-                  {savingBounds ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-                  오버레이 저장 (회전 포함)
-                </Button>
-              </div>
-            )}
-
-            <div className="border-t pt-3 space-y-2">
-              <Label className="text-xs">새 위험구역 이름</Label>
-              <Input value={draftName} onChange={(e) => setDraftName(e.target.value)} />
-              {pendingPoly && (
-                <Badge variant="outline">{pendingPoly.length}점 다각형 대기</Badge>
-              )}
-              <Button className="w-full" onClick={() => void savePolygonZone()} disabled={saving || !pendingPoly}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-                위험구역 저장
-              </Button>
-            </div>
-
-            <div className="text-xs text-muted-foreground space-y-1 max-h-40 overflow-auto">
-              <div className="font-medium text-foreground">등록 구역 {zones.length}</div>
-              {zones.map((z) => (
-                <div key={z.id} className="flex items-center justify-between gap-2 py-0.5">
-                  <span className="truncate">{z.name}</span>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Badge variant="secondary" className="text-[10px]">
-                      {z.geometry_type === "radius" ? `원 ${z.radius_m}m` : "폴리곤"}
-                    </Badge>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 text-destructive"
-                      onClick={() => void deleteZone(z.id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
 
@@ -728,7 +801,7 @@ export default function SiteControlMap() {
                   />
                 )}
 
-                {layers.drone && draftCorners && activeMap?.image_url && (
+                {layers.drone && draftCorners && activeMap?.image_url && panelTab === "mapping" && (
                   <VisualCornerMarkers
                     corners={draftCorners}
                     onChange={setDraftCorners}
@@ -743,14 +816,21 @@ export default function SiteControlMap() {
                   token={fitToken}
                 />
 
-                {layers.zones && (
-                  <LeafletDrawControl onPolygonCreated={onPolygonCreated} position="topleft" />
+                {panelTab === "zones" && layers.zones && (
+                  <LeafletDrawControl onShapeCreated={onShapeCreated} position="topleft" enabled />
                 )}
 
-                {layers.zones && pendingPoly && (
+                {layers.zones && pendingShape?.kind === "polygon" && (
                   <Polygon
-                    positions={pendingPoly.map((p) => [p.lat, p.lng] as [number, number])}
+                    positions={pendingShape.latlngs.map((p) => [p.lat, p.lng] as [number, number])}
                     pathOptions={{ color: "#f59e0b", weight: 2, dashArray: "6 4" }}
+                  />
+                )}
+                {layers.zones && pendingShape?.kind === "circle" && (
+                  <Circle
+                    center={[pendingShape.center.lat, pendingShape.center.lng]}
+                    radius={pendingShape.radius_m}
+                    pathOptions={{ color: "#f59e0b", weight: 2, dashArray: "6 4", fillOpacity: 0.15 }}
                   />
                 )}
 
@@ -765,18 +845,20 @@ export default function SiteControlMap() {
                         center={[z.center_lat, z.center_lng]}
                         radius={Number(z.radius_m)}
                         pathOptions={{ color: "#ef4444", fillOpacity: 0.2 }}
+                        eventHandlers={{ click: () => focusZone(z) }}
                       />
                     ) : z.geo_polygon && z.geo_polygon.length >= 3 ? (
                       <Polygon
                         key={z.id}
                         positions={z.geo_polygon.map((p) => [p.lat, p.lng] as [number, number])}
                         pathOptions={{ color: "#ef4444", fillOpacity: 0.2 }}
+                        eventHandlers={{ click: () => focusZone(z) }}
                       />
                     ) : null,
                   )}
               </MapContainer>
 
-              {activeMap?.image_url && !draftCorners && (
+              {activeMap?.image_url && !draftCorners && panelTab === "mapping" && (
                 <div className="absolute inset-x-0 bottom-3 mx-auto max-w-md rounded-lg bg-background/95 border p-3 text-xs text-center shadow z-[500]">
                   뷰포트 중앙에 TL/TR/BL 마커를 배치하는 중…
                 </div>
@@ -785,6 +867,18 @@ export default function SiteControlMap() {
           </CardContent>
         </Card>
       </div>
+
+      <ZoneAccessRulesDialog
+        open={zoneModalOpen}
+        shape={pendingShape}
+        companies={companies}
+        saving={saving}
+        onOpenChange={(open) => {
+          setZoneModalOpen(open);
+          if (!open) setPendingShape(null);
+        }}
+        onSave={saveZoneFromModal}
+      />
     </div>
   );
 }

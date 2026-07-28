@@ -134,7 +134,7 @@ var list_risk_assessments_default = defineTool4({
 });
 
 // src/lib/mcp/index.ts
-var projectRef = "iqtiozscqwuacgzrlfzu";
+var projectRef = "qhntxmggacorqjjmjqgo";
 var mcp_default = defineMcp({
   name: "safenex-mcp",
   title: "SafeNex \uC548\uC804\uAD00\uB9AC MCP",

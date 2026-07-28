@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { Building2, Plus, Search, Pencil, Trash2, Merge, Network } from 'lucide-react';
+import { COMPANY_TYPE_OPTIONS, companyTypeLabel, normalizeCompanyType } from '@/lib/companyTypes';
 
 interface CompanyRow {
   id: string;
@@ -21,16 +22,18 @@ interface CompanyRow {
   address: string | null;
   is_deleted: boolean;
   project_count: number;
+  project_ids: string[];
 }
 
-const TYPE_OPTIONS = [
-  { v: 'client', label: '발주처' },
-  { v: 'gc', label: '원도급' },
-  { v: 'contractor', label: '시공사' },
-  { v: 'vendor', label: '협력사' },
-];
-
-const emptyForm = { id: '', name: '', type: 'contractor', business_no: '', contact: '', address: '' };
+const emptyForm = {
+  id: '',
+  name: '',
+  type: 'gc',
+  business_no: '',
+  contact: '',
+  address: '',
+  project_ids: [] as string[],
+};
 
 export default function SettingsCompanies() {
   const { hasRole } = useAuth();
@@ -38,6 +41,7 @@ export default function SettingsCompanies() {
   const canEdit = hasRole('master') || hasRole('project_admin');
 
   const [rows, setRows] = useState<CompanyRow[]>([]);
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showDialog, setShowDialog] = useState(false);
@@ -45,28 +49,37 @@ export default function SettingsCompanies() {
   const [mergeMode, setMergeMode] = useState(false);
   const [mergeSrc, setMergeSrc] = useState<string>('');
   const [mergeDst, setMergeDst] = useState<string>('');
+  const [saving, setSaving] = useState(false);
 
   const fetchAll = async () => {
     setLoading(true);
-    const { data: companies } = await (supabase as any)
-      .from('companies')
-      .select('id, name, type, business_no, contact, address, is_deleted')
-      .order('is_deleted')
-      .order('name');
+    const [{ data: companies }, { data: projectRows }] = await Promise.all([
+      (supabase as any)
+        .from('companies')
+        .select('id, name, type, business_no, contact, address, is_deleted')
+        .order('is_deleted')
+        .order('name'),
+      supabase.from('projects').select('id, name').order('name'),
+    ]);
+    setProjects(projectRows || []);
     const list = companies || [];
     const ids = list.map((c: any) => c.id);
-    const projectCounts: Record<string, number> = {};
+    const projectIdsByCompany: Record<string, string[]> = {};
     if (ids.length > 0) {
       const { data: pcs } = await (supabase as any)
         .from('project_companies')
-        .select('company_id')
+        .select('company_id, project_id')
         .in('company_id', ids)
         .eq('is_deleted', false);
       (pcs || []).forEach((p: any) => {
-        projectCounts[p.company_id] = (projectCounts[p.company_id] || 0) + 1;
+        if (!projectIdsByCompany[p.company_id]) projectIdsByCompany[p.company_id] = [];
+        projectIdsByCompany[p.company_id].push(p.project_id);
       });
     }
-    setRows(list.map((c: any) => ({ ...c, project_count: projectCounts[c.id] || 0 })));
+    setRows(list.map((c: any) => {
+      const project_ids = projectIdsByCompany[c.id] || [];
+      return { ...c, project_ids, project_count: project_ids.length };
+    }));
     setLoading(false);
   };
 
@@ -80,26 +93,98 @@ export default function SettingsCompanies() {
 
   const openNew = () => { setForm({ ...emptyForm }); setShowDialog(true); };
   const openEdit = (r: CompanyRow) => {
-    setForm({ id: r.id, name: r.name, type: r.type, business_no: r.business_no || '', contact: r.contact || '', address: r.address || '' });
+    setForm({
+      id: r.id,
+      name: r.name,
+      type: normalizeCompanyType(r.type) || 'gc',
+      business_no: r.business_no || '',
+      contact: r.contact || '',
+      address: r.address || '',
+      project_ids: [...(r.project_ids || [])],
+    });
     setShowDialog(true);
+  };
+
+  const toggleProject = (projectId: string) => {
+    setForm((prev) => {
+      const has = prev.project_ids.includes(projectId);
+      return {
+        ...prev,
+        project_ids: has
+          ? prev.project_ids.filter((id) => id !== projectId)
+          : [...prev.project_ids, projectId],
+      };
+    });
   };
 
   const save = async () => {
     if (!form.name.trim()) { toast({ title: '회사명을 입력해주세요', variant: 'destructive' }); return; }
+    const type = normalizeCompanyType(form.type) || 'gc';
     const payload = {
       name: form.name.trim(),
-      type: form.type,
+      type,
       business_no: form.business_no.trim() || null,
       contact: form.contact.trim() || null,
       address: form.address.trim() || null,
     };
+    setSaving(true);
+    let companyId = form.id;
     let error;
     if (form.id) {
       ({ error } = await (supabase as any).from('companies').update(payload).eq('id', form.id));
     } else {
-      ({ error } = await (supabase as any).from('companies').insert(payload));
+      const ins = await (supabase as any).from('companies').insert(payload).select('id').single();
+      error = ins.error;
+      companyId = ins.data?.id;
     }
-    if (error) { toast({ title: '저장 실패', description: error.message, variant: 'destructive' }); return; }
+    if (error || !companyId) {
+      setSaving(false);
+      toast({ title: '저장 실패', description: error?.message || '업체 ID를 확인할 수 없습니다', variant: 'destructive' });
+      return;
+    }
+
+    // Sync project_companies links (SSOT for project participation)
+    const desired = new Set(form.project_ids);
+    const { data: existingLinks } = await (supabase as any)
+      .from('project_companies')
+      .select('id, project_id, is_deleted')
+      .eq('company_id', companyId);
+    const byProject = new Map<string, any>((existingLinks || []).map((l: any) => [l.project_id, l]));
+
+    for (const projectId of desired) {
+      const cur = byProject.get(projectId);
+      if (cur) {
+        if (cur.is_deleted) {
+          await (supabase as any).from('project_companies').update({
+            is_deleted: false,
+            deleted_at: null,
+            role_in_project: type,
+          }).eq('id', cur.id);
+        } else {
+          await (supabase as any).from('project_companies').update({
+            role_in_project: type,
+          }).eq('id', cur.id);
+        }
+      } else {
+        await (supabase as any).from('project_companies').upsert({
+          project_id: projectId,
+          company_id: companyId,
+          role_in_project: type,
+          is_deleted: false,
+        }, { onConflict: 'project_id,company_id' });
+      }
+    }
+    // Soft-remove unchecked projects
+    for (const link of existingLinks || []) {
+      if (!desired.has(link.project_id) && !link.is_deleted) {
+        await (supabase as any).from('project_companies').update({
+          is_deleted: true,
+          deleted_at: new Date().toISOString(),
+        }).eq('id', link.id);
+      }
+    }
+
+    setSaving(false);
     toast({ title: form.id ? '수정되었습니다' : '등록되었습니다' });
     setShowDialog(false);
     fetchAll();
@@ -143,7 +228,8 @@ export default function SettingsCompanies() {
             <Building2 className="h-6 w-6" /> 업체 관리 (시스템)
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            시스템 전역 업체 정보를 관리합니다. 여기서 등록된 업체는 프로젝트별로 참여 지정할 수 있고, 각 모듈에서 자동으로 소속 업체로 매핑됩니다.
+            시스템 전역 업체 마스터입니다. 유형은 발주처→시공사→협력사→공급사 순이며,
+            아래에서 참여 프로젝트를 지정하면 각 프로젝트 업체목록에 자동 연결됩니다.
           </p>
         </div>
         <div className="flex gap-2">
@@ -212,7 +298,7 @@ export default function SettingsCompanies() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium">{r.name}</span>
                       <Badge variant="outline" className="text-[10px]">
-                        {TYPE_OPTIONS.find(o => o.v === r.type)?.label || r.type}
+                        {companyTypeLabel(r.type)}
                       </Badge>
                       <Badge variant="secondary" className="text-[10px]">
                         <Network className="h-2.5 w-2.5 mr-1" /> 참여 프로젝트 {r.project_count}
@@ -248,9 +334,10 @@ export default function SettingsCompanies() {
               <Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {TYPE_OPTIONS.map(o => <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>)}
+                  {COMPANY_TYPE_OPTIONS.map(o => <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <p className="text-[10px] text-muted-foreground mt-1">시공사 = 원도급(gc), 협력사 = 하청(contractor)</p>
             </div>
             <div>
               <Label className="text-xs">사업자등록번호</Label>
@@ -264,10 +351,33 @@ export default function SettingsCompanies() {
               <Label className="text-xs">주소</Label>
               <Input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
             </div>
+            <div>
+              <Label className="text-xs">참여 프로젝트</Label>
+              <div className="mt-1 max-h-40 overflow-y-auto rounded border p-2 space-y-1">
+                {projects.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2">등록된 프로젝트가 없습니다.</p>
+                ) : projects.map((p) => {
+                  const checked = form.project_ids.includes(p.id);
+                  return (
+                    <label key={p.id} className="flex items-center gap-2 text-xs cursor-pointer rounded px-1 py-1 hover:bg-muted/40">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleProject(p.id)}
+                      />
+                      <span className="truncate">{p.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                선택한 프로젝트의 업체관리에 {companyTypeLabel(form.type)} 역할로 연결됩니다.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDialog(false)}>취소</Button>
-            <Button onClick={save}>{form.id ? '수정' : '등록'}</Button>
+            <Button onClick={save} disabled={saving}>{saving ? '저장 중...' : (form.id ? '수정' : '등록')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

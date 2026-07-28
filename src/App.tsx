@@ -32,6 +32,7 @@ import SettingsPermissions from "./pages/SettingsPermissions";
 import SettingsApprovalRoutes from "./pages/SettingsApprovalRoutes";
 import SettingsNotifications from "./pages/SettingsNotifications";
 import SettingsAI from "./pages/SettingsAI";
+import SettingsWeather from "./pages/SettingsWeather";
 import MobileReleases from "./pages/MobileReleases";
 import SettingsPermitForms from "./pages/SettingsPermitForms";
 import SettingsCompanies from "./pages/SettingsCompanies";
@@ -198,6 +199,7 @@ function ProtectedRoutes() {
         <Route path="/settings/approval-routes" element={<RoleGuard><SettingsApprovalRoutes /></RoleGuard>} />
         <Route path="/settings/notifications" element={<RoleGuard><SettingsNotifications /></RoleGuard>} />
         <Route path="/settings/ai" element={<RoleGuard><SettingsAI /></RoleGuard>} />
+        <Route path="/settings/weather" element={<RoleGuard masterOnly><SettingsWeather /></RoleGuard>} />
         <Route path="/settings/mobile-releases" element={<RoleGuard masterOnly><MobileReleases /></RoleGuard>} />
         <Route path="/settings/permit-forms" element={<RoleGuard><SettingsPermitForms /></RoleGuard>} />
         <Route path="/settings/companies" element={<RoleGuard><SettingsCompanies /></RoleGuard>} />

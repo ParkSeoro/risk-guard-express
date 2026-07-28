@@ -174,7 +174,8 @@ const SiteWeather = () => {
         body: {
           project_id: selectedProject,
           lat, lng,
-          address: (!lat && !lng) ? address : undefined,
+          // Always send site_address so geocode uses project location (Lovable parity)
+          address: address || undefined,
           source: source || "kma",
         },
       });

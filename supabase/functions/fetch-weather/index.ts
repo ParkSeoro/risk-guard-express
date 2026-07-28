@@ -516,6 +516,77 @@ async function fetchOpenWeather(lat: number, lng: number, owKey: string) {
   return { current, hourly, daily };
 }
 
+async function loadDbSecrets(supabase: ReturnType<typeof createClient>): Promise<Record<string, string>> {
+  try {
+    const { data, error } = await supabase
+      .from("integration_secrets")
+      .select("key, value")
+      .in("key", ["KMA_API_KEY", "OPENWEATHER_API_KEY"]);
+    if (error) {
+      console.warn("integration_secrets read skipped:", error.message);
+      return {};
+    }
+    const map: Record<string, string> = {};
+    for (const row of data || []) {
+      if (row?.key && typeof row.value === "string" && row.value.trim()) {
+        map[row.key] = row.value.trim();
+      }
+    }
+    return map;
+  } catch (e) {
+    console.warn("integration_secrets unavailable:", e);
+    return {};
+  }
+}
+
+/** Forward to legacy Lovable fetch-weather when DEST has no KMA/OW keys. */
+async function proxyLegacyWeather(body: Record<string, unknown>): Promise<Response | null> {
+  const proxyUrl = (Deno.env.get("LEGACY_WEATHER_PROXY_URL") || "").trim();
+  if (!proxyUrl) return null;
+
+  // Prefer explicit legacy anon key; otherwise try calling without JWT (verify_jwt=false sources).
+  const anon = (Deno.env.get("LEGACY_WEATHER_ANON_KEY") || "").trim();
+  try {
+    console.log("Proxying weather request to legacy:", proxyUrl);
+    const res = await fetch(proxyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(anon ? { Authorization: `Bearer ${anon}`, apikey: anon } : {}),
+      },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    let parsed: any = null;
+    try { parsed = JSON.parse(text); } catch { /* keep raw */ }
+
+    if (!res.ok) {
+      console.error("Legacy weather proxy HTTP", res.status, text.slice(0, 300));
+      return null;
+    }
+    if (!parsed || parsed.error) {
+      console.error("Legacy weather proxy body error:", parsed?.error || text.slice(0, 200));
+      return null;
+    }
+
+    // Mark provenance so UI can show legacy source clearly
+    if (parsed && typeof parsed === "object") {
+      parsed.source = parsed.source ? `legacy_${parsed.source}` : "legacy";
+      parsed.source_label = parsed.source_label
+        ? `${parsed.source_label} (Lovable 연동)`
+        : "Lovable 날씨 연동";
+      parsed.via = "legacy_proxy";
+    }
+
+    return new Response(JSON.stringify(parsed), {
+      headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+    });
+  } catch (e) {
+    console.error("Legacy weather proxy failed:", e);
+    return null;
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -525,13 +596,24 @@ serve(async (req) => {
     const body = await req.json();
     const { project_id, lat, lng, address, source, geocode_only } = body;
 
-    const owKey = Deno.env.get("OPENWEATHER_API_KEY");
-    const kmaKey = Deno.env.get("KMA_API_KEY");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Priority: Edge env secrets → master DB integration_secrets
+    const dbSecrets = await loadDbSecrets(supabase);
+    const owKey = (Deno.env.get("OPENWEATHER_API_KEY") || dbSecrets.OPENWEATHER_API_KEY || "").trim() || null;
+    const kmaKey = (Deno.env.get("KMA_API_KEY") || dbSecrets.KMA_API_KEY || "").trim() || null;
+    const hasLocalKeys = !!(owKey || kmaKey);
 
     // Geocode-only mode (for project creation/edit)
     if (geocode_only && address) {
       let geo = owKey ? await geocodeAddress(address, owKey) : null;
       if (!geo) geo = await geocodeNominatimOnly(address);
+      if (!geo && !hasLocalKeys) {
+        const proxied = await proxyLegacyWeather({ ...body, geocode_only: true, address });
+        if (proxied) return proxied;
+      }
       if (geo) {
         return new Response(JSON.stringify(geo), {
           headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
@@ -555,25 +637,29 @@ serve(async (req) => {
       });
     }
 
-    // Keys are optional — Open-Meteo is a free no-key fallback.
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // No local keys → try Lovable proxy first (same KMA/OW quality as before migration)
+    if (!hasLocalKeys) {
+      const proxied = await proxyLegacyWeather(body);
+      if (proxied) return proxied;
+      console.log("No local weather keys and legacy proxy unavailable; continuing with Open-Meteo");
+    }
 
-    // Resolve coordinates
+    // Resolve coordinates — prefer explicit address geocode when provided
     let resolvedLat = lat;
     let resolvedLng = lng;
     let resolvedCity = "";
 
-    // Geocode address if needed
-    if (address && (!resolvedLat || !resolvedLng)) {
+    if (address) {
+      // Always attempt address geocode when address is sent (project site_address SSOT)
       let geo = owKey ? await geocodeAddress(address, owKey) : null;
       if (!geo) geo = await geocodeNominatimOnly(address);
       if (geo) {
         resolvedLat = geo.lat;
         resolvedLng = geo.lng;
         resolvedCity = geo.city;
-        await supabase.from("projects").update({ site_lat: resolvedLat, site_lng: resolvedLng }).eq("id", project_id);
+        if (project_id && project_id !== "__geocode__") {
+          await supabase.from("projects").update({ site_lat: resolvedLat, site_lng: resolvedLng }).eq("id", project_id);
+        }
       }
     }
 

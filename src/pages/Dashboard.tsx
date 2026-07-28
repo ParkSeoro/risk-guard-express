@@ -747,13 +747,14 @@ function WeatherSummaryCard({ projectId }: { projectId: string }) {
       try {
         const { data: project } = await supabase
           .from("projects")
-          .select("site_lat, site_lng")
+          .select("site_lat, site_lng, site_address")
           .eq("id", projectId)
           .single();
         const lat = (project as any)?.site_lat || 37.5665;
         const lng = (project as any)?.site_lng || 126.978;
+        const address = (project as any)?.site_address || undefined;
         const { data } = await supabase.functions.invoke("fetch-weather", {
-          body: { project_id: projectId, lat, lng },
+          body: { project_id: projectId, lat, lng, address },
         });
         setWeather(data);
       } catch {

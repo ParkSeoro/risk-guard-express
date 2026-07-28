@@ -256,6 +256,8 @@ export default function RestrictedZones() {
           <p className="text-sm text-muted-foreground mt-1">
             GPS 반경·폴리곤 위험구역과 진입 금지 대상(근로자·소속·직종)을 설정합니다.
             금지 대상이 비어 있으면 구역에 진입하는 전원에게 알람이 발동합니다.
+            {" "}
+            <a href="/georef-map" className="text-primary underline">드론 Georef 관제</a>에서 사진 위 다각형 드로잉도 가능합니다.
           </p>
         </div>
         <div className="flex gap-2 items-center">

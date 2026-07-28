@@ -26,8 +26,11 @@ export type ProjectPosition =
   | 'FOREMAN'
   | 'WORKER'
   | 'OWNER_PM'
+  | 'OWNER_CM'
+  | 'OWNER_SM'
   | 'OWNER_HSE'
   | 'SUPERVISOR'
+  | 'SITE_SUPERVISOR'
   | null;
 
 export type CompanyType = 'client' | 'gc' | 'contractor' | 'vendor' | null;

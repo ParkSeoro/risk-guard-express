@@ -23,26 +23,15 @@ import {
   normalizeCompanyType,
   resolveProjectCompanyType,
 } from '@/lib/companyTypes';
+import { POSITION_LABELS, positionsForCompanyType } from '@/lib/projectPositions';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
   safety_manager: '안전관리자', site_manager: '현장대리인',
-  supervisor: '관리감독자', worker: '작업자', viewer: '열람자',
+  supervisor: '감리·관리감독', worker: '작업자', viewer: '열람자',
 };
 
-const positionLabels: Record<string, string> = {
-  CEO: '대표이사',
-  EXECUTIVE: '임원',
-  SITE_MANAGER: '현장소장',
-  HSE_MANAGER: '안전관리자',
-  CONSTRUCTION_MGR: '공사부장',
-  FIELD_ENGINEER: '공사담당',
-  FOREMAN: '직장/조장',
-  WORKER: '작업자',
-  OWNER_PM: '발주처 PM',
-  OWNER_HSE: '발주처 안전',
-  SUPERVISOR: '감리',
-};
+const positionLabels: Record<string, string> = { ...POSITION_LABELS };
 
 
 const companyTypes: Record<string, string> = { ...COMPANY_TYPE_LABELS };
@@ -878,9 +867,15 @@ const ProjectDetail = () => {
                             <SelectTrigger className="h-7 w-36 text-xs"><SelectValue placeholder="직책" /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="_none">직책 미지정</SelectItem>
-                              {Object.entries(positionLabels).map(([k, v]) => (
-                                <SelectItem key={k} value={k}>{v}</SelectItem>
-                              ))}
+                              {(() => {
+                                const co = companies.find((c) => c.id === m.company_id);
+                                const allowed = positionsForCompanyType(co?.type);
+                                const keys = [...allowed];
+                                if (m.position_new && !keys.includes(m.position_new)) keys.unshift(m.position_new);
+                                return keys.map((k) => (
+                                  <SelectItem key={k} value={k}>{positionLabels[k] || k}</SelectItem>
+                                ));
+                              })()}
                             </SelectContent>
                           </Select>
                           <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleRemoveMember(m.id)}>

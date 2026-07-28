@@ -17,10 +17,12 @@ export const projectRoleSchema = z.enum(VALID_PROJECT_ROLES, {
   errorMap: () => ({ message: '유효하지 않은 프로젝트 역할입니다.' }),
 });
 
-// Project positions (11)
+// Project positions (발주처 PM/CM/SM, 시공사 감리≠관리감독자)
 export const VALID_POSITIONS = [
   'CEO', 'EXECUTIVE', 'SITE_MANAGER', 'HSE_MANAGER', 'CONSTRUCTION_MGR',
-  'FIELD_ENGINEER', 'FOREMAN', 'WORKER', 'OWNER_PM', 'OWNER_HSE', 'SUPERVISOR',
+  'FIELD_ENGINEER', 'FOREMAN', 'WORKER',
+  'OWNER_PM', 'OWNER_CM', 'OWNER_SM', 'OWNER_HSE',
+  'SUPERVISOR', 'SITE_SUPERVISOR',
 ] as const;
 export const projectPositionSchema = z.enum(VALID_POSITIONS, {
   errorMap: () => ({ message: '유효하지 않은 직책입니다.' }),

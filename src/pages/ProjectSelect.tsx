@@ -154,7 +154,7 @@ const ProjectSelect = () => {
           project_id: data.id,
           user_id: user.id,
           role_new: 'project_admin' as any,
-          position_new: 'OWNER_HSE' as any,
+          position_new: 'OWNER_SM' as any,
           company: profile?.company || '',
         }]);
 

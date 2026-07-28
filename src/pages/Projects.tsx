@@ -121,7 +121,7 @@ const Projects = () => {
           project_id: data.id,
           user_id: user.id,
           role_new: 'project_admin' as any,
-          position_new: 'OWNER_HSE' as any,
+          position_new: 'OWNER_SM' as any,
         }]);
         if (memberError) {
           console.error('Project member insert error:', memberError);

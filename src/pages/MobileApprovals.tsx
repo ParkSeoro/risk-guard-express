@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { ArrowLeft, CheckCircle2, XCircle, Loader2, FileCheck2 } from "lucide-react";
 import { toast } from "sonner";
+import PermitAiBriefingCard from "@/components/permits/PermitAiBriefingCard";
+import type { PermitAiBriefing } from "@/lib/permitBriefing";
 
 const ENTITY_LABEL: Record<string, string> = {
   work_plan: "작업계획서",
@@ -23,7 +25,7 @@ const ENTITY_LINK = (t: string, id: string) => {
   switch (t) {
     case "assessment_run": return `/assessment-run/${id}`;
     case "work_plan": return "/work-plans";
-    case "work_permit": return "/work-permits";
+    case "work_permit": return `/work-permits/${id}`;
     case "safety_cost": return "/safety-cost";
     case "incident": return "/incidents";
     case "emergency_drill": return "/emergency-drills";
@@ -41,6 +43,8 @@ export default function MobileApprovals() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [briefings, setBriefings] = useState<Record<string, PermitAiBriefing | null>>({});
+  const [briefingLoading, setBriefingLoading] = useState<string | null>(null);
 
   const load = async () => {
     if (!user) return;
@@ -52,6 +56,28 @@ export default function MobileApprovals() {
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [user]);
+
+  const openRow = async (r: any) => {
+    setOpenId(r.approval_id);
+    if (r.entity_type !== "work_permit") return;
+    if (briefings[r.entity_id] !== undefined) return;
+    setBriefingLoading(r.entity_id);
+    try {
+      const { data } = await supabase
+        .from("work_permits" as any)
+        .select("ai_briefing, permit_kinds, permit_type, work_name, work_description, location")
+        .eq("id", r.entity_id)
+        .maybeSingle();
+      setBriefings((prev) => ({
+        ...prev,
+        [r.entity_id]: ((data as any)?.ai_briefing as PermitAiBriefing) || null,
+      }));
+    } catch {
+      setBriefings((prev) => ({ ...prev, [r.entity_id]: null }));
+    } finally {
+      setBriefingLoading(null);
+    }
+  };
 
   const decide = async (r: any, action: "approve" | "reject") => {
     if (action === "reject" && !comment.trim()) return toast.error("반려 사유를 입력하세요");
@@ -109,6 +135,11 @@ export default function MobileApprovals() {
 
               {openId === r.approval_id ? (
                 <div className="space-y-2 pt-2 border-t">
+                  {r.entity_type === "work_permit" && (
+                    briefingLoading === r.entity_id
+                      ? <div className="text-xs text-muted-foreground py-2"><Loader2 className="h-3 w-3 animate-spin inline mr-1" />AI 브리핑 불러오는 중…</div>
+                      : <PermitAiBriefingCard briefing={briefings[r.entity_id]} compact />
+                  )}
                   <IMESafeTextarea rows={2} placeholder="의견/사유 (반려 시 필수)" defaultValue={comment} onCommit={setComment} />
                   <div className="grid grid-cols-3 gap-2">
                     <Button variant="outline" onClick={() => { setOpenId(null); setComment(""); }}>취소</Button>
@@ -125,7 +156,7 @@ export default function MobileApprovals() {
                   <Button variant="outline" onClick={() => navigate(ENTITY_LINK(r.entity_type, r.entity_id))}>
                     문서 보기
                   </Button>
-                  <Button onClick={() => setOpenId(r.approval_id)}>결재 처리</Button>
+                  <Button onClick={() => openRow(r)}>결재 처리</Button>
                 </div>
               )}
             </CardContent>

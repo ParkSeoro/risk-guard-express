@@ -20,6 +20,11 @@ import {
   validateStepsHierarchy,
   type ApprovalEntityType as SSOTApprovalEntityType,
 } from '@/lib/approvalRules';
+import {
+  generatePermitAiBriefing,
+  buildLocalPermitBriefing,
+} from '@/lib/permitBriefing';
+import type { PermitKindId } from '@/lib/permitKinds';
 
 
 // Re-export SSOT types/labels so existing imports keep working.
@@ -45,6 +50,15 @@ interface Step {
   company_name: string;
 }
 
+export interface PermitBriefingContext {
+  permitKinds: PermitKindId[];
+  formData: Record<string, unknown>;
+  workName?: string;
+  workDescription?: string;
+  workLocation?: string;
+  permitDate?: string;
+}
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -56,12 +70,15 @@ interface Props {
   /** 상신 성공 후 콜백 (status 변경 등) */
   onSubmitted?: () => void;
   title?: string;
+  /** 작업허가서 상신 시 AI 브리핑 생성용 컨텍스트 */
+  permitBriefingContext?: PermitBriefingContext;
 }
 
 const POSITION_LABELS = SSOT_POSITION_LABELS;
 
 export default function SubmitApprovalDialog({
   open, onOpenChange, entityType, entityId, projectId, submitterCompanyId, onSubmitted, title,
+  permitBriefingContext,
 }: Props) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -193,6 +210,32 @@ export default function SubmitApprovalDialog({
 
     setSubmitting(true);
     try {
+      // 작업허가서: 상신 직전 AI 결재 브리핑 생성·저장 (실패해도 로컬 폴백 후 상신 진행)
+      if (entityType === 'work_permit' && permitBriefingContext) {
+        try {
+          await generatePermitAiBriefing({
+            permitId: entityId,
+            projectId,
+            formData: permitBriefingContext.formData,
+            permitKinds: permitBriefingContext.permitKinds,
+            workName: permitBriefingContext.workName,
+            workDescription: permitBriefingContext.workDescription,
+            workLocation: permitBriefingContext.workLocation,
+            permitDate: permitBriefingContext.permitDate,
+          });
+        } catch (briefErr) {
+          console.warn('AI briefing fallback', briefErr);
+          const local = buildLocalPermitBriefing({
+            formData: permitBriefingContext.formData,
+            permitKinds: permitBriefingContext.permitKinds,
+            workName: permitBriefingContext.workName,
+            workDescription: permitBriefingContext.workDescription,
+            workLocation: permitBriefingContext.workLocation,
+          });
+          await supabase.from('work_permits' as any).update({ ai_briefing: local }).eq('id', entityId);
+        }
+      }
+
       const { error } = await supabase.rpc('submit_approval', {
         _entity_type: entityType,
         _entity_id: entityId,

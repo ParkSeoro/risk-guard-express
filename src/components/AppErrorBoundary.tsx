@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { AlertTriangle, RefreshCw, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface State { error: Error | null; }
@@ -21,6 +21,11 @@ export class AppErrorBoundary extends React.Component<
 
   reset = () => this.setState({ error: null });
 
+  goHome = () => {
+    this.reset();
+    window.location.assign("/");
+  };
+
   render() {
     if (this.state.error) {
       return (
@@ -31,7 +36,7 @@ export class AppErrorBoundary extends React.Component<
               <h2 className="font-bold text-lg">화면을 불러오지 못했습니다</h2>
             </div>
             <p className="text-sm text-muted-foreground">
-              일시적인 오류가 발생했습니다. 새로고침하거나 이전 화면으로 돌아가주세요.
+              일시적인 오류가 발생했습니다. 새로고침하거나 첫 화면으로 돌아가주세요.
             </p>
             <pre className="text-xs bg-muted/50 rounded p-2 overflow-auto max-h-32">
               {this.state.error.message}
@@ -40,8 +45,8 @@ export class AppErrorBoundary extends React.Component<
               <Button onClick={() => { this.reset(); window.location.reload(); }} size="sm">
                 <RefreshCw className="h-3.5 w-3.5 mr-1" /> 새로고침
               </Button>
-              <Button onClick={() => { this.reset(); window.history.back(); }} size="sm" variant="outline">
-                이전 화면
+              <Button onClick={this.goHome} size="sm" variant="outline">
+                <Home className="h-3.5 w-3.5 mr-1" /> 첫 화면
               </Button>
             </div>
           </div>

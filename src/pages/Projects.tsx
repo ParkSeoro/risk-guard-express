@@ -41,7 +41,11 @@ const Projects = () => {
   });
 
   const fetchProjects = async () => {
-    const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+    const { data } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('is_deleted', false)
+      .order('created_at', { ascending: false });
     setProjects(data || []);
     setLoading(false);
   };

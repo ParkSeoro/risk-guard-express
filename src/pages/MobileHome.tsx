@@ -237,7 +237,11 @@ export default function MobileHome() {
             <Button variant="outline" className="w-full h-12" onClick={enablePush}>
               <Bell className="h-4 w-4 mr-2" /> 푸시 알림 켜기
             </Button>
-            <Button variant="ghost" className="w-full h-12" onClick={() => { setForceDesktop(true); navigate("/"); }}>
+            <Button variant="ghost" className="w-full h-12" onClick={() => {
+              setForceDesktop(true);
+              // Hard navigate so nested /* routes always land on dashboard home
+              window.location.assign("/");
+            }}>
               데스크톱 화면으로 전환
             </Button>
           </>

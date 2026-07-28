@@ -8,7 +8,7 @@ import {
   Building2, FolderOpen,
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { NavLink } from "@/components/NavLink";
 
 import { useAuth } from "@/contexts/AuthContext";
@@ -221,7 +221,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
-        <div className="flex items-center gap-3">
+        <Link to="/" className="flex items-center gap-3 rounded-md outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-sidebar-ring">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
             <HardHat className="h-5 w-5 text-sidebar-primary-foreground" />
           </div>
@@ -231,7 +231,7 @@ export function AppSidebar() {
               <span className="text-[10px] text-sidebar-muted">Safety Management System</span>
             </div>
           )}
-        </div>
+        </Link>
       </SidebarHeader>
 
       <SidebarContent className="gap-2">

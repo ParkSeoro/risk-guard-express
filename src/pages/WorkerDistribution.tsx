@@ -233,7 +233,7 @@ export default function WorkerDistribution() {
           <CardContent>
             {!activeMap?.image_url ? (
               <div className="aspect-video bg-muted rounded flex items-center justify-center text-sm text-muted-foreground">
-                {maps.length === 0 ? "등록된 사이트맵이 없습니다. (현장 사이트맵/구역에서 등록)" : "사이트맵을 선택하세요"}
+                {maps.length === 0 ? "등록된 사이트맵이 없습니다. (통합 현장 관제맵에서 등록)" : "사이트맵을 선택하세요"}
               </div>
             ) : (
               <div className="relative w-full">

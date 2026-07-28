@@ -122,7 +122,6 @@ function mergeApprovalSignatures(
   approvals: Array<{ position?: string | null; approver_name?: string | null; approved_at?: string | null; status?: string | null }>,
 ): PermitSignatures {
   const merged: PermitSignatures = { ...baseSig };
-  let cmAt: string | undefined;
   let smAt: string | undefined;
 
   for (const a of approvals) {
@@ -139,20 +138,16 @@ function mergeApprovalSignatures(
         };
       }
     }
-    // CM → 검토일, SM → 승인일 (요구사항 5)
-    if (pos === 'owner_cm' || pos === 'cm') {
-      if (a.approved_at) cmAt = a.approved_at;
-    }
+    // SM 실제 승인 시각 → 승인일. 검토일은 승인일 -1일(현장 규칙).
     if (pos === 'owner_sm' || pos === 'sm') {
       if (a.approved_at) smAt = a.approved_at;
     }
   }
 
-  if (cmAt) merged.reviewed_at = cmAt;
-  if (smAt) merged.approved_at = smAt;
-  // SM만 있고 CM이 없으면 검토일은 비움 (가짜 -1day 금지)
-  if (!cmAt && merged.reviewed_at && smAt && merged.reviewed_at === merged.approved_at) {
-    delete merged.reviewed_at;
+  if (smAt) {
+    merged.approved_at = smAt;
+    // 정책: 검토일 = 승인일 하루 전 (CM 실제 결재시각과 무관)
+    merged.reviewed_at = new Date(new Date(smAt).getTime() - 86400000).toISOString();
   }
   return merged;
 }

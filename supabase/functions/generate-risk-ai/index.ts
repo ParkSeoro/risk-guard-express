@@ -178,8 +178,8 @@ async function generateRiskAssessment(
   detailLevel: 'core' | 'comprehensive',
   ragContext: string,
 ): Promise<{ items: any[]; accident_cases: any[] }> {
-  const targetCount = detailLevel === 'core' ? 15 : 18;
-  const maxTokens = detailLevel === 'core' ? 3600 : 4500;
+  const targetCount = detailLevel === 'core' ? 15 : 16;
+  const maxTokens = detailLevel === 'core' ? 3200 : 4000;
 
   const systemPrompt = `/no_think
 당신은 건설현장 위험성평가 전문가다. 산안법·산안기준규칙·KOSHA GUIDE 기준으로 작성한다.

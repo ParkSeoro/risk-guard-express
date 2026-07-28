@@ -5,7 +5,7 @@ import { Download, X, Share, Plus, MoreVertical, Copy, ExternalLink } from "luci
 import { toast } from "sonner";
 
 // 설치 안내 배너는 모바일 홈(/m) 과 로그인(/auth) 화면에서만 노출 — 한 곳에 고정
-const ALLOWED_PATHS = ["/m", "/auth"];
+const ALLOWED_PATHS = ["/m", "/auth", "/login", "/register"];
 
 // PWA 설치 안내 배너 — 플랫폼별 안내 + 현재 배포 주소 링크
 type Platform = "android" | "ios" | "desktop";

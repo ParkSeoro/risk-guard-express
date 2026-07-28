@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature, Building2 } from 'lucide-react';
+import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature, Building2, CloudSun } from 'lucide-react';
 import { E2ETestAccountsSetup } from '@/components/E2ETestAccountsSetup';
 
 const settingsCards = [
@@ -47,6 +47,15 @@ const settingsCards = [
     description: 'AI API Key, 모델 선택, AI 사용 여부를 설정합니다.',
     icon: Bot,
     path: '/settings/ai',
+    requires: 'master' as const,
+    badge: '마스터 전용',
+  },
+  {
+    id: 'weather',
+    title: '현장 날씨 API',
+    description: '기상청·OpenWeather API 키를 등록해 현장 주소 기반 날씨를 조회합니다.',
+    icon: CloudSun,
+    path: '/settings/weather',
     requires: 'master' as const,
     badge: '마스터 전용',
   },

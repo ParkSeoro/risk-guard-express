@@ -16,12 +16,20 @@ type Props = {
  * Master-only control: force TTS + fullscreen alert + admin push cycle (no GPS).
  */
 export default function MasterAlarmSimulator({ projectId, className }: Props) {
-  const { profile, hasRole } = useAuth();
+  const { profile, hasRole, roles } = useAuth();
   const isMaster = hasRole("master");
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   if (!isMaster) return null;
+
+  // Prefer project-ish role for honorific; master wins for sim identity
+  const effectiveRole =
+    (roles || []).find((r) => r === "master") ||
+    (roles || []).find((r) =>
+      ["project_admin", "safety_manager", "site_manager", "supervisor", "site_supervisor", "worker"].includes(r),
+    ) ||
+    "master";
 
   const run = async () => {
     if (!projectId) {
@@ -32,6 +40,7 @@ export default function MasterAlarmSimulator({ projectId, className }: Props) {
     const r = await simulateDangerZoneAlert({
       projectId,
       workerName: profile?.display_name || "마스터(시뮬레이션)",
+      workerRole: effectiveRole,
       zoneName: "알람 시뮬레이터 구역",
     });
     setBusy(false);
@@ -41,7 +50,7 @@ export default function MasterAlarmSimulator({ projectId, className }: Props) {
     } else if (r.error) {
       toast.message("로컬 알람 실행 · 서버 이벤트: " + r.error);
     } else {
-      toast.success("육성 알람 + 관리자 푸시 사이클을 트리거했습니다");
+      toast.success("사이렌+육성 알람 + 관리자 푸시 사이클을 트리거했습니다");
     }
   };
 
@@ -51,6 +60,7 @@ export default function MasterAlarmSimulator({ projectId, className }: Props) {
         open={open}
         zoneName="알람 시뮬레이터 구역"
         workerName={profile?.display_name || "마스터"}
+        workerRole={effectiveRole}
         onDismiss={() => setOpen(false)}
       />
       <Button

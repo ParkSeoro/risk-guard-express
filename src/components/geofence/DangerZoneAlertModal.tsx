@@ -1,5 +1,7 @@
 import { useEffect } from "react";
-import { DANGER_MESSAGE, speakDangerAlert, stopSpeaking } from "@/lib/tts";
+import { DANGER_MESSAGE, playDangerAlarm, stopSpeaking, unlockAlarmAudio } from "@/lib/tts";
+import type { AlarmRoleInput } from "@/lib/alarmRoleLabel";
+import { formatAlarmSubject } from "@/lib/alarmRoleLabel";
 import { Button } from "@/components/ui/button";
 import { AlertOctagon, X } from "lucide-react";
 
@@ -7,26 +9,40 @@ type Props = {
   open: boolean;
   zoneName?: string | null;
   workerName?: string | null;
+  /** project_role / global role for honorific (관리자님 / 근로자 …) */
+  workerRole?: AlarmRoleInput;
   onDismiss: () => void;
 };
 
-/** Full-screen red danger alert with forced TTS playback. */
-export default function DangerZoneAlertModal({ open, zoneName, workerName, onDismiss }: Props) {
+/** Full-screen red danger alert with siren → TTS playback. */
+export default function DangerZoneAlertModal({
+  open,
+  zoneName,
+  workerName,
+  workerRole,
+  onDismiss,
+}: Props) {
   useEffect(() => {
     if (!open) {
       stopSpeaking();
       return;
     }
-    speakDangerAlert(DANGER_MESSAGE);
-    // Repeat every 8s while open
-    const id = window.setInterval(() => speakDangerAlert(DANGER_MESSAGE), 8000);
+    void unlockAlarmAudio();
+    void playDangerAlarm({ displayName: workerName, role: workerRole });
+    // Repeat full sequence every 10s while open (siren ~2s + TTS)
+    const id = window.setInterval(() => {
+      void playDangerAlarm({ displayName: workerName, role: workerRole });
+    }, 10_000);
     return () => {
       window.clearInterval(id);
       stopSpeaking();
     };
-  }, [open]);
+  }, [open, workerName, workerRole]);
 
   if (!open) return null;
+
+  const subjectLabel =
+    workerName || workerRole ? formatAlarmSubject(workerName, workerRole) : null;
 
   return (
     <div
@@ -40,15 +56,15 @@ export default function DangerZoneAlertModal({ open, zoneName, workerName, onDis
         위험 구역 진입
       </h1>
       <p className="text-xl sm:text-2xl font-bold text-center leading-snug max-w-md mb-2">
-        경고. 위험 구역에 진입했습니다.
+        {DANGER_MESSAGE.split(". ").slice(0, 2).join(". ")}.
         <br />
         즉시 이탈하십시오.
       </p>
       {zoneName && (
         <p className="text-lg text-red-100 mt-4 text-center">구역: {zoneName}</p>
       )}
-      {workerName && (
-        <p className="text-base text-red-200 mt-1 text-center">{workerName}</p>
+      {subjectLabel && (
+        <p className="text-base text-red-200 mt-1 text-center">{subjectLabel}</p>
       )}
       <Button
         size="lg"

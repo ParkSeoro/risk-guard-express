@@ -70,7 +70,8 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
             zone_id: (data as any)?.zone_id ?? null,
             source: (data as any)?.source ?? "gps-bg",
             mode: "bg",
-          });
+            ...(data as any),
+          } as any);
         } catch (e: any) {
           opts.onError?.(new Error(e?.message || String(e)));
         }
@@ -206,7 +207,8 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
           zone_id: (data as any)?.zone_id ?? null,
           source: (data as any)?.source ?? "gps",
           mode: currentMode,
-        });
+          ...(data as any),
+        } as any);
       } catch (e: any) {
         onError?.(new Error(e?.message || String(e)));
       }

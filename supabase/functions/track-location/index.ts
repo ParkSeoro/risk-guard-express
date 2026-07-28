@@ -1,5 +1,6 @@
 // Authoritative location → zone resolver.
 // Runs server-side so a malicious client cannot fake which zone they entered.
+// Also evaluates restricted_zones (polygon/radius + ban targets) for voice/push alerts.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { z } from "https://esm.sh/zod@3.23.8";
@@ -24,6 +25,8 @@ const BodySchema = z.object({
     .optional()
     .default([]),
   device_ts: z.string().optional(),
+  restricted_zone_id: z.string().uuid().optional().nullable(),
+  force_restricted_check: z.boolean().optional().default(false),
 });
 
 function pointInPolygon(lng: number, lat: number, poly: { lat: number; lng: number }[]) {
@@ -38,6 +41,17 @@ function pointInPolygon(lng: number, lat: number, poly: { lat: number; lng: numb
     if (intersect) inside = !inside;
   }
   return inside;
+}
+
+function haversineM(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
 }
 
 function cosineSimilarity(
@@ -58,6 +72,24 @@ function cosineSimilarity(
   return sa && sb ? dot / Math.sqrt(sa * sb) : 0;
 }
 
+function isBanned(
+  zone: {
+    banned_worker_ids?: string[] | null;
+    banned_company_ids?: string[] | null;
+    banned_job_types?: string[] | null;
+  },
+  subject: { worker_id?: string | null; company_id?: string | null; job_type?: string | null }
+) {
+  const workers = zone.banned_worker_ids || [];
+  const companies = zone.banned_company_ids || [];
+  const jobs = (zone.banned_job_types || []).map((j) => j.trim().toLowerCase()).filter(Boolean);
+  if (workers.length === 0 && companies.length === 0 && jobs.length === 0) return true;
+  if (subject.worker_id && workers.includes(subject.worker_id)) return true;
+  if (subject.company_id && companies.includes(subject.company_id)) return true;
+  if (subject.job_type && jobs.includes(subject.job_type.trim().toLowerCase())) return true;
+  return false;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -71,8 +103,7 @@ Deno.serve(async (req) => {
     }
     const body = parsed.data;
 
-    // Reject obviously bad fixes when there is also no Wi-Fi signal to fall back on.
-    if (body.accuracy_m > 100 && (!body.wifi_scan || body.wifi_scan.length === 0)) {
+    if (body.accuracy_m > 100 && (!body.wifi_scan || body.wifi_scan.length === 0) && !body.force_restricted_check) {
       return new Response(
         JSON.stringify({ zone_id: null, source: null, event_type: null, ignored: "low_accuracy" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -84,7 +115,73 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Load zones in this project
+    // Resolve worker subject for ban matching
+    let subject = {
+      worker_id: body.worker_id || body.worker_qr_id || null,
+      company_id: null as string | null,
+      job_type: null as string | null,
+    };
+    const workerLookupId = body.worker_id || body.worker_qr_id;
+    if (workerLookupId) {
+      const { data: w } = await supabase
+        .from("workers")
+        .select("id, company_id, job_type, name, phone")
+        .eq("id", workerLookupId)
+        .maybeSingle();
+      if (w) {
+        subject = { worker_id: w.id, company_id: w.company_id, job_type: w.job_type };
+        if (!body.worker_name) body.worker_name = w.name;
+        if (!body.worker_phone) body.worker_phone = w.phone;
+      }
+    } else if (body.worker_phone) {
+      const { data: w } = await supabase
+        .from("workers")
+        .select("id, company_id, job_type, name, phone")
+        .eq("project_id", body.project_id)
+        .eq("phone", body.worker_phone)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+      if (w) {
+        subject = { worker_id: w.id, company_id: w.company_id, job_type: w.job_type };
+        if (!body.worker_name) body.worker_name = w.name;
+      }
+    }
+
+    // ---- restricted_zones (primary for voice/push ban targeting) ----
+    const { data: rZones } = await supabase
+      .from("restricted_zones")
+      .select(
+        "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, banned_worker_ids, banned_company_ids, banned_job_types"
+      )
+      .eq("project_id", body.project_id)
+      .eq("is_deleted", false)
+      .eq("is_active", true);
+
+    let matchedRestricted: any = null;
+    if (body.restricted_zone_id) {
+      matchedRestricted = (rZones || []).find((z: any) => z.id === body.restricted_zone_id) || null;
+      if (matchedRestricted && !isBanned(matchedRestricted, subject)) matchedRestricted = null;
+    } else {
+      for (const z of rZones || []) {
+        let inside = false;
+        if (z.geometry_type === "radius") {
+          if (z.center_lat != null && z.center_lng != null && z.radius_m) {
+            inside =
+              haversineM(body.lat, body.lng, Number(z.center_lat), Number(z.center_lng)) <=
+              Number(z.radius_m);
+          }
+        } else if (z.geo_polygon) {
+          inside = pointInPolygon(body.lng, body.lat, z.geo_polygon as any);
+        }
+        if (inside && isBanned(z, subject)) {
+          matchedRestricted = z;
+          break;
+        }
+      }
+    }
+
+    // ---- legacy site_zones ----
     const { data: zones, error: zErr } = await supabase
       .from("site_zones")
       .select("id, name, zone_type, geo_polygon, wifi_fingerprint")
@@ -92,11 +189,10 @@ Deno.serve(async (req) => {
       .eq("is_deleted", false);
     if (zErr) throw zErr;
 
-    // 1) GPS geofence
     let matchedZoneId: string | null = null;
-    let source: "gps" | "wifi" = "gps";
+    let source: "gps" | "wifi" | "restricted" = "gps";
 
-    if (body.accuracy_m <= 50) {
+    if (body.accuracy_m <= 50 || body.force_restricted_check) {
       for (const z of zones || []) {
         if (z.geo_polygon && pointInPolygon(body.lng, body.lat, z.geo_polygon as any)) {
           matchedZoneId = z.id;
@@ -105,7 +201,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 2) Wi-Fi fingerprint fallback
     if (!matchedZoneId && body.wifi_scan?.length) {
       let best: { id: string; score: number } | null = null;
       for (const z of zones || []) {
@@ -120,22 +215,35 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Decide event type vs last event for this worker today
+    if (matchedRestricted) source = "restricted";
+
     const since = new Date();
     since.setHours(0, 0, 0, 0);
     const workerKey = body.worker_qr_id
       ? { col: "worker_qr_id", val: body.worker_qr_id }
       : body.worker_phone
       ? { col: "worker_phone", val: body.worker_phone }
+      : subject.worker_id
+      ? null
       : null;
 
     let lastEvent: any = null;
     if (workerKey) {
       const { data } = await supabase
         .from("worker_zone_events")
-        .select("zone_id, event_type")
+        .select("zone_id, event_type, restricted_zone_id")
         .eq("project_id", body.project_id)
         .eq(workerKey.col, workerKey.val)
+        .gte("created_at", since.toISOString())
+        .order("created_at", { ascending: false })
+        .limit(1);
+      lastEvent = data?.[0] ?? null;
+    } else if (subject.worker_id) {
+      const { data } = await supabase
+        .from("worker_zone_events")
+        .select("zone_id, event_type, restricted_zone_id")
+        .eq("project_id", body.project_id)
+        .eq("worker_name", body.worker_name || "")
         .gte("created_at", since.toISOString())
         .order("created_at", { ascending: false })
         .limit(1);
@@ -145,14 +253,22 @@ Deno.serve(async (req) => {
     const zoneMeta = (zones || []).find((z) => z.id === matchedZoneId);
     let eventType: string | null = null;
 
-    if (matchedZoneId && matchedZoneId !== lastEvent?.zone_id) {
-      // entered a new zone
+    // Restricted zone unauthorized entry (ban match)
+    if (
+      matchedRestricted &&
+      matchedRestricted.id !== lastEvent?.restricted_zone_id
+    ) {
+      eventType = "unauthorized_entry";
+    } else if (matchedZoneId && matchedZoneId !== lastEvent?.zone_id) {
       eventType =
         zoneMeta?.zone_type === "danger" || zoneMeta?.zone_type === "restricted"
           ? "unauthorized_entry"
           : "entry";
-    } else if (!matchedZoneId && lastEvent?.zone_id) {
-      // left previous zone
+    } else if (
+      !matchedZoneId &&
+      !matchedRestricted &&
+      (lastEvent?.zone_id || lastEvent?.restricted_zone_id)
+    ) {
       eventType = "exit";
     }
 
@@ -160,7 +276,11 @@ Deno.serve(async (req) => {
       await supabase.from("worker_zone_events").insert({
         project_id: body.project_id,
         zone_id: matchedZoneId ?? lastEvent?.zone_id ?? null,
-        worker_qr_id: body.worker_qr_id ?? null,
+        restricted_zone_id:
+          matchedRestricted?.id ??
+          (eventType === "exit" ? lastEvent?.restricted_zone_id : null) ??
+          null,
+        worker_qr_id: body.worker_qr_id ?? subject.worker_id ?? null,
         worker_name: body.worker_name ?? null,
         worker_phone: body.worker_phone ?? null,
         event_type: eventType,
@@ -169,14 +289,19 @@ Deno.serve(async (req) => {
         lng: body.lng,
         accuracy_m: body.accuracy_m,
       });
-
-      // 위험/제한구역 무단진입 알림은 DB 트리거(trg_zone_event_notify)가 SSOT로 처리.
-      // 여기서는 worker_zone_events INSERT 만 담당하며 별도 알림/푸시 호출은 하지 않는다.
     }
 
-
     return new Response(
-      JSON.stringify({ zone_id: matchedZoneId, source, event_type: eventType }),
+      JSON.stringify({
+        zone_id: matchedZoneId,
+        restricted_zone_id: matchedRestricted?.id ?? null,
+        zone_name: matchedRestricted?.name || zoneMeta?.name || null,
+        zone_type: matchedRestricted
+          ? "danger"
+          : zoneMeta?.zone_type || null,
+        source,
+        event_type: eventType,
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e: any) {
@@ -186,5 +311,3 @@ Deno.serve(async (req) => {
     });
   }
 });
-
-

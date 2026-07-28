@@ -12,12 +12,14 @@ import { Label } from "@/components/ui/label";
 import { Loader2, HardHat, FileText, LogIn, LogOut, AlertCircle, CheckCircle2, QrCode, Home, Phone, Siren, ShieldAlert, MapPin, Flame, Heart } from "lucide-react";
 import { toast } from "sonner";
 import WorkerTrackingCard from "@/components/worker/WorkerTrackingCard";
+import GeofenceAlertBridge from "@/components/geofence/GeofenceAlertBridge";
 
 type WorkerInfo = {
   id: string;
   project_id: string;
   company_id?: string;
   company_name?: string;
+  job_type?: string | null;
   name: string;
   phone: string;
   education_confirmed_at?: string | null;
@@ -197,6 +199,17 @@ export default function WorkerPortal() {
             worker_name: worker.name,
             worker_phone: worker.phone,
           }}
+        />
+        <GeofenceAlertBridge
+          projectId={worker.project_id}
+          subject={{
+            worker_id: worker.id,
+            company_id: worker.company_id,
+            job_type: worker.job_type,
+            worker_name: worker.name,
+            worker_phone: worker.phone,
+          }}
+          autoStart
         />
 
         {/* 오늘의 QR */}

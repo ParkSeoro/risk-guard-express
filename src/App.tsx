@@ -95,10 +95,13 @@ import MobileWorkStop from "./pages/MobileWorkStop";
 import MobileScan from "./pages/MobileScan";
 import MobileDailyHealthLog from "./pages/MobileDailyHealthLog";
 import SiteMaps from "./pages/SiteMaps";
+import RestrictedZones from "./pages/RestrictedZones";
 import ZoneCheckin from "./pages/ZoneCheckin";
 import ZoneEvents from "./pages/ZoneEvents";
 import WorkerDistribution from "./pages/WorkerDistribution";
 import AdminTrackingHealth from "./pages/AdminTrackingHealth";
+import MobileAssessmentViewer from "./pages/MobileAssessmentViewer";
+import MobileWorkPlanViewer from "./pages/MobileWorkPlanViewer";
 import Companies from "./pages/Companies";
 import CompanyDetail from "./pages/CompanyDetail";
 import InstallPrompt from "./components/InstallPrompt";
@@ -237,6 +240,7 @@ function ProtectedRoutes() {
         <Route path="/health/education" element={<HealthEducation />} />
         <Route path="/health/hazard-surveys" element={<HazardSurveys />} />
         <Route path="/site-maps" element={<SiteMaps />} />
+        <Route path="/restricted-zones" element={<RestrictedZones />} />
         <Route path="/zone-events" element={<ZoneEvents />} />
         <Route path="/worker-distribution" element={<WorkerDistribution />} />
         <Route path="/admin/tracking-health" element={<RoleGuard><AdminTrackingHealth /></RoleGuard>} />
@@ -291,7 +295,9 @@ const App = () => (
             <Route path="/m/approvals" element={<MobileApprovals />} />
             <Route path="/m/workers" element={<MobileWorkers />} />
             <Route path="/m/risk-assessment" element={<MobileRiskAssessment />} />
+            <Route path="/m/risk-assessment/:runId" element={<MobileAssessmentViewer />} />
             <Route path="/m/work-plans" element={<MobileWorkPlans />} />
+            <Route path="/m/work-plans/:planId" element={<MobileWorkPlanViewer />} />
             <Route path="/m/tbm" element={<MobileTbm />} />
             <Route path="/m/permits" element={<MobilePermits />} />
             <Route path="/m/incident" element={<MobileIncident />} />

@@ -4,6 +4,7 @@
  * 사용 예: import { koreanName, phoneKR } from "@/lib/commonSchemas";
  */
 import { z } from "zod";
+export { jobTypeSchema, jobTypeOptionalSchema, isStandardJobType } from "@/lib/jobCategories";
 
 /** 한글 이름: 2~30자, 공백 트림. 빈 문자열 거부. */
 export const koreanName = z

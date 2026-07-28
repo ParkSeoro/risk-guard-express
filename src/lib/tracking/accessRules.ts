@@ -14,6 +14,8 @@
  * - allow_job_types: only listed job types may enter; others forbidden
  */
 
+import { STANDARD_JOB_TYPES } from "@/lib/jobCategories";
+
 export type AccessRuleMode = "deny_all" | "allow_companies" | "allow_job_types";
 
 export type AccessRules = {
@@ -37,20 +39,8 @@ export const ZONE_CATEGORY_OPTIONS = [
   { value: "기타", label: "기타" },
 ] as const;
 
-export const JOB_TYPE_OPTIONS = [
-  "용접공",
-  "배관공",
-  "전기공",
-  "비계공",
-  "철골공",
-  "콘크리트공",
-  "굴착기운전",
-  "크레인운전",
-  "신호수",
-  "관리감독자",
-  "안전관리자",
-  "일반근로자",
-] as const;
+/** 표준 직종 SSOT (주관식·기타 없음) — ZoneAccessRulesDialog 등에서 사용 */
+export const JOB_TYPE_OPTIONS = STANDARD_JOB_TYPES;
 
 export const DEFAULT_ACCESS_RULES: AccessRules = { mode: "deny_all" };
 

@@ -22,9 +22,9 @@ import {
   AccessRuleMode,
   AccessRules,
   DEFAULT_ACCESS_RULES,
-  JOB_TYPE_OPTIONS,
   ZONE_CATEGORY_OPTIONS,
 } from "@/lib/tracking/accessRules";
+import { jobCategoryEntries } from "@/lib/jobCategories";
 import type { DrawnShape } from "@/components/geofence/LeafletDrawControl";
 
 export type ZoneDraftPayload = {
@@ -193,16 +193,21 @@ export default function ZoneAccessRulesDialog({
           )}
 
           {mode === "allow_job_types" && (
-            <div className="space-y-2 max-h-40 overflow-auto rounded-md border p-2">
-              <p className="text-[11px] text-muted-foreground">허용 직종 선택</p>
-              {JOB_TYPE_OPTIONS.map((job) => (
-                <label key={job} className="flex items-center gap-2 text-xs cursor-pointer py-0.5">
-                  <Checkbox
-                    checked={jobTypes.includes(job)}
-                    onCheckedChange={(v) => toggleJob(job, !!v)}
-                  />
-                  <span>{job}</span>
-                </label>
+            <div className="space-y-3 max-h-48 overflow-auto rounded-md border p-2">
+              <p className="text-[11px] text-muted-foreground">허용 직종 선택 (표준 직종만)</p>
+              {jobCategoryEntries().map(([category, jobs]) => (
+                <div key={category} className="space-y-1">
+                  <p className="text-[10px] font-semibold text-muted-foreground">{category}</p>
+                  {jobs.map((job) => (
+                    <label key={job} className="flex items-center gap-2 text-xs cursor-pointer py-0.5">
+                      <Checkbox
+                        checked={jobTypes.includes(job)}
+                        onCheckedChange={(v) => toggleJob(job, !!v)}
+                      />
+                      <span>{job}</span>
+                    </label>
+                  ))}
+                </div>
               ))}
               {jobTypes.length === 0 && (
                 <p className="text-[10px] text-amber-600">직종을 1개 이상 선택하세요.</p>

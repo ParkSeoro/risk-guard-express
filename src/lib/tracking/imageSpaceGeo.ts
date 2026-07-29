@@ -87,12 +87,19 @@ export function looksLikeWgs84(p: LatLngLiteral): boolean {
   );
 }
 
-export function formatGpsPreview(shape: {
+/** Shared gate for any restricted_zones / site_zones polygon write path. */
+export function looksLikeWgs84Ring(ring: LatLngLiteral[] | null | undefined): boolean {
+  return !!ring && ring.length >= 3 && ring.every(looksLikeWgs84);
+}
+
+export type GpsShapePreview = {
   kind: "polygon" | "circle";
   latlngs?: LatLngLiteral[];
   center?: LatLngLiteral;
   radius_m?: number;
-}): string {
+};
+
+export function formatGpsPreview(shape: GpsShapePreview): string {
   if (shape.kind === "circle" && shape.center) {
     const { lat, lng } = shape.center;
     return `📍 변환된 GPS 좌표: [${lat.toFixed(6)}, ${lng.toFixed(6)}] · 반경 ${shape.radius_m ?? "?"}m`;
@@ -104,6 +111,10 @@ export function formatGpsPreview(shape: {
     .join(", ");
   return `📍 변환된 GPS 좌표: ${body}`;
 }
+
+/** Admin-facing error when pixel/invalid coords would hit the DB. */
+export const GPS_COORDS_INVALID_MSG =
+  "좌표가 GPS(위경도)로 유효하지 않습니다. 픽셀값이 섞였거나 맵핑 Bounds를 확인하세요.";
 
 export function polygonUvToLatLng(
   ring: ImageUv[],

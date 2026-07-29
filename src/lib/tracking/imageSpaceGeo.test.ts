@@ -7,6 +7,7 @@ import {
   gpsBoundsFromCorners,
   latLngToUv,
   looksLikeWgs84,
+  looksLikeWgs84Ring,
   translateCrsToGps,
   translatePixelToGps,
   uvToLatLng,
@@ -84,6 +85,24 @@ describe("GPS preview / validation helpers", () => {
   it("looksLikeWgs84 rejects pixel-scale values", () => {
     expect(looksLikeWgs84({ lat: 37.5, lng: 127.0 })).toBe(true);
     expect(looksLikeWgs84({ lat: 800, lng: 1200 })).toBe(false);
+  });
+
+  it("looksLikeWgs84Ring requires ≥3 valid points", () => {
+    expect(looksLikeWgs84Ring([{ lat: 37.5, lng: 127.0 }])).toBe(false);
+    expect(
+      looksLikeWgs84Ring([
+        { lat: 37.5, lng: 127.0 },
+        { lat: 37.51, lng: 127.01 },
+        { lat: 37.49, lng: 127.02 },
+      ]),
+    ).toBe(true);
+    expect(
+      looksLikeWgs84Ring([
+        { lat: 37.5, lng: 127.0 },
+        { lat: 800, lng: 1200 },
+        { lat: 37.49, lng: 127.02 },
+      ]),
+    ).toBe(false);
   });
 
   it("formatGpsPreview lists polygon points", () => {

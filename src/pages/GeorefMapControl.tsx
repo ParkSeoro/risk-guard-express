@@ -15,6 +15,11 @@ import {
 import { Map, Upload, Save, Crosshair, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import LeafletDrawControl from "@/components/geofence/LeafletDrawControl";
+import {
+  formatGpsPreview,
+  GPS_COORDS_INVALID_MSG,
+  looksLikeWgs84Ring,
+} from "@/lib/tracking/imageSpaceGeo";
 
 type SiteMap = {
   id: string;
@@ -212,6 +217,11 @@ export default function GeorefMapControl() {
   };
 
   const onPolygonCreated = useCallback((latlngs: { lat: number; lng: number }[]) => {
+    if (!looksLikeWgs84Ring(latlngs)) {
+      toast.error(GPS_COORDS_INVALID_MSG);
+      setPendingPoly(null);
+      return;
+    }
     setPendingPoly(latlngs);
     toast.message(`다각형 ${latlngs.length}점 작성됨 — 이름을 확인하고 저장하세요`);
   }, []);
@@ -219,6 +229,10 @@ export default function GeorefMapControl() {
   const savePolygonZone = async () => {
     if (!projectId || !pendingPoly || pendingPoly.length < 3) {
       toast.error("먼저 지도에서 다각형을 그려주세요");
+      return;
+    }
+    if (!looksLikeWgs84Ring(pendingPoly)) {
+      toast.error(GPS_COORDS_INVALID_MSG);
       return;
     }
     setSaving(true);
@@ -339,7 +353,12 @@ export default function GeorefMapControl() {
               <Label className="text-xs">새 위험구역 이름</Label>
               <Input value={draftName} onChange={(e) => setDraftName(e.target.value)} />
               {pendingPoly && (
-                <Badge variant="outline">{pendingPoly.length}점 다각형 대기</Badge>
+                <>
+                  <Badge variant="outline">{pendingPoly.length}점 다각형 대기</Badge>
+                  <p className="text-[10px] leading-relaxed text-muted-foreground break-all">
+                    {formatGpsPreview({ kind: "polygon", latlngs: pendingPoly })}
+                  </p>
+                </>
               )}
               <Button className="w-full" onClick={savePolygonZone} disabled={saving || !pendingPoly}>
                 {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
@@ -381,7 +400,12 @@ export default function GeorefMapControl() {
                   <ImageOverlay url={activeMap.image_url} bounds={bounds} opacity={0.85} />
                 )}
                 <FitBounds bounds={bounds} />
-                {bounds && <LeafletDrawControl onPolygonCreated={onPolygonCreated} />}
+                {bounds && (
+                  <LeafletDrawControl
+                    showToolbar
+                    onPolygonCreated={onPolygonCreated}
+                  />
+                )}
                 {pendingPoly && (
                   <Polygon
                     positions={pendingPoly.map((p) => [p.lat, p.lng] as [number, number])}

@@ -1,6 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { geminiChatFetch, streamGeminiChatText, GeminiError } from "../_shared/gemini.ts";
+import { geminiChatFetch, GeminiError } from "../_shared/gemini.ts";
+import {
+  streamDeepseekRiskChatText,
+  DeepseekRiskError,
+  RISK_DEEPSEEK_SYSTEM_PROMPT,
+  RISK_DEEPSEEK_MODEL,
+  parseDeepseekRiskJson,
+  stripCodeFences,
+} from "../_shared/deepseekRisk.ts";
 import { fetchApprovedLibraryRisks } from "../_shared/aiResponseCache.ts";
 
 const corsHeaders = {
@@ -168,46 +176,23 @@ async function fetchRAGContext(
   return `\n[참고 사례]\n${lines.join("\n")}`;
 }
 
-const HSE_SYSTEM_PROMPT = `/no_think
-너는 대한민국 최고 권위의 건설안전 기술사이자 산업안전보건법 전문가다.
-산업안전보건기준에 관한 규칙 및 KOSHA GUIDE 표준에 의거하여, 현장 즉시 적용 가능한 고품질 위험성평가 행(테이블 데이터)만 생성한다.
-사고사례·설명문·마크다운 코드펜스·프롬프트/스키마 지시어 누수 절대 금지.
-
-[STRICT — 품질]
-1. 추상·뻔한 문구 금지. 예: "안전수칙 준수", "주의 작업", "기본 점검", "작업전 TBM", "SOP 일상점검" 등 복붙형 문구 사용 불가.
-   반드시 구체적 장비명·자재명·작업 절차·수치(높이·하중·전압·농도 등)를 명시할 것.
-2. 위험요인 = [법적 기준/원인] + [구체적 위험발생 메커니즘] 형태.
-   예: "산업안전보건기준에 관한 규칙 제38조(추락 방지) 미준수 — 개구부 덮개 미고정으로 발판 이탈·추락"
-3. 위험발생상황 = 누가/어디서/무엇이/어떻게 사고로 이어지는지 1문장 개조식. 매크로 템플릿 금지.
-4. 개선대책은 반드시 다음 3요소를 모두 포함할 것(쉼표로 구분된 개조식):
-   (1) 공학적 대책(설비·방호·격리·환기 등)
-   (2) 관리적 대책(작업허가·신호·출입통제·교육·표지 등)
-   (3) 개인보호구(PPE)
-5. 기존대책도 현장 실무 수준의 구체 조치만. 빈칸·'없음'·'-' 금지.
-6. 문체: 서술형(~할 것, ~합니다, ~해야 한다) 금지. 개조식(명사형)만. 종결 예: '~음', '~함', '~발생 우려', '~미흡', '~조치'.
-7. 치명 위험(추락·협착·감전·질식·붕괴·화재·폭발·중장비 충돌·낙하 등)은 위험도·심각도 '상'. 무조건 '하' 금지.
-8. 포맷: 쉼표(,) 뒤 공백 1칸. 한자·한중 혼용 금지. 100% 자연스러운 한국어.
-9. 법적근거는 산안법·산안기준규칙 조항 또는 KOSHA GUIDE 코드만.
-10. 출력은 오직 JSON 객체 하나. 코드펜스·서문·후기 금지.
-
-[CRITICAL WARNING — Anti-Macro]
-절대로 '[OOO] 단계에서 관리·장비·환경 요인이 겹치며 [OOO]로 이어질 수 있음' 형태의 기계적 템플릿을 반복하지 마라.
-각 행의 발생상황·기존대책·개선대책은 해당 세부작업의 물리적 특성(높이, 하중, 전원, 가스, 동선, 지반, 기상)을 반영해 서로 다른 문장으로 창작하라.`;
+const HSE_SYSTEM_PROMPT = RISK_DEEPSEEK_SYSTEM_PROMPT;
 
 /** Noun-only field definitions — never put imperative instructions here (prevents prompt leak into values). */
 const RISK_ITEM_FIELD_SCHEMA: Record<string, string> = {
-  공정: "공종명",
-  세부작업: "세부 작업 명칭(장비·부재·절차 포함)",
-  위험요인: "법적 기준/원인 + 위험 메커니즘",
-  발생상황: "구체적 위험 발생 상황(개조식)",
-  기존대책: "현재 현장의 구체적 안전 조치",
-  개선대책: "공학적 + 관리적 + PPE 대책",
-  위험도: "가능성 등급(상|중|하)",
-  심각도: "중대성 등급(상|중|하)",
-  개선후위험도: "개선 후 가능성 등급",
-  개선후심각도: "개선 후 중대성 등급",
-  보호구: "필요 보호구 목록",
-  법적근거: "관련 법령·가이드 코드",
+  process: "공종명",
+  sub_work: "세부 작업 명칭(장비·부재·절차 포함)",
+  hazard_factor: "법적 기준/원인 + 위험 메커니즘",
+  hazard_situation: "구체적 위험 발생 시나리오(개조식)",
+  existing_control: "현재 현장의 구체적 안전 조치",
+  improvement_control: "공학적 + 관리적 + PPE 대책",
+  initial_likelihood: "가능성 등급(상|중|하)",
+  initial_severity: "중대성 등급(상|중|하)",
+  initial_risk_level: "초기 위험등급(상|중|하)",
+  residual_likelihood: "개선 후 가능성",
+  residual_severity: "개선 후 중대성",
+  residual_risk_level: "잔여 위험등급",
+  ppe: "필요 보호구",
 };
 
 const LEAK_INSTRUCTION_RE =
@@ -236,7 +221,6 @@ function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other" 
   s = s.replace(/[.。]+\s*$/, "").trim();
   s = normalizeCommaSpacing(s);
 
-  // Drop leftover imperative endings that leaked from prompts
   if (/(할\s*것|합니다|해야\s*한다)\s*$/.test(s)) {
     s = s.replace(/(할\s*것|합니다|해야\s*한다)\s*$/g, "").trim();
   }
@@ -245,8 +229,6 @@ function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other" 
   if (kind === "situation" && MACRO_SITUATION_RE.test(s)) return null;
   if (kind === "measure" && VAGUE_MEASURE_RE.test(s)) return null;
   if (kind === "hazard" && VAGUE_HAZARD_RE.test(s)) return null;
-
-  // Reject if still looks like a schema placeholder / instruction echo
   if (/^(원인\+결과|짧은\s*개조식|현장\s*통상\s*조치|본질안전→|개조식|공학적\s*\+|법적\s*기준\/원인)/.test(s)) return null;
 
   return s;
@@ -362,52 +344,50 @@ function extractCompletedObjects(buffer: string, alreadyEmitted: number): { obje
 
 function mapRawItem(item: any, processName: string): any | null {
   const sub_task = sanitizeFieldText(
-    String(item["세부작업"] || item.sub_task || item.sub_work || ""),
+    String(item.sub_work || item["세부작업"] || item.sub_task || ""),
     "other",
   );
   const hazard = sanitizeFieldText(
-    String(item["위험요인"] || item.hazard || item.hazard_factor || ""),
+    String(item.hazard_factor || item["위험요인"] || item.hazard || ""),
     "hazard",
   );
   if (!sub_task || !hazard) return null;
 
-  // Never soft-fill with instructional macros — incomplete rows are dropped.
   const hazard_situation = sanitizeFieldText(
-    String(item["발생상황"] || item.hazard_situation || ""),
+    String(item.hazard_situation || item["발생상황"] || ""),
     "situation",
   );
   const existing_measure = sanitizeFieldText(
-    String(item["기존대책"] || item.existing_measure || item.existing_control || ""),
+    String(item.existing_control || item["기존대책"] || item.existing_measure || ""),
     "measure",
   );
   const improvement_measure = sanitizeFieldText(
-    String(item["개선대책"] || item.improvement_measure || item.improvement_control || ""),
+    String(item.improvement_control || item["개선대책"] || item.improvement_measure || ""),
     "measure",
   );
   if (!hazard_situation || !existing_measure || !improvement_measure) return null;
 
-  // Prefer explicit initial_* aliases when model emits English schema
   let likelihood = String(
-    item["위험도"] || item.likelihood_grade || item.initial_likelihood || item.initial_risk_level || "중",
+    item.initial_likelihood || item["위험도"] || item.likelihood_grade || item.initial_risk_level || "중",
   ).trim();
   let severity = String(
-    item["심각도"] || item.severity_grade || item.initial_severity || "중",
+    item.initial_severity || item["심각도"] || item.severity_grade || "중",
   ).trim();
   if (!["상", "중", "하"].includes(likelihood)) likelihood = "중";
   if (!["상", "중", "하"].includes(severity)) severity = "중";
 
-  // Fatal keywords must not stay at 하
   const fatalRe = /추락|협착|끼임|감전|질식|붕괴|도괴|화재|폭발|중장비|충돌|낙하|비래/;
   if (fatalRe.test(hazard) || fatalRe.test(hazard_situation)) {
     if (likelihood === "하") likelihood = "중";
     if (severity === "하") severity = "상";
   }
 
-  const ppeRaw = item["보호구"] ?? item.ppe ?? [];
+  const ppeRaw = item.ppe ?? item["보호구"] ?? [];
   const ppe = Array.isArray(ppeRaw)
     ? ppeRaw.map(String).map((s) => s.trim()).filter(Boolean)
     : String(ppeRaw).split(/[,，]/).map((s) => s.trim()).filter(Boolean);
-  const legalRaw = item["법적근거"] ?? item.legal_basis ?? "";
+
+  const legalRaw = item.legal_basis ?? item["법적근거"] ?? "";
   const legal_basis = Array.isArray(legalRaw)
     ? legalRaw.map(String).filter(Boolean)
     : String(legalRaw).trim()
@@ -415,18 +395,14 @@ function mapRawItem(item: any, processName: string): any | null {
     : [];
 
   const improvedLikelihood = String(
-    item["개선후위험도"] ||
-      item.improved_likelihood_grade ||
-      item.residual_likelihood ||
-      item.residual_risk_level ||
-      "",
+    item.residual_likelihood || item["개선후위험도"] || item.improved_likelihood_grade || item.residual_risk_level || "",
   ).trim();
   const improvedSeverity = String(
-    item["개선후심각도"] || item.improved_severity_grade || item.residual_severity || "",
+    item.residual_severity || item["개선후심각도"] || item.improved_severity_grade || "",
   ).trim();
 
   return {
-    process: sanitizeFieldText(String(item["공정"] || item.process || processName), "other") || processName,
+    process: sanitizeFieldText(String(item.process || item["공정"] || processName), "other") || processName,
     sub_task,
     hazard,
     hazard_situation,
@@ -482,55 +458,87 @@ ${ragContext}
 
 [이번 배치 — ${phase.title}]
 초점: ${phase.focus}
-items를 최소 ${phase.targetCount}개 이상, 가능하면 ${phase.targetCount + 2}개까지 Exhaustive 도출.
-각 행의 위험요인·발생상황·기존대책·개선대책은 서로 다른 구체 내용(매크로·추상문구 복붙 금지).
-개선대책에는 공학적·관리적·PPE를 모두 명시.
-치명 재해(추락·협착·감전·질식·붕괴 등)는 위험도/심각도 '상'.
-사고사례·accident_cases·설명문·스키마 지시문·마크다운 코드펜스 출력 금지.
+DeepSeek V4 Flash (${RISK_DEEPSEEK_MODEL}) 전용 생성.
+items를 최소 ${phase.targetCount}개 이상 Exhaustive 도출.
+개선대책(improvement_control)에 공학적·관리적·PPE를 모두 명시.
+치명 재해는 initial_likelihood/severity '상'.
+마크다운·설명문 금지. JSON만.
 
-[필드 정의 — 명사형만. 이 문구를 값으로 복사하지 말 것]
+[필드]
 ${fieldSchemaLines}
 
-[출력 JSON 예시 — 값은 예시일 뿐, 그대로 복제 금지]
-{"items":[{"공정":"${processName}","세부작업":"H빔 보 부재 인양 및 볼트 1차 체결","위험요인":"산안기준규칙 제142조(양중기) 미준수 — 웨빙벨트 마모·절단으로 인양물 낙하","발생상황":"타워크레인 인양 중 마모 슬링벨트 파단으로 H빔이 낙하하여 하부 작업자 직격 우려","기존대책":"작업 전 슬링·샤클 육안점검, 신호수 배치","개선대책":"고강도 체인슬링·정격하중 샤클 적용, 인양 하부 출입통제선·감시인 지정, 안전모·안전화·각반 착용","위험도":"상","심각도":"상","개선후위험도":"중","개선후심각도":"중","보호구":["안전모","안전화","각반"],"법적근거":"산안기준규칙 제142조, KOSHA GUIDE C-48-2018"}]}`;
+[출력 형식]
+{"items":[{"process":"${processName}","sub_work":"H빔 보 부재 인양 및 볼트 1차 체결","hazard_factor":"산안기준규칙 제142조 미준수 — 웨빙벨트 마모·절단으로 인양물 낙하","hazard_situation":"타워크레인 인양 중 마모 슬링벨트 파단으로 H빔 낙하, 하부 작업자 직격 우려","existing_control":"작업 전 슬링·샤클 육안점검, 신호수 배치","improvement_control":"고강도 체인슬링·정격하중 샤클 적용, 인양 하부 출입통제선·감시인 지정, 안전모·안전화·각반 착용","initial_likelihood":"상","initial_severity":"상","initial_risk_level":"상","residual_likelihood":"중","residual_severity":"중","residual_risk_level":"중","ppe":"안전모, 안전화, 각반"}]}`;
 
   let buffer = "";
   let emitted = 0;
   const collected: any[] = [];
 
-  for await (const chunk of streamGeminiChatText({
-    messages: [
-      { role: "system", content: HSE_SYSTEM_PROMPT },
-      { role: "user", content: userPrompt },
-    ],
-    temperature: 0.55,
-    max_tokens: 4000,
-    response_format: { type: "json_object" },
-    compact: true,
-  })) {
-    buffer += chunk;
-    const { objects, nextIndex } = extractCompletedObjects(buffer, emitted);
-    for (const obj of objects) {
-      collected.push(obj);
-      onDeltaItem(obj);
+  try {
+    for await (const chunk of streamDeepseekRiskChatText({
+      messages: [
+        { role: "system", content: HSE_SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.45,
+      max_tokens: 4096,
+    })) {
+      buffer += chunk;
+      const { objects, nextIndex } = extractCompletedObjects(buffer, emitted);
+      for (const obj of objects) {
+        collected.push(obj);
+        onDeltaItem(obj);
+      }
+      emitted = nextIndex;
     }
-    emitted = nextIndex;
+  } catch (e) {
+    // If stream failed mid-way but we already have partial buffer, try parse once
+    if (collected.length === 0 && buffer.trim()) {
+      try {
+        const parsed = parseDeepseekRiskJson<any>(buffer);
+        const arr = Array.isArray(parsed) ? parsed : parsed?.items;
+        if (Array.isArray(arr)) {
+          for (const obj of arr) {
+            collected.push(obj);
+            onDeltaItem(obj);
+          }
+          return { rawItems: collected };
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+    throw e;
   }
 
-  const finalParsed = tryParse(buffer.replace(/```json/gi, "").replace(/```/g, "").trim()) ||
-    (() => {
-      const m = buffer.match(/\{[\s\S]*\}/);
-      return m ? tryParse(m[0]) : null;
-    })();
-
-  if (finalParsed?.items && Array.isArray(finalParsed.items)) {
-    for (let i = emitted; i < finalParsed.items.length; i++) {
-      collected.push(finalParsed.items[i]);
-      onDeltaItem(finalParsed.items[i]);
+  let finalParsed: any = null;
+  try {
+    finalParsed = parseDeepseekRiskJson(stripCodeFences(buffer));
+  } catch {
+    const m = buffer.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+    if (m) {
+      try {
+        finalParsed = parseDeepseekRiskJson(m[0]);
+      } catch {
+        finalParsed = null;
+      }
     }
   }
 
-  return { rawItems: collected.length ? collected : (finalParsed?.items || []) };
+  const finalItems = Array.isArray(finalParsed)
+    ? finalParsed
+    : Array.isArray(finalParsed?.items)
+    ? finalParsed.items
+    : [];
+
+  if (finalItems.length > emitted) {
+    for (let i = emitted; i < finalItems.length; i++) {
+      collected.push(finalItems[i]);
+      onDeltaItem(finalItems[i]);
+    }
+  }
+
+  return { rawItems: collected.length ? collected : finalItems };
 }
 
 serve(async (req) => {
@@ -697,8 +705,8 @@ serve(async (req) => {
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
 
-    // v5: anti-macro + noun-only field schema (no instructional soft-fill)
-    const cacheKey = `v5|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
+    // v6: DeepSeek V4 Flash dedicated path + English schema
+    const cacheKey = `v6-ds|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
       .toLowerCase()
       .trim();
 
@@ -821,10 +829,13 @@ serve(async (req) => {
           }
         } catch (phaseErr) {
           console.error(`[AI Engine] phase ${phase.id} error:`, phaseErr);
-          if (phaseErr instanceof GeminiError) {
+          if (phaseErr instanceof DeepseekRiskError || phaseErr instanceof GeminiError) {
             if (phaseErr.code === "RATE_LIMIT") throw new Error("RATE_LIMIT");
             if (phaseErr.code === "QUOTA_EXHAUSTED") throw new Error("CREDITS_EXHAUSTED");
             if (phaseErr.code === "INVALID_KEY") throw new Error("INVALID_KEY");
+            if (phaseErr instanceof DeepseekRiskError && phaseErr.code === "TIMEOUT") {
+              throw new Error(phaseErr.message);
+            }
           }
           send({
             type: "phase_error",
@@ -891,7 +902,7 @@ serve(async (req) => {
             else if (msg === "CREDITS_EXHAUSTED") {
               error = "AI 크레딧이 부족합니다. 워크스페이스 크레딧을 충전해주세요.";
             } else if (msg === "INVALID_KEY") {
-              error = "AI API 키가 유효하지 않습니다. 마스터가 설정 > 시크릿에서 확인해야 합니다.";
+              error = "DeepSeek API 키가 유효하지 않습니다. DEEPSEEK_API_KEY(Supabase Edge Secrets)를 확인해야 합니다.";
             }
             try {
               send({ type: "error", error });
@@ -945,7 +956,7 @@ serve(async (req) => {
     }
     if (msg === "INVALID_KEY") {
       return new Response(
-        JSON.stringify({ error: "AI API 키가 유효하지 않습니다. 마스터가 설정 > 시크릿에서 확인해야 합니다." }),
+        JSON.stringify({ error: "DeepSeek API 키가 유효하지 않습니다. DEEPSEEK_API_KEY(Supabase Edge Secrets)를 확인해야 합니다." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
       );
     }

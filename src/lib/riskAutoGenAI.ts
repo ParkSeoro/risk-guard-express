@@ -88,13 +88,13 @@ function mapErrorMessage(rawMsg: string): string {
   if (/크레딧|CREDITS_EXHAUSTED|credit_limit|402|QUOTA_EXHAUSTED|할당량/i.test(rawMsg)) {
     return 'AI 무료 할당량이 소진되었습니다. 관리자에게 문의하거나 잠시 후 다시 시도해주세요.';
   }
-  if (/INVALID_KEY|api[_ ]?key|NVIDIA_API_KEY|키가 유효하지/i.test(rawMsg)) {
-    return 'AI API 키가 설정되지 않았거나 유효하지 않습니다. 마스터가 설정 > 시크릿에서 확인해야 합니다.';
+  if (/INVALID_KEY|api[_ ]?key|NVIDIA_API_KEY|DEEPSEEK_API_KEY|키가 유효하지/i.test(rawMsg)) {
+    return 'AI API 키가 설정되지 않았거나 유효하지 않습니다. 마스터가 DEEPSEEK_API_KEY(위험성평가) / NVIDIA_API_KEY를 Edge Secrets에 등록해야 합니다.';
   }
   if (/RATE_LIMIT|429|too many|너무 많/i.test(rawMsg)) {
     return '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.';
   }
-  if (/시간.?초과|WORKER_RESOURCE|compute resources/i.test(rawMsg)) {
+  if (/TIMEOUT|중단되었|시간.?초과|WORKER_RESOURCE|compute resources/i.test(rawMsg)) {
     return 'AI 생성 연결이 중단되었습니다. 이미 생성된 항목은 유지됩니다. 다시 시도하거나 공종을 나눠 주세요.';
   }
   return rawMsg || 'AI 생성에 실패했습니다.';

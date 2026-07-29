@@ -552,7 +552,7 @@ const AssessmentRunDetail = () => {
       if (job.status === 'error' && autoGenAckRef.current !== `err:${job.startedAt}`) {
         autoGenAckRef.current = `err:${job.startedAt}`;
         toast({
-          title: job.error || '자동 생성 실패',
+          title: `자동작성 요청 전 에러 발생: ${job.error || '자동 생성 실패'}`,
           variant: 'destructive',
         });
         if (job.insertedTotal > 0) fetchAll();

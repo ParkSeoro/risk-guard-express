@@ -552,7 +552,7 @@ const AssessmentRunDetail = () => {
       if (job.status === 'error' && autoGenAckRef.current !== `err:${job.startedAt}`) {
         autoGenAckRef.current = `err:${job.startedAt}`;
         toast({
-          title: job.error || '자동 생성 실패',
+          title: `자동작성 요청 전 에러 발생: ${job.error || '자동 생성 실패'}`,
           variant: 'destructive',
         });
         if (job.insertedTotal > 0) fetchAll();
@@ -744,38 +744,124 @@ const AssessmentRunDetail = () => {
 
   // Auto-generate: background job (survives dialog close) + bulk insert per process
   const handleAutoGenerate = async () => {
-    if (autoGenProcesses.length === 0 || !run || !user) return;
-    if (isRiskAutoGenRunning()) {
-      toast({ title: '이미 생성이 진행 중입니다.', description: '화면 상단 진행 상태를 확인해주세요.' });
-      return;
-    }
-
-    const started = startRiskAutoGenJob({
-      runId: runId!,
-      projectId: run.project_id,
-      userId: user.id,
-      processes: autoGenProcesses,
+    console.log('[AutoGen] handleAutoGenerate start', {
+      processTags: autoGenProcesses.length,
+      pendingInput: autoGenProcessInput,
+      hasRun: !!run,
+      hasUser: !!user,
+      runId,
       useAI: autoGenUseAI,
-      detailLevel: autoGenDetailLevel,
-      equipmentTags: autoGenEquipmentTags,
-      conditionTags: autoGenConditionTags,
-      workLocation: autoGenWorkLocation,
-      conditionText: autoGenConditionText,
-      sortStart: items.length,
+      loading: autoGenLoading,
     });
 
-    if (!started) {
-      toast({ title: '생성 시작에 실패했습니다.', variant: 'destructive' });
-      return;
+    try {
+      // Flush typed-but-not-added process names (Enter/추가 없이 제출하는 UX)
+      const pending = autoGenProcessInput
+        .split(/[,，]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const processes = [
+        ...autoGenProcesses,
+        ...pending.filter((p) => !autoGenProcesses.includes(p)),
+      ];
+
+      if (processes.length === 0) {
+        console.warn('[AutoGen] blocked: empty processes');
+        toast({
+          title: '자동작성 요청 전 에러 발생: 공종명을 입력하세요.',
+          description: '공종명을 입력한 뒤 Enter 또는 [추가]를 누르거나, 입력 후 바로 제출하세요.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (!run) {
+        console.warn('[AutoGen] blocked: run missing');
+        toast({
+          title: '자동작성 요청 전 에러 발생: 회차 정보가 없습니다.',
+          description: '페이지를 새로고침 후 다시 시도하세요.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (!user) {
+        console.warn('[AutoGen] blocked: user missing');
+        toast({
+          title: '자동작성 요청 전 에러 발생: 로그인이 필요합니다.',
+          description: '세션이 만료되었을 수 있습니다. 다시 로그인해 주세요.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (!runId) {
+        console.warn('[AutoGen] blocked: runId missing');
+        toast({
+          title: '자동작성 요청 전 에러 발생: 회차 ID가 없습니다.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (isRiskAutoGenRunning()) {
+        console.warn('[AutoGen] blocked: job already running', getRiskAutoGenJob());
+        toast({
+          title: '이미 생성이 진행 중입니다.',
+          description: '화면 상단 진행 상태를 확인해주세요. 멈춘 경우 페이지를 새로고침하세요.',
+        });
+        return;
+      }
+
+      if (pending.length > 0) {
+        setAutoGenProcesses(processes);
+        setAutoGenProcessInput('');
+      }
+
+      console.log('[AutoGen] calling startRiskAutoGenJob', {
+        runId,
+        projectId: run.project_id,
+        processes,
+        useAI: autoGenUseAI,
+      });
+
+      const started = startRiskAutoGenJob({
+        runId,
+        projectId: run.project_id,
+        userId: user.id,
+        processes,
+        useAI: autoGenUseAI,
+        detailLevel: autoGenDetailLevel,
+        equipmentTags: autoGenEquipmentTags,
+        conditionTags: autoGenConditionTags,
+        workLocation: autoGenWorkLocation,
+        conditionText: autoGenConditionText,
+        sortStart: items.length,
+      });
+
+      if (!started) {
+        console.error('[AutoGen] startRiskAutoGenJob returned false');
+        toast({
+          title: '자동작성 요청 전 에러 발생: 생성 시작에 실패했습니다.',
+          description: '다른 생성이 진행 중이거나 공종 목록이 비어 있습니다.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setShowAutoGen(false);
+      setAutoGenProcesses([]);
+      setAutoGenProcessInput('');
+      toast({
+        title: '위험성평가 생성을 시작했습니다.',
+        description: autoGenUseAI
+          ? '세부작업 행이 먼저 나타난 뒤 위험요인이 병렬로 채워집니다. 상단 진행 바를 확인하세요.'
+          : '라이브러리 전용 모드로 등록합니다. (generate-risk-ai 호출 없음)',
+      });
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      console.error('[AutoGen] handleAutoGenerate threw before/during start:', err);
+      toast({
+        title: `자동작성 요청 전 에러 발생: ${msg}`,
+        variant: 'destructive',
+      });
     }
-
-    setShowAutoGen(false);
-    setAutoGenProcesses([]);
-    setAutoGenProcessInput('');
-    toast({
-      title: '위험성평가 생성을 시작했습니다.',
-      description: '세부작업 행이 먼저 나타난 뒤 위험요인이 병렬로 채워집니다. 상단 진행 바를 확인하세요.',
-    });
   };
 
   // Add process tag
@@ -2257,10 +2343,24 @@ const AssessmentRunDetail = () => {
               </p>
             </div>
 
-            <Button onClick={handleAutoGenerate} disabled={autoGenProcesses.length === 0 || autoGenLoading} className="w-full h-11">
+            <Button
+              type="button"
+              onClick={() => {
+                console.log('[AutoGen] submit button clicked');
+                void handleAutoGenerate();
+              }}
+              disabled={
+                autoGenLoading ||
+                (autoGenProcesses.length === 0 && !autoGenProcessInput.trim())
+              }
+              className="w-full h-11"
+            >
               {autoGenLoading
                 ? `생성 중… ${autoGenJob.elapsedSec || 0}초 · ${autoGenJob.message || autoGenPhaseLabel || '대기'}`
-                : `공종 자동작성 · ${autoGenProcesses.length || 0}개 공종`}
+                : `공종 자동작성 · ${
+                    autoGenProcesses.length ||
+                    (autoGenProcessInput.trim() ? autoGenProcessInput.split(/[,，]/).filter((s) => s.trim()).length : 0)
+                  }개 공종`}
             </Button>
             {autoGenLoading && (
               <p className="text-[11px] text-center text-muted-foreground">

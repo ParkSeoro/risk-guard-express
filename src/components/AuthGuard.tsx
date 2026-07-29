@@ -1,6 +1,6 @@
 /**
  * Role-based auth + traffic routing + universal consent intercept (/consent).
- * ALL authenticated users (admin / manager / worker) must complete consent once.
+ * ALL authenticated users must complete consent once — except while ON /consent itself.
  */
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,6 +18,21 @@ export const ADMIN_SHELL_ROLES = [
 export const WORKER_SHELL_ROLES = ["worker", "viewer"] as const;
 
 export type ShellKind = "admin" | "worker";
+
+/** Auth / consent system paths — never redirect-loop these. */
+export function isAuthSystemPath(pathname: string): boolean {
+  const p = pathname.replace(/\/+$/, "") || "/";
+  return (
+    p === "/login" ||
+    p === "/auth" ||
+    p === "/register" ||
+    p === "/consent" ||
+    p === "/onboarding" ||
+    p === "/forgot-password" ||
+    p === "/update-password" ||
+    p === "/reset-password"
+  );
+}
 
 export function isAdminShellUser(roles: string[]): boolean {
   const set = new Set(roles.map((r) => r.toLowerCase()));
@@ -60,6 +75,8 @@ export function needsConsent(profile: ConsentProfile, roles: string[]): boolean 
   if (!profile.consent_agreed_at) return true;
 
   if (isAdminShellUser(roles)) {
+    // Column missing (pre-migration): don't permanently block after terms+privacy
+    if (profile.agreed_to_admin_security == null) return false;
     return profile.agreed_to_admin_security !== true;
   }
   return profile.agreed_to_location !== true;
@@ -89,7 +106,9 @@ export function writeLoginIntent(intent: "admin" | "worker") {
 }
 
 export function postConsentHomePath(roles: string[]): string {
-  return isAdminShellUser(roles) ? "/app/admin" : "/app/worker/home";
+  const home = isAdminShellUser(roles) ? "/app/admin" : "/app/worker/home";
+  // Never bounce back to root /
+  return home === "/" ? "/app/admin" : home;
 }
 
 export function postLoginPath(
@@ -119,7 +138,14 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
   const { user, loading, roles, rolesReady, profile } = useAuth();
   const location = useLocation();
 
-  if (loading || (user && !rolesReady)) return <Loading />;
+  // 1) Whitelist: consent / login / register must always render (no redirect loop)
+  if (isAuthSystemPath(location.pathname)) {
+    return <>{children}</>;
+  }
+
+  // 2) Don't deadlock forever — if loading stuck, still allow after rolesReady OR timeout handled in AuthContext
+  if (loading && !rolesReady && !user) return <Loading />;
+  if (user && loading && !rolesReady) return <Loading />;
 
   if (!user) {
     if (allowAnonymous) return <>{children}</>;
@@ -127,14 +153,15 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
     return <Navigate to={`/login?next=${next}`} replace />;
   }
 
-  // Universal consent for EVERY role (admin / manager / worker)
+  // Session known but roles still resolving — brief wait (AuthContext guarantees finally)
+  if (!rolesReady) return <Loading />;
+
+  // Universal consent for EVERY role — but never when already on /consent (whitelisted above)
   if (needsConsent(profile, roles)) {
     return <Navigate to="/consent" replace />;
   }
 
-  const pureWorker = isPureWorkerUser(roles);
-
-  if (shell === "admin" && pureWorker) {
+  if (shell === "admin" && isPureWorkerUser(roles)) {
     return <Navigate to="/app/worker/home" replace />;
   }
 
@@ -143,7 +170,12 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
 
 export function RoleHomeRedirect() {
   const { user, loading, roles, rolesReady, profile } = useAuth();
-  if (loading || (user && !rolesReady)) return <Loading />;
+  if (loading && !user) return <Loading />;
+  if (user && !rolesReady && loading) return <Loading />;
+  // If rolesReady never flips, AuthContext finally forces it — still proceed with best effort
+  if (user && !rolesReady) return <Loading />;
   if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={postLoginPath(roles, profile, { rolesReady })} replace />;
+  const dest = postLoginPath(roles, profile, { rolesReady });
+  if (dest === "/" || dest === "") return <Navigate to="/login" replace />;
+  return <Navigate to={dest} replace />;
 }

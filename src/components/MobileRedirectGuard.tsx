@@ -35,13 +35,13 @@ export default function MobileRedirectGuard() {
   const isMobile = useIsMobile();
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, roles, rolesReady, loading } = useAuth();
+  const { user, roles, rolesReady, isAuthLoading } = useAuth();
 
   useEffect(() => {
     if (!isMobile) return;
     if (typeof window !== "undefined" && window.innerWidth >= 768) return;
     if (typeof window !== "undefined" && localStorage.getItem(FORCE_DESKTOP_KEY) === "1") return;
-    if (loading || (user && !rolesReady)) return;
+    if (isAuthLoading || (user && !rolesReady)) return;
 
     // Critical: admins/managers keep desktop admin shell even on small viewports
     if (user && isAdminShellUser(roles)) return;
@@ -68,7 +68,7 @@ export default function MobileRedirectGuard() {
     if (path.startsWith("/app/admin") || path === "/" || !path.startsWith("/app/worker")) {
       navigate("/app/worker/home", { replace: true });
     }
-  }, [isMobile, location.pathname, navigate, user, roles, rolesReady, loading]);
+  }, [isMobile, location.pathname, navigate, user, roles, rolesReady, isAuthLoading]);
 
   return null;
 }

@@ -40,17 +40,9 @@ function PageFallback() {
 }
 
 function AuthRoute() {
-  const { user, loading, roles, rolesReady, profile } = useAuth();
+  const { user, isAuthLoading, roles, rolesReady, profile } = useAuth();
   const [params] = useSearchParams();
-  // Only block anonymous session probe — never wait forever for roles
-  if (loading && !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
-        세션 확인 중…
-      </div>
-    );
-  }
-  if (user && !rolesReady && loading) {
+  if (isAuthLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
         세션 확인 중…
@@ -58,8 +50,14 @@ function AuthRoute() {
     );
   }
   if (user) {
-    // Prefer navigating once roles are ready; if not, still send to /consent when profile incomplete
-    const dest = postLoginPath(roles, profile, { rolesReady: rolesReady || !loading });
+    if (!rolesReady) {
+      return (
+        <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
+          세션 확인 중…
+        </div>
+      );
+    }
+    const dest = postLoginPath(roles, profile, { rolesReady });
     const next = params.get("next");
     if (next && next.startsWith("/") && !next.startsWith("//") && next !== "/consent" && next !== "/") {
       if (dest === "/consent") {
@@ -146,15 +144,8 @@ function OfflineSyncMount() {
 }
 
 function RoleAwareRootRedirect() {
-  const { user, loading, roles, rolesReady, profile } = useAuth();
-  if (loading && !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
-        세션 확인 중…
-      </div>
-    );
-  }
-  if (user && !rolesReady && loading) {
+  const { user, isAuthLoading, roles, rolesReady, profile } = useAuth();
+  if (isAuthLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
         세션 확인 중…
@@ -162,7 +153,14 @@ function RoleAwareRootRedirect() {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
-  const dest = postLoginPath(roles, profile, { rolesReady: rolesReady || !loading });
+  if (!rolesReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
+        세션 확인 중…
+      </div>
+    );
+  }
+  const dest = postLoginPath(roles, profile, { rolesReady });
   // Never Navigate to "/" (would re-enter this redirect)
   if (!dest || dest === "/") return <Navigate to="/consent" replace />;
   return <Navigate to={dest} replace />;

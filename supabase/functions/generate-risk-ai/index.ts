@@ -169,33 +169,39 @@ async function fetchRAGContext(
 }
 
 const HSE_SYSTEM_PROMPT = `/no_think
-너는 20년 경력의 대한민국 건설현장 최고 안전보건전문가(HSE)다.
-목적: 위험성평가 테이블(행) 데이터만 순수 생성. 사고사례·설명문·프롬프트/스키마 지시어 누수 절대 금지.
+너는 대한민국 최고 권위의 건설안전 기술사이자 산업안전보건법 전문가다.
+산업안전보건기준에 관한 규칙 및 KOSHA GUIDE 표준에 의거하여, 현장 즉시 적용 가능한 고품질 위험성평가 행(테이블 데이터)만 생성한다.
+사고사례·설명문·마크다운 코드펜스·프롬프트/스키마 지시어 누수 절대 금지.
+
+[STRICT — 품질]
+1. 추상·뻔한 문구 금지. 예: "안전수칙 준수", "주의 작업", "기본 점검", "작업전 TBM", "SOP 일상점검" 등 복붙형 문구 사용 불가.
+   반드시 구체적 장비명·자재명·작업 절차·수치(높이·하중·전압·농도 등)를 명시할 것.
+2. 위험요인 = [법적 기준/원인] + [구체적 위험발생 메커니즘] 형태.
+   예: "산업안전보건기준에 관한 규칙 제38조(추락 방지) 미준수 — 개구부 덮개 미고정으로 발판 이탈·추락"
+3. 위험발생상황 = 누가/어디서/무엇이/어떻게 사고로 이어지는지 1문장 개조식. 매크로 템플릿 금지.
+4. 개선대책은 반드시 다음 3요소를 모두 포함할 것(쉼표로 구분된 개조식):
+   (1) 공학적 대책(설비·방호·격리·환기 등)
+   (2) 관리적 대책(작업허가·신호·출입통제·교육·표지 등)
+   (3) 개인보호구(PPE)
+5. 기존대책도 현장 실무 수준의 구체 조치만. 빈칸·'없음'·'-' 금지.
+6. 문체: 서술형(~할 것, ~합니다, ~해야 한다) 금지. 개조식(명사형)만. 종결 예: '~음', '~함', '~발생 우려', '~미흡', '~조치'.
+7. 치명 위험(추락·협착·감전·질식·붕괴·화재·폭발·중장비 충돌·낙하 등)은 위험도·심각도 '상'. 무조건 '하' 금지.
+8. 포맷: 쉼표(,) 뒤 공백 1칸. 한자·한중 혼용 금지. 100% 자연스러운 한국어.
+9. 법적근거는 산안법·산안기준규칙 조항 또는 KOSHA GUIDE 코드만.
+10. 출력은 오직 JSON 객체 하나. 코드펜스·서문·후기 금지.
 
 [CRITICAL WARNING — Anti-Macro]
-절대로 '[OOO] 단계에서 관리·장비·환경 요인이 겹치며 [OOO]로 이어질 수 있음'과 같은 기계적 템플릿(매크로) 문장을 반복 사용하지 마라.
-각 위험발생상황은 해당 세부작업의 실제 물리적·환경적 특성(높이, 하중, 전원, 가스, 동선, 지반, 기상 등)을 반영해 **완전히 다른 문장 구조**로 개별 창작하라.
-'기본 점검 준수', '작업전 TBM', '표준작업절차(SOP)에 따른 일상점검'처럼 모든 행에 복붙되는 무의미한 기존대책도 금지.
-
-[절대 규칙]
-1. 해당 공종의 잠재 위험 요인을 가혹할 정도로 최대한(Exhaustive) 도출.
-2. 문체: 서술형(~할 것, ~합니다, ~해야 한다, ~서술할 것, ~작성할 것) 절대 금지. 개조식(명사형)만 허용. 종결 예: '~음', '~함', '~발생 우려', '~미흡', '~조치'.
-3. 위험발생상황·기존대책·개선대책은 짧고 굵게. 빈칸(null,'-','없음','') 금지. 스키마 description·프롬프트 문장을 값으로 복사하지 말 것.
-4. 치명 위험(추락·협착·감전·질식·붕괴·화재·폭발·중장비 충돌 등)은 위험도·심각도 '상'. 무조건 '하' 금지.
-5. 기존대책: 현장에서 실제로 취하는 구체적 물리적/관리적 조치로 작성. 예: "안전조끼 착용, 반경 5m 접근 통제선 설치", "절연장갑·절연장화 착용, 활선접근경보기 휴대".
-6. 개선대책: 본질안전(제거·대체)→공학적(방호·격리·환기)→관리적(작업허가·교육·표지)→PPE 순. PPE만 나열 금지.
-7. 포맷: 쉼표(,) 뒤에는 반드시 공백 1칸. 한자(漢字)·한중 혼용(예: 미실施) 금지. 100% 자연스러운 한국어 표준어만.
-8. 법적근거는 산안법·산안기준규칙 조항 또는 KOSHA GUIDE 코드만.
-9. 출력은 오직 JSON. 코드펜스·설명문·사고사례 필드 금지.`;
+절대로 '[OOO] 단계에서 관리·장비·환경 요인이 겹치며 [OOO]로 이어질 수 있음' 형태의 기계적 템플릿을 반복하지 마라.
+각 행의 발생상황·기존대책·개선대책은 해당 세부작업의 물리적 특성(높이, 하중, 전원, 가스, 동선, 지반, 기상)을 반영해 서로 다른 문장으로 창작하라.`;
 
 /** Noun-only field definitions — never put imperative instructions here (prevents prompt leak into values). */
 const RISK_ITEM_FIELD_SCHEMA: Record<string, string> = {
   공정: "공종명",
-  세부작업: "세부 작업 명칭",
-  위험요인: "발생 가능한 유해·위험 요인",
-  발생상황: "발생 가능한 위험 상황",
+  세부작업: "세부 작업 명칭(장비·부재·절차 포함)",
+  위험요인: "법적 기준/원인 + 위험 메커니즘",
+  발생상황: "구체적 위험 발생 상황(개조식)",
   기존대책: "현재 현장의 구체적 안전 조치",
-  개선대책: "추가 감소 대책",
+  개선대책: "공학적 + 관리적 + PPE 대책",
   위험도: "가능성 등급(상|중|하)",
   심각도: "중대성 등급(상|중|하)",
   개선후위험도: "개선 후 가능성 등급",
@@ -209,7 +215,9 @@ const LEAK_INSTRUCTION_RE =
 const MACRO_SITUATION_RE =
   /단계에서\s*관리[·・,]?\s*장비[·・,]?\s*환경\s*요인이\s*겹치며/;
 const VAGUE_MEASURE_RE =
-  /^(기본\s*점검\s*준수|일상\s*점검|표준작업절차\(SOP\)에\s*따른\s*일상점검.*|작업전\s*TBM\s*및\s*위험성\s*고지.*)$/;
+  /^(기본\s*점검\s*준수|일상\s*점검|표준작업절차\(SOP\)에\s*따른\s*일상점검.*|작업전\s*TBM\s*및\s*위험성\s*고지.*|안전수칙\s*준수|주의\s*작업|안전\s*주의|조심히\s*작업.*|관련\s*규정\s*준수)$/;
+const VAGUE_HAZARD_RE =
+  /^(안전수칙\s*미준수|부주의|주의\s*부족|일반\s*위험|작업\s*중\s*사고)$/;
 
 function normalizeCommaSpacing(text: string): string {
   return text
@@ -220,7 +228,7 @@ function normalizeCommaSpacing(text: string): string {
 }
 
 /** Strip schema/prompt instruction leaks and reject macro templates. */
-function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other"): string | null {
+function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other" | "hazard"): string | null {
   let s = String(raw ?? "").trim();
   if (!s || s === "-" || s === "없음" || s.toLowerCase() === "null") return null;
 
@@ -236,9 +244,10 @@ function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other")
   if (!s) return null;
   if (kind === "situation" && MACRO_SITUATION_RE.test(s)) return null;
   if (kind === "measure" && VAGUE_MEASURE_RE.test(s)) return null;
+  if (kind === "hazard" && VAGUE_HAZARD_RE.test(s)) return null;
 
   // Reject if still looks like a schema placeholder / instruction echo
-  if (/^(원인\+결과|짧은\s*개조식|현장\s*통상\s*조치|본질안전→|개조식)/.test(s)) return null;
+  if (/^(원인\+결과|짧은\s*개조식|현장\s*통상\s*조치|본질안전→|개조식|공학적\s*\+|법적\s*기준\/원인)/.test(s)) return null;
 
   return s;
 }
@@ -353,12 +362,12 @@ function extractCompletedObjects(buffer: string, alreadyEmitted: number): { obje
 
 function mapRawItem(item: any, processName: string): any | null {
   const sub_task = sanitizeFieldText(
-    String(item["세부작업"] || item.sub_task || ""),
+    String(item["세부작업"] || item.sub_task || item.sub_work || ""),
     "other",
   );
   const hazard = sanitizeFieldText(
-    String(item["위험요인"] || item.hazard || ""),
-    "other",
+    String(item["위험요인"] || item.hazard || item.hazard_factor || ""),
+    "hazard",
   );
   if (!sub_task || !hazard) return null;
 
@@ -368,17 +377,22 @@ function mapRawItem(item: any, processName: string): any | null {
     "situation",
   );
   const existing_measure = sanitizeFieldText(
-    String(item["기존대책"] || item.existing_measure || ""),
+    String(item["기존대책"] || item.existing_measure || item.existing_control || ""),
     "measure",
   );
   const improvement_measure = sanitizeFieldText(
-    String(item["개선대책"] || item.improvement_measure || ""),
+    String(item["개선대책"] || item.improvement_measure || item.improvement_control || ""),
     "measure",
   );
   if (!hazard_situation || !existing_measure || !improvement_measure) return null;
 
-  let likelihood = String(item["위험도"] || item.likelihood_grade || "중").trim();
-  let severity = String(item["심각도"] || item.severity_grade || "중").trim();
+  // Prefer explicit initial_* aliases when model emits English schema
+  let likelihood = String(
+    item["위험도"] || item.likelihood_grade || item.initial_likelihood || item.initial_risk_level || "중",
+  ).trim();
+  let severity = String(
+    item["심각도"] || item.severity_grade || item.initial_severity || "중",
+  ).trim();
   if (!["상", "중", "하"].includes(likelihood)) likelihood = "중";
   if (!["상", "중", "하"].includes(severity)) severity = "중";
 
@@ -400,6 +414,17 @@ function mapRawItem(item: any, processName: string): any | null {
     ? [String(legalRaw).trim()]
     : [];
 
+  const improvedLikelihood = String(
+    item["개선후위험도"] ||
+      item.improved_likelihood_grade ||
+      item.residual_likelihood ||
+      item.residual_risk_level ||
+      "",
+  ).trim();
+  const improvedSeverity = String(
+    item["개선후심각도"] || item.improved_severity_grade || item.residual_severity || "",
+  ).trim();
+
   return {
     process: sanitizeFieldText(String(item["공정"] || item.process || processName), "other") || processName,
     sub_task,
@@ -409,12 +434,8 @@ function mapRawItem(item: any, processName: string): any | null {
     improvement_measure,
     likelihood_grade: likelihood,
     severity_grade: severity,
-    improved_likelihood_grade: ["상", "중", "하"].includes(item["개선후위험도"] || item.improved_likelihood_grade)
-      ? (item["개선후위험도"] || item.improved_likelihood_grade)
-      : "하",
-    improved_severity_grade: ["상", "중", "하"].includes(item["개선후심각도"] || item.improved_severity_grade)
-      ? (item["개선후심각도"] || item.improved_severity_grade)
-      : "하",
+    improved_likelihood_grade: ["상", "중", "하"].includes(improvedLikelihood) ? improvedLikelihood : "하",
+    improved_severity_grade: ["상", "중", "하"].includes(improvedSeverity) ? improvedSeverity : "하",
     ppe: ppe.length ? ppe : ["안전모", "안전화"],
     legal_basis,
   };
@@ -462,15 +483,16 @@ ${ragContext}
 [이번 배치 — ${phase.title}]
 초점: ${phase.focus}
 items를 최소 ${phase.targetCount}개 이상, 가능하면 ${phase.targetCount + 2}개까지 Exhaustive 도출.
-각 행의 발생상황·기존대책·개선대책은 서로 다른 구체 내용(매크로 복붙 금지).
+각 행의 위험요인·발생상황·기존대책·개선대책은 서로 다른 구체 내용(매크로·추상문구 복붙 금지).
+개선대책에는 공학적·관리적·PPE를 모두 명시.
 치명 재해(추락·협착·감전·질식·붕괴 등)는 위험도/심각도 '상'.
-사고사례·accident_cases·설명문·스키마 지시문 출력 금지.
+사고사례·accident_cases·설명문·스키마 지시문·마크다운 코드펜스 출력 금지.
 
 [필드 정의 — 명사형만. 이 문구를 값으로 복사하지 말 것]
 ${fieldSchemaLines}
 
 [출력 JSON 예시 — 값은 예시일 뿐, 그대로 복제 금지]
-{"items":[{"공정":"${processName}","세부작업":"용접부 가우징","위험요인":"용접흄·아크광 흡입 및 안면 화상","발생상황":"밀폐 배관 내부 가우징 시 환기 부족으로 흄 체류, 아크 반사광에 안면 노출 우려","기존대책":"송기마스크 착용, 국소배기 가동, 차광면 착용","개선대책":"강제환기 덕트 설치, 연속 작업 시 교대 휴식, 용접면 자동차광 렌즈 사용","위험도":"상","심각도":"상","개선후위험도":"하","개선후심각도":"중","보호구":["송기마스크","차광면","가죽앞치마"],"법적근거":"산안기준규칙 제429조"}]}`;
+{"items":[{"공정":"${processName}","세부작업":"H빔 보 부재 인양 및 볼트 1차 체결","위험요인":"산안기준규칙 제142조(양중기) 미준수 — 웨빙벨트 마모·절단으로 인양물 낙하","발생상황":"타워크레인 인양 중 마모 슬링벨트 파단으로 H빔이 낙하하여 하부 작업자 직격 우려","기존대책":"작업 전 슬링·샤클 육안점검, 신호수 배치","개선대책":"고강도 체인슬링·정격하중 샤클 적용, 인양 하부 출입통제선·감시인 지정, 안전모·안전화·각반 착용","위험도":"상","심각도":"상","개선후위험도":"중","개선후심각도":"중","보호구":["안전모","안전화","각반"],"법적근거":"산안기준규칙 제142조, KOSHA GUIDE C-48-2018"}]}`;
 
   let buffer = "";
   let emitted = 0;

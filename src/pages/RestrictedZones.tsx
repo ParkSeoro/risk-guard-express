@@ -16,6 +16,12 @@ import {
 import { ShieldAlert, Plus, Trash2, MapPin, Save, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useSoftDelete } from "@/hooks/useSoftDelete";
+import {
+  formatGpsPreview,
+  GPS_COORDS_INVALID_MSG,
+  looksLikeWgs84,
+  looksLikeWgs84Ring,
+} from "@/lib/tracking/imageSpaceGeo";
 
 type Zone = {
   id: string;
@@ -184,14 +190,23 @@ export default function RestrictedZones() {
         setSaving(false);
         return;
       }
+      if (!looksLikeWgs84({ lat, lng })) {
+        toast.error(GPS_COORDS_INVALID_MSG);
+        setSaving(false);
+        return;
+      }
       payload.center_lat = lat;
       payload.center_lng = lng;
       payload.radius_m = r;
       payload.geo_polygon = null;
     } else {
       const poly = parsePolygon(form.polygon_text);
-      if (!poly) {
-        toast.error("폴리곤은 lat,lng 형식으로 3개 이상 좌표가 필요합니다");
+      if (!poly || !looksLikeWgs84Ring(poly)) {
+        toast.error(
+          !poly
+            ? "폴리곤은 lat,lng 형식으로 3개 이상 좌표가 필요합니다"
+            : GPS_COORDS_INVALID_MSG,
+        );
         setSaving(false);
         return;
       }
@@ -411,6 +426,15 @@ export default function RestrictedZones() {
                   placeholder={"37.5665,126.9780\n37.5666,126.9785\n37.5660,126.9784"}
                   className="font-mono text-xs"
                 />
+                {(() => {
+                  const poly = parsePolygon(form.polygon_text);
+                  if (!poly || !looksLikeWgs84Ring(poly)) return null;
+                  return (
+                    <p className="text-[10px] leading-relaxed text-muted-foreground break-all">
+                      {formatGpsPreview({ kind: "polygon", latlngs: poly })}
+                    </p>
+                  );
+                })()}
               </div>
             )}
 

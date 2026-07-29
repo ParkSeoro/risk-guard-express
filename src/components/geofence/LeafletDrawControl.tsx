@@ -81,26 +81,30 @@ export default function LeafletDrawControl({
   const handlerRef = useRef<{ disable: () => void } | null>(null);
   const draggingWasEnabled = useRef(true);
 
-  // While an external draw tool is active, block map panning so draw clicks/drags win.
+  const suspendMapGestures = () => {
+    draggingWasEnabled.current = map.dragging.enabled();
+    map.dragging.disable();
+    map.doubleClickZoom?.disable?.();
+    map.boxZoom?.disable?.();
+  };
+
+  const restoreMapGestures = () => {
+    if (draggingWasEnabled.current) map.dragging.enable();
+    map.doubleClickZoom?.enable?.();
+    map.boxZoom?.enable?.();
+  };
+
+  // External activeTool: block panning while drawing so draw clicks/drags win.
   useEffect(() => {
     if (!enabled || showToolbar) return;
     if (activeTool) {
-      draggingWasEnabled.current = map.dragging.enabled();
-      map.dragging.disable();
-      map.doubleClickZoom?.disable?.();
-      map.boxZoom?.disable?.();
-      return () => {
-        if (draggingWasEnabled.current) map.dragging.enable();
-        map.doubleClickZoom?.enable?.();
-        map.boxZoom?.enable?.();
-      };
+      suspendMapGestures();
+      return () => restoreMapGestures();
     }
-    map.dragging.enable();
-    map.doubleClickZoom?.enable?.();
-    map.boxZoom?.enable?.();
+    restoreMapGestures();
   }, [map, enabled, showToolbar, activeTool]);
 
-  // Optional legacy toolbar
+  // Optional legacy toolbar (GeorefMapControl etc.) — also suspend panning on DRAWSTART.
   useEffect(() => {
     if (!enabled || !showToolbar) return;
     if (!onShapeCreated && !onPolygonCreated) return;
@@ -138,12 +142,24 @@ export default function LeafletDrawControl({
     const onCreated = (e: any) => {
       emitShape(e, drawnItems, onShapeCreated, onPolygonCreated);
     };
+    const onDrawStart = () => suspendMapGestures();
+    const onDrawStop = () => restoreMapGestures();
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     map.on((L as any).Draw.Event.CREATED, onCreated);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    map.on((L as any).Draw.Event.DRAWSTART, onDrawStart);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    map.on((L as any).Draw.Event.DRAWSTOP, onDrawStop);
 
     return () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       map.off((L as any).Draw.Event.CREATED, onCreated);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      map.off((L as any).Draw.Event.DRAWSTART, onDrawStart);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      map.off((L as any).Draw.Event.DRAWSTOP, onDrawStop);
+      restoreMapGestures();
       map.removeControl(drawControl);
       map.removeLayer(drawnItems);
     };

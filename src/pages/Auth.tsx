@@ -206,11 +206,11 @@ const Auth = () => {
         return;
       }
 
-      // 관리자: 표준 이메일/비밀번호 → 절대 worker onboarding으로 보내지 않음
+      // 관리자: 표준 이메일/비밀번호
       writeLoginIntent('admin');
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) toast({ title: '로그인 실패', description: error.message, variant: 'destructive' });
-      // AuthRoute → postLoginPath → /app/admin
+      // AuthRoute → postLoginPath → /consent (미동의) 또는 /app/admin
     } finally {
       setLoading(false);
     }

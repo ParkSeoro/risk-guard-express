@@ -1,6 +1,6 @@
 /**
- * Role-based auth + traffic routing.
- * Consent intercept applies ONLY to pure WORKER users — never admins/managers.
+ * Role-based auth + traffic routing + universal consent intercept (/consent).
+ * ALL authenticated users (admin / manager / worker) must complete consent once.
  */
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -24,47 +24,50 @@ export function isAdminShellUser(roles: string[]): boolean {
   return ADMIN_SHELL_ROLES.some((r) => set.has(r));
 }
 
-/** True only when user has worker/viewer and NO admin/manager roles. */
 export function isPureWorkerUser(roles: string[]): boolean {
   if (isAdminShellUser(roles)) return false;
   const set = new Set(roles.map((r) => r.toLowerCase()));
   return WORKER_SHELL_ROLES.some((r) => set.has(r));
 }
 
-/**
- * Resolve destination shell.
- * Empty roles while still loading must NOT default to worker (that hijacks admins).
- */
 export function resolvePostLoginShell(
   roles: string[],
   opts?: { rolesReady?: boolean; loginIntent?: "admin" | "worker" | null },
 ): ShellKind {
   if (isAdminShellUser(roles)) return "admin";
   if (isPureWorkerUser(roles)) return "worker";
-
-  // Roles not ready yet — honor login tab intent if present
   if (opts?.rolesReady === false) {
-    if (opts.loginIntent === "admin") return "admin";
     if (opts.loginIntent === "worker") return "worker";
-    return "admin"; // safe default for unknown: admin desktop, never onboarding
+    return "admin";
   }
-
-  // Roles fetched but empty: prefer admin path (project gate handles membership)
   if (opts?.loginIntent === "worker") return "worker";
   return "admin";
 }
 
-export function workerNeedsConsent(profile: {
-  agreed_to_location?: boolean | null;
+type ConsentProfile = {
   agreed_to_terms?: boolean | null;
+  agreed_to_location?: boolean | null;
   agreed_to_privacy?: boolean | null;
-} | null): boolean {
+  agreed_to_admin_security?: boolean | null;
+  consent_agreed_at?: string | null;
+} | null;
+
+/** Universal consent gate — role-aware required flags. */
+export function needsConsent(profile: ConsentProfile, roles: string[]): boolean {
   if (!profile) return true;
-  return !(
-    profile.agreed_to_location === true &&
-    profile.agreed_to_terms === true &&
-    profile.agreed_to_privacy === true
-  );
+  if (profile.agreed_to_terms !== true) return true;
+  if (profile.agreed_to_privacy !== true) return true;
+  if (!profile.consent_agreed_at) return true;
+
+  if (isAdminShellUser(roles)) {
+    return profile.agreed_to_admin_security !== true;
+  }
+  return profile.agreed_to_location !== true;
+}
+
+/** @deprecated use needsConsent */
+export function workerNeedsConsent(profile: ConsentProfile): boolean {
+  return needsConsent(profile, ["worker"]);
 }
 
 export function readLoginIntent(): "admin" | "worker" | null {
@@ -85,28 +88,17 @@ export function writeLoginIntent(intent: "admin" | "worker") {
   }
 }
 
+export function postConsentHomePath(roles: string[]): string {
+  return isAdminShellUser(roles) ? "/app/admin" : "/app/worker/home";
+}
+
 export function postLoginPath(
   roles: string[],
-  profile?: {
-    agreed_to_location?: boolean | null;
-    agreed_to_terms?: boolean | null;
-    agreed_to_privacy?: boolean | null;
-  } | null,
-  opts?: { rolesReady?: boolean },
+  profile?: ConsentProfile,
+  _opts?: { rolesReady?: boolean },
 ): string {
-  const shell = resolvePostLoginShell(roles, {
-    rolesReady: opts?.rolesReady,
-    loginIntent: readLoginIntent(),
-  });
-
-  // ADMIN / MANAGER → desktop admin dashboard (never onboarding)
-  if (shell === "admin") return "/app/admin";
-
-  // WORKER only → consent gate
-  if (isPureWorkerUser(roles) && workerNeedsConsent(profile ?? null)) {
-    return "/app/worker/onboarding";
-  }
-  return "/app/worker/home";
+  if (needsConsent(profile ?? null, roles)) return "/consent";
+  return postConsentHomePath(roles);
 }
 
 type AuthGuardProps = {
@@ -135,44 +127,15 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
     return <Navigate to={`/login?next=${next}`} replace />;
   }
 
-  const admin = isAdminShellUser(roles);
+  // Universal consent for EVERY role (admin / manager / worker)
+  if (needsConsent(profile, roles)) {
+    return <Navigate to="/consent" replace />;
+  }
+
   const pureWorker = isPureWorkerUser(roles);
-  const preferred = resolvePostLoginShell(roles, {
-    rolesReady,
-    loginIntent: readLoginIntent(),
-  });
 
-  // ——— Admin / manager shell ———
-  if (shell === "admin") {
-    // Pure workers may not live in admin shell
-    if (pureWorker) {
-      return <Navigate to={postLoginPath(roles, profile, { rolesReady })} replace />;
-    }
-    // Admins/managers always pass — NEVER send to worker onboarding
-    return <>{children}</>;
-  }
-
-  // ——— Worker shell ———
-  // Admins opening /app/worker/* are allowed (field use) but skip consent
-  if (admin) {
-    return <>{children}</>;
-  }
-
-  // Consent intercept: ONLY pure WORKER role
-  const onOnboarding =
-    location.pathname === "/app/worker/onboarding" || location.pathname.endsWith("/onboarding");
-
-  if (pureWorker && workerNeedsConsent(profile) && !onOnboarding) {
-    return <Navigate to="/app/worker/onboarding" replace />;
-  }
-
-  if (pureWorker && !workerNeedsConsent(profile) && onOnboarding) {
+  if (shell === "admin" && pureWorker) {
     return <Navigate to="/app/worker/home" replace />;
-  }
-
-  // Non-worker / unknown on worker shell: if preferred admin, bounce to admin
-  if (!pureWorker && preferred === "admin" && !onOnboarding) {
-    return <Navigate to="/app/admin" replace />;
   }
 
   return <>{children}</>;

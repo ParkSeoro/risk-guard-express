@@ -5,6 +5,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&display=swap');
 
 @layer base {
+  /* Prevent wide tables/sidebars from forcing a desktop pinch-zoom viewport on phones */
+  html,
+  body,
+  #root {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
   :root {
     --background: 210 20% 97%;
     --foreground: 220 30% 15%;

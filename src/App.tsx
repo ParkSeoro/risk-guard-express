@@ -12,6 +12,7 @@ import { useOfflineSync } from "@/hooks/useOfflineSync";
 import AdminAppRoutes from "@/routes/AdminAppRoutes";
 import WorkerAppRoutes from "@/routes/WorkerAppRoutes";
 import { postLoginPath } from "@/components/AuthGuard";
+import { prefersMobileAppShell } from "@/hooks/use-mobile";
 
 const Auth = lazy(() => import("@/pages/Auth"));
 const Index = lazy(() => import("@/pages/Index"));
@@ -63,7 +64,11 @@ function AuthRoute() {
       if (dest === "/consent") {
         return <Navigate to="/consent" replace />;
       }
-      // Prefer explicit admin deep-link over a stale worker dest (never hijack managers)
+      // Phone: keep managers on mobile shell even if ?next=/app/admin
+      if (prefersMobileAppShell() && next.startsWith("/app/admin") && dest.startsWith("/app/worker")) {
+        return <Navigate to={dest} replace />;
+      }
+      // Desktop: prefer explicit admin deep-link over a stale worker dest
       if (next.startsWith("/app/admin") && dest.startsWith("/app/worker")) {
         return <Navigate to={next} replace />;
       }

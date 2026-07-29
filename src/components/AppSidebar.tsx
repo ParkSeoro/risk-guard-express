@@ -132,7 +132,7 @@ const masterOnlyItems: Item[] = [
 ];
 
 export function AppSidebar() {
-  const { state, toggleSidebar } = useSidebar();
+  const { state, toggleSidebar, isMobile, setOpenMobile } = useSidebar();
   const collapsed = state === "collapsed";
   const { profile, signOut, hasRole, roles } = useAuth();
   const access = useGlobalProjectAccessOptional();
@@ -145,6 +145,10 @@ export function AppSidebar() {
   const restrictToContractorUI = isContractorCo || isLowPriv;
   const location = useLocation();
   const pendingApprovals = usePendingApprovalsCount();
+
+  const closeMobileNav = () => {
+    if (isMobile) setOpenMobile(false);
+  };
 
   const adminFinal = isMaster ? [...adminItems, ...masterOnlyItems] : adminItems;
 
@@ -203,6 +207,7 @@ export function AppSidebar() {
             end={item.url === "/"}
             className={`hover:bg-sidebar-accent/80 rounded-md transition-colors ${active ? 'bg-sidebar-accent text-sidebar-primary font-semibold' : ''}`}
             onClick={() => {
+              closeMobileNav();
               try {
                 const recent = JSON.parse(localStorage.getItem('sidebar:recent') || '[]');
                 const next = [href, ...recent.filter((u: string) => u !== href)].slice(0, 5);
@@ -229,9 +234,13 @@ export function AppSidebar() {
 
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="offcanvas">
       <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
-        <Link to={ADMIN_APP_BASE} className="flex items-center gap-3 rounded-md outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-sidebar-ring">
+        <Link
+          to={ADMIN_APP_BASE}
+          onClick={closeMobileNav}
+          className="flex items-center gap-3 rounded-md outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+        >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
             <HardHat className="h-5 w-5 text-sidebar-primary-foreground" />
           </div>

@@ -29,11 +29,13 @@ export interface AIGenerateOptions {
 }
 
 export interface AIGenerateProgress {
-  phase: 'cache_check' | 'generating' | 'fallback' | 'complete' | 'phase';
+  phase: 'cache_check' | 'generating' | 'fallback' | 'complete' | 'phase' | 'status';
   itemsSoFar: number;
   normalizedEquipment?: string;
   phaseId?: string;
   phaseTitle?: string;
+  message?: string;
+  elapsedSec?: number;
 }
 
 function mapAIItemToGenerated(item: any, processName: string): GeneratedRiskItem {
@@ -230,8 +232,6 @@ async function fetchRiskItemsOneShot(
 ): Promise<void> {
   const detailLevel: DetailLevel = opts.detailLevel || 'core';
   const baseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-  const token = await getAccessToken();
-  const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
   handlers.onProgress?.(
     {
@@ -239,20 +239,17 @@ async function fetchRiskItemsOneShot(
       itemsSoFar: bag.items.length,
       phaseId: 'oneshot',
       phaseTitle: 'JSA 전공정 생성',
+      message: 'AI 서버에 연결 중…',
       normalizedEquipment: bag.normalizedEquipment.value,
     },
     bag.items,
   );
 
-  const resp = await fetch(`${baseUrl}/functions/v1/generate-risk-ai`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      apikey: anonKey,
-      'Content-Type': 'application/json; charset=utf-8',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify({
+  // SSE + status heartbeats keep the connection alive when the tab is backgrounded
+  // (silent non-stream JSON often dies on idle proxy/browser cutoffs).
+  await consumeSse(
+    `${baseUrl}/functions/v1/generate-risk-ai`,
+    {
       process_name: opts.processName,
       equipment: opts.equipment || '',
       work_description: opts.workDescription || '',
@@ -260,45 +257,70 @@ async function fetchRiskItemsOneShot(
       work_environment: opts.workEnvironment || [],
       detail_level: detailLevel,
       project_id: opts.projectId || '',
-      stream: false,
+      stream: true,
       mode: 'risk',
-    }),
-    signal: handlers.signal,
-  });
-
-  if (!resp.ok) {
-    let detail = '';
-    try {
-      const errBody = await resp.json();
-      detail = errBody?.error || errBody?.message || '';
-      if (errBody?.code === 'WORKER_RESOURCE_LIMIT') {
-        detail = 'AI 생성 연결이 중단되었습니다. 이미 생성된 항목은 유지됩니다.';
-      }
-    } catch { /* ignore */ }
-    throw new Error(mapErrorMessage(detail || `AI 서버 오류 (${resp.status})`));
-  }
-
-  const data = await resp.json();
-  if (data?.error) throw new Error(mapErrorMessage(String(data.error)));
-
-  if (data?.normalized_equipment) bag.normalizedEquipment.value = data.normalized_equipment;
-  if (data?.source === 'cache' || data?.source === 'ai' || data?.source === 'library') {
-    bag.source.value = data.source;
-  }
-
-  const rawItems: any[] = Array.isArray(data?.items) ? data.items : [];
-  for (const raw of rawItems) {
-    const mapped = mapAIItemToGenerated(raw, opts.processName);
-    const key = `${mapped.sub_task}|${mapped.hazard}`;
-    if (opts.deduplicate !== false && bag.seen.has(key)) continue;
-    bag.seen.add(key);
-    bag.items.push(mapped);
-    await handlers.onItem?.(mapped, bag.items);
-    handlers.onProgress?.(
-      { phase: 'generating', itemsSoFar: bag.items.length, normalizedEquipment: bag.normalizedEquipment.value },
-      bag.items,
-    );
-  }
+    },
+    {
+      onEvent: async (payload) => {
+        const type = payload?.type;
+        if (type === 'meta') {
+          if (payload.normalized_equipment) bag.normalizedEquipment.value = payload.normalized_equipment;
+          if (payload.source === 'cache' || payload.source === 'ai' || payload.source === 'library') {
+            bag.source.value = payload.source;
+          }
+          handlers.onProgress?.(
+            {
+              phase: 'generating',
+              itemsSoFar: bag.items.length,
+              message: payload.source === 'cache' ? '캐시에서 불러오는 중…' : 'JSA 위험성평가 생성 중…',
+              normalizedEquipment: bag.normalizedEquipment.value,
+            },
+            bag.items,
+          );
+          return;
+        }
+        if (type === 'status') {
+          handlers.onProgress?.(
+            {
+              phase: 'status',
+              itemsSoFar: bag.items.length,
+              message: String(payload.message || '생성 중…'),
+              elapsedSec: typeof payload.elapsed_sec === 'number' ? payload.elapsed_sec : undefined,
+              normalizedEquipment: bag.normalizedEquipment.value,
+            },
+            bag.items,
+          );
+          return;
+        }
+        if (type === 'item' && payload.item) {
+          const mapped = mapAIItemToGenerated(payload.item, opts.processName);
+          const key = `${mapped.sub_task}|${mapped.hazard}`;
+          if (opts.deduplicate !== false && bag.seen.has(key)) return;
+          bag.seen.add(key);
+          bag.items.push(mapped);
+          await handlers.onItem?.(mapped, bag.items);
+          handlers.onProgress?.(
+            {
+              phase: 'generating',
+              itemsSoFar: bag.items.length,
+              message: `${bag.items.length}건 수신 중…`,
+              normalizedEquipment: bag.normalizedEquipment.value,
+            },
+            bag.items,
+          );
+          return;
+        }
+        if (type === 'done') {
+          if (payload.source === 'cache' || payload.source === 'ai' || payload.source === 'library') {
+            bag.source.value = payload.source;
+          }
+          if (payload.normalized_equipment) bag.normalizedEquipment.value = payload.normalized_equipment;
+          return;
+        }
+      },
+    },
+    handlers.signal,
+  );
 }
 
 /**

@@ -23,10 +23,17 @@ import { Switch } from '@/components/ui/switch';
 import {
   Plus, Download, Filter, Search, Copy, Trash2, Printer, FileText, Wand2, ShieldCheck, Send,
   Lock, Users, XCircle, AlertTriangle, CheckCircle2, Upload, RotateCcw, FileWarning, RefreshCw,
-  Edit3, Archive, Clock, Pencil, Ban, Camera,
+  Edit3, Archive, Clock, Pencil, Ban, Camera, Loader2,
 } from 'lucide-react';
 import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
-import { generateRiskItemsStreaming, type AIGenerateOptions } from '@/lib/riskAutoGenAI';
+import {
+  acknowledgeRiskAutoGenJob,
+  getRiskAutoGenJob,
+  isRiskAutoGenRunning,
+  startRiskAutoGenJob,
+  subscribeRiskAutoGenJob,
+  type RiskAutoGenJobState,
+} from '@/lib/riskAutoGenJob';
 import { ConditionTagPicker, SmartEquipmentTagInput, DEFAULT_CONDITION_TAGS, DEFAULT_EQUIPMENT_SUGGESTIONS } from '@/components/assessment/RiskAutoGenFields';
 import { exportToXLSX, exportToPDF, exportToPDFServer, printRiskAssessment } from '@/lib/exportUtils';
 import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue } from '@/lib/validationEngine';
@@ -82,9 +89,11 @@ const AssessmentRunDetail = () => {
   const [autoGenProcessInput, setAutoGenProcessInput] = useState('');
   const [autoGenDetailLevel, setAutoGenDetailLevel] = useState<'core' | 'comprehensive'>('core');
   const [autoGenConditionTags, setAutoGenConditionTags] = useState<string[]>([]);
-  const [autoGenLoading, setAutoGenLoading] = useState(false);
+  const [autoGenLoading, setAutoGenLoading] = useState(() => isRiskAutoGenRunning());
+  const [autoGenJob, setAutoGenJob] = useState<RiskAutoGenJobState>(() => getRiskAutoGenJob());
   const [autoGenStreamCount, setAutoGenStreamCount] = useState(0);
   const [autoGenPhaseLabel, setAutoGenPhaseLabel] = useState('');
+  const autoGenAckRef = useRef<string | null>(null);
   const [autoGenConditionText, setAutoGenConditionText] = useState('');
   const [autoGenWorkLocation, setAutoGenWorkLocation] = useState('');
   const [autoGenEquipmentTags, setAutoGenEquipmentTags] = useState<string[]>([]);
@@ -485,17 +494,60 @@ const AssessmentRunDetail = () => {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // Prevent accidental leave while AI streaming is in progress
+  // Prevent accidental leave while AI generation is in progress
   useEffect(() => {
     if (!autoGenLoading) return;
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
-      e.returnValue = '위험성평가 AI 생성이 진행 중입니다. 페이지를 나가면 생성이 중단될 수 있습니다.';
+      e.returnValue = '위험성평가 AI 생성이 진행 중입니다. 이 탭을 닫으면 생성이 중단될 수 있습니다.';
       return e.returnValue;
     };
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [autoGenLoading]);
+
+  // Background job: survives dialog close; shows live progress on this page
+  useEffect(() => {
+    return subscribeRiskAutoGenJob((job) => {
+      setAutoGenJob(job);
+      const mine = !job.runId || job.runId === runId;
+      setAutoGenLoading(job.status === 'running' && mine);
+      setAutoGenStreamCount(job.insertedTotal);
+      setAutoGenPhaseLabel(job.currentProcess || job.message || '');
+
+      if (!mine) return;
+      if (job.status === 'done' && autoGenAckRef.current !== `done:${job.startedAt}`) {
+        autoGenAckRef.current = `done:${job.startedAt}`;
+        toast({
+          title: '위험성평가 생성이 완료되었습니다. 불필요한 항목을 삭제하거나 수정해 주세요.',
+          description: `${job.insertedTotal}건 등록 · 경과 ${job.elapsedSec}초 · 사고사례는 하단 [사고사례 AI 작성]에서 별도 생성`,
+        });
+        fetchAll();
+        acknowledgeRiskAutoGenJob();
+      }
+      if (job.status === 'error' && autoGenAckRef.current !== `err:${job.startedAt}`) {
+        autoGenAckRef.current = `err:${job.startedAt}`;
+        toast({
+          title: job.error || '자동 생성 실패',
+          variant: 'destructive',
+        });
+        acknowledgeRiskAutoGenJob();
+      }
+    });
+  }, [runId, toast, fetchAll]);
+
+  // When returning to this tab, refresh items if a job just finished in background
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== 'visible') return;
+      const job = getRiskAutoGenJob();
+      if (job.runId === runId && (job.status === 'done' || job.status === 'running')) {
+        fetchAll();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [runId, fetchAll]);
 
   // Auto-refresh to sync approval status changes from other pages
   useEffect(() => {
@@ -665,147 +717,38 @@ const AssessmentRunDetail = () => {
     toast({ title: '제외 해제됨' });
   };
 
-  // Auto-generate: one-shot AI per process → bulk insert (no per-row hammering)
+  // Auto-generate: background job (survives dialog close) + bulk insert per process
   const handleAutoGenerate = async () => {
     if (autoGenProcesses.length === 0 || !run || !user) return;
-    setAutoGenLoading(true);
-    setAutoGenStreamCount(0);
-    setAutoGenPhaseLabel('');
-    const abort = new AbortController();
-    try {
-      let insertedTotal = 0;
-      let sortCursor = items.length;
-      let sourceLabel = 'ai';
-      const equipJoined = autoGenEquipmentTags.join(', ');
-      const insertSeen = new Set<string>();
-
-      const toRow = (g: any) => {
-        const key = `${g.sub_task}|${g.hazard}`;
-        if (insertSeen.has(key)) return null;
-        insertSeen.add(key);
-        return {
-          project_id: run.project_id,
-          run_id: runId,
-          process: g.process,
-          sub_task: g.sub_task,
-          hazard: g.hazard,
-          hazard_situation: g.hazard_situation,
-          existing_measure: g.existing_measure,
-          improvement_measure: g.improvement_measure,
-          frequency: g.frequency,
-          severity: g.severity,
-          improved_frequency: g.improved_frequency,
-          improved_severity: g.improved_severity,
-          likelihood_grade: g.likelihood_grade,
-          severity_grade: g.severity_grade,
-          risk_grade: g.risk_grade,
-          improved_likelihood_grade: g.improved_likelihood_grade,
-          improved_severity_grade: g.improved_severity_grade,
-          improved_risk_grade: g.improved_risk_grade,
-          status: '초안' as const,
-          ppe: g.ppe,
-          legal_basis: g.legal_basis,
-          department: g.department,
-          assignee: g.assignee,
-          created_by: user.id,
-          sort_order: sortCursor++,
-        };
-      };
-
-      const bulkPersist = async (generated: any[]) => {
-        const rows = generated.map(toRow).filter(Boolean) as Record<string, unknown>[];
-        if (rows.length === 0) return 0;
-        const { data, error } = await supabase.from('risk_items').insert(rows).select();
-        if (error) {
-          console.warn('[AutoGen] bulk insert failed:', error.message);
-          throw new Error(error.message || '일괄 저장에 실패했습니다.');
-        }
-        if (data?.length) {
-          setItems((prev) => [...prev, ...data]);
-          return data.length;
-        }
-        return 0;
-      };
-
-      for (const proc of autoGenProcesses) {
-        console.log(`[AutoGen] One-shot AI 호출 (공종: ${proc.trim()}, 장비: ${equipJoined})`);
-        setAutoGenPhaseLabel(proc.trim());
-
-        if (!autoGenUseAI) {
-          const { generateRiskItems } = await import('@/lib/riskAutoGen');
-          const libraryItems = await generateRiskItems({
-            processName: proc.trim(),
-            tags: autoGenConditionTags,
-            targetCount: autoGenDetailLevel === 'core' ? 12 : 20,
-            deduplicate: true,
-          });
-          const n = await bulkPersist(libraryItems);
-          insertedTotal += n;
-          setAutoGenStreamCount(insertedTotal);
-          sourceLabel = 'library';
-          continue;
-        }
-
-        const opts: AIGenerateOptions = {
-          processName: proc.trim(),
-          equipment: equipJoined,
-          workDescription: autoGenConditionText,
-          workLocation: autoGenWorkLocation || undefined,
-          workEnvironment: autoGenConditionTags.length > 0 ? autoGenConditionTags : undefined,
-          tags: autoGenConditionTags,
-          detailLevel: autoGenDetailLevel,
-          deduplicate: true,
-          projectId: run.project_id,
-        };
-
-        const result = await generateRiskItemsStreaming(opts, {
-          signal: abort.signal,
-          onProgress: (progress) => {
-            if (progress.phaseTitle) setAutoGenPhaseLabel(String(progress.phaseTitle));
-            setAutoGenStreamCount(progress.itemsSoFar + insertedTotal);
-          },
-        });
-
-        const n = await bulkPersist(result.items);
-        insertedTotal += n;
-        setAutoGenStreamCount(insertedTotal);
-        console.log(`[AutoGen] 완료: ${result.items.length}건 생성 → ${n}건 bulk insert (source: ${result.source})`);
-        sourceLabel = result.source;
-      }
-
-      if (insertedTotal === 0) {
-        toast({
-          title: 'AI 생성 실패 - 다시 시도해주세요.',
-          description: '결과를 생성하지 못했습니다. 공종명과 장비를 확인해주세요.',
-          variant: 'destructive',
-        });
-        setAutoGenLoading(false);
-        return;
-      }
-
-      const sourceMap: Record<string, string> = {
-        library: '라이브러리',
-        cache: '캐시',
-        ai: 'AI',
-        hybrid: '하이브리드',
-      };
-      toast({
-        title: '위험성평가 생성이 완료되었습니다. 불필요한 항목을 삭제하거나 수정해 주세요.',
-        description: `${insertedTotal}건 등록 (${sourceMap[sourceLabel] || sourceLabel}) · 사고사례는 하단 [사고사례 AI 작성]에서 별도 생성`,
-      });
-      setShowAutoGen(false);
-      setAutoGenProcesses([]);
-      setAutoGenProcessInput('');
-      setAutoGenConditionTags([]);
-      setAutoGenWorkLocation('');
-      setAutoGenEquipmentTags([]);
-      setAutoGenConditionText('');
-      setAutoGenPhaseLabel('');
-      setAutoGenStreamCount(0);
-    } catch (err: any) {
-      toast({ title: err?.message || '자동 생성 실패', variant: 'destructive' });
+    if (isRiskAutoGenRunning()) {
+      toast({ title: '이미 생성이 진행 중입니다.', description: '화면 상단 진행 상태를 확인해주세요.' });
+      return;
     }
-    setAutoGenLoading(false);
+
+    const started = startRiskAutoGenJob({
+      runId: runId!,
+      projectId: run.project_id,
+      userId: user.id,
+      processes: autoGenProcesses,
+      useAI: autoGenUseAI,
+      detailLevel: autoGenDetailLevel,
+      equipmentTags: autoGenEquipmentTags,
+      conditionTags: autoGenConditionTags,
+      workLocation: autoGenWorkLocation,
+      conditionText: autoGenConditionText,
+      sortStart: items.length,
+    });
+
+    if (!started) {
+      toast({ title: '생성 시작에 실패했습니다.', variant: 'destructive' });
+      return;
+    }
+
+    setShowAutoGen(false);
+    toast({
+      title: '위험성평가 생성을 시작했습니다.',
+      description: '다른 메뉴를 둘러봐도 이 탭에서는 계속 진행됩니다. 상단 진행 바를 확인하세요.',
+    });
   };
 
   // Add process tag
@@ -1535,6 +1478,28 @@ const AssessmentRunDetail = () => {
 
   return (
     <div className="space-y-4 animate-fade-in print:space-y-2">
+      {(autoGenLoading || (autoGenJob.status === 'running' && autoGenJob.runId === runId)) && (
+        <div className="print:hidden sticky top-0 z-30 rounded-lg border border-accent/40 bg-accent/10 px-4 py-3 shadow-sm backdrop-blur-sm">
+          <div className="flex items-start gap-3">
+            <Loader2 className="h-5 w-5 shrink-0 animate-spin text-accent mt-0.5" />
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-sm font-semibold">
+                위험성평가 AI 생성 중
+                {autoGenJob.processTotal > 0
+                  ? ` · 공종 ${autoGenJob.processIndex || 1}/${autoGenJob.processTotal}`
+                  : ''}
+                {autoGenJob.elapsedSec > 0 ? ` · ${autoGenJob.elapsedSec}초` : ''}
+              </p>
+              <p className="text-xs text-muted-foreground break-words">
+                {autoGenJob.message || autoGenPhaseLabel || 'DeepSeek JSA 생성 대기 중…'}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                저장 {autoGenJob.insertedTotal || autoGenStreamCount}건 · 이 탭을 유지하면 다른 창을 열어도 계속됩니다. 탭을 닫으면 중단될 수 있습니다.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Company Form Header - 회사 양식 */}
       <Card className="print:border-2 print:border-foreground">
         <CardContent className="py-4 space-y-3">
@@ -2094,16 +2059,23 @@ const AssessmentRunDetail = () => {
 
       {/* Auto Generate Dialog — compact field-card layout */}
       <Dialog open={showAutoGen} onOpenChange={(open) => {
-        if (!open && autoGenLoading) return;
+        // Allow closing during generation — job continues in background with banner
         setShowAutoGen(open);
       }}>
         <DialogContent
           className="max-w-md sm:max-w-lg max-h-[90vh] overflow-y-auto p-4 sm:p-5 gap-3"
-          onPointerDownOutside={(e) => e.preventDefault()}
-          onInteractOutside={(e) => e.preventDefault()}
-          onFocusOutside={(e) => e.preventDefault()}
-          onEscapeKeyDown={(e) => {
+          onPointerDownOutside={(e) => {
             if (autoGenLoading) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            if (autoGenLoading) e.preventDefault();
+          }}
+          onFocusOutside={(e) => {
+            if (autoGenLoading) e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            // Escape closes dialog but does not cancel the background job
+            if (autoGenLoading) setShowAutoGen(false);
           }}
         >
           <DialogHeader className="space-y-1 pb-1">
@@ -2211,12 +2183,12 @@ const AssessmentRunDetail = () => {
 
             <Button onClick={handleAutoGenerate} disabled={autoGenProcesses.length === 0 || autoGenLoading} className="w-full h-11">
               {autoGenLoading
-                ? `위험성평가 생성 중… ${autoGenStreamCount}건${autoGenPhaseLabel ? ` · ${autoGenPhaseLabel}` : ''}`
+                ? `생성 중… ${autoGenJob.elapsedSec || 0}초 · ${autoGenJob.message || autoGenPhaseLabel || '대기'}`
                 : `공종 자동작성 · ${autoGenProcesses.length || 0}개 공종`}
             </Button>
             {autoGenLoading && (
               <p className="text-[11px] text-center text-muted-foreground">
-                생성 중에는 화면을 나가지 마세요. 공종별 완료 후 일괄 저장됩니다.
+                이 창을 닫아도 생성은 계속됩니다. 상단 진행 바에서 상태를 확인하세요.
               </p>
             )}
           </div>

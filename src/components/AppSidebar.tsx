@@ -25,6 +25,16 @@ import { Button } from "@/components/ui/button";
 type Item = { title: string; url: string; icon: any; badgeKey?: 'approvals' };
 type Group = { label: string; key: string; items: Item[] };
 
+/** Canonical admin shell prefix (role-split routing). */
+export const ADMIN_APP_BASE = "/app/admin";
+
+function toAdminUrl(url: string) {
+  if (!url || url.startsWith("http")) return url;
+  if (url === "/") return ADMIN_APP_BASE;
+  if (url.startsWith(ADMIN_APP_BASE)) return url;
+  return `${ADMIN_APP_BASE}${url.startsWith("/") ? url : `/${url}`}`;
+}
+
 const groups: Group[] = [
   {
     label: "핵심", key: "priority",
@@ -167,35 +177,35 @@ export function AppSidebar() {
 
   const toggleGroup = (k: string) => setOpenGroups(s => ({ ...s, [k]: !s[k] }));
 
-  // Resolve active state honoring query string (so /workers, /workers?tab=attendance,
-  // and /workers?tab=daily-qr are distinct active items).
   const isItemActive = (url: string) => {
-    const [pathPart, queryPart = ''] = url.split('?');
-    if (pathPart === '/') return location.pathname === '/';
+    const full = toAdminUrl(url);
+    const [pathPart, queryPart = ""] = full.split("?");
+    if (pathPart === ADMIN_APP_BASE || pathPart === `${ADMIN_APP_BASE}/`) {
+      return location.pathname === ADMIN_APP_BASE || location.pathname === `${ADMIN_APP_BASE}/`;
+    }
     if (location.pathname !== pathPart) return false;
     const itemParams = new URLSearchParams(queryPart);
     const currentParams = new URLSearchParams(location.search);
-    const itemTab = itemParams.get('tab');
-    const currentTab = currentParams.get('tab');
-    // If this nav item specifies a tab, require exact match.
+    const itemTab = itemParams.get("tab");
+    const currentTab = currentParams.get("tab");
     if (itemTab) return currentTab === itemTab;
-    // Item has no tab → only active when current URL also has no tab.
     return !currentTab;
   };
 
   const renderItem = (item: Item) => {
     const active = isItemActive(item.url);
+    const href = toAdminUrl(item.url);
     return (
       <SidebarMenuItem key={item.url}>
         <SidebarMenuButton asChild isActive={active}>
           <NavLink
-            to={item.url}
+            to={href}
             end={item.url === "/"}
             className={`hover:bg-sidebar-accent/80 rounded-md transition-colors ${active ? 'bg-sidebar-accent text-sidebar-primary font-semibold' : ''}`}
             onClick={() => {
               try {
                 const recent = JSON.parse(localStorage.getItem('sidebar:recent') || '[]');
-                const next = [item.url, ...recent.filter((u: string) => u !== item.url)].slice(0, 5);
+                const next = [href, ...recent.filter((u: string) => u !== href)].slice(0, 5);
                 localStorage.setItem('sidebar:recent', JSON.stringify(next));
               } catch {}
             }}
@@ -221,7 +231,7 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border px-4 py-4">
-        <Link to="/" className="flex items-center gap-3 rounded-md outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-sidebar-ring">
+        <Link to={ADMIN_APP_BASE} className="flex items-center gap-3 rounded-md outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-sidebar-ring">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
             <HardHat className="h-5 w-5 text-sidebar-primary-foreground" />
           </div>

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { geminiChatFetch, streamGeminiChatText, GeminiError } from "../_shared/gemini.ts";
+import { fetchApprovedLibraryRisks } from "../_shared/aiResponseCache.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -721,6 +722,40 @@ serve(async (req) => {
           mode: "risk",
         });
         return;
+      }
+
+      // Approved standard_risk_library hit — avoid LLM when corpus is rich enough
+      if (!phaseIdBody) {
+        const libraryItems = await fetchApprovedLibraryRisks(adminClient, process_name, cacheMin + 8);
+        if (libraryItems.length >= Math.min(12, cacheMin)) {
+          console.log(`[AI Engine] Library hit (stream): ${libraryItems.length}`);
+          send({
+            type: "meta",
+            source: "library",
+            normalized_equipment: normalizedEquipment,
+            detail_level: detailLevel,
+            mode: "risk",
+          });
+          for (const item of libraryItems) send({ type: "item", item });
+          send({
+            type: "done",
+            source: "library",
+            count: libraryItems.length,
+            is_complete: true,
+            mode: "risk",
+          });
+          await adminClient.from("ai_risk_cache").upsert(
+            {
+              cache_key: cacheKey,
+              generated_items: libraryItems,
+              process_name,
+              hit_count: 1,
+              project_id: project_id || null,
+            },
+            { onConflict: "cache_key" },
+          );
+          return;
+        }
       }
 
       const ragContext = await fetchRAGContext(adminClient, process_name, equipText, 5);

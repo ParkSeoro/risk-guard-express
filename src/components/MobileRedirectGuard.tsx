@@ -4,11 +4,10 @@ import { useIsMobile } from "@/hooks/use-mobile";
 
 const FORCE_DESKTOP_KEY = "forceDesktopUI";
 
-// 모바일 기기에서 데스크톱 페이지 진입 시 /m으로 자동 이동
-// 예외: /m/*, /auth, /reset-password, /worker/*, /tbm/*, /manual
-// 위험성평가·작업계획 상세는 모바일 Viewer 경로로 리다이렉트
+// 모바일 기기에서 관리자(/app/admin) 진입 시 근로자 셸(/app/worker)로 이동
 const MOBILE_EXCLUDE = [
-  /^\/m(\/|$)/,
+  /^\/app\/worker(\/|$)/,
+  /^\/m(\/|$)/, // legacy alias (redirects to /app/worker)
   /^\/auth/,
   /^\/login/,
   /^\/register/,
@@ -18,10 +17,8 @@ const MOBILE_EXCLUDE = [
   /^\/worker\//,
   /^\/tbm\//,
   /^\/manual/,
-  /^\/worker-attendance/,
   /^\/landing/,
   /^\/privacy/,
-  /^\/$/,
   /^\/z\//,
   /^\/c\//,
 ];
@@ -37,19 +34,27 @@ export default function MobileRedirectGuard() {
     if (typeof window !== "undefined" && localStorage.getItem(FORCE_DESKTOP_KEY) === "1") return;
     const path = location.pathname;
 
-    const ar = path.match(/^\/assessment-run\/([^/]+)/);
+    const ar =
+      path.match(/^\/app\/admin\/assessment-run\/([^/]+)/) ||
+      path.match(/^\/assessment-run\/([^/]+)/);
     if (ar) {
-      navigate(`/m/risk-assessment/${ar[1]}`, { replace: true });
+      navigate(`/app/worker/risk-assessment/${ar[1]}`, { replace: true });
       return;
     }
-    const wp = path.match(/^\/work-plan\/([^/]+)/);
+    const wp =
+      path.match(/^\/app\/admin\/work-plan\/([^/]+)/) ||
+      path.match(/^\/work-plan\/([^/]+)/);
     if (wp) {
-      navigate(`/m/work-plans/${wp[1]}`, { replace: true });
+      navigate(`/app/worker/work-plans/${wp[1]}`, { replace: true });
       return;
     }
 
     if (MOBILE_EXCLUDE.some((re) => re.test(path))) return;
-    navigate("/m", { replace: true });
+
+    // Admin shell or other desktop paths → worker home
+    if (path.startsWith("/app/admin") || path === "/" || !path.startsWith("/app/worker")) {
+      navigate("/app/worker", { replace: true });
+    }
   }, [isMobile, location.pathname, navigate]);
 
   return null;

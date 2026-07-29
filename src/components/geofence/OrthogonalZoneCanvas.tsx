@@ -9,7 +9,10 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
-import LeafletDrawControl, { type DrawnShape } from "@/components/geofence/LeafletDrawControl";
+import LeafletDrawControl, {
+  type DrawnShape,
+  type DrawTool,
+} from "@/components/geofence/LeafletDrawControl";
 import type { GeoCorners } from "@/lib/mapBounds";
 import {
   crsCircleToGeo,
@@ -28,6 +31,7 @@ export type OrthogonalZone = {
   center_lng: number | null;
   radius_m: number | null;
   is_active?: boolean;
+  zone_color?: string | null;
 };
 
 type Props = {
@@ -35,6 +39,10 @@ type Props = {
   corners: GeoCorners;
   zones: OrthogonalZone[];
   pendingGeoShape: DrawnShape | null;
+  pendingColor?: string;
+  activeTool?: DrawTool | null;
+  drawColor?: string;
+  onToolFinished?: () => void;
   onGeoShapeCreated: (shape: DrawnShape) => void;
   onFocusZone?: (id: string) => void;
   className?: string;
@@ -60,13 +68,17 @@ function loadImageSize(url: string): Promise<{ w: number; h: number }> {
 
 /**
  * CRS.Simple orthogonal drone canvas for zone drawing (no satellite, no rotation).
- * Drawn CRS coordinates are inverse-projected to WGS84 via geo_transform corners.
+ * Drawing is driven by external activeTool buttons (no default leaflet-draw toolbar).
  */
 export default function OrthogonalZoneCanvas({
   imageUrl,
   corners,
   zones,
   pendingGeoShape,
+  pendingColor = "#f59e0b",
+  activeTool = null,
+  drawColor = "#ef4444",
+  onToolFinished,
   onGeoShapeCreated,
   onFocusZone,
   className,
@@ -155,25 +167,32 @@ export default function OrthogonalZoneCanvas({
       >
         <ImageOverlay url={imageUrl} bounds={bounds} opacity={1} />
         <FitImage bounds={bounds} />
-        <LeafletDrawControl onShapeCreated={onCrsShape} position="topleft" enabled />
+        <LeafletDrawControl
+          showToolbar={false}
+          enabled
+          activeTool={activeTool}
+          drawColor={drawColor}
+          onShapeCreated={onCrsShape}
+          onToolFinished={onToolFinished}
+        />
 
         {crsPending?.kind === "polygon" && (
           <Polygon
             positions={crsPending.ring.map((p) => [p.lat, p.lng] as [number, number])}
-            pathOptions={{ color: "#f59e0b", weight: 2, dashArray: "6 4" }}
+            pathOptions={{ color: pendingColor, weight: 2, dashArray: "6 4" }}
           />
         )}
         {crsPending?.kind === "circle" && (
           <Circle
             center={[crsPending.center.lat, crsPending.center.lng]}
             radius={crsPending.radius}
-            pathOptions={{ color: "#f59e0b", weight: 2, dashArray: "6 4", fillOpacity: 0.15 }}
+            pathOptions={{ color: pendingColor, weight: 2, dashArray: "6 4", fillOpacity: 0.15 }}
           />
         )}
 
         {zones.map((z) => {
           const active = z.is_active !== false;
-          const color = active ? "#ef4444" : "#94a3b8";
+          const color = active ? (z.zone_color || "#ef4444") : "#94a3b8";
           if (
             z.geometry_type === "radius" &&
             z.center_lat != null &&
@@ -212,7 +231,7 @@ export default function OrthogonalZoneCanvas({
         })}
       </MapContainer>
       <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] rounded-md bg-background/90 px-2 py-1 text-[10px] text-muted-foreground shadow">
-        평면 도면 (CRS.Simple) · 위성/회전 없음 · 확대·패닝 자유
+        평면 도면 (CRS.Simple) · 기본 Draw 툴바 숨김 · 좌측 커스텀 버튼으로 그리기
       </div>
     </div>
   );

@@ -97,6 +97,7 @@ function cosineSimilarity(
 function isBanned(
   zone: {
     access_rules?: unknown;
+    rule_type?: string | null;
     banned_worker_ids?: string[] | null;
     banned_company_ids?: string[] | null;
     banned_job_types?: string[] | null;
@@ -107,6 +108,7 @@ function isBanned(
     banned_worker_ids: zone.banned_worker_ids,
     banned_company_ids: zone.banned_company_ids,
     banned_job_types: zone.banned_job_types,
+    rule_type: zone.rule_type,
   });
 }
 
@@ -172,7 +174,7 @@ Deno.serve(async (req) => {
     const { data: rZones } = await supabase
       .from("restricted_zones")
       .select(
-        "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, banned_worker_ids, banned_company_ids, banned_job_types, access_rules, zone_category"
+        "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, banned_worker_ids, banned_company_ids, banned_job_types, access_rules, rule_type, zone_category, zone_color"
       )
       .eq("project_id", body.project_id)
       .eq("is_deleted", false)

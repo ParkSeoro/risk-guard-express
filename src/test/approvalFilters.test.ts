@@ -31,10 +31,9 @@ const pool: EligibleApprover[] = [
 describe("filterApproversForStep — 협력사 기안", () => {
   const ctx = { authorCompanyId: "sub1", authorCompanyType: "contractor" };
 
-  it("1단계: 기안자 회사 관리직(상신) — SITE_SUPERVISOR·소장·안전 포함", () => {
+  it("1단계: 기안자 회사 SITE_SUPERVISOR only (SSOT)", () => {
     const r = filterApproversForStep(pool, "contractor_supervisor", ctx);
-    expect(r.map((x) => x.out_user_id).sort()).toEqual(["hse", "sm", "sup"]);
-    expect(r.every((x) => x.out_company_id === "sub1")).toBe(true);
+    expect(r.map((x) => x.out_user_id)).toEqual(["sup"]);
   });
 
   it("1단계 fallback: allowlist 미스여도 기안회사 비근로자 허용", () => {
@@ -90,9 +89,9 @@ describe("filterApproversForStep — 협력사 기안", () => {
 describe("filterApproversForStep — 시공사 기안", () => {
   const ctx = { authorCompanyId: "gc1", authorCompanyType: "gc" };
 
-  it("1단계: 시공사 내부 관리직만 (협력사 제외)", () => {
+  it("1단계: 시공사 내부 SITE_SUPERVISOR only (협력사 제외)", () => {
     const r = filterApproversForStep(pool, "contractor_supervisor", ctx);
-    expect(r.map((x) => x.out_user_id).sort()).toEqual(["gc-admin", "gc-sup"]);
+    expect(r.map((x) => x.out_user_id)).toEqual(["gc-sup"]);
     expect(r.every((x) => x.out_company_id === "gc1")).toBe(true);
   });
 

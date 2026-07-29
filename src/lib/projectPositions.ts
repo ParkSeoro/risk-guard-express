@@ -96,6 +96,55 @@ export function defaultRoleForPosition(position: string | null | undefined): str
   }
 }
 
+/**
+ * Canonical position for a project_role (SSOT pair).
+ * Used when role is edited so position_new stays aligned
+ * (e.g. site_supervisor ↔ SITE_SUPERVISOR, supervisor ↔ SUPERVISOR).
+ */
+export function defaultPositionForRole(
+  role: string | null | undefined,
+  companyType?: string | null,
+): ProjectPosition | null {
+  switch ((role || '').toLowerCase()) {
+    case 'site_supervisor':
+      return 'SITE_SUPERVISOR';
+    case 'supervisor':
+      return 'SUPERVISOR';
+    case 'safety_manager': {
+      const t = normalizeCompanyType(companyType);
+      if (t === 'client') return 'OWNER_SM';
+      return 'HSE_MANAGER';
+    }
+    case 'site_manager':
+      return 'SITE_MANAGER';
+    case 'worker':
+      return 'WORKER';
+    case 'project_admin': {
+      const t = normalizeCompanyType(companyType);
+      if (t === 'client') return 'OWNER_CM';
+      return null; // keep existing position for GC/contractor admins
+    }
+    default:
+      return null;
+  }
+}
+
+/** Patch object to keep role_new ↔ position_new in sync on membership edits. */
+export function syncMembershipRolePosition(opts: {
+  field: 'role_new' | 'position_new' | string;
+  value: string | null;
+  companyType?: string | null;
+}): Record<string, string | null> {
+  const out: Record<string, string | null> = { [opts.field]: opts.value };
+  if (opts.field === 'position_new' && opts.value) {
+    out.role_new = defaultRoleForPosition(opts.value);
+  } else if (opts.field === 'role_new' && opts.value) {
+    const pos = defaultPositionForRole(opts.value, opts.companyType);
+    if (pos) out.position_new = pos;
+  }
+  return out;
+}
+
 export function positionsForCompanyType(companyType: string | null | undefined): ProjectPosition[] {
   const code = normalizeCompanyType(companyType);
   if (code && POSITIONS_BY_COMPANY_TYPE[code]) return POSITIONS_BY_COMPANY_TYPE[code];

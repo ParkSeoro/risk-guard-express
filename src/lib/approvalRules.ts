@@ -218,18 +218,8 @@ const CLIENT_STEP_KEYS = new Set<string>(['owner_cm', 'owner_sm']);
 
 /** Step key → allowed project_position codes (strict). */
 export const STEP_POSITION_ALLOWLIST: Record<string, string[]> = {
-  // 상신(관리감독자): SITE_SUPERVISOR 우선. 현장 직책이 비어 있는 업체를 위해
-  // 공사/현장 관리 직책도 허용(없으면 상신 버튼이 영구 비활성됨).
-  contractor_supervisor: [
-    'SITE_SUPERVISOR',
-    'FOREMAN',
-    'FIELD_ENGINEER',
-    'CONSTRUCTION_MGR',
-    'SITE_MANAGER',
-    'HSE_MANAGER',
-    'CEO',
-    'EXECUTIVE',
-  ],
+  // SSOT: 관리감독자(상신) = SITE_SUPERVISOR
+  contractor_supervisor: ['SITE_SUPERVISOR'],
   contractor_safety_manager: ['HSE_MANAGER'],
   contractor_site_director: ['SITE_MANAGER'],
   gc_manager: ['SITE_MANAGER', 'HSE_MANAGER', 'CONSTRUCTION_MGR', 'CEO', 'EXECUTIVE'],
@@ -239,15 +229,13 @@ export const STEP_POSITION_ALLOWLIST: Record<string, string[]> = {
   owner_sm: ['OWNER_SM', 'OWNER_HSE'],
 };
 
-/** Fallback when position_new empty: match project_role */
+/**
+ * Role match for a step. Applied even when position_new is set so
+ * drift (role=site_supervisor + position=CONSTRUCTION_MGR) still qualifies
+ * for 관리감독자(상신). Keep this list tight to the canonical role.
+ */
 const STEP_ROLE_FALLBACK: Record<string, string[]> = {
-  contractor_supervisor: [
-    'site_supervisor',
-    'supervisor',
-    'project_admin',
-    'site_manager',
-    'safety_manager',
-  ],
+  contractor_supervisor: ['site_supervisor'],
   contractor_safety_manager: ['safety_manager'],
   contractor_site_director: ['site_manager'],
   gc_manager: ['project_admin', 'safety_manager', 'site_manager'],
@@ -335,12 +323,11 @@ function matchesStepPosition(a: EligibleApprover, stepKey: string): boolean {
   const allow = STEP_POSITION_ALLOWLIST[stepKey];
   if (!allow || allow.length === 0) return true;
   const pos = POS(a.out_position);
+  const role = (a.out_role || '').toLowerCase();
+  const roles = STEP_ROLE_FALLBACK[stepKey] || [];
   if (pos && allow.includes(pos)) return true;
-  // position missing → role fallback (narrow)
-  if (!pos) {
-    const roles = STEP_ROLE_FALLBACK[stepKey] || [];
-    return roles.includes((a.out_role || '').toLowerCase());
-  }
+  // Role match even when position_new is set (guards role/position drift)
+  if (roles.includes(role)) return true;
   return false;
 }
 

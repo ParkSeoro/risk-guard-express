@@ -19,6 +19,7 @@ import {
   POSITION_LABELS as SSOT_POSITION_LABELS,
   POSITIONS_BY_COMPANY_TYPE as SSOT_POSITIONS_BY_TYPE,
   defaultRoleForPosition,
+  syncMembershipRolePosition,
 } from '@/lib/projectPositions';
 import { companyTypeLabel, normalizeCompanyType } from '@/lib/companyTypes';
 
@@ -400,10 +401,18 @@ const UserManagement = () => {
   };
 
   // Update existing project membership inline.
-  // When changing role_new / position_new we also mirror to the legacy
-  // `role` / `position` columns until Phase 4 cleanup.
+  // Keep role_new ↔ position_new SSOT pairs in sync (site_supervisor ↔ SITE_SUPERVISOR).
   const handleUpdateMembership = async (membershipId: string, field: string, value: string | null) => {
-    const updateData: Record<string, any> = { [field]: value };
+    const mem = Object.values(userMemberships).flat().find((m) => m.id === membershipId);
+    const companyType = mem?.company_id
+      ? projectCompanies.find((c) => c.id === mem.company_id)?.type
+      : null;
+
+    const updateData: Record<string, any> =
+      field === 'role_new' || field === 'position_new'
+        ? syncMembershipRolePosition({ field, value, companyType })
+        : { [field]: value };
+
     if (field === 'company_id') {
       const company = projectCompanies.find(c => c.id === value);
       updateData.company = company?.name || '';
@@ -413,7 +422,7 @@ const UserManagement = () => {
       toast({ title: '멤버십 수정 실패', description: error.message, variant: 'destructive' });
     } else {
       toast({ title: '프로젝트 멤버십이 업데이트되었습니다.' });
-      log('멤버십수정', 'project_member', membershipId, undefined, { field, value });
+      log('멤버십수정', 'project_member', membershipId, undefined, { field, value, updateData });
       fetchUsers();
     }
   };

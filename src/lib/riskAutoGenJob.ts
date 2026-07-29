@@ -1,9 +1,20 @@
 /**
  * Module-level risk auto-gen job — survives dialog close / SPA remount in the same tab.
- * Save-as-you-go: each streamed item is inserted immediately so timeouts keep partial data.
+ *
+ * Two-step parallel architecture (avoids Edge 150s timeout):
+ *  1) Phase 1 — fetch JSA sub_task timeline (~1–3s), bulk-insert placeholder rows
+ *  2) Phase 2 — fill each row via parallel risk_row calls + patch DB
  */
 import { supabase } from '@/integrations/supabase/client';
-import { generateRiskItemsStreaming, type AIGenerateOptions, type DetailLevel } from '@/lib/riskAutoGenAI';
+import {
+  AI_PENDING_HAZARD,
+  fetchJsaTimeline,
+  fetchRiskRowDetail,
+  mapPool,
+  type AIGenerateOptions,
+  type DetailLevel,
+} from '@/lib/riskAutoGenAI';
+import { calculateRiskGrade } from '@/lib/riskGrade';
 
 export type RiskAutoGenJobState = {
   status: 'idle' | 'running' | 'done' | 'partial' | 'error';
@@ -14,10 +25,15 @@ export type RiskAutoGenJobState = {
   processTotal: number;
   currentProcess: string;
   message: string;
-  /** Items successfully written to DB */
+  /** Placeholder rows inserted (Phase 1) */
   insertedTotal: number;
-  /** Items received from stream (may be ahead of inserts briefly) */
+  /** Rows fully filled by Phase 2 */
+  filledTotal: number;
+  /** Alias for UI that still reads receivedTotal */
   receivedTotal: number;
+  /** Item ids still waiting for Phase-2 fill */
+  pendingIds: string[];
+  phase: 'idle' | 'timeline' | 'filling';
   elapsedSec: number;
   error?: string;
   startedAt: number | null;
@@ -49,7 +65,10 @@ const IDLE: RiskAutoGenJobState = {
   currentProcess: '',
   message: '',
   insertedTotal: 0,
+  filledTotal: 0,
   receivedTotal: 0,
+  pendingIds: [],
+  phase: 'idle',
   elapsedSec: 0,
   startedAt: null,
 };
@@ -60,7 +79,7 @@ let elapsedTimer: ReturnType<typeof setInterval> | null = null;
 let runningPromise: Promise<void> | null = null;
 
 function emit() {
-  const snap = { ...state };
+  const snap = { ...state, pendingIds: [...state.pendingIds] };
   listeners.forEach((fn) => {
     try {
       fn(snap);
@@ -71,7 +90,11 @@ function emit() {
 }
 
 function patch(partial: Partial<RiskAutoGenJobState>) {
-  state = { ...state, ...partial };
+  state = {
+    ...state,
+    ...partial,
+    pendingIds: partial.pendingIds ? [...partial.pendingIds] : state.pendingIds,
+  };
   emit();
 }
 
@@ -91,12 +114,12 @@ function stopElapsedClock() {
 }
 
 export function getRiskAutoGenJob(): RiskAutoGenJobState {
-  return { ...state };
+  return { ...state, pendingIds: [...state.pendingIds] };
 }
 
 export function subscribeRiskAutoGenJob(fn: Listener): () => void {
   listeners.add(fn);
-  fn({ ...state });
+  fn(getRiskAutoGenJob());
   return () => listeners.delete(fn);
 }
 
@@ -108,57 +131,12 @@ export function isRiskAutoGenRunning(runId?: string): boolean {
 
 async function runJob(input: RiskAutoGenJobInput): Promise<void> {
   const equipJoined = input.equipmentTags.join(', ');
-  const insertSeen = new Set<string>();
   let sortCursor = input.sortStart;
   let insertedTotal = 0;
-  let receivedTotal = 0;
+  let filledTotal = 0;
   let sourceLabel = 'ai';
   let interrupted = false;
-
-  const toRow = (g: any) => {
-    const key = `${g.sub_task}|${g.hazard}`;
-    if (insertSeen.has(key)) return null;
-    insertSeen.add(key);
-    return {
-      project_id: input.projectId,
-      run_id: input.runId,
-      process: g.process,
-      sub_task: g.sub_task,
-      hazard: g.hazard,
-      hazard_situation: g.hazard_situation,
-      existing_measure: g.existing_measure,
-      improvement_measure: g.improvement_measure,
-      frequency: g.frequency,
-      severity: g.severity,
-      improved_frequency: g.improved_frequency,
-      improved_severity: g.improved_severity,
-      likelihood_grade: g.likelihood_grade,
-      severity_grade: g.severity_grade,
-      risk_grade: g.risk_grade,
-      improved_likelihood_grade: g.improved_likelihood_grade,
-      improved_severity_grade: g.improved_severity_grade,
-      improved_risk_grade: g.improved_risk_grade,
-      status: '초안' as const,
-      ppe: g.ppe,
-      legal_basis: g.legal_basis,
-      department: g.department,
-      assignee: g.assignee,
-      created_by: input.userId,
-      sort_order: sortCursor++,
-    };
-  };
-
-  /** Save-as-you-go: one row insert immediately when an item is complete. */
-  const persistOne = async (g: any): Promise<boolean> => {
-    const row = toRow(g);
-    if (!row) return false;
-    const { error } = await supabase.from('risk_items').insert(row);
-    if (error) {
-      console.warn('[AutoGenJob] row insert failed:', error.message);
-      return false;
-    }
-    return true;
-  };
+  const allPending: string[] = [];
 
   for (let i = 0; i < input.processes.length; i++) {
     if (state.status !== 'running') return;
@@ -166,7 +144,8 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     patch({
       processIndex: i + 1,
       currentProcess: proc,
-      message: `공종 「${proc}」 JSA 스트리밍 생성 중…`,
+      phase: 'timeline',
+      message: `공종 「${proc}」 세부작업 타임라인 도출 중…`,
     });
 
     if (!input.useAI) {
@@ -177,17 +156,49 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
         targetCount: input.detailLevel === 'core' ? 8 : 12,
         deduplicate: true,
       });
-      for (const g of libraryItems) {
-        receivedTotal += 1;
-        const ok = await persistOne(g);
-        if (ok) insertedTotal += 1;
-        patch({
-          receivedTotal,
-          insertedTotal,
-          message: `${receivedTotal}건 생성됨 (${insertedTotal}건 저장 완료)`,
-        });
+      const rows = libraryItems.map((g) => ({
+        project_id: input.projectId,
+        run_id: input.runId,
+        process: g.process,
+        sub_task: g.sub_task,
+        hazard: g.hazard,
+        hazard_situation: g.hazard_situation,
+        existing_measure: g.existing_measure,
+        improvement_measure: g.improvement_measure,
+        frequency: g.frequency,
+        severity: g.severity,
+        improved_frequency: g.improved_frequency,
+        improved_severity: g.improved_severity,
+        likelihood_grade: g.likelihood_grade,
+        severity_grade: g.severity_grade,
+        risk_grade: g.risk_grade,
+        improved_likelihood_grade: g.improved_likelihood_grade,
+        improved_severity_grade: g.improved_severity_grade,
+        improved_risk_grade: g.improved_risk_grade,
+        status: '초안' as const,
+        ppe: g.ppe,
+        legal_basis: g.legal_basis,
+        department: g.department,
+        assignee: g.assignee,
+        created_by: input.userId,
+        sort_order: sortCursor++,
+        source_type: 'library',
+      }));
+      if (rows.length) {
+        const { data, error } = await supabase.from('risk_items').insert(rows).select('id');
+        if (error) console.warn('[AutoGenJob] library insert failed:', error.message);
+        else {
+          insertedTotal += data?.length || 0;
+          filledTotal += data?.length || 0;
+        }
       }
       sourceLabel = 'library';
+      patch({
+        insertedTotal,
+        filledTotal,
+        receivedTotal: filledTotal,
+        message: `${filledTotal}건 라이브러리 등록`,
+      });
       continue;
     }
 
@@ -203,80 +214,182 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       projectId: input.projectId,
     };
 
+    // ── Phase 1: timeline → placeholder bulk insert ──
+    let subTasks: string[] = [];
     try {
-      const result = await generateRiskItemsStreaming(opts, {
-        onItem: async (g) => {
-          receivedTotal += 1;
-          patch({
-            receivedTotal,
-            message: `${receivedTotal}건 생성됨 (${insertedTotal}건 저장 완료)…`,
-          });
-          const ok = await persistOne(g);
-          if (ok) {
-            insertedTotal += 1;
-            patch({
-              insertedTotal,
-              receivedTotal,
-              message: `${receivedTotal}건 생성됨 (${insertedTotal}건 저장 완료)`,
-            });
-          }
-        },
-        onProgress: (progress) => {
-          if (progress.message) {
-            patch({
-              message: `${progress.message} · 저장 ${insertedTotal}건`,
-            });
-          }
-        },
-      });
-      sourceLabel = result.source;
-      if (result.interrupted) {
-        interrupted = true;
-        break;
-      }
+      const tl = await fetchJsaTimeline(opts);
+      subTasks = tl.subTasks;
     } catch (err: any) {
+      console.warn('[AutoGenJob] timeline failed:', err?.message || err);
       interrupted = true;
-      console.warn('[AutoGenJob] stream interrupted:', err?.message || err);
-      // Graceful: keep whatever was already inserted
-      if (insertedTotal > 0) {
-        patch({
-          status: 'partial',
-          insertedTotal,
-          receivedTotal,
-          message: `네트워크 지연으로 스트리밍이 중단되었습니다. 현재까지 ${insertedTotal}건이 저장되었습니다.`,
-          error: undefined,
-        });
-        return;
-      }
+      if (insertedTotal > 0 || filledTotal > 0) break;
       throw err;
     }
+
+    const placeholders = subTasks.map((st) => ({
+      project_id: input.projectId,
+      run_id: input.runId,
+      process: proc,
+      sub_task: st,
+      hazard: AI_PENDING_HAZARD,
+      hazard_situation: '',
+      existing_measure: '',
+      improvement_measure: '',
+      frequency: 3,
+      severity: 3,
+      improved_frequency: 1,
+      improved_severity: 1,
+      likelihood_grade: '중',
+      severity_grade: '중',
+      risk_grade: '중',
+      improved_likelihood_grade: '하',
+      improved_severity_grade: '하',
+      improved_risk_grade: '하',
+      status: '초안' as const,
+      ppe: [] as string[],
+      legal_basis: [] as string[],
+      department: '',
+      assignee: '',
+      created_by: input.userId,
+      sort_order: sortCursor++,
+      source_type: 'ai',
+      note: '[AI_PENDING]',
+    }));
+
+    const { data: inserted, error: insertErr } = await supabase
+      .from('risk_items')
+      .insert(placeholders)
+      .select('id, sub_task, sort_order');
+
+    if (insertErr || !inserted?.length) {
+      console.warn('[AutoGenJob] placeholder insert failed:', insertErr?.message);
+      interrupted = true;
+      if (insertedTotal === 0 && filledTotal === 0) {
+        throw new Error(insertErr?.message || '세부작업 행 저장에 실패했습니다.');
+      }
+      break;
+    }
+
+    insertedTotal += inserted.length;
+    const pendingIds = inserted.map((r) => r.id);
+    allPending.push(...pendingIds);
+    patch({
+      phase: 'filling',
+      insertedTotal,
+      filledTotal,
+      receivedTotal: filledTotal,
+      pendingIds: [...allPending],
+      message: `세부작업 ${inserted.length}행 표시 · 위험요인 병렬 생성 중…`,
+    });
+
+    // ── Phase 2: parallel per-row fill + patch ──
+    await mapPool(inserted, 4, async (row) => {
+      if (state.status !== 'running') {
+        interrupted = true;
+        return;
+      }
+      const subTask = row.sub_task || '';
+      try {
+        const detail = await fetchRiskRowDetail({ ...opts, subTask });
+        const lg = detail.likelihood_grade || '중';
+        const sg = detail.severity_grade || '중';
+        const ilg = detail.improved_likelihood_grade || '하';
+        const isg = detail.improved_severity_grade || '하';
+        const { error: updErr } = await supabase
+          .from('risk_items')
+          .update({
+            process: detail.process || proc,
+            sub_task: detail.sub_task || subTask,
+            hazard: detail.hazard,
+            hazard_situation: detail.hazard_situation,
+            existing_measure: detail.existing_measure,
+            improvement_measure: detail.improvement_measure,
+            frequency: detail.frequency,
+            severity: detail.severity,
+            improved_frequency: detail.improved_frequency,
+            improved_severity: detail.improved_severity,
+            likelihood_grade: lg,
+            severity_grade: sg,
+            risk_grade: detail.risk_grade || calculateRiskGrade(lg as any, sg as any),
+            improved_likelihood_grade: ilg,
+            improved_severity_grade: isg,
+            improved_risk_grade: detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any),
+            ppe: detail.ppe || [],
+            legal_basis: detail.legal_basis || [],
+            note: null,
+          })
+          .eq('id', row.id);
+
+        if (updErr) {
+          console.warn('[AutoGenJob] row patch failed:', updErr.message);
+          interrupted = true;
+          return;
+        }
+
+        filledTotal += 1;
+        const stillPending = allPending.filter((id) => id !== row.id);
+        // mutate shared list
+        const idx = allPending.indexOf(row.id);
+        if (idx >= 0) allPending.splice(idx, 1);
+
+        patch({
+          filledTotal,
+          receivedTotal: filledTotal,
+          pendingIds: [...allPending],
+          message: `${filledTotal}/${insertedTotal}행 채움 완료 (${subTask})`,
+        });
+      } catch (err: any) {
+        interrupted = true;
+        console.warn('[AutoGenJob] risk_row failed:', subTask, err?.message || err);
+        // Leave placeholder so user sees which row failed; clear pending flag later
+        const idx = allPending.indexOf(row.id);
+        if (idx >= 0) allPending.splice(idx, 1);
+        await supabase
+          .from('risk_items')
+          .update({
+            hazard: '생성 실패 — 수동 입력 또는 재시도',
+            note: `[AI_ROW_FAILED] ${err?.message || ''}`.slice(0, 200),
+          })
+          .eq('id', row.id);
+        patch({ pendingIds: [...allPending] });
+      }
+    });
+
+    sourceLabel = 'ai';
   }
 
-  if (insertedTotal === 0) {
+  if (insertedTotal === 0 && filledTotal === 0) {
     patch({
       status: 'error',
       error: '결과를 생성하지 못했습니다. 공종명과 장비를 확인해주세요.',
       message: '생성 실패',
-      insertedTotal: 0,
+      phase: 'idle',
+      pendingIds: [],
     });
     return;
   }
 
-  if (interrupted) {
+  if (interrupted || filledTotal < insertedTotal) {
     patch({
       status: 'partial',
-      message: `네트워크 지연으로 스트리밍이 중단되었습니다. 현재까지 ${insertedTotal}건이 저장되었습니다.`,
+      message: `부분 완료 · ${filledTotal}/${insertedTotal}행 채움 (타임라인 ${insertedTotal}행은 저장됨)`,
       insertedTotal,
-      receivedTotal,
+      filledTotal,
+      receivedTotal: filledTotal,
+      pendingIds: [],
+      phase: 'idle',
     });
     return;
   }
 
   patch({
     status: 'done',
-    message: `${insertedTotal}건 등록 완료 (${sourceLabel})`,
+    message: `${filledTotal}건 등록 완료 (${sourceLabel})`,
     insertedTotal,
-    receivedTotal,
+    filledTotal,
+    receivedTotal: filledTotal,
+    pendingIds: [],
+    phase: 'idle',
   });
 }
 
@@ -299,7 +412,10 @@ export function startRiskAutoGenJob(input: RiskAutoGenJobInput): boolean {
     currentProcess: processes[0],
     message: '생성 준비 중…',
     insertedTotal: 0,
+    filledTotal: 0,
     receivedTotal: 0,
+    pendingIds: [],
+    phase: 'timeline',
     elapsedSec: 0,
     error: undefined,
     startedAt: Date.now(),
@@ -308,11 +424,13 @@ export function startRiskAutoGenJob(input: RiskAutoGenJobInput): boolean {
 
   runningPromise = runJob({ ...input, processes })
     .catch((err: any) => {
-      if (state.insertedTotal > 0) {
+      if (state.insertedTotal > 0 || state.filledTotal > 0) {
         patch({
           status: 'partial',
-          message: `네트워크 지연으로 스트리밍이 중단되었습니다. 현재까지 ${state.insertedTotal}건이 저장되었습니다.`,
+          message: `부분 저장됨 · 타임라인 ${state.insertedTotal}행 / 채움 ${state.filledTotal}행`,
           error: undefined,
+          pendingIds: [],
+          phase: 'idle',
         });
         return;
       }
@@ -320,6 +438,8 @@ export function startRiskAutoGenJob(input: RiskAutoGenJobInput): boolean {
         status: 'error',
         error: err?.message || '자동 생성 실패',
         message: err?.message || '자동 생성 실패',
+        pendingIds: [],
+        phase: 'idle',
       });
     })
     .finally(() => {

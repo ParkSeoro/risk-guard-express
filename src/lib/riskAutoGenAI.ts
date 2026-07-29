@@ -114,6 +114,211 @@ async function getAccessToken(): Promise<string> {
   return token;
 }
 
+/** Placeholder hazard while Phase-2 row fill is in flight */
+export const AI_PENDING_HAZARD = '…생성중';
+
+export function isAiPendingRiskItem(item: { hazard?: string | null; note?: string | null }): boolean {
+  return item.hazard === AI_PENDING_HAZARD || (item.note || '').includes('[AI_PENDING]');
+}
+
+async function invokeRiskJson<T = any>(
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<T> {
+  const token = await getAccessToken();
+  const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+  const baseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+  const resp = await fetch(`${baseUrl}/functions/v1/generate-risk-ai`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      apikey: anonKey,
+      'Content-Type': 'application/json; charset=utf-8',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+  let payload: any = null;
+  try {
+    payload = await resp.json();
+  } catch {
+    payload = null;
+  }
+  if (!resp.ok) {
+    throw new Error(mapErrorMessage(payload?.error || `AI 서버 오류 (${resp.status})`));
+  }
+  return payload as T;
+}
+
+/** Phase 1 — fast JSA sub_task timeline (JSON). */
+export async function fetchJsaTimeline(
+  opts: AIGenerateOptions,
+  signal?: AbortSignal,
+): Promise<{ subTasks: string[]; normalizedEquipment?: string }> {
+  const detailLevel: DetailLevel = opts.detailLevel || 'core';
+  const data = await invokeRiskJson<{
+    sub_tasks?: string[];
+    normalized_equipment?: string;
+    error?: string;
+  }>(
+    {
+      mode: 'jsa_timeline',
+      process_name: opts.processName,
+      equipment: opts.equipment || '',
+      work_description: opts.workDescription || '',
+      work_location: opts.workLocation || '일반',
+      work_environment: opts.workEnvironment || [],
+      detail_level: detailLevel,
+      project_id: opts.projectId || '',
+    },
+    signal,
+  );
+  const subTasks = (data.sub_tasks || [])
+    .map((s) => String(s || '').trim())
+    .filter(Boolean);
+  if (subTasks.length === 0) {
+    throw new Error(mapErrorMessage(data.error || '세부작업 목록이 비어 있습니다.'));
+  }
+  return { subTasks, normalizedEquipment: data.normalized_equipment };
+}
+
+/** Phase 2 — single sub_task risk row (JSON). */
+export async function fetchRiskRowDetail(
+  opts: AIGenerateOptions & { subTask: string },
+  signal?: AbortSignal,
+): Promise<GeneratedRiskItem> {
+  const detailLevel: DetailLevel = opts.detailLevel || 'core';
+  const data = await invokeRiskJson<{ item?: any; error?: string }>(
+    {
+      mode: 'risk_row',
+      process_name: opts.processName,
+      sub_task: opts.subTask,
+      equipment: opts.equipment || '',
+      work_description: opts.workDescription || '',
+      work_location: opts.workLocation || '일반',
+      work_environment: opts.workEnvironment || [],
+      detail_level: detailLevel,
+      project_id: opts.projectId || '',
+    },
+    signal,
+  );
+  if (!data.item) {
+    throw new Error(mapErrorMessage(data.error || '행 상세 생성에 실패했습니다.'));
+  }
+  const mapped = mapAIItemToGenerated(data.item, opts.processName);
+  mapped.sub_task = mapped.sub_task || opts.subTask;
+  return mapped;
+}
+
+/** Run async tasks with a concurrency cap. */
+export async function mapPool<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await worker(items[i], i);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
+/**
+ * Two-step risk generation:
+ * 1) timeline → caller inserts placeholder rows
+ * 2) parallel per-row detail fill
+ */
+export async function generateRiskItemsTwoStep(
+  opts: AIGenerateOptions,
+  handlers?: {
+    onTimeline?: (subTasks: string[]) => void | Promise<void>;
+    onRow?: (item: GeneratedRiskItem, index: number, subTask: string) => void | Promise<void>;
+    onProgress?: (progress: AIGenerateProgress, partialItems: GeneratedRiskItem[]) => void;
+    onRowError?: (subTask: string, index: number, error: Error) => void;
+    concurrency?: number;
+    signal?: AbortSignal;
+  },
+): Promise<{
+  items: GeneratedRiskItem[];
+  source: 'ai';
+  normalizedEquipment?: string;
+  interrupted?: boolean;
+}> {
+  handlers?.onProgress?.(
+    { phase: 'generating', itemsSoFar: 0, message: 'JSA 세부작업 타임라인 도출 중…' },
+    [],
+  );
+
+  const { subTasks, normalizedEquipment } = await fetchJsaTimeline(opts, handlers?.signal);
+  await handlers?.onTimeline?.(subTasks);
+  handlers?.onProgress?.(
+    {
+      phase: 'status',
+      itemsSoFar: 0,
+      message: `세부작업 ${subTasks.length}건 확보 · 행별 병렬 생성 시작…`,
+      normalizedEquipment,
+    },
+    [],
+  );
+
+  const items: GeneratedRiskItem[] = [];
+  let interrupted = false;
+  const concurrency = Math.max(1, Math.min(handlers?.concurrency ?? 4, 6));
+
+  await mapPool(subTasks, concurrency, async (subTask, index) => {
+    if (handlers?.signal?.aborted) {
+      interrupted = true;
+      return null as any;
+    }
+    try {
+      const row = await fetchRiskRowDetail({ ...opts, subTask }, handlers?.signal);
+      items.push(row);
+      await handlers?.onRow?.(row, index, subTask);
+      handlers?.onProgress?.(
+        {
+          phase: 'generating',
+          itemsSoFar: items.length,
+          message: `${items.length}/${subTasks.length}행 채움 완료`,
+          normalizedEquipment,
+        },
+        [...items],
+      );
+      return row;
+    } catch (err: any) {
+      interrupted = true;
+      const e = err instanceof Error ? err : new Error(String(err?.message || err));
+      handlers?.onRowError?.(subTask, index, e);
+      console.warn('[AI Engine] risk_row failed:', subTask, e.message);
+      return null as any;
+    }
+  });
+
+  if (items.length === 0) {
+    throw new Error('AI가 유효한 항목을 반환하지 않았습니다.');
+  }
+
+  handlers?.onProgress?.(
+    {
+      phase: 'complete',
+      itemsSoFar: items.length,
+      message: interrupted
+        ? `부분 완료 · ${items.length}/${subTasks.length}행`
+        : `완료 · ${items.length}행`,
+      normalizedEquipment,
+    },
+    items,
+  );
+
+  return { items, source: 'ai', normalizedEquipment, interrupted };
+}
+
 function mapAccidentPayload(raw: any): AIAccidentCase | null {
   if (!raw || typeof raw !== 'object') return null;
   const a: AIAccidentCase = {
@@ -523,10 +728,10 @@ export async function generateRiskItemsHybrid(
   const detailLevel: DetailLevel = opts.detailLevel || 'core';
 
   try {
-    return await generateRiskItemsStreaming(opts, { onProgress });
+    return await generateRiskItemsTwoStep(opts, { onProgress, concurrency: 4 });
   } catch (err: any) {
     const rawMsg = err?.message || '';
-    console.error('[AI Engine] oneshot 실패:', rawMsg);
+    console.error('[AI Engine] two-step 실패:', rawMsg);
 
     const mapped = mapErrorMessage(rawMsg);
     if (/할당량|API 키|너무 많/.test(mapped) && mapped !== rawMsg) {

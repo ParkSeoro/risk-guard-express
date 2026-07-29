@@ -6,17 +6,18 @@ ALTER TABLE public.tbm_participations
   ADD COLUMN IF NOT EXISTS worker_id uuid;
 
 -- Backfill worker_id from phone + session project
+-- NOTE: Postgres regexp_replace uses POSIX regex — use [^0-9], not PCRE \D
 UPDATE public.tbm_participations tp
    SET worker_id = w.id
   FROM public.tbm_sessions ts
   JOIN public.workers w
     ON w.project_id = ts.project_id
-   AND regexp_replace(coalesce(w.phone, ''), '\D', '', 'g')
-     = regexp_replace(coalesce(tp.worker_phone, ''), '\D', '', 'g')
+   AND regexp_replace(coalesce(w.phone, ''), '[^0-9]', '', 'g')
+     = regexp_replace(coalesce(tp.worker_phone, ''), '[^0-9]', '', 'g')
  WHERE tp.tbm_session_id = ts.id
    AND tp.worker_id IS NULL
    AND coalesce(tp.worker_phone, '') <> ''
-   AND regexp_replace(coalesce(tp.worker_phone, ''), '\D', '', 'g') <> '';
+   AND regexp_replace(coalesce(tp.worker_phone, ''), '[^0-9]', '', 'g') <> '';
 
 UPDATE public.tbm_participations tp
    SET worker_id = NULL

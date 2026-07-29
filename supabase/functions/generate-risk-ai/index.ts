@@ -229,7 +229,7 @@ function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other" 
   if (kind === "situation" && MACRO_SITUATION_RE.test(s)) return null;
   if (kind === "measure" && VAGUE_MEASURE_RE.test(s)) return null;
   if (kind === "hazard" && VAGUE_HAZARD_RE.test(s)) return null;
-  if (/^(원인\+결과|짧은\s*개조식|현장\s*통상\s*조치|본질안전→|개조식|공학적\s*\+)/.test(s)) return null;
+  if (/^(원인\+결과|짧은\s*개조식|현장\s*통상\s*조치|본질안전→|개조식|공학적\s*\+|법적\s*기준\/원인)/.test(s)) return null;
 
   return s;
 }

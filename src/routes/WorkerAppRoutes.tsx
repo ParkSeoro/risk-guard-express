@@ -4,7 +4,7 @@ import * as P from "@/routes/lazyPages";
 import AuthGuard from "@/components/AuthGuard";
 import WorkerGlobalGps from "@/components/worker/WorkerGlobalGps";
 import { useAuth } from "@/contexts/AuthContext";
-import { workerNeedsConsent, resolvePostLoginShell } from "@/components/AuthGuard";
+import { workerNeedsConsent, isPureWorkerUser } from "@/components/AuthGuard";
 
 function Fallback() {
   return (
@@ -16,8 +16,8 @@ function Fallback() {
 
 function WorkerGpsGate() {
   const { profile, roles } = useAuth();
-  // Never start GPS before legal location consent
-  if (resolvePostLoginShell(roles) === "worker" && workerNeedsConsent(profile)) {
+  // Never start GPS before legal location consent (workers only)
+  if (isPureWorkerUser(roles) && workerNeedsConsent(profile)) {
     return null;
   }
   return <WorkerGlobalGps />;

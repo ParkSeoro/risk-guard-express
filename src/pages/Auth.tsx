@@ -25,6 +25,7 @@ import {
   workerPhoneSchema,
   workerPinSchema,
 } from '@/lib/workerAuth';
+import { writeLoginIntent } from '@/components/AuthGuard';
 
 type Mode = 'login' | 'signup';
 type Audience = 'worker' | 'manager';
@@ -196,16 +197,20 @@ const Auth = () => {
     try {
       // 근로자: 전화번호 → 가상 이메일 랩핑 후 signIn
       if (loginAudience === 'worker') {
+        writeLoginIntent('worker');
         const { error } = await signInWorkerWithPhone(phone, pin);
         if (error) {
           toast({ title: '로그인 실패', description: error.message, variant: 'destructive' });
         }
+        // AuthRoute waits for rolesReady then routes to /app/worker/*
         return;
       }
 
-      // 관리자: 표준 이메일/비밀번호
+      // 관리자: 표준 이메일/비밀번호 → 절대 worker onboarding으로 보내지 않음
+      writeLoginIntent('admin');
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) toast({ title: '로그인 실패', description: error.message, variant: 'destructive' });
+      // AuthRoute → postLoginPath → /app/admin
     } finally {
       setLoading(false);
     }

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/contexts/AuthContext";
-import { isAdminShellUser } from "@/components/AuthGuard";
+import { isPureWorkerUser } from "@/components/AuthGuard";
 
 const FORCE_DESKTOP_KEY = "forceDesktopUI";
 
@@ -43,8 +43,9 @@ export default function MobileRedirectGuard() {
     if (typeof window !== "undefined" && localStorage.getItem(FORCE_DESKTOP_KEY) === "1") return;
     if (isAuthLoading || (user && !rolesReady)) return;
 
-    // Critical: admins/managers keep desktop admin shell even on small viewports
-    if (user && isAdminShellUser(roles)) return;
+    // Critical: only pure workers bounce to worker shell.
+    // Empty roles / project admins must NEVER be kidnapped to /app/worker/home.
+    if (user && !isPureWorkerUser(roles)) return;
 
     const path = location.pathname;
 

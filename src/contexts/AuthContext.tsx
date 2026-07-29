@@ -54,13 +54,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const fetchRoles = useCallback(async (userId: string): Promise<AppRole[]> => {
-    const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", userId);
-    if (error) {
-      console.error("Error fetching roles:", error);
-      setRoles([]);
-      return [];
+    // Global roles (user_roles) are usually only `master`.
+    // Partner/company admins live in project_members.role_new — must load both.
+    const [globalRes, memberRes] = await Promise.all([
+      supabase.from("user_roles").select("role").eq("user_id", userId),
+      supabase.from("project_members").select("role_new").eq("user_id", userId),
+    ]);
+    if (globalRes.error) {
+      console.error("Error fetching user_roles:", globalRes.error);
     }
-    const next = (data?.map((r) => r.role) || []) as AppRole[];
+    if (memberRes.error) {
+      console.error("Error fetching project_members roles:", memberRes.error);
+    }
+    const merged = new Set<string>();
+    for (const r of globalRes.data || []) {
+      if (r.role) merged.add(String(r.role));
+    }
+    for (const r of memberRes.data || []) {
+      if (r.role_new) merged.add(String(r.role_new));
+    }
+    const next = Array.from(merged) as AppRole[];
     setRoles(next);
     return next;
   }, []);
@@ -184,9 +197,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user, fetchProfile, fetchRoles]);
 
   const hasRole = (role: AppRole) => roles.includes(role);
-  const isAdmin = hasRole("admin") || hasRole("owner") || hasRole("pm") || hasRole("cm") || hasRole("sm");
+  // Shell-aware flags (match AuthGuard ADMIN_SHELL / WORKER_SHELL)
+  const isAdmin =
+    hasRole("master") ||
+    hasRole("project_admin") ||
+    hasRole("safety_manager") ||
+    hasRole("site_manager") ||
+    hasRole("supervisor") ||
+    hasRole("site_supervisor") ||
+    // legacy aliases (if any remain in old data)
+    hasRole("admin") ||
+    hasRole("owner") ||
+    hasRole("pm") ||
+    hasRole("cm") ||
+    hasRole("sm");
   const isManager = isAdmin || hasRole("manager") || hasRole("hq") || hasRole("partner_manager");
-  const isWorker = hasRole("worker") || hasRole("partner_worker");
+  const isWorker =
+    !isAdmin && (hasRole("worker") || hasRole("partner_worker") || hasRole("viewer"));
 
   return (
     <AuthContext.Provider

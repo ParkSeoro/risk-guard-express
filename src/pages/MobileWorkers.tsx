@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useNavigateMobileHome } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { useAuditLog } from "@/hooks/useAuditLog";
 
 export default function MobileWorkers() {
   const navigate = useNavigate();
+  const goMobileHome = useNavigateMobileHome();
   const { projectId, applyCompanyFilter } = useMobileAccess();
   const { log: auditLog } = useAuditLog();
   const [workers, setWorkers] = useState<any[]>([]);
@@ -57,7 +59,7 @@ export default function MobileWorkers() {
   return (
     <div className="min-h-screen bg-muted/30 pb-24">
       <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
-        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => navigate("/m")}>
+        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => goMobileHome()}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="font-bold text-lg flex-1">근로자 QR</div>

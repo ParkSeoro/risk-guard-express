@@ -14,7 +14,7 @@ import { isSubmitterApprovalStep } from "@/lib/approvalRules";
 
 /**
  * Mobile approval detail — AI briefing at top, then action buttons.
- * Route: /m/approvals/:approvalId
+ * Route: /app/worker/approvals/:approvalId
  */
 export default function MobileApprovalDetail() {
   const { approvalId } = useParams<{ approvalId: string }>();
@@ -43,7 +43,7 @@ export default function MobileApprovalDetail() {
         toast.error("상신(기안) 단계는 승인/반려할 수 없습니다.");
         setRow(null);
         setLoading(false);
-        navigate("/m/approvals", { replace: true });
+        navigate("/app/worker/approvals", { replace: true });
         return;
       }
       setRow(found);
@@ -76,7 +76,7 @@ export default function MobileApprovalDetail() {
           ? action === "approve" ? "작업 완료 및 종료 처리됨" : "종료 확인이 반려되었습니다"
           : action === "approve" ? "승인 완료" : "반려 처리됨",
       );
-      navigate("/m/approvals", { replace: true });
+      navigate("/app/worker/approvals", { replace: true });
     } catch (e: any) {
       toast.error(e.message || "처리 실패");
     } finally {
@@ -87,7 +87,7 @@ export default function MobileApprovalDetail() {
   return (
     <div className="min-h-screen bg-muted/30 pb-24">
       <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
-        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => navigate("/m/approvals")}>
+        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => navigate("/app/worker/approvals")}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="font-bold text-lg flex-1">결재 상세</div>
@@ -103,7 +103,7 @@ export default function MobileApprovalDetail() {
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
               대기 중인 결재를 찾을 수 없습니다.
-              <Button className="mt-3 w-full" variant="outline" onClick={() => navigate("/m/approvals")}>
+              <Button className="mt-3 w-full" variant="outline" onClick={() => navigate("/app/worker/approvals")}>
                 목록으로
               </Button>
             </CardContent>
@@ -154,9 +154,9 @@ export default function MobileApprovalDetail() {
                   <Button
                     variant="outline"
                     className="w-full"
-                    onClick={() => navigate(`/work-permits/${row.entity_id}`)}
+                    onClick={() => navigate("/app/worker/permits")}
                   >
-                    원본 문서 보기
+                    허가서 목록 보기
                   </Button>
                 )}
               </CardContent>

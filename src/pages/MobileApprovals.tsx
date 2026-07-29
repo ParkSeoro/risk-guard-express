@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useNavigateMobileHome, mobileEntityPath } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,23 +23,13 @@ const ENTITY_LABEL: Record<string, string> = {
   tbm: "TBM 일지",
 };
 
-const ENTITY_LINK = (t: string, id: string) => {
-  switch (t) {
-    case "assessment_run": return `/assessment-run/${id}`;
-    case "work_plan": return "/work-plans";
-    case "work_permit": return `/work-permits/${id}`;
-    case "safety_cost": return "/safety-cost";
-    case "incident": return "/incidents";
-    case "emergency_drill": return "/emergency-drills";
-    case "tbm": return "/tbm";
-    default: return "/approvals";
-  }
-};
+const ENTITY_LINK = (t: string, id: string) => mobileEntityPath(t, id).path;
 
 const isClosureStep = (r: any) => (r.step_position || "").toLowerCase() === "closure_sm";
 
 export default function MobileApprovals() {
   const navigate = useNavigate();
+  const goMobileHome = useNavigateMobileHome();
   const { user } = useAuth();
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -63,7 +54,7 @@ export default function MobileApprovals() {
 
   const openRow = async (r: any) => {
     if (r.entity_type === "work_permit") {
-      navigate(`/m/approvals/${r.approval_id}`);
+      navigate(`/app/worker/approvals/${r.approval_id}`);
       return;
     }
     setOpenId(r.approval_id);
@@ -99,7 +90,7 @@ export default function MobileApprovals() {
   return (
     <div className="min-h-screen bg-muted/30 pb-24">
       <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
-        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => navigate("/m")}>
+        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => goMobileHome()}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="font-bold text-lg flex-1">전자결재</div>

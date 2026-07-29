@@ -4,10 +4,26 @@ import { Button } from "@/components/ui/button";
 import { Download, X, Share, Plus, MoreVertical, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
-// 설치 안내 배너는 모바일 홈(/m) 과 로그인(/auth) 화면에서만 노출 — 한 곳에 고정
-const ALLOWED_PATHS = ["/m", "/auth", "/login", "/register"];
+/** Show on login + mobile worker shell (incl. menu after login). */
+function isAllowedPath(pathname: string): boolean {
+  if (
+    pathname === "/m" ||
+    pathname.startsWith("/m/") ||
+    pathname === "/auth" ||
+    pathname.startsWith("/auth/") ||
+    pathname === "/login" ||
+    pathname === "/register" ||
+    pathname.startsWith("/login/") ||
+    pathname.startsWith("/register/")
+  ) {
+    return true;
+  }
+  if (pathname === "/app/worker" || pathname.startsWith("/app/worker/")) {
+    return true;
+  }
+  return false;
+}
 
-// PWA 설치 안내 배너 — 플랫폼별 안내 + 현재 배포 주소 링크
 type Platform = "android" | "ios" | "desktop";
 
 function detectPlatform(): Platform {
@@ -25,12 +41,15 @@ function isStandalone(): boolean {
 }
 
 function isInIframe(): boolean {
-  try { return window.self !== window.top; } catch { return true; }
+  try {
+    return window.self !== window.top;
+  } catch {
+    return true;
+  }
 }
 
 const DISMISS_KEY = "installPromptDismissedAt";
 const DISMISS_HOURS = 24 * 7; // 7일
-
 
 export default function InstallPrompt() {
   const [deferred, setDeferred] = useState<any>(null);
@@ -39,9 +58,8 @@ export default function InstallPrompt() {
   const platform = useMemo(detectPlatform, []);
   const inIframe = useMemo(isInIframe, []);
   const loc = useLocation();
-  const allowed = ALLOWED_PATHS.some((p) => loc.pathname === p || loc.pathname.startsWith(p + "/"));
+  const allowed = isAllowedPath(loc.pathname);
 
-  // 배포 주소 (iframe 안이면 top 주소 추정 불가 → 알려진 호스트 우선순위)
   const deployUrl = useMemo(() => {
     const host = window.location.hostname;
     if (host.includes("lovableproject.com") || host.includes("id-preview--")) {
@@ -70,14 +88,24 @@ export default function InstallPrompt() {
     setShow(false);
   };
 
+  /** Native install when available; otherwise open platform how-to (expected on iOS). */
   const install = async () => {
-    if (!deferred) {
-      setExpanded(true);
-      return;
+    if (deferred) {
+      try {
+        deferred.prompt();
+        await deferred.userChoice;
+        setShow(false);
+        return;
+      } catch {
+        /* fall through to instructions */
+      }
     }
-    deferred.prompt();
-    await deferred.userChoice;
-    setShow(false);
+    setExpanded(true);
+    if (platform === "ios") {
+      toast.message("Safari에서 공유 → 홈 화면에 추가를 눌러 주세요");
+    } else if (platform === "android" && !deferred) {
+      toast.message("Chrome 메뉴 → 앱 설치 / 홈 화면에 추가를 눌러 주세요");
+    }
   };
 
   const copyUrl = async () => {
@@ -90,6 +118,11 @@ export default function InstallPrompt() {
   };
 
   const openUrl = () => window.open(deployUrl, "_blank", "noopener");
+
+  const ctaLabel =
+    deferred ? "설치"
+    : platform === "ios" ? "설치 방법"
+    : "설치 안내";
 
   if (!show || !allowed) return null;
 
@@ -109,8 +142,8 @@ export default function InstallPrompt() {
             {deployUrl.replace(/^https?:\/\//, "")}
           </button>
         </div>
-        <Button size="sm" onClick={() => { install(); setExpanded(true); }}>
-          설치
+        <Button size="sm" onClick={() => void install()}>
+          {ctaLabel}
         </Button>
         <Button size="icon" variant="ghost" onClick={dismiss} aria-label="닫기">
           <X className="h-4 w-4" />
@@ -143,9 +176,9 @@ export default function InstallPrompt() {
                 1. Safari 하단의 <Share className="h-3.5 w-3.5 inline" /> 공유 버튼을 탭
               </li>
               <li className="flex items-center gap-2">
-                2. <Plus className="h-3.5 w-3.5 inline" /> "홈 화면에 추가" 선택
+                2. <Plus className="h-3.5 w-3.5 inline" /> &quot;홈 화면에 추가&quot; 선택
               </li>
-              <li>3. 우측 상단 "추가" 탭 → 홈 화면에 아이콘 생성</li>
+              <li>3. 우측 상단 &quot;추가&quot; 탭 → 홈 화면에 아이콘 생성</li>
             </ol>
           )}
 
@@ -154,7 +187,7 @@ export default function InstallPrompt() {
               <li className="flex items-center gap-2">
                 1. Chrome 우측 상단 <MoreVertical className="h-3.5 w-3.5 inline" /> 메뉴
               </li>
-              <li>2. "앱 설치" 또는 "홈 화면에 추가" 선택</li>
+              <li>2. &quot;앱 설치&quot; 또는 &quot;홈 화면에 추가&quot; 선택</li>
               <li>3. 안내에 따라 설치 완료</li>
             </ol>
           )}
@@ -162,7 +195,7 @@ export default function InstallPrompt() {
           {platform === "desktop" && (
             <ol className="space-y-1.5 text-xs">
               <li>1. Chrome/Edge 주소창 오른쪽의 설치 아이콘 클릭</li>
-              <li>2. 또는 메뉴 → "앱 설치" 선택</li>
+              <li>2. 또는 메뉴 → &quot;앱 설치&quot; 선택</li>
               <li>3. 모바일 사용 시: 위 주소를 휴대폰 브라우저에서 여세요</li>
             </ol>
           )}

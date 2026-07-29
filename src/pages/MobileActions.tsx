@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useNavigateMobileHome } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
@@ -33,6 +34,7 @@ const sevLabel: Record<string, string> = { high: "높음", medium: "보통", low
 
 export default function MobileActions() {
   const navigate = useNavigate();
+  const goMobileHome = useNavigateMobileHome();
   const { profile } = useAuth();
   const { projectId } = useMobileAccess();
   const { log: logAudit } = useAuditLog();
@@ -94,7 +96,7 @@ export default function MobileActions() {
   return (
     <div className="min-h-screen bg-muted/30 pb-24">
       <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
-        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => navigate("/m")}>
+        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => goMobileHome()}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="font-bold text-lg flex-1">조치 관리</div>

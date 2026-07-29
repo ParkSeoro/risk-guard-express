@@ -88,7 +88,8 @@ function LegacyPathRedirect() {
     return <RoleAwareRootRedirect />;
   }
   if (path === "/m" || path.startsWith("/m/")) {
-    const rest = path === "/m" ? "" : path.slice(2); // "/m/foo" → "/foo"
+    // Bare /m → menu (not WorkerDailyHome) so managers do not land on check-in
+    const rest = path === "/m" ? "/menu" : path.slice(2); // "/m/foo" → "/foo"
     return <Navigate to={`/app/worker${rest}${loc.search}${loc.hash}`} replace />;
   }
   // Absolute admin legacy (e.g. /work-permits/x) → /app/admin/...

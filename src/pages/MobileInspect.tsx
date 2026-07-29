@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useNavigateMobileHome } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,6 +33,7 @@ type Member = { user_id: string; display_name: string; role: string };
 
 export default function MobileInspect() {
   const navigate = useNavigate();
+  const goMobileHome = useNavigateMobileHome();
   const { profile } = useAuth();
   const { projectId, companyId } = useMobileAccess();
   const { log: auditLog } = useAuditLog();
@@ -214,7 +216,7 @@ export default function MobileInspect() {
       fail: items.filter(i=>i.result==='fail').length,
     });
     toast.success(hasFail ? "조치 필요 항목과 함께 저장됨" : "점검 완료");
-    navigate("/m");
+    goMobileHome();
   };
 
   const okCount = items.filter(i => i.result === "pass").length;
@@ -226,7 +228,7 @@ export default function MobileInspect() {
     <div className="min-h-screen bg-muted/30 pb-24">
       <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
         <Button size="icon" variant="ghost" className="text-primary-foreground"
-          onClick={() => step === "checklist" ? setStep("setup") : navigate("/m")}>
+          onClick={() => step === "checklist" ? setStep("setup") : goMobileHome()}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="font-bold text-lg flex-1">현장 안전점검</div>

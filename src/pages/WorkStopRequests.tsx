@@ -100,7 +100,7 @@ export default function WorkStopRequests() {
           <p className="text-sm text-muted-foreground">산안법 §54 — 근로자는 산업재해 발생 급박한 위험을 인지하면 즉시 작업중지권을 행사할 수 있으며, 사업주는 그를 이유로 불이익을 줄 수 없습니다.</p>
         </div>
         <Button variant="outline" size="sm" asChild>
-          <a href="/m/work-stop" target="_blank" rel="noreferrer"><Smartphone className="size-4 mr-1"/> 모바일 신고 페이지</a>
+          <a href="/app/worker/work-stop" target="_blank" rel="noreferrer"><Smartphone className="size-4 mr-1"/> 모바일 신고 페이지</a>
         </Button>
       </header>
 

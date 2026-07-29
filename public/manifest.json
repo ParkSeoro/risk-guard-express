@@ -2,7 +2,7 @@
   "name": "안전관리시스템",
   "short_name": "안전관리",
   "description": "현장 안전관리 모바일 앱",
-  "start_url": "/m",
+  "start_url": "/app/worker/menu",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
@@ -13,7 +13,7 @@
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ],
   "shortcuts": [
-    { "name": "안전점검", "url": "/m/inspect", "short_name": "점검" },
+    { "name": "안전점검", "url": "/app/worker/inspect", "short_name": "점검" },
     { "name": "근로자 등록", "url": "/worker/register", "short_name": "QR등록" }
   ]
 }

@@ -327,6 +327,7 @@ export default function SiteControlMap() {
       setLayers((l) => ({ ...l, zones: true, satellite: false }));
     } else {
       setLayers((l) => ({ ...l, satellite: true }));
+      setDrawTool(null);
     }
   }, [panelTab]);
 

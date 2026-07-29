@@ -3,6 +3,10 @@ import {
   filterApproversForStep,
   buildDefaultStepsForAuthor,
   stepLabelForAuthor,
+  isSubmitterApprovalStep,
+  dedupeApprovalSteps,
+  approvalTimelineGroupKey,
+  sequentialDisplayStatus,
   type EligibleApprover,
 } from "@/lib/approvalRules";
 
@@ -104,5 +108,41 @@ describe("filterApproversForStep — 시공사 기안", () => {
     const steps = buildDefaultStepsForAuthor("work_permit", "gc");
     expect(steps.some((s) => s.position === "gc_manager")).toBe(false);
     expect(stepLabelForAuthor("contractor_supervisor", "gc")).toContain("시공사");
+  });
+});
+
+describe("approval timeline helpers — self-lock / sequential", () => {
+  it("isSubmitterApprovalStep detects 상신 nodes", () => {
+    expect(isSubmitterApprovalStep({ position: "contractor_supervisor" })).toBe(true);
+    expect(isSubmitterApprovalStep({ step: "시공사 관리감독자 (상신)" })).toBe(true);
+    expect(isSubmitterApprovalStep({ position: "owner_sm", step: "발주처 SM" })).toBe(false);
+  });
+
+  it("dedupeApprovalSteps removes twin position+user copies", () => {
+    const steps = [
+      { position: "contractor_supervisor", user_id: "a", label: "시공사 상신" },
+      { position: "contractor_safety_manager", user_id: "b", label: "시공사 검토" },
+      { position: "contractor_supervisor", user_id: "a", label: "협력사 상신" },
+    ];
+    const d = dedupeApprovalSteps(steps);
+    expect(d).toHaveLength(2);
+    expect(d.map((s) => s.label)).toEqual(["시공사 상신", "시공사 검토"]);
+  });
+
+  it("approvalTimelineGroupKey isolates entity docs", () => {
+    expect(approvalTimelineGroupKey({ entity_type: "work_permit", entity_id: "p1" })).toBe("work_permit:p1");
+    expect(approvalTimelineGroupKey({ run_id: "r1" })).toBe("run:r1");
+    expect(approvalTimelineGroupKey({ entity_type: "work_permit", entity_id: "p1" }))
+      .not.toBe(approvalTimelineGroupKey({ entity_type: "work_permit", entity_id: "p2" }));
+  });
+
+  it("sequentialDisplayStatus never paints later steps complete early", () => {
+    const steps = [
+      { step_order: 1, status: "진행중" },
+      { step_order: 2, status: "승인" },
+      { step_order: 3, status: "대기" },
+    ];
+    expect(sequentialDisplayStatus(steps, steps[1])).toBe("대기");
+    expect(sequentialDisplayStatus(steps, steps[0])).toBe("진행중");
   });
 });

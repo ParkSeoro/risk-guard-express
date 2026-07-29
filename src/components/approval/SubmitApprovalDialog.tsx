@@ -20,6 +20,7 @@ import {
   filterApproversForStep,
   sortStepsByHierarchy,
   validateStepsHierarchy,
+  dedupeApprovalSteps,
   stepLabelForAuthor,
   type ApprovalEntityType as SSOTApprovalEntityType,
 } from '@/lib/approvalRules';
@@ -263,12 +264,15 @@ export default function SubmitApprovalDialog({
     if (steps.length === 0) return toast.error('결재선을 1단계 이상 지정하세요');
     if (steps.some((s) => !s.user_id)) return toast.error('각 단계의 결재자를 지정하세요');
 
-    // 위계(협력사 → 시공사 → 발주처) 강제 정렬 & 검증
-    const orderedSteps = sortStepsByHierarchy(steps);
+    // 위계(협력사 → 시공사 → 발주처) 강제 정렬 & 검증 + 중복 노드 제거
+    const orderedSteps = dedupeApprovalSteps(sortStepsByHierarchy(steps));
     const v = validateStepsHierarchy(orderedSteps);
     if (!v.ok) return toast.error(v.message || '결재 단계 순서가 위계에 어긋납니다');
     // 정렬된 결과를 화면에도 반영하여 사용자에게 최종 순서를 보여준다.
-    if (orderedSteps.some((s, i) => s !== steps[i])) setSteps(orderedSteps);
+    if (orderedSteps.some((s, i) => s !== steps[i]) || orderedSteps.length !== steps.length) {
+      setSteps(orderedSteps);
+    }
+    if (orderedSteps.length === 0) return toast.error('결재선을 1단계 이상 지정하세요');
 
     setSubmitting(true);
     try {

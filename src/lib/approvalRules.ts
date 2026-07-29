@@ -475,4 +475,74 @@ export function validateStepsHierarchy<T extends { position?: string | null; lab
   return { ok: true };
 }
 
+/** 상신(기안) 단계 — 승인/반려 대상이 아님 */
+export function isSubmitterApprovalStep(step: {
+  position?: string | null;
+  step?: string | null;
+  step_label?: string | null;
+  step_position?: string | null;
+  step_order?: number | null;
+}): boolean {
+  const pos = (step.position || step.step_position || '').toLowerCase();
+  if (pos === 'contractor_supervisor' || pos === 'contractor_pic') return true;
+  const label = `${step.step || ''}${step.step_label || ''}`;
+  if (label.includes('상신')) return true;
+  return false;
+}
+
+/**
+ * Remove duplicate nodes on one approval line (same position+user, or twin org-labeled copies).
+ * Keeps first occurrence in hierarchy order.
+ */
+export function dedupeApprovalSteps<
+  T extends { position?: string | null; user_id?: string | null },
+>(steps: T[]): T[] {
+  const seenPosUser = new Set<string>();
+  const out: T[] = [];
+  for (const s of steps) {
+    const uid = s.user_id || '';
+    const pos = (s.position || '').toLowerCase();
+    if (!pos || !uid) {
+      out.push(s);
+      continue;
+    }
+    const key = `${pos}:${uid}`;
+    if (seenPosUser.has(key)) continue;
+    seenPosUser.add(key);
+    out.push(s);
+  }
+  return out;
+}
+
+/**
+ * Group key for Approvals UI — never dump all entity docs into one "general" bucket.
+ */
+export function approvalTimelineGroupKey(ap: {
+  run_id?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  id?: string;
+}): string {
+  if (ap.run_id) return `run:${ap.run_id}`;
+  if (ap.entity_type && ap.entity_id) return `${ap.entity_type}:${ap.entity_id}`;
+  return `orphan:${ap.id || 'unknown'}`;
+}
+
+/**
+ * Sequential display status: a later step cannot look "완료" unless all prior steps are 승인.
+ * Corrupted / mixed-line data is forced back to 대기 for rendering.
+ */
+export function sequentialDisplayStatus(
+  steps: Array<{ step_order?: number | null; status?: string | null }>,
+  step: { step_order?: number | null; status?: string | null },
+): string {
+  const order = step.step_order ?? 99;
+  const raw = step.status || '대기';
+  if (raw !== '승인' && raw !== '반려') return raw;
+  const priors = steps.filter((s) => (s.step_order ?? 99) < order);
+  const blocked = priors.some((s) => s.status !== '승인' && s.status !== '취소');
+  if (blocked && raw === '승인') return '대기';
+  return raw;
+}
+
 

@@ -175,6 +175,8 @@ export interface PermitSignatures {
   sm?: { name: string; signature: string; signed_at: string };              // 담당자(SM)
   site_director?: { name: string; signature: string; signed_at: string };   // 책임자(소장)
   site_supervisor?: { name: string; signature: string; signed_at: string }; // 현장감독자
+  /** 시공사(GC) 관리자 — 결재 스탬프 저장용 (양식 칸은 선택) */
+  gc_manager?: { name: string; signature: string; signed_at: string };
   /** SM 작업 완료(Closure) 최종 서명 — 하단 승인자 칸 */
   closure_approver?: { name: string; signature: string; signed_at: string };
 

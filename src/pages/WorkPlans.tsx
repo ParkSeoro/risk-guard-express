@@ -23,10 +23,14 @@ import { ko } from 'date-fns/locale';
 const statusColors: Record<string, string> = {
   '작성중': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
   '결재중': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+  '승인': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+  '승인완료': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
   '완료': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
   '만료': 'bg-muted text-muted-foreground',
   '반려': 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
 };
+
+const APPROVED_PLAN_STATUSES = new Set(['승인완료', '승인', '완료']);
 
 const WorkPlans = () => {
   const navigate = useNavigate();
@@ -88,7 +92,7 @@ const WorkPlans = () => {
     let items = data || [];
 
     // Auto-expire past end_date items
-    const toExpire = items.filter(p => p.end_date && p.status === '완료' && isPast(parseISO(p.end_date)));
+    const toExpire = items.filter(p => p.end_date && APPROVED_PLAN_STATUSES.has(p.status) && isPast(parseISO(p.end_date)));
     if (toExpire.length > 0) {
       await Promise.all(toExpire.map(p =>
         supabase.from('work_plans').update({ status: '만료' }).eq('id', p.id)
@@ -199,7 +203,11 @@ const WorkPlans = () => {
     }
   };
 
-  const filteredPlans = statusFilter === 'all' ? plans : plans.filter(p => p.status === statusFilter);
+  const filteredPlans = statusFilter === 'all'
+    ? plans
+    : statusFilter === '승인완료'
+      ? plans.filter(p => APPROVED_PLAN_STATUSES.has(p.status))
+      : plans.filter(p => p.status === statusFilter);
 
   if (access.loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
 
@@ -219,7 +227,8 @@ const WorkPlans = () => {
               <SelectItem value="all">전체</SelectItem>
               <SelectItem value="작성중">작성중</SelectItem>
               <SelectItem value="결재중">결재중</SelectItem>
-              <SelectItem value="완료">완료</SelectItem>
+              <SelectItem value="승인완료">승인완료</SelectItem>
+              <SelectItem value="반려">반려</SelectItem>
               <SelectItem value="만료">만료</SelectItem>
             </SelectContent>
           </Select>
@@ -291,8 +300,10 @@ const WorkPlans = () => {
 
       {/* Summary badges */}
       <div className="flex gap-2 flex-wrap">
-        {['작성중', '결재중', '완료', '만료'].map(s => {
-          const count = plans.filter(p => p.status === s).length;
+        {['작성중', '결재중', '승인완료', '반려', '만료'].map(s => {
+          const count = s === '승인완료'
+            ? plans.filter(p => APPROVED_PLAN_STATUSES.has(p.status)).length
+            : plans.filter(p => p.status === s).length;
           if (count === 0) return null;
           return (
             <Badge key={s} variant="outline" className="text-xs cursor-pointer" onClick={() => setStatusFilter(s)}>

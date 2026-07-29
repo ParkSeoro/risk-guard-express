@@ -230,7 +230,7 @@ const Approvals = () => {
       const filtered: Record<string, any[]> = {};
       for (const [runId, steps] of Object.entries(grouped)) {
         const submitted = (steps as any[]).some(s =>
-          s.approver_id === user.id && (s.step === '작성' || isSubmitterApprovalStep(s))
+          s.approver_id === user.id && isSubmitterApprovalStep(s)
         );
         if (submitted) filtered[runId] = steps as any[];
       }
@@ -356,7 +356,7 @@ const Approvals = () => {
           (steps as any[]).some(s => s.approver_id === user.id && s.status === '진행중' && !pendingIds.has(s.id))
         ).length + entityPending.length : 0;
         const submittedCount = user ? Object.values(grouped).filter((steps: any) =>
-          (steps as any[]).some(s => s.approver_id === user.id && s.step === '작성')
+          (steps as any[]).some(s => s.approver_id === user.id && isSubmitterApprovalStep(s))
         ).length : 0;
         const completedCount = Object.values(grouped).filter((steps: any) =>
           (steps as any[]).every(s => s.status === '승인' || s.status === '반려' || s.status === '취소')

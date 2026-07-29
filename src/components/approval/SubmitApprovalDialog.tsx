@@ -96,6 +96,7 @@ export default function SubmitApprovalDialog({
   const [reason, setReason] = useState('');
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [authorCompanyType, setAuthorCompanyType] = useState<string | null>(null);
+  const [isResubmit, setIsResubmit] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -114,7 +115,7 @@ export default function SubmitApprovalDialog({
         }
         setAuthorCompanyType(authorType);
 
-        const [{ data: ap, error: apErr }, { data: tpl }] = await Promise.all([
+        const [{ data: ap, error: apErr }, { data: tpl }, { count: priorCount }] = await Promise.all([
           supabase.rpc('get_eligible_approvers', {
             _project_id: projectId,
             _submitter_company_id: submitterCompanyId,
@@ -126,10 +127,16 @@ export default function SubmitApprovalDialog({
             .eq('entity_type', entityType)
             .eq('is_deleted', false)
             .order('is_default', { ascending: false }),
+          supabase
+            .from('approvals')
+            .select('id', { count: 'exact', head: true })
+            .eq('entity_type', entityType)
+            .eq('entity_id', entityId),
         ]);
         if (apErr) throw apErr;
         setApprovers((ap as any) || []);
         setTemplates(tpl || []);
+        setIsResubmit((priorCount || 0) > 0);
 
         const list = (tpl || []) as any[];
         const uid = (await supabase.auth.getUser()).data.user?.id;
@@ -158,7 +165,7 @@ export default function SubmitApprovalDialog({
         setLoading(false);
       }
     })();
-  }, [open, projectId, entityType, submitterCompanyId]);
+  }, [open, projectId, entityType, entityId, submitterCompanyId]);
 
   const normalizeSteps = (raw: any): Step[] => {
     if (!Array.isArray(raw)) return [];
@@ -263,6 +270,9 @@ export default function SubmitApprovalDialog({
   const submit = async () => {
     if (steps.length === 0) return toast.error('결재선을 1단계 이상 지정하세요');
     if (steps.some((s) => !s.user_id)) return toast.error('각 단계의 결재자를 지정하세요');
+    if (APPROVAL_POLICY.requireResubmitReason && isResubmit && !reason.trim()) {
+      return toast.error('재상신 사유를 입력하세요');
+    }
 
     // 위계(협력사 → 시공사 → 발주처) 강제 정렬 & 검증 + 중복 노드 제거
     const orderedSteps = dedupeApprovalSteps(sortStepsByHierarchy(steps));
@@ -450,8 +460,14 @@ export default function SubmitApprovalDialog({
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs">상신 사유 / 메모 (선택)</Label>
-              <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="재상신 사유 등" />
+              <Label className="text-xs">
+                상신 사유 / 메모{APPROVAL_POLICY.requireResubmitReason && isResubmit ? ' (재상신 필수)' : ' (선택)'}
+              </Label>
+              <Input
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder={isResubmit ? '재상신 사유를 입력하세요' : '상신 메모'}
+              />
             </div>
 
             <label className="flex items-center gap-2 text-sm">

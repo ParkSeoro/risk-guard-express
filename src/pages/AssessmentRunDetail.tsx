@@ -1036,8 +1036,9 @@ const AssessmentRunDetail = () => {
     }
 
 
-    // Unified approval engine: pass approver steps only (skip author at index 0)
-    const approverSteps = linesToUse.slice(1).map((line: any) => ({
+    // Same path as SubmitApprovalDialog: full line incl. 상신 → RPC auto-approves submitter step
+    const { dedupeApprovalSteps, sortStepsByHierarchy, validateStepsHierarchy } = await import('@/lib/approvalRules');
+    const rawSteps = linesToUse.map((line: any) => ({
       label: line.step_label,
       user_id: line.user_id,
       user_name: line.user_name || '',
@@ -1045,12 +1046,18 @@ const AssessmentRunDetail = () => {
       company_id: line.company_id || null,
       company_name: line.company_name || '',
     }));
+    const orderedSteps = dedupeApprovalSteps(sortStepsByHierarchy(rawSteps));
+    const hierarchy = validateStepsHierarchy(orderedSteps);
+    if (!hierarchy.ok) {
+      toast({ title: '결재선 순서 오류', description: hierarchy.message, variant: 'destructive' });
+      return;
+    }
     const { error: submitErr } = await supabase.rpc('submit_approval', {
       _entity_type: 'assessment_run',
       _entity_id: runId,
       _project_id: run.project_id,
       _company_id: null,
-      _steps: approverSteps as any,
+      _steps: orderedSteps as any,
       _reason: approvalComment || null,
     });
     if (submitErr) {
@@ -1060,18 +1067,36 @@ const AssessmentRunDetail = () => {
 
     setRun((prev: any) => ({ ...prev, status: '결재진행' }));
     setShowApproval(false); setApprovalComment('');
-    toast({ title: `결재 상신 완료 (${approverSteps.length}단계 순차 결재)` });
-    log('결재상신', 'assessment_run', runId!, run.project_id, { steps: approverSteps.length });
+    toast({ title: `결재 상신 완료 (${orderedSteps.length}단계 순차 결재)` });
+    log('결재상신', 'assessment_run', runId!, run.project_id, { steps: orderedSteps.length });
+    fetchAll();
   };
 
-  // Cancel approval
+  // Cancel approval — withdraw_approval cancels 진행중/대기 + auto-approved 상신
   const handleCancelApproval = async () => {
     if (!run || !user) return;
-    await supabase.from('approvals').update({ status: '취소' }).eq('run_id', runId).eq('status', '대기');
-    await supabase.from('assessment_runs').update({ status: '검증완료' }).eq('id', runId);
+    const { data, error } = await supabase.rpc('withdraw_approval', {
+      _entity_type: 'assessment_run',
+      _entity_id: runId,
+      _reason: '상신 취소',
+    });
+    if (error) {
+      toast({ title: '상신 취소 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
+    const r = data as any;
+    if (r?.error) {
+      const msg =
+        r.error === 'ALREADY_DECIDED' ? '이미 결재가 진행된 문서는 회수할 수 없습니다.'
+        : r.error === 'NOT_SUBMITTER' ? '상신자 또는 관리자만 회수할 수 있습니다.'
+        : r.error;
+      toast({ title: '상신 취소 실패', description: msg, variant: 'destructive' });
+      return;
+    }
     setRun((prev: any) => ({ ...prev, status: '검증완료' }));
     toast({ title: '결재 상신이 취소되었습니다.' });
     log('상신취소', 'assessment_run', runId!, run.project_id);
+    fetchAll();
   };
 
   // Final approval — uses unified RPC
@@ -1117,14 +1142,37 @@ const AssessmentRunDetail = () => {
     fetchAll();
   };
 
-  // Resubmit
+  // Resubmit — clear any active approval via RPC, then return to 제출됨 for re-validation
   const handleResubmit = async () => {
-    if (!run) return;
-    await supabase.from('approvals').update({ status: '취소' }).eq('run_id', runId).eq('status', '대기');
-    await supabase.from('assessment_runs').update({ status: '제출됨' }).eq('id', runId);
+    if (!run || !user) return;
+    if (run.status === '결재진행') {
+      const { data, error } = await supabase.rpc('withdraw_approval', {
+        _entity_type: 'assessment_run',
+        _entity_id: runId,
+        _reason: '재제출을 위한 회수',
+      });
+      if (error) {
+        toast({ title: '회수 실패', description: error.message, variant: 'destructive' });
+        return;
+      }
+      const r = data as any;
+      if (r?.error && r.error !== 'NO_APPROVAL') {
+        const msg =
+          r.error === 'ALREADY_DECIDED' ? '이미 결재가 진행된 문서는 회수할 수 없습니다. 반려 후 재제출하세요.'
+          : r.error;
+        toast({ title: '회수 실패', description: msg, variant: 'destructive' });
+        return;
+      }
+    }
+    const { error: updErr } = await supabase.from('assessment_runs').update({ status: '제출됨' }).eq('id', runId);
+    if (updErr) {
+      toast({ title: '재제출 실패', description: updErr.message, variant: 'destructive' });
+      return;
+    }
     setRun((prev: any) => ({ ...prev, status: '제출됨' }));
     toast({ title: '재제출 완료. 재검증을 실행하세요.' });
     log('재제출', 'assessment_run', runId!, run.project_id);
+    fetchAll();
   };
 
   // Unified auto-remediation wizard: step 1 = generate & show, step 2 = apply

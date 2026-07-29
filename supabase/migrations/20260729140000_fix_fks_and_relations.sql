@@ -44,7 +44,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.tbm_participations
       ADD CONSTRAINT tbm_participations_worker_id_fkey
-      FOREIGN KEY (worker_id) REFERENCES public.workers(id) ON DELETE SET NULL;
+      FOREIGN KEY (worker_id) REFERENCES public.workers(id) ON DELETE SET NULL NOT VALID;
   END IF;
 END $$;
 

@@ -15,7 +15,9 @@ export type RestrictedZoneGeom = {
   banned_company_ids: string[] | null;
   banned_job_types: string[] | null;
   access_rules?: unknown;
+  rule_type?: string | null;
   zone_category?: string | null;
+  zone_color?: string | null;
   is_active?: boolean;
 };
 
@@ -49,14 +51,15 @@ export type BanSubject = {
 };
 
 /**
- * Entry is forbidden when access_rules (or legacy ban lists) say so.
- * access_rules.mode=deny_all → everyone; allow_* → not in allow-list.
+ * Entry is forbidden when access_rules / rule_type say so.
+ * ALLOW = whitelist, DENY = blacklist (see accessRules.ts).
  */
 export function isSubjectBanned(zone: RestrictedZoneGeom, subject: BanSubject): boolean {
   return isAccessForbidden(zone.access_rules, subject, {
     banned_worker_ids: zone.banned_worker_ids,
     banned_company_ids: zone.banned_company_ids,
     banned_job_types: zone.banned_job_types,
+    rule_type: zone.rule_type,
   });
 }
 

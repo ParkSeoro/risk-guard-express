@@ -24,17 +24,26 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Map, Upload, Save, Loader2, Layers, Satellite, Image as ImageIcon, ShieldAlert, Trash2,
+  Map, Upload, Save, Loader2, Layers, Satellite, Image as ImageIcon, ShieldAlert, Trash2, Pencil,
   RotateCcw, RotateCw, Move, ZoomIn, ZoomOut, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
+  Square, Pentagon, Circle as CircleIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import ZoneAccessRulesDialog, { type ZoneDraftPayload } from "@/components/geofence/ZoneAccessRulesDialog";
+import ZoneAccessRulesDialog, {
+  type ZoneDraftPayload,
+  type ZoneEditSeed,
+} from "@/components/geofence/ZoneAccessRulesDialog";
 import RotatedImageOverlay from "@/components/geofence/RotatedImageOverlay";
 import OrthogonalZoneCanvas from "@/components/geofence/OrthogonalZoneCanvas";
 import { fetchProjectCompanies } from "@/lib/projectCompanies";
-import { accessRulesSummary } from "@/lib/tracking/accessRules";
-import type { DrawnShape } from "@/components/geofence/LeafletDrawControl";
+import {
+  accessRulesSummary,
+  parseAccessRules,
+  ruleTypeLabel,
+  ZONE_COLOR_OPTIONS,
+} from "@/lib/tracking/accessRules";
+import type { DrawnShape, DrawTool } from "@/components/geofence/LeafletDrawControl";
 import {
   bottomRight,
   cornersCenter,
@@ -72,6 +81,8 @@ type Zone = {
   zone_category?: string | null;
   access_rules?: unknown;
   is_active?: boolean;
+  rule_type?: string | null;
+  zone_color?: string | null;
 };
 
 type LayerState = {
@@ -112,8 +123,14 @@ if (typeof document !== "undefined" && !document.getElementById("site-control-bo
   style.id = "site-control-bounds-css";
   style.textContent = `
     .site-control-bounds-marker { background: transparent !important; border: none !important; }
+    .leaflet-draw { display: none !important; }
   `;
   document.head.appendChild(style);
+} else if (typeof document !== "undefined") {
+  const el = document.getElementById("site-control-bounds-css");
+  if (el && !el.textContent?.includes("leaflet-draw")) {
+    el.textContent += `\n.leaflet-draw { display: none !important; }`;
+  }
 }
 
 function FitToTargets({
@@ -266,7 +283,10 @@ export default function SiteControlMap() {
   const [companies, setCompanies] = useState<{ id: string; name: string }[]>([]);
   const [panelTab, setPanelTab] = useState<PanelTab>("mapping");
   const [pendingShape, setPendingShape] = useState<DrawnShape | null>(null);
+  const [editingZone, setEditingZone] = useState<ZoneEditSeed | null>(null);
   const [zoneModalOpen, setZoneModalOpen] = useState(false);
+  const [drawTool, setDrawTool] = useState<DrawTool | null>(null);
+  const [drawColor, setDrawColor] = useState<string>("#ef4444");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [savingBounds, setSavingBounds] = useState(false);
@@ -349,7 +369,7 @@ export default function SiteControlMap() {
     const { data } = await supabase
       .from("restricted_zones")
       .select(
-        "id,name,geometry_type,geo_polygon,center_lat,center_lng,radius_m,zone_category,access_rules,is_active",
+        "id,name,geometry_type,geo_polygon,center_lat,center_lng,radius_m,zone_category,access_rules,is_active,rule_type,zone_color",
       )
       .eq("project_id", projectId)
       .eq("is_deleted", false)
@@ -432,11 +452,26 @@ export default function SiteControlMap() {
   };
 
   const onShapeCreated = useCallback((shape: DrawnShape) => {
+    setEditingZone(null);
     setPendingShape(shape);
+    setDrawTool(null);
     setZoneModalOpen(true);
     setLayers((l) => ({ ...l, zones: true }));
     setPanelTab("zones");
   }, []);
+
+  const openEditZone = (z: Zone) => {
+    setPendingShape(null);
+    setEditingZone({
+      id: z.id,
+      name: z.name,
+      zone_category: z.zone_category,
+      zone_color: z.zone_color,
+      rule_type: z.rule_type,
+      access_rules: z.access_rules,
+    });
+    setZoneModalOpen(true);
+  };
 
   const saveZoneFromModal = async (payload: ZoneDraftPayload) => {
     if (!projectId) {
@@ -444,10 +479,44 @@ export default function SiteControlMap() {
       return;
     }
     setSaving(true);
+
+    // Edit: update attributes only (keep geometry)
+    if (payload.zoneId) {
+      const { error } = await supabase
+        .from("restricted_zones")
+        .update({
+          name: payload.name,
+          zone_category: payload.zone_category,
+          zone_color: payload.zone_color,
+          rule_type: payload.rule_type,
+          access_rules: payload.access_rules,
+        } as any)
+        .eq("id", payload.zoneId);
+      setSaving(false);
+      if (error) {
+        toast.error("수정 실패: " + error.message);
+        return;
+      }
+      toast.success("통제 조건이 업데이트되었습니다");
+      setZoneModalOpen(false);
+      setEditingZone(null);
+      setPendingShape(null);
+      void loadZones();
+      return;
+    }
+
+    if (!payload.shape) {
+      setSaving(false);
+      toast.error("도형 정보가 없습니다. 다시 그려 주세요.");
+      return;
+    }
+
     const base = {
       project_id: projectId,
       name: payload.name,
       zone_category: payload.zone_category,
+      zone_color: payload.zone_color,
+      rule_type: payload.rule_type,
       access_rules: payload.access_rules,
       banned_worker_ids: [] as string[],
       banned_company_ids: [] as string[],
@@ -484,6 +553,7 @@ export default function SiteControlMap() {
     toast.success("위험 구역이 저장되었습니다");
     setZoneModalOpen(false);
     setPendingShape(null);
+    setEditingZone(null);
     void loadZones();
   };
 
@@ -710,8 +780,8 @@ export default function SiteControlMap() {
 
               <TabsContent value="zones" className="mt-3 space-y-3 focus-visible:outline-none">
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  중앙 평면 도면(회전 없음)에서 <b>다각형</b>·<b>원형</b>을 그리면, 맵핑된 GPS Bounds·Rotation으로
-                  위도/경도로 자동 변환되어 저장됩니다. 위성 베이스맵은 이 탭에서 숨겨집니다.
+                  아래 버튼으로 평면 도면에 구역을 그립니다. 완료 후 Whitelist/Blacklist 통제를 설정하면
+                  GPS 좌표로 자동 변환·저장됩니다.
                 </p>
                 {!activeMap?.image_url && (
                   <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
@@ -723,13 +793,63 @@ export default function SiteControlMap() {
                     맵핑 탭에서 TL/TR/BL 정렬을 저장해야 좌표 역산이 가능합니다.
                   </div>
                 )}
-                <div className="rounded-md border bg-muted/30 p-2 text-[11px] text-muted-foreground space-y-1">
-                  <div className="font-medium text-foreground">그리기 안내</div>
-                  <ul className="list-disc pl-4 space-y-0.5">
-                    <li>좌측 상단 Leaflet Draw로 도형 완성</li>
-                    <li>출입 통제(전체금지/업체/직종) 설정 후 저장</li>
-                    <li>우측 목록에서 알람 ON/OFF 즉시 반영</li>
-                  </ul>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs">구역 색상</Label>
+                  <div className="flex gap-1.5">
+                    {ZONE_COLOR_OPTIONS.map((c) => (
+                      <button
+                        key={c.value}
+                        type="button"
+                        onClick={() => setDrawColor(c.value)}
+                        className={`h-9 flex-1 rounded-md border text-[11px] font-semibold transition ${
+                          drawColor === c.value ? "ring-2 ring-offset-1 ring-primary" : ""
+                        }`}
+                        style={{ backgroundColor: `${c.value}22`, borderColor: c.value, color: c.value }}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs">그리기 도구</Label>
+                  <div className="grid gap-2">
+                    <Button
+                      type="button"
+                      variant={drawTool === "rectangle" ? "default" : "outline"}
+                      className="h-11 justify-start"
+                      disabled={!activeMap?.image_url || !draftCorners}
+                      onClick={() => setDrawTool((t) => (t === "rectangle" ? null : "rectangle"))}
+                    >
+                      <Square className="h-4 w-4 mr-2" /> 사각형 그리기
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={drawTool === "polygon" ? "default" : "outline"}
+                      className="h-11 justify-start"
+                      disabled={!activeMap?.image_url || !draftCorners}
+                      onClick={() => setDrawTool((t) => (t === "polygon" ? null : "polygon"))}
+                    >
+                      <Pentagon className="h-4 w-4 mr-2" /> 다각형 그리기
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={drawTool === "circle" ? "default" : "outline"}
+                      className="h-11 justify-start"
+                      disabled={!activeMap?.image_url || !draftCorners}
+                      onClick={() => setDrawTool((t) => (t === "circle" ? null : "circle"))}
+                    >
+                      <CircleIcon className="h-4 w-4 mr-2" /> 원형 그리기
+                    </Button>
+                  </div>
+                  {drawTool && (
+                    <p className="text-[10px] text-primary">
+                      {drawTool === "rectangle" ? "사각형" : drawTool === "polygon" ? "다각형" : "원형"}{" "}
+                      모드 — 도면에서 드래그/클릭으로 완성하세요. (Esc로 취소)
+                    </p>
+                  )}
                 </div>
               </TabsContent>
             </Tabs>
@@ -745,6 +865,10 @@ export default function SiteControlMap() {
                 corners={draftCorners}
                 zones={zones}
                 pendingGeoShape={pendingShape}
+                pendingColor={drawColor}
+                activeTool={drawTool}
+                drawColor={drawColor}
+                onToolFinished={() => setDrawTool(null)}
                 onGeoShapeCreated={onShapeCreated}
               />
             ) : (
@@ -892,49 +1016,96 @@ export default function SiteControlMap() {
                   등록된 위험구역이 없습니다.
                 </div>
               )}
-              {zones.map((z) => (
-                <div
-                  key={z.id}
-                  className="rounded-md border p-2.5 space-y-2 hover:bg-muted/40 transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <button
-                      type="button"
-                      className="min-w-0 text-left flex-1"
-                      onClick={() => focusZone(z)}
-                    >
-                      <div className="font-medium truncate text-sm text-foreground">{z.name}</div>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {z.zone_category && (
-                          <Badge variant="outline" className="text-[10px]">{z.zone_category}</Badge>
-                        )}
-                        <Badge variant="secondary" className="text-[10px]">
-                          {z.geometry_type === "radius" ? `원 ${z.radius_m}m` : "폴리곤"}
-                        </Badge>
+              {zones.map((z) => {
+                const rules = parseAccessRules(z.access_rules);
+                const rt =
+                  z.rule_type === "ALLOW" || z.rule_type === "DENY" ? z.rule_type : rules.rule_type;
+                const companyNames = (rules.company_ids || [])
+                  .map((id) => companies.find((c) => c.id === id)?.name || id.slice(0, 6))
+                  .slice(0, 6);
+                const jobs = (rules.job_types || []).slice(0, 6);
+                return (
+                  <div
+                    key={z.id}
+                    className="rounded-md border p-2.5 space-y-2 hover:bg-muted/40 transition-colors"
+                    style={{ borderLeftWidth: 4, borderLeftColor: z.zone_color || "#ef4444" }}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <button
+                        type="button"
+                        className="min-w-0 text-left flex-1"
+                        onClick={() => focusZone(z)}
+                      >
+                        <div className="font-medium truncate text-sm text-foreground">{z.name}</div>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {z.zone_category && (
+                            <Badge variant="outline" className="text-[10px]">{z.zone_category}</Badge>
+                          )}
+                          <Badge variant="secondary" className="text-[10px]">
+                            {z.geometry_type === "radius" ? `원 ${z.radius_m}m` : "폴리곤"}
+                          </Badge>
+                          <Badge
+                            className={`text-[10px] ${
+                              rt === "ALLOW"
+                                ? "bg-emerald-600 hover:bg-emerald-600"
+                                : "bg-destructive hover:bg-destructive"
+                            }`}
+                          >
+                            {ruleTypeLabel(rt)}
+                          </Badge>
+                        </div>
+                      </button>
+                      <div className="flex shrink-0">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          title="통제 조건 수정"
+                          onClick={() => openEditZone(z)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => void deleteZone(z.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
-                    </button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-destructive shrink-0"
-                      onClick={() => void deleteZone(z.id)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1">
+                      {companyNames.map((n) => (
+                        <Badge key={`c-${z.id}-${n}`} variant="outline" className="text-[10px] font-normal">
+                          {rt === "ALLOW" ? "허용" : "차단"} · {n}
+                        </Badge>
+                      ))}
+                      {jobs.map((j) => (
+                        <Badge key={`j-${z.id}-${j}`} variant="outline" className="text-[10px] font-normal">
+                          {rt === "ALLOW" ? "허용" : "차단"} · {j}
+                        </Badge>
+                      ))}
+                      {companyNames.length + jobs.length === 0 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {accessRulesSummary(z.access_rules, z.rule_type)}
+                        </span>
+                      )}
+                    </div>
+
+                    <label className="flex items-center justify-between gap-2 text-xs cursor-pointer border-t pt-2">
+                      <span className="font-medium">알람 활성화</span>
+                      <Switch
+                        checked={z.is_active !== false}
+                        onCheckedChange={(v) => void toggleZoneActive(z.id, v)}
+                      />
+                    </label>
                   </div>
-                  <div className="text-[10px] text-muted-foreground">
-                    통제: {accessRulesSummary(z.access_rules)}
-                  </div>
-                  <label className="flex items-center justify-between gap-2 text-xs cursor-pointer border-t pt-2">
-                    <span className="font-medium">알람 활성화</span>
-                    <Switch
-                      checked={z.is_active !== false}
-                      onCheckedChange={(v) => void toggleZoneActive(z.id, v)}
-                    />
-                  </label>
-                </div>
-              ))}
+                );
+              })}
             </CardContent>
           </Card>
         )}
@@ -943,11 +1114,16 @@ export default function SiteControlMap() {
       <ZoneAccessRulesDialog
         open={zoneModalOpen}
         shape={pendingShape}
+        editZone={editingZone}
         companies={companies}
+        defaultColor={drawColor}
         saving={saving}
         onOpenChange={(open) => {
           setZoneModalOpen(open);
-          if (!open) setPendingShape(null);
+          if (!open) {
+            setPendingShape(null);
+            setEditingZone(null);
+          }
         }}
         onSave={saveZoneFromModal}
       />

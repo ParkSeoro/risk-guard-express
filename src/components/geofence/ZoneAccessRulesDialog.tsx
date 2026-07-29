@@ -19,10 +19,13 @@ import {
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import {
-  AccessRuleMode,
   AccessRules,
-  DEFAULT_ACCESS_RULES,
   ZONE_CATEGORY_OPTIONS,
+  ZONE_COLOR_OPTIONS,
+  ZoneRuleType,
+  ZoneColor,
+  buildAccessRules,
+  parseAccessRules,
 } from "@/lib/tracking/accessRules";
 import { jobCategoryEntries } from "@/lib/jobCategories";
 import type { DrawnShape } from "@/components/geofence/LeafletDrawControl";
@@ -30,8 +33,21 @@ import type { DrawnShape } from "@/components/geofence/LeafletDrawControl";
 export type ZoneDraftPayload = {
   name: string;
   zone_category: string;
+  zone_color: ZoneColor | string;
+  rule_type: ZoneRuleType;
   access_rules: AccessRules;
-  shape: DrawnShape;
+  shape: DrawnShape | null;
+  /** When set, update existing zone instead of insert */
+  zoneId?: string;
+};
+
+export type ZoneEditSeed = {
+  id: string;
+  name: string;
+  zone_category?: string | null;
+  zone_color?: string | null;
+  rule_type?: string | null;
+  access_rules?: unknown;
 };
 
 type CompanyOpt = { id: string; name: string };
@@ -39,7 +55,9 @@ type CompanyOpt = { id: string; name: string };
 type Props = {
   open: boolean;
   shape: DrawnShape | null;
+  editZone?: ZoneEditSeed | null;
   companies: CompanyOpt[];
+  defaultColor?: string;
   saving?: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (payload: ZoneDraftPayload) => void | Promise<void>;
@@ -48,25 +66,43 @@ type Props = {
 export default function ZoneAccessRulesDialog({
   open,
   shape,
+  editZone,
   companies,
+  defaultColor = "#ef4444",
   saving,
   onOpenChange,
   onSave,
 }: Props) {
   const [name, setName] = useState("위험구역");
   const [category, setCategory] = useState<string>("추락위험");
-  const [mode, setMode] = useState<AccessRuleMode>("deny_all");
+  const [ruleType, setRuleType] = useState<ZoneRuleType>("ALLOW");
+  const [zoneColor, setZoneColor] = useState<string>(defaultColor);
   const [companyIds, setCompanyIds] = useState<string[]>([]);
   const [jobTypes, setJobTypes] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
+    if (editZone) {
+      const parsed = parseAccessRules(editZone.access_rules);
+      const rt =
+        editZone.rule_type === "ALLOW" || editZone.rule_type === "DENY"
+          ? editZone.rule_type
+          : parsed.rule_type;
+      setName(editZone.name || "위험구역");
+      setCategory(editZone.zone_category || "추락위험");
+      setRuleType(rt);
+      setZoneColor(editZone.zone_color || defaultColor);
+      setCompanyIds(parsed.company_ids || []);
+      setJobTypes(parsed.job_types || []);
+      return;
+    }
     setName("위험구역");
     setCategory("추락위험");
-    setMode("deny_all");
+    setRuleType("ALLOW");
+    setZoneColor(defaultColor);
     setCompanyIds([]);
     setJobTypes([]);
-  }, [open, shape]);
+  }, [open, shape, editZone, defaultColor]);
 
   const toggleCompany = (id: string, on: boolean) => {
     setCompanyIds((prev) => (on ? [...new Set([...prev, id])] : prev.filter((x) => x !== id)));
@@ -75,23 +111,20 @@ export default function ZoneAccessRulesDialog({
     setJobTypes((prev) => (on ? [...new Set([...prev, job])] : prev.filter((x) => x !== job)));
   };
 
+  const hasTargets = companyIds.length > 0 || jobTypes.length > 0;
+  const canSave = (!!shape || !!editZone) && hasTargets;
+
   const handleSave = async () => {
-    if (!shape) return;
-    const access_rules: AccessRules =
-      mode === "allow_companies"
-        ? { mode, company_ids: companyIds, job_types: [] }
-        : mode === "allow_job_types"
-          ? { mode, company_ids: [], job_types: jobTypes }
-          : { ...DEFAULT_ACCESS_RULES };
-
-    if (mode === "allow_companies" && companyIds.length === 0) return;
-    if (mode === "allow_job_types" && jobTypes.length === 0) return;
-
+    if (!canSave) return;
+    const access_rules = buildAccessRules(ruleType, companyIds, jobTypes);
     await onSave({
       name: name.trim() || "위험구역",
       zone_category: category,
+      zone_color: zoneColor,
+      rule_type: ruleType,
       access_rules,
-      shape,
+      shape: shape,
+      zoneId: editZone?.id,
     });
   };
 
@@ -100,13 +133,15 @@ export default function ZoneAccessRulesDialog({
       ? `원형 · 반경 ${shape.radius_m}m`
       : shape?.kind === "polygon"
         ? `다각형 · ${shape.latlngs.length}점`
-        : "";
+        : editZone
+          ? "기존 도형 유지 · 통제 조건만 수정"
+          : "";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>위험구역 속성 · 출입 통제</DialogTitle>
+          <DialogTitle>{editZone ? "구역 통제 조건 수정" : "위험구역 속성 · 출입 통제"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 text-sm">
@@ -135,45 +170,65 @@ export default function ZoneAccessRulesDialog({
             </Select>
           </div>
 
+          <div className="space-y-1.5">
+            <Label>구역 색상</Label>
+            <div className="flex gap-2">
+              {ZONE_COLOR_OPTIONS.map((c) => (
+                <button
+                  key={c.value}
+                  type="button"
+                  onClick={() => setZoneColor(c.value)}
+                  className={`h-9 flex-1 rounded-md border text-xs font-medium transition ${
+                    zoneColor === c.value ? "ring-2 ring-offset-1 ring-primary border-primary" : ""
+                  }`}
+                  style={{ backgroundColor: `${c.value}22`, borderColor: c.value }}
+                >
+                  <span className="inline-block h-2.5 w-2.5 rounded-full mr-1.5 align-middle" style={{ background: c.value }} />
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-2">
-            <Label>출입 통제 / 허용 대상</Label>
+            <Label>통제 방식</Label>
             <div className="space-y-2 rounded-md border p-2.5">
-              <label className="flex items-start gap-2 cursor-pointer">
-                <Checkbox
-                  checked={mode === "deny_all"}
-                  onCheckedChange={(c) => c && setMode("deny_all")}
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="rule_type"
+                  className="mt-1"
+                  checked={ruleType === "ALLOW"}
+                  onChange={() => setRuleType("ALLOW")}
                 />
                 <span>
-                  <span className="font-medium">전면 통제</span>
-                  <span className="block text-[11px] text-muted-foreground">관리자 외 접근 금지 · 진입 시 전원 알람</span>
+                  <span className="font-medium">지정 대상만 출입 허용 (Whitelist)</span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    선택한 업체·직종만 출입 가능 · 그 외 진입 시 알람
+                  </span>
                 </span>
               </label>
-              <label className="flex items-start gap-2 cursor-pointer">
-                <Checkbox
-                  checked={mode === "allow_companies"}
-                  onCheckedChange={(c) => c && setMode("allow_companies")}
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="rule_type"
+                  className="mt-1"
+                  checked={ruleType === "DENY"}
+                  onChange={() => setRuleType("DENY")}
                 />
                 <span>
-                  <span className="font-medium">특정 업체만 허용</span>
-                  <span className="block text-[11px] text-muted-foreground">선택한 협력사만 출입 가능</span>
-                </span>
-              </label>
-              <label className="flex items-start gap-2 cursor-pointer">
-                <Checkbox
-                  checked={mode === "allow_job_types"}
-                  onCheckedChange={(c) => c && setMode("allow_job_types")}
-                />
-                <span>
-                  <span className="font-medium">특정 직종만 허용</span>
-                  <span className="block text-[11px] text-muted-foreground">선택한 직종만 출입 가능</span>
+                  <span className="font-medium">지정 대상 출입 전면 통제 (Blacklist)</span>
+                  <span className="block text-[11px] text-muted-foreground">
+                    선택한 업체·직종 진입 시 알람 · 그 외는 허용
+                  </span>
                 </span>
               </label>
             </div>
           </div>
 
-          {mode === "allow_companies" && (
-            <div className="space-y-2 max-h-40 overflow-auto rounded-md border p-2">
-              <p className="text-[11px] text-muted-foreground">허용 업체 선택</p>
+          <div className="space-y-2">
+            <Label>대상 지정 — 업체</Label>
+            <div className="space-y-1 max-h-32 overflow-auto rounded-md border p-2">
               {companies.length === 0 && (
                 <p className="text-xs text-destructive">등록된 프로젝트 업체가 없습니다.</p>
               )}
@@ -186,18 +241,15 @@ export default function ZoneAccessRulesDialog({
                   <span className="truncate">{c.name}</span>
                 </label>
               ))}
-              {mode === "allow_companies" && companyIds.length === 0 && (
-                <p className="text-[10px] text-amber-600">업체를 1곳 이상 선택하세요.</p>
-              )}
             </div>
-          )}
+          </div>
 
-          {mode === "allow_job_types" && (
-            <div className="space-y-3 max-h-48 overflow-auto rounded-md border p-2">
-              <p className="text-[11px] text-muted-foreground">허용 직종 선택 (표준 직종만)</p>
-              {jobCategoryEntries().map(([category, jobs]) => (
-                <div key={category} className="space-y-1">
-                  <p className="text-[10px] font-semibold text-muted-foreground">{category}</p>
+          <div className="space-y-2">
+            <Label>대상 지정 — 직종</Label>
+            <div className="space-y-2 max-h-40 overflow-auto rounded-md border p-2">
+              {jobCategoryEntries().map(([cat, jobs]) => (
+                <div key={cat} className="space-y-1">
+                  <p className="text-[10px] font-semibold text-muted-foreground">{cat}</p>
                   {jobs.map((job) => (
                     <label key={job} className="flex items-center gap-2 text-xs cursor-pointer py-0.5">
                       <Checkbox
@@ -209,10 +261,11 @@ export default function ZoneAccessRulesDialog({
                   ))}
                 </div>
               ))}
-              {jobTypes.length === 0 && (
-                <p className="text-[10px] text-amber-600">직종을 1개 이상 선택하세요.</p>
-              )}
             </div>
+          </div>
+
+          {!hasTargets && (
+            <p className="text-[10px] text-amber-600">업체 또는 직종을 1개 이상 선택하세요.</p>
           )}
         </div>
 
@@ -220,18 +273,9 @@ export default function ZoneAccessRulesDialog({
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={!!saving}>
             취소
           </Button>
-          <Button
-            type="button"
-            onClick={() => void handleSave()}
-            disabled={
-              !!saving ||
-              !shape ||
-              (mode === "allow_companies" && companyIds.length === 0) ||
-              (mode === "allow_job_types" && jobTypes.length === 0)
-            }
-          >
+          <Button type="button" onClick={() => void handleSave()} disabled={!!saving || !canSave}>
             {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-            구역 저장
+            {editZone ? "조건 저장" : "구역 저장"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -8,9 +8,12 @@
 import { supabase } from '@/integrations/supabase/client';
 import {
   AI_PENDING_HAZARD,
+  AI_ROW_FAILED_HAZARD,
+  AI_ROW_FAILED_NOTE_PREFIX,
   fetchJsaTimeline,
-  fetchRiskRowDetail,
+  fetchRiskRowDetailWithRetry,
   mapPool,
+  RISK_ROW_CONCURRENCY,
   type AIGenerateOptions,
   type DetailLevel,
 } from '@/lib/riskAutoGenAI';
@@ -294,15 +297,15 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       message: `세부작업 ${inserted.length}행 표시 · 위험요인 병렬 생성 중…`,
     });
 
-    // ── Phase 2: parallel per-row fill + patch ──
-    await mapPool(inserted, 4, async (row) => {
+    // ── Phase 2: capped parallel per-row fill + auto-retry ──
+    await mapPool(inserted, RISK_ROW_CONCURRENCY, async (row) => {
       if (state.status !== 'running') {
         interrupted = true;
         return;
       }
       const subTask = row.sub_task || '';
       try {
-        const detail = await fetchRiskRowDetail({ ...opts, subTask });
+        const detail = await fetchRiskRowDetailWithRetry({ ...opts, subTask });
         const lg = detail.likelihood_grade || '중';
         const sg = detail.severity_grade || '중';
         const ilg = detail.improved_likelihood_grade || '하';
@@ -339,8 +342,6 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
         }
 
         filledTotal += 1;
-        const stillPending = allPending.filter((id) => id !== row.id);
-        // mutate shared list
         const idx = allPending.indexOf(row.id);
         if (idx >= 0) allPending.splice(idx, 1);
 
@@ -352,15 +353,15 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
         });
       } catch (err: any) {
         interrupted = true;
-        console.warn('[AutoGenJob] risk_row failed:', subTask, err?.message || err);
-        // Leave placeholder so user sees which row failed; clear pending flag later
+        console.warn('[AutoGenJob] risk_row failed after retries:', subTask, err?.message || err);
         const idx = allPending.indexOf(row.id);
         if (idx >= 0) allPending.splice(idx, 1);
         await supabase
           .from('risk_items')
           .update({
-            hazard: '생성 실패 — 수동 입력 또는 재시도',
-            note: `[AI_ROW_FAILED] ${err?.message || ''}`.slice(0, 200),
+            hazard: AI_ROW_FAILED_HAZARD,
+            hazard_situation: 'API 과부하 또는 일시 오류로 생성되지 않았습니다.',
+            note: `${AI_ROW_FAILED_NOTE_PREFIX} ${err?.message || ''} · [재시도] 버튼을 눌러주세요`.slice(0, 240),
           })
           .eq('id', row.id);
         patch({ pendingIds: [...allPending] });

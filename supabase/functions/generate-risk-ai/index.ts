@@ -198,11 +198,22 @@ function mapRawItem(item: any, processName: string): any | null {
     : String(ppeRaw).split(/[,，]/).map((s) => s.trim()).filter(Boolean);
 
   const legalRaw = item.legal_basis ?? item["법적근거"] ?? "";
-  const legal_basis = Array.isArray(legalRaw)
+  let legal_basis = Array.isArray(legalRaw)
     ? legalRaw.map(String).filter(Boolean)
     : String(legalRaw).trim()
     ? [String(legalRaw).trim()]
     : [];
+
+  // Harvest inline citations if legal_basis array was empty
+  if (legal_basis.length === 0) {
+    const blob = `${hazard_situation}\n${existing_measure}\n${improvement_measure}`;
+    const found = blob.match(
+      /[\[(]?산업안전보건기준에\s*관한\s*규칙\s*제\s*\d+\s*조[\])]?|[\[(]?산안기준규칙\s*제\s*\d+\s*조[\])]?|[\[(]?KOSHA\s*GUIDE[^\])\n,]{0,40}[\])]?/gi,
+    );
+    if (found?.length) {
+      legal_basis = [...new Set(found.map((s) => s.replace(/^[\[(]|[\])]$/g, "").trim()))];
+    }
+  }
 
   const improvedLikelihood = String(
     item.residual_likelihood || item["개선후위험도"] || item.improved_likelihood_grade || item.residual_risk_level || "",
@@ -656,13 +667,23 @@ serve(async (req) => {
       }
 
       const sys =
-        `너는 건설안전 기술사다. 반드시 JSON 객체 하나만 출력한다. 마크다운·배열 금지.\n` +
-        `스키마 키: process, sub_work, hazard_factor, hazard_situation, existing_control, improvement_control, ` +
-        `initial_likelihood, initial_severity, residual_likelihood, residual_severity, ppe\n` +
-        `likelihood/severity는 상|중|하. ppe는 문자열 또는 배열.`;
+        `너는 대한민국 건설안전 기술사다. 반드시 JSON 객체 하나만 출력한다. 마크다운·배열·서론 금지.\n` +
+        `스키마 키(필수): process, sub_work, hazard_factor, hazard_situation, existing_control, improvement_control, ` +
+        `initial_likelihood, initial_severity, residual_likelihood, residual_severity, ppe, legal_basis\n` +
+        `likelihood/severity는 상|중|하. ppe는 문자열 또는 배열. legal_basis는 조항 문자열 배열.\n` +
+        `[법적 근거 필수 — 위반 시 무효]\n` +
+        `1) hazard_situation 과 improvement_control 문장에는 반드시 구체적인 법적 근거를 ` +
+        `문장 첫머리 또는 괄호 안에 명시한다.\n` +
+        `2) 허용 형식 예: [산업안전보건기준에 관한 규칙 제225조], (산안기준규칙 제38조), [KOSHA GUIDE C-42-2021]\n` +
+        `3) "안전수칙 준수" 같은 추상 문구만 쓰면 안 된다. 조항 번호가 없는 문장은 금지.\n` +
+        `4) legal_basis 배열에도 동일 조항을 넣는다.\n` +
+        `예시 improvement_control: "(산안기준규칙 제225조) 이동식 국소배기장치를 용접점 30cm 이내에 설치하고 흡입 풍속을 유지한다."\n` +
+        `예시 hazard_situation: "[산업안전보건기준에 관한 규칙 제42조] 개구부 난간·덮개 미설치 상태에서 보행 중 추락."`;
       const user =
         `[입력] 공종:${process_name} / 세부작업:${st} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
-        `위 세부작업 1건에 대한 위험성평가만 작성하라. 추상문구 금지. 공학·관리·PPE 포함.`;
+        `위 세부작업 1건에 대한 위험성평가만 작성하라.\n` +
+        `추상문구 금지. 공학·관리·PPE 포함.\n` +
+        `hazard_situation·improvement_control에 [산안기준규칙 제OOO조] 또는 [KOSHA GUIDE] 조항을 반드시 명시하고 legal_basis에도 넣으라.`;
 
       try {
         const { content } = await callDeepseekRiskChat({
@@ -671,7 +692,7 @@ serve(async (req) => {
             { role: "user", content: user },
           ],
           temperature: 0.25,
-          max_tokens: 1400,
+          max_tokens: 1800,
           timeoutMs: 45_000,
         });
         const parsed = parseDeepseekRiskJson<any>(content);
@@ -704,6 +725,10 @@ serve(async (req) => {
             ppe: ["안전모", "안전화"],
             legal_basis: [] as string[],
           };
+          // Soft row: still try to keep any legal strings the model emitted
+          const softLegal = raw.legal_basis ?? raw["법적근거"];
+          if (Array.isArray(softLegal)) soft.legal_basis = softLegal.map(String).filter(Boolean);
+          else if (typeof softLegal === "string" && softLegal.trim()) soft.legal_basis = [softLegal.trim()];
           return new Response(
             JSON.stringify({ item: soft, normalized_equipment: normalizedEquipment, mode: "risk_row" }),
             { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },

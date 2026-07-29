@@ -216,6 +216,76 @@ export async function fetchRiskRowDetail(
   return mapped;
 }
 
+/** Max auto-retries for a single risk_row call (attempt 1 + 2 retries = 3 total). */
+export const RISK_ROW_MAX_ATTEMPTS = 3;
+
+/** Strict parallel cap for Phase-2 row fills (avoids NVIDIA/Edge rate limits). */
+export const RISK_ROW_CONCURRENCY = 2;
+
+export const AI_ROW_FAILED_HAZARD = 'API 과부하로 생성 지연. [재시도] 버튼을 눌러주세요';
+export const AI_ROW_FAILED_NOTE_PREFIX = '[AI_ROW_FAILED]';
+
+export function isAiFailedRiskItem(item: { hazard?: string | null; note?: string | null }): boolean {
+  const h = item.hazard || '';
+  const n = item.note || '';
+  return n.includes(AI_ROW_FAILED_NOTE_PREFIX) || h.includes('API 과부하로 생성 지연') || h.startsWith('생성 실패');
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const t = setTimeout(resolve, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/**
+ * Retry wrapper — up to RISK_ROW_MAX_ATTEMPTS, with backoff.
+ * Rate-limit / timeout errors wait longer before the next attempt.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts?: { attempts?: number; signal?: AbortSignal; label?: string },
+): Promise<T> {
+  const attempts = Math.max(1, opts?.attempts ?? RISK_ROW_MAX_ATTEMPTS);
+  let lastErr: unknown;
+  for (let i = 1; i <= attempts; i++) {
+    if (opts?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      const msg = String(err?.message || err || '');
+      const retryable = /RATE_LIMIT|429|TIMEOUT|중단|과부하|NETWORK|fetch|서버 오류|5\d\d/i.test(msg);
+      console.warn(`[AI Engine] retry ${i}/${attempts}${opts?.label ? ` (${opts.label})` : ''}:`, msg);
+      if (i >= attempts || !retryable) throw err;
+      const delayMs = /RATE_LIMIT|429|과부하/i.test(msg)
+        ? 1500 * i
+        : 800 * i;
+      await sleep(delayMs, opts?.signal);
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+export async function fetchRiskRowDetailWithRetry(
+  opts: AIGenerateOptions & { subTask: string },
+  signal?: AbortSignal,
+): Promise<GeneratedRiskItem> {
+  return withRetry(() => fetchRiskRowDetail(opts, signal), {
+    attempts: RISK_ROW_MAX_ATTEMPTS,
+    signal,
+    label: opts.subTask,
+  });
+}
+
 /** Run async tasks with a concurrency cap. */
 export async function mapPool<T, R>(
   items: T[],
@@ -275,7 +345,7 @@ export async function generateRiskItemsTwoStep(
 
   const items: GeneratedRiskItem[] = [];
   let interrupted = false;
-  const concurrency = Math.max(1, Math.min(handlers?.concurrency ?? 4, 6));
+  const concurrency = Math.max(1, Math.min(handlers?.concurrency ?? RISK_ROW_CONCURRENCY, 3));
 
   await mapPool(subTasks, concurrency, async (subTask, index) => {
     if (handlers?.signal?.aborted) {
@@ -283,7 +353,7 @@ export async function generateRiskItemsTwoStep(
       return null as any;
     }
     try {
-      const row = await fetchRiskRowDetail({ ...opts, subTask }, handlers?.signal);
+      const row = await fetchRiskRowDetailWithRetry({ ...opts, subTask }, handlers?.signal);
       items.push(row);
       await handlers?.onRow?.(row, index, subTask);
       handlers?.onProgress?.(
@@ -300,7 +370,7 @@ export async function generateRiskItemsTwoStep(
       interrupted = true;
       const e = err instanceof Error ? err : new Error(String(err?.message || err));
       handlers?.onRowError?.(subTask, index, e);
-      console.warn('[AI Engine] risk_row failed:', subTask, e.message);
+      console.warn('[AI Engine] risk_row failed after retries:', subTask, e.message);
       return null as any;
     }
   });
@@ -733,7 +803,7 @@ export async function generateRiskItemsHybrid(
   const detailLevel: DetailLevel = opts.detailLevel || 'core';
 
   try {
-    return await generateRiskItemsTwoStep(opts, { onProgress, concurrency: 4 });
+    return await generateRiskItemsTwoStep(opts, { onProgress, concurrency: RISK_ROW_CONCURRENCY });
   } catch (err: any) {
     const rawMsg = err?.message || '';
     console.error('[AI Engine] two-step 실패:', rawMsg);

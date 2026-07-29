@@ -100,19 +100,9 @@ function mapErrorMessage(rawMsg: string): string {
   return rawMsg || 'AI 생성에 실패했습니다.';
 }
 
-/** Phase plan mirrored from Edge Function — client drives one SSE call per phase. */
-export function riskGenPhases(detailLevel: DetailLevel): { id: string; title: string }[] {
-  if (detailLevel === 'core') {
-    return [
-      { id: 'prep_main', title: '준비·본작업' },
-      { id: 'finish', title: '마무리·비상' },
-    ];
-  }
-  return [
-    { id: 'prep', title: '작업 전 준비·반입' },
-    { id: 'main', title: '본 작업' },
-    { id: 'finish', title: '마무리·해체·비상' },
-  ];
+/** @deprecated Phases removed — one-shot generation only. Kept for import compatibility. */
+export function riskGenPhases(_detailLevel: DetailLevel): { id: string; title: string }[] {
+  return [{ id: 'oneshot', title: '치명 고위험군 생성' }];
 }
 
 async function getAccessToken(): Promise<string> {
@@ -224,8 +214,8 @@ async function consumeSse(
   if (streamError) throw new Error(mapErrorMessage(streamError));
 }
 
-async function consumeRiskSse(
-  opts: AIGenerateOptions & { phaseId: string; phaseTitle: string },
+async function fetchRiskItemsOneShot(
+  opts: AIGenerateOptions,
   handlers: {
     onProgress?: (progress: AIGenerateProgress, partialItems: GeneratedRiskItem[]) => void;
     onItem?: (item: GeneratedRiskItem, itemsSoFar: GeneratedRiskItem[]) => void | Promise<void>;
@@ -238,102 +228,82 @@ async function consumeRiskSse(
     normalizedEquipment: { value?: string };
   },
 ): Promise<void> {
-  const detailLevel: DetailLevel = opts.detailLevel || 'comprehensive';
+  const detailLevel: DetailLevel = opts.detailLevel || 'core';
   const baseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-  const itemsBefore = bag.items.length;
-  let phaseHadError = false;
+  const token = await getAccessToken();
+  const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
   handlers.onProgress?.(
     {
-      phase: 'phase',
+      phase: 'generating',
       itemsSoFar: bag.items.length,
-      phaseId: opts.phaseId,
-      phaseTitle: opts.phaseTitle,
+      phaseId: 'oneshot',
+      phaseTitle: '치명 고위험군 생성',
       normalizedEquipment: bag.normalizedEquipment.value,
     },
     bag.items,
   );
 
-  try {
-    await consumeSse(
-      `${baseUrl}/functions/v1/generate-risk-ai`,
-      {
-        process_name: opts.processName,
-        equipment: opts.equipment || '',
-        work_description: opts.workDescription || '',
-        work_location: opts.workLocation || '일반',
-        work_environment: opts.workEnvironment || [],
-        detail_level: detailLevel,
-        project_id: opts.projectId || '',
-        stream: true,
-        phase_id: opts.phaseId,
-        mode: 'risk',
-      },
-      {
-        onEvent: async (payload) => {
-          const type = payload.type;
+  const resp = await fetch(`${baseUrl}/functions/v1/generate-risk-ai`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      apikey: anonKey,
+      'Content-Type': 'application/json; charset=utf-8',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({
+      process_name: opts.processName,
+      equipment: opts.equipment || '',
+      work_description: opts.workDescription || '',
+      work_location: opts.workLocation || '일반',
+      work_environment: opts.workEnvironment || [],
+      detail_level: detailLevel,
+      project_id: opts.projectId || '',
+      stream: false,
+      mode: 'risk',
+    }),
+    signal: handlers.signal,
+  });
 
-          if (type === 'meta') {
-            if (payload.normalized_equipment) bag.normalizedEquipment.value = payload.normalized_equipment;
-            if (payload.source === 'cache' || payload.source === 'ai') bag.source.value = payload.source;
-            return;
-          }
-
-          if (type === 'phase') {
-            handlers.onProgress?.(
-              {
-                phase: 'phase',
-                itemsSoFar: bag.items.length,
-                phaseId: payload.phase || opts.phaseId,
-                phaseTitle: payload.title || opts.phaseTitle,
-                normalizedEquipment: bag.normalizedEquipment.value,
-              },
-              bag.items,
-            );
-            return;
-          }
-
-          if (type === 'item' && payload.item) {
-            const mapped = mapAIItemToGenerated(payload.item, opts.processName);
-            const key = `${mapped.sub_task}|${mapped.hazard}`;
-            if (opts.deduplicate !== false && bag.seen.has(key)) return;
-            bag.seen.add(key);
-            bag.items.push(mapped);
-            await handlers.onItem?.(mapped, bag.items);
-            handlers.onProgress?.(
-              { phase: 'generating', itemsSoFar: bag.items.length, normalizedEquipment: bag.normalizedEquipment.value },
-              bag.items,
-            );
-            return;
-          }
-
-          if (type === 'done') {
-            if (payload.source === 'cache' || payload.source === 'ai') bag.source.value = payload.source;
-            if (payload.normalized_equipment) bag.normalizedEquipment.value = payload.normalized_equipment;
-            return;
-          }
-
-          if (type === 'error' || type === 'phase_error') {
-            phaseHadError = true;
-          }
-        },
-      },
-      handlers.signal,
-    );
-  } catch (err) {
-    if (bag.items.length === itemsBefore) throw err;
-    // Partial phase success — keep items
-    console.warn('[AI Engine] phase ended with partial items:', err);
-    return;
+  if (!resp.ok) {
+    let detail = '';
+    try {
+      const errBody = await resp.json();
+      detail = errBody?.error || errBody?.message || '';
+      if (errBody?.code === 'WORKER_RESOURCE_LIMIT') {
+        detail = 'AI 생성 연결이 중단되었습니다. 이미 생성된 항목은 유지됩니다.';
+      }
+    } catch { /* ignore */ }
+    throw new Error(mapErrorMessage(detail || `AI 서버 오류 (${resp.status})`));
   }
 
-  if (phaseHadError && bag.items.length === itemsBefore) {
-    throw new Error('AI 생성에 실패했습니다.');
+  const data = await resp.json();
+  if (data?.error) throw new Error(mapErrorMessage(String(data.error)));
+
+  if (data?.normalized_equipment) bag.normalizedEquipment.value = data.normalized_equipment;
+  if (data?.source === 'cache' || data?.source === 'ai' || data?.source === 'library') {
+    bag.source.value = data.source;
+  }
+
+  const rawItems: any[] = Array.isArray(data?.items) ? data.items : [];
+  for (const raw of rawItems) {
+    const mapped = mapAIItemToGenerated(raw, opts.processName);
+    const key = `${mapped.sub_task}|${mapped.hazard}`;
+    if (opts.deduplicate !== false && bag.seen.has(key)) continue;
+    bag.seen.add(key);
+    bag.items.push(mapped);
+    await handlers.onItem?.(mapped, bag.items);
+    handlers.onProgress?.(
+      { phase: 'generating', itemsSoFar: bag.items.length, normalizedEquipment: bag.normalizedEquipment.value },
+      bag.items,
+    );
   }
 }
 
 /**
- * Stream risk items from generate-risk-ai (SSE), one phase per request.
+ * One-shot risk generation via generate-risk-ai (non-streaming JSON).
+ * Name kept for callers; no longer uses prep/main/finish SSE phases.
  * Risk-only — accidents are generated via generateAccidentCasesStreaming.
  */
 export async function generateRiskItemsStreaming(
@@ -348,7 +318,6 @@ export async function generateRiskItemsStreaming(
   source: 'library' | 'cache' | 'ai' | 'hybrid';
   normalizedEquipment?: string;
 }> {
-  const detailLevel: DetailLevel = opts.detailLevel || 'comprehensive';
   const bag = {
     items: [] as GeneratedRiskItem[],
     seen: new Set<string>(),
@@ -358,14 +327,7 @@ export async function generateRiskItemsStreaming(
 
   handlers?.onProgress?.({ phase: 'generating', itemsSoFar: 0 }, []);
 
-  const phases = riskGenPhases(detailLevel);
-  for (const phase of phases) {
-    await consumeRiskSse(
-      { ...opts, phaseId: phase.id, phaseTitle: phase.title },
-      handlers || {},
-      bag,
-    );
-  }
+  await fetchRiskItemsOneShot(opts, handlers || {}, bag);
 
   if (bag.items.length === 0) {
     throw new Error('AI가 유효한 항목을 반환하지 않았습니다.');
@@ -453,8 +415,8 @@ export async function generateAccidentCasesStreaming(
 }
 
 /**
- * AI-first risk item generation (streaming by default).
- * Falls back to library only when streaming fails with zero items.
+ * AI-first risk item generation (one-shot JSON by default).
+ * Falls back to library only when generation fails with zero items.
  */
 export async function generateRiskItemsHybrid(
   opts: AIGenerateOptions,
@@ -464,13 +426,13 @@ export async function generateRiskItemsHybrid(
   source: 'library' | 'cache' | 'ai' | 'hybrid';
   normalizedEquipment?: string;
 }> {
-  const detailLevel: DetailLevel = opts.detailLevel || 'comprehensive';
+  const detailLevel: DetailLevel = opts.detailLevel || 'core';
 
   try {
     return await generateRiskItemsStreaming(opts, { onProgress });
   } catch (err: any) {
     const rawMsg = err?.message || '';
-    console.error('[AI Engine] stream 실패:', rawMsg);
+    console.error('[AI Engine] oneshot 실패:', rawMsg);
 
     const mapped = mapErrorMessage(rawMsg);
     if (/할당량|API 키|너무 많/.test(mapped) && mapped !== rawMsg) {
@@ -481,7 +443,7 @@ export async function generateRiskItemsHybrid(
     }
 
     onProgress?.({ phase: 'fallback', itemsSoFar: 0 }, []);
-    const fallbackTarget = detailLevel === 'core' ? 15 : 30;
+    const fallbackTarget = detailLevel === 'core' ? 5 : 7;
     const libraryItems = await generateRiskItems({
       processName: opts.processName,
       tags: opts.tags || [],

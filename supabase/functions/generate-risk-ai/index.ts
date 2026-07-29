@@ -330,16 +330,17 @@ ${ragContext}
 위 입력에 대해 JSA 방식으로 ①작업 전 준비·장비 반입 ➔ ②본 작업(단위 작업별) ➔ ③작업 후 정리·해체까지 누락 없이 위험성평가 항목을 작성하라.
 일부 핵심만 골라내지 말 것. 대략 ${guideCount}개 내외를 목표로 하되, 절차 누락이 있으면 더 추가하라.
 추상문구 금지. improvement_control에 공학적·관리적·PPE 모두 포함.
+각 필드는 1~2문장 이내 개조식(짧게). 장황한 서술 금지 — 속도·완결성 모두 확보.
 마크다운·서론·결론 금지. 오직 JSON Array [ {...}, {...} ] 만 출력.`;
 
   // Full JSA rows need headroom so the model does not truncate mid-array.
-  const maxTokens = detailLevel === "comprehensive" ? 8000 : 6000;
+  const maxTokens = detailLevel === "comprehensive" ? 7000 : 5000;
   const { content } = await callDeepseekRiskChat({
     messages: [
       { role: "system", content: HSE_SYSTEM_PROMPT },
       { role: "user", content: userPrompt },
     ],
-    temperature: 0.3,
+    temperature: 0.25,
     max_tokens: maxTokens,
     timeoutMs: 90_000,
   });
@@ -591,12 +592,28 @@ serve(async (req) => {
         normalized_equipment: normalizedEquipment,
         detail_level: detailLevel,
         mode: "risk",
-          oneshot: true,
-          jsa: true,
-          target_count: targetCount,
+        oneshot: true,
+        jsa: true,
+        target_count: targetCount,
       });
 
       let rawItems: any[] = [];
+      const genStarted = Date.now();
+      send({
+        type: "status",
+        message: "DeepSeek JSA 생성 중… (보통 20~60초)",
+        elapsed_sec: 0,
+      });
+      const statusIv = setInterval(() => {
+        const elapsed = Math.round((Date.now() - genStarted) / 1000);
+        try {
+          send({
+            type: "status",
+            message: `DeepSeek JSA 생성 중… ${elapsed}초 경과 (탭을 전환해도 계속됩니다)`,
+            elapsed_sec: elapsed,
+          });
+        } catch { /* closed */ }
+      }, 3000);
       try {
         rawItems = await generateOneShotRiskItems(
           process_name,
@@ -608,6 +625,7 @@ serve(async (req) => {
           detailLevel,
         );
       } catch (genErr) {
+        clearInterval(statusIv);
         console.error(`[AI Engine] oneshot error:`, genErr);
         if (genErr instanceof DeepseekRiskError || genErr instanceof GeminiError) {
           if (genErr.code === "RATE_LIMIT") throw new Error("RATE_LIMIT");
@@ -619,6 +637,12 @@ serve(async (req) => {
         }
         throw genErr;
       }
+      clearInterval(statusIv);
+      send({
+        type: "status",
+        message: "응답 정리·저장 중…",
+        elapsed_sec: Math.round((Date.now() - genStarted) / 1000),
+      });
 
       const allMapped = mapAndDedupe(rawItems, process_name, existingKeys);
       for (const item of allMapped) {
@@ -633,7 +657,8 @@ serve(async (req) => {
         return;
       }
 
-      const { error: cacheErr } = await adminClient.from("ai_risk_cache").upsert(
+      // Fire-and-forget cache — do not block the client on upsert RTT
+      void adminClient.from("ai_risk_cache").upsert(
         {
           cache_key: cacheKey,
           process_name,
@@ -646,8 +671,9 @@ serve(async (req) => {
           updated_at: new Date().toISOString(),
         },
         { onConflict: "cache_key" },
-      );
-      if (cacheErr) console.warn("[AI Engine] cache upsert skipped:", cacheErr.message);
+      ).then(({ error: cacheErr }) => {
+        if (cacheErr) console.warn("[AI Engine] cache upsert skipped:", cacheErr.message);
+      });
 
       send({
         type: "done",
@@ -667,7 +693,7 @@ serve(async (req) => {
           const send = (payload: Record<string, unknown>) => {
             controller.enqueue(sseEncode(encoder, payload));
           };
-          // Heartbeat while one-shot DeepSeek awaits (idle proxy/browser cutoffs).
+          // Keep SSE alive with comment pings; status events carry UI progress.
           const heartbeat = setInterval(() => {
             try {
               controller.enqueue(encoder.encode(`: ping ${Date.now()}\n\n`));

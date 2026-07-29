@@ -42,6 +42,7 @@ import {
   parseAccessRules,
   ruleTypeLabel,
   ZONE_COLOR_OPTIONS,
+  zoneCategorySchema,
 } from "@/lib/tracking/accessRules";
 import type { DrawnShape, DrawTool } from "@/components/geofence/LeafletDrawControl";
 import {
@@ -479,6 +480,11 @@ export default function SiteControlMap() {
       toast.error("프로젝트를 먼저 선택하세요");
       return;
     }
+    const catParsed = zoneCategorySchema.safeParse(payload.zone_category);
+    if (!catParsed.success) {
+      toast.error("유효한 구역 유형을 선택하세요");
+      return;
+    }
     setSaving(true);
 
     // Edit: update attributes only (keep geometry)
@@ -487,7 +493,7 @@ export default function SiteControlMap() {
         .from("restricted_zones")
         .update({
           name: payload.name,
-          zone_category: payload.zone_category,
+          zone_category: catParsed.data,
           zone_color: payload.zone_color,
           rule_type: payload.rule_type,
           access_rules: payload.access_rules,
@@ -515,7 +521,7 @@ export default function SiteControlMap() {
     const base = {
       project_id: projectId,
       name: payload.name,
-      zone_category: payload.zone_category,
+      zone_category: catParsed.data,
       zone_color: payload.zone_color,
       rule_type: payload.rule_type,
       access_rules: payload.access_rules,

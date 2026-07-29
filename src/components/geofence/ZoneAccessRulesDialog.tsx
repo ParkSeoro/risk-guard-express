@@ -24,15 +24,18 @@ import {
   ZONE_COLOR_OPTIONS,
   ZoneRuleType,
   ZoneColor,
+  DEFAULT_ZONE_CATEGORY,
   buildAccessRules,
   parseAccessRules,
+  zoneCategorySchema,
+  type ZoneCategory,
 } from "@/lib/tracking/accessRules";
 import { jobCategoryEntries } from "@/lib/jobCategories";
 import type { DrawnShape } from "@/components/geofence/LeafletDrawControl";
 
 export type ZoneDraftPayload = {
   name: string;
-  zone_category: string;
+  zone_category: ZoneCategory;
   zone_color: ZoneColor | string;
   rule_type: ZoneRuleType;
   access_rules: AccessRules;
@@ -74,7 +77,7 @@ export default function ZoneAccessRulesDialog({
   onSave,
 }: Props) {
   const [name, setName] = useState("위험구역");
-  const [category, setCategory] = useState<string>("추락위험");
+  const [category, setCategory] = useState<ZoneCategory>(DEFAULT_ZONE_CATEGORY);
   const [ruleType, setRuleType] = useState<ZoneRuleType>("ALLOW");
   const [zoneColor, setZoneColor] = useState<string>(defaultColor);
   const [companyIds, setCompanyIds] = useState<string[]>([]);
@@ -88,8 +91,9 @@ export default function ZoneAccessRulesDialog({
         editZone.rule_type === "ALLOW" || editZone.rule_type === "DENY"
           ? editZone.rule_type
           : parsed.rule_type;
+      const catParsed = zoneCategorySchema.safeParse(editZone.zone_category);
       setName(editZone.name || "위험구역");
-      setCategory(editZone.zone_category || "추락위험");
+      setCategory(catParsed.success ? catParsed.data : DEFAULT_ZONE_CATEGORY);
       setRuleType(rt);
       setZoneColor(editZone.zone_color || defaultColor);
       setCompanyIds(parsed.company_ids || []);
@@ -97,7 +101,7 @@ export default function ZoneAccessRulesDialog({
       return;
     }
     setName("위험구역");
-    setCategory("추락위험");
+    setCategory(DEFAULT_ZONE_CATEGORY);
     setRuleType("ALLOW");
     setZoneColor(defaultColor);
     setCompanyIds([]);
@@ -116,10 +120,12 @@ export default function ZoneAccessRulesDialog({
 
   const handleSave = async () => {
     if (!canSave) return;
+    const catParsed = zoneCategorySchema.safeParse(category);
+    if (!catParsed.success) return;
     const access_rules = buildAccessRules(ruleType, companyIds, jobTypes);
     await onSave({
       name: name.trim() || "위험구역",
-      zone_category: category,
+      zone_category: catParsed.data,
       zone_color: zoneColor,
       rule_type: ruleType,
       access_rules,
@@ -158,7 +164,13 @@ export default function ZoneAccessRulesDialog({
 
           <div className="space-y-1.5">
             <Label>구역 유형</Label>
-            <Select value={category} onValueChange={setCategory}>
+            <Select
+              value={category}
+              onValueChange={(v) => {
+                const parsed = zoneCategorySchema.safeParse(v);
+                if (parsed.success) setCategory(parsed.data);
+              }}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>

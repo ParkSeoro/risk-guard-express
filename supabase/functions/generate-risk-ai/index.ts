@@ -5,8 +5,7 @@ import {
   callDeepseekRiskChat,
   DeepseekRiskError,
   RISK_DEEPSEEK_SYSTEM_PROMPT,
-  parseDeepseekRiskJson,
-  stripCodeFences,
+  safeParseDeepseekRiskItems,
 } from "../_shared/deepseekRisk.ts";
 import { fetchApprovedLibraryRisks } from "../_shared/aiResponseCache.ts";
 
@@ -177,23 +176,6 @@ async function fetchRAGContext(
 
 const HSE_SYSTEM_PROMPT = RISK_DEEPSEEK_SYSTEM_PROMPT;
 
-/** Noun-only field definitions — never put imperative instructions here (prevents prompt leak into values). */
-const RISK_ITEM_FIELD_SCHEMA: Record<string, string> = {
-  process: "공종명",
-  sub_work: "세부 작업 명칭(장비·부재·절차 포함)",
-  hazard_factor: "법적 기준/원인 + 위험 메커니즘",
-  hazard_situation: "구체적 위험 발생 시나리오(개조식)",
-  existing_control: "현재 현장의 구체적 안전 조치",
-  improvement_control: "공학적 + 관리적 + PPE 대책",
-  initial_likelihood: "가능성 등급(상|중|하)",
-  initial_severity: "중대성 등급(상|중|하)",
-  initial_risk_level: "초기 위험등급(상|중|하)",
-  residual_likelihood: "개선 후 가능성",
-  residual_severity: "개선 후 중대성",
-  residual_risk_level: "잔여 위험등급",
-  ppe: "필요 보호구",
-};
-
 const LEAK_INSTRUCTION_RE =
   /(서술할\s*것|작성할\s*것|기재할\s*것|포함할\s*것|도출할\s*것|준수할\s*것|특정해\s*서술|개조식으로\s*작성|빈칸\s*금지)/g;
 const MACRO_SITUATION_RE =
@@ -233,9 +215,9 @@ function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other" 
   return s;
 }
 
-/** Target item count for one-shot generation (fatal KOSHA risks only). */
-function oneshotTargetCount(detailLevel: "core" | "comprehensive"): number {
-  return detailLevel === "core" ? 5 : 7;
+/** Soft guidance for library/cache sizing (JSA full coverage — no hard AI slice cap). */
+function jsaGuideCount(detailLevel: "core" | "comprehensive"): number {
+  return detailLevel === "core" ? 12 : 20;
 }
 
 function mapRawItem(item: any, processName: string): any | null {
@@ -330,7 +312,7 @@ function sseEncode(encoder: TextEncoder, payload: Record<string, unknown>): Uint
   return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
-/** Single DeepSeek call → 5–7 fatal KOSHA risks (no prep/main/finish phases). */
+/** Single DeepSeek call → full JSA risk items (prep → main → finish, no phase split). */
 async function generateOneShotRiskItems(
   processName: string,
   equipText: string,
@@ -340,24 +322,18 @@ async function generateOneShotRiskItems(
   ragContext: string,
   detailLevel: "core" | "comprehensive",
 ): Promise<any[]> {
-  const targetCount = oneshotTargetCount(detailLevel);
-  const fieldSchemaLines = Object.entries(RISK_ITEM_FIELD_SCHEMA)
-    .map(([k, v]) => `- ${k}: ${v}`)
-    .join("\n");
+  const guideCount = jsaGuideCount(detailLevel);
 
   const userPrompt = `[입력] 공종:${processName} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}
 ${ragContext}
 
-산업안전보건기준에 관한 규칙 및 KOSHA GUIDE에 의거하여, 해당 공종에서 [사망, 중상, 화재, 폭발]로 직결되는 가장 치명적인 핵심 위험요인 ${targetCount}개만 엄선하여 작성하라.
-망라·과다 생성 금지. 추상문구 금지. improvement_control에 공학적·관리적·PPE 모두.
-치명재해는 initial_* '상'. 마크다운 금지. JSON만.
+위 입력에 대해 JSA 방식으로 ①작업 전 준비·장비 반입 ➔ ②본 작업(단위 작업별) ➔ ③작업 후 정리·해체까지 누락 없이 위험성평가 항목을 작성하라.
+일부 핵심만 골라내지 말 것. 대략 ${guideCount}개 내외를 목표로 하되, 절차 누락이 있으면 더 추가하라.
+추상문구 금지. improvement_control에 공학적·관리적·PPE 모두 포함.
+마크다운·서론·결론 금지. 오직 JSON Array [ {...}, {...} ] 만 출력.`;
 
-[필드]
-${fieldSchemaLines}
-
-[형식] {"items":[{"process":"${processName}","sub_work":"...","hazard_factor":"...","hazard_situation":"...","existing_control":"...","improvement_control":"...","initial_likelihood":"상","initial_severity":"상","initial_risk_level":"상","residual_likelihood":"중","residual_severity":"중","residual_risk_level":"중","ppe":"안전모, 안전화"}]}`;
-
-  const maxTokens = Math.min(2800, 400 + targetCount * 320);
+  // Full JSA rows need headroom so the model does not truncate mid-array.
+  const maxTokens = detailLevel === "comprehensive" ? 8000 : 6000;
   const { content } = await callDeepseekRiskChat({
     messages: [
       { role: "system", content: HSE_SYSTEM_PROMPT },
@@ -365,30 +341,14 @@ ${fieldSchemaLines}
     ],
     temperature: 0.3,
     max_tokens: maxTokens,
-    timeoutMs: 55_000,
+    timeoutMs: 90_000,
   });
 
-  let parsed: any = null;
-  try {
-    parsed = parseDeepseekRiskJson(stripCodeFences(content));
-  } catch {
-    const m = content.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
-    if (m) {
-      try {
-        parsed = parseDeepseekRiskJson(m[0]);
-      } catch {
-        parsed = null;
-      }
-    }
+  const items = safeParseDeepseekRiskItems(content);
+  if (items.length === 0) {
+    console.warn("[AI Engine] oneshot JSA parse yielded 0 items");
   }
-
-  const items: any[] = Array.isArray(parsed)
-    ? parsed
-    : Array.isArray(parsed?.items)
-    ? parsed.items
-    : [];
-
-  return items.slice(0, Math.max(targetCount, 7));
+  return items;
 }
 
 serve(async (req) => {
@@ -441,7 +401,7 @@ serve(async (req) => {
       detail_level === "comprehensive" ? "comprehensive" : "core";
     // One-shot JSON is the stable default; SSE only when client explicitly opts in.
     const wantStream = streamFlag === true;
-    const targetCount = oneshotTargetCount(detailLevel);
+    const targetCount = jsaGuideCount(detailLevel);
 
     if (!isInternal && project_id) {
       const userSb = createClient(supabaseUrl, anonKey, {
@@ -546,8 +506,8 @@ serve(async (req) => {
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
 
-    // v7: one-shot 5–7 fatal risks (phases removed)
-    const cacheKey = `v7-os|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
+    // v8: one-shot full JSA (prep → main → finish)
+    const cacheKey = `v8-jsa|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
       .toLowerCase()
       .trim();
 
@@ -558,7 +518,7 @@ serve(async (req) => {
       .maybeSingle();
 
     const cachedItems = (cached?.generated_items as any[]) || [];
-    const cacheMin = 5;
+    const cacheMin = 8;
 
     const emitCachedOrGenerate = async (
       send: (payload: Record<string, unknown>) => void,
@@ -590,10 +550,10 @@ serve(async (req) => {
         return;
       }
 
-      const libraryItems = await fetchApprovedLibraryRisks(adminClient, process_name, targetCount + 4);
+      const libraryItems = await fetchApprovedLibraryRisks(adminClient, process_name, targetCount + 8);
       if (libraryItems.length >= cacheMin) {
         console.log(`[AI Engine] Library hit (oneshot): ${libraryItems.length}`);
-        const trimmed = libraryItems.slice(0, Math.max(targetCount, 7));
+        const trimmed = libraryItems.slice(0, Math.max(targetCount, 12));
         send({
           type: "meta",
           source: "library",
@@ -631,8 +591,9 @@ serve(async (req) => {
         normalized_equipment: normalizedEquipment,
         detail_level: detailLevel,
         mode: "risk",
-        oneshot: true,
-        target_count: targetCount,
+          oneshot: true,
+          jsa: true,
+          target_count: targetCount,
       });
 
       let rawItems: any[] = [];

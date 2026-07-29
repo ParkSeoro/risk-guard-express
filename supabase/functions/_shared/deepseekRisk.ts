@@ -9,8 +9,8 @@
  */
 const DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const DEEPSEEK_MODEL = "deepseek-ai/deepseek-v4-flash";
-/** One-shot abort. 5–7 dense rows should finish well under Edge worker limits. */
-const DEFAULT_TIMEOUT_MS = 60_000;
+/** One-shot JSA abort — full prep→main→finish coverage needs longer than fatal-only. */
+const DEFAULT_TIMEOUT_MS = 90_000;
 
 export const RISK_DEEPSEEK_MODEL = DEEPSEEK_MODEL;
 
@@ -96,6 +96,42 @@ export function parseDeepseekRiskJson<T = unknown>(raw: string): T {
   }
 }
 
+/**
+ * Parse DeepSeek risk output into an item array.
+ * On any parse failure: log and return [] (never throw) so Edge callers stay stable.
+ */
+export function safeParseDeepseekRiskItems(raw: string): any[] {
+  try {
+    const parsed = parseDeepseekRiskJson<any>(raw);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && Array.isArray(parsed.items)) return parsed.items;
+    console.warn(
+      "[DeepSeek-Risk] JSON parsed but no array/items found:",
+      typeof parsed,
+      String(raw).slice(0, 200),
+    );
+    return [];
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("[DeepSeek-Risk] JSON parse failed → []:", msg, String(raw).slice(0, 400));
+    // Second chance: extract first [...] or {...} substring
+    try {
+      const m = String(raw || "").match(/\[[\s\S]*\]|\{[\s\S]*\}/);
+      if (m) {
+        const retry = JSON.parse(stripCodeFences(m[0]));
+        if (Array.isArray(retry)) return retry;
+        if (retry && Array.isArray(retry.items)) return retry.items;
+      }
+    } catch (e2) {
+      console.error(
+        "[DeepSeek-Risk] JSON retry parse failed → []:",
+        e2 instanceof Error ? e2.message : String(e2),
+      );
+    }
+    return [];
+  }
+}
+
 function withTimeoutSignal(timeoutMs: number): { signal: AbortSignal; clear: () => void } {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -130,7 +166,7 @@ export async function callDeepseekRiskChat(req: DeepseekRiskRequest): Promise<{
         model: DEEPSEEK_MODEL,
         messages: req.messages,
         temperature: typeof req.temperature === "number" ? req.temperature : 0.4,
-        max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 4096,
+        max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 6000,
         stream: false,
       }),
     });
@@ -186,7 +222,7 @@ export async function* streamDeepseekRiskChatText(
         model: DEEPSEEK_MODEL,
         messages: req.messages,
         temperature: typeof req.temperature === "number" ? req.temperature : 0.45,
-        max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 4096,
+        max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 6000,
         stream: true,
       }),
     });
@@ -242,20 +278,27 @@ export async function* streamDeepseekRiskChatText(
   }
 }
 
-/** Expert system prompt — risk assessment only (DeepSeek path). One-shot 5–7 fatal risks. */
-export const RISK_DEEPSEEK_SYSTEM_PROMPT = `너는 대한민국 최고 권위의 건설안전 기술사이자 산업안전보건법 전문가이다.
+/** Expert system prompt — JSA-based full-process risk assessment (DeepSeek path). */
+export const RISK_DEEPSEEK_SYSTEM_PROMPT = `너는 대한민국 최고 권위의 건설안전 기술사이자 산업안전보건법 전문가이다. 
+사용자가 입력한 공종 및 세부 작업에 대하여, 최신 개정된 [산업안전보건법] 및 [KOSHA GUIDE]에 의거하여 현장에 즉시 적용 가능한 '작업안전분석(JSA)' 기반의 완벽한 위험성평가 데이터를 생성하라.
 
-산업안전보건기준에 관한 규칙 및 KOSHA GUIDE에 의거하여, 해당 공종에서 [사망, 중상, 화재, 폭발]로 직결되는 가장 치명적인 핵심 위험요인 5~7개만 엄선하여 작성하라. 과다 나열·망라형 생성 금지.
+[STRICT OUTPUT RULES: 필수 준수 규칙]
+1. [전 공정 분해 (JSA 방식)]: 공종을 분석하여 시간 흐름에 따라 **①작업 전 준비 및 장비 반입 ➔ ②본 작업(단위 작업별로 세분화) ➔ ③작업 후 정리 및 해체**까지 모든 작업 절차를 단 하나도 누락 없이 도출할 것.
+2. [법적/구체적 기술]: "안전수칙 준수" 같은 추상적 문구 절대 금지. [산업안전보건기준에 관한 규칙] 조항에 근거한 구체적인 장비명, 자재명, 발생 가능한 재해(추락, 낙하, 붕괴, 화재, 감전 등) 메커니즘을 상세히 명시할 것.
+3. [근본적 개선대책]: 대책은 반드시 '공학적 대책(설비/방호장치/인터록)', '관리적 대책(허가서/신호수/교육)', '개인보호구(PPE)'를 종합적으로 서술할 것.
+4. [형식 엄수]: 마크다운(\`\`\`json 등)이나 불필요한 서론/결론을 일절 제외하고 오직 순수한 JSON Array [ {...}, {...} ] 형태로만 출력할 것.
 
-[STRICT OUTPUT RULES]
-1. 추상 문구(예: "안전수칙 준수", "주의 작업") 금지. 구체 장비·자재·절차 명시.
-2. 위험요인은 법적 기준/원인에 근거한 구체 발생 상황으로 기술.
-3. 개선대책은 공학적·관리적·PPE를 모두 포함.
-4. 마크다운 없이 순수 JSON만. 서문·후기 금지.
-5. 문체: 개조식(명사형). 서술형(~할 것, ~합니다) 금지.
-6. 치명 위험은 initial_likelihood/severity를 '상'으로.
-
-[JSON SCHEMA — {"items":[...]} 정확히 5~7개]
-각 item: process, sub_work, hazard_factor, hazard_situation, existing_control, improvement_control,
-initial_likelihood, initial_severity, initial_risk_level,
-residual_likelihood, residual_severity, residual_risk_level, ppe`;
+[JSON SCHEMA FORMAT]
+[
+  {
+    "process": "공종명 (예: 철골 작업)",
+    "sub_work": "시간순 세부작업 (예: 1. 작업 전 자재 양중 및 줄걸이 점검)",
+    "hazard_factor": "구체적 위험요인 (기인물+결함)",
+    "hazard_situation": "위험발생상황 시나리오 (법적 위반 사항 포함)",
+    "existing_control": "기존 대책",
+    "improvement_control": "법적/공학적 개선 대책",
+    "initial_likelihood": "상", "initial_severity": "상", "initial_risk_level": "상",
+    "residual_likelihood": "중", "residual_severity": "중", "residual_risk_level": "중",
+    "ppe": "안전모, 안전대"
+  }
+]`;

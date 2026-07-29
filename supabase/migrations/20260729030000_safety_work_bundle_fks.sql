@@ -145,7 +145,7 @@ SELECT
   ar.status AS assessment_status,
   wp.tbm_session_id,
   ts.title AS tbm_title,
-  ts.session_date AS tbm_session_date,
+  ts.tbm_date AS tbm_session_date,
   wp.work_plan_id,
   wpl.title AS work_plan_title
 FROM public.work_permits wp

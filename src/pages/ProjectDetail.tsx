@@ -23,7 +23,7 @@ import {
   normalizeCompanyType,
   resolveProjectCompanyType,
 } from '@/lib/companyTypes';
-import { POSITION_LABELS, positionsForCompanyType } from '@/lib/projectPositions';
+import { POSITION_LABELS, positionsForCompanyType, syncMembershipRolePosition } from '@/lib/projectPositions';
 
 const roleLabels: Record<string, string> = {
   master: '마스터', project_admin: '프로젝트 관리자',
@@ -366,21 +366,31 @@ const ProjectDetail = () => {
         return;
       }
     }
-    await supabase.from('project_members').update({ role_new: newRole as any }).eq('id', memberId);
+    const companyType = companies.find((c) => c.id === target?.company_id)?.type;
+    const updateData = syncMembershipRolePosition({
+      field: 'role_new',
+      value: newRole,
+      companyType,
+    });
+    await supabase.from('project_members').update(updateData as any).eq('id', memberId);
     fetchAll();
   };
 
   const handleChangePosition = async (memberId: string, newPosition: string | null) => {
+    const updateData = syncMembershipRolePosition({
+      field: 'position_new',
+      value: newPosition,
+    });
     const { error } = await supabase
       .from('project_members')
-      .update({ position_new: newPosition as any })
+      .update(updateData as any)
       .eq('id', memberId);
     if (error) {
       toast({ title: '직책 저장 실패', description: error.message, variant: 'destructive' });
       return;
     }
     toast({ title: '직책이 저장되었습니다.' });
-    await log('직책변경', 'project_member', memberId, projectId || undefined, { position: newPosition });
+    await log('직책변경', 'project_member', memberId, projectId || undefined, { position: newPosition, updateData });
     fetchAll();
   };
 

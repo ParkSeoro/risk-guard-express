@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine, HeartPulse, Settings2, RotateCcw, MapPin } from "lucide-react";
+import { Building2, ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine, HeartPulse, Settings2, RotateCcw, MapPin, LogOut } from "lucide-react";
 import { isOnline, listQueue } from "@/lib/offlineQueue";
 import { isPushSupported, registerSW, subscribeToPush } from "@/lib/pushSubscription";
 import { setForceDesktop } from "@/components/MobileRedirectGuard";
@@ -20,7 +20,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 // 모바일 통합 홈 — 로그인 사용자(관리자) / 비로그인(근로자 안내)
 export default function MobileHome() {
   const navigate = useNavigate();
-  const { user, profile, loading, hasRole, roles } = useAuth();
+  const { user, profile, loading, hasRole, roles, signOut } = useAuth();
   const isMaster = hasRole('master');
   const role = detectRole(hasRole);
   const [unread, setUnread] = useState(0);
@@ -141,6 +141,17 @@ export default function MobileHome() {
           {online ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
           {online ? "온라인" : "오프라인"}
         </Badge>
+        {user && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-9 gap-1 bg-primary-foreground/15 text-primary-foreground hover:bg-primary-foreground/25 border-0"
+            onClick={() => void signOut()}
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            로그아웃
+          </Button>
+        )}
       </header>
 
       <main className="p-4 space-y-4 max-w-md mx-auto">
@@ -153,7 +164,7 @@ export default function MobileHome() {
                 <Button className="w-full h-14 text-base" onClick={() => navigate("/worker/register")}>
                   <QrCode className="h-5 w-5 mr-2" /> 근로자 등록
                 </Button>
-                <Button variant="outline" className="w-full h-12" onClick={() => navigate("/auth")}>
+                <Button variant="outline" className="w-full h-12" onClick={() => navigate("/login")}>
                   <LogIn className="h-5 w-5 mr-2" /> 관리자 로그인
                 </Button>
               </div>

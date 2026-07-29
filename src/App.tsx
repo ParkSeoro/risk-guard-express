@@ -138,7 +138,7 @@ function ProtectedRoutes() {
   }, [user?.id, isMaster]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">로딩 중...</div>;
-  if (!user) return <Navigate to="/landing" replace />;
+  if (!user) return <Navigate to="/login" replace />;
 
   if (profile && (profile as any).account_status === 'pending') {
     return (
@@ -262,7 +262,14 @@ function ProtectedRoutes() {
 function AuthRoute() {
   const { user, loading } = useAuth();
   const [params] = useSearchParams();
-  if (loading) return null;
+  // Wait for localStorage session restore before showing login (auto-login / PWA reopen)
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
+        세션 확인 중…
+      </div>
+    );
+  }
   if (user) {
     const next = params.get("next");
     if (next && next.startsWith("/") && !next.startsWith("//")) {

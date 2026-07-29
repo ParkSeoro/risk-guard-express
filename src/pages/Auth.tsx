@@ -66,8 +66,8 @@ const Auth = () => {
   const inviteParam = searchParams.get('invite') || '';
 
   const [mode, setMode] = useState<Mode>(() => modeFromPath(location.pathname, !!inviteParam));
-  const [signupAudience, setSignupAudience] = useState<Audience>('worker');
-  const [loginAudience, setLoginAudience] = useState<Audience>('worker');
+  const [signupAudience, setSignupAudience] = useState<Audience>('manager');
+  const [loginAudience, setLoginAudience] = useState<Audience>('manager');
   const [signupMethod, setSignupMethod] = useState<SignupMethod>('directory');
 
   const [email, setEmail] = useState('');
@@ -398,21 +398,6 @@ const Auth = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setSignupAudience('worker');
-                  resetCompanySelection();
-                }}
-                className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
-                  signupAudience === 'worker'
-                    ? 'border-primary bg-primary/10 text-foreground shadow-sm'
-                    : 'border-border bg-muted/20 text-muted-foreground'
-                }`}
-              >
-                <span className="block text-lg leading-none mb-1">👷</span>
-                근로자 가입
-              </button>
-              <button
-                type="button"
-                onClick={() => {
                   setSignupAudience('manager');
                   resetCompanySelection();
                 }}
@@ -425,23 +410,26 @@ const Auth = () => {
                 <span className="block text-lg leading-none mb-1">👔</span>
                 관리자 가입
               </button>
-            </div>
-          )}
-
-          {mode === 'login' && (
-            <div className="grid grid-cols-2 gap-2 mb-4">
               <button
                 type="button"
-                onClick={() => setLoginAudience('worker')}
+                onClick={() => {
+                  setSignupAudience('worker');
+                  resetCompanySelection();
+                }}
                 className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
-                  loginAudience === 'worker'
+                  signupAudience === 'worker'
                     ? 'border-primary bg-primary/10 text-foreground shadow-sm'
                     : 'border-border bg-muted/20 text-muted-foreground'
                 }`}
               >
                 <span className="block text-lg leading-none mb-1">👷</span>
-                근로자 로그인
+                근로자 가입
               </button>
+            </div>
+          )}
+
+          {mode === 'login' && (
+            <div className="grid grid-cols-2 gap-2 mb-4">
               <button
                 type="button"
                 onClick={() => setLoginAudience('manager')}
@@ -453,6 +441,18 @@ const Auth = () => {
               >
                 <span className="block text-lg leading-none mb-1">👔</span>
                 관리자 로그인
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoginAudience('worker')}
+                className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
+                  loginAudience === 'worker'
+                    ? 'border-primary bg-primary/10 text-foreground shadow-sm'
+                    : 'border-border bg-muted/20 text-muted-foreground'
+                }`}
+              >
+                <span className="block text-lg leading-none mb-1">👷</span>
+                근로자 로그인
               </button>
             </div>
           )}

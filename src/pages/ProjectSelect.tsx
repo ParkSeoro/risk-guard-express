@@ -402,7 +402,7 @@ const ProjectSelect = () => {
 
         {/* Logout */}
         <div className="text-center">
-          <Button variant="ghost" size="sm" className="text-muted-foreground gap-1.5" onClick={signOut}>
+          <Button variant="ghost" size="sm" className="text-muted-foreground gap-1.5" onClick={() => void signOut()}>
             <LogOut className="h-3.5 w-3.5" /> 로그아웃
           </Button>
         </div>

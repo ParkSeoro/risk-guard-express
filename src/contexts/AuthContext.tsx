@@ -153,11 +153,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      // Clears localStorage-persisted session (and server refresh token when online)
+      await supabase.auth.signOut();
+    } catch {
+      /* still force local clear below */
+    }
     setUser(null);
     setSession(null);
     setProfile(null);
     setRoles([]);
+    // Hard navigate so PWA/cold start cannot reuse stale in-memory auth; land on /login
+    if (typeof window !== 'undefined') {
+      window.location.assign('/login');
+    }
   };
 
   const hasRole = (role: AppRole) => roles.includes(role);

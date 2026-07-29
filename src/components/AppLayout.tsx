@@ -83,8 +83,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <AICreditBanner />
                 <NotificationBell />
                 <HelpButton className="text-muted-foreground" />
-                <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={signOut}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground gap-1.5"
+                  onClick={() => void signOut()}
+                  title="로그아웃"
+                >
                   <LogOut className="h-4 w-4" />
+                  <span className="hidden sm:inline text-xs">로그아웃</span>
                 </Button>
               </div>
             </header>

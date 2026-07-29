@@ -296,7 +296,25 @@ export function AppSidebar() {
             <ChevronLeft className={`h-4 w-4 transition-transform ${collapsed ? 'rotate-180' : ''}`} />
           </Button>
           {!collapsed && (
-            <Button variant="ghost" size="sm" onClick={signOut} className="text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void signOut()}
+              className="flex-1 justify-start gap-1.5 text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent"
+              title="로그아웃"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="text-xs">로그아웃</span>
+            </Button>
+          )}
+          {collapsed && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void signOut()}
+              className="flex-1 justify-center text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent"
+              title="로그아웃"
+            >
               <LogOut className="h-4 w-4" />
             </Button>
           )}

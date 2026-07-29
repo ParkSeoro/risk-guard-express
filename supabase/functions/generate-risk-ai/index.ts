@@ -1,8 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { geminiChatFetch, GeminiError } from "../_shared/gemini.ts";
+import { geminiChatFetch } from "../_shared/gemini.ts";
 import {
-  callDeepseekRiskChat,
+  streamDeepseekRiskChatText,
   DeepseekRiskError,
   RISK_DEEPSEEK_SYSTEM_PROMPT,
   safeParseDeepseekRiskItems,
@@ -12,6 +12,14 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+const sseHeaders = {
+  ...corsHeaders,
+  "Content-Type": "text/event-stream; charset=utf-8",
+  "Cache-Control": "no-cache, no-transform",
+  "Connection": "keep-alive",
+  "X-Content-Type-Options": "nosniff",
 };
 
 // ── Equipment normalization map ──
@@ -230,39 +238,145 @@ function mapAndDedupe(items: any[], processName: string, existingKeys: Set<strin
   return out;
 }
 
-/** Single DeepSeek non-stream call → full JSA JSON array (one-shot, no phases). */
-async function generateOneShotRiskItems(
+function tryParse(s: string): any {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+/** Incremental extract of completed objects from a growing JSON array buffer. */
+function extractCompletedObjects(
+  buffer: string,
+  alreadyEmitted: number,
+): { objects: any[]; nextIndex: number } {
+  const cleaned = buffer.replace(/```json/gi, "").replace(/```/g, "");
+  const itemsKey = cleaned.search(/"items"\s*:/);
+  let arrStart = -1;
+  if (itemsKey >= 0) {
+    arrStart = cleaned.indexOf("[", itemsKey);
+  } else {
+    arrStart = cleaned.indexOf("[");
+  }
+  if (arrStart < 0) return { objects: [], nextIndex: alreadyEmitted };
+
+  const arrBody = cleaned.slice(arrStart + 1);
+  const objects: any[] = [];
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let objStart = -1;
+  let completed = 0;
+
+  for (let i = 0; i < arrBody.length; i++) {
+    const ch = arrBody[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === "\\") escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") {
+      if (depth === 0) objStart = i;
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0 && objStart >= 0) {
+        completed++;
+        if (completed > alreadyEmitted) {
+          const rawObj = arrBody.slice(objStart, i + 1);
+          const parsed = tryParse(rawObj);
+          if (parsed && typeof parsed === "object") objects.push(parsed);
+        }
+        objStart = -1;
+      }
+    } else if (ch === "]" && depth === 0) {
+      break;
+    }
+  }
+  return { objects, nextIndex: alreadyEmitted + objects.length };
+}
+
+function sseEncode(encoder: TextEncoder, payload: Record<string, unknown>): Uint8Array {
+  return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function buildJsaUserPrompt(
   processName: string,
   equipText: string,
   descText: string,
   locationText: string,
   envText: string,
   detailLevel: "core" | "comprehensive",
-): Promise<any[]> {
+): string {
   const guideCount = jsaGuideCount(detailLevel);
-
-  const userPrompt = `[입력] 공종:${processName} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}
+  return `[입력] 공종:${processName} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}
 
 위 입력에 대해 JSA 방식(작업 전 준비 ➔ 본 작업 ➔ 마무리)으로 누락 없이 위험성평가를 작성하라.
 대략 ${guideCount}개 내외. 추상문구 금지. 공학적·관리적·PPE 포함.
 마크다운·서론·결론 금지. 오직 JSON Array [ {...}, {...} ] 만 출력.`;
+}
 
+/**
+ * One-Shot DeepSeek stream → emit each completed JSON object as it arrives.
+ * No prep/main/finish phases.
+ */
+async function streamOneShotRiskItems(
+  processName: string,
+  equipText: string,
+  descText: string,
+  locationText: string,
+  envText: string,
+  detailLevel: "core" | "comprehensive",
+  onItem: (mapped: any) => void,
+): Promise<{ count: number }> {
+  const userPrompt = buildJsaUserPrompt(
+    processName,
+    equipText,
+    descText,
+    locationText,
+    envText,
+    detailLevel,
+  );
   const maxTokens = detailLevel === "comprehensive" ? 7000 : 5000;
-  const { content } = await callDeepseekRiskChat({
+  const existingKeys = new Set<string>();
+  let buffer = "";
+  let emitted = 0;
+  let count = 0;
+
+  for await (const delta of streamDeepseekRiskChatText({
     messages: [
       { role: "system", content: HSE_SYSTEM_PROMPT },
       { role: "user", content: userPrompt },
     ],
     temperature: 0.25,
     max_tokens: maxTokens,
-    timeoutMs: 90_000,
-  });
-
-  const items = safeParseDeepseekRiskItems(content);
-  if (items.length === 0) {
-    console.warn("[AI Engine] oneshot JSA parse yielded 0 items");
+    timeoutMs: 120_000,
+  })) {
+    buffer += delta;
+    const { objects, nextIndex } = extractCompletedObjects(buffer, emitted);
+    emitted = nextIndex;
+    const mapped = mapAndDedupe(objects, processName, existingKeys);
+    for (const item of mapped) {
+      count++;
+      onItem(item);
+    }
   }
-  return items;
+
+  // Final sweep — catch any trailing objects / {items:[...]} wrapper
+  const leftover = safeParseDeepseekRiskItems(buffer);
+  const mappedLeft = mapAndDedupe(leftover, processName, existingKeys);
+  for (const item of mappedLeft) {
+    count++;
+    onItem(item);
+  }
+
+  return { count };
 }
 
 serve(async (req) => {
@@ -274,7 +388,6 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const adminClient = createClient(supabaseUrl, supabaseKey);
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -406,8 +519,8 @@ serve(async (req) => {
       });
     }
 
-    // ============ Risk Assessment Mode: One-Shot DeepSeek, Non-Streaming JSON only ============
-    // No SSE, no prep/main/finish phases, no ai_risk_cache / standard_risk_library lookups.
+    // ============ Risk Assessment Mode: One-Shot JSA + SSE (no prep/main/finish) ============
+    // Stream DeepSeek deltas; emit each completed item over SSE to avoid 150s idle/non-stream timeout.
     const normalizedEquipment = normalizeEquipment(equipment || "");
     const locationText = work_location || "일반";
     const envText =
@@ -417,57 +530,106 @@ serve(async (req) => {
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
 
-    let rawItems: any[] = [];
-    try {
-      rawItems = await generateOneShotRiskItems(
-        process_name,
-        equipText,
-        descText,
-        locationText,
-        envText,
-        detailLevel,
-      );
-    } catch (genErr) {
-      console.error(`[AI Engine] oneshot error:`, genErr);
-      if (genErr instanceof DeepseekRiskError || genErr instanceof GeminiError) {
-        if (genErr.code === "RATE_LIMIT") throw new Error("RATE_LIMIT");
-        if (genErr.code === "QUOTA_EXHAUSTED") throw new Error("CREDITS_EXHAUSTED");
-        if (genErr.code === "INVALID_KEY") throw new Error("INVALID_KEY");
-        if (genErr instanceof DeepseekRiskError && genErr.code === "TIMEOUT") {
-          throw new Error(genErr.message);
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const send = (payload: Record<string, unknown>) => {
+          try {
+            controller.enqueue(sseEncode(encoder, payload));
+          } catch {
+            /* closed */
+          }
+        };
+        const heartbeat = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(`: ping ${Date.now()}\n\n`));
+          } catch {
+            /* closed */
+          }
+        }, 4000);
+
+        try {
+          controller.enqueue(encoder.encode(`: connected\n\n`));
+          send({
+            type: "meta",
+            source: "ai",
+            normalized_equipment: normalizedEquipment,
+            detail_level: detailLevel,
+            mode: "risk",
+            oneshot: true,
+            jsa: true,
+          });
+          send({ type: "status", message: "DeepSeek JSA 스트리밍 생성 시작…" });
+
+          let emitted = 0;
+          const { count } = await streamOneShotRiskItems(
+            process_name,
+            equipText,
+            descText,
+            locationText,
+            envText,
+            detailLevel,
+            (item) => {
+              emitted++;
+              send({ type: "item", item, index: emitted });
+              send({
+                type: "status",
+                message: `${emitted}건 생성됨…`,
+                items_so_far: emitted,
+              });
+            },
+          );
+
+          if (count === 0) {
+            send({
+              type: "error",
+              error: "AI가 유효한 위험성평가 항목을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.",
+            });
+            return;
+          }
+
+          send({
+            type: "done",
+            source: "ai",
+            count,
+            is_complete: true,
+            normalized_equipment: normalizedEquipment,
+            detail_level: detailLevel,
+            mode: "risk",
+          });
+        } catch (e) {
+          console.error("generate-risk-ai stream error:", e);
+          const msg = e instanceof Error ? e.message : "Unknown error";
+          let error = msg;
+          if (msg === "RATE_LIMIT" || (e instanceof DeepseekRiskError && e.code === "RATE_LIMIT")) {
+            error = "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
+          } else if (
+            msg === "CREDITS_EXHAUSTED" ||
+            (e instanceof DeepseekRiskError && e.code === "QUOTA_EXHAUSTED")
+          ) {
+            error = "AI 크레딧이 부족합니다. 워크스페이스 크레딧을 충전해주세요.";
+          } else if (
+            msg === "INVALID_KEY" ||
+            (e instanceof DeepseekRiskError && e.code === "INVALID_KEY")
+          ) {
+            error =
+              "DeepSeek API 키가 유효하지 않습니다. DEEPSEEK_API_KEY(Supabase Edge Secrets)를 확인해야 합니다.";
+          } else if (e instanceof DeepseekRiskError && e.code === "TIMEOUT") {
+            error = e.message;
+          }
+          try {
+            send({ type: "error", error });
+          } catch { /* closed */ }
+        } finally {
+          clearInterval(heartbeat);
+          try {
+            controller.close();
+          } catch { /* ignore */ }
         }
-      }
-      throw genErr;
-    }
+      },
+    });
 
-    const allMapped = mapAndDedupe(rawItems, process_name, new Set<string>());
-    if (allMapped.length === 0) {
-      return new Response(
-        JSON.stringify({
-          error: "AI가 유효한 위험성평가 항목을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.",
-          items: [],
-          count: 0,
-          mode: "risk",
-        }),
-        {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-        },
-      );
-    }
-
-    return new Response(
-      JSON.stringify({
-        items: allMapped,
-        source: "ai",
-        count: allMapped.length,
-        normalized_equipment: normalizedEquipment,
-        detail_level: detailLevel,
-        is_complete: true,
-        mode: "risk",
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
-    );
+    return new Response(stream, { headers: sseHeaders });
   } catch (e) {
     console.error("generate-risk-ai error:", e);
     const msg = e instanceof Error ? e.message : "Unknown error";

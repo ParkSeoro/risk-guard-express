@@ -232,95 +232,125 @@ async function fetchRiskItemsOneShot(
 ): Promise<void> {
   const detailLevel: DetailLevel = opts.detailLevel || 'core';
   const baseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-  const token = await getAccessToken();
-  const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
   handlers.onProgress?.(
     {
       phase: 'generating',
       itemsSoFar: 0,
       phaseId: 'oneshot',
-      phaseTitle: 'JSA One-Shot',
-      message: 'DeepSeek JSA 생성 중… (한 번에 수신, SSE 없음)',
+      phaseTitle: 'JSA One-Shot SSE',
+      message: 'DeepSeek JSA 스트리밍 연결 중…',
       normalizedEquipment: bag.normalizedEquipment.value,
     },
     bag.items,
   );
 
-  // Non-streaming: await full JSON Array once (no SSE chunk assembly).
-  const resp = await fetch(`${baseUrl}/functions/v1/generate-risk-ai`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      apikey: anonKey,
-      'Content-Type': 'application/json; charset=utf-8',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify({
-      process_name: opts.processName,
-      equipment: opts.equipment || '',
-      work_description: opts.workDescription || '',
-      work_location: opts.workLocation || '일반',
-      work_environment: opts.workEnvironment || [],
-      detail_level: detailLevel,
-      project_id: opts.projectId || '',
-      stream: false,
-      mode: 'risk',
-    }),
-    signal: handlers.signal,
-  });
+  // Soft client timeout — stop infinite spinner if Edge/DeepSeek never completes
+  const timeoutMs = 140_000;
+  const timeoutCtrl = new AbortController();
+  const timeoutId = setTimeout(() => timeoutCtrl.abort(), timeoutMs);
+  const onOuterAbort = () => timeoutCtrl.abort();
+  handlers.signal?.addEventListener('abort', onOuterAbort);
 
-  if (!resp.ok) {
-    let detail = '';
-    try {
-      const errBody = await resp.json();
-      detail = errBody?.error || errBody?.message || '';
-      if (errBody?.code === 'WORKER_RESOURCE_LIMIT') {
-        detail = 'AI 생성 연결이 중단되었습니다. 이미 생성된 항목은 유지됩니다.';
-      }
-    } catch { /* ignore */ }
-    throw new Error(mapErrorMessage(detail || `AI 서버 오류 (${resp.status})`));
-  }
-
-  let data: any;
   try {
-    data = await resp.json();
-  } catch (e) {
-    console.error('[AI Engine] response JSON parse failed:', e);
-    throw new Error('AI 응답 JSON 파싱에 실패했습니다.');
+    await consumeSse(
+      `${baseUrl}/functions/v1/generate-risk-ai`,
+      {
+        process_name: opts.processName,
+        equipment: opts.equipment || '',
+        work_description: opts.workDescription || '',
+        work_location: opts.workLocation || '일반',
+        work_environment: opts.workEnvironment || [],
+        detail_level: detailLevel,
+        project_id: opts.projectId || '',
+        stream: true,
+        mode: 'risk',
+      },
+      {
+        onEvent: async (payload) => {
+          const type = payload?.type;
+          if (type === 'meta') {
+            if (payload.normalized_equipment) bag.normalizedEquipment.value = payload.normalized_equipment;
+            bag.source.value = 'ai';
+            handlers.onProgress?.(
+              {
+                phase: 'generating',
+                itemsSoFar: bag.items.length,
+                message: 'JSA 스트리밍 생성 중…',
+                normalizedEquipment: bag.normalizedEquipment.value,
+              },
+              bag.items,
+            );
+            return;
+          }
+          if (type === 'status') {
+            handlers.onProgress?.(
+              {
+                phase: 'status',
+                itemsSoFar: typeof payload.items_so_far === 'number'
+                  ? payload.items_so_far
+                  : bag.items.length,
+                message: String(payload.message || '생성 중…'),
+                elapsedSec: typeof payload.elapsed_sec === 'number' ? payload.elapsed_sec : undefined,
+                normalizedEquipment: bag.normalizedEquipment.value,
+              },
+              bag.items,
+            );
+            return;
+          }
+          if (type === 'item' && payload.item) {
+            const mapped = mapAIItemToGenerated(payload.item, opts.processName);
+            const key = `${mapped.sub_task}|${mapped.hazard}`;
+            if (opts.deduplicate !== false && bag.seen.has(key)) return;
+            bag.seen.add(key);
+            bag.items.push(mapped);
+            await handlers.onItem?.(mapped, bag.items);
+            handlers.onProgress?.(
+              {
+                phase: 'generating',
+                itemsSoFar: bag.items.length,
+                message: `${bag.items.length}건 수신…`,
+                normalizedEquipment: bag.normalizedEquipment.value,
+              },
+              bag.items,
+            );
+            return;
+          }
+          if (type === 'done') {
+            bag.source.value = 'ai';
+            if (payload.normalized_equipment) bag.normalizedEquipment.value = payload.normalized_equipment;
+            handlers.onProgress?.(
+              {
+                phase: 'complete',
+                itemsSoFar: bag.items.length,
+                message: `스트림 완료 · ${bag.items.length}건`,
+                normalizedEquipment: bag.normalizedEquipment.value,
+              },
+              bag.items,
+            );
+          }
+        },
+      },
+      timeoutCtrl.signal,
+    );
+  } catch (err: any) {
+    if (err?.name === 'AbortError' || /aborted/i.test(String(err?.message || ''))) {
+      if (bag.items.length > 0) {
+        console.warn('[AI Engine] stream aborted with partial items:', bag.items.length);
+        return;
+      }
+      throw new Error('AI 생성 연결이 중단되었습니다. 이미 생성된 항목은 유지됩니다. 다시 시도하거나 공종을 나눠 주세요.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+    handlers.signal?.removeEventListener('abort', onOuterAbort);
   }
-
-  if (data?.error && (!Array.isArray(data?.items) || data.items.length === 0)) {
-    throw new Error(mapErrorMessage(String(data.error)));
-  }
-
-  if (data?.normalized_equipment) bag.normalizedEquipment.value = data.normalized_equipment;
-  bag.source.value = 'ai';
-
-  const rawItems: any[] = Array.isArray(data?.items) ? data.items : [];
-  for (const raw of rawItems) {
-    const mapped = mapAIItemToGenerated(raw, opts.processName);
-    const key = `${mapped.sub_task}|${mapped.hazard}`;
-    if (opts.deduplicate !== false && bag.seen.has(key)) continue;
-    bag.seen.add(key);
-    bag.items.push(mapped);
-    await handlers.onItem?.(mapped, bag.items);
-  }
-
-  handlers.onProgress?.(
-    {
-      phase: 'generating',
-      itemsSoFar: bag.items.length,
-      message: `${bag.items.length}건 수신 완료`,
-      normalizedEquipment: bag.normalizedEquipment.value,
-    },
-    bag.items,
-  );
 }
 
 /**
- * One-shot risk generation via generate-risk-ai (non-streaming JSON Array).
- * Name kept for callers; no SSE / no prep-main-finish phases.
+ * One-shot risk generation via generate-risk-ai SSE (single phase, no prep/main/finish).
+ * Collects streamed items; callers bulk-insert after completion.
  */
 export async function generateRiskItemsStreaming(
   opts: AIGenerateOptions,

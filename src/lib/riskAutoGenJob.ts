@@ -156,7 +156,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     patch({
       processIndex: i + 1,
       currentProcess: proc,
-      message: `공종 「${proc}」 DeepSeek One-Shot 생성 중… (SSE 없음 · 완료 후 일괄 저장)`,
+      message: `공종 「${proc}」 JSA 스트리밍 생성 중…`,
     });
 
     if (!input.useAI) {
@@ -187,14 +187,27 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       projectId: input.projectId,
     };
 
+    let received = 0;
     const result = await generateRiskItemsStreaming(opts, {
+      onItem: async (_item, soFar) => {
+        received = soFar.length;
+        patch({
+          message: `공종 「${proc}」 ${received}건 수신… (완료 후 일괄 저장)`,
+        });
+      },
       onProgress: (progress) => {
         const msg = progress.message
           || progress.phaseTitle
           || `공종 「${proc}」 생성 중…`;
-        patch({ message: String(msg) });
+        patch({
+          message: String(msg),
+        });
       },
     });
+
+    if (result.items.length === 0) {
+      throw new Error(`공종 「${proc}」 생성 결과가 비어 있습니다.`);
+    }
 
     patch({ message: `공종 「${proc}」 ${result.items.length}건 일괄 저장 중…` });
     const n = await bulkPersist(result.items);

@@ -21,6 +21,7 @@ import {
   geoPolygonToCrs,
   imageCrsBounds,
   looksLikeWgs84,
+  looksLikeWgs84Ring,
 } from "@/lib/tracking/imageSpaceGeo";
 
 export type OrthogonalZone = {
@@ -114,7 +115,7 @@ export default function OrthogonalZoneCanvas({
       // CRS.Simple getLatLngs() → pixel Y/X; translate to real GPS with geo bounds.
       if (shape.kind === "polygon") {
         const latlngs = crsPolygonToGeo(shape.latlngs, corners, size.w, size.h);
-        if (!latlngs.every(looksLikeWgs84)) {
+        if (!looksLikeWgs84Ring(latlngs)) {
           console.error("[OrthogonalZoneCanvas] GPS inverse failed", {
             crs: shape.latlngs,
             geo: latlngs,

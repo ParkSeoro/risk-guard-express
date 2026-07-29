@@ -45,7 +45,7 @@ import {
   zoneCategorySchema,
 } from "@/lib/tracking/accessRules";
 import type { DrawnShape, DrawTool } from "@/components/geofence/LeafletDrawControl";
-import { looksLikeWgs84 } from "@/lib/tracking/imageSpaceGeo";
+import { looksLikeWgs84, looksLikeWgs84Ring, GPS_COORDS_INVALID_MSG } from "@/lib/tracking/imageSpaceGeo";
 import {
   bottomRight,
   cornersCenter,
@@ -523,12 +523,10 @@ export default function SiteControlMap() {
     const gpsOk =
       payload.shape.kind === "circle"
         ? looksLikeWgs84(payload.shape.center)
-        : payload.shape.latlngs.every(looksLikeWgs84);
+        : looksLikeWgs84Ring(payload.shape.latlngs);
     if (!gpsOk) {
       setSaving(false);
-      toast.error(
-        "좌표가 GPS(위경도)로 변환되지 않았습니다. 맵핑 탭 GPS Bounds를 저장한 뒤 다시 그려 주세요.",
-      );
+      toast.error(GPS_COORDS_INVALID_MSG);
       return;
     }
 

@@ -12,6 +12,11 @@ import { Map, Plus, Trash2, Upload, QrCode, Check, X, Search } from "lucide-reac
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSoftDelete } from "@/hooks/useSoftDelete";
+import {
+  formatGpsPreview,
+  GPS_COORDS_INVALID_MSG,
+  looksLikeWgs84Ring,
+} from "@/lib/tracking/imageSpaceGeo";
 
 
 type SiteMap = {
@@ -166,6 +171,10 @@ export default function SiteMaps() {
         nw_lat: activeMap.geo_anchor_nw_lat, nw_lng: activeMap.geo_anchor_nw_lng,
         se_lat: activeMap.geo_anchor_se_lat, se_lng: activeMap.geo_anchor_se_lng,
       });
+      if (!looksLikeWgs84Ring(geo_polygon)) {
+        toast.error(GPS_COORDS_INVALID_MSG);
+        return;
+      }
     }
     const { error } = await supabase.from("site_zones").insert({
       site_map_id: activeMap.id,
@@ -177,7 +186,11 @@ export default function SiteMaps() {
       geo_polygon: geo_polygon as any,
     });
     if (error) { toast.error(error.message); return; }
-    toast.success(geo_polygon ? "구역 추가 완료 (GPS 지오펜스 활성)" : "구역 추가 완료 — 지도 좌표가 미설정이라 GPS 추적은 비활성");
+    toast.success(
+      geo_polygon
+        ? `구역 추가 완료 (GPS 지오펜스 활성)\n${formatGpsPreview({ kind: "polygon", latlngs: geo_polygon })}`
+        : "구역 추가 완료 — 지도 좌표가 미설정이라 GPS 추적은 비활성",
+    );
     setDrafting(false);
     setDraftPts([]);
     setDraftName("");
@@ -215,6 +228,7 @@ export default function SiteMaps() {
     let n = 0;
     for (const z of zones) {
       const geo = projectPolygonToGeo(z.polygon, anchors);
+      if (!looksLikeWgs84Ring(geo)) continue;
       const { error } = await supabase.from("site_zones").update({ geo_polygon: geo as any }).eq("id", z.id);
       if (!error) n++;
     }

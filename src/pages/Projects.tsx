@@ -318,7 +318,7 @@ const Projects = () => {
           <h1 className="text-2xl font-bold">프로젝트 관리</h1>
           <p className="text-sm text-muted-foreground mt-1">현장/공사 프로젝트 목록</p>
         </div>
-        {isAdmin() && (
+        {isAdmin && (
           <Button size="sm" className="gap-1.5" onClick={() => { setShowCreate(true); resetForm(); }}>
             <Plus className="h-3.5 w-3.5" /> 프로젝트 생성
           </Button>
@@ -375,7 +375,7 @@ const Projects = () => {
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/project/${project.id}`)}>
                       <Shield className="h-4 w-4" />
                     </Button>
-                    {(isAdmin() || project.created_by === user?.id) && (
+                    {(isAdmin || project.created_by === user?.id) && (
                       <>
                         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(project)}>
                           <Pencil className="h-4 w-4" />

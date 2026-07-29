@@ -39,9 +39,9 @@ function PageFallback() {
 }
 
 function AuthRoute() {
-  const { user, loading, roles, profile } = useAuth();
+  const { user, loading, roles, rolesReady, profile } = useAuth();
   const [params] = useSearchParams();
-  if (loading) {
+  if (loading || (user && !rolesReady)) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
         세션 확인 중…
@@ -49,23 +49,23 @@ function AuthRoute() {
     );
   }
   if (user) {
+    const dest = postLoginPath(roles, profile, { rolesReady });
     const next = params.get("next");
     if (next && next.startsWith("/") && !next.startsWith("//")) {
-      // Respect explicit next, but keep workers out of admin unless next is worker
-      if (next.startsWith("/app/admin") && postLoginPath(roles, profile).startsWith("/app/worker")) {
-        return <Navigate to={postLoginPath(roles, profile)} replace />;
+      // Workers must not deep-link into admin
+      if (next.startsWith("/app/admin") && dest.startsWith("/app/worker")) {
+        return <Navigate to={dest} replace />;
       }
-      // Workers without consent cannot deep-link past onboarding
-      if (
-        postLoginPath(roles, profile) === "/app/worker/onboarding" &&
-        next.startsWith("/app/worker") &&
-        !next.includes("/onboarding")
-      ) {
+      // Admins must not be forced into worker onboarding via stale next=
+      if (dest.startsWith("/app/admin") && next.startsWith("/app/worker")) {
+        return <Navigate to={dest} replace />;
+      }
+      if (dest === "/app/worker/onboarding" && next.startsWith("/app/worker") && !next.includes("/onboarding")) {
         return <Navigate to="/app/worker/onboarding" replace />;
       }
       return <Navigate to={next} replace />;
     }
-    return <Navigate to={postLoginPath(roles, profile)} replace />;
+    return <Navigate to={dest} replace />;
   }
   return <Auth />;
 }
@@ -139,16 +139,18 @@ function OfflineSyncMount() {
 }
 
 function RoleAwareRootRedirect() {
-  const { user, loading, roles, profile } = useAuth();
-  if (loading) {
+  const { user, loading, roles, rolesReady, profile } = useAuth();
+  if (loading || (user && !rolesReady)) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
         세션 확인 중…
       </div>
     );
   }
+  // 비로그인 → 관리자 로그인 탭이 기본인 /login
   if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={postLoginPath(roles, profile)} replace />;
+  // 관리자 → /app/admin (Dashboard index), 근로자 → home/onboarding
+  return <Navigate to={postLoginPath(roles, profile, { rolesReady })} replace />;
 }
 
 export default App;

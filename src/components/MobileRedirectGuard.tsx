@@ -1,13 +1,15 @@
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useAuth } from "@/contexts/AuthContext";
+import { isAdminShellUser } from "@/components/AuthGuard";
 
 const FORCE_DESKTOP_KEY = "forceDesktopUI";
 
-// 모바일 기기에서 관리자(/app/admin) 진입 시 근로자 셸(/app/worker)로 이동
+// Public / worker-native paths — never auto-bounce
 const MOBILE_EXCLUDE = [
   /^\/app\/worker(\/|$)/,
-  /^\/m(\/|$)/, // legacy alias (redirects to /app/worker)
+  /^\/m(\/|$)/,
   /^\/auth/,
   /^\/login/,
   /^\/register/,
@@ -23,15 +25,25 @@ const MOBILE_EXCLUDE = [
   /^\/c\//,
 ];
 
+/**
+ * Mobile UX helper — MUST NOT kidnap authenticated admins/managers into worker onboarding.
+ * Only pure workers (or anonymous) get bounced from /app/admin to /app/worker.
+ */
 export default function MobileRedirectGuard() {
   const isMobile = useIsMobile();
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, roles, rolesReady, loading } = useAuth();
 
   useEffect(() => {
     if (!isMobile) return;
     if (typeof window !== "undefined" && window.innerWidth >= 768) return;
     if (typeof window !== "undefined" && localStorage.getItem(FORCE_DESKTOP_KEY) === "1") return;
+    if (loading || (user && !rolesReady)) return;
+
+    // Critical: admins/managers keep desktop admin shell even on small viewports
+    if (user && isAdminShellUser(roles)) return;
+
     const path = location.pathname;
 
     const ar =
@@ -51,11 +63,10 @@ export default function MobileRedirectGuard() {
 
     if (MOBILE_EXCLUDE.some((re) => re.test(path))) return;
 
-    // Admin shell or other desktop paths → worker home
     if (path.startsWith("/app/admin") || path === "/" || !path.startsWith("/app/worker")) {
       navigate("/app/worker/home", { replace: true });
     }
-  }, [isMobile, location.pathname, navigate]);
+  }, [isMobile, location.pathname, navigate, user, roles, rolesReady, loading]);
 
   return null;
 }

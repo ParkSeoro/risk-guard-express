@@ -1,5 +1,6 @@
 /**
- * Role-based auth + traffic routing + worker legal consent intercept.
+ * Role-based auth + traffic routing.
+ * Consent intercept applies ONLY to pure WORKER users — never admins/managers.
  */
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,14 +19,41 @@ export const WORKER_SHELL_ROLES = ["worker", "viewer"] as const;
 
 export type ShellKind = "admin" | "worker";
 
-export function resolvePostLoginShell(roles: string[]): ShellKind {
+export function isAdminShellUser(roles: string[]): boolean {
   const set = new Set(roles.map((r) => r.toLowerCase()));
-  if (ADMIN_SHELL_ROLES.some((r) => set.has(r))) return "admin";
-  if (WORKER_SHELL_ROLES.some((r) => set.has(r))) return "worker";
-  return "worker";
+  return ADMIN_SHELL_ROLES.some((r) => set.has(r));
 }
 
-/** Worker needs legal consent before any worker-shell feature. */
+/** True only when user has worker/viewer and NO admin/manager roles. */
+export function isPureWorkerUser(roles: string[]): boolean {
+  if (isAdminShellUser(roles)) return false;
+  const set = new Set(roles.map((r) => r.toLowerCase()));
+  return WORKER_SHELL_ROLES.some((r) => set.has(r));
+}
+
+/**
+ * Resolve destination shell.
+ * Empty roles while still loading must NOT default to worker (that hijacks admins).
+ */
+export function resolvePostLoginShell(
+  roles: string[],
+  opts?: { rolesReady?: boolean; loginIntent?: "admin" | "worker" | null },
+): ShellKind {
+  if (isAdminShellUser(roles)) return "admin";
+  if (isPureWorkerUser(roles)) return "worker";
+
+  // Roles not ready yet — honor login tab intent if present
+  if (opts?.rolesReady === false) {
+    if (opts.loginIntent === "admin") return "admin";
+    if (opts.loginIntent === "worker") return "worker";
+    return "admin"; // safe default for unknown: admin desktop, never onboarding
+  }
+
+  // Roles fetched but empty: prefer admin path (project gate handles membership)
+  if (opts?.loginIntent === "worker") return "worker";
+  return "admin";
+}
+
 export function workerNeedsConsent(profile: {
   agreed_to_location?: boolean | null;
   agreed_to_terms?: boolean | null;
@@ -39,6 +67,24 @@ export function workerNeedsConsent(profile: {
   );
 }
 
+export function readLoginIntent(): "admin" | "worker" | null {
+  try {
+    const v = sessionStorage.getItem("login_shell_intent");
+    if (v === "admin" || v === "worker") return v;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+export function writeLoginIntent(intent: "admin" | "worker") {
+  try {
+    sessionStorage.setItem("login_shell_intent", intent);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function postLoginPath(
   roles: string[],
   profile?: {
@@ -46,9 +92,20 @@ export function postLoginPath(
     agreed_to_terms?: boolean | null;
     agreed_to_privacy?: boolean | null;
   } | null,
+  opts?: { rolesReady?: boolean },
 ): string {
-  if (resolvePostLoginShell(roles) === "admin") return "/app/admin";
-  if (workerNeedsConsent(profile ?? null)) return "/app/worker/onboarding";
+  const shell = resolvePostLoginShell(roles, {
+    rolesReady: opts?.rolesReady,
+    loginIntent: readLoginIntent(),
+  });
+
+  // ADMIN / MANAGER → desktop admin dashboard (never onboarding)
+  if (shell === "admin") return "/app/admin";
+
+  // WORKER only → consent gate
+  if (isPureWorkerUser(roles) && workerNeedsConsent(profile ?? null)) {
+    return "/app/worker/onboarding";
+  }
   return "/app/worker/home";
 }
 
@@ -67,10 +124,10 @@ function Loading() {
 }
 
 export default function AuthGuard({ children, shell, allowAnonymous = false }: AuthGuardProps) {
-  const { user, loading, roles, profile } = useAuth();
+  const { user, loading, roles, rolesReady, profile } = useAuth();
   const location = useLocation();
 
-  if (loading) return <Loading />;
+  if (loading || (user && !rolesReady)) return <Loading />;
 
   if (!user) {
     if (allowAnonymous) return <>{children}</>;
@@ -78,42 +135,52 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
     return <Navigate to={`/login?next=${next}`} replace />;
   }
 
-  const preferred = resolvePostLoginShell(roles);
+  const admin = isAdminShellUser(roles);
+  const pureWorker = isPureWorkerUser(roles);
+  const preferred = resolvePostLoginShell(roles, {
+    rolesReady,
+    loginIntent: readLoginIntent(),
+  });
 
-  if (shell === "admin" && preferred === "worker") {
-    return <Navigate to={postLoginPath(roles, profile)} replace />;
+  // ——— Admin / manager shell ———
+  if (shell === "admin") {
+    // Pure workers may not live in admin shell
+    if (pureWorker) {
+      return <Navigate to={postLoginPath(roles, profile, { rolesReady })} replace />;
+    }
+    // Admins/managers always pass — NEVER send to worker onboarding
+    return <>{children}</>;
   }
 
-  // Worker shell intercept: block all routes until legal consent
-  const onOnboarding =
-    location.pathname === "/app/worker/onboarding" ||
-    location.pathname.endsWith("/onboarding");
+  // ——— Worker shell ———
+  // Admins opening /app/worker/* are allowed (field use) but skip consent
+  if (admin) {
+    return <>{children}</>;
+  }
 
-  if (
-    shell === "worker" &&
-    preferred === "worker" &&
-    workerNeedsConsent(profile) &&
-    !onOnboarding
-  ) {
+  // Consent intercept: ONLY pure WORKER role
+  const onOnboarding =
+    location.pathname === "/app/worker/onboarding" || location.pathname.endsWith("/onboarding");
+
+  if (pureWorker && workerNeedsConsent(profile) && !onOnboarding) {
     return <Navigate to="/app/worker/onboarding" replace />;
   }
 
-  // Already consented users should not stay on onboarding
-  if (
-    shell === "worker" &&
-    preferred === "worker" &&
-    !workerNeedsConsent(profile) &&
-    onOnboarding
-  ) {
+  if (pureWorker && !workerNeedsConsent(profile) && onOnboarding) {
     return <Navigate to="/app/worker/home" replace />;
+  }
+
+  // Non-worker / unknown on worker shell: if preferred admin, bounce to admin
+  if (!pureWorker && preferred === "admin" && !onOnboarding) {
+    return <Navigate to="/app/admin" replace />;
   }
 
   return <>{children}</>;
 }
 
 export function RoleHomeRedirect() {
-  const { user, loading, roles, profile } = useAuth();
-  if (loading) return <Loading />;
+  const { user, loading, roles, rolesReady, profile } = useAuth();
+  if (loading || (user && !rolesReady)) return <Loading />;
   if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={postLoginPath(roles, profile)} replace />;
+  return <Navigate to={postLoginPath(roles, profile, { rolesReady })} replace />;
 }

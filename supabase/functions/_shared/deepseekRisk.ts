@@ -9,8 +9,8 @@
  */
 const DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const DEEPSEEK_MODEL = "deepseek-ai/deepseek-v4-flash";
-/** Default generation timeout — exhaustive risk rows need far more than 3s. */
-const DEFAULT_TIMEOUT_MS = 90_000;
+/** Per-phase abort. Keep under Edge worker limits; phases are sized to finish sooner. */
+const DEFAULT_TIMEOUT_MS = 75_000;
 
 export const RISK_DEEPSEEK_MODEL = DEEPSEEK_MODEL;
 

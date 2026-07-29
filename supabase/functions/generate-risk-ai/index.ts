@@ -2,10 +2,9 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { geminiChatFetch, GeminiError } from "../_shared/gemini.ts";
 import {
-  streamDeepseekRiskChatText,
+  callDeepseekRiskChat,
   DeepseekRiskError,
   RISK_DEEPSEEK_SYSTEM_PROMPT,
-  RISK_DEEPSEEK_MODEL,
   parseDeepseekRiskJson,
   stripCodeFences,
 } from "../_shared/deepseekRisk.ts";
@@ -242,21 +241,22 @@ type PhaseDef = {
 };
 
 function buildPhases(detailLevel: "core" | "comprehensive"): PhaseDef[] {
-  // Client orchestrates one phase per HTTP request so each stays under ~150s.
+  // Client orchestrates one phase per HTTP request so each stays under Edge limits.
   // Accidents are intentionally excluded — use generate-accident-ai.
+  // Counts kept modest: DeepSeek JSON for 10+ dense rows often exceeds idle SSE / worker budgets.
   if (detailLevel === "core") {
     return [
       {
         id: "prep_main",
         title: "준비·본작업",
-        focus: "작업허가·장비점검·본작업 중 추락·협착·붕괴·감전·충돌·유해물질 등 4M 치명 위험",
-        targetCount: 10,
+        focus: "작업허가·장비점검·본작업 중 추락·협착·붕괴·감전·충돌 등 치명 위험",
+        targetCount: 8,
       },
       {
         id: "finish",
         title: "마무리·비상",
-        focus: "철수·정리·잔여위험·비상조치·복구",
-        targetCount: 6,
+        focus: "철수·정리·잔여위험·비상조치",
+        targetCount: 5,
       },
     ];
   }
@@ -264,20 +264,20 @@ function buildPhases(detailLevel: "core" | "comprehensive"): PhaseDef[] {
     {
       id: "prep",
       title: "작업 전 준비·반입",
-      focus: "사전조사·작업허가·장비반입·양중·지장물·환기측정·보호구·신호수·구역통제",
-      targetCount: 9,
+      focus: "사전조사·작업허가·장비반입·양중·보호구·신호수·구역통제",
+      targetCount: 6,
     },
     {
       id: "main",
       title: "본 작업",
-      focus: "단계별 본작업·장비운용·인력교차·구조적 위험·환경·관리 미비",
-      targetCount: 12,
+      focus: "단계별 본작업·장비운용·인력교차·구조적 위험",
+      targetCount: 7,
     },
     {
       id: "finish",
       title: "마무리·해체·비상",
-      focus: "해체·되메우기·잔재처리·점검·비상연락·대피",
-      targetCount: 8,
+      focus: "해체·잔재처리·점검·비상연락",
+      targetCount: 5,
     },
   ];
 }
@@ -448,97 +448,54 @@ async function streamPhaseItems(
     .map(([k, v]) => `- ${k}: ${v}`)
     .join("\n");
 
-  const userPrompt = `[입력]
-공종: ${processName}
-장비: ${equipText}
-작업내용: ${descText}
-작업위치: ${locationText}
-작업조건/환경: ${envText}
+  // Exact count (not "Exhaustive+") keeps latency predictable under Edge/SSE limits.
+  const userPrompt = `[입력] 공종:${processName} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}
 ${ragContext}
 
-[이번 배치 — ${phase.title}]
-초점: ${phase.focus}
-DeepSeek V4 Flash (${RISK_DEEPSEEK_MODEL}) 전용 생성.
-items를 최소 ${phase.targetCount}개 이상 Exhaustive 도출.
-개선대책(improvement_control)에 공학적·관리적·PPE를 모두 명시.
-치명 재해는 initial_likelihood/severity '상'.
-마크다운·설명문 금지. JSON만.
+[배치] ${phase.title} — 초점: ${phase.focus}
+정확히 ${phase.targetCount}개 items만. 추상문구 금지. improvement_control에 공학적·관리적·PPE 모두.
+치명재해는 initial_* '상'. 마크다운 금지. JSON만.
 
 [필드]
 ${fieldSchemaLines}
 
-[출력 형식]
-{"items":[{"process":"${processName}","sub_work":"H빔 보 부재 인양 및 볼트 1차 체결","hazard_factor":"산안기준규칙 제142조 미준수 — 웨빙벨트 마모·절단으로 인양물 낙하","hazard_situation":"타워크레인 인양 중 마모 슬링벨트 파단으로 H빔 낙하, 하부 작업자 직격 우려","existing_control":"작업 전 슬링·샤클 육안점검, 신호수 배치","improvement_control":"고강도 체인슬링·정격하중 샤클 적용, 인양 하부 출입통제선·감시인 지정, 안전모·안전화·각반 착용","initial_likelihood":"상","initial_severity":"상","initial_risk_level":"상","residual_likelihood":"중","residual_severity":"중","residual_risk_level":"중","ppe":"안전모, 안전화, 각반"}]}`;
+[형식] {"items":[{"process":"${processName}","sub_work":"...","hazard_factor":"...","hazard_situation":"...","existing_control":"...","improvement_control":"...","initial_likelihood":"상","initial_severity":"상","initial_risk_level":"상","residual_likelihood":"중","residual_severity":"중","residual_risk_level":"중","ppe":"안전모, 안전화"}]}`;
 
-  let buffer = "";
-  let emitted = 0;
-  const collected: any[] = [];
+  // Non-stream: DeepSeek often buffers full JSON anyway; idle SSE then dies in the browser.
+  // Caller must send SSE heartbeats while this awaits.
+  const maxTokens = Math.min(3200, 500 + phase.targetCount * 320);
+  const { content } = await callDeepseekRiskChat({
+    messages: [
+      { role: "system", content: HSE_SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.35,
+    max_tokens: maxTokens,
+    timeoutMs: 70_000,
+  });
 
+  let parsed: any = null;
   try {
-    for await (const chunk of streamDeepseekRiskChatText({
-      messages: [
-        { role: "system", content: HSE_SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.45,
-      max_tokens: 4096,
-    })) {
-      buffer += chunk;
-      const { objects, nextIndex } = extractCompletedObjects(buffer, emitted);
-      for (const obj of objects) {
-        collected.push(obj);
-        onDeltaItem(obj);
-      }
-      emitted = nextIndex;
-    }
-  } catch (e) {
-    // If stream failed mid-way but we already have partial buffer, try parse once
-    if (collected.length === 0 && buffer.trim()) {
-      try {
-        const parsed = parseDeepseekRiskJson<any>(buffer);
-        const arr = Array.isArray(parsed) ? parsed : parsed?.items;
-        if (Array.isArray(arr)) {
-          for (const obj of arr) {
-            collected.push(obj);
-            onDeltaItem(obj);
-          }
-          return { rawItems: collected };
-        }
-      } catch {
-        /* fall through */
-      }
-    }
-    throw e;
-  }
-
-  let finalParsed: any = null;
-  try {
-    finalParsed = parseDeepseekRiskJson(stripCodeFences(buffer));
+    parsed = parseDeepseekRiskJson(stripCodeFences(content));
   } catch {
-    const m = buffer.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+    const m = content.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
     if (m) {
       try {
-        finalParsed = parseDeepseekRiskJson(m[0]);
+        parsed = parseDeepseekRiskJson(m[0]);
       } catch {
-        finalParsed = null;
+        parsed = null;
       }
     }
   }
 
-  const finalItems = Array.isArray(finalParsed)
-    ? finalParsed
-    : Array.isArray(finalParsed?.items)
-    ? finalParsed.items
+  const items: any[] = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed?.items)
+    ? parsed.items
     : [];
 
-  if (finalItems.length > emitted) {
-    for (let i = emitted; i < finalItems.length; i++) {
-      collected.push(finalItems[i]);
-      onDeltaItem(finalItems[i]);
-    }
-  }
-
-  return { rawItems: collected.length ? collected : finalItems };
+  for (const obj of items) onDeltaItem(obj);
+  return { rawItems: items };
 }
 
 serve(async (req) => {
@@ -788,7 +745,7 @@ serve(async (req) => {
         }
       }
 
-      const ragContext = await fetchRAGContext(adminClient, process_name, equipText, 5);
+      const ragContext = await fetchRAGContext(adminClient, process_name, equipText, 3);
       const phases = selectedPhases;
       const existingKeys = new Set<string>();
       const allMapped: any[] = [];
@@ -890,9 +847,17 @@ serve(async (req) => {
           const send = (payload: Record<string, unknown>) => {
             controller.enqueue(sseEncode(encoder, payload));
           };
+          // Keep SSE alive while DeepSeek non-stream call runs (browser/proxy idle cutoffs).
+          const heartbeat = setInterval(() => {
+            try {
+              controller.enqueue(encoder.encode(`: ping ${Date.now()}\n\n`));
+            } catch {
+              /* closed */
+            }
+          }, 4000);
           try {
-            // heartbeat so proxies keep the connection
             controller.enqueue(encoder.encode(`: connected\n\n`));
+            send({ type: "status", message: "생성 시작" });
             await emitCachedOrGenerate(send);
           } catch (e) {
             console.error("generate-risk-ai stream error:", e);
@@ -908,6 +873,7 @@ serve(async (req) => {
               send({ type: "error", error });
             } catch { /* controller may be closed */ }
           } finally {
+            clearInterval(heartbeat);
             try {
               controller.close();
             } catch { /* ignore */ }

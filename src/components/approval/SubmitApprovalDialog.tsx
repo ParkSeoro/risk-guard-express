@@ -139,13 +139,18 @@ export default function SubmitApprovalDialog({
           mine.find((t) => t.is_default) || mine[0] ||
           co.find((t) => t.is_default) || co[0] ||
           shared.find((t) => t.is_default) || shared[0];
-        if (def) {
-          setSelectedTemplateId(def.id);
-          setSteps(sortStepsByHierarchy(adaptStepsForAuthor(normalizeSteps(def.steps), authorType)));
-        } else {
-          setSelectedTemplateId('');
-          setSteps(sortStepsByHierarchy(buildDefaultStepsForAuthor(entityType, authorType)));
-        }
+
+        const approverList = ((ap as any) || []) as ApproverOption[];
+        let nextSteps: Step[] = def
+          ? sortStepsByHierarchy(adaptStepsForAuthor(normalizeSteps(def.steps), authorType))
+          : sortStepsByHierarchy(buildDefaultStepsForAuthor(entityType, authorType));
+
+        // 상신(관리감독자) 단계가 비어 있으면 현재 로그인 사용자를 자동 지정
+        nextSteps = seedSubmitterStep(nextSteps, approverList, uid || user?.id || null);
+
+        if (def) setSelectedTemplateId(def.id);
+        else setSelectedTemplateId('');
+        setSteps(nextSteps);
       } catch (e: any) {
         toast.error('결재선 정보를 불러오지 못했습니다: ' + (e.message || e));
       } finally {
@@ -166,10 +171,38 @@ export default function SubmitApprovalDialog({
     }));
   };
 
+  /** Fill empty 상신(contractor_supervisor) step with the logged-in user when eligible. */
+  const seedSubmitterStep = (
+    rawSteps: Step[],
+    approverList: ApproverOption[],
+    uid: string | null,
+  ): Step[] => {
+    if (!uid) return rawSteps;
+    const idx = rawSteps.findIndex(
+      (s) => (s.position || '').toLowerCase() === 'contractor_supervisor',
+    );
+    if (idx < 0 || rawSteps[idx].user_id) return rawSteps;
+    const me = approverList.find((a) => a.out_user_id === uid);
+    if (!me) return rawSteps;
+    const next = [...rawSteps];
+    next[idx] = {
+      ...next[idx],
+      user_id: me.out_user_id,
+      user_name: me.out_display_name,
+      company_id: me.out_company_id,
+      company_name: me.out_company_name,
+    };
+    return next;
+  };
+
   const onPickTemplate = (id: string) => {
     setSelectedTemplateId(id);
     const t = templates.find((x) => x.id === id);
-    if (t) setSteps(sortStepsByHierarchy(adaptStepsForAuthor(normalizeSteps(t.steps), authorCompanyType)));
+    if (!t) return;
+    const adapted = sortStepsByHierarchy(
+      adaptStepsForAuthor(normalizeSteps(t.steps), authorCompanyType),
+    );
+    setSteps(seedSubmitterStep(adapted, approvers, user?.id || null));
   };
 
   const addStep = () =>
@@ -219,6 +252,8 @@ export default function SubmitApprovalDialog({
   const anyStepMissingApprovers = useMemo(() => {
     return steps.some((s) => {
       if (!s.position) return true;
+      // Already assigned (e.g. template / auto-seed) — do not block submit
+      if (s.user_id) return false;
       const filtered = filterApproversForStep(sortedApprovers as any, s.position, filterCtx);
       return filtered.length === 0;
     });
@@ -360,11 +395,19 @@ export default function SubmitApprovalDialog({
                     const filtered = stepKey
                       ? filterApproversForStep(sortedApprovers as any, stepKey, filterCtx)
                       : [];
+                    // Keep currently selected user visible even if filter/template drifted
+                    const selected = s.user_id
+                      ? sortedApprovers.find((a) => a.out_user_id === s.user_id)
+                      : undefined;
+                    const options =
+                      selected && !filtered.some((a) => a.out_user_id === selected.out_user_id)
+                        ? [selected, ...filtered]
+                        : filtered;
                     const stepTitle = stepLabelForAuthor(stepKey, authorCompanyType)
                       || POSITION_LABELS[stepKey]
                       || stepKey
                       || '직책 미지정';
-                    const empty = filtered.length === 0;
+                    const empty = options.length === 0;
                     return (
                       <Select
                         value={s.user_id || undefined}
@@ -386,7 +429,7 @@ export default function SubmitApprovalDialog({
                               해당 직책의 결재자가 등록되지 않았습니다.
                             </div>
                           )}
-                          {filtered.map((a) => (
+                          {options.map((a) => (
                             <SelectItem key={a.out_user_id} value={a.out_user_id}>
                               {a.out_display_name || '(이름없음)'} · {a.out_company_name}{' '}
                               <Badge variant="outline" className="ml-1 text-[10px] align-middle">

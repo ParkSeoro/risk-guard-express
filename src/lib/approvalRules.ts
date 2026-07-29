@@ -218,7 +218,18 @@ const CLIENT_STEP_KEYS = new Set<string>(['owner_cm', 'owner_sm']);
 
 /** Step key → allowed project_position codes (strict). */
 export const STEP_POSITION_ALLOWLIST: Record<string, string[]> = {
-  contractor_supervisor: ['SITE_SUPERVISOR'],
+  // 상신(관리감독자): SITE_SUPERVISOR 우선. 현장 직책이 비어 있는 업체를 위해
+  // 공사/현장 관리 직책도 허용(없으면 상신 버튼이 영구 비활성됨).
+  contractor_supervisor: [
+    'SITE_SUPERVISOR',
+    'FOREMAN',
+    'FIELD_ENGINEER',
+    'CONSTRUCTION_MGR',
+    'SITE_MANAGER',
+    'HSE_MANAGER',
+    'CEO',
+    'EXECUTIVE',
+  ],
   contractor_safety_manager: ['HSE_MANAGER'],
   contractor_site_director: ['SITE_MANAGER'],
   gc_manager: ['SITE_MANAGER', 'HSE_MANAGER', 'CONSTRUCTION_MGR', 'CEO', 'EXECUTIVE'],
@@ -230,7 +241,13 @@ export const STEP_POSITION_ALLOWLIST: Record<string, string[]> = {
 
 /** Fallback when position_new empty: match project_role */
 const STEP_ROLE_FALLBACK: Record<string, string[]> = {
-  contractor_supervisor: ['site_supervisor', 'supervisor'],
+  contractor_supervisor: [
+    'site_supervisor',
+    'supervisor',
+    'project_admin',
+    'site_manager',
+    'safety_manager',
+  ],
   contractor_safety_manager: ['safety_manager'],
   contractor_site_director: ['site_manager'],
   gc_manager: ['project_admin', 'safety_manager', 'site_manager'],
@@ -239,6 +256,12 @@ const STEP_ROLE_FALLBACK: Record<string, string[]> = {
   owner_cm: ['project_admin'],
   owner_sm: ['safety_manager'],
 };
+
+function isWorkerApprover(a: EligibleApprover): boolean {
+  const pos = POS(a.out_position);
+  const role = (a.out_role || '').toLowerCase();
+  return pos === 'WORKER' || role === 'worker' || role === 'partner_worker' || role === 'viewer';
+}
 
 /**
  * 레거시 단계 키(구형 project_role/position)를 SSOT 단계 키로 매핑.
@@ -355,7 +378,7 @@ export function filterApproversForStep(
     return [];
   }
 
-  return approvers.filter((a) => {
+  const strict = approvers.filter((a) => {
     const t = normalizeCompanyType(a.out_company_type);
 
     if (CONTRACTOR_STEP_KEYS.has(key)) {
@@ -378,6 +401,18 @@ export function filterApproversForStep(
     if (key === 'cooperator') return true;
     return false;
   });
+
+  if (strict.length > 0) return strict;
+
+  // Soft fallback — 관리감독자(상신) 슬롯에 SITE_SUPERVISOR가 없으면
+  // 기안 회사의 비근로자 멤버라도 선택 가능해야 결재상신이 막히지 않는다.
+  if (key === 'contractor_supervisor' && authorCompanyId) {
+    return approvers.filter(
+      (a) => a.out_company_id === authorCompanyId && !isWorkerApprover(a),
+    );
+  }
+
+  return strict;
 }
 
 

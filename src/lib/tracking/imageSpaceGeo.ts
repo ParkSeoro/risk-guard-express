@@ -3,6 +3,11 @@
  *
  * Image UV: (0,0)=TL, (1,0)=TR, (0,1)=BL — matches leaflet-imageoverlay-rotated corners.
  * Affine: P(u,v) = TL + u*(TR−TL) + v*(BL−TL)
+ *
+ * Axis-aligned GPS Bounds (mapping tab TopLeft / BottomRight) use linear interpolation:
+ *   lat = TL.lat + (py / H) * (BR.lat − TL.lat)
+ *   lng = TL.lng + (px / W) * (BR.lng − TL.lng)
+ * where (px, py) is pixel from the image top-left.
  */
 import {
   bottomRight,
@@ -12,6 +17,12 @@ import {
 
 export type ImageUv = { u: number; v: number };
 
+/** Original drone photo GPS bounds (mapping tab SSOT). */
+export type GpsImageBounds = {
+  topLeft: LatLngLiteral;
+  bottomRight: LatLngLiteral;
+};
+
 /** Affine map UV → lat/lng using georef corners (rotation/skew included). */
 export function uvToLatLng(uv: ImageUv, corners: GeoCorners): LatLngLiteral {
   const { tl, tr, bl } = corners;
@@ -19,6 +30,79 @@ export function uvToLatLng(uv: ImageUv, corners: GeoCorners): LatLngLiteral {
     lat: tl.lat + uv.u * (tr.lat - tl.lat) + uv.v * (bl.lat - tl.lat),
     lng: tl.lng + uv.u * (tr.lng - tl.lng) + uv.v * (bl.lng - tl.lng),
   };
+}
+
+/**
+ * Pixel (x from left, y from top) → WGS84 via TL/BR linear interpolation.
+ * Prefer {@link translateCrsToGps} / corners when geo_transform has rotation/skew.
+ */
+export function translatePixelToGps(
+  px: number,
+  py: number,
+  imageWidth: number,
+  imageHeight: number,
+  gpsBounds: GpsImageBounds,
+): LatLngLiteral {
+  const w = Math.max(imageWidth, 1);
+  const h = Math.max(imageHeight, 1);
+  const { topLeft: tl, bottomRight: br } = gpsBounds;
+  const u = px / w;
+  const v = py / h;
+  return {
+    lat: tl.lat + v * (br.lat - tl.lat),
+    lng: tl.lng + u * (br.lng - tl.lng),
+  };
+}
+
+/** Build TL/BR GPS bounds from geo corners (BR derived from parallelogram). */
+export function gpsBoundsFromCorners(corners: GeoCorners): GpsImageBounds {
+  return {
+    topLeft: { ...corners.tl },
+    bottomRight: bottomRight(corners),
+  };
+}
+
+/**
+ * CRS.Simple “lat/lng” (actually y/x image units) → real WGS84.
+ * Uses affine UV when corners include TR/BL (handles rotation); equivalent to
+ * TL/BR linear interpolation for axis-aligned orthophotos.
+ */
+export function translateCrsToGps(
+  crsPoint: { lat: number; lng: number },
+  corners: GeoCorners,
+  imageWidth: number,
+  imageHeight: number,
+): LatLngLiteral {
+  const uv = crsLatLngToUv(crsPoint, imageWidth, imageHeight);
+  return uvToLatLng(uv, corners);
+}
+
+/** Heuristic: reject CRS pixel-scale values mistaken for GPS before DB write. */
+export function looksLikeWgs84(p: LatLngLiteral): boolean {
+  return (
+    Number.isFinite(p.lat) &&
+    Number.isFinite(p.lng) &&
+    Math.abs(p.lat) <= 90 &&
+    Math.abs(p.lng) <= 180
+  );
+}
+
+export function formatGpsPreview(shape: {
+  kind: "polygon" | "circle";
+  latlngs?: LatLngLiteral[];
+  center?: LatLngLiteral;
+  radius_m?: number;
+}): string {
+  if (shape.kind === "circle" && shape.center) {
+    const { lat, lng } = shape.center;
+    return `📍 변환된 GPS 좌표: [${lat.toFixed(6)}, ${lng.toFixed(6)}] · 반경 ${shape.radius_m ?? "?"}m`;
+  }
+  const pts = shape.latlngs || [];
+  if (!pts.length) return "";
+  const body = pts
+    .map((p) => `[${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}]`)
+    .join(", ");
+  return `📍 변환된 GPS 좌표: ${body}`;
 }
 
 export function polygonUvToLatLng(
@@ -156,17 +240,14 @@ export function imageCrsBounds(
   ];
 }
 
-/** CRS.Simple polygon ring → WGS84 via UV + geo corners. */
+/** CRS.Simple polygon ring → WGS84 via UV + geo corners (pixel → GPS inverse). */
 export function crsPolygonToGeo(
   crsRing: { lat: number; lng: number }[],
   corners: GeoCorners,
   imageWidth: number,
   imageHeight: number,
 ): LatLngLiteral[] {
-  return crsRing.map((p) => {
-    const uv = crsLatLngToUv(p, imageWidth, imageHeight);
-    return uvToLatLng(uv, corners);
-  });
+  return crsRing.map((p) => translateCrsToGps(p, corners, imageWidth, imageHeight));
 }
 
 /** WGS84 polygon → CRS.Simple ring for orthogonal display. */

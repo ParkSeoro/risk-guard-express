@@ -39,7 +39,7 @@ function PageFallback() {
 }
 
 function AuthRoute() {
-  const { user, loading, roles } = useAuth();
+  const { user, loading, roles, profile } = useAuth();
   const [params] = useSearchParams();
   if (loading) {
     return (
@@ -52,12 +52,20 @@ function AuthRoute() {
     const next = params.get("next");
     if (next && next.startsWith("/") && !next.startsWith("//")) {
       // Respect explicit next, but keep workers out of admin unless next is worker
-      if (next.startsWith("/app/admin") && postLoginPath(roles).startsWith("/app/worker")) {
-        return <Navigate to="/app/worker/home" replace />;
+      if (next.startsWith("/app/admin") && postLoginPath(roles, profile).startsWith("/app/worker")) {
+        return <Navigate to={postLoginPath(roles, profile)} replace />;
+      }
+      // Workers without consent cannot deep-link past onboarding
+      if (
+        postLoginPath(roles, profile) === "/app/worker/onboarding" &&
+        next.startsWith("/app/worker") &&
+        !next.includes("/onboarding")
+      ) {
+        return <Navigate to="/app/worker/onboarding" replace />;
       }
       return <Navigate to={next} replace />;
     }
-    return <Navigate to={postLoginPath(roles)} replace />;
+    return <Navigate to={postLoginPath(roles, profile)} replace />;
   }
   return <Auth />;
 }
@@ -131,7 +139,7 @@ function OfflineSyncMount() {
 }
 
 function RoleAwareRootRedirect() {
-  const { user, loading, roles } = useAuth();
+  const { user, loading, roles, profile } = useAuth();
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
@@ -140,7 +148,7 @@ function RoleAwareRootRedirect() {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={postLoginPath(roles)} replace />;
+  return <Navigate to={postLoginPath(roles, profile)} replace />;
 }
 
 export default App;

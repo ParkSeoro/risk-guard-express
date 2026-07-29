@@ -4183,7 +4183,11 @@ export type Database = {
       profiles: {
         Row: {
           account_status: string
+          agreed_to_location: boolean
+          agreed_to_privacy: boolean
+          agreed_to_terms: boolean
           company: string | null
+          consent_agreed_at: string | null
           created_at: string
           display_name: string
           id: string
@@ -4194,7 +4198,11 @@ export type Database = {
         }
         Insert: {
           account_status?: string
+          agreed_to_location?: boolean
+          agreed_to_privacy?: boolean
+          agreed_to_terms?: boolean
           company?: string | null
+          consent_agreed_at?: string | null
           created_at?: string
           display_name?: string
           id?: string
@@ -4205,7 +4213,11 @@ export type Database = {
         }
         Update: {
           account_status?: string
+          agreed_to_location?: boolean
+          agreed_to_privacy?: boolean
+          agreed_to_terms?: boolean
           company?: string | null
+          consent_agreed_at?: string | null
           created_at?: string
           display_name?: string
           id?: string

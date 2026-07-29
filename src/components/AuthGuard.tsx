@@ -1,8 +1,5 @@
 /**
- * Role-based auth + traffic routing.
- * - Unauthenticated → /login
- * - Worker-only roles → /app/worker
- * - Admin/supervisor roles → /app/admin
+ * Role-based auth + traffic routing + worker legal consent intercept.
  */
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -25,19 +22,39 @@ export function resolvePostLoginShell(roles: string[]): ShellKind {
   const set = new Set(roles.map((r) => r.toLowerCase()));
   if (ADMIN_SHELL_ROLES.some((r) => set.has(r))) return "admin";
   if (WORKER_SHELL_ROLES.some((r) => set.has(r))) return "worker";
-  // No role yet / unknown → worker shell (safer for field devices)
   return "worker";
 }
 
-export function postLoginPath(roles: string[]): string {
-  return resolvePostLoginShell(roles) === "admin" ? "/app/admin" : "/app/worker";
+/** Worker needs legal consent before any worker-shell feature. */
+export function workerNeedsConsent(profile: {
+  agreed_to_location?: boolean | null;
+  agreed_to_terms?: boolean | null;
+  agreed_to_privacy?: boolean | null;
+} | null): boolean {
+  if (!profile) return true;
+  return !(
+    profile.agreed_to_location === true &&
+    profile.agreed_to_terms === true &&
+    profile.agreed_to_privacy === true
+  );
+}
+
+export function postLoginPath(
+  roles: string[],
+  profile?: {
+    agreed_to_location?: boolean | null;
+    agreed_to_terms?: boolean | null;
+    agreed_to_privacy?: boolean | null;
+  } | null,
+): string {
+  if (resolvePostLoginShell(roles) === "admin") return "/app/admin";
+  if (workerNeedsConsent(profile ?? null)) return "/app/worker/onboarding";
+  return "/app/worker/home";
 }
 
 type AuthGuardProps = {
   children: ReactNode;
-  /** Which shell this guard protects */
   shell: ShellKind;
-  /** Allow unauthenticated render (legacy; prefer false) */
   allowAnonymous?: boolean;
 };
 
@@ -50,7 +67,7 @@ function Loading() {
 }
 
 export default function AuthGuard({ children, shell, allowAnonymous = false }: AuthGuardProps) {
-  const { user, loading, roles } = useAuth();
+  const { user, loading, roles, profile } = useAuth();
   const location = useLocation();
 
   if (loading) return <Loading />;
@@ -63,19 +80,40 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
 
   const preferred = resolvePostLoginShell(roles);
 
-  // Worker shell: block admin-only users from living in worker UI accidentally? Allow both.
-  // Admin shell: workers without admin roles are redirected to worker home.
   if (shell === "admin" && preferred === "worker") {
+    return <Navigate to={postLoginPath(roles, profile)} replace />;
+  }
+
+  // Worker shell intercept: block all routes until legal consent
+  const onOnboarding =
+    location.pathname === "/app/worker/onboarding" ||
+    location.pathname.endsWith("/onboarding");
+
+  if (
+    shell === "worker" &&
+    preferred === "worker" &&
+    workerNeedsConsent(profile) &&
+    !onOnboarding
+  ) {
+    return <Navigate to="/app/worker/onboarding" replace />;
+  }
+
+  // Already consented users should not stay on onboarding
+  if (
+    shell === "worker" &&
+    preferred === "worker" &&
+    !workerNeedsConsent(profile) &&
+    onOnboarding
+  ) {
     return <Navigate to="/app/worker/home" replace />;
   }
 
   return <>{children}</>;
 }
 
-/** Login success redirect by role (use inside AuthRoute). */
 export function RoleHomeRedirect() {
-  const { user, loading, roles } = useAuth();
+  const { user, loading, roles, profile } = useAuth();
   if (loading) return <Loading />;
   if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={postLoginPath(roles)} replace />;
+  return <Navigate to={postLoginPath(roles, profile)} replace />;
 }

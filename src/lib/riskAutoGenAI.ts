@@ -102,7 +102,7 @@ function mapErrorMessage(rawMsg: string): string {
 
 /** @deprecated Phases removed — one-shot generation only. Kept for import compatibility. */
 export function riskGenPhases(_detailLevel: DetailLevel): { id: string; title: string }[] {
-  return [{ id: 'oneshot', title: '치명 고위험군 생성' }];
+  return [{ id: 'oneshot', title: 'JSA 전공정 생성' }];
 }
 
 async function getAccessToken(): Promise<string> {
@@ -238,7 +238,7 @@ async function fetchRiskItemsOneShot(
       phase: 'generating',
       itemsSoFar: bag.items.length,
       phaseId: 'oneshot',
-      phaseTitle: '치명 고위험군 생성',
+      phaseTitle: 'JSA 전공정 생성',
       normalizedEquipment: bag.normalizedEquipment.value,
     },
     bag.items,
@@ -443,7 +443,7 @@ export async function generateRiskItemsHybrid(
     }
 
     onProgress?.({ phase: 'fallback', itemsSoFar: 0 }, []);
-    const fallbackTarget = detailLevel === 'core' ? 5 : 7;
+    const fallbackTarget = detailLevel === 'core' ? 12 : 20;
     const libraryItems = await generateRiskItems({
       processName: opts.processName,
       tags: opts.tags || [],

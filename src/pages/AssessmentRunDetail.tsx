@@ -736,7 +736,7 @@ const AssessmentRunDetail = () => {
           const libraryItems = await generateRiskItems({
             processName: proc.trim(),
             tags: autoGenConditionTags,
-            targetCount: autoGenDetailLevel === 'core' ? 5 : 7,
+            targetCount: autoGenDetailLevel === 'core' ? 12 : 20,
             deduplicate: true,
           });
           const n = await bulkPersist(libraryItems);
@@ -2200,12 +2200,12 @@ const AssessmentRunDetail = () => {
               <Label className="text-xs font-semibold">평가 수준</Label>
               <div className="grid grid-cols-2 gap-2">
                 <Button type="button" variant={autoGenDetailLevel === 'core' ? 'default' : 'outline'} size="sm" className="h-10 text-xs"
-                  onClick={() => setAutoGenDetailLevel('core')}>핵심 치명 (5개)</Button>
+                  onClick={() => setAutoGenDetailLevel('core')}>JSA 핵심 (~12)</Button>
                 <Button type="button" variant={autoGenDetailLevel === 'comprehensive' ? 'default' : 'outline'} size="sm" className="h-10 text-xs"
-                  onClick={() => setAutoGenDetailLevel('comprehensive')}>고위험 엄선 (7개)</Button>
+                  onClick={() => setAutoGenDetailLevel('comprehensive')}>JSA 상세 (~20)</Button>
               </div>
               <p className="text-[10px] text-muted-foreground leading-snug">
-                사망·중상·화재·폭발로 직결되는 핵심 위험만 One-Shot 생성 · 사고사례는 별도 버튼
+                작업 준비➔본작업➔마무리 전 공정 누락 없이 One-Shot 생성 · 사고사례는 별도 버튼
               </p>
             </div>
 

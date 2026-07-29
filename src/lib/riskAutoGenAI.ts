@@ -37,20 +37,34 @@ export interface AIGenerateProgress {
 }
 
 function mapAIItemToGenerated(item: any, processName: string): GeneratedRiskItem {
-  const lg: RiskGrade = (['상', '중', '하'].includes(item.likelihood_grade) ? item.likelihood_grade : '중') as RiskGrade;
-  const sg: RiskGrade = (['상', '중', '하'].includes(item.severity_grade) ? item.severity_grade : '중') as RiskGrade;
+  const pickGrade = (...vals: unknown[]): RiskGrade | null => {
+    for (const v of vals) {
+      if (typeof v === 'string' && ['상', '중', '하'].includes(v)) return v as RiskGrade;
+    }
+    return null;
+  };
+
+  const lg = pickGrade(item.likelihood_grade, item.initial_likelihood) ?? '중';
+  const sg = pickGrade(item.severity_grade, item.initial_severity) ?? '중';
   const rg = calculateRiskGrade(lg, sg);
-  const ilg: RiskGrade = (['상', '중', '하'].includes(item.improved_likelihood_grade) ? item.improved_likelihood_grade : '하') as RiskGrade;
-  const isg: RiskGrade = (['상', '중', '하'].includes(item.improved_severity_grade) ? item.improved_severity_grade : '하') as RiskGrade;
+  const ilg = pickGrade(item.improved_likelihood_grade, item.residual_likelihood) ?? '하';
+  const isg = pickGrade(item.improved_severity_grade, item.residual_severity) ?? '하';
   const irg = calculateRiskGrade(ilg, isg);
+
+  const ppeRaw = item.ppe;
+  const ppe = Array.isArray(ppeRaw)
+    ? ppeRaw.map(String)
+    : typeof ppeRaw === 'string'
+      ? ppeRaw.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
+      : [];
 
   return {
     process: correctTerms(item.process || processName),
-    sub_task: item.sub_task || '',
-    hazard: item.hazard || '',
+    sub_task: item.sub_task || item.sub_work || '',
+    hazard: item.hazard || item.hazard_factor || '',
     hazard_situation: item.hazard_situation || '',
-    existing_measure: item.existing_measure || '',
-    improvement_measure: item.improvement_measure || '',
+    existing_measure: item.existing_measure || item.existing_control || '',
+    improvement_measure: item.improvement_measure || item.improvement_control || '',
     likelihood_grade: lg,
     severity_grade: sg,
     risk_grade: rg,
@@ -61,7 +75,7 @@ function mapAIItemToGenerated(item: any, processName: string): GeneratedRiskItem
     severity: sg === '상' ? 4 : sg === '중' ? 3 : 2,
     improved_frequency: ilg === '상' ? 3 : ilg === '중' ? 2 : 1,
     improved_severity: isg === '상' ? 4 : isg === '중' ? 3 : 2,
-    ppe: Array.isArray(item.ppe) ? item.ppe : [],
+    ppe,
     legal_basis: Array.isArray(item.legal_basis) ? item.legal_basis : [],
     department: '',
     assignee: '',

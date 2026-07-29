@@ -145,7 +145,7 @@ const MasterData = () => {
     toast({ title: '위험도 매트릭스가 저장되었습니다.' });
   };
 
-  const admin = isAdmin();
+  const admin = !!isAdmin;
 
   // eslint-disable-next-line react/no-unstable-nested-components
   const DeptMappingTab = () => {

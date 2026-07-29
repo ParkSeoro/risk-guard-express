@@ -36,14 +36,14 @@ export class AppErrorBoundary extends React.Component<
               <h2 className="font-bold text-lg">화면을 불러오지 못했습니다</h2>
             </div>
             <p className="text-sm text-muted-foreground">
-              일시적인 오류가 발생했습니다. 새로고침하거나 첫 화면으로 돌아가주세요.
+              데이터를 불러오는 중 오류가 발생했습니다. (상세 원인)
             </p>
-            <pre className="text-xs bg-muted/50 rounded p-2 overflow-auto max-h-32">
+            <pre className="text-xs bg-muted/50 rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap">
               {this.state.error.message}
             </pre>
             <div className="flex gap-2">
               <Button onClick={() => { this.reset(); window.location.reload(); }} size="sm">
-                <RefreshCw className="h-3.5 w-3.5 mr-1" /> 새로고침
+                <RefreshCw className="h-3.5 w-3.5 mr-1" /> 재시도
               </Button>
               <Button onClick={this.goHome} size="sm" variant="outline">
                 <Home className="h-3.5 w-3.5 mr-1" /> 첫 화면

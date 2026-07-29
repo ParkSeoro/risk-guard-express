@@ -39,6 +39,7 @@ import FeedbackPanel from '@/components/FeedbackPanel';
 import ApprovalLineManager, { type ApprovalLine } from '@/components/ApprovalLineManager';
 import WorkerParticipationPanel from '@/components/assessment/WorkerParticipationPanel';
 import * as XLSX from 'xlsx';
+import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
 
@@ -506,20 +507,22 @@ const AssessmentRunDetail = () => {
 
   const isApproved = run?.status === '승인완료';
   const isArchived = run?.status === '폐기';
-  const isMasterOrCreator = isAdmin() || (user && run?.created_by === user.id);
+  const isMasterOrCreator = !!isAdmin || (user && run?.created_by === user.id);
   const canEdit = run && EDITABLE_STATUSES.includes(run.status);
   const canForceEdit = isApproved && isMasterOrCreator;
 
   // Only non-excluded items for display
-  const activeItems = useMemo(() => items.filter(i => !(i as any).is_excluded), [items]);
-  const excludedItems = useMemo(() => items.filter(i => (i as any).is_excluded), [items]);
+  const activeItems = useMemo(() => (items || []).filter(i => !(i as any).is_excluded), [items]);
+  const excludedItems = useMemo(() => (items || []).filter(i => (i as any).is_excluded), [items]);
 
   const filteredItems = useMemo(() => {
-    return activeItems.filter(item => {
+    return (activeItems || []).filter(item => {
       if (filterRiskGrade !== 'all' && item.risk_grade !== filterRiskGrade) return false;
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
-        return (item.hazard || '').toLowerCase().includes(term) || (item.sub_task || '').toLowerCase().includes(term) || item.process.toLowerCase().includes(term);
+        return (item.hazard || '').toLowerCase().includes(term)
+          || (item.sub_task || '').toLowerCase().includes(term)
+          || (item.process || '').toLowerCase().includes(term);
       }
       return true;
     });
@@ -527,20 +530,20 @@ const AssessmentRunDetail = () => {
 
   const stats = useMemo(() => ({
     total: activeItems.length,
-    high: activeItems.filter(i => i.risk_grade === '상').length,
-    med: activeItems.filter(i => i.risk_grade === '중').length,
-    low: activeItems.filter(i => i.risk_grade === '하').length,
-    highRemain: activeItems.filter(i => i.improved_risk_grade === '상').length,
+    high: (activeItems || []).filter(i => i.risk_grade === '상').length,
+    med: (activeItems || []).filter(i => i.risk_grade === '중').length,
+    low: (activeItems || []).filter(i => i.risk_grade === '하').length,
+    highRemain: (activeItems || []).filter(i => i.improved_risk_grade === '상').length,
     excluded: excludedItems.length,
   }), [activeItems, excludedItems]);
 
   // Must stay above early returns (React hooks order / error #310)
   const conditionTagSuggestions = useMemo(() => {
-    const fromDb = environmentTags.filter(t => t.category === 'environment' || !t.category).map(t => t.name);
+    const fromDb = (environmentTags || []).filter(t => t.category === 'environment' || !t.category).map(t => t.name);
     return Array.from(new Set([...DEFAULT_CONDITION_TAGS, ...fromDb]));
   }, [environmentTags]);
   const equipmentSuggestions = useMemo(() => {
-    const fromDb = environmentTags.filter(t => t.category === 'equipment').map(t => t.name);
+    const fromDb = (environmentTags || []).filter(t => t.category === 'equipment').map(t => t.name);
     return Array.from(new Set([...DEFAULT_EQUIPMENT_SUGGESTIONS, ...fromDb]));
   }, [environmentTags]);
 
@@ -1504,7 +1507,7 @@ const AssessmentRunDetail = () => {
   // Draft: 제출 가능
   const canSubmitForValidation = isDraft && activeItems.length > 0;
   // 검증 실행: 제출됨 or 보완중(재제출 후) 상태에서 관리자만
-  const canValidate = (isSubmitted || isReturned) && isAdmin();
+  const canValidate = (isSubmitted || isReturned) && !!isAdmin;
   // 재제출: 보완중/반려 상태에서만
   const canResubmit = isReturned;
   // 결재 상신: 승인완료/폐기/결재진행 제외하고 항상 가능
@@ -1512,7 +1515,7 @@ const AssessmentRunDetail = () => {
   // 재상신: 보완중/반려 상태에서도 가능
   const canResubmitApproval = false; // canSubmitApproval로 통합
   // 상신 취소
-  const canCancelApproval = isInApproval && (isAdmin() || (user && run.created_by === user.id));
+  const canCancelApproval = isInApproval && (!!isAdmin || (user && run.created_by === user.id));
   // 자동 보완: 검증 결과가 있고 적정이 아닐 때 (참고용)
   const canAutoRemediate = validationReport && validationReport.verdict !== '적정' && (canEdit || canForceEdit) && !isInApproval && !isApproved;
   // 결재자 승인/반려: ONLY assigned approver
@@ -2851,4 +2854,10 @@ const AssessmentRunDetail = () => {
   );
 };
 
-export default AssessmentRunDetail;
+export default function AssessmentRunDetailPage() {
+  return (
+    <AppErrorBoundary>
+      <AssessmentRunDetail />
+    </AppErrorBoundary>
+  );
+}

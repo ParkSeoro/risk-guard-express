@@ -76,7 +76,7 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
   const [autoAccidentRan, setAutoAccidentRan] = useState(false);
   const [autoAccidentLoading, setAutoAccidentLoading] = useState(false);
   const detectedHighRisk = useMemo(() => detectHighRiskCategories(riskItems), [riskItems]);
-  const autoCases = accidents.filter(a => a.source_type === 'auto');
+  const autoCases = (accidents || []).filter(a => a.source_type === 'auto');
   const hasHighRiskWithoutCases = detectedHighRisk.length > 0 && autoCases.length === 0;
 
   const reload = async () => {

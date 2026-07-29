@@ -167,8 +167,18 @@ export async function exportToPDF(
     // Dynamic import to avoid bundle issues
     const jsPDFModule = await import('jspdf');
     const autoTableModule = await import('jspdf-autotable');
-    const jsPDF = jsPDFModule.default;
-    const autoTable = autoTableModule.default;
+    // ESM: named `jsPDF` is the constructor; `default` is often the module namespace object
+    const jsPDF =
+      (jsPDFModule as any).jsPDF ||
+      (typeof (jsPDFModule as any).default === 'function'
+        ? (jsPDFModule as any).default
+        : (jsPDFModule as any).default?.jsPDF);
+    const autoTable =
+      (autoTableModule as any).default ||
+      (autoTableModule as any).autoTable;
+    if (typeof jsPDF !== 'function') {
+      throw new Error('jsPDF constructor is not available');
+    }
 
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 

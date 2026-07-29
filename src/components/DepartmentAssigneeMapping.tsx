@@ -147,7 +147,7 @@ const DepartmentAssigneeMapping = ({ projectId }: Props) => {
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-base">부서별 담당자 매핑</CardTitle>
-        {isAdmin() && (
+        {isAdmin && (
           <Button size="sm" className="gap-1.5" onClick={handleSave} disabled={saving}>
             <Save className="h-3.5 w-3.5" /> {saving ? '저장 중...' : '저장'}
           </Button>

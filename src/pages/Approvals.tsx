@@ -423,7 +423,7 @@ const Approvals = () => {
           <TabsTrigger value="submitted" className="flex-1">상신한 결재</TabsTrigger>
           <TabsTrigger value="completed" className="flex-1">완료</TabsTrigger>
           <TabsTrigger value="rejected" className="flex-1">반려</TabsTrigger>
-          {isAdmin() && <TabsTrigger value="all" className="flex-1">전체 현황</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="all" className="flex-1">전체 현황</TabsTrigger>}
         </TabsList>
 
 

@@ -461,6 +461,8 @@ const WorkPlanDetail = () => {
   const statusColor = {
     '작성중': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
     '결재중': 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
+    '승인': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
+    '승인완료': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
     '완료': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
     '만료': 'bg-muted text-muted-foreground',
     '반려': 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
@@ -502,7 +504,7 @@ const WorkPlanDetail = () => {
             <Copy className="h-3.5 w-3.5" /> 이 계획서로 새로 만들기
           </Button>
         )}
-        {plan.status === '승인완료' && (
+        {['승인완료', '승인', '완료'].includes(plan.status) && (
           <>
             <Button size="sm" variant="outline" className="gap-1" onClick={async () => {
               const { data, error } = await supabase.rpc('derive_permit_from_work_plan', { _work_plan_id: planId });

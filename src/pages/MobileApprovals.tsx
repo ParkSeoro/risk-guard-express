@@ -10,6 +10,7 @@ import { ArrowLeft, CheckCircle2, XCircle, Loader2, FileCheck2 } from "lucide-re
 import { toast } from "sonner";
 import PermitAiBriefingCard from "@/components/permits/PermitAiBriefingCard";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
+import { isSubmitterApprovalStep } from "@/lib/approvalRules";
 
 const ENTITY_LABEL: Record<string, string> = {
   work_plan: "작업계획서",
@@ -53,7 +54,8 @@ export default function MobileApprovals() {
     try { await (supabase as any).rpc("promote_permits_to_closure_pending"); } catch { /* non-fatal */ }
     const { data, error } = await supabase.rpc("get_my_pending_entity_approvals");
     if (error) toast.error("결재 목록 로드 실패: " + error.message);
-    setRows((data as any[]) || []);
+    // Desktop parity: 상신(기안) 단계는 승인/반려 UI에 노출하지 않음
+    setRows(((data as any[]) || []).filter((r) => !isSubmitterApprovalStep(r)));
     setLoading(false);
   };
 

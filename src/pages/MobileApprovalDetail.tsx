@@ -10,6 +10,7 @@ import { ArrowLeft, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import PermitAiBriefingCard from "@/components/permits/PermitAiBriefingCard";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
+import { isSubmitterApprovalStep } from "@/lib/approvalRules";
 
 /**
  * Mobile approval detail — AI briefing at top, then action buttons.
@@ -38,6 +39,13 @@ export default function MobileApprovalDetail() {
         return;
       }
       const found = ((data as any[]) || []).find((r) => r.approval_id === approvalId) || null;
+      if (found && isSubmitterApprovalStep(found)) {
+        toast.error("상신(기안) 단계는 승인/반려할 수 없습니다.");
+        setRow(null);
+        setLoading(false);
+        navigate("/m/approvals", { replace: true });
+        return;
+      }
       setRow(found);
       if (found?.entity_type === "work_permit" && found.entity_id) {
         const { data: p } = await supabase

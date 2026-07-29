@@ -12,6 +12,8 @@ describe('resolveSigKey', () => {
     expect(resolveSigKey(null, 'owner_cm')).toBe('cm');
     expect(resolveSigKey(null, 'owner_sm')).toBe('sm');
     expect(resolveSigKey(null, 'contractor_safety_manager')).toBe('safety_pic');
+    expect(resolveSigKey(null, 'gc_manager')).toBe('gc_manager');
+    expect(resolveSigKey('시공사 관리자', null)).toBe('gc_manager');
   });
 });
 

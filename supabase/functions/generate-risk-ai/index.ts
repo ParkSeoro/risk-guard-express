@@ -145,9 +145,9 @@ function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other" 
   return s;
 }
 
-/** Soft guidance count for user prompt (no hard slice after parse). */
+/** Soft guidance count for user prompt (keep modest for latency). */
 function jsaGuideCount(detailLevel: "core" | "comprehensive"): number {
-  return detailLevel === "core" ? 12 : 20;
+  return detailLevel === "core" ? 8 : 12;
 }
 
 function mapRawItem(item: any, processName: string): any | null {
@@ -246,60 +246,34 @@ function tryParse(s: string): any {
   }
 }
 
-/** Incremental extract of completed objects from a growing JSON array buffer. */
-function extractCompletedObjects(
-  buffer: string,
-  alreadyEmitted: number,
-): { objects: any[]; nextIndex: number } {
-  const cleaned = buffer.replace(/```json/gi, "").replace(/```/g, "");
-  const itemsKey = cleaned.search(/"items"\s*:/);
-  let arrStart = -1;
-  if (itemsKey >= 0) {
-    arrStart = cleaned.indexOf("[", itemsKey);
-  } else {
-    arrStart = cleaned.indexOf("[");
-  }
-  if (arrStart < 0) return { objects: [], nextIndex: alreadyEmitted };
+/** Parse one JSONL line into an object (tolerates trailing commas / fence crumbs). */
+function parseJsonlLine(raw: string): any | null {
+  let s = String(raw || "").trim();
+  if (!s) return null;
+  if (s.startsWith("```")) return null;
+  if (s === "[" || s === "]" || s === "," || s === "],") return null;
+  s = s.replace(/^```json/i, "").replace(/```$/g, "").trim();
+  s = s.replace(/,\s*$/, "");
+  if (!(s.startsWith("{") && s.endsWith("}"))) return null;
+  const parsed = tryParse(s);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  return parsed;
+}
 
-  const arrBody = cleaned.slice(arrStart + 1);
+/**
+ * Drain complete JSONL lines from a growing text buffer.
+ * Incomplete last line stays in `rest`.
+ */
+function drainJsonlObjects(buffer: string): { objects: any[]; rest: string } {
+  const normalized = buffer.replace(/\r\n/g, "\n");
+  const parts = normalized.split("\n");
+  const rest = parts.pop() ?? "";
   const objects: any[] = [];
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  let objStart = -1;
-  let completed = 0;
-
-  for (let i = 0; i < arrBody.length; i++) {
-    const ch = arrBody[i];
-    if (inString) {
-      if (escape) escape = false;
-      else if (ch === "\\") escape = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-    if (ch === "{") {
-      if (depth === 0) objStart = i;
-      depth++;
-    } else if (ch === "}") {
-      depth--;
-      if (depth === 0 && objStart >= 0) {
-        completed++;
-        if (completed > alreadyEmitted) {
-          const rawObj = arrBody.slice(objStart, i + 1);
-          const parsed = tryParse(rawObj);
-          if (parsed && typeof parsed === "object") objects.push(parsed);
-        }
-        objStart = -1;
-      }
-    } else if (ch === "]" && depth === 0) {
-      break;
-    }
+  for (const line of parts) {
+    const obj = parseJsonlLine(line);
+    if (obj) objects.push(obj);
   }
-  return { objects, nextIndex: alreadyEmitted + objects.length };
+  return { objects, rest };
 }
 
 function sseEncode(encoder: TextEncoder, payload: Record<string, unknown>): Uint8Array {
@@ -319,11 +293,13 @@ function buildJsaUserPrompt(
 
 위 입력에 대해 JSA 방식(작업 전 준비 ➔ 본 작업 ➔ 마무리)으로 누락 없이 위험성평가를 작성하라.
 대략 ${guideCount}개 내외. 추상문구 금지. 공학적·관리적·PPE 포함.
-마크다운·서론·결론 금지. 오직 JSON Array [ {...}, {...} ] 만 출력.`;
+마크다운·서론·결론 금지.
+절대 JSON Array([ ])로 묶지 마라. 객체 사이 쉼표 금지.
+한 줄에 JSON 객체 하나만 — JSON Lines(JSONL)로만 출력.`;
 }
 
 /**
- * One-Shot DeepSeek stream → emit each completed JSON object as it arrives.
+ * One-Shot DeepSeek stream → emit each completed JSONL object as its line completes.
  * No prep/main/finish phases.
  */
 async function streamOneShotRiskItems(
@@ -343,11 +319,19 @@ async function streamOneShotRiskItems(
     envText,
     detailLevel,
   );
-  const maxTokens = detailLevel === "comprehensive" ? 7000 : 5000;
+  // Keep tokens moderate so Edge stays under wall-clock budget while streaming.
+  const maxTokens = detailLevel === "comprehensive" ? 5500 : 4000;
   const existingKeys = new Set<string>();
   let buffer = "";
-  let emitted = 0;
   let count = 0;
+
+  const emitRaw = (rawObjects: any[]) => {
+    const mapped = mapAndDedupe(rawObjects, processName, existingKeys);
+    for (const item of mapped) {
+      count++;
+      onItem(item);
+    }
+  };
 
   for await (const delta of streamDeepseekRiskChatText({
     messages: [
@@ -359,21 +343,18 @@ async function streamOneShotRiskItems(
     timeoutMs: 120_000,
   })) {
     buffer += delta;
-    const { objects, nextIndex } = extractCompletedObjects(buffer, emitted);
-    emitted = nextIndex;
-    const mapped = mapAndDedupe(objects, processName, existingKeys);
-    for (const item of mapped) {
-      count++;
-      onItem(item);
-    }
+    const { objects, rest } = drainJsonlObjects(buffer);
+    buffer = rest;
+    if (objects.length) emitRaw(objects);
   }
 
-  // Final sweep — catch any trailing objects / {items:[...]} wrapper
-  const leftover = safeParseDeepseekRiskItems(buffer);
-  const mappedLeft = mapAndDedupe(leftover, processName, existingKeys);
-  for (const item of mappedLeft) {
-    count++;
-    onItem(item);
+  // Final incomplete line / leftover
+  const last = parseJsonlLine(buffer);
+  if (last) emitRaw([last]);
+  else {
+    // Fallback: model ignored JSONL and returned an array — salvage what we can
+    const salvaged = safeParseDeepseekRiskItems(buffer);
+    if (salvaged.length) emitRaw(salvaged);
   }
 
   return { count };

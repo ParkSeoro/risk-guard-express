@@ -1,12 +1,12 @@
 /**
  * Module-level risk auto-gen job — survives dialog close / SPA remount in the same tab.
- * Browser cannot continue work in a different tab's JS context; this keeps the original tab alive.
+ * Save-as-you-go: each streamed item is inserted immediately so timeouts keep partial data.
  */
 import { supabase } from '@/integrations/supabase/client';
 import { generateRiskItemsStreaming, type AIGenerateOptions, type DetailLevel } from '@/lib/riskAutoGenAI';
 
 export type RiskAutoGenJobState = {
-  status: 'idle' | 'running' | 'done' | 'error';
+  status: 'idle' | 'running' | 'done' | 'partial' | 'error';
   runId: string | null;
   projectId: string | null;
   processes: string[];
@@ -14,7 +14,10 @@ export type RiskAutoGenJobState = {
   processTotal: number;
   currentProcess: string;
   message: string;
+  /** Items successfully written to DB */
   insertedTotal: number;
+  /** Items received from stream (may be ahead of inserts briefly) */
+  receivedTotal: number;
   elapsedSec: number;
   error?: string;
   startedAt: number | null;
@@ -46,6 +49,7 @@ const IDLE: RiskAutoGenJobState = {
   currentProcess: '',
   message: '',
   insertedTotal: 0,
+  receivedTotal: 0,
   elapsedSec: 0,
   startedAt: null,
 };
@@ -107,7 +111,9 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
   const insertSeen = new Set<string>();
   let sortCursor = input.sortStart;
   let insertedTotal = 0;
+  let receivedTotal = 0;
   let sourceLabel = 'ai';
+  let interrupted = false;
 
   const toRow = (g: any) => {
     const key = `${g.sub_task}|${g.hazard}`;
@@ -142,12 +148,16 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     };
   };
 
-  const bulkPersist = async (generated: any[]) => {
-    const rows = generated.map(toRow).filter(Boolean) as Record<string, unknown>[];
-    if (rows.length === 0) return 0;
-    const { data, error } = await supabase.from('risk_items').insert(rows).select();
-    if (error) throw new Error(error.message || '일괄 저장에 실패했습니다.');
-    return data?.length || 0;
+  /** Save-as-you-go: one row insert immediately when an item is complete. */
+  const persistOne = async (g: any): Promise<boolean> => {
+    const row = toRow(g);
+    if (!row) return false;
+    const { error } = await supabase.from('risk_items').insert(row);
+    if (error) {
+      console.warn('[AutoGenJob] row insert failed:', error.message);
+      return false;
+    }
+    return true;
   };
 
   for (let i = 0; i < input.processes.length; i++) {
@@ -164,13 +174,19 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       const libraryItems = await generateRiskItems({
         processName: proc,
         tags: input.conditionTags,
-        targetCount: input.detailLevel === 'core' ? 12 : 20,
+        targetCount: input.detailLevel === 'core' ? 8 : 12,
         deduplicate: true,
       });
-      patch({ message: `공종 「${proc}」 저장 중…` });
-      const n = await bulkPersist(libraryItems);
-      insertedTotal += n;
-      patch({ insertedTotal, message: `공종 「${proc}」 ${n}건 저장 완료` });
+      for (const g of libraryItems) {
+        receivedTotal += 1;
+        const ok = await persistOne(g);
+        if (ok) insertedTotal += 1;
+        patch({
+          receivedTotal,
+          insertedTotal,
+          message: `${receivedTotal}건 생성됨 (${insertedTotal}건 저장 완료)`,
+        });
+      }
       sourceLabel = 'library';
       continue;
     }
@@ -187,36 +203,53 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       projectId: input.projectId,
     };
 
-    let received = 0;
-    const result = await generateRiskItemsStreaming(opts, {
-      onItem: async (_item, soFar) => {
-        received = soFar.length;
+    try {
+      const result = await generateRiskItemsStreaming(opts, {
+        onItem: async (g) => {
+          receivedTotal += 1;
+          patch({
+            receivedTotal,
+            message: `${receivedTotal}건 생성됨 (${insertedTotal}건 저장 완료)…`,
+          });
+          const ok = await persistOne(g);
+          if (ok) {
+            insertedTotal += 1;
+            patch({
+              insertedTotal,
+              receivedTotal,
+              message: `${receivedTotal}건 생성됨 (${insertedTotal}건 저장 완료)`,
+            });
+          }
+        },
+        onProgress: (progress) => {
+          if (progress.message) {
+            patch({
+              message: `${progress.message} · 저장 ${insertedTotal}건`,
+            });
+          }
+        },
+      });
+      sourceLabel = result.source;
+      if (result.interrupted) {
+        interrupted = true;
+        break;
+      }
+    } catch (err: any) {
+      interrupted = true;
+      console.warn('[AutoGenJob] stream interrupted:', err?.message || err);
+      // Graceful: keep whatever was already inserted
+      if (insertedTotal > 0) {
         patch({
-          message: `공종 「${proc}」 ${received}건 수신… (완료 후 일괄 저장)`,
+          status: 'partial',
+          insertedTotal,
+          receivedTotal,
+          message: `네트워크 지연으로 스트리밍이 중단되었습니다. 현재까지 ${insertedTotal}건이 저장되었습니다.`,
+          error: undefined,
         });
-      },
-      onProgress: (progress) => {
-        const msg = progress.message
-          || progress.phaseTitle
-          || `공종 「${proc}」 생성 중…`;
-        patch({
-          message: String(msg),
-        });
-      },
-    });
-
-    if (result.items.length === 0) {
-      throw new Error(`공종 「${proc}」 생성 결과가 비어 있습니다.`);
+        return;
+      }
+      throw err;
     }
-
-    patch({ message: `공종 「${proc}」 ${result.items.length}건 일괄 저장 중…` });
-    const n = await bulkPersist(result.items);
-    insertedTotal += n;
-    patch({
-      insertedTotal,
-      message: `공종 「${proc}」 ${n}건 저장 완료 (${result.source})`,
-    });
-    sourceLabel = result.source;
   }
 
   if (insertedTotal === 0) {
@@ -229,10 +262,21 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     return;
   }
 
+  if (interrupted) {
+    patch({
+      status: 'partial',
+      message: `네트워크 지연으로 스트리밍이 중단되었습니다. 현재까지 ${insertedTotal}건이 저장되었습니다.`,
+      insertedTotal,
+      receivedTotal,
+    });
+    return;
+  }
+
   patch({
     status: 'done',
     message: `${insertedTotal}건 등록 완료 (${sourceLabel})`,
     insertedTotal,
+    receivedTotal,
   });
 }
 
@@ -255,6 +299,7 @@ export function startRiskAutoGenJob(input: RiskAutoGenJobInput): boolean {
     currentProcess: processes[0],
     message: '생성 준비 중…',
     insertedTotal: 0,
+    receivedTotal: 0,
     elapsedSec: 0,
     error: undefined,
     startedAt: Date.now(),
@@ -263,6 +308,14 @@ export function startRiskAutoGenJob(input: RiskAutoGenJobInput): boolean {
 
   runningPromise = runJob({ ...input, processes })
     .catch((err: any) => {
+      if (state.insertedTotal > 0) {
+        patch({
+          status: 'partial',
+          message: `네트워크 지연으로 스트리밍이 중단되었습니다. 현재까지 ${state.insertedTotal}건이 저장되었습니다.`,
+          error: undefined,
+        });
+        return;
+      }
       patch({
         status: 'error',
         error: err?.message || '자동 생성 실패',

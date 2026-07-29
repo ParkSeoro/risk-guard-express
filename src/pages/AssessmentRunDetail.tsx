@@ -525,12 +525,22 @@ const AssessmentRunDetail = () => {
         fetchAll();
         acknowledgeRiskAutoGenJob();
       }
+      if (job.status === 'partial' && autoGenAckRef.current !== `partial:${job.startedAt}`) {
+        autoGenAckRef.current = `partial:${job.startedAt}`;
+        toast({
+          title: '네트워크 지연으로 스트리밍이 중단되었습니다.',
+          description: `현재까지 ${job.insertedTotal}건이 저장되었습니다. 목록을 확인한 뒤 필요하면 이어서 생성하세요.`,
+        });
+        fetchAll();
+        acknowledgeRiskAutoGenJob();
+      }
       if (job.status === 'error' && autoGenAckRef.current !== `err:${job.startedAt}`) {
         autoGenAckRef.current = `err:${job.startedAt}`;
         toast({
           title: job.error || '자동 생성 실패',
           variant: 'destructive',
         });
+        if (job.insertedTotal > 0) fetchAll();
         acknowledgeRiskAutoGenJob();
       }
     });
@@ -1496,7 +1506,7 @@ const AssessmentRunDetail = () => {
                 {autoGenJob.message || autoGenPhaseLabel || 'DeepSeek JSA 생성 대기 중…'}
               </p>
               <p className="text-[11px] text-muted-foreground">
-                수신 {autoGenJob.insertedTotal || autoGenStreamCount}건 저장 · 이 탭을 유지하면 계속됩니다. 탭을 닫으면 중단될 수 있습니다.
+                {autoGenJob.receivedTotal || 0}건 생성 · {autoGenJob.insertedTotal || autoGenStreamCount}건 저장 · 이 탭을 유지하세요.
               </p>
             </div>
           </div>

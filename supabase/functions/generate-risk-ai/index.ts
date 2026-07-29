@@ -3,6 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { geminiChatFetch } from "../_shared/gemini.ts";
 import {
   streamDeepseekRiskChatText,
+  callDeepseekRiskChat,
+  parseDeepseekRiskJson,
   DeepseekRiskError,
   RISK_DEEPSEEK_SYSTEM_PROMPT,
   safeParseDeepseekRiskItems,
@@ -475,6 +477,7 @@ serve(async (req) => {
       work_environment,
       detail_level,
       project_id,
+      sub_task,
     } = body;
 
     const detailLevel: "core" | "comprehensive" =
@@ -573,8 +576,6 @@ serve(async (req) => {
       });
     }
 
-    // ============ Risk Assessment Mode: One-Shot JSA + SSE (no prep/main/finish) ============
-    // Stream DeepSeek deltas; emit each completed item over SSE to avoid 150s idle/non-stream timeout.
     const normalizedEquipment = normalizeEquipment(equipment || "");
     const locationText = work_location || "일반";
     const envText =
@@ -583,6 +584,148 @@ serve(async (req) => {
         : "일반 작업 환경";
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
+
+    // ============ Phase 1: JSA timeline only (fast JSON, ~1–3s) ============
+    if (mode === "jsa_timeline") {
+      const guideCount = jsaGuideCount(detailLevel);
+      const sys =
+        `너는 건설현장 JSA 전문가다. 반드시 JSON만 출력한다. 마크다운 금지.\n` +
+        `출력 스키마: {"sub_tasks":["세부작업1","세부작업2",...]}`;
+      const user =
+        `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
+        `위 공종의 시간순(작업 전 준비→본 작업→마무리) 세부작업명만 ${guideCount}개 내외로 나열하라.\n` +
+        `위험요인·대책·설명 금지. sub_tasks 문자열 배열만.`;
+
+      try {
+        const { content } = await callDeepseekRiskChat({
+          messages: [
+            { role: "system", content: sys },
+            { role: "user", content: user },
+          ],
+          temperature: 0.2,
+          max_tokens: 900,
+          timeoutMs: 35_000,
+        });
+        const parsed = parseDeepseekRiskJson<any>(content);
+        let subTasks: string[] = [];
+        if (Array.isArray(parsed)) {
+          subTasks = parsed.map((x) => String(x ?? "").trim()).filter(Boolean);
+        } else if (parsed && Array.isArray(parsed.sub_tasks)) {
+          subTasks = parsed.sub_tasks.map((x: any) => String(x ?? "").trim()).filter(Boolean);
+        }
+        // Strip leading numbering like "1. "
+        subTasks = subTasks
+          .map((s) => s.replace(/^\d+[\.\)]\s*/, "").trim())
+          .filter(Boolean)
+          .slice(0, detailLevel === "comprehensive" ? 14 : 10);
+
+        if (subTasks.length === 0) {
+          return new Response(
+            JSON.stringify({ error: "세부작업 목록을 생성하지 못했습니다.", sub_tasks: [] }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            sub_tasks: subTasks,
+            count: subTasks.length,
+            normalized_equipment: normalizedEquipment,
+            mode: "jsa_timeline",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Unknown error";
+        console.error("jsa_timeline error:", e);
+        return new Response(JSON.stringify({ error: msg }), {
+          status: e instanceof DeepseekRiskError ? e.status || 500 : 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+        });
+      }
+    }
+
+    // ============ Phase 2: single sub_task risk row (fast JSON, ~3–8s) ============
+    if (mode === "risk_row") {
+      const st = String(sub_task || "").trim();
+      if (!st) {
+        return new Response(JSON.stringify({ error: "세부작업(sub_task)이 필요합니다." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+        });
+      }
+
+      const sys =
+        `너는 건설안전 기술사다. 반드시 JSON 객체 하나만 출력한다. 마크다운·배열 금지.\n` +
+        `스키마 키: process, sub_work, hazard_factor, hazard_situation, existing_control, improvement_control, ` +
+        `initial_likelihood, initial_severity, residual_likelihood, residual_severity, ppe\n` +
+        `likelihood/severity는 상|중|하. ppe는 문자열 또는 배열.`;
+      const user =
+        `[입력] 공종:${process_name} / 세부작업:${st} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
+        `위 세부작업 1건에 대한 위험성평가만 작성하라. 추상문구 금지. 공학·관리·PPE 포함.`;
+
+      try {
+        const { content } = await callDeepseekRiskChat({
+          messages: [
+            { role: "system", content: sys },
+            { role: "user", content: user },
+          ],
+          temperature: 0.25,
+          max_tokens: 1400,
+          timeoutMs: 45_000,
+        });
+        const parsed = parseDeepseekRiskJson<any>(content);
+        const raw = Array.isArray(parsed) ? parsed[0] : parsed?.item || parsed;
+        if (!raw || typeof raw !== "object") {
+          return new Response(JSON.stringify({ error: "행 데이터를 파싱하지 못했습니다." }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+          });
+        }
+        // Ensure sub_work matches requested step
+        raw.sub_work = raw.sub_work || raw.sub_task || st;
+        raw.process = raw.process || process_name;
+        const mapped = mapRawItem(raw, process_name);
+        if (!mapped) {
+          // Soft-accept minimally filled row rather than fail the whole parallel batch
+          const soft = {
+            process: process_name,
+            sub_task: st,
+            hazard: String(raw.hazard_factor || raw.hazard || "위험요인 확인 필요").trim() || "위험요인 확인 필요",
+            hazard_situation: String(raw.hazard_situation || "").trim() || `${st} 중 위험 상황 발생`,
+            existing_measure: String(raw.existing_control || raw.existing_measure || "").trim() || "작업 전 점검 및 보호구 착용",
+            improvement_measure:
+              String(raw.improvement_control || raw.improvement_measure || "").trim() ||
+              "공학적 방호·관리적 통제·PPE를 병행한다",
+            likelihood_grade: "중",
+            severity_grade: "중",
+            improved_likelihood_grade: "하",
+            improved_severity_grade: "하",
+            ppe: ["안전모", "안전화"],
+            legal_basis: [] as string[],
+          };
+          return new Response(
+            JSON.stringify({ item: soft, normalized_equipment: normalizedEquipment, mode: "risk_row" }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({ item: mapped, normalized_equipment: normalizedEquipment, mode: "risk_row" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Unknown error";
+        console.error("risk_row error:", e);
+        return new Response(JSON.stringify({ error: msg }), {
+          status: e instanceof DeepseekRiskError ? e.status || 500 : 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+        });
+      }
+    }
+
+    // ============ Legacy Risk Assessment Mode: One-Shot JSA + SSE ============
+    // Kept for compatibility; UI prefers jsa_timeline + risk_row parallel path.
+    // Stream DeepSeek deltas; emit each completed item over SSE to avoid 150s idle/non-stream timeout.
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({

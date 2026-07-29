@@ -34,6 +34,8 @@ import {
   subscribeRiskAutoGenJob,
   type RiskAutoGenJobState,
 } from '@/lib/riskAutoGenJob';
+import { isAiPendingRiskItem } from '@/lib/riskAutoGenAI';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ConditionTagPicker, SmartEquipmentTagInput, DEFAULT_CONDITION_TAGS, DEFAULT_EQUIPMENT_SUGGESTIONS } from '@/components/assessment/RiskAutoGenFields';
 import { exportToXLSX, exportToPDF, exportToPDFServer, printRiskAssessment } from '@/lib/exportUtils';
 import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue } from '@/lib/validationEngine';
@@ -508,19 +510,32 @@ const AssessmentRunDetail = () => {
 
   // Background job: survives dialog close; shows live progress on this page
   useEffect(() => {
+    let lastInserted = -1;
+    let lastFilled = -1;
     return subscribeRiskAutoGenJob((job) => {
       setAutoGenJob(job);
       const mine = !job.runId || job.runId === runId;
       setAutoGenLoading(job.status === 'running' && mine);
-      setAutoGenStreamCount(job.insertedTotal);
+      setAutoGenStreamCount(job.filledTotal ?? job.insertedTotal);
       setAutoGenPhaseLabel(job.currentProcess || job.message || '');
 
       if (!mine) return;
+
+      // Refresh table as soon as placeholders land / rows fill
+      if (
+        job.status === 'running' &&
+        (job.insertedTotal !== lastInserted || job.filledTotal !== lastFilled)
+      ) {
+        lastInserted = job.insertedTotal;
+        lastFilled = job.filledTotal ?? job.insertedTotal;
+        fetchAll();
+      }
+
       if (job.status === 'done' && autoGenAckRef.current !== `done:${job.startedAt}`) {
         autoGenAckRef.current = `done:${job.startedAt}`;
         toast({
           title: '위험성평가 생성이 완료되었습니다. 불필요한 항목을 삭제하거나 수정해 주세요.',
-          description: `${job.insertedTotal}건 등록 · 경과 ${job.elapsedSec}초 · 사고사례는 하단 [사고사례 AI 작성]에서 별도 생성`,
+          description: `${job.filledTotal ?? job.insertedTotal}건 등록 · 경과 ${job.elapsedSec}초 · 사고사례는 하단 [사고사례 AI 작성]에서 별도 생성`,
         });
         fetchAll();
         acknowledgeRiskAutoGenJob();
@@ -528,8 +543,8 @@ const AssessmentRunDetail = () => {
       if (job.status === 'partial' && autoGenAckRef.current !== `partial:${job.startedAt}`) {
         autoGenAckRef.current = `partial:${job.startedAt}`;
         toast({
-          title: '네트워크 지연으로 스트리밍이 중단되었습니다.',
-          description: `현재까지 ${job.insertedTotal}건이 저장되었습니다. 목록을 확인한 뒤 필요하면 이어서 생성하세요.`,
+          title: '일부 행 생성이 중단·실패했습니다.',
+          description: `타임라인 ${job.insertedTotal}행 / 채움 ${job.filledTotal ?? 0}행이 저장되었습니다. 실패 행은 수동 수정하거나 다시 생성하세요.`,
         });
         fetchAll();
         acknowledgeRiskAutoGenJob();
@@ -759,7 +774,7 @@ const AssessmentRunDetail = () => {
     setAutoGenProcessInput('');
     toast({
       title: '위험성평가 생성을 시작했습니다.',
-      description: '다른 메뉴를 둘러봐도 이 탭에서는 계속 진행됩니다. 상단 진행 바를 확인하세요.',
+      description: '세부작업 행이 먼저 나타난 뒤 위험요인이 병렬로 채워집니다. 상단 진행 바를 확인하세요.',
     });
   };
 
@@ -1494,20 +1509,39 @@ const AssessmentRunDetail = () => {
         <div className="print:hidden sticky top-0 z-30 rounded-lg border border-accent/40 bg-accent/10 px-4 py-3 shadow-sm backdrop-blur-sm">
           <div className="flex items-start gap-3">
             <Loader2 className="h-5 w-5 shrink-0 animate-spin text-accent mt-0.5" />
-            <div className="min-w-0 flex-1 space-y-1">
+            <div className="min-w-0 flex-1 space-y-1.5">
               <p className="text-sm font-semibold">
                 위험성평가 AI 생성 중
+                {autoGenJob.phase === 'timeline' ? ' · 1단계 타임라인' : ''}
+                {autoGenJob.phase === 'filling' ? ' · 2단계 행별 병렬' : ''}
                 {autoGenJob.processTotal > 0
                   ? ` · 공종 ${autoGenJob.processIndex || 1}/${autoGenJob.processTotal}`
                   : ''}
                 {autoGenJob.elapsedSec > 0 ? ` · ${autoGenJob.elapsedSec}초` : ''}
               </p>
               <p className="text-xs text-muted-foreground break-words">
-                {autoGenJob.message || autoGenPhaseLabel || 'DeepSeek JSA 생성 대기 중…'}
+                {autoGenJob.message || autoGenPhaseLabel || 'JSA 생성 대기 중…'}
               </p>
-              <p className="text-[11px] text-muted-foreground">
-                {autoGenJob.receivedTotal || 0}건 생성 · {autoGenJob.insertedTotal || autoGenStreamCount}건 저장 · 이 탭을 유지하세요.
-              </p>
+              {(() => {
+                const total = Math.max(autoGenJob.insertedTotal || 0, 1);
+                const filled = autoGenJob.filledTotal || 0;
+                const pct = Math.min(100, Math.round((filled / total) * 100));
+                return (
+                  <div className="space-y-1">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-accent transition-all duration-500"
+                        style={{ width: `${autoGenJob.phase === 'timeline' ? 8 : Math.max(pct, 4)}%` }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      타임라인 {autoGenJob.insertedTotal || 0}행 · 채움 {filled}행
+                      {autoGenJob.pendingIds?.length ? ` · 대기 ${autoGenJob.pendingIds.length}` : ''}
+                      {' · '}이 탭을 유지하세요.
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -1933,8 +1967,11 @@ const AssessmentRunDetail = () => {
                   </td></tr>
                 ) : filteredItems.map((item, idx) => {
                   const itemVerdict = validationReport?.itemVerdicts?.[item.id];
+                  const pending =
+                    isAiPendingRiskItem(item) ||
+                    (autoGenJob.pendingIds || []).includes(item.id);
                   return (
-                    <tr key={item.id} className={`${itemVerdict?.verdict === '부적정' ? 'bg-destructive/5' : itemVerdict?.verdict === '조건부 적정' ? 'bg-warning/5' : ''} ${selectedRowIds.has(item.id) ? 'bg-accent/10' : ''}`}>
+                    <tr key={item.id} className={`${itemVerdict?.verdict === '부적정' ? 'bg-destructive/5' : itemVerdict?.verdict === '조건부 적정' ? 'bg-warning/5' : ''} ${selectedRowIds.has(item.id) ? 'bg-accent/10' : ''} ${pending ? 'bg-muted/40' : ''}`}>
                       {(canEdit || canForceEdit) && (
                         <td className="text-center print:hidden">
                           <Checkbox
@@ -1952,6 +1989,31 @@ const AssessmentRunDetail = () => {
                       <td className="text-center text-muted-foreground">{idx + 1}</td>
                       <td className="editable whitespace-nowrap">{(item.process || '').trim() ? <EditableCell item={item} field="process" /> : <span className="text-muted-foreground italic">(미분류)</span>}</td>
                       <td className="editable"><EditableCell item={item} field="sub_task" /></td>
+                      {pending ? (
+                        <>
+                          <td colSpan={4} className="py-2">
+                            <div className="flex items-center gap-2 pr-2">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-accent shrink-0" />
+                              <div className="flex-1 space-y-1.5">
+                                <Skeleton className="h-3 w-[85%]" />
+                                <Skeleton className="h-3 w-[60%]" />
+                              </div>
+                              <span className="text-[10px] text-muted-foreground whitespace-nowrap">AI 채우는 중…</span>
+                            </div>
+                          </td>
+                          <td className="text-center"><Skeleton className="h-5 w-8 mx-auto" /></td>
+                          <td className="text-center"><Skeleton className="h-5 w-8 mx-auto" /></td>
+                          <td className="text-center"><Skeleton className="h-5 w-8 mx-auto" /></td>
+                          <td className="text-center"><Skeleton className="h-5 w-8 mx-auto" /></td>
+                          <td className="text-center"><Skeleton className="h-5 w-8 mx-auto" /></td>
+                          <td className="text-center"><Skeleton className="h-5 w-8 mx-auto" /></td>
+                          <td className="text-center"><Badge variant="outline" className="text-[9px]">생성중</Badge></td>
+                          <td><Skeleton className="h-3 w-16" /></td>
+                          <td><Skeleton className="h-3 w-20" /></td>
+                          <td colSpan={2}><Skeleton className="h-3 w-24" /></td>
+                        </>
+                      ) : (
+                        <>
                       <td className="editable"><EditableCell item={item} field="hazard" /></td>
                       <td className="editable max-w-[200px]"><EditableCell item={item} field="hazard_situation" /></td>
                       <td className="editable max-w-[180px]"><EditableCell item={item} field="existing_measure" /></td>
@@ -2006,6 +2068,8 @@ const AssessmentRunDetail = () => {
                           <span className="text-xs text-muted-foreground">{item.assignee || '—'}</span>
                         )}
                       </td>
+                        </>
+                      )}
                       {validationReport && (
                         <td className="text-center">
                           {itemVerdict && (

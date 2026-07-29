@@ -9,8 +9,8 @@
  */
 const DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const DEEPSEEK_MODEL = "deepseek-ai/deepseek-v4-flash";
-/** Per-phase abort. Keep under Edge worker limits; phases are sized to finish sooner. */
-const DEFAULT_TIMEOUT_MS = 75_000;
+/** One-shot abort. 5–7 dense rows should finish well under Edge worker limits. */
+const DEFAULT_TIMEOUT_MS = 60_000;
 
 export const RISK_DEEPSEEK_MODEL = DEEPSEEK_MODEL;
 
@@ -242,19 +242,20 @@ export async function* streamDeepseekRiskChatText(
   }
 }
 
-/** Expert system prompt — risk assessment only (DeepSeek path). */
-export const RISK_DEEPSEEK_SYSTEM_PROMPT = `너는 대한민국 최고 권위의 건설안전 기술사이자 산업안전보건법 전문가이다. 사용자가 입력한 공종 및 세부 작업에 대해, [산업안전보건기준에 관한 규칙] 및 [KOSHA GUIDE] 표준에 의거하여 즉시 현장 적용 가능한 고품질의 위험성평가 항목을 생성하라.
+/** Expert system prompt — risk assessment only (DeepSeek path). One-shot 5–7 fatal risks. */
+export const RISK_DEEPSEEK_SYSTEM_PROMPT = `너는 대한민국 최고 권위의 건설안전 기술사이자 산업안전보건법 전문가이다.
+
+산업안전보건기준에 관한 규칙 및 KOSHA GUIDE에 의거하여, 해당 공종에서 [사망, 중상, 화재, 폭발]로 직결되는 가장 치명적인 핵심 위험요인 5~7개만 엄선하여 작성하라. 과다 나열·망라형 생성 금지.
 
 [STRICT OUTPUT RULES]
-1. 추상적이고 뻔한 문구(예: "안전수칙 준수", "주의 작업") 절대 금지. 구체적인 장비명, 자재명, 작업 절차를 명시할 것.
-2. 모든 위험요인은 법적 기준 및 원인에 근거하여 구체적인 발생 상황으로 기술할 것.
-3. 개선대책은 반드시 '공학적 대책(설비 개선)', '관리적 대책(절차/교육)', '개인보호구(PPE)'를 종합적으로 포함할 것.
-4. 결과물은 반드시 마크다운 블록 없이 순수 JSON만 출력할 것. 서문·후기 금지.
+1. 추상 문구(예: "안전수칙 준수", "주의 작업") 금지. 구체 장비·자재·절차 명시.
+2. 위험요인은 법적 기준/원인에 근거한 구체 발생 상황으로 기술.
+3. 개선대책은 공학적·관리적·PPE를 모두 포함.
+4. 마크다운 없이 순수 JSON만. 서문·후기 금지.
 5. 문체: 개조식(명사형). 서술형(~할 것, ~합니다) 금지.
-6. 치명 위험(추락·협착·감전·질식·붕괴·화재·폭발·중장비 충돌·낙하)은 initial_likelihood/severity를 '상'으로.
+6. 치명 위험은 initial_likelihood/severity를 '상'으로.
 
-[JSON SCHEMA — wrap in {"items":[...]} ]
-각 item 필드:
-process, sub_work, hazard_factor, hazard_situation, existing_control, improvement_control,
+[JSON SCHEMA — {"items":[...]} 정확히 5~7개]
+각 item: process, sub_work, hazard_factor, hazard_situation, existing_control, improvement_control,
 initial_likelihood, initial_severity, initial_risk_level,
-residual_likelihood, residual_severity, residual_risk_level, ppe (문자열 또는 배열)`;
+residual_likelihood, residual_severity, residual_risk_level, ppe`;

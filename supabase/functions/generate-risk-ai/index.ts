@@ -233,113 +233,9 @@ function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other" 
   return s;
 }
 
-type PhaseDef = {
-  id: string;
-  title: string;
-  focus: string;
-  targetCount: number;
-};
-
-function buildPhases(detailLevel: "core" | "comprehensive"): PhaseDef[] {
-  // Client orchestrates one phase per HTTP request so each stays under Edge limits.
-  // Accidents are intentionally excluded — use generate-accident-ai.
-  // Counts kept modest: DeepSeek JSON for 10+ dense rows often exceeds idle SSE / worker budgets.
-  if (detailLevel === "core") {
-    return [
-      {
-        id: "prep_main",
-        title: "준비·본작업",
-        focus: "작업허가·장비점검·본작업 중 추락·협착·붕괴·감전·충돌 등 치명 위험",
-        targetCount: 8,
-      },
-      {
-        id: "finish",
-        title: "마무리·비상",
-        focus: "철수·정리·잔여위험·비상조치",
-        targetCount: 5,
-      },
-    ];
-  }
-  return [
-    {
-      id: "prep",
-      title: "작업 전 준비·반입",
-      focus: "사전조사·작업허가·장비반입·양중·보호구·신호수·구역통제",
-      targetCount: 6,
-    },
-    {
-      id: "main",
-      title: "본 작업",
-      focus: "단계별 본작업·장비운용·인력교차·구조적 위험",
-      targetCount: 7,
-    },
-    {
-      id: "finish",
-      title: "마무리·해체·비상",
-      focus: "해체·잔재처리·점검·비상연락",
-      targetCount: 5,
-    },
-  ];
-}
-
-function tryParse(s: string): any {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
-}
-
-function extractCompletedObjects(buffer: string, alreadyEmitted: number): { objects: any[]; nextIndex: number } {
-  const cleaned = buffer.replace(/```json/gi, "").replace(/```/g, "");
-  const itemsKey = cleaned.search(/"items"\s*:/);
-  let arrStart = -1;
-  if (itemsKey >= 0) {
-    arrStart = cleaned.indexOf("[", itemsKey);
-  } else {
-    arrStart = cleaned.indexOf("[");
-  }
-  if (arrStart < 0) return { objects: [], nextIndex: alreadyEmitted };
-
-  const arrBody = cleaned.slice(arrStart + 1);
-  const objects: any[] = [];
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  let objStart = -1;
-  let completed = 0;
-
-  for (let i = 0; i < arrBody.length; i++) {
-    const ch = arrBody[i];
-    if (inString) {
-      if (escape) escape = false;
-      else if (ch === "\\") escape = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-    if (ch === "{") {
-      if (depth === 0) objStart = i;
-      depth++;
-    } else if (ch === "}") {
-      depth--;
-      if (depth === 0 && objStart >= 0) {
-        completed++;
-        if (completed > alreadyEmitted) {
-          const rawObj = arrBody.slice(objStart, i + 1);
-          const parsed = tryParse(rawObj);
-          if (parsed && typeof parsed === "object") objects.push(parsed);
-        }
-        objStart = -1;
-      }
-    } else if (ch === "]" && depth === 0) {
-      break;
-    }
-  }
-  return { objects, nextIndex: alreadyEmitted + objects.length };
+/** Target item count for one-shot generation (fatal KOSHA risks only). */
+function oneshotTargetCount(detailLevel: "core" | "comprehensive"): number {
+  return detailLevel === "core" ? 5 : 7;
 }
 
 function mapRawItem(item: any, processName: string): any | null {
@@ -434,26 +330,26 @@ function sseEncode(encoder: TextEncoder, payload: Record<string, unknown>): Uint
   return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
-async function streamPhaseItems(
+/** Single DeepSeek call → 5–7 fatal KOSHA risks (no prep/main/finish phases). */
+async function generateOneShotRiskItems(
   processName: string,
   equipText: string,
   descText: string,
   locationText: string,
   envText: string,
   ragContext: string,
-  phase: PhaseDef,
-  onDeltaItem: (raw: any) => void,
-): Promise<{ rawItems: any[] }> {
+  detailLevel: "core" | "comprehensive",
+): Promise<any[]> {
+  const targetCount = oneshotTargetCount(detailLevel);
   const fieldSchemaLines = Object.entries(RISK_ITEM_FIELD_SCHEMA)
     .map(([k, v]) => `- ${k}: ${v}`)
     .join("\n");
 
-  // Exact count (not "Exhaustive+") keeps latency predictable under Edge/SSE limits.
   const userPrompt = `[입력] 공종:${processName} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}
 ${ragContext}
 
-[배치] ${phase.title} — 초점: ${phase.focus}
-정확히 ${phase.targetCount}개 items만. 추상문구 금지. improvement_control에 공학적·관리적·PPE 모두.
+산업안전보건기준에 관한 규칙 및 KOSHA GUIDE에 의거하여, 해당 공종에서 [사망, 중상, 화재, 폭발]로 직결되는 가장 치명적인 핵심 위험요인 ${targetCount}개만 엄선하여 작성하라.
+망라·과다 생성 금지. 추상문구 금지. improvement_control에 공학적·관리적·PPE 모두.
 치명재해는 initial_* '상'. 마크다운 금지. JSON만.
 
 [필드]
@@ -461,17 +357,15 @@ ${fieldSchemaLines}
 
 [형식] {"items":[{"process":"${processName}","sub_work":"...","hazard_factor":"...","hazard_situation":"...","existing_control":"...","improvement_control":"...","initial_likelihood":"상","initial_severity":"상","initial_risk_level":"상","residual_likelihood":"중","residual_severity":"중","residual_risk_level":"중","ppe":"안전모, 안전화"}]}`;
 
-  // Non-stream: DeepSeek often buffers full JSON anyway; idle SSE then dies in the browser.
-  // Caller must send SSE heartbeats while this awaits.
-  const maxTokens = Math.min(3200, 500 + phase.targetCount * 320);
+  const maxTokens = Math.min(2800, 400 + targetCount * 320);
   const { content } = await callDeepseekRiskChat({
     messages: [
       { role: "system", content: HSE_SYSTEM_PROMPT },
       { role: "user", content: userPrompt },
     ],
-    temperature: 0.35,
+    temperature: 0.3,
     max_tokens: maxTokens,
-    timeoutMs: 70_000,
+    timeoutMs: 55_000,
   });
 
   let parsed: any = null;
@@ -494,8 +388,7 @@ ${fieldSchemaLines}
     ? parsed.items
     : [];
 
-  for (const obj of items) onDeltaItem(obj);
-  return { rawItems: items };
+  return items.slice(0, Math.max(targetCount, 7));
 }
 
 serve(async (req) => {
@@ -542,22 +435,13 @@ serve(async (req) => {
       detail_level,
       project_id,
       stream: streamFlag,
-      phase_id: phaseIdBody,
     } = body;
 
     const detailLevel: "core" | "comprehensive" =
-      detail_level === "core" ? "core" : "comprehensive";
-    const wantStream = streamFlag !== false; // default ON for risk mode
-    const allPhases = buildPhases(detailLevel);
-    const selectedPhases = phaseIdBody
-      ? allPhases.filter((p) => p.id === phaseIdBody)
-      : allPhases;
-    if (phaseIdBody && selectedPhases.length === 0) {
-      return new Response(JSON.stringify({ error: `Unknown phase_id: ${phaseIdBody}` }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-      });
-    }
+      detail_level === "comprehensive" ? "comprehensive" : "core";
+    // One-shot JSON is the stable default; SSE only when client explicitly opts in.
+    const wantStream = streamFlag === true;
+    const targetCount = oneshotTargetCount(detailLevel);
 
     if (!isInternal && project_id) {
       const userSb = createClient(supabaseUrl, anonKey, {
@@ -652,7 +536,7 @@ serve(async (req) => {
       });
     }
 
-    // ============ Risk Assessment Mode ============
+    // ============ Risk Assessment Mode (one-shot DeepSeek, non-stream by default) ============
     const normalizedEquipment = normalizeEquipment(equipment || "");
     const locationText = work_location || "일반";
     const envText =
@@ -662,8 +546,8 @@ serve(async (req) => {
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
 
-    // v6: DeepSeek V4 Flash dedicated path + English schema
-    const cacheKey = `v6-ds|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
+    // v7: one-shot 5–7 fatal risks (phases removed)
+    const cacheKey = `v7-os|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
       .toLowerCase()
       .trim();
 
@@ -674,19 +558,13 @@ serve(async (req) => {
       .maybeSingle();
 
     const cachedItems = (cached?.generated_items as any[]) || [];
-    const cacheMin = detailLevel === "core" ? 15 : 20;
+    const cacheMin = 5;
 
     const emitCachedOrGenerate = async (
       send: (payload: Record<string, unknown>) => void,
     ) => {
-      // Full-result cache only when generating all phases in one request
-      if (
-        !phaseIdBody &&
-        cached &&
-        Array.isArray(cachedItems) &&
-        cachedItems.length >= cacheMin
-      ) {
-        console.log(`[AI Engine] Cache hit (stream): ${cachedItems.length}`);
+      if (cached && Array.isArray(cachedItems) && cachedItems.length >= cacheMin) {
+        console.log(`[AI Engine] Cache hit (oneshot): ${cachedItems.length}`);
         await adminClient
           .from("ai_risk_cache")
           .update({ hit_count: (cached.hit_count || 0) + 1 })
@@ -697,6 +575,7 @@ serve(async (req) => {
           source: "cache",
           normalized_equipment: normalizedEquipment,
           detail_level: detailLevel,
+          mode: "risk",
         });
         for (const item of cachedItems) {
           send({ type: "item", item });
@@ -711,95 +590,78 @@ serve(async (req) => {
         return;
       }
 
-      // Approved standard_risk_library hit — avoid LLM when corpus is rich enough
-      if (!phaseIdBody) {
-        const libraryItems = await fetchApprovedLibraryRisks(adminClient, process_name, cacheMin + 8);
-        if (libraryItems.length >= Math.min(12, cacheMin)) {
-          console.log(`[AI Engine] Library hit (stream): ${libraryItems.length}`);
-          send({
-            type: "meta",
-            source: "library",
-            normalized_equipment: normalizedEquipment,
-            detail_level: detailLevel,
-            mode: "risk",
-          });
-          for (const item of libraryItems) send({ type: "item", item });
-          send({
-            type: "done",
-            source: "library",
-            count: libraryItems.length,
-            is_complete: true,
-            mode: "risk",
-          });
-          await adminClient.from("ai_risk_cache").upsert(
-            {
-              cache_key: cacheKey,
-              generated_items: libraryItems,
-              process_name,
-              hit_count: 1,
-              project_id: project_id || null,
-            },
-            { onConflict: "cache_key" },
-          );
-          return;
-        }
+      const libraryItems = await fetchApprovedLibraryRisks(adminClient, process_name, targetCount + 4);
+      if (libraryItems.length >= cacheMin) {
+        console.log(`[AI Engine] Library hit (oneshot): ${libraryItems.length}`);
+        const trimmed = libraryItems.slice(0, Math.max(targetCount, 7));
+        send({
+          type: "meta",
+          source: "library",
+          normalized_equipment: normalizedEquipment,
+          detail_level: detailLevel,
+          mode: "risk",
+        });
+        for (const item of trimmed) send({ type: "item", item });
+        send({
+          type: "done",
+          source: "library",
+          count: trimmed.length,
+          is_complete: true,
+          mode: "risk",
+        });
+        await adminClient.from("ai_risk_cache").upsert(
+          {
+            cache_key: cacheKey,
+            generated_items: trimmed,
+            process_name,
+            hit_count: 1,
+            project_id: project_id || null,
+          },
+          { onConflict: "cache_key" },
+        );
+        return;
       }
 
       const ragContext = await fetchRAGContext(adminClient, process_name, equipText, 3);
-      const phases = selectedPhases;
       const existingKeys = new Set<string>();
-      const allMapped: any[] = [];
 
       send({
         type: "meta",
         source: "ai",
         normalized_equipment: normalizedEquipment,
         detail_level: detailLevel,
-        phases: phases.map((p) => p.id),
-        phase_mode: phaseIdBody ? "single" : "all",
         mode: "risk",
+        oneshot: true,
+        target_count: targetCount,
       });
 
-      for (const phase of phases) {
-        send({ type: "phase", phase: phase.id, title: phase.title });
-        try {
-          const { rawItems } = await streamPhaseItems(
-            process_name,
-            equipText,
-            descText,
-            locationText,
-            envText,
-            ragContext,
-            phase,
-            (raw) => {
-              const mapped = mapAndDedupe([raw], process_name, existingKeys);
-              for (const item of mapped) {
-                allMapped.push(item);
-                send({ type: "item", item, phase: phase.id });
-              }
-            },
-          );
-          const leftover = mapAndDedupe(rawItems, process_name, existingKeys);
-          for (const item of leftover) {
-            allMapped.push(item);
-            send({ type: "item", item, phase: phase.id });
+      let rawItems: any[] = [];
+      try {
+        rawItems = await generateOneShotRiskItems(
+          process_name,
+          equipText,
+          descText,
+          locationText,
+          envText,
+          ragContext,
+          detailLevel,
+        );
+      } catch (genErr) {
+        console.error(`[AI Engine] oneshot error:`, genErr);
+        if (genErr instanceof DeepseekRiskError || genErr instanceof GeminiError) {
+          if (genErr.code === "RATE_LIMIT") throw new Error("RATE_LIMIT");
+          if (genErr.code === "QUOTA_EXHAUSTED") throw new Error("CREDITS_EXHAUSTED");
+          if (genErr.code === "INVALID_KEY") throw new Error("INVALID_KEY");
+          if (genErr instanceof DeepseekRiskError && genErr.code === "TIMEOUT") {
+            throw new Error(genErr.message);
           }
-        } catch (phaseErr) {
-          console.error(`[AI Engine] phase ${phase.id} error:`, phaseErr);
-          if (phaseErr instanceof DeepseekRiskError || phaseErr instanceof GeminiError) {
-            if (phaseErr.code === "RATE_LIMIT") throw new Error("RATE_LIMIT");
-            if (phaseErr.code === "QUOTA_EXHAUSTED") throw new Error("CREDITS_EXHAUSTED");
-            if (phaseErr.code === "INVALID_KEY") throw new Error("INVALID_KEY");
-            if (phaseErr instanceof DeepseekRiskError && phaseErr.code === "TIMEOUT") {
-              throw new Error(phaseErr.message);
-            }
-          }
-          send({
-            type: "phase_error",
-            phase: phase.id,
-            error: phaseErr instanceof Error ? phaseErr.message : String(phaseErr),
-          });
         }
+        throw genErr;
+      }
+
+      const allMapped = mapAndDedupe(rawItems, process_name, existingKeys);
+      for (const item of allMapped) {
+        send({ type: "item", item });
       }
 
       if (allMapped.length === 0) {
@@ -810,23 +672,21 @@ serve(async (req) => {
         return;
       }
 
-      if (!phaseIdBody) {
-        const { error: cacheErr } = await adminClient.from("ai_risk_cache").upsert(
-          {
-            cache_key: cacheKey,
-            process_name,
-            equipment: equipText,
-            work_description: descText,
-            work_location: locationText,
-            work_environment: work_environment || [],
-            generated_items: allMapped,
-            hit_count: 0,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "cache_key" },
-        );
-        if (cacheErr) console.warn("[AI Engine] cache upsert skipped:", cacheErr.message);
-      }
+      const { error: cacheErr } = await adminClient.from("ai_risk_cache").upsert(
+        {
+          cache_key: cacheKey,
+          process_name,
+          equipment: equipText,
+          work_description: descText,
+          work_location: locationText,
+          work_environment: work_environment || [],
+          generated_items: allMapped,
+          hit_count: 0,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "cache_key" },
+      );
+      if (cacheErr) console.warn("[AI Engine] cache upsert skipped:", cacheErr.message);
 
       send({
         type: "done",
@@ -835,7 +695,6 @@ serve(async (req) => {
         is_complete: true,
         normalized_equipment: normalizedEquipment,
         detail_level: detailLevel,
-        phase_id: phaseIdBody || null,
         mode: "risk",
       });
     };
@@ -847,7 +706,7 @@ serve(async (req) => {
           const send = (payload: Record<string, unknown>) => {
             controller.enqueue(sseEncode(encoder, payload));
           };
-          // Keep SSE alive while DeepSeek non-stream call runs (browser/proxy idle cutoffs).
+          // Heartbeat while one-shot DeepSeek awaits (idle proxy/browser cutoffs).
           const heartbeat = setInterval(() => {
             try {
               controller.enqueue(encoder.encode(`: ping ${Date.now()}\n\n`));
@@ -884,7 +743,7 @@ serve(async (req) => {
       return new Response(stream, { headers: sseHeaders });
     }
 
-    // Non-stream JSON fallback (orchestrator / legacy)
+    // Default: non-stream JSON (stable under idle timeouts)
     const collectedItems: any[] = [];
     let source = "ai";
     await emitCachedOrGenerate((payload) => {

@@ -665,7 +665,7 @@ const AssessmentRunDetail = () => {
     toast({ title: '제외 해제됨' });
   };
 
-  // Auto-generate with multi-process support (AI streaming engine)
+  // Auto-generate: one-shot AI per process → bulk insert (no per-row hammering)
   const handleAutoGenerate = async () => {
     if (autoGenProcesses.length === 0 || !run || !user) return;
     setAutoGenLoading(true);
@@ -679,11 +679,11 @@ const AssessmentRunDetail = () => {
       const equipJoined = autoGenEquipmentTags.join(', ');
       const insertSeen = new Set<string>();
 
-      const persistOne = async (g: any) => {
+      const toRow = (g: any) => {
         const key = `${g.sub_task}|${g.hazard}`;
         if (insertSeen.has(key)) return null;
         insertSeen.add(key);
-        const row = {
+        return {
           project_id: run.project_id,
           run_id: runId,
           process: g.process,
@@ -710,32 +710,38 @@ const AssessmentRunDetail = () => {
           created_by: user.id,
           sort_order: sortCursor++,
         };
-        const { data, error } = await supabase.from('risk_items').insert(row).select().single();
+      };
+
+      const bulkPersist = async (generated: any[]) => {
+        const rows = generated.map(toRow).filter(Boolean) as Record<string, unknown>[];
+        if (rows.length === 0) return 0;
+        const { data, error } = await supabase.from('risk_items').insert(rows).select();
         if (error) {
-          console.warn('[AutoGen] row insert failed:', error.message);
-          return null;
+          console.warn('[AutoGen] bulk insert failed:', error.message);
+          throw new Error(error.message || '일괄 저장에 실패했습니다.');
         }
-        return data;
+        if (data?.length) {
+          setItems((prev) => [...prev, ...data]);
+          return data.length;
+        }
+        return 0;
       };
 
       for (const proc of autoGenProcesses) {
-        console.log(`[AutoGen] AI 스트림 호출 시작 (공종: ${proc.trim()}, 장비: ${equipJoined})`);
+        console.log(`[AutoGen] One-shot AI 호출 (공종: ${proc.trim()}, 장비: ${equipJoined})`);
+        setAutoGenPhaseLabel(proc.trim());
+
         if (!autoGenUseAI) {
           const { generateRiskItems } = await import('@/lib/riskAutoGen');
           const libraryItems = await generateRiskItems({
             processName: proc.trim(),
             tags: autoGenConditionTags,
-            targetCount: autoGenDetailLevel === 'core' ? 15 : 30,
+            targetCount: autoGenDetailLevel === 'core' ? 5 : 7,
             deduplicate: true,
           });
-          for (const g of libraryItems) {
-            const saved = await persistOne(g);
-            if (saved) {
-              insertedTotal += 1;
-              setAutoGenStreamCount(insertedTotal);
-              setItems((prev) => [...prev, saved]);
-            }
-          }
+          const n = await bulkPersist(libraryItems);
+          insertedTotal += n;
+          setAutoGenStreamCount(insertedTotal);
           sourceLabel = 'library';
           continue;
         }
@@ -758,17 +764,12 @@ const AssessmentRunDetail = () => {
             if (progress.phaseTitle) setAutoGenPhaseLabel(String(progress.phaseTitle));
             setAutoGenStreamCount(progress.itemsSoFar + insertedTotal);
           },
-          onItem: async (g) => {
-            const saved = await persistOne(g);
-            if (saved) {
-              insertedTotal += 1;
-              setAutoGenStreamCount(insertedTotal);
-              setItems((prev) => [...prev, saved]);
-            }
-          },
         });
 
-        console.log(`[AutoGen] 스트림 완료: ${result.items.length}건 (source: ${result.source})`);
+        const n = await bulkPersist(result.items);
+        insertedTotal += n;
+        setAutoGenStreamCount(insertedTotal);
+        console.log(`[AutoGen] 완료: ${result.items.length}건 생성 → ${n}건 bulk insert (source: ${result.source})`);
         sourceLabel = result.source;
       }
 
@@ -2199,12 +2200,12 @@ const AssessmentRunDetail = () => {
               <Label className="text-xs font-semibold">평가 수준</Label>
               <div className="grid grid-cols-2 gap-2">
                 <Button type="button" variant={autoGenDetailLevel === 'core' ? 'default' : 'outline'} size="sm" className="h-10 text-xs"
-                  onClick={() => setAutoGenDetailLevel('core')}>핵심 (15개±)</Button>
+                  onClick={() => setAutoGenDetailLevel('core')}>핵심 치명 (5개)</Button>
                 <Button type="button" variant={autoGenDetailLevel === 'comprehensive' ? 'default' : 'outline'} size="sm" className="h-10 text-xs"
-                  onClick={() => setAutoGenDetailLevel('comprehensive')}>작업순서 상세 (15+)</Button>
+                  onClick={() => setAutoGenDetailLevel('comprehensive')}>고위험 엄선 (7개)</Button>
               </div>
               <p className="text-[10px] text-muted-foreground leading-snug">
-                위험성평가 데이터만 생성 · 세부 작업 단계별 시나리오 · 사고사례는 별도 버튼에서 생성
+                사망·중상·화재·폭발로 직결되는 핵심 위험만 One-Shot 생성 · 사고사례는 별도 버튼
               </p>
             </div>
 
@@ -2215,7 +2216,7 @@ const AssessmentRunDetail = () => {
             </Button>
             {autoGenLoading && (
               <p className="text-[11px] text-center text-muted-foreground">
-                생성 중에는 화면을 나가지 마세요. 항목이 테이블에 실시간으로 추가됩니다.
+                생성 중에는 화면을 나가지 마세요. 공종별 완료 후 일괄 저장됩니다.
               </p>
             )}
           </div>

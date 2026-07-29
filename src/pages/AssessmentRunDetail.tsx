@@ -1496,7 +1496,7 @@ const AssessmentRunDetail = () => {
                 {autoGenJob.message || autoGenPhaseLabel || 'DeepSeek JSA 생성 대기 중…'}
               </p>
               <p className="text-[11px] text-muted-foreground">
-                저장 {autoGenJob.insertedTotal || autoGenStreamCount}건 · 이 탭을 유지하면 다른 창을 열어도 계속됩니다. 탭을 닫으면 중단될 수 있습니다.
+                수신 {autoGenJob.insertedTotal || autoGenStreamCount}건 저장 · 이 탭을 유지하면 계속됩니다. 탭을 닫으면 중단될 수 있습니다.
               </p>
             </div>
           </div>

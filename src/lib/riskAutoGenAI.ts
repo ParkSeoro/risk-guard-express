@@ -350,7 +350,7 @@ async function fetchRiskItemsOneShot(
 
 /**
  * One-shot risk generation via generate-risk-ai SSE (single phase, no prep/main/finish).
- * Collects streamed items; callers bulk-insert after completion.
+ * Callers should save-as-you-go via onItem; partial streams return items already received.
  */
 export async function generateRiskItemsStreaming(
   opts: AIGenerateOptions,
@@ -363,6 +363,7 @@ export async function generateRiskItemsStreaming(
   items: GeneratedRiskItem[];
   source: 'library' | 'cache' | 'ai' | 'hybrid';
   normalizedEquipment?: string;
+  interrupted?: boolean;
 }> {
   const bag = {
     items: [] as GeneratedRiskItem[],
@@ -373,20 +374,38 @@ export async function generateRiskItemsStreaming(
 
   handlers?.onProgress?.({ phase: 'generating', itemsSoFar: 0 }, []);
 
-  await fetchRiskItemsOneShot(opts, handlers || {}, bag);
+  let interrupted = false;
+  try {
+    await fetchRiskItemsOneShot(opts, handlers || {}, bag);
+  } catch (err: any) {
+    if (bag.items.length > 0) {
+      interrupted = true;
+      console.warn('[AI Engine] partial stream kept:', bag.items.length, err?.message || err);
+    } else {
+      throw err;
+    }
+  }
 
   if (bag.items.length === 0) {
     throw new Error('AI가 유효한 항목을 반환하지 않았습니다.');
   }
 
   handlers?.onProgress?.(
-    { phase: 'complete', itemsSoFar: bag.items.length, normalizedEquipment: bag.normalizedEquipment.value },
+    {
+      phase: 'complete',
+      itemsSoFar: bag.items.length,
+      message: interrupted
+        ? `연결 중단 · ${bag.items.length}건까지 수신`
+        : `스트림 완료 · ${bag.items.length}건`,
+      normalizedEquipment: bag.normalizedEquipment.value,
+    },
     bag.items,
   );
   return {
     items: bag.items,
     source: bag.source.value,
     normalizedEquipment: bag.normalizedEquipment.value,
+    interrupted,
   };
 }
 

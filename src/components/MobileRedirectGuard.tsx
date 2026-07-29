@@ -53,7 +53,7 @@ export default function MobileRedirectGuard() {
 
     // Admin shell or other desktop paths → worker home
     if (path.startsWith("/app/admin") || path === "/" || !path.startsWith("/app/worker")) {
-      navigate("/app/worker", { replace: true });
+      navigate("/app/worker/home", { replace: true });
     }
   }, [isMobile, location.pathname, navigate]);
 

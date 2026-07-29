@@ -24,12 +24,12 @@ const APPROVED_RUN_STATUSES = ["승인완료", "승인", "approved", "APPROVED"]
 /** Fetch permit + primary RA + TBM in one round-trip via view. */
 export async function fetchSafetyWorkBundle(permitId: string) {
   const { data, error } = await supabase
-    .from("v_safety_work_bundle" as any)
+    .from("v_safety_work_bundle")
     .select("*")
     .eq("work_permit_id", permitId)
     .maybeSingle();
   if (error) throw error;
-  return (data as unknown as SafetyWorkBundle) || null;
+  return data ?? null;
 }
 
 /** Sync junction rows from scalar + array fields (keeps uuid[] and FK table aligned). */
@@ -44,7 +44,7 @@ export async function syncPermitAssessmentLinks(
     ),
   );
   await supabase
-    .from("work_permit_assessment_links" as any)
+    .from("work_permit_assessment_links")
     .delete()
     .eq("work_permit_id", permitId);
 
@@ -55,7 +55,7 @@ export async function syncPermitAssessmentLinks(
     assessment_run_id,
     is_primary: primaryRunId != null && assessment_run_id === primaryRunId,
   }));
-  const { error } = await supabase.from("work_permit_assessment_links" as any).insert(rows);
+  const { error } = await supabase.from("work_permit_assessment_links").insert(rows);
   if (error) throw error;
 }
 

@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useParams } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
 import ContractorGate from "@/components/ContractorGate";
 import RoleGuard from "@/components/RoleGuard";
+import AuthGuard from "@/components/AuthGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import * as P from "@/routes/lazyPages";
@@ -19,7 +20,7 @@ function Fallback() {
  * Manager/Admin shell — Leaflet maps, charts, settings load only here.
  * Mounted at /app/admin/* ; legacy /* paths redirect into this tree.
  */
-export default function AdminAppRoutes() {
+function AdminAppRoutesInner() {
   const { user, loading, profile, hasRole } = useAuth();
   const isMaster = hasRole("master");
   const [hasProject, setHasProject] = useState<boolean | null>(null);
@@ -171,6 +172,14 @@ export default function AdminAppRoutes() {
         </Suspense>
       </ContractorGate>
     </AppLayout>
+  );
+}
+
+export default function AdminAppRoutes() {
+  return (
+    <AuthGuard shell="admin">
+      <AdminAppRoutesInner />
+    </AuthGuard>
   );
 }
 

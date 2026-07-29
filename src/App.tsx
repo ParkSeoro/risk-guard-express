@@ -4,13 +4,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useSearchParams, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy } from "react";
 import SystemRealtimeProvider from "@/providers/SystemRealtimeProvider";
 import MobileRedirectGuard from "@/components/MobileRedirectGuard";
 import InstallPrompt from "@/components/InstallPrompt";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
 import AdminAppRoutes from "@/routes/AdminAppRoutes";
 import WorkerAppRoutes from "@/routes/WorkerAppRoutes";
+import { postLoginPath } from "@/components/AuthGuard";
 
 const Auth = lazy(() => import("@/pages/Auth"));
 const Index = lazy(() => import("@/pages/Index"));
@@ -38,7 +39,7 @@ function PageFallback() {
 }
 
 function AuthRoute() {
-  const { user, loading } = useAuth();
+  const { user, loading, roles } = useAuth();
   const [params] = useSearchParams();
   if (loading) {
     return (
@@ -50,9 +51,13 @@ function AuthRoute() {
   if (user) {
     const next = params.get("next");
     if (next && next.startsWith("/") && !next.startsWith("//")) {
+      // Respect explicit next, but keep workers out of admin unless next is worker
+      if (next.startsWith("/app/admin") && postLoginPath(roles).startsWith("/app/worker")) {
+        return <Navigate to="/app/worker/home" replace />;
+      }
       return <Navigate to={next} replace />;
     }
-    return <Navigate to="/app/admin" replace />;
+    return <Navigate to={postLoginPath(roles)} replace />;
   }
   return <Auth />;
 }
@@ -63,7 +68,7 @@ function LegacyPathRedirect() {
   const path = loc.pathname;
 
   if (path === "/" || path === "") {
-    return <Navigate to="/app/admin" replace />;
+    return <RoleAwareRootRedirect />;
   }
   if (path === "/m" || path.startsWith("/m/")) {
     const rest = path === "/m" ? "" : path.slice(2); // "/m/foo" → "/foo"
@@ -123,6 +128,19 @@ const App = () => (
 function OfflineSyncMount() {
   useOfflineSync();
   return null;
+}
+
+function RoleAwareRootRedirect() {
+  const { user, loading, roles } = useAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
+        세션 확인 중…
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" replace />;
+  return <Navigate to={postLoginPath(roles)} replace />;
 }
 
 export default App;

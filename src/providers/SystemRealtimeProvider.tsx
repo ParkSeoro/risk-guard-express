@@ -1,7 +1,6 @@
 /**
- * Global realtime + push context.
- * Mount once under AuthProvider. GeofenceAlertBridge stays on worker shells
- * (needs projectId); this provider owns notifications realtime + GPS worker API.
+ * Global realtime + push + GPS tracking context.
+ * GPS is owned here (not page-local) so worker navigation never stops the tracker.
  */
 import {
   createContext,
@@ -18,6 +17,13 @@ import { useAuth } from "@/contexts/AuthContext";
 import PushNotificationBridge from "@/components/PushNotificationBridge";
 import type { TrackingIdentity } from "@/lib/tracking/locationTracker";
 
+export type GpsFix = {
+  lat: number;
+  lng: number;
+  accuracy: number;
+  at: number;
+};
+
 type ZoneEventPayload = {
   id?: string;
   project_id?: string;
@@ -31,6 +37,7 @@ type SystemRealtimeValue = {
   unreadNotifications: number;
   lastZoneEvent: ZoneEventPayload | null;
   gpsTracking: boolean;
+  lastGpsFix: GpsFix | null;
   startGpsTracking: (identity: TrackingIdentity) => void;
   stopGpsTracking: () => void;
 };
@@ -54,9 +61,11 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
   const [unreadNotifications, setUnread] = useState(0);
   const [lastZoneEvent, setLastZoneEvent] = useState<ZoneEventPayload | null>(null);
   const [gpsTracking, setGpsTracking] = useState(false);
+  const [lastGpsFix, setLastGpsFix] = useState<GpsFix | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const stopTrackerRef = useRef<null | (() => void)>(null);
   const identityRef = useRef<TrackingIdentity | null>(null);
+  const startGenRef = useRef(0);
 
   useEffect(() => {
     if (!user?.id) {
@@ -97,7 +106,10 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
   }, [user?.id]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setLastZoneEvent(null);
+      return;
+    }
     const channel = supabase
       .channel(`sys-zone-${user.id}`)
       .on(
@@ -116,9 +128,11 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
   const postFix = useCallback(async (lat: number, lng: number, accuracy: number, source: string) => {
     const identity = identityRef.current;
     if (!identity) return;
+    setLastGpsFix({ lat, lng, accuracy, at: Date.now() });
     try {
       await supabase.functions.invoke("track-location", {
-        body: { ...identity, lat, lng, accuracy, source },
+        // Edge expects accuracy_m (Zod); keep source for diagnostics
+        body: { ...identity, lat, lng, accuracy_m: accuracy, source },
       });
     } catch (e) {
       console.warn("[SystemRealtime] track-location failed", e);
@@ -126,6 +140,7 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
   }, []);
 
   const stopGpsTracking = useCallback(() => {
+    startGenRef.current += 1;
     stopTrackerRef.current?.();
     stopTrackerRef.current = null;
     workerRef.current?.terminate();
@@ -137,10 +152,31 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
   const startGpsTracking = useCallback(
     (identity: TrackingIdentity) => {
       stopGpsTracking();
+      const gen = startGenRef.current;
       identityRef.current = identity;
       setGpsTracking(true);
 
-      // Worker emits ticks; main thread owns geolocation (workers lack geo in most browsers).
+      // Prefer unified tracker (native BG → Capacitor → browser). Worker ticks as secondary.
+      void import("@/lib/tracking/locationTracker").then(async ({ startTracking }) => {
+        if (startGenRef.current !== gen) return;
+        const stop = await startTracking({
+          identity,
+          onUpdate: (info) => {
+            setLastGpsFix({
+              lat: info.lat,
+              lng: info.lng,
+              accuracy: info.accuracy,
+              at: Date.now(),
+            });
+          },
+        });
+        if (startGenRef.current !== gen) {
+          stop();
+          return;
+        }
+        stopTrackerRef.current = stop;
+      });
+
       try {
         const worker = new Worker(new URL("../workers/gpsTracker.worker.ts", import.meta.url), {
           type: "module",
@@ -159,10 +195,7 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
           );
         };
       } catch (e) {
-        console.warn("[SystemRealtime] Worker unavailable, using locationTracker", e);
-        void import("@/lib/tracking/locationTracker").then(async ({ startTracking }) => {
-          stopTrackerRef.current = await startTracking({ identity });
-        });
+        console.warn("[SystemRealtime] GPS worker unavailable", e);
       }
     },
     [postFix, stopGpsTracking],
@@ -175,10 +208,11 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
       unreadNotifications,
       lastZoneEvent,
       gpsTracking,
+      lastGpsFix,
       startGpsTracking,
       stopGpsTracking,
     }),
-    [unreadNotifications, lastZoneEvent, gpsTracking, startGpsTracking, stopGpsTracking],
+    [unreadNotifications, lastZoneEvent, gpsTracking, lastGpsFix, startGpsTracking, stopGpsTracking],
   );
 
   return (

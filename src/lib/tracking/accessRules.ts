@@ -15,6 +15,7 @@
  */
 
 import { STANDARD_JOB_TYPES } from "@/lib/jobCategories";
+import { z } from "zod";
 
 export type ZoneRuleType = "ALLOW" | "DENY";
 
@@ -30,7 +31,9 @@ export type AccessSubject = {
   job_type?: string | null;
 };
 
+/** 구역 유형(SSOT) — 모달 Select / Zod / DB 허용 값 */
 export const ZONE_CATEGORY_OPTIONS = [
+  { value: "공정(위험)구역", label: "공정(위험)구역" },
   { value: "추락위험", label: "추락위험" },
   { value: "화재위험", label: "화재위험" },
   { value: "밀폐공간", label: "밀폐공간" },
@@ -38,6 +41,24 @@ export const ZONE_CATEGORY_OPTIONS = [
   { value: "감전위험", label: "감전위험" },
   { value: "기타", label: "기타" },
 ] as const;
+
+export type ZoneCategory = (typeof ZONE_CATEGORY_OPTIONS)[number]["value"];
+
+export const ZONE_CATEGORY_VALUES = ZONE_CATEGORY_OPTIONS.map((o) => o.value) as [
+  ZoneCategory,
+  ...ZoneCategory[],
+];
+
+export const DEFAULT_ZONE_CATEGORY: ZoneCategory = "공정(위험)구역";
+
+/** Zod: zone_category / 구역 유형 허용 enum */
+export const zoneCategorySchema = z.enum(ZONE_CATEGORY_VALUES, {
+  errorMap: () => ({ message: "유효한 구역 유형을 선택하세요" }),
+});
+
+export function isZoneCategory(value: string | null | undefined): value is ZoneCategory {
+  return !!value && (ZONE_CATEGORY_VALUES as readonly string[]).includes(value);
+}
 
 export const ZONE_COLOR_OPTIONS = [
   { value: "#ef4444", label: "Red", swatch: "bg-red-500" },

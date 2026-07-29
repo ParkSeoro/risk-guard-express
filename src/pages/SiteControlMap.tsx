@@ -42,6 +42,7 @@ import {
   parseAccessRules,
   ruleTypeLabel,
   ZONE_COLOR_OPTIONS,
+  zoneCategorySchema,
 } from "@/lib/tracking/accessRules";
 import type { DrawnShape, DrawTool } from "@/components/geofence/LeafletDrawControl";
 import {

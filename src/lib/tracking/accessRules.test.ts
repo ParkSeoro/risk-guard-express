@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildAccessRules, isAccessForbidden, parseAccessRules } from "@/lib/tracking/accessRules";
+import {
+  buildAccessRules,
+  isAccessForbidden,
+  parseAccessRules,
+  zoneCategorySchema,
+  ZONE_CATEGORY_OPTIONS,
+  DEFAULT_ZONE_CATEGORY,
+} from "@/lib/tracking/accessRules";
 
 describe("zone whitelist / blacklist", () => {
   const companyA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -29,5 +36,18 @@ describe("zone whitelist / blacklist", () => {
     });
     expect(parsed.rule_type).toBe("ALLOW");
     expect(parsed.company_ids).toEqual([companyA]);
+  });
+});
+
+describe("zone category enum", () => {
+  it("lists 공정(위험)구역 first as default", () => {
+    expect(ZONE_CATEGORY_OPTIONS[0].value).toBe("공정(위험)구역");
+    expect(DEFAULT_ZONE_CATEGORY).toBe("공정(위험)구역");
+  });
+
+  it("accepts 공정(위험)구역 via Zod", () => {
+    expect(zoneCategorySchema.safeParse("공정(위험)구역").success).toBe(true);
+    expect(zoneCategorySchema.safeParse("추락위험").success).toBe(true);
+    expect(zoneCategorySchema.safeParse("임의구역").success).toBe(false);
   });
 });

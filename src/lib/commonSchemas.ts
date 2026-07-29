@@ -5,6 +5,8 @@
  */
 import { z } from "zod";
 export { jobTypeSchema, jobTypeOptionalSchema, isStandardJobType } from "@/lib/jobCategories";
+export { zoneCategorySchema, isZoneCategory, DEFAULT_ZONE_CATEGORY } from "@/lib/tracking/accessRules";
+export type { ZoneCategory } from "@/lib/tracking/accessRules";
 
 /** 한글 이름: 2~30자, 공백 트림. 빈 문자열 거부. */
 export const koreanName = z

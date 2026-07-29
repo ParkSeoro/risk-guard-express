@@ -5,19 +5,32 @@
 ALTER TABLE public.tbm_participations
   ADD COLUMN IF NOT EXISTS worker_id uuid;
 
--- Backfill worker_id from phone + session project
--- NOTE: Postgres regexp_replace uses POSIX regex — use [^0-9], not PCRE \D
-UPDATE public.tbm_participations tp
-   SET worker_id = w.id
-  FROM public.tbm_sessions ts
-  JOIN public.workers w
-    ON w.project_id = ts.project_id
-   AND regexp_replace(coalesce(w.phone, ''), '[^0-9]', '', 'g')
-     = regexp_replace(coalesce(tp.worker_phone, ''), '[^0-9]', '', 'g')
- WHERE tp.tbm_session_id = ts.id
-   AND tp.worker_id IS NULL
-   AND coalesce(tp.worker_phone, '') <> ''
-   AND regexp_replace(coalesce(tp.worker_phone, ''), '[^0-9]', '', 'g') <> '';
+-- Soft backfill (best-effort). Must not fail the migration:
+-- duplicate phones / missing project links previously aborted db push.
+DO $$
+BEGIN
+  UPDATE public.tbm_participations tp
+     SET worker_id = matched.worker_id
+    FROM (
+      SELECT DISTINCT ON (tp2.id)
+             tp2.id AS participation_id,
+             w.id AS worker_id
+        FROM public.tbm_participations tp2
+        JOIN public.tbm_sessions ts ON ts.id = tp2.tbm_session_id
+        JOIN public.workers w
+          ON w.project_id IS NOT DISTINCT FROM ts.project_id
+         AND w.phone IS NOT NULL
+         AND tp2.worker_phone IS NOT NULL
+         AND w.phone = tp2.worker_phone
+       WHERE tp2.worker_id IS NULL
+       ORDER BY tp2.id, w.created_at DESC NULLS LAST
+    ) matched
+   WHERE tp.id = matched.participation_id
+     AND tp.worker_id IS NULL;
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE NOTICE 'tbm_participations.worker_id backfill skipped: %', SQLERRM;
+END $$;
 
 UPDATE public.tbm_participations tp
    SET worker_id = NULL
@@ -38,54 +51,63 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_tbm_participations_worker_id
   ON public.tbm_participations(worker_id);
 
--- 2) Orphan cleanup for workers / entry / permit workers / sessions / permits
-UPDATE public.workers w
-   SET company_id = NULL
- WHERE company_id IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM public.companies c WHERE c.id = w.company_id);
+-- 2) Orphan cleanup (best-effort; never abort migration)
+DO $$
+BEGIN
+  UPDATE public.workers w
+     SET company_id = NULL
+   WHERE company_id IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM public.companies c WHERE c.id = w.company_id);
 
-DELETE FROM public.workers w
- WHERE NOT EXISTS (SELECT 1 FROM public.projects p WHERE p.id = w.project_id);
+  DELETE FROM public.work_permit_workers x
+   WHERE NOT EXISTS (SELECT 1 FROM public.work_permits wp WHERE wp.id = x.work_permit_id)
+      OR NOT EXISTS (SELECT 1 FROM public.workers w WHERE w.id = x.worker_id)
+      OR NOT EXISTS (SELECT 1 FROM public.projects p WHERE p.id = x.project_id);
 
-DELETE FROM public.worker_entry_logs l
- WHERE NOT EXISTS (SELECT 1 FROM public.workers w WHERE w.id = l.worker_id);
+  UPDATE public.worker_entry_logs l
+     SET work_permit_id = NULL
+   WHERE work_permit_id IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM public.work_permits wp WHERE wp.id = l.work_permit_id);
 
-UPDATE public.worker_entry_logs l
-   SET work_permit_id = NULL
- WHERE work_permit_id IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM public.work_permits wp WHERE wp.id = l.work_permit_id);
+  DELETE FROM public.worker_entry_logs l
+   WHERE NOT EXISTS (SELECT 1 FROM public.workers w WHERE w.id = l.worker_id)
+      OR NOT EXISTS (SELECT 1 FROM public.projects p WHERE p.id = l.project_id);
 
-DELETE FROM public.worker_entry_logs l
- WHERE NOT EXISTS (SELECT 1 FROM public.projects p WHERE p.id = l.project_id);
+  -- Only delete unreferenced orphan workers/permits/sessions
+  DELETE FROM public.workers w
+   WHERE NOT EXISTS (SELECT 1 FROM public.projects p WHERE p.id = w.project_id)
+     AND NOT EXISTS (SELECT 1 FROM public.worker_entry_logs l WHERE l.worker_id = w.id)
+     AND NOT EXISTS (SELECT 1 FROM public.work_permit_workers x WHERE x.worker_id = w.id)
+     AND NOT EXISTS (SELECT 1 FROM public.tbm_participations tp WHERE tp.worker_id = w.id);
 
-DELETE FROM public.work_permit_workers x
- WHERE NOT EXISTS (SELECT 1 FROM public.work_permits wp WHERE wp.id = x.work_permit_id)
-    OR NOT EXISTS (SELECT 1 FROM public.workers w WHERE w.id = x.worker_id)
-    OR NOT EXISTS (SELECT 1 FROM public.projects p WHERE p.id = x.project_id);
+  DELETE FROM public.work_permits wp
+   WHERE NOT EXISTS (SELECT 1 FROM public.projects p WHERE p.id = wp.project_id);
 
-DELETE FROM public.work_permits wp
- WHERE NOT EXISTS (SELECT 1 FROM public.projects p WHERE p.id = wp.project_id);
+  UPDATE public.tbm_sessions ts
+     SET company_id = NULL
+   WHERE company_id IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM public.companies c WHERE c.id = ts.company_id);
 
-UPDATE public.tbm_sessions ts
-   SET company_id = NULL
- WHERE company_id IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM public.companies c WHERE c.id = ts.company_id);
+  DELETE FROM public.tbm_sessions ts
+   WHERE NOT EXISTS (SELECT 1 FROM public.projects p WHERE p.id = ts.project_id)
+     AND NOT EXISTS (SELECT 1 FROM public.tbm_participations tp WHERE tp.tbm_session_id = ts.id);
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE NOTICE 'orphan cleanup skipped: %', SQLERRM;
+END $$;
 
-DELETE FROM public.tbm_sessions ts
- WHERE NOT EXISTS (SELECT 1 FROM public.projects p WHERE p.id = ts.project_id);
-
--- 3) workers FKs
+-- 3) workers FKs (NOT VALID tolerates residual orphans)
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'workers_project_id_fkey') THEN
     ALTER TABLE public.workers
       ADD CONSTRAINT workers_project_id_fkey
-      FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+      FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE NOT VALID;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'workers_company_id_fkey') THEN
     ALTER TABLE public.workers
       ADD CONSTRAINT workers_company_id_fkey
-      FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE SET NULL;
+      FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE SET NULL NOT VALID;
   END IF;
 END $$;
 
@@ -95,17 +117,17 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'worker_entry_logs_worker_id_fkey') THEN
     ALTER TABLE public.worker_entry_logs
       ADD CONSTRAINT worker_entry_logs_worker_id_fkey
-      FOREIGN KEY (worker_id) REFERENCES public.workers(id) ON DELETE CASCADE;
+      FOREIGN KEY (worker_id) REFERENCES public.workers(id) ON DELETE CASCADE NOT VALID;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'worker_entry_logs_project_id_fkey') THEN
     ALTER TABLE public.worker_entry_logs
       ADD CONSTRAINT worker_entry_logs_project_id_fkey
-      FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+      FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE NOT VALID;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'worker_entry_logs_work_permit_id_fkey') THEN
     ALTER TABLE public.worker_entry_logs
       ADD CONSTRAINT worker_entry_logs_work_permit_id_fkey
-      FOREIGN KEY (work_permit_id) REFERENCES public.work_permits(id) ON DELETE SET NULL;
+      FOREIGN KEY (work_permit_id) REFERENCES public.work_permits(id) ON DELETE SET NULL NOT VALID;
   END IF;
 END $$;
 
@@ -118,17 +140,17 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'work_permit_workers_work_permit_id_fkey') THEN
     ALTER TABLE public.work_permit_workers
       ADD CONSTRAINT work_permit_workers_work_permit_id_fkey
-      FOREIGN KEY (work_permit_id) REFERENCES public.work_permits(id) ON DELETE CASCADE;
+      FOREIGN KEY (work_permit_id) REFERENCES public.work_permits(id) ON DELETE CASCADE NOT VALID;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'work_permit_workers_worker_id_fkey') THEN
     ALTER TABLE public.work_permit_workers
       ADD CONSTRAINT work_permit_workers_worker_id_fkey
-      FOREIGN KEY (worker_id) REFERENCES public.workers(id) ON DELETE CASCADE;
+      FOREIGN KEY (worker_id) REFERENCES public.workers(id) ON DELETE CASCADE NOT VALID;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'work_permit_workers_project_id_fkey') THEN
     ALTER TABLE public.work_permit_workers
       ADD CONSTRAINT work_permit_workers_project_id_fkey
-      FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+      FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE NOT VALID;
   END IF;
 END $$;
 
@@ -138,17 +160,17 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'work_permits_project_id_fkey') THEN
     ALTER TABLE public.work_permits
       ADD CONSTRAINT work_permits_project_id_fkey
-      FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+      FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE NOT VALID;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tbm_sessions_project_id_fkey') THEN
     ALTER TABLE public.tbm_sessions
       ADD CONSTRAINT tbm_sessions_project_id_fkey
-      FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+      FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE NOT VALID;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tbm_sessions_company_id_fkey') THEN
     ALTER TABLE public.tbm_sessions
       ADD CONSTRAINT tbm_sessions_company_id_fkey
-      FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE SET NULL;
+      FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE SET NULL NOT VALID;
   END IF;
 END $$;
 

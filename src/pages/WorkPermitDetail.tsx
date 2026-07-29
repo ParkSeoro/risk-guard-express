@@ -28,6 +28,7 @@ import {
   type PermitKindId,
 } from '@/lib/permitKinds';
 import type { PermitAiBriefing } from '@/lib/permitBriefing';
+import { syncPermitAssessmentLinks } from '@/lib/safetyWorkBundle';
 
 const STANDARD_FORM_VALUE = '__standard__';
 
@@ -346,12 +347,15 @@ export default function WorkPermitDetail() {
     const workLocation = syncedData.work_location || permit.location || permit.work_location || '';
     const contractorCompany = syncedData.contractor_company || permit.contractor_company || '';
     const primary = primaryPermitKind(selectedKinds);
+    const linkedIds = linkedRuns.map((r) => r.id);
+    const primaryRunId = linkedIds[0] || permit.assessment_run_id || null;
     const { error } = await supabase.from('work_permits' as any).update({
       permit_type: primary,
       permit_kinds: selectedKinds,
       form_data: syncedData,
       signatures,
-      linked_assessment_run_ids: linkedRuns.map((r) => r.id),
+      assessment_run_id: primaryRunId,
+      linked_assessment_run_ids: linkedIds,
       form_version: 'SF003-Rev1',
       form_template_id: templateId && templateId !== STANDARD_FORM_VALUE ? templateId : null,
       work_name: syncedData.work_name || permit.work_name || workDescription,
@@ -364,8 +368,13 @@ export default function WorkPermitDetail() {
     }).eq('id', permit.id);
     setSaving(false);
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
+    try {
+      await syncPermitAssessmentLinks(permit.id, primaryRunId, linkedIds);
+    } catch (e) {
+      console.warn('syncPermitAssessmentLinks failed', e);
+    }
     toast({ title: '허가서가 저장되었습니다.', description: `${selectedKinds.map((k) => PERMIT_KIND_LABEL[k]).join(' · ')} 묶음` });
-    setPermit((prev: any) => prev ? { ...prev, permit_kinds: selectedKinds, permit_type: primary } : prev);
+    setPermit((prev: any) => prev ? { ...prev, permit_kinds: selectedKinds, permit_type: primary, assessment_run_id: primaryRunId, linked_assessment_run_ids: linkedIds } : prev);
   };
 
   const isApproved = isPermitApproved(permit?.status);

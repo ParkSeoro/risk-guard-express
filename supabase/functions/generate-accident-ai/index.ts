@@ -1,6 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { streamGeminiChatText, GeminiError } from "../_shared/gemini.ts";
+import {
+  buildAccidentCacheKey,
+  fetchApprovedAccidentCases,
+} from "../_shared/aiResponseCache.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -205,6 +209,56 @@ serve(async (req) => {
     const locationHint = String(work_location || "").trim() || "국내 건설현장";
     const wantStream = streamFlag !== false;
 
+    const adminClient = createClient(supabaseUrl, supabaseKey);
+    const cacheKey = buildAccidentCacheKey({
+      process_name: processName,
+      equipment: equipText,
+      work_description: descText,
+    });
+
+    // 1) Exact cache hit
+    const { data: cached } = await adminClient
+      .from("ai_accident_cache")
+      .select("*")
+      .eq("cache_key", cacheKey)
+      .maybeSingle();
+    const cachedCases = (cached?.generated_cases as any[]) || [];
+
+    // 2) Approved corpus (assessment_accidents) — skip LLM when enough cases exist
+    const libraryCases =
+      cachedCases.length >= 3
+        ? []
+        : await fetchApprovedAccidentCases(adminClient, processName, 4);
+
+    const emitCached = async (
+      send: (payload: Record<string, unknown>) => void,
+      cases: any[],
+      source: string,
+    ) => {
+      send({ type: "meta", source, mode: "accident", process: processName });
+      for (const c of cases) send({ type: "item", item: c, mode: "accident" });
+      send({ type: "done", source, count: cases.length, mode: "accident", is_complete: true });
+      if (source === "library") {
+        await adminClient.from("ai_accident_cache").upsert(
+          {
+            cache_key: cacheKey,
+            process_name: processName,
+            generated_cases: cases,
+            source: "library",
+            project_id: project_id || null,
+            hit_count: 1,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "cache_key" },
+        );
+      } else if (cached?.id) {
+        await adminClient
+          .from("ai_accident_cache")
+          .update({ hit_count: (cached.hit_count || 0) + 1 })
+          .eq("id", cached.id);
+      }
+    };
+
     const userPrompt = `[입력]
 공종: ${processName}
 장비: ${equipText}
@@ -220,6 +274,15 @@ serve(async (req) => {
 {"accident_cases":[{"occurrence_date":"2019-07-15","location":"경기도 ○○시 ○○신축공사 지하 2층","accident_summary":"누가 어디서 무엇을 하다 어떻게 되어 결과가…","title":"사고명(재해형태)","cause":"직접·간접원인 개조식","result":"인명·물적 피해 개조식","prevention":"재발방지 기술·관리 조치 개조식"}]}`;
 
     const runGeneration = async (send: (payload: Record<string, unknown>) => void) => {
+      if (cachedCases.length >= 3) {
+        await emitCached(send, cachedCases, "cache");
+        return;
+      }
+      if (libraryCases.length >= 3) {
+        await emitCached(send, libraryCases, "library");
+        return;
+      }
+
       send({ type: "meta", source: "ai", mode: "accident", process: processName });
 
       let buffer = "";
@@ -292,6 +355,19 @@ serve(async (req) => {
         accident_cases: collected,
         is_complete: true,
       });
+
+      await adminClient.from("ai_accident_cache").upsert(
+        {
+          cache_key: cacheKey,
+          process_name: processName,
+          generated_cases: collected,
+          source: "ai",
+          project_id: project_id || null,
+          hit_count: 0,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "cache_key" },
+      );
     };
 
     if (wantStream) {

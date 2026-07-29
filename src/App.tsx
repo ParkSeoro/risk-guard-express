@@ -2,267 +2,44 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { AppLayout } from "@/components/AppLayout";
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import Dashboard from "./pages/Dashboard";
-import Projects from "./pages/Projects";
-import ProjectDetail from "./pages/ProjectDetail";
-import ProjectSelect from "./pages/ProjectSelect";
-import AssessmentRuns from "./pages/AssessmentRuns";
-import AssessmentRunDetail from "./pages/AssessmentRunDetail";
-import MasterData from "./pages/MasterData";
-import Approvals from "./pages/Approvals";
-import VerificationCenter from "./pages/VerificationCenter";
-import ScheduleUpload from "./pages/ScheduleUpload";
-import AuditLogs from "./pages/AuditLogs";
-import PermissionTest from "./pages/PermissionTest";
-import Profile from "./pages/Profile";
-import Auth from "./pages/Auth";
-import ForgotPassword from "./pages/ForgotPassword";
-import UpdatePassword from "./pages/UpdatePassword";
-import Index from "./pages/Index";
-import Privacy from "./pages/Privacy";
-import OAuthConsent from "./pages/OAuthConsent";
-import Settings from "./pages/Settings";
-import SettingsAccount from "./pages/SettingsAccount";
-import SettingsPermissions from "./pages/SettingsPermissions";
-import SettingsApprovalRoutes from "./pages/SettingsApprovalRoutes";
-import SettingsNotifications from "./pages/SettingsNotifications";
-import SettingsAI from "./pages/SettingsAI";
-import SettingsWeather from "./pages/SettingsWeather";
-import MobileReleases from "./pages/MobileReleases";
-import SettingsPermitForms from "./pages/SettingsPermitForms";
-import SettingsCompanies from "./pages/SettingsCompanies";
-import WorkPlans from "./pages/WorkPlans";
-import WorkPlanDetail from "./pages/WorkPlanDetail";
-import LegalDuties from "./pages/LegalDuties";
-import TodoDashboard from "./pages/TodoDashboard";
-import AIAssistant from "./pages/AIAssistant";
-import SiteWeather from "./pages/SiteWeather";
-import SafetyCost from "./pages/SafetyCost";
-import WorkPermits from "./pages/WorkPermits";
-import WorkPermitDetail from "./pages/WorkPermitDetail";
-import TbmParticipate from "./pages/TbmParticipate";
-import TbmLogs from "./pages/TbmLogs";
-import InspectionMode from "./pages/InspectionMode";
-import SafetyInspections from "./pages/SafetyInspections";
-import SiteReadinessChecklist from "./pages/SiteReadinessChecklist";
-import EducationMaterials from "./pages/EducationMaterials";
-import ProjectLibrary from "./pages/ProjectLibrary";
-import WorkerManagement from "./pages/WorkerManagement";
-import WorkerDetail from "./pages/WorkerDetail";
-import LegalEducationMapping from "./pages/LegalEducationMapping";
-// WorkerAttendance is now embedded inside WorkerManagement as a tab; legacy route redirects.
-import WorkerRegister from "./pages/WorkerRegister";
-import WorkerPortal from "./pages/WorkerPortal";
-import WorkerEntry from "./pages/WorkerEntry";
-import CompanyScan from "./pages/CompanyScan";
-import Manual from "./pages/Manual";
-import AITestEngine from "./pages/AITestEngine";
-import AILogs from "./pages/AILogs";
-import SystemTestEngine from "./pages/SystemTestEngine";
-import ConsistencyAudit from "./pages/ConsistencyAudit";
-import DataAudit from "./pages/DataAudit";
-import Trash from "./pages/Trash";
-import HealthDashboard from "./pages/health/HealthDashboard";
-import HealthCheckups from "./pages/health/HealthCheckups";
-import Chemicals from "./pages/health/Chemicals";
-import EnvMeasurements from "./pages/health/EnvMeasurements";
-import HealthEducation from "./pages/health/HealthEducation";
-import HazardSurveys from "./pages/health/HazardSurveys";
-import HazardSurveyResponse from "./pages/health/HazardSurveyResponse";
-import MobileHome from "./pages/MobileHome";
-import MobileInspect from "./pages/MobileInspect";
-import MobileAlerts from "./pages/MobileAlerts";
-import MobileActions from "./pages/MobileActions";
-import MobileApprovals from "./pages/MobileApprovals";
-import MobileApprovalDetail from "./pages/MobileApprovalDetail";
-import MobileWorkers from "./pages/MobileWorkers";
-import MobileRiskAssessment from "./pages/MobileRiskAssessment";
-import MobileWorkPlans from "./pages/MobileWorkPlans";
-import MobileTbm from "./pages/MobileTbm";
-import MobilePermits from "./pages/MobilePermits";
-import MobileIncident from "./pages/MobileIncident";
-import Incidents from "./pages/Incidents";
-import EmergencyDrills from "./pages/EmergencyDrills";
-import WorkerEducation from "./pages/WorkerEducation";
-import SafetyAppointments from "./pages/SafetyAppointments";
-import WorkStopRequests from "./pages/WorkStopRequests";
-import ContractorScorecard from "./pages/ContractorScorecard";
-import AssessmentNotices from "./pages/AssessmentNotices";
-import SafetyCostValidation from "./pages/SafetyCostValidation";
-import MobileWorkStop from "./pages/MobileWorkStop";
-import MobileScan from "./pages/MobileScan";
-import MobileDailyHealthLog from "./pages/MobileDailyHealthLog";
-import SiteControlMap from "./pages/SiteControlMap";
-import ZoneCheckin from "./pages/ZoneCheckin";
-import MobileGeofenceDrop from "./pages/MobileGeofenceDrop";
-import ZoneEvents from "./pages/ZoneEvents";
-import WorkerDistribution from "./pages/WorkerDistribution";
-import AdminTrackingHealth from "./pages/AdminTrackingHealth";
-import MobileAssessmentViewer from "./pages/MobileAssessmentViewer";
-import MobileWorkPlanViewer from "./pages/MobileWorkPlanViewer";
-import Companies from "./pages/Companies";
-import CompanyDetail from "./pages/CompanyDetail";
-import InstallPrompt from "./components/InstallPrompt";
-import MobileRedirectGuard from "./components/MobileRedirectGuard";
-import PushNotificationBridge from "./components/PushNotificationBridge";
-import ContractorGate from "./components/ContractorGate";
-import RoleGuard from "./components/RoleGuard";
-import { useOfflineSync } from "./hooks/useOfflineSync";
-import NotFound from "./pages/NotFound";
+import { Suspense, lazy, useEffect } from "react";
+import SystemRealtimeProvider from "@/providers/SystemRealtimeProvider";
+import MobileRedirectGuard from "@/components/MobileRedirectGuard";
+import InstallPrompt from "@/components/InstallPrompt";
+import { useOfflineSync } from "@/hooks/useOfflineSync";
+import AdminAppRoutes from "@/routes/AdminAppRoutes";
+import WorkerAppRoutes from "@/routes/WorkerAppRoutes";
+
+const Auth = lazy(() => import("@/pages/Auth"));
+const Index = lazy(() => import("@/pages/Index"));
+const Privacy = lazy(() => import("@/pages/Privacy"));
+const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
+const UpdatePassword = lazy(() => import("@/pages/UpdatePassword"));
+const OAuthConsent = lazy(() => import("@/pages/OAuthConsent"));
+const TbmParticipate = lazy(() => import("@/pages/TbmParticipate"));
+const WorkerRegister = lazy(() => import("@/pages/WorkerRegister"));
+const WorkerEntry = lazy(() => import("@/pages/WorkerEntry"));
+const WorkerPortal = lazy(() => import("@/pages/WorkerPortal"));
+const HazardSurveyResponse = lazy(() => import("@/pages/health/HazardSurveyResponse"));
+const ZoneCheckin = lazy(() => import("@/pages/ZoneCheckin"));
+const CompanyScan = lazy(() => import("@/pages/CompanyScan"));
+const Manual = lazy(() => import("@/pages/Manual"));
 
 const queryClient = new QueryClient();
 
-function ProtectedRoutes() {
-  const { user, loading, profile, hasRole } = useAuth();
-  const isMaster = hasRole('master');
-  const [hasProject, setHasProject] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    if (!user) {
-      // Don't reset to loading on transient auth blips; clear only when logged out.
-      return;
-    }
-    if (isMaster) { setHasProject(true); return; }
-    supabase
-      .from('project_members')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-      .then(({ count }) => {
-        setHasProject((count || 0) > 0);
-      });
-  }, [user?.id, isMaster]);
-
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">로딩 중...</div>;
-  if (!user) return <Navigate to="/login" replace />;
-
-  if (profile && (profile as any).account_status === 'pending') {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center space-y-4 max-w-md">
-          <div className="h-16 w-16 rounded-2xl bg-warning/20 flex items-center justify-center mx-auto">
-            <span className="text-3xl">⏳</span>
-          </div>
-          <h2 className="text-xl font-bold">승인 대기 중</h2>
-          <p className="text-sm text-muted-foreground">
-            관리자가 계정을 승인한 후에 시스템을 이용하실 수 있습니다.<br />
-            승인이 완료되면 새로고침 후 접근 가능합니다.
-          </p>
-          <button onClick={() => window.location.reload()} className="text-sm text-accent hover:underline">새로고침</button>
-        </div>
-      </div>
-    );
-  }
-
-  if (profile && (profile as any).account_status === 'inactive') {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="text-center space-y-4 max-w-md">
-          <h2 className="text-xl font-bold text-destructive">계정 비활성화</h2>
-          <p className="text-sm text-muted-foreground">계정이 비활성화되었습니다. 관리자에게 문의하세요.</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Project membership gate: non-master users without any project membership
-  if (hasProject === null) return <div className="min-h-screen flex items-center justify-center text-muted-foreground">로딩 중...</div>;
-  if (!hasProject && !isMaster) return <ProjectSelect />;
-
+function PageFallback() {
   return (
-    <AppLayout>
-      <ContractorGate>
-      <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/projects" element={<Projects />} />
-        <Route path="/project/:projectId" element={<ProjectDetail />} />
-        <Route path="/risk-assessment" element={<AssessmentRuns />} />
-        <Route path="/risk-assessment/:projectId" element={<AssessmentRuns />} />
-        <Route path="/assessment-run/:runId" element={<AssessmentRunDetail />} />
-        <Route path="/schedule-upload" element={<ScheduleUpload />} />
-        <Route path="/schedule-upload/:projectId" element={<ScheduleUpload />} />
-        <Route path="/verification" element={<Navigate to="/verification-center" replace />} />
-        <Route path="/verification-center" element={<VerificationCenter />} />
-        <Route path="/master-data" element={<RoleGuard><MasterData /></RoleGuard>} />
-        <Route path="/approvals" element={<Approvals />} />
-        <Route path="/audit-logs" element={<RoleGuard><AuditLogs /></RoleGuard>} />
-        <Route path="/user-management" element={<Navigate to="/settings/permissions" replace />} />
-        <Route path="/permission-test" element={<RoleGuard><PermissionTest /></RoleGuard>} />
-        <Route path="/profile" element={<Profile />} />
-        <Route path="/settings" element={<RoleGuard><Settings /></RoleGuard>} />
-        <Route path="/settings/account" element={<SettingsAccount />} />
-        <Route path="/settings/permissions" element={<RoleGuard><SettingsPermissions /></RoleGuard>} />
-        <Route path="/settings/approval-routes" element={<RoleGuard><SettingsApprovalRoutes /></RoleGuard>} />
-        <Route path="/settings/notifications" element={<RoleGuard><SettingsNotifications /></RoleGuard>} />
-        <Route path="/settings/ai" element={<RoleGuard><SettingsAI /></RoleGuard>} />
-        <Route path="/settings/weather" element={<RoleGuard masterOnly><SettingsWeather /></RoleGuard>} />
-        <Route path="/settings/mobile-releases" element={<RoleGuard masterOnly><MobileReleases /></RoleGuard>} />
-        <Route path="/settings/permit-forms" element={<RoleGuard><SettingsPermitForms /></RoleGuard>} />
-        <Route path="/settings/companies" element={<RoleGuard><SettingsCompanies /></RoleGuard>} />
-        <Route path="/work-plans" element={<WorkPlans />} />
-        <Route path="/work-plan/:planId" element={<WorkPlanDetail />} />
-        <Route path="/legal-duties" element={<LegalDuties />} />
-        <Route path="/todo" element={<TodoDashboard />} />
-        <Route path="/todos" element={<Navigate to="/todo" replace />} />
-        <Route path="/ai-assistant" element={<AIAssistant />} />
-        <Route path="/site-weather" element={<SiteWeather />} />
-        <Route path="/safety-cost" element={<RoleGuard><SafetyCost /></RoleGuard>} />
-        <Route path="/work-permits" element={<WorkPermits />} />
-        <Route path="/work-permits/:id" element={<WorkPermitDetail />} />
-        <Route path="/tbm-logs" element={<TbmLogs />} />
-        <Route path="/inspection-mode" element={<InspectionMode />} />
-        <Route path="/safety-inspections" element={<SafetyInspections />} />
-        <Route path="/incidents" element={<Incidents />} />
-        <Route path="/emergency-drills" element={<EmergencyDrills />} />
-        <Route path="/worker-education" element={<WorkerEducation />} />
-        <Route path="/safety-appointments" element={<SafetyAppointments />} />
-        <Route path="/work-stop" element={<WorkStopRequests />} />
-        <Route path="/contractor-scorecard" element={<RoleGuard><ContractorScorecard /></RoleGuard>} />
-        <Route path="/assessment-notices" element={<RoleGuard><AssessmentNotices /></RoleGuard>} />
-        <Route path="/safety-cost-validation" element={<RoleGuard><SafetyCostValidation /></RoleGuard>} />
-        <Route path="/site-readiness" element={<SiteReadinessChecklist />} />
-        <Route path="/education-materials" element={<EducationMaterials />} />
-        <Route path="/project-library" element={<ProjectLibrary />} />
-        <Route path="/workers" element={<WorkerManagement />} />
-        <Route path="/workers/legal-mapping" element={<LegalEducationMapping />} />
-        <Route path="/workers/:id" element={<WorkerDetail />} />
-        <Route path="/worker-attendance" element={<Navigate to="/workers?tab=attendance" replace />} />
-        <Route path="/admin/ai-test" element={<RoleGuard masterOnly><AITestEngine /></RoleGuard>} />
-        <Route path="/admin/ai-logs" element={<RoleGuard masterOnly><AILogs /></RoleGuard>} />
-        <Route path="/admin/system-test" element={<RoleGuard masterOnly><SystemTestEngine /></RoleGuard>} />
-        <Route path="/admin/consistency-audit" element={<RoleGuard masterOnly><ConsistencyAudit /></RoleGuard>} />
-        <Route path="/admin/data-audit" element={<RoleGuard masterOnly><DataAudit /></RoleGuard>} />
-        <Route path="/admin/trash" element={<RoleGuard masterOnly><Trash /></RoleGuard>} />
-        <Route path="/health" element={<HealthDashboard />} />
-        <Route path="/health/checkups" element={<HealthCheckups />} />
-        <Route path="/health/chemicals" element={<Chemicals />} />
-        <Route path="/health/measurements" element={<EnvMeasurements />} />
-        <Route path="/health/education" element={<HealthEducation />} />
-        <Route path="/health/hazard-surveys" element={<HazardSurveys />} />
-        <Route path="/site-control-map" element={<SiteControlMap />} />
-        <Route path="/site-maps" element={<Navigate to="/site-control-map" replace />} />
-        <Route path="/restricted-zones" element={<Navigate to="/site-control-map" replace />} />
-        <Route path="/georef-map" element={<Navigate to="/site-control-map" replace />} />
-        <Route path="/zone-events" element={<ZoneEvents />} />
-        <Route path="/worker-distribution" element={<WorkerDistribution />} />
-        <Route path="/admin/tracking-health" element={<RoleGuard><AdminTrackingHealth /></RoleGuard>} />
-        <Route path="/companies" element={<Companies />} />
-        <Route path="/companies/:id" element={<CompanyDetail />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-      </ContractorGate>
-    </AppLayout>
+    <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
+      로딩 중…
+    </div>
   );
 }
 
 function AuthRoute() {
   const { user, loading } = useAuth();
   const [params] = useSearchParams();
-  // Wait for localStorage session restore before showing login (auto-login / PWA reopen)
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
@@ -275,9 +52,25 @@ function AuthRoute() {
     if (next && next.startsWith("/") && !next.startsWith("//")) {
       return <Navigate to={next} replace />;
     }
-    return <Navigate to="/" replace />;
+    return <Navigate to="/app/admin" replace />;
   }
   return <Auth />;
+}
+
+/** Map legacy desktop paths → /app/admin/... and /m → /app/worker */
+function LegacyPathRedirect() {
+  const loc = useLocation();
+  const path = loc.pathname;
+
+  if (path === "/" || path === "") {
+    return <Navigate to="/app/admin" replace />;
+  }
+  if (path === "/m" || path.startsWith("/m/")) {
+    const rest = path === "/m" ? "" : path.slice(2); // "/m/foo" → "/foo"
+    return <Navigate to={`/app/worker${rest}${loc.search}${loc.hash}`} replace />;
+  }
+  // Absolute admin legacy (e.g. /work-permits/x) → /app/admin/...
+  return <Navigate to={`/app/admin${path}${loc.search}${loc.hash}`} replace />;
 }
 
 const App = () => (
@@ -287,48 +80,40 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <Routes>
-            <Route path="/landing" element={<Index />} />
-            <Route path="/privacy" element={<Privacy />} />
-            <Route path="/auth" element={<AuthRoute />} />
-            <Route path="/login" element={<AuthRoute />} />
-            <Route path="/register" element={<AuthRoute />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/update-password" element={<UpdatePassword />} />
-            <Route path="/reset-password" element={<UpdatePassword />} />
-            <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
-            <Route path="/tbm/:token" element={<TbmParticipate />} />
-            <Route path="/worker/register" element={<WorkerRegister />} />
-            <Route path="/worker" element={<WorkerEntry />} />
-            <Route path="/worker/portal/:token" element={<WorkerPortal />} />
-            <Route path="/health/survey/:token" element={<HazardSurveyResponse />} />
-            <Route path="/z/:code" element={<ZoneCheckin />} />
-            <Route path="/c/:token" element={<CompanyScan />} />
-            <Route path="/manual" element={<Manual />} />
-            <Route path="/m" element={<MobileHome />} />
-            <Route path="/m/inspect" element={<MobileInspect />} />
-            <Route path="/m/alerts" element={<MobileAlerts />} />
-            <Route path="/m/actions" element={<MobileActions />} />
-            <Route path="/m/approvals" element={<MobileApprovals />} />
-            <Route path="/m/approvals/:approvalId" element={<MobileApprovalDetail />} />
-            <Route path="/m/workers" element={<MobileWorkers />} />
-            <Route path="/m/risk-assessment" element={<MobileRiskAssessment />} />
-            <Route path="/m/risk-assessment/:runId" element={<MobileAssessmentViewer />} />
-            <Route path="/m/work-plans" element={<MobileWorkPlans />} />
-            <Route path="/m/work-plans/:planId" element={<MobileWorkPlanViewer />} />
-            <Route path="/m/tbm" element={<MobileTbm />} />
-            <Route path="/m/permits" element={<MobilePermits />} />
-            <Route path="/m/incident" element={<MobileIncident />} />
-            <Route path="/m/scan" element={<MobileScan />} />
-            <Route path="/m/daily-health-log" element={<MobileDailyHealthLog />} />
-            <Route path="/m/work-stop" element={<MobileWorkStop />} />
-            <Route path="/m/geofence-drop" element={<MobileGeofenceDrop />} />
-            <Route path="/*" element={<ProtectedRoutes />} />
-          </Routes>
-          <MobileRedirectGuard />
-          <InstallPrompt />
-          <OfflineSyncMount />
-          <PushNotificationBridge />
+          <SystemRealtimeProvider>
+            <Suspense fallback={<PageFallback />}>
+              <Routes>
+                <Route path="/landing" element={<Index />} />
+                <Route path="/privacy" element={<Privacy />} />
+                <Route path="/auth" element={<AuthRoute />} />
+                <Route path="/login" element={<AuthRoute />} />
+                <Route path="/register" element={<AuthRoute />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/update-password" element={<UpdatePassword />} />
+                <Route path="/reset-password" element={<UpdatePassword />} />
+                <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
+                <Route path="/tbm/:token" element={<TbmParticipate />} />
+                <Route path="/worker/register" element={<WorkerRegister />} />
+                <Route path="/worker" element={<WorkerEntry />} />
+                <Route path="/worker/portal/:token" element={<WorkerPortal />} />
+                <Route path="/health/survey/:token" element={<HazardSurveyResponse />} />
+                <Route path="/z/:code" element={<ZoneCheckin />} />
+                <Route path="/c/:token" element={<CompanyScan />} />
+                <Route path="/manual" element={<Manual />} />
+
+                {/* Canonical role-split shells */}
+                <Route path="/app/worker/*" element={<WorkerAppRoutes />} />
+                <Route path="/app/admin/*" element={<AdminAppRoutes />} />
+
+                {/* Legacy aliases → canonical */}
+                <Route path="/m/*" element={<LegacyPathRedirect />} />
+                <Route path="/*" element={<LegacyPathRedirect />} />
+              </Routes>
+            </Suspense>
+            <MobileRedirectGuard />
+            <InstallPrompt />
+            <OfflineSyncMount />
+          </SystemRealtimeProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

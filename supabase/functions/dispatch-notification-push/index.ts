@@ -46,15 +46,23 @@ const ENTITY_ROUTES: Record<string, (id?: string | null, project?: string | null
 
 function deepLinkFor(n: NotificationRow): string {
   const explicit = (n.link || '').trim();
-  if (explicit) return explicit;
+  // Prefer mobile worker shell for approval / alerts (phone PWA)
+  if (n.type?.startsWith('approval') || n.related_type === 'approval') {
+    return '/app/worker/approvals';
+  }
+  if (explicit) {
+    if (explicit === '/m' || explicit.startsWith('/m/')) {
+      return explicit === '/m' ? '/app/worker/menu' : `/app/worker${explicit.slice(2)}`;
+    }
+    return explicit;
+  }
   if (n.related_type && ENTITY_ROUTES[n.related_type]) {
     return ENTITY_ROUTES[n.related_type](n.related_id, n.project_id);
   }
-  if (n.type?.startsWith('approval')) return '/m/approvals';
   if (n.type === 'danger_zone_entry') {
     return n.project_id ? `/zone-events?project=${n.project_id}` : '/zone-events';
   }
-  return '/m/alerts';
+  return '/app/worker/alerts';
 }
 
 Deno.serve(async (req) => {

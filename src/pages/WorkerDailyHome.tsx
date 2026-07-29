@@ -43,7 +43,7 @@ type TbmSession = {
 
 export default function WorkerDailyHome() {
   const { user, profile } = useAuth();
-  const { lastGpsFix, gpsTracking, startGpsTracking, stopGpsTracking } = useSystemRealtime();
+  const { lastGpsFix, gpsTracking, gpsError, startGpsTracking, stopGpsTracking } = useSystemRealtime();
   const [projectId, setProjectId] = useState(() => localStorage.getItem(PROJECT_KEY) || "");
   const [siteLat, setSiteLat] = useState<number | null>(null);
   const [siteLng, setSiteLng] = useState<number | null>(null);
@@ -130,13 +130,20 @@ export default function WorkerDailyHome() {
       .limit(1);
     setTbmSession((tbms?.[0] as TbmSession) || null);
 
-    if (wid && !gpsTracking) {
-      startGpsTracking({
-        project_id: pid,
-        worker_id: wid,
-        worker_name: profile?.display_name || null,
-        worker_phone: profile?.phone || null,
-      });
+    // Start GPS even before workers-row match so distance UI can update
+    if (pid && !gpsTracking) {
+      const { setTrackingConsent, hasTrackingConsent, normalizeTrackingConsentStorage } =
+        await import("@/lib/tracking/locationTracker");
+      normalizeTrackingConsentStorage();
+      if (profile?.agreed_to_location === true || hasTrackingConsent()) {
+        setTrackingConsent(true);
+        startGpsTracking({
+          project_id: pid,
+          worker_id: wid,
+          worker_name: profile?.display_name || null,
+          worker_phone: profile?.phone || null,
+        });
+      }
     }
   }, [user, profile, gpsTracking, startGpsTracking]);
 
@@ -149,7 +156,8 @@ export default function WorkerDailyHome() {
   }, [isCheckedIn, tbmDone]);
 
   const ensureConsentAndGps = async () => {
-    localStorage.setItem("tracking-consent-v1", "1");
+    const { setTrackingConsent } = await import("@/lib/tracking/locationTracker");
+    setTrackingConsent(true);
     if (!projectId) {
       toast.error("현장을 먼저 선택하세요");
       return false;
@@ -293,7 +301,11 @@ export default function WorkerDailyHome() {
             <div>추적: {gpsTracking ? "ON" : "OFF"}</div>
             <div>
               거리:{" "}
-              {distanceM == null ? "측정 중…" : `${Math.round(distanceM)}m`}
+              {siteLat == null || siteLng == null
+                ? "현장 좌표 미설정"
+                : !lastGpsFix
+                  ? (gpsError ? "GPS 오류" : "GPS 대기…")
+                  : `${Math.round(distanceM!)}m`}
             </div>
             <div className="col-span-2">
               좌표:{" "}
@@ -305,12 +317,29 @@ export default function WorkerDailyHome() {
               현장 기준:{" "}
               {siteLat != null && siteLng != null
                 ? `${siteLat.toFixed(5)}, ${siteLng.toFixed(5)}`
-                : "projects.site_lat/lng 미설정"}
+                : "projects.site_lat/lng 미설정 — 관리자가 프로젝트에 현장 좌표를 넣어야 합니다"}
             </div>
+            {gpsError && (
+              <div className="col-span-2 text-destructive">GPS: {gpsError}</div>
+            )}
           </div>
           <Badge variant={within100m ? "default" : "secondary"}>
-            {within100m ? "반경 100m 이내 — 출근 가능" : "반경 밖 — 출근 비활성"}
+            {siteLat == null || siteLng == null
+              ? "현장 좌표 없음 — 출근 불가"
+              : within100m
+                ? "반경 100m 이내 — 출근 가능"
+                : "반경 밖 — 출근 비활성"}
           </Badge>
+          {!gpsTracking && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={() => void ensureConsentAndGps()}
+            >
+              GPS 다시 시작
+            </Button>
+          )}
         </section>
 
         <section className="rounded-2xl bg-white/80 border border-slate-200 p-4 space-y-3 shadow-sm">

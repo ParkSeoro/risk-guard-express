@@ -28,6 +28,18 @@ export function isPushSupported(): boolean {
     && "Notification" in window;
 }
 
+/** iOS Safari tab cannot receive Web Push — needs Home Screen PWA (16.4+). */
+export function isIosSafariTab(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const iOS = /iphone|ipad|ipod/i.test(ua);
+  if (!iOS) return false;
+  const standalone =
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (navigator as any).standalone === true;
+  return !standalone;
+}
+
 export async function registerSW(): Promise<ServiceWorkerRegistration | null> {
   if (!("serviceWorker" in navigator)) return null;
   try {
@@ -38,11 +50,33 @@ export async function registerSW(): Promise<ServiceWorkerRegistration | null> {
   }
 }
 
+async function ensureServiceWorker(): Promise<ServiceWorkerRegistration | null> {
+  // CRITICAL: register BEFORE awaiting ready — ready never resolves with no registration
+  const existing = await navigator.serviceWorker.getRegistration();
+  if (existing) return existing;
+  const reg = await registerSW();
+  if (!reg) return null;
+  try {
+    await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((resolve) => setTimeout(resolve, 8000)),
+    ]);
+  } catch {
+    /* ignore */
+  }
+  return (await navigator.serviceWorker.getRegistration()) || reg;
+}
+
 /** 사용자에게 권한 요청 + 푸시 구독 + 서버 저장. 이미 구독돼 있으면 idempotent */
 export async function subscribeToPush(userId: string): Promise<{ ok: boolean; reason?: string }> {
-  if (!isPushSupported()) return { ok: false, reason: "unsupported" };
-  const reg = (await navigator.serviceWorker.ready) || (await registerSW());
-  if (!reg) return { ok: false, reason: "no_sw" };
+  if (!isPushSupported()) {
+    if (isIosSafariTab()) {
+      return { ok: false, reason: "ios_needs_homescreen" };
+    }
+    return { ok: false, reason: "unsupported" };
+  }
+  const reg = await ensureServiceWorker();
+  if (!reg?.pushManager) return { ok: false, reason: "no_sw" };
 
   let perm = Notification.permission;
   if (perm === "default") perm = await Notification.requestPermission();
@@ -80,11 +114,22 @@ export async function subscribeToPush(userId: string): Promise<{ ok: boolean; re
 
 export async function unsubscribeFromPush(): Promise<void> {
   if (!("serviceWorker" in navigator)) return;
-  const reg = await navigator.serviceWorker.ready;
+  const reg = await navigator.serviceWorker.getRegistration();
+  if (!reg) return;
   const sub = await reg.pushManager.getSubscription();
   if (sub) {
     const endpoint = sub.endpoint;
     await sub.unsubscribe();
     await supabase.from("push_subscriptions" as any).delete().eq("endpoint", endpoint);
   }
+}
+
+export function pushStatusLabel(): string {
+  if (typeof window === "undefined") return "확인 불가";
+  if (isIosSafariTab()) return "iOS: 홈 화면 추가 후 활성화";
+  if (!isPushSupported()) return "이 브라우저 미지원";
+  if (typeof Notification === "undefined") return "미지원";
+  if (Notification.permission === "granted") return "활성(권한 허용됨)";
+  if (Notification.permission === "denied") return "차단됨(브라우저 설정에서 허용)";
+  return "미활성화 — 아래 버튼으로 켜기";
 }

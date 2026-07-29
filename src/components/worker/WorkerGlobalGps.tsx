@@ -6,7 +6,11 @@ import { useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSystemRealtime } from "@/providers/SystemRealtimeProvider";
 import { supabase } from "@/integrations/supabase/client";
-import { hasTrackingConsent } from "@/lib/tracking/locationTracker";
+import {
+  hasTrackingConsent,
+  normalizeTrackingConsentStorage,
+  setTrackingConsent,
+} from "@/lib/tracking/locationTracker";
 
 const PROJECT_KEY = "selectedProjectId";
 
@@ -20,7 +24,12 @@ export default function WorkerGlobalGps() {
       stopGpsTracking();
       return;
     }
-    if (!hasTrackingConsent()) return;
+    normalizeTrackingConsentStorage();
+    // Profile location consent (DB) should unlock local GPS gate
+    if (profile?.agreed_to_location === true && !hasTrackingConsent()) {
+      setTrackingConsent(true);
+    }
+    if (!hasTrackingConsent() && profile?.agreed_to_location !== true) return;
 
     let cancelled = false;
 
@@ -48,6 +57,7 @@ export default function WorkerGlobalGps() {
       }
 
       if (cancelled) return;
+      // Start even without workers-row match — check-in still needs worker_id later
       startGpsTracking({
         project_id: projectId,
         worker_id: workerId,
@@ -61,15 +71,18 @@ export default function WorkerGlobalGps() {
     const onStorage = (e: StorageEvent) => {
       if (e.key === PROJECT_KEY) void boot();
     };
+    const onProjectChanged = () => void boot();
     window.addEventListener("storage", onStorage);
     window.addEventListener("focus", boot);
+    window.addEventListener("mobile:project-changed", onProjectChanged);
 
     return () => {
       cancelled = true;
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("focus", boot);
+      window.removeEventListener("mobile:project-changed", onProjectChanged);
     };
-  }, [user, profile?.display_name, profile?.phone, startGpsTracking, stopGpsTracking]);
+  }, [user, profile?.display_name, profile?.phone, profile?.agreed_to_location, startGpsTracking, stopGpsTracking]);
 
   useEffect(() => () => stopGpsTracking(), [stopGpsTracking]);
 

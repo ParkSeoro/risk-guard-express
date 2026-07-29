@@ -5,6 +5,7 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import type { ReactNode } from "react";
+import { prefersMobileAppShell } from "@/hooks/use-mobile";
 
 export const ADMIN_SHELL_ROLES = [
   "master",
@@ -18,6 +19,11 @@ export const ADMIN_SHELL_ROLES = [
 export const WORKER_SHELL_ROLES = ["worker", "viewer"] as const;
 
 export type ShellKind = "admin" | "worker";
+
+/** Mobile admin dashboard (tiles, push, alarm sim) — roles stay admin. */
+export const MOBILE_ADMIN_HOME = "/app/worker/menu";
+export const WORKER_HOME = "/app/worker/home";
+export const DESKTOP_ADMIN_HOME = "/app/admin";
 
 /** Public auth/consent paths — AuthGuard always passes these through. */
 export const PUBLIC_ROUTES = [
@@ -125,8 +131,10 @@ export function postConsentHomePath(
     rolesReady: opts?.rolesReady ?? true,
     loginIntent: opts?.loginIntent ?? readLoginIntent(),
   });
-  // Empty / unknown roles default to admin (never hijack managers to worker home)
-  return shell === "worker" ? "/app/worker/home" : "/app/admin";
+  if (shell === "worker") return WORKER_HOME;
+  // Admin/manager roles: on phone → mobile app shell (role state unchanged)
+  if (prefersMobileAppShell()) return MOBILE_ADMIN_HOME;
+  return DESKTOP_ADMIN_HOME;
 }
 
 export function postLoginPath(
@@ -193,11 +201,12 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
 
   // ⑤ Shell gate — only pure workers are blocked from admin shell
   if (shell === "admin" && isPureWorkerUser(roles)) {
-    return <Navigate to="/app/worker/home" replace />;
+    return <Navigate to={WORKER_HOME} replace />;
   }
-  // Empty-role managers must NOT be kicked to worker (roles may still be hydrating from project_members)
-  if (shell === "worker" && isAdminShellUser(roles)) {
-    return <Navigate to="/app/admin" replace />;
+  // Admins may use the worker/mobile shell on phones (UI only — roles stay admin).
+  // Desktop (or forceDesktop) still keeps managers on /app/admin.
+  if (shell === "worker" && isAdminShellUser(roles) && !prefersMobileAppShell()) {
+    return <Navigate to={DESKTOP_ADMIN_HOME} replace />;
   }
 
   return <>{children}</>;

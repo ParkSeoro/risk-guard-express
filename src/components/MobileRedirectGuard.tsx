@@ -1,10 +1,11 @@
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useIsMobile } from "@/hooks/use-mobile";
+import { useIsMobile, isForceDesktop, setForceDesktop, prefersMobileAppShell } from "@/hooks/use-mobile";
 import { useAuth } from "@/contexts/AuthContext";
-import { isPureWorkerUser } from "@/components/AuthGuard";
+import { isAdminShellUser, isPureWorkerUser, MOBILE_ADMIN_HOME, WORKER_HOME } from "@/components/AuthGuard";
 
-const FORCE_DESKTOP_KEY = "forceDesktopUI";
+// Re-export for existing callers (MobileHome, AssessmentRunDetail, …)
+export { setForceDesktop, isForceDesktop };
 
 // Public / worker-native paths — never auto-bounce
 const MOBILE_EXCLUDE = [
@@ -28,8 +29,11 @@ const MOBILE_EXCLUDE = [
 ];
 
 /**
- * Mobile UX helper — MUST NOT kidnap authenticated admins/managers into worker onboarding.
- * Only pure workers (or anonymous) get bounced from /app/admin to /app/worker.
+ * Mobile UX helper:
+ * - Pure workers → /app/worker/home
+ * - Admins/managers on a phone → /app/worker/menu (mobile dashboard)
+ *   Role state is NOT demoted — only the UI shell changes.
+ * - forceDesktopUI=1 → leave them on /app/admin (responsive desktop)
  */
 export default function MobileRedirectGuard() {
   const isMobile = useIsMobile();
@@ -40,15 +44,13 @@ export default function MobileRedirectGuard() {
   useEffect(() => {
     if (!isMobile) return;
     if (typeof window !== "undefined" && window.innerWidth >= 768) return;
-    if (typeof window !== "undefined" && localStorage.getItem(FORCE_DESKTOP_KEY) === "1") return;
+    if (isForceDesktop()) return;
     if (isAuthLoading || (user && !rolesReady)) return;
 
-    // Critical: only pure workers bounce to worker shell.
-    // Empty roles / project admins must NEVER be kidnapped to /app/worker/home.
-    if (user && !isPureWorkerUser(roles)) return;
-
     const path = location.pathname;
+    if (MOBILE_EXCLUDE.some((re) => re.test(path))) return;
 
+    // Deep-link remaps (admin or legacy absolute → worker viewers)
     const ar =
       path.match(/^\/app\/admin\/assessment-run\/([^/]+)/) ||
       path.match(/^\/assessment-run\/([^/]+)/);
@@ -64,23 +66,25 @@ export default function MobileRedirectGuard() {
       return;
     }
 
-    if (MOBILE_EXCLUDE.some((re) => re.test(path))) return;
+    const isAdminPath = path.startsWith("/app/admin") || path === "/" || path === "";
 
-    if (path.startsWith("/app/admin") || path === "/" || !path.startsWith("/app/worker")) {
-      navigate("/app/worker/home", { replace: true });
+    // Authenticated admin/manager on mobile → mobile admin dashboard
+    if (user && isAdminShellUser(roles) && prefersMobileAppShell() && isAdminPath) {
+      navigate(MOBILE_ADMIN_HOME, { replace: true });
+      return;
+    }
+
+    // Pure workers (or anonymous) still bounce into worker shell
+    if (user && !isPureWorkerUser(roles) && !isAdminShellUser(roles)) {
+      // Empty / unknown roles: do not kidnap — leave alone (roles still hydrating)
+      return;
+    }
+    if (user && isAdminShellUser(roles)) return;
+
+    if (isAdminPath || !path.startsWith("/app/worker")) {
+      navigate(WORKER_HOME, { replace: true });
     }
   }, [isMobile, location.pathname, navigate, user, roles, rolesReady, isAuthLoading]);
 
   return null;
-}
-
-export function setForceDesktop(on: boolean) {
-  if (typeof window === "undefined") return;
-  if (on) localStorage.setItem(FORCE_DESKTOP_KEY, "1");
-  else localStorage.removeItem(FORCE_DESKTOP_KEY);
-}
-
-export function isForceDesktop(): boolean {
-  if (typeof window === "undefined") return false;
-  return localStorage.getItem(FORCE_DESKTOP_KEY) === "1";
 }

@@ -16,6 +16,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CheckCircle2, Clock, XCircle, FileCheck, MessageSquare, FileText, ExternalLink, Search, Inbox, Send, AlertTriangle } from "lucide-react";
 import { exportToPDF } from "@/lib/exportUtils";
 import { useMemo } from "react";
+import {
+  approvalTimelineGroupKey,
+  isSubmitterApprovalStep,
+  sequentialDisplayStatus,
+} from "@/lib/approvalRules";
 
 
 const ENTITY_LINK = (t?: string | null, id?: string | null): string | null => {
@@ -55,12 +60,29 @@ const Approvals = () => {
     setEntityPending((data as any[]) || []);
   };
 
-  const actOnEntity = async (id: string, action: 'approve'|'reject', isClosure = false) => {
+  const actOnEntity = async (id: string, action: 'approve'|'reject', isClosure = false, stepMeta?: any) => {
+    if (stepMeta && isSubmitterApprovalStep(stepMeta)) {
+      toast({
+        title: '상신 단계는 승인/반려할 수 없습니다.',
+        description: '기안 상신은 제출 시 자동 완료됩니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const comment = action === 'reject' ? (prompt('반려 사유') || '') : '';
     if (action === 'reject' && !comment) return;
+    // 결재 전용 RPC만 호출 — work_permits 전체 UPDATE 금지
     const { data, error } = await supabase.rpc('act_on_entity_approval', { _approval_id: id, _action: action, _comment: comment });
     const r = data as any;
-    if (error || r?.error) toast({ title: '처리 실패', description: r?.error || error?.message, variant: 'destructive' });
+    if (error || r?.error) {
+      const code = r?.error || error?.message || '';
+      const msg = code === 'SUBMITTER_STEP_NO_SELF_APPROVE'
+        ? '상신(기안) 단계는 승인/반려할 수 없습니다.'
+        : code === 'WORK_PERMIT_LOCKED' || String(code).includes('WORK_PERMIT_LOCKED')
+          ? '문서 잠금 충돌이 발생했습니다. 페이지를 새로고침 후 다시 시도하세요.'
+          : (r?.error || error?.message);
+      toast({ title: '처리 실패', description: msg, variant: 'destructive' });
+    }
     else {
       toast({
         title: isClosure
@@ -68,6 +90,7 @@ const Approvals = () => {
           : (action === 'approve' ? '승인 완료' : '반려 완료'),
       });
       fetchEntityPending();
+      fetchData();
     }
   };
 
@@ -77,7 +100,10 @@ const Approvals = () => {
       toast({ title: '회수 불가', description: '이 결재는 회수를 지원하지 않습니다.', variant: 'destructive' });
       return;
     }
-    if (steps.some((s: any) => s.status === '승인' || s.status === '반려')) {
+    // 상신 자동승인만 있는 경우는 회수 허용 — 실결재(비-상신 승인/반려)가 있으면 차단
+    if (steps.some((s: any) =>
+      (s.status === '승인' && !isSubmitterApprovalStep(s)) || s.status === '반려'
+    )) {
       toast({ title: '회수 불가', description: '이미 처리된 결재 단계가 있어 회수할 수 없습니다.', variant: 'destructive' });
       return;
     }
@@ -144,6 +170,8 @@ const Approvals = () => {
 
   const filteredEntityPending = useMemo(() => {
     return entityPending.filter((e: any) => {
+      // 상신(기안) 단계는 승인/반려 대기 목록에 노출하지 않음
+      if (isSubmitterApprovalStep(e)) return false;
       if (entityTypeFilter !== 'all' && e.entity_type !== entityTypeFilter) return false;
       if (!search.trim()) return true;
       const q = search.toLowerCase();
@@ -152,18 +180,18 @@ const Approvals = () => {
   }, [entityPending, entityTypeFilter, search]);
 
 
-  // Group by run_id, only show the latest approval_version per run
+  // Group by entity (or assessment run), only show the latest approval_version per document
   const grouped = (() => {
-    const maxVersionByRun: Record<string, number> = {};
+    const maxVersionByKey: Record<string, number> = {};
     for (const ap of approvals) {
-      const key = ap.run_id || 'general';
+      const key = approvalTimelineGroupKey(ap);
       const ver = ap.approval_version || 1;
-      if (!maxVersionByRun[key] || ver > maxVersionByRun[key]) maxVersionByRun[key] = ver;
+      if (!maxVersionByKey[key] || ver > maxVersionByKey[key]) maxVersionByKey[key] = ver;
     }
     return approvals.reduce((acc, ap) => {
-      const key = ap.run_id || 'general';
+      const key = approvalTimelineGroupKey(ap);
       const ver = ap.approval_version || 1;
-      if (ver === maxVersionByRun[key]) {
+      if (ver === maxVersionByKey[key]) {
         if (!acc[key]) acc[key] = [];
         acc[key].push(ap);
       }
@@ -175,13 +203,14 @@ const Approvals = () => {
     const q = search.trim().toLowerCase();
     if (!q) return group;
     const out: Record<string, any[]> = {};
-    for (const [runId, steps] of Object.entries(group)) {
-      const run = runs.find((r: any) => r.id === runId);
+    for (const [groupKey, steps] of Object.entries(group)) {
+      const runId = groupKey.startsWith('run:') ? groupKey.slice(4) : null;
+      const run = runId ? runs.find((r: any) => r.id === runId) : null;
       const text = [
         run?.type, run?.period_label,
-        ...(steps as any[]).map(s => `${s.step} ${s.approver_name || ''} ${s.company_name || ''} ${s.comment || ''}`),
+        ...(steps as any[]).map(s => `${s.step} ${s.approver_name || ''} ${s.company_name || ''} ${s.comment || ''} ${s.entity_type || ''}`),
       ].join(' ').toLowerCase();
-      if (text.includes(q)) out[runId] = steps;
+      if (text.includes(q)) out[groupKey] = steps;
     }
     return out;
   };
@@ -200,7 +229,9 @@ const Approvals = () => {
     if (tab === 'submitted' && user) {
       const filtered: Record<string, any[]> = {};
       for (const [runId, steps] of Object.entries(grouped)) {
-        const submitted = (steps as any[]).some(s => s.approver_id === user.id && s.step === '작성');
+        const submitted = (steps as any[]).some(s =>
+          s.approver_id === user.id && (s.step === '작성' || isSubmitterApprovalStep(s))
+        );
         if (submitted) filtered[runId] = steps as any[];
       }
       return applySearch(filtered);
@@ -240,11 +271,19 @@ const Approvals = () => {
       toast({ title: '아직 결재 순번이 아닙니다.', description: '앞 단계가 먼저 승인되어야 결재할 수 있습니다.', variant: 'destructive' });
       return;
     }
+    if (isSubmitterApprovalStep(ap)) {
+      toast({
+        title: '상신 단계는 승인/반려할 수 없습니다.',
+        description: '기안 상신은 제출 시 자동 완료됩니다. 다음 결재자의 차례를 기다리세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
     if (action === '반려' && !(comment || '').trim()) {
       toast({ title: '반려 사유를 입력하세요.', variant: 'destructive' }); return;
     }
 
-    // 순차 결재/다음 단계 자동 활성화/알림은 DB RPC(SSOT)가 처리
+    // 순차 결재/다음 단계 자동 활성화/서명 스탬프는 DB RPC(SSOT)만 수행 — 원본 문서 전체 UPDATE 금지
     const { data, error } = await supabase.rpc('act_on_entity_approval', {
       _approval_id: approvalId,
       _action: action === '승인' ? 'approve' : 'reject',
@@ -256,6 +295,7 @@ const Approvals = () => {
       const msg = code === 'PRIOR_STEP_NOT_APPROVED' ? '이전 단계 결재가 완료되지 않았습니다.'
         : code === 'NOT_ACTIVE_STEP' ? '아직 결재 순번이 아닙니다.'
         : code === 'NOT_AUTHORIZED' ? '결재 권한이 없습니다.'
+        : code === 'SUBMITTER_STEP_NO_SELF_APPROVE' ? '상신(기안) 단계는 승인/반려할 수 없습니다.'
         : code;
       toast({ title: '처리 실패', description: msg, variant: 'destructive' });
       return;
@@ -395,10 +435,10 @@ const Approvals = () => {
                     </Button>
                   ) : null;
                 })()}
-                <Button size="sm" onClick={() => actOnEntity(e.approval_id, 'approve', isClosure)}>
+                <Button size="sm" onClick={() => actOnEntity(e.approval_id, 'approve', isClosure, e)}>
                   <CheckCircle2 className="h-3 w-3 mr-1" />{isClosure ? '작업 완료 및 종료' : '승인'}
                 </Button>
-                <Button size="sm" variant="destructive" onClick={() => actOnEntity(e.approval_id, 'reject', isClosure)}>
+                <Button size="sm" variant="destructive" onClick={() => actOnEntity(e.approval_id, 'reject', isClosure, e)}>
                   <XCircle className="h-3 w-3 mr-1" />반려
                 </Button>
               </div>
@@ -439,28 +479,40 @@ const Approvals = () => {
               {tab === 'mine' && <div className="text-xs">위험성평가·작업계획서·작업허가서를 상신하면 이 곳에 표시됩니다.</div>}
             </CardContent></Card>
           ) : (
-            Object.entries(filteredGrouped).map(([runId, steps]) => {
-              const run = runs.find((r: any) => r.id === runId);
+            Object.entries(filteredGrouped).map(([groupKey, steps]) => {
+              const runId = groupKey.startsWith('run:') ? groupKey.slice(4) : null;
+              const run = runId ? runs.find((r: any) => r.id === runId) : null;
               const isAllTab = tab === 'all';
+              const sortedSteps = (steps as any[]).slice().sort((a, b) => {
+                return (a.step_order ?? 99) - (b.step_order ?? 99);
+              });
+              const entityTitle = !run ? (() => {
+                const first = sortedSteps[0];
+                const typeLabel = first?.entity_type === 'work_plan' ? '작업계획서'
+                  : first?.entity_type === 'work_permit' ? '작업허가서'
+                  : first?.entity_type || '문서';
+                return typeLabel;
+              })() : null;
               return (
-                <Card key={runId}>
+                <Card key={groupKey}>
                   <CardContent className="pt-5">
                     <div className="flex items-center justify-between mb-4">
                       <div>
-                        <h3 className="font-semibold">{run ? `[${run.type}] ${run.period_label}` : '일반'}</h3>
+                        <h3 className="font-semibold">{run ? `[${run.type}] ${run.period_label}` : entityTitle || '일반'}</h3>
                         {run && <p className="text-xs text-muted-foreground">상태: {run.status}</p>}
                       </div>
                       <div className="flex items-center gap-2">
                         {(() => {
-                          const arr = steps as any[];
+                          const arr = sortedSteps;
                           const first = arr[0];
                           const canWithdraw = !!user && !isAllTab
                             && first?.entity_type && first?.entity_id
-                            && arr.every(s => s.status === '진행중' || s.status === '대기')
+                            && arr.every(s => s.status === '진행중' || s.status === '대기' || s.status === '승인')
                             && arr.some(s => s.status === '진행중')
-                            // 상신자(=문서 작성자) 또는 마스터/프로젝트 관리자만 UI 노출
+                            // 상신 자동승인 후 1단계가 승인이어도 회수 가능(아직 후속 실결재 전)
+                            && !arr.some(s => s.status === '승인' && !isSubmitterApprovalStep(s) && (s.step_order ?? 0) > 1)
                             && (isMaster || isProjectAdmin
-                                || arr.some(s => s.approver_id === user.id && s.step_order === 1));
+                                || arr.some(s => s.approver_id === user.id && (s.step_order === 1 || isSubmitterApprovalStep(s))));
                           return canWithdraw ? (
                             <Button variant="outline" size="sm" className="h-7 text-xs gap-1 text-destructive" onClick={() => handleWithdraw(arr)}>
                               <XCircle className="h-3 w-3" /> 회수
@@ -469,7 +521,7 @@ const Approvals = () => {
                         })()}
                         {run && (
                           <>
-                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleDownloadRunPDF(runId)}>
+                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleDownloadRunPDF(runId!)}>
                               <FileText className="h-3 w-3" /> PDF
                             </Button>
                             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate(`/assessment-run/${runId}`)}>
@@ -478,7 +530,7 @@ const Approvals = () => {
                           </>
                         )}
                         {!run && (() => {
-                          const first = (steps as any[])[0];
+                          const first = sortedSteps[0];
                           const href = ENTITY_LINK(first?.entity_type, first?.entity_id);
                           return href ? (
                             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate(href)}>
@@ -489,38 +541,46 @@ const Approvals = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      {(steps as any[]).slice().sort((a, b) => {
-                        return (a.step_order ?? 99) - (b.step_order ?? 99);
-                      }).map((step: any, i: number) => (
+                      {sortedSteps.map((step: any, i: number) => {
+                        const displayStatus = sequentialDisplayStatus(sortedSteps, step);
+                        const isSubmitterStep = isSubmitterApprovalStep(step);
+                        const canAct = displayStatus === '진행중'
+                          && !isAllTab
+                          && !!user
+                          && step.approver_id === user.id
+                          && !isSubmitterStep;
+                        return (
                         <div key={step.id} className="flex items-center gap-2">
                           <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium ${
-                            step.status === '승인' ? 'bg-success/10 text-success' :
-                            step.status === '반려' ? 'bg-destructive/10 text-destructive' :
-                            step.status === '진행중' ? 'bg-primary/10 text-primary ring-1 ring-primary/40' :
-                            step.status === '취소' ? 'bg-muted/50 text-muted-foreground line-through' :
+                            displayStatus === '승인' ? 'bg-success/10 text-success' :
+                            displayStatus === '반려' ? 'bg-destructive/10 text-destructive' :
+                            displayStatus === '진행중' ? 'bg-primary/10 text-primary ring-1 ring-primary/40' :
+                            displayStatus === '취소' ? 'bg-muted/50 text-muted-foreground line-through' :
                             'bg-muted/40 text-muted-foreground opacity-60'
                           }`}>
-                            {step.status === '승인' ? <CheckCircle2 className="h-3.5 w-3.5" /> :
-                             step.status === '반려' ? <XCircle className="h-3.5 w-3.5" /> :
-                             step.status === '진행중' ? <Clock className="h-3.5 w-3.5" /> :
+                            {displayStatus === '승인' ? <CheckCircle2 className="h-3.5 w-3.5" /> :
+                             displayStatus === '반려' ? <XCircle className="h-3.5 w-3.5" /> :
+                             displayStatus === '진행중' ? <Clock className="h-3.5 w-3.5" /> :
                              <Clock className="h-3.5 w-3.5 opacity-50" />}
                             <span>{step.step}</span>
                             <span className="opacity-70">({step.approver_name || '미지정'}{step.company_name ? ` · ${step.company_name}` : ''})</span>
-                            {step.status === '대기' && <span className="text-[10px] opacity-70">· 순번대기</span>}
-                            {step.status === '진행중' && <span className="text-[10px] font-bold">· 결재중</span>}
+                            {displayStatus === '대기' && <span className="text-[10px] opacity-70">· 순번대기</span>}
+                            {displayStatus === '진행중' && <span className="text-[10px] font-bold">· 결재중</span>}
+                            {displayStatus === '승인' && isSubmitterStep && <span className="text-[10px] opacity-70">· 상신완료</span>}
                           </div>
-                          {/* 오직 활성(진행중) 단계의 지정 결재자에게만 버튼 노출 */}
-                          {step.status === '진행중' && !isAllTab && user && step.approver_id === user.id && (
+                          {/* 상신 단계 및 비활성 단계에는 승인/반려 비노출 */}
+                          {canAct && (
                             <div className="flex gap-1">
                               <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => handleApprovalAction(step.id, '승인')}>승인</Button>
                               <Button size="sm" variant="outline" className="h-6 text-xs px-2 text-destructive" onClick={() => setRejectingId(step.id)}>반려</Button>
                             </div>
                           )}
-                          {i < (steps as any[]).length - 1 && <div className="h-px w-6 bg-border" />}
+                          {i < sortedSteps.length - 1 && <div className="h-px w-6 bg-border" />}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
-                    {rejectingId && (steps as any[]).some(s => s.id === rejectingId) && (
+                    {rejectingId && sortedSteps.some(s => s.id === rejectingId) && (
                       <div className="mt-3 flex items-end gap-2">
                         <div className="flex-1">
                           <Textarea placeholder="반려 사유를 입력하세요..." value={rejectComment} onChange={e => setRejectComment(e.target.value)} rows={2} className="text-xs" />
@@ -531,9 +591,9 @@ const Approvals = () => {
                         <Button size="sm" variant="ghost" className="h-8" onClick={() => { setRejectingId(null); setRejectComment(''); }}>취소</Button>
                       </div>
                     )}
-                    {(steps as any[]).some((s: any) => s.comment) && (
+                    {sortedSteps.some((s: any) => s.comment) && (
                       <p className="text-xs text-muted-foreground mt-2">
-                        코멘트: {(steps as any[]).filter((s: any) => s.comment).map((s: any) => `${s.approver_name}: "${s.comment}"`).join(' | ')}
+                        코멘트: {sortedSteps.filter((s: any) => s.comment).map((s: any) => `${s.approver_name}: "${s.comment}"`).join(' | ')}
                       </p>
                     )}
                   </CardContent>

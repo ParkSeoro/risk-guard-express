@@ -130,6 +130,12 @@ export function isRiskAutoGenRunning(runId?: string): boolean {
 }
 
 async function runJob(input: RiskAutoGenJobInput): Promise<void> {
+  console.log('[AutoGenJob] runJob start', {
+    runId: input.runId,
+    processes: input.processes,
+    useAI: input.useAI,
+    detailLevel: input.detailLevel,
+  });
   const equipJoined = input.equipmentTags.join(', ');
   let sortCursor = input.sortStart;
   let insertedTotal = 0;
@@ -139,7 +145,10 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
   const allPending: string[] = [];
 
   for (let i = 0; i < input.processes.length; i++) {
-    if (state.status !== 'running') return;
+    if (state.status !== 'running') {
+      console.warn('[AutoGenJob] aborted mid-loop, status=', state.status);
+      return;
+    }
     const proc = input.processes[i].trim();
     patch({
       processIndex: i + 1,
@@ -149,6 +158,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     });
 
     if (!input.useAI) {
+      console.log('[AutoGenJob] library-only path (no generate-risk-ai)', proc);
       const { generateRiskItems } = await import('@/lib/riskAutoGen');
       const libraryItems = await generateRiskItems({
         processName: proc,
@@ -217,10 +227,12 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     // ── Phase 1: timeline → placeholder bulk insert ──
     let subTasks: string[] = [];
     try {
+      console.log('[AutoGenJob] fetchJsaTimeline → generate-risk-ai (jsa_timeline)', proc);
       const tl = await fetchJsaTimeline(opts);
       subTasks = tl.subTasks;
+      console.log('[AutoGenJob] timeline ok', subTasks.length, subTasks.slice(0, 5));
     } catch (err: any) {
-      console.warn('[AutoGenJob] timeline failed:', err?.message || err);
+      console.error('[AutoGenJob] timeline failed:', err?.message || err, err);
       interrupted = true;
       if (insertedTotal > 0 || filledTotal > 0) break;
       throw err;
@@ -397,10 +409,31 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
  * Start auto-gen in the background (same tab). Returns false if another job is already running.
  */
 export function startRiskAutoGenJob(input: RiskAutoGenJobInput): boolean {
-  if (state.status === 'running') return false;
+  console.log('[AutoGenJob] startRiskAutoGenJob', {
+    runId: input.runId,
+    processes: input.processes,
+    useAI: input.useAI,
+    status: state.status,
+    hasPromise: !!runningPromise,
+  });
+
+  // Recover orphaned "running" flag (promise gone but status stuck)
+  if (state.status === 'running' && !runningPromise) {
+    console.warn('[AutoGenJob] orphaned running state — resetting before start');
+    stopElapsedClock();
+    state = { ...IDLE };
+  }
+
+  if (state.status === 'running') {
+    console.warn('[AutoGenJob] reject: already running');
+    return false;
+  }
 
   const processes = input.processes.map((p) => p.trim()).filter(Boolean);
-  if (processes.length === 0) return false;
+  if (processes.length === 0) {
+    console.warn('[AutoGenJob] reject: empty processes');
+    return false;
+  }
 
   patch({
     status: 'running',
@@ -424,6 +457,7 @@ export function startRiskAutoGenJob(input: RiskAutoGenJobInput): boolean {
 
   runningPromise = runJob({ ...input, processes })
     .catch((err: any) => {
+      console.error('[AutoGenJob] runJob catch:', err?.message || err, err);
       if (state.insertedTotal > 0 || state.filledTotal > 0) {
         patch({
           status: 'partial',
@@ -448,6 +482,12 @@ export function startRiskAutoGenJob(input: RiskAutoGenJobInput): boolean {
       if (state.startedAt) {
         patch({ elapsedSec: Math.floor((Date.now() - state.startedAt) / 1000) });
       }
+      console.log('[AutoGenJob] finished', {
+        status: state.status,
+        insertedTotal: state.insertedTotal,
+        filledTotal: state.filledTotal,
+        error: state.error,
+      });
     });
 
   return true;

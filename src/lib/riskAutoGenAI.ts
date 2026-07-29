@@ -128,7 +128,9 @@ async function invokeRiskJson<T = any>(
   const token = await getAccessToken();
   const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
   const baseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-  const resp = await fetch(`${baseUrl}/functions/v1/generate-risk-ai`, {
+  const url = `${baseUrl}/functions/v1/generate-risk-ai`;
+  console.log('[AI Engine] fetch generate-risk-ai', { mode: body.mode, process_name: body.process_name, url });
+  const resp = await fetch(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -142,12 +144,15 @@ async function invokeRiskJson<T = any>(
   let payload: any = null;
   try {
     payload = await resp.json();
-  } catch {
+  } catch (e) {
+    console.error('[AI Engine] response JSON parse failed', resp.status, e);
     payload = null;
   }
   if (!resp.ok) {
+    console.error('[AI Engine] generate-risk-ai error', resp.status, payload);
     throw new Error(mapErrorMessage(payload?.error || `AI 서버 오류 (${resp.status})`));
   }
+  console.log('[AI Engine] generate-risk-ai ok', { mode: body.mode, keys: payload ? Object.keys(payload) : [] });
   return payload as T;
 }
 

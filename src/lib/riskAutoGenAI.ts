@@ -266,8 +266,8 @@ async function fetchRiskItemsOneShot(
     bag.items,
   );
 
-  // Soft client timeout — stop infinite spinner if Edge/DeepSeek never completes
-  const timeoutMs = 140_000;
+  // Soft client timeout — Edge wall ~150s; leave a little headroom for last SSE frames
+  const timeoutMs = 155_000;
   const timeoutCtrl = new AbortController();
   const timeoutId = setTimeout(() => timeoutCtrl.abort(), timeoutMs);
   const onOuterAbort = () => timeoutCtrl.abort();

@@ -142,6 +142,35 @@ function withTimeoutSignal(timeoutMs: number): { signal: AbortSignal; clear: () 
 }
 
 /**
+ * NVIDIA NIM DeepSeek-V4 defaults to "thinking" mode, which streams
+ * reasoning_content for tens of seconds before any JSON content.
+ * That looks like a hung SSE (0 items) and then disconnects at ~90s.
+ * Disable thinking so JSONL tokens start immediately.
+ */
+function deepseekChatBody(req: DeepseekRiskRequest, stream: boolean): Record<string, unknown> {
+  return {
+    model: DEEPSEEK_MODEL,
+    messages: req.messages,
+    temperature: typeof req.temperature === "number" ? req.temperature : stream ? 0.45 : 0.4,
+    max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 6000,
+    stream,
+    chat_template_kwargs: { thinking: false },
+  };
+}
+
+/** Extract assistant text delta from an OpenAI-compatible SSE chunk. */
+function extractContentDelta(parsed: any): string {
+  const choice = parsed?.choices?.[0];
+  const delta = choice?.delta;
+  if (typeof delta?.content === "string" && delta.content) return delta.content;
+  // Some gateways put the final message on non-delta frames
+  if (typeof choice?.message?.content === "string" && choice.message.content) {
+    return choice.message.content;
+  }
+  return "";
+}
+
+/**
  * Non-streaming OpenAI-compatible chat completion → DeepSeek V4 Flash.
  * model is hard-fixed to deepseek-ai/deepseek-v4-flash.
  */
@@ -162,13 +191,7 @@ export async function callDeepseekRiskChat(req: DeepseekRiskRequest): Promise<{
         Accept: "application/json",
       },
       signal,
-      body: JSON.stringify({
-        model: DEEPSEEK_MODEL,
-        messages: req.messages,
-        temperature: typeof req.temperature === "number" ? req.temperature : 0.4,
-        max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 6000,
-        stream: false,
-      }),
+      body: JSON.stringify(deepseekChatBody(req, false)),
     });
 
     if (!resp.ok) {
@@ -206,8 +229,17 @@ export async function* streamDeepseekRiskChatText(
   req: DeepseekRiskRequest,
 ): AsyncGenerator<string, void, unknown> {
   const { apiKey, baseUrl, timeoutMs: defaultTimeout } = resolveConfig();
-  const timeoutMs = req.timeoutMs ?? defaultTimeout;
-  const { signal, clear } = withTimeoutSignal(timeoutMs);
+  // Wall clock for the whole completion. Idle abort is enforced separately below
+  // so slow-but-progressing streams are not killed mid-JSONL.
+  const timeoutMs = Math.max(req.timeoutMs ?? defaultTimeout, 120_000);
+  const idleMs = Math.min(45_000, timeoutMs);
+  const controller = new AbortController();
+  let idleTimer = setTimeout(() => controller.abort(), idleMs);
+  const bumpIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => controller.abort(), idleMs);
+  };
+  const wallTimer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const resp = await fetch(`${baseUrl}/chat/completions`, {
@@ -217,14 +249,8 @@ export async function* streamDeepseekRiskChatText(
         Authorization: `Bearer ${apiKey}`,
         Accept: "text/event-stream",
       },
-      signal,
-      body: JSON.stringify({
-        model: DEEPSEEK_MODEL,
-        messages: req.messages,
-        temperature: typeof req.temperature === "number" ? req.temperature : 0.45,
-        max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 6000,
-        stream: true,
-      }),
+      signal: controller.signal,
+      body: JSON.stringify(deepseekChatBody(req, true)),
     });
 
     if (!resp.ok) {
@@ -235,6 +261,7 @@ export async function* streamDeepseekRiskChatText(
       throw new DeepseekRiskError("DeepSeek 스트림 응답이 비어 있습니다.", 500, "SERVER_ERROR");
     }
 
+    bumpIdle();
     const reader = resp.body.getReader();
     const decoder = new TextDecoder("utf-8", { stream: true } as TextDecoderOptions);
     let carry = "";
@@ -242,6 +269,7 @@ export async function* streamDeepseekRiskChatText(
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      bumpIdle();
       carry += decoder.decode(value, { stream: true });
       const lines = carry.split("\n");
       carry = lines.pop() || "";
@@ -252,8 +280,8 @@ export async function* streamDeepseekRiskChatText(
         if (!payload || payload === "[DONE]") continue;
         try {
           const parsed = JSON.parse(payload);
-          const delta = parsed?.choices?.[0]?.delta?.content;
-          if (typeof delta === "string" && delta) yield delta;
+          const delta = extractContentDelta(parsed);
+          if (delta) yield delta;
         } catch {
           /* ignore partial SSE JSON */
         }
@@ -274,7 +302,8 @@ export async function* streamDeepseekRiskChatText(
       "SERVER_ERROR",
     );
   } finally {
-    clear();
+    clearTimeout(idleTimer);
+    clearTimeout(wallTimer);
   }
 }
 

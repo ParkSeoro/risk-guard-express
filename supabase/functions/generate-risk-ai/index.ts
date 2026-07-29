@@ -366,11 +366,13 @@ async function streamOneShotRiskItems(
     envText,
     detailLevel,
   );
-  const maxTokens = detailLevel === "comprehensive" ? 5500 : 4000;
+  // Keep modest — thinking-off JSONL still needs room, but huge caps slow TTFT/finish.
+  const maxTokens = detailLevel === "comprehensive" ? 4500 : 3200;
   const existingKeys = new Set<string>();
   let buffer = "";
   let count = 0;
   let lastStatusAt = 0;
+  let receivedChars = 0;
 
   const emitRaw = (rawObjects: any[]) => {
     const mapped = mapAndDedupe(rawObjects, processName, existingKeys);
@@ -388,8 +390,10 @@ async function streamOneShotRiskItems(
       ],
       temperature: 0.25,
       max_tokens: maxTokens,
-      timeoutMs: 120_000,
+      // Wall clock; idle is enforced inside the DeepSeek client on chunk activity.
+      timeoutMs: 140_000,
     })) {
+      receivedChars += delta.length;
       buffer += stripStreamNoise(delta);
 
       const { objects, rest } = extractCompleteObjects(buffer);
@@ -397,10 +401,11 @@ async function streamOneShotRiskItems(
       if (objects.length) emitRaw(objects);
 
       const now = Date.now();
-      if (now - lastStatusAt > 2500) {
+      if (now - lastStatusAt > 2000) {
         lastStatusAt = now;
-        onStatus?.(`모델 응답 수신 중… ${buffer.length}자 버퍼 · ${count}건 추출`, {
+        onStatus?.(`모델 응답 수신 중… ${receivedChars}자 · ${count}건 추출`, {
           buffer_chars: buffer.length,
+          received_chars: receivedChars,
           items_so_far: count,
         });
       }
@@ -589,13 +594,26 @@ serve(async (req) => {
             /* closed */
           }
         };
+        const startedAt = Date.now();
+        let emitted = 0;
         const heartbeat = setInterval(() => {
+          const elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
           try {
             controller.enqueue(encoder.encode(`: ping ${Date.now()}\n\n`));
+            // Visible keepalive — comment pings alone do not update the UI.
+            // Until the first item arrives, show wait progress so users don't see a frozen "시작…".
+            if (emitted === 0) {
+              send({
+                type: "status",
+                message: `DeepSeek 응답 대기 중… ${elapsedSec}초`,
+                items_so_far: 0,
+                elapsed_sec: elapsedSec,
+              });
+            }
           } catch {
             /* closed */
           }
-        }, 4000);
+        }, 3000);
 
         try {
           controller.enqueue(encoder.encode(`: connected\n\n`));
@@ -607,10 +625,10 @@ serve(async (req) => {
             mode: "risk",
             oneshot: true,
             jsa: true,
+            thinking: false,
           });
           send({ type: "status", message: "DeepSeek JSA 스트리밍 생성 시작…" });
 
-          let emitted = 0;
           const { count } = await streamOneShotRiskItems(
             process_name,
             equipText,

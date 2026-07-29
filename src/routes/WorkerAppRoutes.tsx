@@ -3,6 +3,8 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import * as P from "@/routes/lazyPages";
 import AuthGuard from "@/components/AuthGuard";
 import WorkerGlobalGps from "@/components/worker/WorkerGlobalGps";
+import { useAuth } from "@/contexts/AuthContext";
+import { workerNeedsConsent, resolvePostLoginShell } from "@/components/AuthGuard";
 
 function Fallback() {
   return (
@@ -12,17 +14,27 @@ function Fallback() {
   );
 }
 
+function WorkerGpsGate() {
+  const { profile, roles } = useAuth();
+  // Never start GPS before legal location consent
+  if (resolvePostLoginShell(roles) === "worker" && workerNeedsConsent(profile)) {
+    return null;
+  }
+  return <WorkerGlobalGps />;
+}
+
 /**
- * Worker shell routes — AuthGuard on all pages + global GPS mount.
- * Mounted at /app/worker/* and aliased from /m/* for compatibility.
+ * Worker shell routes — AuthGuard + consent intercept + GPS after consent.
  */
 export default function WorkerAppRoutes() {
   return (
     <AuthGuard shell="worker">
-      <WorkerGlobalGps />
+      <WorkerGpsGate />
       <Suspense fallback={<Fallback />}>
         <Routes>
           <Route index element={<Navigate to="home" replace />} />
+          <Route path="onboarding" element={<P.LazyWorkerConsentPage />} />
+          <Route path="consent" element={<Navigate to="/app/worker/onboarding" replace />} />
           <Route path="home" element={<P.LazyWorkerDailyHome />} />
           <Route path="menu" element={<P.LazyMobileHome />} />
           <Route path="inspect" element={<P.LazyMobileInspect />} />

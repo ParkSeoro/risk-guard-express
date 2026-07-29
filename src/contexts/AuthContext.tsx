@@ -11,6 +11,10 @@ interface Profile {
   phone: string;
   company: string;
   position: string;
+  agreed_to_terms?: boolean | null;
+  agreed_to_location?: boolean | null;
+  agreed_to_privacy?: boolean | null;
+  consent_agreed_at?: string | null;
 }
 
 interface AuthContextType {

@@ -4183,6 +4183,7 @@ export type Database = {
       profiles: {
         Row: {
           account_status: string
+          agreed_to_admin_security: boolean
           agreed_to_location: boolean
           agreed_to_privacy: boolean
           agreed_to_terms: boolean
@@ -4198,6 +4199,7 @@ export type Database = {
         }
         Insert: {
           account_status?: string
+          agreed_to_admin_security?: boolean
           agreed_to_location?: boolean
           agreed_to_privacy?: boolean
           agreed_to_terms?: boolean
@@ -4213,6 +4215,7 @@ export type Database = {
         }
         Update: {
           account_status?: string
+          agreed_to_admin_security?: boolean
           agreed_to_location?: boolean
           agreed_to_privacy?: boolean
           agreed_to_terms?: boolean

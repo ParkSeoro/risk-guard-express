@@ -27,6 +27,7 @@ const HazardSurveyResponse = lazy(() => import("@/pages/health/HazardSurveyRespo
 const ZoneCheckin = lazy(() => import("@/pages/ZoneCheckin"));
 const CompanyScan = lazy(() => import("@/pages/CompanyScan"));
 const Manual = lazy(() => import("@/pages/Manual"));
+const ConsentPage = lazy(() => import("@/pages/ConsentPage"));
 
 const queryClient = new QueryClient();
 
@@ -51,17 +52,14 @@ function AuthRoute() {
   if (user) {
     const dest = postLoginPath(roles, profile, { rolesReady });
     const next = params.get("next");
-    if (next && next.startsWith("/") && !next.startsWith("//")) {
+    if (next && next.startsWith("/") && !next.startsWith("//") && next !== "/consent") {
+      // Incomplete consent always wins
+      if (dest === "/consent") {
+        return <Navigate to="/consent" replace />;
+      }
       // Workers must not deep-link into admin
       if (next.startsWith("/app/admin") && dest.startsWith("/app/worker")) {
         return <Navigate to={dest} replace />;
-      }
-      // Admins must not be forced into worker onboarding via stale next=
-      if (dest.startsWith("/app/admin") && next.startsWith("/app/worker")) {
-        return <Navigate to={dest} replace />;
-      }
-      if (dest === "/app/worker/onboarding" && next.startsWith("/app/worker") && !next.includes("/onboarding")) {
-        return <Navigate to="/app/worker/onboarding" replace />;
       }
       return <Navigate to={next} replace />;
     }
@@ -113,6 +111,8 @@ const App = () => (
                 <Route path="/z/:code" element={<ZoneCheckin />} />
                 <Route path="/c/:token" element={<CompanyScan />} />
                 <Route path="/manual" element={<Manual />} />
+                <Route path="/consent" element={<ConsentPage />} />
+                <Route path="/onboarding" element={<Navigate to="/consent" replace />} />
 
                 {/* Canonical role-split shells */}
                 <Route path="/app/worker/*" element={<WorkerAppRoutes />} />
@@ -149,7 +149,7 @@ function RoleAwareRootRedirect() {
   }
   // 비로그인 → 관리자 로그인 탭이 기본인 /login
   if (!user) return <Navigate to="/login" replace />;
-  // 관리자 → /app/admin (Dashboard index), 근로자 → home/onboarding
+  // 미동의 → /consent, 동의 후 role별 home
   return <Navigate to={postLoginPath(roles, profile, { rolesReady })} replace />;
 }
 

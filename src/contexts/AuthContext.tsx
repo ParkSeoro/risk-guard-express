@@ -1,244 +1,222 @@
-import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import type { User, Session } from '@supabase/supabase-js';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import { User, Session } from "@supabase/supabase-js";
+import { supabase } from "@/integrations/supabase/client";
+import type { Tables } from "@/integrations/supabase/types";
+import type { AppRole } from "@/lib/permissions";
 
-type AppRole = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor' | 'site_supervisor' | 'contractor' | 'worker' | 'viewer' | 'user' | 'access_blocked';
+export type Profile = Tables<"profiles">;
 
-interface Profile {
-  id: string;
-  user_id: string;
-  display_name: string;
-  phone: string;
-  company: string;
-  position: string;
-  agreed_to_terms?: boolean | null;
-  agreed_to_location?: boolean | null;
-  agreed_to_privacy?: boolean | null;
-  agreed_to_admin_security?: boolean | null;
-  consent_agreed_at?: string | null;
-}
-
-interface AuthContextType {
+type AuthContextType = {
   user: User | null;
   session: Session | null;
   profile: Profile | null;
-  roles: AppRole[];
-  rolesReady: boolean;
+  /** @deprecated use isAuthLoading */
   loading: boolean;
-  signOut: () => Promise<void>;
+  /** Session + profile + roles bootstrap in progress (single global gate). */
+  isAuthLoading: boolean;
+  /** True once roles have been fetched at least once for the current session. */
+  rolesReady: boolean;
+  roles: AppRole[];
   hasRole: (role: AppRole) => boolean;
-  isAdmin: () => boolean;
+  isAdmin: boolean;
+  isManager: boolean;
+  isWorker: boolean;
+  signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
-}
+  /** Optimistic local profile patch (e.g. after consent DB write). No network. */
+  applyProfilePatch: (patch: Partial<Profile>) => void;
+  /** Re-fetch profile + roles from DB and update context (awaits completion). */
+  reloadAuthProfile: () => Promise<Profile | null>;
+};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+const AUTH_BOOT_SAFETY_MS = 8_000;
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [rolesReady, setRolesReady] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const metaGen = useRef(0);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const bootstrappedRef = useRef(false);
 
-  const fetchProfile = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', userId)
-        .maybeSingle();
-      if (error) {
-        console.warn('[Auth] fetchProfile', error.message);
+  const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
+    const { data, error } = await supabase.from("profiles").select("*").eq("user_id", userId).maybeSingle();
+    if (error) {
+      console.error("Error fetching profile:", error);
+      setProfile(null);
+      return null;
+    }
+    setProfile(data);
+    return data;
+  }, []);
+
+  const fetchRoles = useCallback(async (userId: string): Promise<AppRole[]> => {
+    const { data, error } = await supabase.from("user_roles").select("role").eq("user_id", userId);
+    if (error) {
+      console.error("Error fetching roles:", error);
+      setRoles([]);
+      return [];
+    }
+    const next = (data?.map((r) => r.role) || []) as AppRole[];
+    setRoles(next);
+    return next;
+  }, []);
+
+  const finishAuthLoading = useCallback(() => {
+    setRolesReady(true);
+    setIsAuthLoading(false);
+  }, []);
+
+  /** Load profile + roles for a session. Only the initial boot clears isAuthLoading. */
+  const hydrateUser = useCallback(
+    async (nextSession: Session | null, opts?: { isInitialBoot?: boolean }) => {
+      setSession(nextSession);
+      setUser(nextSession?.user ?? null);
+
+      if (!nextSession?.user) {
+        setProfile(null);
+        setRoles([]);
+        finishAuthLoading();
         return;
       }
-      if (data) setProfile(data as Profile);
-    } catch (e) {
-      console.warn('[Auth] fetchProfile threw', e);
-    }
-  };
 
-  const KNOWN_ROLES = new Set([
-    'master', 'project_admin', 'safety_manager', 'site_manager', 'supervisor',
-    'site_supervisor', 'contractor', 'worker', 'viewer', 'user',
-  ]);
-
-  const normalizeRole = (role: string | null | undefined): AppRole | 'access_blocked' | null => {
-    if (!role) return null;
-    const r = role.toLowerCase();
-    if (r === 'contractor' || r === 'user') return 'worker';
-    if (KNOWN_ROLES.has(r)) return r as AppRole;
-    return 'access_blocked';
-  };
-
-  const fetchRoles = async (userId: string) => {
-    try {
-      const [{ data: systemRoles }, { data: projectRoles }] = await Promise.all([
-        supabase.from('user_roles').select('role').eq('user_id', userId),
-        supabase.from('project_members').select('role_new').eq('user_id', userId),
-      ]);
-
-      const raw = [
-        ...(systemRoles || []).map((r: any) => normalizeRole(r.role)),
-        ...(projectRoles || []).map((m: any) => normalizeRole(m.role_new)),
-      ].filter(Boolean) as AppRole[];
-
-      const combined = raw.length === 0
-        ? []
-        : raw.every((v) => v === 'access_blocked')
-          ? (['access_blocked'] as AppRole[])
-          : raw.filter((v) => v !== 'access_blocked');
-
-      setRoles(Array.from(new Set(combined)));
-    } catch (e) {
-      console.warn('[Auth] fetchRoles threw', e);
-      setRoles([]);
-    }
-  };
-
-  const syncMasterAllowlist = async (userId: string) => {
-    try {
-      await supabase.rpc('ensure_master_allowlist', { _user_id: userId });
-    } catch {
-      // non-critical
-    }
-  };
-
-  const loadUserMeta = async (userId: string) => {
-    const gen = ++metaGen.current;
-    setRolesReady(false);
-    try {
-      await syncMasterAllowlist(userId);
-      await Promise.all([fetchProfile(userId), fetchRoles(userId)]);
-    } catch (e) {
-      console.warn('[Auth] loadUserMeta failed', e);
-    } finally {
-      // Always release deadlock — even on fetch failure / abort
-      if (gen === metaGen.current) {
-        setRolesReady(true);
-        setLoading(false);
+      try {
+        await Promise.all([fetchProfile(nextSession.user.id), fetchRoles(nextSession.user.id)]);
+      } catch (e) {
+        console.error("Auth hydrate failed:", e);
+        setProfile(null);
+        setRoles([]);
+      } finally {
+        if (opts?.isInitialBoot) {
+          finishAuthLoading();
+        } else {
+          setRolesReady(true);
+        }
       }
-    }
-  };
-
-  const refreshProfile = async () => {
-    if (!user) return;
-    // Do NOT flip rolesReady=false here — that freezes ConsentPage after submit
-    try {
-      await Promise.all([fetchProfile(user.id), fetchRoles(user.id)]);
-    } catch (e) {
-      console.warn('[Auth] refreshProfile failed', e);
-    } finally {
-      setRolesReady(true);
-      setLoading(false);
-    }
-  };
+    },
+    [fetchProfile, fetchRoles, finishAuthLoading],
+  );
 
   useEffect(() => {
     let cancelled = false;
+    const safety = window.setTimeout(() => {
+      if (!cancelled) {
+        console.warn("[AuthProvider] bootstrap safety timeout — forcing isAuthLoading=false");
+        finishAuthLoading();
+      }
+    }, AUTH_BOOT_SAFETY_MS);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+    const runInitialBoot = async () => {
+      try {
+        const { data: { session: s } } = await supabase.auth.getSession();
         if (cancelled) return;
-        if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-          setSession(session);
-          if (session?.user) setUser(session.user);
+        bootstrappedRef.current = true;
+        await hydrateUser(s, { isInitialBoot: true });
+      } catch (e) {
+        console.error("Initial auth boot failed:", e);
+        if (!cancelled) finishAuthLoading();
+      } finally {
+        window.clearTimeout(safety);
+      }
+    };
+
+    void runInitialBoot();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      // INITIAL_SESSION is covered by getSession() above — skip to avoid double-fetch races.
+      if (event === "INITIAL_SESSION") return;
+      if (event === "TOKEN_REFRESHED") {
+        setSession(nextSession);
+        return;
+      }
+      // Login / logout / user update — rehydrate without flipping isAuthLoading back to true
+      // (except we keep rolesReady honest during role refetch)
+      void (async () => {
+        if (event === "SIGNED_OUT") {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+          setRoles([]);
+          setRolesReady(true);
+          setIsAuthLoading(false);
           return;
         }
-        // Skip duplicate INITIAL_SESSION if getSession already handling — still safe with gen
-        setSession(session);
-        setUser(session?.user ?? null);
-        if (session?.user) {
-          const inviteCode = session.user.user_metadata?.invite_code;
-          if (inviteCode) {
-            try {
-              await supabase.rpc('process_invite_code', {
-                _user_id: session.user.id,
-                _invite_code: inviteCode,
-              });
-              await supabase.auth.updateUser({ data: { invite_code: null } });
-            } catch {
-              // non-critical
-            }
-          }
-          await loadUserMeta(session.user.id);
-        } else {
-          setProfile(null);
-          setRoles([]);
-          setRolesReady(true);
-          setLoading(false);
-        }
-      },
-    );
-
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (cancelled) return;
-      setSession(session);
-      setUser(session?.user ?? null);
-      try {
-        if (session?.user) {
-          await loadUserMeta(session.user.id);
-        } else {
-          setProfile(null);
-          setRoles([]);
-          setRolesReady(true);
-        }
-      } finally {
-        setLoading(false);
-      }
+        setRolesReady(false);
+        await hydrateUser(nextSession, { isInitialBoot: false });
+        setRolesReady(true);
+      })();
     });
-
-    // Safety: never leave UI on "세션 확인 중…" more than 8s
-    const safety = window.setTimeout(() => {
-      setLoading(false);
-      setRolesReady(true);
-    }, 8000);
 
     return () => {
       cancelled = true;
       window.clearTimeout(safety);
       subscription.unsubscribe();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- boot once on mount
   }, []);
 
   const signOut = async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch {
-      /* force local clear */
-    }
+    await supabase.auth.signOut();
     setUser(null);
     setSession(null);
     setProfile(null);
     setRoles([]);
     setRolesReady(true);
-    setLoading(false);
-    if (typeof window !== 'undefined') {
-      window.location.assign('/login');
-    }
+    setIsAuthLoading(false);
   };
 
+  const refreshProfile = async () => {
+    if (user) await fetchProfile(user.id);
+  };
+
+  const applyProfilePatch = useCallback((patch: Partial<Profile>) => {
+    setProfile((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
+  const reloadAuthProfile = useCallback(async (): Promise<Profile | null> => {
+    if (!user) return null;
+    const [p] = await Promise.all([fetchProfile(user.id), fetchRoles(user.id)]);
+    setRolesReady(true);
+    return p;
+  }, [user, fetchProfile, fetchRoles]);
+
   const hasRole = (role: AppRole) => roles.includes(role);
-  const isAdmin = () =>
-    roles.includes('master') ||
-    roles.includes('project_admin') ||
-    roles.includes('safety_manager') ||
-    roles.includes('site_manager') ||
-    roles.includes('supervisor') ||
-    roles.includes('site_supervisor');
+  const isAdmin = hasRole("admin") || hasRole("owner") || hasRole("pm") || hasRole("cm") || hasRole("sm");
+  const isManager = isAdmin || hasRole("manager") || hasRole("hq") || hasRole("partner_manager");
+  const isWorker = hasRole("worker") || hasRole("partner_worker");
 
   return (
     <AuthContext.Provider
-      value={{ user, session, profile, roles, rolesReady, loading, signOut, hasRole, isAdmin, refreshProfile }}
+      value={{
+        user,
+        session,
+        profile,
+        loading: isAuthLoading,
+        isAuthLoading,
+        rolesReady,
+        roles,
+        hasRole,
+        isAdmin,
+        isManager,
+        isWorker,
+        signOut,
+        refreshProfile,
+        applyProfilePatch,
+        reloadAuthProfile,
+      }}
     >
       {children}
     </AuthContext.Provider>
   );
 }
 
-export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
-  return ctx;
-};
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+}

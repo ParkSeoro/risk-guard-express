@@ -36,7 +36,8 @@ const ICONS: Record<ConsentDocId, typeof FileText> = {
 };
 
 export default function ConsentPage() {
-  const { user, loading, roles, profile, refreshProfile } = useAuth();
+  const { user, session, isAuthLoading, roles, profile, applyProfilePatch, reloadAuthProfile } =
+    useAuth();
   const navigate = useNavigate();
   const isAdmin = isAdminShellUser(roles);
   const items = useMemo(() => consentItemsForRoles(isAdmin), [isAdmin]);
@@ -45,15 +46,16 @@ export default function ConsentPage() {
   const [modal, setModal] = useState<ConsentDocId | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (loading && !user) {
+  // ① Wait for global auth boot only
+  if (isAuthLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
         세션 확인 중…
       </div>
     );
   }
-  // rolesReady may lag — still show consent UI (defaults to worker checklist until roles arrive)
-  if (!user) return <Navigate to="/login?next=/consent" replace />;
+  // ④ Race defense: unauthenticated URL hit → login
+  if (!session || !user) return <Navigate to="/login?next=/consent" replace />;
   if (!needsConsent(profile, roles)) {
     const home = postConsentHomePath(roles);
     if (home === "/consent") return null; // belt: never loop
@@ -90,6 +92,7 @@ export default function ConsentPage() {
             consent_agreed_at: now,
           };
 
+      // ① Persist consent flags
       const { error } = await supabase.from("profiles").update(payload).eq("user_id", user.id);
       if (error) throw error;
 
@@ -101,7 +104,15 @@ export default function ConsentPage() {
         }
       }
 
-      await refreshProfile();
+      // ② Critical: sync AuthContext BEFORE navigate so AuthGuard sees needsConsent=false
+      applyProfilePatch(payload);
+      try {
+        await reloadAuthProfile();
+      } catch {
+        /* local patch already applied — navigate anyway */
+      }
+
+      // ③ Role-aware home
       toast.success("약관 동의가 완료되었습니다");
       navigate(postConsentHomePath(roles), { replace: true });
     } catch (e: any) {

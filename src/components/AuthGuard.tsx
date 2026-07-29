@@ -1,6 +1,6 @@
 /**
  * Role-based auth + traffic routing + universal consent intercept (/consent).
- * ALL authenticated users must complete consent once — except while ON /consent itself.
+ * AuthGuard never talks to the DB — only reads useAuth() state (waterfall).
  */
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -19,19 +19,22 @@ export const WORKER_SHELL_ROLES = ["worker", "viewer"] as const;
 
 export type ShellKind = "admin" | "worker";
 
+/** Public auth/consent paths — AuthGuard always passes these through. */
+export const PUBLIC_ROUTES = [
+  "/login",
+  "/auth",
+  "/register",
+  "/consent",
+  "/onboarding",
+  "/forgot-password",
+  "/update-password",
+  "/reset-password",
+] as const;
+
 /** Auth / consent system paths — never redirect-loop these. */
 export function isAuthSystemPath(pathname: string): boolean {
   const p = pathname.replace(/\/+$/, "") || "/";
-  return (
-    p === "/login" ||
-    p === "/auth" ||
-    p === "/register" ||
-    p === "/consent" ||
-    p === "/onboarding" ||
-    p === "/forgot-password" ||
-    p === "/update-password" ||
-    p === "/reset-password"
-  );
+  return (PUBLIC_ROUTES as readonly string[]).includes(p);
 }
 
 export function isAdminShellUser(roles: string[]): boolean {
@@ -126,7 +129,7 @@ type AuthGuardProps = {
   allowAnonymous?: boolean;
 };
 
-function Loading() {
+function LoadingSpinner() {
   return (
     <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
       세션 확인 중…
@@ -134,33 +137,42 @@ function Loading() {
   );
 }
 
+/**
+ * Strict waterfall (no DB):
+ * ① isAuthLoading → spinner
+ * ② PUBLIC_ROUTES → pass
+ * ③ !session → /login
+ * ④ needsConsent → /consent
+ * ⑤ shell mismatch → correct home; else children
+ */
 export default function AuthGuard({ children, shell, allowAnonymous = false }: AuthGuardProps) {
-  const { user, loading, roles, rolesReady, profile } = useAuth();
+  const { user, session, isAuthLoading, roles, rolesReady, profile } = useAuth();
   const location = useLocation();
 
-  // 1) Whitelist: consent / login / register must always render (no redirect loop)
+  // ① Global auth bootstrap
+  if (isAuthLoading) return <LoadingSpinner />;
+
+  // ② Public auth/consent routes always render
   if (isAuthSystemPath(location.pathname)) {
     return <>{children}</>;
   }
 
-  // 2) Don't deadlock forever — if loading stuck, still allow after rolesReady OR timeout handled in AuthContext
-  if (loading && !rolesReady && !user) return <Loading />;
-  if (user && loading && !rolesReady) return <Loading />;
-
-  if (!user) {
+  // ③ No session
+  if (!session && !user) {
     if (allowAnonymous) return <>{children}</>;
     const next = encodeURIComponent(location.pathname + location.search);
     return <Navigate to={`/login?next=${next}`} replace />;
   }
 
-  // Session known but roles still resolving — brief wait (AuthContext guarantees finally)
-  if (!rolesReady) return <Loading />;
+  // Brief wait if signed in but roles still resolving (post-login hydrate)
+  if (!rolesReady) return <LoadingSpinner />;
 
-  // Universal consent for EVERY role — but never when already on /consent (whitelisted above)
+  // ④ Consent required
   if (needsConsent(profile, roles)) {
     return <Navigate to="/consent" replace />;
   }
 
+  // ⑤ Shell gate
   if (shell === "admin" && isPureWorkerUser(roles)) {
     return <Navigate to="/app/worker/home" replace />;
   }
@@ -169,12 +181,10 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
 }
 
 export function RoleHomeRedirect() {
-  const { user, loading, roles, rolesReady, profile } = useAuth();
-  if (loading && !user) return <Loading />;
-  if (user && !rolesReady && loading) return <Loading />;
-  // If rolesReady never flips, AuthContext finally forces it — still proceed with best effort
-  if (user && !rolesReady) return <Loading />;
-  if (!user) return <Navigate to="/login" replace />;
+  const { user, session, isAuthLoading, roles, rolesReady, profile } = useAuth();
+  if (isAuthLoading) return <LoadingSpinner />;
+  if (!session && !user) return <Navigate to="/login" replace />;
+  if (!rolesReady) return <LoadingSpinner />;
   const dest = postLoginPath(roles, profile, { rolesReady });
   if (dest === "/" || dest === "") return <Navigate to="/login" replace />;
   return <Navigate to={dest} replace />;

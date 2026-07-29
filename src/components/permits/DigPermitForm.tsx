@@ -13,6 +13,7 @@ import {
   colWidthCss, type StandardStyle, type StandardLabels, type PermitTypeKey,
 } from '@/lib/permitStandardStyle';
 import { formatPermitStamp, formatPermitReviewDate } from '@/lib/permitDateFormat';
+import { slotSignedAt } from '@/lib/permitApprovalSignatures';
 
 export type PermitType = 'general' | 'confined_space' | 'hot_work' | 'excavation';
 
@@ -177,7 +178,9 @@ export interface PermitSignatures {
   /** SM 작업 완료(Closure) 최종 서명 — 하단 승인자 칸 */
   closure_approver?: { name: string; signature: string; signed_at: string };
 
+  /** @deprecated Do not bind stamp cells to these — use per-slot signed_at only */
   reviewed_at?: string;
+  /** @deprecated Do not bind stamp cells to these — use per-slot signed_at only */
   approved_at?: string;
   closed_at?: string;
 }
@@ -422,18 +425,18 @@ export default function DigPermitForm({
                 <td><SigCell k="contractor_pic" /></td>
                 <th className="hd">담당자(CM)</th>
                 <td><SigCell k="cm" /></td>
-                {/* CM 검토일 = CM 결재일시 − 1일 / CM 승인일 = CM 결재일시 */}
-                <ReviewDateCell approvedAt={(signatures.cm as any)?.signed_at || signatures.reviewed_at} />
-                <ApprovalDateCell approvedAt={(signatures.cm as any)?.signed_at || signatures.reviewed_at} />
+                {/* CM 검토일/승인일 — 오직 CM 슬롯 signed_at (문서 approved_at 금지) */}
+                <ReviewDateCell approvedAt={slotSignedAt(signatures, 'cm')} />
+                <ApprovalDateCell approvedAt={slotSignedAt(signatures, 'cm')} />
               </tr>
               <tr>
                 <th className="hd">담당자(안전)</th>
                 <td><SigCell k="safety_pic" /></td>
                 <th className="hd">담당자(SM)</th>
                 <td><SigCell k="sm" /></td>
-                {/* SM 검토일/승인일 — CM과 독립 바인딩 */}
-                <ReviewDateCell approvedAt={(signatures.sm as any)?.signed_at || signatures.approved_at} />
-                <ApprovalDateCell approvedAt={(signatures.sm as any)?.signed_at || signatures.approved_at} />
+                {/* SM 검토일/승인일 — 오직 SM 슬롯 signed_at (CM·문서 시각과 독립) */}
+                <ReviewDateCell approvedAt={slotSignedAt(signatures, 'sm')} />
+                <ApprovalDateCell approvedAt={slotSignedAt(signatures, 'sm')} />
               </tr>
               <tr>
                 <th className="hd">책임자(소장)</th>
@@ -619,8 +622,8 @@ export default function DigPermitForm({
               </tr>
               <tr>
                 <td colSpan={5} className="text-right text-[10px] text-muted-foreground pr-2">
-                  {signatures.closed_at || (signatures.closure_approver as any)?.signed_at
-                    ? `종료 확인 ${formatPermitStamp(signatures.closed_at || (signatures.closure_approver as any)?.signed_at)}`
+                  {slotSignedAt(signatures, 'closure_approver') || signatures.closed_at
+                    ? `종료 확인 ${formatPermitStamp(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at)}`
                     : '작업 종료 후 발주처 SM 확인'}
                 </td>
                 <td className="text-right">
@@ -711,7 +714,7 @@ export default function DigPermitForm({
                 <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
                 <td><SigCell k="applicant" /></td>
               </tr>
-              <tr><th className="hd">승인자</th><td>{(signatures.closed_at || signatures.closure_approver?.signed_at) ? formatPermitStamp(signatures.closed_at || signatures.closure_approver?.signed_at) : '년 월 일 시 분'} 성명 : {signatures.closure_approver?.name || ''}</td><td><SigCell k="closure_approver" /></td></tr>
+              <tr><th className="hd">승인자</th><td>{(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at) ? formatPermitStamp(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at) : '년 월 일 시 분'} 성명 : {signatures.closure_approver?.name || ''}</td><td><SigCell k="closure_approver" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 밀폐공간 작업시간은 1일 최대 8시간을 넘지 않도록 하며 연장근무 발생 시 작업허가 연장 승인 필요</div>
@@ -770,7 +773,7 @@ export default function DigPermitForm({
               <tr><td className="text-center">기준</td><td>18%이상~23.5%미만</td><td>10ppm미만 / 30ppm미만</td><td>0% / 1.5%미만</td></tr>
               <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
               <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
-              <tr><th className="hd">승인자</th><td colSpan={2}>{(signatures.closed_at || signatures.closure_approver?.signed_at) ? formatPermitStamp(signatures.closed_at || signatures.closure_approver?.signed_at) : '년 월 일 시 분'} 성명 : {signatures.closure_approver?.name || ''}</td><td><SigCell k="closure_approver" /></td></tr>
+              <tr><th className="hd">승인자</th><td colSpan={2}>{(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at) ? formatPermitStamp(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at) : '년 월 일 시 분'} 성명 : {signatures.closure_approver?.name || ''}</td><td><SigCell k="closure_approver" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 연장근무 발생 시 작업허가 연장 승인 필요</div>
@@ -844,7 +847,7 @@ export default function DigPermitForm({
               </tr>
               <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
               <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
-              <tr><th className="hd">승인자</th><td colSpan={2}>{(signatures.closed_at || signatures.closure_approver?.signed_at) ? formatPermitStamp(signatures.closed_at || signatures.closure_approver?.signed_at) : '년 월 일 시 분'} 성명 : {signatures.closure_approver?.name || ''}</td><td><SigCell k="closure_approver" /></td></tr>
+              <tr><th className="hd">승인자</th><td colSpan={2}>{(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at) ? formatPermitStamp(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at) : '년 월 일 시 분'} 성명 : {signatures.closure_approver?.name || ''}</td><td><SigCell k="closure_approver" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 지하매설물 손상 시 즉시 작업중지 후 관리주체에 통보. 깊이 1.5m 이상 굴착 시 흙막이/지보공 의무.</div>

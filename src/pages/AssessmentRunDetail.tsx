@@ -745,6 +745,8 @@ const AssessmentRunDetail = () => {
     }
 
     setShowAutoGen(false);
+    setAutoGenProcesses([]);
+    setAutoGenProcessInput('');
     toast({
       title: '위험성평가 생성을 시작했습니다.',
       description: '다른 메뉴를 둘러봐도 이 탭에서는 계속 진행됩니다. 상단 진행 바를 확인하세요.',

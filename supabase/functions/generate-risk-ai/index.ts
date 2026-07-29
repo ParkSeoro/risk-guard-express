@@ -7,20 +7,11 @@ import {
   RISK_DEEPSEEK_SYSTEM_PROMPT,
   safeParseDeepseekRiskItems,
 } from "../_shared/deepseekRisk.ts";
-import { fetchApprovedLibraryRisks } from "../_shared/aiResponseCache.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
-
-const sseHeaders = {
-  ...corsHeaders,
-  "Content-Type": "text/event-stream; charset=utf-8",
-  "Cache-Control": "no-cache, no-transform",
-  "Connection": "keep-alive",
-  "X-Content-Type-Options": "nosniff",
 };
 
 // ── Equipment normalization map ──
@@ -105,75 +96,6 @@ function formatStructuredToKorean(_sectionKey: string, data: any): string {
   return render(data);
 }
 
-async function fetchRAGContext(
-  adminClient: any,
-  processName: string,
-  equipment: string,
-  limit = 5,
-): Promise<string> {
-  const keywords = processName
-    .split(/[\s,/·]+/)
-    .filter((w: string) => w.length >= 2)
-    .slice(0, 2);
-  const primaryKw = keywords[0] || processName;
-  const queries: PromiseLike<{ data: any[] | null }>[] = [];
-
-  if (primaryKw) {
-    queries.push(
-      adminClient
-        .from("standard_risk_library")
-        .select("sub_task, hazard, hazard_situation, existing_measure, improvement_measure")
-        .or(`category_large.ilike.%${primaryKw}%,sub_task.ilike.%${primaryKw}%`)
-        .eq("is_active", true)
-        .limit(5),
-    );
-    queries.push(
-      adminClient
-        .from("risk_items")
-        .select("sub_task, hazard, hazard_situation, existing_measure, improvement_measure")
-        .ilike("process", `%${primaryKw}%`)
-        .limit(5),
-    );
-  }
-
-  if (equipment) {
-    const normEquip = normalizeEquipment(equipment);
-    const equipKw = normEquip.split(/[()/\s]+/).filter((w: string) => w.length >= 2)[0];
-    if (equipKw) {
-      queries.push(
-        adminClient
-          .from("standard_risk_library")
-          .select("sub_task, hazard, hazard_situation, existing_measure, improvement_measure")
-          .contains("equipment", [equipKw])
-          .eq("is_active", true)
-          .limit(3),
-      );
-    }
-  }
-
-  const results = await Promise.all(queries);
-  const ragItems: any[] = [];
-  for (const r of results) {
-    if (r?.data) ragItems.push(...r.data);
-  }
-
-  const seen = new Set<string>();
-  const unique = ragItems.filter((item: any) => {
-    const key = `${item.sub_task || ""}|${item.hazard || ""}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).slice(0, limit);
-
-  if (unique.length === 0) return "";
-
-  const lines = unique.map(
-    (item: any, i: number) =>
-      `${i + 1}. 세부작업: ${item.sub_task || ""}, 위험요인: ${item.hazard || ""}, 발생상황: ${item.hazard_situation || ""}, 개선대책: ${item.improvement_measure || item.existing_measure || ""}`,
-  );
-  return `\n[참고 사례]\n${lines.join("\n")}`;
-}
-
 const HSE_SYSTEM_PROMPT = RISK_DEEPSEEK_SYSTEM_PROMPT;
 
 const LEAK_INSTRUCTION_RE =
@@ -215,7 +137,7 @@ function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other" 
   return s;
 }
 
-/** Soft guidance for library/cache sizing (JSA full coverage — no hard AI slice cap). */
+/** Soft guidance count for user prompt (no hard slice after parse). */
 function jsaGuideCount(detailLevel: "core" | "comprehensive"): number {
   return detailLevel === "core" ? 12 : 20;
 }
@@ -308,32 +230,23 @@ function mapAndDedupe(items: any[], processName: string, existingKeys: Set<strin
   return out;
 }
 
-function sseEncode(encoder: TextEncoder, payload: Record<string, unknown>): Uint8Array {
-  return encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
-}
-
-/** Single DeepSeek call → full JSA risk items (prep → main → finish, no phase split). */
+/** Single DeepSeek non-stream call → full JSA JSON array (one-shot, no phases). */
 async function generateOneShotRiskItems(
   processName: string,
   equipText: string,
   descText: string,
   locationText: string,
   envText: string,
-  ragContext: string,
   detailLevel: "core" | "comprehensive",
 ): Promise<any[]> {
   const guideCount = jsaGuideCount(detailLevel);
 
   const userPrompt = `[입력] 공종:${processName} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}
-${ragContext}
 
-위 입력에 대해 JSA 방식으로 ①작업 전 준비·장비 반입 ➔ ②본 작업(단위 작업별) ➔ ③작업 후 정리·해체까지 누락 없이 위험성평가 항목을 작성하라.
-일부 핵심만 골라내지 말 것. 대략 ${guideCount}개 내외를 목표로 하되, 절차 누락이 있으면 더 추가하라.
-추상문구 금지. improvement_control에 공학적·관리적·PPE 모두 포함.
-각 필드는 1~2문장 이내 개조식(짧게). 장황한 서술 금지 — 속도·완결성 모두 확보.
+위 입력에 대해 JSA 방식(작업 전 준비 ➔ 본 작업 ➔ 마무리)으로 누락 없이 위험성평가를 작성하라.
+대략 ${guideCount}개 내외. 추상문구 금지. 공학적·관리적·PPE 포함.
 마크다운·서론·결론 금지. 오직 JSON Array [ {...}, {...} ] 만 출력.`;
 
-  // Full JSA rows need headroom so the model does not truncate mid-array.
   const maxTokens = detailLevel === "comprehensive" ? 7000 : 5000;
   const { content } = await callDeepseekRiskChat({
     messages: [
@@ -395,14 +308,10 @@ serve(async (req) => {
       work_environment,
       detail_level,
       project_id,
-      stream: streamFlag,
     } = body;
 
     const detailLevel: "core" | "comprehensive" =
       detail_level === "comprehensive" ? "comprehensive" : "core";
-    // One-shot JSON is the stable default; SSE only when client explicitly opts in.
-    const wantStream = streamFlag === true;
-    const targetCount = jsaGuideCount(detailLevel);
 
     if (!isInternal && project_id) {
       const userSb = createClient(supabaseUrl, anonKey, {
@@ -497,7 +406,8 @@ serve(async (req) => {
       });
     }
 
-    // ============ Risk Assessment Mode (one-shot DeepSeek, non-stream by default) ============
+    // ============ Risk Assessment Mode: One-Shot DeepSeek, Non-Streaming JSON only ============
+    // No SSE, no prep/main/finish phases, no ai_risk_cache / standard_risk_library lookups.
     const normalizedEquipment = normalizeEquipment(equipment || "");
     const locationText = work_location || "일반";
     const envText =
@@ -507,243 +417,50 @@ serve(async (req) => {
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
 
-    // v8: one-shot full JSA (prep → main → finish)
-    const cacheKey = `v8-jsa|${process_name}|${equipText}|${descText}|${locationText}|${envText}|${detailLevel}`
-      .toLowerCase()
-      .trim();
-
-    const { data: cached } = await adminClient
-      .from("ai_risk_cache")
-      .select("*")
-      .eq("cache_key", cacheKey)
-      .maybeSingle();
-
-    const cachedItems = (cached?.generated_items as any[]) || [];
-    const cacheMin = 8;
-
-    const emitCachedOrGenerate = async (
-      send: (payload: Record<string, unknown>) => void,
-    ) => {
-      if (cached && Array.isArray(cachedItems) && cachedItems.length >= cacheMin) {
-        console.log(`[AI Engine] Cache hit (oneshot): ${cachedItems.length}`);
-        await adminClient
-          .from("ai_risk_cache")
-          .update({ hit_count: (cached.hit_count || 0) + 1 })
-          .eq("id", cached.id);
-
-        send({
-          type: "meta",
-          source: "cache",
-          normalized_equipment: normalizedEquipment,
-          detail_level: detailLevel,
-          mode: "risk",
-        });
-        for (const item of cachedItems) {
-          send({ type: "item", item });
+    let rawItems: any[] = [];
+    try {
+      rawItems = await generateOneShotRiskItems(
+        process_name,
+        equipText,
+        descText,
+        locationText,
+        envText,
+        detailLevel,
+      );
+    } catch (genErr) {
+      console.error(`[AI Engine] oneshot error:`, genErr);
+      if (genErr instanceof DeepseekRiskError || genErr instanceof GeminiError) {
+        if (genErr.code === "RATE_LIMIT") throw new Error("RATE_LIMIT");
+        if (genErr.code === "QUOTA_EXHAUSTED") throw new Error("CREDITS_EXHAUSTED");
+        if (genErr.code === "INVALID_KEY") throw new Error("INVALID_KEY");
+        if (genErr instanceof DeepseekRiskError && genErr.code === "TIMEOUT") {
+          throw new Error(genErr.message);
         }
-        send({
-          type: "done",
-          source: "cache",
-          count: cachedItems.length,
-          is_complete: true,
-          mode: "risk",
-        });
-        return;
       }
-
-      const libraryItems = await fetchApprovedLibraryRisks(adminClient, process_name, targetCount + 8);
-      if (libraryItems.length >= cacheMin) {
-        console.log(`[AI Engine] Library hit (oneshot): ${libraryItems.length}`);
-        const trimmed = libraryItems.slice(0, Math.max(targetCount, 12));
-        send({
-          type: "meta",
-          source: "library",
-          normalized_equipment: normalizedEquipment,
-          detail_level: detailLevel,
-          mode: "risk",
-        });
-        for (const item of trimmed) send({ type: "item", item });
-        send({
-          type: "done",
-          source: "library",
-          count: trimmed.length,
-          is_complete: true,
-          mode: "risk",
-        });
-        await adminClient.from("ai_risk_cache").upsert(
-          {
-            cache_key: cacheKey,
-            generated_items: trimmed,
-            process_name,
-            hit_count: 1,
-            project_id: project_id || null,
-          },
-          { onConflict: "cache_key" },
-        );
-        return;
-      }
-
-      const ragContext = await fetchRAGContext(adminClient, process_name, equipText, 3);
-      const existingKeys = new Set<string>();
-
-      send({
-        type: "meta",
-        source: "ai",
-        normalized_equipment: normalizedEquipment,
-        detail_level: detailLevel,
-        mode: "risk",
-        oneshot: true,
-        jsa: true,
-        target_count: targetCount,
-      });
-
-      let rawItems: any[] = [];
-      const genStarted = Date.now();
-      send({
-        type: "status",
-        message: "DeepSeek JSA 생성 중… (보통 20~60초)",
-        elapsed_sec: 0,
-      });
-      const statusIv = setInterval(() => {
-        const elapsed = Math.round((Date.now() - genStarted) / 1000);
-        try {
-          send({
-            type: "status",
-            message: `DeepSeek JSA 생성 중… ${elapsed}초 경과 (탭을 전환해도 계속됩니다)`,
-            elapsed_sec: elapsed,
-          });
-        } catch { /* closed */ }
-      }, 3000);
-      try {
-        rawItems = await generateOneShotRiskItems(
-          process_name,
-          equipText,
-          descText,
-          locationText,
-          envText,
-          ragContext,
-          detailLevel,
-        );
-      } catch (genErr) {
-        clearInterval(statusIv);
-        console.error(`[AI Engine] oneshot error:`, genErr);
-        if (genErr instanceof DeepseekRiskError || genErr instanceof GeminiError) {
-          if (genErr.code === "RATE_LIMIT") throw new Error("RATE_LIMIT");
-          if (genErr.code === "QUOTA_EXHAUSTED") throw new Error("CREDITS_EXHAUSTED");
-          if (genErr.code === "INVALID_KEY") throw new Error("INVALID_KEY");
-          if (genErr instanceof DeepseekRiskError && genErr.code === "TIMEOUT") {
-            throw new Error(genErr.message);
-          }
-        }
-        throw genErr;
-      }
-      clearInterval(statusIv);
-      send({
-        type: "status",
-        message: "응답 정리·저장 중…",
-        elapsed_sec: Math.round((Date.now() - genStarted) / 1000),
-      });
-
-      const allMapped = mapAndDedupe(rawItems, process_name, existingKeys);
-      for (const item of allMapped) {
-        send({ type: "item", item });
-      }
-
-      if (allMapped.length === 0) {
-        send({
-          type: "error",
-          error: "AI가 유효한 위험성평가 항목을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.",
-        });
-        return;
-      }
-
-      // Fire-and-forget cache — do not block the client on upsert RTT
-      void adminClient.from("ai_risk_cache").upsert(
-        {
-          cache_key: cacheKey,
-          process_name,
-          equipment: equipText,
-          work_description: descText,
-          work_location: locationText,
-          work_environment: work_environment || [],
-          generated_items: allMapped,
-          hit_count: 0,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "cache_key" },
-      ).then(({ error: cacheErr }) => {
-        if (cacheErr) console.warn("[AI Engine] cache upsert skipped:", cacheErr.message);
-      });
-
-      send({
-        type: "done",
-        source: "ai",
-        count: allMapped.length,
-        is_complete: true,
-        normalized_equipment: normalizedEquipment,
-        detail_level: detailLevel,
-        mode: "risk",
-      });
-    };
-
-    if (wantStream) {
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream<Uint8Array>({
-        async start(controller) {
-          const send = (payload: Record<string, unknown>) => {
-            controller.enqueue(sseEncode(encoder, payload));
-          };
-          // Keep SSE alive with comment pings; status events carry UI progress.
-          const heartbeat = setInterval(() => {
-            try {
-              controller.enqueue(encoder.encode(`: ping ${Date.now()}\n\n`));
-            } catch {
-              /* closed */
-            }
-          }, 4000);
-          try {
-            controller.enqueue(encoder.encode(`: connected\n\n`));
-            send({ type: "status", message: "생성 시작" });
-            await emitCachedOrGenerate(send);
-          } catch (e) {
-            console.error("generate-risk-ai stream error:", e);
-            const msg = e instanceof Error ? e.message : "Unknown error";
-            let error = msg;
-            if (msg === "RATE_LIMIT") error = "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
-            else if (msg === "CREDITS_EXHAUSTED") {
-              error = "AI 크레딧이 부족합니다. 워크스페이스 크레딧을 충전해주세요.";
-            } else if (msg === "INVALID_KEY") {
-              error = "DeepSeek API 키가 유효하지 않습니다. DEEPSEEK_API_KEY(Supabase Edge Secrets)를 확인해야 합니다.";
-            }
-            try {
-              send({ type: "error", error });
-            } catch { /* controller may be closed */ }
-          } finally {
-            clearInterval(heartbeat);
-            try {
-              controller.close();
-            } catch { /* ignore */ }
-          }
-        },
-      });
-
-      return new Response(stream, { headers: sseHeaders });
+      throw genErr;
     }
 
-    // Default: non-stream JSON (stable under idle timeouts)
-    const collectedItems: any[] = [];
-    let source = "ai";
-    await emitCachedOrGenerate((payload) => {
-      if (payload.type === "item" && payload.item) collectedItems.push(payload.item);
-      if (payload.type === "done") source = String(payload.source || "ai");
-      if (payload.type === "error") throw new Error(String(payload.error));
-    });
+    const allMapped = mapAndDedupe(rawItems, process_name, new Set<string>());
+    if (allMapped.length === 0) {
+      return new Response(
+        JSON.stringify({
+          error: "AI가 유효한 위험성평가 항목을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.",
+          items: [],
+          count: 0,
+          mode: "risk",
+        }),
+        {
+          status: 502,
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+        },
+      );
+    }
 
     return new Response(
       JSON.stringify({
-        items: collectedItems,
-        source,
-        count: collectedItems.length,
+        items: allMapped,
+        source: "ai",
+        count: allMapped.length,
         normalized_equipment: normalizedEquipment,
         detail_level: detailLevel,
         is_complete: true,

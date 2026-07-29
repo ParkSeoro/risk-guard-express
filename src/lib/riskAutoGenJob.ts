@@ -153,11 +153,10 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
   for (let i = 0; i < input.processes.length; i++) {
     if (state.status !== 'running') return;
     const proc = input.processes[i].trim();
-    patch({
-      processIndex: i + 1,
-      currentProcess: proc,
-      message: `공종 「${proc}」 AI 생성 중… (다른 창을 열어도 이 탭에서는 계속됩니다)`,
-    });
+      patch({
+        currentProcess: proc,
+        message: `공종 「${proc}」 DeepSeek One-Shot 생성 중… (SSE 없음 · 완료 후 일괄 저장)`,
+      });
 
     if (!input.useAI) {
       const { generateRiskItems } = await import('@/lib/riskAutoGen');

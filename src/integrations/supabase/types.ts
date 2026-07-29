@@ -301,6 +301,51 @@ export type Database = {
           },
         ]
       }
+
+      ai_accident_cache: {
+        Row: {
+          cache_key: string
+          created_at: string
+          generated_cases: Json
+          hit_count: number
+          id: string
+          process_name: string | null
+          project_id: string | null
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          cache_key: string
+          created_at?: string
+          generated_cases?: Json
+          hit_count?: number
+          id?: string
+          process_name?: string | null
+          project_id?: string | null
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          cache_key?: string
+          created_at?: string
+          generated_cases?: Json
+          hit_count?: number
+          id?: string
+          process_name?: string | null
+          project_id?: string | null
+          source?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_accident_cache_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_settings: {
         Row: {
           api_key_encrypted: string
@@ -7241,6 +7286,7 @@ export type Database = {
           signature_data: string
           tbm_session_id: string
           user_agent: string
+          worker_id: string | null
           worker_name: string
           worker_phone: string
         }
@@ -7254,6 +7300,7 @@ export type Database = {
           signature_data?: string
           tbm_session_id: string
           user_agent?: string
+          worker_id?: string | null
           worker_name: string
           worker_phone: string
         }
@@ -7267,6 +7314,7 @@ export type Database = {
           signature_data?: string
           tbm_session_id?: string
           user_agent?: string
+          worker_id?: string | null
           worker_name?: string
           worker_phone?: string
         }
@@ -7276,6 +7324,13 @@ export type Database = {
             columns: ["tbm_session_id"]
             isOneToOne: false
             referencedRelation: "tbm_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tbm_participations_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
             referencedColumns: ["id"]
           },
         ]
@@ -7928,6 +7983,46 @@ export type Database = {
           },
         ]
       }
+
+      work_permit_assessment_links: {
+        Row: {
+          assessment_run_id: string
+          created_at: string
+          id: string
+          is_primary: boolean
+          work_permit_id: string
+        }
+        Insert: {
+          assessment_run_id: string
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          work_permit_id: string
+        }
+        Update: {
+          assessment_run_id?: string
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          work_permit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_permit_assessment_links_assessment_run_id_fkey"
+            columns: ["assessment_run_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_permit_assessment_links_work_permit_id_fkey"
+            columns: ["work_permit_id"]
+            isOneToOne: false
+            referencedRelation: "work_permits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       work_permit_workers: {
         Row: {
           created_at: string
@@ -7956,7 +8051,29 @@ export type Database = {
           work_permit_id?: string
           worker_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "work_permit_workers_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_permit_workers_work_permit_id_fkey"
+            columns: ["work_permit_id"]
+            isOneToOne: false
+            referencedRelation: "work_permits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_permit_workers_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       work_permits: {
         Row: {
@@ -8820,6 +8937,27 @@ export type Database = {
             referencedRelation: "worker_daily_qr"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "worker_entry_logs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "worker_entry_logs_work_permit_id_fkey"
+            columns: ["work_permit_id"]
+            isOneToOne: false
+            referencedRelation: "work_permits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "worker_entry_logs_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
         ]
       }
       worker_legal_education_mapping: {
@@ -9240,7 +9378,22 @@ export type Database = {
           special_education_required_until?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "workers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workers_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       zone_qr_codes: {
         Row: {
@@ -9330,6 +9483,25 @@ export type Database = {
           company_type: string | null
           project_id: string | null
           project_name: string | null
+        }
+        Relationships: []
+      }
+
+      v_safety_work_bundle: {
+        Row: {
+          assessment_period_label: string | null
+          assessment_status: string | null
+          permit_date: string | null
+          permit_status: string | null
+          primary_assessment_run_id: string | null
+          project_id: string | null
+          tbm_session_date: string | null
+          tbm_session_id: string | null
+          tbm_title: string | null
+          work_name: string | null
+          work_permit_id: string | null
+          work_plan_id: string | null
+          work_plan_title: string | null
         }
         Relationships: []
       }

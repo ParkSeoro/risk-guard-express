@@ -20,6 +20,7 @@ import {
   geoCircleToCrs,
   geoPolygonToCrs,
   imageCrsBounds,
+  looksLikeWgs84,
 } from "@/lib/tracking/imageSpaceGeo";
 
 export type OrthogonalZone = {
@@ -36,6 +37,7 @@ export type OrthogonalZone = {
 
 type Props = {
   imageUrl: string;
+  /** Mapping-tab GPS corners (geo_transform TL/TR/BL or NW/SE). */
   corners: GeoCorners;
   zones: OrthogonalZone[];
   pendingGeoShape: DrawnShape | null;
@@ -69,6 +71,7 @@ function loadImageSize(url: string): Promise<{ w: number; h: number }> {
 /**
  * CRS.Simple orthogonal drone canvas for zone drawing (no satellite, no rotation).
  * Drawing is driven by external activeTool buttons (no default leaflet-draw toolbar).
+ * draw:created CRS pixel rings are inverse-mapped to WGS84 via mapping GPS bounds.
  */
 export default function OrthogonalZoneCanvas({
   imageUrl,
@@ -108,12 +111,31 @@ export default function OrthogonalZoneCanvas({
   const onCrsShape = useCallback(
     (shape: DrawnShape) => {
       if (!size) return;
+      // CRS.Simple getLatLngs() → pixel Y/X; translate to real GPS with geo bounds.
       if (shape.kind === "polygon") {
         const latlngs = crsPolygonToGeo(shape.latlngs, corners, size.w, size.h);
+        if (!latlngs.every(looksLikeWgs84)) {
+          console.error("[OrthogonalZoneCanvas] GPS inverse failed", {
+            crs: shape.latlngs,
+            geo: latlngs,
+            corners,
+            size,
+          });
+          return;
+        }
         onGeoShapeCreated({ kind: "polygon", latlngs });
         return;
       }
       const geo = crsCircleToGeo(shape.center, shape.radius_m, corners, size.w, size.h);
+      if (!looksLikeWgs84(geo.center)) {
+        console.error("[OrthogonalZoneCanvas] circle GPS inverse failed", {
+          crs: shape.center,
+          geo,
+          corners,
+          size,
+        });
+        return;
+      }
       onGeoShapeCreated({
         kind: "circle",
         center: geo.center,
@@ -150,8 +172,22 @@ export default function OrthogonalZoneCanvas({
           }
         : null;
 
+  const guideText =
+    activeTool === "polygon"
+      ? "다각형: 클릭할 때마다 꼭짓점(Vertex)이 찍히고, 더블클릭 시 닫히며(Finish) 완료됩니다. · 지도 이동(Panning) 일시 차단"
+      : activeTool === "rectangle"
+        ? "사각형: 클릭 후 드래그로 영역을 지정하세요. · 지도 이동(Panning) 일시 차단"
+        : activeTool === "circle"
+          ? "원형: 중심을 클릭한 뒤 드래그로 반경을 지정하세요. · 지도 이동(Panning) 일시 차단"
+          : null;
+
   return (
     <div className={`relative z-0 bg-neutral-900 ${className || ""}`}>
+      {guideText && (
+        <div className="pointer-events-none absolute top-3 left-1/2 z-[1100] w-[min(92%,28rem)] -translate-x-1/2 rounded-md border border-amber-500/40 bg-amber-50 px-3 py-2 text-center text-[11px] font-medium text-amber-950 shadow-md dark:bg-amber-950/90 dark:text-amber-50">
+          {guideText}
+        </div>
+      )}
       <MapContainer
         key={`${imageUrl}-${size.w}x${size.h}`}
         crs={L.CRS.Simple}
@@ -231,7 +267,7 @@ export default function OrthogonalZoneCanvas({
         })}
       </MapContainer>
       <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] rounded-md bg-background/90 px-2 py-1 text-[10px] text-muted-foreground shadow">
-        평면 도면 (CRS.Simple) · 기본 Draw 툴바 숨김 · 좌측 커스텀 버튼으로 그리기
+        평면 도면 (CRS.Simple) · 픽셀→WGS84 역산 · 좌측 버튼으로 그리기
       </div>
     </div>
   );

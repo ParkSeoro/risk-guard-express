@@ -45,6 +45,7 @@ import {
   zoneCategorySchema,
 } from "@/lib/tracking/accessRules";
 import type { DrawnShape, DrawTool } from "@/components/geofence/LeafletDrawControl";
+import { looksLikeWgs84 } from "@/lib/tracking/imageSpaceGeo";
 import {
   bottomRight,
   cornersCenter,
@@ -518,6 +519,19 @@ export default function SiteControlMap() {
       return;
     }
 
+    // Guard: never persist CRS.Simple pixel coords as if they were WGS84.
+    const gpsOk =
+      payload.shape.kind === "circle"
+        ? looksLikeWgs84(payload.shape.center)
+        : payload.shape.latlngs.every(looksLikeWgs84);
+    if (!gpsOk) {
+      setSaving(false);
+      toast.error(
+        "좌표가 GPS(위경도)로 변환되지 않았습니다. 맵핑 탭 GPS Bounds를 저장한 뒤 다시 그려 주세요.",
+      );
+      return;
+    }
+
     const base = {
       project_id: projectId,
       name: payload.name,
@@ -852,9 +866,20 @@ export default function SiteControlMap() {
                     </Button>
                   </div>
                   {drawTool && (
-                    <p className="text-[10px] text-primary">
-                      {drawTool === "rectangle" ? "사각형" : drawTool === "polygon" ? "다각형" : "원형"}{" "}
-                      모드 — 도면에서 드래그/클릭으로 완성하세요. (Esc로 취소)
+                    <p className="text-[10px] text-primary space-y-0.5">
+                      <span className="block">
+                        {drawTool === "rectangle"
+                          ? "사각형"
+                          : drawTool === "polygon"
+                            ? "다각형"
+                            : "원형"}{" "}
+                        모드 — 지도 이동(Panning)이 일시 차단됩니다. (Esc로 취소)
+                      </span>
+                      {drawTool === "polygon" && (
+                        <span className="block text-muted-foreground">
+                          클릭 = 꼭짓점 추가 · 더블클릭 = 닫기(Finish) 완료
+                        </span>
+                      )}
                     </p>
                   )}
                 </div>

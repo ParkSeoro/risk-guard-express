@@ -32,6 +32,7 @@ import {
 } from "@/lib/tracking/accessRules";
 import { jobCategoryEntries } from "@/lib/jobCategories";
 import type { DrawnShape } from "@/components/geofence/LeafletDrawControl";
+import { formatGpsPreview } from "@/lib/tracking/imageSpaceGeo";
 
 export type ZoneDraftPayload = {
   name: string;
@@ -278,6 +279,12 @@ export default function ZoneAccessRulesDialog({
 
           {!hasTargets && (
             <p className="text-[10px] text-amber-600">업체 또는 직종을 1개 이상 선택하세요.</p>
+          )}
+
+          {shape && (
+            <p className="text-[10px] leading-relaxed text-muted-foreground break-all border-t pt-3">
+              {formatGpsPreview(shape)}
+            </p>
           )}
         </div>
 

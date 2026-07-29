@@ -37,6 +37,32 @@ type Props = {
   position?: "topleft" | "topright" | "bottomleft" | "bottomright";
 };
 
+function applyKoreanDrawTooltips() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const local = (L as any).drawLocal;
+  if (!local?.draw?.handlers) return;
+  local.draw.handlers.polygon = {
+    ...local.draw.handlers.polygon,
+    tooltip: {
+      start: "클릭하여 첫 꼭짓점을 찍으세요",
+      cont: "클릭할 때마다 꼭짓점이 추가됩니다",
+      end: "더블클릭하면 닫히며(Finish) 완료됩니다",
+    },
+  };
+  local.draw.handlers.rectangle = {
+    ...local.draw.handlers.rectangle,
+    tooltip: {
+      start: "클릭·드래그로 사각형을 그리세요",
+    },
+  };
+  local.draw.handlers.circle = {
+    ...local.draw.handlers.circle,
+    tooltip: {
+      start: "클릭·드래그로 원형을 그리세요",
+    },
+  };
+}
+
 /**
  * Headless / optional-toolbar Leaflet Draw bridge.
  * Prefer activeTool + external UI buttons over the default Control.Draw icons.
@@ -53,11 +79,33 @@ export default function LeafletDrawControl({
 }: Props) {
   const map = useMap();
   const handlerRef = useRef<{ disable: () => void } | null>(null);
+  const draggingWasEnabled = useRef(true);
+
+  // While an external draw tool is active, block map panning so draw clicks/drags win.
+  useEffect(() => {
+    if (!enabled || showToolbar) return;
+    if (activeTool) {
+      draggingWasEnabled.current = map.dragging.enabled();
+      map.dragging.disable();
+      map.doubleClickZoom?.disable?.();
+      map.boxZoom?.disable?.();
+      return () => {
+        if (draggingWasEnabled.current) map.dragging.enable();
+        map.doubleClickZoom?.enable?.();
+        map.boxZoom?.enable?.();
+      };
+    }
+    map.dragging.enable();
+    map.doubleClickZoom?.enable?.();
+    map.boxZoom?.enable?.();
+  }, [map, enabled, showToolbar, activeTool]);
 
   // Optional legacy toolbar
   useEffect(() => {
     if (!enabled || !showToolbar) return;
     if (!onShapeCreated && !onPolygonCreated) return;
+
+    applyKoreanDrawTooltips();
 
     const drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
@@ -110,6 +158,8 @@ export default function LeafletDrawControl({
       return;
     }
     if (!onShapeCreated && !onPolygonCreated) return;
+
+    applyKoreanDrawTooltips();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const Draw = (L as any).Draw;

@@ -63,8 +63,9 @@ function AuthRoute() {
       if (dest === "/consent") {
         return <Navigate to="/consent" replace />;
       }
+      // Prefer explicit admin deep-link over a stale worker dest (never hijack managers)
       if (next.startsWith("/app/admin") && dest.startsWith("/app/worker")) {
-        return <Navigate to={dest} replace />;
+        return <Navigate to={next} replace />;
       }
       return <Navigate to={next} replace />;
     }

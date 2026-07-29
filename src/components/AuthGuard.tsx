@@ -71,13 +71,22 @@ type ConsentProfile = {
 } | null;
 
 /** Universal consent gate — role-aware required flags. */
-export function needsConsent(profile: ConsentProfile, roles: string[]): boolean {
+export function needsConsent(
+  profile: ConsentProfile,
+  roles: string[],
+  opts?: { loginIntent?: "admin" | "worker" | null },
+): boolean {
   if (!profile) return true;
   if (profile.agreed_to_terms !== true) return true;
   if (profile.agreed_to_privacy !== true) return true;
   if (!profile.consent_agreed_at) return true;
 
-  if (isAdminShellUser(roles)) {
+  const shell = resolvePostLoginShell(roles, {
+    rolesReady: true,
+    loginIntent: opts?.loginIntent ?? readLoginIntent(),
+  });
+
+  if (shell === "admin" || isAdminShellUser(roles)) {
     // Column missing (pre-migration): don't permanently block after terms+privacy
     if (profile.agreed_to_admin_security == null) return false;
     return profile.agreed_to_admin_security !== true;
@@ -108,19 +117,29 @@ export function writeLoginIntent(intent: "admin" | "worker") {
   }
 }
 
-export function postConsentHomePath(roles: string[]): string {
-  const home = isAdminShellUser(roles) ? "/app/admin" : "/app/worker/home";
-  // Never bounce back to root /
-  return home === "/" ? "/app/admin" : home;
+export function postConsentHomePath(
+  roles: string[],
+  opts?: { rolesReady?: boolean; loginIntent?: "admin" | "worker" | null },
+): string {
+  const shell = resolvePostLoginShell(roles, {
+    rolesReady: opts?.rolesReady ?? true,
+    loginIntent: opts?.loginIntent ?? readLoginIntent(),
+  });
+  // Empty / unknown roles default to admin (never hijack managers to worker home)
+  return shell === "worker" ? "/app/worker/home" : "/app/admin";
 }
 
 export function postLoginPath(
   roles: string[],
   profile?: ConsentProfile,
-  _opts?: { rolesReady?: boolean },
+  opts?: { rolesReady?: boolean; loginIntent?: "admin" | "worker" | null },
 ): string {
-  if (needsConsent(profile ?? null, roles)) return "/consent";
-  return postConsentHomePath(roles);
+  const intent = opts?.loginIntent ?? readLoginIntent();
+  if (needsConsent(profile ?? null, roles, { loginIntent: intent })) return "/consent";
+  return postConsentHomePath(roles, {
+    rolesReady: opts?.rolesReady,
+    loginIntent: intent,
+  });
 }
 
 type AuthGuardProps = {
@@ -172,9 +191,13 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
     return <Navigate to="/consent" replace />;
   }
 
-  // ⑤ Shell gate
+  // ⑤ Shell gate — only pure workers are blocked from admin shell
   if (shell === "admin" && isPureWorkerUser(roles)) {
     return <Navigate to="/app/worker/home" replace />;
+  }
+  // Empty-role managers must NOT be kicked to worker (roles may still be hydrating from project_members)
+  if (shell === "worker" && isAdminShellUser(roles)) {
+    return <Navigate to="/app/admin" replace />;
   }
 
   return <>{children}</>;

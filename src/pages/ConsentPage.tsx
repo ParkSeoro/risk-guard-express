@@ -15,6 +15,8 @@ import {
   isAdminShellUser,
   needsConsent,
   postConsentHomePath,
+  readLoginIntent,
+  resolvePostLoginShell,
 } from "@/components/AuthGuard";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
@@ -39,7 +41,11 @@ export default function ConsentPage() {
   const { user, session, isAuthLoading, roles, profile, applyProfilePatch, reloadAuthProfile } =
     useAuth();
   const navigate = useNavigate();
-  const isAdmin = isAdminShellUser(roles);
+  const shell = resolvePostLoginShell(roles, {
+    rolesReady: true,
+    loginIntent: readLoginIntent(),
+  });
+  const isAdmin = shell === "admin" || isAdminShellUser(roles);
   const items = useMemo(() => consentItemsForRoles(isAdmin), [isAdmin]);
 
   const [checked, setChecked] = useState<Record<string, boolean>>({});
@@ -57,7 +63,7 @@ export default function ConsentPage() {
   // ④ Race defense: unauthenticated URL hit → login
   if (!session || !user) return <Navigate to="/login?next=/consent" replace />;
   if (!needsConsent(profile, roles)) {
-    const home = postConsentHomePath(roles);
+    const home = postConsentHomePath(roles, { loginIntent: readLoginIntent() });
     if (home === "/consent") return null; // belt: never loop
     return <Navigate to={home} replace />;
   }
@@ -114,7 +120,7 @@ export default function ConsentPage() {
 
       // ③ Role-aware home
       toast.success("약관 동의가 완료되었습니다");
-      navigate(postConsentHomePath(roles), { replace: true });
+      navigate(postConsentHomePath(roles, { loginIntent: readLoginIntent() }), { replace: true });
     } catch (e: any) {
       toast.error(e?.message || "동의 저장에 실패했습니다");
     } finally {

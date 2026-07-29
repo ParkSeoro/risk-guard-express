@@ -246,34 +246,80 @@ function tryParse(s: string): any {
   }
 }
 
-/** Parse one JSONL line into an object (tolerates trailing commas / fence crumbs). */
-function parseJsonlLine(raw: string): any | null {
-  let s = String(raw || "").trim();
-  if (!s) return null;
-  if (s.startsWith("```")) return null;
-  if (s === "[" || s === "]" || s === "," || s === "],") return null;
-  s = s.replace(/^```json/i, "").replace(/```$/g, "").trim();
-  s = s.replace(/,\s*$/, "");
-  if (!(s.startsWith("{") && s.endsWith("}"))) return null;
-  const parsed = tryParse(s);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  return parsed;
+/** Strip markdown fences / noise before buffering LLM text. */
+function stripStreamNoise(chunk: string): string {
+  return String(chunk || "")
+    .replace(/```json/gi, "")
+    .replace(/```/g, "");
 }
 
 /**
- * Drain complete JSONL lines from a growing text buffer.
- * Incomplete last line stays in `rest`.
+ * Bulletproof extractor: pull every fully-closed `{ ... }` object from a growing buffer
+ * using brace depth (not naive regex — handles nested braces/strings).
+ * Successfully parsed objects are removed from the returned rest buffer.
  */
-function drainJsonlObjects(buffer: string): { objects: any[]; rest: string } {
-  const normalized = buffer.replace(/\r\n/g, "\n");
-  const parts = normalized.split("\n");
-  const rest = parts.pop() ?? "";
+function extractCompleteObjects(buffer: string): { objects: any[]; rest: string } {
   const objects: any[] = [];
-  for (const line of parts) {
-    const obj = parseJsonlLine(line);
-    if (obj) objects.push(obj);
+  let i = 0;
+  const n = buffer.length;
+  let keepFrom = 0;
+
+  while (i < n) {
+    // Skip until next object start
+    if (buffer[i] !== "{") {
+      i++;
+      continue;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    const start = i;
+
+    for (; i < n; i++) {
+      const ch = buffer[i];
+      if (inString) {
+        if (escape) escape = false;
+        else if (ch === "\\") escape = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === "{") depth++;
+      else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          const raw = buffer.slice(start, i + 1);
+          const parsed = tryParse(raw);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            objects.push(parsed);
+            keepFrom = i + 1;
+          } else {
+            console.error(
+              "[AI Engine] Stream parsing failed. Raw buffer slice:",
+              raw.slice(0, 400),
+            );
+            // Skip this '{' and keep scanning — do not kill the stream
+            i = start;
+            keepFrom = Math.max(keepFrom, start + 1);
+          }
+          i++;
+          break;
+        }
+      }
+    }
+
+    // Incomplete object — leave from `start` in rest
+    if (depth !== 0) {
+      return { objects, rest: buffer.slice(Math.min(keepFrom, start)) };
+    }
   }
-  return { objects, rest };
+
+  // Drop leading junk before keepFrom; keep trailing incomplete text
+  return { objects, rest: buffer.slice(keepFrom) };
 }
 
 function sseEncode(encoder: TextEncoder, payload: Record<string, unknown>): Uint8Array {
@@ -299,8 +345,8 @@ function buildJsaUserPrompt(
 }
 
 /**
- * One-Shot DeepSeek stream → emit each completed JSONL object as its line completes.
- * No prep/main/finish phases.
+ * One-Shot DeepSeek stream → emit each completed JSON object as braces close.
+ * Bulletproof vs markdown/noise; continues after individual parse failures.
  */
 async function streamOneShotRiskItems(
   processName: string,
@@ -310,6 +356,7 @@ async function streamOneShotRiskItems(
   envText: string,
   detailLevel: "core" | "comprehensive",
   onItem: (mapped: any) => void,
+  onStatus?: (message: string, extra?: Record<string, unknown>) => void,
 ): Promise<{ count: number }> {
   const userPrompt = buildJsaUserPrompt(
     processName,
@@ -319,11 +366,11 @@ async function streamOneShotRiskItems(
     envText,
     detailLevel,
   );
-  // Keep tokens moderate so Edge stays under wall-clock budget while streaming.
   const maxTokens = detailLevel === "comprehensive" ? 5500 : 4000;
   const existingKeys = new Set<string>();
   let buffer = "";
   let count = 0;
+  let lastStatusAt = 0;
 
   const emitRaw = (rawObjects: any[]) => {
     const mapped = mapAndDedupe(rawObjects, processName, existingKeys);
@@ -333,27 +380,48 @@ async function streamOneShotRiskItems(
     }
   };
 
-  for await (const delta of streamDeepseekRiskChatText({
-    messages: [
-      { role: "system", content: HSE_SYSTEM_PROMPT },
-      { role: "user", content: userPrompt },
-    ],
-    temperature: 0.25,
-    max_tokens: maxTokens,
-    timeoutMs: 120_000,
-  })) {
-    buffer += delta;
-    const { objects, rest } = drainJsonlObjects(buffer);
-    buffer = rest;
+  try {
+    for await (const delta of streamDeepseekRiskChatText({
+      messages: [
+        { role: "system", content: HSE_SYSTEM_PROMPT },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.25,
+      max_tokens: maxTokens,
+      timeoutMs: 120_000,
+    })) {
+      buffer += stripStreamNoise(delta);
+
+      const { objects, rest } = extractCompleteObjects(buffer);
+      buffer = rest;
+      if (objects.length) emitRaw(objects);
+
+      const now = Date.now();
+      if (now - lastStatusAt > 2500) {
+        lastStatusAt = now;
+        onStatus?.(`모델 응답 수신 중… ${buffer.length}자 버퍼 · ${count}건 추출`, {
+          buffer_chars: buffer.length,
+          items_so_far: count,
+        });
+      }
+    }
+  } catch (e) {
+    console.error(
+      "[AI Engine] Stream parsing failed. Raw buffer:",
+      buffer.slice(0, 800),
+      e,
+    );
+    // Salvage whatever complete objects remain, then rethrow if nothing emitted
+    const { objects } = extractCompleteObjects(buffer + "\n");
     if (objects.length) emitRaw(objects);
+    if (count === 0) throw e;
   }
 
-  // Final incomplete line / leftover
-  const last = parseJsonlLine(buffer);
-  if (last) emitRaw([last]);
+  // Final sweep
+  const { objects: finalObjs, rest } = extractCompleteObjects(buffer);
+  if (finalObjs.length) emitRaw(finalObjs);
   else {
-    // Fallback: model ignored JSONL and returned an array — salvage what we can
-    const salvaged = safeParseDeepseekRiskItems(buffer);
+    const salvaged = safeParseDeepseekRiskItems(rest || buffer);
     if (salvaged.length) emitRaw(salvaged);
   }
 
@@ -557,6 +625,14 @@ serve(async (req) => {
                 type: "status",
                 message: `${emitted}건 생성됨…`,
                 items_so_far: emitted,
+              });
+            },
+            (message, extra) => {
+              send({
+                type: "status",
+                message,
+                items_so_far: emitted,
+                ...(extra || {}),
               });
             },
           );

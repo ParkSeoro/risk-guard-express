@@ -171,13 +171,37 @@ async function consumeSse(
   const decoder = new TextDecoder('utf-8', { stream: true } as TextDecoderOptions);
   let carry = '';
   let streamError: string | null = null;
+  let gotItems = false;
 
   const handleEvent = async (payload: any) => {
     if (!payload || typeof payload !== 'object') return;
     if (payload.type === 'error') {
       streamError = String(payload.error || 'AI 생성 실패');
     }
+    if (payload.type === 'item' || payload.type === 'accident') {
+      gotItems = true;
+    }
     await handlers.onEvent?.(payload);
+  };
+
+  const parseDataLine = async (data: string) => {
+    if (!data || data === '[DONE]') return;
+    try {
+      await handleEvent(JSON.parse(data));
+    } catch (error) {
+      // Bulletproof: one bad SSE frame must NOT kill the whole stream
+      console.error('Stream parsing failed. Raw buffer:', data.slice(0, 500), error);
+      // Try to salvage a complete {...} envelope from noisy data
+      const start = data.indexOf('{');
+      const end = data.lastIndexOf('}');
+      if (start >= 0 && end > start) {
+        try {
+          await handleEvent(JSON.parse(data.slice(start, end + 1)));
+        } catch (error2) {
+          console.error('Stream parsing failed (salvage). Raw buffer:', data.slice(0, 500), error2);
+        }
+      }
+    }
   };
 
   while (true) {
@@ -191,11 +215,7 @@ async function consumeSse(
         const trimmed = line.trim();
         if (!trimmed || trimmed.startsWith(':')) continue;
         if (!trimmed.startsWith('data:')) continue;
-        const data = trimmed.slice(5).trim();
-        if (!data || data === '[DONE]') continue;
-        try {
-          await handleEvent(JSON.parse(data));
-        } catch { /* ignore */ }
+        await parseDataLine(trimmed.slice(5).trim());
       }
     }
   }
@@ -205,15 +225,16 @@ async function consumeSse(
     for (const line of carry.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed.startsWith('data:')) continue;
-      const data = trimmed.slice(5).trim();
-      if (!data || data === '[DONE]') continue;
-      try {
-        await handleEvent(JSON.parse(data));
-      } catch { /* ignore */ }
+      await parseDataLine(trimmed.slice(5).trim());
     }
   }
 
-  if (streamError) throw new Error(mapErrorMessage(streamError));
+  if (streamError && !gotItems) {
+    throw new Error(mapErrorMessage(streamError));
+  }
+  if (streamError) {
+    console.warn('[AI Engine] stream ended with error after partial items:', streamError);
+  }
 }
 
 async function fetchRiskItemsOneShot(
@@ -299,21 +320,29 @@ async function fetchRiskItemsOneShot(
             return;
           }
           if (type === 'item' && payload.item) {
-            const mapped = mapAIItemToGenerated(payload.item, opts.processName);
-            const key = `${mapped.sub_task}|${mapped.hazard}`;
-            if (opts.deduplicate !== false && bag.seen.has(key)) return;
-            bag.seen.add(key);
-            bag.items.push(mapped);
-            await handlers.onItem?.(mapped, bag.items);
-            handlers.onProgress?.(
-              {
-                phase: 'generating',
-                itemsSoFar: bag.items.length,
-                message: `${bag.items.length}건 수신…`,
-                normalizedEquipment: bag.normalizedEquipment.value,
-              },
-              bag.items,
-            );
+            try {
+              const mapped = mapAIItemToGenerated(payload.item, opts.processName);
+              const key = `${mapped.sub_task}|${mapped.hazard}`;
+              if (opts.deduplicate !== false && bag.seen.has(key)) return;
+              if (!mapped.sub_task || !mapped.hazard) {
+                console.error('Stream parsing failed. Raw buffer:', payload.item, 'missing sub_task/hazard');
+                return;
+              }
+              bag.seen.add(key);
+              bag.items.push(mapped);
+              await handlers.onItem?.(mapped, bag.items);
+              handlers.onProgress?.(
+                {
+                  phase: 'generating',
+                  itemsSoFar: bag.items.length,
+                  message: `${bag.items.length}건 수신…`,
+                  normalizedEquipment: bag.normalizedEquipment.value,
+                },
+                bag.items,
+              );
+            } catch (error) {
+              console.error('Stream parsing failed. Raw buffer:', payload.item, error);
+            }
             return;
           }
           if (type === 'done') {

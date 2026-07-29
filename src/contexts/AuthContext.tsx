@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import type { User, Session } from '@supabase/supabase-js';
 
@@ -23,7 +23,6 @@ interface AuthContextType {
   session: Session | null;
   profile: Profile | null;
   roles: AppRole[];
-  /** False until role fetch finishes for the current user (prevents admin→worker hijack). */
   rolesReady: boolean;
   loading: boolean;
   signOut: () => Promise<void>;
@@ -41,14 +40,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [roles, setRoles] = useState<AppRole[]>([]);
   const [rolesReady, setRolesReady] = useState(false);
   const [loading, setLoading] = useState(true);
+  const metaGen = useRef(0);
 
   const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-    if (data) setProfile(data as Profile);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (error) {
+        console.warn('[Auth] fetchProfile', error.message);
+        return;
+      }
+      if (data) setProfile(data as Profile);
+    } catch (e) {
+      console.warn('[Auth] fetchProfile threw', e);
+    }
   };
 
   const KNOWN_ROLES = new Set([
@@ -65,24 +73,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const fetchRoles = async (userId: string) => {
-    const [{ data: systemRoles }, { data: projectRoles }] = await Promise.all([
-      supabase.from('user_roles').select('role').eq('user_id', userId),
-      supabase.from('project_members').select('role_new').eq('user_id', userId),
-    ]);
+    try {
+      const [{ data: systemRoles }, { data: projectRoles }] = await Promise.all([
+        supabase.from('user_roles').select('role').eq('user_id', userId),
+        supabase.from('project_members').select('role_new').eq('user_id', userId),
+      ]);
 
-    const raw = [
-      ...(systemRoles || []).map((r: any) => normalizeRole(r.role)),
-      ...(projectRoles || []).map((m: any) => normalizeRole(m.role_new)),
-    ].filter(Boolean) as AppRole[];
+      const raw = [
+        ...(systemRoles || []).map((r: any) => normalizeRole(r.role)),
+        ...(projectRoles || []).map((m: any) => normalizeRole(m.role_new)),
+      ].filter(Boolean) as AppRole[];
 
-    const combined = raw.length === 0
-      ? []
-      : raw.every((v) => v === 'access_blocked')
-        ? (['access_blocked'] as AppRole[])
-        : raw.filter((v) => v !== 'access_blocked');
+      const combined = raw.length === 0
+        ? []
+        : raw.every((v) => v === 'access_blocked')
+          ? (['access_blocked'] as AppRole[])
+          : raw.filter((v) => v !== 'access_blocked');
 
-    setRoles(Array.from(new Set(combined)));
-    setRolesReady(true);
+      setRoles(Array.from(new Set(combined)));
+    } catch (e) {
+      console.warn('[Auth] fetchRoles threw', e);
+      setRoles([]);
+    }
   };
 
   const syncMasterAllowlist = async (userId: string) => {
@@ -94,26 +106,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const loadUserMeta = async (userId: string) => {
+    const gen = ++metaGen.current;
     setRolesReady(false);
-    await syncMasterAllowlist(userId);
-    await Promise.all([fetchProfile(userId), fetchRoles(userId)]);
+    try {
+      await syncMasterAllowlist(userId);
+      await Promise.all([fetchProfile(userId), fetchRoles(userId)]);
+    } catch (e) {
+      console.warn('[Auth] loadUserMeta failed', e);
+    } finally {
+      // Always release deadlock — even on fetch failure / abort
+      if (gen === metaGen.current) {
+        setRolesReady(true);
+        setLoading(false);
+      }
+    }
   };
 
   const refreshProfile = async () => {
-    if (user) {
-      setRolesReady(false);
+    if (!user) return;
+    // Do NOT flip rolesReady=false here — that freezes ConsentPage after submit
+    try {
       await Promise.all([fetchProfile(user.id), fetchRoles(user.id)]);
+    } catch (e) {
+      console.warn('[Auth] refreshProfile failed', e);
+    } finally {
+      setRolesReady(true);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
+    let cancelled = false;
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (cancelled) return;
         if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
           setSession(session);
           if (session?.user) setUser(session.user);
           return;
         }
+        // Skip duplicate INITIAL_SESSION if getSession already handling — still safe with gen
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
@@ -129,11 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               // non-critical
             }
           }
-          try {
-            await loadUserMeta(session.user.id);
-          } finally {
-            setLoading(false);
-          }
+          await loadUserMeta(session.user.id);
         } else {
           setProfile(null);
           setRoles([]);
@@ -144,6 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (cancelled) return;
       setSession(session);
       setUser(session?.user ?? null);
       try {
@@ -159,7 +189,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    // Safety: never leave UI on "세션 확인 중…" more than 8s
+    const safety = window.setTimeout(() => {
+      setLoading(false);
+      setRolesReady(true);
+    }, 8000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(safety);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const signOut = async () => {
@@ -173,6 +213,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
     setRoles([]);
     setRolesReady(true);
+    setLoading(false);
     if (typeof window !== 'undefined') {
       window.location.assign('/login');
     }

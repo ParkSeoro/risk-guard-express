@@ -36,7 +36,7 @@ const ICONS: Record<ConsentDocId, typeof FileText> = {
 };
 
 export default function ConsentPage() {
-  const { user, loading, roles, rolesReady, profile, refreshProfile } = useAuth();
+  const { user, loading, roles, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const isAdmin = isAdminShellUser(roles);
   const items = useMemo(() => consentItemsForRoles(isAdmin), [isAdmin]);
@@ -45,16 +45,19 @@ export default function ConsentPage() {
   const [modal, setModal] = useState<ConsentDocId | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (loading || (user && !rolesReady)) {
+  if (loading && !user) {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
         세션 확인 중…
       </div>
     );
   }
+  // rolesReady may lag — still show consent UI (defaults to worker checklist until roles arrive)
   if (!user) return <Navigate to="/login?next=/consent" replace />;
   if (!needsConsent(profile, roles)) {
-    return <Navigate to={postConsentHomePath(roles)} replace />;
+    const home = postConsentHomePath(roles);
+    if (home === "/consent") return null; // belt: never loop
+    return <Navigate to={home} replace />;
   }
 
   const allChecked = items.every((id) => checked[id] === true);

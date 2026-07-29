@@ -42,7 +42,15 @@ function PageFallback() {
 function AuthRoute() {
   const { user, loading, roles, rolesReady, profile } = useAuth();
   const [params] = useSearchParams();
-  if (loading || (user && !rolesReady)) {
+  // Only block anonymous session probe — never wait forever for roles
+  if (loading && !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
+        세션 확인 중…
+      </div>
+    );
+  }
+  if (user && !rolesReady && loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
         세션 확인 중…
@@ -50,20 +58,19 @@ function AuthRoute() {
     );
   }
   if (user) {
-    const dest = postLoginPath(roles, profile, { rolesReady });
+    // Prefer navigating once roles are ready; if not, still send to /consent when profile incomplete
+    const dest = postLoginPath(roles, profile, { rolesReady: rolesReady || !loading });
     const next = params.get("next");
-    if (next && next.startsWith("/") && !next.startsWith("//") && next !== "/consent") {
-      // Incomplete consent always wins
+    if (next && next.startsWith("/") && !next.startsWith("//") && next !== "/consent" && next !== "/") {
       if (dest === "/consent") {
         return <Navigate to="/consent" replace />;
       }
-      // Workers must not deep-link into admin
       if (next.startsWith("/app/admin") && dest.startsWith("/app/worker")) {
         return <Navigate to={dest} replace />;
       }
       return <Navigate to={next} replace />;
     }
-    return <Navigate to={dest} replace />;
+    return <Navigate to={dest === "/" ? "/consent" : dest} replace />;
   }
   return <Auth />;
 }
@@ -140,17 +147,25 @@ function OfflineSyncMount() {
 
 function RoleAwareRootRedirect() {
   const { user, loading, roles, rolesReady, profile } = useAuth();
-  if (loading || (user && !rolesReady)) {
+  if (loading && !user) {
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
         세션 확인 중…
       </div>
     );
   }
-  // 비로그인 → 관리자 로그인 탭이 기본인 /login
+  if (user && !rolesReady && loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
+        세션 확인 중…
+      </div>
+    );
+  }
   if (!user) return <Navigate to="/login" replace />;
-  // 미동의 → /consent, 동의 후 role별 home
-  return <Navigate to={postLoginPath(roles, profile, { rolesReady })} replace />;
+  const dest = postLoginPath(roles, profile, { rolesReady: rolesReady || !loading });
+  // Never Navigate to "/" (would re-enter this redirect)
+  if (!dest || dest === "/") return <Navigate to="/consent" replace />;
+  return <Navigate to={dest} replace />;
 }
 
 export default App;

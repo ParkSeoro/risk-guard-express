@@ -28,11 +28,8 @@ import {
   type PermitKindId,
 } from '@/lib/permitKinds';
 import type { PermitAiBriefing } from '@/lib/permitBriefing';
-<<<<<<< HEAD
 import { syncPermitAssessmentLinks } from '@/lib/safetyWorkBundle';
-=======
 import { mergeApprovalSignatures } from '@/lib/permitApprovalSignatures';
->>>>>>> origin/main
 
 const STANDARD_FORM_VALUE = '__standard__';
 

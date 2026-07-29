@@ -163,7 +163,7 @@ export function NotificationBell() {
             variant="ghost"
             size="sm"
             className="h-7 text-xs"
-            onClick={() => { navigate('/mobile/alerts'); setOpen(false); }}
+            onClick={() => { navigate('/app/worker/alerts'); setOpen(false); }}
           >
             전체 보기 →
           </Button>

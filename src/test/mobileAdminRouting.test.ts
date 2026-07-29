@@ -5,13 +5,25 @@ import {
   WORKER_HOME,
   DESKTOP_ADMIN_HOME,
 } from "@/components/AuthGuard";
+import { prefersMobileAppShell, setForceDesktop } from "@/hooks/use-mobile";
+import {
+  canonicalizeAppPath,
+  resolveNotificationRoute,
+  toMobileShellPath,
+} from "@/lib/notificationRoutes";
+import { resolveMobileHomePath, mobileEntityPath } from "@/lib/mobileNav";
 
 describe("postConsentHomePath — mobile admin routing", () => {
   const originalInnerWidth = window.innerWidth;
+  const originalUA = navigator.userAgent;
 
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
+    });
   });
 
   afterEach(() => {
@@ -19,11 +31,22 @@ describe("postConsentHomePath — mobile admin routing", () => {
       configurable: true,
       value: originalInnerWidth,
     });
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: originalUA,
+    });
     localStorage.clear();
   });
 
   function setWidth(w: number) {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: w });
+  }
+
+  function setPhoneUA() {
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
+    });
   }
 
   it("sends pure workers to worker home on any viewport", () => {
@@ -40,7 +63,7 @@ describe("postConsentHomePath — mobile admin routing", () => {
     expect(postConsentHomePath(["site_supervisor"])).toBe(MOBILE_ADMIN_HOME);
   });
 
-  it("keeps managers on /app/admin on desktop width", () => {
+  it("keeps managers on /app/admin on desktop width + desktop UA", () => {
     setWidth(1200);
     expect(postConsentHomePath(["project_admin"])).toBe(DESKTOP_ADMIN_HOME);
     expect(postConsentHomePath(["master"])).toBe(DESKTOP_ADMIN_HOME);
@@ -50,5 +73,66 @@ describe("postConsentHomePath — mobile admin routing", () => {
     setWidth(390);
     localStorage.setItem("forceDesktopUI", "1");
     expect(postConsentHomePath(["project_admin"])).toBe(DESKTOP_ADMIN_HOME);
+  });
+
+  it("phone UA keeps mobile shell even when landscape width ≥ 768", () => {
+    setPhoneUA();
+    setWidth(900);
+    expect(prefersMobileAppShell()).toBe(true);
+    expect(postConsentHomePath(["project_admin"])).toBe(MOBILE_ADMIN_HOME);
+  });
+});
+
+describe("notification + entity mobile routes", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+    });
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+  });
+
+  it("resolveNotificationRoute uses worker paths on mobile shell", () => {
+    expect(resolveNotificationRoute({ related_type: "approval" }, { mobileShell: true })).toBe(
+      "/app/worker/approvals",
+    );
+    expect(
+      resolveNotificationRoute(
+        { related_type: "assessment_run", related_id: "abc" },
+        { mobileShell: true },
+      ),
+    ).toBe("/app/worker/risk-assessment/abc");
+    expect(resolveNotificationRoute({ type: "approval_result" }, { mobileShell: true })).toBe(
+      "/app/worker/approvals",
+    );
+  });
+
+  it("canonicalizeAppPath remaps bare admin paths on mobile", () => {
+    expect(canonicalizeAppPath("/approvals", { mobileShell: true })).toBe("/app/worker/approvals");
+    expect(canonicalizeAppPath("/m", { mobileShell: true })).toBe("/app/worker/menu");
+    expect(canonicalizeAppPath("/m/inspect", { mobileShell: true })).toBe("/app/worker/inspect");
+  });
+
+  it("toMobileShellPath maps assessment and work plan deep links", () => {
+    expect(toMobileShellPath("/app/admin/assessment-run/x1")).toBe("/app/worker/risk-assessment/x1");
+    expect(toMobileShellPath("/app/admin/work-plan/p1")).toBe("/app/worker/work-plans/p1");
+  });
+
+  it("resolveMobileHomePath is role-aware", () => {
+    expect(resolveMobileHomePath(["project_admin"])).toBe(MOBILE_ADMIN_HOME);
+    expect(resolveMobileHomePath(["worker"])).toBe(WORKER_HOME);
+  });
+
+  it("mobileEntityPath stays in worker shell", () => {
+    expect(mobileEntityPath("work_permit", "p1").path).toBe("/app/worker/permits");
+    expect(mobileEntityPath("assessment_run", "r1").path).toBe("/app/worker/risk-assessment/r1");
+  });
+
+  it("setForceDesktop(false) clears sticky desktop", () => {
+    setForceDesktop(true);
+    expect(prefersMobileAppShell()).toBe(false);
+    setForceDesktop(false);
+    expect(prefersMobileAppShell()).toBe(true);
   });
 });

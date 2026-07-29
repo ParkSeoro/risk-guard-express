@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useNavigateMobileHome } from "@/lib/mobileNav";
 import { Capacitor } from "@capacitor/core";
 import { supabase } from "@/integrations/supabase/client";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
@@ -48,6 +49,7 @@ async function getCurrentPosition(): Promise<{ lat: number; lng: number; accurac
  */
 export default function MobileGeofenceDrop() {
   const navigate = useNavigate();
+  const goMobileHome = useNavigateMobileHome();
   const { projectId } = useMobileAccess();
   const [name, setName] = useState("현장 지정 위험구역");
   const [radiusM, setRadiusM] = useState("15");
@@ -103,7 +105,7 @@ export default function MobileGeofenceDrop() {
       return;
     }
     toast.success("현재 위치 반경 위험구역이 등록되었습니다");
-    navigate("/m");
+    goMobileHome();
   };
 
   return (
@@ -113,7 +115,7 @@ export default function MobileGeofenceDrop() {
           size="icon"
           variant="ghost"
           className="text-destructive-foreground hover:bg-destructive/80"
-          onClick={() => navigate("/m")}
+          onClick={() => goMobileHome()}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>

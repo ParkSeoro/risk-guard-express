@@ -1,6 +1,6 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
-import { User, LogOut, Building2 } from "lucide-react";
+import { User, LogOut, Building2, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -13,6 +13,8 @@ import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createContext, useContext } from "react";
 import type { ProjectAccess } from "@/hooks/useProjectAccess";
+import { isForceDesktop, isLikelyPhoneDevice, setForceDesktop } from "@/hooks/use-mobile";
+import { MOBILE_ADMIN_HOME } from "@/components/AuthGuard";
 
 export const ProjectAccessContext = createContext<ProjectAccess | null>(null);
 export const useGlobalProjectAccess = () => {
@@ -26,6 +28,7 @@ export const useGlobalProjectAccessOptional = () => useContext(ProjectAccessCont
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { profile, signOut, roles } = useAuth();
   const projectAccess = useProjectAccess();
+  const showBackToMobile = isForceDesktop() && isLikelyPhoneDevice();
 
   const ROLE_LABEL: Record<string, string> = {
     master: '마스터', project_admin: '프로젝트관리자', safety_manager: '안전관리자',
@@ -37,6 +40,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const effectiveRole = projectAccess.userRole || (roles[0] || '');
   const roleLabel = ROLE_LABEL[effectiveRole] || effectiveRole || '역할 미지정';
 
+  const returnToMobile = () => {
+    setForceDesktop(false);
+    window.location.assign(MOBILE_ADMIN_HOME);
+  };
   return (
     <ProjectAccessContext.Provider value={projectAccess}>
       <SidebarProvider>
@@ -70,6 +77,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 )}
               </div>
               <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                {showBackToMobile && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 px-2 text-xs border-primary/40 text-primary"
+                    onClick={returnToMobile}
+                    title="모바일 화면으로 돌아가기"
+                  >
+                    <Smartphone className="h-4 w-4" />
+                    <span className="hidden sm:inline">모바일</span>
+                  </Button>
+                )}
                 <div className="flex items-center gap-1.5 sm:gap-2 px-1.5 sm:px-2 py-1 rounded-md bg-secondary min-w-0">
                   <div className="h-7 w-7 rounded-full bg-primary flex items-center justify-center shrink-0">
                     <User className="h-4 w-4 text-primary-foreground" />

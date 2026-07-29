@@ -315,7 +315,7 @@ const TILE_DEFS: Record<MobileTileKey, { icon: any; label: string; sub: string; 
   risk: { icon: ShieldAlert, label: "위험성평가", sub: "요약 보기", to: "/app/worker/risk-assessment" },
   "work-plans": { icon: ClipboardList, label: "작업계획", sub: "목록/상태", to: "/app/worker/work-plans" },
   workers: { icon: QrCode, label: "근로자 QR", sub: "발급/조회", to: "/app/worker/workers" },
-  attendance: { icon: HardHat, label: "입퇴장 현황", sub: "오늘 출입", to: "/worker-attendance" },
+  attendance: { icon: HardHat, label: "입퇴장 현황", sub: "근로자 QR/명부", to: "/app/worker/workers" },
   "daily-health": { icon: HeartPulse, label: "일일 건강로그", sub: "오늘 컨디션", to: "/app/worker/daily-health-log" },
   manual: { icon: BookOpen, label: "사용 설명서", sub: "도움말", to: "/manual" },
 };

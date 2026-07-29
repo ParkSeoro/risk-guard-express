@@ -79,7 +79,7 @@ export default function ZoneCheckin() {
         <Card className="max-w-sm w-full"><CardContent className="pt-6 text-center space-y-3">
           <AlertTriangle className="h-10 w-10 text-destructive mx-auto" />
           <div className="font-bold">{error}</div>
-          <Button variant="outline" onClick={() => navigate("/m")}>홈으로</Button>
+          <Button variant="outline" onClick={() => navigate("/app/worker/menu")}>홈으로</Button>
         </CardContent></Card>
       </div>
     );

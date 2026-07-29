@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useNavigateMobileHome } from "@/lib/mobileNav";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -7,10 +8,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft, Bell, CheckCheck } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
+import { resolveNotificationRoute } from "@/lib/notificationRoutes";
 
 export default function MobileAlerts() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const goMobileHome = useNavigateMobileHome();
   const [items, setItems] = useState<any[]>([]);
 
   const load = async () => {
@@ -24,9 +27,8 @@ export default function MobileAlerts() {
 
   const handle = async (n: any) => {
     if (!n.is_read) await supabase.from("notifications").update({ is_read: true }).eq("id", n.id);
-    if (n.related_type === "safety_inspection") navigate("/safety-inspections");
-    else if (n.related_type === "approval") navigate("/approvals");
-    else if (n.related_type === "assessment_run" && n.related_id) navigate(`/assessment-run/${n.related_id}`);
+    const route = resolveNotificationRoute(n, { mobileShell: true });
+    if (route) navigate(route);
   };
 
   const markAll = async () => {
@@ -38,7 +40,7 @@ export default function MobileAlerts() {
   return (
     <div className="min-h-screen bg-muted/30 pb-24">
       <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
-        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => navigate("/m")}>
+        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => goMobileHome()}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="font-bold text-lg flex-1">알림</div>

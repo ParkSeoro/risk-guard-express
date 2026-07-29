@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useNavigateMobileHome } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
@@ -36,6 +37,7 @@ const SEVERITY = [
 
 export default function MobileIncident() {
   const navigate = useNavigate();
+  const goMobileHome = useNavigateMobileHome();
   const { profile } = useAuth();
   const { projectId, applyCompanyFilter } = useMobileAccess();
   const { log: logAudit } = useAuditLog();
@@ -138,7 +140,7 @@ export default function MobileIncident() {
   return (
     <div className="min-h-screen bg-muted/30 pb-24">
       <header className="bg-destructive text-destructive-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
-        <Button size="icon" variant="ghost" className="text-destructive-foreground" onClick={() => navigate("/m")}>
+        <Button size="icon" variant="ghost" className="text-destructive-foreground" onClick={() => goMobileHome()}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <AlertOctagon className="h-5 w-5" />
@@ -148,7 +150,7 @@ export default function MobileIncident() {
       <main className="p-4 space-y-4 max-w-md mx-auto">
         {!projectId && (
           <Card className="border-warning/40 bg-warning/5">
-            <CardContent className="pt-3 pb-3 text-sm">프로젝트를 먼저 선택하세요. <Button variant="link" size="sm" onClick={() => navigate("/m")}>홈으로</Button></CardContent>
+            <CardContent className="pt-3 pb-3 text-sm">프로젝트를 먼저 선택하세요. <Button variant="link" size="sm" onClick={() => goMobileHome()}>홈으로</Button></CardContent>
           </Card>
         )}
         <Card>

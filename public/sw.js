@@ -36,7 +36,7 @@ self.addEventListener("push", (event) => {
     vibrate: isHigh ? [300, 120, 300, 120, 300] : [180, 80, 180],
     timestamp: Date.now(),
     data: {
-      url: data.url || data.link || "/m/alerts",
+      url: data.url || data.link || "/app/worker/alerts",
       related_id: data.related_id || null,
       related_type: data.related_type || null,
       project_id: data.project_id || null,
@@ -49,7 +49,7 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/m/alerts";
+  const url = (event.notification.data && event.notification.data.url) || "/app/worker/alerts";
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       for (const c of list) {

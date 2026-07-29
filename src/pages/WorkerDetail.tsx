@@ -183,7 +183,7 @@ export default function WorkerDetail() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">일일 건강일지 (최근 60일)</CardTitle>
-              <Link to={`/m/daily-health-log?worker=${w.id}`}><Button size="sm">오늘 일지 작성</Button></Link>
+              <Link to={`/app/worker/daily-health-log?worker=${w.id}`}><Button size="sm">오늘 일지 작성</Button></Link>
             </CardHeader>
             <CardContent>
               {data!.dailyLogs.length === 0 ? (

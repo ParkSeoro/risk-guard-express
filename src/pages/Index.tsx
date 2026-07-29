@@ -191,7 +191,7 @@ export default function Index() {
                 무료로 시작 <ArrowRight className="h-5 w-5 ml-2" />
               </Button>
             </Link>
-            <Link to="/m">
+            <Link to="/app/worker/menu">
               <Button size="lg" variant="outline" className="h-14 px-8 text-base border-[hsl(220,45%,32%)] bg-transparent text-[hsl(210,30%,92%)] hover:bg-[hsl(220,45%,22%)] hover:text-white">
                 모바일 화면 보기
               </Button>

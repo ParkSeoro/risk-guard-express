@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useNavigateMobileHome } from "@/lib/mobileNav";
+import { setForceDesktop } from "@/hooks/use-mobile";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
@@ -27,6 +29,7 @@ const isApprovedStatus = (status?: string) => ["승인", "승인완료", "approv
 
 export default function MobilePermits() {
   const navigate = useNavigate();
+  const goMobileHome = useNavigateMobileHome();
   const { profile } = useAuth();
   const { projectId, applyCompanyFilter } = useMobileAccess();
   const { log: logAudit } = useAuditLog();
@@ -94,7 +97,7 @@ export default function MobilePermits() {
     <div className="min-h-screen bg-muted/30 pb-24">
       <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
         <Button size="icon" variant="ghost" className="text-primary-foreground"
-          onClick={() => active ? setActive(null) : navigate("/m")}>
+          onClick={() => active ? setActive(null) : goMobileHome()}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="font-bold text-lg flex-1">작업허가서 결재</div>
@@ -165,7 +168,14 @@ export default function MobilePermits() {
                     <CheckCircle2 className="h-5 w-5 mr-1" /> 승인
                   </Button>
                 </div>
-                <Button variant="outline" className="w-full" onClick={() => navigate(`/work-permits`)}>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setForceDesktop(true);
+                    navigate("/app/admin/work-permits");
+                  }}
+                >
                   데스크톱에서 상세 보기
                 </Button>
               </CardContent>

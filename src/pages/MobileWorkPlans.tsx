@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useNavigateMobileHome } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { useMobileAccess } from "@/hooks/useMobileAccess";
  */
 export default function MobileWorkPlans() {
   const navigate = useNavigate();
+  const goMobileHome = useNavigateMobileHome();
   const { projectId, applyCompanyFilter } = useMobileAccess();
   const [rows, setRows] = useState<any[]>([]);
   const [q, setQ] = useState("");
@@ -50,7 +52,7 @@ export default function MobileWorkPlans() {
           size="icon"
           variant="ghost"
           className="text-primary-foreground"
-          onClick={() => navigate("/m")}
+          onClick={() => goMobileHome()}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
@@ -91,7 +93,7 @@ export default function MobileWorkPlans() {
           <Card
             key={r.id}
             className="active:bg-muted/50 cursor-pointer"
-            onClick={() => navigate(`/m/work-plans/${r.id}`)}
+            onClick={() => navigate(`/app/worker/work-plans/${r.id}`)}
           >
             <CardContent className="pt-3 pb-3 space-y-2">
               <div className="flex items-center gap-2 flex-wrap">

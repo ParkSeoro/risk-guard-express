@@ -34,7 +34,8 @@ import {
   subscribeRiskAutoGenJob,
   type RiskAutoGenJobState,
 } from '@/lib/riskAutoGenJob';
-import { isAiPendingRiskItem } from '@/lib/riskAutoGenAI';
+import { isAiPendingRiskItem, isAiFailedRiskItem, fetchRiskRowDetailWithRetry } from '@/lib/riskAutoGenAI';
+import { calculateRiskGrade } from '@/lib/riskGrade';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConditionTagPicker, SmartEquipmentTagInput, DEFAULT_CONDITION_TAGS, DEFAULT_EQUIPMENT_SUGGESTIONS } from '@/components/assessment/RiskAutoGenFields';
 import { exportToXLSX, exportToPDF, exportToPDFServer, printRiskAssessment } from '@/lib/exportUtils';
@@ -743,6 +744,75 @@ const AssessmentRunDetail = () => {
   };
 
   // Auto-generate: background job (survives dialog close) + bulk insert per process
+  const handleRetryFailedRow = async (item: any) => {
+    if (!run || !user) return;
+    const subTask = (item.sub_task || '').trim();
+    if (!subTask) {
+      toast({ title: '세부작업명이 없어 재시도할 수 없습니다.', variant: 'destructive' });
+      return;
+    }
+    toast({ title: '행 재생성 중…', description: subTask });
+    try {
+      await supabase
+        .from('risk_items')
+        .update({ hazard: '…생성중', note: '[AI_PENDING]', hazard_situation: '' })
+        .eq('id', item.id);
+      setItems((prev) =>
+        prev.map((r) => (r.id === item.id ? { ...r, hazard: '…생성중', note: '[AI_PENDING]' } as any : r)),
+      );
+
+      const detail = await fetchRiskRowDetailWithRetry({
+        processName: item.process || run.period_label || '공종',
+        subTask,
+        projectId: run.project_id,
+        detailLevel: 'core',
+      });
+      const lg = detail.likelihood_grade || '중';
+      const sg = detail.severity_grade || '중';
+      const ilg = detail.improved_likelihood_grade || '하';
+      const isg = detail.improved_severity_grade || '하';
+      const patch = {
+        process: detail.process || item.process,
+        sub_task: detail.sub_task || subTask,
+        hazard: detail.hazard,
+        hazard_situation: detail.hazard_situation,
+        existing_measure: detail.existing_measure,
+        improvement_measure: detail.improvement_measure,
+        frequency: detail.frequency,
+        severity: detail.severity,
+        improved_frequency: detail.improved_frequency,
+        improved_severity: detail.improved_severity,
+        likelihood_grade: lg,
+        severity_grade: sg,
+        risk_grade: detail.risk_grade || calculateRiskGrade(lg as any, sg as any),
+        improved_likelihood_grade: ilg,
+        improved_severity_grade: isg,
+        improved_risk_grade: detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any),
+        ppe: detail.ppe || [],
+        legal_basis: detail.legal_basis || [],
+        note: null,
+      };
+      const { error } = await supabase.from('risk_items').update(patch).eq('id', item.id);
+      if (error) throw error;
+      setItems((prev) => prev.map((r) => (r.id === item.id ? { ...r, ...patch } as any : r)));
+      toast({ title: '행 재생성 완료', description: subTask });
+    } catch (e: any) {
+      await supabase
+        .from('risk_items')
+        .update({
+          hazard: 'API 과부하로 생성 지연. [재시도] 버튼을 눌러주세요',
+          note: `[AI_ROW_FAILED] ${e?.message || ''}`.slice(0, 240),
+        })
+        .eq('id', item.id);
+      fetchAll();
+      toast({
+        title: '재시도 실패',
+        description: e?.message || '잠시 후 다시 [재시도]를 눌러주세요.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleAutoGenerate = async () => {
     console.log('[AutoGen] handleAutoGenerate start', {
       processTags: autoGenProcesses.length,
@@ -2100,7 +2170,22 @@ const AssessmentRunDetail = () => {
                         </>
                       ) : (
                         <>
-                      <td className="editable"><EditableCell item={item} field="hazard" /></td>
+                      <td className="editable">
+                        <div className="space-y-1">
+                          <EditableCell item={item} field="hazard" />
+                          {isAiFailedRiskItem(item) && (canEdit || canForceEdit) && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-[10px] gap-1 border-destructive/40 text-destructive"
+                              onClick={() => void handleRetryFailedRow(item)}
+                            >
+                              <RotateCcw className="h-3 w-3" /> 재시도
+                            </Button>
+                          )}
+                        </div>
+                      </td>
                       <td className="editable max-w-[200px]"><EditableCell item={item} field="hazard_situation" /></td>
                       <td className="editable max-w-[180px]"><EditableCell item={item} field="existing_measure" /></td>
                       <td className="editable max-w-[180px]"><EditableCell item={item} field="improvement_measure" /></td>

@@ -80,7 +80,7 @@ const AssessmentRunDetail = () => {
   const [showAutoGen, setShowAutoGen] = useState(false);
   const [autoGenProcesses, setAutoGenProcesses] = useState<string[]>([]);
   const [autoGenProcessInput, setAutoGenProcessInput] = useState('');
-  const [autoGenDetailLevel, setAutoGenDetailLevel] = useState<'core' | 'comprehensive'>('comprehensive');
+  const [autoGenDetailLevel, setAutoGenDetailLevel] = useState<'core' | 'comprehensive'>('core');
   const [autoGenConditionTags, setAutoGenConditionTags] = useState<string[]>([]);
   const [autoGenLoading, setAutoGenLoading] = useState(false);
   const [autoGenStreamCount, setAutoGenStreamCount] = useState(0);

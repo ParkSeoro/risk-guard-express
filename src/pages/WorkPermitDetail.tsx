@@ -11,7 +11,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock } from 'lucide-react';
+import { DateTimePicker } from '@/components/ui/datetime-picker';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
@@ -99,6 +102,9 @@ export default function WorkPermitDetail() {
   const [signatures, setSignatures] = useState<PermitSignatures>({});
   const [linkedRuns, setLinkedRuns] = useState<any[]>([]);
   const [approvalOpen, setApprovalOpen] = useState(false);
+  const [extendOpen, setExtendOpen] = useState(false);
+  const [extendUntil, setExtendUntil] = useState('');
+  const [extending, setExtending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [templates, setTemplates] = useState<any[]>([]);
   const [templateId, setTemplateId] = useState<string>(STANDARD_FORM_VALUE);
@@ -312,6 +318,48 @@ export default function WorkPermitDetail() {
   const canSubmit = !readOnly && isAuthor;
   // 발행 완료면 날짜 제한 없이 인쇄 가능
   const canPrint = isApproved;
+  const canRequestExtend =
+    !!permit &&
+    APPROVED_PERMIT_STATUSES.has(permit.status || '') &&
+    !data.work_extend_requested_until;
+
+  const requestExtend = async () => {
+    if (!id || !extendUntil) {
+      toast({ title: '연장 종료 시각을 선택하세요.', variant: 'destructive' });
+      return;
+    }
+    const iso = toDbTimestamp(extendUntil);
+    if (!iso) {
+      toast({ title: '연장 시각 형식이 올바르지 않습니다.', variant: 'destructive' });
+      return;
+    }
+    setExtending(true);
+    try {
+      const { data: res, error } = await supabase.rpc('request_work_permit_extension' as any, {
+        _permit_id: id,
+        _extend_until: iso,
+      });
+      const r = res as any;
+      if (error || r?.error) {
+        const code = r?.error || error?.message || '';
+        const msg =
+          code === 'MUST_BE_AFTER_CURRENT_END' ? '현재 종료 시각보다 이후여야 합니다.'
+          : code === 'MUST_BE_FUTURE' ? '현재 시각보다 이후여야 합니다.'
+          : code === 'PENDING_POST_APPROVAL' ? '이미 종료/연장 결재가 진행 중입니다.'
+          : code === 'NO_SM' ? '발주처 SM을 찾을 수 없습니다.'
+          : code === 'NOT_APPROVED' ? '승인된 허가서만 연장할 수 있습니다.'
+          : String(code);
+        toast({ title: '연장 신청 실패', description: msg, variant: 'destructive' });
+        return;
+      }
+      toast({ title: '연장 신청 완료', description: '발주처 SM에게 결재 요청이 전달되었습니다.' });
+      setExtendOpen(false);
+      setExtendUntil('');
+      await load();
+    } finally {
+      setExtending(false);
+    }
+  };
 
   const print = async () => {
     if (!canPrint) {
@@ -407,6 +455,17 @@ export default function WorkPermitDetail() {
           >
             <Printer className="h-4 w-4 mr-1" />{canPrint ? '인쇄 / PDF' : '인쇄 불가'}
           </Button>
+          {canRequestExtend && (
+            <Button size="sm" variant="outline" onClick={() => setExtendOpen(true)}>
+              <Clock className="h-4 w-4 mr-1" />연장 신청
+            </Button>
+          )}
+          {!!data.work_extend_requested_until && (
+            <Badge variant="outline" className="border-amber-500/40 text-amber-700">연장 승인 대기</Badge>
+          )}
+          {!!data.work_extend_until && !data.work_extend_requested_until && (
+            <Badge variant="secondary">연장됨</Badge>
+          )}
         </div>
       </div>
 
@@ -541,6 +600,31 @@ export default function WorkPermitDetail() {
           onSubmitted={() => { setApprovalOpen(false); load(); }}
         />
       )}
+
+      <Dialog open={extendOpen} onOpenChange={setExtendOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>작업허가 연장 신청</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              연장 종료 시각을 고른 뒤 신청하면 발주처 SM에게 결재가 갑니다. 승인되면 양식에 시간이 찍힙니다.
+            </p>
+            <div>
+              <Label>연장 종료 시각</Label>
+              <DateTimePicker
+                className="w-full mt-1"
+                value={extendUntil}
+                onChange={setExtendUntil}
+                placeholder="연장 종료 일시 선택"
+              />
+            </div>
+            <Button className="w-full" onClick={requestExtend} disabled={extending || !extendUntil}>
+              {extending ? '신청 중…' : '발주처 SM에게 연장 결재 요청'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

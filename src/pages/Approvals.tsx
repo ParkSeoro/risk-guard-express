@@ -22,6 +22,11 @@ import {
   sequentialDisplayStatus,
 } from "@/lib/approvalRules";
 import { filterRunsByCompanyScope } from "@/lib/companyDocScope";
+import {
+  permitPostStepKind,
+  permitPostStepBadge,
+  permitPostStepApproveLabel,
+} from "@/lib/permitPostApproval";
 
 
 const ENTITY_LINK = (t?: string | null, id?: string | null): string | null => {
@@ -61,7 +66,7 @@ const Approvals = () => {
     setEntityPending((data as any[]) || []);
   };
 
-  const actOnEntity = async (id: string, action: 'approve'|'reject', isClosure = false, stepMeta?: any) => {
+  const actOnEntity = async (id: string, action: 'approve'|'reject', stepKind: ReturnType<typeof permitPostStepKind> = 'normal', stepMeta?: any) => {
     if (stepMeta && isSubmitterApprovalStep(stepMeta)) {
       toast({
         title: '상신 단계는 승인/반려할 수 없습니다.',
@@ -85,11 +90,15 @@ const Approvals = () => {
       toast({ title: '처리 실패', description: msg, variant: 'destructive' });
     }
     else {
-      toast({
-        title: isClosure
+      const title =
+        stepKind === 'closure_sm'
           ? (action === 'approve' ? '작업 완료 및 종료 처리됨' : '종료 확인 반려')
-          : (action === 'approve' ? '승인 완료' : '반려 완료'),
-      });
+          : stepKind === 'closure_supervisor'
+            ? (action === 'approve' ? '관리감독자 완료 확인됨 → 발주처 SM 대기' : '완료 확인 반려')
+            : stepKind === 'extend_sm'
+              ? (action === 'approve' ? '연장 승인 완료' : '연장 요청 반려')
+              : (action === 'approve' ? '승인 완료' : '반려 완료');
+      toast({ title });
       fetchEntityPending();
       fetchData();
     }
@@ -416,15 +425,16 @@ const Approvals = () => {
               <FileCheck className="h-4 w-4" /> 작업계획서·작업허가서 결재 대기 ({filteredEntityPending.length}/{entityPending.length})
             </div>
             {filteredEntityPending.map((e: any) => {
-              const isClosure = (e.step_position || '').toLowerCase() === 'closure_sm';
+              const stepKind = permitPostStepKind(e.step_position);
+              const badge = permitPostStepBadge(stepKind);
               return (
               <div key={e.approval_id} className="flex items-center gap-2 p-2 border rounded bg-background">
                 <Badge variant="outline" className="text-[10px]">
                   {e.entity_type === 'work_plan' ? '작업계획서' : '작업허가서'}
                 </Badge>
-                {isClosure && (
+                {badge && (
                   <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-700">
-                    작업 완료 확인 요망
+                    {badge}
                   </Badge>
                 )}
                 <div className="flex-1 min-w-0">
@@ -439,10 +449,10 @@ const Approvals = () => {
                     </Button>
                   ) : null;
                 })()}
-                <Button size="sm" onClick={() => actOnEntity(e.approval_id, 'approve', isClosure, e)}>
-                  <CheckCircle2 className="h-3 w-3 mr-1" />{isClosure ? '작업 완료 및 종료' : '승인'}
+                <Button size="sm" onClick={() => actOnEntity(e.approval_id, 'approve', stepKind, e)}>
+                  <CheckCircle2 className="h-3 w-3 mr-1" />{permitPostStepApproveLabel(stepKind)}
                 </Button>
-                <Button size="sm" variant="destructive" onClick={() => actOnEntity(e.approval_id, 'reject', isClosure, e)}>
+                <Button size="sm" variant="destructive" onClick={() => actOnEntity(e.approval_id, 'reject', stepKind, e)}>
                   <XCircle className="h-3 w-3 mr-1" />반려
                 </Button>
               </div>

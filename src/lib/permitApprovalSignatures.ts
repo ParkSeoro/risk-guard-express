@@ -30,6 +30,8 @@ export const POSITION_TO_SIG: Record<string, keyof PermitSignatures> = {
   owner_sm: 'sm',
   sm: 'sm',
   closure_sm: 'closure_approver',
+  closure_supervisor: 'site_supervisor',
+  extend_sm: 'extension_approver',
 };
 
 export const ROLE_ALIAS_TO_SIG: Record<string, keyof PermitSignatures> = {
@@ -72,6 +74,9 @@ export const ROLE_ALIAS_TO_SIG: Record<string, keyof PermitSignatures> = {
   '시공사관리자': 'gc_manager',
   closure_sm: 'closure_approver',
   closure_approver: 'closure_approver',
+  closure_supervisor: 'site_supervisor',
+  extend_sm: 'extension_approver',
+  extension_approver: 'extension_approver',
 };
 
 export function resolveSigKey(

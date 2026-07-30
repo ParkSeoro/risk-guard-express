@@ -171,9 +171,22 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
         } else if (now - lastMovedAt >= idleAfterMs) {
           if (currentMode !== "danger") currentMode = "idle";
         }
+      } else {
+        lastPos = here;
       }
 
-      // 현재 모드에 따른 최소 송신 간격
+      // UI must update on every browser fix — do NOT wait for edge function success.
+      // (Previously lastGpsFix stayed null whenever track-location failed → perpetual "측정 중")
+      onUpdate?.({
+        lat: here.lat,
+        lng: here.lng,
+        accuracy: pos.coords.accuracy,
+        zone_id: null,
+        source: "gps-local",
+        mode: currentMode,
+      });
+
+      // 서버(지오펜스) 송신만 모드별 스로틀
       const minInterval = intervals[currentMode];
       if (now - lastSentAt < minInterval) return;
       lastSentAt = now;
@@ -210,10 +223,18 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
           ...(data as any),
         } as any);
       } catch (e: any) {
+        // Keep local fix on screen; surface server/geo sync error separately
         onError?.(new Error(e?.message || String(e)));
       }
     },
-    (e) => onError?.(new Error(e?.message || String(e)))
+    (e) => {
+      const msg =
+        e?.code === 1 ? "위치 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요."
+        : e?.code === 2 ? "위치를 사용할 수 없습니다. GPS를 켜 주세요."
+        : e?.code === 3 ? "위치 수신 시간 초과. 야외에서 다시 시도해 주세요."
+        : (e?.message || String(e));
+      onError?.(new Error(msg));
+    }
   );
 
   return () => {
@@ -223,9 +244,32 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
 }
 
 const CONSENT_KEY = "tracking-consent-v1";
+
+/** Accept legacy "1" written by ConsentPage / DailyHome before SSOT fix. */
 export function hasTrackingConsent() {
-  return localStorage.getItem(CONSENT_KEY) === "yes";
+  try {
+    const v = localStorage.getItem(CONSENT_KEY);
+    return v === "yes" || v === "1";
+  } catch {
+    return false;
+  }
 }
+
 export function setTrackingConsent(yes: boolean) {
-  localStorage.setItem(CONSENT_KEY, yes ? "yes" : "no");
+  try {
+    localStorage.setItem(CONSENT_KEY, yes ? "yes" : "no");
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Normalize legacy "1" → "yes" so all readers agree. */
+export function normalizeTrackingConsentStorage() {
+  try {
+    if (localStorage.getItem(CONSENT_KEY) === "1") {
+      localStorage.setItem(CONSENT_KEY, "yes");
+    }
+  } catch {
+    /* ignore */
+  }
 }

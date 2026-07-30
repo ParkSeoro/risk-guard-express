@@ -38,6 +38,8 @@ type SystemRealtimeValue = {
   lastZoneEvent: ZoneEventPayload | null;
   gpsTracking: boolean;
   lastGpsFix: GpsFix | null;
+  /** Last geolocation / track-location error message (null when healthy). */
+  gpsError: string | null;
   startGpsTracking: (identity: TrackingIdentity) => void;
   stopGpsTracking: () => void;
 };
@@ -62,6 +64,7 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
   const [lastZoneEvent, setLastZoneEvent] = useState<ZoneEventPayload | null>(null);
   const [gpsTracking, setGpsTracking] = useState(false);
   const [lastGpsFix, setLastGpsFix] = useState<GpsFix | null>(null);
+  const [gpsError, setGpsError] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const stopTrackerRef = useRef<null | (() => void)>(null);
   const identityRef = useRef<TrackingIdentity | null>(null);
@@ -147,6 +150,7 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
     workerRef.current = null;
     identityRef.current = null;
     setGpsTracking(false);
+    setGpsError(null);
   }, []);
 
   const startGpsTracking = useCallback(
@@ -155,9 +159,11 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
       const gen = startGenRef.current;
       identityRef.current = identity;
       setGpsTracking(true);
+      setGpsError(null);
 
       // Prefer unified tracker (native BG → Capacitor → browser). Worker ticks as secondary.
-      void import("@/lib/tracking/locationTracker").then(async ({ startTracking }) => {
+      void import("@/lib/tracking/locationTracker").then(async ({ startTracking, normalizeTrackingConsentStorage }) => {
+        normalizeTrackingConsentStorage();
         if (startGenRef.current !== gen) return;
         const stop = await startTracking({
           identity,
@@ -168,6 +174,13 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
               accuracy: info.accuracy,
               at: Date.now(),
             });
+            // Clear permission-style errors once we have a fix; keep soft server errors quiet
+            if (info.source === "gps-local" || info.source === "gps") {
+              setGpsError((prev) => (prev && /권한|거부|시간 초과|사용할 수 없/.test(prev) ? null : prev));
+            }
+          },
+          onError: (err) => {
+            setGpsError(err.message || String(err));
           },
         });
         if (startGenRef.current !== gen) {
@@ -188,9 +201,23 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
           if (!("geolocation" in navigator)) return;
           navigator.geolocation.getCurrentPosition(
             (pos) => {
+              setLastGpsFix({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy: pos.coords.accuracy,
+                at: Date.now(),
+              });
               void postFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, "web-worker-tick");
             },
-            (err) => console.warn("[SystemRealtime] geo error", err.message),
+            (err) => {
+              const msg =
+                err?.code === 1 ? "위치 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요."
+                : err?.code === 2 ? "위치를 사용할 수 없습니다. GPS를 켜 주세요."
+                : err?.code === 3 ? "위치 수신 시간 초과. 야외에서 다시 시도해 주세요."
+                : (err.message || "GPS 오류");
+              setGpsError(msg);
+              console.warn("[SystemRealtime] geo error", err.message);
+            },
             { enableHighAccuracy: true, maximumAge: 5000, timeout: 12000 },
           );
         };
@@ -209,10 +236,11 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
       lastZoneEvent,
       gpsTracking,
       lastGpsFix,
+      gpsError,
       startGpsTracking,
       stopGpsTracking,
     }),
-    [unreadNotifications, lastZoneEvent, gpsTracking, lastGpsFix, startGpsTracking, stopGpsTracking],
+    [unreadNotifications, lastZoneEvent, gpsTracking, lastGpsFix, gpsError, startGpsTracking, stopGpsTracking],
   );
 
   return (

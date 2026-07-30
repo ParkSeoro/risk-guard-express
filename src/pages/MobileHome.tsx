@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building2, ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine, HeartPulse, Settings2, RotateCcw, MapPin, LogOut } from "lucide-react";
 import { isOnline, listQueue } from "@/lib/offlineQueue";
-import { isPushSupported, registerSW, subscribeToPush } from "@/lib/pushSubscription";
+import { isPushSupported, isIosSafariTab, pushStatusLabel, registerSW, subscribeToPush } from "@/lib/pushSubscription";
 import { setForceDesktop } from "@/components/MobileRedirectGuard";
 import MasterAlarmSimulator from "@/components/geofence/MasterAlarmSimulator";
 import { toast } from "sonner";
@@ -100,11 +100,25 @@ export default function MobileHome() {
     })();
   }, [user, isMaster]);
 
+  const [pushLabel, setPushLabel] = useState(() => pushStatusLabel());
+
   const enablePush = async () => {
     if (!user) return;
-    if (!isPushSupported()) { toast.error("이 브라우저는 푸시 알림을 지원하지 않습니다"); return; }
+    if (isIosSafariTab()) {
+      toast.error("iPhone은 Safari 탭에서는 백그라운드 알림이 불가합니다. 공유 → 홈 화면에 추가 후, 홈 아이콘으로 열고 다시 눌러 주세요.");
+      setPushLabel(pushStatusLabel());
+      return;
+    }
+    if (!isPushSupported()) {
+      toast.error("이 브라우저는 푸시 알림을 지원하지 않습니다");
+      setPushLabel(pushStatusLabel());
+      return;
+    }
     const r = await subscribeToPush(user.id);
-    if (r.ok) toast.success("푸시 알림이 활성화되었습니다");
+    setPushLabel(pushStatusLabel());
+    if (r.ok) toast.success("푸시 알림이 활성화되었습니다. 결재 대기 시 알림이 갑니다.");
+    else if (r.reason === "denied") toast.error("알림이 차단되어 있습니다. 브라우저 사이트 설정에서 알림을 허용해 주세요.");
+    else if (r.reason === "ios_needs_homescreen") toast.error("홈 화면에 추가한 뒤 다시 시도해 주세요.");
     else toast.error("푸시 알림 활성화 실패: " + (r.reason || ""));
   };
 
@@ -252,9 +266,15 @@ export default function MobileHome() {
               })}
             </div>
 
-            <Button variant="outline" className="w-full h-12" onClick={enablePush}>
-              <Bell className="h-4 w-4 mr-2" /> 푸시 알림 켜기
-            </Button>
+            <div className="space-y-1.5">
+              <Button variant="outline" className="w-full h-12" onClick={enablePush}>
+                <Bell className="h-4 w-4 mr-2" /> 푸시 알림 켜기
+              </Button>
+              <p className="text-[11px] text-muted-foreground text-center px-1">
+                결재·위험 알림 · {pushLabel}
+                {isIosSafariTab() && " · 홈 화면 앱으로만 백그라운드 수신 가능"}
+              </p>
+            </div>
 
             <Button
               variant="secondary"

@@ -28,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ShieldCheck, MapPin, FileText, ScrollText, Lock } from "lucide-react";
+import { setTrackingConsent } from "@/lib/tracking/locationTracker";
 import { toast } from "sonner";
 
 const ICONS: Record<ConsentDocId, typeof FileText> = {
@@ -103,11 +104,8 @@ export default function ConsentPage() {
       if (error) throw error;
 
       if (!isAdmin) {
-        try {
-          localStorage.setItem("tracking-consent-v1", "1");
-        } catch {
-          /* ignore */
-        }
+        // Must be "yes" — locationTracker.hasTrackingConsent() rejected legacy "1"
+        setTrackingConsent(true);
       }
 
       // ② Critical: sync AuthContext BEFORE navigate so AuthGuard sees needsConsent=false

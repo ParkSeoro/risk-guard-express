@@ -78,7 +78,7 @@ npx cap open android  # Android Studio → Generate Signed Bundle
 
 Play 스토어 / Capacitor Android 셸에서만 동작합니다 (웹·PWA는 OS가 시스템 볼륨 강제 불가).
 
-- 플러그인: `AlarmVolume` (`android/.../AlarmVolumePlugin.java`)
+- 플러그인: `AlarmVolume` (`capacitor-plugins/alarm-volume + install.sh`)
 - 동작: 경고 중 `STREAM_ALARM` + `STREAM_MUSIC`을 최대로 올리고, 사이렌을 `USAGE_ALARM`으로 재생한 뒤 종료 시 볼륨 복구
 - 권한: `MODIFY_AUDIO_SETTINGS`, `VIBRATE`
 - 웹/PWA 보완: 강한 진동 패턴 + 전체화면 점멸 (`alarmHaptics` / `DangerZoneAlertModal`)

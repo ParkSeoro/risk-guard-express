@@ -29,7 +29,7 @@ import {
   canViewPermitInList,
   isUserInvolvedInPermit,
 } from '@/lib/permitWorkDate';
-import { mustScopeToOwnCompany } from '@/lib/companyDocScope';
+import { filterRunsByCompanyScope } from '@/lib/companyDocScope';
 
 
 const STATUS_COLOR: Record<string, string> = {
@@ -118,6 +118,7 @@ export default function WorkPermits() {
     userRole,
     applyCompanyFilter,
     isProjectAdmin,
+    accessibleCompanyIds,
   } = useGlobalProjectAccess();
 
   const [permits, setPermits] = useState<any[]>([]);
@@ -196,33 +197,16 @@ export default function WorkPermits() {
     );
     setPlans((wp as any) || []);
     const runsRaw = (ar as any[]) || [];
-    const forceOwn = mustScopeToOwnCompany({
-      role: userRole,
-      companyType: userCompanyType,
-    });
     setRuns(
-      forceOwn && userCompanyId
-        ? runsRaw.filter(
-            (r) =>
-              r.created_by === user?.id ||
-              (Array.isArray(r.target_company_ids) && r.target_company_ids.includes(userCompanyId)),
-          )
-        : isProjectAdmin
-          ? runsRaw
-          : userCompanyId
-            ? runsRaw.filter(
-                (r) =>
-                  r.created_by === user?.id ||
-                  !r.target_company_ids ||
-                  r.target_company_ids.length === 0 ||
-                  r.target_company_ids.includes(userCompanyId),
-              )
-            : [],
+      filterRunsByCompanyScope(runsRaw, {
+        userId: user?.id,
+        accessibleCompanyIds,
+      }),
     );
     setTbms((tb as any) || []);
   };
 
-  useEffect(() => { load(); }, [projectId, user?.id]);
+  useEffect(() => { load(); }, [projectId, user?.id, applyCompanyFilter, accessibleCompanyIds]);
 
   useEffect(() => {
     if (!userCompanyId) { setCompanyName(''); return; }
@@ -255,7 +239,7 @@ export default function WorkPermits() {
       setPreviousPermits((data as any[]) || []);
       setLoadingPrevious(false);
     })();
-  }, [showCreate, projectId, form.permit_type]);
+  }, [showCreate, projectId, form.permit_type, applyCompanyFilter]);
 
   const resetForm = () => setForm(makeBlankForm(companyName));
 

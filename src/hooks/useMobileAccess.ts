@@ -1,15 +1,14 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { applyOwnCompanyFilter } from "@/lib/companyDocScope";
+import { applyOwnCompanyFilter, resolveAccessibleCompanyIds } from "@/lib/companyDocScope";
 import { normalizeCompanyType, type CompanyTypeCode } from "@/lib/companyTypes";
 
 export type MobileRole = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor' | 'site_supervisor' | 'worker' | 'viewer' | 'contractor';
 
 /**
  * 모바일 페이지 공통 액세스 훅.
- * - localStorage `selectedProjectId` 구독
- * - applyCompanyFilter: 협력사/공급사는 역할과 무관하게 자사 company_id만
+ * 시공사(gc): 자사+하위만 / 협력사: 자사만 / 발주처 PA: 전체
  */
 export function useMobileAccess() {
   const { user, hasRole } = useAuth();
@@ -20,6 +19,7 @@ export function useMobileAccess() {
   const [role, setRole] = useState<MobileRole>('viewer');
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [companyType, setCompanyType] = useState<CompanyTypeCode | null>(null);
+  const [accessibleCompanyIds, setAccessibleCompanyIds] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -54,6 +54,7 @@ export function useMobileAccess() {
           setRole('master');
           setCompanyId(null);
           setCompanyType(null);
+          setAccessibleCompanyIds(null);
           setLoading(false);
         }
         return;
@@ -63,6 +64,7 @@ export function useMobileAccess() {
           setRole('viewer');
           setCompanyId(null);
           setCompanyType(null);
+          setAccessibleCompanyIds([]); // restrictive until known
           setLoading(false);
         }
         return;
@@ -73,12 +75,24 @@ export function useMobileAccess() {
         .eq('user_id', user.id)
         .eq('project_id', projectId)
         .maybeSingle();
+      if (cancelled) return;
+      const d = data as any;
+      const raw = (d?.role_new as MobileRole) || 'viewer';
+      const nextRole = raw === 'contractor' ? 'worker' : raw;
+      const nextCid = d?.company_id || null;
+      const nextType = normalizeCompanyType(d?.companies?.type) || null;
+      setRole(nextRole);
+      setCompanyId(nextCid);
+      setCompanyType(nextType);
+      const ids = await resolveAccessibleCompanyIds({
+        projectId,
+        companyId: nextCid,
+        companyType: nextType,
+        role: nextRole,
+        isMaster: false,
+      });
       if (!cancelled) {
-        const d = data as any;
-        const raw = (d?.role_new as MobileRole) || 'viewer';
-        setRole(raw === 'contractor' ? 'worker' : raw);
-        setCompanyId(d?.company_id || null);
-        setCompanyType(normalizeCompanyType(d?.companies?.type) || null);
+        setAccessibleCompanyIds(ids);
         setLoading(false);
       }
     })();
@@ -94,8 +108,9 @@ export function useMobileAccess() {
       companyType,
       companyId,
       isMaster,
+      accessibleCompanyIds,
     }) as T;
-  }, [isMaster, role, companyId, companyType]);
+  }, [isMaster, role, companyId, companyType, accessibleCompanyIds]);
 
   return {
     projectId,
@@ -103,6 +118,7 @@ export function useMobileAccess() {
     role,
     companyId,
     companyType,
+    accessibleCompanyIds,
     isMaster,
     isProjectAdmin,
     isContractor,

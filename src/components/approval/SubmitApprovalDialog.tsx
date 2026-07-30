@@ -323,18 +323,37 @@ export default function SubmitApprovalDialog({
       if (error) throw error;
 
 
-      if (saveAsDefault) {
-        await supabase.from('approval_route_templates').insert({
+      if (saveAsDefault && user?.id) {
+        const personalPayload = {
           project_id: projectId,
           entity_type: entityType,
-          owner_user_id: user?.id, // 본인 전용 템플릿으로 저장
+          owner_user_id: user.id,
           company_id: null,
           name: `${ENTITY_LABELS[entityType]} 내 결재선`,
           assessment_type: '정기',
           is_default: true,
           steps: steps as any,
-          created_by: user?.id,
-        });
+          created_by: user.id,
+          is_deleted: false,
+        };
+        const { data: existingPersonal } = await supabase
+          .from('approval_route_templates')
+          .select('id')
+          .eq('project_id', projectId)
+          .eq('entity_type', entityType)
+          .eq('owner_user_id', user.id)
+          .eq('is_deleted', false)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (existingPersonal?.id) {
+          await supabase
+            .from('approval_route_templates')
+            .update(personalPayload)
+            .eq('id', existingPersonal.id);
+        } else {
+          await supabase.from('approval_route_templates').insert(personalPayload);
+        }
       }
 
 
@@ -472,7 +491,7 @@ export default function SubmitApprovalDialog({
 
             <label className="flex items-center gap-2 text-sm">
               <Checkbox checked={saveAsDefault} onCheckedChange={(v) => setSaveAsDefault(!!v)} />
-              현재 결재선을 회사 기본 템플릿으로 저장
+              현재 결재선을 내 결재선으로 저장 (본인만 보임)
             </label>
           </div>
         )}

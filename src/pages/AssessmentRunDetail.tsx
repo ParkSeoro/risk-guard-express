@@ -408,6 +408,8 @@ const AssessmentRunDetail = () => {
           .from('approval_route_templates' as any)
           .select('*')
           .eq('project_id', runRes.data.project_id)
+          .is('owner_user_id', null)
+          .eq('is_deleted', false)
           .order('is_default', { ascending: false });
         
         if (templates && templates.length > 0) {

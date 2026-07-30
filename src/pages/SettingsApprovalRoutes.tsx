@@ -63,7 +63,9 @@ export default function SettingsApprovalRoutes() {
 
 
   // 본인 / 회사 / 프로젝트 공용 가시성 필터 + 검색
+  // 타인 개인 결재선은 절대 노출하지 않음 (RLS와 이중 방어)
   const visibleTemplates = templates.filter((t) => {
+    if (t.owner_user_id && t.owner_user_id !== user?.id) return false;
     const isMine = t.owner_user_id === user?.id;
     const isMyCompany = !t.owner_user_id && t.company_id && myCompanyId && t.company_id === myCompanyId;
     const isShared = !t.owner_user_id && !t.company_id;

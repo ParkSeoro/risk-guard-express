@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { HardHat, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 
 import {
   positionsForCompanyType,
@@ -384,80 +384,89 @@ const Auth = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center space-y-2">
-          <div className="flex justify-center">
-            <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
-              <HardHat className="h-7 w-7 text-primary-foreground" />
-            </div>
-          </div>
-          <CardTitle className="text-xl">
+      <Card className="w-full max-w-md border-border/80 shadow-sm">
+        <CardHeader className="text-center space-y-1.5 pb-4">
+          <p className="text-[11px] font-semibold tracking-[0.22em] text-muted-foreground uppercase">
+            Safenex
+          </p>
+          <CardTitle className="text-xl font-semibold tracking-tight">
             {mode === 'login' ? '로그인' : '회원가입'}
           </CardTitle>
-          <p className="text-sm font-semibold text-foreground">안전관리시스템</p>
-          <p className="text-xs text-muted-foreground">Safety Management System</p>
+          <p className="text-sm text-muted-foreground">안전관리시스템</p>
         </CardHeader>
         <CardContent>
           {mode === 'signup' && (
-            <div className="grid grid-cols-2 gap-2 mb-4">
+            <div
+              role="tablist"
+              aria-label="가입 유형"
+              className="mb-5 grid grid-cols-2 rounded-md border border-border bg-muted/40 p-0.5"
+            >
               <button
                 type="button"
+                role="tab"
+                aria-selected={signupAudience === 'manager'}
                 onClick={() => {
                   setSignupAudience('manager');
                   resetCompanySelection();
                 }}
-                className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
+                className={`rounded-[5px] px-3 py-2.5 text-sm transition ${
                   signupAudience === 'manager'
-                    ? 'border-primary bg-primary/10 text-foreground shadow-sm'
-                    : 'border-border bg-muted/20 text-muted-foreground'
+                    ? 'bg-background text-foreground font-semibold shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <span className="block text-lg leading-none mb-1">👔</span>
-                관리자 가입
+                관리자
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={signupAudience === 'worker'}
                 onClick={() => {
                   setSignupAudience('worker');
                   resetCompanySelection();
                 }}
-                className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
+                className={`rounded-[5px] px-3 py-2.5 text-sm transition ${
                   signupAudience === 'worker'
-                    ? 'border-primary bg-primary/10 text-foreground shadow-sm'
-                    : 'border-border bg-muted/20 text-muted-foreground'
+                    ? 'bg-background text-foreground font-semibold shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <span className="block text-lg leading-none mb-1">👷</span>
-                근로자 가입
+                근로자
               </button>
             </div>
           )}
 
           {mode === 'login' && (
-            <div className="grid grid-cols-2 gap-2 mb-4">
+            <div
+              role="tablist"
+              aria-label="로그인 유형"
+              className="mb-5 grid grid-cols-2 rounded-md border border-border bg-muted/40 p-0.5"
+            >
               <button
                 type="button"
+                role="tab"
+                aria-selected={loginAudience === 'manager'}
                 onClick={() => setLoginAudience('manager')}
-                className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
+                className={`rounded-[5px] px-3 py-2.5 text-sm transition ${
                   loginAudience === 'manager'
-                    ? 'border-primary bg-primary/10 text-foreground shadow-sm'
-                    : 'border-border bg-muted/20 text-muted-foreground'
+                    ? 'bg-background text-foreground font-semibold shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <span className="block text-lg leading-none mb-1">👔</span>
-                관리자 로그인
+                관리자
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={loginAudience === 'worker'}
                 onClick={() => setLoginAudience('worker')}
-                className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
+                className={`rounded-[5px] px-3 py-2.5 text-sm transition ${
                   loginAudience === 'worker'
-                    ? 'border-primary bg-primary/10 text-foreground shadow-sm'
-                    : 'border-border bg-muted/20 text-muted-foreground'
+                    ? 'bg-background text-foreground font-semibold shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
-                <span className="block text-lg leading-none mb-1">👷</span>
-                근로자 로그인
+                근로자
               </button>
             </div>
           )}

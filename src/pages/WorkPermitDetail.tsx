@@ -292,7 +292,17 @@ export default function WorkPermitDetail() {
       console.warn('syncPermitAssessmentLinks failed', e);
     }
     toast({ title: '허가서가 저장되었습니다.', description: `${selectedKinds.map((k) => PERMIT_KIND_LABEL[k]).join(' · ')} 묶음` });
-    setPermit((prev: any) => prev ? { ...prev, permit_kinds: selectedKinds, permit_type: primary, assessment_run_id: primaryRunId, linked_assessment_run_ids: linkedIds } : prev);
+    setPermit((prev: any) => prev ? {
+      ...prev,
+      permit_kinds: selectedKinds,
+      permit_type: primary,
+      assessment_run_id: primaryRunId,
+      linked_assessment_run_ids: linkedIds,
+      permit_date: syncPermitDateFromWorkStart(syncedData.work_start, prev.permit_date),
+      work_start_at: toDbTimestamp(syncedData.work_start) || prev.work_start_at || null,
+      work_end_at: toDbTimestamp(syncedData.work_end) || prev.work_end_at || null,
+      form_data: syncedData,
+    } : prev);
   };
 
   const isApproved = isPermitApproved(permit?.status);

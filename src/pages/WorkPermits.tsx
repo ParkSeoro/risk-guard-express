@@ -563,9 +563,9 @@ export default function WorkPermits() {
       </div>
 
       <Dialog open={showCreate || !!editing} onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditing(null); resetForm(); } }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? '작업허가서 수정' : '작업허가서 생성'}</DialogTitle></DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-3 pb-2">
             <div>
               <PermitKindSelector
                 value={normalizePermitKinds(form.permit_kinds, (form.permit_type || 'general') as PermitKindId)}

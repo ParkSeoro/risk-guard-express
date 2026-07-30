@@ -297,7 +297,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     try {
       console.log('[AutoGenJob] fetchScopeDraft → generate-risk-ai (scope_draft)', proc);
       const draft = await fetchScopeDraft(opts);
-      draftItems = draft.items;
+      draftItems = draft?.items || [];
       console.log('[AutoGenJob] scope_draft ok', draftItems.length);
     } catch (err: any) {
       console.error('[AutoGenJob] scope_draft failed:', err?.message || err, err);

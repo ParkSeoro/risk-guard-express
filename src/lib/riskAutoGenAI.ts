@@ -150,7 +150,8 @@ async function invokeRiskJson<T = any>(
   });
   let payload: any = null;
   try {
-    payload = await resp.json();
+    const text = await resp.text();
+    payload = text?.trim() ? JSON.parse(text) : null;
   } catch (e) {
     console.error('[AI Engine] response JSON parse failed', resp.status, e);
     payload = null;
@@ -159,7 +160,14 @@ async function invokeRiskJson<T = any>(
     console.error('[AI Engine] generate-risk-ai error', resp.status, payload);
     throw new Error(mapErrorMessage(payload?.error || `AI 서버 오류 (${resp.status})`));
   }
-  console.log('[AI Engine] generate-risk-ai ok', { mode: body.mode, keys: payload ? Object.keys(payload) : [] });
+  if (payload == null || typeof payload !== 'object') {
+    console.error('[AI Engine] generate-risk-ai empty body', resp.status);
+    throw new Error('AI 서버 응답이 비어 있습니다. Edge Function(generate-risk-ai) 배포·API 키를 확인해주세요.');
+  }
+  if (payload.error && !payload.items && !payload.item && !payload.sub_tasks) {
+    throw new Error(mapErrorMessage(String(payload.error)));
+  }
+  console.log('[AI Engine] generate-risk-ai ok', { mode: body.mode, keys: Object.keys(payload) });
   return payload as T;
 }
 
@@ -186,13 +194,13 @@ export async function fetchJsaTimeline(
     },
     signal,
   );
-  const subTasks = (data.sub_tasks || [])
+  const subTasks = (data?.sub_tasks || [])
     .map((s) => String(s || '').trim())
     .filter(Boolean);
   if (subTasks.length === 0) {
-    throw new Error(mapErrorMessage(data.error || '세부작업 목록이 비어 있습니다.'));
+    throw new Error(mapErrorMessage(data?.error || '세부작업 목록이 비어 있습니다.'));
   }
-  return { subTasks, normalizedEquipment: data.normalized_equipment };
+  return { subTasks, normalizedEquipment: data?.normalized_equipment };
 }
 
 export type ScopeDraftItem = {
@@ -224,7 +232,7 @@ export async function fetchScopeDraft(
     },
     signal,
   );
-  const items: ScopeDraftItem[] = (data.items || [])
+  const items: ScopeDraftItem[] = (data?.items || [])
     .map((it) => ({
       sub_task: String(it?.sub_task || '').trim(),
       hazard: String(it?.hazard || '').trim(),
@@ -232,9 +240,9 @@ export async function fetchScopeDraft(
     }))
     .filter((it) => it.sub_task);
   if (items.length === 0) {
-    throw new Error(mapErrorMessage(data.error || '세부작업·위험요인 초안이 비어 있습니다.'));
+    throw new Error(mapErrorMessage(data?.error || '세부작업·위험요인 초안이 비어 있습니다.'));
   }
-  return { items, normalizedEquipment: data.normalized_equipment };
+  return { items, normalizedEquipment: data?.normalized_equipment };
 }
 
 /** Phase 2 — single sub_task risk row (JSON). */
@@ -257,8 +265,8 @@ export async function fetchRiskRowDetail(
     },
     signal,
   );
-  if (!data.item) {
-    throw new Error(mapErrorMessage(data.error || '행 상세 생성에 실패했습니다.'));
+  if (!data?.item) {
+    throw new Error(mapErrorMessage(data?.error || '행 상세 생성에 실패했습니다.'));
   }
   const mapped = mapAIItemToGenerated(data.item, opts.processName);
   mapped.sub_task = mapped.sub_task || opts.subTask;

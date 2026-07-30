@@ -9,6 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Capacitor } from '@capacitor/core';
 import { resolveNotificationRoute } from '@/lib/notificationRoutes';
 import { isPushSupported, subscribeToPush } from '@/lib/pushSubscription';
+import { isIosNativeAlarmAvailable, requestIosCriticalAlerts } from '@/lib/alarmVolume';
 
 export default function PushNotificationBridge() {
   const { user } = useAuth();
@@ -74,6 +75,24 @@ export default function PushNotificationBridge() {
         await PushNotifications.register();
 
         const platform = Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
+
+        // iOS Critical Alerts (Apple entitlement + Info.plist flag required)
+        if (platform === 'ios' && isIosNativeAlarmAvailable()) {
+          try {
+            const crit = await requestIosCriticalAlerts();
+            if (crit.criticalAlertSetting === 'enabled') {
+              console.info('[PushBridge/native] Critical Alerts enabled');
+            } else if (crit.criticalAlertsEnabledInPlist) {
+              console.warn(
+                '[PushBridge/native] Critical Alerts requested but not enabled:',
+                crit.criticalAlertSetting,
+                crit.note,
+              );
+            }
+          } catch (e) {
+            console.warn('[PushBridge/native] Critical Alerts request skipped', e);
+          }
+        }
 
         const regHandle = await PushNotifications.addListener(
           'registration',

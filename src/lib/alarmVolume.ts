@@ -1,7 +1,8 @@
 /**
  * Capacitor AlarmVolume plugin bridge.
- * Android native: STREAM_ALARM max + USAGE_ALARM siren.
- * Web/iOS: methods return ok:false — callers fall back to web audio + haptics.
+ * - Android: STREAM_ALARM max + USAGE_ALARM siren
+ * - iOS: AVAudioSession playback (mute-switch bypass) + Critical Alerts request API
+ * - Web: ok:false → fall back to web audio + haptics
  */
 import { Capacitor, registerPlugin } from "@capacitor/core";
 
@@ -11,11 +12,26 @@ export type BoostMaxResult = {
   previousMusic?: number;
   maxAlarm?: number;
   maxMusic?: number;
+  note?: string;
 };
 
 export type PlaySirenResult = {
   ok: boolean;
   source?: string;
+};
+
+export type CriticalAlertsRequestResult = {
+  ok: boolean;
+  granted?: boolean;
+  criticalAlertsEnabledInPlist?: boolean;
+  criticalAlertSetting?: string;
+  note?: string;
+};
+
+export type CriticalAlertsStatusResult = {
+  plistFlag?: boolean;
+  criticalAlertSetting?: string;
+  authorizationStatus?: number;
 };
 
 export interface AlarmVolumePlugin {
@@ -24,6 +40,8 @@ export interface AlarmVolumePlugin {
   playSiren(options?: { durationMs?: number }): Promise<PlaySirenResult>;
   vibrate(): Promise<{ ok: boolean }>;
   stop(): Promise<{ ok: boolean }>;
+  requestCriticalAlerts(): Promise<CriticalAlertsRequestResult>;
+  criticalAlertsStatus(): Promise<CriticalAlertsStatusResult>;
 }
 
 const AlarmVolume = registerPlugin<AlarmVolumePlugin>("AlarmVolume", {
@@ -43,6 +61,15 @@ const AlarmVolume = registerPlugin<AlarmVolumePlugin>("AlarmVolume", {
     async stop() {
       return { ok: false };
     },
+    async requestCriticalAlerts() {
+      return {
+        ok: false,
+        note: "Critical Alerts require the iOS native app + Apple entitlement",
+      };
+    },
+    async criticalAlertsStatus() {
+      return { criticalAlertSetting: "notSupported" };
+    },
   }),
 });
 
@@ -50,8 +77,17 @@ export function isAndroidNativeAlarmAvailable(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
 }
 
+export function isIosNativeAlarmAvailable(): boolean {
+  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios";
+}
+
+/** Android STREAM_ALARM or iOS AVAudioSession playback plugin. */
+export function isNativeAlarmAvailable(): boolean {
+  return isAndroidNativeAlarmAvailable() || isIosNativeAlarmAvailable();
+}
+
 export async function boostAlarmVolumeMax(): Promise<boolean> {
-  if (!isAndroidNativeAlarmAvailable()) return false;
+  if (!isNativeAlarmAvailable()) return false;
   try {
     const r = await AlarmVolume.boostMax();
     return !!r.ok;
@@ -62,7 +98,7 @@ export async function boostAlarmVolumeMax(): Promise<boolean> {
 }
 
 export async function restoreAlarmVolume(): Promise<void> {
-  if (!isAndroidNativeAlarmAvailable()) return;
+  if (!isNativeAlarmAvailable()) return;
   try {
     await AlarmVolume.restore();
   } catch (e) {
@@ -71,7 +107,7 @@ export async function restoreAlarmVolume(): Promise<void> {
 }
 
 export async function playNativeAlarmSiren(durationMs = 2000): Promise<boolean> {
-  if (!isAndroidNativeAlarmAvailable()) return false;
+  if (!isNativeAlarmAvailable()) return false;
   try {
     const r = await AlarmVolume.playSiren({ durationMs });
     return !!r.ok;
@@ -82,7 +118,7 @@ export async function playNativeAlarmSiren(durationMs = 2000): Promise<boolean> 
 }
 
 export async function stopNativeAlarmSiren(): Promise<void> {
-  if (!isAndroidNativeAlarmAvailable()) return;
+  if (!isNativeAlarmAvailable()) return;
   try {
     await AlarmVolume.stop();
   } catch {
@@ -91,12 +127,33 @@ export async function stopNativeAlarmSiren(): Promise<void> {
 }
 
 export async function nativeAlarmVibrate(): Promise<boolean> {
-  if (!isAndroidNativeAlarmAvailable()) return false;
+  if (!isNativeAlarmAvailable()) return false;
   try {
     const r = await AlarmVolume.vibrate();
     return !!r.ok;
   } catch {
     return false;
+  }
+}
+
+/** iOS only — no-ops / false on other platforms. */
+export async function requestIosCriticalAlerts(): Promise<CriticalAlertsRequestResult> {
+  if (!isIosNativeAlarmAvailable()) {
+    return { ok: false, note: "iOS native only" };
+  }
+  try {
+    return await AlarmVolume.requestCriticalAlerts();
+  } catch (e: any) {
+    return { ok: false, note: e?.message || String(e) };
+  }
+}
+
+export async function getIosCriticalAlertsStatus(): Promise<CriticalAlertsStatusResult | null> {
+  if (!isIosNativeAlarmAvailable()) return null;
+  try {
+    return await AlarmVolume.criticalAlertsStatus();
+  } catch {
+    return null;
   }
 }
 

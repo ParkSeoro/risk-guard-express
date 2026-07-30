@@ -74,23 +74,37 @@ npx cap open android  # Android Studio → Generate Signed Bundle
 
 재제출 후 `min_native_version`을 올려 두면 구버전 네이티브 쉘에서는 OTA가 차단됩니다.
 
-## 5. 금지구역 알람 최대 음량 (Android 네이티브)
+## 5. 금지구역 알람 최대 음량 (Android + iOS 네이티브)
 
-Play 스토어 / Capacitor Android 셸에서만 동작합니다 (웹·PWA는 OS가 시스템 볼륨 강제 불가).
+웹·PWA는 OS가 시스템 볼륨/무음 강제를 막습니다. 네이티브 셸에서만 가능합니다.
 
-- 플러그인: `AlarmVolume` (`capacitor-plugins/alarm-volume + install.sh`)
-- 동작: 경고 중 `STREAM_ALARM` + `STREAM_MUSIC`을 최대로 올리고, 사이렌을 `USAGE_ALARM`으로 재생한 뒤 종료 시 볼륨 복구
+### Android
+- 플러그인: `capacitor-plugins/alarm-volume/` — `bash capacitor-plugins/alarm-volume/install.sh android`
+- 동작: `STREAM_ALARM` + `STREAM_MUSIC` 최대 → `USAGE_ALARM` 사이렌 → 종료 시 복구
 - 권한: `MODIFY_AUDIO_SETTINGS`, `VIBRATE`
-- 웹/PWA 보완: 강한 진동 패턴 + 전체화면 점멸 (`alarmHaptics` / `DangerZoneAlertModal`)
-- 네이티브 변경이므로 **스토어 재빌드·재제출** 필요 (`npx cap sync` 후 Archive/Bundle). OTA만으로는 Java 플러그인이 배포되지 않습니다.
+
+### iOS (Critical Alerts = 선택 B)
+- 같은 플러그인: `install.sh ios` → `AlarmVolumePlugin.swift` (AVAudioSession `.playback` = 무음 스위치 무시, 하드웨어 볼륨은 따름)
+- **무음·집중 모드에서도 푸시가 크게 울리려면** Apple **Critical Alerts** 엔타이틀먼트 승인 필요
+  1. Apple Developer에서 App ID `org.safenex.app`에 Critical Alerts 요청 (현장 안전/금지구역 사유)
+  2. 승인 후 `App.critical-alerts.entitlements.example`을 App entitlements에 병합 + 프로비저닝 재발급
+  3. `Info.plist`에 `SafenexCriticalAlertsEnabled=YES` (승인 전엔 `false` 유지 — 서명 실패 방지)
+  4. 번들에 `siren.wav` 포함 (critical sound 이름)
+- 포그라운드 인앱 알람은 Critical Alerts 없이도 세션 재생으로 동작
+- 푸시: `dispatch-notification-push`가 `danger_zone_entry` / high severity에 APNs critical sound 페이로드 포함 (엔타이틀먼트 있을 때만 효과)
+
+### 공통
+- 웹/PWA 보완: 진동 + 전체화면 점멸
+- **스토어 재빌드 필수** (OTA로 Java/Swift 플러그인 불가)
 
 마스터 시뮬레이터(모바일 메뉴)로 알람 사이클을 검증하세요.
 
 ## 6. 푸시 알림 (선택)
 - Android: Firebase Console → `google-services.json` → `android/app/`
-- iOS: Apple Developer → APNs Key → Xcode Capabilities → Push Notifications
+- iOS: Apple Developer → APNs Key → Xcode Capabilities → Push Notifications (+ Critical Alerts after approval)
 
-`send-push` 엣지 함수와 `push_subscriptions` 테이블이 이미 구성되어 있습니다.
+`dispatch-notification-push` 엣지 함수와 `push_subscriptions` / `device_push_tokens` 테이블이 구성되어 있습니다.
+Edge 함수 재배포 필요 (critical APNs 페이로드).
 
 ## 트러블슈팅
 - 위치가 백그라운드에서 끊긴다 → "항상 허용" 및 배터리 최적화 해제 안내

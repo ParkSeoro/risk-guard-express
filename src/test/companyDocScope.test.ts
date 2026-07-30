@@ -1,60 +1,92 @@
 import { describe, it, expect } from 'vitest';
-import { mustScopeToOwnCompany, applyOwnCompanyFilter } from '@/lib/companyDocScope';
+import {
+  companyDocScopeMode,
+  mustScopeToOwnCompany,
+  applyOwnCompanyFilter,
+  collectDescendants,
+  filterRunsByCompanyScope,
+} from '@/lib/companyDocScope';
+
+describe('companyDocScopeMode', () => {
+  it('scopes GC including PA to tree (not all)', () => {
+    expect(companyDocScopeMode({ role: 'project_admin', companyType: 'gc' })).toBe('tree');
+    expect(companyDocScopeMode({ role: 'site_manager', companyType: '시공사' })).toBe('tree');
+    expect(companyDocScopeMode({ role: 'worker', companyType: 'gc' })).toBe('own');
+  });
+
+  it('keeps client PA as all', () => {
+    expect(companyDocScopeMode({ role: 'project_admin', companyType: 'client' })).toBe('all');
+    expect(companyDocScopeMode({ role: 'master', isMaster: true })).toBe('all');
+  });
+
+  it('scopes contractor/vendor to own', () => {
+    expect(companyDocScopeMode({ role: 'site_manager', companyType: 'contractor' })).toBe('own');
+    expect(companyDocScopeMode({ role: 'project_admin', companyType: 'vendor' })).toBe('own');
+  });
+});
 
 describe('mustScopeToOwnCompany', () => {
-  it('forces contractor/vendor regardless of role', () => {
-    expect(mustScopeToOwnCompany({ role: 'site_manager', companyType: 'contractor' })).toBe(true);
-    expect(mustScopeToOwnCompany({ role: 'project_admin', companyType: 'vendor' })).toBe(true);
-    expect(mustScopeToOwnCompany({ role: 'supervisor', companyType: '협력사' })).toBe(true);
+  it('true for GC (needs filter)', () => {
+    expect(mustScopeToOwnCompany({ role: 'project_admin', companyType: 'gc' })).toBe(true);
   });
-
-  it('allows gc/client PA and SM to see all', () => {
-    expect(mustScopeToOwnCompany({ role: 'project_admin', companyType: 'gc' })).toBe(false);
-    expect(mustScopeToOwnCompany({ role: 'safety_manager', companyType: 'client' })).toBe(false);
-    expect(mustScopeToOwnCompany({ role: 'master', companyType: null, isMaster: true })).toBe(false);
+  it('false for client PA', () => {
+    expect(mustScopeToOwnCompany({ role: 'project_admin', companyType: 'client' })).toBe(false);
   });
+});
 
-  it('scopes workers/viewers', () => {
-    expect(mustScopeToOwnCompany({ role: 'worker', companyType: 'gc' })).toBe(true);
-    expect(mustScopeToOwnCompany({ role: 'viewer', companyType: 'client' })).toBe(true);
-  });
-
-  it('gc site_manager does not force client filter (RLS tree)', () => {
-    expect(mustScopeToOwnCompany({ role: 'site_manager', companyType: 'gc' })).toBe(false);
+describe('collectDescendants', () => {
+  it('includes root and children', () => {
+    const ids = collectDescendants(
+      [
+        { id: 'gc-a', parent_id: null },
+        { id: 'gc-b', parent_id: null },
+        { id: 'c1', parent_id: 'gc-a' },
+        { id: 'c2', parent_id: 'c1' },
+        { id: 'c3', parent_id: 'gc-b' },
+      ],
+      'gc-a',
+    );
+    expect(ids.sort()).toEqual(['c1', 'c2', 'gc-a'].sort());
+    expect(ids).not.toContain('gc-b');
+    expect(ids).not.toContain('c3');
   });
 });
 
 describe('applyOwnCompanyFilter', () => {
-  it('adds company_id eq for contractors', () => {
+  it('uses in() for tree with accessible ids', () => {
     const calls: any[] = [];
     const q = {
       eq: (k: string, v: string) => {
-        calls.push([k, v]);
+        calls.push(['eq', k, v]);
+        return q;
+      },
+      in: (k: string, v: string[]) => {
+        calls.push(['in', k, v]);
         return q;
       },
     };
     applyOwnCompanyFilter(q, {
-      role: 'site_manager',
-      companyType: 'contractor',
-      companyId: 'co-1',
-    });
-    expect(calls).toEqual([['company_id', 'co-1']]);
-  });
-
-  it('no-ops for gc admin', () => {
-    let called = false;
-    const q = {
-      eq: () => {
-        called = true;
-        return q;
-      },
-    };
-    const out = applyOwnCompanyFilter(q, {
       role: 'project_admin',
       companyType: 'gc',
-      companyId: 'co-1',
+      companyId: 'gc-a',
+      accessibleCompanyIds: ['gc-a', 'c1'],
     });
-    expect(called).toBe(false);
-    expect(out).toBe(q);
+    expect(calls[0][0]).toBe('in');
+    expect(calls[0][2]).toEqual(['gc-a', 'c1']);
+  });
+});
+
+describe('filterRunsByCompanyScope', () => {
+  it('keeps runs targeting accessible companies', () => {
+    const rows = [
+      { id: '1', created_by: 'u1', target_company_ids: ['gc-b'] },
+      { id: '2', created_by: 'u2', target_company_ids: ['gc-a', 'c1'] },
+      { id: '3', created_by: 'me', target_company_ids: null },
+    ];
+    const out = filterRunsByCompanyScope(rows as any, {
+      userId: 'me',
+      accessibleCompanyIds: ['gc-a', 'c1'],
+    });
+    expect(out.map((r: any) => r.id).sort()).toEqual(['2', '3']);
   });
 });

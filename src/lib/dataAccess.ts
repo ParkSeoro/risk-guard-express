@@ -14,15 +14,17 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import type { ProjectRole } from '@/hooks/useProjectAccess';
-import { mustScopeToOwnCompany } from '@/lib/companyDocScope';
+import { applyOwnCompanyFilter } from '@/lib/companyDocScope';
 
 export interface ScopeOptions {
   projectId: string | null | undefined;
   companyId?: string | null;
-  /** Company type — required for correct contractor isolation */
+  /** Company type — required for correct contractor / GC isolation */
   companyType?: string | null;
   role: ProjectRole;
   isMaster?: boolean;
+  /** Precomputed own / own+descendants for GC tree mode */
+  accessibleCompanyIds?: string[] | null;
   /** 휴지통 보기일 때만 true — 기본은 삭제된 행 제외 */
   includeDeleted?: boolean;
   /** 이 테이블에 is_deleted 컬럼이 없으면 false */
@@ -41,19 +43,13 @@ export function scopedSelect<T>(query: T, opts: ScopeOptions): T {
     q = q.eq('project_id', '00000000-0000-0000-0000-000000000000');
   }
 
-  if (
-    mustScopeToOwnCompany({
-      role: opts.role,
-      companyType: opts.companyType,
-      isMaster: opts.isMaster,
-    })
-  ) {
-    if (opts.companyId) {
-      q = q.eq('company_id', opts.companyId);
-    } else {
-      q = q.eq('company_id', '00000000-0000-0000-0000-000000000000');
-    }
-  }
+  q = applyOwnCompanyFilter(q, {
+    role: opts.role,
+    companyType: opts.companyType,
+    companyId: opts.companyId,
+    isMaster: opts.isMaster,
+    accessibleCompanyIds: opts.accessibleCompanyIds,
+  });
 
   if (opts.hasSoftDelete && !opts.includeDeleted) {
     q = q.eq('is_deleted', false);

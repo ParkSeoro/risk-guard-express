@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { applyOwnCompanyFilter } from '@/lib/companyDocScope';
+import { applyOwnCompanyFilter, resolveAccessibleCompanyIds } from '@/lib/companyDocScope';
 
 /**
  * Project-scoped role (new model).
@@ -158,8 +158,12 @@ export interface ProjectAccess {
   isWorker: boolean;
   isContractor: boolean; // legacy alias = isWorker
   loading: boolean;
-  /** Apply to supabase query builder for company-scoped filtering.
-   * Owner-side full-access roles bypass. RLS still enforces hierarchy. */
+  /**
+   * null = project-wide (master/client admin).
+   * string[] = allowed company_ids (own or own+descendants for GC).
+   */
+  accessibleCompanyIds: string[] | null;
+  /** Apply to supabase query builder for company-scoped filtering. */
   applyCompanyFilter: (query: any) => any;
   canCreate: (feature: FeatureKey) => boolean;
   canEdit: (feature: FeatureKey) => boolean;
@@ -184,6 +188,7 @@ export function useProjectAccess(): ProjectAccess {
   });
   const [memberInfo, setMemberInfo] = useState<MemberInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [accessibleCompanyIds, setAccessibleCompanyIds] = useState<string[] | null>(null);
 
   const setSelectedProject = (id: string) => {
     setSelectedProjectState(id);
@@ -282,13 +287,42 @@ export function useProjectAccess(): ProjectAccess {
   const userCompanyType: CompanyType = isMaster ? null : (memberInfo?.company_type ?? null);
   const userPosition: ProjectPosition = isMaster ? null : (memberInfo?.position ?? null);
 
-  const applyCompanyFilter = (query: any): any =>
-    applyOwnCompanyFilter(query, {
-      role: userRole,
-      companyType: userCompanyType,
-      companyId: userCompanyId,
-      isMaster,
-    });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (isMaster) {
+        if (!cancelled) setAccessibleCompanyIds(null); // null = project-wide
+        return;
+      }
+      // Restrictive until member/scope resolves — never treat unknown as "all"
+      if (!selectedProject || !memberInfo) {
+        if (!cancelled) setAccessibleCompanyIds([]);
+        return;
+      }
+      const ids = await resolveAccessibleCompanyIds({
+        projectId: selectedProject,
+        companyId: memberInfo.company_id,
+        companyType: memberInfo.company_type,
+        role: memberInfo.role || userRole,
+        isMaster: false,
+      });
+      // null only when mode=all (발주처 admin); otherwise string[]
+      if (!cancelled) setAccessibleCompanyIds(ids === null ? null : ids);
+    })();
+    return () => { cancelled = true; };
+  }, [isMaster, selectedProject, memberInfo, userRole]);
+
+  const applyCompanyFilter = useCallback(
+    (query: any): any =>
+      applyOwnCompanyFilter(query, {
+        role: userRole,
+        companyType: userCompanyType,
+        companyId: userCompanyId,
+        isMaster,
+        accessibleCompanyIds,
+      }),
+    [userRole, userCompanyType, userCompanyId, isMaster, accessibleCompanyIds],
+  );
 
   const getPermissions = (feature: FeatureKey): Perm =>
     PERMISSION_MATRIX[userRole]?.[feature] ?? RO;
@@ -313,6 +347,7 @@ export function useProjectAccess(): ProjectAccess {
       userRole === 'site_supervisor' || userRole === 'worker'
     ),
     loading,
+    accessibleCompanyIds,
     applyCompanyFilter,
     canCreate: (f) => getPermissions(f).create,
     canEdit: (f) => getPermissions(f).edit,

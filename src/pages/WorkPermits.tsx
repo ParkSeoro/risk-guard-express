@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature, Pencil, Trash2, Users, Copy } from 'lucide-react';
+import { Plus, CheckCircle2, XCircle, FileSignature, Pencil, Trash2, Users, Copy, Clock } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialog';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
@@ -44,6 +44,8 @@ const STATUS_COLOR: Record<string, string> = {
   '승인': 'bg-success/10 text-success',
   '발행완료': 'bg-success/10 text-success',
   '승인완료': 'bg-success/10 text-success',
+  '종료대기': 'bg-warning/10 text-warning',
+  '종료완료': 'bg-muted text-muted-foreground',
   '반려': 'bg-destructive/10 text-destructive',
   '작업중': 'bg-primary/10 text-primary',
   '완료': 'bg-accent/10 text-accent',
@@ -51,6 +53,17 @@ const STATUS_COLOR: Record<string, string> = {
 
 const EDITABLE_PERMIT_STATUSES = new Set(['작성중', '반려', '임시저장']);
 const APPROVED_PERMIT_STATUSES = new Set(['승인', '승인완료', '발행완료', 'approved']);
+const CLOSED_PERMIT_STATUSES = new Set(['종료완료', 'CLOSED', '마감']);
+const CLOSURE_PENDING_STATUSES = new Set(['종료대기', 'CLOSURE_PENDING']);
+
+function canRequestPermitExtend(p: any): boolean {
+  if (!p || CLOSED_PERMIT_STATUSES.has(p.status)) return false;
+  if (CLOSURE_PENDING_STATUSES.has(p.status)) return false;
+  if (!APPROVED_PERMIT_STATUSES.has(p.status)) return false;
+  const fd = p.form_data || {};
+  if (fd.work_extend_requested_until) return false;
+  return true;
+}
 
 function permitStatusLabel(status?: string | null) {
   if (APPROVED_PERMIT_STATUSES.has(status || '')) return '발행 완료';
@@ -130,10 +143,11 @@ export default function WorkPermits() {
   const [tbms, setTbms] = useState<any[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
-  const [gateOpen, setGateOpen] = useState<any | null>(null);
-  const [gateResult, setGateResult] = useState<any>(null);
   const [workersDialog, setWorkersDialog] = useState<any | null>(null);
   const [approvalTarget, setApprovalTarget] = useState<any | null>(null);
+  const [extendTarget, setExtendTarget] = useState<any | null>(null);
+  const [extendUntil, setExtendUntil] = useState('');
+  const [extending, setExtending] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [previousPermits, setPreviousPermits] = useState<any[]>([]);
   const [loadingPrevious, setLoadingPrevious] = useState(false);
@@ -362,62 +376,45 @@ export default function WorkPermits() {
     load();
   };
 
-  const runGateCheck = async (permit: any) => {
-    setGateOpen(permit);
-    setGateResult(null);
-
-    // 결재 게이트: 위험성평가/작업계획서는 선택. 연결된 경우에만 상태 검증.
-    const checks: any = {
-      assessment: { ok: true, msg: '위험성평가 미연결 (선택)' },
-      work_plan: { ok: true, msg: '작업계획서 미연결 (선택)' },
-    };
-    // TBM은 실행 조건(별도 표시)
-    const exec: any = { tbm: { ok: false, msg: 'TBM 미실시 - 작업 실행 시 당일 TBM 필요' } };
-
-    if (permit.assessment_run_id) {
-      const { data } = await supabase.from('assessment_runs').select('status').eq('id', permit.assessment_run_id).single();
-      checks.assessment = data?.status === '승인완료'
-        ? { ok: true, msg: `위험성평가 승인완료` }
-        : { ok: false, msg: `위험성평가 상태: ${data?.status || '없음'}` };
+  const requestExtend = async () => {
+    if (!extendTarget?.id || !extendUntil) {
+      toast({ title: '연장 종료 시각을 선택하세요.', variant: 'destructive' });
+      return;
     }
-    if (permit.work_plan_id) {
-      const { data } = await supabase.from('work_plans' as any).select('status').eq('id', permit.work_plan_id).single();
-      const st = (data as any)?.status;
-      checks.work_plan = st === '승인완료' || st === 'approved'
-        ? { ok: true, msg: '작업계획서 승인완료' }
-        : { ok: false, msg: `작업계획서 상태: ${st || '없음'}` };
+    const iso = toDbTimestamp(extendUntil);
+    if (!iso) {
+      toast({ title: '연장 시각 형식이 올바르지 않습니다.', variant: 'destructive' });
+      return;
     }
-    if (permit.tbm_session_id) {
-      const today = todayKst();
-      const { data: tbm } = await supabase.from('tbm_sessions' as any).select('tbm_date').eq('id', permit.tbm_session_id).single();
-      const isSameDay = (tbm as any)?.tbm_date === today;
-      const { count } = await supabase.from('tbm_participations' as any)
-        .select('id', { count: 'exact', head: true }).eq('tbm_session_id', permit.tbm_session_id);
-      if ((count || 0) > 0 && isSameDay) {
-        exec.tbm = { ok: true, msg: `당일 TBM 참여 ${count}명 - 작업 실행 가능` };
-      } else if ((count || 0) > 0) {
-        exec.tbm = { ok: false, msg: `TBM 참여 ${count}명 (당일 TBM 아님 - 당일 실시 필요)` };
-      } else {
-        exec.tbm = { ok: false, msg: 'TBM 참여자 0명 - 작업 실행 시 당일 TBM 필요' };
+    setExtending(true);
+    try {
+      const { data: res, error } = await supabase.rpc('request_work_permit_extension' as any, {
+        _permit_id: extendTarget.id,
+        _extend_until: iso,
+      });
+      const r = res as any;
+      if (error || r?.error) {
+        const code = r?.error || error?.message || '';
+        const msg =
+          code === 'MUST_BE_AFTER_CURRENT_END' ? '현재 종료 시각보다 이후여야 합니다.'
+          : code === 'MUST_BE_FUTURE' ? '현재 시각보다 이후여야 합니다.'
+          : code === 'PENDING_POST_APPROVAL' ? '이미 종료/연장 결재가 진행 중입니다.'
+          : code === 'NO_SM' ? '발주처 SM을 찾을 수 없습니다.'
+          : code === 'NOT_APPROVED' ? '승인된 허가서만 연장할 수 있습니다.'
+          : String(code);
+        toast({ title: '연장 신청 실패', description: msg, variant: 'destructive' });
+        return;
       }
+      toast({ title: '연장 신청 완료', description: '발주처 SM에게 결재 요청이 전달되었습니다.' });
+      setExtendTarget(null);
+      setExtendUntil('');
+      load();
+    } finally {
+      setExtending(false);
     }
-
-    const all_ok = Object.values(checks).every((c: any) => c.ok); // 결재용 (연결된 항목만 검증)
-    const exec_ok = exec.tbm.ok; // 실행용
-    setGateResult({ checks, exec, all_ok, exec_ok });
-
-
-    await supabase.from('work_permits' as any).update({
-      gate_check_result: { checks, exec, all_ok, exec_ok, checked_at: new Date().toISOString() },
-      weather_check_passed: true,
-    }).eq('id', permit.id);
-    load();
   };
 
   const submit = async (permit: any) => {
-    if (!permit.gate_check_result?.all_ok) {
-      return toast({ title: '게이트 체크 통과 후 상신할 수 있습니다.', variant: 'destructive' });
-    }
     await supabase.from('work_permits' as any).update({
       status: '검토대기',
       submitted_by: user?.id,
@@ -509,19 +506,10 @@ export default function WorkPermits() {
                     .map((k) => PERMIT_KIND_LABEL[k])
                     .join(' · ')}
                 </p>
-                {p.gate_check_result?.all_ok === false && (
-                  <p className="text-xs text-destructive mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />결재불가 - 연결된 위험성평가/작업계획서가 승인완료 상태가 아닙니다</p>
-                )}
-                {p.gate_check_result?.all_ok === true && (
-                  <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />결재 가능</p>
-                )}
-
-                {APPROVED_PERMIT_STATUSES.has(p.status) && (
-                  p.gate_check_result?.exec_ok
-                    ? <p className="text-xs text-success mt-1 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />당일 TBM 완료 - 작업 실행 가능</p>
-                    : <p className="text-xs text-warning mt-1 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />작업 불가 - 당일 TBM 미실시</p>
-                )}
                 {p.rejection_reason && <p className="text-xs text-destructive mt-1">반려: {p.rejection_reason}</p>}
+                {p.form_data?.work_extend_requested_until && (
+                  <p className="text-xs text-amber-700 mt-1 flex items-center gap-1"><Clock className="h-3 w-3" />연장 승인 대기</p>
+                )}
                 <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
                   {p.submitted_at && <div>📤 상신: {p.submitted_by_name || '-'} · {new Date(p.submitted_at).toLocaleString('ko-KR')}</div>}
                   {p.reviewed_at && <div>🔍 검토: {p.reviewed_by_name || '-'} · {new Date(p.reviewed_at).toLocaleString('ko-KR')}{p.review_comment ? ` · ${p.review_comment}` : ''}</div>}
@@ -529,10 +517,21 @@ export default function WorkPermits() {
                 </div>
               </div>
               <div className="flex gap-1 flex-wrap">
-                <Button size="sm" variant="outline" onClick={() => runGateCheck(p)}><ShieldCheck className="h-3 w-3 mr-1" />게이트체크</Button>
+                {canRequestPermitExtend(p) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setExtendTarget(p);
+                      setExtendUntil('');
+                    }}
+                  >
+                    <Clock className="h-3 w-3 mr-1" />시간 연장
+                  </Button>
+                )}
                 {isPermitEditable(p.status) && (
                   <>
-                    <Button size="sm" onClick={() => submit(p)} disabled={!p.gate_check_result?.all_ok}>상신</Button>
+                    <Button size="sm" onClick={() => submit(p)}>상신</Button>
                     <Button size="sm" variant="outline" onClick={() => setApprovalTarget(p)}>결재상신(결재선 지정)</Button>
                   </>
                 )}
@@ -666,39 +665,36 @@ export default function WorkPermits() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!gateOpen} onOpenChange={(v) => !v && setGateOpen(null)}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>작업 게이트 체크 결과</DialogTitle></DialogHeader>
-          {!gateResult ? <p className="text-sm text-muted-foreground">검사 중...</p> : (
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs font-semibold mb-1 text-muted-foreground">결재 조건 (사전 승인용)</p>
-                <div className="space-y-1">
-                  {Object.entries(gateResult.checks).map(([k, v]: any) => (
-                    <div key={k} className="flex items-center gap-2 p-2 rounded border">
-                      {v.ok ? <CheckCircle2 className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-destructive" />}
-                      <span className="text-sm font-medium w-24">{k === 'assessment' ? '위험성평가' : '작업계획서'}</span>
-                      <span className="text-sm text-muted-foreground">{v.msg}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className={`p-2 mt-2 rounded text-center text-sm font-bold ${gateResult.all_ok ? 'bg-success/10 text-success' : 'bg-destructive/10 text-destructive'}`}>
-                  {gateResult.all_ok ? '✅ 결재 가능' : '🚫 결재 불가'}
-                </div>
-              </div>
-              <div>
-                <p className="text-xs font-semibold mb-1 text-muted-foreground">작업 실행 조건 (당일 TBM)</p>
-                <div className="flex items-center gap-2 p-2 rounded border">
-                  {gateResult.exec?.tbm.ok ? <CheckCircle2 className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-warning" />}
-                  <span className="text-sm font-medium w-24">TBM</span>
-                  <span className="text-sm text-muted-foreground">{gateResult.exec?.tbm.msg}</span>
-                </div>
-                <div className={`p-2 mt-2 rounded text-center text-sm font-bold ${gateResult.exec_ok ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
-                  {gateResult.exec_ok ? '✅ 작업 실행 가능' : '⚠ 작업 불가 - 당일 TBM 미실시'}
-                </div>
-              </div>
+      <Dialog
+        open={!!extendTarget}
+        onOpenChange={(v) => {
+          if (!v) {
+            setExtendTarget(null);
+            setExtendUntil('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>작업허가 시간 연장</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              연장 종료 시각을 고른 뒤 신청하면 발주처 SM에게 결재가 갑니다. 승인되면 양식에 시간이 찍힙니다.
+            </p>
+            <div>
+              <Label>연장 종료 시각</Label>
+              <DateTimePicker
+                className="w-full mt-1"
+                value={extendUntil}
+                onChange={setExtendUntil}
+                placeholder="연장 종료 일시 선택"
+              />
             </div>
-          )}
+            <Button className="w-full" onClick={requestExtend} disabled={extending || !extendUntil}>
+              {extending ? '신청 중…' : '발주처 SM에게 연장 결재 요청'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

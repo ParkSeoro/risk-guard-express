@@ -31,7 +31,7 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, onCloseAutoFocus, ...props }, ref) => (
+>(({ className, children, onCloseAutoFocus, onPointerDownOutside, onInteractOutside, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -44,6 +44,29 @@ const DialogContent = React.forwardRef<
         // Prevent Dropdown→Dialog stacking from leaving body pointer-events:none.
         unlockBodyPointerEvents();
         onCloseAutoFocus?.(e);
+      }}
+      onPointerDownOutside={(e) => {
+        // Nested Popover/Select portals are outside the dialog DOM — don't close.
+        const t = e.target as HTMLElement | null;
+        if (
+          t?.closest(
+            '[data-radix-popper-content-wrapper], [data-radix-select-content], [data-radix-popover-content], [role="listbox"]',
+          )
+        ) {
+          e.preventDefault();
+        }
+        onPointerDownOutside?.(e);
+      }}
+      onInteractOutside={(e) => {
+        const t = e.target as HTMLElement | null;
+        if (
+          t?.closest(
+            '[data-radix-popper-content-wrapper], [data-radix-select-content], [data-radix-popover-content], [role="listbox"]',
+          )
+        ) {
+          e.preventDefault();
+        }
+        onInteractOutside?.(e);
       }}
       {...props}
     >

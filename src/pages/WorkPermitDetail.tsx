@@ -321,6 +321,8 @@ export default function WorkPermitDetail() {
   const canRequestExtend =
     !!permit &&
     APPROVED_PERMIT_STATUSES.has(permit.status || '') &&
+    !CLOSED_PERMIT_STATUSES.has(permit.status || '') &&
+    !CLOSURE_PENDING_STATUSES.has(permit.status || '') &&
     !data.work_extend_requested_until;
 
   const requestExtend = async () => {

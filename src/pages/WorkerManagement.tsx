@@ -18,10 +18,12 @@ import WorkerDailyQR from "./WorkerDailyQR";
 import CompanyDailyQR from "./CompanyDailyQR";
 import WorkerBulkImportDialog from "@/components/workers/WorkerBulkImportDialog";
 import { useAuditLog } from "@/hooks/useAuditLog";
+import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 
 const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "site_supervisor", "worker"]);
 
 export default function WorkerManagement() {
+  const access = useGlobalProjectAccessOptional();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
   const resolveTab = (v: string | null) =>
@@ -97,12 +99,14 @@ export default function WorkerManagement() {
 
   const load = async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    let q: any = supabase
       .from("workers")
       .select("*")
       .eq("project_id", projectId)
       .eq("is_active", true)
       .order("created_at", { ascending: false });
+    if (access?.applyCompanyFilter) q = access.applyCompanyFilter(q);
+    const { data, error } = await q;
     setLoading(false);
     if (error) { toast.error(error.message); return; }
     setWorkers(data || []);

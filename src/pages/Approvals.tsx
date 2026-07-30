@@ -21,6 +21,7 @@ import {
   isSubmitterApprovalStep,
   sequentialDisplayStatus,
 } from "@/lib/approvalRules";
+import { mustScopeToOwnCompany } from "@/lib/companyDocScope";
 
 
 const ENTITY_LINK = (t?: string | null, id?: string | null): string | null => {
@@ -40,7 +41,7 @@ const ENTITY_LINK = (t?: string | null, id?: string | null): string | null => {
 const Approvals = () => {
   const navigate = useNavigate();
   const { user, profile, isAdmin, hasRole } = useAuth();
-  const { projects, selectedProject, setSelectedProject, isMaster, isProjectAdmin, userCompanyId } = useGlobalProjectAccess();
+  const { projects, selectedProject, setSelectedProject, isMaster, isProjectAdmin, userCompanyId, userCompanyType, userRole } = useGlobalProjectAccess();
   const { toast } = useToast();
   const { log } = useAuditLog();
   const [approvals, setApprovals] = useState<any[]>([]);
@@ -137,13 +138,21 @@ const Approvals = () => {
       let approvalsData = a.data || [];
       let runsData = r.data || [];
 
-      // 업체 기반 필터링: 발주사/관리자가 아닌 경우 본인 회사 관련 결재만 표시
-      if (!isMaster && !isProjectAdmin && userCompanyId) {
+      // 업체 기반 필터링: 협력사/공급사·비관리자는 본인 회사 관련만
+      const forceOwn = mustScopeToOwnCompany({
+        role: userRole,
+        companyType: userCompanyType,
+        isMaster,
+      });
+      if ((forceOwn || (!isMaster && !isProjectAdmin)) && userCompanyId) {
         approvalsData = approvalsData.filter((ap: any) =>
           ap.approver_id === user?.id || ap.company_id === userCompanyId
         );
         runsData = runsData.filter((r: any) =>
-          !r.target_company_ids || r.target_company_ids.length === 0 || r.target_company_ids.includes(userCompanyId)
+          forceOwn
+            ? r.created_by === user?.id ||
+              (Array.isArray(r.target_company_ids) && r.target_company_ids.includes(userCompanyId))
+            : !r.target_company_ids || r.target_company_ids.length === 0 || r.target_company_ids.includes(userCompanyId)
         );
       }
 

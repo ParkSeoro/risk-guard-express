@@ -29,6 +29,7 @@ import {
   canViewPermitInList,
   isUserInvolvedInPermit,
 } from '@/lib/permitWorkDate';
+import { mustScopeToOwnCompany } from '@/lib/companyDocScope';
 
 
 const STATUS_COLOR: Record<string, string> = {
@@ -113,6 +114,8 @@ export default function WorkPermits() {
   const {
     selectedProject: projectId,
     userCompanyId,
+    userCompanyType,
+    userRole,
     applyCompanyFilter,
     isProjectAdmin,
   } = useGlobalProjectAccess();
@@ -162,11 +165,18 @@ export default function WorkPermits() {
       .order('created_at', { ascending: false });
     permitQuery = applyCompanyFilter(permitQuery);
 
+    let plansQ: any = supabase.from('work_plans' as any).select('id, title, status').eq('project_id', projectId).order('created_at', { ascending: false }).limit(100);
+    plansQ = applyCompanyFilter(plansQ);
+    let tbmQ: any = supabase.from('tbm_sessions' as any).select('id, title, tbm_date, is_active').eq('project_id', projectId).order('created_at', { ascending: false }).limit(50);
+    tbmQ = applyCompanyFilter(tbmQ);
+    // assessment_runs: no company_id — filter by target_company_ids / creator for subordinates
+    let runsQ: any = supabase.from('assessment_runs').select('id, period_label, status, created_by, target_company_ids').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }).limit(100);
+
     const [{ data: p }, { data: wp }, { data: ar }, { data: tb }, { data: myApprovals }] = await Promise.all([
       permitQuery,
-      supabase.from('work_plans' as any).select('id, title, status').eq('project_id', projectId).order('created_at', { ascending: false }).limit(100),
-      supabase.from('assessment_runs').select('id, period_label, status').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }).limit(100),
-      supabase.from('tbm_sessions' as any).select('id, title, tbm_date, is_active').eq('project_id', projectId).order('created_at', { ascending: false }).limit(50),
+      plansQ,
+      runsQ,
+      tbmQ,
       user?.id
         ? supabase
             .from('approvals')
@@ -185,7 +195,30 @@ export default function WorkPermits() {
       ),
     );
     setPlans((wp as any) || []);
-    setRuns((ar as any) || []);
+    const runsRaw = (ar as any[]) || [];
+    const forceOwn = mustScopeToOwnCompany({
+      role: userRole,
+      companyType: userCompanyType,
+    });
+    setRuns(
+      forceOwn && userCompanyId
+        ? runsRaw.filter(
+            (r) =>
+              r.created_by === user?.id ||
+              (Array.isArray(r.target_company_ids) && r.target_company_ids.includes(userCompanyId)),
+          )
+        : isProjectAdmin
+          ? runsRaw
+          : userCompanyId
+            ? runsRaw.filter(
+                (r) =>
+                  r.created_by === user?.id ||
+                  !r.target_company_ids ||
+                  r.target_company_ids.length === 0 ||
+                  r.target_company_ids.includes(userCompanyId),
+              )
+            : [],
+    );
     setTbms((tb as any) || []);
   };
 
@@ -209,7 +242,7 @@ export default function WorkPermits() {
     if (!showCreate || !projectId) { setPreviousPermits([]); return; }
     (async () => {
       setLoadingPrevious(true);
-      const { data } = await supabase
+      let q: any = supabase
         .from('work_permits' as any)
         .select('id, permit_date, permit_type, work_name, work_description, location, contractor_company, personnel_count, work_start_at, work_end_at, form_data')
         .eq('project_id', projectId)
@@ -217,6 +250,8 @@ export default function WorkPermits() {
         .eq('permit_type', form.permit_type || 'general')
         .order('permit_date', { ascending: false })
         .limit(10);
+      q = applyCompanyFilter(q);
+      const { data } = await q;
       setPreviousPermits((data as any[]) || []);
       setLoadingPrevious(false);
     })();

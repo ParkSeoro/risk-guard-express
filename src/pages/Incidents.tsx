@@ -46,7 +46,7 @@ function deadlineLabel(iso: string | null): { text: string; tone: "ok" | "warn" 
 }
 
 export default function Incidents() {
-  const { selectedProject: projectId } = useGlobalProjectAccess();
+  const { selectedProject: projectId, applyCompanyFilter } = useGlobalProjectAccess();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
@@ -66,12 +66,14 @@ export default function Incidents() {
   async function load() {
     if (!projectId) return;
     setLoading(true);
-    const { data, error } = await supabase
+    let q: any = supabase
       .from("incident_reports")
       .select("*")
       .eq("project_id", projectId)
       .eq("is_deleted", false)
       .order("occurred_at", { ascending: false });
+    q = applyCompanyFilter(q);
+    const { data, error } = await q;
     if (error) toast.error(error.message);
     setRows((data as Row[]) || []);
     setLoading(false);

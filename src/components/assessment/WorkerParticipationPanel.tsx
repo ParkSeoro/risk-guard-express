@@ -212,13 +212,16 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
       const { data, error } = await supabase.functions.invoke('analyze-worker-opinion', { body: { mode: 'health', process: aiProcess, equipment: aiEquipment } });
       if (error) throw new Error(await edgeFnErrorMessage(error, data));
       if (data?.error) throw new Error(typeof data.error === 'string' ? data.error : data.error.message || 'AI 생성 실패');
-      const inserts = (data.items || []).map((h: any) => ({
+      const inserts = (data?.items || []).map((h: any) => ({
         run_id: runId, project_id: projectId, process: aiProcess,
         category: h.category, description: h.description, exposure_level: h.exposure_level || '보통',
         countermeasure: h.countermeasure, legal_basis: h.legal_basis || '',
         source_type: 'ai', is_user_reviewed: false, created_by: userId,
       }));
-      if (inserts.length) await supabase.from('health_hazards' as any).insert(inserts);
+      if (inserts.length === 0) {
+        throw new Error(data?.error || '보건 항목을 생성하지 못했습니다. AI 응답이 비어 있습니다.');
+      }
+      await supabase.from('health_hazards' as any).insert(inserts);
       await reload(); onChanged?.();
       toast({ title: `보건 항목 ${inserts.length}건 생성 (검토 필요)` });
     } catch (e: any) { toast({ title: 'AI 생성 실패', description: e.message, variant: 'destructive' }); }

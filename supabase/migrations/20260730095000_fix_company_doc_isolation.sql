@@ -139,12 +139,14 @@ BEGIN
           EXISTS (
             SELECT 1
             FROM public.work_permits wp
-            WHERE wp.id = work_permit_workers.permit_id
+            WHERE wp.id = work_permit_workers.work_permit_id
               AND public.is_project_member(auth.uid(), wp.project_id)
               AND (
-                NOT public.is_contractor_user(auth.uid(), wp.project_id)
-                OR wp.company_id = public.get_user_company_id(auth.uid(), wp.project_id)
-                OR wp.created_by = auth.uid()
+                wp.created_by = auth.uid()
+                OR (
+                  wp.company_id IS NOT NULL
+                  AND public.can_access_company_data(auth.uid(), wp.project_id, wp.company_id)
+                )
               )
           )
         )

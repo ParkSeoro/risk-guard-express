@@ -64,10 +64,9 @@ function VerdictBadge({ verdict, score }: { verdict: string | null; score: numbe
 
 const AssessmentRuns = () => {
   const navigate = useNavigate();
-  const { user, hasRole } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const { log } = useAuditLog();
-  const isMaster = hasRole('master');
   const [projectRole, setProjectRole] = useState<string | null>(null);
 
   const { selectedProject, userCompanyId, userCompanyType, userRole, isMaster } = useGlobalProjectAccess();

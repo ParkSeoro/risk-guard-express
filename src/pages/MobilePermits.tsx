@@ -12,12 +12,18 @@ import { Badge } from "@/components/ui/badge";
 import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { ArrowLeft, FileCheck2, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import {
+  resolvePermitWorkDate,
+  canViewPermitInList,
+} from "@/lib/permitWorkDate";
 
 const STATUS_BADGE: Record<string, string> = {
   대기: "bg-warning/20 text-warning",
   검토중: "bg-primary/20 text-primary",
   승인: "bg-success/20 text-success",
   반려: "bg-destructive/20 text-destructive",
+  작성중: "bg-muted text-muted-foreground",
+  결재중: "bg-primary/20 text-primary",
 };
 
 const getForm = (p: any) => (p?.form_data && typeof p.form_data === "object" ? p.form_data : {});
@@ -25,13 +31,13 @@ const permitTitle = (p: any) => p?.work_name || getForm(p).work_name || p?.work_
 const permitLocation = (p: any) => p?.location || p?.work_location || getForm(p).work_location || "-";
 const permitCompany = (p: any) => p?.contractor_company || getForm(p).contractor_company || getForm(p).applicant_company || "-";
 const permitPersonnel = (p: any) => p?.personnel_count || getForm(p).personnel_count || 0;
-const isApprovedStatus = (status?: string) => ["승인", "승인완료", "approved"].includes(status || "");
+const isApprovedStatus = (status?: string) => ["승인", "승인완료", "발행완료", "approved"].includes(status || "");
 
 export default function MobilePermits() {
   const navigate = useNavigate();
   const goMobileHome = useNavigateMobileHome();
-  const { profile } = useAuth();
-  const { projectId, applyCompanyFilter } = useMobileAccess();
+  const { profile, isAdmin } = useAuth();
+  const { projectId, applyCompanyFilter, isProjectAdmin } = useMobileAccess();
   const { log: logAudit } = useAuditLog();
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,13 +50,35 @@ export default function MobilePermits() {
     setLoading(true);
     let q: any = supabase.from("work_permits" as any).select("*").eq("project_id", projectId).eq("is_deleted", false);
     q = applyCompanyFilter(q);
-    const { data, error } = await q
-      .order("permit_date", { ascending: false }).limit(100);
+    const userId = profile?.user_id || "";
+    const [{ data, error }, { data: myApprovals }] = await Promise.all([
+      q.order("permit_date", { ascending: false }).limit(100),
+      userId
+        ? supabase
+            .from("approvals")
+            .select("entity_id")
+            .eq("project_id", projectId)
+            .eq("entity_type", "work_permit")
+            .eq("approver_id", userId)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
     if (error) toast.error("로드 실패: " + error.message);
-    setList((data as any) || []);
+    const involved = new Set(
+      ((myApprovals as any[]) || [])
+        .map((a) => a.entity_id)
+        .filter((id): id is string => !!id),
+    );
+    const rows = ((data as any[]) || []).filter((p) =>
+      canViewPermitInList(p, {
+        userId,
+        isPermitAdmin: !!isProjectAdmin || !!isAdmin,
+        involvedPermitIds: involved,
+      }),
+    );
+    setList(rows);
     setLoading(false);
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId]);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [projectId, profile?.user_id]);
 
   const act = async (status: "승인" | "반려") => {
     if (!active) return;
@@ -128,7 +156,7 @@ export default function MobilePermits() {
                   <div className="text-xs text-muted-foreground mt-1">
                     {p.permit_type} · {permitLocation(p)} · {permitCompany(p)}
                   </div>
-                  <div className="text-xs mt-1">{p.permit_date} · 인원 {permitPersonnel(p)}명</div>
+                  <div className="text-xs mt-1">{resolvePermitWorkDate(p) || p.permit_date} · 인원 {permitPersonnel(p)}명</div>
                 </div>
                 <span className={`text-xs px-2 py-1 rounded ${STATUS_BADGE[p.status] || "bg-muted"}`}>{p.status}</span>
               </div>
@@ -143,7 +171,7 @@ export default function MobilePermits() {
                 <div className="font-bold text-base">{permitTitle(active)}</div>
                 <div className="text-xs text-muted-foreground space-y-0.5">
                   <div>유형: {active.permit_type}</div>
-                  <div>일자: {active.permit_date}</div>
+                  <div>일자: {resolvePermitWorkDate(active) || active.permit_date}</div>
                   <div>장소: {permitLocation(active)}</div>
                   <div>업체: {permitCompany(active)}</div>
                   <div>인원: {permitPersonnel(active)}명</div>

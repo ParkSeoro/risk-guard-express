@@ -30,6 +30,7 @@ import {
 import type { PermitAiBriefing } from '@/lib/permitBriefing';
 import { syncPermitAssessmentLinks } from '@/lib/safetyWorkBundle';
 import { mergeApprovalSignatures } from '@/lib/permitApprovalSignatures';
+import { syncPermitDateFromWorkStart, resolvePermitWorkDate } from '@/lib/permitWorkDate';
 
 const STANDARD_FORM_VALUE = '__standard__';
 
@@ -278,6 +279,10 @@ export default function WorkPermitDetail() {
       personnel_count: Number(syncedData.personnel_count || permit.personnel_count || 0),
       work_start_at: toDbTimestamp(syncedData.work_start) || permit.work_start_at || null,
       work_end_at: toDbTimestamp(syncedData.work_end) || permit.work_end_at || null,
+      permit_date: syncPermitDateFromWorkStart(
+        syncedData.work_start,
+        permit.permit_date || undefined,
+      ),
     }).eq('id', permit.id);
     setSaving(false);
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
@@ -287,7 +292,17 @@ export default function WorkPermitDetail() {
       console.warn('syncPermitAssessmentLinks failed', e);
     }
     toast({ title: '허가서가 저장되었습니다.', description: `${selectedKinds.map((k) => PERMIT_KIND_LABEL[k]).join(' · ')} 묶음` });
-    setPermit((prev: any) => prev ? { ...prev, permit_kinds: selectedKinds, permit_type: primary, assessment_run_id: primaryRunId, linked_assessment_run_ids: linkedIds } : prev);
+    setPermit((prev: any) => prev ? {
+      ...prev,
+      permit_kinds: selectedKinds,
+      permit_type: primary,
+      assessment_run_id: primaryRunId,
+      linked_assessment_run_ids: linkedIds,
+      permit_date: syncPermitDateFromWorkStart(syncedData.work_start, prev.permit_date),
+      work_start_at: toDbTimestamp(syncedData.work_start) || prev.work_start_at || null,
+      work_end_at: toDbTimestamp(syncedData.work_end) || prev.work_end_at || null,
+      form_data: syncedData,
+    } : prev);
   };
 
   const isApproved = isPermitApproved(permit?.status);
@@ -371,7 +386,7 @@ export default function WorkPermitDetail() {
           <Button variant="outline" size="sm" onClick={() => navigate('/work-permits')}><ArrowLeft className="h-4 w-4 mr-1" />목록</Button>
           <h1 className="text-lg md:text-xl font-bold flex items-center gap-2"><FileSignature className="h-5 w-5" />안전작업허가서</h1>
           <Badge variant="outline">{permitStatusLabel(permit.status)}</Badge>
-          <Badge variant="outline">{permit.permit_date}</Badge>
+          <Badge variant="outline">{resolvePermitWorkDate(permit) || permit.permit_date}</Badge>
           <Badge variant="secondary" className="text-[10px]">{selectedKinds.length}종 묶음</Badge>
         </div>
         <div className="flex gap-2 flex-wrap">

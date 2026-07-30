@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, ShieldCheck, AlertTriangle, CheckCircle2, XCircle, FileSignature, Pencil, Trash2, Users, Copy } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
@@ -19,6 +20,15 @@ import { useGlobalProjectAccess } from '@/components/AppLayout';
 import type { PermitType } from '@/components/permits/DigPermitForm';
 import PermitKindSelector from '@/components/permits/PermitKindSelector';
 import { normalizePermitKinds, primaryPermitKind, type PermitKindId, PERMIT_KIND_LABEL } from '@/lib/permitKinds';
+import {
+  todayKst,
+  syncPermitDateFromWorkStart,
+  resolvePermitWorkDate,
+  permitValidityKind,
+  shouldShowPermitValidityBadge,
+  canViewPermitInList,
+  isUserInvolvedInPermit,
+} from '@/lib/permitWorkDate';
 
 
 const STATUS_COLOR: Record<string, string> = {
@@ -58,7 +68,7 @@ const PERMIT_TYPES: { id: PermitType; label: string }[] = [
 ];
 
 const makeBlankForm = (companyName = '') => ({
-  permit_date: new Date().toISOString().slice(0, 10),
+  permit_date: todayKst(),
   permit_type: 'general' as PermitType,
   permit_kinds: ['general'] as PermitKindId[],
   work_name: '',
@@ -100,10 +110,16 @@ export default function WorkPermits() {
   const { user, isAdmin } = useAuth();
   const { log } = useAuditLog();
   const navigate = useNavigate();
-  const { selectedProject: projectId, userCompanyId } = useGlobalProjectAccess();
-
+  const {
+    selectedProject: projectId,
+    userCompanyId,
+    applyCompanyFilter,
+    isProjectAdmin,
+  } = useGlobalProjectAccess();
 
   const [permits, setPermits] = useState<any[]>([]);
+  const [involvedPermitIds, setInvolvedPermitIds] = useState<Set<string>>(new Set());
+  const [listTab, setListTab] = useState<'all' | 'involved'>('all');
   const [plans, setPlans] = useState<any[]>([]);
   const [runs, setRuns] = useState<any[]>([]);
   const [tbms, setTbms] = useState<any[]>([]);
@@ -119,21 +135,61 @@ export default function WorkPermits() {
 
   const [form, setForm] = useState<any>(() => makeBlankForm());
 
+  const visibilityOpts = useMemo(
+    () => ({
+      userId: user?.id || null,
+      isPermitAdmin: !!isProjectAdmin || !!isAdmin,
+      involvedPermitIds,
+    }),
+    [user?.id, isProjectAdmin, isAdmin, involvedPermitIds],
+  );
+
+  const visiblePermits = useMemo(() => {
+    const scoped = permits.filter((p) => canViewPermitInList(p, visibilityOpts));
+    if (listTab === 'involved') {
+      return scoped.filter((p) => isUserInvolvedInPermit(p, visibilityOpts));
+    }
+    return scoped;
+  }, [permits, visibilityOpts, listTab]);
+
   const load = async () => {
     if (!projectId) return;
-    const [{ data: p }, { data: wp }, { data: ar }, { data: tb }] = await Promise.all([
-      supabase.from('work_permits' as any).select('*').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }),
+    let permitQuery: any = supabase
+      .from('work_permits' as any)
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('is_deleted', false)
+      .order('created_at', { ascending: false });
+    permitQuery = applyCompanyFilter(permitQuery);
+
+    const [{ data: p }, { data: wp }, { data: ar }, { data: tb }, { data: myApprovals }] = await Promise.all([
+      permitQuery,
       supabase.from('work_plans' as any).select('id, title, status').eq('project_id', projectId).order('created_at', { ascending: false }).limit(100),
       supabase.from('assessment_runs').select('id, period_label, status').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }).limit(100),
       supabase.from('tbm_sessions' as any).select('id, title, tbm_date, is_active').eq('project_id', projectId).order('created_at', { ascending: false }).limit(50),
+      user?.id
+        ? supabase
+            .from('approvals')
+            .select('entity_id')
+            .eq('project_id', projectId)
+            .eq('entity_type', 'work_permit')
+            .eq('approver_id', user.id)
+        : Promise.resolve({ data: [] as any[] }),
     ]);
     setPermits((p as any) || []);
+    setInvolvedPermitIds(
+      new Set(
+        ((myApprovals as any[]) || [])
+          .map((a) => a.entity_id)
+          .filter((id): id is string => !!id),
+      ),
+    );
     setPlans((wp as any) || []);
     setRuns((ar as any) || []);
     setTbms((tb as any) || []);
   };
 
-  useEffect(() => { load(); }, [projectId]);
+  useEffect(() => { load(); }, [projectId, user?.id]);
 
   useEffect(() => {
     if (!userCompanyId) { setCompanyName(''); return; }
@@ -197,8 +253,10 @@ export default function WorkPermits() {
     if (!form.work_description.trim()) return toast({ title: '작업 내용을 입력하세요.', variant: 'destructive' });
     const kinds = normalizePermitKinds(form.permit_kinds, (form.permit_type || 'general') as PermitKindId);
     const primary = primaryPermitKind(kinds);
+    const syncedPermitDate = syncPermitDateFromWorkStart(form.work_start, form.permit_date);
     const formData = {
       ...form,
+      permit_date: syncedPermitDate,
       permit_kinds: kinds,
       contractor_company: form.contractor_company || companyName,
       applicant_company: form.applicant_company || form.contractor_company || companyName,
@@ -208,7 +266,7 @@ export default function WorkPermits() {
       personnel_count: Number(form.personnel_count || 0),
     };
     const payload: any = {
-      permit_date: form.permit_date,
+      permit_date: syncedPermitDate,
       permit_type: primary,
       permit_kinds: kinds,
       form_data: formData,
@@ -248,7 +306,10 @@ export default function WorkPermits() {
     }
     setEditing(p);
     setForm({
-      permit_date: p.permit_date || new Date().toISOString().slice(0, 10),
+      permit_date: syncPermitDateFromWorkStart(
+        p.form_data?.work_start || toLocalInput(p.work_start_at),
+        p.permit_date || todayKst(),
+      ),
       permit_type: p.permit_type || 'general',
       permit_kinds: normalizePermitKinds(p.permit_kinds, (p.permit_type || 'general') as PermitKindId),
       work_name: p.work_name || p.form_data?.work_name || '',
@@ -307,7 +368,7 @@ export default function WorkPermits() {
         : { ok: false, msg: `작업계획서 상태: ${st || '없음'}` };
     }
     if (permit.tbm_session_id) {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayKst();
       const { data: tbm } = await supabase.from('tbm_sessions' as any).select('tbm_date').eq('id', permit.tbm_session_id).single();
       const isSameDay = (tbm as any)?.tbm_date === today;
       const { count } = await supabase.from('tbm_participations' as any)
@@ -394,26 +455,35 @@ export default function WorkPermits() {
         <Button onClick={() => setShowCreate(true)}><Plus className="h-4 w-4 mr-1" />허가서 생성</Button>
       </div>
 
+      <Tabs value={listTab} onValueChange={(v) => setListTab(v as 'all' | 'involved')}>
+        <TabsList>
+          <TabsTrigger value="all">전체</TabsTrigger>
+          <TabsTrigger value="involved">내가 관여</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       <div className="grid gap-3">
-        {permits.length === 0 ? (
-          <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">등록된 작업허가서가 없습니다.</CardContent></Card>
-        ) : permits.map((p) => (
+        {visiblePermits.length === 0 ? (
+          <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">
+            {listTab === 'involved' ? '내가 작성·결재한 작업허가서가 없습니다.' : '등록된 작업허가서가 없습니다.'}
+          </CardContent></Card>
+        ) : visiblePermits.map((p) => {
+          const workDate = resolvePermitWorkDate(p);
+          const today = todayKst();
+          const validity = shouldShowPermitValidityBadge(p.status) ? permitValidityKind(workDate, today) : null;
+          return (
           <Card key={p.id}>
             <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge className={STATUS_COLOR[p.status] || ''}>{permitStatusLabel(p.status)}</Badge>
                   <button className="font-semibold text-left hover:underline" onClick={() => navigate(`/work-permits/${p.id}`)}>{p.work_description}</button>
-                  {(() => {
-                    const today = new Date().toISOString().slice(0, 10);
-                    if (!p.permit_date) return null;
-                    if (p.permit_date < today) return <Badge variant="outline" className="text-destructive border-destructive/40">만료 (유효기간 경과)</Badge>;
-                    if (p.permit_date === today) return <Badge variant="outline" className="text-success border-success/40">오늘 유효</Badge>;
-                    return <Badge variant="outline" className="text-muted-foreground">예정 ({p.permit_date})</Badge>;
-                  })()}
+                  {validity === 'expired' && <Badge variant="outline" className="text-destructive border-destructive/40">만료 (유효기간 경과)</Badge>}
+                  {validity === 'today' && <Badge variant="outline" className="text-success border-success/40">오늘 유효</Badge>}
+                  {validity === 'scheduled' && workDate && <Badge variant="outline" className="text-muted-foreground">예정 ({workDate})</Badge>}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {p.permit_date} · {p.location || '-'}
+                  {workDate || '-'} · {p.location || '-'}
                   {' · '}
                   {normalizePermitKinds(p.permit_kinds, (p.permit_type || 'general') as PermitKindId)
                     .map((k) => PERMIT_KIND_LABEL[k])
@@ -469,7 +539,8 @@ export default function WorkPermits() {
               </div>
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
 
       <Dialog open={showCreate || !!editing} onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditing(null); resetForm(); } }}>
@@ -488,14 +559,28 @@ export default function WorkPermits() {
               />
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <div><Label>일자</Label><Input type="date" value={form.permit_date} onChange={(e) => setForm({ ...form, permit_date: e.target.value })} /></div>
+              <div><Label>작업 일자</Label><Input type="date" value={form.permit_date} onChange={(e) => setForm({ ...form, permit_date: e.target.value })} /></div>
               <div><Label>장소</Label><Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>
             </div>
             <div><Label>공사업체</Label><Input value={form.contractor_company} onChange={(e) => setForm({ ...form, contractor_company: e.target.value, applicant_company: e.target.value })} placeholder="작성자 소속 회사 자동 입력" /></div>
             <div><Label>작업명</Label><Input value={form.work_name} onChange={(e) => setForm({ ...form, work_name: e.target.value })} /></div>
             <div><Label>작업 내용 *</Label><Textarea value={form.work_description} onChange={(e) => setForm({ ...form, work_description: e.target.value })} rows={3} /></div>
             <div className="grid grid-cols-2 gap-2">
-              <div><Label>작업 시작</Label><Input type="datetime-local" value={form.work_start} onChange={(e) => setForm({ ...form, work_start: e.target.value })} /></div>
+              <div>
+                <Label>작업 시작</Label>
+                <Input
+                  type="datetime-local"
+                  value={form.work_start}
+                  onChange={(e) => {
+                    const work_start = e.target.value;
+                    setForm({
+                      ...form,
+                      work_start,
+                      permit_date: syncPermitDateFromWorkStart(work_start, form.permit_date),
+                    });
+                  }}
+                />
+              </div>
               <div><Label>작업 종료</Label><Input type="datetime-local" value={form.work_end} onChange={(e) => setForm({ ...form, work_end: e.target.value })} /></div>
             </div>
             <div><Label>작업 인원</Label><Input type="number" value={form.personnel_count} onChange={(e) => setForm({ ...form, personnel_count: e.target.value })} /></div>
@@ -520,7 +605,7 @@ export default function WorkPermits() {
                   <SelectContent>
                     {previousPermits.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.permit_date} · {p.work_name || p.form_data?.work_name || p.work_description || '(제목 없음)'} · {p.location || p.form_data?.work_location || '-'}
+                        {resolvePermitWorkDate(p) || p.permit_date} · {p.work_name || p.form_data?.work_name || p.work_description || '(제목 없음)'} · {p.location || p.form_data?.work_location || '-'}
                       </SelectItem>
                     ))}
                   </SelectContent>

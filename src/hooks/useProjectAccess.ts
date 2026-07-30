@@ -307,9 +307,10 @@ export function useProjectAccess(): ProjectAccess {
     isSiteManager,
     isSupervisor,
     isWorker,
-    isContractor: userCompanyType === 'contractor' && (
+    isContractor: (userCompanyType === 'contractor' || userCompanyType === 'vendor') && (
       userRole === 'project_admin' || userRole === 'safety_manager' ||
-      userRole === 'site_manager' || userRole === 'supervisor'
+      userRole === 'site_manager' || userRole === 'supervisor' ||
+      userRole === 'site_supervisor' || userRole === 'worker'
     ),
     loading,
     applyCompanyFilter,

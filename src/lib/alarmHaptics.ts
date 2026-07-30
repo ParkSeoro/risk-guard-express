@@ -3,7 +3,7 @@
  * Cannot raise speaker volume on web; vibration still helps when muted.
  */
 
-import { nativeAlarmVibrate, isAndroidNativeAlarmAvailable } from "@/lib/alarmVolume";
+import { nativeAlarmVibrate, isNativeAlarmAvailable } from "@/lib/alarmVolume";
 
 /** Aggressive pattern: short bursts then longer pulse (ms). */
 export const DANGER_VIBRATE_PATTERN: number[] = [0, 400, 200, 400, 200, 600, 200, 400, 200, 800];
@@ -11,7 +11,7 @@ export const DANGER_VIBRATE_PATTERN: number[] = [0, 400, 200, 400, 200, 600, 200
 let vibrateTimer: number | null = null;
 
 export async function pulseDangerHaptics(): Promise<void> {
-  if (isAndroidNativeAlarmAvailable()) {
+  if (isNativeAlarmAvailable()) {
     const ok = await nativeAlarmVibrate();
     if (ok) return;
   }

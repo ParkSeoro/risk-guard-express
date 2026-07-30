@@ -175,6 +175,12 @@ Deno.serve(async (req) => {
 
   // ---------- Native (FCM legacy HTTP) ----------
   const FCM_KEY = Deno.env.get("FCM_SERVER_KEY");
+  const isCriticalAlarm =
+    n.type === "danger_zone_entry" ||
+    n.severity === "high" ||
+    n.severity === "critical" ||
+    n.severity === "danger";
+
   if (FCM_KEY) {
     try {
       const { data: toks } = await supabase
@@ -185,6 +191,26 @@ Deno.serve(async (req) => {
       await Promise.all(
         (toks || []).map(async (t: any) => {
           try {
+            const platform = (t.platform || "").toLowerCase();
+            // Critical Alerts (iOS): requires Apple entitlement on the app.
+            // FCM legacy: nest apns payload; ignored on Android / without entitlement.
+            const apnsCritical = isCriticalAlarm && platform === "ios"
+              ? {
+                  headers: { "apns-priority": "10", "apns-push-type": "alert" },
+                  payload: {
+                    aps: {
+                      alert: { title: n.title, body },
+                      "interruption-level": "critical",
+                      sound: {
+                        critical: 1,
+                        name: "siren.wav",
+                        volume: 1.0,
+                      },
+                    },
+                  },
+                }
+              : undefined;
+
             const res = await fetch("https://fcm.googleapis.com/fcm/send", {
               method: "POST",
               headers: {
@@ -194,19 +220,23 @@ Deno.serve(async (req) => {
               body: JSON.stringify({
                 to: t.token,
                 priority: "high",
+                content_available: true,
                 notification: {
                   title: n.title,
                   body,
                   tag,
                   click_action: url,
+                  sound: isCriticalAlarm ? "siren.wav" : "default",
                 },
                 data: {
                   title: n.title,
                   body,
+                  critical: isCriticalAlarm ? "1" : "0",
                   ...Object.fromEntries(
                     Object.entries(commonData).map(([k, v]) => [k, v == null ? "" : String(v)]),
                   ),
                 },
+                ...(apnsCritical ? { apns: apnsCritical } : {}),
               }),
             });
             const j = await res.json().catch(() => ({}));

@@ -5,7 +5,8 @@
  * - Android native (Capacitor): AlarmVolume plugin → STREAM_ALARM + STREAM_MUSIC
  *   forced to max for the alert duration, siren via USAGE_ALARM (bypasses silent
  *   for alarm stream on most OEMs). Volume restored on stop.
- * - iOS native: NativeAudio focus/playback (ignores mute switch; follows hardware vol).
+ * - iOS native: AlarmVolume plugin → AVAudioSession .playback (ignores mute switch;
+ *   follows hardware volume). Critical Alerts push (Apple entitlement) for silent breakthrough.
  * - Web/PWA: cannot force system volume — app-relative 1.0 + haptics (see alarmHaptics).
  */
 
@@ -14,7 +15,7 @@ import { NativeAudio } from "@capacitor-community/native-audio";
 import { buildDangerTtsMessage, type AlarmRoleInput } from "@/lib/alarmRoleLabel";
 import {
   boostAlarmVolumeMax,
-  isAndroidNativeAlarmAvailable,
+  isNativeAlarmAvailable,
   playNativeAlarmSiren,
   restoreAlarmVolume,
   stopNativeAlarmSiren,
@@ -55,8 +56,8 @@ export async function unlockAlarmAudio(): Promise<void> {
 
 async function ensureNativeSiren(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false;
-  // Android uses AlarmVolume plugin (STREAM_ALARM) — skip media-stream native-audio
-  if (isAndroidNativeAlarmAvailable()) return false;
+  // Native AlarmVolume plugin handles Android + iOS siren paths
+  if (isNativeAlarmAvailable()) return false;
   if (!nativeReady) {
     nativeReady = (async () => {
       try {
@@ -174,8 +175,8 @@ function playSirenViaHtmlAudio(): Promise<void> {
 async function playSiren(): Promise<void> {
   await unlockAlarmAudio();
 
-  // Android Capacitor: STREAM_ALARM at system max
-  if (isAndroidNativeAlarmAvailable()) {
+  // Android / iOS Capacitor: AlarmVolume plugin
+  if (isNativeAlarmAvailable()) {
     const boosted = await boostAlarmVolumeMax();
     volumeBoosted = boosted || volumeBoosted;
     const played = await playNativeAlarmSiren(SIREN_DURATION_MS);
@@ -265,8 +266,8 @@ export async function playDangerAlarm(opts: DangerAlarmOpts = {}): Promise<void>
     opts.message ||
     buildDangerTtsMessage({ displayName: opts.displayName, role: opts.role });
 
-  // Ensure volume boost covers TTS (media stream) as well as siren
-  if (isAndroidNativeAlarmAvailable() && !volumeBoosted) {
+  // Ensure volume boost / iOS playback session covers TTS as well as siren
+  if (isNativeAlarmAvailable() && !volumeBoosted) {
     volumeBoosted = await boostAlarmVolumeMax();
   }
 

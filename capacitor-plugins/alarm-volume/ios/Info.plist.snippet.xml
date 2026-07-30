@@ -1,0 +1,16 @@
+<!--
+  Snippet to merge into ios/App/App/Info.plist AFTER Critical Alerts entitlement is approved.
+  Until then keep SafenexCriticalAlertsEnabled as false / omit the key.
+-->
+<key>SafenexCriticalAlertsEnabled</key>
+<false/>
+<!-- Change to <true/> only after Apple approves + entitlement is in the profile -->
+
+<!-- Ensure background modes include remote-notification for critical pushes -->
+<key>UIBackgroundModes</key>
+<array>
+  <string>location</string>
+  <string>fetch</string>
+  <string>remote-notification</string>
+  <string>audio</string>
+</array>

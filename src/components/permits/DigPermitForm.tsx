@@ -14,6 +14,7 @@ import {
 } from '@/lib/permitStandardStyle';
 import { formatPermitStamp, formatPermitReviewDate } from '@/lib/permitDateFormat';
 import { slotSignedAt } from '@/lib/permitApprovalSignatures';
+import { DateTimePicker } from '@/components/ui/datetime-picker';
 
 export type PermitType = 'general' | 'confined_space' | 'hot_work' | 'excavation';
 
@@ -457,10 +458,22 @@ export default function DigPermitForm({
                   {readOnly || printMode ? (
                     <span>{data.work_start || ''} ~ {data.work_end || ''}</span>
                   ) : (
-                    <div className="flex gap-1 items-center">
-                      <input type="datetime-local" className="text-xs border-0 bg-transparent" value={data.work_start || ''} onChange={(e) => update({ work_start: e.target.value })} />
+                    <div className="flex gap-2 items-center flex-wrap">
+                      <DateTimePicker
+                        compact
+                        className="w-[168px]"
+                        value={data.work_start || ''}
+                        onChange={(v) => update({ work_start: v })}
+                        placeholder="시작 일시"
+                      />
                       <span>~</span>
-                      <input type="datetime-local" className="text-xs border-0 bg-transparent" value={data.work_end || ''} onChange={(e) => update({ work_end: e.target.value })} />
+                      <DateTimePicker
+                        compact
+                        className="w-[168px]"
+                        value={data.work_end || ''}
+                        onChange={(v) => update({ work_end: v })}
+                        placeholder="종료 일시"
+                      />
                     </div>
                   )}
                 </td>
@@ -692,13 +705,19 @@ export default function DigPermitForm({
                 </td>
               </tr>
               <tr><td colSpan={4} className="text-center font-semibold bg-[#f0f0f0]">가스농도 측정결과 확인</td></tr>
-              <tr><th className="hd">구분</th><th className="hd">O₂</th><th className="hd">H₂S</th><th className="hd">CO / H·C / CO₂</th></tr>
+              <tr><th className="hd">구분</th><th className="hd">O₂</th><th className="hd">H₂S</th><th className="hd">CO · H·C · CO₂</th></tr>
               <tr><td className="text-center">측정결과</td>
-                <td><Inp value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} /></td>
-                <td><Inp value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} /></td>
-                <td><Inp value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} /> / <Inp value={data.gas_hc} onChangeText={(v: string) => update({ gas_hc: v })} /> / <Inp value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} /></td>
+                <td><Inp className="min-w-[3rem]" value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} placeholder="%" /></td>
+                <td><Inp className="min-w-[3rem]" value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} placeholder="ppm" /></td>
+                <td>
+                  <div className="flex gap-2 items-center flex-wrap">
+                    <Inp className="w-14 min-w-0 shrink-0" value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} placeholder="CO" />
+                    <Inp className="w-14 min-w-0 shrink-0" value={data.gas_hc} onChangeText={(v: string) => update({ gas_hc: v })} placeholder="H·C" />
+                    <Inp className="w-14 min-w-0 shrink-0" value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} placeholder="CO₂" />
+                  </div>
+                </td>
               </tr>
-              <tr><td className="text-center">기준 값</td><td>18%이상~23.5%미만</td><td>10ppm미만</td><td>30ppm미만 / 0% / 1.5%미만</td></tr>
+              <tr><td className="text-center">기준 값</td><td>18%이상~23.5%미만</td><td>10ppm미만</td><td>30ppm미만 · 0% · 1.5%미만</td></tr>
               <tr>
                 <th className="hd">안전관리자</th>
                 <td><SigCell k="safety_pic" /></td>
@@ -716,7 +735,7 @@ export default function DigPermitForm({
                 <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
                 <td><SigCell k="applicant" /></td>
               </tr>
-              <tr><th className="hd">승인자</th><td>{(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at) ? formatPermitStamp(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at) : '년 월 일 시 분'} 성명 : {signatures.closure_approver?.name || ''}</td><td><SigCell k="closure_approver" /></td></tr>
+              <tr><th className="hd">승인자</th><td>{(slotSignedAt(signatures, 'sm') || signatures.approved_at) ? formatPermitStamp(slotSignedAt(signatures, 'sm') || signatures.approved_at) : '년 월 일 시 분'} 성명 : {signatures.sm?.name || ''}</td><td><SigCell k="sm" label="발주처 SM" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 밀폐공간 작업시간은 1일 최대 8시간을 넘지 않도록 하며 연장근무 발생 시 작업허가 연장 승인 필요</div>
@@ -766,16 +785,32 @@ export default function DigPermitForm({
                 </td>
               </tr>
               <tr><td colSpan={4} className="text-center font-semibold bg-[#f0f0f0]">가스농도 측정결과</td></tr>
-              <tr><th className="hd">구분</th><th className="hd">O₂</th><th className="hd">H₂S / CO</th><th className="hd">H·C / CO₂</th></tr>
-              <tr><td className="text-center">측정결과</td>
-                <td><Inp value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} /></td>
-                <td><Inp value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} /> / <Inp value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} /></td>
-                <td><Inp value={data.gas_hc} onChangeText={(v: string) => update({ gas_hc: v })} /> / <Inp value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} /></td>
+              <tr>
+                <th className="hd">구분</th>
+                <th className="hd">O₂</th>
+                <th className="hd">H₂S · CO</th>
+                <th className="hd">H·C · CO₂</th>
               </tr>
-              <tr><td className="text-center">기준</td><td>18%이상~23.5%미만</td><td>10ppm미만 / 30ppm미만</td><td>0% / 1.5%미만</td></tr>
+              <tr>
+                <td className="text-center">측정결과</td>
+                <td><Inp className="min-w-[3rem]" value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} placeholder="%" /></td>
+                <td>
+                  <div className="flex gap-2 items-center">
+                    <Inp className="w-16 min-w-0 shrink-0" value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} placeholder="H₂S" />
+                    <Inp className="w-16 min-w-0 shrink-0" value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} placeholder="CO" />
+                  </div>
+                </td>
+                <td>
+                  <div className="flex gap-2 items-center">
+                    <Inp className="w-16 min-w-0 shrink-0" value={data.gas_hc} onChangeText={(v: string) => update({ gas_hc: v })} placeholder="H·C" />
+                    <Inp className="w-16 min-w-0 shrink-0" value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} placeholder="CO₂" />
+                  </div>
+                </td>
+              </tr>
+              <tr><td className="text-center">기준</td><td>18%이상~23.5%미만</td><td>10ppm미만 · 30ppm미만</td><td>0% · 1.5%미만</td></tr>
               <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
               <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
-              <tr><th className="hd">승인자</th><td colSpan={2}>{(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at) ? formatPermitStamp(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at) : '년 월 일 시 분'} 성명 : {signatures.closure_approver?.name || ''}</td><td><SigCell k="closure_approver" /></td></tr>
+              <tr><th className="hd">승인자</th><td colSpan={2}>{(slotSignedAt(signatures, 'sm') || signatures.approved_at) ? formatPermitStamp(slotSignedAt(signatures, 'sm') || signatures.approved_at) : '년 월 일 시 분'} 성명 : {signatures.sm?.name || ''}</td><td><SigCell k="sm" label="발주처 SM" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 연장근무 발생 시 작업허가 연장 승인 필요</div>
@@ -849,7 +884,7 @@ export default function DigPermitForm({
               </tr>
               <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
               <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
-              <tr><th className="hd">승인자</th><td colSpan={2}>{(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at) ? formatPermitStamp(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at) : '년 월 일 시 분'} 성명 : {signatures.closure_approver?.name || ''}</td><td><SigCell k="closure_approver" /></td></tr>
+              <tr><th className="hd">승인자</th><td colSpan={2}>{(slotSignedAt(signatures, 'sm') || signatures.approved_at) ? formatPermitStamp(slotSignedAt(signatures, 'sm') || signatures.approved_at) : '년 월 일 시 분'} 성명 : {signatures.sm?.name || ''}</td><td><SigCell k="sm" label="발주처 SM" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 지하매설물 손상 시 즉시 작업중지 후 관리주체에 통보. 깊이 1.5m 이상 굴착 시 흙막이/지보공 의무.</div>

@@ -30,6 +30,7 @@ import {
   isUserInvolvedInPermit,
 } from '@/lib/permitWorkDate';
 import { filterRunsByCompanyScope } from '@/lib/companyDocScope';
+import { DateTimePicker } from '@/components/ui/datetime-picker';
 
 
 const STATUS_COLOR: Record<string, string> = {
@@ -584,23 +585,31 @@ export default function WorkPermits() {
             <div><Label>공사업체</Label><Input value={form.contractor_company} onChange={(e) => setForm({ ...form, contractor_company: e.target.value, applicant_company: e.target.value })} placeholder="작성자 소속 회사 자동 입력" /></div>
             <div><Label>작업명</Label><Input value={form.work_name} onChange={(e) => setForm({ ...form, work_name: e.target.value })} /></div>
             <div><Label>작업 내용 *</Label><Textarea value={form.work_description} onChange={(e) => setForm({ ...form, work_description: e.target.value })} rows={3} /></div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <div>
                 <Label>작업 시작</Label>
-                <Input
-                  type="datetime-local"
+                <DateTimePicker
+                  className="w-full"
                   value={form.work_start}
-                  onChange={(e) => {
-                    const work_start = e.target.value;
+                  onChange={(work_start) => {
                     setForm({
                       ...form,
                       work_start,
                       permit_date: syncPermitDateFromWorkStart(work_start, form.permit_date),
                     });
                   }}
+                  placeholder="시작 일시 선택"
                 />
               </div>
-              <div><Label>작업 종료</Label><Input type="datetime-local" value={form.work_end} onChange={(e) => setForm({ ...form, work_end: e.target.value })} /></div>
+              <div>
+                <Label>작업 종료</Label>
+                <DateTimePicker
+                  className="w-full"
+                  value={form.work_end}
+                  onChange={(work_end) => setForm({ ...form, work_end })}
+                  placeholder="종료 일시 선택"
+                />
+              </div>
             </div>
             <div><Label>작업 인원</Label><Input type="number" value={form.personnel_count} onChange={(e) => setForm({ ...form, personnel_count: e.target.value })} /></div>
             {!editing && (

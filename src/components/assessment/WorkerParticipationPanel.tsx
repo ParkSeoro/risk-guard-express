@@ -7,7 +7,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Trash2, Sparkles, Loader2, Upload, MessageSquare, HeartPulse, AlertTriangle, Users, Wand2, MapPin, Calendar } from 'lucide-react';
 import { detectHighRiskCategories, type RiskItemLike } from '@/lib/highRiskDetection';
@@ -71,9 +70,7 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
   const [aiEquipment, setAiEquipment] = useState('');
   const [accidentAICount, setAccidentAICount] = useState(0);
 
-  // 고위험 작업 자동 사고사례 생성
-  const [autoAccidentEnabled, setAutoAccidentEnabled] = useState(true);
-  const [autoAccidentRan, setAutoAccidentRan] = useState(false);
+  // 고위험 작업 사고사례 — 버튼으로만 생성 (공종 자동작성과 분리)
   const [autoAccidentLoading, setAutoAccidentLoading] = useState(false);
   const detectedHighRisk = useMemo(() => detectHighRiskCategories(riskItems), [riskItems]);
   const autoCases = (accidents || []).filter(a => a.source_type === 'auto');
@@ -91,37 +88,23 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
   };
   useEffect(() => { reload(); }, [runId]);
 
-  const runAutoAccidentGeneration = async (silent = false) => {
+  const runAutoAccidentGeneration = async () => {
     if (!canEdit || detectedHighRisk.length === 0) return;
     setAutoAccidentLoading(true);
     try {
       const res = await autoGenerateAccidentCases({ runId, projectId, items: riskItems, userId });
       await reload();
       onChanged?.();
-      if (!silent) {
-        toast({
-          title: `사고사례 자동 생성 완료`,
-          description: `고위험 카테고리 ${res.categories.length}건, 사례 ${res.inserted}건 추가`,
-        });
-      }
+      toast({
+        title: `사고사례 라이브러리 매칭 완료`,
+        description: `고위험 카테고리 ${res.categories.length}건, 사례 ${res.inserted}건 추가`,
+      });
     } catch (e: any) {
-      if (!silent) toast({ title: '자동 생성 실패', description: e.message, variant: 'destructive' });
+      toast({ title: '생성 실패', description: e.message, variant: 'destructive' });
     } finally {
       setAutoAccidentLoading(false);
-      setAutoAccidentRan(true);
     }
   };
-
-  // 자동 트리거: 위험성평가 항목 로드 후 1회
-  useEffect(() => {
-    if (!autoAccidentEnabled || autoAccidentRan) return;
-    if (!canEdit) return;
-    if (riskItems.length === 0) return;
-    if (detectedHighRisk.length === 0) { setAutoAccidentRan(true); return; }
-    if (autoCases.length > 0) { setAutoAccidentRan(true); return; }
-    runAutoAccidentGeneration(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [riskItems.length, autoAccidentEnabled, canEdit]);
 
 
   // ---------- Opinion ----------
@@ -547,23 +530,23 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
             </div>
           )}
 
-          {/* 고위험 작업 자동 사고사례 패널 */}
+          {/* 고위험 작업 — 라이브러리 매칭 (수동만, 공종 자동작성과 분리) */}
           {canEdit && (
             <div className="rounded border p-2 bg-muted/20 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-xs">
-                  <Switch checked={autoAccidentEnabled} onCheckedChange={setAutoAccidentEnabled} />
-                  <span className="font-medium">고위험 작업 사고사례 자동 생성</span>
+                <div className="text-xs space-y-0.5">
+                  <p className="font-medium">고위험 작업 사고사례 (라이브러리)</p>
+                  <p className="text-[10px] text-muted-foreground">공종 자동작성 시 자동으로 붙지 않습니다. 필요할 때만 생성하세요.</p>
                 </div>
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-7 text-xs gap-1"
+                  className="h-7 text-xs gap-1 shrink-0"
                   disabled={autoAccidentLoading || detectedHighRisk.length === 0}
-                  onClick={() => runAutoAccidentGeneration(false)}
+                  onClick={() => runAutoAccidentGeneration()}
                 >
                   {autoAccidentLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-                  지금 생성
+                  라이브러리에서 가져오기
                 </Button>
               </div>
               {detectedHighRisk.length > 0 ? (
@@ -576,10 +559,10 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
               ) : (
                 <p className="text-[10px] text-muted-foreground">고위험 작업이 식별되지 않았습니다.</p>
               )}
-              {hasHighRiskWithoutCases && autoAccidentRan && (
-                <div className="flex items-start gap-1.5 p-2 rounded bg-destructive/10 text-destructive text-[11px]">
+              {hasHighRiskWithoutCases && (
+                <div className="flex items-start gap-1.5 p-2 rounded bg-muted/40 text-muted-foreground text-[11px]">
                   <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                  <span>고위험 작업이 식별되었지만 사고사례가 등록되지 않았습니다. 자동 생성을 실행하거나 수동으로 등록해주세요.</span>
+                  <span>고위험 작업이 있으나 사고사례가 없습니다. 위 버튼 또는 [사고사례 AI 작성]을 사용하세요.</span>
                 </div>
               )}
             </div>

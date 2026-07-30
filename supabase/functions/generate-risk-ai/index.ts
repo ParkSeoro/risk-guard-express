@@ -617,7 +617,7 @@ serve(async (req) => {
           ],
           temperature: 0.25,
           max_tokens: 2200,
-          timeoutMs: 45_000,
+          timeoutMs: 90_000,
         });
         const parsed = parseDeepseekRiskJson<any>(content);
         let rawItems: any[] = [];

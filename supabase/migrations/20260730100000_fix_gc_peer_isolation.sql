@@ -275,3 +275,38 @@ END;
 $function$;
 
 GRANT EXECUTE ON FUNCTION public.can_write_company_data(uuid, uuid, uuid) TO authenticated, service_role;
+
+-- work_permit_workers: column is work_permit_id (not permit_id); scope via parent permit
+DROP POLICY IF EXISTS "wpw_select" ON public.work_permit_workers;
+DROP POLICY IF EXISTS "Members can view work_permit_workers" ON public.work_permit_workers;
+DROP POLICY IF EXISTS "Project members can view work_permit_workers" ON public.work_permit_workers;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'work_permit_workers'
+  ) THEN
+    EXECUTE $pol$
+      CREATE POLICY "Members can view work_permit_workers"
+        ON public.work_permit_workers
+        FOR SELECT
+        TO authenticated
+        USING (
+          EXISTS (
+            SELECT 1
+            FROM public.work_permits wp
+            WHERE wp.id = work_permit_workers.work_permit_id
+              AND public.is_project_member(auth.uid(), wp.project_id)
+              AND (
+                wp.created_by = auth.uid()
+                OR (
+                  wp.company_id IS NOT NULL
+                  AND public.can_access_company_data(auth.uid(), wp.project_id, wp.company_id)
+                )
+              )
+          )
+        )
+    $pol$;
+  END IF;
+END $$;

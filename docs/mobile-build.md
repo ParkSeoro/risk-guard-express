@@ -74,7 +74,19 @@ npx cap open android  # Android Studio → Generate Signed Bundle
 
 재제출 후 `min_native_version`을 올려 두면 구버전 네이티브 쉘에서는 OTA가 차단됩니다.
 
-## 5. 푸시 알림 (선택)
+## 5. 금지구역 알람 최대 음량 (Android 네이티브)
+
+Play 스토어 / Capacitor Android 셸에서만 동작합니다 (웹·PWA는 OS가 시스템 볼륨 강제 불가).
+
+- 플러그인: `AlarmVolume` (`android/.../AlarmVolumePlugin.java`)
+- 동작: 경고 중 `STREAM_ALARM` + `STREAM_MUSIC`을 최대로 올리고, 사이렌을 `USAGE_ALARM`으로 재생한 뒤 종료 시 볼륨 복구
+- 권한: `MODIFY_AUDIO_SETTINGS`, `VIBRATE`
+- 웹/PWA 보완: 강한 진동 패턴 + 전체화면 점멸 (`alarmHaptics` / `DangerZoneAlertModal`)
+- 네이티브 변경이므로 **스토어 재빌드·재제출** 필요 (`npx cap sync` 후 Archive/Bundle). OTA만으로는 Java 플러그인이 배포되지 않습니다.
+
+마스터 시뮬레이터(모바일 메뉴)로 알람 사이클을 검증하세요.
+
+## 6. 푸시 알림 (선택)
 - Android: Firebase Console → `google-services.json` → `android/app/`
 - iOS: Apple Developer → APNs Key → Xcode Capabilities → Push Notifications
 

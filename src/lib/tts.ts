@@ -1,15 +1,24 @@
 /**
  * Danger-zone alarm audio: siren (1–2s) → Korean TTS.
  *
- * Silent / vibrate bypass:
- * - Native (Capacitor): @capacitor-community/native-audio with focus=true
- *   (iOS AVAudioSession Playback category; Android STREAM_MUSIC / max volume)
- * - Web/PWA: AudioContext + HTMLAudioElement at volume 1.0
+ * Volume / silent behavior:
+ * - Android native (Capacitor): AlarmVolume plugin → STREAM_ALARM + STREAM_MUSIC
+ *   forced to max for the alert duration, siren via USAGE_ALARM (bypasses silent
+ *   for alarm stream on most OEMs). Volume restored on stop.
+ * - iOS native: NativeAudio focus/playback (ignores mute switch; follows hardware vol).
+ * - Web/PWA: cannot force system volume — app-relative 1.0 + haptics (see alarmHaptics).
  */
 
 import { Capacitor } from "@capacitor/core";
 import { NativeAudio } from "@capacitor-community/native-audio";
 import { buildDangerTtsMessage, type AlarmRoleInput } from "@/lib/alarmRoleLabel";
+import {
+  boostAlarmVolumeMax,
+  isAndroidNativeAlarmAvailable,
+  playNativeAlarmSiren,
+  restoreAlarmVolume,
+  stopNativeAlarmSiren,
+} from "@/lib/alarmVolume";
 
 const SIREN_ASSET_ID = "danger_siren";
 const SIREN_WEB_PATH = "/sounds/siren.wav";
@@ -22,6 +31,7 @@ let audioCtx: AudioContext | null = null;
 let nativeReady: Promise<boolean> | null = null;
 let htmlSiren: HTMLAudioElement | null = null;
 let cancelled = false;
+let volumeBoosted = false;
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -45,10 +55,11 @@ export async function unlockAlarmAudio(): Promise<void> {
 
 async function ensureNativeSiren(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false;
+  // Android uses AlarmVolume plugin (STREAM_ALARM) — skip media-stream native-audio
+  if (isAndroidNativeAlarmAvailable()) return false;
   if (!nativeReady) {
     nativeReady = (async () => {
       try {
-        // focus:true → take audio focus / prefer Playback-style session
         await NativeAudio.configure({ fade: false, focus: true });
         await NativeAudio.preload({
           assetId: SIREN_ASSET_ID,
@@ -61,7 +72,6 @@ async function ensureNativeSiren(): Promise<boolean> {
         return true;
       } catch (e) {
         console.warn("[alarm] native-audio preload failed, falling back to web", e);
-        // Try URL form (some WebView asset layouts)
         try {
           await NativeAudio.preload({
             assetId: SIREN_ASSET_ID,
@@ -92,7 +102,6 @@ function playSirenViaWebAudio(): Promise<void> {
     const start = async () => {
       try {
         if (ctx.state === "suspended") await ctx.resume();
-        // Gain forced to max (alarm intent)
         const gain = ctx.createGain();
         gain.gain.value = 1.0;
         gain.connect(ctx.destination);
@@ -105,14 +114,14 @@ function playSirenViaWebAudio(): Promise<void> {
 
         const now = ctx.currentTime;
         const end = now + SIREN_DURATION_MS / 1000;
-        // 삐용삐용: alternate 880 / 1175 Hz
         osc.frequency.setValueAtTime(880, now);
         for (let t = 0.25; t < SIREN_DURATION_MS / 1000; t += 0.25) {
           osc.frequency.setValueAtTime(t % 0.5 < 0.25 ? 1175 : 880, now + t);
         }
+        // Louder envelope for web (still capped by system volume)
         oscGain.gain.setValueAtTime(0.0001, now);
-        oscGain.gain.exponentialRampToValueAtTime(0.55, now + 0.05);
-        oscGain.gain.setValueAtTime(0.55, end - 0.08);
+        oscGain.gain.exponentialRampToValueAtTime(0.85, now + 0.05);
+        oscGain.gain.setValueAtTime(0.85, end - 0.08);
         oscGain.gain.exponentialRampToValueAtTime(0.0001, end);
 
         osc.start(now);
@@ -139,7 +148,6 @@ function playSirenViaHtmlAudio(): Promise<void> {
       el.pause();
       el.currentTime = 0;
       el.volume = 1.0;
-      // Best-effort attributes for alarm-like playback
       el.setAttribute("playsinline", "true");
       (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
 
@@ -153,7 +161,6 @@ function playSirenViaHtmlAudio(): Promise<void> {
       const p = el.play();
       if (p && typeof p.then === "function") {
         p.catch(() => {
-          // Autoplay blocked → synthesize
           void playSirenViaWebAudio().then(resolve);
         });
       }
@@ -166,6 +173,19 @@ function playSirenViaHtmlAudio(): Promise<void> {
 
 async function playSiren(): Promise<void> {
   await unlockAlarmAudio();
+
+  // Android Capacitor: STREAM_ALARM at system max
+  if (isAndroidNativeAlarmAvailable()) {
+    const boosted = await boostAlarmVolumeMax();
+    volumeBoosted = boosted || volumeBoosted;
+    const played = await playNativeAlarmSiren(SIREN_DURATION_MS);
+    if (played) {
+      await new Promise((r) => setTimeout(r, SIREN_DURATION_MS));
+      await stopNativeAlarmSiren();
+      return;
+    }
+  }
+
   if (Capacitor.isNativePlatform()) {
     const ok = await ensureNativeSiren();
     if (ok) {
@@ -184,7 +204,6 @@ async function playSiren(): Promise<void> {
       }
     }
   }
-  // Web / fallback: prefer file, then oscillator synth
   await playSirenViaHtmlAudio();
 }
 
@@ -220,7 +239,6 @@ function speakTts(message: string): Promise<void> {
         window.speechSynthesis.addEventListener("voiceschanged", onVoices);
       }
       window.speechSynthesis.speak(utter);
-      // Safety timeout (in case onend never fires)
       window.setTimeout(() => resolve(), 12_000);
     } catch (e) {
       console.warn("[tts] speak failed", e);
@@ -239,7 +257,7 @@ export type DangerAlarmOpts = {
 
 /**
  * Full alarm sequence: (optional) siren → TTS.
- * Prefer this over speakDangerAlert for production alerts.
+ * On Android native, boosts system alarm/media volume for the whole sequence.
  */
 export async function playDangerAlarm(opts: DangerAlarmOpts = {}): Promise<void> {
   cancelled = false;
@@ -247,11 +265,20 @@ export async function playDangerAlarm(opts: DangerAlarmOpts = {}): Promise<void>
     opts.message ||
     buildDangerTtsMessage({ displayName: opts.displayName, role: opts.role });
 
-  if (!opts.skipSiren) {
-    await playSiren();
-    if (cancelled) return;
+  // Ensure volume boost covers TTS (media stream) as well as siren
+  if (isAndroidNativeAlarmAvailable() && !volumeBoosted) {
+    volumeBoosted = await boostAlarmVolumeMax();
   }
-  await speakTts(message);
+
+  try {
+    if (!opts.skipSiren) {
+      await playSiren();
+      if (cancelled) return;
+    }
+    await speakTts(message);
+  } finally {
+    // Keep boost until stopSpeaking / modal dismiss (repeat loop may re-enter)
+  }
 }
 
 /** Back-compat sync entry — fires async sequence without awaiting. */
@@ -274,6 +301,11 @@ export function stopSpeaking(): void {
   }
   if (Capacitor.isNativePlatform()) {
     void NativeAudio.stop({ assetId: SIREN_ASSET_ID }).catch(() => undefined);
+  }
+  void stopNativeAlarmSiren();
+  if (volumeBoosted) {
+    volumeBoosted = false;
+    void restoreAlarmVolume();
   }
 }
 

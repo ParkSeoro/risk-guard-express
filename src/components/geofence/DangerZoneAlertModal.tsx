@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { DANGER_MESSAGE, playDangerAlarm, stopSpeaking, unlockAlarmAudio } from "@/lib/tts";
 import type { AlarmRoleInput } from "@/lib/alarmRoleLabel";
 import { formatAlarmSubject } from "@/lib/alarmRoleLabel";
+import { startDangerHapticsLoop } from "@/lib/alarmHaptics";
 import { Button } from "@/components/ui/button";
 import { AlertOctagon, X } from "lucide-react";
 
@@ -14,7 +15,7 @@ type Props = {
   onDismiss: () => void;
 };
 
-/** Full-screen red danger alert with siren → TTS playback. */
+/** Full-screen red danger alert with siren → TTS + haptics. */
 export default function DangerZoneAlertModal({
   open,
   zoneName,
@@ -29,12 +30,14 @@ export default function DangerZoneAlertModal({
     }
     void unlockAlarmAudio();
     void playDangerAlarm({ displayName: workerName, role: workerRole });
+    const stopHaptics = startDangerHapticsLoop(10_000);
     // Repeat full sequence every 10s while open (siren ~2s + TTS)
     const id = window.setInterval(() => {
       void playDangerAlarm({ displayName: workerName, role: workerRole });
     }, 10_000);
     return () => {
       window.clearInterval(id);
+      stopHaptics();
       stopSpeaking();
     };
   }, [open, workerName, workerRole]);
@@ -49,9 +52,25 @@ export default function DangerZoneAlertModal({
       role="alertdialog"
       aria-modal="true"
       aria-label="위험 구역 진입 경고"
-      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-red-700 text-white p-6 animate-in fade-in duration-200"
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-red-700 text-white p-6 animate-in fade-in duration-200 danger-alarm-flash"
     >
-      <AlertOctagon className="h-28 w-28 mb-6 animate-pulse" strokeWidth={1.5} />
+      <style>{`
+        @keyframes danger-alarm-flash {
+          0%, 100% { background-color: rgb(185 28 28); }
+          50% { background-color: rgb(127 29 29); }
+        }
+        .danger-alarm-flash {
+          animation: danger-alarm-flash 0.7s ease-in-out infinite;
+        }
+        @keyframes danger-icon-pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.12); opacity: 0.85; }
+        }
+        .danger-icon-pulse {
+          animation: danger-icon-pulse 0.7s ease-in-out infinite;
+        }
+      `}</style>
+      <AlertOctagon className="h-28 w-28 mb-6 danger-icon-pulse" strokeWidth={1.5} />
       <h1 className="text-4xl sm:text-5xl font-black text-center leading-tight mb-4">
         위험 구역 진입
       </h1>

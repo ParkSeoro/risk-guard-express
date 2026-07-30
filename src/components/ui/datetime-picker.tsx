@@ -88,7 +88,7 @@ export function DateTimePicker({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover modal open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -105,7 +105,19 @@ export function DateTimePicker({
           <span className="truncate">{label}</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-3" align="start">
+      <PopoverContent
+        className="w-auto p-3 z-[100]"
+        align="start"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => {
+          // Keep open when interacting with nested Select portals
+          const t = e.target as HTMLElement | null;
+          if (t?.closest('[data-radix-select-content], [role="listbox"]')) {
+            e.preventDefault();
+          }
+        }}
+      >
         <Calendar
           mode="single"
           selected={draftDate}

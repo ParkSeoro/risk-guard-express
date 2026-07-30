@@ -163,7 +163,8 @@ export interface PermitFormData {
   chk_etc?: boolean;
   chk_etc_note?: string;
   // 작업허가 연장 · 작업완료 시각
-  work_extend_until?: string;   // datetime-local
+  work_extend_until?: string;   // datetime-local or ISO
+  work_extend_requested_until?: string;
   work_complete_time?: string;  // "HH:MM" 자유 입력
 }
 
@@ -180,6 +181,8 @@ export interface PermitSignatures {
   gc_manager?: { name: string; signature: string; signed_at: string };
   /** SM 작업 완료(Closure) 최종 서명 — 하단 승인자 칸 */
   closure_approver?: { name: string; signature: string; signed_at: string };
+  /** 작업허가 연장 승인 (발주처 SM) */
+  extension_approver?: { name: string; signature: string; signed_at: string };
 
   /** @deprecated Do not bind stamp cells to these — use per-slot signed_at only */
   reviewed_at?: string;
@@ -647,9 +650,19 @@ export default function DigPermitForm({
               </tr>
               <tr>
                 <th className="hd">작업허가 연장</th>
-                <td colSpan={3}><ManualDateTimeBlank /> 까지</td>
+                <td colSpan={3}>
+                  {data.work_extend_until
+                    ? <span className="font-semibold">{formatPermitStamp(data.work_extend_until)} 까지</span>
+                    : data.work_extend_requested_until
+                      ? <span className="text-amber-700">연장 요청중: {formatPermitStamp(String(data.work_extend_requested_until))} 까지</span>
+                      : <><ManualDateTimeBlank /> 까지</>}
+                </td>
                 <th className="hd">작업허가<br/>연장 승인</th>
-                <td><ManualSignatureBlank /></td>
+                <td>
+                  {(signatures.extension_approver?.name || slotSignedAt(signatures, 'extension_approver'))
+                    ? <SigCell k="extension_approver" label="연장 승인" />
+                    : <ManualSignatureBlank />}
+                </td>
               </tr>
             </tbody>
           </table>

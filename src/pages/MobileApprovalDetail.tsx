@@ -11,6 +11,12 @@ import { toast } from "sonner";
 import PermitAiBriefingCard from "@/components/permits/PermitAiBriefingCard";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
 import { isSubmitterApprovalStep } from "@/lib/approvalRules";
+import {
+  permitPostStepKind,
+  permitPostStepBadge,
+  permitPostStepApproveLabel,
+} from "@/lib/permitPostApproval";
+import { formatPermitStamp } from "@/lib/permitDateFormat";
 
 /**
  * Mobile approval detail — AI briefing at top, then action buttons.
@@ -22,11 +28,13 @@ export default function MobileApprovalDetail() {
   const { user } = useAuth();
   const [row, setRow] = useState<any | null>(null);
   const [briefing, setBriefing] = useState<PermitAiBriefing | null>(null);
+  const [extendUntil, setExtendUntil] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const isClosure = (row?.step_position || "").toLowerCase() === "closure_sm";
+  const stepKind = permitPostStepKind(row?.step_position);
+  const badge = permitPostStepBadge(stepKind);
 
   useEffect(() => {
     if (!user || !approvalId) return;
@@ -50,10 +58,17 @@ export default function MobileApprovalDetail() {
       if (found?.entity_type === "work_permit" && found.entity_id) {
         const { data: p } = await supabase
           .from("work_permits" as any)
-          .select("ai_briefing, work_name, work_description, location, permit_date, status")
+          .select("ai_briefing, work_name, work_description, location, permit_date, status, form_data, extension_until")
           .eq("id", found.entity_id)
           .maybeSingle();
         setBriefing(((p as any)?.ai_briefing as PermitAiBriefing) || null);
+        const fd = ((p as any)?.form_data || {}) as any;
+        setExtendUntil(
+          fd.work_extend_requested_until ||
+          fd.work_extend_until ||
+          (p as any)?.extension_until ||
+          null,
+        );
       }
       setLoading(false);
     })();
@@ -72,9 +87,13 @@ export default function MobileApprovalDetail() {
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       toast.success(
-        isClosure
+        stepKind === "closure_sm"
           ? action === "approve" ? "작업 완료 및 종료 처리됨" : "종료 확인이 반려되었습니다"
-          : action === "approve" ? "승인 완료" : "반려 처리됨",
+          : stepKind === "closure_supervisor"
+            ? action === "approve" ? "관리감독자 완료 확인됨" : "완료 확인 반려"
+            : stepKind === "extend_sm"
+              ? action === "approve" ? "연장 승인 완료" : "연장 요청 반려"
+              : action === "approve" ? "승인 완료" : "반려 처리됨",
       );
       navigate("/app/worker/approvals", { replace: true });
     } catch (e: any) {
@@ -120,9 +139,9 @@ export default function MobileApprovalDetail() {
               <CardContent className="pt-4 space-y-3">
                 <div className="flex flex-wrap gap-1.5">
                   <Badge variant="secondary">작업허가서</Badge>
-                  {isClosure && (
+                  {badge && (
                     <Badge className="bg-amber-500/15 text-amber-700 border-amber-500/30" variant="outline">
-                      작업 완료 확인 요망
+                      {badge}
                     </Badge>
                   )}
                   <Badge variant="outline">{row.step || "결재"}</Badge>
@@ -132,10 +151,15 @@ export default function MobileApprovalDetail() {
                   {row.entity_date && <>작업일 {row.entity_date} · </>}
                   요청 {new Date(row.created_at).toLocaleString("ko-KR")}
                 </div>
+                {stepKind === "extend_sm" && extendUntil && (
+                  <div className="text-sm rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                    연장 요청 시각: <strong>{formatPermitStamp(extendUntil)}</strong> 까지
+                  </div>
+                )}
 
                 <IMESafeTextarea
                   rows={3}
-                  placeholder={isClosure ? "완료 확인 의견 (선택) / 반려 시 필수" : "의견/사유 (반려 시 필수)"}
+                  placeholder={stepKind !== "normal" ? "의견 (선택) / 반려 시 필수" : "의견/사유 (반려 시 필수)"}
                   defaultValue={comment}
                   onCommit={setComment}
                 />
@@ -146,7 +170,7 @@ export default function MobileApprovalDetail() {
                   </Button>
                   <Button onClick={() => decide("approve")} disabled={submitting}>
                     {submitting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
-                    {isClosure ? "작업 완료 및 종료" : "승인"}
+                    {permitPostStepApproveLabel(stepKind)}
                   </Button>
                 </div>
 

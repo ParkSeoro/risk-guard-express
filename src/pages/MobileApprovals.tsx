@@ -12,6 +12,11 @@ import { toast } from "sonner";
 import PermitAiBriefingCard from "@/components/permits/PermitAiBriefingCard";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
 import { isSubmitterApprovalStep } from "@/lib/approvalRules";
+import {
+  permitPostStepKind,
+  permitPostStepBadge,
+  permitPostStepApproveLabel,
+} from "@/lib/permitPostApproval";
 
 const ENTITY_LABEL: Record<string, string> = {
   work_plan: "작업계획서",
@@ -24,8 +29,6 @@ const ENTITY_LABEL: Record<string, string> = {
 };
 
 const ENTITY_LINK = (t: string, id: string) => mobileEntityPath(t, id).path;
-
-const isClosureStep = (r: any) => (r.step_position || "").toLowerCase() === "closure_sm";
 
 export default function MobileApprovals() {
   const navigate = useNavigate();
@@ -73,10 +76,15 @@ export default function MobileApprovals() {
       if (error) throw error;
       const result: any = data;
       if (result?.error) throw new Error(result.error);
+      const kind = permitPostStepKind(r.step_position);
       toast.success(
-        isClosureStep(r)
+        kind === "closure_sm"
           ? (action === "approve" ? "작업 완료 및 종료 처리됨" : "종료 확인 반려")
-          : (action === "approve" ? "승인 완료" : "반려 처리됨"),
+          : kind === "closure_supervisor"
+            ? (action === "approve" ? "관리감독자 완료 확인됨" : "완료 확인 반려")
+            : kind === "extend_sm"
+              ? (action === "approve" ? "연장 승인 완료" : "연장 요청 반려")
+              : (action === "approve" ? "승인 완료" : "반려 처리됨"),
       );
       setOpenId(null); setComment("");
       load();
@@ -105,14 +113,17 @@ export default function MobileApprovals() {
             <div className="text-sm mt-2">대기 중인 결재가 없습니다</div>
           </div>
         )}
-        {rows.map((r: any) => (
+        {rows.map((r: any) => {
+          const kind = permitPostStepKind(r.step_position);
+          const badge = permitPostStepBadge(kind);
+          return (
           <Card key={r.approval_id}>
             <CardContent className="pt-4 space-y-2">
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="secondary" className="text-xs">{ENTITY_LABEL[r.entity_type] || r.entity_type}</Badge>
-                {isClosureStep(r) && (
+                {badge && (
                   <Badge className="text-xs bg-amber-500/15 text-amber-700 border-amber-500/30" variant="outline">
-                    작업 완료 확인 요망
+                    {badge}
                   </Badge>
                 )}
                 <Badge variant="outline" className="text-xs">{r.step || "결재"}</Badge>
@@ -139,7 +150,7 @@ export default function MobileApprovals() {
                     </Button>
                     <Button onClick={() => decide(r, "approve")} disabled={submitting}>
                       {submitting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
-                      {isClosureStep(r) ? "종료" : "승인"}
+                      {permitPostStepApproveLabel(kind)}
                     </Button>
                   </div>
                 </div>
@@ -149,13 +160,14 @@ export default function MobileApprovals() {
                     문서 보기
                   </Button>
                   <Button onClick={() => openRow(r)}>
-                    {isClosureStep(r) ? "완료 확인" : "결재 처리"}
+                    {kind === "normal" ? "결재 처리" : permitPostStepApproveLabel(kind)}
                   </Button>
                 </div>
               )}
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </main>
     </div>
   );

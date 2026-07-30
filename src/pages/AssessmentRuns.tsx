@@ -21,7 +21,7 @@ import RunCardActions from '@/components/assessment-runs/RunCardActions';
 import EditRunDialog from '@/components/assessment-runs/EditRunDialog';
 import DeleteRunDialog from '@/components/assessment-runs/DeleteRunDialog';
 import CloneRunDialog from '@/components/assessment-runs/CloneRunDialog';
-import { mustScopeToOwnCompany } from '@/lib/companyDocScope';
+import { filterRunsByCompanyScope } from '@/lib/companyDocScope';
 
 const typeLabels: Record<string, string> = { '최초': '최초', '정기': '정기', '수시': '수시', '상시': '상시' };
 
@@ -69,7 +69,7 @@ const AssessmentRuns = () => {
   const { log } = useAuditLog();
   const [projectRole, setProjectRole] = useState<string | null>(null);
 
-  const { selectedProject, userCompanyId, userCompanyType, userRole, isMaster } = useGlobalProjectAccess();
+  const { selectedProject, userCompanyId, userCompanyType, userRole, isMaster, accessibleCompanyIds } = useGlobalProjectAccess();
   const [runs, setRuns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -137,14 +137,10 @@ const AssessmentRuns = () => {
       query = query.eq('is_deleted', false).neq('status', '폐기');
     }
     const { data } = await query;
-    let list = data || [];
-    if (mustScopeToOwnCompany({ role: userRole, companyType: userCompanyType, isMaster }) && userCompanyId) {
-      list = list.filter(
-        (r: any) =>
-          r.created_by === user?.id ||
-          (Array.isArray(r.target_company_ids) && r.target_company_ids.includes(userCompanyId)),
-      );
-    }
+    const list = filterRunsByCompanyScope(data || [], {
+      userId: user?.id,
+      accessibleCompanyIds,
+    });
     setRuns(list);
 
     if (list.length > 0) {
@@ -166,7 +162,7 @@ const AssessmentRuns = () => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchProjectRole(); fetchRuns(); fetchContractors(); }, [selectedProject, showDeleted]);
+  useEffect(() => { fetchProjectRole(); fetchRuns(); fetchContractors(); }, [selectedProject, showDeleted, accessibleCompanyIds]);
 
   const toggleContractor = (id: string) => {
     setForm(prev => ({

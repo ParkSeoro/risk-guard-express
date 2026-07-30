@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  AFTER Apple approves Critical Alerts for org.safenex.app:
+  1. Merge these keys into ios/App/App/App.entitlements (or create it)
+  2. Enable Critical Alerts on the App ID in Apple Developer → Identifiers
+  3. Regenerate provisioning profiles
+  4. Set Info.plist SafenexCriticalAlertsEnabled = YES
+  5. Rebuild & submit
+
+  Do NOT enable in production builds before Apple approval — signing will fail.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.developer.usernotifications.critical-alerts</key>
+  <true/>
+</dict>
+</plist>

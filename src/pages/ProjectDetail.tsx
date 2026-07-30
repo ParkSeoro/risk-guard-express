@@ -125,7 +125,12 @@ const ProjectDetail = () => {
         .eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('project_invites').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_join_requests').select('*, profiles:user_id(display_name, company)').eq('project_id', projectId).eq('status', 'pending'),
-      supabase.from('approval_route_templates' as any).select('*').eq('project_id', projectId).order('created_at'),
+      supabase.from('approval_route_templates' as any)
+        .select('*')
+        .eq('project_id', projectId)
+        .is('owner_user_id', null)
+        .eq('is_deleted', false)
+        .order('created_at'),
       supabase.from('environment_tags' as any).select('*').or(`project_id.eq.${projectId},project_id.is.null`).eq('is_deleted', false).order('created_at'),
     ]);
 
@@ -650,6 +655,9 @@ const ProjectDetail = () => {
       is_default: templateForm.is_default,
       steps: templateForm.steps.map((s, i) => ({ ...s, step_order: i })),
       created_by: user.id,
+      // Project 결재라인 tab = shared project templates only (never personal)
+      owner_user_id: null,
+      company_id: null,
     };
 
     if (editingTemplateId) {
@@ -1026,7 +1034,10 @@ const ProjectDetail = () => {
         <TabsContent value="approval-routes" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm">결재라인 템플릿</CardTitle>
+              <div>
+                <CardTitle className="text-sm">결재라인 템플릿</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">프로젝트 공용 결재선만 표시됩니다. 개인용 「내 결재선」은 설정 &gt; 결재선 관리에서만 본인에게 보입니다.</p>
+              </div>
               {canManage && (
                 <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={openNewTemplate}>
                   <Plus className="h-3.5 w-3.5" /> 결재라인 추가

@@ -526,7 +526,7 @@ export default function WorkPermits() {
                       setExtendUntil('');
                     }}
                   >
-                    <Clock className="h-3 w-3 mr-1" />시간 연장
+                    <Clock className="h-3 w-3 mr-1" />연장 작업
                   </Button>
                 )}
                 {isPermitEditable(p.status) && (
@@ -676,7 +676,7 @@ export default function WorkPermits() {
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>작업허가 시간 연장</DialogTitle>
+            <DialogTitle>연장 작업</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">

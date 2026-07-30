@@ -68,7 +68,8 @@ export function DateTimePicker({
   useEffect(() => {
     if (!open) return;
     const p = parseValue(value);
-    setDraftDate(p || undefined);
+    // Empty value: default to today so Confirm is usable (today styling ≠ selected).
+    setDraftDate(p || new Date());
     setHour(p ? format(p, "HH") : "09");
     if (p) {
       const m = p.getMinutes();
@@ -82,8 +83,8 @@ export function DateTimePicker({
   const label = parsed ? format(parsed, DISPLAY_FMT) : placeholder;
 
   const confirm = () => {
-    if (!draftDate) return;
-    onChange(toValue(draftDate, hour, minute));
+    const day = draftDate || new Date();
+    onChange(toValue(day, hour, minute));
     setOpen(false);
   };
 
@@ -120,8 +121,11 @@ export function DateTimePicker({
       >
         <Calendar
           mode="single"
+          required
           selected={draftDate}
-          onSelect={(d) => setDraftDate(d)}
+          onSelect={(d) => {
+            if (d) setDraftDate(d);
+          }}
           locale={ko}
           initialFocus
         />
@@ -160,7 +164,7 @@ export function DateTimePicker({
           >
             지우기
           </Button>
-          <Button type="button" className="flex-1" disabled={!draftDate} onClick={confirm}>
+          <Button type="button" className="flex-1" onClick={confirm}>
             확인
           </Button>
         </div>

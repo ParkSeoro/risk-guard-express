@@ -459,7 +459,7 @@ export default function WorkPermitDetail() {
           </Button>
           {canRequestExtend && (
             <Button size="sm" variant="outline" onClick={() => setExtendOpen(true)}>
-              <Clock className="h-4 w-4 mr-1" />연장 신청
+              <Clock className="h-4 w-4 mr-1" />연장 작업
             </Button>
           )}
           {!!data.work_extend_requested_until && (
@@ -606,7 +606,7 @@ export default function WorkPermitDetail() {
       <Dialog open={extendOpen} onOpenChange={setExtendOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>작업허가 연장 신청</DialogTitle>
+            <DialogTitle>연장 작업</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">

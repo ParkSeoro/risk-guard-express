@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { applyOwnCompanyFilter } from '@/lib/companyDocScope';
 
 /**
  * Project-scoped role (new model).
@@ -281,20 +282,13 @@ export function useProjectAccess(): ProjectAccess {
   const userCompanyType: CompanyType = isMaster ? null : (memberInfo?.company_type ?? null);
   const userPosition: ProjectPosition = isMaster ? null : (memberInfo?.position ?? null);
 
-  const applyCompanyFilter = (query: any): any => {
-    // Owner-side roles see all companies in a project (RLS-enforced)
-    if (userRole === 'master' || userRole === 'project_admin' || userRole === 'safety_manager') {
-      return query;
-    }
-    // worker/viewer: hard restrict to own company on client (RLS is the real gate)
-    if (userRole === 'worker' || userRole === 'viewer') {
-      if (userCompanyId) return query.eq('company_id', userCompanyId);
-      // No company → restrict to nothing
-      return query.eq('company_id', '00000000-0000-0000-0000-000000000000');
-    }
-    // site_manager/supervisor: rely on RLS for descendant filtering (no client filter)
-    return query;
-  };
+  const applyCompanyFilter = (query: any): any =>
+    applyOwnCompanyFilter(query, {
+      role: userRole,
+      companyType: userCompanyType,
+      companyId: userCompanyId,
+      isMaster,
+    });
 
   const getPermissions = (feature: FeatureKey): Perm =>
     PERMISSION_MATRIX[userRole]?.[feature] ?? RO;
@@ -313,9 +307,10 @@ export function useProjectAccess(): ProjectAccess {
     isSiteManager,
     isSupervisor,
     isWorker,
-    isContractor: userCompanyType === 'contractor' && (
+    isContractor: (userCompanyType === 'contractor' || userCompanyType === 'vendor') && (
       userRole === 'project_admin' || userRole === 'safety_manager' ||
-      userRole === 'site_manager' || userRole === 'supervisor'
+      userRole === 'site_manager' || userRole === 'supervisor' ||
+      userRole === 'site_supervisor' || userRole === 'worker'
     ),
     loading,
     applyCompanyFilter,

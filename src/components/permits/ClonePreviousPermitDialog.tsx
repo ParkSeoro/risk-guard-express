@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Copy, FileSignature } from 'lucide-react';
+import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
 
 interface Props {
   open: boolean;
@@ -24,6 +25,7 @@ export default function ClonePreviousPermitDialog({
   open, onOpenChange, projectId, permitType, currentPermitId, onCloned,
 }: Props) {
   const { toast } = useToast();
+  const access = useGlobalProjectAccessOptional();
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -31,7 +33,7 @@ export default function ClonePreviousPermitDialog({
     if (!open || !projectId) return;
     (async () => {
       setLoading(true);
-      const { data } = await supabase
+      let q: any = supabase
         .from('work_permits' as any)
         .select('id, permit_date, work_description, work_location, permit_type, status, form_data')
         .eq('project_id', projectId)
@@ -40,10 +42,12 @@ export default function ClonePreviousPermitDialog({
         .neq('id', currentPermitId)
         .order('permit_date', { ascending: false })
         .limit(20);
+      if (access?.applyCompanyFilter) q = access.applyCompanyFilter(q);
+      const { data } = await q;
       setList((data as any[]) || []);
       setLoading(false);
     })();
-  }, [open, projectId, permitType, currentPermitId]);
+  }, [open, projectId, permitType, currentPermitId, access]);
 
   const apply = async (src: any) => {
     // 복사 대상: form_data, work_description, work_location

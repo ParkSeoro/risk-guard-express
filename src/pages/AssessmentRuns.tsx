@@ -21,6 +21,7 @@ import RunCardActions from '@/components/assessment-runs/RunCardActions';
 import EditRunDialog from '@/components/assessment-runs/EditRunDialog';
 import DeleteRunDialog from '@/components/assessment-runs/DeleteRunDialog';
 import CloneRunDialog from '@/components/assessment-runs/CloneRunDialog';
+import { mustScopeToOwnCompany } from '@/lib/companyDocScope';
 
 const typeLabels: Record<string, string> = { '최초': '최초', '정기': '정기', '수시': '수시', '상시': '상시' };
 
@@ -63,13 +64,12 @@ function VerdictBadge({ verdict, score }: { verdict: string | null; score: numbe
 
 const AssessmentRuns = () => {
   const navigate = useNavigate();
-  const { user, hasRole } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const { log } = useAuditLog();
-  const isMaster = hasRole('master');
   const [projectRole, setProjectRole] = useState<string | null>(null);
 
-  const { selectedProject } = useGlobalProjectAccess();
+  const { selectedProject, userCompanyId, userCompanyType, userRole, isMaster } = useGlobalProjectAccess();
   const [runs, setRuns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -137,10 +137,18 @@ const AssessmentRuns = () => {
       query = query.eq('is_deleted', false).neq('status', '폐기');
     }
     const { data } = await query;
-    setRuns(data || []);
+    let list = data || [];
+    if (mustScopeToOwnCompany({ role: userRole, companyType: userCompanyType, isMaster }) && userCompanyId) {
+      list = list.filter(
+        (r: any) =>
+          r.created_by === user?.id ||
+          (Array.isArray(r.target_company_ids) && r.target_company_ids.includes(userCompanyId)),
+      );
+    }
+    setRuns(list);
 
-    if (data && data.length > 0) {
-      const runIds = data.map((r: any) => r.id);
+    if (list.length > 0) {
+      const runIds = list.map((r: any) => r.id);
       const { data: items } = await supabase.from('risk_items')
         .select('run_id, risk_grade')
         .in('run_id', runIds);

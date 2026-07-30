@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText, Copy, ClipboardList, Search, CalendarDays, CheckCircle2 } from 'lucide-react';
 import AssigneeSelect from '@/components/AssigneeSelect';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
+import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
 
 
 interface Props {
@@ -41,6 +42,7 @@ const BRIEFING_TEMPLATE = `■ 오늘 작업 설명:
 - `;
 
 export default function TbmManager({ projectId, runId, defaultRisks = [] }: Props) {
+  const access = useGlobalProjectAccessOptional();
   const { toast } = useToast();
   const { softDelete } = useSoftDelete();
   const [sessions, setSessions] = useState<TbmSession[]>([]);
@@ -86,6 +88,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
       .or('is_deleted.is.null,is_deleted.eq.false')
       .order('created_at', { ascending: false });
     if (runId) q = q.eq('run_id', runId);
+    if (access?.applyCompanyFilter) q = access.applyCompanyFilter(q);
     const { data } = await q;
     const list = ((data as any) || []) as TbmSession[];
     setSessions(list);
@@ -153,6 +156,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
       .select('*').eq('project_id', projectId)
       .order('tbm_date', { ascending: false }).limit(20);
     if (processCategory) q = q.eq('process_category', processCategory);
+    if (access?.applyCompanyFilter) q = access.applyCompanyFilter(q);
     const { data } = await q;
     setCopyCandidates((data as any) || []);
     setShowCopyDialog(true);

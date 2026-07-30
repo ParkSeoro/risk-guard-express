@@ -14,59 +14,47 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import type { ProjectRole } from '@/hooks/useProjectAccess';
+import { mustScopeToOwnCompany } from '@/lib/companyDocScope';
 
 export interface ScopeOptions {
   projectId: string | null | undefined;
   companyId?: string | null;
+  /** Company type — required for correct contractor isolation */
+  companyType?: string | null;
   role: ProjectRole;
+  isMaster?: boolean;
   /** 휴지통 보기일 때만 true — 기본은 삭제된 행 제외 */
   includeDeleted?: boolean;
   /** 이 테이블에 is_deleted 컬럼이 없으면 false */
   hasSoftDelete?: boolean;
 }
 
-/** 회사 격리가 필요한 역할인지 */
-function shouldEnforceCompanyFilter(role: ProjectRole): boolean {
-  return role === 'worker' || role === 'viewer';
-}
-
-/** 프로젝트 전체 접근이 가능한 역할인지 (격리 면제) */
-function isOwnerSideRole(role: ProjectRole): boolean {
-  return role === 'master' || role === 'project_admin' || role === 'safety_manager';
-}
-
 /**
  * 조회 쿼리에 스코프 필터 적용.
- *
- * @example
- *   const { data } = await scopedSelect(
- *     supabase.from('work_plans').select('*'),
- *     { projectId, companyId, role, hasSoftDelete: true }
- *   );
  */
 export function scopedSelect<T>(query: T, opts: ScopeOptions): T {
   let q: any = query;
 
-  // 1) project_id 필터
   if (opts.projectId) {
     q = q.eq('project_id', opts.projectId);
   } else {
-    // 프로젝트가 없으면 절대 데이터를 보이지 않음
     q = q.eq('project_id', '00000000-0000-0000-0000-000000000000');
   }
 
-  // 2) 회사 격리 (worker / viewer 만)
-  if (shouldEnforceCompanyFilter(opts.role)) {
+  if (
+    mustScopeToOwnCompany({
+      role: opts.role,
+      companyType: opts.companyType,
+      isMaster: opts.isMaster,
+    })
+  ) {
     if (opts.companyId) {
       q = q.eq('company_id', opts.companyId);
     } else {
-      // company_id 없는 worker/viewer 는 아무것도 못 봄
       q = q.eq('company_id', '00000000-0000-0000-0000-000000000000');
     }
   }
-  // site_manager / supervisor 는 RLS의 하위 회사 트리 검사에 위임
 
-  // 3) 소프트 삭제 제외 (휴지통 모드 아닐 때)
   if (opts.hasSoftDelete && !opts.includeDeleted) {
     q = q.eq('is_deleted', false);
   }

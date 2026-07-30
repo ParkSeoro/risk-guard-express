@@ -1,15 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { applyOwnCompanyFilter } from "@/lib/companyDocScope";
+import { normalizeCompanyType, type CompanyTypeCode } from "@/lib/companyTypes";
 
 export type MobileRole = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor' | 'site_supervisor' | 'worker' | 'viewer' | 'contractor';
 
 /**
  * 모바일 페이지 공통 액세스 훅.
  * - localStorage `selectedProjectId` 구독
- * - applyCompanyFilter: desktop useProjectAccess 와 동일
- *   (master/PA/SM 전체, site_manager/supervisor RLS, worker/viewer 만 company_id)
- * - assessment_runs 처럼 company_id 없는 테이블에는 적용 금지
+ * - applyCompanyFilter: 협력사/공급사는 역할과 무관하게 자사 company_id만
  */
 export function useMobileAccess() {
   const { user, hasRole } = useAuth();
@@ -19,6 +19,7 @@ export function useMobileAccess() {
   });
   const [role, setRole] = useState<MobileRole>('viewer');
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const [companyType, setCompanyType] = useState<CompanyTypeCode | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -49,23 +50,35 @@ export function useMobileAccess() {
     (async () => {
       setLoading(true);
       if (isMaster) {
-        if (!cancelled) { setRole('master'); setCompanyId(null); setLoading(false); }
+        if (!cancelled) {
+          setRole('master');
+          setCompanyId(null);
+          setCompanyType(null);
+          setLoading(false);
+        }
         return;
       }
       if (!user || !projectId) {
-        if (!cancelled) { setRole('viewer'); setCompanyId(null); setLoading(false); }
+        if (!cancelled) {
+          setRole('viewer');
+          setCompanyId(null);
+          setCompanyType(null);
+          setLoading(false);
+        }
         return;
       }
       const { data } = await supabase
         .from('project_members')
-        .select('role_new, company_id')
+        .select('role_new, company_id, companies(type)' as any)
         .eq('user_id', user.id)
         .eq('project_id', projectId)
         .maybeSingle();
       if (!cancelled) {
-        const raw = (data?.role_new as MobileRole) || 'viewer';
+        const d = data as any;
+        const raw = (d?.role_new as MobileRole) || 'viewer';
         setRole(raw === 'contractor' ? 'worker' : raw);
-        setCompanyId(data?.company_id || null);
+        setCompanyId(d?.company_id || null);
+        setCompanyType(normalizeCompanyType(d?.companies?.type) || null);
         setLoading(false);
       }
     })();
@@ -76,19 +89,20 @@ export function useMobileAccess() {
   const isContractor = role === 'worker' || role === 'contractor';
 
   const applyCompanyFilter = useCallback(<T,>(query: T): T => {
-    if (isMaster || role === 'project_admin' || role === 'safety_manager') return query;
-    if (role === 'worker' || role === 'viewer' || role === 'contractor') {
-      if (companyId) return (query as any).eq('company_id', companyId);
-      return (query as any).eq('company_id', '00000000-0000-0000-0000-000000000000');
-    }
-    return query;
-  }, [isMaster, role, companyId]);
+    return applyOwnCompanyFilter(query, {
+      role,
+      companyType,
+      companyId,
+      isMaster,
+    }) as T;
+  }, [isMaster, role, companyId, companyType]);
 
   return {
     projectId,
     setProjectId,
     role,
     companyId,
+    companyType,
     isMaster,
     isProjectAdmin,
     isContractor,

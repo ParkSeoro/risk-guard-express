@@ -596,7 +596,86 @@ serve(async (req) => {
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
 
-    // ============ Phase 1: JSA timeline only (fast JSON, ~1–3s) ============
+    // ============ Phase A: scope draft — 세부작업+위험요인+상황 only (one shot, fast) ============
+    if (mode === "scope_draft") {
+      const guideCount = jsaGuideCount(detailLevel);
+      const sys =
+        `너는 건설현장 JSA·위험성평가 전문가다. 반드시 JSON만 출력한다. 마크다운·서론 금지.\n` +
+        `출력 스키마: {"items":[{"sub_task":"세부작업","hazard":"위험요인","hazard_situation":"위험발생상황(한두 문장)"}]}\n` +
+        `대책·등급·PPE·법적근거·사고사례는 절대 넣지 않는다.`;
+      const user =
+        `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
+        `위 조건으로 시간순(준비→본작업→마무리) 세부작업 ${guideCount}개 내외와\n` +
+        `각 세부작업의 핵심 위험요인·위험발생상황만 작성하라.\n` +
+        `현장 구체성을 유지하고 추상 문구(예: 안전수칙 준수)만 쓰지 마라.`;
+
+      try {
+        const { content } = await callDeepseekRiskChat({
+          messages: [
+            { role: "system", content: sys },
+            { role: "user", content: user },
+          ],
+          temperature: 0.25,
+          max_tokens: 2200,
+          timeoutMs: 45_000,
+        });
+        const parsed = parseDeepseekRiskJson<any>(content);
+        let rawItems: any[] = [];
+        if (Array.isArray(parsed)) rawItems = parsed;
+        else if (parsed && Array.isArray(parsed.items)) rawItems = parsed.items;
+        else if (parsed && Array.isArray(parsed.sub_tasks)) {
+          rawItems = parsed.sub_tasks.map((s: any) =>
+            typeof s === "string"
+              ? { sub_task: s, hazard: "", hazard_situation: "" }
+              : s,
+          );
+        }
+
+        const maxN = detailLevel === "comprehensive" ? 14 : 10;
+        const items = rawItems
+          .map((it: any) => {
+            const sub_task = String(it?.sub_task || it?.sub_work || "")
+              .replace(/^\d+[\.\)]\s*/, "")
+              .trim();
+            const hazard = String(it?.hazard || it?.hazard_factor || "").trim();
+            const hazard_situation = String(it?.hazard_situation || "").trim();
+            if (!sub_task) return null;
+            return {
+              sub_task,
+              hazard: hazard || `${sub_task} 관련 위험요인`,
+              hazard_situation: hazard_situation || `${sub_task} 중 위험 상황 발생 가능`,
+            };
+          })
+          .filter(Boolean)
+          .slice(0, maxN);
+
+        if (items.length === 0) {
+          return new Response(
+            JSON.stringify({ error: "세부작업·위험요인 초안을 생성하지 못했습니다.", items: [] }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            items,
+            count: items.length,
+            normalized_equipment: normalizedEquipment,
+            mode: "scope_draft",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Unknown error";
+        console.error("scope_draft error:", e);
+        return new Response(JSON.stringify({ error: msg }), {
+          status: e instanceof DeepseekRiskError ? e.status || 500 : 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+        });
+      }
+    }
+
+    // ============ Phase 1 (legacy): JSA timeline only (fast JSON, ~1–3s) ============
     if (mode === "jsa_timeline") {
       const guideCount = jsaGuideCount(detailLevel);
       const sys =

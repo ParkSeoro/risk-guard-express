@@ -28,14 +28,16 @@ import {
 import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
 import {
   acknowledgeRiskAutoGenJob,
+  continueRiskAutoGenFill,
+  dismissRiskAutoGenReview,
   getRiskAutoGenJob,
   isRiskAutoGenRunning,
   startRiskAutoGenJob,
   subscribeRiskAutoGenJob,
   type RiskAutoGenJobState,
 } from '@/lib/riskAutoGenJob';
-import { isAiPendingRiskItem, isAiFailedRiskItem, fetchRiskRowDetailWithRetry } from '@/lib/riskAutoGenAI';
-import { calculateRiskGrade } from '@/lib/riskGrade';
+import { isAiPendingRiskItem, isAiFailedRiskItem, isAiScopeDraftItem, fetchRiskRowDetailWithRetry } from '@/lib/riskAutoGenAI';
+import { enrichLegalBasis } from '@/lib/enrichLegalBasis';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConditionTagPicker, SmartEquipmentTagInput, DEFAULT_CONDITION_TAGS, DEFAULT_EQUIPMENT_SUGGESTIONS } from '@/components/assessment/RiskAutoGenFields';
 import { exportToXLSX, exportToPDF, exportToPDFServer, printRiskAssessment } from '@/lib/exportUtils';
@@ -524,9 +526,9 @@ const AssessmentRunDetail = () => {
 
       if (!mine) return;
 
-      // Refresh table as soon as placeholders land / rows fill
+      // Refresh table as soon as drafts land / rows fill
       if (
-        job.status === 'running' &&
+        (job.status === 'running' || job.status === 'awaiting_review') &&
         (job.insertedTotal !== lastInserted || job.filledTotal !== lastFilled)
       ) {
         lastInserted = job.insertedTotal;
@@ -534,11 +536,19 @@ const AssessmentRunDetail = () => {
         fetchAll();
       }
 
+      if (job.status === 'awaiting_review' && autoGenAckRef.current !== `review:${job.startedAt}`) {
+        autoGenAckRef.current = `review:${job.startedAt}`;
+        toast({
+          title: '초안이 준비되었습니다. 불필요한 행을 삭제한 뒤 [나머지 채우기]를 누르세요.',
+          description: `${job.insertedTotal}행 · 세부작업·위험요인만 생성됨 · 사고사례는 [사고사례 AI 작성]에서 별도`,
+        });
+        fetchAll();
+      }
       if (job.status === 'done' && autoGenAckRef.current !== `done:${job.startedAt}`) {
         autoGenAckRef.current = `done:${job.startedAt}`;
         toast({
-          title: '위험성평가 생성이 완료되었습니다. 불필요한 항목을 삭제하거나 수정해 주세요.',
-          description: `${job.filledTotal ?? job.insertedTotal}건 등록 · 경과 ${job.elapsedSec}초 · 사고사례는 하단 [사고사례 AI 작성]에서 별도 생성`,
+          title: '위험성평가 채움이 완료되었습니다. 법적근거·대책을 확인해 주세요.',
+          description: `${job.filledTotal ?? job.insertedTotal}건 · 경과 ${job.elapsedSec}초 · 사고사례는 [사고사례 AI 작성]에서 별도`,
         });
         fetchAll();
         acknowledgeRiskAutoGenJob();
@@ -546,8 +556,8 @@ const AssessmentRunDetail = () => {
       if (job.status === 'partial' && autoGenAckRef.current !== `partial:${job.startedAt}`) {
         autoGenAckRef.current = `partial:${job.startedAt}`;
         toast({
-          title: '일부 행 생성이 중단·실패했습니다.',
-          description: `타임라인 ${job.insertedTotal}행 / 채움 ${job.filledTotal ?? 0}행이 저장되었습니다. 실패 행은 수동 수정하거나 다시 생성하세요.`,
+          title: '일부 행 채움이 중단·실패했습니다.',
+          description: `채움 ${job.filledTotal ?? 0}행. 실패 행은 [재시도]하거나 다시 [나머지 채우기]하세요.`,
         });
         fetchAll();
         acknowledgeRiskAutoGenJob();
@@ -555,7 +565,7 @@ const AssessmentRunDetail = () => {
       if (job.status === 'error' && autoGenAckRef.current !== `err:${job.startedAt}`) {
         autoGenAckRef.current = `err:${job.startedAt}`;
         toast({
-          title: `자동작성 요청 전 에러 발생: ${job.error || '자동 생성 실패'}`,
+          title: `자동작성 오류: ${job.error || '자동 생성 실패'}`,
           variant: 'destructive',
         });
         if (job.insertedTotal > 0) fetchAll();
@@ -773,6 +783,12 @@ const AssessmentRunDetail = () => {
       const sg = detail.severity_grade || '중';
       const ilg = detail.improved_likelihood_grade || '하';
       const isg = detail.improved_severity_grade || '하';
+      const legal = await enrichLegalBasis({
+        processName: detail.process || item.process || '',
+        hazard: detail.hazard,
+        hazardSituation: detail.hazard_situation,
+        existing: detail.legal_basis || [],
+      });
       const patch = {
         process: detail.process || item.process,
         sub_task: detail.sub_task || subTask,
@@ -791,7 +807,7 @@ const AssessmentRunDetail = () => {
         improved_severity_grade: isg,
         improved_risk_grade: detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any),
         ppe: detail.ppe || [],
-        legal_basis: detail.legal_basis || [],
+        legal_basis: legal,
         note: null,
       };
       const { error } = await supabase.from('risk_items').update(patch).eq('id', item.id);
@@ -921,9 +937,9 @@ const AssessmentRunDetail = () => {
       setAutoGenProcesses([]);
       setAutoGenProcessInput('');
       toast({
-        title: '위험성평가 생성을 시작했습니다.',
+        title: '위험성평가 초안 생성을 시작했습니다.',
         description: autoGenUseAI
-          ? '세부작업 행이 먼저 나타난 뒤 위험요인이 병렬로 채워집니다. 상단 진행 바를 확인하세요.'
+          ? '① 세부작업·위험요인 초안 → 검수 → ② [나머지 채우기](대책·등급·법적근거). 사고사례는 별도 버튼.'
           : '라이브러리 전용 모드로 등록합니다. (generate-risk-ai 호출 없음)',
       });
     } catch (err: any) {
@@ -1717,16 +1733,16 @@ const AssessmentRunDetail = () => {
             <Loader2 className="h-5 w-5 shrink-0 animate-spin text-accent mt-0.5" />
             <div className="min-w-0 flex-1 space-y-1.5">
               <p className="text-sm font-semibold">
-                위험성평가 AI 생성 중
-                {autoGenJob.phase === 'timeline' ? ' · 1단계 타임라인' : ''}
-                {autoGenJob.phase === 'filling' ? ' · 2단계 행별 병렬' : ''}
+                위험성평가 AI {autoGenJob.phase === 'filling' ? '채움' : '초안'} 생성 중
+                {autoGenJob.phase === 'draft' ? ' · 1단계 세부작업·위험요인' : ''}
+                {autoGenJob.phase === 'filling' ? ' · 2단계 대책·법적근거' : ''}
                 {autoGenJob.processTotal > 0
                   ? ` · 공종 ${autoGenJob.processIndex || 1}/${autoGenJob.processTotal}`
                   : ''}
                 {autoGenJob.elapsedSec > 0 ? ` · ${autoGenJob.elapsedSec}초` : ''}
               </p>
               <p className="text-xs text-muted-foreground break-words">
-                {autoGenJob.message || autoGenPhaseLabel || 'JSA 생성 대기 중…'}
+                {autoGenJob.message || autoGenPhaseLabel || '생성 대기 중…'}
               </p>
               {(() => {
                 const total = Math.max(autoGenJob.insertedTotal || 0, 1);
@@ -1737,17 +1753,53 @@ const AssessmentRunDetail = () => {
                     <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                       <div
                         className="h-full rounded-full bg-accent transition-all duration-500"
-                        style={{ width: `${autoGenJob.phase === 'timeline' ? 8 : Math.max(pct, 4)}%` }}
+                        style={{ width: `${autoGenJob.phase === 'draft' ? 12 : Math.max(pct, 4)}%` }}
                       />
                     </div>
                     <p className="text-[11px] text-muted-foreground">
-                      타임라인 {autoGenJob.insertedTotal || 0}행 · 채움 {filled}행
+                      초안 {autoGenJob.insertedTotal || 0}행 · 채움 {filled}행
                       {autoGenJob.pendingIds?.length ? ` · 대기 ${autoGenJob.pendingIds.length}` : ''}
                       {' · '}이 탭을 유지하세요.
                     </p>
                   </div>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {autoGenJob.status === 'awaiting_review' && autoGenJob.runId === runId && (
+        <div className="print:hidden sticky top-0 z-30 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 space-y-0.5">
+              <p className="text-sm font-semibold">초안 검수 중 · {autoGenJob.insertedTotal}행</p>
+              <p className="text-xs text-muted-foreground">
+                세부작업·위험요인만 채워져 있습니다. 불필요 행을 삭제한 뒤 대책·등급·법적근거를 채우세요.
+              </p>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                size="sm"
+                onClick={() => {
+                  const ok = continueRiskAutoGenFill(runId);
+                  if (!ok) {
+                    toast({
+                      title: '채움을 시작할 수 없습니다.',
+                      description: '다른 생성이 진행 중이거나 세션 정보가 없습니다. 페이지를 새로고침 후 다시 시도하세요.',
+                      variant: 'destructive',
+                    });
+                    return;
+                  }
+                  toast({ title: '나머지 채우기를 시작했습니다.', description: '대책·등급·PPE·법적근거를 병렬로 채웁니다.' });
+                }}
+                disabled={isRiskAutoGenRunning()}
+              >
+                <Wand2 className="h-3.5 w-3.5 mr-1" /> 나머지 채우기
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => dismissRiskAutoGenReview()}>
+                나중에
+              </Button>
             </div>
           </div>
         </div>
@@ -1962,6 +2014,24 @@ const AssessmentRunDetail = () => {
             <Button size="sm" className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => setShowAutoGen(true)}>
               <Wand2 className="h-3.5 w-3.5" /> 공종 자동작성
             </Button>
+            {items.some((it) => isAiScopeDraftItem(it)) && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                disabled={isRiskAutoGenRunning()}
+                onClick={() => {
+                  const ok = continueRiskAutoGenFill(runId);
+                  if (!ok) {
+                    toast({ title: '채움을 시작할 수 없습니다.', variant: 'destructive' });
+                    return;
+                  }
+                  toast({ title: '나머지 채우기 시작', description: '대책·등급·법적근거를 채웁니다.' });
+                }}
+              >
+                <Wand2 className="h-3.5 w-3.5" /> 나머지 채우기
+              </Button>
+            )}
             <Button size="sm" variant="outline" className="gap-1.5" onClick={handleAddNew}>
               <Plus className="h-3.5 w-3.5" /> 행 추가
             </Button>
@@ -2175,9 +2245,12 @@ const AssessmentRunDetail = () => {
                   const itemVerdict = validationReport?.itemVerdicts?.[item.id];
                   const pending =
                     isAiPendingRiskItem(item) ||
-                    (autoGenJob.pendingIds || []).includes(item.id);
+                    (autoGenJob.status === 'running' &&
+                      autoGenJob.phase === 'filling' &&
+                      (autoGenJob.pendingIds || []).includes(item.id));
+                  const scopeDraft = isAiScopeDraftItem(item);
                   return (
-                    <tr key={item.id} className={`${itemVerdict?.verdict === '부적정' ? 'bg-destructive/5' : itemVerdict?.verdict === '조건부 적정' ? 'bg-warning/5' : ''} ${selectedRowIds.has(item.id) ? 'bg-accent/10' : ''} ${pending ? 'bg-muted/40' : ''}`}>
+                    <tr key={item.id} className={`${itemVerdict?.verdict === '부적정' ? 'bg-destructive/5' : itemVerdict?.verdict === '조건부 적정' ? 'bg-warning/5' : ''} ${selectedRowIds.has(item.id) ? 'bg-accent/10' : ''} ${pending ? 'bg-muted/40' : ''} ${scopeDraft && !pending ? 'bg-primary/5' : ''}`}>
                       {(canEdit || canForceEdit) && (
                         <td className="text-center print:hidden">
                           <Checkbox
@@ -2194,7 +2267,14 @@ const AssessmentRunDetail = () => {
                       )}
                       <td className="text-center text-muted-foreground">{idx + 1}</td>
                       <td className="editable whitespace-nowrap">{(item.process || '').trim() ? <EditableCell item={item} field="process" /> : <span className="text-muted-foreground italic">(미분류)</span>}</td>
-                      <td className="editable"><EditableCell item={item} field="sub_task" /></td>
+                      <td className="editable">
+                        <div className="flex items-start gap-1">
+                          {scopeDraft && !pending && (
+                            <Badge variant="outline" className="text-[9px] h-4 shrink-0 mt-0.5">초안</Badge>
+                          )}
+                          <div className="min-w-0 flex-1"><EditableCell item={item} field="sub_task" /></div>
+                        </div>
+                      </td>
                       {pending ? (
                         <>
                           <td colSpan={4} className="py-2">
@@ -2474,7 +2554,7 @@ const AssessmentRunDetail = () => {
                   onClick={() => setAutoGenDetailLevel('comprehensive')}>JSA 상세 (~20)</Button>
               </div>
               <p className="text-[10px] text-muted-foreground leading-snug">
-                작업 준비➔본작업➔마무리 전 공정 누락 없이 One-Shot 생성 · 사고사례는 별도 버튼
+                ① 공종·환경 입력 → 세부작업·위험요인 초안 ② 검수 후 [나머지 채우기](대책·등급·법적근거) · 사고사례는 별도 버튼
               </p>
             </div>
 
@@ -2492,7 +2572,7 @@ const AssessmentRunDetail = () => {
             >
               {autoGenLoading
                 ? `생성 중… ${autoGenJob.elapsedSec || 0}초 · ${autoGenJob.message || autoGenPhaseLabel || '대기'}`
-                : `공종 자동작성 · ${
+                : `초안 생성 · ${
                     autoGenProcesses.length ||
                     (autoGenProcessInput.trim() ? autoGenProcessInput.split(/[,，]/).filter((s) => s.trim()).length : 0)
                   }개 공종`}

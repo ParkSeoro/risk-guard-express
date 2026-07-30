@@ -117,8 +117,15 @@ async function getAccessToken(): Promise<string> {
 /** Placeholder hazard while Phase-2 row fill is in flight */
 export const AI_PENDING_HAZARD = '…생성중';
 
+/** Rows from Phase A (세부작업+위험요인) awaiting user review before fill */
+export const AI_SCOPE_DRAFT_NOTE = '[AI_SCOPE_DRAFT]';
+
 export function isAiPendingRiskItem(item: { hazard?: string | null; note?: string | null }): boolean {
   return item.hazard === AI_PENDING_HAZARD || (item.note || '').includes('[AI_PENDING]');
+}
+
+export function isAiScopeDraftItem(item: { note?: string | null }): boolean {
+  return (item.note || '').includes(AI_SCOPE_DRAFT_NOTE);
 }
 
 async function invokeRiskJson<T = any>(
@@ -186,6 +193,48 @@ export async function fetchJsaTimeline(
     throw new Error(mapErrorMessage(data.error || '세부작업 목록이 비어 있습니다.'));
   }
   return { subTasks, normalizedEquipment: data.normalized_equipment };
+}
+
+export type ScopeDraftItem = {
+  sub_task: string;
+  hazard: string;
+  hazard_situation: string;
+};
+
+/** Phase A — one-shot 세부작업 + 위험요인 + 위험발생상황 (no measures/legal/accidents). */
+export async function fetchScopeDraft(
+  opts: AIGenerateOptions,
+  signal?: AbortSignal,
+): Promise<{ items: ScopeDraftItem[]; normalizedEquipment?: string }> {
+  const detailLevel: DetailLevel = opts.detailLevel || 'core';
+  const data = await invokeRiskJson<{
+    items?: any[];
+    normalized_equipment?: string;
+    error?: string;
+  }>(
+    {
+      mode: 'scope_draft',
+      process_name: opts.processName,
+      equipment: opts.equipment || '',
+      work_description: opts.workDescription || '',
+      work_location: opts.workLocation || '일반',
+      work_environment: opts.workEnvironment || [],
+      detail_level: detailLevel,
+      project_id: opts.projectId || '',
+    },
+    signal,
+  );
+  const items: ScopeDraftItem[] = (data.items || [])
+    .map((it) => ({
+      sub_task: String(it?.sub_task || '').trim(),
+      hazard: String(it?.hazard || '').trim(),
+      hazard_situation: String(it?.hazard_situation || '').trim(),
+    }))
+    .filter((it) => it.sub_task);
+  if (items.length === 0) {
+    throw new Error(mapErrorMessage(data.error || '세부작업·위험요인 초안이 비어 있습니다.'));
+  }
+  return { items, normalizedEquipment: data.normalized_equipment };
 }
 
 /** Phase 2 — single sub_task risk row (JSON). */

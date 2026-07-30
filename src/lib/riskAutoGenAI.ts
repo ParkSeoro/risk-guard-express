@@ -93,8 +93,8 @@ function mapErrorMessage(rawMsg: string): string {
   if (/INVALID_KEY|api[_ ]?key|NVIDIA_API_KEY|DEEPSEEK_API_KEY|키가 유효하지/i.test(rawMsg)) {
     return 'AI API 키가 설정되지 않았거나 유효하지 않습니다. 마스터가 DEEPSEEK_API_KEY(위험성평가) / NVIDIA_API_KEY를 Edge Secrets에 등록해야 합니다.';
   }
-  if (/RATE_LIMIT|429|too many|너무 많/i.test(rawMsg)) {
-    return '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.';
+  if (/RATE_LIMIT|429|503|529|too many|너무 많|과부하/i.test(rawMsg)) {
+    return 'AI 서버가 일시적으로 바쁩니다. 잠시 후 다시 시도해주세요.';
   }
   if (/TIMEOUT|중단되었|시간.?초과|WORKER_RESOURCE|compute resources/i.test(rawMsg)) {
     return 'AI 생성 연결이 중단되었습니다. 이미 생성된 항목은 유지됩니다. 다시 시도하거나 공종을 나눠 주세요.';
@@ -149,11 +149,13 @@ async function invokeRiskJson<T = any>(
     signal,
   });
   let payload: any = null;
+  const contentType = resp.headers.get('content-type') || '';
+  let text = '';
   try {
-    const text = await resp.text();
-    payload = text?.trim() ? JSON.parse(text) : null;
+    text = await resp.text();
+    if (text?.trim()) payload = JSON.parse(text);
   } catch (e) {
-    console.error('[AI Engine] response JSON parse failed', resp.status, e);
+    console.error('[AI Engine] response JSON parse failed', resp.status, contentType, e);
     payload = null;
   }
   if (!resp.ok) {
@@ -161,7 +163,12 @@ async function invokeRiskJson<T = any>(
     throw new Error(mapErrorMessage(payload?.error || `AI 서버 오류 (${resp.status})`));
   }
   if (payload == null || typeof payload !== 'object') {
-    console.error('[AI Engine] generate-risk-ai empty body', resp.status);
+    console.error('[AI Engine] generate-risk-ai empty/non-JSON body', resp.status, contentType, text.slice(0, 120));
+    if (/event-stream/i.test(contentType) || text.startsWith('data:') || text.startsWith(': ')) {
+      throw new Error(
+        'AI 서버가 구버전입니다(SSE). generate-risk-ai Edge Function을 최신으로 재배포해주세요.',
+      );
+    }
     throw new Error('AI 서버 응답이 비어 있습니다. Edge Function(generate-risk-ai) 배포·API 키를 확인해주세요.');
   }
   if (payload.error && !payload.items && !payload.item && !payload.sub_tasks) {

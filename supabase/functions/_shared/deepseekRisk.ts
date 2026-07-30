@@ -58,6 +58,14 @@ function mapHttpError(status: number, text: string): never {
   if (status === 429) {
     throw new DeepseekRiskError("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", 429, "RATE_LIMIT");
   }
+  // NVIDIA NIM overload / capacity (often transient)
+  if (status === 529 || status === 503) {
+    throw new DeepseekRiskError(
+      "AI 서버가 일시적으로 과부하입니다. 잠시 후 다시 시도해주세요.",
+      status,
+      "RATE_LIMIT",
+    );
+  }
   if (status === 401 || status === 403) {
     if (/quota|exceed|exhausted|credit/i.test(text)) {
       throw new DeepseekRiskError("NVIDIA API 할당량이 소진되었습니다. 사용량을 확인해주세요.", 402, "QUOTA_EXHAUSTED");
@@ -68,6 +76,10 @@ function mapHttpError(status: number, text: string): never {
     throw new DeepseekRiskError(`DeepSeek 요청 오류: ${text.slice(0, 200)}`, 400, "BAD_REQUEST");
   }
   throw new DeepseekRiskError(`DeepSeek 서버 오류 (${status})`, status, "SERVER_ERROR");
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || status === 503 || status === 529;
 }
 
 /** Strip ```json fences and extract first JSON value. */
@@ -180,45 +192,64 @@ export async function callDeepseekRiskChat(req: DeepseekRiskRequest): Promise<{
 }> {
   const { apiKey, baseUrl, timeoutMs: defaultTimeout } = resolveConfig();
   const timeoutMs = req.timeoutMs ?? defaultTimeout;
-  const { signal, clear } = withTimeoutSignal(timeoutMs);
+  const maxAttempts = 3;
+  let lastErr: unknown;
 
-  try {
-    const resp = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
-      },
-      signal,
-      body: JSON.stringify(deepseekChatBody(req, false)),
-    });
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const { signal, clear } = withTimeoutSignal(timeoutMs);
+    try {
+      const resp = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
+        signal,
+        body: JSON.stringify(deepseekChatBody(req, false)),
+      });
 
-    if (!resp.ok) {
-      const text = await resp.text();
-      mapHttpError(resp.status, text);
-    }
+      if (!resp.ok) {
+        const text = await resp.text();
+        if (isRetryableStatus(resp.status) && attempt < maxAttempts) {
+          console.warn(`[DeepSeek-Risk] retryable ${resp.status}, attempt ${attempt}/${maxAttempts}`);
+          await new Promise((r) => setTimeout(r, 800 * attempt));
+          continue;
+        }
+        mapHttpError(resp.status, text);
+      }
 
-    const data = await resp.json();
-    const content = String(data?.choices?.[0]?.message?.content ?? "").trim();
-    return { content, usage: data?.usage };
-  } catch (e) {
-    if (e instanceof DeepseekRiskError) throw e;
-    if ((e as Error)?.name === "AbortError") {
+      const data = await resp.json();
+      const content = String(data?.choices?.[0]?.message?.content ?? "").trim();
+      return { content, usage: data?.usage };
+    } catch (e) {
+      lastErr = e;
+      if (e instanceof DeepseekRiskError) {
+        if (e.code === "RATE_LIMIT" && attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, 800 * attempt));
+          continue;
+        }
+        throw e;
+      }
+      if ((e as Error)?.name === "AbortError") {
+        throw new DeepseekRiskError(
+          `DeepSeek 요청이 ${timeoutMs}ms 내 완료되지 않아 중단되었습니다.`,
+          504,
+          "TIMEOUT",
+        );
+      }
       throw new DeepseekRiskError(
-        `DeepSeek 요청이 ${timeoutMs}ms 내 완료되지 않아 중단되었습니다.`,
-        504,
-        "TIMEOUT",
+        e instanceof Error ? e.message : "DeepSeek 네트워크 오류",
+        500,
+        "SERVER_ERROR",
       );
+    } finally {
+      clear();
     }
-    throw new DeepseekRiskError(
-      e instanceof Error ? e.message : "DeepSeek 네트워크 오류",
-      500,
-      "SERVER_ERROR",
-    );
-  } finally {
-    clear();
   }
+
+  if (lastErr instanceof DeepseekRiskError) throw lastErr;
+  throw new DeepseekRiskError("DeepSeek 요청 재시도 실패", 500, "SERVER_ERROR");
 }
 
 /**

@@ -28,15 +28,23 @@ import {
 import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
 import {
   acknowledgeRiskAutoGenJob,
+  cancelRiskAutoGenJob,
   continueRiskAutoGenFill,
   dismissRiskAutoGenReview,
   getRiskAutoGenJob,
   isRiskAutoGenRunning,
+  recoverRiskAutoGenReview,
   startRiskAutoGenJob,
   subscribeRiskAutoGenJob,
   type RiskAutoGenJobState,
 } from '@/lib/riskAutoGenJob';
-import { isAiPendingRiskItem, isAiFailedRiskItem, isAiScopeDraftItem, fetchRiskRowDetailWithRetry } from '@/lib/riskAutoGenAI';
+import {
+  isAiPendingRiskItem,
+  isAiFailedRiskItem,
+  isAiScopeDraftItem,
+  isFillableRiskItem,
+  fetchRiskRowDetailWithRetry,
+} from '@/lib/riskAutoGenAI';
 import { enrichLegalBasis } from '@/lib/enrichLegalBasis';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConditionTagPicker, SmartEquipmentTagInput, DEFAULT_CONDITION_TAGS, DEFAULT_EQUIPMENT_SUGGESTIONS } from '@/components/assessment/RiskAutoGenFields';
@@ -500,6 +508,19 @@ const AssessmentRunDetail = () => {
   }, [runId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // After reload: restore [나머지 채우기] banner if fillable drafts already exist in DB
+  useEffect(() => {
+    if (!runId || !run?.project_id) return;
+    let cancelled = false;
+    (async () => {
+      const ok = await recoverRiskAutoGenReview(runId, run.project_id);
+      if (!cancelled && ok) {
+        setAutoGenJob(getRiskAutoGenJob());
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [runId, run?.project_id]);
 
   // Prevent accidental leave while AI generation is in progress
   useEffect(() => {
@@ -1771,11 +1792,29 @@ const AssessmentRunDetail = () => {
                     <p className="text-[11px] text-muted-foreground">
                       초안 {autoGenJob.insertedTotal || 0}행 · 채움 {filled}행
                       {autoGenJob.pendingIds?.length ? ` · 대기 ${autoGenJob.pendingIds.length}` : ''}
-                      {' · '}이 탭을 닫지 마세요.
+                      {' · '}이 탭을 닫지 마세요. 보통 20~40초 걸립니다.
                     </p>
                   </div>
                 );
               })()}
+              {(autoGenJob.elapsedSec || 0) >= 45 && (
+                <div className="pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      cancelRiskAutoGenJob('응답이 길어 중단했습니다. 공종을 하나만 넣고 다시 시도하세요.');
+                      toast({
+                        title: '생성을 중단했습니다.',
+                        description: '공종을 하나만 넣고 [공종 자동작성]을 다시 눌러주세요.',
+                      });
+                    }}
+                  >
+                    중단하고 다시 시도
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2026,7 +2065,7 @@ const AssessmentRunDetail = () => {
             <Button size="sm" className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => setShowAutoGen(true)}>
               <Wand2 className="h-3.5 w-3.5" /> 공종 자동작성
             </Button>
-            {items.some((it) => isAiScopeDraftItem(it)) && (
+            {items.some((it) => isFillableRiskItem(it)) && (
               <Button
                 size="sm"
                 variant="outline"
@@ -2038,7 +2077,7 @@ const AssessmentRunDetail = () => {
                     toast({ title: '채움을 시작할 수 없습니다.', variant: 'destructive' });
                     return;
                   }
-                  toast({ title: '나머지 채우기 시작', description: '대책·등급·법적근거를 채웁니다.' });
+                  toast({ title: '나머지 채우기 시작', description: '대책·등급·법적근거를 채웁니다. 이 탭을 닫지 마세요.' });
                 }}
               >
                 <Wand2 className="h-3.5 w-3.5" /> 나머지 채우기

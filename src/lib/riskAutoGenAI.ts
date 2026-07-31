@@ -96,7 +96,7 @@ function mapErrorMessage(rawMsg: string): string {
   if (/RATE_LIMIT|429|503|529|too many|너무 많|과부하/i.test(rawMsg)) {
     return 'AI 서버가 일시적으로 바쁩니다. 잠시 후 다시 시도해주세요.';
   }
-  if (/TIMEOUT|중단되었|시간.?초과|WORKER_RESOURCE|compute resources|AbortError/i.test(rawMsg)) {
+  if (/TIMEOUT|중단되었|시간.?초과|WORKER_RESOURCE|compute resources|AbortError|504|Gateway Timeout|gateway/i.test(rawMsg)) {
     return 'AI 응답이 너무 오래 걸려 중단되었습니다. 공종을 하나만 넣고 다시 시도해주세요.';
   }
   if (/42501|row-level security|RLS|권한이 없습니다|Forbidden/i.test(rawMsg)) {
@@ -131,36 +131,83 @@ export function isAiScopeDraftItem(item: { note?: string | null }): boolean {
   return (item.note || '').includes(AI_SCOPE_DRAFT_NOTE);
 }
 
+/**
+ * Rows that [나머지 채우기] should process:
+ * - Phase A drafts tagged [AI_SCOPE_DRAFT]
+ * - Incomplete AI rows (empty situation/measures) from older flows
+ */
+export function isFillableRiskItem(item: {
+  note?: string | null;
+  source_type?: string | null;
+  hazard_situation?: string | null;
+  existing_measure?: string | null;
+  improvement_measure?: string | null;
+  hazard?: string | null;
+}): boolean {
+  if (isAiScopeDraftItem(item)) return true;
+  if (isAiPendingRiskItem(item)) return false;
+  if ((item.note || '').includes('[AI_ROW_FAILED]')) return true;
+  const src = (item.source_type || '').toLowerCase();
+  if (src !== 'ai' && src !== 'ai_opinion') return false;
+  const situation = (item.hazard_situation || '').trim();
+  const existing = (item.existing_measure || '').trim();
+  const improve = (item.improvement_measure || '').trim();
+  return !situation || !existing || !improve;
+}
+
 async function invokeRiskJson<T = any>(
   body: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<T> {
   const token = await getAccessToken();
-  const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+  const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
   const baseUrl = import.meta.env.VITE_SUPABASE_URL as string;
   const url = `${baseUrl}/functions/v1/generate-risk-ai`;
   console.log('[AI Engine] fetch generate-risk-ai', { mode: body.mode, process_name: body.process_name, url });
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      apikey: anonKey,
-      'Content-Type': 'application/json; charset=utf-8',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify(body),
-    signal,
-  });
-  let payload: any = null;
-  const contentType = resp.headers.get('content-type') || '';
-  let text = '';
-  try {
-    text = await resp.text();
-    if (text?.trim()) payload = JSON.parse(text);
-  } catch (e) {
-    console.error('[AI Engine] response JSON parse failed', resp.status, contentType, e);
-    payload = null;
+
+  // Prefer publishable key (same as supabase-js client). Fallback to invoke if raw fetch fails hard.
+  const doFetch = async (apikey: string) => {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey,
+        'Content-Type': 'application/json; charset=utf-8',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
+    let payload: any = null;
+    const contentType = resp.headers.get('content-type') || '';
+    let text = '';
+    try {
+      text = await resp.text();
+      if (text?.trim()) payload = JSON.parse(text);
+    } catch (e) {
+      console.error('[AI Engine] response JSON parse failed', resp.status, contentType, e);
+      payload = null;
+    }
+    return { resp, payload, contentType, text };
+  };
+
+  let { resp, payload, contentType, text } = await doFetch(publishableKey);
+
+  // Rare gateway mismatch: retry once via supabase.functions.invoke
+  if (!resp.ok && (resp.status === 401 || resp.status === 403)) {
+    console.warn('[AI Engine] raw fetch auth failed, retrying via functions.invoke', resp.status);
+    const { data, error } = await supabase.functions.invoke('generate-risk-ai', { body });
+    if (error) {
+      throw new Error(mapErrorMessage(error.message || `AI 서버 오류 (${resp.status})`));
+    }
+    payload = data;
+    if (payload?.error && !payload.items && !payload.item && !payload.sub_tasks) {
+      throw new Error(mapErrorMessage(String(payload.error)));
+    }
+    console.log('[AI Engine] generate-risk-ai ok (invoke fallback)', { mode: body.mode });
+    return payload as T;
   }
+
   if (!resp.ok) {
     console.error('[AI Engine] generate-risk-ai error', resp.status, payload);
     throw new Error(mapErrorMessage(payload?.error || `AI 서버 오류 (${resp.status})`));
@@ -253,8 +300,8 @@ export async function fetchScopeDraft(
   return { items, normalizedEquipment: data?.normalized_equipment };
 }
 
-/** Phase B batch size — one Edge call fills up to this many draft rows. */
-export const RISK_FILL_CHUNK = 6;
+/** Phase B batch size — keep small so Edge/gateway doesn't 504 (6 rows often timed out). */
+export const RISK_FILL_CHUNK = 3;
 
 /** Phase B — batch fill remaining fields (situation, measures, grades, PPE, legal). */
 export async function fetchRiskFillBatch(

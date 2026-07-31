@@ -219,14 +219,9 @@ const Box = ({ checked }: { checked?: boolean }) => (
   </span>
 );
 
+/** Empty until extension is requested/approved — no handwritten "년 월 일 시 분" labels. */
 const ManualDateTimeBlank = () => (
-  <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px]">
-    <span className="inline-block min-w-8 border-b border-foreground/80">&nbsp;</span>년
-    <span className="inline-block min-w-6 border-b border-foreground/80">&nbsp;</span>월
-    <span className="inline-block min-w-6 border-b border-foreground/80">&nbsp;</span>일
-    <span className="inline-block min-w-6 border-b border-foreground/80">&nbsp;</span>시
-    <span className="inline-block min-w-6 border-b border-foreground/80">&nbsp;</span>분
-  </span>
+  <span className="text-[11px] text-muted-foreground">—</span>
 );
 
 const ManualSignatureBlank = () => (
@@ -748,7 +743,7 @@ export default function DigPermitForm({
                 <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
                 <td><SigCell k="applicant" /></td>
               </tr>
-              <tr><th className="hd">승인자</th><td>{(slotSignedAt(signatures, 'sm') || signatures.approved_at) ? formatPermitStamp(slotSignedAt(signatures, 'sm') || signatures.approved_at) : '년 월 일 시 분'} 성명 : {signatures.sm?.name || ''}</td><td><SigCell k="sm" label="발주처 SM" /></td></tr>
+              <tr><th className="hd">승인자</th><td>{(slotSignedAt(signatures, 'sm') || signatures.approved_at) ? formatPermitStamp(slotSignedAt(signatures, 'sm') || signatures.approved_at) : '—'} 성명 : {signatures.sm?.name || ''}</td><td><SigCell k="sm" label="발주처 SM" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 밀폐공간 작업시간은 1일 최대 8시간을 넘지 않도록 하며 연장근무 발생 시 작업허가 연장 승인 필요</div>
@@ -823,7 +818,7 @@ export default function DigPermitForm({
               <tr><td className="text-center">기준</td><td>18%이상~23.5%미만</td><td>10ppm미만 · 30ppm미만</td><td>0% · 1.5%미만</td></tr>
               <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
               <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
-              <tr><th className="hd">승인자</th><td colSpan={2}>{(slotSignedAt(signatures, 'sm') || signatures.approved_at) ? formatPermitStamp(slotSignedAt(signatures, 'sm') || signatures.approved_at) : '년 월 일 시 분'} 성명 : {signatures.sm?.name || ''}</td><td><SigCell k="sm" label="발주처 SM" /></td></tr>
+              <tr><th className="hd">승인자</th><td colSpan={2}>{(slotSignedAt(signatures, 'sm') || signatures.approved_at) ? formatPermitStamp(slotSignedAt(signatures, 'sm') || signatures.approved_at) : '—'} 성명 : {signatures.sm?.name || ''}</td><td><SigCell k="sm" label="발주처 SM" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 연장근무 발생 시 작업허가 연장 승인 필요</div>
@@ -897,7 +892,7 @@ export default function DigPermitForm({
               </tr>
               <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
               <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
-              <tr><th className="hd">승인자</th><td colSpan={2}>{(slotSignedAt(signatures, 'sm') || signatures.approved_at) ? formatPermitStamp(slotSignedAt(signatures, 'sm') || signatures.approved_at) : '년 월 일 시 분'} 성명 : {signatures.sm?.name || ''}</td><td><SigCell k="sm" label="발주처 SM" /></td></tr>
+              <tr><th className="hd">승인자</th><td colSpan={2}>{(slotSignedAt(signatures, 'sm') || signatures.approved_at) ? formatPermitStamp(slotSignedAt(signatures, 'sm') || signatures.approved_at) : '—'} 성명 : {signatures.sm?.name || ''}</td><td><SigCell k="sm" label="발주처 SM" /></td></tr>
             </tbody>
           </table>
           <div className="text-[10px] mt-2 px-2">※ 지하매설물 손상 시 즉시 작업중지 후 관리주체에 통보. 깊이 1.5m 이상 굴착 시 흙막이/지보공 의무.</div>

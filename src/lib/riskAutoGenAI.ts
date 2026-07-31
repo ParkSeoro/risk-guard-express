@@ -213,10 +213,9 @@ export async function fetchJsaTimeline(
 export type ScopeDraftItem = {
   sub_task: string;
   hazard: string;
-  hazard_situation: string;
 };
 
-/** Phase A — one-shot 세부작업 + 위험요인 + 위험발생상황 (no measures/legal/accidents). */
+/** Phase A — 공종(입력) + 세부작업 + 위험요인만 (대책·법적근거 없음). */
 export async function fetchScopeDraft(
   opts: AIGenerateOptions,
   signal?: AbortSignal,
@@ -243,7 +242,6 @@ export async function fetchScopeDraft(
     .map((it) => ({
       sub_task: String(it?.sub_task || '').trim(),
       hazard: String(it?.hazard || '').trim(),
-      hazard_situation: String(it?.hazard_situation || '').trim(),
     }))
     .filter((it) => it.sub_task);
   if (items.length === 0) {
@@ -252,7 +250,51 @@ export async function fetchScopeDraft(
   return { items, normalizedEquipment: data?.normalized_equipment };
 }
 
-/** Phase 2 — single sub_task risk row (JSON). */
+/** Phase B batch size — one Edge call fills up to this many draft rows. */
+export const RISK_FILL_CHUNK = 6;
+
+/** Phase B — batch fill remaining fields (situation, measures, grades, PPE, legal). */
+export async function fetchRiskFillBatch(
+  opts: AIGenerateOptions & { draftItems: ScopeDraftItem[] },
+  signal?: AbortSignal,
+): Promise<GeneratedRiskItem[]> {
+  const detailLevel: DetailLevel = opts.detailLevel || 'core';
+  const draft_items = (opts.draftItems || [])
+    .map((it) => ({
+      sub_task: String(it.sub_task || '').trim(),
+      hazard: String(it.hazard || '').trim(),
+    }))
+    .filter((it) => it.sub_task)
+    .slice(0, RISK_FILL_CHUNK);
+
+  if (draft_items.length === 0) return [];
+
+  const data = await invokeRiskJson<{ items?: any[]; error?: string }>(
+    {
+      mode: 'risk_fill',
+      process_name: opts.processName,
+      draft_items,
+      equipment: opts.equipment || '',
+      work_description: opts.workDescription || '',
+      work_location: opts.workLocation || '일반',
+      work_environment: opts.workEnvironment || [],
+      detail_level: detailLevel,
+      project_id: opts.projectId || '',
+    },
+    signal,
+  );
+
+  const items = (data?.items || [])
+    .map((it) => mapAIItemToGenerated(it, opts.processName))
+    .filter((it) => it.sub_task);
+
+  if (items.length === 0) {
+    throw new Error(mapErrorMessage(data?.error || '채움 결과가 비어 있습니다.'));
+  }
+  return items;
+}
+
+/** Phase 2 (legacy single-row) — used for [재시도] of one failed row. */
 export async function fetchRiskRowDetail(
   opts: AIGenerateOptions & { subTask: string },
   signal?: AbortSignal,

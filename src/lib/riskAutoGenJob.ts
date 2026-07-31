@@ -1,9 +1,9 @@
 /**
  * Module-level risk auto-gen job — survives dialog close / SPA remount in the same tab.
  *
- * Two-phase UX (AI path):
- *  A) scope_draft — 세부작업·위험요인·상황만 삽입 → awaiting_review (user edits)
- *  B) continueRiskAutoGenFill — 대책·등급·PPE·법적근거 채움 (+ library legal enrich)
+ * Simple two-phase UX (AI path):
+ *  A) scope_draft — 공종·세부작업·위험요인만 삽입 → awaiting_review (user edits)
+ *  B) risk_fill (batch) — 발생상황·대책·등급·PPE·법적근거 채움
  */
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -11,13 +11,14 @@ import {
   AI_ROW_FAILED_HAZARD,
   AI_ROW_FAILED_NOTE_PREFIX,
   fetchScopeDraft,
+  fetchRiskFillBatch,
   fetchRiskRowDetailWithRetry,
   isAiScopeDraftItem,
-  mapPool,
-  RISK_ROW_CONCURRENCY,
+  RISK_FILL_CHUNK,
   type AIGenerateOptions,
   type DetailLevel,
 } from '@/lib/riskAutoGenAI';
+import type { GeneratedRiskItem } from '@/lib/riskAutoGen';
 import { enrichLegalBasis } from '@/lib/enrichLegalBasis';
 import { calculateRiskGrade } from '@/lib/riskGrade';
 
@@ -150,6 +151,69 @@ function buildOpts(input: RiskAutoGenJobInput, proc: string): AIGenerateOptions 
   };
 }
 
+async function applyFilledDetail(
+  rowId: string,
+  proc: string,
+  subTask: string,
+  rowHazard: string | null | undefined,
+  detail: GeneratedRiskItem,
+): Promise<boolean> {
+  const lg = detail.likelihood_grade || '중';
+  const sg = detail.severity_grade || '중';
+  const ilg = detail.improved_likelihood_grade || '하';
+  const isg = detail.improved_severity_grade || '하';
+  const legal = await enrichLegalBasis({
+    processName: proc,
+    hazard: detail.hazard || rowHazard || '',
+    hazardSituation: detail.hazard_situation || '',
+    existing: detail.legal_basis || [],
+  });
+  const { error: updErr } = await supabase
+    .from('risk_items')
+    .update({
+      process: detail.process || proc,
+      sub_task: detail.sub_task || subTask,
+      hazard: detail.hazard || rowHazard || '',
+      hazard_situation: detail.hazard_situation || '',
+      existing_measure: detail.existing_measure,
+      improvement_measure: detail.improvement_measure,
+      frequency: detail.frequency,
+      severity: detail.severity,
+      improved_frequency: detail.improved_frequency,
+      improved_severity: detail.improved_severity,
+      likelihood_grade: lg,
+      severity_grade: sg,
+      risk_grade: detail.risk_grade || calculateRiskGrade(lg as any, sg as any),
+      improved_likelihood_grade: ilg,
+      improved_severity_grade: isg,
+      improved_risk_grade: detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any),
+      ppe: detail.ppe || [],
+      legal_basis: legal,
+      note: null,
+    })
+    .eq('id', rowId);
+
+  if (updErr) {
+    console.warn('[AutoGenJob] row patch failed:', updErr.message);
+    return false;
+  }
+  return true;
+}
+
+async function markRowFailed(
+  row: { id: string; hazard?: string | null; hazard_situation?: string | null },
+  err: any,
+): Promise<void> {
+  await supabase
+    .from('risk_items')
+    .update({
+      hazard: row.hazard || AI_ROW_FAILED_HAZARD,
+      hazard_situation: row.hazard_situation || 'API 과부하 또는 일시 오류로 생성되지 않았습니다.',
+      note: `${AI_ROW_FAILED_NOTE_PREFIX} ${err?.message || ''} · [재시도] 버튼을 눌러주세요`.slice(0, 240),
+    })
+    .eq('id', row.id);
+}
+
 async function fillOneRow(
   row: { id: string; sub_task: string | null; process: string | null; hazard?: string | null; hazard_situation?: string | null },
   opts: AIGenerateOptions,
@@ -158,58 +222,44 @@ async function fillOneRow(
   const proc = row.process || opts.processName;
   try {
     const detail = await fetchRiskRowDetailWithRetry({ ...opts, processName: proc, subTask });
-    const lg = detail.likelihood_grade || '중';
-    const sg = detail.severity_grade || '중';
-    const ilg = detail.improved_likelihood_grade || '하';
-    const isg = detail.improved_severity_grade || '하';
-    const legal = await enrichLegalBasis({
-      processName: proc,
-      hazard: detail.hazard || row.hazard || '',
-      hazardSituation: detail.hazard_situation || row.hazard_situation || '',
-      existing: detail.legal_basis || [],
-    });
-    const { error: updErr } = await supabase
-      .from('risk_items')
-      .update({
-        process: detail.process || proc,
-        sub_task: detail.sub_task || subTask,
-        hazard: detail.hazard || row.hazard || '',
-        hazard_situation: detail.hazard_situation || row.hazard_situation || '',
-        existing_measure: detail.existing_measure,
-        improvement_measure: detail.improvement_measure,
-        frequency: detail.frequency,
-        severity: detail.severity,
-        improved_frequency: detail.improved_frequency,
-        improved_severity: detail.improved_severity,
-        likelihood_grade: lg,
-        severity_grade: sg,
-        risk_grade: detail.risk_grade || calculateRiskGrade(lg as any, sg as any),
-        improved_likelihood_grade: ilg,
-        improved_severity_grade: isg,
-        improved_risk_grade: detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any),
-        ppe: detail.ppe || [],
-        legal_basis: legal,
-        note: null,
-      })
-      .eq('id', row.id);
-
-    if (updErr) {
-      console.warn('[AutoGenJob] row patch failed:', updErr.message);
-      return false;
-    }
-    return true;
+    return await applyFilledDetail(row.id, proc, subTask, row.hazard, detail);
   } catch (err: any) {
     console.warn('[AutoGenJob] risk_row failed after retries:', subTask, err?.message || err);
-    await supabase
-      .from('risk_items')
-      .update({
-        hazard: row.hazard || AI_ROW_FAILED_HAZARD,
-        hazard_situation: row.hazard_situation || 'API 과부하 또는 일시 오류로 생성되지 않았습니다.',
-        note: `${AI_ROW_FAILED_NOTE_PREFIX} ${err?.message || ''} · [재시도] 버튼을 눌러주세요`.slice(0, 240),
-      })
-      .eq('id', row.id);
+    await markRowFailed(row, err);
     return false;
   }
+}
+
+function matchFilledToDraft(
+  filled: GeneratedRiskItem[],
+  drafts: { id: string; sub_task: string | null; hazard?: string | null }[],
+): Map<string, GeneratedRiskItem> {
+  const map = new Map<string, GeneratedRiskItem>();
+  const used = new Set<number>();
+  for (const row of drafts) {
+    const st = (row.sub_task || '').trim();
+    const hz = (row.hazard || '').trim();
+    let idx = filled.findIndex(
+      (f, i) => !used.has(i) && (f.sub_task || '').trim() === st && (!hz || (f.hazard || '').trim() === hz),
+    );
+    if (idx < 0) {
+      idx = filled.findIndex((f, i) => !used.has(i) && (f.sub_task || '').trim() === st);
+    }
+    if (idx < 0) continue;
+    used.add(idx);
+    map.set(row.id, filled[idx]);
+  }
+  // Positional fallback for unmatched
+  let fi = 0;
+  for (const row of drafts) {
+    if (map.has(row.id)) continue;
+    while (fi < filled.length && used.has(fi)) fi += 1;
+    if (fi >= filled.length) break;
+    used.add(fi);
+    map.set(row.id, filled[fi]);
+    fi += 1;
+  }
+  return map;
 }
 
 async function runJob(input: RiskAutoGenJobInput): Promise<void> {
@@ -293,7 +343,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     }
 
     const opts = buildOpts(input, proc);
-    let draftItems: { sub_task: string; hazard: string; hazard_situation: string }[] = [];
+    let draftItems: { sub_task: string; hazard: string }[] = [];
     try {
       console.log('[AutoGenJob] fetchScopeDraft → generate-risk-ai (scope_draft)', proc);
       const draft = await fetchScopeDraft(opts);
@@ -312,7 +362,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       process: proc,
       sub_task: it.sub_task,
       hazard: it.hazard,
-      hazard_situation: it.hazard_situation,
+      hazard_situation: '',
       existing_measure: '',
       improvement_measure: '',
       frequency: 3,
@@ -399,7 +449,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
   patch({
     status: 'awaiting_review',
     phase: 'review',
-    message: `초안 ${insertedTotal}행 준비됨 · 불필요 항목 삭제 후 [나머지 채우기]`,
+    message: `초안 ${insertedTotal}행 준비됨 · 공종·세부작업·위험요인 검수 후 [나머지 채우기]`,
     insertedTotal,
     filledTotal: 0,
     receivedTotal: 0,
@@ -411,7 +461,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
 }
 
 /**
- * Phase B — fill scope-draft rows with measures, grades, PPE, legal basis.
+ * Phase B — batch-fill scope-draft rows (situation, measures, grades, PPE, legal).
  * Uses remaining [AI_SCOPE_DRAFT] rows for the run (respects user deletes).
  */
 export function continueRiskAutoGenFill(runId?: string): boolean {
@@ -484,23 +534,80 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
       message: `${rows.length}행 채움 시작…`,
     });
 
+    // Group by process → chunk → one Edge call per chunk (much fewer calls than per-row)
+    const byProcess = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const key = (row.process || input.processes[0] || '공종').trim() || '공종';
+      if (!byProcess.has(key)) byProcess.set(key, []);
+      byProcess.get(key)!.push(row);
+    }
+
     let filledTotal = 0;
     let failed = 0;
-    await mapPool(rows, RISK_ROW_CONCURRENCY, async (row) => {
+
+    for (const [proc, procRows] of byProcess) {
       if (state.status !== 'running') return;
-      const opts = buildOpts(input, row.process || input.processes[0] || '');
-      const ok = await fillOneRow(row, opts);
-      const idx = pending.indexOf(row.id);
-      if (idx >= 0) pending.splice(idx, 1);
-      if (ok) filledTotal += 1;
-      else failed += 1;
-      patch({
-        filledTotal,
-        receivedTotal: filledTotal,
-        pendingIds: [...pending],
-        message: `${filledTotal}/${rows.length}행 채움${failed ? ` · 실패 ${failed}` : ''}`,
-      });
-    });
+      const opts = buildOpts(input, proc);
+
+      for (let offset = 0; offset < procRows.length; offset += RISK_FILL_CHUNK) {
+        if (state.status !== 'running') return;
+        const chunk = procRows.slice(offset, offset + RISK_FILL_CHUNK);
+        patch({
+          currentProcess: proc,
+          message: `「${proc}」 ${filledTotal + failed}/${rows.length} · 배치 채움…`,
+        });
+
+        try {
+          const filled = await fetchRiskFillBatch({
+            ...opts,
+            draftItems: chunk.map((r) => ({
+              sub_task: r.sub_task || '',
+              hazard: r.hazard || '',
+            })),
+          });
+          const matched = matchFilledToDraft(filled, chunk);
+
+          for (const row of chunk) {
+            const detail = matched.get(row.id);
+            if (!detail) {
+              // Fallback single-row for unmatched
+              const ok = await fillOneRow(row, opts);
+              if (ok) filledTotal += 1;
+              else failed += 1;
+            } else {
+              const ok = await applyFilledDetail(
+                row.id,
+                proc,
+                row.sub_task || '',
+                row.hazard,
+                detail,
+              );
+              if (ok) filledTotal += 1;
+              else failed += 1;
+            }
+            const idx = pending.indexOf(row.id);
+            if (idx >= 0) pending.splice(idx, 1);
+          }
+        } catch (err: any) {
+          console.warn('[AutoGenJob] risk_fill batch failed, falling back per-row:', err?.message || err);
+          for (const row of chunk) {
+            if (state.status !== 'running') return;
+            const ok = await fillOneRow(row, opts);
+            if (ok) filledTotal += 1;
+            else failed += 1;
+            const idx = pending.indexOf(row.id);
+            if (idx >= 0) pending.splice(idx, 1);
+          }
+        }
+
+        patch({
+          filledTotal,
+          receivedTotal: filledTotal,
+          pendingIds: [...pending],
+          message: `${filledTotal}/${rows.length}행 채움${failed ? ` · 실패 ${failed}` : ''}`,
+        });
+      }
+    }
 
     if (failed > 0 && filledTotal === 0) {
       patch({

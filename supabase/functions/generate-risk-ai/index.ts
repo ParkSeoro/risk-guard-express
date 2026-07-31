@@ -147,9 +147,9 @@ function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other" 
   return s;
 }
 
-/** Soft guidance count for user prompt (keep modest for latency). */
+/** Soft guidance count for draft (Phase A — keep modest for latency). */
 function jsaGuideCount(detailLevel: "core" | "comprehensive"): number {
-  return detailLevel === "core" ? 8 : 12;
+  return detailLevel === "core" ? 10 : 16;
 }
 
 function mapRawItem(item: any, processName: string): any | null {
@@ -489,6 +489,7 @@ serve(async (req) => {
       detail_level,
       project_id,
       sub_task,
+      draft_items,
     } = body;
 
     const detailLevel: "core" | "comprehensive" =
@@ -596,18 +597,18 @@ serve(async (req) => {
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
 
-    // ============ Phase A: scope draft — 세부작업+위험요인+상황 only (one shot, fast) ============
+    // ============ Phase A: scope draft — 공종(입력)+세부작업+위험요인 only ============
     if (mode === "scope_draft") {
       const guideCount = jsaGuideCount(detailLevel);
       const sys =
-        `너는 건설현장 JSA·위험성평가 전문가다. 반드시 JSON만 출력한다. 마크다운·서론 금지.\n` +
-        `출력 스키마: {"items":[{"sub_task":"세부작업","hazard":"위험요인","hazard_situation":"위험발생상황(한두 문장)"}]}\n` +
-        `대책·등급·PPE·법적근거·사고사례는 절대 넣지 않는다.`;
+        `너는 건설현장 JSA 전문가다. 반드시 JSON만 출력한다. 마크다운·서론 금지.\n` +
+        `출력 스키마: {"items":[{"sub_task":"세부작업","hazard":"위험요인"}]}\n` +
+        `대책·등급·PPE·법적근거·발생상황·사고사례는 절대 넣지 않는다.`;
       const user =
         `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
-        `위 조건으로 시간순(준비→본작업→마무리) 세부작업 ${guideCount}개 내외와\n` +
-        `각 세부작업의 핵심 위험요인·위험발생상황만 작성하라.\n` +
-        `현장 구체성을 유지하고 추상 문구(예: 안전수칙 준수)만 쓰지 마라.`;
+        `위 공종의 시간순(준비→본작업→마무리) 세부작업 ${guideCount}개 내외와\n` +
+        `각 세부작업의 핵심 위험요인(hazard)만 짧게 작성하라.\n` +
+        `추상 문구(안전수칙 준수 등) 금지.`;
 
       try {
         const { content } = await callDeepseekRiskChat({
@@ -615,9 +616,9 @@ serve(async (req) => {
             { role: "system", content: sys },
             { role: "user", content: user },
           ],
-          temperature: 0.25,
-          max_tokens: 2200,
-          timeoutMs: 90_000,
+          temperature: 0.2,
+          max_tokens: 1400,
+          timeoutMs: 60_000,
         });
         const parsed = parseDeepseekRiskJson<any>(content);
         let rawItems: any[] = [];
@@ -625,25 +626,22 @@ serve(async (req) => {
         else if (parsed && Array.isArray(parsed.items)) rawItems = parsed.items;
         else if (parsed && Array.isArray(parsed.sub_tasks)) {
           rawItems = parsed.sub_tasks.map((s: any) =>
-            typeof s === "string"
-              ? { sub_task: s, hazard: "", hazard_situation: "" }
-              : s,
+            typeof s === "string" ? { sub_task: s, hazard: "" } : s,
           );
         }
 
-        const maxN = detailLevel === "comprehensive" ? 14 : 10;
+        const maxN = detailLevel === "comprehensive" ? 18 : 12;
         const items = rawItems
           .map((it: any) => {
             const sub_task = String(it?.sub_task || it?.sub_work || "")
               .replace(/^\d+[\.\)]\s*/, "")
               .trim();
             const hazard = String(it?.hazard || it?.hazard_factor || "").trim();
-            const hazard_situation = String(it?.hazard_situation || "").trim();
             if (!sub_task) return null;
             return {
+              process: process_name,
               sub_task,
-              hazard: hazard || `${sub_task} 관련 위험요인`,
-              hazard_situation: hazard_situation || `${sub_task} 중 위험 상황 발생 가능`,
+              hazard: hazard || `${sub_task} 관련 위험`,
             };
           })
           .filter(Boolean)
@@ -668,6 +666,121 @@ serve(async (req) => {
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Unknown error";
         console.error("scope_draft error:", e);
+        return new Response(JSON.stringify({ error: msg }), {
+          status: e instanceof DeepseekRiskError ? e.status || 500 : 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+        });
+      }
+    }
+
+    // ============ Phase B batch: fill draft rows (measures, grades, PPE, legal) ============
+    if (mode === "risk_fill") {
+      const drafts = Array.isArray(draft_items) ? draft_items : [];
+      const cleaned = drafts
+        .map((it: any) => ({
+          sub_task: String(it?.sub_task || "").replace(/^\d+[\.\)]\s*/, "").trim(),
+          hazard: String(it?.hazard || "").trim(),
+        }))
+        .filter((it: { sub_task: string }) => it.sub_task)
+        .slice(0, 8);
+
+      if (cleaned.length === 0) {
+        return new Response(JSON.stringify({ error: "채울 초안(draft_items)이 필요합니다.", items: [] }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+        });
+      }
+
+      const listText = cleaned
+        .map((it: { sub_task: string; hazard: string }, i: number) =>
+          `${i + 1}. 세부작업:${it.sub_task} / 위험요인:${it.hazard || "(미기재)"}`,
+        )
+        .join("\n");
+
+      const sys =
+        `너는 대한민국 건설안전 기술사다. 반드시 JSON만 출력한다. 마크다운·서론 금지.\n` +
+        `출력 스키마: {"items":[{"sub_work":"세부작업","hazard_factor":"위험요인","hazard_situation":"위험발생상황",` +
+        `"existing_control":"현재안전대책","improvement_control":"개선대책",` +
+        `"initial_likelihood":"상|중|하","initial_severity":"상|중|하",` +
+        `"residual_likelihood":"상|중|하","residual_severity":"상|중|하",` +
+        `"ppe":["보호구"],"legal_basis":["법적근거 조항"]}]}\n` +
+        `입력된 세부작업·위험요인을 유지하고, 나머지 필드를 채운다.\n` +
+        `legal_basis에는 산안기준규칙 제OOO조 또는 KOSHA GUIDE를 넣는다. 추상문구 금지.`;
+      const user =
+        `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
+        `[초안 목록]\n${listText}\n\n` +
+        `위 ${cleaned.length}건 각각에 대해 발생상황·현재대책·개선대책·등급·PPE·법적근거를 채워 JSON items로 반환하라.\n` +
+        `항목 수·순서는 초안과 동일하게 맞춰라.`;
+
+      try {
+        const { content } = await callDeepseekRiskChat({
+          messages: [
+            { role: "system", content: sys },
+            { role: "user", content: user },
+          ],
+          temperature: 0.25,
+          max_tokens: Math.min(6000, 900 * cleaned.length + 800),
+          timeoutMs: 90_000,
+        });
+        const parsed = parseDeepseekRiskJson<any>(content);
+        let rawItems: any[] = [];
+        if (Array.isArray(parsed)) rawItems = parsed;
+        else if (parsed && Array.isArray(parsed.items)) rawItems = parsed.items;
+
+        const items = rawItems
+          .map((raw: any, idx: number) => {
+            if (!raw || typeof raw !== "object") return null;
+            const fallback = cleaned[idx];
+            raw.sub_work = raw.sub_work || raw.sub_task || fallback?.sub_task;
+            raw.hazard_factor = raw.hazard_factor || raw.hazard || fallback?.hazard;
+            raw.process = raw.process || process_name;
+            let mapped = mapRawItem(raw, process_name);
+            if (!mapped && fallback) {
+              // Soft accept — keep draft identity, fill what we can
+              mapped = {
+                process: process_name,
+                sub_task: fallback.sub_task,
+                hazard: fallback.hazard || String(raw.hazard_factor || raw.hazard || "").trim() || `${fallback.sub_task} 위험`,
+                hazard_situation: String(raw.hazard_situation || "").trim() || `${fallback.sub_task} 중 위험 상황`,
+                existing_measure: String(raw.existing_control || raw.existing_measure || "").trim() || "현장 통상 안전조치",
+                improvement_measure: String(raw.improvement_control || raw.improvement_measure || "").trim() || "구체적 개선조치 보완 필요",
+                likelihood_grade: "중",
+                severity_grade: "중",
+                risk_grade: "중",
+                improved_likelihood_grade: "하",
+                improved_severity_grade: "하",
+                improved_risk_grade: "하",
+                frequency: 3,
+                severity: 3,
+                improved_frequency: 1,
+                improved_severity: 1,
+                ppe: Array.isArray(raw.ppe) ? raw.ppe.map(String) : ["안전모", "안전화"],
+                legal_basis: Array.isArray(raw.legal_basis) ? raw.legal_basis.map(String).filter(Boolean) : [],
+              };
+            }
+            return mapped;
+          })
+          .filter(Boolean);
+
+        if (items.length === 0) {
+          return new Response(
+            JSON.stringify({ error: "채움 결과를 생성하지 못했습니다.", items: [] }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            items,
+            count: items.length,
+            normalized_equipment: normalizedEquipment,
+            mode: "risk_fill",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Unknown error";
+        console.error("risk_fill error:", e);
         return new Response(JSON.stringify({ error: msg }), {
           status: e instanceof DeepseekRiskError ? e.status || 500 : 500,
           headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },

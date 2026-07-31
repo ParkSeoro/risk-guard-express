@@ -539,7 +539,7 @@ const AssessmentRunDetail = () => {
       if (job.status === 'awaiting_review' && autoGenAckRef.current !== `review:${job.startedAt}`) {
         autoGenAckRef.current = `review:${job.startedAt}`;
         toast({
-          title: '초안이 준비되었습니다. 불필요한 행을 삭제한 뒤 [나머지 채우기]를 누르세요.',
+          title: '초안이 준비되었습니다. 공종·세부작업·위험요인을 확인·삭제한 뒤 [나머지 채우기]를 누르세요.',
           description: `${job.insertedTotal}행 · 세부작업·위험요인만 생성됨 · 사고사례는 [사고사례 AI 작성]에서 별도`,
         });
         fetchAll();
@@ -939,7 +939,7 @@ const AssessmentRunDetail = () => {
       toast({
         title: '위험성평가 초안 생성을 시작했습니다.',
         description: autoGenUseAI
-          ? '① 세부작업·위험요인 초안 → 검수 → ② [나머지 채우기](대책·등급·법적근거). 사고사례는 별도 버튼.'
+          ? '① 공종·세부작업·위험요인 초안 → 검수 → ② [나머지 채우기](대책·등급·법적근거). 사고사례는 별도 버튼.'
           : '라이브러리 전용 모드로 등록합니다. (generate-risk-ai 호출 없음)',
       });
     } catch (err: any) {
@@ -1791,7 +1791,7 @@ const AssessmentRunDetail = () => {
                     });
                     return;
                   }
-                  toast({ title: '나머지 채우기를 시작했습니다.', description: '대책·등급·PPE·법적근거를 병렬로 채웁니다.' });
+                  toast({ title: '나머지 채우기를 시작했습니다.', description: '대책·등급·PPE·법적근거를 배치로 채웁니다.' });
                 }}
                 disabled={isRiskAutoGenRunning()}
               >
@@ -2554,7 +2554,7 @@ const AssessmentRunDetail = () => {
                   onClick={() => setAutoGenDetailLevel('comprehensive')}>JSA 상세 (~20)</Button>
               </div>
               <p className="text-[10px] text-muted-foreground leading-snug">
-                ① 공종·환경 입력 → 세부작업·위험요인 초안 ② 검수 후 [나머지 채우기](대책·등급·법적근거) · 사고사례는 별도 버튼
+                ① 공종·세부작업·위험요인 초안 → 검수(삭제·추가) → ② [나머지 채우기](대책·등급·법적근거) · 사고사례는 별도 버튼
               </p>
             </div>
 

@@ -1,7 +1,7 @@
 /**
  * 작업허가서 상세 — 필요 종류 동적 선택, 단일 작업 묶음 결재, AI 브리핑, 연속 PDF 인쇄.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,7 +10,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock } from 'lucide-react';
@@ -18,12 +17,10 @@ import { DateTimePicker } from '@/components/ui/datetime-picker';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
-import OverlayFillForm from '@/components/permits/OverlayFillForm';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import PermitKindSelector from '@/components/permits/PermitKindSelector';
 import PermitAiBriefingCard from '@/components/permits/PermitAiBriefingCard';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
-import { printOverlay } from '@/lib/permitOverlayPrint';
 import {
   normalizePermitKinds,
   primaryPermitKind,
@@ -34,24 +31,12 @@ import type { PermitAiBriefing } from '@/lib/permitBriefing';
 import { syncPermitAssessmentLinks } from '@/lib/safetyWorkBundle';
 import { mergeApprovalSignatures } from '@/lib/permitApprovalSignatures';
 import { syncPermitDateFromWorkStart, resolvePermitWorkDate } from '@/lib/permitWorkDate';
-
-const STANDARD_FORM_VALUE = '__standard__';
-
-function hasStandardStyle(t: any) {
-  return !!(t?.layout_json && typeof t.layout_json === 'object' && (t.layout_json as any).standard_style);
-}
-
-function pickStandardStyleHolder(list: any[], permitType: PermitType) {
-  const candidates = list.filter((t) => t?.is_active !== false && hasStandardStyle(t));
-  return (
-    candidates.find((t) => t.permit_type === permitType && t.is_default) ||
-    candidates.find((t) => t.permit_type === permitType) ||
-    candidates.find((t) => t.permit_type === 'general' && t.is_default) ||
-    candidates.find((t) => t.permit_type === 'general') ||
-    candidates.find((t) => t.is_default) ||
-    candidates[0]
-  );
-}
+import {
+  normalizeDisplayTemplate,
+  parseLayoutJson,
+  pickProjectDisplayTemplate,
+  type PermitDisplayTemplate,
+} from '@/lib/permitDisplayTemplate';
 
 function toDbTimestamp(value?: string | null) {
   if (!value) return null;
@@ -106,17 +91,12 @@ export default function WorkPermitDetail() {
   const [extendUntil, setExtendUntil] = useState('');
   const [extending, setExtending] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [templates, setTemplates] = useState<any[]>([]);
-  const [templateId, setTemplateId] = useState<string>(STANDARD_FORM_VALUE);
   const [standardStyle, setStandardStyle] = useState<Partial<StandardStyle> | null>(null);
   const [standardLabels, setStandardLabels] = useState<Partial<StandardLabels> | null>(null);
-  const [autoCtx, setAutoCtx] = useState<any>({});
+  const [displayTemplate, setDisplayTemplate] = useState<PermitDisplayTemplate | null>(null);
+  const [displayTemplateId, setDisplayTemplateId] = useState<string | null>(null);
+  const [displayTemplateName, setDisplayTemplateName] = useState<string | null>(null);
   const [aiBriefing, setAiBriefing] = useState<PermitAiBriefing | null>(null);
-
-  const template = useMemo(
-    () => (templateId && templateId !== STANDARD_FORM_VALUE ? templates.find((t) => t.id === templateId) || null : null),
-    [templates, templateId],
-  );
 
   const load = async () => {
     if (!id) return;
@@ -183,22 +163,9 @@ export default function WorkPermitDetail() {
 
     try {
       const companyId = (p as any).company_id || userCompanyId;
-      const [{ data: prof }, { data: comp }, { data: proj2 }] = await Promise.all([
-        user?.id ? supabase.from('profiles').select('full_name, position, phone').eq('id', user.id).maybeSingle() : Promise.resolve({ data: null } as any),
-        companyId ? supabase.from('companies').select('name, representative, business_no, address').eq('id', companyId).maybeSingle() : Promise.resolve({ data: null } as any),
-        (p as any).project_id ? supabase.from('projects').select('name, site_address').eq('id', (p as any).project_id).maybeSingle() : Promise.resolve({ data: null } as any),
-      ]);
-      setAutoCtx({
-        company: comp || undefined,
-        author: prof ? { name: (prof as any).full_name, position: (prof as any).position, phone: (prof as any).phone } : undefined,
-        project: proj2 || undefined,
-        permit: {
-          date: (p as any).permit_date,
-          work_description: (p as any).work_description,
-          work_location: (p as any).work_location,
-          work_period: (p as any).work_period,
-        },
-      });
+      const { data: comp } = companyId
+        ? await supabase.from('companies').select('name').eq('id', companyId).maybeSingle()
+        : { data: null };
       const companyName = (comp as any)?.name || '';
       if (companyName) {
         setData((current) => ({
@@ -207,7 +174,7 @@ export default function WorkPermitDetail() {
           applicant_company: current.applicant_company || companyName,
         }));
       }
-    } catch (e) { console.warn('autoCtx build failed', e); }
+    } catch (e) { console.warn('company autofill failed', e); }
   };
 
   useEffect(() => { load(); }, [id]);
@@ -221,35 +188,54 @@ export default function WorkPermitDetail() {
   useEffect(() => {
     (async () => {
       try {
+        const projectId = permit?.project_id as string | undefined;
+        if (!projectId) {
+          setStandardStyle(null);
+          setStandardLabels(null);
+          setDisplayTemplate(null);
+          setDisplayTemplateId(null);
+          setDisplayTemplateName(null);
+          return;
+        }
         const { data: tpls } = await supabase
           .from('permit_form_templates')
-          .select('id, name, code, version, layout_json, print_overlay, original_pdf_url, is_default, permit_type')
+          .select('id, name, code, version, layout_json, is_default, is_active, permit_type, project_id')
           .eq('is_deleted', false)
           .eq('is_active', true)
+          .eq('project_id', projectId)
           .order('is_default', { ascending: false })
           .order('updated_at', { ascending: false });
         const list = (tpls || []) as any[];
-        const usable = list.filter((t) => {
-          const typeOk = !t.permit_type || t.permit_type === activeKind || t.permit_type === 'general';
-          const hasOverlay = t.original_pdf_url && (t.print_overlay?.pages?.length || 0) > 0;
-          return typeOk && hasOverlay;
-        });
-        setTemplates(usable);
-        const styleHolder = pickStandardStyleHolder(list, activeKind);
-        setStandardStyle((styleHolder?.layout_json as any)?.standard_style ?? null);
-        setStandardLabels((styleHolder?.layout_json as any)?.standard_labels ?? null);
-        const saved = (permit as any)?.form_template_id;
-        const matched = saved ? usable.find((t) => t.id === saved) : null;
-        setTemplateId(matched?.id || STANDARD_FORM_VALUE);
+        const holder = pickProjectDisplayTemplate(list, projectId, activeKind as PermitType);
+        if (!holder) {
+          // 프로젝트 표시 양식 없음 → DigPermitForm 내장 기본 (기존과 동일)
+          setStandardStyle(null);
+          setStandardLabels(null);
+          setDisplayTemplate(null);
+          setDisplayTemplateId(null);
+          setDisplayTemplateName(null);
+          return;
+        }
+        const layout = parseLayoutJson(holder.layout_json);
+        setStandardStyle(layout.standard_style ?? null);
+        setStandardLabels(layout.standard_labels ?? null);
+        setDisplayTemplate(
+          layout.display_template
+            ? normalizeDisplayTemplate(layout.display_template)
+            : null,
+        );
+        setDisplayTemplateId(holder.id);
+        setDisplayTemplateName(holder.name);
       } catch (e) {
-        console.warn('template lookup failed', e);
-        setTemplates([]);
+        console.warn('display template lookup failed', e);
         setStandardStyle(null);
         setStandardLabels(null);
-        setTemplateId(STANDARD_FORM_VALUE);
+        setDisplayTemplate(null);
+        setDisplayTemplateId(null);
+        setDisplayTemplateName(null);
       }
     })();
-  }, [activeKind, permit?.id]);
+  }, [activeKind, permit?.id, permit?.project_id]);
 
   const save = async () => {
     if (!permit) return;
@@ -277,7 +263,7 @@ export default function WorkPermitDetail() {
       assessment_run_id: primaryRunId,
       linked_assessment_run_ids: linkedIds,
       form_version: 'SF003-Rev1',
-      form_template_id: templateId && templateId !== STANDARD_FORM_VALUE ? templateId : null,
+      form_template_id: displayTemplateId || null,
       work_name: syncedData.work_name || permit.work_name || workDescription,
       work_description: workDescription,
       location: workLocation,
@@ -378,50 +364,7 @@ export default function WorkPermitDetail() {
       await (document as any).fonts?.ready;
     } catch { /* ignore */ }
 
-    // Overlay path: only when a single overlay template is explicitly chosen
-    try {
-      let tpl: any = template && template.original_pdf_url ? template : null;
-      if (tpl && selectedKinds.length === 1) {
-        const { data: full } = await supabase
-          .from('permit_form_templates')
-          .select('signature_slots')
-          .eq('id', tpl.id)
-          .maybeSingle();
-        tpl.signature_slots = full?.signature_slots || [];
-        const path = (tpl.original_pdf_url as string).replace(/^.*permit-form-assets\//, '');
-        const { data: signed } = await supabase.storage.from('permit-form-assets').createSignedUrl(path, 600);
-        if (signed?.signedUrl) {
-          const sigMap: Record<string, { signature?: string; name?: string }> = {};
-          Object.entries(signatures || {}).forEach(([role, val]: [string, any]) => {
-            if (val && typeof val === 'object') sigMap[role] = { signature: val.signature, name: val.name };
-          });
-          const approvedSigners = Object.entries(signatures || {})
-            .filter(([, v]) => v && typeof v === 'object' && ((v as any).name || (v as any).signature))
-            .map(([role, v]: [string, any]) => ({
-              role,
-              name: v.name || '',
-              position: v.position || '',
-              signatureImage: v.signature || '',
-              approvedAt: v.signed_at || '',
-              status: 'approved' as const,
-            }));
-          await printOverlay({
-            pdfUrl: signed.signedUrl,
-            overlay: tpl.print_overlay,
-            values: { ...data, permit_date: permit.permit_date, work_description: permit.work_description },
-            signatures: sigMap,
-            signatureSlots: tpl.signature_slots || [],
-            approvedSigners,
-            title: document.title,
-          });
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn('overlay print fallback', e);
-    }
-
-    // Standard path: selected kinds render as consecutive pages (print CSS page-break)
+    // DigPermitForm 연속 페이지 인쇄만 사용 (PDF 오버레이 경로 제거)
     window.print();
   };
 
@@ -511,19 +454,12 @@ export default function WorkPermitDetail() {
       <Card className="print:hidden">
         <CardContent className="p-3 flex items-center gap-2 text-sm flex-wrap">
           <FileSignature className="h-4 w-4" />
-          <span className="font-semibold">허가서 양식:</span>
-          <Select value={templateId} onValueChange={setTemplateId} disabled={readOnly}>
-            <SelectTrigger className="h-8 max-w-[460px]"><SelectValue placeholder="양식 선택" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value={STANDARD_FORM_VALUE}>표준 SF003 양식 — 표준양식 스타일 적용</SelectItem>
-              {templates.map((t) => (
-                <SelectItem key={t.id} value={t.id}>
-                  원본 PDF 오버레이 · {t.name} · {t.version}
-                  {t.is_default ? ' (기본)' : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <span className="font-semibold">표시 양식:</span>
+          <span className="text-muted-foreground">
+            {displayTemplateName
+              ? `${displayTemplateName} (프로젝트 표시양식 · 라벨/숨김만 적용)`
+              : '표준 DigPermitForm (프로젝트 표시양식 없음)'}
+          </span>
           {readOnly && (
             <span className="text-xs text-muted-foreground">
               {isApproved ? '발행 완료 — 수정 불가' : IN_APPROVAL_PERMIT_STATUSES.has(permit.status) ? '결재 진행중 — 수정 불가' : '수정 잠금'}
@@ -532,35 +468,22 @@ export default function WorkPermitDetail() {
         </CardContent>
       </Card>
 
-      {/* Screen edit: active kind only */}
+      {/* Screen edit: active kind only — always DigPermitForm */}
       <div className="bg-white border rounded shadow-sm p-3 md:p-6 print:hidden">
-        {template && template.original_pdf_url ? (
-          <OverlayFillForm
-            pdfUrl={template.original_pdf_url}
-            layout={template.layout_json}
-            overlay={template.print_overlay}
-            values={data}
-            signatures={signatures as any}
-            autoFillContext={autoCtx}
-            onChange={(v) => { if (!readOnly) setData(v); }}
-            onSign={(role, sig) => { if (!readOnly) setSignatures({ ...signatures, [role]: sig } as any); }}
+        <StandardPermitSheet>
+          <DigPermitForm
+            permitType={activeKind}
+            data={data}
+            signatures={signatures}
+            projectName={projectName}
+            standardStyle={standardStyle}
+            standardLabels={standardLabels}
+            displayTemplate={displayTemplate}
             readOnly={readOnly}
+            onChange={(d) => { if (!readOnly) setData(d); }}
+            onSign={(k, v) => { if (!readOnly) setSignatures({ ...signatures, [k]: v }); }}
           />
-        ) : (
-          <StandardPermitSheet>
-            <DigPermitForm
-              permitType={activeKind}
-              data={data}
-              signatures={signatures}
-              projectName={projectName}
-              standardStyle={standardStyle}
-              standardLabels={standardLabels}
-              readOnly={readOnly}
-              onChange={(d) => { if (!readOnly) setData(d); }}
-              onSign={(k, v) => { if (!readOnly) setSignatures({ ...signatures, [k]: v }); }}
-            />
-          </StandardPermitSheet>
-        )}
+        </StandardPermitSheet>
       </div>
 
       {/* Print-only: consecutive pages for each selected kind, same signatures stamped */}
@@ -575,6 +498,7 @@ export default function WorkPermitDetail() {
                 projectName={projectName}
                 standardStyle={standardStyle}
                 standardLabels={standardLabels}
+                displayTemplate={displayTemplate}
                 readOnly
                 printMode
               />

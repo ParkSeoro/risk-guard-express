@@ -78,8 +78,8 @@ const settingsCards = [
   },
   {
     id: 'permit-forms',
-    title: '허가서 양식 디자인',
-    description: 'SF003 표준양식 등 작업허가서 레이아웃(JSON)을 마스터 권한으로 직접 디자인합니다.',
+    title: '허가서 표시 양식',
+    description: '프로젝트별로 표준 허가서를 복제해 문구·항목 표시만 조정합니다. 결재 규칙은 바뀌지 않습니다.',
     icon: FileSignature,
     path: '/settings/permit-forms',
     requires: 'master' as const,

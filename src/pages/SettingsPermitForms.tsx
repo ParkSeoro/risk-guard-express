@@ -1,14 +1,11 @@
 /**
- * 허가서 양식 디자인 (마스터 전용) — 비주얼 빌더
- * 좌측: 양식 목록 / 우측: 빌더(섹션·필드) | 미리보기 | 원본PDF 오버레이 | 고급(JSON) | 버전
+ * 허가서 표시 양식 (마스터) — 프로젝트별 복제 · 라벨 · 항목 숨기기
+ *
+ * 절대 하지 않음: 결재 규칙/RPC, form_data 키, DigPermitForm 구조 변경.
+ * PDF 오버레이·자유 빌더·AI 분석은 제거됨.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import {
-  DndContext, closestCenter, KeyboardSensor, PointerSensor,
-  useSensor, useSensors, DragEndEvent,
-} from '@dnd-kit/core';
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -18,22 +15,36 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  FileSignature, Plus, Copy, Trash2, Save, Eye, History, FileText, MousePointer2, Sparkles, Signature, LayoutGrid,
-} from 'lucide-react';
-import SortableSectionCard from '@/components/permit-designer/SortableSectionCard';
-import PropertyPanel from '@/components/permit-designer/PropertyPanel';
-import OverlayEditor from '@/components/permit-designer/OverlayEditor';
-import AIAnalysisPanel from '@/components/permit-designer/AIAnalysisPanel';
-import SignatureSlotMapper from '@/components/permit-designer/SignatureSlotMapper';
-import StandardStyleEditor from '@/components/permit-designer/StandardStyleEditor';
-import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
+import { FileSignature, Trash2, Save, Eye, Copy } from 'lucide-react';
+import DigPermitForm, {
+  type PermitFormData,
+  type PermitSignatures,
+  type PermitType,
+} from '@/components/permits/DigPermitForm';
 import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
-import { FormLayout, PrintOverlay, SignatureSlot, EMPTY_LAYOUT, EMPTY_OVERLAY, newSection } from '@/lib/permitFormTypes';
+import StandardStyleEditor from '@/components/permit-designer/StandardStyleEditor';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
+import {
+  DEFAULT_STANDARD_LABELS,
+  DEFAULT_STANDARD_STYLE,
+  PERMIT_TYPE_LABEL,
+} from '@/lib/permitStandardStyle';
+import {
+  buildCloneLayoutJson,
+  emptyDisplayTemplate,
+  normalizeDisplayTemplate,
+  parseLayoutJson,
+  PERMIT_KIND_CLONE_META,
+  sectionsForKind,
+  type PermitDisplaySectionId,
+  type PermitDisplayTemplate,
+  type PermitLayoutJson,
+} from '@/lib/permitDisplayTemplate';
+
+type ProjectOpt = { id: string; name: string };
 
 type Tpl = {
   id: string;
@@ -41,26 +52,14 @@ type Tpl = {
   code: string;
   name: string;
   version: string;
-  layout_json: FormLayout;
-  print_overlay: PrintOverlay;
-  original_pdf_url: string | null;
+  layout_json: PermitLayoutJson;
   is_default: boolean;
   is_active: boolean;
-  permit_type: string | null;
-  signature_slots: SignatureSlot[];
-  suggested_approval_steps: number | null;
-  ai_analyzed_at: string | null;
+  permit_type: PermitType;
   updated_at: string;
 };
 
-const PERMIT_TYPE_OPTIONS = [
-  { value: 'general', label: '일반' },
-  { value: 'confined_space', label: '밀폐공간' },
-  { value: 'hot_work', label: '화기' },
-  { value: 'excavation', label: '굴착·중장비' },
-];
-
-const STANDARD_PREVIEW_DATA: PermitFormData = {
+const PREVIEW_DATA: PermitFormData = {
   contractor_company: '(주)샘플건설',
   work_name: '배관 용접 작업',
   work_description: '냉각탑 상부 배관 T-이음 용접',
@@ -70,7 +69,7 @@ const STANDARD_PREVIEW_DATA: PermitFormData = {
   applicant_name: '홍길동',
 };
 
-const STANDARD_PREVIEW_SIGS: PermitSignatures = {
+const PREVIEW_SIGS: PermitSignatures = {
   contractor_pic: { name: '김시공', signature: '', signed_at: '2026-07-21T09:00:00.000Z' },
   safety_pic: { name: '박안전', signature: '', signed_at: '2026-07-21T10:00:00.000Z' },
   site_director: { name: '이소장', signature: '', signed_at: '2026-07-22T08:30:00.000Z' },
@@ -80,528 +79,480 @@ const STANDARD_PREVIEW_SIGS: PermitSignatures = {
   reviewed_at: '2026-07-21T09:30:00.000Z',
 };
 
-type SelectedRef =
-  | { kind: 'section'; sectionId: string }
-  | { kind: 'field'; sectionId: string; fieldKey: string }
-  | null;
-
 export default function SettingsPermitForms() {
-  const { hasRole } = useAuth();
+  const { hasRole, user } = useAuth();
   const { toast } = useToast();
   const isMaster = hasRole('master');
+
+  const [projects, setProjects] = useState<ProjectOpt[]>([]);
+  const [projectId, setProjectId] = useState<string>('');
   const [rows, setRows] = useState<Tpl[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Tpl | null>(null);
-  const [layout, setLayout] = useState<FormLayout>(EMPTY_LAYOUT);
-  const [overlay, setOverlay] = useState<PrintOverlay>(EMPTY_OVERLAY);
-  const [originalPdfUrl, setOriginalPdfUrl] = useState<string | null>(null);
-  const [selectedRef, setSelectedRef] = useState<SelectedRef>(null);
-  const [tab, setTab] = useState('standard');
-  const [versions, setVersions] = useState<any[]>([]);
-  const [showJson, setShowJson] = useState(false);
-  const [jsonText, setJsonText] = useState('');
-  const [signatureSlots, setSignatureSlots] = useState<SignatureSlot[]>([]);
+  const [style, setStyle] = useState<Partial<StandardStyle>>(DEFAULT_STANDARD_STYLE);
+  const [stdLabels, setStdLabels] = useState<Partial<StandardLabels>>(DEFAULT_STANDARD_LABELS);
+  const [display, setDisplay] = useState<PermitDisplayTemplate>(emptyDisplayTemplate());
+  const [tab, setTab] = useState('labels');
+  const [saving, setSaving] = useState(false);
+  const [cloning, setCloning] = useState(false);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  );
+  const loadProjects = async () => {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('id, name')
+      .eq('is_deleted', false)
+      .order('name');
+    if (error) {
+      toast({ title: '프로젝트 목록 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
+    const list = (data || []) as ProjectOpt[];
+    setProjects(list);
+    if (!projectId && list[0]) setProjectId(list[0].id);
+  };
 
-  const load = async () => {
+  const loadTemplates = async (pid: string) => {
+    if (!pid) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const { data, error } = await supabase
       .from('permit_form_templates')
-      .select('id, project_id, code, name, version, layout_json, print_overlay, original_pdf_url, is_default, is_active, permit_type, signature_slots, suggested_approval_steps, ai_analyzed_at, updated_at')
+      .select('id, project_id, code, name, version, layout_json, is_default, is_active, permit_type, updated_at')
       .eq('is_deleted', false)
-      .order('code')
-      .order('version', { ascending: false });
-    if (error) toast({ title: '불러오기 실패', description: error.message, variant: 'destructive' });
-    const list = (data || []) as any[];
-    const normalizeLayout = (raw: any): FormLayout => {
-      if (!raw || typeof raw !== 'object') return EMPTY_LAYOUT;
-      const header = raw.header && typeof raw.header === 'object' ? raw.header : EMPTY_LAYOUT.header;
-      const secs = Array.isArray(raw.sections) ? raw.sections : [];
-      const sections = secs.map((s: any, i: number) => ({
-        id: s?.id || `sec_${i}`,
-        title: s?.title || `섹션 ${i + 1}`,
-        description: s?.description,
-        fields: Array.isArray(s?.fields)
-          ? s.fields.map((f: any, j: number) => ({
-              key: f?.key || `field_${i}_${j}`,
-              label: f?.label || '필드',
-              type: f?.type || 'text',
-              ...f,
-              options: Array.isArray(f?.options) ? f.options : undefined,
-              columns: Array.isArray(f?.columns) ? f.columns : undefined,
-            }))
-          : [],
-      }));
-      return { header, sections };
-    };
-    const normalizeOverlay = (raw: any): PrintOverlay => {
-      if (!raw || typeof raw !== 'object') return EMPTY_OVERLAY;
-      const pages = Array.isArray(raw.pages) ? raw.pages.map((p: any) => ({
-        page: Number(p?.page) || 1,
-        boxes: Array.isArray(p?.boxes) ? p.boxes : [],
-      })) : [];
-      return { pages };
-    };
-    setRows(list.map((r) => ({
-      ...r,
-      layout_json: normalizeLayout(r.layout_json),
-      print_overlay: normalizeOverlay(r.print_overlay),
-      signature_slots: Array.isArray(r.signature_slots) ? r.signature_slots : [],
-    })));
+      .eq('project_id', pid)
+      .order('permit_type')
+      .order('updated_at', { ascending: false });
+    if (error) {
+      toast({ title: '불러오기 실패', description: error.message, variant: 'destructive' });
+      setRows([]);
+    } else {
+      setRows(
+        (data || []).map((r: any) => ({
+          ...r,
+          permit_type: (r.permit_type || 'general') as PermitType,
+          layout_json: parseLayoutJson(r.layout_json),
+        })),
+      );
+    }
     setLoading(false);
   };
 
-  const loadVersions = async (templateId: string) => {
-    const { data } = await supabase
-      .from('permit_form_template_versions' as any)
-      .select('id, version_label, snapshot_reason, created_at')
-      .eq('template_id', templateId)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    setVersions((data as any) || []);
-  };
+  useEffect(() => {
+    if (isMaster) loadProjects();
+  }, [isMaster]);
 
-  useEffect(() => { if (isMaster) load(); }, [isMaster]);
+  useEffect(() => {
+    if (isMaster && projectId) {
+      setSelected(null);
+      loadTemplates(projectId);
+    }
+  }, [isMaster, projectId]);
 
   if (!isMaster) return <Navigate to="/settings" replace />;
 
   const openEdit = (t: Tpl) => {
+    const layout = parseLayoutJson(t.layout_json);
     setSelected(t);
-    setLayout(t.layout_json);
-    setOverlay(t.print_overlay);
-    setOriginalPdfUrl(t.original_pdf_url);
-    setSignatureSlots(t.signature_slots || []);
-    setSelectedRef(null);
-    setTab('standard');
-    setJsonText(JSON.stringify(t.layout_json, null, 2));
-    loadVersions(t.id);
+    setStyle(layout.standard_style || DEFAULT_STANDARD_STYLE);
+    setStdLabels(layout.standard_labels || DEFAULT_STANDARD_LABELS);
+    setDisplay(normalizeDisplayTemplate(layout.display_template || emptyDisplayTemplate()));
+    setTab('labels');
   };
 
-  const save = async (snapshotReason?: string) => {
+  const buildLayoutPayload = (): PermitLayoutJson => ({
+    standard_style: style,
+    standard_labels: {
+      ...stdLabels,
+      approverCompany: display.labels.approverCompany || stdLabels.approverCompany,
+      docNoPrefix: display.labels.docNoPrefix || stdLabels.docNoPrefix,
+    },
+    display_template: normalizeDisplayTemplate(display),
+  });
+
+  const save = async () => {
     if (!selected) return;
-    const payload: any = {
-      code: selected.code.trim(),
-      name: selected.name.trim(),
-      version: selected.version.trim(),
-      is_default: selected.is_default,
-      is_active: selected.is_active,
-      permit_type: selected.permit_type || 'general',
-      layout_json: layout,
-      print_overlay: overlay,
-      original_pdf_url: originalPdfUrl,
-      signature_slots: signatureSlots,
-      suggested_approval_steps: signatureSlots.length || null,
-    };
-    const { error } = await supabase.from('permit_form_templates').update(payload).eq('id', selected.id);
-    if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
-    await supabase.from('permit_form_template_versions' as any).insert({
-      template_id: selected.id,
-      version_label: selected.version,
-      layout_json: layout,
-      print_overlay: overlay,
-      original_pdf_url: originalPdfUrl,
-      snapshot_reason: snapshotReason || '저장',
-    } as any);
-    setSelected({ ...selected, ...payload } as Tpl);
-    setLayout(payload.layout_json);
-    setOverlay(payload.print_overlay);
-    setOriginalPdfUrl(payload.original_pdf_url);
-    setSignatureSlots(payload.signature_slots);
-    toast({ title: '양식이 저장되었습니다.' });
-    await load();
-    await loadVersions(selected.id);
+    setSaving(true);
+    const layout = buildLayoutPayload();
+    const { error } = await supabase
+      .from('permit_form_templates')
+      .update({
+        code: selected.code.trim(),
+        name: selected.name.trim(),
+        version: selected.version.trim() || '1',
+        is_default: selected.is_default,
+        is_active: selected.is_active,
+        permit_type: selected.permit_type,
+        project_id: projectId,
+        layout_json: layout as any,
+        // 레거시 오버레이/AI 필드 정리 (기능 삭제)
+        print_overlay: { pages: [] } as any,
+        original_pdf_url: null,
+        signature_slots: [] as any,
+        suggested_approval_steps: null,
+        ai_analysis_json: null,
+        ai_analyzed_at: null,
+      })
+      .eq('id', selected.id);
+    setSaving(false);
+    if (error) {
+      toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({ title: '저장되었습니다.', description: '결재 규칙·허가서 데이터 구조는 변경되지 않습니다.' });
+    await loadTemplates(projectId);
+    setSelected((prev) =>
+      prev
+        ? {
+            ...prev,
+            layout_json: layout,
+            name: selected.name,
+            code: selected.code,
+            version: selected.version,
+            is_default: selected.is_default,
+            is_active: selected.is_active,
+          }
+        : prev,
+    );
   };
 
-  // AI 분석 결과 적용: AI가 만든 기존 박스는 교체, 사용자 수동 박스는 보존
-  const applyAIResult = (res: {
-    layout: FormLayout; overlay: PrintOverlay; signatureSlots: SignatureSlot[]; detectedTitle?: string;
-  }) => {
-    const hasSections = (res.layout?.sections?.length || 0) > 0;
-    const hasOverlay = (res.overlay?.pages || []).some((p) => (p.boxes?.length || 0) > 0);
-    const hasSigs = (res.signatureSlots?.length || 0) > 0;
-    if (!hasSections && !hasOverlay && !hasSigs) {
+  const softDelete = async (t: Tpl) => {
+    if (!confirm(`「${t.name}」을(를) 삭제할까요? (허가서 본문·결재는 영향 없음)`)) return;
+    const { error } = await supabase
+      .from('permit_form_templates')
+      .update({ is_deleted: true, is_active: false })
+      .eq('id', t.id);
+    if (error) {
+      toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
+    if (selected?.id === t.id) setSelected(null);
+    toast({ title: '삭제되었습니다.' });
+    await loadTemplates(projectId);
+  };
+
+  const cloneFromStandard = async () => {
+    if (!projectId) {
+      toast({ title: '프로젝트를 선택하세요.', variant: 'destructive' });
+      return;
+    }
+    setCloning(true);
+    const existingTypes = new Set(rows.map((r) => r.permit_type));
+    const toCreate = PERMIT_KIND_CLONE_META.filter((m) => !existingTypes.has(m.permit_type));
+    if (toCreate.length === 0) {
+      setCloning(false);
       toast({
-        title: '적용할 AI 결과가 없습니다',
-        description: 'AI가 인식한 요소가 없어 빌더/오버레이를 변경하지 않았습니다.',
-        variant: 'destructive',
+        title: '이미 복제본이 있습니다.',
+        description: '종류별로 하나씩 있으면 됩니다. 기존 양식을 열어 수정하세요.',
       });
       return;
     }
-
-    // overlay 병합
-    const mergedPages = new Map<number, any[]>();
-    (overlay.pages || []).forEach((p) => {
-      mergedPages.set(p.page, p.boxes.filter((b) => !b.ai_generated));
+    const layout = buildCloneLayoutJson();
+    const projectName = projects.find((p) => p.id === projectId)?.name || 'PRJ';
+    const inserts = toCreate.map((m) => ({
+      project_id: projectId,
+      code: `${projectName.slice(0, 12).replace(/\s+/g, '')}-${m.codeSuffix}`.slice(0, 40),
+      name: m.name,
+      version: '1',
+      permit_type: m.permit_type,
+      is_default: true,
+      is_active: true,
+      layout_json: layout as any,
+      print_overlay: { pages: [] } as any,
+      original_pdf_url: null,
+      signature_slots: [] as any,
+      suggested_approval_steps: null,
+      created_by: user?.id || null,
+    }));
+    const { error } = await supabase.from('permit_form_templates').insert(inserts);
+    setCloning(false);
+    if (error) {
+      toast({ title: '복제 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
+    toast({
+      title: `표준 허가서에서 ${inserts.length}종 복제했습니다.`,
+      description: '라벨·숨김만 바꾸면 됩니다. 결재 규칙은 그대로입니다.',
     });
-    (res.overlay.pages || []).forEach((p) => {
-      const cur = mergedPages.get(p.page) || [];
-      mergedPages.set(p.page, [...cur, ...p.boxes]);
+    await loadTemplates(projectId);
+  };
+
+  const kindSections = useMemo(
+    () => (selected ? sectionsForKind(selected.permit_type) : []),
+    [selected],
+  );
+
+  const editableLabelEntries = useMemo(() => {
+    if (!selected) return [];
+    const kind = selected.permit_type;
+    return Object.entries(display.labels).filter(([k]) => {
+      if (k === 'approverCompany' || k === 'docNoPrefix') return true;
+      if (k.startsWith(`${kind}.`)) return true;
+      if (kind === 'general' && k.startsWith('general.')) return true;
+      return false;
     });
-    setOverlay({
-      pages: Array.from(mergedPages.entries()).map(([page, boxes]) => ({ page, boxes })),
+  }, [display.labels, selected]);
+
+  const toggleHidden = (id: PermitDisplaySectionId, checked: boolean) => {
+    const def = kindSections.find((s) => s.id === id);
+    if (def?.locked) return;
+    setDisplay((prev) => {
+      const set = new Set(prev.hiddenSections);
+      if (checked) set.add(id);
+      else set.delete(id);
+      return { ...prev, hiddenSections: Array.from(set) };
     });
-
-    // layout 병합: AI 자동 섹션은 교체, 사용자 섹션은 유지
-    const userSections = (layout.sections || []).filter((s) => !s.id.startsWith('sec_ai_'));
-    setLayout({
-      header: res.detectedTitle
-        ? { ...layout.header, title: res.detectedTitle }
-        : layout.header,
-      sections: [...userSections, ...(res.layout.sections || [])],
-    });
-
-    setSignatureSlots(res.signatureSlots);
-    setTab('builder');
-    toast({ title: 'AI 결과가 적용되었습니다. 검토 후 저장하세요.' });
-  };
-
-
-  const createNew = async (clone?: Tpl) => {
-    const base = clone
-      ? {
-          code: clone.code,
-          name: `${clone.name} (복제)`,
-          version: 'v' + Date.now().toString().slice(-4),
-          layout_json: clone.layout_json,
-          print_overlay: clone.print_overlay,
-          original_pdf_url: clone.original_pdf_url,
-        }
-      : {
-          code: 'CUSTOM-' + Date.now().toString().slice(-4),
-          name: '새 허가서 양식',
-          version: 'v1',
-          layout_json: EMPTY_LAYOUT,
-          print_overlay: EMPTY_OVERLAY,
-          original_pdf_url: null,
-        };
-    const { data, error } = await supabase
-      .from('permit_form_templates')
-      .insert({ ...base, project_id: null, is_default: false, is_active: true } as any)
-      .select()
-      .single();
-    if (error) return toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
-    toast({ title: '새 양식이 생성되었습니다.' });
-    await load();
-    openEdit({
-      ...(data as any),
-      layout_json: base.layout_json,
-      print_overlay: base.print_overlay,
-    } as Tpl);
-  };
-
-  const remove = async (t: Tpl) => {
-    if (!confirm(`"${t.name}" ${t.version} 양식을 삭제하시겠습니까? (소프트 삭제)`)) return;
-    const { error } = await supabase.from('permit_form_templates').update({ is_deleted: true } as any).eq('id', t.id);
-    if (error) return toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
-    if (selected?.id === t.id) setSelected(null);
-    await load();
-    toast({ title: '삭제되었습니다.' });
-  };
-
-  // 섹션 정렬
-  const onDragEnd = (e: DragEndEvent) => {
-    const { active, over } = e;
-    if (!over || active.id === over.id) return;
-    const oldIndex = layout.sections.findIndex((s) => s.id === active.id);
-    const newIndex = layout.sections.findIndex((s) => s.id === over.id);
-    if (oldIndex < 0 || newIndex < 0) return;
-    setLayout({ ...layout, sections: arrayMove(layout.sections, oldIndex, newIndex) });
-  };
-
-  const addSection = () => {
-    const s = newSection(layout.sections.length);
-    setLayout({ ...layout, sections: [...layout.sections, s] });
-    setSelectedRef({ kind: 'section', sectionId: s.id });
-  };
-
-  const duplicateSection = (id: string) => {
-    const idx = layout.sections.findIndex((s) => s.id === id);
-    if (idx < 0) return;
-    const src = layout.sections[idx];
-    const copy = {
-      ...src,
-      id: `sec_${Date.now().toString(36)}`,
-      title: `${src.title} (복제)`,
-      fields: src.fields.map((f) => ({ ...f, key: `${f.key}_${Date.now().toString(36).slice(-3)}` })),
-    };
-    const next = [...layout.sections];
-    next.splice(idx + 1, 0, copy);
-    setLayout({ ...layout, sections: next });
   };
 
   return (
-    <div className="space-y-3 animate-fade-in p-3 md:p-6">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <FileSignature className="h-6 w-6" /> 허가서 양식 디자인
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            마스터 전용. 작업허가서 작성 화면의 기준은 <strong>표준양식 스타일</strong>입니다. 원본 PDF 오버레이와 자유 빌더는 특수 양식용 고급 기능입니다.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => createNew()}><Plus className="h-4 w-4 mr-1" />새 양식</Button>
+    <div className="space-y-4 max-w-6xl">
+      <div>
+        <h1 className="text-xl font-bold flex items-center gap-2">
+          <FileSignature className="h-5 w-5" />
+          허가서 표시 양식
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          지금 쓰는 허가서를 <strong>프로젝트별로 복제</strong>한 뒤, 문구(라벨)와 선택 항목 숨김만 조정합니다.
+          결재·연장·종료·저장 구조는 절대 바꾸지 않습니다. 양식이 없으면 표준 허가서가 그대로 사용됩니다.
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
+      <Card>
+        <CardContent className="p-4 flex flex-wrap items-end gap-3">
+          <div className="space-y-1 min-w-[240px]">
+            <Label>프로젝트</Label>
+            <Select value={projectId} onValueChange={setProjectId}>
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="프로젝트 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={cloneFromStandard} disabled={!projectId || cloning} className="gap-1.5">
+            <Copy className="h-4 w-4" />
+            {cloning ? '복제 중…' : '표준 허가서에서 복제'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <div className="grid md:grid-cols-[280px_1fr] gap-4">
         <Card>
-          <CardHeader className="py-3"><CardTitle className="text-sm">양식 목록</CardTitle></CardHeader>
-          <CardContent className="p-2 space-y-1 max-h-[80vh] overflow-auto">
-            {loading && <div className="text-xs text-muted-foreground p-2">불러오는 중...</div>}
-            {!loading && rows.length === 0 && <div className="text-xs text-muted-foreground p-2">등록된 양식이 없습니다.</div>}
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="text-sm">이 프로젝트 양식</CardTitle>
+          </CardHeader>
+          <CardContent className="p-2 space-y-1">
+            {loading && <p className="text-xs text-muted-foreground p-2">불러오는 중…</p>}
+            {!loading && rows.length === 0 && (
+              <p className="text-xs text-muted-foreground p-2">
+                아직 없습니다. 「표준 허가서에서 복제」를 누르세요. 복제 전엔 기존 표준 허가서가 그대로 동작합니다.
+              </p>
+            )}
             {rows.map((t) => (
-              <div
+              <button
                 key={t.id}
-                className={`p-2 rounded border cursor-pointer hover:bg-accent ${selected?.id === t.id ? 'border-primary bg-accent/40' : 'border-transparent'}`}
+                type="button"
                 onClick={() => openEdit(t)}
+                className={`w-full text-left rounded-md px-2 py-2 text-sm border ${
+                  selected?.id === t.id ? 'border-primary bg-primary/5' : 'border-transparent hover:bg-muted/50'
+                }`}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium truncate">{t.name}</div>
-                    <div className="text-[11px] text-muted-foreground truncate">{t.code} · {t.version}</div>
-                  </div>
-                  <div className="flex gap-1 shrink-0">
-                    {t.is_default && <Badge variant="outline" className="text-[10px]">기본</Badge>}
-                    {!t.is_active && <Badge variant="outline" className="text-[10px] text-muted-foreground">비활성</Badge>}
-                  </div>
+                <div className="font-medium truncate">{t.name}</div>
+                <div className="text-[11px] text-muted-foreground flex gap-1 flex-wrap mt-0.5">
+                  <Badge variant="outline" className="text-[10px] h-4">
+                    {PERMIT_TYPE_LABEL[t.permit_type] || t.permit_type}
+                  </Badge>
+                  {t.is_default && <Badge variant="secondary" className="text-[10px] h-4">기본</Badge>}
+                  {!t.is_active && <Badge variant="destructive" className="text-[10px] h-4">비활성</Badge>}
                 </div>
-                <div className="flex gap-1 mt-1">
-                  <Button size="sm" variant="ghost" className="h-6 px-1.5" onClick={(e) => { e.stopPropagation(); createNew(t); }}>
-                    <Copy className="h-3 w-3 mr-1" />복제
-                  </Button>
-                  <Button size="sm" variant="ghost" className="h-6 px-1.5 text-destructive" onClick={(e) => { e.stopPropagation(); remove(t); }}>
-                    <Trash2 className="h-3 w-3 mr-1" />삭제
-                  </Button>
-                </div>
-              </div>
+              </button>
             ))}
           </CardContent>
         </Card>
 
-        {!selected ? (
-          <Card><CardContent className="p-8 text-center text-muted-foreground text-sm">왼쪽에서 양식을 선택하거나 새 양식을 생성하세요.</CardContent></Card>
-        ) : (
-          <div className="space-y-3">
-            {/* 메타 정보 + 저장 */}
-            <Card>
-              <CardContent className="p-3 space-y-2">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <div><Label className="text-xs">코드</Label>
-                    <Input className="h-8" value={selected.code} onChange={(e) => setSelected({ ...selected, code: e.target.value })} />
-                  </div>
-                  <div><Label className="text-xs">이름</Label>
-                    <Input className="h-8" value={selected.name} onChange={(e) => setSelected({ ...selected, name: e.target.value })} />
-                  </div>
-                  <div><Label className="text-xs">버전</Label>
-                    <Input className="h-8" value={selected.version} onChange={(e) => setSelected({ ...selected, version: e.target.value })} />
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <div className="min-w-[220px]">
-                    <Label className="text-xs">허가서 종류</Label>
-                    <Select
-                      value={selected.permit_type || 'general'}
-                      onValueChange={(v) => setSelected({ ...selected, permit_type: v })}
-                    >
-                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {PERMIT_TYPE_OPTIONS.map((o) => (
-                          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-[10px] text-muted-foreground mt-1">이 종류의 허가서를 작성할 때 자동 로드됩니다.</p>
-                  </div>
-                  <label className="flex items-center gap-2 text-sm">
-                    <Switch checked={selected.is_default} onCheckedChange={(v) => setSelected({ ...selected, is_default: v })} />
-                    이 종류의 기본 양식으로 사용
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <Switch checked={selected.is_active} onCheckedChange={(v) => setSelected({ ...selected, is_active: v })} />
-                    활성
-                  </label>
-                  <div className="ml-auto flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => setShowJson(!showJson)}>{showJson ? '고급 닫기' : '고급 (JSON)'}</Button>
-                    <Button size="sm" onClick={() => save()}><Save className="h-4 w-4 mr-1" />저장</Button>
-                  </div>
-                </div>
-                {showJson && (
-                  <div className="pt-2">
-                    <Label className="text-xs">레이아웃 JSON (직접 편집)</Label>
-                    <Textarea
-                      rows={12}
-                      value={jsonText}
-                      onChange={(e) => setJsonText(e.target.value)}
-                      className="font-mono text-xs"
-                    />
-                    <Button size="sm" variant="outline" className="mt-2" onClick={() => {
-                      try {
-                        const parsed = JSON.parse(jsonText);
-                        setLayout(parsed);
-                        toast({ title: 'JSON이 빌더에 적용되었습니다.' });
-                      } catch (err: any) {
-                        toast({ title: 'JSON 오류', description: err.message, variant: 'destructive' });
-                      }
-                    }}>JSON → 빌더에 적용</Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Tabs value={tab} onValueChange={setTab}>
-              <TabsList className="flex-wrap h-auto">
-                <TabsTrigger value="standard"><LayoutGrid className="h-4 w-4 mr-1" />표준양식 스타일</TabsTrigger>
-                <TabsTrigger value="signatures"><Signature className="h-4 w-4 mr-1" />표준 결재·서명 ({signatureSlots.length})</TabsTrigger>
-                <TabsTrigger value="versions"><History className="h-4 w-4 mr-1" />버전</TabsTrigger>
-                <span className="mx-2 text-[10px] text-muted-foreground self-center">— 고급 —</span>
-                <TabsTrigger value="overlay"><FileText className="h-4 w-4 mr-1" />원본 PDF 오버레이</TabsTrigger>
-                <TabsTrigger value="ai"><Sparkles className="h-4 w-4 mr-1" />AI 자동 분석</TabsTrigger>
-                <TabsTrigger value="builder"><MousePointer2 className="h-4 w-4 mr-1" />자유 빌더</TabsTrigger>
-                <TabsTrigger value="preview"><Eye className="h-4 w-4 mr-1" />표준 미리보기</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="standard">
-                <Card>
-                  <CardContent className="p-3">
-                    <StandardStyleEditor
-                      style={(layout as any).standard_style || null}
-                      labels={(layout as any).standard_labels || null}
-                      onChange={(style: StandardStyle, labels: StandardLabels) =>
-                        setLayout({ ...layout, ...( { standard_style: style, standard_labels: labels } as any) })
-                      }
-                    />
-                    <p className="text-[11px] text-muted-foreground mt-2">
-                      이 양식이 permit_type = '{selected.permit_type || 'general'}' 로 저장되어 있으면, 허가서 작성 화면의 표준 SF003 양식에 위 열 너비 / 색상 / 로고 / 라벨이 자동 반영됩니다.
-                    </p>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-
-
-
-              <TabsContent value="ai">
-                <Card>
-                  <CardContent className="p-3 space-y-3">
-                    <AIAnalysisPanel
-                      templateId={selected.id}
-                      originalPdfUrl={originalPdfUrl}
-                      onApply={applyAIResult}
-                    />
-                    {selected.ai_analyzed_at && (
-                      <p className="text-[11px] text-muted-foreground">
-                        마지막 AI 분석: {new Date(selected.ai_analyzed_at).toLocaleString('ko-KR')}
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="signatures">
-                <Card>
-                  <CardContent className="p-3">
-                    <SignatureSlotMapper slots={signatureSlots} onChange={setSignatureSlots} />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-
-              <TabsContent value="builder">
-                <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-3">
-                  <Card>
-                    <CardHeader className="py-2 flex flex-row items-center justify-between">
-                      <CardTitle className="text-sm">섹션 / 필드</CardTitle>
-                      <Button size="sm" variant="outline" onClick={addSection}><Plus className="h-3.5 w-3.5 mr-1" />섹션 추가</Button>
-                    </CardHeader>
-                    <CardContent className="space-y-2 max-h-[70vh] overflow-auto" onClick={() => setSelectedRef(null)}>
-                      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-                        <SortableContext items={layout.sections.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-                          {layout.sections.map((s) => (
-                            <SortableSectionCard
-                              key={s.id}
-                              section={s}
-                              selected={selectedRef}
-                              onSelect={setSelectedRef}
-                              onChange={(updated) => setLayout({ ...layout, sections: layout.sections.map((x) => (x.id === s.id ? updated : x)) })}
-                              onDelete={() => {
-                                setLayout({ ...layout, sections: layout.sections.filter((x) => x.id !== s.id) });
-                                if (selectedRef?.sectionId === s.id) setSelectedRef(null);
-                              }}
-                              onDuplicate={() => duplicateSection(s.id)}
-                            />
-                          ))}
-                        </SortableContext>
-                      </DndContext>
-                      {layout.sections.length === 0 && (
-                        <div className="text-center text-sm text-muted-foreground py-12 border-2 border-dashed rounded">
-                          섹션을 추가해 시작하세요.
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader className="py-2"><CardTitle className="text-sm">속성</CardTitle></CardHeader>
-                    <CardContent className="max-h-[70vh] overflow-auto">
-                      <PropertyPanel layout={layout} selected={selectedRef} onChange={setLayout} />
-                    </CardContent>
-                  </Card>
-                </div>
-              </TabsContent>
-
-              <TabsContent value="preview">
-                <Card>
-                  <CardHeader className="py-2"><CardTitle className="text-sm">표준양식 스타일 기준 미리보기</CardTitle></CardHeader>
-                  <CardContent className="p-2 bg-muted/30 overflow-auto max-h-[80vh]">
-                    <StandardPermitSheet mode="print">
-                      <DigPermitForm
-                        permitType={(selected.permit_type || 'general') as PermitType}
-                        data={STANDARD_PREVIEW_DATA}
-                        signatures={STANDARD_PREVIEW_SIGS}
-                        readOnly
-                        printMode
-                        projectName="샘플 프로젝트"
-                        standardStyle={(layout as any).standard_style || null}
-                        standardLabels={(layout as any).standard_labels || null}
-                      />
-                    </StandardPermitSheet>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="overlay">
-                <p className="text-xs text-muted-foreground mb-2">
-                  원본 PDF 오버레이는 표준양식 스타일과 별개인 고급 출력 방식입니다. PDF 자체가 배경 기준이며, 작성 화면 드롭다운에서 원본 PDF 오버레이 양식을 선택한 경우에만 사용됩니다.
-                </p>
-                <OverlayEditor
-                  templateId={selected.id}
-                  layout={layout}
-                  overlay={overlay}
-                  originalPdfUrl={originalPdfUrl}
-                  onChange={(o, u) => { setOverlay(o); setOriginalPdfUrl(u); }}
-                />
-              </TabsContent>
-
-              <TabsContent value="versions">
-                <Card>
-                  <CardContent className="p-3">
-                    {versions.length === 0 && <div className="text-sm text-muted-foreground">저장된 버전이 없습니다.</div>}
+        <Card>
+          {!selected ? (
+            <CardContent className="p-8 text-sm text-muted-foreground">
+              왼쪽에서 양식을 선택하거나, 표준에서 복제하세요.
+            </CardContent>
+          ) : (
+            <>
+              <CardHeader className="py-3 px-4 space-y-3">
+                <div className="flex flex-wrap gap-2 items-end justify-between">
+                  <div className="grid grid-cols-2 gap-2 flex-1 min-w-[240px]">
                     <div className="space-y-1">
-                      {versions.map((v) => (
-                        <div key={v.id} className="text-xs flex items-center justify-between border-b py-1">
-                          <span>{new Date(v.created_at).toLocaleString()} — {v.version_label} {v.snapshot_reason && `· ${v.snapshot_reason}`}</span>
+                      <Label className="text-xs">이름</Label>
+                      <Input
+                        value={selected.name}
+                        onChange={(e) => setSelected({ ...selected, name: e.target.value })}
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">코드</Label>
+                      <Input
+                        value={selected.code}
+                        onChange={(e) => setSelected({ ...selected, code: e.target.value })}
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">버전</Label>
+                      <Input
+                        value={selected.version}
+                        onChange={(e) => setSelected({ ...selected, version: e.target.value })}
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="flex items-center gap-4 pt-5">
+                      <label className="flex items-center gap-1.5 text-xs">
+                        <Switch
+                          checked={selected.is_default}
+                          onCheckedChange={(v) => setSelected({ ...selected, is_default: v })}
+                        />
+                        기본
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs">
+                        <Switch
+                          checked={selected.is_active}
+                          onCheckedChange={(v) => setSelected({ ...selected, is_active: v })}
+                        />
+                        사용
+                      </label>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => softDelete(selected)}>
+                      <Trash2 className="h-3.5 w-3.5 mr-1" /> 삭제
+                    </Button>
+                    <Button size="sm" onClick={save} disabled={saving}>
+                      <Save className="h-3.5 w-3.5 mr-1" /> {saving ? '저장 중…' : '저장'}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                <Tabs value={tab} onValueChange={setTab}>
+                  <TabsList>
+                    <TabsTrigger value="labels">문구(라벨)</TabsTrigger>
+                    <TabsTrigger value="hide">항목 숨기기</TabsTrigger>
+                    <TabsTrigger value="style">스타일</TabsTrigger>
+                    <TabsTrigger value="preview">미리보기</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="labels" className="space-y-3 pt-3">
+                    <p className="text-xs text-muted-foreground">
+                      비워 두지 마세요. 저장 키는 그대로이고, 화면에 보이는 글자만 바뀝니다.
+                    </p>
+                    <div className="grid gap-2 max-h-[420px] overflow-y-auto pr-1">
+                      {editableLabelEntries.map(([key, val]) => (
+                        <div key={key} className="grid grid-cols-[160px_1fr] gap-2 items-center">
+                          <Label className="text-[11px] text-muted-foreground truncate" title={key}>{key}</Label>
+                          <Input
+                            value={val}
+                            className="h-8"
+                            onChange={(e) =>
+                              setDisplay((prev) => ({
+                                ...prev,
+                                labels: { ...prev.labels, [key]: e.target.value },
+                              }))
+                            }
+                          />
                         </div>
                       ))}
                     </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </div>
-        )}
+                  </TabsContent>
+
+                  <TabsContent value="hide" className="space-y-3 pt-3">
+                    <p className="text-xs text-muted-foreground">
+                      숨긴 항목은 화면에만 안 보입니다. 이미 저장된 값·결재 슬롯은 유지됩니다.
+                      잠금 표시된 항목(결재·작업일시·핵심 요약·완료·연장)은 숨길 수 없습니다.
+                    </p>
+                    <div className="space-y-2">
+                      {kindSections.map((s) => {
+                        const checked = display.hiddenSections.includes(s.id);
+                        return (
+                          <label
+                            key={s.id}
+                            className={`flex items-start gap-2 rounded-md border p-2 text-sm ${
+                              s.locked ? 'opacity-60 bg-muted/30' : ''
+                            }`}
+                          >
+                            <Checkbox
+                              checked={checked}
+                              disabled={s.locked}
+                              onCheckedChange={(v) => toggleHidden(s.id, !!v)}
+                              className="mt-0.5"
+                            />
+                            <span>
+                              <span className="font-medium">{s.label}</span>
+                              {s.locked && (
+                                <Badge variant="outline" className="ml-2 text-[10px]">잠금</Badge>
+                              )}
+                              {s.description && (
+                                <span className="block text-[11px] text-muted-foreground">{s.description}</span>
+                              )}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="style" className="pt-3">
+                    <StandardStyleEditor
+                      style={style as StandardStyle}
+                      labels={{
+                        approverCompany: display.labels.approverCompany || stdLabels.approverCompany,
+                        docNoPrefix: display.labels.docNoPrefix || stdLabels.docNoPrefix,
+                      }}
+                      onChange={(nextStyle, nextLabels) => {
+                        setStyle(nextStyle);
+                        setStdLabels(nextLabels);
+                        setDisplay((prev) => ({
+                          ...prev,
+                          labels: {
+                            ...prev.labels,
+                            approverCompany: nextLabels.approverCompany || prev.labels.approverCompany,
+                            docNoPrefix: nextLabels.docNoPrefix || prev.labels.docNoPrefix,
+                          },
+                        }));
+                      }}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="preview" className="pt-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                      <Eye className="h-3.5 w-3.5" /> 실제 DigPermitForm 미리보기 (샘플 데이터)
+                    </div>
+                    <div className="border rounded bg-white p-3 overflow-auto max-h-[640px]">
+                      <StandardPermitSheet>
+                        <DigPermitForm
+                          permitType={selected.permit_type}
+                          data={PREVIEW_DATA}
+                          signatures={PREVIEW_SIGS}
+                          readOnly
+                          printMode
+                          standardStyle={style}
+                          standardLabels={{
+                            approverCompany: display.labels.approverCompany,
+                            docNoPrefix: display.labels.docNoPrefix,
+                          }}
+                          displayTemplate={display}
+                        />
+                      </StandardPermitSheet>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </>
+          )}
+        </Card>
       </div>
     </div>
   );

@@ -201,6 +201,7 @@ export function sectionsForKind(kind: PermitType): PermitDisplaySectionDef[] {
 export type PermitTemplateRow = {
   id: string;
   project_id: string | null;
+  company_id?: string | null;
   code: string;
   name: string;
   version: string;
@@ -211,9 +212,37 @@ export type PermitTemplateRow = {
 };
 
 /**
- * 프로젝트 전용 표시 양식만 고른다.
+ * 회사 전용 표시 양식만 고른다.
  * 없으면 null → DigPermitForm 내장 기본 (기존 동작 유지).
  */
+export function pickCompanyDisplayTemplate(
+  list: PermitTemplateRow[],
+  companyId: string | null | undefined,
+  permitType: PermitType,
+): PermitTemplateRow | null {
+  if (!companyId) return null;
+  const forCompany = list.filter(
+    (t) => t.company_id === companyId && t.is_active !== false,
+  );
+  if (forCompany.length === 0) return null;
+
+  const exactDefault = forCompany.find(
+    (t) => t.permit_type === permitType && t.is_default,
+  );
+  if (exactDefault) return exactDefault;
+
+  const exact = forCompany.find((t) => t.permit_type === permitType);
+  if (exact) return exact;
+
+  const generalDefault = forCompany.find(
+    (t) => (!t.permit_type || t.permit_type === 'general') && t.is_default,
+  );
+  if (generalDefault) return generalDefault;
+
+  return forCompany.find((t) => !t.permit_type || t.permit_type === 'general') || null;
+}
+
+/** @deprecated use pickCompanyDisplayTemplate — kept for tests/compat */
 export function pickProjectDisplayTemplate(
   list: PermitTemplateRow[],
   projectId: string | null | undefined,
@@ -224,21 +253,25 @@ export function pickProjectDisplayTemplate(
     (t) => t.project_id === projectId && t.is_active !== false,
   );
   if (forProject.length === 0) return null;
-
-  const exactDefault = forProject.find(
-    (t) => t.permit_type === permitType && t.is_default,
+  return pickCompanyDisplayTemplate(
+    forProject.map((t) => ({ ...t, company_id: t.project_id })),
+    projectId,
+    permitType,
   );
-  if (exactDefault) return exactDefault;
+}
 
-  const exact = forProject.find((t) => t.permit_type === permitType);
-  if (exact) return exact;
-
-  const generalDefault = forProject.find(
-    (t) => (!t.permit_type || t.permit_type === 'general') && t.is_default,
-  );
-  if (generalDefault) return generalDefault;
-
-  return forProject.find((t) => !t.permit_type || t.permit_type === 'general') || null;
+/**
+ * 프로젝트에서 「양식을 소유한 회사」(원청/발주) id 를 고른다.
+ * 턴키·다수 프로젝트에 동일 회사 양식을 쓰기 위함.
+ */
+export function resolveFormOwnerCompanyId(project: {
+  gc_company_id?: string | null;
+  gc_company_ids?: string[] | null;
+} | null | undefined, fallbackCompanyId?: string | null): string | null {
+  if (project?.gc_company_id) return project.gc_company_id;
+  const ids = project?.gc_company_ids || [];
+  if (ids.length > 0 && ids[0]) return ids[0];
+  return fallbackCompanyId || null;
 }
 
 export const PERMIT_KIND_CLONE_META: Array<{

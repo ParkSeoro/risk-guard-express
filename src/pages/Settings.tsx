@@ -79,7 +79,7 @@ const settingsCards = [
   {
     id: 'permit-forms',
     title: '허가서 표시 양식',
-    description: '프로젝트별로 표준 허가서를 복제해 문구·항목 표시만 조정합니다. 결재 규칙은 바뀌지 않습니다.',
+    description: '회사별로 표준 허가서를 복제해 문구·항목 표시만 조정합니다. 같은 회사의 모든 프로젝트에 적용됩니다. 결재 규칙은 바뀌지 않습니다.',
     icon: FileSignature,
     path: '/settings/permit-forms',
     requires: 'master' as const,

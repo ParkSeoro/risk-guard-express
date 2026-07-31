@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   isSectionHidden,
   normalizeDisplayTemplate,
-  pickProjectDisplayTemplate,
+  pickCompanyDisplayTemplate,
+  resolveFormOwnerCompanyId,
   emptyDisplayTemplate,
   LOCKED_DISPLAY_SECTIONS,
 } from '@/lib/permitDisplayTemplate';
@@ -32,11 +33,12 @@ describe('permitDisplayTemplate', () => {
     expect(isSectionHidden(t, 'approval_matrix')).toBe(false);
   });
 
-  it('pickProjectDisplayTemplate ignores global/null project templates', () => {
+  it('pickCompanyDisplayTemplate ignores other companies and globals', () => {
     const list = [
       {
         id: 'global',
         project_id: null,
+        company_id: null,
         code: 'G',
         name: 'global',
         version: '1',
@@ -46,10 +48,11 @@ describe('permitDisplayTemplate', () => {
         permit_type: 'general',
       },
       {
-        id: 'p1',
-        project_id: 'proj-a',
+        id: 'co-a',
+        project_id: null,
+        company_id: 'company-a',
         code: 'A',
-        name: 'proj',
+        name: 'Air Liquide form',
         version: '1',
         layout_json: {},
         is_default: true,
@@ -57,9 +60,20 @@ describe('permitDisplayTemplate', () => {
         permit_type: 'general',
       },
     ];
-    expect(pickProjectDisplayTemplate(list as any, 'proj-a', 'general')?.id).toBe('p1');
-    expect(pickProjectDisplayTemplate(list as any, 'other', 'general')).toBeNull();
-    expect(pickProjectDisplayTemplate(list as any, null, 'general')).toBeNull();
+    expect(pickCompanyDisplayTemplate(list as any, 'company-a', 'general')?.id).toBe('co-a');
+    expect(pickCompanyDisplayTemplate(list as any, 'other', 'general')).toBeNull();
+    expect(pickCompanyDisplayTemplate(list as any, null, 'general')).toBeNull();
+  });
+
+  it('resolveFormOwnerCompanyId prefers gc_company_id', () => {
+    expect(
+      resolveFormOwnerCompanyId(
+        { gc_company_id: 'gc1', gc_company_ids: ['gc2'] },
+        'fallback',
+      ),
+    ).toBe('gc1');
+    expect(resolveFormOwnerCompanyId({ gc_company_ids: ['gc2'] }, 'fallback')).toBe('gc2');
+    expect(resolveFormOwnerCompanyId(null, 'fallback')).toBe('fallback');
   });
 
   it('emptyDisplayTemplate starts with no hidden sections', () => {

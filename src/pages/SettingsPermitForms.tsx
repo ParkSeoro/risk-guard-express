@@ -44,11 +44,12 @@ import {
   type PermitLayoutJson,
 } from '@/lib/permitDisplayTemplate';
 
-type ProjectOpt = { id: string; name: string };
+type CompanyOpt = { id: string; name: string; type: string | null };
 
 type Tpl = {
   id: string;
   project_id: string | null;
+  company_id: string | null;
   code: string;
   name: string;
   version: string;
@@ -84,8 +85,8 @@ export default function SettingsPermitForms() {
   const { toast } = useToast();
   const isMaster = hasRole('master');
 
-  const [projects, setProjects] = useState<ProjectOpt[]>([]);
-  const [projectId, setProjectId] = useState<string>('');
+  const [companies, setCompanies] = useState<CompanyOpt[]>([]);
+  const [companyId, setCompanyId] = useState<string>('');
   const [rows, setRows] = useState<Tpl[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Tpl | null>(null);
@@ -96,23 +97,26 @@ export default function SettingsPermitForms() {
   const [saving, setSaving] = useState(false);
   const [cloning, setCloning] = useState(false);
 
-  const loadProjects = async () => {
+  const loadCompanies = async () => {
     const { data, error } = await supabase
-      .from('projects')
-      .select('id, name')
+      .from('companies')
+      .select('id, name, type')
       .eq('is_deleted', false)
       .order('name');
     if (error) {
-      toast({ title: '프로젝트 목록 실패', description: error.message, variant: 'destructive' });
+      toast({ title: '회사 목록 실패', description: error.message, variant: 'destructive' });
       return;
     }
-    const list = (data || []) as ProjectOpt[];
-    setProjects(list);
-    if (!projectId && list[0]) setProjectId(list[0].id);
+    // 발주/원청 우선, 없으면 전체
+    const all = (data || []) as CompanyOpt[];
+    const preferred = all.filter((c) => c.type === 'client' || c.type === 'gc');
+    const list = preferred.length > 0 ? preferred : all;
+    setCompanies(list);
+    if (!companyId && list[0]) setCompanyId(list[0].id);
   };
 
-  const loadTemplates = async (pid: string) => {
-    if (!pid) {
+  const loadTemplates = async (cid: string) => {
+    if (!cid) {
       setRows([]);
       setLoading(false);
       return;
@@ -120,9 +124,9 @@ export default function SettingsPermitForms() {
     setLoading(true);
     const { data, error } = await supabase
       .from('permit_form_templates')
-      .select('id, project_id, code, name, version, layout_json, is_default, is_active, permit_type, updated_at')
+      .select('id, project_id, company_id, code, name, version, layout_json, is_default, is_active, permit_type, updated_at')
       .eq('is_deleted', false)
-      .eq('project_id', pid)
+      .eq('company_id', cid)
       .order('permit_type')
       .order('updated_at', { ascending: false });
     if (error) {
@@ -132,6 +136,7 @@ export default function SettingsPermitForms() {
       setRows(
         (data || []).map((r: any) => ({
           ...r,
+          company_id: r.company_id || null,
           permit_type: (r.permit_type || 'general') as PermitType,
           layout_json: parseLayoutJson(r.layout_json),
         })),
@@ -141,15 +146,15 @@ export default function SettingsPermitForms() {
   };
 
   useEffect(() => {
-    if (isMaster) loadProjects();
+    if (isMaster) loadCompanies();
   }, [isMaster]);
 
   useEffect(() => {
-    if (isMaster && projectId) {
+    if (isMaster && companyId) {
       setSelected(null);
-      loadTemplates(projectId);
+      loadTemplates(companyId);
     }
-  }, [isMaster, projectId]);
+  }, [isMaster, companyId]);
 
   if (!isMaster) return <Navigate to="/settings" replace />;
 
@@ -185,7 +190,8 @@ export default function SettingsPermitForms() {
         is_default: selected.is_default,
         is_active: selected.is_active,
         permit_type: selected.permit_type,
-        project_id: projectId,
+        project_id: null,
+        company_id: companyId,
         layout_json: layout as any,
         // 레거시 오버레이/AI 필드 정리 (기능 삭제)
         print_overlay: { pages: [] } as any,
@@ -202,7 +208,7 @@ export default function SettingsPermitForms() {
       return;
     }
     toast({ title: '저장되었습니다.', description: '결재 규칙·허가서 데이터 구조는 변경되지 않습니다.' });
-    await loadTemplates(projectId);
+    await loadTemplates(companyId);
     setSelected((prev) =>
       prev
         ? {
@@ -230,12 +236,12 @@ export default function SettingsPermitForms() {
     }
     if (selected?.id === t.id) setSelected(null);
     toast({ title: '삭제되었습니다.' });
-    await loadTemplates(projectId);
+    await loadTemplates(companyId);
   };
 
   const cloneFromStandard = async () => {
-    if (!projectId) {
-      toast({ title: '프로젝트를 선택하세요.', variant: 'destructive' });
+    if (!companyId) {
+      toast({ title: '회사를 선택하세요.', variant: 'destructive' });
       return;
     }
     setCloning(true);
@@ -250,10 +256,11 @@ export default function SettingsPermitForms() {
       return;
     }
     const layout = buildCloneLayoutJson();
-    const projectName = projects.find((p) => p.id === projectId)?.name || 'PRJ';
+    const companyName = companies.find((c) => c.id === companyId)?.name || 'CO';
     const inserts = toCreate.map((m) => ({
-      project_id: projectId,
-      code: `${projectName.slice(0, 12).replace(/\s+/g, '')}-${m.codeSuffix}`.slice(0, 40),
+      project_id: null,
+      company_id: companyId,
+      code: `${companyName.slice(0, 12).replace(/\s+/g, '')}-${m.codeSuffix}`.slice(0, 40),
       name: m.name,
       version: '1',
       permit_type: m.permit_type,
@@ -274,9 +281,9 @@ export default function SettingsPermitForms() {
     }
     toast({
       title: `표준 허가서에서 ${inserts.length}종 복제했습니다.`,
-      description: '라벨·숨김만 바꾸면 됩니다. 결재 규칙은 그대로입니다.',
+      description: '이 회사의 모든 프로젝트 허가서에 표시(라벨/숨김)만 적용됩니다. 결재 규칙은 그대로입니다.',
     });
-    await loadTemplates(projectId);
+    await loadTemplates(companyId);
   };
 
   const kindSections = useMemo(
@@ -314,7 +321,8 @@ export default function SettingsPermitForms() {
           허가서 표시 양식
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          지금 쓰는 허가서를 <strong>프로젝트별로 복제</strong>한 뒤, 문구(라벨)와 선택 항목 숨김만 조정합니다.
+          지금 쓰는 허가서를 <strong>회사별로 복제</strong>한 뒤, 문구(라벨)와 선택 항목 숨김만 조정합니다.
+          같은 회사의 모든 프로젝트에 동일하게 적용됩니다(턴키 다수 현장용).
           결재·연장·종료·저장 구조는 절대 바꾸지 않습니다. 양식이 없으면 표준 허가서가 그대로 사용됩니다.
         </p>
       </div>
@@ -322,19 +330,21 @@ export default function SettingsPermitForms() {
       <Card>
         <CardContent className="p-4 flex flex-wrap items-end gap-3">
           <div className="space-y-1 min-w-[240px]">
-            <Label>프로젝트</Label>
-            <Select value={projectId} onValueChange={setProjectId}>
+            <Label>회사 (발주/원청)</Label>
+            <Select value={companyId} onValueChange={setCompanyId}>
               <SelectTrigger className="h-9">
-                <SelectValue placeholder="프로젝트 선택" />
+                <SelectValue placeholder="회사 선택" />
               </SelectTrigger>
               <SelectContent>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                {companies.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}{c.type ? ` · ${c.type}` : ''}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={cloneFromStandard} disabled={!projectId || cloning} className="gap-1.5">
+          <Button onClick={cloneFromStandard} disabled={!companyId || cloning} className="gap-1.5">
             <Copy className="h-4 w-4" />
             {cloning ? '복제 중…' : '표준 허가서에서 복제'}
           </Button>
@@ -344,7 +354,7 @@ export default function SettingsPermitForms() {
       <div className="grid md:grid-cols-[280px_1fr] gap-4">
         <Card>
           <CardHeader className="py-3 px-4">
-            <CardTitle className="text-sm">이 프로젝트 양식</CardTitle>
+            <CardTitle className="text-sm">이 회사 양식</CardTitle>
           </CardHeader>
           <CardContent className="p-2 space-y-1">
             {loading && <p className="text-xs text-muted-foreground p-2">불러오는 중…</p>}

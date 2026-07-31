@@ -34,7 +34,8 @@ import { syncPermitDateFromWorkStart, resolvePermitWorkDate } from '@/lib/permit
 import {
   normalizeDisplayTemplate,
   parseLayoutJson,
-  pickProjectDisplayTemplate,
+  pickCompanyDisplayTemplate,
+  resolveFormOwnerCompanyId,
   type PermitDisplayTemplate,
 } from '@/lib/permitDisplayTemplate';
 
@@ -197,18 +198,35 @@ export default function WorkPermitDetail() {
           setDisplayTemplateName(null);
           return;
         }
+        const { data: proj } = await supabase
+          .from('projects')
+          .select('gc_company_id, gc_company_ids')
+          .eq('id', projectId)
+          .maybeSingle();
+        const ownerCompanyId = resolveFormOwnerCompanyId(
+          proj as any,
+          (permit as any)?.company_id || null,
+        );
+        if (!ownerCompanyId) {
+          setStandardStyle(null);
+          setStandardLabels(null);
+          setDisplayTemplate(null);
+          setDisplayTemplateId(null);
+          setDisplayTemplateName(null);
+          return;
+        }
         const { data: tpls } = await supabase
           .from('permit_form_templates')
-          .select('id, name, code, version, layout_json, is_default, is_active, permit_type, project_id')
+          .select('id, name, code, version, layout_json, is_default, is_active, permit_type, project_id, company_id')
           .eq('is_deleted', false)
           .eq('is_active', true)
-          .eq('project_id', projectId)
+          .eq('company_id', ownerCompanyId)
           .order('is_default', { ascending: false })
           .order('updated_at', { ascending: false });
         const list = (tpls || []) as any[];
-        const holder = pickProjectDisplayTemplate(list, projectId, activeKind as PermitType);
+        const holder = pickCompanyDisplayTemplate(list, ownerCompanyId, activeKind as PermitType);
         if (!holder) {
-          // 프로젝트 표시 양식 없음 → DigPermitForm 내장 기본 (기존과 동일)
+          // 회사 표시 양식 없음 → DigPermitForm 내장 기본 (기존과 동일)
           setStandardStyle(null);
           setStandardLabels(null);
           setDisplayTemplate(null);
@@ -235,7 +253,7 @@ export default function WorkPermitDetail() {
         setDisplayTemplateName(null);
       }
     })();
-  }, [activeKind, permit?.id, permit?.project_id]);
+  }, [activeKind, permit?.id, permit?.project_id, permit?.company_id]);
 
   const save = async () => {
     if (!permit) return;
@@ -457,8 +475,8 @@ export default function WorkPermitDetail() {
           <span className="font-semibold">표시 양식:</span>
           <span className="text-muted-foreground">
             {displayTemplateName
-              ? `${displayTemplateName} (프로젝트 표시양식 · 라벨/숨김만 적용)`
-              : '표준 DigPermitForm (프로젝트 표시양식 없음)'}
+              ? `${displayTemplateName} (회사 표시양식 · 라벨/숨김만 적용)`
+              : '표준 DigPermitForm (회사 표시양식 없음)'}
           </span>
           {readOnly && (
             <span className="text-xs text-muted-foreground">

@@ -36,6 +36,8 @@ export type DeepseekRiskRequest = {
   max_tokens?: number;
   /** Abort after N ms (default DEEPSEEK_TIMEOUT_MS or 90000). */
   timeoutMs?: number;
+  /** Override retry count (default 3). Use 1 for fast draft calls. */
+  maxAttempts?: number;
 };
 
 function resolveConfig(): { apiKey: string; baseUrl: string; timeoutMs: number } {
@@ -192,7 +194,7 @@ export async function callDeepseekRiskChat(req: DeepseekRiskRequest): Promise<{
 }> {
   const { apiKey, baseUrl, timeoutMs: defaultTimeout } = resolveConfig();
   const timeoutMs = req.timeoutMs ?? defaultTimeout;
-  const maxAttempts = 3;
+  const maxAttempts = Math.max(1, Math.min(4, req.maxAttempts ?? 3));
   let lastErr: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

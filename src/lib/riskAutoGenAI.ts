@@ -96,8 +96,11 @@ function mapErrorMessage(rawMsg: string): string {
   if (/RATE_LIMIT|429|503|529|too many|너무 많|과부하/i.test(rawMsg)) {
     return 'AI 서버가 일시적으로 바쁩니다. 잠시 후 다시 시도해주세요.';
   }
-  if (/TIMEOUT|중단되었|시간.?초과|WORKER_RESOURCE|compute resources/i.test(rawMsg)) {
-    return 'AI 생성 연결이 중단되었습니다. 이미 생성된 항목은 유지됩니다. 다시 시도하거나 공종을 나눠 주세요.';
+  if (/TIMEOUT|중단되었|시간.?초과|WORKER_RESOURCE|compute resources|AbortError/i.test(rawMsg)) {
+    return 'AI 응답이 너무 오래 걸려 중단되었습니다. 공종을 하나만 넣고 다시 시도해주세요.';
+  }
+  if (/42501|row-level security|RLS|권한이 없습니다|Forbidden/i.test(rawMsg)) {
+    return '위험성평가 항목을 저장할 권한이 없습니다. project_admin / safety_manager / site_manager / supervisor 권한이 필요합니다.';
   }
   return rawMsg || 'AI 생성에 실패했습니다.';
 }

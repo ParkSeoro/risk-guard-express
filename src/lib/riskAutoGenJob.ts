@@ -13,7 +13,7 @@ import {
   fetchScopeDraft,
   fetchRiskFillBatch,
   fetchRiskRowDetailWithRetry,
-  isAiScopeDraftItem,
+  isFillableRiskItem,
   RISK_FILL_CHUNK,
   type AIGenerateOptions,
   type DetailLevel,
@@ -21,6 +21,8 @@ import {
 import type { GeneratedRiskItem } from '@/lib/riskAutoGen';
 import { enrichLegalBasis } from '@/lib/enrichLegalBasis';
 import { calculateRiskGrade } from '@/lib/riskGrade';
+
+const JOB_STORAGE_KEY = 'safenex.riskAutoGenJob.v1';
 
 export type RiskAutoGenJobState = {
   status: 'idle' | 'running' | 'awaiting_review' | 'done' | 'partial' | 'error';
@@ -85,9 +87,69 @@ let elapsedTimer: ReturnType<typeof setInterval> | null = null;
 let runningPromise: Promise<void> | null = null;
 /** Kept so Phase B can reuse equipment/env after review pause */
 let lastJobInput: RiskAutoGenJobInput | null = null;
+/** Set when user cancels a hung job so in-flight loops exit */
+let cancelRequested = false;
+
+function persistJob() {
+  if (typeof sessionStorage === 'undefined') return;
+  try {
+    if (state.status === 'idle') {
+      sessionStorage.removeItem(JOB_STORAGE_KEY);
+      return;
+    }
+    sessionStorage.setItem(
+      JOB_STORAGE_KEY,
+      JSON.stringify({
+        state: { ...state, pendingIds: [...state.pendingIds] },
+        input: lastJobInput,
+      }),
+    );
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function restoreJobFromStorage() {
+  if (typeof sessionStorage === 'undefined') return;
+  try {
+    const raw = sessionStorage.getItem(JOB_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as { state?: RiskAutoGenJobState; input?: RiskAutoGenJobInput | null };
+    if (!parsed?.state) return;
+    // Never restore an in-flight "running" — the fetch was killed by refresh
+    if (parsed.state.status === 'running') {
+      if (parsed.state.insertedTotal > 0) {
+        state = {
+          ...parsed.state,
+          status: 'awaiting_review',
+          phase: 'review',
+          message: `초안 ${parsed.state.insertedTotal}행 · 새로고침 후 검수 가능 · [나머지 채우기]`,
+          error: undefined,
+        };
+      } else {
+        state = {
+          ...IDLE,
+          status: 'error',
+          runId: parsed.state.runId,
+          projectId: parsed.state.projectId,
+          error: '새로고침으로 생성이 중단되었습니다. [공종 자동작성]을 다시 눌러주세요.',
+          message: '생성 중단',
+        };
+      }
+    } else {
+      state = { ...parsed.state, pendingIds: [...(parsed.state.pendingIds || [])] };
+    }
+    lastJobInput = parsed.input || null;
+  } catch {
+    /* ignore */
+  }
+}
+
+restoreJobFromStorage();
 
 function emit() {
   const snap = { ...state, pendingIds: [...state.pendingIds] };
+  persistJob();
   listeners.forEach((fn) => {
     try {
       fn(snap);
@@ -135,6 +197,118 @@ export function isRiskAutoGenRunning(runId?: string): boolean {
   if (state.status !== 'running') return false;
   if (runId) return state.runId === runId;
   return true;
+}
+
+/** Force-stop a hung job so the user can retry. */
+export function cancelRiskAutoGenJob(reason?: string) {
+  cancelRequested = true;
+  stopElapsedClock();
+  runningPromise = null;
+  const msg = reason || '생성을 중단했습니다. 다시 [공종 자동작성] 또는 [나머지 채우기]를 눌러주세요.';
+  if (state.insertedTotal > 0) {
+    patch({
+      status: 'awaiting_review',
+      phase: 'review',
+      message: `초안 ${state.insertedTotal}행 · 중단됨 · 검수 후 [나머지 채우기]`,
+      error: undefined,
+    });
+  } else {
+    patch({
+      status: 'error',
+      error: msg,
+      message: '생성 중단',
+      phase: 'idle',
+      pendingIds: [],
+    });
+  }
+}
+
+/**
+ * If this run already has fillable draft rows in DB, show the review banner
+ * even after a full page reload (session/memory lost).
+ */
+export async function recoverRiskAutoGenReview(runId: string, projectId?: string): Promise<boolean> {
+  if (!runId) return false;
+  if (state.status === 'running') return false;
+  if (state.status === 'awaiting_review' && state.runId === runId) return true;
+
+  const { data, error } = await supabase
+    .from('risk_items')
+    .select('id, process, note, source_type, hazard_situation, existing_measure, improvement_measure, hazard')
+    .eq('run_id', runId)
+    .eq('is_deleted', false);
+
+  if (error) {
+    console.warn('[AutoGenJob] recover review failed:', error.message);
+    return false;
+  }
+
+  const drafts = ((data as any[]) || []).filter((r) => isFillableRiskItem(r));
+  if (drafts.length === 0) return false;
+
+  const processes = Array.from(
+    new Set(drafts.map((r) => String(r.process || '').trim()).filter(Boolean)),
+  );
+
+  if (!lastJobInput || lastJobInput.runId !== runId) {
+    lastJobInput = {
+      runId,
+      projectId: projectId || state.projectId || '',
+      userId: '',
+      processes: processes.length ? processes : ['공종'],
+      useAI: true,
+      detailLevel: 'core',
+      equipmentTags: [],
+      conditionTags: [],
+      workLocation: '',
+      conditionText: '',
+      sortStart: 0,
+    };
+  }
+
+  patch({
+    status: 'awaiting_review',
+    runId,
+    projectId: projectId || state.projectId || lastJobInput.projectId,
+    processes: lastJobInput.processes,
+    processIndex: 0,
+    processTotal: lastJobInput.processes.length,
+    currentProcess: '',
+    insertedTotal: drafts.length,
+    filledTotal: 0,
+    receivedTotal: 0,
+    pendingIds: drafts.map((r) => r.id),
+    phase: 'review',
+    message: `초안 ${drafts.length}행 검수 대기 · [나머지 채우기]로 대책·등급을 채우세요`,
+    error: undefined,
+    startedAt: state.startedAt || Date.now(),
+  });
+  return true;
+}
+
+async function assertCanInsertRiskItems(projectId: string, userId: string): Promise<void> {
+  // Lightweight probe: insert+delete a soft-marked row is heavy; use RPC/role if available.
+  // Fallback: attempt a no-op update path via selecting membership.
+  const { data: mem, error } = await supabase
+    .from('project_members')
+    .select('role_new')
+    .eq('project_id', projectId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('[AutoGenJob] role precheck failed:', error.message);
+    return; // don't block on precheck failure
+  }
+
+  const role = String((mem as any)?.role_new || '');
+  const allowed = new Set(['project_admin', 'safety_manager', 'site_manager', 'supervisor']);
+  // masters may not have project_members row — allow empty and let insert RLS decide
+  if (mem && role && !allowed.has(role)) {
+    throw new Error(
+      `위험성평가 항목을 저장할 권한이 없습니다. 현재 역할: ${role || '없음'}. project_admin / safety_manager / site_manager / supervisor 계정이 필요합니다.`,
+    );
+  }
 }
 
 function buildOpts(input: RiskAutoGenJobInput, proc: string): AIGenerateOptions {
@@ -269,15 +443,20 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     useAI: input.useAI,
   });
   lastJobInput = input;
+  cancelRequested = false;
   let sortCursor = input.sortStart;
   let insertedTotal = 0;
   let filledTotal = 0;
   let interrupted = false;
   const allPending: string[] = [];
 
+  if (input.useAI && input.userId && input.projectId) {
+    await assertCanInsertRiskItems(input.projectId, input.userId);
+  }
+
   for (let i = 0; i < input.processes.length; i++) {
-    if (state.status !== 'running') {
-      console.warn('[AutoGenJob] aborted mid-loop, status=', state.status);
+    if (cancelRequested || state.status !== 'running') {
+      console.warn('[AutoGenJob] aborted mid-loop, status=', state.status, 'cancel=', cancelRequested);
       return;
     }
     const proc = input.processes[i].trim();
@@ -508,20 +687,25 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
   startElapsedClock();
 
   runningPromise = (async () => {
+    cancelRequested = false;
     const { data: drafts, error } = await supabase
       .from('risk_items')
-      .select('id, process, sub_task, hazard, hazard_situation, note, sort_order, project_id')
+      .select(
+        'id, process, sub_task, hazard, hazard_situation, existing_measure, improvement_measure, note, source_type, sort_order, project_id',
+      )
       .eq('run_id', targetRunId)
       .eq('is_deleted', false)
       .order('sort_order', { ascending: true });
 
     if (error) throw new Error(error.message);
 
-    const rows = ((drafts as any[]) || []).filter((r) => isAiScopeDraftItem(r));
+    const rows = ((drafts as any[]) || []).filter((r) => isFillableRiskItem(r));
     if (rows.length === 0) {
       patch({
-        status: 'done',
-        message: '채울 초안이 없습니다. (이미 채웠거나 삭제됨)',
+        status: 'error',
+        error:
+          '채울 초안이 없습니다. 먼저 [공종 자동작성]으로 세부작업·위험요인 초안을 만든 뒤 다시 시도하세요. (이미 대책까지 채워진 행은 대상이 아닙니다)',
+        message: '채울 초안 없음',
         phase: 'idle',
         pendingIds: [],
       });
@@ -556,7 +740,7 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
       const opts = buildOpts(input, proc);
 
       for (let offset = 0; offset < procRows.length; offset += RISK_FILL_CHUNK) {
-        if (state.status !== 'running') return;
+        if (cancelRequested || state.status !== 'running') return;
         const chunk = procRows.slice(offset, offset + RISK_FILL_CHUNK);
         patch({
           currentProcess: proc,
@@ -676,11 +860,12 @@ export function startRiskAutoGenJob(input: RiskAutoGenJobInput): boolean {
     state = { ...IDLE };
   }
 
-  // Stale running (>3min) — allow restart so a hung tab doesn't lock AI forever
-  if (state.status === 'running' && state.startedAt && Date.now() - state.startedAt > 180_000) {
-    console.warn('[AutoGenJob] stale running (>3min) — force reset');
+  // Stale running (>90s) — allow restart so a hung tab doesn't lock AI forever
+  if (state.status === 'running' && state.startedAt && Date.now() - state.startedAt > 90_000) {
+    console.warn('[AutoGenJob] stale running (>90s) — force reset');
     stopElapsedClock();
     runningPromise = null;
+    cancelRequested = true;
     state = { ...IDLE };
   }
 
@@ -688,6 +873,8 @@ export function startRiskAutoGenJob(input: RiskAutoGenJobInput): boolean {
     console.warn('[AutoGenJob] reject: already running');
     return false;
   }
+
+  cancelRequested = false;
 
   const processes = input.processes.map((p) => p.trim()).filter(Boolean);
   if (processes.length === 0) {
@@ -756,6 +943,7 @@ export function acknowledgeRiskAutoGenJob() {
   if (state.status === 'running' || state.status === 'awaiting_review') return;
   stopElapsedClock();
   state = { ...IDLE };
+  lastJobInput = null;
   emit();
 }
 

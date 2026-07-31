@@ -702,13 +702,14 @@ serve(async (req) => {
     // ============ Phase B batch: fill draft rows (measures, grades, PPE, legal) ============
     if (mode === "risk_fill") {
       const drafts = Array.isArray(draft_items) ? draft_items : [];
+      // Cap at 3 — larger batches often exceed Supabase gateway (~60–150s) → browser 504
       const cleaned = drafts
         .map((it: any) => ({
           sub_task: String(it?.sub_task || "").replace(/^\d+[\.\)]\s*/, "").trim(),
           hazard: String(it?.hazard || "").trim(),
         }))
         .filter((it: { sub_task: string }) => it.sub_task)
-        .slice(0, 8);
+        .slice(0, 3);
 
       if (cleaned.length === 0) {
         return new Response(JSON.stringify({ error: "채울 초안(draft_items)이 필요합니다.", items: [] }), {
@@ -730,30 +731,21 @@ serve(async (req) => {
         `"initial_likelihood":"상|중|하","initial_severity":"상|중|하",` +
         `"residual_likelihood":"상|중|하","residual_severity":"상|중|하",` +
         `"ppe":["보호구"],"legal_basis":["법적근거 조항"]}]}\n` +
-        `입력된 세부작업·위험요인을 유지하고, 나머지 필드를 채운다.\n` +
+        `입력된 세부작업·위험요인을 유지하고, 나머지 필드를 짧게 채운다.\n` +
         `legal_basis에는 산안기준규칙 제OOO조 또는 KOSHA GUIDE를 넣는다. 추상문구 금지.`;
       const user =
         `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
         `[초안 목록]\n${listText}\n\n` +
         `위 ${cleaned.length}건 각각에 대해 발생상황·현재대책·개선대책·등급·PPE·법적근거를 채워 JSON items로 반환하라.\n` +
-        `항목 수·순서는 초안과 동일하게 맞춰라.`;
+        `항목 수·순서는 초안과 동일. 각 필드는 1~2문장으로 짧게.`;
 
-      try {
-        const { content } = await callDeepseekRiskChat({
-          messages: [
-            { role: "system", content: sys },
-            { role: "user", content: user },
-          ],
-          temperature: 0.25,
-          max_tokens: Math.min(6000, 900 * cleaned.length + 800),
-          timeoutMs: 90_000,
-        });
+      const mapFillItems = (content: string) => {
         const parsed = parseDeepseekRiskJson<any>(content);
         let rawItems: any[] = [];
         if (Array.isArray(parsed)) rawItems = parsed;
         else if (parsed && Array.isArray(parsed.items)) rawItems = parsed.items;
 
-        const items = rawItems
+        return rawItems
           .map((raw: any, idx: number) => {
             if (!raw || typeof raw !== "object") return null;
             const fallback = cleaned[idx];
@@ -762,7 +754,6 @@ serve(async (req) => {
             raw.process = raw.process || process_name;
             let mapped = mapRawItem(raw, process_name);
             if (!mapped && fallback) {
-              // Soft accept — keep draft identity, fill what we can
               mapped = {
                 process: process_name,
                 sub_task: fallback.sub_task,
@@ -787,6 +778,40 @@ serve(async (req) => {
             return mapped;
           })
           .filter(Boolean);
+      };
+
+      try {
+        let content = "";
+        try {
+          const deep = await callDeepseekRiskChat({
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: user },
+            ],
+            temperature: 0.2,
+            max_tokens: Math.min(2800, 700 * cleaned.length + 400),
+            timeoutMs: 50_000,
+            maxAttempts: 1,
+          });
+          content = deep.content;
+        } catch (deepErr) {
+          console.warn("risk_fill DeepSeek failed, falling back to Nemotron:", deepErr);
+          const resp = await geminiChatFetch({
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: user },
+            ],
+            temperature: 0.2,
+          });
+          if (!resp.ok) {
+            const t = await resp.text();
+            throw new Error(`채움 AI 폴백 실패 (${resp.status}): ${t.slice(0, 160)}`);
+          }
+          const result = await resp.json();
+          content = String(result?.choices?.[0]?.message?.content || "").trim();
+        }
+
+        const items = mapFillItems(content);
 
         if (items.length === 0) {
           return new Response(

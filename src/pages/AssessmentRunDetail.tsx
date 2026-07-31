@@ -579,13 +579,21 @@ const AssessmentRunDetail = () => {
     const onVis = () => {
       if (document.visibilityState !== 'visible') return;
       const job = getRiskAutoGenJob();
-      if (job.runId === runId && (job.status === 'done' || job.status === 'running')) {
+      if (job.runId === runId && (job.status === 'done' || job.status === 'running' || job.status === 'awaiting_review')) {
         fetchAll();
       }
     };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
   }, [runId, fetchAll]);
+
+  // While draft/fill is running, poll the table so rows appear as soon as they are saved
+  useEffect(() => {
+    if (!runId) return;
+    if (!(autoGenJob.status === 'running' && autoGenJob.runId === runId)) return;
+    const t = setInterval(() => { fetchAll(); }, 4000);
+    return () => clearInterval(t);
+  }, [runId, autoGenJob.status, autoGenJob.runId, fetchAll]);
 
   // Auto-refresh to sync approval status changes from other pages
   useEffect(() => {
@@ -1742,24 +1750,28 @@ const AssessmentRunDetail = () => {
                 {autoGenJob.elapsedSec > 0 ? ` · ${autoGenJob.elapsedSec}초` : ''}
               </p>
               <p className="text-xs text-muted-foreground break-words">
-                {autoGenJob.message || autoGenPhaseLabel || '생성 대기 중…'}
+                {autoGenJob.phase === 'draft'
+                  ? (autoGenJob.message || '초안 생성 중… 보통 20~40초 걸립니다. 완료되면 표에 행이 나타납니다.')
+                  : (autoGenJob.message || autoGenPhaseLabel || '생성 대기 중…')}
               </p>
               {(() => {
                 const total = Math.max(autoGenJob.insertedTotal || 0, 1);
                 const filled = autoGenJob.filledTotal || 0;
-                const pct = Math.min(100, Math.round((filled / total) * 100));
+                const pct = autoGenJob.phase === 'draft'
+                  ? Math.min(90, 8 + Math.round((autoGenJob.elapsedSec || 0) * 2.2))
+                  : Math.min(100, Math.round((filled / total) * 100));
                 return (
                   <div className="space-y-1">
                     <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                       <div
                         className="h-full rounded-full bg-accent transition-all duration-500"
-                        style={{ width: `${autoGenJob.phase === 'draft' ? 12 : Math.max(pct, 4)}%` }}
+                        style={{ width: `${Math.max(pct, 4)}%` }}
                       />
                     </div>
                     <p className="text-[11px] text-muted-foreground">
                       초안 {autoGenJob.insertedTotal || 0}행 · 채움 {filled}행
                       {autoGenJob.pendingIds?.length ? ` · 대기 ${autoGenJob.pendingIds.length}` : ''}
-                      {' · '}이 탭을 유지하세요.
+                      {' · '}이 탭을 닫지 마세요.
                     </p>
                   </div>
                 );
@@ -2232,12 +2244,23 @@ const AssessmentRunDetail = () => {
                 {filteredItems.length === 0 ? (
                   <tr><td colSpan={22} className="text-center py-10 text-muted-foreground">
                     <div className="flex flex-col items-center gap-2">
+                      {autoGenJob.status === 'running' && autoGenJob.runId === runId ? (
+                        <>
+                          <Loader2 className="h-6 w-6 animate-spin text-accent" />
+                          <div className="font-medium text-foreground">AI가 초안을 만들고 있습니다…</div>
+                          <div className="text-xs">보통 20~40초 걸립니다. 완료되면 여기에 행이 나타납니다.</div>
+                          <div className="text-xs">{autoGenJob.elapsedSec || 0}초 경과 · {autoGenJob.message || '대기 중'}</div>
+                        </>
+                      ) : (
+                        <>
                       <div>등록된 위험성평가 항목이 없습니다.</div>
                       {canEdit && (
                         <div className="flex gap-2 mt-1">
                           <Button size="sm" variant="outline" onClick={() => setShowAutoGen(true)}>AI 자동생성</Button>
                           <Button size="sm" variant="outline" onClick={handleAddNew}>수동으로 추가</Button>
                         </div>
+                      )}
+                        </>
                       )}
                     </div>
                   </td></tr>

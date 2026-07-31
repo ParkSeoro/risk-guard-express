@@ -395,7 +395,13 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       console.warn('[AutoGenJob] draft insert failed:', insertErr?.message);
       interrupted = true;
       if (insertedTotal === 0) {
-        throw new Error(insertErr?.message || '초안 행 저장에 실패했습니다.');
+        const raw = insertErr?.message || '초안 행 저장에 실패했습니다.';
+        if (/42501|row-level security|RLS/i.test(raw)) {
+          throw new Error(
+            '위험성평가 항목을 저장할 권한이 없습니다. project_admin / safety_manager / site_manager / supervisor 계정으로 다시 시도하세요.',
+          );
+        }
+        throw new Error(raw);
       }
       break;
     }
@@ -667,6 +673,14 @@ export function startRiskAutoGenJob(input: RiskAutoGenJobInput): boolean {
   if (state.status === 'running' && !runningPromise) {
     console.warn('[AutoGenJob] orphaned running state — resetting before start');
     stopElapsedClock();
+    state = { ...IDLE };
+  }
+
+  // Stale running (>3min) — allow restart so a hung tab doesn't lock AI forever
+  if (state.status === 'running' && state.startedAt && Date.now() - state.startedAt > 180_000) {
+    console.warn('[AutoGenJob] stale running (>3min) — force reset');
+    stopElapsedClock();
+    runningPromise = null;
     state = { ...IDLE };
   }
 

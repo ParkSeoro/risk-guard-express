@@ -147,9 +147,9 @@ function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other" 
   return s;
 }
 
-/** Soft guidance count for draft (Phase A — keep modest for latency). */
+/** Soft guidance count for draft (Phase A — keep small for latency). */
 function jsaGuideCount(detailLevel: "core" | "comprehensive"): number {
-  return detailLevel === "core" ? 10 : 16;
+  return detailLevel === "core" ? 6 : 10;
 }
 
 function mapRawItem(item: any, processName: string): any | null {
@@ -496,19 +496,27 @@ serve(async (req) => {
       detail_level === "comprehensive" ? "comprehensive" : "core";
 
     if (!isInternal && project_id) {
-      const userSb = createClient(supabaseUrl, anonKey, {
-        global: { headers: { Authorization: authHeader } },
-      });
-      const { data: claimsData } = await userSb.auth.getClaims(token);
-      const { data: isMember } = await userSb.rpc("is_project_member", {
-        _user_id: claimsData!.claims.sub,
-        _project_id: project_id,
-      });
-      if (!isMember) {
-        return new Response(JSON.stringify({ error: "Forbidden" }), {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+      try {
+        const userSb = createClient(supabaseUrl, anonKey, {
+          global: { headers: { Authorization: authHeader } },
         });
+        const { data: claimsData } = await userSb.auth.getClaims(token);
+        const uid = claimsData?.claims?.sub as string | undefined;
+        if (uid) {
+          const [{ data: isMember }, { data: isMaster }] = await Promise.all([
+            userSb.rpc("is_project_member", { _user_id: uid, _project_id: project_id }),
+            userSb.rpc("is_master", { _user_id: uid }),
+          ]);
+          if (!isMember && !isMaster) {
+            return new Response(
+              JSON.stringify({ error: "이 프로젝트에 대한 권한이 없습니다." }),
+              { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+            );
+          }
+        }
+      } catch (authzErr) {
+        // Don't block AI on flaky authz RPC — JWT was already verified above.
+        console.warn("project authz check skipped:", authzErr);
       }
     }
 
@@ -606,20 +614,10 @@ serve(async (req) => {
         `대책·등급·PPE·법적근거·발생상황·사고사례는 절대 넣지 않는다.`;
       const user =
         `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
-        `위 공종의 시간순(준비→본작업→마무리) 세부작업 ${guideCount}개 내외와\n` +
-        `각 세부작업의 핵심 위험요인(hazard)만 짧게 작성하라.\n` +
-        `추상 문구(안전수칙 준수 등) 금지.`;
+        `위 공종의 시간순(준비→본작업→마무리) 세부작업 ${guideCount}개와\n` +
+        `각 세부작업의 핵심 위험요인(hazard)만 한 줄로 작성하라. 추상 문구 금지.`;
 
-      try {
-        const { content } = await callDeepseekRiskChat({
-          messages: [
-            { role: "system", content: sys },
-            { role: "user", content: user },
-          ],
-          temperature: 0.2,
-          max_tokens: 1400,
-          timeoutMs: 60_000,
-        });
+      const parseDraftItems = (content: string) => {
         const parsed = parseDeepseekRiskJson<any>(content);
         let rawItems: any[] = [];
         if (Array.isArray(parsed)) rawItems = parsed;
@@ -629,24 +627,52 @@ serve(async (req) => {
             typeof s === "string" ? { sub_task: s, hazard: "" } : s,
           );
         }
-
-        const maxN = detailLevel === "comprehensive" ? 18 : 12;
-        const items = rawItems
+        const maxN = detailLevel === "comprehensive" ? 12 : 8;
+        return rawItems
           .map((it: any) => {
-            const sub_task = String(it?.sub_task || it?.sub_work || "")
+            const sub = String(it?.sub_task || it?.sub_work || "")
               .replace(/^\d+[\.\)]\s*/, "")
               .trim();
             const hazard = String(it?.hazard || it?.hazard_factor || "").trim();
-            if (!sub_task) return null;
-            return {
-              process: process_name,
-              sub_task,
-              hazard: hazard || `${sub_task} 관련 위험`,
-            };
+            if (!sub) return null;
+            return { process: process_name, sub_task: sub, hazard: hazard || `${sub} 관련 위험` };
           })
           .filter(Boolean)
           .slice(0, maxN);
+      };
 
+      try {
+        let content = "";
+        try {
+          const deep = await callDeepseekRiskChat({
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: user },
+            ],
+            temperature: 0.15,
+            max_tokens: 900,
+            timeoutMs: 40_000,
+            maxAttempts: 1,
+          });
+          content = deep.content;
+        } catch (deepErr) {
+          console.warn("scope_draft DeepSeek failed, falling back to Nemotron:", deepErr);
+          const resp = await geminiChatFetch({
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: user },
+            ],
+            temperature: 0.15,
+          });
+          if (!resp.ok) {
+            const t = await resp.text();
+            throw new Error(`초안 AI 폴백 실패 (${resp.status}): ${t.slice(0, 160)}`);
+          }
+          const result = await resp.json();
+          content = String(result?.choices?.[0]?.message?.content || "").trim();
+        }
+
+        const items = parseDraftItems(content);
         if (items.length === 0) {
           return new Response(
             JSON.stringify({ error: "세부작업·위험요인 초안을 생성하지 못했습니다.", items: [] }),

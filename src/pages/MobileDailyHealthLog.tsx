@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +20,10 @@ const SYMPTOMS = [
 export default function MobileDailyHealthLog() {
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const workerId = params.get("worker") || "";
+  const { profile } = useAuth();
+  const { projectId } = useMobileAccess();
+  const paramWorkerId = params.get("worker") || "";
+  const [workerId, setWorkerId] = useState(paramWorkerId);
   const [worker, setWorker] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -33,17 +38,36 @@ export default function MobileDailyHealthLog() {
 
   useEffect(() => {
     (async () => {
-      if (!workerId) { setLoading(false); return; }
+      setLoading(true);
+      let wid = paramWorkerId;
+      // Resolve logged-in worker by phone + selected project when ?worker= missing
+      if (!wid && profile?.phone && projectId) {
+        const digits = profile.phone.replace(/\D/g, "");
+        const { data: workers } = await supabase
+          .from("workers")
+          .select("id, phone")
+          .eq("project_id", projectId)
+          .eq("is_active", true)
+          .limit(200);
+        wid =
+          (workers || []).find((w) => (w.phone || "").replace(/\D/g, "") === digits)?.id || "";
+      }
+      setWorkerId(wid);
+      if (!wid) {
+        setWorker(null);
+        setLoading(false);
+        return;
+      }
       const today = new Date().toISOString().slice(0, 10);
       const [{ data: w }, { data: existing }] = await Promise.all([
-        supabase.from("workers").select("*").eq("id", workerId).maybeSingle(),
-        supabase.from("worker_daily_health_logs").select("id").eq("worker_id", workerId).eq("log_date", today).maybeSingle(),
+        supabase.from("workers").select("*").eq("id", wid).maybeSingle(),
+        supabase.from("worker_daily_health_logs").select("id").eq("worker_id", wid).eq("log_date", today).maybeSingle(),
       ]);
       setWorker(w);
       setAlreadyToday(!!existing);
       setLoading(false);
     })();
-  }, [workerId]);
+  }, [paramWorkerId, profile?.phone, projectId]);
 
   const toggleSymptom = (s: string) => {
     setSymptoms((cur) => cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]);

@@ -3,24 +3,30 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { applyOwnCompanyFilter, resolveAccessibleCompanyIds } from "@/lib/companyDocScope";
 import { normalizeCompanyType, type CompanyTypeCode } from "@/lib/companyTypes";
+import { usePreview } from "@/contexts/PreviewContext";
 
 export type MobileRole = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor' | 'site_supervisor' | 'worker' | 'viewer' | 'contractor';
 
 /**
  * 모바일 페이지 공통 액세스 훅.
  * 시공사(gc): 자사+하위만 / 협력사: 자사만 / 발주처 PA: 전체
+ * PreviewContext가 있으면 합성 역할·프로젝트를 사용 (마스터 PC 프리뷰).
  */
 export function useMobileAccess() {
   const { user, hasRole } = useAuth();
-  const isMaster = hasRole('master');
+  const preview = usePreview();
+  const isMaster = preview.isPreview ? preview.syntheticRole === "master" : hasRole('master');
   const [projectId, setProjectIdState] = useState<string>(() => {
+    if (preview.isPreview && preview.previewProjectId) return preview.previewProjectId;
     try { return localStorage.getItem("selectedProjectId") || ""; } catch { return ""; }
   });
-  const [role, setRole] = useState<MobileRole>('viewer');
+  const [role, setRole] = useState<MobileRole>(
+    preview.isPreview ? preview.syntheticRole : 'viewer',
+  );
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [companyType, setCompanyType] = useState<CompanyTypeCode | null>(null);
   const [accessibleCompanyIds, setAccessibleCompanyIds] = useState<string[] | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!preview.isPreview);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -46,8 +52,26 @@ export function useMobileAccess() {
   }, []);
 
   useEffect(() => {
+    if (preview.isPreview && preview.previewProjectId) {
+      setProjectIdState(preview.previewProjectId);
+    }
+  }, [preview.isPreview, preview.previewProjectId]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Master PC preview: synthetic role, unscoped company filter (UI-only)
+      if (preview.isPreview) {
+        if (!cancelled) {
+          setRole(preview.syntheticRole);
+          setCompanyId(null);
+          setCompanyType(null);
+          // Preview shows real project rows for UX review; writes are blocked separately.
+          setAccessibleCompanyIds(null);
+          setLoading(false);
+        }
+        return;
+      }
       setLoading(true);
       if (isMaster) {
         if (!cancelled) {
@@ -97,7 +121,7 @@ export function useMobileAccess() {
       }
     })();
     return () => { cancelled = true; };
-  }, [user, projectId, isMaster]);
+  }, [user, projectId, isMaster, preview.isPreview, preview.syntheticRole]);
 
   const isProjectAdmin = role === 'project_admin' || isMaster || role === 'safety_manager';
   const isContractor = role === 'worker' || role === 'contractor';

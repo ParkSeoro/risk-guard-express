@@ -88,9 +88,10 @@ function LegacyPathRedirect() {
     return <RoleAwareRootRedirect />;
   }
   if (path === "/m" || path.startsWith("/m/")) {
-    // Bare /m → menu (not WorkerDailyHome) so managers do not land on check-in
-    const rest = path === "/m" ? "/menu" : path.slice(2); // "/m/foo" → "/foo"
-    return <Navigate to={`/app/worker${rest}${loc.search}${loc.hash}`} replace />;
+    // Bare /m → Today (role-specific content for worker vs manager)
+    const rest = path === "/m" ? "/today" : path.slice(2); // "/m/foo" → "/foo"
+    const mapped = rest === "/menu" || rest === "/home" ? "/today" : rest;
+    return <Navigate to={`/app/worker${mapped}${loc.search}${loc.hash}`} replace />;
   }
   // Absolute admin legacy (e.g. /work-permits/x) → /app/admin/...
   return <Navigate to={`/app/admin${path}${loc.search}${loc.hash}`} replace />;

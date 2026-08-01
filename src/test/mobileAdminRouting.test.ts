@@ -110,7 +110,7 @@ describe("notification + entity mobile routes", () => {
 
   it("canonicalizeAppPath remaps bare admin paths on mobile", () => {
     expect(canonicalizeAppPath("/approvals", { mobileShell: true })).toBe("/app/worker/approvals");
-    expect(canonicalizeAppPath("/m", { mobileShell: true })).toBe("/app/worker/menu");
+    expect(canonicalizeAppPath("/m", { mobileShell: true })).toBe("/app/worker/today");
     expect(canonicalizeAppPath("/m/inspect", { mobileShell: true })).toBe("/app/worker/inspect");
   });
 

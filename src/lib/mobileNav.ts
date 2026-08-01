@@ -5,17 +5,13 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import {
-  isAdminShellUser,
-  MOBILE_ADMIN_HOME,
-  WORKER_HOME,
-} from "@/components/AuthGuard";
+import { MOBILE_ADMIN_HOME, WORKER_HOME } from "@/components/AuthGuard";
 
 const WORKER = "/app/worker";
 
-/** Role-aware mobile home: managers → menu tiles, workers → daily home. */
-export function resolveMobileHomePath(roles: string[]): string {
-  return isAdminShellUser(roles) ? MOBILE_ADMIN_HOME : WORKER_HOME;
+/** Role-aware mobile home: both land on Today (content differs by project role). */
+export function resolveMobileHomePath(_roles: string[]): string {
+  return WORKER_HOME;
 }
 
 /** Hook: back / home button → correct mobile home. */

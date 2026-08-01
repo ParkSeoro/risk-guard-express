@@ -17,6 +17,13 @@ import {
   permitPostStepApproveLabel,
 } from "@/lib/permitPostApproval";
 import { formatPermitStamp } from "@/lib/permitDateFormat";
+import GasMeasurementDialog from "@/components/permits/GasMeasurementDialog";
+import {
+  gasClosureErrorMessage,
+  kindsNeedGasMeasurement,
+  permitKindsFromRow,
+  validatePermitGasForClosure,
+} from "@/lib/permitGasValidation";
 
 /**
  * Mobile approval detail — AI briefing at top, then action buttons.
@@ -32,6 +39,8 @@ export default function MobileApprovalDetail() {
   const [loading, setLoading] = useState(true);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [permitRow, setPermitRow] = useState<any | null>(null);
+  const [gasOpen, setGasOpen] = useState(false);
 
   const stepKind = permitPostStepKind(row?.step_position);
   const badge = permitPostStepBadge(stepKind);
@@ -58,9 +67,10 @@ export default function MobileApprovalDetail() {
       if (found?.entity_type === "work_permit" && found.entity_id) {
         const { data: p } = await supabase
           .from("work_permits" as any)
-          .select("ai_briefing, work_name, work_description, location, permit_date, status, form_data, extension_until")
+          .select("id, ai_briefing, work_name, work_description, location, permit_date, status, form_data, extension_until, permit_kinds, permit_type")
           .eq("id", found.entity_id)
           .maybeSingle();
+        setPermitRow(p || null);
         setBriefing(((p as any)?.ai_briefing as PermitAiBriefing) || null);
         const fd = ((p as any)?.form_data || {}) as any;
         setExtendUntil(
@@ -69,14 +79,15 @@ export default function MobileApprovalDetail() {
           (p as any)?.extension_until ||
           null,
         );
+      } else {
+        setPermitRow(null);
       }
       setLoading(false);
     })();
   }, [user, approvalId]);
 
-  const decide = async (action: "approve" | "reject") => {
+  const runDecide = async (action: "approve" | "reject") => {
     if (!row) return;
-    if (action === "reject" && !comment.trim()) return toast.error("반려 사유를 입력하세요");
     setSubmitting(true);
     try {
       const { data, error } = await supabase.rpc("act_on_approval", {
@@ -85,7 +96,14 @@ export default function MobileApprovalDetail() {
         _comment: comment || "",
       });
       if (error) throw error;
-      if ((data as any)?.error) throw new Error((data as any).error);
+      const r = data as any;
+      if (r?.error) {
+        if (r.error === "GAS_MEASUREMENT_REQUIRED") {
+          const missing = Array.isArray(r.missing) ? ` (미입력: ${r.missing.join(", ")})` : "";
+          throw new Error(`가스농도 측정을 입력한 뒤 다시 시도하세요.${missing}`);
+        }
+        throw new Error(r.error);
+      }
       toast.success(
         stepKind === "closure_sm"
           ? action === "approve" ? "작업 완료 및 종료 처리됨" : "종료 확인이 반려되었습니다"
@@ -101,6 +119,31 @@ export default function MobileApprovalDetail() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const decide = async (action: "approve" | "reject") => {
+    if (!row) return;
+    if (action === "reject" && !comment.trim()) return toast.error("반려 사유를 입력하세요");
+
+    if (
+      action === "approve" &&
+      row.entity_type === "work_permit" &&
+      (stepKind === "closure_supervisor" || stepKind === "closure_sm") &&
+      permitRow
+    ) {
+      const kinds = permitKindsFromRow(permitRow);
+      if (kindsNeedGasMeasurement(kinds)) {
+        const fd = (permitRow.form_data || {}) as Record<string, unknown>;
+        const check = validatePermitGasForClosure(fd, kinds);
+        if (!check.ok) {
+          toast.error(gasClosureErrorMessage(check));
+          setGasOpen(true);
+          return;
+        }
+      }
+    }
+
+    await runDecide(action);
   };
 
   return (
@@ -188,6 +231,24 @@ export default function MobileApprovalDetail() {
           </>
         )}
       </main>
+
+      {permitRow && (
+        <GasMeasurementDialog
+          open={gasOpen}
+          onOpenChange={setGasOpen}
+          permitId={permitRow.id}
+          permitKinds={permitKindsFromRow(permitRow)}
+          initialFormData={(permitRow.form_data || {}) as Record<string, unknown>}
+          continueLabel={
+            stepKind === "closure_sm" ? "저장 후 작업 완료 및 종료" : "저장 후 완료 확인"
+          }
+          onSaved={async (fd) => {
+            setPermitRow((prev: any) => (prev ? { ...prev, form_data: fd } : prev));
+            setGasOpen(false);
+            await runDecide("approve");
+          }}
+        />
+      )}
     </div>
   );
 }

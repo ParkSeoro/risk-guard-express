@@ -38,6 +38,11 @@ import {
   resolveFormOwnerCompanyId,
   type PermitDisplayTemplate,
 } from '@/lib/permitDisplayTemplate';
+import {
+  GAS_READING_KEYS,
+  kindsNeedGasMeasurement,
+  pickGasReadings,
+} from '@/lib/permitGasValidation';
 
 function toDbTimestamp(value?: string | null) {
   if (!value) return null;
@@ -320,6 +325,42 @@ export default function WorkPermitDetail() {
   const readOnly = !isPermitEditable(permit?.status);
   const canSave = !readOnly && isAuthor;
   const canSubmit = !readOnly && isAuthor;
+  /** 발행·종료대기: 가스측정만 입력/저장 (작업 완료 결재 전 필수) */
+  const gasFieldsEditable =
+    !!permit &&
+    (APPROVED_PERMIT_STATUSES.has(permit.status || '') ||
+      CLOSURE_PENDING_STATUSES.has(permit.status || '')) &&
+    !CLOSED_PERMIT_STATUSES.has(permit.status || '') &&
+    kindsNeedGasMeasurement(selectedKinds);
+  const canSaveGas = gasFieldsEditable;
+
+  const saveGasReadings = async () => {
+    if (!id || !canSaveGas) return;
+    setSaving(true);
+    try {
+      const payload = pickGasReadings(data as Record<string, unknown>);
+      const { data: res, error } = await (supabase as any).rpc('save_permit_gas_readings', {
+        _permit_id: id,
+        _readings: payload,
+      });
+      if (error || res?.error) {
+        toast({
+          title: '가스측정 저장 실패',
+          description: res?.error || error?.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+      const merged = { ...data, ...payload } as PermitFormData;
+      for (const k of GAS_READING_KEYS) {
+        if (payload[k] == null) (merged as any)[k] = (data as any)[k];
+      }
+      setData(merged);
+      toast({ title: '가스농도 측정값이 저장되었습니다.' });
+    } finally {
+      setSaving(false);
+    }
+  };
   // 발행 완료면 날짜 제한 없이 인쇄 가능
   const canPrint = isApproved;
   const canRequestExtend =
@@ -404,6 +445,11 @@ export default function WorkPermitDetail() {
           {canSave && (
             <Button size="sm" variant="outline" onClick={save} disabled={saving}><Save className="h-4 w-4 mr-1" />저장</Button>
           )}
+          {canSaveGas && (
+            <Button size="sm" variant="outline" onClick={saveGasReadings} disabled={saving}>
+              <Save className="h-4 w-4 mr-1" />가스측정 저장
+            </Button>
+          )}
           {canSubmit && (
             <Button size="sm" variant="outline" onClick={async () => {
               await save();
@@ -480,7 +526,13 @@ export default function WorkPermitDetail() {
           </span>
           {readOnly && (
             <span className="text-xs text-muted-foreground">
-              {isApproved ? '발행 완료 — 수정 불가' : IN_APPROVAL_PERMIT_STATUSES.has(permit.status) ? '결재 진행중 — 수정 불가' : '수정 잠금'}
+              {isApproved
+                ? (gasFieldsEditable
+                  ? '발행 완료 — 가스농도 측정만 입력 가능 (작업 완료 전 필수)'
+                  : '발행 완료 — 수정 불가')
+                : IN_APPROVAL_PERMIT_STATUSES.has(permit.status)
+                  ? '결재 진행중 — 수정 불가'
+                  : '수정 잠금'}
             </span>
           )}
         </CardContent>
@@ -498,7 +550,21 @@ export default function WorkPermitDetail() {
             standardLabels={standardLabels}
             displayTemplate={displayTemplate}
             readOnly={readOnly}
-            onChange={(d) => { if (!readOnly) setData(d); }}
+            gasFieldsEditable={gasFieldsEditable}
+            onChange={(d) => {
+              if (!readOnly) {
+                setData(d);
+                return;
+              }
+              if (gasFieldsEditable) {
+                // 잠금 상태에서는 가스측정 키만 반영
+                const next = { ...data } as PermitFormData;
+                for (const k of GAS_READING_KEYS) {
+                  (next as any)[k] = (d as any)[k];
+                }
+                setData(next);
+              }
+            }}
             onSign={(k, v) => { if (!readOnly) setSignatures({ ...signatures, [k]: v }); }}
           />
         </StandardPermitSheet>

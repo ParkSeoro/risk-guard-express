@@ -41,6 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [rolesReady, setRolesReady] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const bootstrappedRef = useRef(false);
+  const userIdRef = useRef<string | null>(null);
 
   const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
     const { data, error } = await supabase.from("profiles").select("*").eq("user_id", userId).maybeSingle();
@@ -88,6 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (nextSession: Session | null, opts?: { isInitialBoot?: boolean }) => {
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
+      userIdRef.current = nextSession?.user?.id ?? null;
 
       if (!nextSession?.user) {
         setProfile(null);
@@ -145,10 +147,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(nextSession);
         return;
       }
-      // Login / logout / user update — rehydrate without flipping isAuthLoading back to true
-      // (except we keep rolesReady honest during role refetch)
+      // Login / logout / user update — rehydrate without flipping isAuthLoading back to true.
+      // Same-user SIGNED_IN (second tab/iframe sharing storage) must not clear rolesReady —
+      // that unmounts the admin tree and looks like a flicker loop.
       void (async () => {
         if (event === "SIGNED_OUT") {
+          userIdRef.current = null;
           setSession(null);
           setUser(null);
           setProfile(null);
@@ -157,7 +161,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsAuthLoading(false);
           return;
         }
-        setRolesReady(false);
+        const nextId = nextSession?.user?.id ?? null;
+        const sameUser = !!(nextId && userIdRef.current && nextId === userIdRef.current);
+        if (!sameUser) setRolesReady(false);
         await hydrateUser(nextSession, { isInitialBoot: false });
         setRolesReady(true);
       })();
@@ -173,6 +179,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    userIdRef.current = null;
     setUser(null);
     setSession(null);
     setProfile(null);

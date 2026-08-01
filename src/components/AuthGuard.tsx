@@ -192,8 +192,10 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
     return <Navigate to={`/login?next=${next}`} replace />;
   }
 
-  // Brief wait if signed in but roles still resolving (post-login hydrate)
-  if (!rolesReady) return <LoadingSpinner />;
+  // Brief wait if signed in but roles still resolving (post-login hydrate).
+  // Keep showing the shell once we already have roles — avoids full-tree flicker
+  // when a same-user auth event briefly clears rolesReady.
+  if (!rolesReady && roles.length === 0) return <LoadingSpinner />;
 
   // ④ Consent required
   if (needsConsent(profile, roles)) {

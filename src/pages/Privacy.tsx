@@ -62,8 +62,8 @@ const Privacy = () => {
 
         <h2 className="mt-6 text-lg font-semibold">7. 개인정보 보호책임자</h2>
         <ul className="list-disc space-y-1 pl-6">
-          <li>이름: (운영자 지정)</li>
-          <li>이메일: privacy@safenex.org</li>
+          <li>이름: 박서로</li>
+          <li>이메일: psr1579@gmail.com</li>
         </ul>
 
         <h2 className="mt-6 text-lg font-semibold">8. 변경 고지</h2>

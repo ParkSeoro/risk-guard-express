@@ -227,6 +227,9 @@ Deno.serve(async (req) => {
                   tag,
                   click_action: url,
                   sound: isCriticalAlarm ? "siren.wav" : "default",
+                  // Android status bar: white silhouette drawable (see ic_stat_safenex)
+                  icon: "ic_stat_safenex",
+                  color: "#0D9488",
                 },
                 data: {
                   title: n.title,

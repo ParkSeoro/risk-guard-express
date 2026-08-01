@@ -308,7 +308,7 @@ export default function SettingsPermitForms() {
     }
     toast({
       title: `표준 허가서에서 ${inserts.length}종 복제했습니다.`,
-      description: '이 회사의 모든 프로젝트 허가서에 표시(라벨/숨김)만 적용됩니다. 결재 규칙은 그대로입니다.',
+      description: '이 회사가 작성한 허가서에만 표시(라벨/숨김)이 적용됩니다. 결재 규칙은 그대로입니다.',
     });
     await loadTemplates(companyId);
   };
@@ -349,7 +349,7 @@ export default function SettingsPermitForms() {
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
           지금 쓰는 허가서를 <strong>회사별로 복제</strong>한 뒤, 문구(라벨)와 선택 항목 숨김만 조정합니다.
-          같은 회사의 모든 프로젝트에 동일하게 적용됩니다(턴키 다수 현장용).
+          <strong>해당 회사가 작성한 허가서에만</strong> 적용됩니다(다른 협력사 문서는 기본 양식 유지).
           결재·연장·종료·저장 구조는 절대 바꾸지 않습니다. 양식이 없으면 표준 허가서가 그대로 사용됩니다.
         </p>
       </div>
@@ -357,7 +357,7 @@ export default function SettingsPermitForms() {
       <Card>
         <CardContent className="p-4 flex flex-wrap items-end gap-3">
           <div className="space-y-1 min-w-[240px]">
-            <Label>회사 (발주/원청)</Label>
+            <Label>회사 (작성 회사)</Label>
             <Select value={companyId} onValueChange={setCompanyId}>
               <SelectTrigger className="h-9">
                 <SelectValue placeholder="회사 선택" />

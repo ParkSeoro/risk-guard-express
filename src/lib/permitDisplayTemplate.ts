@@ -262,17 +262,20 @@ export function pickProjectDisplayTemplate(
 }
 
 /**
- * 프로젝트에서 「양식을 소유한 회사」(원청/발주) id 를 고른다.
- * 턴키·다수 프로젝트에 동일 회사 양식을 쓰기 위함.
+ * 표시 양식을 적용할 회사 id.
+ * 허가서 작성 회사(permit.company_id)를 우선한다.
+ * 프로젝트 원청(gc_company_id)을 쓰면 원청 라벨(예: 협조부서→GSCaltex)이
+ * 모든 협력사 허가서에 덮이므로, 회사별 표시 양식은 해당 회사 문서에만 적용한다.
  */
 export function resolveFormOwnerCompanyId(project: {
   gc_company_id?: string | null;
   gc_company_ids?: string[] | null;
-} | null | undefined, fallbackCompanyId?: string | null): string | null {
+} | null | undefined, permitCompanyId?: string | null): string | null {
+  if (permitCompanyId) return permitCompanyId;
   if (project?.gc_company_id) return project.gc_company_id;
   const ids = project?.gc_company_ids || [];
   if (ids.length > 0 && ids[0]) return ids[0];
-  return fallbackCompanyId || null;
+  return null;
 }
 
 export const PERMIT_KIND_CLONE_META: Array<{

@@ -469,7 +469,7 @@ export default function DigPermitForm({
               <tr>
                 <th className="hd">책임자(소장)</th>
                 <td><SigCell k="site_director" /></td>
-                <th className="hd">협조부서</th>
+                <th className="hd">{L('general.cooperationDept', 'GSCaltex')}</th>
                 <td />
                 <td />
                 <td />

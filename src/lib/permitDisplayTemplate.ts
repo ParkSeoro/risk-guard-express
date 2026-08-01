@@ -89,6 +89,7 @@ export const DEFAULT_DISPLAY_LABELS: Record<string, string> = {
   'excavation.title': '굴착·중장비 작업허가서',
   'general.contractor': '공사업체',
   'general.approverCompany': '승인업체',
+  'general.cooperationDept': 'GSCaltex',
   'general.reviewDate': '검토일',
   'general.approveDate': '승인일',
   'general.workDatetime': '작업일시',

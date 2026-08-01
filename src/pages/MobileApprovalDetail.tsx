@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePreviewWriteBlock } from "@/contexts/PreviewContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +34,7 @@ export default function MobileApprovalDetail() {
   const { approvalId } = useParams<{ approvalId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const blockWrite = usePreviewWriteBlock();
   const [row, setRow] = useState<any | null>(null);
   const [briefing, setBriefing] = useState<PermitAiBriefing | null>(null);
   const [extendUntil, setExtendUntil] = useState<string | null>(null);
@@ -88,6 +90,10 @@ export default function MobileApprovalDetail() {
 
   const runDecide = async (action: "approve" | "reject") => {
     if (!row) return;
+    if (blockWrite()) {
+      toast.message("프리뷰 모드에서는 데이터를 변경할 수 없습니다.");
+      return;
+    }
     setSubmitting(true);
     try {
       const { data, error } = await supabase.rpc("act_on_approval", {

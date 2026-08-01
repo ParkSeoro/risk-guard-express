@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useNavigateMobileHome, mobileEntityPath } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePreviewWriteBlock } from "@/contexts/PreviewContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +35,7 @@ export default function MobileApprovals() {
   const navigate = useNavigate();
   const goMobileHome = useNavigateMobileHome();
   const { user } = useAuth();
+  const blockWrite = usePreviewWriteBlock();
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -65,6 +67,10 @@ export default function MobileApprovals() {
   };
 
   const decide = async (r: any, action: "approve" | "reject") => {
+    if (blockWrite()) {
+      toast.message("프리뷰 모드에서는 데이터를 변경할 수 없습니다.");
+      return;
+    }
     if (action === "reject" && !comment.trim()) return toast.error("반려 사유를 입력하세요");
     setSubmitting(true);
     try {

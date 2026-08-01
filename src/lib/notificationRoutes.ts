@@ -44,23 +44,24 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
 /** Mobile shell equivalents — prefer list/viewer pages that exist under /app/worker. */
 const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
   work_plan: (id) => (id ? `${WORKER}/work-plans/${id}` : `${WORKER}/work-plans`),
-  work_permit: () => `${WORKER}/permits`,
+  work_permit: (id) =>
+    id ? `${WORKER}/approvals` : `${WORKER}/permits`,
   assessment_run: (id) => (id ? `${WORKER}/risk-assessment/${id}` : `${WORKER}/risk-assessment`),
-  approval: () => `${WORKER}/approvals`,
+  approval: (id) => (id ? `${WORKER}/approvals/${id}` : `${WORKER}/approvals`),
   safety_inspection: () => `${WORKER}/inspect`,
   incident: () => `${WORKER}/incident`,
   incident_report: () => `${WORKER}/incident`,
   tbm: () => `${WORKER}/tbm`,
   work_stop: () => `${WORKER}/work-stop`,
-  // No dedicated mobile page yet → menu (avoid silent desktop jump)
-  safety_cost: () => `${WORKER}/menu`,
-  safety_cost_report: () => `${WORKER}/menu`,
-  emergency_drill: () => `${WORKER}/menu`,
-  todo: () => `${WORKER}/menu`,
-  education: () => `${WORKER}/menu`,
+  // No dedicated mobile page yet → Today (avoid silent desktop jump)
+  safety_cost: () => `${WORKER}/today`,
+  safety_cost_report: () => `${WORKER}/today`,
+  emergency_drill: () => `${WORKER}/today`,
+  todo: () => `${WORKER}/tasks`,
+  education: () => `${WORKER}/docs`,
   worker: () => `${WORKER}/workers`,
-  chemical: () => `${WORKER}/menu`,
-  zone_event: () => `${WORKER}/menu`,
+  chemical: () => `${WORKER}/today`,
+  zone_event: () => `${WORKER}/alerts`,
 };
 
 const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
@@ -79,17 +80,17 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
 };
 
 const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
-  danger_zone_entry: () => `${WORKER}/menu`,
+  danger_zone_entry: () => `${WORKER}/alerts`,
   approval_request: () => `${WORKER}/approvals`,
   approval_result: () => `${WORKER}/approvals`,
   return_request: () => `${WORKER}/approvals`,
   incident: () => `${WORKER}/incident`,
   safety_inspection: () => `${WORKER}/inspect`,
-  work_permit: () => `${WORKER}/permits`,
+  work_permit: () => `${WORKER}/approvals`,
   tbm: () => `${WORKER}/tbm`,
-  todo_due: () => `${WORKER}/menu`,
+  todo_due: () => `${WORKER}/tasks`,
   health_warning: () => `${WORKER}/daily-health-log`,
-  health_checkup_due: () => `${WORKER}/menu`,
+  health_checkup_due: () => `${WORKER}/daily-health-log`,
 };
 
 /** Map known admin paths into mobile equivalents when on phone shell. */

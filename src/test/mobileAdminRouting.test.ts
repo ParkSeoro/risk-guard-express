@@ -125,8 +125,22 @@ describe("notification + entity mobile routes", () => {
   });
 
   it("mobileEntityPath stays in worker shell", () => {
-    expect(mobileEntityPath("work_permit", "p1").path).toBe("/app/worker/permits");
+    // Permit actions → unified approvals inbox; list viewer remains /permits
+    expect(mobileEntityPath("work_permit", "p1").path).toBe("/app/worker/approvals");
+    expect(mobileEntityPath("work_permit").path).toBe("/app/worker/permits");
     expect(mobileEntityPath("assessment_run", "r1").path).toBe("/app/worker/risk-assessment/r1");
+  });
+
+  it("mobile work_permit notifications open approvals inbox", () => {
+    expect(
+      resolveNotificationRoute({ type: "work_permit" }, { mobileShell: true }),
+    ).toBe("/app/worker/approvals");
+    expect(
+      resolveNotificationRoute(
+        { related_type: "work_permit", related_id: "x" },
+        { mobileShell: true },
+      ),
+    ).toBe("/app/worker/approvals");
   });
 
   it("setForceDesktop(false) clears sticky desktop", () => {

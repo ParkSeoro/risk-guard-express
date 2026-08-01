@@ -4061,6 +4061,7 @@ export type Database = {
           ai_analysis_json: Json | null
           ai_analyzed_at: string | null
           code: string
+          company_id: string | null
           created_at: string
           created_by: string | null
           id: string
@@ -4082,6 +4083,7 @@ export type Database = {
           ai_analysis_json?: Json | null
           ai_analyzed_at?: string | null
           code: string
+          company_id?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -4103,6 +4105,7 @@ export type Database = {
           ai_analysis_json?: Json | null
           ai_analyzed_at?: string | null
           code?: string
+          company_id?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -4121,6 +4124,13 @@ export type Database = {
           version?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "permit_form_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "permit_form_templates_project_id_fkey"
             columns: ["project_id"]

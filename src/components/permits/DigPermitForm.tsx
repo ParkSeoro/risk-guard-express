@@ -12,6 +12,12 @@ import {
   DEFAULT_STANDARD_STYLE, DEFAULT_STANDARD_LABELS, mergeStandardStyle, mergeStandardLabels,
   colWidthCss, type StandardStyle, type StandardLabels, type PermitTypeKey,
 } from '@/lib/permitStandardStyle';
+import {
+  displayLabel,
+  isSectionHidden,
+  normalizeDisplayTemplate,
+  type PermitDisplayTemplate,
+} from '@/lib/permitDisplayTemplate';
 import { formatPermitStamp, formatPermitReviewDate } from '@/lib/permitDateFormat';
 import { slotSignedAt } from '@/lib/permitApprovalSignatures';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
@@ -205,6 +211,11 @@ interface Props {
   standardStyle?: Partial<StandardStyle> | null;
   /** 마스터가 디자이너에서 저장한 라벨 오버라이드 (승인업체명 등) */
   standardLabels?: Partial<StandardLabels> | null;
+  /**
+   * 프로젝트 표시 양식 (라벨·섹션 숨김). null/undefined 이면 기존 하드코딩 문구 그대로.
+   * form_data 키·결재 슬롯은 절대 바꾸지 않음 — 화면 표시만.
+   */
+  displayTemplate?: PermitDisplayTemplate | Partial<PermitDisplayTemplate> | null;
 }
 
 const Cell = ({ children, className = '' }: any) => (
@@ -246,10 +257,22 @@ export default function DigPermitForm({
   permitType, data, signatures, onChange, onSign, readOnly, printMode,
   docNo, projectName = '',
   standardStyle, standardLabels,
+  displayTemplate,
 }: Props) {
   const style = mergeStandardStyle(standardStyle || null);
   const labels = mergeStandardLabels(standardLabels || null);
-  const effectiveDocNo = docNo || labels.docNoPrefix || DEFAULT_STANDARD_LABELS.docNoPrefix!;
+  // 템플릿 없으면 normalize 결과가 기본 라벨 맵을 갖지만, L()/hide()는 fallback·locked로 기존 UI 유지
+  const display = displayTemplate ? normalizeDisplayTemplate(displayTemplate) : null;
+  const L = (key: string, fallback: string) => displayLabel(display, key, fallback);
+  const hide = (id: Parameters<typeof isSectionHidden>[1]) => isSectionHidden(display, id);
+  const effectiveDocNo =
+    docNo ||
+    (display ? L('docNoPrefix', labels.docNoPrefix || DEFAULT_STANDARD_LABELS.docNoPrefix!) : null) ||
+    labels.docNoPrefix ||
+    DEFAULT_STANDARD_LABELS.docNoPrefix!;
+  const approverCompanyText = display
+    ? L('approverCompany', labels.approverCompany || DEFAULT_STANDARD_LABELS.approverCompany!)
+    : (labels.approverCompany || DEFAULT_STANDARD_LABELS.approverCompany!);
   const roCtx = !!(readOnly || printMode);
   const generalCols = style.columns.general;
   const applicantCols = style.columns[permitType as PermitTypeKey] || DEFAULT_STANDARD_STYLE.columns[permitType as PermitTypeKey];
@@ -400,26 +423,30 @@ export default function DigPermitForm({
       {/* Header: logo + title + doc */}
       {permitType === 'general' && (
         <>
+          {!hide('header') && (
           <div className="form-header">
             {logoUrl ? <img src={logoUrl} alt="logo" className="logo" /> : <div style={{ width: 160 }} />}
             <div className="title-wrap">
-              <h2 className="title" style={{ margin: 0 }}>안전작업허가서</h2>
+              <h2 className="title" style={{ margin: 0 }}>{L('general.title', '안전작업허가서')}</h2>
               {projectName && <div className="text-[10px] text-muted-foreground mt-0.5">Project : {projectName}</div>}
             </div>
             <div className="doc-meta">Doc. No<br/>{effectiveDocNo}</div>
           </div>
+          )}
 
           <table>
             <ColGroup widths={generalCols} />
             <tbody>
-              {/* 발주처 결재란 매트릭스 (오프라인 원본): 검토일|승인일 × CM|SM|협조 */}
+              {/* 발주처 결재란 매트릭스 — locked: approval_matrix */}
+              {!hide('approval_matrix') && (
+              <>
               <tr>
-                <th className="hd">공사업체</th>
+                <th className="hd">{L('general.contractor', '공사업체')}</th>
                 <td><Inp value={data.contractor_company} onChangeText={(v: string) => update({ contractor_company: v })} /></td>
                 <th className="hd" />
-                <th className="hd">승인업체 : {labels.approverCompany}</th>
-                <th className="hd">검토일</th>
-                <th className="hd">승인일</th>
+                <th className="hd">{L('general.approverCompany', '승인업체')} : {approverCompanyText}</th>
+                <th className="hd">{L('general.reviewDate', '검토일')}</th>
+                <th className="hd">{L('general.approveDate', '승인일')}</th>
               </tr>
               <tr>
                 <th className="hd">담당자(시공)</th>
@@ -450,8 +477,11 @@ export default function DigPermitForm({
               <tr>
                 <td colSpan={6} className="text-right text-[10px]">※ 전일 검토, 당일 작업 전 승인</td>
               </tr>
+              </>
+              )}
+              {!hide('work_datetime') && (
               <tr>
-                <th className="hd">작업일시</th>
+                <th className="hd">{L('general.workDatetime', '작업일시')}</th>
                 <td colSpan={5}>
                   {readOnly || printMode ? (
                     <span>{data.work_start || ''} ~ {data.work_end || ''}</span>
@@ -476,32 +506,38 @@ export default function DigPermitForm({
                   )}
                 </td>
               </tr>
+              )}
+              {!hide('work_summary') && (
+              <>
               <tr>
                 <th rowSpan={3} className="hd">작업개요</th>
                 <td colSpan={5}>
                   <div className="flex items-center gap-1">
-                    <span className="shrink-0 whitespace-nowrap">작업명 :</span>
+                    <span className="shrink-0 whitespace-nowrap">{L('general.workName', '작업명')} :</span>
                     <Inp className="flex-1" value={data.work_name} onChangeText={(v: string) => update({ work_name: v })} />
                   </div>
                 </td>
               </tr>
               <tr><td colSpan={5}>
                 <div className="flex items-center gap-1">
-                  <span className="shrink-0 whitespace-nowrap">작업내용 :</span>
+                  <span className="shrink-0 whitespace-nowrap">{L('general.workDescription', '작업내용')} :</span>
                   <Inp className="flex-1" value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} />
                 </div>
               </td></tr>
               <tr>
                 <td colSpan={2}>
                   <div className="flex items-center gap-1">
-                    <span className="shrink-0 whitespace-nowrap">작업지역(장소) :</span>
+                    <span className="shrink-0 whitespace-nowrap">{L('general.workLocation', '작업지역(장소)')} :</span>
                     <Inp className="flex-1" value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} />
                   </div>
                 </td>
-                <td colSpan={3}>작업인원 : {readOnly || printMode ? data.personnel_count : <input type="number" className="w-16 text-xs border-0 bg-transparent" value={data.personnel_count || ''} onChange={(e) => update({ personnel_count: Number(e.target.value) })} />} 명</td>
+                <td colSpan={3}>{L('general.personnel', '작업인원')} : {readOnly || printMode ? data.personnel_count : <input type="number" className="w-16 text-xs border-0 bg-transparent" value={data.personnel_count || ''} onChange={(e) => update({ personnel_count: Number(e.target.value) })} />} 명</td>
               </tr>
+              </>
+              )}
+              {!hide('attachments') && (
               <tr>
-                <th className="hd">첨부서류</th>
+                <th className="hd">{L('general.attachments', '첨부서류')}</th>
                 <td colSpan={5} className="text-[11px]">
                   <label className="mr-3 inline-flex items-center"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.att_risk_assessment} onChange={(e) => update({ att_risk_assessment: e.target.checked })} className="mr-1" />위험성평가</label>
                   <label className="mr-3 inline-flex items-center"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.att_safety_check} onChange={(e) => update({ att_safety_check: e.target.checked })} className="mr-1" />안전작업점검표</label>
@@ -513,7 +549,10 @@ export default function DigPermitForm({
                   </span>
                 </td>
               </tr>
-              <tr><th className="hd" colSpan={6}>안전조치 요구사항(필요한 부분에 대해 현장 확인 후 ☑ 표시)</th></tr>
+              )}
+              {!hide('safety_checklist') && (
+              <>
+              <tr><th className="hd" colSpan={6}>{L('general.safetyChecklist', '안전조치 요구사항(필요한 부분에 대해 현장 확인 후 ☑ 표시)')}</th></tr>
               {[
                 [['안전교육 이수 여부', 'chk_education'], ['보호구 착용 및 건강 상태 확인', 'chk_ppe'], ['MSDS 비치', 'chk_msds']],
                 [['작업구역 외 출입금지 조치', 'chk_no_entry'], ['흡연장소 지정 및 정리정돈 상태', 'chk_smoking'], ['근로자 작업거부권 교육', 'chk_refusal_edu']],
@@ -548,9 +587,13 @@ export default function DigPermitForm({
                   </div>
                 </td>
               </tr>
+              </>
+              )}
 
+              {!hide('hazard_confirm') && (
+              <>
               {/* === 위험작업허가 확인사항 === */}
-              <tr><th className="hd" colSpan={6}>위험작업허가 확인사항(해당 작업에 ☑ 표시 후 세부 항목 확인)</th></tr>
+              <tr><th className="hd" colSpan={6}>{L('general.hazardConfirm', '위험작업허가 확인사항(해당 작업에 ☑ 표시 후 세부 항목 확인)')}</th></tr>
               {([
                 { key: 'hz_confined', label: '밀폐공간', note: 'hz_confined_note', detail: 'hz_confined_detail', items: ['통신수단', '구명장비(로프·송기마스크 등)', '2인1조 작업', '밀폐작업 특별안전교육', '관리감독자 배치', '밀폐공간 작업점검표', '밀폐작업허가서 첨부'] },
                 { key: 'hz_hot', label: '화기', note: 'hz_hot_note', detail: 'hz_hot_detail', items: ['불티방지포 설치', '화기작업 작업점검표', '화재감시자 배치', '소화기 비치', '작업 후 30분 잔류 감시'] },
@@ -598,11 +641,15 @@ export default function DigPermitForm({
                   </tr>
                 );
               })}
+              </>
+              )}
 
+              {!hide('gas_measurement') && (
+              <>
               {/* Gas readings */}
               <tr>
                 <td rowSpan={5} className="text-center font-semibold">
-                  가스농도측정<br />
+                  {L('general.gasMeasurement', '가스농도측정')}<br />
                   <label className="inline-flex items-center mt-1"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.gas_for_hot} onChange={(e) => update({ gas_for_hot: e.target.checked })} className="mr-1" />화기작업</label><br/>
                   <label className="inline-flex items-center"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.gas_for_confined} onChange={(e) => update({ gas_for_confined: e.target.checked })} className="mr-1" />밀폐공간</label>
                 </td>
@@ -616,11 +663,16 @@ export default function DigPermitForm({
               <tr><td>CO₂</td><td><Inp value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} /></td><td>이산화탄소(CO₂) : 1.5% 미만</td></tr>
               <tr><td>H₂S</td><td><Inp value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} /></td><td>황화수소(H₂S) : 10ppm 미만</td></tr>
               <tr><td>CO</td><td><Inp value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} /></td><td>일산화탄소(CO) : 30ppm 미만</td></tr>
+              </>
+              )}
             </tbody>
           </table>
 
+          {(!hide('site_confirm') || !hide('extension')) && (
           <table className="mt-1">
             <tbody>
+              {!hide('site_confirm') && (
+              <>
               <tr>
                 <th className="hd w-[80px]" rowSpan={2}>작업장<br/>안전조치<br/>확인</th>
                 <th className="hd">작업 전 교육</th>
@@ -643,8 +695,11 @@ export default function DigPermitForm({
                   <SigCell k="closure_approver" label="승인 서명" />
                 </td>
               </tr>
+              </>
+              )}
+              {!hide('extension') && (
               <tr>
-                <th className="hd">작업허가 연장</th>
+                <th className="hd">{L('general.extension', '작업허가 연장')}</th>
                 <td colSpan={3}>
                   {data.work_extend_until
                     ? <span className="font-semibold">{formatPermitStamp(data.work_extend_until)} 까지</span>
@@ -659,14 +714,18 @@ export default function DigPermitForm({
                     : <ManualSignatureBlank />}
                 </td>
               </tr>
+              )}
             </tbody>
           </table>
+          )}
 
+          {!hide('footer_notes') && (
           <div className="text-[10px] mt-2 px-2">
-            ※ 공사업체 작업공종별 안전서류(을지) 첨부 후 현황판에 비치 바랍니다.<br />
+            {L('general.footerNote', '※ 공사업체 작업공종별 안전서류(을지) 첨부 후 현황판에 비치 바랍니다.')}<br />
             ① 작업계획서 ② 위험성평가 ③ 안전작업 점검표 ④ TBM 일지 ⑤ MSDS<br />
             ⑥ 중장비 서류 (작업계획서, 등록증&amp;검사증, 보험증, 면허증, 안전점검표, 특별안전교육 및 준수서약서)
           </div>
+          )}
         </>
       )}
 
@@ -674,7 +733,7 @@ export default function DigPermitForm({
         <>
           <div className="form-header">
             {logoUrl ? <img src={logoUrl} alt="logo" className="logo" /> : <div style={{ width: 160 }} />}
-            <div className="title-wrap"><h2 className="title" style={{ margin: 0 }}>밀폐공간 작업허가서</h2></div>
+            <div className="title-wrap"><h2 className="title" style={{ margin: 0 }}>{L('confined_space.title', '밀폐공간 작업허가서')}</h2></div>
             <div className="doc-meta">Doc. No<br/>{effectiveDocNo}</div>
           </div>
           <table>
@@ -688,6 +747,7 @@ export default function DigPermitForm({
               </tr>
               <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
               <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>
+              {!hide('cs_type') && (
               <tr>
                 <th className="hd">작업 구분</th>
                 <td colSpan={3}>
@@ -701,7 +761,9 @@ export default function DigPermitForm({
                   )}
                 </td>
               </tr>
+              )}
               <tr><th className="hd">작업 개요<br/>(필요시 도면 첨부)</th><td colSpan={3}><Inp value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} /></td></tr>
+              {!hide('cs_safety') && (
               <tr>
                 <th className="hd">안전조치<br/>(해당항목)</th>
                 <td colSpan={3}>
@@ -712,6 +774,9 @@ export default function DigPermitForm({
                   />
                 </td>
               </tr>
+              )}
+              {!hide('cs_gas') && (
+              <>
               <tr><td colSpan={4} className="text-center font-semibold bg-[#f0f0f0]">가스농도 측정결과 확인</td></tr>
               <tr><th className="hd">구분</th><th className="hd">O₂</th><th className="hd">H₂S</th><th className="hd">CO · H·C · CO₂</th></tr>
               <tr><td className="text-center">측정결과</td>
@@ -726,6 +791,8 @@ export default function DigPermitForm({
                 </td>
               </tr>
               <tr><td className="text-center">기준 값</td><td>18%이상~23.5%미만</td><td>10ppm미만</td><td>30ppm미만 · 0% · 1.5%미만</td></tr>
+              </>
+              )}
               <tr>
                 <th className="hd">안전관리자</th>
                 <td><SigCell k="safety_pic" /></td>
@@ -754,7 +821,7 @@ export default function DigPermitForm({
         <>
           <div className="form-header">
             {logoUrl ? <img src={logoUrl} alt="logo" className="logo" /> : <div style={{ width: 160 }} />}
-            <div className="title-wrap"><h2 className="title" style={{ margin: 0 }}>화기작업허가서</h2></div>
+            <div className="title-wrap"><h2 className="title" style={{ margin: 0 }}>{L('hot_work.title', '화기작업허가서')}</h2></div>
             <div className="doc-meta">Doc. No<br/>{effectiveDocNo}</div>
           </div>
           <table>
@@ -768,6 +835,7 @@ export default function DigPermitForm({
               </tr>
               <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
               <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>
+              {!hide('hw_type') && (
               <tr>
                 <th className="hd">작업 구분</th>
                 <td colSpan={3}>
@@ -781,7 +849,9 @@ export default function DigPermitForm({
                   )}
                 </td>
               </tr>
+              )}
               <tr><th className="hd">작업 개요</th><td colSpan={3}><Inp value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} /></td></tr>
+              {!hide('hw_safety') && (
               <tr>
                 <th className="hd">안전조치<br/>(해당항목)</th>
                 <td colSpan={3}>
@@ -792,6 +862,9 @@ export default function DigPermitForm({
                   />
                 </td>
               </tr>
+              )}
+              {!hide('hw_gas') && (
+              <>
               <tr><td colSpan={4} className="text-center font-semibold bg-[#f0f0f0]">가스농도 측정결과</td></tr>
               <tr>
                 <th className="hd">구분</th>
@@ -816,6 +889,8 @@ export default function DigPermitForm({
                 </td>
               </tr>
               <tr><td className="text-center">기준</td><td>18%이상~23.5%미만</td><td>10ppm미만 · 30ppm미만</td><td>0% · 1.5%미만</td></tr>
+              </>
+              )}
               <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
               <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
               <tr><th className="hd">승인자</th><td colSpan={2}>{(slotSignedAt(signatures, 'sm') || signatures.approved_at) ? formatPermitStamp(slotSignedAt(signatures, 'sm') || signatures.approved_at) : '—'} 성명 : {signatures.sm?.name || ''}</td><td><SigCell k="sm" label="발주처 SM" /></td></tr>
@@ -829,7 +904,7 @@ export default function DigPermitForm({
         <>
           <div className="form-header">
             {logoUrl ? <img src={logoUrl} alt="logo" className="logo" /> : <div style={{ width: 160 }} />}
-            <div className="title-wrap"><h2 className="title" style={{ margin: 0 }}>굴착·중장비 작업허가서</h2></div>
+            <div className="title-wrap"><h2 className="title" style={{ margin: 0 }}>{L('excavation.title', '굴착·중장비 작업허가서')}</h2></div>
             <div className="doc-meta">Doc. No<br/>{effectiveDocNo}</div>
           </div>
           <table>
@@ -843,6 +918,7 @@ export default function DigPermitForm({
               </tr>
               <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
               <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>
+              {!hide('ex_dims') && (
               <tr>
                 <th className="hd">굴착 제원</th>
                 <td colSpan={3}>
@@ -856,15 +932,21 @@ export default function DigPermitForm({
                   </div>
                 </td>
               </tr>
+              )}
+              {!hide('ex_equipment') && (
               <tr>
                 <th className="hd">투입 중장비</th>
                 <td colSpan={3}><Inp value={data.hz_heavy_equipment_name} onChangeText={(v: string) => update({ hz_heavy_equipment_name: v })} placeholder="굴착기 0.7㎥, 덤프 15t 등" /></td>
               </tr>
+              )}
+              {!hide('ex_underground') && (
               <tr>
                 <th className="hd">지하매설물<br/>확인사항</th>
                 <td colSpan={3}><Inp value={data.ex_underground} onChangeText={(v: string) => update({ ex_underground: v })} placeholder="가스/수도/전기/통신/소방배관 위치·도면 확인 결과" /></td>
               </tr>
+              )}
               <tr><th className="hd">작업 개요</th><td colSpan={3}><Inp value={data.work_description} onChangeText={(v: string) => update({ work_description: v })} /></td></tr>
+              {!hide('ex_safety') && (
               <tr>
                 <th className="hd">안전조치<br/>(해당항목)</th>
                 <td colSpan={3}>
@@ -890,6 +972,7 @@ export default function DigPermitForm({
                   />
                 </td>
               </tr>
+              )}
               <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
               <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>
               <tr><th className="hd">승인자</th><td colSpan={2}>{(slotSignedAt(signatures, 'sm') || signatures.approved_at) ? formatPermitStamp(slotSignedAt(signatures, 'sm') || signatures.approved_at) : '—'} 성명 : {signatures.sm?.name || ''}</td><td><SigCell k="sm" label="발주처 SM" /></td></tr>

@@ -75,21 +75,27 @@ const PermitInput = React.memo(function PermitInput({
 
 /** readOnly 상태를 하위 PermitInput 로 공유하기 위한 컨텍스트 (매 호출 prop-drilling 방지) */
 const PermitFormReadOnlyCtx = React.createContext<boolean>(false);
+/** 발행/종료대기 중에도 가스측정칸만 입력 허용 */
+const PermitGasEditableCtx = React.createContext<boolean>(false);
 
 /** readOnly 를 컨텍스트에서 자동으로 받아 쓰는 래퍼 — 기존 <Inp/> 자리 대체 */
 const Inp = React.memo(function Inp(props: {
   value?: string; onCommit?: (v: string) => void; onChangeText?: (v: string) => void;
   placeholder?: string; className?: string;
+  /** true면 폼 전체 readOnly여도 입력 가능 (가스측정용) */
+  gasField?: boolean;
 }) {
   const readOnly = React.useContext(PermitFormReadOnlyCtx);
+  const gasEditable = React.useContext(PermitGasEditableCtx);
   const handle = props.onCommit || props.onChangeText || (() => {});
+  const effectiveRo = props.gasField && gasEditable ? false : readOnly;
   return (
     <PermitInput
       value={props.value}
       onCommit={handle}
       placeholder={props.placeholder}
       className={props.className}
-      readOnly={readOnly}
+      readOnly={effectiveRo}
     />
   );
 });
@@ -216,6 +222,11 @@ interface Props {
    * form_data 키·결재 슬롯은 절대 바꾸지 않음 — 화면 표시만.
    */
   displayTemplate?: PermitDisplayTemplate | Partial<PermitDisplayTemplate> | null;
+  /**
+   * 발행·종료대기 상태에서 가스농도 측정칸만 입력 가능하게 할 때 true.
+   * printMode 에서는 무시된다.
+   */
+  gasFieldsEditable?: boolean;
 }
 
 const Cell = ({ children, className = '' }: any) => (
@@ -258,6 +269,7 @@ export default function DigPermitForm({
   docNo, projectName = '',
   standardStyle, standardLabels,
   displayTemplate,
+  gasFieldsEditable = false,
 }: Props) {
   const style = mergeStandardStyle(standardStyle || null);
   const labels = mergeStandardLabels(standardLabels || null);
@@ -274,6 +286,7 @@ export default function DigPermitForm({
     ? L('approverCompany', labels.approverCompany || DEFAULT_STANDARD_LABELS.approverCompany!)
     : (labels.approverCompany || DEFAULT_STANDARD_LABELS.approverCompany!);
   const roCtx = !!(readOnly || printMode);
+  const gasEditOk = !!(gasFieldsEditable && !printMode);
   const generalCols = style.columns.general;
   const applicantCols = style.columns[permitType as PermitTypeKey] || DEFAULT_STANDARD_STYLE.columns[permitType as PermitTypeKey];
   const update = (patch: Partial<PermitFormData>) => onChange?.({ ...data, ...patch });
@@ -386,6 +399,7 @@ export default function DigPermitForm({
 
   return (
     <PermitFormReadOnlyCtx.Provider value={roCtx}>
+    <PermitGasEditableCtx.Provider value={gasEditOk}>
     <div
       className={`dig-permit-form ${printMode ? 'print-mode' : ''} bg-white text-foreground text-xs`}
       style={{
@@ -659,10 +673,10 @@ export default function DigPermitForm({
                 <th className="hd">측정자</th>
                 <th className="hd">기준농도</th>
               </tr>
-              <tr><td>O₂</td><td><Inp value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} /></td><td rowSpan={4}><Inp value={data.gas_time} onChangeText={(v: string) => update({ gas_time: v })} /></td><td rowSpan={4}><Inp value={data.gas_measurer} onChangeText={(v: string) => update({ gas_measurer: v })} /></td><td>산소(O₂) : 18.0% ~ 23.5 %</td></tr>
-              <tr><td>CO₂</td><td><Inp value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} /></td><td>이산화탄소(CO₂) : 1.5% 미만</td></tr>
-              <tr><td>H₂S</td><td><Inp value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} /></td><td>황화수소(H₂S) : 10ppm 미만</td></tr>
-              <tr><td>CO</td><td><Inp value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} /></td><td>일산화탄소(CO) : 30ppm 미만</td></tr>
+              <tr><td>O₂</td><td><Inp gasField value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} /></td><td rowSpan={4}><Inp gasField value={data.gas_time} onChangeText={(v: string) => update({ gas_time: v })} /></td><td rowSpan={4}><Inp gasField value={data.gas_measurer} onChangeText={(v: string) => update({ gas_measurer: v })} /></td><td>산소(O₂) : 18.0% ~ 23.5 %</td></tr>
+              <tr><td>CO₂</td><td><Inp gasField value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} /></td><td>이산화탄소(CO₂) : 1.5% 미만</td></tr>
+              <tr><td>H₂S</td><td><Inp gasField value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} /></td><td>황화수소(H₂S) : 10ppm 미만</td></tr>
+              <tr><td>CO</td><td><Inp gasField value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} /></td><td>일산화탄소(CO) : 30ppm 미만</td></tr>
               </>
               )}
             </tbody>
@@ -780,13 +794,13 @@ export default function DigPermitForm({
               <tr><td colSpan={4} className="text-center font-semibold bg-[#f0f0f0]">가스농도 측정결과 확인</td></tr>
               <tr><th className="hd">구분</th><th className="hd">O₂</th><th className="hd">H₂S</th><th className="hd">CO · H·C · CO₂</th></tr>
               <tr><td className="text-center">측정결과</td>
-                <td><Inp className="min-w-[3rem]" value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} placeholder="%" /></td>
-                <td><Inp className="min-w-[3rem]" value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} placeholder="ppm" /></td>
+                <td><Inp gasField className="min-w-[3rem]" value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} placeholder="%" /></td>
+                <td><Inp gasField className="min-w-[3rem]" value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} placeholder="ppm" /></td>
                 <td>
                   <div className="flex gap-2 items-center flex-wrap">
-                    <Inp className="w-14 min-w-0 shrink-0" value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} placeholder="CO" />
-                    <Inp className="w-14 min-w-0 shrink-0" value={data.gas_hc} onChangeText={(v: string) => update({ gas_hc: v })} placeholder="H·C" />
-                    <Inp className="w-14 min-w-0 shrink-0" value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} placeholder="CO₂" />
+                    <Inp gasField className="w-14 min-w-0 shrink-0" value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} placeholder="CO" />
+                    <Inp gasField className="w-14 min-w-0 shrink-0" value={data.gas_hc} onChangeText={(v: string) => update({ gas_hc: v })} placeholder="H·C" />
+                    <Inp gasField className="w-14 min-w-0 shrink-0" value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} placeholder="CO₂" />
                   </div>
                 </td>
               </tr>
@@ -874,17 +888,17 @@ export default function DigPermitForm({
               </tr>
               <tr>
                 <td className="text-center">측정결과</td>
-                <td><Inp className="min-w-[3rem]" value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} placeholder="%" /></td>
+                <td><Inp gasField className="min-w-[3rem]" value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} placeholder="%" /></td>
                 <td>
                   <div className="flex gap-2 items-center">
-                    <Inp className="w-16 min-w-0 shrink-0" value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} placeholder="H₂S" />
-                    <Inp className="w-16 min-w-0 shrink-0" value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} placeholder="CO" />
+                    <Inp gasField className="w-16 min-w-0 shrink-0" value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} placeholder="H₂S" />
+                    <Inp gasField className="w-16 min-w-0 shrink-0" value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} placeholder="CO" />
                   </div>
                 </td>
                 <td>
                   <div className="flex gap-2 items-center">
-                    <Inp className="w-16 min-w-0 shrink-0" value={data.gas_hc} onChangeText={(v: string) => update({ gas_hc: v })} placeholder="H·C" />
-                    <Inp className="w-16 min-w-0 shrink-0" value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} placeholder="CO₂" />
+                    <Inp gasField className="w-16 min-w-0 shrink-0" value={data.gas_hc} onChangeText={(v: string) => update({ gas_hc: v })} placeholder="H·C" />
+                    <Inp gasField className="w-16 min-w-0 shrink-0" value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} placeholder="CO₂" />
                   </div>
                 </td>
               </tr>
@@ -999,6 +1013,7 @@ export default function DigPermitForm({
         </DialogContent>
       </Dialog>
     </div>
+    </PermitGasEditableCtx.Provider>
     </PermitFormReadOnlyCtx.Provider>
   );
 }

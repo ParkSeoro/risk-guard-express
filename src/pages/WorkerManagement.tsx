@@ -10,13 +10,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { QRCodeSVG } from "qrcode.react";
-import { HardHat, QrCode, Trash2, ExternalLink, Settings2, AlertTriangle, FileSpreadsheet, Search } from "lucide-react";
+import { HardHat, QrCode, Trash2, ExternalLink, Settings2, AlertTriangle, FileSpreadsheet, Search, Ban, Unlock } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import WorkerAttendance from "./WorkerAttendance";
 import WorkerDailyQR from "./WorkerDailyQR";
 import CompanyDailyQR from "./CompanyDailyQR";
 import WorkerBulkImportDialog from "@/components/workers/WorkerBulkImportDialog";
+import SuspendWorkerDialog from "@/components/workers/SuspendWorkerDialog";
+import {
+  formatSuspensionUntil,
+  isWorkerCurrentlySuspended,
+  suspensionKindLabel,
+} from "@/lib/workerSuspension";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 
@@ -48,6 +54,7 @@ export default function WorkerManagement() {
   const [showBulk, setShowBulk] = useState(false);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [suspendTarget, setSuspendTarget] = useState<{ id: string; name: string } | null>(null);
   const { log } = useAuditLog();
   const baseUrl = window.location.origin;
   const registerUrl = projectId
@@ -124,6 +131,25 @@ export default function WorkerManagement() {
     await log("soft_delete", "workers", w.id, projectId, { reason: reason.trim(), label: w.name });
     setWorkers(prev => prev.filter(x => x.id !== w.id));
     toast.success("비활성 처리됨");
+  };
+
+  const liftSuspension = async (w: any) => {
+    const { data, error } = await supabase.rpc("set_worker_site_entry_suspension" as any, {
+      _worker_id: w.id,
+      _kind: "lift",
+      _reason: null,
+    });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    if ((data as any)?.error) {
+      toast.error((data as any).error);
+      return;
+    }
+    await log("site_entry_unsuspend", "workers", w.id, projectId, { label: w.name });
+    toast.success("출입 정지 해제");
+    load();
   };
 
   const onTabChange = (v: string) => {
@@ -210,11 +236,14 @@ export default function WorkerManagement() {
                           <th className="text-left p-2">교육확인</th>
                           <th className="text-left p-2">대상</th>
                           <th className="text-left p-2">상태</th>
+                          <th className="text-left p-2">출입</th>
                           <th className="p-2"></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredWorkers.map(w => (
+                        {filteredWorkers.map(w => {
+                          const suspended = isWorkerCurrentlySuspended(w);
+                          return (
                           <tr key={w.id} className="border-b hover:bg-muted/40">
                             <td className="p-2 font-medium">
                               <Link to={`/workers/${w.id}`} className="text-primary hover:underline">{w.name}</Link>
@@ -227,12 +256,42 @@ export default function WorkerManagement() {
                               {w.requires_daily_health_log && <Badge variant="outline" className="gap-1 text-warning border-warning"><AlertTriangle className="h-3 w-3" />일일일지</Badge>}
                             </td>
                             <td className="p-2">{w.is_active ? <Badge>활성</Badge> : <Badge variant="outline">비활성</Badge>}</td>
-                            <td className="p-2 flex gap-1">
+                            <td className="p-2">
+                              {suspended ? (
+                                <div className="space-y-0.5">
+                                  <Badge variant="destructive">
+                                    정지 · {suspensionKindLabel(w.site_entry_suspension_kind)}
+                                  </Badge>
+                                  <div className="text-[10px] text-muted-foreground max-w-[160px] truncate" title={w.site_entry_suspension_reason || ""}>
+                                    {formatSuspensionUntil(w.site_entry_suspended_until, w.site_entry_suspension_kind)}
+                                    {w.site_entry_suspension_reason ? ` · ${w.site_entry_suspension_reason}` : ""}
+                                  </div>
+                                </div>
+                              ) : (
+                                <Badge variant="outline">정상</Badge>
+                              )}
+                            </td>
+                            <td className="p-2 flex gap-1 items-center">
                               <Link to={`/workers/${w.id}`}><Button size="icon" variant="ghost"><ExternalLink className="h-4 w-4" /></Button></Link>
+                              {suspended ? (
+                                <Button size="icon" variant="ghost" title="출입 정지 해제" onClick={() => liftSuspension(w)}>
+                                  <Unlock className="h-4 w-4" />
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  title="현장 출입 정지 (1일/3일/영구)"
+                                  onClick={() => setSuspendTarget({ id: w.id, name: w.name })}
+                                >
+                                  <Ban className="h-4 w-4 text-destructive" />
+                                </Button>
+                              )}
                               <Button size="icon" variant="ghost" onClick={() => remove(w)} title="비활성 처리(사유 필수)"><Trash2 className="h-4 w-4" /></Button>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -290,6 +349,20 @@ export default function WorkerManagement() {
         open={showBulk}
         onClose={() => setShowBulk(false)}
         onDone={load}
+      />
+
+      <SuspendWorkerDialog
+        open={!!suspendTarget}
+        onOpenChange={(v) => !v && setSuspendTarget(null)}
+        worker={suspendTarget}
+        onDone={async () => {
+          if (suspendTarget) {
+            await log("site_entry_suspend", "workers", suspendTarget.id, projectId, {
+              label: suspendTarget.name,
+            });
+          }
+          load();
+        }}
       />
     </div>
   );

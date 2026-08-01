@@ -1,7 +1,7 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,7 +14,10 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "cap:sync": "npm run build && npx cap sync",
+    "cap:prepare": "node scripts/prepare-native.mjs",
+    "mobile:ota-bundle": "node scripts/ota-bundle.mjs"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

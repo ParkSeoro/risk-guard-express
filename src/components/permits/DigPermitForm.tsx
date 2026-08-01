@@ -428,6 +428,26 @@ export default function DigPermitForm({
         .dig-permit-form .form-header .logo { max-height: 48px; max-width: 160px; object-fit: contain; }
         .dig-permit-form .form-header .title-wrap { flex: 1; text-align: ${titleAlign}; }
         .dig-permit-form .form-header .doc-meta { text-align: right; font-size: 10pt; color: #333; }
+        /* 가스측정: 결재란 colgroup과 열 의미가 달라 중첩 테이블로 분리 */
+        .dig-permit-form td.gas-nested-wrap {
+          padding: 0 !important;
+          border: none !important;
+          background: transparent !important;
+        }
+        .dig-permit-form table.gas-nested {
+          width: 100%;
+          border-collapse: collapse;
+          table-layout: fixed;
+        }
+        .dig-permit-form table.gas-nested td,
+        .dig-permit-form table.gas-nested th {
+          border: 1px solid var(--dpf-border, #000);
+        }
+        .dig-permit-form table.gas-nested .gas-std {
+          font-size: 9px;
+          line-height: 1.25;
+          white-space: nowrap;
+        }
         @media print {
           .page-break { page-break-after: always; }
         }
@@ -659,25 +679,71 @@ export default function DigPermitForm({
               )}
 
               {!hide('gas_measurement') && (
-              <>
-              {/* Gas readings */}
               <tr>
-                <td rowSpan={5} className="text-center font-semibold">
-                  {L('general.gasMeasurement', '가스농도측정')}<br />
-                  <label className="inline-flex items-center mt-1"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.gas_for_hot} onChange={(e) => update({ gas_for_hot: e.target.checked })} className="mr-1" />화기작업</label><br/>
-                  <label className="inline-flex items-center"><input type="checkbox" disabled={readOnly || printMode} checked={!!data.gas_for_confined} onChange={(e) => update({ gas_for_confined: e.target.checked })} className="mr-1" />밀폐공간</label>
+                {/*
+                  결재란 colgroup([110,160,110,auto,100,100])에 가스 6열을 얹으면
+                  측정물질이 과대·기준농도가 과소가 되어 세로선이 어긋남.
+                  → 가스 전용 중첩 테이블로 열 너비를 분리.
+                */}
+                <td colSpan={6} className="gas-nested-wrap">
+                  <table className="gas-nested">
+                    <colgroup>
+                      <col style={{ width: '16%' }} />
+                      <col style={{ width: '12%' }} />
+                      <col style={{ width: '12%' }} />
+                      <col style={{ width: '14%' }} />
+                      <col style={{ width: '14%' }} />
+                      <col style={{ width: '32%' }} />
+                    </colgroup>
+                    <tbody>
+                      <tr>
+                        <td rowSpan={5} className="text-center font-semibold align-middle">
+                          {L('general.gasMeasurement', '가스농도측정')}<br />
+                          <label className="inline-flex items-center mt-1">
+                            <input type="checkbox" disabled={readOnly || printMode} checked={!!data.gas_for_hot} onChange={(e) => update({ gas_for_hot: e.target.checked })} className="mr-1" />
+                            화기작업
+                          </label><br />
+                          <label className="inline-flex items-center">
+                            <input type="checkbox" disabled={readOnly || printMode} checked={!!data.gas_for_confined} onChange={(e) => update({ gas_for_confined: e.target.checked })} className="mr-1" />
+                            밀폐공간
+                          </label>
+                        </td>
+                        <th className="hd">측정물질</th>
+                        <th className="hd">농도</th>
+                        <th className="hd">측정시간</th>
+                        <th className="hd">측정자</th>
+                        <th className="hd">기준농도</th>
+                      </tr>
+                      <tr>
+                        <td className="text-center">O₂</td>
+                        <td><Inp gasField value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} /></td>
+                        <td rowSpan={4} className="text-center align-middle">
+                          <Inp gasField value={data.gas_time} onChangeText={(v: string) => update({ gas_time: v })} placeholder="시:분" />
+                        </td>
+                        <td rowSpan={4} className="text-center align-middle">
+                          <Inp gasField value={data.gas_measurer} onChangeText={(v: string) => update({ gas_measurer: v })} placeholder="성명" />
+                        </td>
+                        <td className="gas-std">산소(O₂) : 18.0% ~ 23.5 %</td>
+                      </tr>
+                      <tr>
+                        <td className="text-center">CO₂</td>
+                        <td><Inp gasField value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} /></td>
+                        <td className="gas-std">이산화탄소(CO₂) : 1.5% 미만</td>
+                      </tr>
+                      <tr>
+                        <td className="text-center">H₂S</td>
+                        <td><Inp gasField value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} /></td>
+                        <td className="gas-std">황화수소(H₂S) : 10ppm 미만</td>
+                      </tr>
+                      <tr>
+                        <td className="text-center">CO</td>
+                        <td><Inp gasField value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} /></td>
+                        <td className="gas-std">일산화탄소(CO) : 30ppm 미만</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </td>
-                <th className="hd">측정물질</th>
-                <th className="hd">농도</th>
-                <th className="hd">측정시간</th>
-                <th className="hd">측정자</th>
-                <th className="hd">기준농도</th>
               </tr>
-              <tr><td>O₂</td><td><Inp gasField value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} /></td><td rowSpan={4}><Inp gasField value={data.gas_time} onChangeText={(v: string) => update({ gas_time: v })} /></td><td rowSpan={4}><Inp gasField value={data.gas_measurer} onChangeText={(v: string) => update({ gas_measurer: v })} /></td><td>산소(O₂) : 18.0% ~ 23.5 %</td></tr>
-              <tr><td>CO₂</td><td><Inp gasField value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} /></td><td>이산화탄소(CO₂) : 1.5% 미만</td></tr>
-              <tr><td>H₂S</td><td><Inp gasField value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} /></td><td>황화수소(H₂S) : 10ppm 미만</td></tr>
-              <tr><td>CO</td><td><Inp gasField value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} /></td><td>일산화탄소(CO) : 30ppm 미만</td></tr>
-              </>
               )}
             </tbody>
           </table>

@@ -6,6 +6,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import type { ReactNode } from "react";
 import { prefersMobileAppShell } from "@/hooks/use-mobile";
+import { isActiveMobilePreviewRequest } from "@/lib/mobilePreview";
 
 export const ADMIN_SHELL_ROLES = [
   "master",
@@ -204,8 +205,13 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
     return <Navigate to={WORKER_HOME} replace />;
   }
   // Admins may use the worker/mobile shell on phones (UI only — roles stay admin).
-  // Desktop (or forceDesktop) still keeps managers on /app/admin.
+  // Desktop (or forceDesktop) still keeps managers on /app/admin —
+  // except master PC mobile preview (iframe / ?mobilePreview=1).
   if (shell === "worker" && isAdminShellUser(roles) && !prefersMobileAppShell()) {
+    const isMaster = roles.some((r) => r.toLowerCase() === "master");
+    if (isMaster && isActiveMobilePreviewRequest(location.search)) {
+      return <>{children}</>;
+    }
     return <Navigate to={DESKTOP_ADMIN_HOME} replace />;
   }
 

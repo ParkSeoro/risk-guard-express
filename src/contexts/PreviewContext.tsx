@@ -1,14 +1,23 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { useLocation } from "react-router-dom";
 import type { MobileRole } from "@/hooks/useMobileAccess";
+import {
+  notifyPreviewWriteBlocked,
+  parsePreviewMode,
+  resolveMobilePreviewSession,
+  type MobilePreviewSession,
+  type PreviewMode,
+  PREVIEW_MODES,
+} from "@/lib/mobilePreview";
 
-export type PreviewMode =
-  | "worker"
-  | "supervisor"
-  | "site_supervisor"
-  | "site_manager"
-  | "project_admin"
-  | "safety_manager"
-  | "master";
+export type { PreviewMode };
 
 export type PreviewContextValue = {
   isPreview: boolean;
@@ -48,6 +57,17 @@ export function previewModeToRole(mode: PreviewMode): MobileRole {
   }
 }
 
+function sessionToValue(session: MobilePreviewSession): PreviewContextValue {
+  const mode = parsePreviewMode(session.mode);
+  return {
+    isPreview: true,
+    previewMode: mode,
+    previewProjectId: session.projectId,
+    readOnly: true,
+    syntheticRole: previewModeToRole(mode),
+  };
+}
+
 export function PreviewProvider({
   mode,
   projectId,
@@ -58,16 +78,33 @@ export function PreviewProvider({
   children: ReactNode;
 }) {
   const value = useMemo<PreviewContextValue>(
-    () => ({
-      isPreview: true,
-      previewMode: mode,
-      previewProjectId: projectId,
-      readOnly: true,
-      syntheticRole: previewModeToRole(mode),
-    }),
+    () => sessionToValue({ mode, projectId }),
     [mode, projectId],
   );
   return <PreviewContext.Provider value={value}>{children}</PreviewContext.Provider>;
+}
+
+/**
+ * Bootstrap preview from URL / iframe sessionStorage (no nested Router).
+ * Mount inside BrowserRouter, typically around worker shell routes.
+ */
+export function MobilePreviewGate({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  const [session, setSession] = useState<MobilePreviewSession | null>(() =>
+    resolveMobilePreviewSession(location.search),
+  );
+
+  useEffect(() => {
+    setSession(resolveMobilePreviewSession(location.search));
+  }, [location.search, location.pathname]);
+
+  if (!session) return <>{children}</>;
+
+  return (
+    <PreviewProvider mode={session.mode} projectId={session.projectId}>
+      {children}
+    </PreviewProvider>
+  );
 }
 
 export function usePreview() {
@@ -79,18 +116,11 @@ export function usePreviewWriteBlock(): () => boolean {
   const { isPreview, readOnly } = usePreview();
   return () => {
     if (isPreview && readOnly) {
-      try {
-        // lazy import toast would create cycle; use alert-less console + custom event
-        window.dispatchEvent(
-          new CustomEvent("mobile-preview:blocked-write", {
-            detail: { message: "프리뷰 모드에서는 데이터를 변경할 수 없습니다." },
-          }),
-        );
-      } catch {
-        /* ignore */
-      }
+      notifyPreviewWriteBlocked("프리뷰 모드에서는 데이터를 변경할 수 없습니다.");
       return true;
     }
     return false;
   };
 }
+
+export { PREVIEW_MODES };

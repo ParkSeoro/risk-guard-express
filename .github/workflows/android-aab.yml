@@ -1,7 +1,12 @@
-name: Android AAB (Play 내부 테스트)
+name: Android AAB
 
 # Google Play Console 내부 테스트 트랙에 올릴 서명된 AAB(app-release.aab)를 자동 생성합니다.
 # 결과물은 Actions → 해당 run → Artifacts 에서 다운로드해 Play Console 에 업로드하세요.
+#
+# 실행 방법 (Run workflow 버튼이 안 보일 때 포함)
+#   A) Actions → "Android AAB" → Run workflow (본인 GitHub 로그인 + write 권한 필요)
+#   B) 브랜치 build/android-aab 에 push → 자동 빌드 (버튼 불필요)
+#   C) 태그 android-v1.0.1 등을 push → 자동 빌드 + Release 첨부
 #
 # ─ 필수 GitHub Secrets (Settings → Secrets and variables → Actions) ─────────────
 #   ANDROID_KEYSTORE_BASE64   : *.jks 키스토어를 base64 로 인코딩한 문자열
@@ -36,14 +41,22 @@ on:
         default: ""
   push:
     tags: ["android-v*"]
+    # Run workflow 버튼이 안 보일 때: 이 브랜치로 push 하면 빌드 시작
+    branches: ["build/android-aab"]
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build-aab:
     name: Build signed AAB
     runs-on: ubuntu-latest
+    # 태그/지정 브랜치/수동만 — 일반 PR·main push 의 빈 실패 방지
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/android-v') ||
+      github.ref == 'refs/heads/build/android-aab'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,11 +71,12 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Setup JDK 17
+      - name: Setup JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          # Capacitor 8 / AGP 8.x templates compile with sourceCompatibility 21
+          java-version: "21"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -72,10 +86,30 @@ jobs:
           CAP_DEV_URL: ""
         run: bun run build
 
-      - name: Add Android platform (없으면 생성)
+      - name: Add Android platform (불완전하면 재생성)
         run: |
-          if [ ! -d "android" ]; then
+          # android/ 일부 커스텀 파일만 git 추적됨 → 디렉터리는 있어도
+          # build.gradle 이 없을 수 있음. 그때는 플랫폼을 다시 깐다.
+          if [ ! -f "android/app/build.gradle" ]; then
+            echo "Incomplete android platform — regenerating while preserving custom sources"
+            CUSTOM=$(mktemp -d)
+            if [ -d android/app/src ]; then
+              cp -a android/app/src "$CUSTOM/src"
+            fi
+            rm -rf android
             bunx cap add android
+            if [ -d "$CUSTOM/src" ]; then
+              cp -a "$CUSTOM/src/." android/app/src/
+            fi
+            # AlarmVolume 플러그인 등록 MainActivity (있으면 덮어씀)
+            if [ -f capacitor-plugins/alarm-volume/MainActivity.java ]; then
+              cp capacitor-plugins/alarm-volume/MainActivity.java \
+                android/app/src/main/java/org/safenex/app/MainActivity.java
+            fi
+            if [ -f capacitor-plugins/alarm-volume/AlarmVolumePlugin.java ]; then
+              cp capacitor-plugins/alarm-volume/AlarmVolumePlugin.java \
+                android/app/src/main/java/org/safenex/app/AlarmVolumePlugin.java
+            fi
             node scripts/prepare-native.mjs || true
           fi
           bunx cap sync android
@@ -117,25 +151,7 @@ jobs:
           sed -i "s/versionCode [0-9]\+/versionCode ${VC}/" "$GRADLE"
           sed -i "s/versionName \"[^\"]*\"/versionName \"${VN}\"/" "$GRADLE"
           # signingConfig 주입 (이미 있으면 skip)
-          if ! grep -q "signingConfigs {" "$GRADLE"; then
-            node -e "
-              const fs=require('fs');
-              const p='$GRADLE';
-              let s=fs.readFileSync(p,'utf8');
-              const sign=\`
-    signingConfigs {
-        release {
-            storeFile file('release.jks')
-            storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
-            keyAlias System.getenv('ANDROID_KEY_ALIAS')
-            keyPassword System.getenv('ANDROID_KEY_PASSWORD')
-        }
-    }\`;
-              s=s.replace(/android\s*\{/, 'android {'+sign);
-              s=s.replace(/buildTypes\s*\{\s*release\s*\{/, \"buildTypes {\\n        release {\\n            signingConfig signingConfigs.release\");
-              fs.writeFileSync(p,s);
-            "
-          fi
+          python3 scripts/patch-android-signing.py "$GRADLE"
           echo "----- patched build.gradle -----"
           sed -n '1,80p' "$GRADLE"
 

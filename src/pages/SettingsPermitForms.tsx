@@ -60,6 +60,33 @@ type Tpl = {
   updated_at: string;
 };
 
+/** 설정 화면용 — 키 옆에 한글 설명 (찾기 쉽게) */
+const LABEL_KEY_TITLE: Record<string, string> = {
+  approverCompany: '승인업체명',
+  docNoPrefix: '문서번호 접두사',
+  'general.title': '일반 — 제목',
+  'general.contractor': '일반 — 공사업체',
+  'general.approverCompany': '일반 — 승인업체 라벨',
+  'general.cooperationDept': '일반 — 협조부서',
+  'general.reviewDate': '일반 — 검토일',
+  'general.approveDate': '일반 — 승인일',
+  'general.workDatetime': '일반 — 작업일시',
+  'general.workName': '일반 — 작업명',
+  'general.workDescription': '일반 — 작업내용',
+  'general.workLocation': '일반 — 작업장소',
+  'general.personnel': '일반 — 투입인원',
+  'general.attachments': '일반 — 첨부서류',
+  'general.safetyChecklist': '일반 — 안전조치',
+  'general.hazardConfirm': '일반 — 위험작업 확인',
+  'general.gasMeasurement': '일반 — 가스측정',
+  'general.siteConfirm': '일반 — 작업완료 확인',
+  'general.extension': '일반 — 연장 작업',
+  'general.footerNote': '일반 — 하단 안내',
+  'confined_space.title': '밀폐 — 제목',
+  'hot_work.title': '화기 — 제목',
+  'excavation.title': '굴착 — 제목',
+};
+
 const PREVIEW_DATA: PermitFormData = {
   contractor_company: '(주)샘플건설',
   work_name: '배관 용접 작업',
@@ -461,8 +488,13 @@ export default function SettingsPermitForms() {
                     </p>
                     <div className="grid gap-2 max-h-[420px] overflow-y-auto pr-1">
                       {editableLabelEntries.map(([key, val]) => (
-                        <div key={key} className="grid grid-cols-[160px_1fr] gap-2 items-center">
-                          <Label className="text-[11px] text-muted-foreground truncate" title={key}>{key}</Label>
+                        <div key={key} className="grid grid-cols-[200px_1fr] gap-2 items-center">
+                          <div className="min-w-0">
+                            <Label className="text-xs font-medium truncate block">
+                              {LABEL_KEY_TITLE[key] || key}
+                            </Label>
+                            <span className="text-[10px] text-muted-foreground truncate block" title={key}>{key}</span>
+                          </div>
                           <Input
                             value={val}
                             className="h-8"

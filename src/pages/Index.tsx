@@ -1,9 +1,10 @@
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
-  HardHat, ShieldAlert, ClipboardCheck, QrCode, FileSignature,
+  ShieldAlert, ClipboardCheck, QrCode, FileSignature,
   Activity, MapPin, ArrowRight, CheckCircle2, AlertTriangle, Users,
 } from "lucide-react";
+import { BrandMark } from "@/components/BrandMark";
 
 /**
  * 통합 안전관리시스템 — 공개 랜딩 페이지
@@ -25,14 +26,10 @@ export default function Index() {
       <header className="border-b border-[hsl(220,45%,22%)]">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-md bg-[hsl(25,95%,53%)] flex items-center justify-center shadow-[0_0_24px_-4px_hsl(25_95%_53%/0.6)]">
-              <HardHat className="h-6 w-6 text-[hsl(220,60%,12%)]" />
-            </div>
+            <BrandMark size={40} className="h-10 w-10 rounded-md shadow-[0_0_24px_-4px_hsl(25_95%_53%/0.45)]" />
             <div className="leading-tight">
-              <div className="text-xs uppercase tracking-[0.2em] text-[hsl(25,95%,60%)]">
-                Safenex / 안전관리
-              </div>
-              <div className="font-black text-lg tracking-tight">통합 안전관리시스템</div>
+              <div className="font-black text-lg tracking-tight">SafeNex</div>
+              <div className="text-xs text-[hsl(210,30%,72%)]">통합 안전관리시스템</div>
             </div>
           </div>
           <div className="flex items-center gap-2">

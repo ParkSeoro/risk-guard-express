@@ -14,6 +14,7 @@ import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 import { usePendingApprovalsCount } from "@/hooks/usePendingApprovalsCount";
+import { BrandMark } from "@/components/BrandMark";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
@@ -241,13 +242,11 @@ export function AppSidebar() {
           onClick={closeMobileNav}
           className="flex items-center gap-3 rounded-md outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-sidebar-ring"
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
-            <HardHat className="h-5 w-5 text-sidebar-primary-foreground" />
-          </div>
+          <BrandMark size={36} className="h-9 w-9" />
           {!collapsed && (
             <div className="flex flex-col">
-              <span className="text-sm font-bold text-sidebar-foreground">안전관리시스템</span>
-              <span className="text-[10px] text-sidebar-muted">Safety Management System</span>
+              <span className="text-sm font-bold text-sidebar-foreground">SafeNex</span>
+              <span className="text-[10px] text-sidebar-muted">안전관리시스템</span>
             </div>
           )}
         </Link>

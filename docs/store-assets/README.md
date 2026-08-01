@@ -3,7 +3,9 @@
 | 파일 | 용도 | 크기 |
 |------|------|------|
 | `../public/icon-512.png` | 스토어 / 앱 아이콘 (후보 B) | 512×512 PNG |
-| `../public/icon-192.png` | PWA / 보조 아이콘 | 192×192 PNG |
+| `../public/icon-192.png` | PWA / 웹 사이드바·BrandMark | 192×192 PNG |
+| `../public/favicon.png` | 브라우저 탭 파비콘 | 32×32 PNG |
+| `../public/favicon.svg` | 벡터 파비콘 (Icon B) | SVG |
 | `feature-graphic-1024x500.png` | Play 피처 그래픽 (한글 포함) | 1024×500 PNG |
 | `candidates/icon-b-source.png` | 선정된 원본 후보 | — |
 

@@ -65,15 +65,17 @@ describe('permitDisplayTemplate', () => {
     expect(pickCompanyDisplayTemplate(list as any, null, 'general')).toBeNull();
   });
 
-  it('resolveFormOwnerCompanyId prefers gc_company_id', () => {
+  it('resolveFormOwnerCompanyId prefers permit company over project GC', () => {
     expect(
       resolveFormOwnerCompanyId(
         { gc_company_id: 'gc1', gc_company_ids: ['gc2'] },
-        'fallback',
+        'permit-co',
       ),
-    ).toBe('gc1');
-    expect(resolveFormOwnerCompanyId({ gc_company_ids: ['gc2'] }, 'fallback')).toBe('gc2');
-    expect(resolveFormOwnerCompanyId(null, 'fallback')).toBe('fallback');
+    ).toBe('permit-co');
+    expect(resolveFormOwnerCompanyId({ gc_company_id: 'gc1' }, null)).toBe('gc1');
+    expect(resolveFormOwnerCompanyId({ gc_company_ids: ['gc2'] }, null)).toBe('gc2');
+    expect(resolveFormOwnerCompanyId(null, 'permit-co')).toBe('permit-co');
+    expect(resolveFormOwnerCompanyId(null, null)).toBeNull();
   });
 
   it('emptyDisplayTemplate starts with no hidden sections', () => {

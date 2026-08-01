@@ -23,7 +23,9 @@ const VIEWPORTS = [
 const MODES: { id: PreviewMode; label: string }[] = [
   { id: "worker", label: "근로자" },
   { id: "supervisor", label: "관리감독자" },
+  { id: "site_supervisor", label: "감리" },
   { id: "site_manager", label: "현장관리자" },
+  { id: "project_admin", label: "프로젝트 관리자" },
   { id: "safety_manager", label: "안전관리자" },
   { id: "master", label: "마스터" },
 ];

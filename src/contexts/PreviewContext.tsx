@@ -1,7 +1,14 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type { MobileRole } from "@/hooks/useMobileAccess";
 
-export type PreviewMode = "worker" | "supervisor" | "site_manager" | "safety_manager" | "master";
+export type PreviewMode =
+  | "worker"
+  | "supervisor"
+  | "site_supervisor"
+  | "site_manager"
+  | "project_admin"
+  | "safety_manager"
+  | "master";
 
 export type PreviewContextValue = {
   isPreview: boolean;
@@ -26,8 +33,12 @@ export function previewModeToRole(mode: PreviewMode): MobileRole {
       return "worker";
     case "supervisor":
       return "supervisor";
+    case "site_supervisor":
+      return "site_supervisor";
     case "site_manager":
       return "site_manager";
+    case "project_admin":
+      return "project_admin";
     case "safety_manager":
       return "safety_manager";
     case "master":

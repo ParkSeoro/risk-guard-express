@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
+import { usePreviewWriteBlock } from "@/contexts/PreviewContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ export default function MobileDailyHealthLog() {
   const nav = useNavigate();
   const { profile } = useAuth();
   const { projectId } = useMobileAccess();
+  const blockWrite = usePreviewWriteBlock();
   const paramWorkerId = params.get("worker") || "";
   const [workerId, setWorkerId] = useState(paramWorkerId);
   const [worker, setWorker] = useState<any>(null);
@@ -74,6 +76,10 @@ export default function MobileDailyHealthLog() {
   };
 
   const submit = async () => {
+    if (blockWrite()) {
+      toast.message("프리뷰 모드에서는 데이터를 변경할 수 없습니다.");
+      return;
+    }
     if (!worker) return;
     if (!bodyTemp) { toast.error("체온을 입력하세요"); return; }
     setSaving(true);

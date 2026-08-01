@@ -1,12 +1,15 @@
 /**
  * Master-only PC Mobile Preview — phone frame + role/project controls.
- * Reuses real mobile routes/components without JWT impersonation.
+ * Loads real /app/worker routes in a same-origin iframe (no nested Router).
  */
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { MemoryRouter, Navigate, Route, Routes, useNavigate } from "react-router-dom";
-import { PreviewProvider, type PreviewMode } from "@/contexts/PreviewContext";
-import MobileShell from "@/components/mobile/MobileShell";
-import * as P from "@/routes/lazyPages";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import type { PreviewMode } from "@/contexts/PreviewContext";
+import {
+  buildMobilePreviewSrc,
+  MOBILE_PREVIEW_BLOCKED_MSG_TYPE,
+  PREVIEW_MODES,
+} from "@/lib/mobilePreview";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,52 +23,15 @@ const VIEWPORTS = [
   { id: "small", label: "Small Android", w: 360, h: 740 },
 ] as const;
 
-const MODES: { id: PreviewMode; label: string }[] = [
-  { id: "worker", label: "근로자" },
-  { id: "supervisor", label: "관리감독자" },
-  { id: "site_supervisor", label: "감리" },
-  { id: "site_manager", label: "현장관리자" },
-  { id: "project_admin", label: "프로젝트 관리자" },
-  { id: "safety_manager", label: "안전관리자" },
-  { id: "master", label: "마스터" },
-];
-
-function PreviewInnerRoutes() {
-  return (
-    <MobileShell>
-      <Suspense
-        fallback={<div className="p-6 text-sm text-muted-foreground">화면 로딩…</div>}
-      >
-        <Routes>
-          <Route index element={<Navigate to="today" replace />} />
-          <Route path="today" element={<P.LazyMobileToday />} />
-          <Route path="tasks" element={<P.LazyMobileTasks />} />
-          <Route path="docs" element={<P.LazyMobileDocs />} />
-          <Route path="more" element={<P.LazyMobileMore />} />
-          <Route path="home" element={<Navigate to="today" replace />} />
-          <Route path="menu" element={<Navigate to="today" replace />} />
-          <Route path="alerts" element={<P.LazyMobileAlerts />} />
-          <Route path="actions" element={<P.LazyMobileActions />} />
-          <Route path="approvals" element={<P.LazyMobileApprovals />} />
-          <Route path="approvals/:approvalId" element={<P.LazyMobileApprovalDetail />} />
-          <Route path="workers" element={<P.LazyMobileWorkers />} />
-          <Route path="risk-assessment" element={<P.LazyMobileRiskAssessment />} />
-          <Route path="risk-assessment/:runId" element={<P.LazyMobileAssessmentViewer />} />
-          <Route path="work-plans" element={<P.LazyMobileWorkPlans />} />
-          <Route path="work-plans/:planId" element={<P.LazyMobileWorkPlanViewer />} />
-          <Route path="tbm" element={<P.LazyMobileTbm />} />
-          <Route path="permits" element={<P.LazyMobilePermits />} />
-          <Route path="incident" element={<P.LazyMobileIncident />} />
-          <Route path="scan" element={<P.LazyMobileScan />} />
-          <Route path="daily-health-log" element={<P.LazyMobileDailyHealthLog />} />
-          <Route path="work-stop" element={<P.LazyMobileWorkStop />} />
-          <Route path="inspect" element={<P.LazyMobileInspect />} />
-          <Route path="*" element={<Navigate to="today" replace />} />
-        </Routes>
-      </Suspense>
-    </MobileShell>
-  );
-}
+const MODE_LABELS: Record<PreviewMode, string> = {
+  worker: "근로자",
+  supervisor: "관리감독자",
+  site_supervisor: "감리",
+  site_manager: "현장관리자",
+  project_admin: "프로젝트 관리자",
+  safety_manager: "안전관리자",
+  master: "마스터",
+};
 
 export default function MobilePreviewHost() {
   const navigate = useNavigate();
@@ -82,8 +48,17 @@ export default function MobilePreviewHost() {
       const detail = (e as CustomEvent).detail;
       toast.message(detail?.message || "프리뷰에서는 변경할 수 없습니다.");
     };
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      if (e.data?.type !== MOBILE_PREVIEW_BLOCKED_MSG_TYPE) return;
+      toast.message(e.data?.message || "프리뷰에서는 변경할 수 없습니다.");
+    };
     window.addEventListener("mobile-preview:blocked-write", onBlock);
-    return () => window.removeEventListener("mobile-preview:blocked-write", onBlock);
+    window.addEventListener("message", onMessage);
+    return () => {
+      window.removeEventListener("mobile-preview:blocked-write", onBlock);
+      window.removeEventListener("message", onMessage);
+    };
   }, []);
 
   useEffect(() => {
@@ -105,15 +80,20 @@ export default function MobilePreviewHost() {
     }
   }, [projectId]);
 
+  const iframeSrc = useMemo(() => {
+    if (!projectId) return "";
+    return buildMobilePreviewSrc({ mode, projectId });
+  }, [mode, projectId]);
+
   const diag = useMemo(
     () => ({
       mode,
       projectId,
       viewport: viewport.id,
-      path: "/app/worker/today",
+      src: iframeSrc || null,
       at: new Date().toISOString(),
     }),
-    [mode, projectId, viewport.id],
+    [mode, projectId, viewport.id, iframeSrc],
   );
 
   return (
@@ -142,9 +122,9 @@ export default function MobilePreviewHost() {
                 setFrameKey((k) => k + 1);
               }}
             >
-              {MODES.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
+              {PREVIEW_MODES.map((id) => (
+                <option key={id} value={id}>
+                  {MODE_LABELS[id]}
                 </option>
               ))}
             </select>
@@ -188,7 +168,7 @@ export default function MobilePreviewHost() {
             <RefreshCw className="h-4 w-4 mr-2" />
             프레임 새로고침
           </Button>
-          <Button variant="ghost" className="w-full" onClick={() => navigate("/settings")}>
+          <Button variant="ghost" className="w-full" onClick={() => navigate("/app/admin/settings")}>
             설정으로
           </Button>
           <pre className="text-[10px] bg-muted rounded-md p-2 overflow-auto max-h-40">
@@ -207,15 +187,15 @@ export default function MobilePreviewHost() {
               className="bg-background overflow-hidden"
               style={{ width: viewport.w, height: viewport.h }}
             >
-              {projectId ? (
-                <PreviewProvider key={frameKey} mode={mode} projectId={projectId}>
-                  <MemoryRouter initialEntries={["/app/worker/today"]} initialIndex={0}>
-                    <Routes>
-                      <Route path="/app/worker/*" element={<PreviewInnerRoutes />} />
-                      <Route path="*" element={<Navigate to="/app/worker/today" replace />} />
-                    </Routes>
-                  </MemoryRouter>
-                </PreviewProvider>
+              {iframeSrc ? (
+                <iframe
+                  key={`${frameKey}-${iframeSrc}`}
+                  title="모바일 프리뷰"
+                  src={iframeSrc}
+                  className="border-0 bg-background"
+                  style={{ width: viewport.w, height: viewport.h }}
+                  data-testid="preview-iframe"
+                />
               ) : (
                 <div className="p-6 text-sm text-muted-foreground">프로젝트를 선택하세요.</div>
               )}

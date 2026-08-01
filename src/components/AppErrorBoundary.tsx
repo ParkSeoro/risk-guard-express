@@ -36,10 +36,10 @@ export class AppErrorBoundary extends React.Component<
               <h2 className="font-bold text-lg">화면을 불러오지 못했습니다</h2>
             </div>
             <p className="text-sm text-muted-foreground">
-              데이터를 불러오는 중 오류가 발생했습니다. (상세 원인)
+              화면을 그리는 중 오류가 발생했습니다.
             </p>
             <pre className="text-xs bg-muted/50 rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap">
-              {this.state.error.message}
+              {this.state.error.message || String(this.state.error)}
             </pre>
             <div className="flex gap-2">
               <Button onClick={() => { this.reset(); window.location.reload(); }} size="sm">

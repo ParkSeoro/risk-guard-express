@@ -119,7 +119,7 @@ export function toMobileShellPath(path: string): string {
   if (p === "/" || p === "") return `${WORKER}/menu`;
 
   // Unknown admin feature — stay in mobile shell rather than flipping to desktop
-  return `${WORKER}/menu`;
+  return `${WORKER}/today`;
 }
 
 /** Normalize legacy /m and bare admin paths into canonical shells. */
@@ -127,12 +127,14 @@ export function canonicalizeAppPath(path: string, opts?: { mobileShell?: boolean
   if (!path) return path;
   const mobile = opts?.mobileShell ?? (typeof window !== "undefined" && prefersMobileAppShell());
 
-  if (path.startsWith("/app/worker")) return path;
+  if (path.startsWith("/app/worker")) {
+    if (path === `${WORKER}/menu` || path === `${WORKER}/home`) return `${WORKER}/today`;
+    return path;
+  }
   if (path === "/m" || path.startsWith("/m/")) {
-    const workerPath = path === "/m" ? WORKER : `${WORKER}${path.slice(2)}`;
-    // Bare /m → role-agnostic menu is safer than daily home for managers;
-    // WorkerAppRoutes index still redirects /app/worker → home; callers should use resolveMobileHomePath.
-    return workerPath === WORKER ? `${WORKER}/menu` : workerPath;
+    const rest = path === "/m" ? "/today" : path.slice(2);
+    const mapped = rest === "/menu" || rest === "/home" ? "/today" : rest;
+    return `${WORKER}${mapped}`;
   }
   if (path.startsWith("/app/admin")) {
     return mobile ? toMobileShellPath(path) : path;

@@ -41,7 +41,7 @@ type TbmSession = {
   tbm_date: string;
 };
 
-export default function WorkerDailyHome() {
+export default function WorkerDailyHome({ embedded = false }: { embedded?: boolean }) {
   const { user, profile } = useAuth();
   const { lastGpsFix, gpsTracking, gpsError, startGpsTracking, stopGpsTracking } = useSystemRealtime();
   const [projectId, setProjectId] = useState(() => localStorage.getItem(PROJECT_KEY) || "");
@@ -58,6 +58,11 @@ export default function WorkerDailyHome() {
   const [noAccident, setNoAccident] = useState(false);
   const [healthOk, setHealthOk] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [suspension, setSuspension] = useState<{
+    until: string;
+    reason: string | null;
+    kind: string | null;
+  } | null>(null);
 
   const distanceM = useMemo(() => {
     if (siteLat == null || siteLng == null || !lastGpsFix) return null;
@@ -94,13 +99,29 @@ export default function WorkerDailyHome() {
       const digits = profile.phone.replace(/\D/g, "");
       const { data: workers } = await supabase
         .from("workers")
-        .select("id, phone, name")
+        .select(
+          "id, phone, name, site_entry_suspended_until, site_entry_suspension_reason, site_entry_suspension_kind",
+        )
         .eq("project_id", pid)
         .eq("is_active", true)
         .limit(100);
-      wid =
-        (workers || []).find((w) => (w.phone || "").replace(/\D/g, "") === digits)?.id || null;
+      const matched = (workers || []).find(
+        (w) => (w.phone || "").replace(/\D/g, "") === digits,
+      ) as any;
+      wid = matched?.id || null;
       setWorkerId(wid);
+      if (
+        matched?.site_entry_suspended_until &&
+        new Date(matched.site_entry_suspended_until).getTime() > Date.now()
+      ) {
+        setSuspension({
+          until: matched.site_entry_suspended_until,
+          reason: matched.site_entry_suspension_reason,
+          kind: matched.site_entry_suspension_kind,
+        });
+      } else {
+        setSuspension(null);
+      }
     }
 
     if (wid) {
@@ -172,6 +193,12 @@ export default function WorkerDailyHome() {
   };
 
   const handleCheckIn = async () => {
+    if (suspension) {
+      toast.error(
+        `출입 정지 상태입니다${suspension.reason ? ` · ${suspension.reason}` : ""}`,
+      );
+      return;
+    }
     if (!within100m) {
       toast.error("현장 사무실 반경 100m 이내에서만 출근할 수 있습니다");
       return;
@@ -277,21 +304,42 @@ export default function WorkerDailyHome() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-100 via-sky-50 to-emerald-50 pb-24">
-      <header className="bg-slate-900 text-white p-4 flex items-center gap-3">
-        <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center">
-          <HardHat className="h-6 w-6" />
-        </div>
-        <div className="flex-1">
-          <div className="font-bold text-lg leading-tight">일일 안전 출퇴근</div>
-          <div className="text-xs opacity-80">{profile?.display_name || "근로자"} · {projectName || "현장 미선택"}</div>
-        </div>
-        <Button asChild variant="secondary" size="sm" className="h-8 text-xs">
-          <Link to="/app/worker/menu">메뉴</Link>
-        </Button>
-      </header>
+    <div
+      className={
+        embedded
+          ? "bg-transparent"
+          : "min-h-screen bg-gradient-to-b from-slate-100 via-sky-50 to-emerald-50 pb-24"
+      }
+    >
+      {!embedded && (
+        <header className="bg-slate-900 text-white p-4 flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center">
+            <HardHat className="h-6 w-6" />
+          </div>
+          <div className="flex-1">
+            <div className="font-bold text-lg leading-tight">일일 안전 출퇴근</div>
+            <div className="text-xs opacity-80">
+              {profile?.display_name || "근로자"} · {projectName || "현장 미선택"}
+            </div>
+          </div>
+          <Button asChild variant="secondary" size="sm" className="h-8 text-xs">
+            <Link to="/app/worker/today">오늘</Link>
+          </Button>
+        </header>
+      )}
 
-      <main className="p-4 space-y-4 max-w-lg mx-auto">
+      <main className={embedded ? "p-3 space-y-3" : "p-4 space-y-4 max-w-lg mx-auto"}>
+        {suspension && (
+          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            <div className="font-semibold">현장 출입 정지</div>
+            <div className="text-xs mt-1 opacity-90">
+              {suspension.kind === "permanent" || suspension.until.startsWith("9999")
+                ? "영구"
+                : `해제일: ${new Date(suspension.until).toLocaleString("ko-KR")}`}
+              {suspension.reason ? ` · ${suspension.reason}` : ""}
+            </div>
+          </div>
+        )}
         <section className="rounded-2xl bg-white/80 backdrop-blur border border-slate-200 p-4 space-y-3 shadow-sm">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <MapPin className="h-4 w-4 text-emerald-600" />
@@ -360,11 +408,11 @@ export default function WorkerDailyHome() {
             {!isCheckedIn && !checkedOut && (
               <Button
                 className="h-12 gap-2"
-                disabled={!within100m || busy || !workerId}
+                disabled={!within100m || busy || !workerId || !!suspension}
                 onClick={() => void handleCheckIn()}
               >
                 <LogIn className="h-4 w-4" />
-                출근하기
+                {suspension ? "출입 정지됨" : "출근하기"}
               </Button>
             )}
             {isCheckedIn && (

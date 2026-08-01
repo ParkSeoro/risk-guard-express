@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature, Building2, CloudSun } from 'lucide-react';
+import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature, Building2, CloudSun, Eye } from 'lucide-react';
 import { E2ETestAccountsSetup } from '@/components/E2ETestAccountsSetup';
 
 const settingsCards = [
@@ -66,6 +66,15 @@ const settingsCards = [
     icon: Bell,
     path: '/settings/notifications',
     requires: 'any' as const,
+  },
+  {
+    id: 'mobile-preview',
+    title: '모바일 프리뷰',
+    description: 'PC에서 근로자·관리자 모바일 화면을 역할별로 미리 검수합니다. AAB 빌드 전 필수.',
+    icon: Eye,
+    path: '/settings/mobile-preview',
+    requires: 'master' as const,
+    badge: '마스터 전용',
   },
   {
     id: 'mobile-releases',

@@ -20,9 +20,9 @@ export const WORKER_SHELL_ROLES = ["worker", "viewer"] as const;
 
 export type ShellKind = "admin" | "worker";
 
-/** Mobile admin dashboard (tiles, push, alarm sim) — roles stay admin. */
-export const MOBILE_ADMIN_HOME = "/app/worker/menu";
-export const WORKER_HOME = "/app/worker/home";
+/** Mobile Today home — role-specific (worker vs manager). Roles stay as-is. */
+export const MOBILE_ADMIN_HOME = "/app/worker/today";
+export const WORKER_HOME = "/app/worker/today";
 export const DESKTOP_ADMIN_HOME = "/app/admin";
 
 /** Public auth/consent paths — AuthGuard always passes these through. */

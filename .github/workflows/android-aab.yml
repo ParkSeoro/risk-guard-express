@@ -130,25 +130,7 @@ jobs:
           sed -i "s/versionCode [0-9]\+/versionCode ${VC}/" "$GRADLE"
           sed -i "s/versionName \"[^\"]*\"/versionName \"${VN}\"/" "$GRADLE"
           # signingConfig 주입 (이미 있으면 skip)
-          if ! grep -q "signingConfigs {" "$GRADLE"; then
-            node -e "
-              const fs=require('fs');
-              const p='$GRADLE';
-              let s=fs.readFileSync(p,'utf8');
-              const sign=\`
-    signingConfigs {
-        release {
-            storeFile file('release.jks')
-            storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
-            keyAlias System.getenv('ANDROID_KEY_ALIAS')
-            keyPassword System.getenv('ANDROID_KEY_PASSWORD')
-        }
-    }\`;
-              s=s.replace(/android\s*\{/, 'android {'+sign);
-              s=s.replace(/buildTypes\s*\{\s*release\s*\{/, \"buildTypes {\\n        release {\\n            signingConfig signingConfigs.release\");
-              fs.writeFileSync(p,s);
-            "
-          fi
+          python3 scripts/patch-android-signing.py "$GRADLE"
           echo "----- patched build.gradle -----"
           sed -n '1,80p' "$GRADLE"
 

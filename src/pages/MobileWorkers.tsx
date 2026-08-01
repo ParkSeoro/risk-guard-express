@@ -23,7 +23,7 @@ import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { isManagerMobileRole } from "@/lib/mobileShell";
 import { usePreview, usePreviewWriteBlock } from "@/contexts/PreviewContext";
-import SuspendWorkerDialog from "@/components/mobile/SuspendWorkerDialog";
+import SuspendWorkerDialog from "@/components/workers/SuspendWorkerDialog";
 import {
   formatSuspensionUntil,
   isWorkerCurrentlySuspended,

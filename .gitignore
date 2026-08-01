@@ -36,3 +36,7 @@ supabase/.temp/
 # Capacitor native (generated locally)
 android/
 ios/
+
+# Android signing — never commit
+*.jks
+*.keystore

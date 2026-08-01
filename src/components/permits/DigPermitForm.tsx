@@ -442,6 +442,7 @@ export default function DigPermitForm({
         .dig-permit-form table.gas-nested td,
         .dig-permit-form table.gas-nested th {
           border: 1px solid var(--dpf-border, #000);
+          overflow: hidden;
         }
         .dig-permit-form table.gas-nested .gas-std {
           font-size: 9px;

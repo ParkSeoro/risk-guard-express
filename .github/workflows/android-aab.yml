@@ -85,10 +85,30 @@ jobs:
           CAP_DEV_URL: ""
         run: bun run build
 
-      - name: Add Android platform (없으면 생성)
+      - name: Add Android platform (불완전하면 재생성)
         run: |
-          if [ ! -d "android" ]; then
+          # android/ 일부 커스텀 파일만 git 추적됨 → 디렉터리는 있어도
+          # build.gradle 이 없을 수 있음. 그때는 플랫폼을 다시 깐다.
+          if [ ! -f "android/app/build.gradle" ]; then
+            echo "Incomplete android platform — regenerating while preserving custom sources"
+            CUSTOM=$(mktemp -d)
+            if [ -d android/app/src ]; then
+              cp -a android/app/src "$CUSTOM/src"
+            fi
+            rm -rf android
             bunx cap add android
+            if [ -d "$CUSTOM/src" ]; then
+              cp -a "$CUSTOM/src/." android/app/src/
+            fi
+            # AlarmVolume 플러그인 등록 MainActivity (있으면 덮어씀)
+            if [ -f capacitor-plugins/alarm-volume/MainActivity.java ]; then
+              cp capacitor-plugins/alarm-volume/MainActivity.java \
+                android/app/src/main/java/org/safenex/app/MainActivity.java
+            fi
+            if [ -f capacitor-plugins/alarm-volume/AlarmVolumePlugin.java ]; then
+              cp capacitor-plugins/alarm-volume/AlarmVolumePlugin.java \
+                android/app/src/main/java/org/safenex/app/AlarmVolumePlugin.java
+            fi
             node scripts/prepare-native.mjs || true
           fi
           bunx cap sync android

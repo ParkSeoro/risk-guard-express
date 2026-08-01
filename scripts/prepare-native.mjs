@@ -77,4 +77,19 @@ if (existsSync(manifestPath)) {
   );
 }
 
+// ---------- Brand icons + FCM notification glyph ----------
+try {
+  const { spawnSync } = await import("node:child_process");
+  const r = spawnSync("python3", ["scripts/sync-android-brand-assets.py"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (r.stdout) process.stdout.write(r.stdout);
+  if (r.stderr) process.stderr.write(r.stderr);
+  if (r.status === 0) console.log("✓ Android brand assets sync 완료");
+  else console.warn("⚠ Android brand assets sync 실패 (Pillow 설치 필요할 수 있음)");
+} catch (e) {
+  console.warn("⚠ Android brand assets sync skipped", e);
+}
+
 console.log("\n다음 단계: npm run build && npx cap sync");

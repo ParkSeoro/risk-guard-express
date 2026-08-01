@@ -113,6 +113,10 @@ jobs:
             node scripts/prepare-native.mjs || true
           fi
           bunx cap sync android
+          # 런처/알림 아이콘 + FCM default_notification_icon (항상 적용)
+          pip install --quiet pillow
+          python3 scripts/sync-android-brand-assets.py
+          node scripts/prepare-native.mjs || true
 
       - name: Resolve version
         id: ver

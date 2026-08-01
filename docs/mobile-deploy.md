@@ -172,5 +172,5 @@ git push origin v1.0.1
 ## 8. 비상 연락 / 책임자
 
 - 시스템 운영: 마스터 계정 보유자
-- 개인정보 보호책임자: privacy@safenex.org
+- 개인정보 보호책임자: 박서로 / psr1579@gmail.com
 - 사고 보고 워크플로우: `/incidents` (중대재해 24시간 카운트다운)

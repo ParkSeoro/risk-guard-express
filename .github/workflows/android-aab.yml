@@ -1,7 +1,12 @@
-name: Android AAB (Play 내부 테스트)
+name: Android AAB
 
 # Google Play Console 내부 테스트 트랙에 올릴 서명된 AAB(app-release.aab)를 자동 생성합니다.
 # 결과물은 Actions → 해당 run → Artifacts 에서 다운로드해 Play Console 에 업로드하세요.
+#
+# 실행 방법 (Run workflow 버튼이 안 보일 때 포함)
+#   A) Actions → "Android AAB" → Run workflow (본인 GitHub 로그인 + write 권한 필요)
+#   B) 브랜치 build/android-aab 에 push → 자동 빌드 (버튼 불필요)
+#   C) 태그 android-v1.0.1 등을 push → 자동 빌드 + Release 첨부
 #
 # ─ 필수 GitHub Secrets (Settings → Secrets and variables → Actions) ─────────────
 #   ANDROID_KEYSTORE_BASE64   : *.jks 키스토어를 base64 로 인코딩한 문자열
@@ -36,14 +41,22 @@ on:
         default: ""
   push:
     tags: ["android-v*"]
+    # Run workflow 버튼이 안 보일 때: 이 브랜치로 push 하면 빌드 시작
+    branches: ["build/android-aab"]
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build-aab:
     name: Build signed AAB
     runs-on: ubuntu-latest
+    # 태그/지정 브랜치/수동만 — 일반 PR·main push 의 빈 실패 방지
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/android-v') ||
+      github.ref == 'refs/heads/build/android-aab'
     steps:
       - name: Checkout
         uses: actions/checkout@v4

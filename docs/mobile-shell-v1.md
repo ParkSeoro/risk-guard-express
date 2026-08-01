@@ -15,16 +15,21 @@ AAB 전에 PC **모바일 프리뷰**로 검수하는 것을 전제로 한 1차 
 - 모든 화면에 **작업중지** FAB
 - 홈: `/app/worker/today` (구 `home`/`menu` 리다이렉트)
 
-## 출입 정지
+## 출입 정지 (모바일 = 데스크탑, 동일 DB)
 
-위치: **할 일/더보기 → 근로자 · 출입** (`MobileWorkers`)
+| 화면 | 경로 |
+|------|------|
+| 모바일 | **근로자 · 출입** (`MobileWorkers`) |
+| 데스크탑 | **근로자 관리** 등록 정보 탭 (`WorkerManagement`) |
 
 - 기간: 1일 / 3일 / 영구 + 사유 필수
-- RPC: `set_worker_site_entry_suspension`
-- `worker_entry` 가 `SUSPENDED` 반환
+- 공통 UI: `components/workers/SuspendWorkerDialog`
+- RPC: `set_worker_site_entry_suspension` (양쪽 동일)
+- `worker_entry` / `company_qr_check_in` → `SUSPENDED`
 - 근로자 오늘 화면에서 출근 버튼 차단
 
-마이그레이션: `supabase/migrations/20260801180000_worker_site_entry_suspension.sql`
+마이그레이션: `supabase/migrations/20260801180000_worker_site_entry_suspension.sql`  
+적용 방법: [`docs/supabase-apply-suspension.md`](./supabase-apply-suspension.md)
 
 ## 마스터 프리뷰 (PC)
 

@@ -92,11 +92,12 @@ Xcode → **Product → Archive** → Organizer → **Distribute App → App Sto
 ## 5. 스토어 등록
 
 ### Google Play Console
-1. **앱 만들기** → 패키지명 `app.lovable.943c0fa50f48402483eac68afc236634`
+1. **앱 만들기** → AAB 업로드 시 패키지 ID **`org.safenex.app`** 자동 인식  
+   (역할 분리 체크리스트: [`play-store-you-vs-me.md`](./play-store-you-vs-me.md))
 2. **내부 테스트 트랙**에 AAB 업로드 → 테스터 이메일 추가 (가장 빠른 검증)
 3. **데이터 보안** 섹션에 수집 항목/목적 입력 (백그라운드 위치, 카메라, 푸시 토큰)
 4. **개인정보처리방침 URL**: `https://safenex.org/privacy`
-5. 스크린샷 폰 2~8장, 아이콘 512×512, 피처 그래픽 1024×500
+5. 스크린샷 폰 2~8장, 아이콘 `public/icon-512.png`, 피처 그래픽 `docs/store-assets/feature-graphic-1024x500.png`
 6. 프로덕션 출시 → 심사 1~3일
 
 ### App Store Connect

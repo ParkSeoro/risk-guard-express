@@ -5,6 +5,9 @@
 
 소요: 결제 1회($25) + 첫 등록 1~2시간 + 심사 대기 보통 1~3일.
 
+> **역할 분리·체크리스트:** [`play-store-you-vs-me.md`](./play-store-you-vs-me.md)  
+> 패키지 ID: **`org.safenex.app`** · 앱 이름: **Safenex**
+
 ---
 
 ## 0. 큰 그림
@@ -40,9 +43,9 @@
 
 PowerShell(또는 macOS Terminal)에서:
 
-```powershell
-cd C:\Users\psr15\Desktop\Safenex
-keytool -genkey -v -keystore safenex.jks -alias safenex `
+```bash
+# 작업 폴더에서 (경로 자유)
+keytool -genkey -v -keystore safenex.jks -alias safenex \
   -keyalg RSA -keysize 2048 -validity 10000
 ```
 
@@ -111,11 +114,13 @@ base64 -i safenex.jks | pbcopy
      - 위치(대략적·정확한), 카메라(사진), 개인 정보(이름·이메일·전화), 앱 활동
      - 모두 "앱 기능 제공", "암호화 전송", "사용자 삭제 요청 가능" 체크
    - ★ 개인정보처리방침 URL: `https://safenex.org/privacy`
+     (임시: `https://risk-guard-express.vercel.app/privacy`)
 
 3. **스토어 등록정보**
-   - 짧은 설명(80자): "건설현장 산업안전보건 통합관리 시스템"
-   - 전체 설명(4000자): README 또는 랜딩페이지 내용 복사
-   - 아이콘 512×512, 피처 그래픽 1024×500, 스크린샷 폰 2~8장 (Lovable preview 캡처 가능)
+   - 짧은 설명·전체 설명: [`play-store-you-vs-me.md`](./play-store-you-vs-me.md) 초안 참고
+   - 아이콘 512×512: `public/icon-512.png`
+   - 피처 그래픽 1024×500: `docs/store-assets/feature-graphic-1024x500.png`
+   - 스크린샷 폰 2~8장: 실기기/에뮬에서 캡처
    - 카테고리: **비즈니스**
 
 ---

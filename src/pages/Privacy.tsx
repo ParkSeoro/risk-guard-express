@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
  * 변호사 검토 전 초안이며, 실제 출시 전 법무 검토 후 수치/연락처를 갱신하세요.
  */
 const Privacy = () => {
-  const updatedAt = "2026-06-28";
+  const updatedAt = "2026-08-01";
   return (
     <main className="mx-auto max-w-3xl px-6 py-12 text-sm leading-7 text-foreground">
       <header className="mb-8 border-b pb-4">

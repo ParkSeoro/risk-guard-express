@@ -1,7 +1,7 @@
 {
-  "name": "안전관리시스템",
-  "short_name": "안전관리",
-  "description": "현장 안전관리 모바일 앱",
+  "name": "Safenex",
+  "short_name": "Safenex",
+  "description": "현장 산업안전 통합관리 모바일 앱",
   "start_url": "/app/worker/menu",
   "scope": "/",
   "display": "standalone",

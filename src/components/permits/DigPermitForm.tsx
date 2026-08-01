@@ -448,6 +448,20 @@ export default function DigPermitForm({
           line-height: 1.25;
           white-space: nowrap;
         }
+        .dig-permit-form .gas-multi {
+          display: flex;
+          gap: 4px;
+          align-items: center;
+          width: 100%;
+          min-width: 0;
+        }
+        .dig-permit-form .gas-multi > input,
+        .dig-permit-form .gas-multi > span {
+          flex: 1 1 0;
+          min-width: 0 !important;
+          width: 100% !important;
+          max-width: 100%;
+        }
         @media print {
           .page-break { page-break-after: always; }
         }
@@ -856,22 +870,45 @@ export default function DigPermitForm({
               </tr>
               )}
               {!hide('cs_gas') && (
-              <>
-              <tr><td colSpan={4} className="text-center font-semibold bg-[#f0f0f0]">가스농도 측정결과 확인</td></tr>
-              <tr><th className="hd">구분</th><th className="hd">O₂</th><th className="hd">H₂S</th><th className="hd">CO · H·C · CO₂</th></tr>
-              <tr><td className="text-center">측정결과</td>
-                <td><Inp gasField className="min-w-[3rem]" value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} placeholder="%" /></td>
-                <td><Inp gasField className="min-w-[3rem]" value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} placeholder="ppm" /></td>
-                <td>
-                  <div className="flex gap-2 items-center flex-wrap">
-                    <Inp gasField className="w-14 min-w-0 shrink-0" value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} placeholder="CO" />
-                    <Inp gasField className="w-14 min-w-0 shrink-0" value={data.gas_hc} onChangeText={(v: string) => update({ gas_hc: v })} placeholder="H·C" />
-                    <Inp gasField className="w-14 min-w-0 shrink-0" value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} placeholder="CO₂" />
-                  </div>
+              <tr>
+                <td colSpan={4} className="gas-nested-wrap">
+                  <table className="gas-nested">
+                    <colgroup>
+                      <col style={{ width: '16%' }} />
+                      <col style={{ width: '18%' }} />
+                      <col style={{ width: '18%' }} />
+                      <col style={{ width: '48%' }} />
+                    </colgroup>
+                    <tbody>
+                      <tr><td colSpan={4} className="text-center font-semibold bg-[#f0f0f0]">가스농도 측정결과 확인</td></tr>
+                      <tr>
+                        <th className="hd">구분</th>
+                        <th className="hd">O₂</th>
+                        <th className="hd">H₂S</th>
+                        <th className="hd">CO · H·C · CO₂</th>
+                      </tr>
+                      <tr>
+                        <td className="text-center">측정결과</td>
+                        <td><Inp gasField value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} placeholder="%" /></td>
+                        <td><Inp gasField value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} placeholder="ppm" /></td>
+                        <td>
+                          <div className="gas-multi">
+                            <Inp gasField value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} placeholder="CO" />
+                            <Inp gasField value={data.gas_hc} onChangeText={(v: string) => update({ gas_hc: v })} placeholder="H·C" />
+                            <Inp gasField value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} placeholder="CO₂" />
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="text-center">기준 값</td>
+                        <td className="gas-std text-center">18%이상~23.5%미만</td>
+                        <td className="gas-std text-center">10ppm미만</td>
+                        <td className="gas-std text-center">30ppm미만 · 0% · 1.5%미만</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </td>
               </tr>
-              <tr><td className="text-center">기준 값</td><td>18%이상~23.5%미만</td><td>10ppm미만</td><td>30ppm미만 · 0% · 1.5%미만</td></tr>
-              </>
               )}
               <tr>
                 <th className="hd">안전관리자</th>
@@ -944,32 +981,49 @@ export default function DigPermitForm({
               </tr>
               )}
               {!hide('hw_gas') && (
-              <>
-              <tr><td colSpan={4} className="text-center font-semibold bg-[#f0f0f0]">가스농도 측정결과</td></tr>
               <tr>
-                <th className="hd">구분</th>
-                <th className="hd">O₂</th>
-                <th className="hd">H₂S · CO</th>
-                <th className="hd">H·C · CO₂</th>
-              </tr>
-              <tr>
-                <td className="text-center">측정결과</td>
-                <td><Inp gasField className="min-w-[3rem]" value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} placeholder="%" /></td>
-                <td>
-                  <div className="flex gap-2 items-center">
-                    <Inp gasField className="w-16 min-w-0 shrink-0" value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} placeholder="H₂S" />
-                    <Inp gasField className="w-16 min-w-0 shrink-0" value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} placeholder="CO" />
-                  </div>
+                <td colSpan={4} className="gas-nested-wrap">
+                  <table className="gas-nested">
+                    <colgroup>
+                      <col style={{ width: '14%' }} />
+                      <col style={{ width: '18%' }} />
+                      <col style={{ width: '34%' }} />
+                      <col style={{ width: '34%' }} />
+                    </colgroup>
+                    <tbody>
+                      <tr><td colSpan={4} className="text-center font-semibold bg-[#f0f0f0]">가스농도 측정결과</td></tr>
+                      <tr>
+                        <th className="hd">구분</th>
+                        <th className="hd">O₂</th>
+                        <th className="hd">H₂S · CO</th>
+                        <th className="hd">H·C · CO₂</th>
+                      </tr>
+                      <tr>
+                        <td className="text-center">측정결과</td>
+                        <td><Inp gasField value={data.gas_o2} onChangeText={(v: string) => update({ gas_o2: v })} placeholder="%" /></td>
+                        <td>
+                          <div className="gas-multi">
+                            <Inp gasField value={data.gas_h2s} onChangeText={(v: string) => update({ gas_h2s: v })} placeholder="H₂S" />
+                            <Inp gasField value={data.gas_co} onChangeText={(v: string) => update({ gas_co: v })} placeholder="CO" />
+                          </div>
+                        </td>
+                        <td>
+                          <div className="gas-multi">
+                            <Inp gasField value={data.gas_hc} onChangeText={(v: string) => update({ gas_hc: v })} placeholder="H·C" />
+                            <Inp gasField value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} placeholder="CO₂" />
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="text-center">기준</td>
+                        <td className="gas-std text-center">18%이상~23.5%미만</td>
+                        <td className="gas-std text-center">10ppm미만 · 30ppm미만</td>
+                        <td className="gas-std text-center">0% · 1.5%미만</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </td>
-                <td>
-                  <div className="flex gap-2 items-center">
-                    <Inp gasField className="w-16 min-w-0 shrink-0" value={data.gas_hc} onChangeText={(v: string) => update({ gas_hc: v })} placeholder="H·C" />
-                    <Inp gasField className="w-16 min-w-0 shrink-0" value={data.gas_co2} onChangeText={(v: string) => update({ gas_co2: v })} placeholder="CO₂" />
-                  </div>
-                </td>
               </tr>
-              <tr><td className="text-center">기준</td><td>18%이상~23.5%미만</td><td>10ppm미만 · 30ppm미만</td><td>0% · 1.5%미만</td></tr>
-              </>
               )}
               <tr><th className="hd">안전관리자</th><td><SigCell k="safety_pic" /></td><td colSpan={2}>연락처 : <Inp value={data.safety_manager_phone} onChangeText={(v: string) => update({ safety_manager_phone: v })} /></td></tr>
               <tr><th className="hd">관리감독자</th><td><SigCell k="site_supervisor" /></td><td colSpan={2}>연락처 : <Inp value={data.supervisor_phone} onChangeText={(v: string) => update({ supervisor_phone: v })} /></td></tr>

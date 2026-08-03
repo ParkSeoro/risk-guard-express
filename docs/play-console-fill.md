@@ -94,12 +94,13 @@ SafeNex는 산업안전보건 현장 운영을 위한 통합 앱입니다.
 
 ## 4) AAB 받기 → 내부 테스트 업로드
 
-### AAB 다운로드 (이미 서명된 빌드 있음)
+### AAB 다운로드 (최신 main 기준 서명 빌드)
 1. GitHub → **Actions** → 워크플로 **Android AAB**  
-2. 성공 run 예: [run 30686783321](https://github.com/ParkSeoro/risk-guard-express/actions/runs/30686783321)  
-3. **Artifacts** → `safenex-1.0.0-447.aab` 다운로드 → zip 풀면 `app-release.aab`
+2. 최신 성공 run: [run 30786779135](https://github.com/ParkSeoro/risk-guard-express/actions/runs/30786779135) (`main` = PR #152 머지 시점)  
+3. **Artifacts** → `safenex-1.0.0-450.aab` 다운로드 → zip 풀면 `app-release.aab`  
+   - **구 빌드(8/1, `…-447`)는 쓰지 마세요.** 그 뒤로 기능이 많이 바뀌었습니다.
 
-새 빌드가 필요하면: Actions → **Android AAB** → **Run workflow** (`main`, versionName `1.0.0` 또는 비움).  
+재빌드: `build/android-aab` 브랜치에 `main`을 push 하거나 Actions → **Android AAB** → **Run workflow**.  
 Secrets(`ANDROID_KEYSTORE_*`)가 없으면 실패합니다.
 
 ### Play Console 업로드

@@ -164,7 +164,7 @@ SafeNex는 산업안전보건 현장 운영을 위한 통합 앱입니다.
 |------|------|
 | Capacitor `appId` | `org.safenex.app` ✅ |
 | Android AAB GitHub Actions | `.github/workflows/android-aab.yml` ✅ |
-| 서명 AAB 아티팩트 | [run 30686783321](https://github.com/ParkSeoro/risk-guard-express/actions/runs/30686783321) `safenex-1.0.0-447.aab` ✅ (만료 전) |
+| 서명 AAB 아티팩트 | [run 30786779135](https://github.com/ParkSeoro/risk-guard-express/actions/runs/30786779135) `safenex-1.0.0-450.aab` ✅ (최신 main) |
 | OTA (Capgo + Supabase) | 코드·관리 UI ✅ |
 | 개인정보처리방침 페이지 | `/privacy` ✅ |
 | 스토어 아이콘 512 PNG | `public/icon-512.png` ✅ |

@@ -42,6 +42,7 @@ import {
   normalizeDisplayTemplate,
   parseLayoutJson,
   pickCompanyDisplayTemplate,
+  pickGlobalStandardTemplate,
   resolveFormOwnerCompanyId,
   type PermitDisplayTemplate,
 } from '@/lib/permitDisplayTemplate';
@@ -270,26 +271,36 @@ export default function WorkPermitDetail() {
           proj as any,
           (permit as any)?.company_id || null,
         );
-        if (!ownerCompanyId) {
-          setStandardStyle(null);
-          setStandardLabels(null);
-          setDisplayTemplate(null);
-          setDisplayTemplateId(null);
-          setDisplayTemplateName(null);
-          return;
+
+        let holder: any = null;
+        if (ownerCompanyId) {
+          const { data: tpls } = await supabase
+            .from('permit_form_templates')
+            .select('id, name, code, version, layout_json, is_default, is_active, permit_type, project_id, company_id')
+            .eq('is_deleted', false)
+            .eq('is_active', true)
+            .eq('company_id', ownerCompanyId)
+            .order('is_default', { ascending: false })
+            .order('updated_at', { ascending: false });
+          holder = pickCompanyDisplayTemplate((tpls || []) as any[], ownerCompanyId, activeKind as PermitType);
         }
-        const { data: tpls } = await supabase
-          .from('permit_form_templates')
-          .select('id, name, code, version, layout_json, is_default, is_active, permit_type, project_id, company_id')
-          .eq('is_deleted', false)
-          .eq('is_active', true)
-          .eq('company_id', ownerCompanyId)
-          .order('is_default', { ascending: false })
-          .order('updated_at', { ascending: false });
-        const list = (tpls || []) as any[];
-        const holder = pickCompanyDisplayTemplate(list, ownerCompanyId, activeKind as PermitType);
+
+        // No company clone → shared global standard (company_id/project_id null)
         if (!holder) {
-          // 회사 표시 양식 없음 → DigPermitForm 내장 기본 (기존과 동일)
+          const { data: globals } = await supabase
+            .from('permit_form_templates')
+            .select('id, name, code, version, layout_json, is_default, is_active, permit_type, project_id, company_id')
+            .eq('is_deleted', false)
+            .eq('is_active', true)
+            .is('company_id', null)
+            .is('project_id', null)
+            .order('is_default', { ascending: false })
+            .order('updated_at', { ascending: false });
+          holder = pickGlobalStandardTemplate((globals || []) as any[], activeKind as PermitType);
+        }
+
+        if (!holder) {
+          // No DB standard either → DigPermitForm code defaults
           setStandardStyle(null);
           setStandardLabels(null);
           setDisplayTemplate(null);
@@ -713,8 +724,12 @@ export default function WorkPermitDetail() {
           <span className="font-semibold">표시 양식:</span>
           <span className="text-muted-foreground">
             {displayTemplateName
-              ? `${displayTemplateName} (회사 표시양식 · 라벨/숨김만 적용)`
-              : '표준 DigPermitForm (회사 표시양식 없음)'}
+              ? `${displayTemplateName}${
+                  String(displayTemplateName || '').includes('기본 표준')
+                    ? ' (공통 기본 표준)'
+                    : ' (회사 표시양식 · 라벨/숨김만 적용)'
+                }`
+              : '코드 기본 양식 (DB 표준/회사 양식 없음)'}
           </span>
           {readOnly && (
             <span className="text-xs text-muted-foreground">

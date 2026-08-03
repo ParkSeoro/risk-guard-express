@@ -9837,6 +9837,10 @@ export type Database = {
         Returns: Json
       }
       issue_daily_qr: { Args: { _worker_id: string }; Returns: Json }
+      link_work_permit_tbm: {
+        Args: { _permit_id: string; _tbm_session_id: string }
+        Returns: string
+      }
       list_joinable_projects: {
         Args: never
         Returns: {

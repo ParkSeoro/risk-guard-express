@@ -49,6 +49,23 @@ export async function syncTemplateRows(opts: {
       is_mandatory: i.required && i.kind === 'legal',
       source_type: 'manual' as const,
     }));
+
+  // Repair mandatory flags on existing rows (e.g. biz_license / insurance_cert)
+  for (const i of items) {
+    if (!existingKeys.has(i.key)) continue;
+    const mandatory = !!(i.required && i.kind === 'legal');
+    await supabase
+      .from('work_plan_attachments')
+      .update({
+        is_mandatory: mandatory,
+        category: i.kind ?? 'site_proof',
+        name: i.name,
+      })
+      .eq('work_plan_id', opts.workPlanId)
+      .eq('attachment_key', i.key)
+      .eq('is_deleted', false);
+  }
+
   if (rows.length === 0) return { inserted: 0 };
   const { error, count } = await supabase
     .from('work_plan_attachments')

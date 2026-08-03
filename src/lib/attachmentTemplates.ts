@@ -24,13 +24,24 @@ interface AttachmentCondition {
 }
 
 // 공통 필수 첨부서류 (모든 공종에 적용)
+// biz_license · insurance_cert 는 결재 차단(legal) — 정책 SSOT
 const COMMON_ATTACHMENTS: AttachmentItem[] = [
-  { key: 'biz_license', name: '사업자등록증', required: true, description: '시공업체 사업자등록증 사본', category: '공통서류' },
-  { key: 'insurance_cert', name: '보험가입증명서', required: true, description: '산재보험, 고용보험, 영업배상 등', category: '공통서류' },
-  { key: 'safety_training', name: '안전보건교육 이수증', required: true, description: '근로자 안전보건교육 이수 증빙', category: '공통서류' },
-  { key: 'risk_assessment', name: '위험성평가서', required: true, description: '해당 작업에 대한 위험성평가 결과', category: '공통서류' },
-  { key: 'work_instruction', name: '작업지휘자 지정서', required: true, description: '작업지휘자 선임 및 지정 서류', category: '공통서류' },
+  { key: 'biz_license', name: '사업자등록증', required: true, description: '시공업체 사업자등록증 사본', category: '공통서류', kind: 'legal' },
+  { key: 'insurance_cert', name: '보험가입증명서', required: true, description: '산재보험, 고용보험, 영업배상 등', category: '공통서류', kind: 'legal' },
+  { key: 'safety_training', name: '안전보건교육 이수증', required: true, description: '근로자 안전보건교육 이수 증빙', category: '공통서류', kind: 'legal' },
+  // 위험성평가서 파일은 체크리스트 필수이나, RA 회차 FK 연결은 결재 절대조건이 아님(실무 정책)
+  { key: 'risk_assessment', name: '위험성평가서', required: true, description: '해당 작업에 대한 위험성평가 결과', category: '공통서류', kind: 'legal' },
+  { key: 'work_instruction', name: '작업지휘자 지정서', required: true, description: '작업지휘자 선임 및 지정 서류', category: '공통서류', kind: 'legal' },
 ];
+
+/** Explicit legal keys that must always block approval when missing */
+export const APPROVAL_BLOCKING_COMMON_KEYS = [
+  'biz_license',
+  'insurance_cert',
+  'safety_training',
+  'risk_assessment',
+  'work_instruction',
+] as const;
 
 // 장비 사용 시 필수 첨부서류
 const EQUIPMENT_ATTACHMENTS: AttachmentItem[] = [
@@ -224,8 +235,9 @@ export function withKind(item: AttachmentItem): AttachmentItem {
   if (item.kind) return item;
   const key = item.key.toLowerCase();
   const cat = item.category;
-  // 인허가·자격·검사증·MSDS·법정 계산서 → legal
+  // 공통 결재차단 키 + 인허가·자격·검사증·MSDS → legal
   if (
+    (APPROVAL_BLOCKING_COMMON_KEYS as readonly string[]).includes(item.key) ||
     ['인허가', '자격', '점검'].includes(cat) ||
     /permit|license|cert|inspection|insurance|biz_license|msds|asbestos/.test(key)
   ) return { ...item, kind: 'legal' };

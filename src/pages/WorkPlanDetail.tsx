@@ -12,6 +12,10 @@ import RiggingPlanForm from '@/components/rigging/RiggingPlanForm';
 import { generateAttachments, type AttachmentItem } from '@/lib/attachmentTemplates';
 import StructuredSectionForm, { validateSection } from '@/components/work-plan/StructuredSectionForm';
 import { fetchLatestApprovedRun, syncRaToWp, type LatestApprovedRun } from '@/lib/workPlanAttachments';
+import {
+  fetchWorkPlanTbmNoticeStatus,
+  type WorkPlanNoticeStatus,
+} from '@/lib/workPlanTbmNotice';
 import AttachmentChecklist from '@/components/work-plan/AttachmentChecklist';
 import LegalCalculatorPanel from '@/components/work-plan/LegalCalculatorPanel';
 import { formatSectionContent } from '@/lib/formatSectionContent';
@@ -68,6 +72,8 @@ const WorkPlanDetail = () => {
   const [checklist, setChecklist] = useState<{ label: string; checked: boolean }[]>([]);
   const [latestApprovedRun, setLatestApprovedRun] = useState<LatestApprovedRun | null>(null);
   const [raSyncing, setRaSyncing] = useState(false);
+  const [tbmNotice, setTbmNotice] = useState<WorkPlanNoticeStatus | null>(null);
+  const [tbmNoticeLoading, setTbmNoticeLoading] = useState(false);
 
   useEffect(() => {
     if (planId) loadPlan();
@@ -111,9 +117,20 @@ const WorkPlanDetail = () => {
     }
     setLoading(false);
 
-    // 최신 승인완료 위험성평가 자동 조회
+    // 최신 승인완료 위험성평가 자동 조회 (연계 권장 · 결재 절대조건 아님)
     if (data.project_id) {
       fetchLatestApprovedRun(data.project_id).then(setLatestApprovedRun).catch(() => {});
+    }
+
+    // 승인 후 근로자 주지 = 연결 TBM 참석
+    if (['승인완료', '승인', '완료'].includes(data.status) && planId) {
+      setTbmNoticeLoading(true);
+      fetchWorkPlanTbmNoticeStatus(planId)
+        .then(setTbmNotice)
+        .catch(() => setTbmNotice(null))
+        .finally(() => setTbmNoticeLoading(false));
+    } else {
+      setTbmNotice(null);
     }
   };
 
@@ -518,9 +535,15 @@ const WorkPlanDetail = () => {
               const { data, error } = await supabase.rpc('derive_tbm_from_work_plan', { _work_plan_id: planId });
               if (error) { toast({ title: 'TBM 생성 실패', description: error.message, variant: 'destructive' }); return; }
               const d: any = data;
-              if (d?.tbm_id) { toast({ title: d.reused ? '기존 TBM으로 이동' : 'TBM 세션이 생성되었습니다.' }); navigate(`/app/admin/tbm-logs`); }
+              if (d?.tbm_id) {
+                toast({ title: d.reused ? '기존 TBM으로 이동' : 'TBM 세션이 생성되었습니다. 참석=근로자 주지' });
+                if (planId) {
+                  fetchWorkPlanTbmNoticeStatus(planId).then(setTbmNotice).catch(() => {});
+                }
+                navigate(`/app/admin/tbm-logs`);
+              }
             }}>
-              <ClipboardList className="h-3.5 w-3.5" /> TBM 자동생성
+              <ClipboardList className="h-3.5 w-3.5" /> TBM 자동생성(주지)
             </Button>
           </>
         )}
@@ -531,12 +554,55 @@ const WorkPlanDetail = () => {
         )}
       </div>
 
-      {/* 위험성평가 자동 연계 (최신 승인완료 회차) */}
+      {/* 근로자 주지 — TBM 참석 증빙 (안전기준규칙 제38조②) */}
+      {['승인완료', '승인', '완료'].includes(plan.status) && (
+        <Card className={tbmNotice?.notified ? 'border-emerald-500/40' : 'border-amber-500/50'}>
+          <CardContent className="p-3 flex items-center gap-3 flex-wrap">
+            <ClipboardList className={`h-4 w-4 ${tbmNotice?.notified ? 'text-emerald-600' : 'text-amber-600'}`} />
+            <div className="flex-1 min-w-[240px]">
+              <div className="text-sm font-semibold">근로자 주지 (TBM 참석)</div>
+              <div className="text-xs text-muted-foreground">
+                {tbmNoticeLoading
+                  ? '확인 중…'
+                  : (tbmNotice?.label || 'TBM 연계 상태를 확인할 수 없습니다.')}
+              </div>
+            </div>
+            {!tbmNotice?.tbmSessionId ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  const { data, error } = await supabase.rpc('derive_tbm_from_work_plan', { _work_plan_id: planId });
+                  if (error) {
+                    toast({ title: 'TBM 생성 실패', description: error.message, variant: 'destructive' });
+                    return;
+                  }
+                  const d: any = data;
+                  if (d?.tbm_id && planId) {
+                    const st = await fetchWorkPlanTbmNoticeStatus(planId);
+                    setTbmNotice(st);
+                    toast({ title: d.reused ? '기존 TBM이 있습니다' : 'TBM이 생성되었습니다' });
+                    navigate('/app/admin/tbm-logs');
+                  }
+                }}
+              >
+                TBM 만들어 주지하기
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" onClick={() => navigate('/app/admin/tbm-logs')}>
+                TBM 보기
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 위험성평가 연계 (권장 · 결재 절대조건 아님) */}
       <Card className="border-primary/40">
         <CardContent className="p-3 flex items-center gap-3 flex-wrap">
           <Shield className="h-4 w-4 text-primary" />
           <div className="flex-1 min-w-[240px]">
-            <div className="text-sm font-semibold">위험성평가 자동 연계</div>
+            <div className="text-sm font-semibold">위험성평가 연계 <span className="text-[10px] font-normal text-muted-foreground">(권장)</span></div>
             {latestApprovedRun ? (
               <div className="text-xs text-muted-foreground">
                 최신 승인완료 회차: <b>{latestApprovedRun.period_label}</b>
@@ -546,7 +612,7 @@ const WorkPlanDetail = () => {
               </div>
             ) : (
               <div className="text-xs text-muted-foreground">
-                프로젝트에 승인완료된 위험성평가 회차가 없습니다. 위험성평가 승인 후 이용하세요.
+                승인완료 회차가 없어도 결재는 가능합니다. 있으면 상위위험 항목을 불러올 수 있습니다.
               </div>
             )}
           </div>

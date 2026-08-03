@@ -9,10 +9,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText, Copy, ClipboardList, Search, CalendarDays, CheckCircle2 } from 'lucide-react';
+import { ExternalLink, Plus, QrCode, Printer, RefreshCw, Users, Trash2, Power, Pencil, FileText, Copy, ClipboardList, Search, CalendarDays, CheckCircle2, FileSignature, Sparkles } from 'lucide-react';
 import AssigneeSelect from '@/components/AssigneeSelect';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
+import { ensureTbmForPermit } from '@/lib/tbmFromPermit';
+import { useAuth } from '@/contexts/AuthContext';
 
 
 interface Props {
@@ -43,12 +45,16 @@ const BRIEFING_TEMPLATE = `■ 오늘 작업 설명:
 
 export default function TbmManager({ projectId, runId, defaultRisks = [] }: Props) {
   const access = useGlobalProjectAccessOptional();
+  const { profile } = useAuth();
   const { toast } = useToast();
   const { softDelete } = useSoftDelete();
   const [sessions, setSessions] = useState<TbmSession[]>([]);
   const [participantCounts, setParticipantCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [showPermitPick, setShowPermitPick] = useState(false);
+  const [permitCandidates, setPermitCandidates] = useState<any[]>([]);
+  const [permitPickBusy, setPermitPickBusy] = useState(false);
 
   const [editing, setEditing] = useState<TbmSession | null>(null);
   const [qrSession, setQrSession] = useState<TbmSession | null>(null);
@@ -476,10 +482,91 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h3 className="font-semibold flex items-center gap-2"><QrCode className="h-4 w-4" /> TBM 세션 (QR 근로자 참여)</h3>
-        <Button size="sm" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4 mr-1" />TBM 생성</Button>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={async () => {
+              const today = new Date().toISOString().slice(0, 10);
+              let q = supabase
+                .from('work_permits' as any)
+                .select('id, work_name, work_description, permit_date, location, tbm_session_id, status, contractor_company')
+                .eq('project_id', projectId)
+                .eq('is_deleted', false)
+                .is('tbm_session_id', null)
+                .gte('permit_date', today)
+                .order('permit_date', { ascending: true })
+                .limit(30);
+              if (access?.applyCompanyFilter) q = access.applyCompanyFilter(q);
+              const { data } = await q;
+              setPermitCandidates((data as any[]) || []);
+              setShowPermitPick(true);
+            }}
+          >
+            <FileSignature className="h-4 w-4 mr-1" />허가서에서
+          </Button>
+          <Button size="sm" onClick={() => setShowCreate(true)}><Plus className="h-4 w-4 mr-1" />TBM 생성</Button>
+        </div>
       </div>
+
+      <Dialog open={showPermitPick} onOpenChange={setShowPermitPick}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4" /> 허가서에서 당일 TBM 만들기
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            TBM이 아직 연결되지 않은 허가서입니다. 선택하면 작업내용·위험을 가져와 1:1 TBM을 만들고 AI 브리핑 초안을 채웁니다.
+          </p>
+          {permitCandidates.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-6 text-center">
+              연결 가능한 허가서가 없습니다. (오늘 이후 · TBM 미연결)
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {permitCandidates.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  disabled={permitPickBusy}
+                  className="w-full text-left border rounded-md p-3 hover:bg-muted/50 disabled:opacity-50"
+                  onClick={async () => {
+                    setPermitPickBusy(true);
+                    const res = await ensureTbmForPermit({
+                      permitId: p.id,
+                      projectId,
+                      leaderName: profile?.display_name || leader || '',
+                      companyId: companyId || access?.userCompanyId || null,
+                      useAiDraft: true,
+                    });
+                    setPermitPickBusy(false);
+                    if (!res.ok) {
+                      toast({ title: '생성 실패', description: res.error, variant: 'destructive' });
+                      return;
+                    }
+                    toast({
+                      title: res.reused ? '기존 TBM 연결' : 'TBM 생성 완료',
+                      description: 'AI 브리핑 초안이 있으면 반영되었습니다.',
+                    });
+                    setShowPermitPick(false);
+                    load();
+                  }}
+                >
+                  <div className="font-medium text-sm truncate">
+                    {p.work_name || p.work_description || '작업허가서'}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {p.permit_date} · {p.location || '-'} · {p.status}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* KPI summary */}
       {(() => {

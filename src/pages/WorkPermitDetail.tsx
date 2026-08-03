@@ -12,7 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock, Users } from 'lucide-react';
+import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock, Users, ClipboardList, UserCheck, Sparkles } from 'lucide-react';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
@@ -21,6 +21,8 @@ import PermitWorkersPrintPage, {
   type TbmParticipantPrint,
 } from '@/components/permits/PermitWorkersPrintPage';
 import type { PermitWorkerRow } from '@/lib/permitWorkers';
+import { canManagePermitCrew, ensureTbmForPermit } from '@/lib/tbmFromPermit';
+import { syncPermitCrewFromOnSite } from '@/lib/permitCrewSync';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import PermitKindSelector from '@/components/permits/PermitKindSelector';
@@ -87,8 +89,9 @@ export default function WorkPermitDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user } = useAuth();
-  const { userCompanyId } = useGlobalProjectAccess();
+  const { user, profile } = useAuth();
+  const { userCompanyId, userRole, isMaster } = useGlobalProjectAccess();
+  const canEditCrew = canManagePermitCrew(userRole, isMaster);
 
   const [permit, setPermit] = useState<any>(null);
   const [projectName, setProjectName] = useState('');
@@ -112,21 +115,32 @@ export default function WorkPermitDetail() {
   const [tbmTitle, setTbmTitle] = useState<string | null>(null);
   const [tbmParticipants, setTbmParticipants] = useState<TbmParticipantPrint[]>([]);
   const [workersDialogOpen, setWorkersDialogOpen] = useState(false);
+  const [tbmBusy, setTbmBusy] = useState(false);
+  const [crewBusy, setCrewBusy] = useState(false);
 
   const loadAssignedCrew = async (permitId: string, tbmSessionId?: string | null) => {
     const { data: links } = await supabase
       .from('work_permit_workers' as any)
-      .select('worker_id, workers(id, name, phone, company_name)')
+      .select('worker_id')
       .eq('work_permit_id', permitId);
-    const rows: PermitWorkerRow[] = ((links as any[]) || [])
-      .map((r) => r.workers)
-      .filter(Boolean)
-      .map((w: any) => ({
-        id: w.id,
-        name: w.name || '-',
-        phone: w.phone,
-        company_name: w.company_name,
-      }));
+    const ids = ((links as any[]) || []).map((r) => r.worker_id).filter(Boolean);
+    let rows: PermitWorkerRow[] = [];
+    if (ids.length > 0) {
+      const { data: ws } = await supabase
+        .from('workers')
+        .select('id, name, phone, company_name')
+        .in('id', ids);
+      const byId = new Map(((ws as any[]) || []).map((w) => [w.id, w]));
+      rows = ids
+        .map((id) => byId.get(id))
+        .filter(Boolean)
+        .map((w: any) => ({
+          id: w.id,
+          name: w.name || '-',
+          phone: w.phone,
+          company_name: w.company_name,
+        }));
+    }
     setAssignedWorkers(rows);
 
     if (tbmSessionId) {
@@ -568,13 +582,43 @@ export default function WorkPermitDetail() {
                 </Badge>
               )}
             </div>
-            <Button size="sm" variant="outline" onClick={() => setWorkersDialogOpen(true)}>
-              근로자 배정
-            </Button>
+            <div className="flex gap-2 flex-wrap">
+              <Button size="sm" variant="outline" onClick={() => setWorkersDialogOpen(true)}>
+                예상 인원 배정
+              </Button>
+              {canEditCrew && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={crewBusy}
+                  title="오늘 출근(미퇴근) 근로자로 명단을 갱신합니다"
+                  onClick={async () => {
+                    if (!permit) return;
+                    setCrewBusy(true);
+                    const res = await syncPermitCrewFromOnSite({
+                      permitId: permit.id,
+                      projectId: permit.project_id,
+                      formData: data as any,
+                    });
+                    setCrewBusy(false);
+                    if (!res.ok) {
+                      toast({ title: '출근자 반영 실패', description: res.error, variant: 'destructive' });
+                      return;
+                    }
+                    toast({ title: `실출근 ${res.count}명으로 명단 갱신` });
+                    setData((d) => ({ ...d, personnel_count: res.count }));
+                    await load();
+                  }}
+                >
+                  <UserCheck className="h-4 w-4 mr-1" />
+                  실출근으로 갱신
+                </Button>
+              )}
+            </div>
           </div>
           {assignedWorkers.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              배정된 근로자가 없습니다. 배정하면 작업인원에 반영되고, 인쇄 시 뒷장(을지)에 명단이 나갑니다.
+              전날: 예상 인원 배정 → 당일: 「실출근으로 갱신」으로 맞춥니다. 인쇄 뒷장(을지)에 명단이 나갑니다.
             </p>
           ) : (
             <ul className="text-xs grid sm:grid-cols-2 gap-1">
@@ -586,11 +630,68 @@ export default function WorkPermitDetail() {
               ))}
             </ul>
           )}
-          {permit?.tbm_session_id && (
-            <p className="text-[11px] text-muted-foreground">
-              연결된 TBM{tbmTitle ? `「${tbmTitle}」` : ''} 참여자 {tbmParticipants.length}명 — 인쇄 뒷장에 서명 포함
-            </p>
-          )}
+        </CardContent>
+      </Card>
+
+      <Card className="print:hidden" data-testid="permit-tbm-link">
+        <CardContent className="p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <ClipboardList className="h-4 w-4" />
+              당일 TBM
+              {permit?.tbm_session_id ? (
+                <Badge variant="secondary">연결됨</Badge>
+              ) : (
+                <Badge variant="outline">미연결</Badge>
+              )}
+            </div>
+            <div className="flex gap-2">
+              {permit?.tbm_session_id ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate('/app/admin/tbm-logs')}
+                >
+                  TBM 일지 열기
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  disabled={tbmBusy || !permit}
+                  onClick={async () => {
+                    if (!permit) return;
+                    setTbmBusy(true);
+                    const res = await ensureTbmForPermit({
+                      permitId: permit.id,
+                      projectId: permit.project_id,
+                      leaderName: profile?.display_name || '',
+                      companyId: permit.company_id || userCompanyId,
+                      useAiDraft: true,
+                    });
+                    setTbmBusy(false);
+                    if (!res.ok) {
+                      toast({ title: 'TBM 생성 실패', description: res.error, variant: 'destructive' });
+                      return;
+                    }
+                    toast({
+                      title: res.reused ? '기존 TBM에 연결됨' : '당일 TBM 생성 · AI 초안 반영',
+                      description: '브리핑 문장은 TBM 일지에서 수정할 수 있습니다.',
+                    });
+                    await load();
+                  }}
+                >
+                  <Sparkles className="h-4 w-4 mr-1" />
+                  {tbmBusy ? '생성 중…' : '당일 TBM 만들기'}
+                </Button>
+              )}
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            1허가서 = 1 TBM. 허가서 작업내용·위험요인을 가져와 일지를 만들고, AI는 브리핑 초안만 채웁니다.
+            {permit?.tbm_session_id && tbmTitle
+              ? ` 현재: 「${tbmTitle}」 · 참여자 ${tbmParticipants.length}명`
+              : ''}
+          </p>
         </CardContent>
       </Card>
 

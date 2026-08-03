@@ -1,191 +1,76 @@
-import { useEffect, useState } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+/**
+ * Legacy /worker/register?project=&company= → Auth 근로자 가입(QR 컨텍스트).
+ * 무계정 register_worker 경로는 사용하지 않음.
+ */
+import { useEffect, useMemo } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Loader2, HardHat, CheckCircle2 } from "lucide-react";
-import { toast } from "sonner";
-import RequiredEducationPanel from "@/components/worker/RequiredEducationPanel";
-import JobTypeSelect from "@/components/JobTypeSelect";
-import {
-  jobTypeSchema,
-  toLegalEducationJobType,
-  type StandardJobType,
-} from "@/lib/jobCategories";
-import { zodErrorMessage } from "@/lib/commonSchemas";
+import { HardHat, Download } from "lucide-react";
+import { openPlayStore, playStoreWebUrl } from "@/lib/playStore";
+import { isNativeApp } from "@/lib/native/isNativeApp";
 
 export default function WorkerRegister() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const projectId = params.get("project") || "";
-  const companyIdParam = params.get("company") || "";
-  const [projectName, setProjectName] = useState("");
-  const [companyName, setCompanyName] = useState("");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [company, setCompany] = useState("");
-  const [birthDate, setBirthDate] = useState("");
-  const [jobType, setJobType] = useState<StandardJobType | "">("");
-  const [hireDate, setHireDate] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [doneToken, setDoneToken] = useState<string | null>(null);
+  const companyId = params.get("company") || "";
+
+  const signupUrl = useMemo(() => {
+    if (!projectId || !companyId) return "";
+    const q = new URLSearchParams({
+      audience: "worker",
+      project: projectId,
+      company: companyId,
+    });
+    return `/register?${q.toString()}`;
+  }, [projectId, companyId]);
 
   useEffect(() => {
-    if (!projectId) return;
-    supabase.from("projects").select("name").eq("id", projectId).maybeSingle()
-      .then(({ data }) => setProjectName(data?.name || ""));
-    if (companyIdParam) {
-      supabase.from("companies").select("name").eq("id", companyIdParam).maybeSingle()
-        .then(({ data }) => setCompanyName(data?.name || ""));
+    if (signupUrl && isNativeApp()) {
+      navigate(signupUrl, { replace: true });
     }
-  }, [projectId, companyIdParam]);
+  }, [signupUrl, navigate]);
 
-  const submit = async () => {
-    if (!projectId) { toast.error("잘못된 링크입니다"); return; }
-    if (!name.trim() || phone.trim().length < 8) { toast.error("이름과 전화번호를 정확히 입력해주세요"); return; }
-    const jobParsed = jobTypeSchema.safeParse(jobType);
-    if (!jobParsed.success) {
-      toast.error(zodErrorMessage(jobParsed.error));
-      return;
-    }
-    const validatedJobType = jobParsed.data;
-    setSubmitting(true);
-    const { data, error } = await supabase.rpc("register_worker", {
-      _project_id: projectId,
-      _name: name.trim(),
-      _phone: phone.trim(),
-      _company_name: companyIdParam ? companyName : company.trim(),
-      _company_id: companyIdParam || null,
-    } as any);
-    setSubmitting(false);
-    if (error) { toast.error("등록 실패: " + error.message); return; }
-    const result = data as any;
-    if (result?.error) { toast.error("등록 실패: " + result.error); return; }
-    // 신규 정보(생년월일/직종/입사일) 동기화 → 트리거가 의무사항 자동 생성
-    if (result.worker_id && (birthDate || validatedJobType || hireDate)) {
-      await supabase.from("workers").update({
-        birth_date: birthDate || null,
-        job_type: validatedJobType,
-        hire_date: hireDate || new Date().toISOString().slice(0, 10),
-      }).eq("id", result.worker_id);
-    }
-    localStorage.setItem("workerToken", result.qr_token);
-    toast.success("등록 완료");
-    setDoneToken(result.qr_token);
-  };
-
-  const tryClose = () => {
-    window.close();
-    setTimeout(() => {
-      // If window.close() didn't work (most browsers block it), show guidance
-      toast.info("브라우저 탭을 직접 닫아주세요");
-    }, 300);
-  };
-
-  if (!projectId) {
-    return <div className="min-h-screen flex items-center justify-center text-muted-foreground">잘못된 링크입니다.</div>;
-  }
-
-  if (doneToken) {
+  if (!projectId || !companyId) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-8 pb-6 text-center space-y-4">
-            <div className="mx-auto h-16 w-16 rounded-full bg-success/10 flex items-center justify-center">
-              <CheckCircle2 className="h-10 w-10 text-success" />
-            </div>
-            <div className="text-2xl font-bold">등록 완료</div>
-            <div className="text-muted-foreground">
-              <strong>{name}</strong>님, 등록이 완료되었습니다.
-            </div>
-            <div className="text-sm text-muted-foreground bg-muted p-3 rounded">
-              현장 입장 시 본인 QR을 다시 스캔하거나<br />아래 버튼으로 입퇴장 페이지를 여세요.
-            </div>
-            <div className="space-y-2 pt-2">
-              <Button className="w-full h-14 text-lg" onClick={() => navigate(`/worker/portal/${doneToken}`)}>
-                입퇴장 페이지로 이동
-              </Button>
-              <Button variant="outline" className="w-full h-12" onClick={tryClose}>
-                창 닫기
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="min-h-dvh flex flex-col items-center justify-center p-6 gap-3 text-center native-safe-pad">
+        <HardHat className="h-10 w-10 text-muted-foreground" />
+        <h1 className="text-lg font-bold">등록 QR이 올바르지 않습니다</h1>
+        <p className="text-sm text-muted-foreground max-w-sm">
+          관리자가 소속사까지 지정한 등록 QR을 다시 스캔해 주세요.
+        </p>
+        <Button variant="outline" asChild>
+          <Link to="/login">로그인으로</Link>
+        </Button>
       </div>
     );
   }
 
-  const educationPreviewJobType = jobType ? toLegalEducationJobType(jobType) : "";
-
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
-              <HardHat className="h-6 w-6 text-primary-foreground" />
-            </div>
-            <div>
-              <CardTitle>근로자 등록</CardTitle>
-              <div className="text-sm text-muted-foreground">{projectName}</div>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {companyIdParam && companyName && (
-            <div className="bg-primary/10 border border-primary/30 rounded p-2 text-sm">
-              소속사: <strong>{companyName}</strong> <span className="text-muted-foreground">(자동 지정)</span>
-            </div>
-          )}
-          <div>
-            <Label className="text-base">이름 *</Label>
-            <Input className="h-12 text-lg" value={name} onChange={e => setName(e.target.value)} placeholder="홍길동" />
-          </div>
-          <div>
-            <Label className="text-base">전화번호 *</Label>
-            <Input className="h-12 text-lg" value={phone} onChange={e => setPhone(e.target.value)} placeholder="010-1234-5678" inputMode="tel" />
-          </div>
-          {!companyIdParam && (
-            <div>
-              <Label className="text-base">소속사</Label>
-              <Input className="h-12 text-lg" value={company} onChange={e => setCompany(e.target.value)} placeholder="(주)○○건설" />
-            </div>
-          )}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-base">생년월일</Label>
-              <Input type="date" className="h-12 text-base" value={birthDate} onChange={e => setBirthDate(e.target.value)} />
-              <div className="text-[11px] text-muted-foreground mt-1">만 65세 이상 시 일일 건강일지 대상</div>
-            </div>
-            <div>
-              <Label className="text-base">입사일</Label>
-              <Input type="date" className="h-12 text-base" value={hireDate} onChange={e => setHireDate(e.target.value)} />
-            </div>
-          </div>
-          <div>
-            <Label className="text-base">직종 *</Label>
-            <JobTypeSelect
-              value={jobType}
-              onValueChange={setJobType}
-              placeholder="표준 직종 선택"
-              triggerClassName="h-12 text-base"
-            />
-            <div className="text-[11px] text-muted-foreground mt-1">
-              플랜트/건설 표준 직종만 선택 가능합니다. 주관식·기타 입력은 불가합니다.
-            </div>
-          </div>
-
-          {projectId && educationPreviewJobType && (
-            <RequiredEducationPanel mode="preview" projectId={projectId} jobType={educationPreviewJobType} />
-          )}
-
-          <Button className="w-full h-14 text-lg" onClick={submit} disabled={submitting}>
-            {submitting && <Loader2 className="h-5 w-5 mr-2 animate-spin" />}등록하기
-          </Button>
-        </CardContent>
-      </Card>
+    <div className="min-h-dvh flex flex-col items-center justify-center p-6 gap-4 text-center native-safe-pad max-w-md mx-auto">
+      <HardHat className="h-10 w-10 text-primary" />
+      <h1 className="text-xl font-bold">SafeNex 근로자 등록</h1>
+      <p className="text-sm text-muted-foreground leading-relaxed">
+        계정 가입이 필요합니다. 앱이 있으면 앱에서, 없으면 Play 스토어에서 설치한 뒤
+        같은 QR로 가입하거나 아래 버튼으로 웹 가입을 진행하세요.
+      </p>
+      {!isNativeApp() && (
+        <Button className="w-full h-12" variant="secondary" onClick={() => openPlayStore()}>
+          <Download className="h-4 w-4 mr-2" />
+          앱 다운로드 (Play 스토어)
+        </Button>
+      )}
+      <Button className="w-full h-12" asChild>
+        <Link to={signupUrl}>전화번호로 가입 계속</Link>
+      </Button>
+      <a
+        href={playStoreWebUrl()}
+        className="text-xs text-muted-foreground underline"
+        target="_blank"
+        rel="noreferrer"
+      >
+        {playStoreWebUrl()}
+      </a>
     </div>
   );
 }

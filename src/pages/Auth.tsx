@@ -27,6 +27,7 @@ import {
 } from '@/lib/workerAuth';
 import { writeLoginIntent } from '@/components/AuthGuard';
 import { isNativeApp } from '@/lib/native/isNativeApp';
+import { openPlayStore, playStoreWebUrl } from '@/lib/playStore';
 
 type Mode = 'login' | 'signup';
 type Audience = 'worker' | 'manager';
@@ -66,11 +67,22 @@ const Auth = () => {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const inviteParam = searchParams.get('invite') || '';
+  const qrProject = searchParams.get('project') || '';
+  const qrCompany = searchParams.get('company') || '';
+  const qrAudience = searchParams.get('audience') || '';
+  /** 현장 등록 QR — 프로젝트·회사 고정 */
+  const workerQrContext = !!(qrProject && qrCompany && (qrAudience === 'worker' || location.pathname === '/register'));
 
-  const [mode, setMode] = useState<Mode>(() => modeFromPath(location.pathname, !!inviteParam));
-  const [signupAudience, setSignupAudience] = useState<Audience>('manager');
+  const [mode, setMode] = useState<Mode>(() =>
+    workerQrContext || modeFromPath(location.pathname, !!inviteParam) === 'signup'
+      ? 'signup'
+      : modeFromPath(location.pathname, !!inviteParam),
+  );
+  const [signupAudience, setSignupAudience] = useState<Audience>(() =>
+    workerQrContext || isNativeApp() ? 'worker' : 'manager',
+  );
   const [loginAudience, setLoginAudience] = useState<Audience>(() =>
-    isNativeApp() ? 'worker' : 'manager',
+    isNativeApp() || workerQrContext ? 'worker' : 'manager',
   );
   const [signupMethod, setSignupMethod] = useState<SignupMethod>('directory');
 
@@ -86,15 +98,37 @@ const Auth = () => {
 
   const [directory, setDirectory] = useState<DirectoryRow[]>([]);
   const [signupProjects, setSignupProjects] = useState<{ id: string; name: string }[]>([]);
-  const [selectedProject, setSelectedProject] = useState('');
-  const [selectedCompany, setSelectedCompany] = useState('');
+  const [selectedProject, setSelectedProject] = useState(qrProject);
+  const [selectedCompany, setSelectedCompany] = useState(qrCompany);
   const [selectedPosition, setSelectedPosition] = useState('');
   const [selectedJobType, setSelectedJobType] = useState<StandardJobType | ''>('');
+  const [qrProjectName, setQrProjectName] = useState('');
+  const [qrCompanyName, setQrCompanyName] = useState('');
   const { toast } = useToast();
 
   useEffect(() => {
+    if (workerQrContext) {
+      setMode('signup');
+      setSignupAudience('worker');
+      setSignupMethod('directory');
+      setSelectedProject(qrProject);
+      setSelectedCompany(qrCompany);
+      return;
+    }
     setMode(modeFromPath(location.pathname, !!searchParams.get('invite')));
-  }, [location.pathname, searchParams]);
+  }, [location.pathname, searchParams, workerQrContext, qrProject, qrCompany]);
+
+  useEffect(() => {
+    if (!workerQrContext) return;
+    (async () => {
+      const [{ data: p }, { data: c }] = await Promise.all([
+        supabase.from('projects').select('name').eq('id', qrProject).maybeSingle(),
+        supabase.from('companies').select('name').eq('id', qrCompany).maybeSingle(),
+      ]);
+      setQrProjectName((p as any)?.name || '');
+      setQrCompanyName((c as any)?.name || '');
+    })();
+  }, [workerQrContext, qrProject, qrCompany]);
 
   useEffect(() => {
     if (searchParams.get('invite')) {
@@ -256,7 +290,20 @@ const Auth = () => {
       return;
     }
     if (!selectedProject || !selectedCompany) {
-      toast({ title: '참여 프로젝트와 소속(협력사)을 선택해주세요.', variant: 'destructive' });
+      toast({
+        title: workerQrContext
+          ? '등록 QR의 프로젝트·소속사 정보가 없습니다. QR을 다시 스캔해 주세요.'
+          : '참여 프로젝트와 소속(협력사)을 선택해주세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!workerQrContext) {
+      toast({
+        title: '현장 등록 QR 필요',
+        description: '프로젝트·소속사는 관리자가 제공한 등록 QR로만 지정됩니다. QR을 스캔해 가입해 주세요.',
+        variant: 'destructive',
+      });
       return;
     }
     if (!jobParsed.success) {
@@ -294,20 +341,29 @@ const Auth = () => {
       }
 
       if (signUpData.user) {
-        const { error: rpcErr } = await (supabase as any).rpc('process_signup_company_selection', {
-          _user_id: signUpData.user.id,
-          _project_id: selectedProject,
-          _company_id: selectedCompany,
-          _position: 'WORKER',
-        });
-        if (rpcErr) {
-          toast({ title: '업체 연결 실패', description: rpcErr.message, variant: 'destructive' });
+        const { data: rosterRes, error: rpcErr } = await (supabase as any).rpc(
+          'complete_worker_roster_signup',
+          {
+            _user_id: signUpData.user.id,
+            _project_id: selectedProject,
+            _company_id: selectedCompany,
+            _name: nameParsed.data,
+            _phone: digits,
+            _job_type: jobParsed.data,
+          },
+        );
+        if (rpcErr || rosterRes?.error) {
+          toast({
+            title: '명부 등록 실패',
+            description: rpcErr?.message || rosterRes?.error || '다시 시도해 주세요',
+            variant: 'destructive',
+          });
         }
       }
 
       toast({
         title: '근로자 가입 완료',
-        description: '전화번호와 PIN으로 로그인하세요. 관리자 승인 후 이용 가능합니다.',
+        description: '등록대기 상태입니다. 관리자 승인 후 전화번호·PIN으로 로그인하세요.',
       });
       setMode('login');
       setLoginAudience('worker');
@@ -496,6 +552,37 @@ const Auth = () => {
             {/* ── 근로자 가입 ── */}
             {mode === 'signup' && signupAudience === 'worker' && (
               <>
+                {workerQrContext ? (
+                  <div className="rounded-lg border bg-muted/40 p-3 space-y-1 text-sm">
+                    <p className="font-medium text-foreground">현장 등록 QR</p>
+                    <p className="text-muted-foreground">
+                      프로젝트: <span className="text-foreground font-medium">{qrProjectName || '…'}</span>
+                    </p>
+                    <p className="text-muted-foreground">
+                      소속사: <span className="text-foreground font-medium">{qrCompanyName || '…'}</span>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground pt-1">
+                      프로젝트·소속사는 QR로 고정됩니다. 잘못됐으면 관리자에게 새 QR을 요청하세요.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-2">
+                    <p className="font-medium">현장 등록 QR이 필요합니다</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      프로젝트와 소속사는 관리자가 만든 등록 QR로만 지정됩니다. QR을 스캔한 뒤 가입해 주세요.
+                    </p>
+                  </div>
+                )}
+                {!isNativeApp() && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full h-11"
+                    onClick={() => openPlayStore()}
+                  >
+                    SafeNex 앱 다운로드 (Play 스토어)
+                  </Button>
+                )}
                 <div className="space-y-1.5">
                   <Label>이름 *</Label>
                   <Input
@@ -505,6 +592,7 @@ const Auth = () => {
                     placeholder="홍길동"
                     autoComplete="name"
                     required
+                    disabled={!workerQrContext}
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -517,48 +605,9 @@ const Auth = () => {
                     inputMode="numeric"
                     autoComplete="tel"
                     required
+                    disabled={!workerQrContext}
                   />
                   <p className="text-[10px] text-muted-foreground">숫자만 입력하면 자동으로 하이픈이 붙습니다.</p>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>참여 프로젝트 *</Label>
-                  <Select
-                    value={selectedProject}
-                    onValueChange={(v) => {
-                      setSelectedProject(v);
-                      resetCompanySelection();
-                    }}
-                  >
-                    <SelectTrigger className="h-12"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
-                    <SelectContent>
-                      {projectOptions.length === 0 && (
-                        <div className="p-2 text-xs text-muted-foreground">등록된 활성 프로젝트가 없습니다.</div>
-                      )}
-                      {projectOptions.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>소속(협력사) *</Label>
-                  <Select
-                    value={selectedCompany}
-                    onValueChange={setSelectedCompany}
-                    disabled={!selectedProject}
-                  >
-                    <SelectTrigger className="h-12">
-                      <SelectValue placeholder={selectedProject ? '협력사 선택' : '프로젝트를 먼저 선택'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {companyOptions.length === 0 && selectedProject && (
-                        <div className="p-2 text-xs text-muted-foreground">이 프로젝트에 등록된 업체가 없습니다.</div>
-                      )}
-                      {companyOptions.map((c) => (
-                        <SelectItem key={c.company_id} value={c.company_id}>{c.company_name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label>직종 *</Label>
@@ -566,7 +615,7 @@ const Auth = () => {
                     value={selectedJobType}
                     onValueChange={setSelectedJobType}
                     placeholder="표준 직종 선택"
-                    disabled={!selectedCompany}
+                    disabled={!workerQrContext}
                     triggerClassName="h-12 text-base"
                   />
                 </div>
@@ -583,6 +632,7 @@ const Auth = () => {
                     placeholder="••••"
                     autoComplete="new-password"
                     required
+                    disabled={!workerQrContext}
                   />
                 </div>
               </>

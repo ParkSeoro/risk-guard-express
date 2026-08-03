@@ -164,19 +164,24 @@ SafeNex는 산업안전보건 현장 운영을 위한 통합 앱입니다.
 |------|------|
 | Capacitor `appId` | `org.safenex.app` ✅ |
 | Android AAB GitHub Actions | `.github/workflows/android-aab.yml` ✅ |
+| 서명 AAB 아티팩트 | [run 30786779135](https://github.com/ParkSeoro/risk-guard-express/actions/runs/30786779135) `safenex-1.0.0-450.aab` ✅ (최신 main) |
 | OTA (Capgo + Supabase) | 코드·관리 UI ✅ |
 | 개인정보처리방침 페이지 | `/privacy` ✅ |
-| 스토어 아이콘 512 PNG | 수정 완료 (기존 파일은 JPEG 확장자였음) ✅ |
+| 스토어 아이콘 512 PNG | `public/icon-512.png` ✅ |
 | 피처 그래픽 1024×500 | `docs/store-assets/` ✅ |
-| `package.json` version | `1.0.0`으로 맞춤 |
-| GitHub Secrets | **당신 등록 필요** ⏳ |
-| Play 개발자 계정 | **당신 등록 필요** ⏳ |
+| `package.json` version | `1.0.0` |
+| Play 앱 만들기 | **완료** (`Safenex` / `org.safenex.app`) ✅ |
+| GitHub Secrets | 과거 AAB 성공 → 등록된 것으로 보임 (재빌드 실패 시 재확인) |
+| 콘솔 ★ 정책·스토어 등록정보 | **당신** — [`play-console-fill.md`](./play-console-fill.md) |
 | 폰 스크린샷 | **당신 캡처 필요** ⏳ |
+| 내부 테스트 AAB 업로드 | **당신** ⏳ |
+
+콘솔 복붙 답안·업로드 순서: **[`play-console-fill.md`](./play-console-fill.md)**
 
 ---
 
 ## 다음에 채팅에 적어주시면 좋은 것
 
-1. `Secrets 등록 완료` → 에이전트가 AAB 워크플로 실행/실패 로그 확인  
-2. Play Console 앱 생성 완료 / 에러 메시지 캡처 → 설문·데이터 보안 문구 도와줌  
-3. 내부 테스트 참여 URL 나옴 → OTA 운영 순서 이어서 안내  
+1. ★ 정책/데이터 보안에서 막힌 화면 캡처 → 답 골라줌  
+2. 내부 테스트 **출시 시작** 완료 / 참여 URL → OTA 운영 이어서  
+3. AAB 재빌드 필요 + `Secrets 등록 완료` → 워크플로 실패 로그 분석  

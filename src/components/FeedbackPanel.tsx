@@ -10,7 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Camera, CheckCircle2, Clock, AlertTriangle, Image as ImageIcon } from 'lucide-react';
+import { Plus, Camera, CheckCircle2, Clock, AlertTriangle, Image as ImageIcon, Send } from 'lucide-react';
+import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 
 interface FeedbackItem {
   id: string;
@@ -51,6 +52,10 @@ interface FeedbackPanelProps {
   projectMembers: ProjectMember[];
   /** Previous run's unresolved feedback to display */
   previousFeedback?: FeedbackItem[];
+  /** assessment_runs.feedback_status */
+  feedbackStatus?: string | null;
+  submitterCompanyId?: string | null;
+  onFeedbackStatusChange?: (status: string) => void;
 }
 
 const FEEDBACK_TYPES = ['보완', '지적', '개선'] as const;
@@ -63,7 +68,17 @@ function getFeedbackTargetItems(riskItems: RiskItemBasic[], manualIds: Set<strin
   );
 }
 
-export default function FeedbackPanel({ runId, projectId, isApproved, riskItems, projectMembers, previousFeedback }: FeedbackPanelProps) {
+export default function FeedbackPanel({
+  runId,
+  projectId,
+  isApproved,
+  riskItems,
+  projectMembers,
+  previousFeedback,
+  feedbackStatus = 'none',
+  submitterCompanyId,
+  onFeedbackStatusChange,
+}: FeedbackPanelProps) {
   const { user, profile } = useAuth();
   const { toast } = useToast();
 
@@ -72,6 +87,16 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
   const [showAdd, setShowAdd] = useState(false);
   const [manualFeedbackTargets, setManualFeedbackTargets] = useState<Set<string>>(new Set());
   const [showTargetSelection, setShowTargetSelection] = useState(false);
+  const [showFeedbackApproval, setShowFeedbackApproval] = useState(false);
+
+  const highRemainItems = riskItems.filter((i) => i.improved_risk_grade === '상');
+  const coveredHighIds = new Set(
+    feedbackList.map((f) => f.risk_item_id).filter(Boolean) as string[],
+  );
+  const missingHighCount = highRemainItems.filter((i) => !coveredHighIds.has(i.id)).length;
+  const feedbackClosed = feedbackStatus === 'closed' || feedbackStatus === 'approved';
+  const feedbackPending = feedbackStatus === 'pending_approval';
+  const canEditFeedback = isApproved && !feedbackClosed && !feedbackPending;
 
   // Form state
   const [formRiskItemId, setFormRiskItemId] = useState('');
@@ -300,10 +325,14 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">피드백(조치관리) · {feedbackList.length}건</h3>
-        <div className="flex gap-2">
-          {isApproved && (
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          피드백(조치관리) · {feedbackList.length}건
+          {feedbackPending && <Badge variant="outline" className="text-[10px]">결재진행</Badge>}
+          {feedbackClosed && <Badge className="text-[10px] bg-success/10 text-success border-success/30" variant="outline">조치 결재완료</Badge>}
+        </h3>
+        <div className="flex gap-2 flex-wrap">
+          {canEditFeedback && (
             <>
               <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setShowTargetSelection(!showTargetSelection)}>
                 피드백 대상 선택
@@ -311,14 +340,64 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
               <Button size="sm" className="gap-1.5" onClick={() => { resetForm(); setEditingId(null); setShowAdd(true); }}>
                 <Plus className="h-3.5 w-3.5" /> 피드백 등록
               </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="gap-1.5 text-xs"
+                onClick={() => {
+                  if (missingHighCount > 0) {
+                    toast({
+                      title: `개선후 상 ${missingHighCount}건에 피드백이 없습니다.`,
+                      description: '권장: 대상 항목을 등록한 뒤 상신하세요. (상신은 가능)',
+                    });
+                  }
+                  void supabase
+                    .from('assessment_runs')
+                    .update({ feedback_status: 'in_progress' } as any)
+                    .eq('id', runId)
+                    .then(() => onFeedbackStatusChange?.('in_progress'));
+                  setShowFeedbackApproval(true);
+                }}
+              >
+                <Send className="h-3.5 w-3.5" /> 피드백 결재 상신
+              </Button>
             </>
+          )}
+          {isApproved && feedbackPending && (
+            <p className="text-xs text-muted-foreground">피드백 조치 결재가 진행 중입니다.</p>
+          )}
+          {isApproved && feedbackClosed && (
+            <p className="text-xs text-muted-foreground">피드백 조치 결재가 완료되어 수정할 수 없습니다.</p>
           )}
           {!isApproved && (
             <p className="text-xs text-muted-foreground">승인 완료된 회차만 피드백(조치관리)이 가능합니다.</p>
           )}
         </div>
       </div>
-      <p className="text-[10px] text-muted-foreground">※ 개선 후 위험도 '상'(관리대상) 항목은 자동 선택됩니다. 추가 항목은 [피드백 대상 선택]에서 수동 지정할 수 있습니다.</p>
+      <p className="text-[10px] text-muted-foreground">
+        ※ 개선 후 위험도 &apos;상&apos;(관리대상) 항목은 자동 대상입니다.
+        {highRemainItems.length > 0 && ` 현재 상 ${highRemainItems.length}건 · 미등록 ${missingHighCount}건.`}
+        {' '}평가 승인 후 피드백을 작성하고 별도 결재로 마무리합니다.
+      </p>
+
+      <SubmitApprovalDialog
+        open={showFeedbackApproval}
+        onOpenChange={setShowFeedbackApproval}
+        entityType="assessment_run_feedback"
+        entityId={runId}
+        projectId={projectId}
+        submitterCompanyId={submitterCompanyId || null}
+        title="피드백(조치) 결재 상신"
+        onSubmitted={async () => {
+          await supabase
+            .from('assessment_runs')
+            .update({ feedback_status: 'pending_approval' } as any)
+            .eq('id', runId);
+          onFeedbackStatusChange?.('pending_approval');
+          setShowFeedbackApproval(false);
+          toast({ title: '피드백 결재를 상신했습니다.' });
+        }}
+      />
 
       {/* Manual feedback target selection */}
       {showTargetSelection && (
@@ -366,7 +445,7 @@ export default function FeedbackPanel({ runId, projectId, isApproved, riskItems,
       ) : (
         <div className="space-y-2">
           {feedbackList.map(fb => (
-            <Card key={fb.id} className="hover:shadow-sm transition-shadow cursor-pointer" onClick={() => isApproved && openEdit(fb)}>
+            <Card key={fb.id} className={`hover:shadow-sm transition-shadow ${canEditFeedback ? 'cursor-pointer' : ''}`} onClick={() => canEditFeedback && openEdit(fb)}>
               <CardContent className="py-3 space-y-1.5">
                 <div className="flex items-center gap-2 flex-wrap">
                   {statusIcon(fb.status)}

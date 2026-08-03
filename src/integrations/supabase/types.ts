@@ -958,6 +958,7 @@ export type Database = {
           deleted_by: string | null
           deleted_reason: string | null
           end_date: string | null
+          feedback_status: string
           health_required: boolean
           id: string
           is_deleted: boolean
@@ -984,6 +985,7 @@ export type Database = {
           deleted_by?: string | null
           deleted_reason?: string | null
           end_date?: string | null
+          feedback_status?: string
           health_required?: boolean
           id?: string
           is_deleted?: boolean
@@ -1010,6 +1012,7 @@ export type Database = {
           deleted_by?: string | null
           deleted_reason?: string | null
           end_date?: string | null
+          feedback_status?: string
           health_required?: boolean
           id?: string
           is_deleted?: boolean

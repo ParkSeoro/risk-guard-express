@@ -12,6 +12,7 @@ import { normalizeCompanyType, type CompanyTypeCode } from '@/lib/companyTypes';
 
 export type ApprovalEntityType =
   | 'assessment_run'
+  | 'assessment_run_feedback'
   | 'work_plan'
   | 'work_permit'
   | 'safety_cost'
@@ -21,6 +22,7 @@ export type ApprovalEntityType =
 
 export const ENTITY_LABELS: Record<ApprovalEntityType, string> = {
   assessment_run: '위험성평가',
+  assessment_run_feedback: '위험성평가 피드백(조치)',
   work_plan: '작업계획서',
   work_permit: '작업허가서',
   safety_cost: '산업안전보건관리비',
@@ -122,6 +124,7 @@ export const DEFAULT_STEPS_BY_ENTITY: Record<ApprovalEntityType, DefaultStep[]> 
   work_permit: WORK_PERMIT_APPROVAL_STEPS,
   work_plan: FIXED_APPROVAL_STEPS,
   assessment_run: FIXED_APPROVAL_STEPS,
+  assessment_run_feedback: FIXED_APPROVAL_STEPS,
   safety_cost: FIXED_APPROVAL_STEPS,
   incident: FIXED_APPROVAL_STEPS,
   emergency_drill: FIXED_APPROVAL_STEPS,

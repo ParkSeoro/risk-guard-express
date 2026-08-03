@@ -40,6 +40,7 @@ const ENTITY_LINK = (t?: string | null, id?: string | null): string | null => {
   if (!t || !id) return null;
   switch (t) {
     case 'assessment_run': return `/assessment-run/${id}`;
+    case 'assessment_run_feedback': return `/assessment-run/${id}?tab=feedback`;
     case 'work_plan': return `/work-plan/${id}`;
     case 'work_permit': return `/work-permits/${id}`;
     case 'safety_cost': return `/safety-cost`;

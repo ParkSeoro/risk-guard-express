@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuditLog } from '@/hooks/useAuditLog';
@@ -58,6 +58,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import FeedbackPanel from '@/components/FeedbackPanel';
 import ApprovalLineManager, { type ApprovalLine } from '@/components/ApprovalLineManager';
 import WorkerParticipationPanel from '@/components/assessment/WorkerParticipationPanel';
+import { evaluateResidualHigh } from '@/lib/residualRiskGuardrails';
 import * as XLSX from 'xlsx';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 
@@ -80,8 +81,9 @@ const STATUS_FLOW = {
 const AssessmentRunDetail = () => {
   const { runId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, profile, isAdmin, roles } = useAuth();
-  const { userRole, userCompanyId, isMaster } = useGlobalProjectAccess();
+  const { userRole, userCompanyId, isMaster, accessibleCompanyIds } = useGlobalProjectAccess();
   const isMobile = useIsMobile();
   const { log } = useAuditLog();
   const { toast } = useToast();
@@ -178,7 +180,13 @@ const AssessmentRunDetail = () => {
   const [showBatchApply, setShowBatchApply] = useState(false);
   
   // Feedback / Active tab
-  const [activeMainTab, setActiveMainTab] = useState<'assessment' | 'feedback'>('assessment');
+  const [activeMainTab, setActiveMainTab] = useState<'assessment' | 'feedback'>(() =>
+    searchParams.get('tab') === 'feedback' ? 'feedback' : 'assessment',
+  );
+
+  useEffect(() => {
+    if (searchParams.get('tab') === 'feedback') setActiveMainTab('feedback');
+  }, [searchParams]);
   const [previousFeedback, setPreviousFeedback] = useState<any[]>([]);
   const [batchDeptId, setBatchDeptId] = useState('');
   const [batchAssigneeUserId, setBatchAssigneeUserId] = useState('');
@@ -950,6 +958,8 @@ const AssessmentRunDetail = () => {
         workLocation: autoGenWorkLocation,
         conditionText: autoGenConditionText,
         sortStart: items.length,
+        accessibleCompanyIds: accessibleCompanyIds ?? null,
+        preferCompanyIds: run.target_company_ids || (userCompanyId ? [userCompanyId] : null),
       });
 
       if (!started) {
@@ -968,8 +978,8 @@ const AssessmentRunDetail = () => {
       toast({
         title: '위험성평가 초안 생성을 시작했습니다.',
         description: autoGenUseAI
-          ? '① 공종·세부작업·위험요인 초안 → 검수 → ② [나머지 채우기](대책·등급·법적근거). 사고사례는 별도 버튼.'
-          : '라이브러리 전용 모드로 등록합니다. (generate-risk-ai 호출 없음)',
+          ? '이전 승인 평가를 먼저 반영하고, 부족분만 AI 초안 → 검수 → [나머지 채우기].'
+          : '표준 라이브러리 전용으로 등록합니다.',
       });
     } catch (err: any) {
       const msg = err?.message || String(err);
@@ -1982,6 +1992,9 @@ const AssessmentRunDetail = () => {
           <p className="text-sm text-muted-foreground mt-1">
             상 {stats.high} · 중 {stats.med} · 하 {stats.low}
             {stats.highRemain > 0 && <span className="text-destructive ml-2">· 개선후 상 잔존 {stats.highRemain}</span>}
+            {stats.highRemain === 0 && stats.total >= 10 && (
+              <span className="text-amber-600 ml-2">· 개선후 상 0건 (확인 권장)</span>
+            )}
             {stats.excluded > 0 && <span className="text-muted-foreground ml-2">· 제외 {stats.excluded}</span>}
           </p>
         </div>
@@ -2492,6 +2505,11 @@ const AssessmentRunDetail = () => {
             riskItems={activeItems.map(i => ({ id: i.id, process: i.process, sub_task: i.sub_task, hazard: i.hazard, risk_grade: i.risk_grade, improved_risk_grade: i.improved_risk_grade }))}
             projectMembers={projectMembers}
             previousFeedback={previousFeedback}
+            feedbackStatus={(run as any).feedback_status || 'none'}
+            submitterCompanyId={userCompanyId}
+            onFeedbackStatusChange={(status) => {
+              setRun((prev: any) => (prev ? { ...prev, feedback_status: status } : prev));
+            }}
           />
         </TabsContent>
       </Tabs>
@@ -2528,9 +2546,14 @@ const AssessmentRunDetail = () => {
             <div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2">
               <Switch checked={autoGenUseAI} onCheckedChange={setAutoGenUseAI} />
               <Label className="text-xs font-medium">
-                {autoGenUseAI ? 'AI 하이브리드 (라이브러리 + AI)' : '라이브러리 전용'}
+                {autoGenUseAI ? '이전 평가 재사용 + 부족분 AI' : '표준 라이브러리 전용'}
               </Label>
             </div>
+            {autoGenUseAI && (
+              <p className="text-[10px] text-muted-foreground -mt-1 px-1 leading-snug">
+                회사·프로젝트에서 승인된 같은 공종 항목을 먼저 가져오고, 부족한 세부작업만 AI로 보완합니다.
+              </p>
+            )}
 
             <div className="rounded-lg border bg-card p-3 space-y-2">
               <Label className="text-xs font-semibold">공종명 <span className="font-normal text-muted-foreground">(다중 · 쉼표/Enter)</span></Label>
@@ -2616,7 +2639,7 @@ const AssessmentRunDetail = () => {
                   onClick={() => setAutoGenDetailLevel('comprehensive')}>JSA 상세 (세분화)</Button>
               </div>
               <p className="text-[10px] text-muted-foreground leading-snug">
-                ① 공종에 맞게 세부작업·위험요인 초안(개수 고정 없음) → 검수(삭제·추가) → ② [나머지 채우기](상황·대책 → 등급·법규) · 사고사례는 별도 버튼
+                ① 이전 승인 평가 재사용 → 부족분 AI 초안 → 검수 → ② [나머지 채우기] · 사고사례는 별도 버튼
               </p>
             </div>
 
@@ -2845,6 +2868,32 @@ const AssessmentRunDetail = () => {
                 <p>검증이 아직 실행되지 않았습니다. 검증 없이 결재를 진행합니다.</p>
               </div>
             )}
+            {(() => {
+              const residual = evaluateResidualHigh({
+                total: stats.total,
+                highInitial: stats.high,
+                highRemain: stats.highRemain,
+              });
+              if (residual.level === 'ok' && !residual.message) return null;
+              return (
+                <div
+                  className={`p-2 rounded text-sm flex items-start gap-2 ${
+                    residual.level === 'ok'
+                      ? 'bg-muted text-muted-foreground'
+                      : 'bg-warning/10 text-warning'
+                  }`}
+                >
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-medium">개선후 위험도 「상」 가드레일 (참고)</p>
+                    <p className="text-xs mt-0.5 opacity-90">{residual.message}</p>
+                    {residual.level !== 'ok' && (
+                      <p className="text-xs mt-1 opacity-70">상신은 가능합니다. 확인 후 진행하세요.</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
             {/* Approval Line Manager — inline */}
             <ApprovalLineManager
               projectId={run.project_id}

@@ -29,6 +29,7 @@
 적용:
 - [`supabase-apply-daily-acks.md`](./supabase-apply-daily-acks.md)
 - [`supabase-apply-permit-tbm-link.md`](./supabase-apply-permit-tbm-link.md)
+- 피드백 결재: [`supabase-apply-feedback-approval.md`](./supabase-apply-feedback-approval.md)
 
 ## TBM 일지 작성만 허가서 연동
 

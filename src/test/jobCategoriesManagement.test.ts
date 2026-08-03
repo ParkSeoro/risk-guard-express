@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isManagementJobType, MANAGEMENT_JOB_TYPES } from "@/lib/jobCategories";
+import {
+  isManagementJobType,
+  isRosterManagementRow,
+  MANAGEMENT_JOB_TYPES,
+} from "@/lib/jobCategories";
 
 describe("isManagementJobType", () => {
   it("flags 안전관리자 and 관리감독자", () => {
@@ -14,5 +18,13 @@ describe("isManagementJobType", () => {
     expect(isManagementJobType("화재감시자")).toBe(false);
     expect(isManagementJobType(null)).toBe(false);
     expect(isManagementJobType("")).toBe(false);
+  });
+});
+
+describe("isRosterManagementRow", () => {
+  it("is true for management job type or admin permission", () => {
+    expect(isRosterManagementRow({ jobType: "전기공", hasAdminPermission: true })).toBe(true);
+    expect(isRosterManagementRow({ jobType: "안전관리자", hasAdminPermission: false })).toBe(true);
+    expect(isRosterManagementRow({ jobType: "전기공", hasAdminPermission: false })).toBe(false);
   });
 });

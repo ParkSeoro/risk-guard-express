@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAuditLog } from '@/hooks/useAuditLog';
@@ -21,9 +21,13 @@ const statusLabel: Record<string, string> = {
 
 const SettingsAccount = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, profile, roles, refreshProfile, hasRole } = useAuth();
   const { log } = useAuditLog();
   const { toast } = useToast();
+  const backTo = location.pathname.startsWith('/app/worker')
+    ? '/app/worker/more'
+    : '/settings';
 
   const [form, setForm] = useState({
     display_name: '',
@@ -154,13 +158,15 @@ const SettingsAccount = () => {
   return (
     <div className="space-y-4 animate-fade-in max-w-lg">
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/settings')}>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(backTo)}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <div className="flex items-center gap-2 text-muted-foreground text-xs">
-            <span>설정</span><span>/</span><span>계정 정보</span>
-          </div>
+          {!location.pathname.startsWith('/app/worker') && (
+            <div className="flex items-center gap-2 text-muted-foreground text-xs">
+              <span>설정</span><span>/</span><span>계정 정보</span>
+            </div>
+          )}
           <h1 className="text-xl font-bold flex items-center gap-2">
             <User className="h-5 w-5" /> 계정 정보
           </h1>

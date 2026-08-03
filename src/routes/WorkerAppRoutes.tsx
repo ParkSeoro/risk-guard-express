@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import * as P from "@/routes/lazyPages";
 import AuthGuard from "@/components/AuthGuard";
 import WorkerGlobalGps from "@/components/worker/WorkerGlobalGps";
+import ShellGeofenceAlerts from "@/components/geofence/ShellGeofenceAlerts";
 import MobileShell from "@/components/mobile/MobileShell";
 import { MobilePreviewGate } from "@/contexts/PreviewContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -33,6 +34,7 @@ export default function WorkerAppRoutes() {
     <AuthGuard shell="worker">
       <MobilePreviewGate>
         <WorkerGpsGate />
+        <ShellGeofenceAlerts />
         <MobileShell>
           <Suspense fallback={<Fallback />}>
             <Routes>
@@ -43,6 +45,7 @@ export default function WorkerAppRoutes() {
               <Route path="tasks" element={<P.LazyMobileTasks />} />
               <Route path="docs" element={<P.LazyMobileDocs />} />
               <Route path="more" element={<P.LazyMobileMore />} />
+              <Route path="account" element={<P.LazySettingsAccount />} />
               {/* legacy aliases */}
               <Route path="home" element={<Navigate to="today" replace />} />
               <Route path="menu" element={<Navigate to="today" replace />} />

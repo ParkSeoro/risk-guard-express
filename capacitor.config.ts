@@ -20,6 +20,11 @@ const config: CapacitorConfig = {
       // Android 알림 채널 ID
       notificationChannelName: '위치 추적',
     },
+    SystemBars: {
+      // Capacitor 8 edge-to-edge — CSS vars --safe-area-inset-*
+      insetsHandling: 'css',
+      style: 'DARK',
+    },
     CapacitorUpdater: {
       // OTA 자동 시작 끄고, 우리 코드(`initOtaUpdater`)에서 통제
       autoUpdate: false,

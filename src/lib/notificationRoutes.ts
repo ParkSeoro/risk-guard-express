@@ -117,6 +117,8 @@ export function toMobileShellPath(path: string): string {
   if (p.startsWith("/tbm")) return `${WORKER}/tbm`;
   if (p.startsWith("/work-stop")) return `${WORKER}/work-stop`;
   if (p.startsWith("/workers")) return `${WORKER}/workers`;
+  if (p.startsWith("/zone-events")) return `${WORKER}/alerts`;
+  if (p.startsWith("/settings")) return `${WORKER}/account`;
   if (p === "/" || p === "") return `${WORKER}/menu`;
 
   // Unknown admin feature — stay in mobile shell rather than flipping to desktop

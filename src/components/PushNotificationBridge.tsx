@@ -68,12 +68,38 @@ export default function PushNotificationBridge() {
         if (perm.receive !== 'granted') return;
         if (cancelled) return;
 
+        const platformResolved = Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
+
+        // Android 8+: custom channels so FCM siren / high priority actually apply
+        if (platformResolved === 'android') {
+          try {
+            await PushNotifications.createChannel({
+              id: 'safenex_alarms',
+              name: '안전 경보',
+              description: '위험구역·긴급 알림 (사이렌)',
+              importance: 5,
+              sound: 'siren',
+              vibration: true,
+              visibility: 1,
+            });
+            await PushNotifications.createChannel({
+              id: 'safenex_default',
+              name: '일반 알림',
+              description: '승인·업무 알림',
+              importance: 4,
+              sound: 'default',
+              vibration: true,
+              visibility: 1,
+            });
+          } catch (e) {
+            console.warn('[PushBridge/native] createChannel skipped', e);
+          }
+        }
+
         await PushNotifications.register();
 
-        const platform = Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
-
         // iOS Critical Alerts (Apple entitlement + Info.plist flag required)
-        if (platform === 'ios' && isIosNativeAlarmAvailable()) {
+        if (platformResolved === 'ios' && isIosNativeAlarmAvailable()) {
           try {
             const crit = await requestIosCriticalAlerts();
             if (crit.criticalAlertSetting === 'enabled') {
@@ -98,7 +124,7 @@ export default function PushNotificationBridge() {
                 {
                   user_id: user!.id,
                   token: t.value,
-                  platform,
+                  platform: platformResolved,
                   user_agent: navigator.userAgent.slice(0, 200),
                   last_used_at: new Date().toISOString(),
                 },

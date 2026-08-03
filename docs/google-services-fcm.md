@@ -1,8 +1,10 @@
-# Android native assets (committed)
+# Android native assets (FCM)
 
-## `google-services.json` (FCM)
+패키지: `org.safenex.app`
 
-Play 푸시에 필요합니다. 패키지 `org.safenex.app`.
+## 1. `google-services.json` (AAB 클라이언트 — **필수**)
+
+Play 푸시 수신에 필요합니다. AAB 워크플로는 없으면 **실패**합니다.
 
 ### 넣는 방법 (택 1)
 
@@ -20,4 +22,15 @@ base64 -w0 google-services.json   # macOS: base64 -i google-services.json
 `native-assets/fcm/google-services.json` 으로 저장 (CI가 복사).  
 공개 레포면 Secret 방식을 쓰세요.
 
-AAB 워크플로는 둘 중 하나가 없으면 **실패**합니다.
+## 2. Edge `FCM_SERVER_KEY` (서버 발송 — **필수**)
+
+클라이언트가 토큰을 받아도, Supabase Edge `dispatch-notification-push` 에  
+Firebase **Cloud Messaging API (레거시) 서버 키**가 없으면 네이티브 트레이 푸시가 나가지 않습니다.
+
+```bash
+supabase secrets set FCM_SERVER_KEY="<Firebase Cloud Messaging 서버 키>"
+```
+
+Firebase Console → 프로젝트 설정 → Cloud Messaging → **Cloud Messaging API (Legacy)** 서버 키.
+
+VAPID 키는 웹 푸시용이며 네이티브 FCM을 대체하지 않습니다.

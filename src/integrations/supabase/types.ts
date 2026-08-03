@@ -9933,6 +9933,10 @@ export type Database = {
         Args: { _reason: string; _user_id: string }
         Returns: Json
       }
+      request_work_permit_closure: {
+        Args: { _permit_id: string }
+        Returns: Json
+      }
       request_worker_otp: { Args: { _phone: string }; Returns: Json }
       resync_assessment_run_status: { Args: { _run_id: string }; Returns: Json }
       run_daily_consistency_audit: { Args: never; Returns: Json }

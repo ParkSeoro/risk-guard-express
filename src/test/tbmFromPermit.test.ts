@@ -52,10 +52,13 @@ describe("tbmFromPermit", () => {
         },
         "현재유저",
       ),
-    ).toBe("신청자김");
+    ).toBe("상신자");
     expect(
-      resolvePermitAuthorName({ submitted_by_name: "상신자홍" }, "현재유저"),
-    ).toBe("상신자홍");
+      resolvePermitAuthorName(
+        { form_data: { applicant_name: "신청자김" } },
+        "현재유저",
+      ),
+    ).toBe("신청자김");
     expect(resolvePermitAuthorName({}, "현재유저")).toBe("현재유저");
   });
 });

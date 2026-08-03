@@ -6,3 +6,7 @@ verify_jwt = false
 # Manual JWT verify + is_master RPC inside the function (service role Admin API).
 [functions.admin-reset-password]
 verify_jwt = false
+
+# Manual JWT verify + project membership check; service role creates Auth users.
+[functions.provision-worker-accounts]
+verify_jwt = false

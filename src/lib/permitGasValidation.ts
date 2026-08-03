@@ -1,6 +1,7 @@
 /**
- * Gas measurement required before work-completion (closure) approval.
- * Applies to all companies. Keys match DigPermitForm / form_data.
+ * Optional gas measurement helpers for work permits.
+ * Closure / work-completion approval is NOT gated on these fields.
+ * Keys match DigPermitForm / form_data.
  */
 import type { PermitKindId } from '@/lib/permitKinds';
 import { normalizePermitKinds } from '@/lib/permitKinds';
@@ -108,7 +109,7 @@ export function gasClosureErrorMessage(check: GasClosureCheck): string {
   const labels = check.missingLabels.length
     ? check.missingLabels.join(', ')
     : '가스농도 측정값';
-  return `작업 완료 확인 전 가스농도 측정을 입력하세요. (미입력: ${labels})`;
+  return `가스농도 측정 미입력: ${labels}`;
 }
 
 export function permitKindsFromRow(row: {

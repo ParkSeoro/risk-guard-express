@@ -27,13 +27,6 @@ import {
   permitPostStepBadge,
   permitPostStepApproveLabel,
 } from "@/lib/permitPostApproval";
-import GasMeasurementDialog from "@/components/permits/GasMeasurementDialog";
-import {
-  gasClosureErrorMessage,
-  kindsNeedGasMeasurement,
-  permitKindsFromRow,
-  validatePermitGasForClosure,
-} from "@/lib/permitGasValidation";
 
 
 const ENTITY_LINK = (t?: string | null, id?: string | null): string | null => {
@@ -66,14 +59,6 @@ const Approvals = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [entityTypeFilter, setEntityTypeFilter] = useState<'all' | 'work_plan' | 'work_permit'>('all');
-  const [gasDialog, setGasDialog] = useState<{
-    approvalId: string;
-    permitId: string;
-    kinds: unknown;
-    formData: Record<string, unknown>;
-    stepKind: ReturnType<typeof permitPostStepKind>;
-    stepMeta?: any;
-  } | null>(null);
 
   const fetchEntityPending = async () => {
     try { await (supabase as any).rpc('promote_permits_to_closure_pending'); } catch { /* ignore */ }
@@ -95,11 +80,8 @@ const Approvals = () => {
     const r = data as any;
     if (error || r?.error) {
       const code = r?.error || error?.message || '';
-      const missing = Array.isArray(r?.missing) ? r.missing.join(', ') : '';
       const msg = code === 'SUBMITTER_STEP_NO_SELF_APPROVE'
         ? '상신(기안) 단계는 승인/반려할 수 없습니다.'
-        : code === 'GAS_MEASUREMENT_REQUIRED'
-          ? `가스농도 측정을 입력한 뒤 다시 시도하세요.${missing ? ` (미입력: ${missing})` : ''}`
         : code === 'WORK_PERMIT_LOCKED' || String(code).includes('WORK_PERMIT_LOCKED')
           ? '문서 잠금 충돌이 발생했습니다. 페이지를 새로고침 후 다시 시도하세요.'
           : (r?.error || error?.message);
@@ -131,44 +113,6 @@ const Approvals = () => {
     }
     const comment = action === 'reject' ? (prompt('반려 사유') || '') : '';
     if (action === 'reject' && !comment) return;
-
-    // 작업 완료 확인/종료: 가스측정 필수 (일반·화기·밀폐)
-    if (
-      action === 'approve' &&
-      stepMeta?.entity_type === 'work_permit' &&
-      (stepKind === 'closure_supervisor' || stepKind === 'closure_sm')
-    ) {
-      const { data: permit, error: pErr } = await supabase
-        .from('work_permits' as any)
-        .select('id, form_data, permit_kinds, permit_type')
-        .eq('id', stepMeta.entity_id)
-        .maybeSingle();
-      if (pErr || !permit) {
-        toast({ title: '처리 실패', description: pErr?.message || '허가서를 불러오지 못했습니다.', variant: 'destructive' });
-        return;
-      }
-      const kinds = permitKindsFromRow(permit as any);
-      if (kindsNeedGasMeasurement(kinds)) {
-        const fd = ((permit as any).form_data || {}) as Record<string, unknown>;
-        const check = validatePermitGasForClosure(fd, kinds);
-        if (!check.ok) {
-          toast({
-            title: '가스농도 측정 필요',
-            description: gasClosureErrorMessage(check),
-            variant: 'destructive',
-          });
-          setGasDialog({
-            approvalId: id,
-            permitId: (permit as any).id,
-            kinds,
-            formData: fd,
-            stepKind,
-            stepMeta,
-          });
-          return;
-        }
-      }
-    }
 
     await runEntityApproval(id, action, stepKind, comment);
   };
@@ -686,26 +630,6 @@ const Approvals = () => {
           )}
         </TabsContent>
       </Tabs>
-
-      {gasDialog && (
-        <GasMeasurementDialog
-          open={!!gasDialog}
-          onOpenChange={(open) => { if (!open) setGasDialog(null); }}
-          permitId={gasDialog.permitId}
-          permitKinds={gasDialog.kinds}
-          initialFormData={gasDialog.formData}
-          continueLabel={
-            gasDialog.stepKind === 'closure_sm'
-              ? '저장 후 작업 완료 및 종료'
-              : '저장 후 완료 확인'
-          }
-          onSaved={async () => {
-            const pending = gasDialog;
-            setGasDialog(null);
-            await runEntityApproval(pending.approvalId, 'approve', pending.stepKind);
-          }}
-        />
-      )}
     </div>
   );
 };

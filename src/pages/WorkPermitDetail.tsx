@@ -12,7 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock, Users, ClipboardList, UserCheck, Sparkles } from 'lucide-react';
+import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock, Users, ClipboardList, UserCheck, Sparkles, CheckCircle2 } from 'lucide-react';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
@@ -48,8 +48,10 @@ import {
 } from '@/lib/permitDisplayTemplate';
 import {
   GAS_READING_KEYS,
+  gasClosureErrorMessage,
   kindsNeedGasMeasurement,
   pickGasReadings,
+  validatePermitGasForClosure,
 } from '@/lib/permitGasValidation';
 
 function toDbTimestamp(value?: string | null) {
@@ -105,6 +107,7 @@ export default function WorkPermitDetail() {
   const [extendOpen, setExtendOpen] = useState(false);
   const [extendUntil, setExtendUntil] = useState('');
   const [extending, setExtending] = useState(false);
+  const [requestingClosure, setRequestingClosure] = useState(false);
   const [saving, setSaving] = useState(false);
   const [standardStyle, setStandardStyle] = useState<Partial<StandardStyle> | null>(null);
   const [standardLabels, setStandardLabels] = useState<Partial<StandardLabels> | null>(null);
@@ -439,6 +442,59 @@ export default function WorkPermitDetail() {
     !CLOSURE_PENDING_STATUSES.has(permit.status || '') &&
     !data.work_extend_requested_until;
 
+  /** 발행 완료 + 가스측정 후: 관리감독자→SM 작업완료(종료) 결재 수동 요청 */
+  const canRequestClosure =
+    !!permit &&
+    APPROVED_PERMIT_STATUSES.has(permit.status || '') &&
+    !CLOSED_PERMIT_STATUSES.has(permit.status || '') &&
+    !CLOSURE_PENDING_STATUSES.has(permit.status || '') &&
+    !data.work_extend_requested_until;
+
+  const requestClosure = async () => {
+    if (!id || !canRequestClosure) return;
+    if (kindsNeedGasMeasurement(selectedKinds)) {
+      const check = validatePermitGasForClosure(data as Record<string, unknown>, selectedKinds);
+      if (!check.ok) {
+        toast({
+          title: '가스측정 후 요청할 수 있습니다',
+          description: gasClosureErrorMessage(check),
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+    setRequestingClosure(true);
+    try {
+      const { data: res, error } = await (supabase as any).rpc('request_work_permit_closure', {
+        _permit_id: id,
+      });
+      const r = res as any;
+      if (error || r?.error) {
+        const code = r?.error || error?.message || '';
+        const missing = Array.isArray(r?.missing) ? r.missing.join(', ') : '';
+        const msg =
+          code === 'GAS_MEASUREMENT_REQUIRED'
+            ? `작업 완료 결재 전 가스농도 측정을 입력·저장하세요.${missing ? ` (미입력: ${missing})` : ''}`
+            : code === 'PENDING_POST_APPROVAL' ? '이미 종료/연장 결재가 진행 중입니다.'
+            : code === 'ALREADY_CLOSURE_PENDING' ? '이미 작업 완료 확인 대기 상태입니다.'
+            : code === 'ALREADY_CLOSED' ? '이미 종료된 허가서입니다.'
+            : code === 'NO_SM' ? '발주처 SM을 찾을 수 없습니다.'
+            : code === 'NOT_APPROVED' ? '승인(발행)된 허가서만 요청할 수 있습니다.'
+            : code === 'FORBIDDEN' ? '권한이 없습니다.'
+            : String(code);
+        toast({ title: '작업완료 결재 요청 실패', description: msg, variant: 'destructive' });
+        return;
+      }
+      toast({
+        title: '작업완료 결재 요청 완료',
+        description: '관리감독자·발주처 SM에게 완료 확인 결재가 전달되었습니다.',
+      });
+      await load();
+    } finally {
+      setRequestingClosure(false);
+    }
+  };
+
   const requestExtend = async () => {
     if (!id || !extendUntil) {
       toast({ title: '연장 종료 시각을 선택하세요.', variant: 'destructive' });
@@ -517,6 +573,17 @@ export default function WorkPermitDetail() {
           {canSaveGas && (
             <Button size="sm" variant="outline" onClick={saveGasReadings} disabled={saving}>
               <Save className="h-4 w-4 mr-1" />가스측정 저장
+            </Button>
+          )}
+          {canRequestClosure && (
+            <Button
+              size="sm"
+              onClick={requestClosure}
+              disabled={requestingClosure || saving}
+              title="가스측정 저장 후 작업 완료(종료) 결재를 요청합니다"
+            >
+              <CheckCircle2 className="h-4 w-4 mr-1" />
+              {requestingClosure ? '요청 중…' : '작업완료 결재 요청'}
             </Button>
           )}
           {canSubmit && (

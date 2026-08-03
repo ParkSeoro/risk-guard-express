@@ -46,8 +46,8 @@ type Props = {
 
 /**
  * Date + time picker.
- * Hour/minute are in-popover button lists (not native <select> / Radix Select)
- * so nested Dialogs do not dismiss when picking time.
+ * Calendar and hour/minute sit side-by-side to keep popover short
+ * (avoids stretching far below the trigger inside dialogs).
  */
 export function DateTimePicker({
   value,
@@ -69,7 +69,6 @@ export function DateTimePicker({
   const hourListRef = useRef<HTMLDivElement>(null);
   const minuteListRef = useRef<HTMLDivElement>(null);
 
-  // Sync draft only when the popover opens — not on every value tick while open.
   useEffect(() => {
     if (open && !wasOpen.current) {
       const p = parseDateTimeValue(value);
@@ -80,14 +79,12 @@ export function DateTimePicker({
     wasOpen.current = open;
   }, [open, value]);
 
-  // Scroll selected hour/minute into view when opening
   useEffect(() => {
     if (!open) return;
     const scrollSelected = (root: HTMLDivElement | null, selected: string) => {
       const el = root?.querySelector(`[data-value="${selected}"]`) as HTMLElement | null;
       el?.scrollIntoView({ block: "center" });
     };
-    // rAF: list is mounted after open paint
     const id = requestAnimationFrame(() => {
       scrollSelected(hourListRef.current, hour);
       scrollSelected(minuteListRef.current, minute);
@@ -122,12 +119,14 @@ export function DateTimePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-auto p-3 z-[100]"
+        className="w-auto p-2 z-[100]"
         align="start"
+        side="bottom"
+        sideOffset={4}
+        collisionPadding={12}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
         onPointerDownOutside={(e) => {
-          // Nested portals (rare) — keep open
           const t = e.target as HTMLElement | null;
           if (
             t?.closest(
@@ -138,86 +137,93 @@ export function DateTimePicker({
           }
         }}
       >
-        <Calendar
-          mode="single"
-          required
-          selected={draftDate}
-          onSelect={(d) => {
-            if (d) setDraftDate(d);
-          }}
-          locale={ko}
-        />
-        <div className="mt-3 flex items-stretch gap-2 border-t pt-3">
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] text-muted-foreground px-1">시</span>
-            <div
-              ref={hourListRef}
-              role="listbox"
-              aria-label="시"
-              className="h-36 w-[64px] overflow-y-auto rounded-md border border-input bg-background"
-            >
-              {HOURS.map((h) => (
-                <button
-                  key={h}
-                  type="button"
-                  role="option"
-                  data-value={h}
-                  aria-selected={hour === h}
-                  className={cn(
-                    "flex w-full items-center justify-center px-2 py-1.5 text-sm hover:bg-accent",
-                    hour === h && "bg-primary text-primary-foreground hover:bg-primary/90",
-                  )}
-                  onClick={() => setHour(h)}
+        {/* Side-by-side: calendar | time — keeps height ~calendar only */}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+          <Calendar
+            mode="single"
+            required
+            selected={draftDate}
+            onSelect={(d) => {
+              if (d) setDraftDate(d);
+            }}
+            locale={ko}
+            className="p-1"
+          />
+          <div className="flex flex-col gap-2 border-t pt-2 sm:border-t-0 sm:border-l sm:pl-2 sm:pt-0">
+            <div className="flex items-stretch gap-1.5">
+              <div className="flex flex-col gap-0.5">
+                <span className="px-1 text-[10px] text-muted-foreground">시</span>
+                <div
+                  ref={hourListRef}
+                  role="listbox"
+                  aria-label="시"
+                  className="h-[200px] w-[52px] overflow-y-auto rounded-md border border-input bg-background"
                 >
-                  {h}시
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-[10px] text-muted-foreground px-1">분</span>
-            <div
-              ref={minuteListRef}
-              role="listbox"
-              aria-label="분"
-              className="h-36 w-[64px] overflow-y-auto rounded-md border border-input bg-background"
-            >
-              {MINUTES.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  role="option"
-                  data-value={m}
-                  aria-selected={minute === m}
-                  className={cn(
-                    "flex w-full items-center justify-center px-2 py-1.5 text-sm hover:bg-accent",
-                    minute === m && "bg-primary text-primary-foreground hover:bg-primary/90",
-                  )}
-                  onClick={() => setMinute(m)}
+                  {HOURS.map((h) => (
+                    <button
+                      key={h}
+                      type="button"
+                      role="option"
+                      data-value={h}
+                      aria-selected={hour === h}
+                      className={cn(
+                        "flex w-full items-center justify-center px-1 py-1 text-xs hover:bg-accent",
+                        hour === h && "bg-primary text-primary-foreground hover:bg-primary/90",
+                      )}
+                      onClick={() => setHour(h)}
+                    >
+                      {h}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="px-1 text-[10px] text-muted-foreground">분</span>
+                <div
+                  ref={minuteListRef}
+                  role="listbox"
+                  aria-label="분"
+                  className="h-[200px] w-[52px] overflow-y-auto rounded-md border border-input bg-background"
                 >
-                  {m}분
-                </button>
-              ))}
+                  {MINUTES.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      role="option"
+                      data-value={m}
+                      aria-selected={minute === m}
+                      className={cn(
+                        "flex w-full items-center justify-center px-1 py-1 text-xs hover:bg-accent",
+                        minute === m && "bg-primary text-primary-foreground hover:bg-primary/90",
+                      )}
+                      onClick={() => setMinute(m)}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="flex flex-1 flex-col justify-end gap-2 pl-1">
-            <div className="rounded-md bg-muted/50 px-2 py-2 text-center text-sm font-medium tabular-nums">
+            <div className="rounded-md bg-muted/50 px-2 py-1.5 text-center text-sm font-medium tabular-nums">
               {hour}:{minute}
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                onChange("");
-                setOpen(false);
-              }}
-            >
-              지우기
-            </Button>
-            <Button type="button" size="sm" onClick={confirm}>
-              확인
-            </Button>
+            <div className="flex gap-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 flex-1 px-2 text-xs"
+                onClick={() => {
+                  onChange("");
+                  setOpen(false);
+                }}
+              >
+                지우기
+              </Button>
+              <Button type="button" size="sm" className="h-8 flex-1 px-2 text-xs" onClick={confirm}>
+                확인
+              </Button>
+            </div>
           </div>
         </div>
       </PopoverContent>

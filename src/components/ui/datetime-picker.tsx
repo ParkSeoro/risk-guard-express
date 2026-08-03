@@ -1,24 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { format, isValid, parse } from "date-fns";
 import { ko } from "date-fns/locale";
 import { CalendarIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 /** Stored as datetime-local style: YYYY-MM-DDTHH:mm */
 const VALUE_FMT = "yyyy-MM-dd'T'HH:mm";
 const DISPLAY_FMT = "yyyy-MM-dd HH:mm";
 
-function parseValue(value?: string): Date | null {
+export function parseDateTimeValue(value?: string): Date | null {
   if (!value?.trim()) return null;
   const raw = value.trim();
   const local = parse(raw.slice(0, 16), VALUE_FMT, new Date());
@@ -27,10 +20,15 @@ function parseValue(value?: string): Date | null {
   return isValid(iso) ? iso : null;
 }
 
-function toValue(d: Date, hour: string, minute: string): string {
+export function toDateTimeValue(d: Date, hour: string, minute: string): string {
   const next = new Date(d);
   next.setHours(Number(hour), Number(minute), 0, 0);
   return format(next, VALUE_FMT);
+}
+
+function snapMinute(m: number): string {
+  const snapped = Math.round(m / 5) * 5;
+  return String(snapped === 60 ? 55 : snapped).padStart(2, "0");
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
@@ -46,6 +44,10 @@ type Props = {
   compact?: boolean;
 };
 
+/**
+ * Date + time picker. Hour/minute use native <select> so nested Dialog/Popover
+ * focus traps cannot reset the draft time back to the default (09:00).
+ */
 export function DateTimePicker({
   value,
   onChange,
@@ -54,42 +56,37 @@ export function DateTimePicker({
   className,
   compact,
 }: Props) {
-  const parsed = useMemo(() => parseValue(value), [value]);
+  const parsed = useMemo(() => parseDateTimeValue(value), [value]);
   const [open, setOpen] = useState(false);
   const [draftDate, setDraftDate] = useState<Date | undefined>(parsed || undefined);
   const [hour, setHour] = useState(parsed ? format(parsed, "HH") : "09");
   const [minute, setMinute] = useState(() => {
     if (!parsed) return "00";
-    const m = parsed.getMinutes();
-    const snapped = Math.round(m / 5) * 5;
-    return String(snapped === 60 ? 55 : snapped).padStart(2, "0");
+    return snapMinute(parsed.getMinutes());
   });
+  const wasOpen = useRef(false);
 
+  // Sync draft only when the popover opens — not on every value tick while open.
   useEffect(() => {
-    if (!open) return;
-    const p = parseValue(value);
-    // Empty value: default to today so Confirm is usable (today styling ≠ selected).
-    setDraftDate(p || new Date());
-    setHour(p ? format(p, "HH") : "09");
-    if (p) {
-      const m = p.getMinutes();
-      const snapped = Math.round(m / 5) * 5;
-      setMinute(String(snapped === 60 ? 55 : snapped).padStart(2, "0"));
-    } else {
-      setMinute("00");
+    if (open && !wasOpen.current) {
+      const p = parseDateTimeValue(value);
+      setDraftDate(p || new Date());
+      setHour(p ? format(p, "HH") : "09");
+      setMinute(p ? snapMinute(p.getMinutes()) : "00");
     }
+    wasOpen.current = open;
   }, [open, value]);
 
   const label = parsed ? format(parsed, DISPLAY_FMT) : placeholder;
 
   const confirm = () => {
     const day = draftDate || new Date();
-    onChange(toValue(day, hour, minute));
+    onChange(toDateTimeValue(day, hour, minute));
     setOpen(false);
   };
 
   return (
-    <Popover modal open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           type="button"
@@ -111,13 +108,6 @@ export function DateTimePicker({
         align="start"
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
-        onPointerDownOutside={(e) => {
-          // Keep open when interacting with nested Select portals
-          const t = e.target as HTMLElement | null;
-          if (t?.closest('[data-radix-select-content], [role="listbox"]')) {
-            e.preventDefault();
-          }
-        }}
       >
         <Calendar
           mode="single"
@@ -130,27 +120,27 @@ export function DateTimePicker({
           initialFocus
         />
         <div className="mt-3 flex items-center gap-2 border-t pt-3">
-          <Select value={hour} onValueChange={setHour}>
-            <SelectTrigger className="w-[76px] h-9">
-              <SelectValue placeholder="시" />
-            </SelectTrigger>
-            <SelectContent className="max-h-56">
-              {HOURS.map((h) => (
-                <SelectItem key={h} value={h}>{h}시</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <select
+            aria-label="시"
+            className="h-9 w-[76px] rounded-md border border-input bg-background px-2 text-sm"
+            value={hour}
+            onChange={(e) => setHour(e.target.value)}
+          >
+            {HOURS.map((h) => (
+              <option key={h} value={h}>{h}시</option>
+            ))}
+          </select>
           <span className="text-muted-foreground">:</span>
-          <Select value={minute} onValueChange={setMinute}>
-            <SelectTrigger className="w-[76px] h-9">
-              <SelectValue placeholder="분" />
-            </SelectTrigger>
-            <SelectContent className="max-h-56">
-              {MINUTES.map((m) => (
-                <SelectItem key={m} value={m}>{m}분</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <select
+            aria-label="분"
+            className="h-9 w-[76px] rounded-md border border-input bg-background px-2 text-sm"
+            value={minute}
+            onChange={(e) => setMinute(e.target.value)}
+          >
+            {MINUTES.map((m) => (
+              <option key={m} value={m}>{m}분</option>
+            ))}
+          </select>
         </div>
         <div className="mt-3 flex gap-2">
           <Button

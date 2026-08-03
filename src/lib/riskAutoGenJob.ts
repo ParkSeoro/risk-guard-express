@@ -59,6 +59,9 @@ export type RiskAutoGenJobInput = {
   workLocation: string;
   conditionText: string;
   sortStart: number;
+  /** Company scope for past-assessment reuse (null = all) */
+  accessibleCompanyIds?: string[] | null;
+  preferCompanyIds?: string[] | null;
 };
 
 type Listener = (state: RiskAutoGenJobState) => void;
@@ -522,17 +525,96 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     }
 
     const opts = buildOpts(input, proc);
-    let draftItems: { sub_task: string; hazard: string }[] = [];
+
+    // Reuse past approved items for this process (company-scoped) as full rows
+    let reusedCount = 0;
     try {
-      console.log('[AutoGenJob] fetchScopeDraft → generate-risk-ai (scope_draft)', proc);
-      const draft = await fetchScopeDraft(opts);
-      draftItems = draft?.items || [];
-      console.log('[AutoGenJob] scope_draft ok', draftItems.length);
-    } catch (err: any) {
-      console.error('[AutoGenJob] scope_draft failed:', err?.message || err, err);
-      interrupted = true;
-      if (insertedTotal > 0) break;
-      throw err;
+      const { fetchPastApprovedRiskItems } = await import('@/lib/riskReuseFromPast');
+      const past = await fetchPastApprovedRiskItems({
+        projectId: input.projectId,
+        processName: proc,
+        accessibleCompanyIds: input.accessibleCompanyIds ?? null,
+        userId: input.userId,
+        preferCompanyIds: input.preferCompanyIds ?? null,
+        excludeRunId: input.runId,
+        limit: input.detailLevel === 'comprehensive' ? 40 : 28,
+      });
+      if (past.length) {
+        const rows = past.map((g) => ({
+          project_id: input.projectId,
+          run_id: input.runId,
+          process: g.process || proc,
+          sub_task: g.sub_task,
+          hazard: g.hazard,
+          hazard_situation: g.hazard_situation,
+          existing_measure: g.existing_measure,
+          improvement_measure: g.improvement_measure,
+          frequency: g.frequency,
+          severity: g.severity,
+          improved_frequency: g.improved_frequency,
+          improved_severity: g.improved_severity,
+          likelihood_grade: g.likelihood_grade,
+          severity_grade: g.severity_grade,
+          risk_grade: g.risk_grade,
+          improved_likelihood_grade: g.improved_likelihood_grade,
+          improved_severity_grade: g.improved_severity_grade,
+          improved_risk_grade: g.improved_risk_grade,
+          status: '초안' as const,
+          ppe: g.ppe,
+          legal_basis: g.legal_basis,
+          department: g.department,
+          assignee: g.assignee,
+          created_by: input.userId,
+          sort_order: sortCursor++,
+          source_type: 'reuse',
+          note: '[REUSE] 이전 승인 평가에서 가져옴',
+        }));
+        const { data, error } = await supabase.from('risk_items').insert(rows).select('id');
+        if (error) console.warn('[AutoGenJob] reuse insert failed:', error.message);
+        else {
+          reusedCount = data?.length || 0;
+          insertedTotal += reusedCount;
+          filledTotal += reusedCount;
+          patch({
+            insertedTotal,
+            filledTotal,
+            receivedTotal: filledTotal,
+            message: `「${proc}」 이전 평가 ${reusedCount}건 반영`,
+          });
+        }
+      }
+    } catch (reuseErr: any) {
+      console.warn('[AutoGenJob] reuse skipped:', reuseErr?.message || reuseErr);
+    }
+
+    // AI scope draft for gaps (when reuse is thin or empty)
+    let draftItems: { sub_task: string; hazard: string }[] = [];
+    const wantMoreAi = reusedCount < (input.detailLevel === 'comprehensive' ? 12 : 8);
+    if (wantMoreAi) {
+      try {
+        console.log('[AutoGenJob] fetchScopeDraft → generate-risk-ai (scope_draft)', proc);
+        const draft = await fetchScopeDraft(opts);
+        const { filterDraftGaps } = await import('@/lib/riskReuseFromPast');
+        const { data: existing } = await supabase
+          .from('risk_items')
+          .select('sub_task, hazard')
+          .eq('run_id', input.runId)
+          .eq('process', proc)
+          .eq('is_deleted', false);
+        draftItems = filterDraftGaps(draft?.items || [], (existing as any[]) || []);
+        console.log('[AutoGenJob] scope_draft ok', draftItems.length, '(after reuse gap filter)');
+      } catch (err: any) {
+        console.error('[AutoGenJob] scope_draft failed:', err?.message || err, err);
+        if (reusedCount === 0) {
+          interrupted = true;
+          if (insertedTotal > 0) break;
+          throw err;
+        }
+      }
+    }
+
+    if (draftItems.length === 0) {
+      continue;
     }
 
     const placeholders = draftItems.map((it) => ({
@@ -630,14 +712,31 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     return;
   }
 
+  // Reuse-only: no AI draft rows left to fill
+  if (allPending.length === 0) {
+    patch({
+      status: 'done',
+      phase: 'idle',
+      message: `${insertedTotal}건 등록 완료 (이전 평가 재사용)`,
+      insertedTotal,
+      filledTotal: insertedTotal,
+      receivedTotal: insertedTotal,
+      pendingIds: [],
+    });
+    return;
+  }
+
   // Pause for user review — Phase B via continueRiskAutoGenFill
   patch({
     status: 'awaiting_review',
     phase: 'review',
-    message: `초안 ${insertedTotal}행 준비됨 · 공종·세부작업·위험요인 검수 후 [나머지 채우기]`,
+    message:
+      filledTotal > 0
+        ? `재사용 ${filledTotal}건 + AI초안 ${allPending.length}행 · 검수 후 [나머지 채우기]`
+        : `초안 ${insertedTotal}행 준비됨 · 공종·세부작업·위험요인 검수 후 [나머지 채우기]`,
     insertedTotal,
-    filledTotal: 0,
-    receivedTotal: 0,
+    filledTotal,
+    receivedTotal: filledTotal,
     pendingIds: [...allPending],
   });
   if (interrupted) {

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "276697494127",
+    "project_id": "safenex-71fe9",
+    "storage_bucket": "safenex-71fe9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:276697494127:android:cb9e9e73276b2f023c939a",
+        "android_client_info": {
+          "package_name": "org.safenex.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAn8OYJ4Hm19N2KuGRBbitZBLF5PIi9n0I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

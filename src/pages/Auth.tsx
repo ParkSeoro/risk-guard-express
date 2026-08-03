@@ -82,6 +82,7 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
 
   const [directory, setDirectory] = useState<DirectoryRow[]>([]);
+  const [signupProjects, setSignupProjects] = useState<{ id: string; name: string }[]>([]);
   const [selectedProject, setSelectedProject] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedPosition, setSelectedPosition] = useState('');
@@ -153,23 +154,40 @@ const Auth = () => {
     return () => clearTimeout(timer);
   }, [inviteCode, mode, signupAudience, signupMethod]);
 
-  // Directory for signup
+  // Projects + company directory for signup (anon RPCs)
   useEffect(() => {
     if (mode !== 'signup') return;
     if (signupAudience === 'manager' && signupMethod === 'invite') return;
     (async () => {
-      const { data } = await (supabase as any).rpc('get_signup_company_directory');
-      setDirectory((data as DirectoryRow[]) || []);
+      const [{ data: projects }, { data: dir }] = await Promise.all([
+        (supabase as any).rpc('get_signup_projects'),
+        (supabase as any).rpc('get_signup_company_directory'),
+      ]);
+      const fromRpc = ((projects as any[]) || [])
+        .map((p) => ({ id: String(p.id), name: String(p.name || '') }))
+        .filter((p) => p.id && p.name);
+      // Fallback if RPC not deployed yet: derive from directory
+      if (fromRpc.length === 0) {
+        const map = new Map<string, string>();
+        ((dir as DirectoryRow[]) || []).forEach((d) => {
+          if (!map.has(d.project_id)) map.set(d.project_id, d.project_name);
+        });
+        setSignupProjects(Array.from(map, ([id, name]) => ({ id, name })));
+      } else {
+        setSignupProjects(fromRpc);
+      }
+      setDirectory((dir as DirectoryRow[]) || []);
     })();
   }, [mode, signupAudience, signupMethod]);
 
   const projectOptions = useMemo(() => {
+    if (signupProjects.length > 0) return signupProjects;
     const map = new Map<string, string>();
     directory.forEach((d) => {
       if (!map.has(d.project_id)) map.set(d.project_id, d.project_name);
     });
     return Array.from(map, ([id, name]) => ({ id, name }));
-  }, [directory]);
+  }, [signupProjects, directory]);
 
   /** 근로자: 협력사/공급사 우선, 없으면 전체 */
   const companyOptions = useMemo(() => {
@@ -511,7 +529,7 @@ const Auth = () => {
                     <SelectTrigger className="h-12"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
                     <SelectContent>
                       {projectOptions.length === 0 && (
-                        <div className="p-2 text-xs text-muted-foreground">등록된 프로젝트가 없습니다.</div>
+                        <div className="p-2 text-xs text-muted-foreground">등록된 활성 프로젝트가 없습니다.</div>
                       )}
                       {projectOptions.map((p) => (
                         <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
@@ -610,7 +628,7 @@ const Auth = () => {
                         <SelectTrigger><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
                         <SelectContent>
                           {projectOptions.length === 0 && (
-                            <div className="p-2 text-xs text-muted-foreground">등록된 프로젝트가 없습니다.</div>
+                            <div className="p-2 text-xs text-muted-foreground">등록된 활성 프로젝트가 없습니다.</div>
                           )}
                           {projectOptions.map((p) => (
                             <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>

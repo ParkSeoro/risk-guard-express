@@ -341,6 +341,9 @@ const Auth = () => {
       }
 
       if (signUpData.user) {
+        if (!signUpData.session) {
+          await signInWorkerWithPhone(digits, pinParsed.data);
+        }
         const { data: rosterRes, error: rpcErr } = await (supabase as any).rpc(
           'complete_worker_roster_signup',
           {

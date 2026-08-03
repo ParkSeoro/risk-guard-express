@@ -3,9 +3,11 @@ import { useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Download, X, Share, Plus, MoreVertical, Copy, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
+import { isNativeApp } from "@/lib/native/isNativeApp";
 
-/** Show on login + mobile worker shell (incl. menu after login). */
+/** PWA install banner — browser/PWA only. Never show inside Capacitor shell. */
 function isAllowedPath(pathname: string): boolean {
+  if (isNativeApp()) return false;
   if (
     pathname === "/m" ||
     pathname.startsWith("/m/") ||

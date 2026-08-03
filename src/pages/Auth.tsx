@@ -26,6 +26,7 @@ import {
   workerPinSchema,
 } from '@/lib/workerAuth';
 import { writeLoginIntent } from '@/components/AuthGuard';
+import { isNativeApp } from '@/lib/native/isNativeApp';
 
 type Mode = 'login' | 'signup';
 type Audience = 'worker' | 'manager';
@@ -68,7 +69,9 @@ const Auth = () => {
 
   const [mode, setMode] = useState<Mode>(() => modeFromPath(location.pathname, !!inviteParam));
   const [signupAudience, setSignupAudience] = useState<Audience>('manager');
-  const [loginAudience, setLoginAudience] = useState<Audience>('manager');
+  const [loginAudience, setLoginAudience] = useState<Audience>(() =>
+    isNativeApp() ? 'worker' : 'manager',
+  );
   const [signupMethod, setSignupMethod] = useState<SignupMethod>('directory');
 
   const [email, setEmail] = useState('');
@@ -401,7 +404,7 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+    <div className="min-h-dvh bg-background flex flex-col items-center justify-center p-4 native-safe-pad">
       <Card className="w-full max-w-md border-border/80 shadow-sm">
         <CardHeader className="text-center space-y-1.5 pb-4">
           <p className="text-[11px] font-semibold tracking-[0.22em] text-muted-foreground uppercase">
@@ -838,9 +841,11 @@ const Auth = () => {
           </div>
         </CardContent>
       </Card>
-      <a href="/manual" className="mt-4 text-xs text-muted-foreground hover:text-foreground hover:underline">
-        사용 설명서 보기 (관리자 & 근로자용)
-      </a>
+      {!isNativeApp() && (
+        <a href="/manual" className="mt-4 text-xs text-muted-foreground hover:text-foreground hover:underline">
+          사용 설명서 보기 (관리자 & 근로자용)
+        </a>
+      )}
     </div>
   );
 };

@@ -69,6 +69,13 @@ if (existsSync(manifestPath)) {
       );
     }
   }
+  // ML Kit barcode UI dependency meta
+  if (!xml.includes("com.google.mlkit.vision.DEPENDENCIES")) {
+    xml = xml.replace(
+      /(<application\b[^>]*>)/,
+      `$1\n        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui"/>`,
+    );
+  }
   writeFileSync(manifestPath, xml);
   console.log("✓ Android Manifest 권한 주입 완료");
 } else {

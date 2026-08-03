@@ -119,6 +119,23 @@ describe("notification + entity mobile routes", () => {
     expect(toMobileShellPath("/app/admin/work-plan/p1")).toBe("/app/worker/work-plans/p1");
   });
 
+  it("toMobileShellPath maps zone-events and settings to worker pages", () => {
+    expect(toMobileShellPath("/app/admin/zone-events")).toBe("/app/worker/alerts");
+    expect(toMobileShellPath("/app/admin/settings/account")).toBe("/app/worker/account");
+  });
+
+  it("danger_zone_entry notifications open worker alerts", () => {
+    expect(
+      resolveNotificationRoute({ type: "danger_zone_entry" }, { mobileShell: true }),
+    ).toBe("/app/worker/alerts");
+    expect(
+      resolveNotificationRoute(
+        { link: "/zone-events?project=p1" },
+        { mobileShell: true },
+      ),
+    ).toBe("/app/worker/alerts");
+  });
+
   it("resolveMobileHomePath is role-aware", () => {
     expect(resolveMobileHomePath(["project_admin"])).toBe(MOBILE_ADMIN_HOME);
     expect(resolveMobileHomePath(["worker"])).toBe(WORKER_HOME);

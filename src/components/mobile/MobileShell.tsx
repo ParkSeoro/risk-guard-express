@@ -49,19 +49,19 @@ export default function MobileShell({ children }: { children: ReactNode }) {
 
   return (
     <div
-      className="min-h-screen bg-muted/30 flex flex-col"
+      className="min-h-dvh bg-muted/30 flex flex-col overflow-x-clip"
       data-testid="mobile-shell"
       data-mobile-role={displayRole}
       data-mobile-bucket={bucket}
     >
       {preview.isPreview && (
-        <div className="sticky top-0 z-40 bg-amber-500 text-amber-950 text-center text-xs font-semibold py-1.5 px-2">
+        <div className="sticky top-0 z-40 bg-amber-500 text-amber-950 text-center text-xs font-semibold py-1.5 px-2 pt-[max(0.375rem,var(--sat))]">
           프리뷰 · 데이터 변경 불가 · {roleLabelKo(displayRole)}
         </div>
       )}
 
       {!hideChrome && (
-        <header className="sticky top-0 z-30 bg-primary text-primary-foreground px-3 py-2.5 flex items-center gap-2">
+        <header className="sticky top-0 z-30 bg-primary text-primary-foreground px-3 pb-2.5 pt-[max(0.625rem,var(--sat))] flex items-center gap-2">
           <div className="flex-1 min-w-0">
             <div className="font-bold text-sm leading-tight">SafeNex</div>
             <div className="text-[10px] opacity-80 truncate">
@@ -75,14 +75,14 @@ export default function MobileShell({ children }: { children: ReactNode }) {
         </header>
       )}
 
-      <div className="flex-1 pb-28">{children}</div>
+      <div className="flex-1 pb-[calc(7rem+var(--sab))]">{children}</div>
 
-      {/* Persistent work-stop */}
+      {/* Work-stop: above tab bar, clear of safe-area — left side so it doesn't cover 자료/더보기 */}
       {!hideChrome && (
         <Button
           type="button"
           size="sm"
-          className="fixed bottom-[4.5rem] right-3 z-30 rounded-full shadow-lg bg-destructive hover:bg-destructive/90 h-11 px-4"
+          className="fixed left-3 z-40 rounded-full shadow-md bg-destructive hover:bg-destructive/90 h-11 px-4 bottom-[calc(4.25rem+var(--sab))]"
           onClick={() => navigate(MOBILE_WORK_STOP)}
           data-testid="work-stop-fab"
         >
@@ -93,7 +93,7 @@ export default function MobileShell({ children }: { children: ReactNode }) {
 
       {!hideChrome && (
         <nav
-          className="fixed bottom-0 inset-x-0 z-30 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 pb-[env(safe-area-inset-bottom)]"
+          className="fixed bottom-0 inset-x-0 z-30 border-t bg-background pb-[var(--sab)]"
           data-testid="mobile-bottom-nav"
         >
           <ul className="mx-auto max-w-md grid" style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}>

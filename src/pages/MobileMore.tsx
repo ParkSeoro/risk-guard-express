@@ -4,6 +4,7 @@ import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { isManagerMobileRole, roleLabelKo } from "@/lib/mobileShell";
 import { usePreview } from "@/contexts/PreviewContext";
 import { setForceDesktop } from "@/hooks/use-mobile";
+import { isNativeApp } from "@/lib/native/isNativeApp";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -89,13 +90,17 @@ export default function MobileMore() {
             ? [
                 { label: "QR 스캔", to: "/app/worker/scan", icon: ScanLine },
                 { label: "근로자 QR", to: "/app/worker/workers", icon: QrCode },
-                { label: "계정 정보", to: "/settings/account", icon: User },
-                { label: "사용 설명서", to: "/manual", icon: BookOpen },
+                { label: "계정 정보", to: "/app/worker/account", icon: User },
+                ...(!isNativeApp()
+                  ? [{ label: "사용 설명서", to: "/manual", icon: BookOpen }]
+                  : []),
               ]
             : [
                 { label: "QR 스캔", to: "/app/worker/scan", icon: ScanLine },
-                { label: "계정 정보", to: "/settings/account", icon: User },
-                { label: "사용 설명서", to: "/manual", icon: BookOpen },
+                { label: "계정 정보", to: "/app/worker/account", icon: User },
+                ...(!isNativeApp()
+                  ? [{ label: "사용 설명서", to: "/manual", icon: BookOpen }]
+                  : []),
               ]
           ).map((row) => (
             <Link
@@ -111,7 +116,7 @@ export default function MobileMore() {
         </CardContent>
       </Card>
 
-      {!preview.isPreview && manager && (
+      {!preview.isPreview && manager && !isNativeApp() && (
         <Button
           variant="outline"
           className="w-full"

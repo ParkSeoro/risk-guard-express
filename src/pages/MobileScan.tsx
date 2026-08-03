@@ -24,27 +24,27 @@ export default function MobileScan() {
 
   const startNative = async () => {
     try {
-      // 동적 import — 네이티브 빌드(Capacitor)에서만 패키지가 설치되어 있음.
-      // 웹 빌드(Rollup)가 모듈을 해석하지 못하므로, 번들러가 분석할 수 없도록 Function 생성자를 통해 런타임 import 한다.
-      const dynamicImport = new Function("m", "return import(m)") as (m: string) => Promise<any>;
-      const mod: any = await dynamicImport("@capacitor-community/barcode-scanner");
-      const BarcodeScanner = mod.BarcodeScanner;
-      const status = await BarcodeScanner.checkPermission({ force: true });
-      if (!status.granted) {
-        setError("카메라 권한이 거부되었습니다. 시스템 설정에서 카메라를 허용해주세요.");
-        return;
+      const { BarcodeScanner, BarcodeFormat } = await import(
+        "@capacitor-mlkit/barcode-scanning"
+      );
+      const perm = await BarcodeScanner.checkPermissions();
+      if (perm.camera !== "granted") {
+        const req = await BarcodeScanner.requestPermissions();
+        if (req.camera !== "granted") {
+          setError("카메라 권한이 거부되었습니다. 설정에서 카메라를 허용해 주세요.");
+          return;
+        }
       }
-      document.body.classList.add("scanner-active");
-      await BarcodeScanner.hideBackground();
       setScanning(true);
-      const result = await BarcodeScanner.startScan();
-      document.body.classList.remove("scanner-active");
+      // Ready-to-use Google Code Scanner UI (ML Kit)
+      const { barcodes } = await BarcodeScanner.scan({
+        formats: [BarcodeFormat.QrCode],
+      });
       setScanning(false);
-      if (result.hasContent) {
-        await onDetect(result.content);
-      }
+      const raw = barcodes?.[0]?.rawValue;
+      if (raw) await onDetect(raw);
+      else setError("QR을 인식하지 못했습니다. 다시 시도해 주세요.");
     } catch (e: any) {
-      document.body.classList.remove("scanner-active");
       setScanning(false);
       setError("네이티브 스캔 실패: " + (e?.message || "오류"));
     }
@@ -179,26 +179,30 @@ export default function MobileScan() {
             {error && (
               <div className="space-y-2">
                 <Badge variant="destructive" className="w-full justify-center whitespace-normal text-left py-2">{error}</Badge>
-                <Button variant="outline" className="w-full" onClick={() => window.open("https://safenex.org/app/worker/scan", "_blank")}>
-                  <ExternalLink className="h-4 w-4 mr-1" /> 새 창에서 열기 (safenex.org)
-                </Button>
+                {!isNative && (
+                  <Button variant="outline" className="w-full" onClick={() => window.open("https://safenex.org/app/worker/scan", "_blank")}>
+                    <ExternalLink className="h-4 w-4 mr-1" /> 새 창에서 열기 (safenex.org)
+                  </Button>
+                )}
               </div>
             )}
 
             {last && (
               <div className="space-y-2 border-t pt-3">
                 <div className="text-xs text-muted-foreground break-all">토큰: {last.token}</div>
-                <Button className="w-full h-14 text-base" onClick={() => window.location.href = last.url}>
+                <Button className="w-full h-14 text-base" onClick={() => { window.location.href = last.url; }}>
                   <ExternalLink className="h-5 w-5 mr-2" /> 포털 열기 (입퇴장)
                 </Button>
-                <Button variant="outline" className="w-full" onClick={() => { setLast(null); start(); }}>
+                <Button variant="outline" className="w-full" onClick={() => { setLast(null); void start(); }}>
                   다시 스캔
                 </Button>
               </div>
             )}
 
             <p className="text-xs text-muted-foreground">
-              * HTTPS 환경에서 카메라가 작동합니다. 권한 거부 시 브라우저 설정에서 카메라를 허용해주세요.
+              {isNative
+                ? "카메라 권한이 필요합니다. 거부 시 시스템 설정에서 SafeNex 카메라를 허용해 주세요."
+                : "HTTPS 환경에서 카메라가 작동합니다. 권한 거부 시 브라우저 설정에서 카메라를 허용해 주세요."}
             </p>
           </CardContent>
         </Card>

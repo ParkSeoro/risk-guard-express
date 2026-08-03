@@ -155,6 +155,18 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
 
   const startGpsTracking = useCallback(
     (identity: TrackingIdentity) => {
+      const prev = identityRef.current;
+      if (
+        stopTrackerRef.current &&
+        prev &&
+        prev.project_id === identity.project_id &&
+        (prev.worker_id || null) === (identity.worker_id || null)
+      ) {
+        // Idempotent — avoid stop/start storms (permission dialog loops)
+        identityRef.current = identity;
+        setGpsTracking(true);
+        return;
+      }
       stopGpsTracking();
       const gen = startGenRef.current;
       identityRef.current = identity;
@@ -211,7 +223,7 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
             },
             (err) => {
               const msg =
-                err?.code === 1 ? "위치 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요."
+                err?.code === 1 ? "위치 권한이 거부되었습니다. 설정에서 위치를 허용해 주세요."
                 : err?.code === 2 ? "위치를 사용할 수 없습니다. GPS를 켜 주세요."
                 : err?.code === 3 ? "위치 수신 시간 초과. 야외에서 다시 시도해 주세요."
                 : (err.message || "GPS 오류");

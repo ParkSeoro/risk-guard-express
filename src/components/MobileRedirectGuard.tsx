@@ -25,6 +25,7 @@ const MOBILE_EXCLUDE = [
   /^\/update-password/,
   /^\/reset-password/,
   /^\/consent/,
+  /^\/native-permissions/,
   /^\/onboarding/,
   /^\/worker\//,
   /^\/tbm\//,

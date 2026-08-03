@@ -56,7 +56,7 @@ export default function ConsentPage() {
   // ① Wait for global auth boot only
   if (isAuthLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
+      <div className="min-h-dvh flex items-center justify-center text-sm text-muted-foreground native-safe-pad">
         세션 확인 중…
       </div>
     );
@@ -130,8 +130,8 @@ export default function ConsentPage() {
   const audienceLabel = isAdmin ? "관리자·매니저" : "근로자";
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-emerald-950 text-white flex flex-col">
-      <header className="p-5 pt-10 space-y-2 max-w-lg w-full mx-auto">
+    <div className="min-h-dvh bg-gradient-to-b from-slate-900 via-slate-800 to-emerald-950 text-white flex flex-col native-safe-pad">
+      <header className="p-5 pt-6 space-y-2 max-w-lg w-full mx-auto">
         <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">
           <ShieldCheck className="h-6 w-6" />
         </div>

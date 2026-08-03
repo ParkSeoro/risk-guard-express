@@ -37,15 +37,16 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
   const cap = (globalThis as any).Capacitor as Capacitor | undefined;
   if (!cap?.isNativePlatform?.()) return null;
   try {
-    const pkg = "@capacitor-community/background-geolocation";
-    const mod: any = await import(/* @vite-ignore */ pkg);
-    const BackgroundGeolocation = mod.BackgroundGeolocation || mod.default;
+    // This community plugin ships native code only — register via Capacitor core.
+    const { registerPlugin } = await import("@capacitor/core");
+    const BackgroundGeolocation = registerPlugin<any>("BackgroundGeolocation");
     if (!BackgroundGeolocation?.addWatcher) return null;
     const watcherId = await BackgroundGeolocation.addWatcher(
       {
         backgroundMessage: "위험구역 자동감지를 위해 위치를 추적 중입니다.",
         backgroundTitle: "안전관리시스템 위치 추적",
-        requestPermissions: true,
+        // Permissions are requested on /native-permissions — do not re-prompt from tracker.
+        requestPermissions: false,
         stale: false,
         distanceFilter: 8,
       },
@@ -91,7 +92,10 @@ async function getGeolocation(): Promise<{
   if (cap?.isNativePlatform?.()) {
     try {
       const { Geolocation } = await import("@capacitor/geolocation");
-      await Geolocation.requestPermissions();
+      const status = await Geolocation.checkPermissions();
+      if (status.location !== "granted" && status.coarseLocation !== "granted") {
+        await Geolocation.requestPermissions();
+      }
       return {
         watch: async (cb, err) => {
           const id = await Geolocation.watchPosition(

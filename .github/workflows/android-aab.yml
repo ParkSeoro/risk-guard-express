@@ -17,6 +17,8 @@ name: Android AAB
 #   ANDROID_KEYSTORE_PASSWORD : 키스토어 비밀번호
 #   ANDROID_KEY_ALIAS         : 키 alias (예: safenex)
 #   ANDROID_KEY_PASSWORD      : 키 비밀번호
+#   GOOGLE_SERVICES_JSON_BASE64 : Firebase google-services.json 의 base64 (FCM 필수)
+#                                 또는 native-assets/fcm/google-services.json 커밋
 # ─ 선택 ────────────────────────────────────────────────────────────────────────
 #   ANDROID_VERSION_CODE      : 정수. 비우면 GitHub run number 사용 (자동 증가)
 #   ANDROID_VERSION_NAME      : 예) 1.0.1. 비우면 package.json version 사용
@@ -129,13 +131,69 @@ jobs:
               cp capacitor-plugins/alarm-volume/AlarmVolumePlugin.java \
                 android/app/src/main/java/org/safenex/app/AlarmVolumePlugin.java
             fi
-            node scripts/prepare-native.mjs || true
           fi
           bunx cap sync android
+          # FCM google-services.json (required for push)
+          mkdir -p android/app
+          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" ]; then
+            echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > android/app/google-services.json
+            echo "Wrote google-services.json from secret"
+          elif [ -f native-assets/fcm/google-services.json ]; then
+            cp native-assets/fcm/google-services.json android/app/google-services.json
+            echo "Wrote google-services.json from native-assets"
+          else
+            echo "::error::Missing FCM google-services.json. Add Secret GOOGLE_SERVICES_JSON_BASE64 or commit native-assets/fcm/google-services.json — push is required for release AAB."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          d=json.load(open("android/app/google-services.json"))
+          pkgs=[c.get("client_info",{}).get("android_client_info",{}).get("package_name") for c in d.get("client",[])]
+          print("FCM packages:", pkgs)
+          if "org.safenex.app" not in pkgs:
+              raise SystemExit("google-services.json has no client for org.safenex.app")
+          PY
+          # FCM custom sound (notification channel)
+          mkdir -p android/app/src/main/res/raw
+          if [ -f public/sounds/siren.wav ]; then
+            cp public/sounds/siren.wav android/app/src/main/res/raw/siren.wav
+            echo "Copied siren.wav → res/raw"
+          fi
           # 런처/알림 아이콘 + FCM default_notification_icon (항상 적용)
           pip install --quiet pillow
           python3 scripts/sync-android-brand-assets.py
-          node scripts/prepare-native.mjs || true
+          # AlarmVolume always re-applied (even when platform already exists)
+          if [ -f capacitor-plugins/alarm-volume/MainActivity.java ]; then
+            mkdir -p android/app/src/main/java/org/safenex/app
+            cp capacitor-plugins/alarm-volume/MainActivity.java \
+              android/app/src/main/java/org/safenex/app/MainActivity.java
+          fi
+          if [ -f capacitor-plugins/alarm-volume/AlarmVolumePlugin.java ]; then
+            cp capacitor-plugins/alarm-volume/AlarmVolumePlugin.java \
+              android/app/src/main/java/org/safenex/app/AlarmVolumePlugin.java
+          fi
+          node scripts/prepare-native.mjs
+          # Hard fail if critical permissions / plugins missing
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          for p in ACCESS_FINE_LOCATION ACCESS_BACKGROUND_LOCATION FOREGROUND_SERVICE_LOCATION POST_NOTIFICATIONS CAMERA; do
+            if ! grep -q "$p" "$MANIFEST"; then
+              echo "::error::AndroidManifest missing $p after prepare-native"
+              exit 1
+            fi
+          done
+          if ! grep -q "com.google.mlkit.vision.DEPENDENCIES" "$MANIFEST"; then
+            echo "::error::ML Kit barcode meta-data missing"
+            exit 1
+          fi
+          if ! grep -q '@capacitor-mlkit/barcode-scanning' android/app/src/main/assets/capacitor.plugins.json; then
+            echo "::error::ML Kit barcode plugin not synced into capacitor.plugins.json"
+            exit 1
+          fi
+          if [ ! -f android/app/google-services.json ]; then
+            echo "::error::google-services.json missing after sync"
+            exit 1
+          fi
+          echo "OK: native permissions + ML Kit + FCM + siren present"
 
       - name: Resolve version
         id: ver

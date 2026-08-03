@@ -8,6 +8,20 @@
 export async function registerSWSafely(): Promise<ServiceWorkerRegistration | null> {
   if (typeof window === "undefined" || !("serviceWorker" in navigator)) return null;
 
+  // Capacitor native shell uses FCM/APNs — do not register web push SW.
+  try {
+    const { Capacitor } = await import("@capacitor/core");
+    if (Capacitor?.isNativePlatform?.()) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) {
+        if (r.active?.scriptURL?.endsWith("/sw.js")) await r.unregister();
+      }
+      return null;
+    }
+  } catch {
+    /* ignore */
+  }
+
   const host = window.location.hostname;
   const isPreviewHost =
     host.startsWith("id-preview--") ||

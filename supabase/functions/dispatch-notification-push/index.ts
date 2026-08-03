@@ -5,7 +5,7 @@
 // Deploy notes (한 번만):
 //   ALTER DATABASE postgres SET app.settings.supabase_url = 'https://<ref>.supabase.co';
 //   ALTER DATABASE postgres SET app.settings.service_role_key = '<service_role_jwt>';
-//   Secrets: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, (선택) FCM_SERVER_KEY
+// Secrets: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, FCM_SERVER_KEY (Android native 필수)
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import webpush from "npm:web-push@3.6.7";
@@ -41,7 +41,7 @@ const ENTITY_ROUTES: Record<string, (id?: string | null, project?: string | null
   worker: () => '/workers',
   chemical: () => '/health/chemicals',
   safety_cost: () => '/safety-cost',
-  zone_event: (_, p) => (p ? `/zone-events?project=${p}` : '/zone-events'),
+  zone_event: () => '/app/worker/alerts',
 };
 
 function deepLinkFor(n: NotificationRow): string {
@@ -54,13 +54,14 @@ function deepLinkFor(n: NotificationRow): string {
     if (explicit === '/m' || explicit.startsWith('/m/')) {
       return explicit === '/m' ? '/app/worker/menu' : `/app/worker${explicit.slice(2)}`;
     }
+    if (explicit.startsWith('/zone-events')) return '/app/worker/alerts';
     return explicit;
   }
   if (n.related_type && ENTITY_ROUTES[n.related_type]) {
     return ENTITY_ROUTES[n.related_type](n.related_id, n.project_id);
   }
   if (n.type === 'danger_zone_entry') {
-    return n.project_id ? `/zone-events?project=${n.project_id}` : '/zone-events';
+    return '/app/worker/alerts';
   }
   return '/app/worker/alerts';
 }
@@ -226,7 +227,9 @@ Deno.serve(async (req) => {
                   body,
                   tag,
                   click_action: url,
-                  sound: isCriticalAlarm ? "siren.wav" : "default",
+                  // Android channel sound is set on the channel; filename without extension in res/raw
+                  sound: isCriticalAlarm ? "siren" : "default",
+                  android_channel_id: isCriticalAlarm ? "safenex_alarms" : "safenex_default",
                   // Android status bar: white silhouette drawable (see ic_stat_safenex)
                   icon: "ic_stat_safenex",
                   color: "#0D9488",

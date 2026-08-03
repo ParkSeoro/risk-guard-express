@@ -193,7 +193,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const applyProfilePatch = useCallback((patch: Partial<Profile>) => {
-    setProfile((prev) => (prev ? { ...prev, ...patch } : prev));
+    setProfile((prev) => {
+      if (prev) return { ...prev, ...patch };
+      // Avoid no-op when profile not yet hydrated — still merge so consent can clear
+      return { ...(patch as Profile) };
+    });
   }, []);
 
   const reloadAuthProfile = useCallback(async (): Promise<Profile | null> => {

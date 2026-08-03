@@ -91,10 +91,40 @@ export async function draftTbmBriefingAi(opts: {
   return templateBriefingSummary(opts.seed);
 }
 
+/**
+ * TBM 주관자 = 허가서 작성자.
+ * 우선순위: 신청자명 → 상신자명 → (비동기) created_by 프로필 → fallback.
+ */
+export function resolvePermitAuthorName(permit: any, fallback = ""): string {
+  const fd = permit?.form_data || {};
+  const fromForm = String(fd.applicant_name || fd.writer_name || fd.author_name || "").trim();
+  if (fromForm) return fromForm;
+  const submitted = String(permit?.submitted_by_name || "").trim();
+  if (submitted) return submitted;
+  return String(fallback || "").trim();
+}
+
+async function resolvePermitAuthorNameAsync(permit: any, fallback = ""): Promise<string> {
+  const sync = resolvePermitAuthorName(permit, "");
+  if (sync) return sync;
+  const createdBy = permit?.created_by;
+  if (createdBy) {
+    const { data } = await supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("user_id", createdBy)
+      .maybeSingle();
+    const name = String((data as any)?.display_name || "").trim();
+    if (name) return name;
+  }
+  return String(fallback || "").trim();
+}
+
 /** Ensure 1:1 TBM for permit — reuse if work_permits.tbm_session_id set. */
 export async function ensureTbmForPermit(opts: {
   permitId: string;
   projectId: string;
+  /** Fallback only when permit author cannot be resolved */
   leaderName?: string;
   companyId?: string | null;
   useAiDraft?: boolean;
@@ -111,6 +141,7 @@ export async function ensureTbmForPermit(opts: {
   }
 
   const seed = buildTbmSeedFromPermit(permit);
+  const leaderName = await resolvePermitAuthorNameAsync(permit, opts.leaderName || "");
   let summary = templateBriefingSummary(seed);
   if (opts.useAiDraft !== false) {
     summary = await draftTbmBriefingAi({
@@ -143,7 +174,7 @@ export async function ensureTbmForPermit(opts: {
     title: seed.title,
     tbm_date: seed.tbm_date,
     location: seed.location,
-    leader_name: opts.leaderName || "",
+    leader_name: leaderName,
     company_id: opts.companyId || (permit as any).company_id || null,
     company_name: seed.company_name,
     work_content: seed.work_content,

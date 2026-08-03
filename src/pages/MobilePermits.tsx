@@ -1,9 +1,10 @@
 /**
  * Mobile permit document viewer (read-only).
  * Approvals go through the unified inbox: /app/worker/approvals
+ * Deep link: /app/worker/permits?id=<permitId>
  */
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useNavigateMobileHome } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -17,6 +18,14 @@ import {
   resolvePermitWorkDate,
   canViewPermitInList,
 } from "@/lib/permitWorkDate";
+import DigPermitForm, {
+  type PermitFormData,
+  type PermitSignatures,
+  type PermitType,
+} from "@/components/permits/DigPermitForm";
+import StandardPermitSheet from "@/components/permits/StandardPermitSheet";
+import { mergeApprovalSignatures } from "@/lib/permitApprovalSignatures";
+import { normalizePermitKinds, type PermitKindId } from "@/lib/permitKinds";
 
 const STATUS_BADGE: Record<string, string> = {
   대기: "bg-warning/20 text-warning",
@@ -25,6 +34,8 @@ const STATUS_BADGE: Record<string, string> = {
   반려: "bg-destructive/20 text-destructive",
   작성중: "bg-muted text-muted-foreground",
   결재중: "bg-primary/20 text-primary",
+  종료대기: "bg-amber-500/20 text-amber-700",
+  종료: "bg-success/20 text-success",
 };
 
 const getForm = (p: any) => (p?.form_data && typeof p.form_data === "object" ? p.form_data : {});
@@ -36,14 +47,36 @@ const permitCompany = (p: any) =>
   p?.contractor_company || getForm(p).contractor_company || getForm(p).applicant_company || "-";
 const permitPersonnel = (p: any) => p?.personnel_count || getForm(p).personnel_count || 0;
 
+function toFormData(p: any): PermitFormData {
+  const fd = getForm(p);
+  return {
+    ...fd,
+    contractor_company: fd.contractor_company || p.contractor_company || "",
+    applicant_company: fd.applicant_company || p.contractor_company || "",
+    work_name: fd.work_name || p.work_name || "",
+    work_description: fd.work_description || p.work_description || "",
+    work_location: fd.work_location || p.location || p.work_location || "",
+    personnel_count: fd.personnel_count ?? p.personnel_count ?? 0,
+    work_start: fd.work_start || "",
+    work_end: fd.work_end || "",
+  };
+}
+
 export default function MobilePermits() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepId = searchParams.get("id");
   const goMobileHome = useNavigateMobileHome();
   const { profile, isAdmin } = useAuth();
   const { projectId, applyCompanyFilter, isProjectAdmin } = useMobileAccess();
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState<any | null>(null);
+  const [formData, setFormData] = useState<PermitFormData>({});
+  const [signatures, setSignatures] = useState<PermitSignatures>({});
+  const [activeKind, setActiveKind] = useState<PermitKindId>("general");
+  const [kinds, setKinds] = useState<PermitKindId[]>(["general"]);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const load = async () => {
     if (!projectId) {
@@ -85,9 +118,78 @@ export default function MobilePermits() {
     setList(rows);
     setLoading(false);
   };
+
   useEffect(() => {
     load(); /* eslint-disable-next-line */
   }, [projectId, profile?.user_id]);
+
+  const openPermit = async (p: any) => {
+    setDetailLoading(true);
+    setActive(p);
+    const nextKinds = normalizePermitKinds(
+      p.permit_kinds,
+      (p.permit_type || "general") as PermitKindId,
+    );
+    setKinds(nextKinds);
+    setActiveKind(
+      nextKinds.includes(p.permit_type as PermitKindId)
+        ? (p.permit_type as PermitKindId)
+        : nextKinds[0],
+    );
+    setFormData(toFormData(p));
+
+    const baseSig: PermitSignatures = p.signatures || {};
+    const { data: aps } = await supabase
+      .from("approvals")
+      .select("position, approver_name, status, approved_at, step_order, approval_version")
+      .eq("entity_type", "work_permit")
+      .eq("entity_id", p.id)
+      .order("approval_version", { ascending: false })
+      .order("step_order", { ascending: true });
+    let versioned = aps || [];
+    if (versioned.length > 0) {
+      const latestVersion = versioned[0].approval_version;
+      versioned = versioned.filter((a: any) => a.approval_version === latestVersion);
+    }
+    setSignatures(mergeApprovalSignatures(baseSig, versioned as any[]));
+    setDetailLoading(false);
+  };
+
+  useEffect(() => {
+    if (!deepId) return;
+    const fromList = list.find((p) => p.id === deepId);
+    if (fromList) {
+      openPermit(fromList);
+      return;
+    }
+    if (!projectId && list.length === 0 && loading) return;
+    (async () => {
+      const { data, error } = await supabase
+        .from("work_permits" as any)
+        .select("*")
+        .eq("id", deepId)
+        .maybeSingle();
+      if (error || !data) {
+        toast.error("허가서를 찾을 수 없습니다.");
+        return;
+      }
+      openPermit(data);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepId, list, projectId, loading]);
+
+  const closeDetail = () => {
+    setActive(null);
+    setSignatures({});
+    setFormData({});
+    if (deepId) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("id");
+      setSearchParams(next, { replace: true });
+    }
+  };
+
+  const kindTabs = useMemo(() => kinds, [kinds]);
 
   return (
     <div className="min-h-screen bg-muted/30 pb-24" data-testid="mobile-permits-viewer">
@@ -96,35 +198,37 @@ export default function MobilePermits() {
           size="icon"
           variant="ghost"
           className="text-primary-foreground"
-          onClick={() => (active ? setActive(null) : goMobileHome())}
+          onClick={() => (active ? closeDetail() : goMobileHome())}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="font-bold text-lg flex-1">작업허가서</div>
-        <Badge variant="secondary">{list.length}</Badge>
+        <Badge variant="secondary">{active ? 1 : list.length}</Badge>
       </header>
 
       <main className="p-4 space-y-3 max-w-md mx-auto">
-        <Card className="border-primary/20 bg-primary/5">
-          <CardContent className="pt-3 pb-3 text-xs space-y-2">
-            <p>모바일에서는 승인된·진행 중 허가서를 조회합니다. 승인·반려는 통합 결재함에서 합니다.</p>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="w-full"
-              onClick={() => navigate("/app/worker/approvals")}
-            >
-              <Inbox className="h-4 w-4 mr-1" /> 결재함 열기
-            </Button>
-          </CardContent>
-        </Card>
+        {!active && (
+          <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="pt-3 pb-3 text-xs space-y-2">
+              <p>모바일에서는 승인된·진행 중 허가서를 조회합니다. 승인·반려는 통합 결재함에서 합니다.</p>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="w-full"
+                onClick={() => navigate("/app/worker/approvals")}
+              >
+                <Inbox className="h-4 w-4 mr-1" /> 결재함 열기
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
-        {!projectId && (
+        {!projectId && !active && (
           <Card className="border-warning/40 bg-warning/5">
             <CardContent className="pt-3 pb-3 text-sm">프로젝트를 먼저 선택하세요.</CardContent>
           </Card>
         )}
-        {loading && (
+        {loading && !active && (
           <div className="text-center text-muted-foreground py-8">
             <Loader2 className="h-5 w-5 animate-spin inline mr-2" />
             로딩…
@@ -144,7 +248,10 @@ export default function MobilePermits() {
             <Card
               key={p.id}
               className="active:scale-[0.99] transition cursor-pointer"
-              onClick={() => setActive(p)}
+              onClick={() => {
+                setSearchParams({ id: p.id });
+                openPermit(p);
+              }}
             >
               <CardContent className="pt-4">
                 <div className="flex items-start gap-2">
@@ -169,31 +276,57 @@ export default function MobilePermits() {
           ))}
 
         {active && (
-          <Card>
-            <CardContent className="pt-4 space-y-2">
-              <div className="font-bold text-base">{permitTitle(active)}</div>
-              <div className="text-xs text-muted-foreground space-y-0.5">
-                <div>유형: {active.permit_type}</div>
-                <div>상태: {active.status}</div>
-                <div>일자: {resolvePermitWorkDate(active) || active.permit_date}</div>
-                <div>장소: {permitLocation(active)}</div>
-                <div>업체: {permitCompany(active)}</div>
-                <div>인원: {permitPersonnel(active)}명</div>
-              </div>
-              {active.work_description && (
-                <div className="text-sm bg-muted/40 rounded p-2 mt-2 whitespace-pre-wrap">
-                  {active.work_description}
+          <div className="space-y-3">
+            <Card>
+              <CardContent className="pt-4 space-y-2">
+                <div className="font-bold text-base">{permitTitle(active)}</div>
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  <div>상태: {active.status}</div>
+                  <div>일자: {resolvePermitWorkDate(active) || active.permit_date}</div>
+                  <div>장소: {permitLocation(active)}</div>
+                  <div>업체: {permitCompany(active)}</div>
                 </div>
-              )}
-              <Button
-                className="w-full mt-2"
-                variant="secondary"
-                onClick={() => navigate("/app/worker/approvals")}
-              >
-                이 문서 결재는 결재함에서
-              </Button>
-            </CardContent>
-          </Card>
+                {kindTabs.length > 1 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {kindTabs.map((k) => (
+                      <Button
+                        key={k}
+                        size="sm"
+                        variant={activeKind === k ? "default" : "outline"}
+                        onClick={() => setActiveKind(k)}
+                      >
+                        {k}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                <Button
+                  className="w-full"
+                  variant="secondary"
+                  onClick={() => navigate("/app/worker/approvals")}
+                >
+                  결재함으로
+                </Button>
+              </CardContent>
+            </Card>
+
+            {detailLoading ? (
+              <div className="text-center py-8">
+                <Loader2 className="h-5 w-5 animate-spin inline" />
+              </div>
+            ) : (
+              <div className="bg-white border rounded shadow-sm p-2 overflow-x-auto">
+                <StandardPermitSheet>
+                  <DigPermitForm
+                    permitType={activeKind as PermitType}
+                    data={formData}
+                    signatures={signatures}
+                    readOnly
+                  />
+                </StandardPermitSheet>
+              </div>
+            )}
+          </div>
         )}
       </main>
     </div>

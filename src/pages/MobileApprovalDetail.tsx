@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import IMESafeTextarea from "@/components/IMESafeTextarea";
-import { ArrowLeft, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, XCircle, Loader2, FileText } from "lucide-react";
 import { toast } from "sonner";
 import PermitAiBriefingCard from "@/components/permits/PermitAiBriefingCard";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
@@ -18,9 +18,11 @@ import {
   permitPostStepApproveLabel,
 } from "@/lib/permitPostApproval";
 import { formatPermitStamp } from "@/lib/permitDateFormat";
+import { resolvePermitWorkDate } from "@/lib/permitWorkDate";
 
 /**
- * Mobile approval detail — AI briefing at top, then action buttons.
+ * Mobile approval detail — summary + AI briefing, then action buttons.
+ * Full permit document opens read-only via /app/worker/permits?id=
  * Route: /app/worker/approvals/:approvalId
  */
 export default function MobileApprovalDetail() {
@@ -61,7 +63,7 @@ export default function MobileApprovalDetail() {
       if (found?.entity_type === "work_permit" && found.entity_id) {
         const { data: p } = await supabase
           .from("work_permits" as any)
-          .select("id, ai_briefing, work_name, work_description, location, permit_date, status, form_data, extension_until, permit_kinds, permit_type")
+          .select("id, ai_briefing, work_name, work_description, location, work_location, permit_date, status, form_data, extension_until, permit_kinds, permit_type, contractor_company, personnel_count, signatures")
           .eq("id", found.entity_id)
           .maybeSingle();
         setPermitRow(p || null);
@@ -78,7 +80,7 @@ export default function MobileApprovalDetail() {
       }
       setLoading(false);
     })();
-  }, [user, approvalId]);
+  }, [user, approvalId, navigate]);
 
   const runDecide = async (action: "approve" | "reject") => {
     if (!row) return;
@@ -121,6 +123,24 @@ export default function MobileApprovalDetail() {
     await runDecide(action);
   };
 
+  const form = (permitRow?.form_data && typeof permitRow.form_data === "object")
+    ? permitRow.form_data
+    : {};
+  const summaryTitle =
+    permitRow?.work_name || form.work_name || row?.entity_title || "(제목 없음)";
+  const summaryLocation =
+    permitRow?.location || permitRow?.work_location || form.work_location || "-";
+  const summaryCompany =
+    permitRow?.contractor_company || form.contractor_company || form.applicant_company || "-";
+  const summaryKinds = Array.isArray(permitRow?.permit_kinds) && permitRow.permit_kinds.length
+    ? permitRow.permit_kinds.join(", ")
+    : (permitRow?.permit_type || "-");
+  const summaryDate = permitRow
+    ? (resolvePermitWorkDate(permitRow) || permitRow.permit_date || "-")
+    : (row?.entity_date || "-");
+  const summaryPersonnel = permitRow?.personnel_count || form.personnel_count || 0;
+  const closureName = permitRow?.signatures?.closure_approver?.name;
+
   return (
     <div className="min-h-screen bg-muted/30 pb-24">
       <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
@@ -148,9 +168,41 @@ export default function MobileApprovalDetail() {
         )}
         {row && (
           <>
-            {/* AI briefing — top of mobile detail */}
             {row.entity_type === "work_permit" && (
               <PermitAiBriefingCard briefing={briefing} />
+            )}
+
+            {row.entity_type === "work_permit" && permitRow && (
+              <Card>
+                <CardContent className="pt-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-primary" />
+                    <div className="font-semibold text-sm">허가서 요약</div>
+                  </div>
+                  <div className="font-medium text-base">{summaryTitle}</div>
+                  <div className="text-xs text-muted-foreground space-y-0.5">
+                    <div>유형: {summaryKinds}</div>
+                    <div>상태: {permitRow.status || "-"}</div>
+                    <div>작업일: {summaryDate}</div>
+                    <div>장소: {summaryLocation}</div>
+                    <div>업체: {summaryCompany}</div>
+                    <div>인원: {summaryPersonnel}명</div>
+                    {closureName && <div>작업완료 SM: {closureName}</div>}
+                  </div>
+                  {(permitRow.work_description || form.work_description) && (
+                    <div className="text-sm bg-muted/40 rounded p-2 whitespace-pre-wrap">
+                      {permitRow.work_description || form.work_description}
+                    </div>
+                  )}
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => navigate(`/app/worker/permits?id=${permitRow.id}`)}
+                  >
+                    전체 문서 보기
+                  </Button>
+                </CardContent>
+              </Card>
             )}
 
             <Card>
@@ -164,7 +216,7 @@ export default function MobileApprovalDetail() {
                   )}
                   <Badge variant="outline">{row.step || "결재"}</Badge>
                 </div>
-                <div className="font-semibold text-base">{row.entity_title || "(제목 없음)"}</div>
+                <div className="font-semibold text-base">{row.entity_title || summaryTitle}</div>
                 <div className="text-xs text-muted-foreground">
                   {row.entity_date && <>작업일 {row.entity_date} · </>}
                   요청 {new Date(row.created_at).toLocaleString("ko-KR")}
@@ -191,16 +243,6 @@ export default function MobileApprovalDetail() {
                     {permitPostStepApproveLabel(stepKind)}
                   </Button>
                 </div>
-
-                {row.entity_type === "work_permit" && (
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => navigate("/app/worker/permits")}
-                  >
-                    허가서 목록 보기
-                  </Button>
-                )}
               </CardContent>
             </Card>
           </>

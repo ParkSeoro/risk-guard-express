@@ -24,6 +24,14 @@
 
 - `worker_daily_acks` — 당일 확인·서명
 - `work_permit_workers` + `personnel_count` — 예상/실원
-- `work_permits.tbm_session_id` — 1:1 TBM
+- `work_permits.tbm_session_id` — 1:1 TBM (결재 잠금 예외 · RPC `link_work_permit_tbm`)
 
-적용: [`supabase-apply-daily-acks.md`](./supabase-apply-daily-acks.md)
+적용:
+- [`supabase-apply-daily-acks.md`](./supabase-apply-daily-acks.md)
+- [`supabase-apply-permit-tbm-link.md`](./supabase-apply-permit-tbm-link.md)
+
+## TBM 일지 작성만 허가서 연동
+
+- **「허가서에서」** / 허가서 상세 CTA → `ensureTbmForPermit` → RPC 링크
+- **「이전 TBM 불러오기」** → TBM 일지 폼 **내용만** 복사 (허가서 링크·근로자·서명·날짜 미복사)
+- 허가서 화면에 이전 TBM 불러오기 없음

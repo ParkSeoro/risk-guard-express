@@ -163,13 +163,27 @@ export async function ensureTbmForPermit(opts: {
   if (cerr || !created) return { ok: false, error: cerr?.message || "TBM 생성 실패" };
 
   const tbmId = (created as any).id;
-  const { error: linkErr } = await supabase
-    .from("work_permits" as any)
-    .update({ tbm_session_id: tbmId })
-    .eq("id", opts.permitId);
-  if (linkErr) return { ok: false, error: linkErr.message };
 
-  return { ok: true, tbmId, reused: false };
+  // Link via RPC so approved/in-approval permits are not blocked by edit lock
+  const { data: linkedId, error: linkErr } = await supabase.rpc("link_work_permit_tbm", {
+    _permit_id: opts.permitId,
+    _tbm_session_id: tbmId,
+  });
+
+  if (linkErr) {
+    // Soft-delete orphan TBM when link fails (race / already linked / permission)
+    await supabase
+      .from("tbm_sessions" as any)
+      .update({
+        is_deleted: true,
+        deleted_at: new Date().toISOString(),
+        deleted_reason: "permit_link_failed",
+      })
+      .eq("id", tbmId);
+    return { ok: false, error: linkErr.message };
+  }
+
+  return { ok: true, tbmId: (linkedId as string) || tbmId, reused: false };
 }
 
 export function canManagePermitCrew(role: string | null | undefined, isMaster?: boolean): boolean {

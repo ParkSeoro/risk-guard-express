@@ -92,15 +92,15 @@ export async function draftTbmBriefingAi(opts: {
 }
 
 /**
- * TBM 주관자 = 허가서 작성자.
- * 우선순위: 신청자명 → 상신자명 → (비동기) created_by 프로필 → fallback.
+ * TBM 주관자 = 허가서 작성자 (허가서 연동 TBM만).
+ * 우선순위: 상신자명 → form 작성자명 → 신청자명 → (비동기) created_by 프로필 → fallback.
  */
 export function resolvePermitAuthorName(permit: any, fallback = ""): string {
-  const fd = permit?.form_data || {};
-  const fromForm = String(fd.applicant_name || fd.writer_name || fd.author_name || "").trim();
-  if (fromForm) return fromForm;
   const submitted = String(permit?.submitted_by_name || "").trim();
   if (submitted) return submitted;
+  const fd = permit?.form_data || {};
+  const fromForm = String(fd.writer_name || fd.author_name || fd.applicant_name || "").trim();
+  if (fromForm) return fromForm;
   return String(fallback || "").trim();
 }
 

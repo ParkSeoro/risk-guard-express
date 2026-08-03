@@ -363,6 +363,18 @@ const WorkPlans = () => {
                           )}
                           {plan.status === '작성중' && access.canEdit('work_plan') && (
                             <DropdownMenuItem onClick={async () => {
+                              const { getApprovalBlockers } = await import('@/lib/workPlanAttachments');
+                              const blockers = await getApprovalBlockers(plan.id, plan.work_type);
+                              if (blockers.length > 0) {
+                                toast({
+                                  title: '법정 필수 첨부 누락',
+                                  description: blockers.slice(0, 4).map((b) => b.name).join(', ')
+                                    + (blockers.length > 4 ? ` 외 ${blockers.length - 4}건` : '')
+                                    + ' — 상세에서 업로드 후 상신하세요.',
+                                  variant: 'destructive',
+                                });
+                                return;
+                              }
                               const { data, error } = await supabase.rpc('submit_entity_for_approval', {
                                 _entity_type: 'work_plan', _entity_id: plan.id, _project_id: plan.project_id,
                               });

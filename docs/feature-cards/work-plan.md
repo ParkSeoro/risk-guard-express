@@ -55,6 +55,13 @@
 - vitest: `src/test/permissions.matrix.test.ts` (work_plan 행)
 - E2E: `SCENARIOS.core12.work_plan_smoke`, `SCENARIOS.flow.create_work_plan`
 
+## 정책 결정 (2026-08-03)
+- 작업유형: **실무 확장형** 유지 (제38조 13종만으로 축소하지 않음)
+- RA 회차 FK: 결재 **절대 필수 아님** (연계 권장)
+- 근로자 주지(제38조②): **연결 TBM 참석**으로 증빙 (사전 승인 문서이므로)
+- 결재 차단 첨부: **사업자등록증·보험가입증명서** 포함 (공통 legal 필수)
+
 ## 남은 작업
-- 7탭 중 "위험성평가 연계" 탭에서 같은 프로젝트 RA 회차 자동 추천
+- derive_permit/tbm RPC 컬럼 매핑 보정
+- 첨부 JSON vs `work_plan_attachments` 이중구조 정리
 

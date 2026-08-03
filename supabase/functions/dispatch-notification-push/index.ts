@@ -299,7 +299,7 @@ Deno.serve(async (req) => {
                     icon: "ic_stat_safenex",
                     color: "#0D9488",
                     ...(tag ? { tag } : {}),
-                    click_action: url,
+                    // Do not set click_action to a web path — tap routing uses data.link
                   },
                 },
               };
@@ -378,7 +378,6 @@ Deno.serve(async (req) => {
                     title: n.title,
                     body,
                     tag,
-                    click_action: url,
                     sound: isCriticalAlarm ? "siren" : "default",
                     android_channel_id: isCriticalAlarm ? "safenex_alarms" : "safenex_default",
                     icon: "ic_stat_safenex",

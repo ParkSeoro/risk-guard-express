@@ -93,7 +93,14 @@ async function getGeolocation(): Promise<{
     try {
       const { Geolocation } = await import("@capacitor/geolocation");
       const status = await Geolocation.checkPermissions();
-      if (status.location !== "granted" && status.coarseLocation !== "granted") {
+      const granted =
+        status.location === "granted" || status.coarseLocation === "granted";
+      if (!granted) {
+        // After /native-permissions, do not re-prompt (avoids permission loops).
+        const { hasCompletedNativePermissions } = await import("@/lib/native/isNativeApp");
+        if (hasCompletedNativePermissions()) {
+          throw new Error("위치 권한이 없습니다. 설정에서 위치를 허용해 주세요.");
+        }
         await Geolocation.requestPermissions();
       }
       return {
@@ -108,7 +115,9 @@ async function getGeolocation(): Promise<{
           return { remove: () => Geolocation.clearWatch({ id }) };
         },
       };
-    } catch {
+    } catch (e) {
+      // Re-throw permission errors so callers can surface them; other failures fall through.
+      if (e instanceof Error && /위치 권한/.test(e.message)) throw e;
       // fall through
     }
   }

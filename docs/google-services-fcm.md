@@ -14,40 +14,36 @@ Firebase 프로젝트: `safenex-71fe9`
 
 ## 2. Edge 서버 발송 (Admin SDK — **권장**)
 
-클라이언트가 토큰을 받아도, Edge `dispatch-notification-push` 가 보내야 트레이에 뜹니다.
+Secret Name: `FIREBASE_SERVICE_ACCOUNT_JSON`  
+Value: Admin SDK JSON 전체 (`type: service_account`)
 
-다운로드한 `…-firebase-adminsdk-….json` 전체(= `"type": "service_account"`)를 씁니다.  
-**레포에 커밋하지 마세요.** Supabase Secret 에만 넣습니다.
+추가로 DB 트리거 인증용:
 
-### Dashboard 등록 (가장 쉬움)
+- Edge Secret: `PUSH_TRIGGER_SECRET`  
+  (= `private.dispatch_config.trigger_secret` 와 동일)
 
-1. [Supabase Dashboard](https://supabase.com/dashboard) → 사용 중 프로젝트
-2. **Project Settings** → **Edge Functions** → **Secrets**
-3. **Add new secret**
-   - **Name:** `FIREBASE_SERVICE_ACCOUNT_JSON`
-   - **Value:** Admin SDK JSON **전체** (중괄호 `{` … `}` 포함, 한 줄이어도 됨)
-4. 저장 후 Edge Function `dispatch-notification-push` **Redeploy** (Secrets만 바꿔도 보통 즉시 반영되지만, 안 되면 Redeploy)
+---
 
-### CLI
+## 3. DB `private.dispatch_config` (푸시 트리거 URL)
 
-```bash
-supabase link --project-ref qhntxmggacorqjjmjqgo
-supabase secrets set FIREBASE_SERVICE_ACCOUNT_JSON="$(cat safenex-71fe9-firebase-adminsdk-….json)"
+알림 INSERT → pg_net → Edge. URL이 틀리면 푸시가 나가지 않습니다.
+
+Supabase **SQL Editor**에서 확인/수정:
+
+```sql
+SELECT key, value FROM private.dispatch_config;
+
+UPDATE private.dispatch_config
+SET value = 'https://qhntxmggacorqjjmjqgo.supabase.co'
+WHERE key = 'supabase_url';
 ```
 
-### 확인
-
-- Function 로그에 `native_mode: "http_v1"`, `native.sent >= 1`
-- `device_push_tokens` 에 android 토큰 존재
-- 알림 발생 시 기기 트레이 수신
+마이그레이션 `20260803123000_fix_dispatch_config_url.sql` 도 동일 내용을 적용합니다.
 
 ---
 
-## 3. (구형) `FCM_SERVER_KEY` — 선택 폴백
+## 4. (구형) `FCM_SERVER_KEY` — 선택 폴백
 
-Legacy Cloud Messaging 서버 키(`AAAA…`)입니다.  
-`FIREBASE_SERVICE_ACCOUNT_JSON` 이 있으면 **무시해도 됩니다.**
-
----
+`FIREBASE_SERVICE_ACCOUNT_JSON` 이 있으면 불필요합니다.
 
 VAPID(`VAPID_*`)는 **웹 푸시**용이며 네이티브 FCM을 대체하지 않습니다.

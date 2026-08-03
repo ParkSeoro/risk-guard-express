@@ -104,6 +104,32 @@ export default function NativePermissionsOnboarding() {
       if (cur.location !== "granted" && cur.coarseLocation !== "granted") {
         await Geolocation.requestPermissions();
       }
+      // Android 10+: request "Always" via BackgroundGeolocation once (Play BG-location).
+      if (Capacitor.getPlatform() === "android") {
+        try {
+          const { registerPlugin } = await import("@capacitor/core");
+          const BackgroundGeolocation = registerPlugin<any>("BackgroundGeolocation");
+          if (BackgroundGeolocation?.addWatcher) {
+            const id = await BackgroundGeolocation.addWatcher(
+              {
+                backgroundMessage: "위험구역 자동감지를 위해 위치를 추적합니다.",
+                backgroundTitle: "SafeNex 위치",
+                requestPermissions: true,
+                stale: true,
+                distanceFilter: 50,
+              },
+              () => {},
+            );
+            try {
+              await BackgroundGeolocation.removeWatcher({ id });
+            } catch {
+              /* ignore */
+            }
+          }
+        } catch (e) {
+          console.warn("[NativePermissions] background location prompt skipped", e);
+        }
+      }
       setStep("notifications");
     } catch (e: any) {
       toast.error("위치 권한 요청 실패: " + (e?.message || "오류"));

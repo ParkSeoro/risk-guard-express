@@ -171,8 +171,15 @@ export async function ensureTbmForPermit(opts: {
   });
 
   if (linkErr) {
-    // Avoid orphan TBM when link fails (race / already linked / permission)
-    await supabase.from("tbm_sessions" as any).delete().eq("id", tbmId);
+    // Soft-delete orphan TBM when link fails (race / already linked / permission)
+    await supabase
+      .from("tbm_sessions" as any)
+      .update({
+        is_deleted: true,
+        deleted_at: new Date().toISOString(),
+        deleted_reason: "permit_link_failed",
+      })
+      .eq("id", tbmId);
     return { ok: false, error: linkErr.message };
   }
 

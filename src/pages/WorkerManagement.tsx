@@ -23,10 +23,14 @@ import {
   isWorkerCurrentlySuspended,
   suspensionKindLabel,
 } from "@/lib/workerSuspension";
+import { isManagementJobType } from "@/lib/jobCategories";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 
 const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "site_supervisor", "worker"]);
+
+/** 등록 명부 보기: 현장 작업자(기본) / 관리 직종 / 전체 */
+type RosterFilter = "field" | "management" | "all";
 
 export default function WorkerManagement() {
   const access = useGlobalProjectAccessOptional();
@@ -54,6 +58,7 @@ export default function WorkerManagement() {
   const [showBulk, setShowBulk] = useState(false);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [rosterFilter, setRosterFilter] = useState<RosterFilter>("field");
   const [suspendTarget, setSuspendTarget] = useState<{ id: string; name: string } | null>(null);
   const { log } = useAuditLog();
   const baseUrl = window.location.origin;
@@ -61,16 +66,33 @@ export default function WorkerManagement() {
     ? `${baseUrl}/worker/register?project=${projectId}${companyId ? `&company=${companyId}` : ''}`
     : "";
 
+  const rosterCounts = useMemo(() => {
+    let field = 0;
+    let management = 0;
+    for (const w of workers) {
+      if (isManagementJobType(w.job_type)) management += 1;
+      else field += 1;
+    }
+    return { field, management, all: workers.length };
+  }, [workers]);
+
   const filteredWorkers = useMemo(() => {
+    let list = workers;
+    if (rosterFilter === "field") {
+      list = list.filter((w) => !isManagementJobType(w.job_type));
+    } else if (rosterFilter === "management") {
+      list = list.filter((w) => isManagementJobType(w.job_type));
+    }
     const q = search.trim().toLowerCase();
-    if (!q) return workers;
-    return workers.filter(w =>
-      (w.name || "").toLowerCase().includes(q) ||
-      (w.phone || "").toLowerCase().includes(q) ||
-      (w.company_name || "").toLowerCase().includes(q) ||
-      (w.job_type || "").toLowerCase().includes(q)
+    if (!q) return list;
+    return list.filter(
+      (w) =>
+        (w.name || "").toLowerCase().includes(q) ||
+        (w.phone || "").toLowerCase().includes(q) ||
+        (w.company_name || "").toLowerCase().includes(q) ||
+        (w.job_type || "").toLowerCase().includes(q),
     );
-  }, [workers, search]);
+  }, [workers, search, rosterFilter]);
 
   useEffect(() => {
     supabase.from("projects").select("id,name").eq('is_deleted', false).then(({ data }) => setProjects(data || []));
@@ -192,9 +214,44 @@ export default function WorkerManagement() {
 
           {projectId && (
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
-                <CardTitle>등록 근로자 ({filteredWorkers.length}{search ? ` / ${workers.length}` : ''}명)</CardTitle>
-                <div className="relative w-64">
+              <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap space-y-0">
+                <div className="space-y-1.5 min-w-0">
+                  <CardTitle>
+                    등록 명부 ({filteredWorkers.length}
+                    {search || rosterFilter !== "all" ? ` / ${workers.length}` : ""}명)
+                  </CardTitle>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        { id: "field" as const, label: "현장 작업자", count: rosterCounts.field },
+                        { id: "management" as const, label: "관리 직종", count: rosterCounts.management },
+                        { id: "all" as const, label: "전체", count: rosterCounts.all },
+                      ] as const
+                    ).map((opt) => (
+                      <Button
+                        key={opt.id}
+                        type="button"
+                        size="sm"
+                        variant={rosterFilter === opt.id ? "default" : "outline"}
+                        className="h-8 text-xs"
+                        onClick={() => setRosterFilter(opt.id)}
+                        data-testid={`roster-filter-${opt.id}`}
+                      >
+                        {opt.label}
+                        <Badge
+                          variant={rosterFilter === opt.id ? "secondary" : "outline"}
+                          className="ml-1.5 text-[10px] px-1.5"
+                        >
+                          {opt.count}
+                        </Badge>
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    관리 직종 = 안전관리자·관리감독자 (QR·출입 데이터는 유지, 보기만 분류)
+                  </p>
+                </div>
+                <div className="relative w-64 shrink-0">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     className="pl-8 h-9"
@@ -221,8 +278,26 @@ export default function WorkerManagement() {
                     </div>
                   </div>
                 ) : filteredWorkers.length === 0 ? (
-                  <div className="text-sm text-muted-foreground py-8 text-center">
-                    검색 결과가 없습니다. <Button variant="link" className="p-0 h-auto" onClick={() => setSearch("")}>전체 보기</Button>
+                  <div className="text-sm text-muted-foreground py-8 text-center space-y-2">
+                    <div>
+                      {search
+                        ? "검색 결과가 없습니다."
+                        : rosterFilter === "management"
+                          ? "관리 직종(안전관리자·관리감독자)으로 등록된 인원이 없습니다."
+                          : "이 보기에 해당하는 인원이 없습니다."}
+                    </div>
+                    <div className="flex gap-2 justify-center flex-wrap">
+                      {search && (
+                        <Button variant="link" className="p-0 h-auto" onClick={() => setSearch("")}>
+                          검색 초기화
+                        </Button>
+                      )}
+                      {rosterFilter !== "all" && (
+                        <Button variant="link" className="p-0 h-auto" onClick={() => setRosterFilter("all")}>
+                          전체 보기
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -243,6 +318,7 @@ export default function WorkerManagement() {
                       <tbody>
                         {filteredWorkers.map(w => {
                           const suspended = isWorkerCurrentlySuspended(w);
+                          const isMgr = isManagementJobType(w.job_type);
                           return (
                           <tr key={w.id} className="border-b hover:bg-muted/40">
                             <td className="p-2 font-medium">
@@ -250,7 +326,16 @@ export default function WorkerManagement() {
                             </td>
                             <td className="p-2">{w.phone}</td>
                             <td className="p-2">{w.company_name}</td>
-                            <td className="p-2 text-xs">{w.job_type || "-"}</td>
+                            <td className="p-2 text-xs">
+                              <div className="flex flex-wrap items-center gap-1">
+                                <span>{w.job_type || "-"}</span>
+                                {isMgr && (
+                                  <Badge variant="outline" className="text-[10px] px-1.5">
+                                    관리
+                                  </Badge>
+                                )}
+                              </div>
+                            </td>
                             <td className="p-2">{w.education_confirmed_at ? <Badge className="bg-success">확인</Badge> : <Badge variant="secondary">미확인</Badge>}</td>
                             <td className="p-2">
                               {w.requires_daily_health_log && <Badge variant="outline" className="gap-1 text-warning border-warning"><AlertTriangle className="h-3 w-3" />일일일지</Badge>}

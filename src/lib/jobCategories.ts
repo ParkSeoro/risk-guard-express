@@ -79,6 +79,15 @@ const LEGAL_EDUCATION_JOB_TYPE_MAP: Record<StandardJobType, string> = {
   관리감독자: "manager",
 };
 
+/** 명부에서 「관리」로 분류하는 직종 (권한 role_new 와 별개 — workers.job_type 기준) */
+export const MANAGEMENT_JOB_TYPES = ["안전관리자", "관리감독자"] as const;
+const MANAGEMENT_JOB_TYPE_SET = new Set<string>(MANAGEMENT_JOB_TYPES);
+
+export function isManagementJobType(jobType: string | null | undefined): boolean {
+  if (!jobType?.trim()) return false;
+  return MANAGEMENT_JOB_TYPE_SET.has(jobType.trim());
+}
+
 export function toLegalEducationJobType(jobType: string | null | undefined): string {
   if (!jobType?.trim()) return "general";
   const trimmed = jobType.trim();

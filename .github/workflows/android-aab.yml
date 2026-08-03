@@ -158,6 +158,13 @@ jobs:
           if [ -f public/sounds/siren.wav ]; then
             cp public/sounds/siren.wav android/app/src/main/res/raw/siren.wav
             echo "Copied siren.wav → res/raw"
+          else
+            echo "::error::public/sounds/siren.wav missing — required for FCM alarm channel"
+            exit 1
+          fi
+          if [ ! -f android/app/src/main/res/raw/siren.wav ]; then
+            echo "::error::siren.wav not present under res/raw after copy"
+            exit 1
           fi
           # 런처/알림 아이콘 + FCM default_notification_icon (항상 적용)
           pip install --quiet pillow

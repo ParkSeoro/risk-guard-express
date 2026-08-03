@@ -28,6 +28,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ShieldCheck, MapPin, FileText, ScrollText, Lock } from "lucide-react";
+import {
+  hasCompletedNativePermissions,
+  isNativeApp,
+} from "@/lib/native/isNativeApp";
 import { setTrackingConsent } from "@/lib/tracking/locationTracker";
 import { toast } from "sonner";
 
@@ -116,9 +120,13 @@ export default function ConsentPage() {
         /* local patch already applied — navigate anyway */
       }
 
-      // ③ Role-aware home
+      // ③ Native: OS permissions next; otherwise role-aware home
       toast.success("약관 동의가 완료되었습니다");
-      navigate(postConsentHomePath(roles, { loginIntent: readLoginIntent() }), { replace: true });
+      if (isNativeApp() && !hasCompletedNativePermissions()) {
+        navigate("/native-permissions", { replace: true });
+      } else {
+        navigate(postConsentHomePath(roles, { loginIntent: readLoginIntent() }), { replace: true });
+      }
     } catch (e: any) {
       toast.error(e?.message || "동의 저장에 실패했습니다");
     } finally {

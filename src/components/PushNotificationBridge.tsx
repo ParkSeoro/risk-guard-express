@@ -120,7 +120,7 @@ export default function PushNotificationBridge() {
           'registration',
           async (t: { value: string }) => {
             try {
-              await supabase.from('device_push_tokens' as any).upsert(
+              const { error } = await supabase.from('device_push_tokens' as any).upsert(
                 {
                   user_id: user!.id,
                   token: t.value,
@@ -130,6 +130,9 @@ export default function PushNotificationBridge() {
                 },
                 { onConflict: 'user_id,token' },
               );
+              if (error) {
+                console.error('[PushBridge/native] token upsert error', error);
+              }
             } catch (e) {
               console.warn('[PushBridge/native] token upsert failed', e);
             }
@@ -145,13 +148,16 @@ export default function PushNotificationBridge() {
           'pushNotificationActionPerformed',
           (action: any) => {
             const data = action?.notification?.data || {};
-            const route = resolveNotificationRoute({
-              link: data.link || data.url,
-              type: data.type,
-              related_type: data.related_type,
-              related_id: data.related_id,
-              project_id: data.project_id,
-            });
+            const route = resolveNotificationRoute(
+              {
+                link: data.link || data.url,
+                type: data.type,
+                related_type: data.related_type,
+                related_id: data.related_id,
+                project_id: data.project_id,
+              },
+              { mobileShell: true },
+            );
             if (route) navigate(route);
           },
         );

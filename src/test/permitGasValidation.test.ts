@@ -34,7 +34,7 @@ describe('permitGasValidation', () => {
     expect(validatePermitGasForClosure({}, ['excavation']).ok).toBe(true);
   });
 
-  it('blocks closure when general fields are blank', () => {
+  it('reports missing optional gas fields for general kinds', () => {
     const check = validatePermitGasForClosure(
       { gas_o2: '20.9', gas_co2: '0.1' },
       ['general'],

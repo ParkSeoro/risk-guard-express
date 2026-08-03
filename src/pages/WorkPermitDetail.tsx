@@ -48,10 +48,8 @@ import {
 } from '@/lib/permitDisplayTemplate';
 import {
   GAS_READING_KEYS,
-  gasClosureErrorMessage,
   kindsNeedGasMeasurement,
   pickGasReadings,
-  validatePermitGasForClosure,
 } from '@/lib/permitGasValidation';
 
 function toDbTimestamp(value?: string | null) {
@@ -397,7 +395,7 @@ export default function WorkPermitDetail() {
   const readOnly = !isPermitEditable(permit?.status);
   const canSave = !readOnly && isAuthor;
   const canSubmit = !readOnly && isAuthor;
-  /** 발행·종료대기: 가스측정만 입력/저장 (작업 완료 결재 전 필수) */
+  /** 발행·종료대기: 가스측정 입력/저장 (선택) */
   const gasFieldsEditable =
     !!permit &&
     (APPROVED_PERMIT_STATUSES.has(permit.status || '') ||
@@ -442,7 +440,7 @@ export default function WorkPermitDetail() {
     !CLOSURE_PENDING_STATUSES.has(permit.status || '') &&
     !data.work_extend_requested_until;
 
-  /** 발행 완료 + 가스측정 후: 관리감독자→SM 작업완료(종료) 결재 수동 요청 */
+  /** 발행 완료: 관리감독자→SM 작업완료(종료) 결재 수동 요청 (가스측정 비필수) */
   const canRequestClosure =
     !!permit &&
     APPROVED_PERMIT_STATUSES.has(permit.status || '') &&
@@ -452,17 +450,6 @@ export default function WorkPermitDetail() {
 
   const requestClosure = async () => {
     if (!id || !canRequestClosure) return;
-    if (kindsNeedGasMeasurement(selectedKinds)) {
-      const check = validatePermitGasForClosure(data as Record<string, unknown>, selectedKinds);
-      if (!check.ok) {
-        toast({
-          title: '가스측정 후 요청할 수 있습니다',
-          description: gasClosureErrorMessage(check),
-          variant: 'destructive',
-        });
-        return;
-      }
-    }
     setRequestingClosure(true);
     try {
       const { data: res, error } = await (supabase as any).rpc('request_work_permit_closure', {
@@ -471,17 +458,16 @@ export default function WorkPermitDetail() {
       const r = res as any;
       if (error || r?.error) {
         const code = r?.error || error?.message || '';
-        const missing = Array.isArray(r?.missing) ? r.missing.join(', ') : '';
         const msg =
-          code === 'GAS_MEASUREMENT_REQUIRED'
-            ? `작업 완료 결재 전 가스농도 측정을 입력·저장하세요.${missing ? ` (미입력: ${missing})` : ''}`
-            : code === 'PENDING_POST_APPROVAL' ? '이미 종료/연장 결재가 진행 중입니다.'
-            : code === 'ALREADY_CLOSURE_PENDING' ? '이미 작업 완료 확인 대기 상태입니다.'
-            : code === 'ALREADY_CLOSED' ? '이미 종료된 허가서입니다.'
-            : code === 'NO_SM' ? '발주처 SM을 찾을 수 없습니다.'
-            : code === 'NOT_APPROVED' ? '승인(발행)된 허가서만 요청할 수 있습니다.'
-            : code === 'FORBIDDEN' ? '권한이 없습니다.'
-            : String(code);
+          code === 'PENDING_POST_APPROVAL' ? '이미 종료/연장 결재가 진행 중입니다.'
+          : code === 'ALREADY_CLOSURE_PENDING' ? '이미 작업 완료 확인 대기 상태입니다.'
+          : code === 'ALREADY_CLOSED' ? '이미 종료된 허가서입니다.'
+          : code === 'NO_SM' ? '발주처 SM을 찾을 수 없습니다.'
+          : code === 'NOT_APPROVED' ? '승인(발행)된 허가서만 요청할 수 있습니다.'
+          : code === 'FORBIDDEN' ? '권한이 없습니다.'
+          : code === 'GAS_MEASUREMENT_REQUIRED'
+            ? '서버에 구 가스측정 필수 로직이 남아 있습니다. SQL(optional_permit_gas_closure)을 적용해 주세요.'
+          : String(code);
         toast({ title: '작업완료 결재 요청 실패', description: msg, variant: 'destructive' });
         return;
       }
@@ -580,7 +566,7 @@ export default function WorkPermitDetail() {
               size="sm"
               onClick={requestClosure}
               disabled={requestingClosure || saving}
-              title="가스측정 저장 후 작업 완료(종료) 결재를 요청합니다"
+              title="작업 완료(종료) 결재를 요청합니다"
             >
               <CheckCircle2 className="h-4 w-4 mr-1" />
               {requestingClosure ? '요청 중…' : '작업완료 결재 요청'}
@@ -802,7 +788,7 @@ export default function WorkPermitDetail() {
             <span className="text-xs text-muted-foreground">
               {isApproved
                 ? (gasFieldsEditable
-                  ? '발행 완료 — 가스농도 측정만 입력 가능 (작업 완료 전 필수)'
+                  ? '발행 완료 — 가스농도 측정은 선택 입력'
                   : '발행 완료 — 수정 불가')
                 : IN_APPROVAL_PERMIT_STATUSES.has(permit.status)
                   ? '결재 진행중 — 수정 불가'

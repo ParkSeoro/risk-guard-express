@@ -18,13 +18,6 @@ import {
   permitPostStepApproveLabel,
 } from "@/lib/permitPostApproval";
 import { formatPermitStamp } from "@/lib/permitDateFormat";
-import GasMeasurementDialog from "@/components/permits/GasMeasurementDialog";
-import {
-  gasClosureErrorMessage,
-  kindsNeedGasMeasurement,
-  permitKindsFromRow,
-  validatePermitGasForClosure,
-} from "@/lib/permitGasValidation";
 
 /**
  * Mobile approval detail — AI briefing at top, then action buttons.
@@ -42,7 +35,6 @@ export default function MobileApprovalDetail() {
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [permitRow, setPermitRow] = useState<any | null>(null);
-  const [gasOpen, setGasOpen] = useState(false);
 
   const stepKind = permitPostStepKind(row?.step_position);
   const badge = permitPostStepBadge(stepKind);
@@ -104,10 +96,6 @@ export default function MobileApprovalDetail() {
       if (error) throw error;
       const r = data as any;
       if (r?.error) {
-        if (r.error === "GAS_MEASUREMENT_REQUIRED") {
-          const missing = Array.isArray(r.missing) ? ` (미입력: ${r.missing.join(", ")})` : "";
-          throw new Error(`가스농도 측정을 입력한 뒤 다시 시도하세요.${missing}`);
-        }
         throw new Error(r.error);
       }
       toast.success(
@@ -130,25 +118,6 @@ export default function MobileApprovalDetail() {
   const decide = async (action: "approve" | "reject") => {
     if (!row) return;
     if (action === "reject" && !comment.trim()) return toast.error("반려 사유를 입력하세요");
-
-    if (
-      action === "approve" &&
-      row.entity_type === "work_permit" &&
-      (stepKind === "closure_supervisor" || stepKind === "closure_sm") &&
-      permitRow
-    ) {
-      const kinds = permitKindsFromRow(permitRow);
-      if (kindsNeedGasMeasurement(kinds)) {
-        const fd = (permitRow.form_data || {}) as Record<string, unknown>;
-        const check = validatePermitGasForClosure(fd, kinds);
-        if (!check.ok) {
-          toast.error(gasClosureErrorMessage(check));
-          setGasOpen(true);
-          return;
-        }
-      }
-    }
-
     await runDecide(action);
   };
 
@@ -237,24 +206,6 @@ export default function MobileApprovalDetail() {
           </>
         )}
       </main>
-
-      {permitRow && (
-        <GasMeasurementDialog
-          open={gasOpen}
-          onOpenChange={setGasOpen}
-          permitId={permitRow.id}
-          permitKinds={permitKindsFromRow(permitRow)}
-          initialFormData={(permitRow.form_data || {}) as Record<string, unknown>}
-          continueLabel={
-            stepKind === "closure_sm" ? "저장 후 작업 완료 및 종료" : "저장 후 완료 확인"
-          }
-          onSaved={async (fd) => {
-            setPermitRow((prev: any) => (prev ? { ...prev, form_data: fd } : prev));
-            setGasOpen(false);
-            await runDecide("approve");
-          }}
-        />
-      )}
     </div>
   );
 }

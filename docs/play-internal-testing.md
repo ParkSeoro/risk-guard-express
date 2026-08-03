@@ -6,6 +6,7 @@
 소요: 결제 1회($25) + 첫 등록 1~2시간 + 심사 대기 보통 1~3일.
 
 > **역할 분리·체크리스트:** [`play-store-you-vs-me.md`](./play-store-you-vs-me.md)  
+> **앱 생성 직후 콘솔 복붙:** [`play-console-fill.md`](./play-console-fill.md)  
 > 패키지 ID: **`org.safenex.app`** · 앱 이름: **Safenex**
 
 ---

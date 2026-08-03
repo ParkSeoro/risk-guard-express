@@ -2,8 +2,8 @@
  * Module-level risk auto-gen job — survives dialog close / SPA remount in the same tab.
  *
  * Simple two-phase UX (AI path):
- *  A) scope_draft — 공종·세부작업·위험요인만 삽입 → awaiting_review (user edits)
- *  B) risk_fill (batch) — 발생상황·대책·등급·PPE·법적근거 채움
+ *  A) scope_draft — 공종·세부작업·위험요인만 삽입 → awaiting_review (개수 자유)
+ *  B) risk_fill two-stage — narrative(상황·대책) → meta(등급·PPE·법규)
  */
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -11,7 +11,7 @@ import {
   AI_ROW_FAILED_HAZARD,
   AI_ROW_FAILED_NOTE_PREFIX,
   fetchScopeDraft,
-  fetchRiskFillBatch,
+  fetchRiskFillTwoStage,
   fetchRiskRowDetailWithRetry,
   isFillableRiskItem,
   RISK_FILL_CHUNK,
@@ -473,7 +473,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       const libraryItems = await generateRiskItems({
         processName: proc,
         tags: input.conditionTags,
-        targetCount: input.detailLevel === 'core' ? 8 : 12,
+        targetCount: input.detailLevel === 'core' ? 16 : 24,
         deduplicate: true,
       });
       const rows = libraryItems.map((g) => ({
@@ -748,7 +748,10 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
         });
 
         try {
-          const filled = await fetchRiskFillBatch({
+          patch({
+            message: `「${proc}」 ${filledTotal + failed}/${rows.length} · 서술 채움→등급·법규…`,
+          });
+          const filled = await fetchRiskFillTwoStage({
             ...opts,
             draftItems: chunk.map((r) => ({
               sub_task: r.sub_task || '',
@@ -779,7 +782,7 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
             if (idx >= 0) pending.splice(idx, 1);
           }
         } catch (err: any) {
-          console.warn('[AutoGenJob] risk_fill batch failed, falling back per-row:', err?.message || err);
+          console.warn('[AutoGenJob] risk_fill two-stage failed, falling back per-row:', err?.message || err);
           for (const row of chunk) {
             if (state.status !== 'running') return;
             const ok = await fillOneRow(row, opts);

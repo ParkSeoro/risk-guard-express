@@ -303,16 +303,31 @@ export async function fetchScopeDraft(
 /** Phase B batch size — keep small so Edge/gateway doesn't 504 (6 rows often timed out). */
 export const RISK_FILL_CHUNK = 3;
 
-/** Phase B — batch fill remaining fields (situation, measures, grades, PPE, legal). */
+export type RiskFillStage = 'narrative' | 'meta' | 'all';
+
+export type ScopeDraftItemRich = ScopeDraftItem & {
+  hazard_situation?: string;
+  existing_measure?: string;
+  improvement_measure?: string;
+};
+
+/** One fill stage — narrative (상황·대책) or meta (등급·PPE·법규). */
 export async function fetchRiskFillBatch(
-  opts: AIGenerateOptions & { draftItems: ScopeDraftItem[] },
+  opts: AIGenerateOptions & {
+    draftItems: ScopeDraftItemRich[];
+    fillStage?: RiskFillStage;
+  },
   signal?: AbortSignal,
 ): Promise<GeneratedRiskItem[]> {
   const detailLevel: DetailLevel = opts.detailLevel || 'core';
+  const fillStage: RiskFillStage = opts.fillStage || 'all';
   const draft_items = (opts.draftItems || [])
     .map((it) => ({
       sub_task: String(it.sub_task || '').trim(),
       hazard: String(it.hazard || '').trim(),
+      hazard_situation: String(it.hazard_situation || '').trim(),
+      existing_measure: String(it.existing_measure || '').trim(),
+      improvement_measure: String(it.improvement_measure || '').trim(),
     }))
     .filter((it) => it.sub_task)
     .slice(0, RISK_FILL_CHUNK);
@@ -322,6 +337,7 @@ export async function fetchRiskFillBatch(
   const data = await invokeRiskJson<{ items?: any[]; error?: string }>(
     {
       mode: 'risk_fill',
+      fill_stage: fillStage,
       process_name: opts.processName,
       draft_items,
       equipment: opts.equipment || '',
@@ -342,6 +358,58 @@ export async function fetchRiskFillBatch(
     throw new Error(mapErrorMessage(data?.error || '채움 결과가 비어 있습니다.'));
   }
   return items;
+}
+
+/** Narrative → meta two-step fill for one chunk; merge by sub_task order. */
+export async function fetchRiskFillTwoStage(
+  opts: AIGenerateOptions & { draftItems: ScopeDraftItem[] },
+  signal?: AbortSignal,
+): Promise<GeneratedRiskItem[]> {
+  const narratives = await fetchRiskFillBatch(
+    { ...opts, draftItems: opts.draftItems, fillStage: 'narrative' },
+    signal,
+  );
+  const forMeta: ScopeDraftItemRich[] = opts.draftItems.map((d, i) => {
+    const n =
+      narratives.find((x) => (x.sub_task || '').trim() === (d.sub_task || '').trim()) ||
+      narratives[i];
+    return {
+      sub_task: d.sub_task,
+      hazard: d.hazard || n?.hazard || '',
+      hazard_situation: n?.hazard_situation || '',
+      existing_measure: n?.existing_measure || '',
+      improvement_measure: n?.improvement_measure || '',
+    };
+  });
+  const metas = await fetchRiskFillBatch(
+    { ...opts, draftItems: forMeta, fillStage: 'meta' },
+    signal,
+  );
+
+  return forMeta.map((d, i) => {
+    const n =
+      narratives.find((x) => (x.sub_task || '').trim() === (d.sub_task || '').trim()) ||
+      narratives[i];
+    const m =
+      metas.find((x) => (x.sub_task || '').trim() === (d.sub_task || '').trim()) || metas[i];
+    const base = n || mapAIItemToGenerated({ sub_task: d.sub_task, hazard: d.hazard }, opts.processName);
+    if (!m) return base;
+    return {
+      ...base,
+      likelihood_grade: m.likelihood_grade || base.likelihood_grade,
+      severity_grade: m.severity_grade || base.severity_grade,
+      risk_grade: m.risk_grade || base.risk_grade,
+      improved_likelihood_grade: m.improved_likelihood_grade || base.improved_likelihood_grade,
+      improved_severity_grade: m.improved_severity_grade || base.improved_severity_grade,
+      improved_risk_grade: m.improved_risk_grade || base.improved_risk_grade,
+      frequency: m.frequency ?? base.frequency,
+      severity: m.severity ?? base.severity,
+      improved_frequency: m.improved_frequency ?? base.improved_frequency,
+      improved_severity: m.improved_severity ?? base.improved_severity,
+      ppe: m.ppe?.length ? m.ppe : base.ppe,
+      legal_basis: m.legal_basis?.length ? m.legal_basis : base.legal_basis,
+    };
+  });
 }
 
 /** Phase 2 (legacy single-row) — used for [재시도] of one failed row. */

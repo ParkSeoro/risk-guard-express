@@ -9862,6 +9862,10 @@ export type Database = {
           status: string
         }[]
       }
+      lookup_auth_user_id_by_email: {
+        Args: { _email: string }
+        Returns: string
+      }
       lookup_project_invite_by_code: {
         Args: { _code: string }
         Returns: {

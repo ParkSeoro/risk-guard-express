@@ -23,13 +23,16 @@ import {
   isWorkerCurrentlySuspended,
   suspensionKindLabel,
 } from "@/lib/workerSuspension";
-import { isManagementJobType } from "@/lib/jobCategories";
+import { isManagementJobType, isRosterManagementRow } from "@/lib/jobCategories";
+import { ADMIN_PROJECT_ROLES } from "@/lib/permissions";
+import { digitsOnlyPhone } from "@/lib/workerAuth";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 
 const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "site_supervisor", "worker"]);
+const ADMIN_ROLE_SET = new Set<string>(ADMIN_PROJECT_ROLES);
 
-/** 등록 명부 보기: 현장 작업자(기본) / 관리 직종 / 전체 */
+/** 등록 명부 보기: 현장 작업자(기본) / 관리 / 전체 */
 type RosterFilter = "field" | "management" | "all";
 
 export default function WorkerManagement() {
@@ -54,6 +57,8 @@ export default function WorkerManagement() {
   const [companyId, setCompanyId] = useState<string>("");
   const [companyLocked, setCompanyLocked] = useState(false);
   const [workers, setWorkers] = useState<any[]>([]);
+  /** phone digits → project admin role_new (from project_members + profiles) */
+  const [adminPhoneRoles, setAdminPhoneRoles] = useState<Map<string, string>>(new Map());
   const [showQr, setShowQr] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -66,22 +71,39 @@ export default function WorkerManagement() {
     ? `${baseUrl}/worker/register?project=${projectId}${companyId ? `&company=${companyId}` : ''}`
     : "";
 
+  const rowMeta = useMemo(() => {
+    const map = new Map<string, { isMgr: boolean; byJob: boolean; byPerm: boolean; permRole?: string }>();
+    for (const w of workers) {
+      const digits = digitsOnlyPhone(w.phone);
+      const permRole = digits ? adminPhoneRoles.get(digits) : undefined;
+      const byJob = isManagementJobType(w.job_type);
+      const byPerm = !!permRole;
+      map.set(w.id, {
+        isMgr: isRosterManagementRow({ jobType: w.job_type, hasAdminPermission: byPerm }),
+        byJob,
+        byPerm,
+        permRole,
+      });
+    }
+    return map;
+  }, [workers, adminPhoneRoles]);
+
   const rosterCounts = useMemo(() => {
     let field = 0;
     let management = 0;
     for (const w of workers) {
-      if (isManagementJobType(w.job_type)) management += 1;
+      if (rowMeta.get(w.id)?.isMgr) management += 1;
       else field += 1;
     }
     return { field, management, all: workers.length };
-  }, [workers]);
+  }, [workers, rowMeta]);
 
   const filteredWorkers = useMemo(() => {
     let list = workers;
     if (rosterFilter === "field") {
-      list = list.filter((w) => !isManagementJobType(w.job_type));
+      list = list.filter((w) => !rowMeta.get(w.id)?.isMgr);
     } else if (rosterFilter === "management") {
-      list = list.filter((w) => isManagementJobType(w.job_type));
+      list = list.filter((w) => rowMeta.get(w.id)?.isMgr);
     }
     const q = search.trim().toLowerCase();
     if (!q) return list;
@@ -92,7 +114,7 @@ export default function WorkerManagement() {
         (w.company_name || "").toLowerCase().includes(q) ||
         (w.job_type || "").toLowerCase().includes(q),
     );
-  }, [workers, search, rosterFilter]);
+  }, [workers, search, rosterFilter, rowMeta]);
 
   useEffect(() => {
     supabase.from("projects").select("id,name").eq('is_deleted', false).then(({ data }) => setProjects(data || []));
@@ -135,7 +157,33 @@ export default function WorkerManagement() {
       .eq("is_active", true)
       .order("created_at", { ascending: false });
     if (access?.applyCompanyFilter) q = access.applyCompanyFilter(q);
-    const { data, error } = await q;
+    const [{ data, error }, membersRes] = await Promise.all([
+      q,
+      supabase
+        .from("project_members")
+        .select("user_id, role_new")
+        .eq("project_id", projectId),
+    ]);
+
+    const adminMap = new Map<string, string>();
+    const members = (membersRes.data || []).filter(
+      (m: any) => m.role_new && ADMIN_ROLE_SET.has(String(m.role_new)),
+    );
+    if (members.length > 0) {
+      const userIds = members.map((m: any) => m.user_id).filter(Boolean);
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("user_id, phone")
+        .in("user_id", userIds);
+      const roleByUser = new Map(members.map((m: any) => [m.user_id, String(m.role_new)]));
+      for (const p of profiles || []) {
+        const digits = digitsOnlyPhone((p as any).phone);
+        const role = roleByUser.get((p as any).user_id);
+        if (digits && role) adminMap.set(digits, role);
+      }
+    }
+    setAdminPhoneRoles(adminMap);
+
     setLoading(false);
     if (error) { toast.error(error.message); return; }
     setWorkers(data || []);
@@ -224,7 +272,7 @@ export default function WorkerManagement() {
                     {(
                       [
                         { id: "field" as const, label: "현장 작업자", count: rosterCounts.field },
-                        { id: "management" as const, label: "관리 직종", count: rosterCounts.management },
+                        { id: "management" as const, label: "관리", count: rosterCounts.management },
                         { id: "all" as const, label: "전체", count: rosterCounts.all },
                       ] as const
                     ).map((opt) => (
@@ -248,7 +296,7 @@ export default function WorkerManagement() {
                     ))}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    관리 직종 = 안전관리자·관리감독자 (QR·출입 데이터는 유지, 보기만 분류)
+                    관리 = 직종(안전관리자·관리감독자) 또는 설정에서 준 프로젝트 관리 권한 (전화 매칭)
                   </p>
                 </div>
                 <div className="relative w-64 shrink-0">
@@ -283,7 +331,7 @@ export default function WorkerManagement() {
                       {search
                         ? "검색 결과가 없습니다."
                         : rosterFilter === "management"
-                          ? "관리 직종(안전관리자·관리감독자)으로 등록된 인원이 없습니다."
+                          ? "관리로 분류된 인원이 없습니다. (관리 직종 또는 프로젝트 관리 권한)"
                           : "이 보기에 해당하는 인원이 없습니다."}
                     </div>
                     <div className="flex gap-2 justify-center flex-wrap">
@@ -318,7 +366,7 @@ export default function WorkerManagement() {
                       <tbody>
                         {filteredWorkers.map(w => {
                           const suspended = isWorkerCurrentlySuspended(w);
-                          const isMgr = isManagementJobType(w.job_type);
+                          const meta = rowMeta.get(w.id);
                           return (
                           <tr key={w.id} className="border-b hover:bg-muted/40">
                             <td className="p-2 font-medium">
@@ -329,9 +377,14 @@ export default function WorkerManagement() {
                             <td className="p-2 text-xs">
                               <div className="flex flex-wrap items-center gap-1">
                                 <span>{w.job_type || "-"}</span>
-                                {isMgr && (
+                                {meta?.byJob && (
                                   <Badge variant="outline" className="text-[10px] px-1.5">
-                                    관리
+                                    관리직종
+                                  </Badge>
+                                )}
+                                {meta?.byPerm && (
+                                  <Badge variant="secondary" className="text-[10px] px-1.5">
+                                    권한
                                   </Badge>
                                 )}
                               </div>

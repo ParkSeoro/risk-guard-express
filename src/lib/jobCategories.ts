@@ -88,6 +88,14 @@ export function isManagementJobType(jobType: string | null | undefined): boolean
   return MANAGEMENT_JOB_TYPE_SET.has(jobType.trim());
 }
 
+/** 등록 명부 관리 분류: 관리 직종 OR 프로젝트 관리 권한 */
+export function isRosterManagementRow(opts: {
+  jobType?: string | null;
+  hasAdminPermission?: boolean;
+}): boolean {
+  return isManagementJobType(opts.jobType) || opts.hasAdminPermission === true;
+}
+
 export function toLegalEducationJobType(jobType: string | null | undefined): string {
   if (!jobType?.trim()) return "general";
   const trimmed = jobType.trim();

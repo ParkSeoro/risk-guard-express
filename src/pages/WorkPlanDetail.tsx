@@ -518,7 +518,7 @@ const WorkPlanDetail = () => {
               const { data, error } = await supabase.rpc('derive_tbm_from_work_plan', { _work_plan_id: planId });
               if (error) { toast({ title: 'TBM 생성 실패', description: error.message, variant: 'destructive' }); return; }
               const d: any = data;
-              if (d?.tbm_id) { toast({ title: d.reused ? '기존 TBM으로 이동' : 'TBM 세션이 생성되었습니다.' }); navigate(`/tbm`); }
+              if (d?.tbm_id) { toast({ title: d.reused ? '기존 TBM으로 이동' : 'TBM 세션이 생성되었습니다.' }); navigate(`/app/admin/tbm-logs`); }
             }}>
               <ClipboardList className="h-3.5 w-3.5" /> TBM 자동생성
             </Button>

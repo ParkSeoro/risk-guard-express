@@ -52,3 +52,6 @@
 ## 남은 작업
 - (선택) 만료된 허가서 자동 클로즈 cron
 - (선택) TBM 참여자 명단을 work_permit_workers 와 자동 동기화
+- [x] 근로자 배정 → personnel_count 동기화 + 인쇄 뒷장 명단 (을지)
+- [x] 배정 다이얼로그에서 오늘 출근자 빠른 선택
+- 상세 흐름: [`docs/tbm-attendance-permit-link.md`](../tbm-attendance-permit-link.md)

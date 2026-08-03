@@ -703,6 +703,7 @@ export default function WorkPermits() {
         projectId={projectId}
         open={!!workersDialog}
         onClose={() => setWorkersDialog(null)}
+        onSaved={() => { void load(); }}
       />
       {approvalTarget && (
         <SubmitApprovalDialog

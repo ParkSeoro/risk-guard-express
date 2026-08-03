@@ -12,10 +12,15 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock } from 'lucide-react';
+import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock, Users } from 'lucide-react';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
+import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialog';
+import PermitWorkersPrintPage, {
+  type TbmParticipantPrint,
+} from '@/components/permits/PermitWorkersPrintPage';
+import type { PermitWorkerRow } from '@/lib/permitWorkers';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import PermitKindSelector from '@/components/permits/PermitKindSelector';
@@ -103,6 +108,43 @@ export default function WorkPermitDetail() {
   const [displayTemplateId, setDisplayTemplateId] = useState<string | null>(null);
   const [displayTemplateName, setDisplayTemplateName] = useState<string | null>(null);
   const [aiBriefing, setAiBriefing] = useState<PermitAiBriefing | null>(null);
+  const [assignedWorkers, setAssignedWorkers] = useState<PermitWorkerRow[]>([]);
+  const [tbmTitle, setTbmTitle] = useState<string | null>(null);
+  const [tbmParticipants, setTbmParticipants] = useState<TbmParticipantPrint[]>([]);
+  const [workersDialogOpen, setWorkersDialogOpen] = useState(false);
+
+  const loadAssignedCrew = async (permitId: string, tbmSessionId?: string | null) => {
+    const { data: links } = await supabase
+      .from('work_permit_workers' as any)
+      .select('worker_id, workers(id, name, phone, company_name)')
+      .eq('work_permit_id', permitId);
+    const rows: PermitWorkerRow[] = ((links as any[]) || [])
+      .map((r) => r.workers)
+      .filter(Boolean)
+      .map((w: any) => ({
+        id: w.id,
+        name: w.name || '-',
+        phone: w.phone,
+        company_name: w.company_name,
+      }));
+    setAssignedWorkers(rows);
+
+    if (tbmSessionId) {
+      const [{ data: sess }, { data: parts }] = await Promise.all([
+        supabase.from('tbm_sessions' as any).select('id, title').eq('id', tbmSessionId).maybeSingle(),
+        supabase
+          .from('tbm_participations' as any)
+          .select('id, worker_name, company_name, worker_phone, participated_at, signature_data')
+          .eq('tbm_session_id', tbmSessionId)
+          .order('participated_at'),
+      ]);
+      setTbmTitle((sess as any)?.title || null);
+      setTbmParticipants(((parts as any[]) || []) as TbmParticipantPrint[]);
+    } else {
+      setTbmTitle(null);
+      setTbmParticipants([]);
+    }
+  };
 
   const load = async () => {
     if (!id) return;
@@ -128,6 +170,8 @@ export default function WorkPermitDetail() {
       work_start: ((p as any).form_data || {}).work_start || toLocalInput((p as any).work_start_at),
       work_end: ((p as any).form_data || {}).work_end || toLocalInput((p as any).work_end_at),
     });
+
+    await loadAssignedCrew((p as any).id, (p as any).tbm_session_id);
 
     const briefing = (p as any).ai_briefing || ((p as any).form_data || {}).ai_briefing || null;
     setAiBriefing(briefing);
@@ -458,9 +502,17 @@ export default function WorkPermitDetail() {
           )}
           <Button
             size="sm"
+            variant="outline"
+            onClick={() => setWorkersDialogOpen(true)}
+            title="작업 인원 배정"
+          >
+            <Users className="h-4 w-4 mr-1" />인원 {assignedWorkers.length}
+          </Button>
+          <Button
+            size="sm"
             onClick={print}
             disabled={!canPrint}
-            title={!isApproved ? '결재 승인 후 인쇄 가능' : '선택된 허가서 종류를 연속 페이지로 출력'}
+            title={!isApproved ? '결재 승인 후 인쇄 가능' : '허가서 + 인원 명단(뒷장) 연속 출력'}
           >
             <Printer className="h-4 w-4 mr-1" />{canPrint ? '인쇄 / PDF' : '인쇄 불가'}
           </Button>
@@ -500,6 +552,45 @@ export default function WorkPermitDetail() {
             onChange={setSelectedKinds}
             disabled={readOnly}
           />
+        </CardContent>
+      </Card>
+
+      <Card className="print:hidden" data-testid="permit-assigned-workers">
+        <CardContent className="p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Users className="h-4 w-4" />
+              작업 인원
+              <Badge variant="secondary">{assignedWorkers.length}명</Badge>
+              {Number(data.personnel_count || 0) !== assignedWorkers.length && assignedWorkers.length > 0 && (
+                <Badge variant="outline" className="text-[10px] text-amber-700 border-amber-400">
+                  양식 인원 {data.personnel_count ?? 0}명 — 배정 저장 시 자동 맞춤
+                </Badge>
+              )}
+            </div>
+            <Button size="sm" variant="outline" onClick={() => setWorkersDialogOpen(true)}>
+              근로자 배정
+            </Button>
+          </div>
+          {assignedWorkers.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              배정된 근로자가 없습니다. 배정하면 작업인원에 반영되고, 인쇄 시 뒷장(을지)에 명단이 나갑니다.
+            </p>
+          ) : (
+            <ul className="text-xs grid sm:grid-cols-2 gap-1">
+              {assignedWorkers.map((w) => (
+                <li key={w.id} className="truncate border rounded px-2 py-1 bg-muted/40">
+                  <span className="font-medium">{w.name}</span>
+                  <span className="text-muted-foreground"> · {w.company_name || '-'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {permit?.tbm_session_id && (
+            <p className="text-[11px] text-muted-foreground">
+              연결된 TBM{tbmTitle ? `「${tbmTitle}」` : ''} 참여자 {tbmParticipants.length}명 — 인쇄 뒷장에 서명 포함
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -570,10 +661,10 @@ export default function WorkPermitDetail() {
         </StandardPermitSheet>
       </div>
 
-      {/* Print-only: consecutive pages for each selected kind, same signatures stamped */}
+      {/* Print-only: consecutive kind pages + crew/TBM appendix (뒷장) */}
       <div className="hidden print:block">
-        {selectedKinds.map((kind, idx) => (
-          <div key={kind} className={idx < selectedKinds.length - 1 ? 'page-break' : ''} style={idx < selectedKinds.length - 1 ? { pageBreakAfter: 'always' } : undefined}>
+        {selectedKinds.map((kind) => (
+          <div key={kind} className="page-break" style={{ pageBreakAfter: 'always' }}>
             <StandardPermitSheet>
               <DigPermitForm
                 permitType={kind}
@@ -589,7 +680,26 @@ export default function WorkPermitDetail() {
             </StandardPermitSheet>
           </div>
         ))}
+        <PermitWorkersPrintPage
+          workTitle={data.work_name || data.work_description || permit.work_description}
+          permitDate={resolvePermitWorkDate(permit) || permit.permit_date}
+          projectName={projectName}
+          workers={assignedWorkers}
+          tbmTitle={tbmTitle}
+          tbmParticipants={tbmParticipants}
+        />
       </div>
+
+      <WorkPermitWorkersDialog
+        permit={permit}
+        projectId={permit.project_id}
+        open={workersDialogOpen}
+        onClose={() => setWorkersDialogOpen(false)}
+        onSaved={async (count) => {
+          setData((d) => ({ ...d, personnel_count: count }));
+          await load();
+        }}
+      />
 
       {approvalOpen && (
         <SubmitApprovalDialog

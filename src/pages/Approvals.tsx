@@ -45,7 +45,7 @@ const ENTITY_LINK = (t?: string | null, id?: string | null): string | null => {
     case 'safety_cost': return `/safety-cost`;
     case 'incident': return `/incidents`;
     case 'emergency_drill': return `/emergency-drills`;
-    case 'tbm': return `/tbm`;
+    case 'tbm': return `/app/admin/tbm-logs`;
     default: return null;
   }
 };

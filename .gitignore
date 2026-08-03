@@ -35,6 +35,6 @@ dist-ssr
 supabase/.temp/
 
 # Capacitor native (generated locally)
-android/
-ios/
+/android/
+/ios/
 safenex.jks

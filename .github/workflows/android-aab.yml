@@ -136,11 +136,11 @@ jobs:
           if [ -n "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" ]; then
             echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > android/app/google-services.json
             echo "Wrote google-services.json from secret"
-          elif [ -f native-assets/android/google-services.json ]; then
-            cp native-assets/android/google-services.json android/app/google-services.json
+          elif [ -f native-assets/fcm/google-services.json ]; then
+            cp native-assets/fcm/google-services.json android/app/google-services.json
             echo "Wrote google-services.json from native-assets"
           else
-            echo "::warning::Missing google-services.json — FCM push will not work until GOOGLE_SERVICES_JSON_BASE64 or native-assets/android/google-services.json is provided."
+            echo "::warning::Missing google-services.json — FCM push will not work until GOOGLE_SERVICES_JSON_BASE64 or native-assets/fcm/google-services.json is provided."
           fi
           if [ -f android/app/google-services.json ]; then
             python3 - <<'PY'

@@ -17,7 +17,7 @@ base64 -w0 google-services.json   # macOS: base64 -i google-services.json
 `GOOGLE_SERVICES_JSON_BASE64` = 위 결과 전체
 
 **B. 이 폴더에 파일 커밋**  
-`native-assets/android/google-services.json` 으로 저장 (CI가 복사).  
+`native-assets/fcm/google-services.json` 으로 저장 (CI가 복사).  
 공개 레포면 Secret 방식을 쓰세요.
 
 AAB 워크플로는 둘 중 하나가 없으면 **실패**합니다.

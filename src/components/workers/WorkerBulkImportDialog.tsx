@@ -11,6 +11,7 @@ import {
   jobCategoryEntries,
   STANDARD_JOB_TYPES,
 } from "@/lib/jobCategories";
+import { provisionWorkerAccounts } from "@/lib/provisionWorkerAccounts";
 
 type Props = {
   projectId: string;
@@ -141,8 +142,9 @@ export default function WorkerBulkImportDialog({
       ["3. 직종은 '직종목록' 시트의 직종명 중 하나만 입력하세요 (복사·붙여넣기 권장)."],
       ["4. 소속사는 엑셀에 넣지 않습니다. 등록하는 관리자 소속 회사로 자동 지정됩니다."],
       ["5. 같은 현장 + 같은 전화번호가 이미 있으면 새 데이터로 업데이트됩니다."],
-      ["6. 전화번호는 숫자만 입력해도 자동 변환됩니다 (예: 01012345678 → 010-1234-5678)."],
-      ["7. 날짜 형식: YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD 모두 허용."],
+      ["6. 등록 시 로그인 계정이 자동 생성됩니다. 아이디=전화번호, 비밀번호=전화 뒤 4자리."],
+      ["7. 전화번호는 숫자만 입력해도 자동 변환됩니다 (예: 01012345678 → 010-1234-5678)."],
+      ["8. 날짜 형식: YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD 모두 허용."],
       [],
       ["표준 직종 목록 (참고):"],
       [STANDARD_JOB_TYPES.join(", ")],
@@ -251,9 +253,33 @@ export default function WorkerBulkImportDialog({
         updated += 1;
       }
 
+      // Auth login accounts: id=phone, password=last 4 digits (existing passwords kept)
+      const provision = await provisionWorkerAccounts({
+        projectId,
+        companyId,
+        companyName,
+        workers: valid.map((r) => ({
+          phone: r.phone,
+          name: r.name,
+          job_type: r.job_type,
+        })),
+      });
+
+      const provisionMsg = provision.ok
+        ? `로그인계정 신규 ${provision.created} · 기존연결 ${provision.linked}` +
+          (provision.failed ? ` · 계정실패 ${provision.failed}` : "")
+        : `로그인계정 생성 실패: ${provision.error || "unknown"}`;
+
       toast.success(
-        `신규 ${inserted}명 · 업데이트 ${updated}명 · 오류 ${rows.length - valid.length}건`,
+        `명부 신규 ${inserted} · 업데이트 ${updated} · 오류 ${rows.length - valid.length}건 · ${provisionMsg}`,
+        { duration: 6000 },
       );
+      if (provision.ok && (provision.created > 0 || provision.linked > 0)) {
+        toast.message("근로자 로그인", {
+          description: "아이디=전화번호, 비밀번호=전화 뒤 4자리",
+          duration: 8000,
+        });
+      }
       onDone?.();
       onClose();
       setRows([]);
@@ -317,6 +343,10 @@ export default function WorkerBulkImportDialog({
             <div>
               직종은 양식의 <strong>직종목록</strong> 시트에서 골라 입력하세요. 동일 전화번호는{" "}
               <strong>기존 근로자 업데이트</strong>합니다.
+            </div>
+            <div>
+              등록 시 로그인 계정 자동 생성 — <strong>아이디=전화번호</strong>,{" "}
+              <strong>비밀번호=전화 뒤 4자리</strong>
             </div>
           </div>
 

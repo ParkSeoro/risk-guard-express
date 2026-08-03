@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildTbmSeedFromPermit,
   canManagePermitCrew,
+  resolvePermitAuthorName,
   templateBriefingSummary,
 } from "@/lib/tbmFromPermit";
 import { buildWorkSummary } from "@/lib/dailyWorkAck";
@@ -40,6 +41,22 @@ describe("tbmFromPermit", () => {
     expect(canManagePermitCrew("site_manager")).toBe(true);
     expect(canManagePermitCrew("worker")).toBe(false);
     expect(canManagePermitCrew("viewer", true)).toBe(true);
+  });
+
+  it("resolves TBM leader from permit author, not current user", () => {
+    expect(
+      resolvePermitAuthorName(
+        {
+          submitted_by_name: "상신자",
+          form_data: { applicant_name: "신청자김" },
+        },
+        "현재유저",
+      ),
+    ).toBe("신청자김");
+    expect(
+      resolvePermitAuthorName({ submitted_by_name: "상신자홍" }, "현재유저"),
+    ).toBe("상신자홍");
+    expect(resolvePermitAuthorName({}, "현재유저")).toBe("현재유저");
   });
 });
 

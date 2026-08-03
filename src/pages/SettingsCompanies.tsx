@@ -157,7 +157,6 @@ export default function SettingsCompanies() {
         if (cur.is_deleted) {
           await (supabase as any).from('project_companies').update({
             is_deleted: false,
-            deleted_at: null,
             role_in_project: type,
           }).eq('id', cur.id);
         } else {
@@ -174,12 +173,11 @@ export default function SettingsCompanies() {
         }, { onConflict: 'project_id,company_id' });
       }
     }
-    // Soft-remove unchecked projects
+    // Soft-remove unchecked projects (is_deleted only — no deleted_at on project_companies)
     for (const link of existingLinks || []) {
       if (!desired.has(link.project_id) && !link.is_deleted) {
         await (supabase as any).from('project_companies').update({
           is_deleted: true,
-          deleted_at: new Date().toISOString(),
         }).eq('id', link.id);
       }
     }

@@ -9772,6 +9772,15 @@ export type Database = {
           project_name: string
         }[]
       }
+      get_signup_projects: {
+        Args: never
+        Returns: {
+          id: string
+          name: string
+          site_name: string
+          status: string
+        }[]
+      }
       get_tbm_by_token: { Args: { _token: string }; Returns: Json }
       get_user_company_id: {
         Args: { _project_id: string; _user_id: string }

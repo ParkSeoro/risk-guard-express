@@ -59,7 +59,25 @@ jobs:
       - name: Production build
         env:
           CAP_DEV_URL: ""
-        run: bun run build
+        run: |
+          if [ -n "${{ secrets.VITE_SUPABASE_URL }}" ]; then
+            export VITE_SUPABASE_URL="${{ secrets.VITE_SUPABASE_URL }}"
+            export VITE_SUPABASE_PUBLISHABLE_KEY="${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}"
+            export VITE_SUPABASE_PROJECT_ID="${{ secrets.VITE_SUPABASE_PROJECT_ID }}"
+          fi
+          if [ ! -f .env.production ] && [ -z "${VITE_SUPABASE_URL:-}" ]; then
+            echo "::error::Missing .env.production and VITE_SUPABASE_* secrets"
+            exit 1
+          fi
+          bun run build
+
+      - name: Guard — Supabase URL must be baked into dist
+        run: |
+          if ! rg -q 'https://[a-z0-9]+\.supabase\.co' dist/assets/*.js; then
+            echo "::error::dist is missing VITE_SUPABASE_URL. Commit .env.production or set GitHub Secrets."
+            exit 1
+          fi
+          echo "OK: Supabase URL present in production bundle"
 
       - name: Capacitor sync (있을 때만)
         run: |

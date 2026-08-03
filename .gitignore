@@ -19,6 +19,8 @@ dist-ssr
 /playwright/.cache/
 .env
 .env.e2e
+# .env.production is committed on purpose (public anon/publishable client keys)
+# so Play Store AAB / OTA CI builds never ship a blank white screen.
 
 # Editor directories and files
 .vscode/*

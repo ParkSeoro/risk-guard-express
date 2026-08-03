@@ -19,11 +19,13 @@ describe("jobCategories SSOT", () => {
     expect(jobTypeSchema.safeParse("기타").success).toBe(false);
     expect(jobTypeSchema.safeParse("직접입력").success).toBe(false);
     expect(jobTypeSchema.safeParse("용접공").success).toBe(true);
+    expect(jobTypeSchema.safeParse("여공").success).toBe(true);
     expect(isStandardJobType("신호수/유도수")).toBe(true);
   });
 
   it("maps plant jobs to legal education codes", () => {
     expect(toLegalEducationJobType("용접공")).toBe("welding");
+    expect(toLegalEducationJobType("여공")).toBe("general");
     expect(toLegalEducationJobType("관리감독자")).toBe("manager");
     expect(toLegalEducationJobType("")).toBe("general");
   });

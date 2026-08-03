@@ -36,3 +36,4 @@ supabase/.temp/
 # Capacitor native (generated locally)
 android/
 ios/
+safenex.jks

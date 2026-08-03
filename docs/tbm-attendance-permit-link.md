@@ -36,5 +36,4 @@
 - 허가서 연동 TBM의 **주관자(`leader_name`)** = 허가서 작성자 (상신자 → form 작성자 → created_by)
 - **「이전 TBM 불러오기」** → TBM 일지 폼 **내용만** 복사 (허가서 링크·근로자·서명·날짜 미복사)
 - 허가서 화면에 이전 TBM 불러오기 없음
-
-기존 데이터 백필: [`supabase-apply-tbm-leader-backfill.md`](./supabase-apply-tbm-leader-backfill.md)
+- 이미 생성된 TBM의 주관자는 소급 변경하지 않음 (신규 생성분만 적용)

@@ -1,7 +1,8 @@
 /**
  * Worker daily life-cycle dashboard:
- * GPS 100m check-in → TBM briefing signature → no-accident check-out.
- * Maps check_in_time → worker_entry_logs.entry_at, check_out → exit_at.
+ * GPS 100m check-in → (optional) confirm today's permits/RA + sign → check-out.
+ * Signature stored in worker_daily_acks and reused for linked TBM sessions.
+ * v1: no hard gate if unsigned (checkout still allowed).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -9,6 +10,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSystemRealtime } from "@/providers/SystemRealtimeProvider";
 import { calculateDistance, isWithinSiteRadius } from "@/lib/geo/calculateDistance";
+import {
+  buildRiskSummary,
+  buildWorkSummary,
+  fetchTodayAck,
+  fetchWorkerDayPermits,
+  saveDailyWorkAck,
+  type DailyPermitBrief,
+} from "@/lib/dailyWorkAck";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -34,13 +43,6 @@ type EntryLog = {
   no_accident_confirmed: boolean;
 };
 
-type TbmSession = {
-  id: string;
-  title: string;
-  briefing_summary: string;
-  tbm_date: string;
-};
-
 export default function WorkerDailyHome({ embedded = false }: { embedded?: boolean }) {
   const { user, profile } = useAuth();
   const { lastGpsFix, gpsTracking, gpsError, startGpsTracking, stopGpsTracking } = useSystemRealtime();
@@ -50,10 +52,14 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
   const [projectName, setProjectName] = useState("");
   const [workerId, setWorkerId] = useState<string | null>(null);
   const [todayLog, setTodayLog] = useState<EntryLog | null>(null);
-  const [tbmSession, setTbmSession] = useState<TbmSession | null>(null);
-  const [tbmOpen, setTbmOpen] = useState(false);
-  const [tbmChecked, setTbmChecked] = useState(false);
-  const [tbmSig, setTbmSig] = useState("");
+  const [ackOpen, setAckOpen] = useState(false);
+  const [ackDone, setAckDone] = useState(false);
+  const [dayPermits, setDayPermits] = useState<DailyPermitBrief[]>([]);
+  const [workSummary, setWorkSummary] = useState("");
+  const [riskSummary, setRiskSummary] = useState("");
+  const [ackWorkOk, setAckWorkOk] = useState(false);
+  const [ackRiskOk, setAckRiskOk] = useState(false);
+  const [ackSig, setAckSig] = useState("");
   const [exitOpen, setExitOpen] = useState(false);
   const [noAccident, setNoAccident] = useState(false);
   const [healthOk, setHealthOk] = useState(false);
@@ -75,7 +81,6 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
   }, [siteLat, siteLng, lastGpsFix]);
 
   const isCheckedIn = !!todayLog && !todayLog.exit_at;
-  const tbmDone = !!todayLog?.tbm_confirmed;
   const checkedOut = !!todayLog?.exit_at;
 
   const refresh = useCallback(async () => {
@@ -136,20 +141,17 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
         .order("entry_at", { ascending: false })
         .limit(1);
       setTodayLog((logs?.[0] as EntryLog) || null);
+      const ack = await fetchTodayAck(pid, wid);
+      setAckDone(!!ack || !!(logs?.[0] as EntryLog | undefined)?.tbm_confirmed);
+      const permits = await fetchWorkerDayPermits(pid, wid);
+      setDayPermits(permits);
+      setWorkSummary(buildWorkSummary(permits));
+      setRiskSummary(await buildRiskSummary(permits));
     } else {
       setTodayLog(null);
+      setAckDone(false);
+      setDayPermits([]);
     }
-
-    const today = new Date().toISOString().slice(0, 10);
-    const { data: tbms } = await supabase
-      .from("tbm_sessions")
-      .select("id, title, briefing_summary, tbm_date")
-      .eq("project_id", pid)
-      .eq("tbm_date", today)
-      .eq("is_deleted", false)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    setTbmSession((tbms?.[0] as TbmSession) || null);
 
     // Start GPS even before workers-row match so distance UI can update
     if (pid && !gpsTracking) {
@@ -173,8 +175,9 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
   }, [refresh]);
 
   useEffect(() => {
-    if (isCheckedIn && !tbmDone) setTbmOpen(true);
-  }, [isCheckedIn, tbmDone]);
+    // Soft prompt after check-in — dismissible (no gate)
+    if (isCheckedIn && !ackDone) setAckOpen(true);
+  }, [isCheckedIn, ackDone]);
 
   const ensureConsentAndGps = async () => {
     const { setTrackingConsent } = await import("@/lib/tracking/locationTracker");
@@ -226,8 +229,8 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
         .single();
       if (error) throw error;
       setTodayLog(data as EntryLog);
-      setTbmOpen(true);
-      toast.success("출근이 기록되었습니다");
+      setAckOpen(true);
+      toast.success("출근이 기록되었습니다. 작업·위험 내용을 확인해 주세요.");
     } catch (e: any) {
       toast.error(e?.message || "출근 기록 실패");
     } finally {
@@ -235,40 +238,41 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
     }
   };
 
-  const handleTbmConfirm = async () => {
-    if (!tbmChecked || !tbmSig.trim()) {
-      toast.error("브리핑 확인과 서명을 완료하세요");
+  const handleDailyAck = async () => {
+    if (!ackWorkOk || !ackRiskOk || !ackSig.trim()) {
+      toast.error("작업내용·위험요인을 확인하고 서명해 주세요");
       return;
     }
-    if (!todayLog || !workerId) return;
+    if (!todayLog || !workerId || !projectId) return;
     setBusy(true);
     try {
-      if (tbmSession) {
-        await supabase.from("tbm_participations").upsert(
-          {
-            tbm_session_id: tbmSession.id,
-            worker_id: workerId,
-            worker_name: profile?.display_name || "",
-            worker_phone: profile?.phone || "",
-            company_name: profile?.company || "",
-            briefing_confirmed: true,
-            signature_data: tbmSig.trim(),
-          },
-          { onConflict: "tbm_session_id,worker_phone" },
-        );
-      }
+      const saved = await saveDailyWorkAck({
+        projectId,
+        workerId,
+        userId: user?.id,
+        workerName: profile?.display_name || ackSig.trim(),
+        workerPhone: profile?.phone || "",
+        entryLogId: todayLog.id,
+        permitIds: dayPermits.map((p) => p.id),
+        workSummary,
+        riskSummary,
+        signatureData: ackSig.trim(),
+      });
+      if ("error" in saved) throw new Error(saved.error);
+
       const { data, error } = await supabase
         .from("worker_entry_logs")
-        .update({ tbm_confirmed: true })
+        .update({ tbm_confirmed: true, risk_assessment_confirmed: true })
         .eq("id", todayLog.id)
         .select("id, entry_at, exit_at, tbm_confirmed, no_accident_confirmed")
         .single();
       if (error) throw error;
       setTodayLog(data as EntryLog);
-      setTbmOpen(false);
-      toast.success("TBM / 작업 브리핑 확인 완료");
+      setAckDone(true);
+      setAckOpen(false);
+      toast.success("오늘 작업·위험 확인 및 서명 완료");
     } catch (e: any) {
-      toast.error(e?.message || "TBM 확인 실패");
+      toast.error(e?.message || "확인 저장 실패");
     } finally {
       setBusy(false);
     }
@@ -396,8 +400,9 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
             <li className={isCheckedIn || checkedOut ? "text-emerald-700" : "text-slate-500"}>
               1. 출근 {todayLog?.entry_at ? `· ${new Date(todayLog.entry_at).toLocaleTimeString("ko-KR")}` : ""}
             </li>
-            <li className={tbmDone ? "text-emerald-700" : "text-slate-500"}>
-              2. TBM / 브리핑 서명 {tbmDone ? "완료" : isCheckedIn ? "대기" : "—"}
+            <li className={ackDone ? "text-emerald-700" : "text-slate-500"}>
+              2. 작업·위험 확인 서명 {ackDone ? "완료" : isCheckedIn ? "권장" : "—"}
+              {dayPermits.length > 0 && !ackDone ? ` · 허가서 ${dayPermits.length}건` : ""}
             </li>
             <li className={checkedOut ? "text-emerald-700" : "text-slate-500"}>
               3. 무재해 서약 · 퇴근 {todayLog?.exit_at ? `· ${new Date(todayLog.exit_at).toLocaleTimeString("ko-KR")}` : ""}
@@ -417,16 +422,16 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
             )}
             {isCheckedIn && (
               <>
-                {!tbmDone && (
-                  <Button variant="outline" className="h-11 gap-2" onClick={() => setTbmOpen(true)}>
+                {!ackDone && (
+                  <Button variant="outline" className="h-11 gap-2" onClick={() => setAckOpen(true)}>
                     <FileSignature className="h-4 w-4" />
-                    TBM 및 작업 브리핑 확인
+                    작업·위험 확인 서명
                   </Button>
                 )}
                 <Button
                   variant="destructive"
                   className="h-12 gap-2"
-                  disabled={!tbmDone || busy}
+                  disabled={busy}
                   onClick={() => setExitOpen(true)}
                 >
                   <LogOut className="h-4 w-4" />
@@ -444,35 +449,44 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
         </section>
       </main>
 
-      <Dialog open={tbmOpen} onOpenChange={(o) => { if (tbmDone) setTbmOpen(o); }}>
-        <DialogContent className="max-w-md" onPointerDownOutside={(e) => !tbmDone && e.preventDefault()}>
+      <Dialog open={ackOpen} onOpenChange={setAckOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>TBM 및 작업 브리핑 확인</DialogTitle>
+            <DialogTitle>오늘 작업·위험 확인</DialogTitle>
             <DialogDescription>
-              출근 후 필수입니다. 브리핑을 확인하고 서명하세요.
+              배정된 허가서를 한 번에 확인하고 서명합니다. (지금은 서명 없이도 퇴근 가능)
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-sm">
             <div className="rounded-md bg-slate-50 p-3 border">
-              <div className="font-medium">{tbmSession?.title || "금일 TBM"}</div>
-              <p className="text-muted-foreground mt-1 whitespace-pre-wrap">
-                {tbmSession?.briefing_summary || "관리자가 등록한 금일 TBM이 없으면 기본 안전 수칙을 확인하세요. PPE 착용, 위험구역 출입 금지, 이상 시 즉시 보고."}
-              </p>
+              <div className="font-medium text-xs text-muted-foreground mb-1">작업 내용</div>
+              <p className="whitespace-pre-wrap text-sm">{workSummary}</p>
+            </div>
+            <div className="rounded-md bg-slate-50 p-3 border">
+              <div className="font-medium text-xs text-muted-foreground mb-1">위험성평가 요지</div>
+              <p className="whitespace-pre-wrap text-sm">{riskSummary}</p>
             </div>
             <label className="flex items-start gap-2">
-              <Checkbox checked={tbmChecked} onCheckedChange={(v) => setTbmChecked(v === true)} />
-              <span>작업 브리핑·위험요인을 확인했고 TBM에 참석합니다.</span>
+              <Checkbox checked={ackWorkOk} onCheckedChange={(v) => setAckWorkOk(v === true)} />
+              <span>오늘 작업 내용을 확인했습니다.</span>
+            </label>
+            <label className="flex items-start gap-2">
+              <Checkbox checked={ackRiskOk} onCheckedChange={(v) => setAckRiskOk(v === true)} />
+              <span>위험요인·대책을 확인했습니다.</span>
             </label>
             <input
               className="w-full h-10 rounded-md border px-3 text-sm"
               placeholder="서명 (성명)"
-              value={tbmSig}
-              onChange={(e) => setTbmSig(e.target.value)}
+              value={ackSig}
+              onChange={(e) => setAckSig(e.target.value)}
             />
           </div>
-          <DialogFooter>
-            <Button disabled={busy} onClick={() => void handleTbmConfirm()}>
-              서명 · 참석 확인
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setAckOpen(false)}>
+              나중에
+            </Button>
+            <Button disabled={busy} onClick={() => void handleDailyAck()}>
+              서명 · 확인
             </Button>
           </DialogFooter>
         </DialogContent>

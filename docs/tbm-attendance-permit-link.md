@@ -1,29 +1,29 @@
-# TBM · 출퇴근 · 허가서 연동
+# TBM · 출퇴근 · 허가서 연동 (합의안)
 
-러버블 시절 기능이 각각 동작하지만, 데이터 축이 달랐습니다. 현재 SSOT와 연결 지점:
+## 확정 정책
 
-| 축 | 테이블 | 역할 |
-|----|--------|------|
-| 출퇴근 | `worker_entry_logs` | 출근/퇴근 시각 |
-| TBM | `tbm_sessions` + `tbm_participations` | 당일 브리핑·서명 |
-| 허가서 인원 | `work_permit_workers` + `personnel_count` | 작업 크루·양식 인원 |
+| 항목 | 결정 |
+|------|------|
+| 인원 | 전날 **예상** 배정 → 당일 **실출근으로 갱신** (관리자) |
+| 인쇄 | 승인 직후 가능 (이후 명단 변경과 무관) |
+| TBM | **1 허가서 = 1 TBM**, 진입점 2개(허가서 상세 / TBM「허가서에서」) |
+| AI | 브리핑 **초안만** |
+| 서명 | 출근 후 배정 허가서+위험요지 **일괄 확인 후 서명 1번** → TBM 참여에 재사용 |
+| 미서명 게이트 | **v1 없음** (서명 없이도 퇴근 가능, 확인은 권장) |
+| 당일 인원 수정 권한 | 관리감독자·현장소장·안전관리자·프로젝트관리자·마스터 |
 
-## 이번에 연결된 것
-
-1. **근로자 배정 → 작업인원 자동 반영** (`WorkPermitWorkersDialog`)
-2. **인쇄 뒷장(을지)** — 배정 명단 + 연결 TBM 서명 (`PermitWorkersPrintPage`)
-3. **출근자 빠른 선택** — 오늘 `entry_at` 있고 `exit_at` 없는 근로자
-4. **죽은 `/tbm` 링크** → `/app/admin/tbm-logs`
-
-## 자연스러운 하루 흐름 (권장)
+## 하루 흐름
 
 ```
-출근(QR/GPS) → 당일 TBM 서명 → 허가서에 근로자 배정(출근자 버튼) → 결재·인쇄(뒷장 명단)
+[전날] 허가서 작성 → 예상 인원 → 결재 승인 → (선택) 인쇄
+[당일] 출근 → 작업·위험 확인 서명(권장) → 관리자가 실출근으로 명단 갱신
+      → 허가서/TBM 메뉴에서 당일 TBM 생성(AI 초안) → QR 참여(서명은 daily ack 재사용 가능)
 ```
 
-## 후속(아직 미완)
+## DB
 
-- 허가서에 연결된 TBM 참여자 → `work_permit_workers` 자동 동기화
-- GPS 체크인 시 당일 배정 허가서 `work_permit_id` 기록
-- 모바일 근로자 “TBM 참여”를 생성 화면이 아니라 `/tbm/:token` / Today 모달로
-- `v_safety_work_bundle`을 허가서 상세 헤더에 표시
+- `worker_daily_acks` — 당일 확인·서명
+- `work_permit_workers` + `personnel_count` — 예상/실원
+- `work_permits.tbm_session_id` — 1:1 TBM
+
+적용: [`supabase-apply-daily-acks.md`](./supabase-apply-daily-acks.md)

@@ -216,6 +216,28 @@ export type PermitTemplateRow = {
  * 회사 전용 표시 양식만 고른다.
  * 없으면 null → DigPermitForm 내장 기본 (기존 동작 유지).
  */
+function pickFromScopedList(
+  scoped: PermitTemplateRow[],
+  permitType: PermitType,
+): PermitTemplateRow | null {
+  if (scoped.length === 0) return null;
+
+  const exactDefault = scoped.find(
+    (t) => t.permit_type === permitType && t.is_default,
+  );
+  if (exactDefault) return exactDefault;
+
+  const exact = scoped.find((t) => t.permit_type === permitType);
+  if (exact) return exact;
+
+  const generalDefault = scoped.find(
+    (t) => (!t.permit_type || t.permit_type === 'general') && t.is_default,
+  );
+  if (generalDefault) return generalDefault;
+
+  return scoped.find((t) => !t.permit_type || t.permit_type === 'general') || null;
+}
+
 export function pickCompanyDisplayTemplate(
   list: PermitTemplateRow[],
   companyId: string | null | undefined,
@@ -225,23 +247,25 @@ export function pickCompanyDisplayTemplate(
   const forCompany = list.filter(
     (t) => t.company_id === companyId && t.is_active !== false,
   );
-  if (forCompany.length === 0) return null;
-
-  const exactDefault = forCompany.find(
-    (t) => t.permit_type === permitType && t.is_default,
-  );
-  if (exactDefault) return exactDefault;
-
-  const exact = forCompany.find((t) => t.permit_type === permitType);
-  if (exact) return exact;
-
-  const generalDefault = forCompany.find(
-    (t) => (!t.permit_type || t.permit_type === 'general') && t.is_default,
-  );
-  if (generalDefault) return generalDefault;
-
-  return forCompany.find((t) => !t.permit_type || t.permit_type === 'general') || null;
+  return pickFromScopedList(forCompany, permitType);
 }
+
+/** Global built-in standard (company_id & project_id null) — used when company has no clone. */
+export function pickGlobalStandardTemplate(
+  list: PermitTemplateRow[],
+  permitType: PermitType,
+): PermitTemplateRow | null {
+  const global = list.filter(
+    (t) =>
+      t.company_id == null &&
+      t.project_id == null &&
+      t.is_active !== false,
+  );
+  return pickFromScopedList(global, permitType);
+}
+
+/** Sentinel for Settings UI — edit the shared default (not a company clone). */
+export const GLOBAL_STANDARD_COMPANY_KEY = '__global_standard__';
 
 /** @deprecated use pickCompanyDisplayTemplate — kept for tests/compat */
 export function pickProjectDisplayTemplate(

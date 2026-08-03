@@ -3,6 +3,7 @@ import {
   isSectionHidden,
   normalizeDisplayTemplate,
   pickCompanyDisplayTemplate,
+  pickGlobalStandardTemplate,
   resolveFormOwnerCompanyId,
   emptyDisplayTemplate,
   LOCKED_DISPLAY_SECTIONS,
@@ -63,6 +64,7 @@ describe('permitDisplayTemplate', () => {
     expect(pickCompanyDisplayTemplate(list as any, 'company-a', 'general')?.id).toBe('co-a');
     expect(pickCompanyDisplayTemplate(list as any, 'other', 'general')).toBeNull();
     expect(pickCompanyDisplayTemplate(list as any, null, 'general')).toBeNull();
+    expect(pickGlobalStandardTemplate(list as any, 'general')?.id).toBe('global');
   });
 
   it('resolveFormOwnerCompanyId prefers permit company over project GC', () => {

@@ -1,8 +1,9 @@
 /**
- * 허가서 표시 양식 (마스터) — 작성 회사별 복제 · 라벨 · 항목 숨기기
+ * 허가서 표시 양식 (마스터)
+ * - 기본 표준(company_id null): 복제 안 한 회사 전체 기본
+ * - 회사별 복제: 해당 회사 문서만 오버라이드
  *
  * 절대 하지 않음: 결재 규칙/RPC, form_data 키, DigPermitForm 구조 변경.
- * PDF 오버레이·자유 빌더·AI 분석은 제거됨.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
@@ -35,6 +36,7 @@ import {
 import {
   buildCloneLayoutJson,
   emptyDisplayTemplate,
+  GLOBAL_STANDARD_COMPANY_KEY,
   normalizeDisplayTemplate,
   parseLayoutJson,
   PERMIT_KIND_CLONE_META,
@@ -113,7 +115,7 @@ export default function SettingsPermitForms() {
   const isMaster = hasRole('master');
 
   const [companies, setCompanies] = useState<CompanyOpt[]>([]);
-  const [companyId, setCompanyId] = useState<string>('');
+  const [companyId, setCompanyId] = useState<string>(GLOBAL_STANDARD_COMPANY_KEY);
   const [rows, setRows] = useState<Tpl[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Tpl | null>(null);
@@ -123,6 +125,9 @@ export default function SettingsPermitForms() {
   const [tab, setTab] = useState('labels');
   const [saving, setSaving] = useState(false);
   const [cloning, setCloning] = useState(false);
+
+  const isGlobalScope = companyId === GLOBAL_STANDARD_COMPANY_KEY;
+  const dbCompanyId = isGlobalScope ? null : companyId;
 
   const loadCompanies = async () => {
     const { data, error } = await supabase
@@ -139,7 +144,7 @@ export default function SettingsPermitForms() {
     const preferred = all.filter((c) => c.type === 'client' || c.type === 'gc');
     const list = preferred.length > 0 ? preferred : all;
     setCompanies(list);
-    if (!companyId && list[0]) setCompanyId(list[0].id);
+    if (!companyId) setCompanyId(GLOBAL_STANDARD_COMPANY_KEY);
   };
 
   const loadTemplates = async (cid: string) => {
@@ -149,13 +154,17 @@ export default function SettingsPermitForms() {
       return;
     }
     setLoading(true);
-    const { data, error } = await supabase
+    const global = cid === GLOBAL_STANDARD_COMPANY_KEY;
+    let q = supabase
       .from('permit_form_templates')
       .select('id, project_id, company_id, code, name, version, layout_json, is_default, is_active, permit_type, updated_at')
       .eq('is_deleted', false)
-      .eq('company_id', cid)
       .order('permit_type')
       .order('updated_at', { ascending: false });
+    q = global
+      ? q.is('company_id', null).is('project_id', null)
+      : q.eq('company_id', cid);
+    const { data, error } = await q;
     if (error) {
       toast({ title: '불러오기 실패', description: error.message, variant: 'destructive' });
       setRows([]);
@@ -218,7 +227,7 @@ export default function SettingsPermitForms() {
         is_active: selected.is_active,
         permit_type: selected.permit_type,
         project_id: null,
-        company_id: companyId,
+        company_id: dbCompanyId,
         layout_json: layout as any,
         // 레거시 오버레이/AI 필드 정리 (기능 삭제)
         print_overlay: { pages: [] } as any,
@@ -266,9 +275,31 @@ export default function SettingsPermitForms() {
     await loadTemplates(companyId);
   };
 
+  /** Layout source for company clone: DB global standard if present, else code defaults. */
+  const resolveCloneLayoutByType = async (): Promise<Record<string, PermitLayoutJson>> => {
+    const { data } = await supabase
+      .from('permit_form_templates')
+      .select('permit_type, layout_json')
+      .eq('is_deleted', false)
+      .eq('is_active', true)
+      .is('company_id', null)
+      .is('project_id', null);
+    const map: Record<string, PermitLayoutJson> = {};
+    const fallback = buildCloneLayoutJson();
+    for (const m of PERMIT_KIND_CLONE_META) {
+      map[m.permit_type] = fallback;
+    }
+    for (const row of (data || []) as any[]) {
+      if (row.permit_type && row.layout_json) {
+        map[row.permit_type] = parseLayoutJson(row.layout_json);
+      }
+    }
+    return map;
+  };
+
   const cloneFromStandard = async () => {
     if (!companyId) {
-      toast({ title: '회사를 선택하세요.', variant: 'destructive' });
+      toast({ title: '대상을 선택하세요.', variant: 'destructive' });
       return;
     }
     setCloning(true);
@@ -277,38 +308,65 @@ export default function SettingsPermitForms() {
     if (toCreate.length === 0) {
       setCloning(false);
       toast({
-        title: '이미 복제본이 있습니다.',
-        description: '종류별로 하나씩 있으면 됩니다. 기존 양식을 열어 수정하세요.',
+        title: isGlobalScope ? '기본 표준 양식이 이미 있습니다.' : '이미 복제본이 있습니다.',
+        description: '종류별로 하나씩 있으면 됩니다. 왼쪽에서 열어 수정하세요.',
       });
       return;
     }
-    const layout = buildCloneLayoutJson();
-    const companyName = companies.find((c) => c.id === companyId)?.name || 'CO';
-    const inserts = toCreate.map((m) => ({
-      project_id: null,
-      company_id: companyId,
-      code: `${companyName.slice(0, 12).replace(/\s+/g, '')}-${m.codeSuffix}`.slice(0, 40),
-      name: m.name,
-      version: '1',
-      permit_type: m.permit_type,
-      is_default: true,
-      is_active: true,
-      layout_json: layout as any,
-      print_overlay: { pages: [] } as any,
-      original_pdf_url: null,
-      signature_slots: [] as any,
-      suggested_approval_steps: null,
-      created_by: user?.id || null,
-    }));
+
+    let inserts: any[];
+    if (isGlobalScope) {
+      const layout = buildCloneLayoutJson();
+      inserts = toCreate.map((m) => ({
+        project_id: null,
+        company_id: null,
+        code: `STANDARD-${m.codeSuffix}`,
+        name: `기본 표준 · ${m.name}`,
+        version: '1',
+        permit_type: m.permit_type,
+        is_default: true,
+        is_active: true,
+        layout_json: layout as any,
+        print_overlay: { pages: [] } as any,
+        original_pdf_url: null,
+        signature_slots: [] as any,
+        suggested_approval_steps: null,
+        created_by: user?.id || null,
+      }));
+    } else {
+      const layouts = await resolveCloneLayoutByType();
+      const companyName = companies.find((c) => c.id === companyId)?.name || 'CO';
+      inserts = toCreate.map((m) => ({
+        project_id: null,
+        company_id: companyId,
+        code: `${companyName.slice(0, 12).replace(/\s+/g, '')}-${m.codeSuffix}`.slice(0, 40),
+        name: m.name,
+        version: '1',
+        permit_type: m.permit_type,
+        is_default: true,
+        is_active: true,
+        layout_json: (layouts[m.permit_type] || buildCloneLayoutJson()) as any,
+        print_overlay: { pages: [] } as any,
+        original_pdf_url: null,
+        signature_slots: [] as any,
+        suggested_approval_steps: null,
+        created_by: user?.id || null,
+      }));
+    }
+
     const { error } = await supabase.from('permit_form_templates').insert(inserts);
     setCloning(false);
     if (error) {
-      toast({ title: '복제 실패', description: error.message, variant: 'destructive' });
+      toast({ title: isGlobalScope ? '표준 생성 실패' : '복제 실패', description: error.message, variant: 'destructive' });
       return;
     }
     toast({
-      title: `표준 허가서에서 ${inserts.length}종 복제했습니다.`,
-      description: '이 회사가 작성한 허가서에만 표시(라벨/숨김)이 적용됩니다. 결재 규칙은 그대로입니다.',
+      title: isGlobalScope
+        ? `기본 표준 허가서 ${inserts.length}종을 만들었습니다.`
+        : `표준 허가서에서 ${inserts.length}종 복제했습니다.`,
+      description: isGlobalScope
+        ? '복제하지 않은 모든 회사 허가서에 적용됩니다. 로고·라벨을 여기서 수정하세요.'
+        : '이 회사가 작성한 허가서에만 표시(라벨/숨김)이 적용됩니다. 결재 규칙은 그대로입니다.',
     });
     await loadTemplates(companyId);
   };
@@ -348,21 +406,23 @@ export default function SettingsPermitForms() {
           허가서 표시 양식
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          지금 쓰는 허가서를 <strong>회사별로 복제</strong>한 뒤, 문구(라벨)와 선택 항목 숨김만 조정합니다.
-          <strong>해당 회사가 작성한 허가서에만</strong> 적용됩니다(다른 협력사 문서는 기본 양식 유지).
-          결재·연장·종료·저장 구조는 절대 바꾸지 않습니다. 양식이 없으면 표준 허가서가 그대로 사용됩니다.
+          <strong>기본 표준</strong>을 먼저 수정하면, 회사별 복제를 안 한 업체의 허가서에 공통 적용됩니다.
+          회사별로 복제하면 그 회사 문서만 따로 덮어씁니다. 결재·연장·종료 구조는 바꾸지 않습니다.
         </p>
       </div>
 
       <Card>
         <CardContent className="p-4 flex flex-wrap items-end gap-3">
-          <div className="space-y-1 min-w-[240px]">
-            <Label>회사 (작성 회사)</Label>
+          <div className="space-y-1 min-w-[280px]">
+            <Label>대상</Label>
             <Select value={companyId} onValueChange={setCompanyId}>
               <SelectTrigger className="h-9">
-                <SelectValue placeholder="회사 선택" />
+                <SelectValue placeholder="대상 선택" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={GLOBAL_STANDARD_COMPANY_KEY}>
+                  기본 표준 허가서 (전체 기본)
+                </SelectItem>
                 {companies.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name}{c.type ? ` · ${c.type}` : ''}
@@ -373,7 +433,9 @@ export default function SettingsPermitForms() {
           </div>
           <Button onClick={cloneFromStandard} disabled={!companyId || cloning} className="gap-1.5">
             <Copy className="h-4 w-4" />
-            {cloning ? '복제 중…' : '표준 허가서에서 복제'}
+            {cloning
+              ? (isGlobalScope ? '생성 중…' : '복제 중…')
+              : (isGlobalScope ? '기본 표준 양식 만들기' : '표준 허가서에서 복제')}
           </Button>
         </CardContent>
       </Card>
@@ -381,13 +443,15 @@ export default function SettingsPermitForms() {
       <div className="grid md:grid-cols-[280px_1fr] gap-4">
         <Card>
           <CardHeader className="py-3 px-4">
-            <CardTitle className="text-sm">이 회사 양식</CardTitle>
+            <CardTitle className="text-sm">{isGlobalScope ? '기본 표준 양식' : '이 회사 양식'}</CardTitle>
           </CardHeader>
           <CardContent className="p-2 space-y-1">
             {loading && <p className="text-xs text-muted-foreground p-2">불러오는 중…</p>}
             {!loading && rows.length === 0 && (
               <p className="text-xs text-muted-foreground p-2">
-                아직 없습니다. 「표준 허가서에서 복제」를 누르세요. 복제 전엔 기존 표준 허가서가 그대로 동작합니다.
+                {isGlobalScope
+                  ? '아직 없습니다. 「기본 표준 양식 만들기」를 누른 뒤 로고·라벨을 수정하세요.'
+                  : '아직 없습니다. 「표준 허가서에서 복제」를 누르세요. 없으면 기본 표준이 그대로 쓰입니다.'}
               </p>
             )}
             {rows.map((t) => (
@@ -415,7 +479,7 @@ export default function SettingsPermitForms() {
         <Card>
           {!selected ? (
             <CardContent className="p-8 text-sm text-muted-foreground">
-              왼쪽에서 양식을 선택하거나, 표준에서 복제하세요.
+              왼쪽에서 양식을 선택하거나, {isGlobalScope ? '기본 표준을 만드세요.' : '표준에서 복제하세요.'}
             </CardContent>
           ) : (
             <>

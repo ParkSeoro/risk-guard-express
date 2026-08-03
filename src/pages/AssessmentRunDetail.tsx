@@ -2611,12 +2611,12 @@ const AssessmentRunDetail = () => {
               <Label className="text-xs font-semibold">평가 수준</Label>
               <div className="grid grid-cols-2 gap-2">
                 <Button type="button" variant={autoGenDetailLevel === 'core' ? 'default' : 'outline'} size="sm" className="h-10 text-xs"
-                  onClick={() => setAutoGenDetailLevel('core')}>JSA 핵심 (~12)</Button>
+                  onClick={() => setAutoGenDetailLevel('core')}>JSA 핵심 (공종에 맞게)</Button>
                 <Button type="button" variant={autoGenDetailLevel === 'comprehensive' ? 'default' : 'outline'} size="sm" className="h-10 text-xs"
-                  onClick={() => setAutoGenDetailLevel('comprehensive')}>JSA 상세 (~20)</Button>
+                  onClick={() => setAutoGenDetailLevel('comprehensive')}>JSA 상세 (세분화)</Button>
               </div>
               <p className="text-[10px] text-muted-foreground leading-snug">
-                ① 공종·세부작업·위험요인 초안 → 검수(삭제·추가) → ② [나머지 채우기](대책·등급·법적근거) · 사고사례는 별도 버튼
+                ① 공종에 맞게 세부작업·위험요인 초안(개수 고정 없음) → 검수(삭제·추가) → ② [나머지 채우기](상황·대책 → 등급·법규) · 사고사례는 별도 버튼
               </p>
             </div>
 

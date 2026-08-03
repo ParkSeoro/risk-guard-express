@@ -147,9 +147,14 @@ function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other" 
   return s;
 }
 
-/** Soft guidance count for draft (Phase A — keep small for latency). */
+/** Soft ceiling only — never a target count. Processes vary widely. */
+function jsaSoftCap(detailLevel: "core" | "comprehensive"): number {
+  return detailLevel === "comprehensive" ? 30 : 25;
+}
+
+/** Legacy oneshot / jsa_timeline soft guidance (not used by scope_draft). */
 function jsaGuideCount(detailLevel: "core" | "comprehensive"): number {
-  return detailLevel === "core" ? 6 : 10;
+  return detailLevel === "core" ? 10 : 16;
 }
 
 function mapRawItem(item: any, processName: string): any | null {
@@ -490,10 +495,16 @@ serve(async (req) => {
       project_id,
       sub_task,
       draft_items,
+      fill_stage,
     } = body;
 
     const detailLevel: "core" | "comprehensive" =
       detail_level === "comprehensive" ? "comprehensive" : "core";
+    /** narrative | meta | all(legacy one-shot fill) */
+    const fillStage: "narrative" | "meta" | "all" =
+      fill_stage === "narrative" || fill_stage === "meta" || fill_stage === "all"
+        ? fill_stage
+        : "all";
 
     if (!isInternal && project_id) {
       try {
@@ -605,17 +616,23 @@ serve(async (req) => {
     const equipText = normalizedEquipment || "없음";
     const descText = work_description || process_name + " 관련 작업";
 
-    // ============ Phase A: scope draft — 공종(입력)+세부작업+위험요인 only ============
+    // ============ Phase A: scope draft — 개수 자유, 공정 분해 완전성 ============
     if (mode === "scope_draft") {
-      const guideCount = jsaGuideCount(detailLevel);
+      const softCap = jsaSoftCap(detailLevel);
+      const depthHint =
+        detailLevel === "comprehensive"
+          ? "실제 현장 작업 단위로 빠짐없이 분해한다. 동일 작업의 위치·장비가 다르면 분리한다."
+          : "준비→본작업→마무리 흐름의 실제 작업 단위로 분해한다. 불필요하게 잘게 쪼개지 않는다.";
       const sys =
         `너는 건설현장 JSA 전문가다. 반드시 JSON만 출력한다. 마크다운·서론 금지.\n` +
         `출력 스키마: {"items":[{"sub_task":"세부작업","hazard":"위험요인"}]}\n` +
-        `대책·등급·PPE·법적근거·발생상황·사고사례는 절대 넣지 않는다.`;
+        `대책·등급·PPE·법적근거·발생상황·사고사례는 절대 넣지 않는다.\n` +
+        `항목 개수는 지정하지 않는다. 공종에 필요한 만큼만 쓴다.`;
       const user =
         `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
-        `위 공종의 시간순(준비→본작업→마무리) 세부작업 ${guideCount}개와\n` +
-        `각 세부작업의 핵심 위험요인(hazard)만 한 줄로 작성하라. 추상 문구 금지.`;
+        `위 공종을 시간순(준비→본작업→마무리)으로 세부작업·핵심 위험요인(hazard)만 작성하라.\n` +
+        `${depthHint}\n` +
+        `개수를 맞추려고 억지로 늘리거나 줄이지 말 것. 추상 문구·중복 금지.`;
 
       const parseDraftItems = (content: string) => {
         const parsed = parseDeepseekRiskJson<any>(content);
@@ -627,8 +644,7 @@ serve(async (req) => {
             typeof s === "string" ? { sub_task: s, hazard: "" } : s,
           );
         }
-        const maxN = detailLevel === "comprehensive" ? 12 : 8;
-        return rawItems
+        const mapped = rawItems
           .map((it: any) => {
             const sub = String(it?.sub_task || it?.sub_work || "")
               .replace(/^\d+[\.\)]\s*/, "")
@@ -637,8 +653,9 @@ serve(async (req) => {
             if (!sub) return null;
             return { process: process_name, sub_task: sub, hazard: hazard || `${sub} 관련 위험` };
           })
-          .filter(Boolean)
-          .slice(0, maxN);
+          .filter(Boolean);
+        // Soft ceiling only (runaway outputs) — not a target count
+        return mapped.slice(0, softCap);
       };
 
       try {
@@ -650,8 +667,8 @@ serve(async (req) => {
               { role: "user", content: user },
             ],
             temperature: 0.15,
-            max_tokens: 900,
-            timeoutMs: 40_000,
+            max_tokens: detailLevel === "comprehensive" ? 2200 : 1600,
+            timeoutMs: 45_000,
             maxAttempts: 1,
           });
           content = deep.content;
@@ -686,6 +703,7 @@ serve(async (req) => {
             count: items.length,
             normalized_equipment: normalizedEquipment,
             mode: "scope_draft",
+            soft_cap: softCap,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
         );
@@ -699,7 +717,7 @@ serve(async (req) => {
       }
     }
 
-    // ============ Phase B batch: fill draft rows (measures, grades, PPE, legal) ============
+    // ============ Phase B batch: narrative then meta (fill_stage) ============
     if (mode === "risk_fill") {
       const drafts = Array.isArray(draft_items) ? draft_items : [];
       // Cap at 3 — larger batches often exceed Supabase gateway (~60–150s) → browser 504
@@ -707,6 +725,9 @@ serve(async (req) => {
         .map((it: any) => ({
           sub_task: String(it?.sub_task || "").replace(/^\d+[\.\)]\s*/, "").trim(),
           hazard: String(it?.hazard || "").trim(),
+          hazard_situation: String(it?.hazard_situation || "").trim(),
+          existing_measure: String(it?.existing_measure || it?.existing_control || "").trim(),
+          improvement_measure: String(it?.improvement_measure || it?.improvement_control || "").trim(),
         }))
         .filter((it: { sub_task: string }) => it.sub_task)
         .slice(0, 3);
@@ -724,20 +745,61 @@ serve(async (req) => {
         )
         .join("\n");
 
-      const sys =
-        `너는 대한민국 건설안전 기술사다. 반드시 JSON만 출력한다. 마크다운·서론 금지.\n` +
-        `출력 스키마: {"items":[{"sub_work":"세부작업","hazard_factor":"위험요인","hazard_situation":"위험발생상황",` +
-        `"existing_control":"현재안전대책","improvement_control":"개선대책",` +
-        `"initial_likelihood":"상|중|하","initial_severity":"상|중|하",` +
-        `"residual_likelihood":"상|중|하","residual_severity":"상|중|하",` +
-        `"ppe":["보호구"],"legal_basis":["법적근거 조항"]}]}\n` +
-        `입력된 세부작업·위험요인을 유지하고, 나머지 필드를 짧게 채운다.\n` +
-        `legal_basis에는 산안기준규칙 제OOO조 또는 KOSHA GUIDE를 넣는다. 추상문구 금지.`;
-      const user =
-        `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
-        `[초안 목록]\n${listText}\n\n` +
-        `위 ${cleaned.length}건 각각에 대해 발생상황·현재대책·개선대책·등급·PPE·법적근거를 채워 JSON items로 반환하라.\n` +
-        `항목 수·순서는 초안과 동일. 각 필드는 1~2문장으로 짧게.`;
+      // fill_stage=all → single richer prompt (compat). Prefer client narrative→meta two-step.
+      let sys = "";
+      let user = "";
+      let maxTokens = 2800;
+
+      if (fillStage === "meta") {
+        const withNarrative = cleaned
+          .map((it, i) =>
+            `${i + 1}. 세부작업:${it.sub_task} / 위험:${it.hazard || "(미기재)"}\n` +
+            `   상황:${it.hazard_situation || "(미기재)"} / 현재대책:${it.existing_measure || "(미기재)"} / 개선:${it.improvement_measure || "(미기재)"}`,
+          )
+          .join("\n");
+        sys =
+          `너는 대한민국 건설안전 기술사다. 반드시 JSON만 출력한다. 마크다운·서론 금지.\n` +
+          `출력 스키마: {"items":[{"sub_work":"세부작업","hazard_factor":"위험요인",` +
+          `"initial_likelihood":"상|중|하","initial_severity":"상|중|하",` +
+          `"residual_likelihood":"상|중|하","residual_severity":"상|중|하",` +
+          `"ppe":["보호구"],"legal_basis":["법적근거 조항"]}]}\n` +
+          `세부작업·위험·서술 필드는 바꾸지 말고, 등급·PPE·법적근거만 채운다.\n` +
+          `legal_basis에는 산안기준규칙 제OOO조 또는 KOSHA GUIDE. 추상문구 금지.`;
+        user =
+          `[입력] 공종:${process_name} / 장비:${equipText} / 위치:${locationText}\n\n` +
+          `[항목]\n${withNarrative}\n\n` +
+          `위 ${cleaned.length}건의 등급·PPE·법적근거만 JSON items로 반환하라. 항목 수·순서 동일.`;
+        maxTokens = Math.min(1600, 400 * cleaned.length + 400);
+      } else if (fillStage === "narrative") {
+        sys =
+          `너는 대한민국 건설안전 기술사다. 반드시 JSON만 출력한다. 마크다운·서론 금지.\n` +
+          `출력 스키마: {"items":[{"sub_work":"세부작업","hazard_factor":"위험요인","hazard_situation":"위험발생상황",` +
+          `"existing_control":"현재안전대책","improvement_control":"개선대책"}]}\n` +
+          `등급·PPE·법적근거는 넣지 않는다. 입력된 세부작업·위험요인을 유지한다.\n` +
+          `발생상황·대책은 현장 행위·위치·조건이 드러나게 구체적으로(각 2~3문장). 추상문구 금지.`;
+        user =
+          `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
+          `[초안 목록]\n${listText}\n\n` +
+          `위 ${cleaned.length}건 각각에 발생상황·현재대책·개선대책만 채워 JSON items로 반환하라.\n` +
+          `항목 수·순서 동일. 공학적·관리적 대책을 구분하여 쓸 것.`;
+        maxTokens = Math.min(3200, 900 * cleaned.length + 500);
+      } else {
+        // all — single call (compat): richer narrative + meta
+        sys =
+          `너는 대한민국 건설안전 기술사다. 반드시 JSON만 출력한다. 마크다운·서론 금지.\n` +
+          `출력 스키마: {"items":[{"sub_work":"세부작업","hazard_factor":"위험요인","hazard_situation":"위험발생상황",` +
+          `"existing_control":"현재안전대책","improvement_control":"개선대책",` +
+          `"initial_likelihood":"상|중|하","initial_severity":"상|중|하",` +
+          `"residual_likelihood":"상|중|하","residual_severity":"상|중|하",` +
+          `"ppe":["보호구"],"legal_basis":["법적근거 조항"]}]}\n` +
+          `입력된 세부작업·위험요인을 유지한다. 발생상황·대책은 2~3문장으로 구체적으로.\n` +
+          `등급·PPE·법적근거는 짧게. legal_basis는 산안기준규칙 제OOO조 또는 KOSHA GUIDE.`;
+        user =
+          `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
+          `[초안 목록]\n${listText}\n\n` +
+          `위 ${cleaned.length}건을 채워 JSON items로 반환하라. 항목 수·순서 동일.`;
+        maxTokens = Math.min(3600, 1000 * cleaned.length + 500);
+      }
 
       const mapFillItems = (content: string) => {
         const parsed = parseDeepseekRiskJson<any>(content);
@@ -752,6 +814,62 @@ serve(async (req) => {
             raw.sub_work = raw.sub_work || raw.sub_task || fallback?.sub_task;
             raw.hazard_factor = raw.hazard_factor || raw.hazard || fallback?.hazard;
             raw.process = raw.process || process_name;
+
+            if (fillStage === "meta") {
+              const sub = String(raw.sub_work || fallback?.sub_task || "").trim();
+              const hazard = String(raw.hazard_factor || fallback?.hazard || "").trim();
+              if (!sub) return null;
+              let likelihood = String(raw.initial_likelihood || raw.likelihood_grade || "중").trim();
+              let severity = String(raw.initial_severity || raw.severity_grade || "중").trim();
+              if (!["상", "중", "하"].includes(likelihood)) likelihood = "중";
+              if (!["상", "중", "하"].includes(severity)) severity = "중";
+              const improvedLikelihood = String(raw.residual_likelihood || raw.improved_likelihood_grade || "하").trim();
+              const improvedSeverity = String(raw.residual_severity || raw.improved_severity_grade || "하").trim();
+              const ppeRaw = raw.ppe ?? [];
+              const ppe = Array.isArray(ppeRaw) ? ppeRaw.map(String).filter(Boolean) : [];
+              const legalRaw = raw.legal_basis ?? [];
+              const legal_basis = Array.isArray(legalRaw) ? legalRaw.map(String).filter(Boolean) : [];
+              return {
+                process: process_name,
+                sub_task: sub,
+                hazard: hazard || `${sub} 관련 위험`,
+                hazard_situation: fallback?.hazard_situation || "",
+                existing_measure: fallback?.existing_measure || "",
+                improvement_measure: fallback?.improvement_measure || "",
+                likelihood_grade: likelihood,
+                severity_grade: severity,
+                improved_likelihood_grade: ["상", "중", "하"].includes(improvedLikelihood) ? improvedLikelihood : "하",
+                improved_severity_grade: ["상", "중", "하"].includes(improvedSeverity) ? improvedSeverity : "하",
+                ppe: ppe.length ? ppe : ["안전모", "안전화"],
+                legal_basis,
+                fill_stage: "meta",
+              };
+            }
+
+            if (fillStage === "narrative") {
+              const sub = String(raw.sub_work || fallback?.sub_task || "").trim();
+              const hazard = String(raw.hazard_factor || fallback?.hazard || "").trim();
+              const situation = String(raw.hazard_situation || "").trim();
+              const existing = String(raw.existing_control || raw.existing_measure || "").trim();
+              const improvement = String(raw.improvement_control || raw.improvement_measure || "").trim();
+              if (!sub || !hazard) return null;
+              return {
+                process: process_name,
+                sub_task: sub,
+                hazard,
+                hazard_situation: situation || `${sub} 중 위험 상황`,
+                existing_measure: existing || "현장 통상 안전조치",
+                improvement_measure: improvement || "구체적 개선조치 보완 필요",
+                likelihood_grade: "중",
+                severity_grade: "중",
+                improved_likelihood_grade: "하",
+                improved_severity_grade: "하",
+                ppe: [],
+                legal_basis: [],
+                fill_stage: "narrative",
+              };
+            }
+
             let mapped = mapRawItem(raw, process_name);
             if (!mapped && fallback) {
               mapped = {
@@ -789,7 +907,7 @@ serve(async (req) => {
               { role: "user", content: user },
             ],
             temperature: 0.2,
-            max_tokens: Math.min(2800, 700 * cleaned.length + 400),
+            max_tokens: maxTokens,
             timeoutMs: 50_000,
             maxAttempts: 1,
           });
@@ -826,6 +944,7 @@ serve(async (req) => {
             count: items.length,
             normalized_equipment: normalizedEquipment,
             mode: "risk_fill",
+            fill_stage: fillStage,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
         );

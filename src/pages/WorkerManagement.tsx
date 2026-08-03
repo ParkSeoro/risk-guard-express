@@ -345,7 +345,8 @@ export default function WorkerManagement() {
 
       <WorkerBulkImportDialog
         projectId={projectId}
-        defaultCompanyId={companyLocked ? companyId : undefined}
+        companyId={companyId}
+        companyName={companies.find((c) => c.id === companyId)?.name || ""}
         open={showBulk}
         onClose={() => setShowBulk(false)}
         onDone={load}

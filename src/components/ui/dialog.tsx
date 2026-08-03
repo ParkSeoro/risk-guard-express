@@ -46,11 +46,11 @@ const DialogContent = React.forwardRef<
         onCloseAutoFocus?.(e);
       }}
       onPointerDownOutside={(e) => {
-        // Nested Popover/Select portals are outside the dialog DOM — don't close.
+        // Nested Popover/Select portals / native selects are outside the dialog DOM — don't close.
         const t = e.target as HTMLElement | null;
         if (
           t?.closest(
-            '[data-radix-popper-content-wrapper], [data-radix-select-content], [data-radix-popover-content], [role="listbox"]',
+            '[data-radix-popper-content-wrapper], [data-radix-select-content], [data-radix-popover-content], [role="listbox"], select, option',
           )
         ) {
           e.preventDefault();
@@ -61,7 +61,7 @@ const DialogContent = React.forwardRef<
         const t = e.target as HTMLElement | null;
         if (
           t?.closest(
-            '[data-radix-popper-content-wrapper], [data-radix-select-content], [data-radix-popover-content], [role="listbox"]',
+            '[data-radix-popper-content-wrapper], [data-radix-select-content], [data-radix-popover-content], [role="listbox"], select, option',
           )
         ) {
           e.preventDefault();

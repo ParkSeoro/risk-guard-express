@@ -99,7 +99,7 @@ jobs:
 
       - name: Guard — Supabase URL must be baked into dist
         run: |
-          if ! rg -q 'https://[a-z0-9]+\.supabase\.co' dist/assets/*.js; then
+          if ! grep -REq 'https://[a-z0-9]+\.supabase\.co' dist/assets; then
             echo "::error::dist is missing VITE_SUPABASE_URL. Commit .env.production or set GitHub Secrets."
             exit 1
           fi

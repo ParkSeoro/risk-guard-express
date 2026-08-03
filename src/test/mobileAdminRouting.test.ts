@@ -142,8 +142,8 @@ describe("notification + entity mobile routes", () => {
   });
 
   it("mobileEntityPath stays in worker shell", () => {
-    // Permit actions → unified approvals inbox; list viewer remains /permits
-    expect(mobileEntityPath("work_permit", "p1").path).toBe("/app/worker/approvals");
+    // Permit document deep-link; approvals inbox remains the action surface
+    expect(mobileEntityPath("work_permit", "p1").path).toBe("/app/worker/permits?id=p1");
     expect(mobileEntityPath("work_permit").path).toBe("/app/worker/permits");
     expect(mobileEntityPath("assessment_run", "r1").path).toBe("/app/worker/risk-assessment/r1");
   });

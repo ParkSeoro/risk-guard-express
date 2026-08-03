@@ -225,7 +225,6 @@ const ProjectDetail = () => {
       company_id: parentId,
       role_in_project: role,
       is_deleted: false,
-      deleted_at: null,
       parent_company_id: null,
     }, { onConflict: 'project_id,company_id' });
     if (error) return error.message as string;
@@ -494,7 +493,6 @@ const ProjectDetail = () => {
         role_in_project: companyForm.type,
         parent_company_id: companyForm.parent_company_id || null,
         is_deleted: false,
-        deleted_at: null,
       };
       const { error: linkErr } = await (supabase as any).from('project_companies').upsert(
         linkPayload,

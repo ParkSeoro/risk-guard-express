@@ -59,6 +59,8 @@ export default function WorkerManagement() {
   const [workers, setWorkers] = useState<any[]>([]);
   /** phone digits → project admin role_new (from project_members + profiles) */
   const [adminPhoneRoles, setAdminPhoneRoles] = useState<Map<string, string>>(new Map());
+  /** phone digits → profiles.account_status (등록대기 표시) */
+  const [accountStatusByPhone, setAccountStatusByPhone] = useState<Map<string, string>>(new Map());
   const [showQr, setShowQr] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -67,8 +69,8 @@ export default function WorkerManagement() {
   const [suspendTarget, setSuspendTarget] = useState<{ id: string; name: string } | null>(null);
   const { log } = useAuditLog();
   const baseUrl = window.location.origin;
-  const registerUrl = projectId
-    ? `${baseUrl}/worker/register?project=${projectId}${companyId ? `&company=${companyId}` : ''}`
+  const registerUrl = projectId && companyId
+    ? `${baseUrl}/worker/register?project=${projectId}&company=${companyId}`
     : "";
 
   const rowMeta = useMemo(() => {
@@ -184,9 +186,44 @@ export default function WorkerManagement() {
     }
     setAdminPhoneRoles(adminMap);
 
+    const workerList = data || [];
+    const phoneDigits = [
+      ...new Set(
+        workerList
+          .map((w: any) => digitsOnlyPhone(w.phone))
+          .filter((d: string) => d.length >= 9),
+      ),
+    ];
+    const statusMap = new Map<string, string>();
+    if (phoneDigits.length > 0) {
+      const { data: profs } = await supabase
+        .from("profiles")
+        .select("phone, account_status")
+        .in("phone", phoneDigits);
+      // also try raw phones with hyphens from workers
+      for (const p of profs || []) {
+        const d = digitsOnlyPhone((p as any).phone);
+        if (d) statusMap.set(d, String((p as any).account_status || "active"));
+      }
+      // Fallback: fetch more broadly if phone stored with hyphens
+      if (statusMap.size < phoneDigits.length) {
+        const { data: allProfs } = await supabase
+          .from("profiles")
+          .select("phone, account_status")
+          .limit(2000);
+        for (const p of allProfs || []) {
+          const d = digitsOnlyPhone((p as any).phone);
+          if (d && phoneDigits.includes(d)) {
+            statusMap.set(d, String((p as any).account_status || "active"));
+          }
+        }
+      }
+    }
+    setAccountStatusByPhone(statusMap);
+
     setLoading(false);
     if (error) { toast.error(error.message); return; }
-    setWorkers(data || []);
+    setWorkers(workerList);
   };
 
   const remove = async (w: any) => {
@@ -253,7 +290,17 @@ export default function WorkerManagement() {
             </Select>
             {projectId && (
               <>
-                <Button onClick={() => setShowQr(true)}><QrCode className="h-4 w-4 mr-2" />등록 QR 표시</Button>
+                <Button
+                  onClick={() => {
+                    if (!companyId) {
+                      toast.error("등록 QR에는 소속사 선택이 필수입니다");
+                      return;
+                    }
+                    setShowQr(true);
+                  }}
+                >
+                  <QrCode className="h-4 w-4 mr-2" />등록 QR 표시
+                </Button>
                 <Button variant="secondary" onClick={() => setShowBulk(true)}><FileSpreadsheet className="h-4 w-4 mr-2" />엑셀 일괄등록</Button>
                 <Link to="/workers/legal-mapping"><Button variant="outline"><Settings2 className="h-4 w-4 mr-2" />법정 교육 매핑</Button></Link>
               </>
@@ -393,7 +440,16 @@ export default function WorkerManagement() {
                             <td className="p-2">
                               {w.requires_daily_health_log && <Badge variant="outline" className="gap-1 text-warning border-warning"><AlertTriangle className="h-3 w-3" />일일일지</Badge>}
                             </td>
-                            <td className="p-2">{w.is_active ? <Badge>활성</Badge> : <Badge variant="outline">비활성</Badge>}</td>
+                            <td className="p-2">
+                              {(() => {
+                                const st = accountStatusByPhone.get(digitsOnlyPhone(w.phone));
+                                if (st === "pending") {
+                                  return <Badge variant="outline" className="text-amber-700 border-amber-500">등록대기</Badge>;
+                                }
+                                if (w.is_active) return <Badge>활성</Badge>;
+                                return <Badge variant="outline">비활성</Badge>;
+                              })()}
+                            </td>
                             <td className="p-2">
                               {suspended ? (
                                 <div className="space-y-0.5">
@@ -454,29 +510,34 @@ export default function WorkerManagement() {
 
       <Dialog open={showQr} onOpenChange={setShowQr}>
         <DialogContent>
-          <DialogHeader><DialogTitle>근로자 등록 QR</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>근로자 등록 QR (계정 가입)</DialogTitle></DialogHeader>
           <div className="flex flex-col items-center gap-3 p-4">
             <div className="w-full">
               <Select
-                value={companyId || "__none__"}
-                onValueChange={(v) => setCompanyId(v === "__none__" ? "" : v)}
+                value={companyId || ""}
+                onValueChange={(v) => setCompanyId(v)}
                 disabled={companyLocked}
               >
-                <SelectTrigger><SelectValue placeholder="소속사 자동 지정 (선택)" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="소속사 선택 (필수)" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">소속사 미지정 (근로자가 직접 입력)</SelectItem>
                   {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
               <div className="text-[11px] text-muted-foreground mt-1">
                 {companyLocked
-                  ? "협력사 권한이라 본인 소속사로 자동 지정됩니다 (변경 불가)."
-                  : "선택된 회사가 QR에 포함되어 자동 지정됩니다."}
+                  ? "협력사 권한이라 본인 소속사로 고정됩니다."
+                  : "소속사 필수. 스캔 시 해당 프로젝트·회사로 계정 가입합니다."}
               </div>
             </div>
-            {registerUrl && <QRCodeSVG value={registerUrl} size={240} level="H" />}
-            <div className="text-xs text-muted-foreground break-all text-center">{registerUrl}</div>
-            <Button variant="outline" onClick={() => { navigator.clipboard.writeText(registerUrl); toast.success("링크 복사됨"); }}>링크 복사</Button>
+            {registerUrl ? (
+              <>
+                <QRCodeSVG value={registerUrl} size={240} level="H" />
+                <div className="text-xs text-muted-foreground break-all text-center">{registerUrl}</div>
+                <Button variant="outline" onClick={() => { navigator.clipboard.writeText(registerUrl); toast.success("링크 복사됨"); }}>링크 복사</Button>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground py-6">소속사를 선택하면 QR이 표시됩니다.</p>
+            )}
           </div>
         </DialogContent>
       </Dialog>

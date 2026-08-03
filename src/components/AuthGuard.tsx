@@ -7,6 +7,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import type { ReactNode } from "react";
 import { prefersMobileAppShell } from "@/hooks/use-mobile";
 import { isActiveMobilePreviewRequest } from "@/lib/mobilePreview";
+import {
+  hasCompletedNativePermissions,
+  isNativeApp,
+} from "@/lib/native/isNativeApp";
 
 export const ADMIN_SHELL_ROLES = [
   "master",
@@ -32,6 +36,7 @@ export const PUBLIC_ROUTES = [
   "/auth",
   "/register",
   "/consent",
+  "/native-permissions",
   "/onboarding",
   "/forgot-password",
   "/update-password",
@@ -200,6 +205,15 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
   // ④ Consent required
   if (needsConsent(profile, roles)) {
     return <Navigate to="/consent" replace />;
+  }
+
+  // ④b Native OS permissions (after legal consent, once)
+  if (
+    isNativeApp() &&
+    !hasCompletedNativePermissions() &&
+    location.pathname !== "/native-permissions"
+  ) {
+    return <Navigate to="/native-permissions" replace />;
   }
 
   // ⑤ Shell gate — only pure workers are blocked from admin shell

@@ -49,9 +49,9 @@ export default function PushNotificationBridge() {
     };
   }, [user]);
 
-  // ---------- NATIVE: Capacitor push registration ----------
+  // ---------- NATIVE: register only when already granted (prompt lives on /native-permissions) ----------
   useEffect(() => {
-    if (!user) return;
+    if (!user?.id) return;
     if (!Capacitor?.isNativePlatform?.()) return;
 
     let cleanup: (() => void) | null = null;
@@ -64,12 +64,8 @@ export default function PushNotificationBridge() {
         if (!PushNotifications) return;
 
         const perm = await PushNotifications.checkPermissions();
-        let status = perm.receive;
-        if (status === 'prompt' || status === 'prompt-with-rationale') {
-          const req = await PushNotifications.requestPermissions();
-          status = req.receive;
-        }
-        if (status !== 'granted') return;
+        // Do NOT auto-request here — that raced with GPS onboarding and caused permission loops.
+        if (perm.receive !== 'granted') return;
         if (cancelled) return;
 
         await PushNotifications.register();
@@ -100,7 +96,7 @@ export default function PushNotificationBridge() {
             try {
               await supabase.from('device_push_tokens' as any).upsert(
                 {
-                  user_id: user.id,
+                  user_id: user!.id,
                   token: t.value,
                   platform,
                   user_agent: navigator.userAgent.slice(0, 200),
@@ -148,7 +144,7 @@ export default function PushNotificationBridge() {
       cancelled = true;
       cleanup?.();
     };
-  }, [user, navigate]);
+  }, [user?.id, navigate]);
 
   return null;
 }

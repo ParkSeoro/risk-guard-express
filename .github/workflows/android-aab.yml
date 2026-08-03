@@ -129,13 +129,46 @@ jobs:
               cp capacitor-plugins/alarm-volume/AlarmVolumePlugin.java \
                 android/app/src/main/java/org/safenex/app/AlarmVolumePlugin.java
             fi
-            node scripts/prepare-native.mjs || true
           fi
           bunx cap sync android
+          # FCM google-services.json (required for push)
+          mkdir -p android/app
+          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" ]; then
+            echo "${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}" | base64 -d > android/app/google-services.json
+            echo "Wrote google-services.json from secret"
+          elif [ -f native-assets/android/google-services.json ]; then
+            cp native-assets/android/google-services.json android/app/google-services.json
+            echo "Wrote google-services.json from native-assets"
+          else
+            echo "::warning::Missing google-services.json — FCM push will not work until GOOGLE_SERVICES_JSON_BASE64 or native-assets/android/google-services.json is provided."
+          fi
+          if [ -f android/app/google-services.json ]; then
+            python3 - <<'PY'
+          import json
+          d=json.load(open("android/app/google-services.json"))
+          pkgs=[c.get("client_info",{}).get("android_client_info",{}).get("package_name") for c in d.get("client",[])]
+          print("FCM packages:", pkgs)
+          if "org.safenex.app" not in pkgs:
+              raise SystemExit("google-services.json has no client for org.safenex.app")
+          PY
+          fi
           # 런처/알림 아이콘 + FCM default_notification_icon (항상 적용)
           pip install --quiet pillow
           python3 scripts/sync-android-brand-assets.py
-          node scripts/prepare-native.mjs || true
+          node scripts/prepare-native.mjs
+          # Hard fail if critical permissions missing
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          for p in ACCESS_FINE_LOCATION ACCESS_BACKGROUND_LOCATION FOREGROUND_SERVICE_LOCATION POST_NOTIFICATIONS CAMERA; do
+            if ! grep -q "$p" "$MANIFEST"; then
+              echo "::error::AndroidManifest missing $p after prepare-native"
+              exit 1
+            fi
+          done
+          if ! grep -q "com.google.mlkit.vision.DEPENDENCIES" "$MANIFEST"; then
+            echo "::error::ML Kit barcode meta-data missing"
+            exit 1
+          fi
+          echo "OK: native permissions + ML Kit meta + FCM present"
 
       - name: Resolve version
         id: ver

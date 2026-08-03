@@ -7,6 +7,7 @@
       "dependencies": {
         "@capacitor-community/background-geolocation": "^1.2.26",
         "@capacitor-community/native-audio": "^8.0.0",
+        "@capacitor-mlkit/barcode-scanning": "^8",
         "@capacitor/app": "^8.1.0",
         "@capacitor/core": "^8.4.1",
         "@capacitor/geolocation": "^8.2.0",
@@ -125,6 +126,8 @@
     "@capacitor-community/background-geolocation": ["@capacitor-community/background-geolocation@1.2.26", "https://europe-west1-npm.pkg.dev/lovable-core-prod/sandbox-npm-cache/@capacitor-community/background-geolocation/-/background-geolocation-1.2.26.tgz", { "peerDependencies": { "@capacitor/core": ">=3.0.0" } }, "sha512-kuva8VQ6zM+uIKgHUJTP87IYbmGKhX7DZw62JYfGZ888h4Xr5zeN+UTR6KBRHQVrGBpzSfbv+6/HQVuHYa7W5A=="],
 
     "@capacitor-community/native-audio": ["@capacitor-community/native-audio@8.0.0", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-2y7uZfwmAkwfaz+Sj8ZX0ZWGgBK+0Hbg3IUl8gb1brCkH3UgQLAKkMNoaxVJ6yKP5Ov9vp8wKkeyLxU2KEpNMw=="],
+
+    "@capacitor-mlkit/barcode-scanning": ["@capacitor-mlkit/barcode-scanning@8.1.0", "", { "peerDependencies": { "@capacitor/core": ">=8.0.0" } }, "sha512-lhOYHZINLOCT0i5YSbSMkouik3zh0BncJouumNTgXCT0/533Z4733jAX9zv+nEd++bE8QHeUl2g0NrewreumnQ=="],
 
     "@capacitor/android": ["@capacitor/android@8.4.1", "https://europe-west1-npm.pkg.dev/lovable-core-prod/sandbox-npm-cache/@capacitor/android/-/android-8.4.1.tgz", { "peerDependencies": { "@capacitor/core": "^8.4.0" } }, "sha512-igtDCJ7QQn0P2qHFD9p4KXaa6V1b2PRNt+MxjVwtjTm/BJvqmiazOJq6rPjwFSZnfHm6iFoZk8TfzHd44pyBGw=="],
 

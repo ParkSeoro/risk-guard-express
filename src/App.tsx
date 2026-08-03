@@ -29,6 +29,9 @@ const ZoneCheckin = lazy(() => import("@/pages/ZoneCheckin"));
 const CompanyScan = lazy(() => import("@/pages/CompanyScan"));
 const Manual = lazy(() => import("@/pages/Manual"));
 const ConsentPage = lazy(() => import("@/pages/ConsentPage"));
+const NativePermissionsOnboarding = lazy(
+  () => import("@/pages/NativePermissionsOnboarding"),
+);
 
 const queryClient = new QueryClient();
 
@@ -125,6 +128,7 @@ const App = () => (
                 <Route path="/c/:token" element={<CompanyScan />} />
                 <Route path="/manual" element={<Manual />} />
                 <Route path="/consent" element={<ConsentPage />} />
+                <Route path="/native-permissions" element={<NativePermissionsOnboarding />} />
                 <Route path="/onboarding" element={<Navigate to="/consent" replace />} />
 
                 {/* Canonical role-split shells */}

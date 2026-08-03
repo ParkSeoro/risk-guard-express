@@ -155,6 +155,18 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
 
   const startGpsTracking = useCallback(
     (identity: TrackingIdentity) => {
+      const prev = identityRef.current;
+      if (
+        stopTrackerRef.current &&
+        prev &&
+        prev.project_id === identity.project_id &&
+        (prev.worker_id || null) === (identity.worker_id || null)
+      ) {
+        // Idempotent — avoid stop/start storms (permission dialog loops)
+        identityRef.current = identity;
+        setGpsTracking(true);
+        return;
+      }
       stopGpsTracking();
       const gen = startGenRef.current;
       identityRef.current = identity;

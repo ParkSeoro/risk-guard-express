@@ -5,65 +5,49 @@ Firebase 프로젝트: `safenex-71fe9`
 
 ## 1. `google-services.json` (AAB 클라이언트 — **필수**)
 
-Play 앱이 FCM 토큰을 받으려면 필요합니다. AAB 워크플로는 없으면 **실패**합니다.
+앱이 FCM **수신**에 필요합니다. AAB 워크플로는 없으면 실패합니다.
 
-### 넣는 방법 (택 1)
-
-**A. GitHub Secret (공개 레포 권장)**  
-```bash
-base64 -w0 google-services.json   # macOS: base64 -i google-services.json
-```
-레포 **Settings → Secrets → Actions** → `GOOGLE_SERVICES_JSON_BASE64`
-
-**B. 이 폴더에 파일 커밋**  
-`native-assets/fcm/google-services.json` (현재 방식). CI가 `android/app/` 으로 복사합니다.
+- 커밋 경로: `native-assets/fcm/google-services.json`
+- 또는 GitHub Secret `GOOGLE_SERVICES_JSON_BASE64`
 
 ---
 
-## 2. Edge `FCM_SERVER_KEY` (서버 발송 — **필수**, 직접 설정)
+## 2. Edge 서버 발송 (Admin SDK — **권장**)
 
-`google-services.json` 안의 `api_key`(AIza…)는 **앱 클라이언트용**입니다.  
-서버가 푸시를 **보내는** 키와 다릅니다. Edge Function `dispatch-notification-push` 는 레거시 HTTP API를 쓰므로 **Server key** 가 필요합니다.
+클라이언트가 토큰을 받아도, Edge `dispatch-notification-push` 가 보내야 트레이에 뜹니다.
 
-### 2-1. Firebase에서 서버 키 복사
+다운로드한 `…-firebase-adminsdk-….json` 전체(= `"type": "service_account"`)를 씁니다.  
+**레포에 커밋하지 마세요.** Supabase Secret 에만 넣습니다.
 
-1. [Firebase Console](https://console.firebase.google.com/) → 프로젝트 **`safenex-71fe9`**
-2. 왼쪽 톱니바퀴 **프로젝트 설정** → 상단 탭 **Cloud Messaging**
-3. **Cloud Messaging API (Legacy)** 섹션의 **서버 키** 복사  
-   - 키가 안 보이거나 “API 사용 중지됨”이면:
-     - [Google Cloud Console → API 라이브러리](https://console.cloud.google.com/apis/library/fcm.googleapis.com?project=safenex-71fe9) 에서  
-       **Firebase Cloud Messaging API** 사용 설정  
-     - 또는 Cloud Messaging 탭에서 Legacy API **사용 설정** 후 새로고침
-4. 서버 키는 보통 `AAAA…` 로 시작하는 긴 문자열입니다. (`AIza…` 클라이언트 키 아님)
+### Dashboard 등록 (가장 쉬움)
 
-### 2-2. Supabase Edge Secret에 등록 (택 1)
-
-**방법 A — Dashboard (가장 쉬움)**  
-1. [Supabase Dashboard](https://supabase.com/dashboard) → 프로젝트 (`qhntxmggacorqjjmjqgo` 등 사용 중 프로젝트)
+1. [Supabase Dashboard](https://supabase.com/dashboard) → 사용 중 프로젝트
 2. **Project Settings** → **Edge Functions** → **Secrets**
 3. **Add new secret**
-   - Name: `FCM_SERVER_KEY`
-   - Value: (위에서 복사한 서버 키 전체)
-4. 저장. 이미 배포된 `dispatch-notification-push` 는 다음 호출부터 새 secret을 읽습니다.  
-   (안 되면 Functions → `dispatch-notification-push` **Redeploy** 한 번)
+   - **Name:** `FIREBASE_SERVICE_ACCOUNT_JSON`
+   - **Value:** Admin SDK JSON **전체** (중괄호 `{` … `}` 포함, 한 줄이어도 됨)
+4. 저장 후 Edge Function `dispatch-notification-push` **Redeploy** (Secrets만 바꿔도 보통 즉시 반영되지만, 안 되면 Redeploy)
 
-**방법 B — CLI**  
-로컬에 [Supabase CLI](https://supabase.com/docs/guides/cli) 로그인 후:
+### CLI
 
 ```bash
 supabase link --project-ref qhntxmggacorqjjmjqgo
-supabase secrets set FCM_SERVER_KEY="여기에_서버_키_붙여넣기"
-supabase secrets list   # FCM_SERVER_KEY 있는지 확인 (값은 마스킹됨)
+supabase secrets set FIREBASE_SERVICE_ACCOUNT_JSON="$(cat safenex-71fe9-firebase-adminsdk-….json)"
 ```
 
-### 2-3. 동작 확인
+### 확인
 
-1. 앱 설치 → 알림 권한 허용 → 로그인
-2. DB `device_push_tokens` 에 `platform=android` 행이 생기는지 확인
-3. 알림/위험구역 이벤트 발생 시 트레이 푸시 수신
-4. Edge 로그: Dashboard → Edge Functions → `dispatch-notification-push` → Logs  
-   `native.sent >= 1` 이면 OK. `FCM_SERVER_KEY` 없으면 native 분기가 건너뛰어집니다.
+- Function 로그에 `native_mode: "http_v1"`, `native.sent >= 1`
+- `device_push_tokens` 에 android 토큰 존재
+- 알림 발생 시 기기 트레이 수신
 
 ---
 
-VAPID 키(`VAPID_*`)는 **웹 푸시**용이며 네이티브 FCM을 대체하지 않습니다.
+## 3. (구형) `FCM_SERVER_KEY` — 선택 폴백
+
+Legacy Cloud Messaging 서버 키(`AAAA…`)입니다.  
+`FIREBASE_SERVICE_ACCOUNT_JSON` 이 있으면 **무시해도 됩니다.**
+
+---
+
+VAPID(`VAPID_*`)는 **웹 푸시**용이며 네이티브 FCM을 대체하지 않습니다.

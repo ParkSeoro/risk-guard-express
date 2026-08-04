@@ -14,3 +14,7 @@ verify_jwt = false
 # CI uses a shared secret (not a user JWT). Gateway JWT check must be off.
 [functions.publish-ota-release]
 verify_jwt = false
+
+# DB pg_net trigger sends only X-Push-Trigger-Secret (no Authorization JWT).
+[functions.dispatch-notification-push]
+verify_jwt = false

@@ -1,22 +1,20 @@
 // supabase/functions/publish-ota-release/index.ts
 // GitHub Actions(또는 CI)가 OTA 번들을 자동 게시하는 엔드포인트.
 //
-// 인증: Authorization: Bearer <OTA_PUBLISH_TOKEN>
+// 인증 (둘 중 하나):
+//   - Authorization: Bearer <OTA_PUBLISH_TOKEN>
+//   - X-OTA-Publish-Token: <OTA_PUBLISH_TOKEN>
+// (Supabase 게이트웨이 JWT 검증은 config.toml 에서 verify_jwt=false)
 // 메타: 헤더 X-OTA-Version, X-OTA-Channel, X-OTA-Mandatory, X-OTA-Notes,
 //       X-OTA-Min-Native-Version
 // 바디: zip 파일 바이너리(Content-Type: application/zip)
-//
-// 처리:
-//   1) app-updates 비공개 버킷에 업로드
-//   2) public.app_releases 에 행 삽입(체크섬 포함)
-//   3) JSON 으로 결과 반환
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, content-type, x-ota-version, x-ota-channel, x-ota-mandatory, x-ota-notes, x-ota-min-native-version",
+    "authorization, content-type, x-ota-version, x-ota-channel, x-ota-mandatory, x-ota-notes, x-ota-min-native-version, x-ota-publish-token, apikey",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -35,10 +33,12 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
-  // 1) 인증
+  // 1) 인증 — custom secret (not Supabase user JWT)
   const expected = Deno.env.get("OTA_PUBLISH_TOKEN");
   const auth = req.headers.get("Authorization") || "";
-  const token = auth.replace(/^Bearer\s+/i, "").trim();
+  const bearer = auth.replace(/^Bearer\s+/i, "").trim();
+  const headerTok = (req.headers.get("X-OTA-Publish-Token") || "").trim();
+  const token = headerTok || bearer;
   if (!expected || !token || token !== expected) {
     return json({ error: "unauthorized" }, 401);
   }
@@ -94,7 +94,6 @@ Deno.serve(async (req) => {
     .single();
 
   if (error) {
-    // 실패 시 업로드한 파일 청소
     await supabase.storage.from("app-updates").remove([path]);
     return json({ error: "insert_failed", detail: error.message }, 500);
   }

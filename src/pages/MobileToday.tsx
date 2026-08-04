@@ -16,6 +16,7 @@ import {
   OctagonAlert,
   Users,
   AlertTriangle,
+  Crosshair,
 } from "lucide-react";
 import WorkerDailyHome from "@/pages/WorkerDailyHome";
 
@@ -71,7 +72,15 @@ function HealthDueCard({ projectId }: { projectId: string }) {
   );
 }
 
-function ManagerToday({ projectId, role }: { projectId: string; role: string }) {
+function ManagerToday({
+  projectId,
+  role,
+  isMaster,
+}: {
+  projectId: string;
+  role: string;
+  isMaster: boolean;
+}) {
   const navigate = useNavigate();
   const [pendingApprovals, setPendingApprovals] = useState<number | null>(null);
   const [openActions, setOpenActions] = useState<number | null>(null);

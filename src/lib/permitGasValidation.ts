@@ -104,6 +104,48 @@ export function pickGasReadings(
   return out;
 }
 
+/**
+ * Merge gas keys from a DigPermitForm onChange payload into previous form state.
+ * Only keys present on `incoming` are applied — avoids wiping earlier fields when
+ * DigPermitForm's update() closes over a stale `data` snapshot.
+ */
+export function mergeGasReadingsIntoForm<T extends Record<string, unknown>>(
+  prev: T,
+  incoming: Record<string, unknown> | null | undefined,
+): T {
+  const next = { ...prev };
+  const src = incoming || {};
+  for (const k of GAS_READING_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(src, k)) continue;
+    const v = src[k];
+    if (v == null || String(v).trim() === '') {
+      delete (next as Record<string, unknown>)[k];
+    } else {
+      (next as Record<string, unknown>)[k] = String(v);
+    }
+  }
+  return next;
+}
+
+/** Map save_permit_gas_readings RPC error codes to Korean UX copy. */
+export function gasSaveErrorMessage(code: unknown): string {
+  const c = String(code ?? '');
+  switch (c) {
+    case 'EMPTY_READINGS':
+      return '가스농도 측정값을 한 칸 이상 입력한 뒤 저장하세요. (양식 아래 「가스농도측정」란)';
+    case 'INVALID_STATUS':
+      return '발행 완료·종료대기 상태에서만 가스측정을 저장할 수 있습니다.';
+    case 'FORBIDDEN':
+      return '이 허가서에 가스측정을 저장할 권한이 없습니다.';
+    case 'NOT_FOUND':
+      return '허가서를 찾을 수 없습니다.';
+    case 'UNAUTHENTICATED':
+      return '로그인이 필요합니다.';
+    default:
+      return c || '알 수 없는 오류';
+  }
+}
+
 export function gasClosureErrorMessage(check: GasClosureCheck): string {
   if (check.ok) return '';
   const labels = check.missingLabels.length

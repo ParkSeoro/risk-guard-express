@@ -7,8 +7,10 @@ name: Mobile Release (OTA bundle)
 # 3) v* 태그 push → GitHub Releases 에도 zip 첨부
 #
 # 자동 게시(/settings/mobile-releases 등재)를 위해 필요한 GitHub Secrets:
-#   - OTA_PUBLISH_URL    예) https://iqtiozscqwuacgzrlfzu.supabase.co/functions/v1/publish-ota-release
-#   - OTA_PUBLISH_TOKEN  Lovable Cloud 시크릿과 동일 값(마스터가 워크스페이스 시크릿에서 복사)
+#   - OTA_PUBLISH_URL    ★앱이 쓰는 프로젝트와 같아야 함
+#                        예) https://qhntxmggacorqjjmjqgo.supabase.co/functions/v1/publish-ota-release
+#                        (구 Lovable iqtiozsc… 로 올리면 폰 OTA가 영원히 빈 목록)
+#   - OTA_PUBLISH_TOKEN  해당 프로젝트 Edge Secret OTA_PUBLISH_TOKEN 과 동일
 #   - OTA_CHANNEL        기본 stable. beta 채널로 보내려면 beta
 # 시크릿이 없으면 zip 만 Artifact 로 남기고 업로드 단계는 건너뜁니다.
 # ----------------------------------------------------------------
@@ -115,7 +117,7 @@ jobs:
           cd releases
           sha256sum *.zip | tee SHA256SUMS.txt
 
-      - name: Publish to /settings/mobile-releases (Lovable Cloud)
+      - name: Publish to app_releases (Supabase Edge publish-ota-release)
         if: ${{ env.OTA_PUBLISH_URL != '' && env.OTA_PUBLISH_TOKEN != '' }}
         env:
           OTA_PUBLISH_URL: ${{ secrets.OTA_PUBLISH_URL }}
@@ -124,9 +126,17 @@ jobs:
           CHANNEL: ${{ steps.ver.outputs.channel }}
           MANDATORY: ${{ steps.ver.outputs.mandatory }}
           COMMIT: ${{ github.sha }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
         run: |
           ZIP=$(ls releases/safenex-*.zip | head -n1)
           echo "→ POST $OTA_PUBLISH_URL  (file=$ZIP)"
+          # Guard: publish URL host should match the app's Supabase host
+          APP_HOST=$(node -e "try{console.log(new URL(process.env.VITE_SUPABASE_URL||'').host)}catch{console.log('')}")
+          PUB_HOST=$(node -e "try{console.log(new URL(process.env.OTA_PUBLISH_URL||'').host)}catch{console.log('')}")
+          if [ -n "$APP_HOST" ] && [ -n "$PUB_HOST" ] && [ "$APP_HOST" != "$PUB_HOST" ]; then
+            echo "::error::OTA_PUBLISH_URL host ($PUB_HOST) ≠ VITE_SUPABASE_URL host ($APP_HOST). Phone will never see this release."
+            exit 1
+          fi
           HTTP=$(curl -sS -w "%{http_code}" -o /tmp/ota-resp.json \
             -X POST "$OTA_PUBLISH_URL" \
             -H "Authorization: Bearer $OTA_PUBLISH_TOKEN" \

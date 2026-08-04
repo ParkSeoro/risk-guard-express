@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import MobileOtaUpdateCard from "@/components/mobile/MobileOtaUpdateCard";
 
 export default function MobileMore() {
   const { signOut, profile, hasRole } = useAuth();
@@ -84,6 +85,8 @@ export default function MobileMore() {
           </CardContent>
         </Card>
       )}
+
+      <MobileOtaUpdateCard />
 
       <Card>
         <CardContent className="p-0 divide-y">

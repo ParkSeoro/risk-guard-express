@@ -22,29 +22,120 @@ function cmpVersion(a: string, b: string) {
   return 0;
 }
 
-export async function initOtaUpdater() {
-  if (!isNativeApp()) return;
+export type OtaStatus = {
+  native: boolean;
+  channel: "stable" | "beta";
+  currentVersion: string;
+  latestVersion: string | null;
+  mandatory: boolean;
+  hasUpdate: boolean;
+  message: string;
+};
+
+export async function getOtaStatus(): Promise<OtaStatus> {
+  const channel = getChannel();
+  if (!isNativeApp()) {
+    return {
+      native: false,
+      channel,
+      currentVersion: "웹",
+      latestVersion: null,
+      mandatory: false,
+      hasUpdate: false,
+      message: "웹/PC는 OTA가 필요 없습니다. 새로고침하면 최신입니다.",
+    };
+  }
   try {
     const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
-    // 새 번들 적용 후 부팅 안정 신호 (없으면 5초 후 롤백)
-    await CapacitorUpdater.notifyAppReady();
-
     const current = await CapacitorUpdater.current();
-    const currentVersion = (current as any)?.bundle?.version || "0.0.0";
-
-    const { data, error } = await supabase.rpc("get_latest_app_release", { _channel: getChannel() } as any);
-    if (error) { console.warn("[ota] release lookup", error); return; }
+    const currentVersion = String((current as any)?.bundle?.version || "내장");
+    const { data, error } = await supabase.rpc("get_latest_app_release", {
+      _channel: channel,
+    } as any);
+    if (error) {
+      return {
+        native: true,
+        channel,
+        currentVersion,
+        latestVersion: null,
+        mandatory: false,
+        hasUpdate: false,
+        message: "서버 릴리스 조회 실패: " + error.message,
+      };
+    }
     const release: any = Array.isArray(data) ? data[0] : data;
-    if (!release?.bundle_url || !release?.version) return;
-    if (cmpVersion(release.version, currentVersion) <= 0) return;
+    const latestVersion = release?.version ? String(release.version) : null;
+    const mandatory = !!release?.mandatory;
+    const hasUpdate =
+      !!latestVersion && cmpVersion(latestVersion, currentVersion === "내장" ? "0.0.0" : currentVersion) > 0;
+    return {
+      native: true,
+      channel,
+      currentVersion,
+      latestVersion,
+      mandatory,
+      hasUpdate,
+      message: hasUpdate
+        ? `새 버전 ${latestVersion} 있음 → 다운로드 후 앱을 완전히 종료했다가 다시 실행하세요`
+        : latestVersion
+          ? `최신입니다 (서버 ${latestVersion})`
+          : "게시된 OTA 릴리스가 없습니다",
+    };
+  } catch (e: any) {
+    return {
+      native: true,
+      channel,
+      currentVersion: "?",
+      latestVersion: null,
+      mandatory: false,
+      hasUpdate: false,
+      message: "OTA 상태 확인 실패: " + (e?.message || String(e)),
+    };
+  }
+}
 
-    // bundle_url 이 "storage:<path>" 이면 서명 URL 생성, 아니면 그대로 사용 (외부 URL 호환)
+/** Download latest bundle if newer. Returns user-facing Korean result. */
+export async function checkAndDownloadOta(): Promise<{
+  ok: boolean;
+  message: string;
+  version?: string;
+  apply: "immediate" | "next_cold_start" | "none";
+}> {
+  if (!isNativeApp()) {
+    return { ok: true, message: "웹은 새로고침으로 업데이트됩니다.", apply: "none" };
+  }
+  try {
+    const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
+    await CapacitorUpdater.notifyAppReady();
+    const current = await CapacitorUpdater.current();
+    const currentVersion = String((current as any)?.bundle?.version || "0.0.0");
+
+    const { data, error } = await supabase.rpc("get_latest_app_release", {
+      _channel: getChannel(),
+    } as any);
+    if (error) return { ok: false, message: "릴리스 조회 실패: " + error.message, apply: "none" };
+    const release: any = Array.isArray(data) ? data[0] : data;
+    if (!release?.bundle_url || !release?.version) {
+      return { ok: true, message: "게시된 업데이트가 없습니다.", apply: "none" };
+    }
+    if (cmpVersion(String(release.version), currentVersion) <= 0) {
+      return {
+        ok: true,
+        message: `이미 최신입니다 (${release.version})`,
+        version: String(release.version),
+        apply: "none",
+      };
+    }
+
     let downloadUrl = release.bundle_url as string;
     if (downloadUrl.startsWith("storage:")) {
       const path = downloadUrl.replace(/^storage:/, "");
       const { data: signed, error: sErr } = await supabase.storage
-        .from("app-updates").createSignedUrl(path, 60 * 60);
-      if (sErr || !signed?.signedUrl) { console.warn("[ota] sign url", sErr); return; }
+        .from("app-updates")
+        .createSignedUrl(path, 60 * 60);
+      if (sErr || !signed?.signedUrl) {
+        return { ok: false, message: "다운로드 URL 생성 실패", apply: "none" };
+      }
       downloadUrl = signed.signedUrl;
     }
 
@@ -55,11 +146,33 @@ export async function initOtaUpdater() {
     } as any);
 
     if (release.mandatory) {
-      await CapacitorUpdater.set({ id: bundle.id } as any); // 즉시 적용 → 앱 재시작
-    } else {
-      await CapacitorUpdater.next({ id: bundle.id } as any); // 다음 콜드 부팅 시 적용
+      await CapacitorUpdater.set({ id: bundle.id } as any);
+      return {
+        ok: true,
+        message: `${release.version} 적용 중 (앱이 곧 다시 시작됩니다)`,
+        version: String(release.version),
+        apply: "immediate",
+      };
     }
-    console.info(`[ota] downloaded ${release.version} (mandatory=${release.mandatory})`);
+    await CapacitorUpdater.next({ id: bundle.id } as any);
+    return {
+      ok: true,
+      message: `${release.version} 다운로드 완료. 최근 앱에서 SafeNex를 완전히 종료한 뒤 다시 실행하세요.`,
+      version: String(release.version),
+      apply: "next_cold_start",
+    };
+  } catch (e: any) {
+    return { ok: false, message: e?.message || String(e), apply: "none" };
+  }
+}
+
+export async function initOtaUpdater() {
+  if (!isNativeApp()) return;
+  try {
+    const r = await checkAndDownloadOta();
+    if (r.ok && r.apply !== "none") {
+      console.info(`[ota] ${r.message}`);
+    }
   } catch (e) {
     console.warn("[ota] updater init failed", e);
   }

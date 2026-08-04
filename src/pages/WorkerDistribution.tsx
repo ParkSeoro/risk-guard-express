@@ -246,11 +246,32 @@ export default function WorkerDistribution() {
 
       {loadError && (
         <Card className="border-destructive/40">
-          <CardContent className="pt-4 text-sm text-destructive">
-            분포 데이터 로드 실패: {loadError}
-            <div className="text-xs text-muted-foreground mt-1">
-              SQL 마이그레이션(`worker_last_positions`) 적용 여부를 확인하세요.
-            </div>
+          <CardContent className="pt-4 text-sm space-y-2">
+            <div className="text-destructive font-medium">분포 데이터 로드 실패</div>
+            <div className="text-destructive/90 text-xs break-all">{loadError}</div>
+            {/company_type/i.test(loadError) ? (
+              <div className="rounded-md border bg-muted/40 p-3 text-xs text-foreground space-y-1.5 leading-relaxed">
+                <p className="font-semibold">지금 바로 고치는 방법 (앱 업데이트와 무관)</p>
+                <ol className="list-decimal pl-4 space-y-1">
+                  <li>Supabase Dashboard → SQL Editor 열기</li>
+                  <li>
+                    마이그레이션 파일{" "}
+                    <code className="text-[10px]">20260804011000_fix_distribution_counts_company_type.sql</code>{" "}
+                    내용을 붙여넣고 Run
+                  </li>
+                  <li>이 페이지를 새로고침</li>
+                </ol>
+                <p className="text-muted-foreground">
+                  원인: RPC가 없는 컬럼 <code>companies.company_type</code>을 참조합니다. 실제 컬럼은{" "}
+                  <code>companies.type</code> 입니다.
+                </p>
+              </div>
+            ) : (
+              <div className="text-xs text-muted-foreground">
+                SQL 마이그레이션(`worker_last_positions` / `get_worker_distribution_counts`) 적용 여부를
+                확인하세요.
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

@@ -50,7 +50,13 @@ export default function MobileToday() {
     );
   }
 
-  return <ManagerToday projectId={projectId || preview.previewProjectId} role={effectiveRole} />;
+  return (
+    <ManagerToday
+      projectId={projectId || preview.previewProjectId}
+      role={effectiveRole}
+      isMaster={preview.isPreview ? effectiveRole === "master" : isMaster}
+    />
+  );
 }
 
 function HealthDueCard({ projectId }: { projectId: string }) {
@@ -233,6 +239,16 @@ function ManagerToday({
           ))}
         </CardContent>
       </Card>
+
+      {isMaster && (
+        <Button
+          className="w-full h-11"
+          disabled={!projectId}
+          onClick={() => navigate("/app/worker/map-calibration")}
+        >
+          <Crosshair className="h-4 w-4 mr-2" /> 맵·GPS 맞추기
+        </Button>
+      )}
     </div>
   );
 }

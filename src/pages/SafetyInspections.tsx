@@ -60,7 +60,7 @@ type InspAction = {
 export default function SafetyInspections() {
   const { profile } = useAuth();
   const { toast } = useToast();
-  const { selectedProject } = useGlobalProjectAccess();
+  const { selectedProject, userCompanyId } = useGlobalProjectAccess();
   const projectId = selectedProject;
   const [tab, setTab] = useState('list');
   const [inspections, setInspections] = useState<Inspection[]>([]);
@@ -117,6 +117,8 @@ export default function SafetyInspections() {
         .from('safety_inspections' as any)
         .insert({
           project_id: projectId,
+          // Prefer own company for GC peer isolation; NULL still allowed by RLS for managers
+          company_id: userCompanyId || null,
           inspection_type: form.inspection_type,
           process_category: form.process_category,
           location: form.location,

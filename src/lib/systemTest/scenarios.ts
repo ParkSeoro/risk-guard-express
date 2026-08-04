@@ -637,14 +637,20 @@ export async function runCrossTableScenario(ctx: TestContext): Promise<StepResul
         _project_id: ctx.projectId ?? null,
       });
       if (error) return { pass: false, error_location: error.message };
-      const findings = ((data as any)?.findings ?? []) as Array<{
-        code: string; severity: string; count: number; message: string;
+      // RPC returns an array of {code, severity, count, detail} — not {findings:[]}.
+      const raw = data as unknown;
+      const findings = (Array.isArray(raw)
+        ? raw
+        : Array.isArray((raw as any)?.findings)
+          ? (raw as any).findings
+          : []) as Array<{
+        code: string; severity: string; count: number; detail?: string; message?: string;
       }>;
-      const high = findings.filter(f => f.severity === "high");
+      const high = findings.filter((f) => f.severity === "high" || f.severity === "critical");
       return {
         pass: high.length === 0,
         error_location: high.length > 0
-          ? `${high.length} high-severity integrity issue(s): ${high.map(f => f.code).join(", ")}`
+          ? `${high.length} high-severity integrity issue(s): ${high.map((f) => f.code).join(", ")}`
           : undefined,
         details: { total: findings.length, findings },
       };

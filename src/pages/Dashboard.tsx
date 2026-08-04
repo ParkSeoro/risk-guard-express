@@ -844,7 +844,7 @@ function QuickStartCards({ navigate, isMaster, isProjectAdmin, isContractor, isW
       { title: "프로젝트 관리", desc: "전체 프로젝트 현황 보기", icon: FolderKanbanIcon, path: "/projects", tone: 'primary' },
       { title: "사용자/권한", desc: "사용자 초대 및 권한 부여", icon: Users, path: "/settings/permissions", tone: 'success' },
       { title: "감사 로그", desc: "전체 시스템 활동 점검", icon: History, path: "/audit-logs", tone: 'warning' },
-      { title: "일관성 감사", desc: "공통 법칙 적용 현황", icon: ShieldCheck, path: "/admin/consistency-audit", tone: 'destructive' },
+      { title: "시스템 테스트", desc: "회귀·무결성 전수 검증", icon: ShieldCheck, path: "/admin/system-test", tone: 'destructive' },
     ];
   } else if (isProjectAdmin) {
     // project_admin / safety_manager

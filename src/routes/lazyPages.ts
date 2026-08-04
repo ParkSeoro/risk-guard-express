@@ -95,7 +95,6 @@ export const LazySafetyCostValidation = L(() => import("@/pages/SafetyCostValida
 export const LazyAITestEngine = L(() => import("@/pages/AITestEngine"));
 export const LazyAILogs = L(() => import("@/pages/AILogs"));
 export const LazySystemTestEngine = L(() => import("@/pages/SystemTestEngine"));
-export const LazyConsistencyAudit = L(() => import("@/pages/ConsistencyAudit"));
 export const LazyDataAudit = L(() => import("@/pages/DataAudit"));
 export const LazyTrash = L(() => import("@/pages/Trash"));
 export const LazyHealthDashboard = L(() => import("@/pages/health/HealthDashboard"));

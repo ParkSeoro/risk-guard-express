@@ -4,12 +4,13 @@
 // 목적: 모바일 페이지가 "링크 없음 / 빈 화면 / 카메라 안됨" 같은
 // 사용자 보고를 자동으로 잡아낸다. 각 모바일 라우트가 의존하는
 // 데이터 소스(테이블/RPC/스토리지/브라우저 능력)를 점검한다.
+// 경로 SSOT: WorkerAppRoutes.tsx (/app/worker/...)
 // ================================================================
 
 import { supabase } from "@/integrations/supabase/client";
 import { runStep, StepResult, TestContext } from "./runner";
 
-// 모바일 라우트 인벤토리 — App.tsx 와 동기화 필수
+// 모바일 라우트 인벤토리 — WorkerAppRoutes.tsx 와 동기화 필수
 export const MOBILE_ROUTES: Array<{
   path: string;
   label: string;
@@ -19,24 +20,32 @@ export const MOBILE_ROUTES: Array<{
     | { kind: "browser"; cap: "camera" | "https" | "service_worker" | "geolocation" }
     | { kind: "static" };
 }> = [
-  { path: "/m", label: "모바일 홈", requires: { kind: "static" } },
-  { path: "/m/inspect", label: "안전점검", requires: { kind: "table", name: "safety_inspections", project_scoped: true } },
-  { path: "/m/alerts", label: "알림", requires: { kind: "table", name: "notifications" } },
-  { path: "/m/actions", label: "조치 관리", requires: { kind: "table", name: "safety_inspection_actions", project_scoped: true } },
-  { path: "/m/approvals", label: "전자결재", requires: { kind: "table", name: "approvals" } },
-  { path: "/m/workers", label: "근로자 QR", requires: { kind: "table", name: "workers", project_scoped: true } },
-  { path: "/m/risk-assessment", label: "위험성평가", requires: { kind: "table", name: "assessment_runs", project_scoped: true } },
-  { path: "/m/work-plans", label: "작업계획", requires: { kind: "table", name: "work_plans", project_scoped: true } },
-  { path: "/m/tbm", label: "TBM", requires: { kind: "table", name: "tbm_sessions", project_scoped: true } },
-  { path: "/m/permits", label: "허가서 결재", requires: { kind: "table", name: "work_permits", project_scoped: true } },
-  { path: "/m/incident", label: "사고 신고", requires: { kind: "table", name: "incident_reports", project_scoped: true } },
-  { path: "/m/scan", label: "QR 스캔(카메라)", requires: { kind: "browser", cap: "camera" } },
+  { path: "/app/worker/today", label: "오늘(홈)", requires: { kind: "static" } },
+  { path: "/app/worker/tasks", label: "할 일", requires: { kind: "table", name: "todo_items", project_scoped: true } },
+  { path: "/app/worker/docs", label: "승인 자료", requires: { kind: "static" } },
+  { path: "/app/worker/more", label: "더보기", requires: { kind: "static" } },
+  { path: "/app/worker/inspect", label: "안전점검", requires: { kind: "table", name: "safety_inspections", project_scoped: true } },
+  { path: "/app/worker/alerts", label: "알림", requires: { kind: "table", name: "notifications" } },
+  { path: "/app/worker/actions", label: "조치 관리", requires: { kind: "table", name: "safety_inspection_actions", project_scoped: true } },
+  { path: "/app/worker/approvals", label: "전자결재", requires: { kind: "table", name: "approvals" } },
+  { path: "/app/worker/workers", label: "근로자 QR", requires: { kind: "table", name: "workers", project_scoped: true } },
+  { path: "/app/worker/risk-assessment", label: "위험성평가", requires: { kind: "table", name: "assessment_runs", project_scoped: true } },
+  { path: "/app/worker/work-plans", label: "작업계획", requires: { kind: "table", name: "work_plans", project_scoped: true } },
+  { path: "/app/worker/tbm", label: "TBM", requires: { kind: "table", name: "tbm_sessions", project_scoped: true } },
+  { path: "/app/worker/permits", label: "허가서 조회", requires: { kind: "table", name: "work_permits", project_scoped: true } },
+  { path: "/app/worker/incident", label: "사고 신고", requires: { kind: "table", name: "incident_reports", project_scoped: true } },
+  { path: "/app/worker/scan", label: "QR 스캔(카메라)", requires: { kind: "browser", cap: "camera" } },
+  { path: "/app/worker/work-stop", label: "작업중지", requires: { kind: "table", name: "work_stop_requests", project_scoped: true } },
+  { path: "/app/worker/daily-health-log", label: "일일 건강일지", requires: { kind: "table", name: "worker_daily_health_logs", project_scoped: true } },
+  { path: "/app/worker/geofence-drop", label: "Walk&Drop 구역", requires: { kind: "table", name: "restricted_zones", project_scoped: true } },
+  { path: "/app/worker/map-calibration", label: "지도 GPS 보정", requires: { kind: "table", name: "site_maps", project_scoped: true } },
+  // Public / auth entry points outside the shell
   { path: "/worker/register", label: "근로자 등록(Auth)", requires: { kind: "rpc", name: "complete_worker_roster_signup", sample_args: {} } },
   { path: "/worker/portal/:token", label: "레거시 포털→로그인 리다이렉트", requires: { kind: "static" } },
   { path: "/tbm/:token", label: "TBM 참여(QR)", requires: { kind: "rpc", name: "get_tbm_by_token", sample_args: { _token: "__qa__" } } },
 ];
 
-// 라우트 등록 누락 감지 — App.tsx 의 라우트 목록과 비교 가능하도록 export
+// 라우트 등록 누락 감지 — export for external inventory checks
 export const REGISTERED_MOBILE_PATHS = MOBILE_ROUTES.map((r) => r.path);
 
 function checkBrowserCap(cap: "camera" | "https" | "service_worker" | "geolocation"): {
@@ -98,6 +107,9 @@ export async function runMobileScenario(ctx: TestContext): Promise<StepResult[]>
   );
   out.push(
     await runStep("mobile", "service_worker", async () => checkBrowserCap("service_worker"))
+  );
+  out.push(
+    await runStep("mobile", "geolocation", async () => checkBrowserCap("geolocation"))
   );
   out.push(
     await runStep("mobile", "selected_project_id", async () => {

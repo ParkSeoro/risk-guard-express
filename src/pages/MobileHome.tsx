@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine, HeartPulse, Settings2, RotateCcw, MapPin, LogOut } from "lucide-react";
+import { Building2, ClipboardCheck, QrCode, Bell, FileCheck2, HardHat, LogIn, BookOpen, Wifi, WifiOff, Wrench, ShieldAlert, ClipboardList, Users, AlertOctagon, ScanLine, HeartPulse, Settings2, RotateCcw, MapPin, LogOut, Crosshair } from "lucide-react";
 import { isOnline, listQueue } from "@/lib/offlineQueue";
 import { isPushSupported, isIosSafariTab, pushStatusLabel, registerSW, subscribeToPush } from "@/lib/pushSubscription";
 import { setForceDesktop } from "@/components/MobileRedirectGuard";
@@ -287,6 +287,17 @@ export default function MobileHome() {
 
             {isMaster && (
               <div className="space-y-2">
+                <Button
+                  variant="default"
+                  className="w-full h-12"
+                  onClick={() => navigate("/app/worker/map-calibration")}
+                  disabled={!selectedProjectId}
+                >
+                  <Crosshair className="h-4 w-4 mr-2" /> 맵·GPS 맞추기
+                </Button>
+                <p className="text-[11px] text-muted-foreground text-center">
+                  마스터 전용 · 현장에서 도면 지점과 현재 GPS를 맞춰 지오펜스 오차를 보정합니다.
+                </p>
                 <MasterAlarmSimulator projectId={selectedProjectId} />
                 <p className="text-[11px] text-muted-foreground text-center">
                   마스터 전용 · GPS 없이 육성 TTS + 전체화면 경고 + 관리자 푸시 사이클을 검증합니다.

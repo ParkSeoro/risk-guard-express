@@ -131,7 +131,28 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
   const postFix = useCallback(async (lat: number, lng: number, accuracy: number, source: string) => {
     const identity = identityRef.current;
     if (!identity) return;
-    setLastGpsFix({ lat, lng, accuracy, at: Date.now() });
+    // Display calibrated; send RAW so track-location does not double-apply.
+    let dispLat = lat;
+    let dispLng = lng;
+    try {
+      const { fetchProjectGpsCalibration, applyGpsCalibration } = await import(
+        "@/lib/tracking/gpsCalibration"
+      );
+      const cal = await fetchProjectGpsCalibration(identity.project_id, async (id) => {
+        const { data } = await supabase
+          .from("projects")
+          .select("gps_calibration")
+          .eq("id", id)
+          .maybeSingle();
+        return data?.gps_calibration ?? null;
+      });
+      const disp = applyGpsCalibration(lat, lng, cal);
+      dispLat = disp.lat;
+      dispLng = disp.lng;
+    } catch {
+      /* keep raw for UI if calibration fetch fails */
+    }
+    setLastGpsFix({ lat: dispLat, lng: dispLng, accuracy, at: Date.now() });
     try {
       await supabase.functions.invoke("track-location", {
         // Edge expects accuracy_m (Zod); keep source for diagnostics
@@ -213,12 +234,7 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
           if (!("geolocation" in navigator)) return;
           navigator.geolocation.getCurrentPosition(
             (pos) => {
-              setLastGpsFix({
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-                accuracy: pos.coords.accuracy,
-                at: Date.now(),
-              });
+              // postFix applies project GPS bias for display, then posts RAW to track-location.
               void postFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, "web-worker-tick");
             },
             (err) => {

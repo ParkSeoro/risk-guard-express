@@ -66,7 +66,7 @@ BEGIN
 
   _is_master := public.is_master(_uid);
 
-  SELECT pm.role_new::text, c.company_type::text, pm.company_id
+  SELECT pm.role_new::text, c.type::text, pm.company_id
     INTO _role, _ctype, _my_company
     FROM public.project_members pm
     LEFT JOIN public.companies c ON c.id = pm.company_id

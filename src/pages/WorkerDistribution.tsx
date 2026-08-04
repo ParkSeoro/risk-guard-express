@@ -249,29 +249,48 @@ export default function WorkerDistribution() {
           <CardContent className="pt-4 text-sm space-y-2">
             <div className="text-destructive font-medium">분포 데이터 로드 실패</div>
             <div className="text-destructive/90 text-xs break-all">{loadError}</div>
-            {/company_type/i.test(loadError) ? (
-              <div className="rounded-md border bg-muted/40 p-3 text-xs text-foreground space-y-1.5 leading-relaxed">
-                <p className="font-semibold">지금 바로 고치는 방법 (앱 업데이트와 무관)</p>
-                <ol className="list-decimal pl-4 space-y-1">
-                  <li>Supabase Dashboard → SQL Editor 열기</li>
-                  <li>
-                    마이그레이션 파일{" "}
+            <div className="rounded-md border bg-muted/40 p-3 text-xs text-foreground space-y-1.5 leading-relaxed">
+              <p className="font-semibold">원인 · 조치 (앱 OTA와 무관 — DB SQL)</p>
+              {/company_type/i.test(loadError) ? (
+                <>
+                  <p>
+                    RPC가 없는 컬럼 <code>companies.company_type</code>을 참조합니다. 실제는{" "}
+                    <code>companies.type</code>.
+                  </p>
+                  <p>
+                    SQL Editor에서{" "}
                     <code className="text-[10px]">20260804011000_fix_distribution_counts_company_type.sql</code>{" "}
-                    내용을 붙여넣고 Run
-                  </li>
-                  <li>이 페이지를 새로고침</li>
-                </ol>
-                <p className="text-muted-foreground">
-                  원인: RPC가 없는 컬럼 <code>companies.company_type</code>을 참조합니다. 실제 컬럼은{" "}
-                  <code>companies.type</code> 입니다.
+                    또는 최신{" "}
+                    <code className="text-[10px]">20260804030000_fix_distribution_counts_no_is_active.sql</code>{" "}
+                    Run 후 새로고침.
+                  </p>
+                </>
+              ) : /is_active/i.test(loadError) ? (
+                <>
+                  <p>
+                    RPC가 없는 컬럼 <code>project_members.is_active</code>를 참조합니다. 해당 테이블에는{" "}
+                    <code>is_active</code>가 없습니다.
+                  </p>
+                  <p>
+                    SQL Editor에서{" "}
+                    <code className="text-[10px]">20260804030000_fix_distribution_counts_no_is_active.sql</code>{" "}
+                    전체 Run 후 이 페이지 새로고침.
+                  </p>
+                </>
+              ) : /worker_last_positions|does not exist/i.test(loadError) ? (
+                <p>
+                  테이블/함수 미생성 가능.{" "}
+                  <code className="text-[10px]">20260804010000_worker_last_positions_qr_only_kill.sql</code>{" "}
+                  적용 여부를 확인하세요.
                 </p>
-              </div>
-            ) : (
-              <div className="text-xs text-muted-foreground">
-                SQL 마이그레이션(`worker_last_positions` / `get_worker_distribution_counts`) 적용 여부를
-                확인하세요.
-              </div>
-            )}
+              ) : (
+                <p>
+                  SQL 마이그레이션(
+                  <code>worker_last_positions</code> / <code>get_worker_distribution_counts</code>) 적용
+                  여부를 확인하세요. 상세: <code>docs/distribution-map-sql.md</code>
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}

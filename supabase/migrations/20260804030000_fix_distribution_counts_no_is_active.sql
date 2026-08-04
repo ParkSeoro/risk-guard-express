@@ -1,4 +1,11 @@
--- Hotfix: companies.type (not company_type)
+-- Hotfix: project_members has no is_active column (live SSOT).
+-- Also drop unused companies join / dead locals from auth probe.
+-- Verified live columns (2026-08-04):
+--   project_members: id, project_id, user_id, company, created_at, company_id, role_new, position_new
+--   companies: type (not company_type), name, ...
+--   worker_last_positions: exists
+--   can_access_company_data: exists
+
 CREATE OR REPLACE FUNCTION public.get_worker_distribution_counts(_project_id uuid)
 RETURNS TABLE (
   company_id uuid,
@@ -15,8 +22,6 @@ AS $$
 DECLARE
   _uid uuid := auth.uid();
   _role text;
-  _ctype text;
-  _my_company uuid;
   _is_master boolean;
 BEGIN
   IF _uid IS NULL THEN
@@ -25,10 +30,10 @@ BEGIN
 
   _is_master := public.is_master(_uid);
 
-  SELECT pm.role_new::text, c.type::text, pm.company_id
-    INTO _role, _ctype, _my_company
+  -- Membership probe: only columns that exist on project_members
+  SELECT pm.role_new::text
+    INTO _role
     FROM public.project_members pm
-    LEFT JOIN public.companies c ON c.id = pm.company_id
    WHERE pm.project_id = _project_id
      AND pm.user_id = _uid
    ORDER BY CASE pm.role_new::text

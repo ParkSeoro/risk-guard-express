@@ -306,8 +306,28 @@ export default function DigPermitForm({
     setSignTarget(null); setSignName('');
   };
 
+  /** Special-form 신청인 slot falls back to contractor_pic (approval SSOT). */
+  const resolveSigSlot = (k: keyof PermitSignatures) => {
+    const primary = signatures[k] as { name?: string; signature?: string; signed_at?: string } | undefined;
+    if (k === 'applicant') {
+      const has =
+        !!(primary?.name && String(primary.name).trim()) ||
+        !!(primary?.signature && String(primary.signature).trim()) ||
+        !!(primary?.signed_at && String(primary.signed_at).trim());
+      if (has) return primary;
+      return signatures.contractor_pic as typeof primary;
+    }
+    return primary;
+  };
+
+  const applicantNameShown =
+    data.applicant_name ||
+    signatures.applicant?.name ||
+    signatures.contractor_pic?.name ||
+    '';
+
   const SigCell = ({ k, label }: { k: keyof PermitSignatures; label?: string }) => {
-    const s = signatures[k] as any;
+    const s = resolveSigSlot(k) as any;
     if (s?.signature) {
       return (
         <div className="text-center">
@@ -837,7 +857,7 @@ export default function DigPermitForm({
               <tr>
                 <th className="hd">신청인</th>
                 <td>소속(업체명) : <Inp value={data.applicant_company} onChangeText={(v: string) => update({ applicant_company: v })} /></td>
-                <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
+                <td>성명 : <Inp value={applicantNameShown} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
                 <td><SigCell k="applicant" /></td>
               </tr>
               <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
@@ -925,7 +945,7 @@ export default function DigPermitForm({
               <tr>
                 <th rowSpan={2} className="hd">현장 당일 확인</th>
                 <th className="hd">안전조치 확인 (공사업체)</th>
-                <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
+                <td>성명 : <Inp value={applicantNameShown} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
                 <td><SigCell k="applicant" /></td>
               </tr>
               <tr>
@@ -957,7 +977,7 @@ export default function DigPermitForm({
               <tr>
                 <th className="hd">신청인</th>
                 <td>소속 : <Inp value={data.applicant_company} onChangeText={(v: string) => update({ applicant_company: v })} /></td>
-                <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
+                <td>성명 : <Inp value={applicantNameShown} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
                 <td><SigCell k="applicant" /></td>
               </tr>
               <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
@@ -1066,7 +1086,7 @@ export default function DigPermitForm({
               <tr>
                 <th className="hd">신청인</th>
                 <td>소속 : <Inp value={data.applicant_company} onChangeText={(v: string) => update({ applicant_company: v })} /></td>
-                <td>성명 : <Inp value={data.applicant_name} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
+                <td>성명 : <Inp value={applicantNameShown} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
                 <td><SigCell k="applicant" /></td>
               </tr>
               <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>

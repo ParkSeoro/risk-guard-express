@@ -3,6 +3,10 @@ import { Toaster as Sonner, toast } from "sonner";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
+/**
+ * Mobile shell has a fixed bottom tab bar + Android/iOS home indicator.
+ * Keep toasts at top-center with safe-area offset so they never block tabs.
+ */
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = "system" } = useTheme();
 
@@ -10,6 +14,10 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      position="top-center"
+      offset="calc(12px + env(safe-area-inset-top, 0px))"
+      mobileOffset="calc(12px + env(safe-area-inset-top, 0px))"
+      duration={3200}
       toastOptions={{
         classNames: {
           toast:

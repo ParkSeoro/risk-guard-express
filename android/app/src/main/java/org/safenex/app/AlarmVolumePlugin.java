@@ -7,9 +7,12 @@ import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.media.ToneGenerator;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
 
 import com.getcapacitor.JSObject;
@@ -17,6 +20,9 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+
+import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Danger-zone alarm: force STREAM_ALARM (+ MUSIC for TTS) to max volume,
@@ -33,6 +39,9 @@ public class AlarmVolumePlugin extends Plugin {
   private boolean boosted = false;
   private MediaPlayer mediaPlayer = null;
   private ToneGenerator toneGenerator = null;
+  private TextToSpeech tts = null;
+  private boolean ttsReady = false;
+  private final Object ttsLock = new Object();
 
   @PluginMethod
   public void boostMax(PluginCall call) {
@@ -123,6 +132,120 @@ public class AlarmVolumePlugin extends Plugin {
         call.reject("playSiren failed: " + e2.getMessage());
       }
     }
+  }
+
+  @PluginMethod
+  public void speak(PluginCall call) {
+    final String text = call.getString("text", "");
+    final String lang = call.getString("lang", "ko-KR");
+    if (text == null || text.trim().isEmpty()) {
+      call.reject("text required");
+      return;
+    }
+    getBridge().getActivity().runOnUiThread(() -> ensureTtsAndSpeak(call, text.trim(), lang));
+  }
+
+  private void ensureTtsAndSpeak(PluginCall call, String text, String lang) {
+    synchronized (ttsLock) {
+      if (tts != null && ttsReady) {
+        doSpeak(call, text, lang);
+        return;
+      }
+      if (tts != null) {
+        try {
+          tts.stop();
+          tts.shutdown();
+        } catch (Exception ignored) {}
+        tts = null;
+        ttsReady = false;
+      }
+      tts = new TextToSpeech(getContext(), status -> {
+        synchronized (ttsLock) {
+          ttsReady = status == TextToSpeech.SUCCESS;
+          if (!ttsReady) {
+            call.resolve(speakResult(false, "tts-init-failed"));
+            return;
+          }
+          doSpeak(call, text, lang);
+        }
+      });
+    }
+  }
+
+  private void doSpeak(PluginCall call, String text, String lang) {
+    try {
+      if (tts == null) {
+        call.resolve(speakResult(false, "tts-null"));
+        return;
+      }
+      Locale locale = localeFromTag(lang);
+      int avail = tts.isLanguageAvailable(locale);
+      if (avail < TextToSpeech.LANG_AVAILABLE) {
+        locale = Locale.KOREAN;
+        avail = tts.isLanguageAvailable(locale);
+      }
+      if (avail >= TextToSpeech.LANG_AVAILABLE) {
+        tts.setLanguage(locale);
+      }
+      tts.setSpeechRate(0.95f);
+      tts.setPitch(1.05f);
+
+      final String utteranceId = "safenex-danger-" + System.currentTimeMillis();
+      final AtomicBoolean settled = new AtomicBoolean(false);
+      final java.util.function.BiConsumer<Boolean, String> finish = (ok, source) -> {
+        if (!settled.compareAndSet(false, true)) return;
+        try {
+          call.resolve(speakResult(ok, source));
+        } catch (Exception ignored) {}
+      };
+      tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+        @Override
+        public void onStart(String utteranceId) {}
+
+        @Override
+        public void onDone(String utteranceId) {
+          finish.accept(true, "android-tts");
+        }
+
+        @Override
+        public void onError(String utteranceId) {
+          finish.accept(false, "tts-error");
+        }
+      });
+
+      Bundle params = new Bundle();
+      params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId);
+      int queued = tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId);
+      if (queued == TextToSpeech.ERROR) {
+        finish.accept(false, "tts-queue-error");
+        return;
+      }
+      // Safety resolve if listener never fires
+      new android.os.Handler(getContext().getMainLooper()).postDelayed(
+        () -> finish.accept(true, "android-tts-timeout"),
+        20_000
+      );
+    } catch (Exception e) {
+      Log.e(TAG, "speak failed", e);
+      call.resolve(speakResult(false, e.getMessage()));
+    }
+  }
+
+  private static JSObject speakResult(boolean ok, String source) {
+    JSObject ret = new JSObject();
+    ret.put("ok", ok);
+    ret.put("source", source);
+    return ret;
+  }
+
+  private static Locale localeFromTag(String tag) {
+    if (tag == null || tag.isEmpty()) return Locale.KOREAN;
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        return Locale.forLanguageTag(tag.replace('_', '-'));
+      }
+    } catch (Exception ignored) {}
+    return Locale.KOREAN;
   }
 
   @PluginMethod
@@ -235,11 +358,30 @@ public class AlarmVolumePlugin extends Plugin {
       }
     } catch (Exception ignored) {}
     toneGenerator = null;
+    try {
+      if (tts != null) {
+        tts.stop();
+      }
+    } catch (Exception ignored) {}
+  }
+
+  private void shutdownTts() {
+    synchronized (ttsLock) {
+      try {
+        if (tts != null) {
+          tts.stop();
+          tts.shutdown();
+        }
+      } catch (Exception ignored) {}
+      tts = null;
+      ttsReady = false;
+    }
   }
 
   @Override
   protected void handleOnDestroy() {
     stopPlayers();
+    shutdownTts();
     // Best-effort restore if activity dies mid-alarm
     try {
       AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);

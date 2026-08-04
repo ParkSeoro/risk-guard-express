@@ -47,13 +47,17 @@ export default function WorkerTrackingCard({ identity }: { identity: TrackingIde
         identity,
         onUpdate: (u) => {
           setInfo({ acc: Math.round(u.accuracy), zone: u.zone_id, source: u.source });
-          const anyU = u as any;
-          if (
-            anyU.event_type === "unauthorized_entry" ||
-            anyU.restricted_zone_id ||
-            anyU.zone_type === "danger" ||
-            anyU.zone_type === "restricted"
-          ) {
+          const anyU = u as {
+            event_type?: string;
+            restricted_zone_id?: string;
+            zone_type?: string;
+            zone_name?: string;
+          };
+          const et = String(anyU.event_type || "");
+          if (/^(exit|leave|depart)/i.test(et)) {
+            setDanger(null);
+          } else if (et === "unauthorized_entry") {
+            // Do not re-open merely because restricted_zone_id is still present
             setDanger({ name: anyU.zone_name || "위험 구역" });
           }
         },

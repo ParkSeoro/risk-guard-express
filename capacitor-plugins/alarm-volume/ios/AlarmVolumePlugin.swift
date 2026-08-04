@@ -22,6 +22,7 @@ public class AlarmVolumePlugin: CAPPlugin, CAPBridgedPlugin {
     CAPPluginMethod(name: "boostMax", returnType: CAPPluginReturnPromise),
     CAPPluginMethod(name: "restore", returnType: CAPPluginReturnPromise),
     CAPPluginMethod(name: "playSiren", returnType: CAPPluginReturnPromise),
+    CAPPluginMethod(name: "speak", returnType: CAPPluginReturnPromise),
     CAPPluginMethod(name: "vibrate", returnType: CAPPluginReturnPromise),
     CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
     CAPPluginMethod(name: "requestCriticalAlerts", returnType: CAPPluginReturnPromise),
@@ -33,6 +34,8 @@ public class AlarmVolumePlugin: CAPPlugin, CAPBridgedPlugin {
   private var previousMode: AVAudioSession.Mode?
   private var previousOptions: AVAudioSession.CategoryOptions?
   private var sessionArmed = false
+  private let synthesizer = AVSpeechSynthesizer()
+  private var speakDelegate: SpeakDelegate?
 
   @objc func boostMax(_ call: CAPPluginCall) {
     do {
@@ -123,6 +126,46 @@ public class AlarmVolumePlugin: CAPPlugin, CAPBridgedPlugin {
     }
   }
 
+  @objc func speak(_ call: CAPPluginCall) {
+    guard let text = call.getString("text"), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      call.reject("text required")
+      return
+    }
+    let lang = call.getString("lang") ?? "ko-KR"
+    do {
+      _ = try? AVAudioSession.sharedInstance().setCategory(
+        .playback,
+        mode: .default,
+        options: [.duckOthers]
+      )
+      try? AVAudioSession.sharedInstance().setActive(true)
+    }
+
+    synthesizer.stopSpeaking(at: .immediate)
+    let utterance = AVSpeechUtterance(string: text)
+    utterance.voice = AVSpeechSynthesisVoice(language: lang)
+      ?? AVSpeechSynthesisVoice(language: "ko-KR")
+    utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.95
+    utterance.pitchMultiplier = 1.05
+    utterance.volume = 1.0
+
+    let delegate = SpeakDelegate { [weak self] ok in
+      call.resolve(["ok": ok, "source": "ios-avspeech"])
+      self?.speakDelegate = nil
+    }
+    speakDelegate = delegate
+    synthesizer.delegate = delegate
+    synthesizer.speak(utterance)
+
+    // Safety timeout
+    DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+      if self?.speakDelegate === delegate {
+        call.resolve(["ok": true, "source": "ios-avspeech-timeout"])
+        self?.speakDelegate = nil
+      }
+    }
+  }
+
   @objc func vibrate(_ call: CAPPluginCall) {
     // Strong haptic pattern for danger
     DispatchQueue.main.async {
@@ -207,5 +250,31 @@ public class AlarmVolumePlugin: CAPPlugin, CAPBridgedPlugin {
   private func stopPlayers() {
     player?.stop()
     player = nil
+    if synthesizer.isSpeaking {
+      synthesizer.stopSpeaking(at: .immediate)
+    }
+  }
+}
+
+private final class SpeakDelegate: NSObject, AVSpeechSynthesizerDelegate {
+  private let onFinish: (Bool) -> Void
+  private var settled = false
+
+  init(onFinish: @escaping (Bool) -> Void) {
+    self.onFinish = onFinish
+  }
+
+  private func finish(_ ok: Bool) {
+    guard !settled else { return }
+    settled = true
+    onFinish(ok)
+  }
+
+  func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    finish(true)
+  }
+
+  func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+    finish(false)
   }
 }

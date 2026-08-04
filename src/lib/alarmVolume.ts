@@ -34,10 +34,18 @@ export type CriticalAlertsStatusResult = {
   authorizationStatus?: number;
 };
 
+export type SpeakResult = {
+  ok: boolean;
+  source?: string;
+  note?: string;
+};
+
 export interface AlarmVolumePlugin {
   boostMax(): Promise<BoostMaxResult>;
   restore(): Promise<{ ok: boolean }>;
   playSiren(options?: { durationMs?: number }): Promise<PlaySirenResult>;
+  /** Native Korean (or lang) TTS — more reliable than WebView speechSynthesis. */
+  speak(options: { text: string; lang?: string }): Promise<SpeakResult>;
   vibrate(): Promise<{ ok: boolean }>;
   stop(): Promise<{ ok: boolean }>;
   requestCriticalAlerts(): Promise<CriticalAlertsRequestResult>;
@@ -54,6 +62,9 @@ const AlarmVolume = registerPlugin<AlarmVolumePlugin>("AlarmVolume", {
     },
     async playSiren() {
       return { ok: false };
+    },
+    async speak() {
+      return { ok: false, note: "web — use speechSynthesis" };
     },
     async vibrate() {
       return { ok: false };
@@ -123,6 +134,18 @@ export async function stopNativeAlarmSiren(): Promise<void> {
     await AlarmVolume.stop();
   } catch {
     /* ignore */
+  }
+}
+
+/** Native TTS (Android TextToSpeech / iOS AVSpeech). Falls back to false on web. */
+export async function playNativeTts(text: string, lang = "ko-KR"): Promise<boolean> {
+  if (!isNativeAlarmAvailable() || !text?.trim()) return false;
+  try {
+    const r = await AlarmVolume.speak({ text: text.trim(), lang });
+    return !!r.ok;
+  } catch (e) {
+    console.warn("[AlarmVolume] speak failed", e);
+    return false;
   }
 }
 

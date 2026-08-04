@@ -2,7 +2,7 @@
  * Geofence danger alarm for the formal /app/worker shell.
  * Uses GPS already started by WorkerGlobalGps (no second tracker).
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { useSystemRealtime } from "@/providers/SystemRealtimeProvider";
@@ -13,6 +13,14 @@ import {
 } from "@/lib/tracking/restrictedZoneGeom";
 import DangerZoneAlertModal from "@/components/geofence/DangerZoneAlertModal";
 
+function isEntryEventType(t: string): boolean {
+  return /unauthorized|restricted|danger|ban/i.test(t) && !/exit|leave|depart/i.test(t);
+}
+
+function isExitEventType(t: string): boolean {
+  return /^(exit|leave|depart)/i.test(t) || /_exit$/i.test(t);
+}
+
 export default function ShellGeofenceAlerts() {
   const { profile } = useAuth();
   const { projectId, role } = useMobileAccess();
@@ -22,27 +30,57 @@ export default function ShellGeofenceAlerts() {
   const lastAlertAt = useRef(0);
   const activeZoneId = useRef<string | null>(null);
 
-  useEffect(() => {
+  const loadZones = useCallback(async () => {
     if (!projectId) {
       zonesRef.current = [];
       return;
     }
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase
-        .from("restricted_zones")
-        .select(
-          "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, banned_worker_ids, banned_company_ids, banned_job_types, access_rules, rule_type, zone_category, zone_color, is_active",
-        )
-        .eq("project_id", projectId)
-        .eq("is_deleted", false)
-        .eq("is_active", true);
-      if (!cancelled) zonesRef.current = (data || []) as unknown as RestrictedZoneGeom[];
-    })();
-    return () => {
-      cancelled = true;
-    };
+    const { data } = await supabase
+      .from("restricted_zones")
+      .select(
+        "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, banned_worker_ids, banned_company_ids, banned_job_types, access_rules, rule_type, zone_category, zone_color, is_active",
+      )
+      .eq("project_id", projectId)
+      .eq("is_deleted", false)
+      .eq("is_active", true);
+    zonesRef.current = (data || []) as unknown as RestrictedZoneGeom[];
+    // Drop sticky modal if the active zone was deleted / deactivated
+    setAlertZone((prev) => {
+      if (!prev) return prev;
+      if (prev.id === "zone") return null;
+      const still = zonesRef.current.some((z) => z.id === prev.id);
+      return still ? prev : null;
+    });
+    if (activeZoneId.current && !zonesRef.current.some((z) => z.id === activeZoneId.current)) {
+      activeZoneId.current = null;
+    }
   }, [projectId]);
+
+  useEffect(() => {
+    void loadZones();
+  }, [loadZones]);
+
+  // Keep zone list fresh when master edits/deletes restricted zones
+  useEffect(() => {
+    if (!projectId) return;
+    const channel = supabase
+      .channel(`shell-rz-${projectId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "restricted_zones", filter: `project_id=eq.${projectId}` },
+        () => {
+          void loadZones();
+        },
+      )
+      .subscribe();
+    const poll = window.setInterval(() => {
+      void loadZones();
+    }, 60_000);
+    return () => {
+      window.clearInterval(poll);
+      void supabase.removeChannel(channel);
+    };
+  }, [projectId, loadZones]);
 
   useEffect(() => {
     if (!lastGpsFix || !projectId) return;
@@ -58,7 +96,9 @@ export default function ShellGeofenceAlerts() {
       sub,
     );
     if (!hit) {
+      // Left all restricted zones — clear sticky alarm
       activeZoneId.current = null;
+      setAlertZone((prev) => (prev ? null : prev));
       return;
     }
     const now = Date.now();
@@ -70,13 +110,24 @@ export default function ShellGeofenceAlerts() {
 
   useEffect(() => {
     if (!lastZoneEvent) return;
-    const t = String((lastZoneEvent as any).event_type || "");
-    if (!/unauthorized|restricted|danger|ban/i.test(t) && !(lastZoneEvent as any).restricted_zone_id) {
+    const t = String((lastZoneEvent as { event_type?: string }).event_type || "");
+    const zoneId =
+      (lastZoneEvent as { restricted_zone_id?: string; zone_id?: string }).restricted_zone_id ||
+      (lastZoneEvent as { zone_id?: string }).zone_id ||
+      null;
+
+    if (isExitEventType(t)) {
+      activeZoneId.current = null;
+      setAlertZone(null);
       return;
     }
+
+    // Only ENTRY-class events open the modal. Exit rows still carry restricted_zone_id.
+    if (!isEntryEventType(t)) return;
+
     setAlertZone({
-      id: (lastZoneEvent as any).restricted_zone_id || (lastZoneEvent as any).zone_id || "zone",
-      name: (lastZoneEvent as any).zone_name || "위험 구역",
+      id: zoneId || "zone",
+      name: (lastZoneEvent as { zone_name?: string }).zone_name || "위험 구역",
     });
   }, [lastZoneEvent]);
 

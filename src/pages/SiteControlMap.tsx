@@ -26,7 +26,7 @@ import {
 import {
   Map, Upload, Save, Loader2, Layers, Satellite, Image as ImageIcon, ShieldAlert, Trash2, Pencil,
   RotateCcw, RotateCw, Move, ZoomIn, ZoomOut, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
-  Square, Pentagon, Circle as CircleIcon,
+  Square, Pentagon, Circle as CircleIcon, Crosshair, MapPin,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -120,11 +120,24 @@ const TL_ICON = cornerIcon("TL · 좌상", "#2563eb");
 const TR_ICON = cornerIcon("TR · 우상", "#dc2626");
 const BL_ICON = cornerIcon("BL · 좌하", "#059669");
 
+const MY_LOC_ICON = L.divIcon({
+  className: "site-control-my-loc",
+  html: `<div style="
+    width:18px;height:18px;border-radius:50%;
+    background:#2563eb;border:3px solid #fff;
+    box-shadow:0 0 0 2px rgba(37,99,235,.45),0 2px 8px rgba(0,0,0,.35);
+    transform:translate(-50%,-50%);
+  "></div>`,
+  iconSize: [0, 0],
+  iconAnchor: [0, 0],
+});
+
 if (typeof document !== "undefined" && !document.getElementById("site-control-bounds-css")) {
   const style = document.createElement("style");
   style.id = "site-control-bounds-css";
   style.textContent = `
     .site-control-bounds-marker { background: transparent !important; border: none !important; }
+    .site-control-my-loc { background: transparent !important; border: none !important; }
     .leaflet-draw { display: none !important; }
   `;
   document.head.appendChild(style);
@@ -304,6 +317,13 @@ export default function SiteControlMap() {
   const [fitToken, setFitToken] = useState("init");
   const [seedRequest, setSeedRequest] = useState(0);
   const mapRef = useRef<L.Map | null>(null);
+  const [myGps, setMyGps] = useState<{
+    lat: number;
+    lng: number;
+    accuracy: number;
+  } | null>(null);
+  const [watchingGps, setWatchingGps] = useState(false);
+  const gpsWatchRef = useRef<number | null>(null);
 
   useEffect(() => {
     supabase
@@ -621,11 +641,98 @@ export default function SiteControlMap() {
 
   const nudgeStep = useMemo(() => {
     if (!draftCorners) return 0.00005;
-    const c = cornersCenter(draftCorners);
     // ~ relative to overlay size
     const dLat = Math.abs(draftCorners.tl.lat - draftCorners.bl.lat) || 0.001;
     return Math.max(dLat * 0.02, 0.00002);
   }, [draftCorners]);
+
+  const applyGpsFix = useCallback(
+    (lat: number, lng: number, accuracy: number, fly: boolean) => {
+      setMyGps({ lat, lng, accuracy });
+      if (fly && mapRef.current) {
+        mapRef.current.setView([lat, lng], Math.max(mapRef.current.getZoom(), 18), {
+          animate: true,
+        });
+      }
+    },
+    [],
+  );
+
+  const locateOnce = useCallback(() => {
+    if (!navigator.geolocation) {
+      toast.error("이 브라우저에서는 GPS를 사용할 수 없습니다");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        applyGpsFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy || 20, true);
+        toast.success(
+          `내 위치 ±${Math.round(pos.coords.accuracy || 0)}m — 모서리 찍기 버튼을 사용하세요`,
+        );
+      },
+      (err) => toast.error("위치 확인 실패: " + (err.message || "권한/GPS 확인")),
+      { enableHighAccuracy: true, timeout: 20_000, maximumAge: 5_000 },
+    );
+  }, [applyGpsFix]);
+
+  const toggleWatchGps = useCallback(() => {
+    if (watchingGps) {
+      if (gpsWatchRef.current != null) {
+        navigator.geolocation.clearWatch(gpsWatchRef.current);
+        gpsWatchRef.current = null;
+      }
+      setWatchingGps(false);
+      toast.message("내 위치 추적을 중지했습니다");
+      return;
+    }
+    if (!navigator.geolocation) {
+      toast.error("이 브라우저에서는 GPS를 사용할 수 없습니다");
+      return;
+    }
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        applyGpsFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy || 20, false);
+      },
+      (err) => toast.error("위치 추적 실패: " + (err.message || "권한/GPS 확인")),
+      { enableHighAccuracy: true, maximumAge: 3_000, timeout: 25_000 },
+    );
+    gpsWatchRef.current = id;
+    setWatchingGps(true);
+    locateOnce();
+  }, [watchingGps, applyGpsFix, locateOnce]);
+
+  useEffect(
+    () => () => {
+      if (gpsWatchRef.current != null) {
+        navigator.geolocation.clearWatch(gpsWatchRef.current);
+      }
+    },
+    [],
+  );
+
+  const snapCornerToGps = useCallback(
+    (key: "tl" | "tr" | "bl") => {
+      if (!myGps) {
+        toast.error("먼저 ‘내 위치’를 확인하세요");
+        locateOnce();
+        return;
+      }
+      if (!draftCorners) {
+        toast.error("오버레이 모서리가 없습니다");
+        return;
+      }
+      if (myGps.accuracy > 40) {
+        toast.message(`GPS 정확도 ±${Math.round(myGps.accuracy)}m — 가능하면 야외에서 다시 찍어 주세요`);
+      }
+      setDraftCorners({
+        ...draftCorners,
+        [key]: { lat: myGps.lat, lng: myGps.lng },
+      });
+      const label = key === "tl" ? "좌상(TL)" : key === "tr" ? "우상(TR)" : "좌하(BL)";
+      toast.success(`${label}을 현재 GPS로 찍었습니다`);
+    },
+    [myGps, draftCorners, locateOnce],
+  );
 
   const center: [number, number] = draftCorners
     ? (() => {
@@ -718,8 +825,75 @@ export default function SiteControlMap() {
                 {draftCorners && activeMap?.image_url ? (
                   <div className="rounded-md border bg-muted/40 p-2.5 space-y-3">
                     <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      <b>TL·TR·BL</b> 마커를 드래그하면 회전·왜곡까지 반영됩니다.
+                      <b>TL·TR·BL</b> 마커를 드래그하거나, 현장 모서리에 서서{" "}
+                      <b>현재 위치로 찍기</b>하면 GPS와 도면이 맞춰집니다.
                     </p>
+
+                    <div className="space-y-1.5 rounded-md border bg-background/80 p-2">
+                      <Label className="text-xs flex items-center gap-1">
+                        <Crosshair className="h-3 w-3" /> 내 위치로 정렬
+                      </Label>
+                      <div className="flex gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="flex-1 h-8"
+                          onClick={locateOnce}
+                        >
+                          <MapPin className="h-3.5 w-3.5 mr-1" /> 내 위치
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={watchingGps ? "default" : "outline"}
+                          className="flex-1 h-8"
+                          onClick={toggleWatchGps}
+                        >
+                          <Crosshair className="h-3.5 w-3.5 mr-1" />
+                          {watchingGps ? "추적 중" : "추적"}
+                        </Button>
+                      </div>
+                      {myGps && (
+                        <p className="text-[10px] text-muted-foreground">
+                          GPS {myGps.lat.toFixed(6)}, {myGps.lng.toFixed(6)} · ±
+                          {Math.round(myGps.accuracy)}m
+                        </p>
+                      )}
+                      <div className="grid grid-cols-3 gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="h-9 text-[11px] px-1"
+                          onClick={() => snapCornerToGps("tl")}
+                        >
+                          TL 찍기
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="h-9 text-[11px] px-1"
+                          onClick={() => snapCornerToGps("tr")}
+                        >
+                          TR 찍기
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="h-9 text-[11px] px-1"
+                          onClick={() => snapCornerToGps("bl")}
+                        >
+                          BL 찍기
+                        </Button>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground leading-relaxed">
+                        도면의 좌상→우상→좌하 모서리에 순서대로 서서 찍으면 회전·스케일이
+                        함께 맞춰집니다. 저장 후 구역을 그리세요.
+                      </p>
+                    </div>
 
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
@@ -973,6 +1147,22 @@ export default function SiteControlMap() {
                     onChange={setDraftCorners}
                     visible
                   />
+                )}
+
+                {myGps && (
+                  <>
+                    <Circle
+                      center={[myGps.lat, myGps.lng]}
+                      radius={Math.max(myGps.accuracy, 5)}
+                      pathOptions={{
+                        color: "#2563eb",
+                        weight: 1,
+                        fillColor: "#3b82f6",
+                        fillOpacity: 0.12,
+                      }}
+                    />
+                    <Marker position={[myGps.lat, myGps.lng]} icon={MY_LOC_ICON} />
+                  </>
                 )}
 
                 <FitToTargets

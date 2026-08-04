@@ -16,6 +16,7 @@ import {
   MOBILE_WORK_STOP,
 } from "@/lib/mobileShell";
 import { usePreview } from "@/contexts/PreviewContext";
+import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -41,6 +42,7 @@ export default function MobileShell({ children }: { children: ReactNode }) {
   );
   const tabs = mobileTabsForBucket(bucket);
   const displayRole = preview.isPreview ? preview.syntheticRole : role;
+  const unread = useSystemRealtimeOptional()?.unreadNotifications ?? 0;
 
   const hideChrome =
     location.pathname.includes("/approvals/") ||
@@ -112,7 +114,14 @@ export default function MobileShell({ children }: { children: ReactNode }) {
                     )}
                     data-testid={`tab-${tab.key}`}
                   >
-                    <Icon className="h-5 w-5" />
+                    <span className="relative">
+                      <Icon className="h-5 w-5" />
+                      {tab.key === "alerts" && unread > 0 && (
+                        <span className="absolute -top-1 -right-2 min-w-[14px] h-[14px] px-0.5 rounded-full bg-destructive text-destructive-foreground text-[9px] leading-[14px] text-center font-semibold">
+                          {unread > 99 ? "99+" : unread}
+                        </span>
+                      )}
+                    </span>
                     {tab.label}
                   </NavLink>
                 </li>

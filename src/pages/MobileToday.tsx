@@ -17,8 +17,10 @@ import {
   Users,
   AlertTriangle,
   Crosshair,
+  Bell,
 } from "lucide-react";
 import WorkerDailyHome from "@/pages/WorkerDailyHome";
+import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
 
 export default function MobileToday() {
   const { role, isMaster, projectId, loading } = useMobileAccess();
@@ -48,7 +50,13 @@ export default function MobileToday() {
     );
   }
 
-  return <ManagerToday projectId={projectId || preview.previewProjectId} role={effectiveRole} />;
+  return (
+    <ManagerToday
+      projectId={projectId || preview.previewProjectId}
+      role={effectiveRole}
+      isMaster={preview.isPreview ? effectiveRole === "master" : isMaster}
+    />
+  );
 }
 
 function HealthDueCard({ projectId }: { projectId: string }) {
@@ -82,6 +90,7 @@ function ManagerToday({
   isMaster: boolean;
 }) {
   const navigate = useNavigate();
+  const unread = useSystemRealtimeOptional()?.unreadNotifications ?? 0;
   const [pendingApprovals, setPendingApprovals] = useState<number | null>(null);
   const [openActions, setOpenActions] = useState<number | null>(null);
   const [workStops, setWorkStops] = useState<number | null>(null);
@@ -136,6 +145,13 @@ function ManagerToday({
       icon: FileCheck2,
       to: "/app/worker/approvals",
       tone: "text-blue-600",
+    },
+    {
+      title: "안 읽은 알림",
+      value: unread,
+      icon: Bell,
+      to: "/app/worker/alerts",
+      tone: "text-violet-600",
     },
     {
       title: "미완료 조치",
@@ -223,6 +239,16 @@ function ManagerToday({
           ))}
         </CardContent>
       </Card>
+
+      {isMaster && (
+        <Button
+          className="w-full h-11"
+          disabled={!projectId}
+          onClick={() => navigate("/app/worker/map-calibration")}
+        >
+          <Crosshair className="h-4 w-4 mr-2" /> 맵·GPS 맞추기
+        </Button>
+      )}
     </div>
   );
 }

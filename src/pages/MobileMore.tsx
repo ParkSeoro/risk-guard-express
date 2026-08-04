@@ -17,6 +17,8 @@ import {
   User,
   BookOpen,
   Bell,
+  Inbox,
+  FolderOpen,
   Crosshair,
   MapPin,
 } from "lucide-react";
@@ -24,12 +26,15 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import MobileOtaUpdateCard from "@/components/mobile/MobileOtaUpdateCard";
 import MasterAlarmSimulator from "@/components/geofence/MasterAlarmSimulator";
+import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
 
 export default function MobileMore() {
   const { signOut, profile, hasRole } = useAuth();
   const { role, isMaster, projectId, setProjectId } = useMobileAccess();
   const preview = usePreview();
   const navigate = useNavigate();
+  const realtime = useSystemRealtimeOptional();
+  const unread = realtime?.unreadNotifications ?? 0;
   const effectiveRole = preview.isPreview ? preview.syntheticRole : role;
   const manager = isManagerMobileRole(
     effectiveRole,
@@ -124,7 +129,9 @@ export default function MobileMore() {
         <CardContent className="p-0 divide-y">
           {(manager
             ? [
+                { label: "알림 내역", to: "/app/worker/alerts", icon: Inbox, badge: unread },
                 { label: "알림 · 알람 설정", to: "/app/worker/notifications", icon: Bell },
+                { label: "승인 자료", to: "/app/worker/docs", icon: FolderOpen },
                 { label: "QR 스캔", to: "/app/worker/scan", icon: ScanLine },
                 { label: "근로자·출입", to: "/app/worker/workers", icon: QrCode },
                 { label: "계정 정보", to: "/app/worker/account", icon: User },
@@ -133,6 +140,7 @@ export default function MobileMore() {
                   : []),
               ]
             : [
+                { label: "알림 내역", to: "/app/worker/alerts", icon: Inbox, badge: unread },
                 { label: "알림 · 알람 설정", to: "/app/worker/notifications", icon: Bell },
                 { label: "QR 스캔", to: "/app/worker/scan", icon: ScanLine },
                 { label: "계정 정보", to: "/app/worker/account", icon: User },
@@ -148,6 +156,11 @@ export default function MobileMore() {
             >
               <row.icon className="h-4 w-4 text-muted-foreground" />
               <span className="flex-1">{row.label}</span>
+              {"badge" in row && typeof row.badge === "number" && row.badge > 0 && (
+                <Badge variant="destructive" className="text-[10px] h-5 min-w-5 px-1.5">
+                  {row.badge > 99 ? "99+" : row.badge}
+                </Badge>
+              )}
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
             </Link>
           ))}

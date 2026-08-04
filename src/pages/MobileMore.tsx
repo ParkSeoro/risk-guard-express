@@ -17,10 +17,13 @@ import {
   User,
   BookOpen,
   Bell,
+  Crosshair,
+  MapPin,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import MobileOtaUpdateCard from "@/components/mobile/MobileOtaUpdateCard";
+import MasterAlarmSimulator from "@/components/geofence/MasterAlarmSimulator";
 
 export default function MobileMore() {
   const { signOut, profile, hasRole } = useAuth();
@@ -87,6 +90,35 @@ export default function MobileMore() {
       )}
 
       <MobileOtaUpdateCard />
+
+      {/* Master field tools — MobileHome is orphaned (redirects to today); live here. */}
+      {(isMaster || (preview.isPreview && effectiveRole === "master")) && (
+        <Card>
+          <CardContent className="p-3 space-y-2">
+            <div className="text-xs font-medium text-muted-foreground">마스터 · 현장 GPS</div>
+            <Button
+              className="w-full h-11"
+              disabled={!projectId && !preview.previewProjectId}
+              onClick={() => navigate("/app/worker/map-calibration")}
+            >
+              <Crosshair className="h-4 w-4 mr-2" /> 맵·GPS 맞추기
+            </Button>
+            <Button
+              variant="secondary"
+              className="w-full h-11"
+              disabled={!projectId && !preview.previewProjectId}
+              onClick={() => navigate("/app/worker/geofence-drop")}
+            >
+              <MapPin className="h-4 w-4 mr-2" /> 내 위치를 위험 구역으로
+            </Button>
+            <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+              도면 지점을 탭하고 현재 GPS로 맞춰 지오펜스 오차를 보정합니다. 프로젝트를 먼저
+              선택하세요.
+            </p>
+            <MasterAlarmSimulator projectId={projectId || preview.previewProjectId || ""} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="p-0 divide-y">

@@ -20,6 +20,7 @@ import {
   geoCircleToCrs,
   geoPolygonToCrs,
   imageCrsBounds,
+  latLngToUv,
   looksLikeWgs84,
   looksLikeWgs84Ring,
 } from "@/lib/tracking/imageSpaceGeo";
@@ -48,14 +49,80 @@ type Props = {
   onToolFinished?: () => void;
   onGeoShapeCreated: (shape: DrawnShape) => void;
   onFocusZone?: (id: string) => void;
+  /** When set, fly the CRS canvas to this zone id. */
+  focusZoneId?: string | null;
   className?: string;
 };
+
+/** True when zone center (or first polygon vertex) projects outside the drone image UV. */
+export function isZoneOffImage(
+  z: Pick<OrthogonalZone, "geometry_type" | "center_lat" | "center_lng" | "geo_polygon">,
+  corners: GeoCorners,
+): boolean {
+  const pt =
+    z.geometry_type === "radius" && z.center_lat != null && z.center_lng != null
+      ? { lat: z.center_lat, lng: z.center_lng }
+      : z.geo_polygon?.[0];
+  if (!pt) return false;
+  const uv = latLngToUv(pt, corners);
+  return uv.u < -0.02 || uv.u > 1.02 || uv.v < -0.02 || uv.v > 1.02;
+}
 
 function FitImage({ bounds }: { bounds: L.LatLngBoundsExpression }) {
   const map = useMap();
   useEffect(() => {
     map.fitBounds(bounds, { padding: [12, 12] });
   }, [map, bounds]);
+  return null;
+}
+
+function FocusCrsZone({
+  zoneId,
+  zones,
+  corners,
+  size,
+}: {
+  zoneId: string | null | undefined;
+  zones: OrthogonalZone[];
+  corners: GeoCorners;
+  size: { w: number; h: number };
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (!zoneId) return;
+    const z = zones.find((x) => x.id === zoneId);
+    if (!z) return;
+    if (
+      z.geometry_type === "radius" &&
+      z.center_lat != null &&
+      z.center_lng != null &&
+      z.radius_m
+    ) {
+      const c = geoCircleToCrs(
+        { lat: z.center_lat, lng: z.center_lng },
+        Number(z.radius_m),
+        corners,
+        size.w,
+        size.h,
+      );
+      const pad = Math.max(c.radius * 1.6, 40);
+      map.fitBounds(
+        L.latLngBounds(
+          [c.center.lat - pad, c.center.lng - pad],
+          [c.center.lat + pad, c.center.lng + pad],
+        ),
+        { padding: [24, 24], maxZoom: 3 },
+      );
+      return;
+    }
+    if (z.geo_polygon && z.geo_polygon.length >= 3) {
+      const ring = geoPolygonToCrs(z.geo_polygon, corners, size.w, size.h);
+      map.fitBounds(
+        L.latLngBounds(ring.map((p) => [p.lat, p.lng] as [number, number])),
+        { padding: [24, 24], maxZoom: 3 },
+      );
+    }
+  }, [zoneId, zones, corners, size, map]);
   return null;
 }
 
@@ -85,6 +152,7 @@ export default function OrthogonalZoneCanvas({
   onToolFinished,
   onGeoShapeCreated,
   onFocusZone,
+  focusZoneId,
   className,
 }: Props) {
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
@@ -104,15 +172,60 @@ export default function OrthogonalZoneCanvas({
     };
   }, [imageUrl]);
 
-  const bounds = useMemo(
+  const imageBounds = useMemo(
     () => (size ? imageCrsBounds(size.w, size.h) : null),
     [size],
   );
 
+  /** Expand pan range so Walk&Drop / off-image GPS circles remain reachable. */
+  const maxBounds = useMemo(() => {
+    if (!size || !imageBounds) return null;
+    let minLat = 0;
+    let minLng = 0;
+    let maxLat = size.h;
+    let maxLng = size.w;
+    const expand = (lat: number, lng: number, r = 0) => {
+      minLat = Math.min(minLat, lat - r);
+      maxLat = Math.max(maxLat, lat + r);
+      minLng = Math.min(minLng, lng - r);
+      maxLng = Math.max(maxLng, lng + r);
+    };
+    for (const z of zones) {
+      if (
+        z.geometry_type === "radius" &&
+        z.center_lat != null &&
+        z.center_lng != null &&
+        z.radius_m
+      ) {
+        const c = geoCircleToCrs(
+          { lat: z.center_lat, lng: z.center_lng },
+          Number(z.radius_m),
+          corners,
+          size.w,
+          size.h,
+        );
+        expand(c.center.lat, c.center.lng, c.radius * 1.2);
+      } else if (z.geo_polygon && z.geo_polygon.length >= 3) {
+        for (const p of geoPolygonToCrs(z.geo_polygon, corners, size.w, size.h)) {
+          expand(p.lat, p.lng, 20);
+        }
+      }
+    }
+    const pad = Math.max(size.w, size.h) * 0.15;
+    return L.latLngBounds(
+      [minLat - pad, minLng - pad],
+      [maxLat + pad, maxLng + pad],
+    );
+  }, [size, imageBounds, zones, corners]);
+
+  const offImageCount = useMemo(() => {
+    if (!size) return 0;
+    return zones.filter((z) => isZoneOffImage(z, corners)).length;
+  }, [zones, corners, size]);
+
   const onCrsShape = useCallback(
     (shape: DrawnShape) => {
       if (!size) return;
-      // CRS.Simple getLatLngs() → pixel Y/X; translate to real GPS with geo bounds.
       if (shape.kind === "polygon") {
         const latlngs = crsPolygonToGeo(shape.latlngs, corners, size.w, size.h);
         if (!looksLikeWgs84Ring(latlngs)) {
@@ -146,7 +259,7 @@ export default function OrthogonalZoneCanvas({
     [corners, onGeoShapeCreated, size],
   );
 
-  if (!size || !bounds) {
+  if (!size || !imageBounds || !maxBounds) {
     return (
       <div className={`flex items-center justify-center bg-muted/40 text-sm text-muted-foreground ${className || ""}`}>
         도면 로딩 중…
@@ -189,21 +302,28 @@ export default function OrthogonalZoneCanvas({
           {guideText}
         </div>
       )}
+      {offImageCount > 0 && (
+        <div className="pointer-events-none absolute top-3 right-3 z-[1100] max-w-[14rem] rounded-md border border-amber-500/50 bg-amber-50/95 px-2.5 py-1.5 text-[10px] text-amber-950 shadow dark:bg-amber-950/90 dark:text-amber-50">
+          도면 밖 구역 {offImageCount}개 — 목록에서 선택하거나 맵핑 탭 위성에서 확인. 모바일
+          Walk&amp;Drop은 GPS 보정 후 재등록하세요.
+        </div>
+      )}
       <MapContainer
         key={`${imageUrl}-${size.w}x${size.h}`}
         crs={L.CRS.Simple}
         center={[size.h / 2, size.w / 2]}
         zoom={-1}
-        minZoom={-3}
-        maxZoom={4}
+        minZoom={-4}
+        maxZoom={5}
         className="h-full w-full"
         scrollWheelZoom
         attributionControl={false}
-        maxBounds={bounds}
-        maxBoundsViscosity={0.85}
+        maxBounds={maxBounds}
+        maxBoundsViscosity={0.6}
       >
-        <ImageOverlay url={imageUrl} bounds={bounds} opacity={1} />
-        <FitImage bounds={bounds} />
+        <ImageOverlay url={imageUrl} bounds={imageBounds} opacity={1} />
+        <FitImage bounds={imageBounds} />
+        <FocusCrsZone zoneId={focusZoneId} zones={zones} corners={corners} size={size} />
         <LeafletDrawControl
           showToolbar={false}
           enabled
@@ -229,7 +349,8 @@ export default function OrthogonalZoneCanvas({
 
         {zones.map((z) => {
           const active = z.is_active !== false;
-          const color = active ? (z.zone_color || "#ef4444") : "#94a3b8";
+          const off = isZoneOffImage(z, corners);
+          const color = active ? (z.zone_color || (off ? "#f97316" : "#ef4444")) : "#94a3b8";
           if (
             z.geometry_type === "radius" &&
             z.center_lat != null &&
@@ -248,7 +369,12 @@ export default function OrthogonalZoneCanvas({
                 key={z.id}
                 center={[c.center.lat, c.center.lng]}
                 radius={c.radius}
-                pathOptions={{ color, fillOpacity: active ? 0.2 : 0.08, weight: active ? 2 : 1 }}
+                pathOptions={{
+                  color,
+                  fillOpacity: active ? 0.2 : 0.08,
+                  weight: active ? 2 : 1,
+                  dashArray: off ? "4 3" : undefined,
+                }}
                 eventHandlers={{ click: () => onFocusZone?.(z.id) }}
               />
             );
@@ -259,7 +385,12 @@ export default function OrthogonalZoneCanvas({
               <Polygon
                 key={z.id}
                 positions={ring.map((p) => [p.lat, p.lng] as [number, number])}
-                pathOptions={{ color, fillOpacity: active ? 0.2 : 0.08, weight: active ? 2 : 1 }}
+                pathOptions={{
+                  color,
+                  fillOpacity: active ? 0.2 : 0.08,
+                  weight: active ? 2 : 1,
+                  dashArray: off ? "4 3" : undefined,
+                }}
                 eventHandlers={{ click: () => onFocusZone?.(z.id) }}
               />
             );

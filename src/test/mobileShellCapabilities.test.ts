@@ -11,11 +11,15 @@ describe("mobile shell role buckets", () => {
     expect(resolveMobileShellBucket("master", true)).toBe("master");
   });
 
-  it("gives managers an approvals tab and workers none", () => {
+  it("gives managers approvals + alerts inbox; workers get alerts not approvals", () => {
     const workerTabs = mobileTabsForBucket("worker").map((t) => t.key);
     const managerTabs = mobileTabsForBucket("manager").map((t) => t.key);
+    const masterTabs = mobileTabsForBucket("master").map((t) => t.key);
     expect(workerTabs).not.toContain("approvals");
     expect(managerTabs).toContain("approvals");
+    expect(workerTabs).toContain("alerts");
+    expect(managerTabs).toContain("alerts");
+    expect(masterTabs).toContain("alerts");
     expect(workerTabs).toContain("today");
     expect(managerTabs).toContain("today");
   });

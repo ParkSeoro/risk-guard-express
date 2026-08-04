@@ -45,12 +45,12 @@ export function mobileTabsForBucket(bucket: MobileShellBucket): MobileTab[] {
       { key: "more", label: "더보기", path: `${BASE}/more` },
     ];
   }
-  // manager + master (operational)
+  // manager + master — include 알림 inbox (was worker-only; settings ≠ history)
   return [
     { key: "today", label: "오늘", path: `${BASE}/today` },
     { key: "tasks", label: "할 일", path: `${BASE}/tasks` },
     { key: "approvals", label: "결재", path: `${BASE}/approvals` },
-    { key: "docs", label: "자료", path: `${BASE}/docs` },
+    { key: "alerts", label: "알림", path: `${BASE}/alerts` },
     { key: "more", label: "더보기", path: `${BASE}/more` },
   ];
 }

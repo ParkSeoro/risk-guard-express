@@ -121,11 +121,23 @@ export function mergeApprovalSignatures(
     const existing = (merged as Record<string, any>)[sigKey];
     // Always overwrite name + signed_at from THIS approval row (independent clock).
     // Keep hand-drawn signature image if present.
-    (merged as Record<string, any>)[sigKey] = {
+    const slot = {
       name: a.approver_name || existing?.name || '',
       signature: existing?.signature || '',
       signed_at: a.approved_at || existing?.signed_at || '',
     };
+    (merged as Record<string, any>)[sigKey] = slot;
+
+    // Special forms (화기/밀폐/굴착) bind 신청인 to signatures.applicant, while the
+    // approval SSOT stamps contractor_pic. Mirror so 성명/서명 cells fill after approve.
+    if (sigKey === 'contractor_pic') {
+      const appExisting = (merged as Record<string, any>).applicant;
+      (merged as Record<string, any>).applicant = {
+        name: slot.name || appExisting?.name || '',
+        signature: appExisting?.signature || slot.signature || '',
+        signed_at: slot.signed_at || appExisting?.signed_at || '',
+      };
+    }
 
     if ((pos === 'owner_cm' || pos === 'cm') && a.approved_at) cmAt = a.approved_at;
     if ((pos === 'owner_sm' || pos === 'sm') && a.approved_at) smAt = a.approved_at;

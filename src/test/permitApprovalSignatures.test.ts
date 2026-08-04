@@ -102,4 +102,19 @@ describe('mergeApprovalSignatures — independent timestamps', () => {
     expect(merged.sm?.name).toBe('발급SM');
     expect(merged.sm?.signed_at).toBe(t5);
   });
+
+  it('mirrors contractor_pic into applicant for special-form 신청인 cells', () => {
+    const merged = mergeApprovalSignatures({}, [
+      {
+        position: 'contractor_supervisor',
+        approver_name: '김신청',
+        status: '승인',
+        approved_at: t1,
+      },
+    ]);
+    expect(merged.contractor_pic?.name).toBe('김신청');
+    expect(merged.contractor_pic?.signed_at).toBe(t1);
+    expect(merged.applicant?.name).toBe('김신청');
+    expect(merged.applicant?.signed_at).toBe(t1);
+  });
 });

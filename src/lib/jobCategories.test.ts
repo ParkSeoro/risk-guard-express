@@ -19,6 +19,7 @@ describe("jobCategories SSOT", () => {
     expect(jobTypeSchema.safeParse("기타").success).toBe(false);
     expect(jobTypeSchema.safeParse("직접입력").success).toBe(false);
     expect(jobTypeSchema.safeParse("용접공").success).toBe(true);
+    expect(jobTypeSchema.safeParse("기계공").success).toBe(true);
     expect(jobTypeSchema.safeParse("여공").success).toBe(true);
     expect(isStandardJobType("신호수/유도수")).toBe(true);
   });

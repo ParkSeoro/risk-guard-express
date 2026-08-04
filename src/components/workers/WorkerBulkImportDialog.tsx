@@ -36,11 +36,14 @@ type Row = {
 type Parsed = {
   name: string;
   phone: string;
+  phoneDigits: string;
   job_type: string;
   birth_date: string | null;
   hire_date: string | null;
   _row: number;
   _error?: string;
+  /** set after existing lookup preview */
+  _action?: "insert" | "update";
 };
 
 const TEMPLATE_HEADERS = [
@@ -79,12 +82,43 @@ function normalizeJobType(raw: string): string {
   return t;
 }
 
-function normalizePhone(s: string): string {
-  if (!s) return "";
-  const d = String(s).replace(/[^\d]/g, "");
-  if (d.length === 11) return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;
-  if (d.length === 10) return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
-  return String(s).trim();
+function phoneDigits(s: string): string {
+  return String(s || "").replace(/\D/g, "");
+}
+
+/** Normalize to 010-XXXX-XXXX when possible; also accept Excel numeric phones. */
+function normalizePhone(s: unknown): string {
+  if (s == null || s === "") return "";
+  // Excel may store phones as numbers (leading 0 lost) e.g. 1036462260
+  let raw = String(s).trim();
+  if (typeof s === "number" && Number.isFinite(s)) {
+    raw = String(Math.trunc(s));
+  }
+  let d = phoneDigits(raw);
+  if (d.length === 10 && d.startsWith("10")) d = `0${d}`; // restore leading 0
+  if (d.length === 11 && d.startsWith("010")) {
+    return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;
+  }
+  if (d.length === 10) {
+    return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+  }
+  return raw;
+}
+
+function phoneLookupVariants(phone: string): string[] {
+  const d = phoneDigits(phone);
+  const out = new Set<string>();
+  if (phone) out.add(phone);
+  if (d) out.add(d);
+  if (d.length === 11) {
+    out.add(`${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`);
+    out.add(`${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`); // rare alt
+  }
+  if (d.length === 10) {
+    out.add(`0${d}`);
+    out.add(`0${d.slice(0, 2)}-${d.slice(2, 6)}-${d.slice(6)}`);
+  }
+  return [...out];
 }
 
 function normalizeDate(s: any): string | null {
@@ -115,6 +149,7 @@ export default function WorkerBulkImportDialog({
   const [rows, setRows] = useState<Parsed[]>([]);
   const [fileName, setFileName] = useState("");
   const [importing, setImporting] = useState(false);
+  const [resolving, setResolving] = useState(false);
 
   const downloadTemplate = () => {
     const workerSheet = XLSX.utils.aoa_to_sheet([
@@ -145,6 +180,7 @@ export default function WorkerBulkImportDialog({
       ["6. 등록 시 로그인 계정이 자동 생성됩니다. 아이디=전화번호, 비밀번호=전화 뒤 4자리."],
       ["7. 전화번호는 숫자만 입력해도 자동 변환됩니다 (예: 01012345678 → 010-1234-5678)."],
       ["8. 날짜 형식: YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD 모두 허용."],
+      ["9. 엑셀에서 전화가 숫자로 저장된 경우(앞자리 0 사라짐)도 자동 보정합니다."],
       [],
       ["표준 직종 목록 (참고):"],
       [STANDARD_JOB_TYPES.join(", ")],
@@ -159,30 +195,80 @@ export default function WorkerBulkImportDialog({
     XLSX.writeFile(wb, `근로자_일괄등록_양식.xlsx`);
   };
 
+  const markExistingActions = async (parsed: Parsed[]) => {
+    const valid = parsed.filter((r) => !r._error);
+    if (!projectId || valid.length === 0) {
+      setRows(parsed);
+      return;
+    }
+    setResolving(true);
+    try {
+      const variants = [...new Set(valid.flatMap((r) => phoneLookupVariants(r.phone)))];
+      const { data: existing, error } = await supabase
+        .from("workers")
+        .select("id, phone")
+        .eq("project_id", projectId)
+        .in("phone", variants);
+      if (error) throw error;
+      const byDigits = new Map<string, string>();
+      for (const w of (existing as { id: string; phone: string }[]) || []) {
+        byDigits.set(phoneDigits(w.phone), w.id);
+      }
+      setRows(
+        parsed.map((r) =>
+          r._error
+            ? r
+            : { ...r, _action: byDigits.has(r.phoneDigits) ? "update" : "insert" },
+        ),
+      );
+    } catch {
+      setRows(parsed);
+    } finally {
+      setResolving(false);
+    }
+  };
+
   const onFile = async (file: File) => {
     setFileName(file.name);
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: "array" });
     const sheetName = wb.SheetNames.find((n) => n === "근로자") || wb.SheetNames[0];
     const ws = wb.Sheets[sheetName];
-    const data: Row[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+    const data: Row[] = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
+    // Also try raw for numeric phones — sheet_to_json with raw:true for phone col
+    const dataRaw: any[] = XLSX.utils.sheet_to_json(ws, { defval: "", raw: true });
+
+    const seenDigits = new Map<string, number>(); // digits -> first row index in parsed
     const parsed: Parsed[] = data.map((r, i) => {
       const name = String(r["이름"] || "").trim();
-      const phoneRaw = String(r["전화번호"] || "").trim();
-      const phone = normalizePhone(phoneRaw);
+      const phoneCell = dataRaw[i]?.["전화번호"] ?? r["전화번호"];
+      const phone = normalizePhone(phoneCell);
+      const digits = phoneDigits(phone);
       const job_type = normalizeJobType(String(r["직종"] || ""));
-      const birth_date = normalizeDate(r["생년월일(YYYY-MM-DD)"]);
-      const hire_date = normalizeDate(r["입사일(YYYY-MM-DD)"]);
+      const birth_date = normalizeDate(dataRaw[i]?.["생년월일(YYYY-MM-DD)"] ?? r["생년월일(YYYY-MM-DD)"]);
+      const hire_date = normalizeDate(dataRaw[i]?.["입사일(YYYY-MM-DD)"] ?? r["입사일(YYYY-MM-DD)"]);
       let _error: string | undefined;
       if (!name) _error = "이름 필수";
-      else if (!phone || phone.replace(/\D/g, "").length < 9) _error = "전화번호 형식 오류";
+      else if (!digits || digits.length < 9) _error = "전화번호 형식 오류";
       else if (!job_type) _error = "직종 필수 — '직종목록' 시트에서 선택";
       else if (!isStandardJobType(job_type)) {
         _error = "직종은 표준 목록만 허용 ('직종목록' 시트 참고)";
+      } else if (seenDigits.has(digits)) {
+        _error = `파일 내 전화번호 중복 (행 ${seenDigits.get(digits)})`;
       }
-      return { name, phone, job_type, birth_date, hire_date, _row: i + 2, _error };
+      if (!_error && digits) seenDigits.set(digits, i + 2);
+      return {
+        name,
+        phone,
+        phoneDigits: digits,
+        job_type,
+        birth_date,
+        hire_date,
+        _row: i + 2,
+        _error,
+      };
     });
-    setRows(parsed);
+    await markExistingActions(parsed);
   };
 
   const doImport = async () => {
@@ -201,16 +287,22 @@ export default function WorkerBulkImportDialog({
     }
     setImporting(true);
     try {
-      const phones = valid.map((r) => r.phone);
+      // Re-resolve existing by digit-normalized phone (RLS + format safe)
+      const variants = [...new Set(valid.flatMap((r) => phoneLookupVariants(r.phone)))];
       const { data: existing, error: exErr } = await supabase
         .from("workers")
-        .select("id, phone")
+        .select("id, phone, qr_token")
         .eq("project_id", projectId)
-        .in("phone", phones);
+        .in("phone", variants);
       if (exErr) throw exErr;
-      const byPhone = new Map<string, string>(
-        ((existing as any[]) || []).map((w) => [w.phone as string, w.id as string]),
-      );
+
+      const byDigits = new Map<string, { id: string; qr_token: string | null }>();
+      for (const w of (existing as any[]) || []) {
+        byDigits.set(phoneDigits(w.phone), {
+          id: w.id as string,
+          qr_token: (w.qr_token as string) || null,
+        });
+      }
 
       const toInsert: any[] = [];
       const toUpdate: Array<{ id: string; patch: Record<string, unknown> }> = [];
@@ -226,9 +318,9 @@ export default function WorkerBulkImportDialog({
           hire_date: r.hire_date,
           is_active: true,
         };
-        const id = byPhone.get(r.phone);
-        if (id) {
-          toUpdate.push({ id, patch });
+        const hit = byDigits.get(r.phoneDigits);
+        if (hit) {
+          toUpdate.push({ id: hit.id, patch });
         } else {
           toInsert.push({
             ...patch,
@@ -240,20 +332,51 @@ export default function WorkerBulkImportDialog({
 
       let inserted = 0;
       let updated = 0;
-      const CHUNK = 200;
+      const CHUNK = 100;
+
       for (let i = 0; i < toInsert.length; i += CHUNK) {
         const slice = toInsert.slice(i, i + CHUNK);
         const { error } = await supabase.from("workers").insert(slice);
-        if (error) throw error;
-        inserted += slice.length;
-      }
-      for (const u of toUpdate) {
-        const { error } = await supabase.from("workers").update(u.patch).eq("id", u.id);
-        if (error) throw error;
-        updated += 1;
+        if (error) {
+          // Race / RLS-hidden existing row → upsert by unique (project_id, phone)
+          if (/workers_project_id_phone_key|duplicate key/i.test(error.message || "")) {
+            const { error: upErr } = await supabase.from("workers").upsert(slice, {
+              onConflict: "project_id,phone",
+              ignoreDuplicates: false,
+            });
+            if (upErr) throw upErr;
+            updated += slice.length;
+          } else {
+            throw error;
+          }
+        } else {
+          inserted += slice.length;
+        }
       }
 
-      // Auth login accounts: id=phone, password=last 4 digits (existing passwords kept)
+      for (let i = 0; i < toUpdate.length; i += CHUNK) {
+        const slice = toUpdate.slice(i, i + CHUNK);
+        // Parallel chunk updates
+        const results = await Promise.all(
+          slice.map((u) =>
+            supabase.from("workers").update(u.patch).eq("id", u.id),
+          ),
+        );
+        for (let j = 0; j < results.length; j++) {
+          const { error } = results[j];
+          if (error) {
+            // Fallback: upsert by natural key
+            const u = slice[j];
+            const { error: upErr } = await supabase.from("workers").upsert(
+              { ...u.patch, project_id: projectId, id: u.id },
+              { onConflict: "project_id,phone" },
+            );
+            if (upErr) throw upErr;
+          }
+          updated += 1;
+        }
+      }
+
       const provision = await provisionWorkerAccounts({
         projectId,
         companyId,
@@ -285,7 +408,15 @@ export default function WorkerBulkImportDialog({
       setRows([]);
       setFileName("");
     } catch (e: any) {
-      toast.error("등록 실패: " + (e?.message || String(e)));
+      const msg = e?.message || String(e);
+      if (/workers_project_id_phone_key|duplicate key/i.test(msg)) {
+        toast.error(
+          "등록 실패: 이미 등록된 전화번호가 있습니다. 파일을 다시 선택하면 미리보기에 ‘업데이트’로 표시됩니다. 그래도 실패하면 해당 번호가 다른 회사 소속으로 잠겨 있을 수 있습니다.",
+          { duration: 8000 },
+        );
+      } else {
+        toast.error("등록 실패: " + msg);
+      }
     } finally {
       setImporting(false);
     }
@@ -293,6 +424,8 @@ export default function WorkerBulkImportDialog({
 
   const validCount = rows.filter((r) => !r._error).length;
   const errorCount = rows.length - validCount;
+  const updateCount = rows.filter((r) => !r._error && r._action === "update").length;
+  const insertCount = rows.filter((r) => !r._error && r._action === "insert").length;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && !importing && onClose()}>
@@ -315,7 +448,8 @@ export default function WorkerBulkImportDialog({
                 className="hidden"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
-                  if (f) onFile(f);
+                  if (f) void onFile(f);
+                  e.target.value = "";
                 }}
               />
               <Button variant="default" asChild>
@@ -325,6 +459,11 @@ export default function WorkerBulkImportDialog({
               </Button>
             </label>
             {fileName && <Badge variant="secondary">{fileName}</Badge>}
+            {resolving && (
+              <Badge variant="outline" className="gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" /> 기존 명부 대조 중
+              </Badge>
+            )}
           </div>
 
           <div className="text-xs text-muted-foreground bg-muted/40 p-3 rounded space-y-1">
@@ -352,11 +491,17 @@ export default function WorkerBulkImportDialog({
 
           {rows.length > 0 && (
             <>
-              <div className="flex items-center gap-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
                 <Badge className="bg-success gap-1">
                   <CheckCircle2 className="h-3 w-3" />
                   {validCount}건 유효
                 </Badge>
+                {insertCount > 0 && (
+                  <Badge variant="secondary">신규 {insertCount}</Badge>
+                )}
+                {updateCount > 0 && (
+                  <Badge variant="outline">업데이트 {updateCount}</Badge>
+                )}
                 {errorCount > 0 && (
                   <Badge variant="destructive" className="gap-1">
                     <AlertCircle className="h-3 w-3" />
@@ -392,8 +537,10 @@ export default function WorkerBulkImportDialog({
                         <td className="p-2">
                           {r._error ? (
                             <span className="text-destructive">{r._error}</span>
+                          ) : r._action === "update" ? (
+                            <span className="text-amber-700 dark:text-amber-400">업데이트</span>
                           ) : (
-                            <span className="text-success">OK</span>
+                            <span className="text-success">신규</span>
                           )}
                         </td>
                       </tr>
@@ -408,7 +555,7 @@ export default function WorkerBulkImportDialog({
             <Button variant="outline" onClick={onClose} disabled={importing}>
               취소
             </Button>
-            <Button onClick={doImport} disabled={importing || validCount === 0 || !companyId}>
+            <Button onClick={() => void doImport()} disabled={importing || validCount === 0 || !companyId}>
               {importing && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
               {validCount}명 등록/업데이트
             </Button>

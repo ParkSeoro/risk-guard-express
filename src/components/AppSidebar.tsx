@@ -3,7 +3,7 @@ import {
   FileCheck, HardHat, ChevronLeft, LogOut, User,
   Shield, SearchCheck, Settings,
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
-  ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, GitCompare, Trash2,
+  ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, Trash2,
   Stethoscope, GraduationCap, HeartPulse, Map, Users, AlertOctagon, Siren, OctagonAlert, UserCheck, BarChart3, Megaphone,
   Building2, FolderOpen,
 } from "lucide-react";
@@ -124,12 +124,11 @@ const adminItems: Item[] = [
 ];
 
 const masterOnlyItems: Item[] = [
- { title: "일관성 감사", url: "/admin/consistency-audit", icon: GitCompare },
- { title: "데이터 정합성 (SSOT)", url: "/admin/data-audit", icon: Database },
- { title: "휴지통", url: "/admin/trash", icon: Trash2 },
+  { title: "데이터 정합성 (SSOT)", url: "/admin/data-audit", icon: Database },
+  { title: "시스템 테스트 엔진", url: "/admin/system-test", icon: FlaskConical },
+  { title: "휴지통", url: "/admin/trash", icon: Trash2 },
   { title: "AI 테스트 엔진", url: "/admin/ai-test", icon: Beaker },
   { title: "AI 로그", url: "/admin/ai-logs", icon: Activity },
-  { title: "시스템 테스트 엔진", url: "/admin/system-test", icon: FlaskConical },
 ];
 
 export function AppSidebar() {

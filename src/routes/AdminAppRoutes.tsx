@@ -150,7 +150,7 @@ function AdminAppRoutesInner() {
             <Route path="admin/ai-test" element={<RoleGuard masterOnly><P.LazyAITestEngine /></RoleGuard>} />
             <Route path="admin/ai-logs" element={<RoleGuard masterOnly><P.LazyAILogs /></RoleGuard>} />
             <Route path="admin/system-test" element={<RoleGuard masterOnly><P.LazySystemTestEngine /></RoleGuard>} />
-            <Route path="admin/consistency-audit" element={<RoleGuard masterOnly><P.LazyConsistencyAudit /></RoleGuard>} />
+            <Route path="admin/consistency-audit" element={<Navigate to="/app/admin/system-test" replace />} />
             <Route path="admin/data-audit" element={<RoleGuard masterOnly><P.LazyDataAudit /></RoleGuard>} />
             <Route path="admin/trash" element={<RoleGuard masterOnly><P.LazyTrash /></RoleGuard>} />
             <Route path="health" element={<P.LazyHealthDashboard />} />

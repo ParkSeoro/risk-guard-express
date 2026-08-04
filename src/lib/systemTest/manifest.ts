@@ -65,6 +65,33 @@ export const FEATURE_COVERAGE: Record<string, string[]> = {
     "mobile.selected_project_id",
     "mobile.storage_attachments_bucket",
   ],
+  "모바일 셸 라우트 (/app/worker)": [
+    "mobile.route__app_worker_today",
+    "mobile.route__app_worker_approvals",
+    "mobile.route__app_worker_geofence_drop",
+    "mobile.route__app_worker_map_calibration",
+  ],
+  "교차 테이블 무결성 (SSOT)": [
+    "xtbl.check_data_integrity_rpc",
+    "xtbl.attendance_ssot_view_queryable",
+  ],
+  "스키마 테이블 존재": ["schema.table_projects", "schema.table_workers"],
+  "핵심 RPC 호출": [
+    "rpc.list_joinable_projects",
+    "rpc.qa_impersonate_check_callable",
+    "rpc.get_tbm_by_token_handles_missing",
+  ],
+  "스키마/RPC 드리프트 가드": ["drift.cols_projects", "drift.rpc_list_joinable_projects"],
+  "보건 모듈": [
+    "health.checkup_creates_todo",
+    "health.hazard_survey_public_rpcs",
+  ],
+  "코어 12 기능 스모크": [
+    "core12.risk_assessment_smoke",
+    "core12.work_permit_smoke",
+    "core12.approvals_smoke",
+    "core12.tbm_smoke",
+  ],
 };
 
 // 핵심 테이블별 필수 컬럼 (드리프트 감지용)

@@ -39,11 +39,12 @@ export async function runCore12Scenario(ctx: TestContext): Promise<StepResult[]>
         if (c.scoped && ctx.projectId) q = q.eq("project_id", ctx.projectId);
         const { error, count } = await q;
         if (error) {
-          // permission errors are acceptable here — we only fail on schema/server errors
-          if (error.code === "42501" || /permission/i.test(error.message)) {
-            return { pass: true, details: { table: c.table, note: "RLS blocked (expected for some roles)" } };
-          }
-          return { pass: false, error_location: `${c.table}: ${error.message}` };
+          // System Test Engine runs as master — schema/RLS/server errors are all FAIL.
+          return {
+            pass: false,
+            error_location: `${c.table}: ${error.message}`,
+            details: { table: c.table, code: error.code ?? null },
+          };
         }
         return { pass: true, details: { table: c.table, rows: count ?? 0 } };
       })

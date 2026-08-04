@@ -332,25 +332,50 @@ Deno.serve(async (req) => {
 
     // Always refresh last-known position when we can identify the worker.
     // Distribution map aggregates from this table (company/zone/count only).
+    // Coalesce: skip upsert if same zone and moved <5m within 8s (cut write amplification).
     if (subject.worker_id) {
       const lastZone =
         eventType === "exit"
           ? null
           : matchedZoneId ?? lastEvent?.zone_id ?? null;
-      await supabase.from("worker_last_positions").upsert(
-        {
-          worker_id: subject.worker_id,
-          project_id: body.project_id,
-          company_id: subject.company_id,
-          zone_id: lastZone,
-          lat: body.lat,
-          lng: body.lng,
-          accuracy_m: body.accuracy_m,
-          source,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "worker_id" },
-      );
+
+      let skipUpsert = false;
+      if (!eventType) {
+        const { data: prevPos } = await supabase
+          .from("worker_last_positions")
+          .select("lat, lng, zone_id, updated_at")
+          .eq("worker_id", subject.worker_id)
+          .maybeSingle();
+        if (prevPos?.updated_at) {
+          const ageMs = Date.now() - new Date(prevPos.updated_at).getTime();
+          if (ageMs >= 0 && ageMs < 8_000) {
+            const sameZone = (prevPos.zone_id || null) === (lastZone || null);
+            const dLat = Math.abs(Number(prevPos.lat) - body.lat);
+            const dLng = Math.abs(Number(prevPos.lng) - body.lng);
+            // ~5m ≈ 0.000045 deg lat
+            if (sameZone && dLat < 0.000045 && dLng < 0.000045) {
+              skipUpsert = true;
+            }
+          }
+        }
+      }
+
+      if (!skipUpsert) {
+        await supabase.from("worker_last_positions").upsert(
+          {
+            worker_id: subject.worker_id,
+            project_id: body.project_id,
+            company_id: subject.company_id,
+            zone_id: lastZone,
+            lat: body.lat,
+            lng: body.lng,
+            accuracy_m: body.accuracy_m,
+            source,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "worker_id" },
+        );
+      }
     }
 
     return new Response(

@@ -10,6 +10,7 @@ import {
   fetchProjectGpsCalibration,
   type GpsCalibration,
 } from "@/lib/tracking/gpsCalibration";
+import { SITE_EXIT_STREAK, SITE_TRACK_EXIT_M } from "@/lib/tracking/siteTrackBounds";
 
 export type TrackingIdentity = {
   worker_id?: string | null;
@@ -47,6 +48,10 @@ export type TrackerOptions = {
   idleAfterMs?: number;
   /** 이동으로 판단할 최소 이동 거리 (m). 기본 8m. */
   movementThresholdM?: number;
+  /** 현장 중심 — 반경 밖이면 onLeaveSite (자동 추적 종료). */
+  siteCenter?: { lat: number; lng: number; radiusM?: number } | null;
+  /** 연속 N회 반경 밖일 때 호출 (기본 3). 호출 후 추적 중지 권장. */
+  onLeaveSite?: (info: { distanceM: number; lat: number; lng: number }) => void;
   onUpdate?: (info: { lat: number; lng: number; accuracy: number; zone_id: string | null; source: string; mode: string }) => void;
   onError?: (err: Error) => void;
 };
@@ -63,6 +68,22 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
     if (!BackgroundGeolocation?.addWatcher) return null;
     // UI bias only — track-location applies the same project offset server-side on raw GPS.
     let cal = await loadCalibration(opts.identity.project_id);
+    const intervals = {
+      moving: opts.intervals?.moving ?? 10_000,
+      idle: opts.intervals?.idle ?? 60_000,
+      danger: opts.intervals?.danger ?? 5_000,
+    };
+    let lastSentAt = 0;
+    let lastPos: { lat: number; lng: number } | null = null;
+    let lastMovedAt = Date.now();
+    let currentMode: "moving" | "idle" | "danger" = "moving";
+    let outsideStreak = 0;
+    let leftSite = false;
+    const idleAfterMs = opts.idleAfterMs ?? 5 * 60_000;
+    const movementThresholdM = opts.movementThresholdM ?? 8;
+    const site = opts.siteCenter;
+    const siteRadius = site?.radiusM ?? SITE_TRACK_EXIT_M;
+
     const watcherId = await BackgroundGeolocation.addWatcher(
       {
         backgroundMessage: "위험구역 자동감지를 위해 위치를 추적 중입니다.",
@@ -73,18 +94,66 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
         distanceFilter: 8,
       },
       async (location: any, error: any) => {
+        if (leftSite) return;
         if (error) { opts.onError?.(new Error(error.message || String(error))); return; }
         if (!location) return;
         try {
-          // Refresh occasionally (cache TTL inside fetchProjectGpsCalibration).
+          const now = Date.now();
           cal = await loadCalibration(opts.identity.project_id);
           const rawLat = location.latitude;
           const rawLng = location.longitude;
           const disp = applyGpsCalibration(rawLat, rawLng, cal);
+
+          if (site && Number.isFinite(site.lat) && Number.isFinite(site.lng)) {
+            const d = distanceM(
+              { lat: site.lat, lng: site.lng },
+              { lat: disp.lat, lng: disp.lng },
+            );
+            if (d > siteRadius) {
+              outsideStreak += 1;
+              if (outsideStreak >= SITE_EXIT_STREAK) {
+                leftSite = true;
+                opts.onLeaveSite?.({ distanceM: d, lat: disp.lat, lng: disp.lng });
+                try {
+                  BackgroundGeolocation.removeWatcher({ id: watcherId });
+                } catch {
+                  /* ignore */
+                }
+                return;
+              }
+            } else {
+              outsideStreak = 0;
+            }
+          }
+
+          // Always push UI fix; throttle edge invokes (was unthrottled → load spike).
+          opts.onUpdate?.({
+            lat: disp.lat,
+            lng: disp.lng,
+            accuracy: location.accuracy,
+            zone_id: null,
+            source: "gps-bg-local",
+            mode: currentMode,
+          });
+
+          if (lastPos) {
+            const moved = distanceM(lastPos, { lat: disp.lat, lng: disp.lng });
+            if (moved >= movementThresholdM) {
+              lastMovedAt = now;
+              if (currentMode === "idle") currentMode = "moving";
+            } else if (now - lastMovedAt >= idleAfterMs && currentMode !== "danger") {
+              currentMode = "idle";
+            }
+          }
+          lastPos = { lat: disp.lat, lng: disp.lng };
+
+          const minInterval = intervals[currentMode];
+          if (now - lastSentAt < minInterval) return;
+          lastSentAt = now;
+
           const { data } = await supabase.functions.invoke("track-location", {
             body: {
               ...opts.identity,
-              // Send RAW GPS — server applies project bias authoritatively.
               lat: rawLat,
               lng: rawLng,
               accuracy_m: location.accuracy,
@@ -92,13 +161,23 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
               device_ts: new Date(location.time || Date.now()).toISOString(),
             },
           });
+          const zoneType = (data as any)?.zone_type as string | undefined;
+          if (
+            zoneType === "danger" ||
+            zoneType === "restricted" ||
+            (data as any)?.event_type === "unauthorized_entry"
+          ) {
+            currentMode = "danger";
+          } else if (currentMode === "danger") {
+            currentMode = now - lastMovedAt >= idleAfterMs ? "idle" : "moving";
+          }
           opts.onUpdate?.({
             lat: disp.lat,
             lng: disp.lng,
             accuracy: location.accuracy,
             zone_id: (data as any)?.zone_id ?? null,
             source: (data as any)?.source ?? "gps-bg",
-            mode: "bg",
+            mode: currentMode,
             ...(data as any),
           } as any);
         } catch (e: any) {
@@ -183,22 +262,31 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   };
   const idleAfterMs = opts.idleAfterMs ?? 5 * 60_000;
   const movementThresholdM = opts.movementThresholdM ?? 8;
+  const site = opts.siteCenter;
+  const siteRadius = site?.radiusM ?? SITE_TRACK_EXIT_M;
 
   let lastSentAt = 0;
   let lastPos: { lat: number; lng: number; ts: number } | null = null;
   let lastMovedAt = Date.now();
   let currentMode: "moving" | "idle" | "danger" = "moving";
   let stopped = false;
+  let outsideStreak = 0;
   // UI bias only — send RAW GPS to track-location (server applies the same offset).
   let cal = await loadCalibration(identity.project_id);
 
   // 네이티브 환경: 백그라운드 워처가 가능하면 그쪽으로 위임 (앱 종료/잠금 상태에서도 동작)
   const bgStop = await tryNativeBackground(opts);
   if (bgStop) {
-    return () => { stopped = true; bgStop(); };
+    const stop = () => {
+      stopped = true;
+      bgStop();
+    };
+    (stop as any).__usedBackground = true;
+    return stop;
   }
 
   const geo = await getGeolocation();
+  let watchHandle: { remove: () => void } | null = null;
   const handle = await geo.watch(
     async (pos) => {
       if (stopped) return;
@@ -207,6 +295,28 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
       cal = await loadCalibration(identity.project_id);
       const disp = applyGpsCalibration(raw.lat, raw.lng, cal);
       const here = { lat: disp.lat, lng: disp.lng, ts: now };
+
+      if (site && Number.isFinite(site.lat) && Number.isFinite(site.lng)) {
+        const d = distanceM(
+          { lat: site.lat, lng: site.lng },
+          { lat: here.lat, lng: here.lng },
+        );
+        if (d > siteRadius) {
+          outsideStreak += 1;
+          if (outsideStreak >= SITE_EXIT_STREAK) {
+            stopped = true;
+            try {
+              watchHandle?.remove();
+            } catch {
+              /* ignore */
+            }
+            opts.onLeaveSite?.({ distanceM: d, lat: here.lat, lng: here.lng });
+            return;
+          }
+        } else {
+          outsideStreak = 0;
+        }
+      }
 
       // 이동/정지 판단 (표시 좌표 기준 — 보정량은 상수라 상대 이동은 동일)
       if (lastPos) {
@@ -283,6 +393,7 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
       onError?.(new Error(msg));
     }
   );
+  watchHandle = handle;
 
   return () => {
     stopped = true;

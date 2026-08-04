@@ -3,6 +3,7 @@
  * Mount once under /app/worker AuthGuard — survives page navigation.
  *
  * Never re-request OS permissions on window focus (that caused install-time loops).
+ * Auto-pauses when leaving site (>100m); resumes when back within ~80m or check-in.
  */
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -14,6 +15,12 @@ import {
   setTrackingConsent,
 } from "@/lib/tracking/locationTracker";
 import { hasCompletedNativePermissions } from "@/lib/native/isNativeApp";
+import { calculateDistance } from "@/lib/geo/calculateDistance";
+import {
+  isGpsPausedOffsite,
+  setGpsPausedOffsite,
+  SITE_TRACK_RESUME_M,
+} from "@/lib/tracking/siteTrackBounds";
 
 const PROJECT_KEY = "selectedProjectId";
 
@@ -34,10 +41,10 @@ export default function WorkerGlobalGps() {
       setTrackingConsent(true);
     }
     if (!hasTrackingConsent() && profile?.agreed_to_location !== true) return;
-    // Wait until explicit native permission onboarding finished (avoids focus/dialog storms)
     if (!hasCompletedNativePermissions()) return;
 
     let cancelled = false;
+    let resumeTimer: number | null = null;
 
     const ensureProject = async () => {
       let projectId = localStorage.getItem(PROJECT_KEY);
@@ -73,14 +80,7 @@ export default function WorkerGlobalGps() {
       return null;
     };
 
-    const boot = async () => {
-      const projectId = await ensureProject();
-      if (!projectId) {
-        stopGpsTracking();
-        lastKeyRef.current = null;
-        return;
-      }
-
+    const startForProject = async (projectId: string) => {
       let workerId = workerIdRef.current;
       if (!workerId && profile?.phone) {
         const digits = profile.phone.replace(/\D/g, "");
@@ -96,7 +96,6 @@ export default function WorkerGlobalGps() {
         workerId = match?.id || null;
         workerIdRef.current = workerId;
       }
-
       if (cancelled) return;
 
       const key = `${projectId}:${workerId || ""}`;
@@ -111,6 +110,66 @@ export default function WorkerGlobalGps() {
       });
     };
 
+    /** Cheap poll while paused — resume when back near site (no full BG tracking). */
+    const watchResumeNearSite = (projectId: string) => {
+      if (resumeTimer != null) window.clearInterval(resumeTimer);
+      resumeTimer = window.setInterval(() => {
+        if (!isGpsPausedOffsite(projectId)) {
+          if (resumeTimer != null) window.clearInterval(resumeTimer);
+          resumeTimer = null;
+          return;
+        }
+        if (!("geolocation" in navigator)) return;
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            const { data: proj } = await supabase
+              .from("projects")
+              .select("site_lat, site_lng")
+              .eq("id", projectId)
+              .maybeSingle();
+            const slat = Number((proj as any)?.site_lat);
+            const slng = Number((proj as any)?.site_lng);
+            if (!Number.isFinite(slat) || !Number.isFinite(slng)) return;
+            const d = calculateDistance(
+              slat,
+              slng,
+              pos.coords.latitude,
+              pos.coords.longitude,
+            );
+            if (d <= SITE_TRACK_RESUME_M) {
+              setGpsPausedOffsite(projectId, false);
+              if (resumeTimer != null) window.clearInterval(resumeTimer);
+              resumeTimer = null;
+              lastKeyRef.current = null;
+              void startForProject(projectId);
+            }
+          },
+          () => {
+            /* ignore */
+          },
+          { enableHighAccuracy: false, maximumAge: 30_000, timeout: 12_000 },
+        );
+      }, 60_000);
+    };
+
+    const boot = async () => {
+      const projectId = await ensureProject();
+      if (!projectId) {
+        stopGpsTracking();
+        lastKeyRef.current = null;
+        return;
+      }
+
+      if (isGpsPausedOffsite(projectId)) {
+        stopGpsTracking();
+        lastKeyRef.current = null;
+        watchResumeNearSite(projectId);
+        return;
+      }
+
+      await startForProject(projectId);
+    };
+
     void boot();
 
     const onStorage = (e: StorageEvent) => {
@@ -123,14 +182,22 @@ export default function WorkerGlobalGps() {
       lastKeyRef.current = null;
       void boot();
     };
+    const onResumeTracking = () => {
+      const pid = localStorage.getItem(PROJECT_KEY);
+      if (pid) setGpsPausedOffsite(pid, false);
+      lastKeyRef.current = null;
+      void boot();
+    };
     window.addEventListener("storage", onStorage);
-    // Intentionally NO window "focus" → requestPermissions loop
     window.addEventListener("mobile:project-changed", onProjectChanged);
+    window.addEventListener("mobile:resume-gps-tracking", onResumeTracking);
 
     return () => {
       cancelled = true;
+      if (resumeTimer != null) window.clearInterval(resumeTimer);
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("mobile:project-changed", onProjectChanged);
+      window.removeEventListener("mobile:resume-gps-tracking", onResumeTracking);
     };
   }, [
     user,

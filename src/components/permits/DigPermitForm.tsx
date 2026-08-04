@@ -293,7 +293,12 @@ export default function DigPermitForm({
   const gasEditOk = !!(gasFieldsEditable && !printMode);
   const generalCols = style.columns.general;
   const applicantCols = style.columns[permitType as PermitTypeKey] || DEFAULT_STANDARD_STYLE.columns[permitType as PermitTypeKey];
-  const update = (patch: Partial<PermitFormData>) => onChange?.({ ...data, ...patch });
+  // Keep latest props.data for patch merges — rapid gas keystrokes otherwise
+  // overwrite sibling fields when update() closes over a stale snapshot.
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const update = (patch: Partial<PermitFormData>) =>
+    onChange?.({ ...dataRef.current, ...patch });
   const [signTarget, setSignTarget] = useState<keyof PermitSignatures | null>(null);
   const [signName, setSignName] = useState('');
   const sigRef = useRef<ResponsiveSignaturePadHandle | null>(null);
@@ -724,7 +729,7 @@ export default function DigPermitForm({
               )}
 
               {!hide('gas_measurement') && (
-              <tr>
+              <tr id="permit-gas-fields">
                 {/*
                   결재란 colgroup([110,160,110,auto,100,100])에 가스 6열을 얹으면
                   측정물질이 과대·기준농도가 과소가 되어 세로선이 어긋남.
@@ -901,7 +906,7 @@ export default function DigPermitForm({
               </tr>
               )}
               {!hide('cs_gas') && (
-              <tr>
+              <tr id="permit-gas-fields">
                 <td colSpan={4} className="gas-nested-wrap">
                   <table className="gas-nested">
                     <colgroup>
@@ -1019,7 +1024,7 @@ export default function DigPermitForm({
               </tr>
               )}
               {!hide('hw_gas') && (
-              <tr>
+              <tr id="permit-gas-fields">
                 <td colSpan={4} className="gas-nested-wrap">
                   <table className="gas-nested">
                     <colgroup>

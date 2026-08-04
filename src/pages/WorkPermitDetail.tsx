@@ -47,8 +47,9 @@ import {
   type PermitDisplayTemplate,
 } from '@/lib/permitDisplayTemplate';
 import {
-  GAS_READING_KEYS,
+  gasSaveErrorMessage,
   kindsNeedGasMeasurement,
+  mergeGasReadingsIntoForm,
   pickGasReadings,
 } from '@/lib/permitGasValidation';
 
@@ -427,28 +428,43 @@ export default function WorkPermitDetail() {
     kindsNeedGasMeasurement(selectedKinds);
   const canSaveGas = gasFieldsEditable;
 
+  const scrollToGasFields = () => {
+    if (typeof document === 'undefined') return;
+    document.getElementById('permit-gas-fields')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    });
+  };
+
   const saveGasReadings = async () => {
     if (!id || !canSaveGas) return;
+    const payload = pickGasReadings(data as Record<string, unknown>);
+    if (Object.keys(payload).length === 0) {
+      scrollToGasFields();
+      toast({
+        title: '가스측정 저장 실패',
+        description: gasSaveErrorMessage('EMPTY_READINGS'),
+        variant: 'destructive',
+      });
+      return;
+    }
     setSaving(true);
     try {
-      const payload = pickGasReadings(data as Record<string, unknown>);
       const { data: res, error } = await (supabase as any).rpc('save_permit_gas_readings', {
         _permit_id: id,
         _readings: payload,
       });
       if (error || res?.error) {
+        const code = res?.error || error?.message;
+        if (code === 'EMPTY_READINGS') scrollToGasFields();
         toast({
           title: '가스측정 저장 실패',
-          description: res?.error || error?.message,
+          description: gasSaveErrorMessage(code),
           variant: 'destructive',
         });
         return;
       }
-      const merged = { ...data, ...payload } as PermitFormData;
-      for (const k of GAS_READING_KEYS) {
-        if (payload[k] == null) (merged as any)[k] = (data as any)[k];
-      }
-      setData(merged);
+      setData((prev) => mergeGasReadingsIntoForm(prev as Record<string, unknown>, payload) as PermitFormData);
       toast({ title: '가스농도 측정값이 저장되었습니다.' });
     } finally {
       setSaving(false);
@@ -840,12 +856,10 @@ export default function WorkPermitDetail() {
                 return;
               }
               if (gasFieldsEditable) {
-                // 잠금 상태에서는 가스측정 키만 반영
-                const next = { ...data } as PermitFormData;
-                for (const k of GAS_READING_KEYS) {
-                  (next as any)[k] = (d as any)[k];
-                }
-                setData(next);
+                // 잠금 상태: 가스 키만 반영. 존재하는 키만 merge해 이전 입력 유실 방지.
+                setData((prev) =>
+                  mergeGasReadingsIntoForm(prev as Record<string, unknown>, d as Record<string, unknown>) as PermitFormData,
+                );
               }
             }}
             onSign={(k, v) => { if (!readOnly) setSignatures({ ...signatures, [k]: v }); }}

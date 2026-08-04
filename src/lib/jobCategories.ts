@@ -5,7 +5,7 @@
 import { z } from "zod";
 
 export const JOB_CATEGORIES = {
-  "기계/배관/용접": ["용접공", "배관공", "제관공", "취부사", "보온공", "도장공", "비파괴검사원"],
+  "기계/배관/용접": ["용접공", "배관공", "기계공", "제관공", "취부사", "보온공", "도장공", "비파괴검사원"],
   "전기/계장": ["전기공", "계장공", "케이블포설공", "통신공"],
   "골조/토목/건축": ["비계공", "철골공", "철근공", "형틀목수", "콘크리트타설공", "방수공", "판넬공"],
   "장비/공통": ["일반조공", "여공", "중장비운전원", "양중작업자"],
@@ -52,6 +52,7 @@ export const jobTypeOptionalSchema = z
 const LEGAL_EDUCATION_JOB_TYPE_MAP: Record<StandardJobType, string> = {
   용접공: "welding",
   배관공: "general",
+  기계공: "general",
   제관공: "welding",
   취부사: "welding",
   보온공: "chemical",

@@ -24,7 +24,7 @@ import DigPermitForm, {
   type PermitType,
 } from "@/components/permits/DigPermitForm";
 import StandardPermitSheet from "@/components/permits/StandardPermitSheet";
-import { mergeApprovalSignatures } from "@/lib/permitApprovalSignatures";
+import { contactPhonesFromApprovals, mergeApprovalSignatures } from "@/lib/permitApprovalSignatures";
 import { normalizePermitKinds, type PermitKindId } from "@/lib/permitKinds";
 
 const STATUS_BADGE: Record<string, string> = {
@@ -141,7 +141,7 @@ export default function MobilePermits() {
     const baseSig: PermitSignatures = p.signatures || {};
     const { data: aps } = await supabase
       .from("approvals")
-      .select("position, approver_name, status, approved_at, step_order, approval_version")
+      .select("position, approver_name, approver_id, status, approved_at, step_order, approval_version")
       .eq("entity_type", "work_permit")
       .eq("entity_id", p.id)
       .order("approval_version", { ascending: false })
@@ -152,6 +152,28 @@ export default function MobilePermits() {
       versioned = versioned.filter((a: any) => a.approval_version === latestVersion);
     }
     setSignatures(mergeApprovalSignatures(baseSig, versioned as any[]));
+
+    try {
+      const ids = [...new Set(versioned.map((a: any) => a.approver_id).filter(Boolean))] as string[];
+      if (ids.length) {
+        const { data: profs } = await supabase
+          .from("profiles")
+          .select("user_id, phone")
+          .in("user_id", ids);
+        const byUser: Record<string, string | null> = {};
+        for (const row of profs || []) byUser[(row as any).user_id] = (row as any).phone;
+        const phones = contactPhonesFromApprovals(versioned as any[], byUser);
+        if (phones.safety_manager_phone || phones.supervisor_phone) {
+          setFormData((cur) => ({
+            ...cur,
+            safety_manager_phone: cur.safety_manager_phone || phones.safety_manager_phone || "",
+            supervisor_phone: cur.supervisor_phone || phones.supervisor_phone || "",
+          }));
+        }
+      }
+    } catch {
+      /* ignore phone autofill */
+    }
     setDetailLoading(false);
   };
 

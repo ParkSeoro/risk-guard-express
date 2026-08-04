@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  contactPhonesFromApprovals,
   mergeApprovalSignatures,
   resolveSigKey,
+  resolveSpecialFormSigSlot,
   slotSignedAt,
 } from '@/lib/permitApprovalSignatures';
 import type { PermitSignatures } from '@/components/permits/DigPermitForm';
@@ -116,5 +118,51 @@ describe('mergeApprovalSignatures — independent timestamps', () => {
     expect(merged.contractor_pic?.signed_at).toBe(t1);
     expect(merged.applicant?.name).toBe('김신청');
     expect(merged.applicant?.signed_at).toBe(t1);
+  });
+});
+
+describe('resolveSpecialFormSigSlot — issuance vs paper keys', () => {
+  const t1 = '2026-07-28T09:00:00.000Z';
+  const t2 = '2026-07-28T10:15:00.000Z';
+  const t3 = '2026-07-28T11:30:00.000Z';
+  const t4 = '2026-07-28T14:00:00.000Z';
+  const t5 = '2026-07-28T15:45:00.000Z';
+
+  it('fills 관리감독자 from contractor_pic and 승인자 from sm after issuance', () => {
+    const merged = mergeApprovalSignatures({}, [
+      { position: 'contractor_supervisor', approver_name: '차강찬', status: '승인', approved_at: t1 },
+      { position: 'contractor_safety_manager', approver_name: '박상우', status: '승인', approved_at: t2 },
+      { position: 'owner_sm', approver_name: '최종SM', status: '승인', approved_at: t5 },
+    ]);
+    expect(resolveSpecialFormSigSlot(merged, 'site_supervisor')?.name).toBe('차강찬');
+    expect(resolveSpecialFormSigSlot(merged, 'safety_pic')?.name).toBe('박상우');
+    expect(resolveSpecialFormSigSlot(merged, 'closure_approver')?.name).toBe('최종SM');
+    expect(resolveSpecialFormSigSlot(merged, 'applicant')?.name).toBe('차강찬');
+  });
+
+  it('keeps 관리감독자 as issuance; prefers closure SM for 승인자 when present', () => {
+    const merged = mergeApprovalSignatures({}, [
+      { position: 'contractor_supervisor', approver_name: '상신자', status: '승인', approved_at: t1 },
+      { position: 'owner_sm', approver_name: '발급SM', status: '승인', approved_at: t5 },
+      { position: 'closure_supervisor', approver_name: '종료감독', status: '승인', approved_at: t3 },
+      { position: 'closure_sm', approver_name: '종료SM', status: '승인', approved_at: t4 },
+    ]);
+    expect(resolveSpecialFormSigSlot(merged, 'site_supervisor')?.name).toBe('상신자');
+    expect(resolveSpecialFormSigSlot(merged, 'closure_approver')?.name).toBe('종료SM');
+  });
+});
+
+describe('contactPhonesFromApprovals', () => {
+  it('maps safety/supervisor phones from approved rows', () => {
+    const phones = contactPhonesFromApprovals(
+      [
+        { position: 'contractor_supervisor', status: '승인', approver_id: 'u1' },
+        { position: 'contractor_safety_manager', status: '승인', approver_id: 'u2' },
+        { position: 'owner_sm', status: '승인', approver_id: 'u3' },
+      ],
+      { u1: '010-1111-1111', u2: '010-2222-2222', u3: '010-3333-3333' },
+    );
+    expect(phones.supervisor_phone).toBe('010-1111-1111');
+    expect(phones.safety_manager_phone).toBe('010-2222-2222');
   });
 });

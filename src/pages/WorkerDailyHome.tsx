@@ -353,7 +353,7 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
         <section className="rounded-2xl bg-white/80 backdrop-blur border border-slate-200 p-4 space-y-3 shadow-sm">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <MapPin className="h-4 w-4 text-emerald-600" />
-            GPS · 현장 100m 지오펜스
+            GPS · 출근 100m / 추적 펜스는 현장 맵 기준
           </div>
           <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
             <div>추적: {gpsTracking ? "ON" : "OFF"}</div>

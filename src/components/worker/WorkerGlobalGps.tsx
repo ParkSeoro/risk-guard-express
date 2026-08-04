@@ -15,12 +15,13 @@ import {
   setTrackingConsent,
 } from "@/lib/tracking/locationTracker";
 import { hasCompletedNativePermissions } from "@/lib/native/isNativeApp";
-import { calculateDistance } from "@/lib/geo/calculateDistance";
 import {
   isGpsPausedOffsite,
+  resolveSiteTrackingFence,
   setGpsPausedOffsite,
-  SITE_TRACK_RESUME_M,
+  isInsideResumeFence,
 } from "@/lib/tracking/siteTrackBounds";
+import { clearStickyDangerAlert } from "@/lib/tracking/dangerAlertSticky";
 
 const PROJECT_KEY = "selectedProjectId";
 
@@ -110,46 +111,47 @@ export default function WorkerGlobalGps() {
       });
     };
 
+    const tryResumeIfInside = async (projectId: string): Promise<boolean> => {
+      if (!("geolocation" in navigator)) return false;
+      const fence = await resolveSiteTrackingFence(projectId);
+      if (!fence) return false;
+      return await new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const inside = isInsideResumeFence(
+              fence,
+              pos.coords.latitude,
+              pos.coords.longitude,
+            );
+            resolve(inside);
+          },
+          () => resolve(false),
+          { enableHighAccuracy: true, maximumAge: 10_000, timeout: 12_000 },
+        );
+      });
+    };
+
     /** Cheap poll while paused — resume when back near site (no full BG tracking). */
     const watchResumeNearSite = (projectId: string) => {
       if (resumeTimer != null) window.clearInterval(resumeTimer);
-      resumeTimer = window.setInterval(() => {
+      const tick = () => {
         if (!isGpsPausedOffsite(projectId)) {
           if (resumeTimer != null) window.clearInterval(resumeTimer);
           resumeTimer = null;
           return;
         }
-        if (!("geolocation" in navigator)) return;
-        navigator.geolocation.getCurrentPosition(
-          async (pos) => {
-            const { data: proj } = await supabase
-              .from("projects")
-              .select("site_lat, site_lng")
-              .eq("id", projectId)
-              .maybeSingle();
-            const slat = Number((proj as any)?.site_lat);
-            const slng = Number((proj as any)?.site_lng);
-            if (!Number.isFinite(slat) || !Number.isFinite(slng)) return;
-            const d = calculateDistance(
-              slat,
-              slng,
-              pos.coords.latitude,
-              pos.coords.longitude,
-            );
-            if (d <= SITE_TRACK_RESUME_M) {
-              setGpsPausedOffsite(projectId, false);
-              if (resumeTimer != null) window.clearInterval(resumeTimer);
-              resumeTimer = null;
-              lastKeyRef.current = null;
-              void startForProject(projectId);
-            }
-          },
-          () => {
-            /* ignore */
-          },
-          { enableHighAccuracy: false, maximumAge: 30_000, timeout: 12_000 },
-        );
-      }, 60_000);
+        void tryResumeIfInside(projectId).then((inside) => {
+          if (!inside || cancelled) return;
+          setGpsPausedOffsite(projectId, false);
+          clearStickyDangerAlert();
+          if (resumeTimer != null) window.clearInterval(resumeTimer);
+          resumeTimer = null;
+          lastKeyRef.current = null;
+          void startForProject(projectId);
+        });
+      };
+      tick(); // immediate — fixes false "offsite" while actually on site
+      resumeTimer = window.setInterval(tick, 60_000);
     };
 
     const boot = async () => {
@@ -161,7 +163,17 @@ export default function WorkerGlobalGps() {
       }
 
       if (isGpsPausedOffsite(projectId)) {
+        // Clear false pause immediately if we are actually inside the expanded fence
+        const inside = await tryResumeIfInside(projectId);
+        if (cancelled) return;
+        if (inside) {
+          setGpsPausedOffsite(projectId, false);
+          clearStickyDangerAlert();
+          await startForProject(projectId);
+          return;
+        }
         stopGpsTracking();
+        clearStickyDangerAlert();
         lastKeyRef.current = null;
         watchResumeNearSite(projectId);
         return;

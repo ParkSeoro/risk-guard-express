@@ -3,6 +3,8 @@
 // - Falls back to navigator.geolocation in the browser / PWA.
 // Sends fixes to the `track-location` edge function, which performs the
 // authoritative geofence + Wi-Fi zone match server-side.
+//
+// Power policy: eco intervals far from danger zones; high-rate only near/inside.
 
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -10,7 +12,16 @@ import {
   fetchProjectGpsCalibration,
   type GpsCalibration,
 } from "@/lib/tracking/gpsCalibration";
-import { SITE_EXIT_STREAK, SITE_TRACK_EXIT_M } from "@/lib/tracking/siteTrackBounds";
+import {
+  DANGER_PROXIMITY_M,
+  isDefinitelyOutsideSite,
+  SITE_EXIT_STREAK,
+  type SiteTrackingFence,
+} from "@/lib/tracking/siteTrackBounds";
+import {
+  minDistanceToRestrictedZoneEdge,
+  type RestrictedZoneGeom,
+} from "@/lib/tracking/restrictedZoneGeom";
 
 export type TrackingIdentity = {
   worker_id?: string | null;
@@ -35,87 +46,168 @@ async function loadCalibration(projectId: string): Promise<GpsCalibration | null
   }
 }
 
+async function loadRestrictedZones(projectId: string): Promise<RestrictedZoneGeom[]> {
+  try {
+    const { data } = await supabase
+      .from("restricted_zones")
+      .select(
+        "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, is_active",
+      )
+      .eq("project_id", projectId)
+      .eq("is_deleted", false)
+      .eq("is_active", true);
+    return (data || []) as unknown as RestrictedZoneGeom[];
+  } catch {
+    return [];
+  }
+}
+
 export type TrackerOptions = {
   identity: TrackingIdentity;
   /**
-   * 적응형 주기 (밀리초). 미지정 시 기본값:
-   *  - moving:  10초  (이동 감지 시)
-   *  - idle:    60초  (5분 이상 정지)
-   *  - danger:   5초  (위험/제한 구역 진입 시 자동 상향)
+   * 적응형 주기 (밀리초). 미지정 시 근접도 기반 기본값:
+   *  - eco (위험구역에서 멀리): moving 45s / idle 180s
+   *  - near (80m 이내): moving 12s / idle 60s
+   *  - danger (구역 안): 5s
    */
-  intervals?: { moving?: number; idle?: number; danger?: number };
-  /** 정지로 판단할 누적 정지 시간 (ms). 기본 5분. */
+  intervals?: { moving?: number; idle?: number; danger?: number; ecoMoving?: number; ecoIdle?: number };
+  /** 정지로 판단할 누적 정지 시간 (ms). 기본 2분. */
   idleAfterMs?: number;
-  /** 이동으로 판단할 최소 이동 거리 (m). 기본 8m. */
+  /** 이동으로 판단할 최소 이동 거리 (m). 기본 12m. */
   movementThresholdM?: number;
-  /** 현장 중심 — 반경 밖이면 onLeaveSite (자동 추적 종료). */
-  siteCenter?: { lat: number; lng: number; radiusM?: number } | null;
-  /** 연속 N회 반경 밖일 때 호출 (기본 3). 호출 후 추적 중지 권장. */
-  onLeaveSite?: (info: { distanceM: number; lat: number; lng: number }) => void;
-  onUpdate?: (info: { lat: number; lng: number; accuracy: number; zone_id: string | null; source: string; mode: string }) => void;
+  /** 현장 펜스 — raw GPS 기준 밖이면 onLeaveSite. */
+  siteCenter?: SiteTrackingFence | null;
+  onLeaveSite?: (info: { distanceM: number; lat: number; lng: number; radiusM: number }) => void;
+  onUpdate?: (info: {
+    lat: number;
+    lng: number;
+    accuracy: number;
+    zone_id: string | null;
+    source: string;
+    mode: string;
+  }) => void;
   onError?: (err: Error) => void;
 };
 
 type Capacitor = { isNativePlatform?: () => boolean; getPlatform?: () => string };
+type PowerMode = "eco" | "near" | "danger" | "idle";
+
+function distanceM(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+function pickIntervalMs(
+  mode: PowerMode,
+  intervals: {
+    moving: number;
+    idle: number;
+    danger: number;
+    ecoMoving: number;
+    ecoIdle: number;
+  },
+): number {
+  if (mode === "danger") return intervals.danger;
+  if (mode === "near") return intervals.moving;
+  if (mode === "idle") return intervals.ecoIdle;
+  return intervals.ecoMoving;
+}
+
+function resolvePowerMode(args: {
+  distToZoneM: number;
+  inDangerFromServer: boolean;
+  idle: boolean;
+}): PowerMode {
+  if (args.inDangerFromServer || args.distToZoneM <= 0) return "danger";
+  if (args.distToZoneM <= DANGER_PROXIMITY_M) return "near";
+  if (args.idle) return "idle";
+  return "eco";
+}
 
 async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => void)> {
   const cap = (globalThis as any).Capacitor as Capacitor | undefined;
   if (!cap?.isNativePlatform?.()) return null;
   try {
-    // This community plugin ships native code only — register via Capacitor core.
     const { registerPlugin } = await import("@capacitor/core");
     const BackgroundGeolocation = registerPlugin<any>("BackgroundGeolocation");
     if (!BackgroundGeolocation?.addWatcher) return null;
-    // UI bias only — track-location applies the same project offset server-side on raw GPS.
+
     let cal = await loadCalibration(opts.identity.project_id);
+    let zones = await loadRestrictedZones(opts.identity.project_id);
+    let zonesAt = Date.now();
+
     const intervals = {
-      moving: opts.intervals?.moving ?? 10_000,
+      moving: opts.intervals?.moving ?? 12_000,
       idle: opts.intervals?.idle ?? 60_000,
       danger: opts.intervals?.danger ?? 5_000,
+      ecoMoving: opts.intervals?.ecoMoving ?? 45_000,
+      ecoIdle: opts.intervals?.ecoIdle ?? 180_000,
     };
     let lastSentAt = 0;
     let lastPos: { lat: number; lng: number } | null = null;
     let lastMovedAt = Date.now();
-    let currentMode: "moving" | "idle" | "danger" = "moving";
+    let currentMode: PowerMode = "eco";
     let outsideStreak = 0;
     let leftSite = false;
-    const idleAfterMs = opts.idleAfterMs ?? 5 * 60_000;
-    const movementThresholdM = opts.movementThresholdM ?? 8;
+    let inDangerFromServer = false;
+    const idleAfterMs = opts.idleAfterMs ?? 2 * 60_000;
+    const movementThresholdM = opts.movementThresholdM ?? 12;
     const site = opts.siteCenter;
-    const siteRadius = site?.radiusM ?? SITE_TRACK_EXIT_M;
 
     const watcherId = await BackgroundGeolocation.addWatcher(
       {
-        backgroundMessage: "위험구역 자동감지를 위해 위치를 추적 중입니다.",
-        backgroundTitle: "안전관리시스템 위치 추적",
-        // Permissions are requested on /native-permissions — do not re-prompt from tracker.
+        backgroundMessage: "현장 안전 위치 추적 중 (위험구역 근처에서만 고정밀)",
+        backgroundTitle: "SafeNex 위치 추적",
         requestPermissions: false,
         stale: false,
-        distanceFilter: 8,
+        // Wider filter = fewer wakeups far from zones (near-zone still uses time throttle)
+        distanceFilter: 15,
       },
       async (location: any, error: any) => {
         if (leftSite) return;
-        if (error) { opts.onError?.(new Error(error.message || String(error))); return; }
+        if (error) {
+          opts.onError?.(new Error(error.message || String(error)));
+          return;
+        }
         if (!location) return;
         try {
           const now = Date.now();
+          if (now - zonesAt > 120_000) {
+            zones = await loadRestrictedZones(opts.identity.project_id);
+            zonesAt = now;
+          }
           cal = await loadCalibration(opts.identity.project_id);
           const rawLat = location.latitude;
           const rawLng = location.longitude;
+          const accuracy = Number(location.accuracy) || 30;
           const disp = applyGpsCalibration(rawLat, rawLng, cal);
 
+          // Site leave: RAW GPS vs fence (do not mix map calibration)
           if (site && Number.isFinite(site.lat) && Number.isFinite(site.lng)) {
-            const d = distanceM(
-              { lat: site.lat, lng: site.lng },
-              { lat: disp.lat, lng: disp.lng },
+            const { outside, distanceM: d } = isDefinitelyOutsideSite(
+              site,
+              rawLat,
+              rawLng,
+              accuracy,
             );
-            if (d > siteRadius) {
+            if (outside) {
               outsideStreak += 1;
               if (outsideStreak >= SITE_EXIT_STREAK) {
                 leftSite = true;
-                opts.onLeaveSite?.({ distanceM: d, lat: disp.lat, lng: disp.lng });
+                opts.onLeaveSite?.({
+                  distanceM: d,
+                  lat: rawLat,
+                  lng: rawLng,
+                  radiusM: site.radiusM,
+                });
                 try {
-                  BackgroundGeolocation.removeWatcher({ id: watcherId });
+                  await BackgroundGeolocation.removeWatcher({ id: watcherId });
                 } catch {
                   /* ignore */
                 }
@@ -126,28 +218,33 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
             }
           }
 
-          // Always push UI fix; throttle edge invokes (was unthrottled → load spike).
+          const distToZone = minDistanceToRestrictedZoneEdge(disp.lat, disp.lng, zones);
+          let idle = false;
+          if (lastPos) {
+            const moved = distanceM(lastPos, { lat: disp.lat, lng: disp.lng });
+            if (moved >= movementThresholdM) {
+              lastMovedAt = now;
+            } else if (now - lastMovedAt >= idleAfterMs) {
+              idle = true;
+            }
+          }
+          lastPos = { lat: disp.lat, lng: disp.lng };
+          currentMode = resolvePowerMode({
+            distToZoneM: distToZone,
+            inDangerFromServer,
+            idle,
+          });
+
           opts.onUpdate?.({
             lat: disp.lat,
             lng: disp.lng,
-            accuracy: location.accuracy,
+            accuracy,
             zone_id: null,
             source: "gps-bg-local",
             mode: currentMode,
           });
 
-          if (lastPos) {
-            const moved = distanceM(lastPos, { lat: disp.lat, lng: disp.lng });
-            if (moved >= movementThresholdM) {
-              lastMovedAt = now;
-              if (currentMode === "idle") currentMode = "moving";
-            } else if (now - lastMovedAt >= idleAfterMs && currentMode !== "danger") {
-              currentMode = "idle";
-            }
-          }
-          lastPos = { lat: disp.lat, lng: disp.lng };
-
-          const minInterval = intervals[currentMode];
+          const minInterval = pickIntervalMs(currentMode, intervals);
           if (now - lastSentAt < minInterval) return;
           lastSentAt = now;
 
@@ -156,25 +253,25 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
               ...opts.identity,
               lat: rawLat,
               lng: rawLng,
-              accuracy_m: location.accuracy,
+              accuracy_m: accuracy,
               wifi_scan: [],
               device_ts: new Date(location.time || Date.now()).toISOString(),
             },
           });
           const zoneType = (data as any)?.zone_type as string | undefined;
-          if (
+          inDangerFromServer =
             zoneType === "danger" ||
             zoneType === "restricted" ||
-            (data as any)?.event_type === "unauthorized_entry"
-          ) {
-            currentMode = "danger";
-          } else if (currentMode === "danger") {
-            currentMode = now - lastMovedAt >= idleAfterMs ? "idle" : "moving";
-          }
+            (data as any)?.event_type === "unauthorized_entry";
+          currentMode = resolvePowerMode({
+            distToZoneM: distToZone,
+            inDangerFromServer,
+            idle,
+          });
           opts.onUpdate?.({
             lat: disp.lat,
             lng: disp.lng,
-            accuracy: location.accuracy,
+            accuracy,
             zone_id: (data as any)?.zone_id ?? null,
             source: (data as any)?.source ?? "gps-bg",
             mode: currentMode,
@@ -183,9 +280,15 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
         } catch (e: any) {
           opts.onError?.(new Error(e?.message || String(e)));
         }
-      }
+      },
     );
-    return () => { try { BackgroundGeolocation.removeWatcher({ id: watcherId }); } catch {} };
+    return () => {
+      try {
+        BackgroundGeolocation.removeWatcher({ id: watcherId });
+      } catch {
+        /* ignore */
+      }
+    };
   } catch (e) {
     if (import.meta.env.DEV) console.warn("background-geo not available, falling back", e);
     return null;
@@ -193,7 +296,10 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
 }
 
 async function getGeolocation(): Promise<{
-  watch: (cb: (pos: GeolocationPosition) => void, err: (e: any) => void) => Promise<{ remove: () => void }>;
+  watch: (
+    cb: (pos: GeolocationPosition) => void,
+    err: (e: any) => void,
+  ) => Promise<{ remove: () => void }>;
 }> {
   const cap = (globalThis as any).Capacitor as Capacitor | undefined;
   if (cap?.isNativePlatform?.()) {
@@ -203,7 +309,6 @@ async function getGeolocation(): Promise<{
       const granted =
         status.location === "granted" || status.coarseLocation === "granted";
       if (!granted) {
-        // After /native-permissions, do not re-prompt (avoids permission loops).
         const { hasCompletedNativePermissions } = await import("@/lib/native/isNativeApp");
         if (hasCompletedNativePermissions()) {
           throw new Error("위치 권한이 없습니다. 설정에서 위치를 허용해 주세요.");
@@ -217,15 +322,13 @@ async function getGeolocation(): Promise<{
             (pos, e) => {
               if (e) return err(e);
               if (pos) cb(pos as unknown as GeolocationPosition);
-            }
+            },
           );
           return { remove: () => Geolocation.clearWatch({ id }) };
         },
       };
     } catch (e) {
-      // Re-throw permission errors so callers can surface them; other failures fall through.
       if (e instanceof Error && /위치 권한/.test(e.message)) throw e;
-      // fall through
     }
   }
   return {
@@ -241,40 +344,30 @@ async function getGeolocation(): Promise<{
   };
 }
 
-// 두 좌표 사이 거리 (m) - Haversine
-function distanceM(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
-  const R = 6371000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(s));
-}
-
 export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   const { identity, onUpdate, onError } = opts;
   const intervals = {
-    moving: opts.intervals?.moving ?? 10_000,
+    moving: opts.intervals?.moving ?? 12_000,
     idle: opts.intervals?.idle ?? 60_000,
     danger: opts.intervals?.danger ?? 5_000,
+    ecoMoving: opts.intervals?.ecoMoving ?? 45_000,
+    ecoIdle: opts.intervals?.ecoIdle ?? 180_000,
   };
-  const idleAfterMs = opts.idleAfterMs ?? 5 * 60_000;
-  const movementThresholdM = opts.movementThresholdM ?? 8;
+  const idleAfterMs = opts.idleAfterMs ?? 2 * 60_000;
+  const movementThresholdM = opts.movementThresholdM ?? 12;
   const site = opts.siteCenter;
-  const siteRadius = site?.radiusM ?? SITE_TRACK_EXIT_M;
 
   let lastSentAt = 0;
   let lastPos: { lat: number; lng: number; ts: number } | null = null;
   let lastMovedAt = Date.now();
-  let currentMode: "moving" | "idle" | "danger" = "moving";
+  let currentMode: PowerMode = "eco";
   let stopped = false;
   let outsideStreak = 0;
-  // UI bias only — send RAW GPS to track-location (server applies the same offset).
+  let inDangerFromServer = false;
   let cal = await loadCalibration(identity.project_id);
+  let zones = await loadRestrictedZones(identity.project_id);
+  let zonesAt = Date.now();
 
-  // 네이티브 환경: 백그라운드 워처가 가능하면 그쪽으로 위임 (앱 종료/잠금 상태에서도 동작)
   const bgStop = await tryNativeBackground(opts);
   if (bgStop) {
     const stop = () => {
@@ -291,17 +384,24 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
     async (pos) => {
       if (stopped) return;
       const now = Date.now();
+      if (now - zonesAt > 120_000) {
+        zones = await loadRestrictedZones(identity.project_id);
+        zonesAt = now;
+      }
       const raw = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: now };
+      const accuracy = pos.coords.accuracy ?? 30;
       cal = await loadCalibration(identity.project_id);
       const disp = applyGpsCalibration(raw.lat, raw.lng, cal);
       const here = { lat: disp.lat, lng: disp.lng, ts: now };
 
       if (site && Number.isFinite(site.lat) && Number.isFinite(site.lng)) {
-        const d = distanceM(
-          { lat: site.lat, lng: site.lng },
-          { lat: here.lat, lng: here.lng },
+        const { outside, distanceM: d } = isDefinitelyOutsideSite(
+          site,
+          raw.lat,
+          raw.lng,
+          accuracy,
         );
-        if (d > siteRadius) {
+        if (outside) {
           outsideStreak += 1;
           if (outsideStreak >= SITE_EXIT_STREAK) {
             stopped = true;
@@ -310,7 +410,12 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
             } catch {
               /* ignore */
             }
-            opts.onLeaveSite?.({ distanceM: d, lat: here.lat, lng: here.lng });
+            opts.onLeaveSite?.({
+              distanceM: d,
+              lat: raw.lat,
+              lng: raw.lng,
+              radiusM: site.radiusM,
+            });
             return;
           }
         } else {
@@ -318,32 +423,35 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
         }
       }
 
-      // 이동/정지 판단 (표시 좌표 기준 — 보정량은 상수라 상대 이동은 동일)
+      let idle = false;
       if (lastPos) {
         const d = distanceM(lastPos, here);
         if (d >= movementThresholdM) {
           lastMovedAt = now;
-          if (currentMode === "idle") currentMode = "moving";
         } else if (now - lastMovedAt >= idleAfterMs) {
-          if (currentMode !== "danger") currentMode = "idle";
+          idle = true;
         }
       } else {
         lastPos = here;
       }
 
-      // UI must update on every browser fix — do NOT wait for edge function success.
-      // (Previously lastGpsFix stayed null whenever track-location failed → perpetual "측정 중")
+      const distToZone = minDistanceToRestrictedZoneEdge(here.lat, here.lng, zones);
+      currentMode = resolvePowerMode({
+        distToZoneM: distToZone,
+        inDangerFromServer,
+        idle,
+      });
+
       onUpdate?.({
         lat: here.lat,
         lng: here.lng,
-        accuracy: pos.coords.accuracy,
+        accuracy,
         zone_id: null,
         source: "gps-local",
         mode: currentMode,
       });
 
-      // 서버(지오펜스) 송신만 모드별 스로틀
-      const minInterval = intervals[currentMode];
+      const minInterval = pickIntervalMs(currentMode, intervals);
       if (now - lastSentAt < minInterval) return;
       lastSentAt = now;
       lastPos = here;
@@ -352,46 +460,50 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
         const { data, error } = await supabase.functions.invoke("track-location", {
           body: {
             ...identity,
-            // RAW GPS — server applies project bias authoritatively.
             lat: raw.lat,
             lng: raw.lng,
-            accuracy_m: pos.coords.accuracy,
+            accuracy_m: accuracy,
             wifi_scan: [],
             device_ts: new Date(pos.timestamp || now).toISOString(),
           },
         });
         if (error) throw error;
 
-        // 서버 응답에 따라 위험구역이면 danger 모드(5초)로 상향, 아니면 복귀
         const zoneType = (data as any)?.zone_type as string | undefined;
-        if (zoneType === "danger" || zoneType === "restricted" || (data as any)?.event_type === "unauthorized_entry") {
-          currentMode = "danger";
-        } else if (currentMode === "danger") {
-          currentMode = now - lastMovedAt >= idleAfterMs ? "idle" : "moving";
-        }
+        inDangerFromServer =
+          zoneType === "danger" ||
+          zoneType === "restricted" ||
+          (data as any)?.event_type === "unauthorized_entry";
+        currentMode = resolvePowerMode({
+          distToZoneM: distToZone,
+          inDangerFromServer,
+          idle,
+        });
 
         onUpdate?.({
           lat: here.lat,
           lng: here.lng,
-          accuracy: pos.coords.accuracy,
+          accuracy,
           zone_id: (data as any)?.zone_id ?? null,
           source: (data as any)?.source ?? "gps",
           mode: currentMode,
           ...(data as any),
         } as any);
       } catch (e: any) {
-        // Keep local fix on screen; surface server/geo sync error separately
         onError?.(new Error(e?.message || String(e)));
       }
     },
     (e) => {
       const msg =
-        e?.code === 1 ? "위치 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요."
-        : e?.code === 2 ? "위치를 사용할 수 없습니다. GPS를 켜 주세요."
-        : e?.code === 3 ? "위치 수신 시간 초과. 야외에서 다시 시도해 주세요."
-        : (e?.message || String(e));
+        e?.code === 1
+          ? "위치 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요."
+          : e?.code === 2
+            ? "위치를 사용할 수 없습니다. GPS를 켜 주세요."
+            : e?.code === 3
+              ? "위치 수신 시간 초과. 야외에서 다시 시도해 주세요."
+              : e?.message || String(e);
       onError?.(new Error(msg));
-    }
+    },
   );
   watchHandle = handle;
 
@@ -403,7 +515,6 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
 
 const CONSENT_KEY = "tracking-consent-v1";
 
-/** Accept legacy "1" written by ConsentPage / DailyHome before SSOT fix. */
 export function hasTrackingConsent() {
   try {
     const v = localStorage.getItem(CONSENT_KEY);
@@ -421,7 +532,6 @@ export function setTrackingConsent(yes: boolean) {
   }
 }
 
-/** Normalize legacy "1" → "yes" so all readers agree. */
 export function normalizeTrackingConsentStorage() {
   try {
     if (localStorage.getItem(CONSENT_KEY) === "1") {

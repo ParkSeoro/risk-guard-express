@@ -17,9 +17,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import PushNotificationBridge from "@/components/PushNotificationBridge";
 import type { TrackingIdentity } from "@/lib/tracking/locationTracker";
 import {
+  resolveSiteTrackingFence,
   setGpsPausedOffsite,
-  SITE_TRACK_EXIT_M,
 } from "@/lib/tracking/siteTrackBounds";
+import { clearStickyDangerAlert } from "@/lib/tracking/dangerAlertSticky";
 import { toast } from "sonner";
 
 export type GpsFix = {
@@ -206,18 +207,9 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
         normalizeTrackingConsentStorage();
         if (startGenRef.current !== gen) return;
 
-        let siteCenter: { lat: number; lng: number; radiusM: number } | null = null;
+        let siteCenter: Awaited<ReturnType<typeof resolveSiteTrackingFence>> = null;
         try {
-          const { data: proj } = await supabase
-            .from("projects")
-            .select("site_lat, site_lng")
-            .eq("id", identity.project_id)
-            .maybeSingle();
-          const lat = Number((proj as { site_lat?: number } | null)?.site_lat);
-          const lng = Number((proj as { site_lng?: number } | null)?.site_lng);
-          if (Number.isFinite(lat) && Number.isFinite(lng)) {
-            siteCenter = { lat, lng, radiusM: SITE_TRACK_EXIT_M };
-          }
+          siteCenter = await resolveSiteTrackingFence(identity.project_id);
         } catch {
           /* tracking still works without site center */
         }
@@ -229,10 +221,11 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
           siteCenter,
           onLeaveSite: (info) => {
             setGpsPausedOffsite(identity.project_id, true);
+            clearStickyDangerAlert();
             stopGpsTracking();
             toast.message("현장 이탈 · GPS 추적 자동 종료", {
-              description: `현장 중심에서 약 ${Math.round(info.distanceM)}m 떨어졌습니다 (${SITE_TRACK_EXIT_M}m 초과). 다시 출근·현장 진입 시 추적이 재개됩니다.`,
-              duration: 7000,
+              description: `현장 기준 약 ${Math.round(info.distanceM)}m (허용 ${Math.round(info.radiusM)}m). 백그라운드 추적·위험 경고를 종료했습니다. 다시 출근하거나 현장 안으로 오면 재개됩니다.`,
+              duration: 6000,
             });
           },
           onUpdate: (info) => {

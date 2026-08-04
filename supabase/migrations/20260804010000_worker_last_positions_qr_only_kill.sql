@@ -72,7 +72,6 @@ BEGIN
     LEFT JOIN public.companies c ON c.id = pm.company_id
    WHERE pm.project_id = _project_id
      AND pm.user_id = _uid
-     AND COALESCE(pm.is_active, true) = true
    ORDER BY CASE pm.role_new::text
      WHEN 'master' THEN 0
      WHEN 'project_admin' THEN 1

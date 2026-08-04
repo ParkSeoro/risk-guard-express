@@ -1,8 +1,7 @@
 /**
  * Master-only: tap map standing point → capture GPS → save project GPS bias.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigateMobileHome } from "@/lib/mobileNav";
 import { Capacitor } from "@capacitor/core";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,6 +14,7 @@ import { ArrowLeft, Crosshair, Loader2, MapPin, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { loadCornersFromMap } from "@/lib/mapBounds";
 import { uvToLatLng } from "@/lib/tracking/imageSpaceGeo";
+import ZoomableSiteMapImage from "@/components/geofence/ZoomableSiteMapImage";
 import {
   clearGpsCalibrationCache,
   computeGpsOffset,
@@ -73,7 +73,6 @@ async function getCurrentPosition(): Promise<{ lat: number; lng: number; accurac
 }
 
 export default function MobileMapCalibration() {
-  const navigate = useNavigate();
   const goHome = useNavigateMobileHome();
   const { hasRole, user } = useAuth();
   const { projectId } = useMobileAccess();
@@ -84,7 +83,6 @@ export default function MobileMapCalibration() {
   const [existing, setExisting] = useState<GpsCalibration | null>(null);
   const [tapUv, setTapUv] = useState<{ u: number; v: number } | null>(null);
   const [busy, setBusy] = useState(false);
-  const imgRef = useRef<HTMLImageElement | null>(null);
 
   const active = maps.find((m) => m.id === mapId) || null;
   const corners = active ? loadCornersFromMap(active) : null;
@@ -123,17 +121,6 @@ export default function MobileMapCalibration() {
       </div>
     );
   }
-
-  const onImageClick = (e: React.MouseEvent<HTMLImageElement>) => {
-    const el = e.currentTarget;
-    const rect = el.getBoundingClientRect();
-    const u = (e.clientX - rect.left) / Math.max(rect.width, 1);
-    const v = (e.clientY - rect.top) / Math.max(rect.height, 1);
-    setTapUv({
-      u: Math.min(1, Math.max(0, u)),
-      v: Math.min(1, Math.max(0, v)),
-    });
-  };
 
   const save = async () => {
     if (!projectId || !active || !corners || !tapUv) {
@@ -181,7 +168,14 @@ export default function MobileMapCalibration() {
       if (error) throw error;
       clearGpsCalibrationCache(projectId);
       setExisting(payload);
-      toast.success(`보정 저장 · 약 ${Math.round(mag)}m 이동 (GPS ±${Math.round(raw.accuracy)}m)`);
+      toast.success(
+        `시스템에 저장됨 · 약 ${Math.round(mag)}m 보정 (GPS ±${Math.round(raw.accuracy)}m)`,
+        {
+          description:
+            "근로자 위치·지오펜스·위험구역 Walk&Drop에 자동 반영됩니다. PC 현장관제맵에도 ‘GPS 보정’으로 표시됩니다.",
+          duration: 6000,
+        },
+      );
     } catch (e: any) {
       toast.error(e?.message || "저장 실패");
     } finally {
@@ -237,11 +231,12 @@ export default function MobileMapCalibration() {
           <CardContent className="p-3 text-[11px] text-muted-foreground leading-relaxed space-y-1">
             <p>
               PC에서 드론 맵핑(TL·TR·BL)을 맞춰 둔 뒤, 현장에서 <b>지금 선 자리</b>를 도면에서
-              탭하고 GPS로 맞춥니다. 전 근로자 지오펜스에 같은 보정량이 적용됩니다.
+              탭하고 GPS로 맞춥니다. 저장 값은 프로젝트에 연동되어 전 근로자 지오펜스에 같은
+              보정량이 적용됩니다.
             </p>
             <p>
-              GPS 정확도 ≤{GPS_CAL_MAX_ACCURACY_M}m, 보정량 ≤{GPS_CAL_MAX_OFFSET_M}m 일 때만
-              저장됩니다.
+              정확한 지점을 위해 <b>핀치로 확대한 뒤</b> 탭하세요. GPS 정확도 ≤
+              {GPS_CAL_MAX_ACCURACY_M}m, 보정량 ≤{GPS_CAL_MAX_OFFSET_M}m 일 때만 저장됩니다.
             </p>
           </CardContent>
         </Card>
@@ -268,21 +263,12 @@ export default function MobileMapCalibration() {
         )}
 
         {active?.image_url && corners ? (
-          <div className="relative rounded-lg border overflow-hidden bg-black">
-            <img
-              ref={imgRef}
-              src={active.image_url}
-              alt={active.name}
-              className="w-full h-auto block touch-manipulation"
-              onClick={onImageClick}
-            />
-            {tapUv && (
-              <div
-                className="absolute w-4 h-4 -ml-2 -mt-2 rounded-full border-2 border-white bg-blue-500 shadow pointer-events-none"
-                style={{ left: `${tapUv.u * 100}%`, top: `${tapUv.v * 100}%` }}
-              />
-            )}
-          </div>
+          <ZoomableSiteMapImage
+            src={active.image_url}
+            alt={active.name}
+            marker={tapUv}
+            onPick={setTapUv}
+          />
         ) : (
           <Card>
             <CardContent className="p-4 text-sm text-muted-foreground">
@@ -301,15 +287,20 @@ export default function MobileMapCalibration() {
         )}
 
         {existing && (
-          <Card>
+          <Card className="border-emerald-500/40 bg-emerald-500/5">
             <CardContent className="p-3 text-xs space-y-1">
-              <div className="font-medium">적용 중 보정</div>
+              <div className="font-medium text-emerald-800 dark:text-emerald-200">
+                시스템 연동 중 · GPS 보정 적용
+              </div>
               <div className="text-muted-foreground">
                 ≈{previewMag != null ? Math.round(previewMag) : "?"}m · GPS ±
                 {Math.round(existing.accuracy_m)}m ·{" "}
                 {existing.calibrated_at
                   ? new Date(existing.calibrated_at).toLocaleString("ko-KR")
                   : "-"}
+              </div>
+              <div className="text-[10px] text-muted-foreground leading-relaxed">
+                track-location·근로자 맵·Walk&amp;Drop 위험구역이 이 보정값을 사용합니다.
               </div>
             </CardContent>
           </Card>
@@ -326,7 +317,7 @@ export default function MobileMapCalibration() {
             ) : (
               <Crosshair className="h-4 w-4 mr-2" />
             )}
-            현재 GPS로 맞추기 · 저장
+            현재 GPS로 맞추기 · 시스템에 저장
           </Button>
           <Button
             variant="outline"

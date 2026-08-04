@@ -35,8 +35,16 @@ import ZoneAccessRulesDialog, {
   type ZoneEditSeed,
 } from "@/components/geofence/ZoneAccessRulesDialog";
 import RotatedImageOverlay from "@/components/geofence/RotatedImageOverlay";
-import OrthogonalZoneCanvas from "@/components/geofence/OrthogonalZoneCanvas";
+import OrthogonalZoneCanvas, {
+  isZoneOffImage,
+} from "@/components/geofence/OrthogonalZoneCanvas";
 import { fetchProjectCompanies } from "@/lib/projectCompanies";
+import {
+  applyGpsCalibration,
+  fetchProjectGpsCalibration,
+  offsetMagnitudeM,
+  type GpsCalibration,
+} from "@/lib/tracking/gpsCalibration";
 import {
   accessRulesSummary,
   parseAccessRules,
@@ -320,10 +328,15 @@ export default function SiteControlMap() {
   const [myGps, setMyGps] = useState<{
     lat: number;
     lng: number;
+    rawLat: number;
+    rawLng: number;
     accuracy: number;
+    calibrated?: boolean;
   } | null>(null);
   const [watchingGps, setWatchingGps] = useState(false);
   const gpsWatchRef = useRef<number | null>(null);
+  const [gpsCal, setGpsCal] = useState<GpsCalibration | null>(null);
+  const [focusZoneId, setFocusZoneId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase
@@ -341,15 +354,25 @@ export default function SiteControlMap() {
     void fetchProjectCompanies(projectId).then((rows) =>
       setCompanies(rows.map((c) => ({ id: c.id, name: c.name }))),
     );
+    void fetchProjectGpsCalibration(projectId, async (id) => {
+      const { data } = await supabase
+        .from("projects")
+        .select("gps_calibration")
+        .eq("id", id)
+        .maybeSingle();
+      return data?.gps_calibration ?? null;
+    }).then(setGpsCal);
   }, [projectId]);
 
   // Tab switch: map tools vs zone tools — keep shared map/layer state, toggle tool visibility only
   useEffect(() => {
     if (panelTab === "zones") {
       setLayers((l) => ({ ...l, zones: true, satellite: false }));
+      void loadZones(); // pick up mobile Walk&Drop without full page reload
     } else {
       setLayers((l) => ({ ...l, satellite: true }));
       setDrawTool(null);
+      setFocusZoneId(null);
     }
   }, [panelTab]);
 
@@ -597,6 +620,21 @@ export default function SiteControlMap() {
   };
 
   const focusZone = (z: Zone) => {
+    // Zones tab uses CRS canvas (mapRef unmounted) — fly there instead.
+    if (panelTab === "zones" && activeMap?.image_url && draftCorners) {
+      setFocusZoneId(z.id);
+      const off = isZoneOffImage(z, draftCorners);
+      if (off) {
+        toast.message("도면 밖 구역 — 맵핑 탭 위성에서도 확인하세요", {
+          description:
+            "모바일 Walk&Drop이 GPS 보정 없이 저장된 경우 도면과 어긋납니다. 보정 후 재등록하세요.",
+          duration: 5000,
+        });
+      }
+      return;
+    }
+    setPanelTab("mapping");
+    setLayers((l) => ({ ...l, zones: true, satellite: true }));
     const map = mapRef.current;
     if (!map) return;
     if (z.geometry_type === "radius" && z.center_lat != null && z.center_lng != null && z.radius_m) {
@@ -647,15 +685,25 @@ export default function SiteControlMap() {
   }, [draftCorners]);
 
   const applyGpsFix = useCallback(
-    (lat: number, lng: number, accuracy: number, fly: boolean) => {
-      setMyGps({ lat, lng, accuracy });
+    (lat: number, lng: number, accuracy: number, fly: boolean, cal?: GpsCalibration | null) => {
+      const aligned = applyGpsCalibration(lat, lng, cal ?? gpsCal);
+      setMyGps({
+        lat: aligned.lat,
+        lng: aligned.lng,
+        rawLat: lat,
+        rawLng: lng,
+        accuracy,
+        calibrated: aligned.calibrated,
+      });
       if (fly && mapRef.current) {
-        mapRef.current.setView([lat, lng], Math.max(mapRef.current.getZoom(), 18), {
-          animate: true,
-        });
+        mapRef.current.setView(
+          [aligned.lat, aligned.lng],
+          Math.max(mapRef.current.getZoom(), 18),
+          { animate: true },
+        );
       }
     },
-    [],
+    [gpsCal],
   );
 
   const locateOnce = useCallback(() => {
@@ -667,13 +715,15 @@ export default function SiteControlMap() {
       (pos) => {
         applyGpsFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy || 20, true);
         toast.success(
-          `내 위치 ±${Math.round(pos.coords.accuracy || 0)}m — 모서리 찍기 버튼을 사용하세요`,
+          `내 위치 ±${Math.round(pos.coords.accuracy || 0)}m${
+            gpsCal ? " (GPS 보정 적용)" : ""
+          } — 모서리 찍기 버튼을 사용하세요`,
         );
       },
       (err) => toast.error("위치 확인 실패: " + (err.message || "권한/GPS 확인")),
       { enableHighAccuracy: true, timeout: 20_000, maximumAge: 5_000 },
     );
-  }, [applyGpsFix]);
+  }, [applyGpsFix, gpsCal]);
 
   const toggleWatchGps = useCallback(() => {
     if (watchingGps) {
@@ -726,10 +776,12 @@ export default function SiteControlMap() {
       }
       setDraftCorners({
         ...draftCorners,
-        [key]: { lat: myGps.lat, lng: myGps.lng },
+        [key]: { lat: myGps.rawLat, lng: myGps.rawLng },
       });
       const label = key === "tl" ? "좌상(TL)" : key === "tr" ? "우상(TR)" : "좌하(BL)";
-      toast.success(`${label}을 현재 GPS로 찍었습니다`);
+      toast.success(
+        `${label}을 현재 GPS(원시)로 찍었습니다${myGps.calibrated ? " · 표시 위치는 보정됨" : ""}`,
+      );
     },
     [myGps, draftCorners, locateOnce],
   );
@@ -752,6 +804,18 @@ export default function SiteControlMap() {
           <p className="text-sm text-muted-foreground mt-1">
             맵핑 탭에서 위성에 드론을 맞추고, 위험구역 탭에서는 평면 도면 위에 구역을 그립니다.
           </p>
+          {gpsCal && (
+            <div className="mt-2">
+              <Badge variant="secondary" className="text-[11px]">
+                GPS 보정 연동 중 ≈
+                {Math.round(offsetMagnitudeM(gpsCal.d_lat, gpsCal.d_lng, gpsCal.map_lat || 37))}
+                m ·{" "}
+                {gpsCal.calibrated_at
+                  ? new Date(gpsCal.calibrated_at).toLocaleString("ko-KR")
+                  : ""}
+              </Badge>
+            </div>
+          )}
         </div>
         <Select value={projectId} onValueChange={setProjectId}>
           <SelectTrigger className="w-56">
@@ -1074,6 +1138,8 @@ export default function SiteControlMap() {
                 drawColor={drawColor}
                 onToolFinished={() => setDrawTool(null)}
                 onGeoShapeCreated={onShapeCreated}
+                focusZoneId={focusZoneId}
+                onFocusZone={(id) => setFocusZoneId(id)}
               />
             ) : (
             <div className="h-[70vh] min-h-[420px] w-full relative z-0">
@@ -1260,6 +1326,14 @@ export default function SiteControlMap() {
                         <div className="flex flex-wrap gap-1 mt-1">
                           {z.zone_category && (
                             <Badge variant="outline" className="text-[10px]">{z.zone_category}</Badge>
+                          )}
+                          {draftCorners && isZoneOffImage(z, draftCorners) && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] border-amber-500 text-amber-700"
+                            >
+                              도면 밖
+                            </Badge>
                           )}
                           <Badge variant="secondary" className="text-[10px]">
                             {z.geometry_type === "radius" ? `원 ${z.radius_m}m` : "폴리곤"}

@@ -13,10 +13,21 @@ export function setChannel(c: "stable" | "beta") {
   localStorage.setItem(CHANNEL_KEY, c);
 }
 
-function cmpVersion(a: string, b: string) {
-  const pa = a.split(".").map(Number), pb = b.split(".").map(Number);
+/**
+ * Compare app/OTA versions. CI publishes `1.0.0-YYYYMMDDHHMM` — the old
+ * `split(".").map(Number)` treated the date suffix as NaN so every 1.0.0-*
+ * build compared equal and phones never downloaded newer OTAs.
+ */
+export function cmpVersion(a: string, b: string): number {
+  const parts = (v: string) => {
+    const nums = String(v).match(/\d+/g);
+    return nums ? nums.map((n) => Number(n)) : [0];
+  };
+  const pa = parts(a);
+  const pb = parts(b);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const x = pa[i] || 0, y = pb[i] || 0;
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
     if (x !== y) return x - y;
   }
   return 0;

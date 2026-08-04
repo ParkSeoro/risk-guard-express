@@ -103,7 +103,10 @@ jobs:
           [ -z "$CH" ] && CH="${{ secrets.OTA_CHANNEL }}"
           [ -z "$CH" ] && CH="stable"
           MAN="${{ github.event.inputs.mandatory }}"
-          [ -z "$MAN" ] && MAN="false"
+          # Empty on push → mandatory so phones apply; workflow_dispatch keeps explicit default.
+          if [ -z "$MAN" ]; then
+            if [ "${{ github.event_name }}" = "push" ]; then MAN="true"; else MAN="false"; fi
+          fi
           echo "version=$V"   >> "$GITHUB_OUTPUT"
           echo "channel=$CH"  >> "$GITHUB_OUTPUT"
           echo "mandatory=$MAN" >> "$GITHUB_OUTPUT"

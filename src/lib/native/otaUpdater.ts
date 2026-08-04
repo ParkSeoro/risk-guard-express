@@ -1,11 +1,13 @@
-// OTA 자동 업데이트 부트스트랩 (Capgo Capacitor Updater + Supabase Storage 호스팅)
-// - 네이티브 앱에서만 작동. 웹/프리뷰에서는 no-op.
-// - 부팅 시 채널별 최신 릴리스를 조회해 백그라운드 다운로드, 다음 실행 시 적용.
-// - mandatory=true 면 다운로드 직후 즉시 적용(앱이 재시작됨).
+// OTA 자동 업데이트 (Capgo Capacitor Updater + Supabase Storage)
+// - 네이티브만. 웹/프리뷰는 no-op.
+// - 부팅·포그라운드 복귀 시 silent 체크 → 다운로드 후 즉시 적용(set).
+// - 근로자는 강제종료/수동 확인 없이 최신 화면을 받도록 설계.
 import { supabase } from "@/integrations/supabase/client";
 import { isNativeApp } from "./platform";
 
 const CHANNEL_KEY = "app-update-channel";
+const MIN_CHECK_INTERVAL_MS = 60_000;
+
 export function getChannel(): "stable" | "beta" {
   return (localStorage.getItem(CHANNEL_KEY) as any) === "beta" ? "beta" : "stable";
 }
@@ -43,6 +45,16 @@ export type OtaStatus = {
   message: string;
 };
 
+export type OtaCheckOptions = {
+  /** Boot/resume: no user-facing noise required. */
+  silent?: boolean;
+  /**
+   * Apply with CapacitorUpdater.set() (reload now) instead of next() (cold start).
+   * Default true — workers should not need force-quit.
+   */
+  preferImmediate?: boolean;
+};
+
 export async function getOtaStatus(): Promise<OtaStatus> {
   const channel = getChannel();
   if (!isNativeApp()) {
@@ -78,7 +90,8 @@ export async function getOtaStatus(): Promise<OtaStatus> {
     const latestVersion = release?.version ? String(release.version) : null;
     const mandatory = !!release?.mandatory;
     const hasUpdate =
-      !!latestVersion && cmpVersion(latestVersion, currentVersion === "내장" ? "0.0.0" : currentVersion) > 0;
+      !!latestVersion &&
+      cmpVersion(latestVersion, currentVersion === "내장" ? "0.0.0" : currentVersion) > 0;
     return {
       native: true,
       channel,
@@ -87,7 +100,7 @@ export async function getOtaStatus(): Promise<OtaStatus> {
       mandatory,
       hasUpdate,
       message: hasUpdate
-        ? `새 버전 ${latestVersion} 있음 → 다운로드 후 앱을 완전히 종료했다가 다시 실행하세요`
+        ? `새 버전 ${latestVersion} — 자동으로 받아 곧 적용됩니다`
         : latestVersion
           ? `최신입니다 (서버 ${latestVersion})`
           : "게시된 OTA 릴리스가 없습니다",
@@ -106,17 +119,19 @@ export async function getOtaStatus(): Promise<OtaStatus> {
 }
 
 /** Download latest bundle if newer. Returns user-facing Korean result. */
-export async function checkAndDownloadOta(): Promise<{
+export async function checkAndDownloadOta(opts: OtaCheckOptions = {}): Promise<{
   ok: boolean;
   message: string;
   version?: string;
   apply: "immediate" | "next_cold_start" | "none";
 }> {
+  const preferImmediate = opts.preferImmediate !== false;
   if (!isNativeApp()) {
     return { ok: true, message: "웹은 새로고침으로 업데이트됩니다.", apply: "none" };
   }
   try {
     const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
+    // Capgo rollback guard — call as early as possible on each check.
     await CapacitorUpdater.notifyAppReady();
     const current = await CapacitorUpdater.current();
     const currentVersion = String((current as any)?.bundle?.version || "0.0.0");
@@ -156,11 +171,12 @@ export async function checkAndDownloadOta(): Promise<{
       checksum: release.checksum || undefined,
     } as any);
 
-    if (release.mandatory) {
+    const immediate = !!release.mandatory || preferImmediate;
+    if (immediate) {
       await CapacitorUpdater.set({ id: bundle.id } as any);
       return {
         ok: true,
-        message: `${release.version} 적용 중 (앱이 곧 다시 시작됩니다)`,
+        message: `${release.version} 적용 중 (잠시 후 새 화면으로 전환됩니다)`,
         version: String(release.version),
         apply: "immediate",
       };
@@ -168,7 +184,7 @@ export async function checkAndDownloadOta(): Promise<{
     await CapacitorUpdater.next({ id: bundle.id } as any);
     return {
       ok: true,
-      message: `${release.version} 다운로드 완료. 최근 앱에서 SafeNex를 완전히 종료한 뒤 다시 실행하세요.`,
+      message: `${release.version} 다운로드 완료. 앱을 다시 열면 적용됩니다.`,
       version: String(release.version),
       apply: "next_cold_start",
     };
@@ -177,14 +193,50 @@ export async function checkAndDownloadOta(): Promise<{
   }
 }
 
+let checking = false;
+let lastCheckAt = 0;
+let resumeHooked = false;
+
+async function runAutoCheck(reason: string) {
+  if (!isNativeApp()) return;
+  if (checking) return;
+  const now = Date.now();
+  if (now - lastCheckAt < MIN_CHECK_INTERVAL_MS) return;
+  checking = true;
+  lastCheckAt = now;
+  try {
+    const r = await checkAndDownloadOta({ silent: true, preferImmediate: true });
+    if (r.ok && r.apply !== "none") {
+      console.info(`[ota:${reason}] ${r.message}`);
+    }
+  } catch (e) {
+    console.warn(`[ota:${reason}] failed`, e);
+  } finally {
+    checking = false;
+  }
+}
+
+/** Boot + foreground auto OTA. Silent; applies immediately when a newer bundle exists. */
 export async function initOtaUpdater() {
   if (!isNativeApp()) return;
   try {
-    const r = await checkAndDownloadOta();
-    if (r.ok && r.apply !== "none") {
-      console.info(`[ota] ${r.message}`);
-    }
+    // Mark ready ASAP so Capgo does not roll back a just-applied bundle.
+    const { CapacitorUpdater } = await import("@capgo/capacitor-updater");
+    await CapacitorUpdater.notifyAppReady();
+  } catch {
+    /* plugin missing in some builds */
+  }
+
+  void runAutoCheck("boot");
+
+  if (resumeHooked) return;
+  resumeHooked = true;
+  try {
+    const { App } = await import("@capacitor/app");
+    App.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) void runAutoCheck("resume");
+    });
   } catch (e) {
-    console.warn("[ota] updater init failed", e);
+    console.warn("[ota] appStateChange hook failed", e);
   }
 }

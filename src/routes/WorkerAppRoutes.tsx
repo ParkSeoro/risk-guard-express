@@ -46,6 +46,7 @@ export default function WorkerAppRoutes() {
               <Route path="docs" element={<P.LazyMobileDocs />} />
               <Route path="more" element={<P.LazyMobileMore />} />
               <Route path="account" element={<P.LazySettingsAccount />} />
+              <Route path="notifications" element={<P.LazySettingsNotifications />} />
               {/* legacy aliases */}
               <Route path="home" element={<Navigate to="today" replace />} />
               <Route path="menu" element={<Navigate to="today" replace />} />

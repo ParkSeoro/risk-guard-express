@@ -33,6 +33,8 @@ export default function DangerZoneAlertModal({
     }
 
     let cancelled = false;
+    let wakeLock: { release: () => Promise<void> } | null = null;
+
     const runCycle = async (withTts: boolean) => {
       if (cancelled || playingRef.current) return;
       playingRef.current = true;
@@ -49,21 +51,37 @@ export default function DangerZoneAlertModal({
     };
 
     void unlockAlarmAudio();
-    // First cycle: siren + Korean TTS announcement
     void runCycle(true);
     const stopHaptics = startDangerHapticsLoop(10_000);
-    // Later cycles: wait for prior sequence; announce TTS every other cycle
     let cycle = 0;
     const id = window.setInterval(() => {
       cycle += 1;
       void runCycle(cycle % 2 === 0);
     }, 12_000);
+
+    // Keep screen awake while red alarm is showing (best-effort)
+    try {
+      const wl = (navigator as any)?.wakeLock;
+      if (wl?.request) {
+        void wl.request("screen").then((lock: any) => {
+          if (cancelled) {
+            void lock.release?.();
+            return;
+          }
+          wakeLock = lock;
+        });
+      }
+    } catch {
+      /* ignore */
+    }
+
     return () => {
       cancelled = true;
       window.clearInterval(id);
       stopHaptics();
       playingRef.current = false;
       stopSpeaking();
+      void wakeLock?.release?.();
     };
   }, [open, workerName, workerRole]);
 

@@ -1,8 +1,10 @@
 /**
  * Geofence danger alarm for the formal /app/worker shell.
  * Uses GPS already started by WorkerGlobalGps (no second tracker).
+ * Sticky across screen-off: persist + restore on app resume.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { useSystemRealtime } from "@/providers/SystemRealtimeProvider";
@@ -11,7 +13,16 @@ import {
   findViolatingRestrictedZone,
   type RestrictedZoneGeom,
 } from "@/lib/tracking/restrictedZoneGeom";
+import {
+  clearStickyDangerAlert,
+  loadStickyDangerAlert,
+  notifyDangerZoneOs,
+  saveStickyDangerAlert,
+} from "@/lib/tracking/dangerAlertSticky";
 import DangerZoneAlertModal from "@/components/geofence/DangerZoneAlertModal";
+
+/** Require this many consecutive "outside" GPS hits before clearing (jitter). */
+const EXIT_STREAK_NEEDED = 3;
 
 function isEntryEventType(t: string): boolean {
   return /unauthorized|restricted|danger|ban/i.test(t) && !/exit|leave|depart/i.test(t);
@@ -27,8 +38,41 @@ export default function ShellGeofenceAlerts() {
   const { lastGpsFix, lastZoneEvent } = useSystemRealtime();
   const [alertZone, setAlertZone] = useState<{ id: string; name: string } | null>(null);
   const zonesRef = useRef<RestrictedZoneGeom[]>([]);
-  const lastAlertAt = useRef(0);
-  const activeZoneId = useRef<string | null>(null);
+  const exitStreak = useRef(0);
+  /** User tapped dismiss — suppress until they leave that zone. */
+  const dismissedZoneId = useRef<string | null>(null);
+  const lastOsNotifyAt = useRef(0);
+  const lastGpsFixRef = useRef(lastGpsFix);
+  lastGpsFixRef.current = lastGpsFix;
+
+  const openAlert = useCallback(
+    (zone: { id: string; name: string }, opts?: { osNotify?: boolean }) => {
+      if (dismissedZoneId.current && dismissedZoneId.current === zone.id) return;
+      setAlertZone(zone);
+      if (projectId) {
+        saveStickyDangerAlert({
+          projectId,
+          zoneId: zone.id,
+          zoneName: zone.name,
+          at: Date.now(),
+        });
+      }
+      if (opts?.osNotify !== false) {
+        const now = Date.now();
+        if (now - lastOsNotifyAt.current > 20_000) {
+          lastOsNotifyAt.current = now;
+          void notifyDangerZoneOs(zone.name);
+        }
+      }
+    },
+    [projectId],
+  );
+
+  const clearAlert = useCallback(() => {
+    exitStreak.current = 0;
+    setAlertZone(null);
+    clearStickyDangerAlert();
+  }, []);
 
   const loadZones = useCallback(async () => {
     if (!projectId) {
@@ -44,23 +88,27 @@ export default function ShellGeofenceAlerts() {
       .eq("is_deleted", false)
       .eq("is_active", true);
     zonesRef.current = (data || []) as unknown as RestrictedZoneGeom[];
-    // Drop sticky modal if the active zone was deleted / deactivated
     setAlertZone((prev) => {
       if (!prev) return prev;
-      if (prev.id === "zone") return null;
+      if (prev.id === "zone") return prev;
       const still = zonesRef.current.some((z) => z.id === prev.id);
       return still ? prev : null;
     });
-    if (activeZoneId.current && !zonesRef.current.some((z) => z.id === activeZoneId.current)) {
-      activeZoneId.current = null;
-    }
   }, [projectId]);
 
   useEffect(() => {
     void loadZones();
   }, [loadZones]);
 
-  // Keep zone list fresh when master edits/deletes restricted zones
+  // Restore sticky alert after remount / OTA
+  useEffect(() => {
+    if (!projectId) return;
+    const sticky = loadStickyDangerAlert(projectId);
+    if (sticky) {
+      setAlertZone({ id: sticky.zoneId, name: sticky.zoneName });
+    }
+  }, [projectId]);
+
   useEffect(() => {
     if (!projectId) return;
     const channel = supabase
@@ -82,6 +130,57 @@ export default function ShellGeofenceAlerts() {
     };
   }, [projectId, loadZones]);
 
+  // Re-evaluate when phone unlocks / app returns to foreground
+  useEffect(() => {
+    if (!projectId) return;
+    let remove: (() => void) | undefined;
+
+    const recheck = () => {
+      const sticky = loadStickyDangerAlert(projectId);
+      const sub = {
+        worker_name: profile?.display_name || null,
+        worker_phone: profile?.phone || null,
+        worker_role: role || null,
+      };
+      const fix = lastGpsFixRef.current;
+      if (fix && zonesRef.current.length) {
+        const hit = findViolatingRestrictedZone(fix.lat, fix.lng, zonesRef.current, sub);
+        if (hit) {
+          dismissedZoneId.current = null;
+          exitStreak.current = 0;
+          openAlert({ id: hit.id, name: hit.name }, { osNotify: true });
+          return;
+        }
+      }
+      if (sticky) {
+        openAlert({ id: sticky.zoneId, name: sticky.zoneName }, { osNotify: true });
+      }
+    };
+
+    const onVis = () => {
+      if (document.visibilityState === "visible") recheck();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onVis);
+
+    if (Capacitor.isNativePlatform()) {
+      void import("@capacitor/app").then(({ App }) => {
+        const sub = App.addListener("appStateChange", ({ isActive }) => {
+          if (isActive) recheck();
+        });
+        remove = () => {
+          void sub.then((h) => h.remove());
+        };
+      });
+    }
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onVis);
+      remove?.();
+    };
+  }, [projectId, profile?.display_name, profile?.phone, role, openAlert]);
+
   useEffect(() => {
     if (!lastGpsFix || !projectId) return;
     const sub = {
@@ -96,17 +195,19 @@ export default function ShellGeofenceAlerts() {
       sub,
     );
     if (!hit) {
-      // Left all restricted zones — clear sticky alarm
-      activeZoneId.current = null;
-      setAlertZone((prev) => (prev ? null : prev));
+      // Ignore sparse "outside" blips while accuracy is poor (common on wake)
+      if ((lastGpsFix.accuracy || 0) > 40) return;
+      exitStreak.current += 1;
+      if (exitStreak.current >= EXIT_STREAK_NEEDED) {
+        dismissedZoneId.current = null;
+        clearAlert();
+      }
       return;
     }
-    const now = Date.now();
-    if (activeZoneId.current === hit.id && now - lastAlertAt.current < 30_000) return;
-    activeZoneId.current = hit.id;
-    lastAlertAt.current = now;
-    setAlertZone({ id: hit.id, name: hit.name });
-  }, [lastGpsFix, projectId, profile?.display_name, profile?.phone, role]);
+    exitStreak.current = 0;
+    if (dismissedZoneId.current === hit.id) return;
+    openAlert({ id: hit.id, name: hit.name });
+  }, [lastGpsFix, projectId, profile?.display_name, profile?.phone, role, openAlert, clearAlert]);
 
   useEffect(() => {
     if (!lastZoneEvent) return;
@@ -117,19 +218,35 @@ export default function ShellGeofenceAlerts() {
       null;
 
     if (isExitEventType(t)) {
-      activeZoneId.current = null;
-      setAlertZone(null);
+      // Don't clear sticky UI from a single server exit if GPS still says inside
+      if (lastGpsFix && zonesRef.current.length) {
+        const sub = {
+          worker_name: profile?.display_name || null,
+          worker_phone: profile?.phone || null,
+          worker_role: role || null,
+        };
+        const hit = findViolatingRestrictedZone(
+          lastGpsFix.lat,
+          lastGpsFix.lng,
+          zonesRef.current,
+          sub,
+        );
+        if (hit) return;
+      }
+      exitStreak.current = EXIT_STREAK_NEEDED;
+      dismissedZoneId.current = null;
+      clearAlert();
       return;
     }
 
-    // Only ENTRY-class events open the modal. Exit rows still carry restricted_zone_id.
     if (!isEntryEventType(t)) return;
 
-    setAlertZone({
+    dismissedZoneId.current = null;
+    openAlert({
       id: zoneId || "zone",
       name: (lastZoneEvent as { zone_name?: string }).zone_name || "위험 구역",
     });
-  }, [lastZoneEvent]);
+  }, [lastZoneEvent, lastGpsFix, profile?.display_name, profile?.phone, role, openAlert, clearAlert]);
 
   return (
     <DangerZoneAlertModal
@@ -137,7 +254,11 @@ export default function ShellGeofenceAlerts() {
       zoneName={alertZone?.name}
       workerName={profile?.display_name}
       workerRole={role}
-      onDismiss={() => setAlertZone(null)}
+      onDismiss={() => {
+        if (alertZone?.id) dismissedZoneId.current = alertZone.id;
+        setAlertZone(null);
+        clearStickyDangerAlert();
+      }}
     />
   );
 }

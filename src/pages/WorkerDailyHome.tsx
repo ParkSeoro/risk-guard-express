@@ -157,8 +157,11 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
     if (pid && !gpsTracking) {
       const { setTrackingConsent, hasTrackingConsent, normalizeTrackingConsentStorage } =
         await import("@/lib/tracking/locationTracker");
+      const { isGpsPausedOffsite } = await import("@/lib/tracking/siteTrackBounds");
       normalizeTrackingConsentStorage();
-      if (profile?.agreed_to_location === true || hasTrackingConsent()) {
+      if (isGpsPausedOffsite(pid)) {
+        // Left site earlier — don't auto-restart until check-in / near-site resume
+      } else if (profile?.agreed_to_location === true || hasTrackingConsent()) {
         setTrackingConsent(true);
         startGpsTracking({
           project_id: pid,
@@ -181,11 +184,14 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
 
   const ensureConsentAndGps = async () => {
     const { setTrackingConsent } = await import("@/lib/tracking/locationTracker");
+    const { setGpsPausedOffsite } = await import("@/lib/tracking/siteTrackBounds");
     setTrackingConsent(true);
     if (!projectId) {
       toast.error("현장을 먼저 선택하세요");
       return false;
     }
+    setGpsPausedOffsite(projectId, false);
+    window.dispatchEvent(new Event("mobile:resume-gps-tracking"));
     startGpsTracking({
       project_id: projectId,
       worker_id: workerId,

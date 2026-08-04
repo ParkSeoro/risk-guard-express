@@ -76,3 +76,29 @@ export function findViolatingRestrictedZone(
   }
   return null;
 }
+
+/** Distance in meters to the nearest restricted-zone edge (0 if inside). */
+export function minDistanceToRestrictedZoneEdge(
+  lat: number,
+  lng: number,
+  zones: RestrictedZoneGeom[],
+): number {
+  let best = Number.POSITIVE_INFINITY;
+  const here = { lat, lng };
+  for (const z of zones) {
+    if (z.is_active === false) continue;
+    if (pointInRestrictedZone(lat, lng, z)) return 0;
+    if (z.geometry_type === "radius" && z.center_lat != null && z.center_lng != null && z.radius_m) {
+      const d =
+        haversineM(here, { lat: z.center_lat, lng: z.center_lng }) - Number(z.radius_m);
+      best = Math.min(best, Math.max(0, d));
+      continue;
+    }
+    const poly = z.geo_polygon;
+    if (!poly || poly.length < 3) continue;
+    for (const p of poly) {
+      best = Math.min(best, haversineM(here, p));
+    }
+  }
+  return Number.isFinite(best) ? best : Number.POSITIVE_INFINITY;
+}

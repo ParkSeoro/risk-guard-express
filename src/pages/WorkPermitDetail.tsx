@@ -36,7 +36,7 @@ import {
 } from '@/lib/permitKinds';
 import type { PermitAiBriefing } from '@/lib/permitBriefing';
 import { syncPermitAssessmentLinks } from '@/lib/safetyWorkBundle';
-import { mergeApprovalSignatures } from '@/lib/permitApprovalSignatures';
+import { contactPhonesFromApprovals, mergeApprovalSignatures } from '@/lib/permitApprovalSignatures';
 import { syncPermitDateFromWorkStart, resolvePermitWorkDate } from '@/lib/permitWorkDate';
 import {
   normalizeDisplayTemplate,
@@ -214,7 +214,7 @@ export default function WorkPermitDetail() {
     // Latest approval version rows for this permit
     const { data: aps } = await supabase
       .from('approvals')
-      .select('position, approver_name, status, approved_at, step_order, approval_version')
+      .select('position, approver_name, approver_id, status, approved_at, step_order, approval_version')
       .eq('entity_type', 'work_permit')
       .eq('entity_id', id)
       .order('approval_version', { ascending: false })
@@ -226,6 +226,29 @@ export default function WorkPermitDetail() {
       versioned = versioned.filter((a: any) => a.approval_version === latestVersion);
     }
     setSignatures(mergeApprovalSignatures(baseSig, versioned as any[]));
+
+    // Autofill 안전관리자/관리감독자 연락처 from approver profiles (when empty)
+    try {
+      const ids = [...new Set(versioned.map((a: any) => a.approver_id).filter(Boolean))] as string[];
+      if (ids.length) {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('user_id, phone')
+          .in('user_id', ids);
+        const byUser: Record<string, string | null> = {};
+        for (const row of profs || []) byUser[(row as any).user_id] = (row as any).phone;
+        const phones = contactPhonesFromApprovals(versioned as any[], byUser);
+        if (phones.safety_manager_phone || phones.supervisor_phone) {
+          setData((cur) => ({
+            ...cur,
+            safety_manager_phone: cur.safety_manager_phone || phones.safety_manager_phone || '',
+            supervisor_phone: cur.supervisor_phone || phones.supervisor_phone || '',
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn('approver phone autofill failed', e);
+    }
 
     try {
       const companyId = (p as any).company_id || userCompanyId;

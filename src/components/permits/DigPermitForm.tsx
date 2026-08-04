@@ -19,7 +19,11 @@ import {
   type PermitDisplayTemplate,
 } from '@/lib/permitDisplayTemplate';
 import { formatPermitStamp, formatPermitReviewDate } from '@/lib/permitDateFormat';
-import { slotSignedAt } from '@/lib/permitApprovalSignatures';
+import {
+  resolveSpecialFormSigSlot,
+  sigSlotHasContent,
+  slotSignedAt,
+} from '@/lib/permitApprovalSignatures';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
 
 export type PermitType = 'general' | 'confined_space' | 'hot_work' | 'excavation';
@@ -306,15 +310,15 @@ export default function DigPermitForm({
     setSignTarget(null); setSignName('');
   };
 
-  /** Special-form 신청인 slot falls back to contractor_pic (approval SSOT). */
+  /**
+   * Special forms (화기/밀폐/굴착): paper rows map to closure-oriented keys but
+   * issuance writes contractor_pic / sm — fall back so stamps fill after approve.
+   * General form keeps closure slots empty until work-completion approval.
+   */
   const resolveSigSlot = (k: keyof PermitSignatures) => {
+    if (permitType !== 'general') return resolveSpecialFormSigSlot(signatures, k);
     const primary = signatures[k] as { name?: string; signature?: string; signed_at?: string } | undefined;
-    if (k === 'applicant') {
-      const has =
-        !!(primary?.name && String(primary.name).trim()) ||
-        !!(primary?.signature && String(primary.signature).trim()) ||
-        !!(primary?.signed_at && String(primary.signed_at).trim());
-      if (has) return primary;
+    if (k === 'applicant' && !sigSlotHasContent(primary)) {
       return signatures.contractor_pic as typeof primary;
     }
     return primary;
@@ -325,6 +329,12 @@ export default function DigPermitForm({
     signatures.applicant?.name ||
     signatures.contractor_pic?.name ||
     '';
+
+  /** Special-form 승인자: closure SM if present, else issuance owner SM. */
+  const specialApproverSlot = resolveSigSlot('closure_approver');
+  const specialApproverAt =
+    specialApproverSlot?.signed_at ||
+    (permitType !== 'general' ? signatures.closed_at || signatures.approved_at : undefined);
 
   const SigCell = ({ k, label }: { k: keyof PermitSignatures; label?: string }) => {
     const s = resolveSigSlot(k) as any;
@@ -951,12 +961,10 @@ export default function DigPermitForm({
               <tr>
                 <th className="hd">승인자</th>
                 <td>
-                  {(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at)
-                    ? formatPermitStamp(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at)
-                    : '—'}{' '}
-                  성명 : {signatures.closure_approver?.name || ''}
+                  {specialApproverAt ? formatPermitStamp(specialApproverAt) : '—'}{' '}
+                  성명 : {specialApproverSlot?.name || ''}
                 </td>
-                <td><SigCell k="closure_approver" label="발주처 SM (작업완료)" /></td>
+                <td><SigCell k="closure_approver" label="발주처 SM" /></td>
               </tr>
             </tbody>
           </table>
@@ -1060,12 +1068,10 @@ export default function DigPermitForm({
               <tr>
                 <th className="hd">승인자</th>
                 <td colSpan={2}>
-                  {(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at)
-                    ? formatPermitStamp(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at)
-                    : '—'}{' '}
-                  성명 : {signatures.closure_approver?.name || ''}
+                  {specialApproverAt ? formatPermitStamp(specialApproverAt) : '—'}{' '}
+                  성명 : {specialApproverSlot?.name || ''}
                 </td>
-                <td><SigCell k="closure_approver" label="발주처 SM (작업완료)" /></td>
+                <td><SigCell k="closure_approver" label="발주처 SM" /></td>
               </tr>
             </tbody>
           </table>
@@ -1151,12 +1157,10 @@ export default function DigPermitForm({
               <tr>
                 <th className="hd">승인자</th>
                 <td colSpan={2}>
-                  {(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at)
-                    ? formatPermitStamp(slotSignedAt(signatures, 'closure_approver') || signatures.closed_at)
-                    : '—'}{' '}
-                  성명 : {signatures.closure_approver?.name || ''}
+                  {specialApproverAt ? formatPermitStamp(specialApproverAt) : '—'}{' '}
+                  성명 : {specialApproverSlot?.name || ''}
                 </td>
-                <td><SigCell k="closure_approver" label="발주처 SM (작업완료)" /></td>
+                <td><SigCell k="closure_approver" label="발주처 SM" /></td>
               </tr>
             </tbody>
           </table>

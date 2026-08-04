@@ -160,3 +160,72 @@ export function slotSignedAt(
   const at = slot?.signed_at;
   return at && String(at).trim() ? String(at) : undefined;
 }
+
+type SigSlot = { name?: string; signature?: string; signed_at?: string };
+
+export function sigSlotHasContent(slot?: SigSlot | null): boolean {
+  if (!slot) return false;
+  return (
+    !!(slot.name && String(slot.name).trim()) ||
+    !!(slot.signature && String(slot.signature).trim()) ||
+    !!(slot.signed_at && String(slot.signed_at).trim())
+  );
+}
+
+/**
+ * Special forms (화기/밀폐/굴착) bind paper rows to keys that do not match
+ * issuance approval SSOT. Remap so stamps fill after approve:
+ *
+ * - applicant → applicant || contractor_pic
+ * - site_supervisor (관리감독자) → always contractor_pic (상신 관리감독자;
+ *   closure_supervisor must not replace this paper row)
+ * - closure_approver (승인자) → closure_approver || sm (작업완료 있으면 우선,
+ *   없으면 발급 SM)
+ */
+export function resolveSpecialFormSigSlot(
+  signatures: PermitSignatures | null | undefined,
+  key: keyof PermitSignatures,
+): SigSlot | undefined {
+  const sig = signatures || {};
+  const primary = sig[key] as SigSlot | undefined;
+  if (key === 'applicant') {
+    return sigSlotHasContent(primary) ? primary : (sig.contractor_pic as SigSlot | undefined);
+  }
+  if (key === 'site_supervisor') {
+    const issuance = sig.contractor_pic as SigSlot | undefined;
+    return sigSlotHasContent(issuance) ? issuance : primary;
+  }
+  if (key === 'closure_approver') {
+    return sigSlotHasContent(primary) ? primary : (sig.sm as SigSlot | undefined);
+  }
+  return primary;
+}
+
+export type ApprovalPhoneRow = {
+  position?: string | null;
+  status?: string | null;
+  approver_id?: string | null;
+};
+
+/** Map issuance approver profile phones → DigPermitForm contact fields. */
+export function contactPhonesFromApprovals(
+  approvals: ApprovalPhoneRow[],
+  phonesByUserId: Record<string, string | null | undefined>,
+): { safety_manager_phone?: string; supervisor_phone?: string } {
+  let safety_manager_phone: string | undefined;
+  let supervisor_phone: string | undefined;
+  for (const a of approvals) {
+    if (!isApprovedStatus(a.status)) continue;
+    const pos = (a.position || '').toLowerCase();
+    const uid = a.approver_id || '';
+    const phone = (phonesByUserId[uid] || '').trim();
+    if (!phone) continue;
+    if (pos === 'contractor_safety_manager' || pos === 'safety_pic') {
+      safety_manager_phone = phone;
+    }
+    if (pos === 'contractor_supervisor' || pos === 'contractor_pic') {
+      supervisor_phone = phone;
+    }
+  }
+  return { safety_manager_phone, supervisor_phone };
+}

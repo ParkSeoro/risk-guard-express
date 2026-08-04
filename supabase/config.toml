@@ -1,4 +1,4 @@
-project_id = "iqtiozscqwuacgzrlfzu"
+project_id = "qhntxmggacorqjjmjqgo"
 
 [functions.setup-e2e-accounts]
 verify_jwt = false
@@ -9,4 +9,8 @@ verify_jwt = false
 
 # Manual JWT verify + project membership check; service role creates Auth users.
 [functions.provision-worker-accounts]
+verify_jwt = false
+
+# CI uses a shared secret (not a user JWT). Gateway JWT check must be off.
+[functions.publish-ota-release]
 verify_jwt = false

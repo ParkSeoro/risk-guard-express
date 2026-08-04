@@ -126,20 +126,22 @@ jobs:
           CHANNEL: ${{ steps.ver.outputs.channel }}
           MANDATORY: ${{ steps.ver.outputs.mandatory }}
           COMMIT: ${{ github.sha }}
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
         run: |
           ZIP=$(ls releases/safenex-*.zip | head -n1)
           echo "→ POST $OTA_PUBLISH_URL  (file=$ZIP)"
-          # Guard: publish URL host should match the app's Supabase host
-          APP_HOST=$(node -e "try{console.log(new URL(process.env.VITE_SUPABASE_URL||'').host)}catch{console.log('')}")
+          # Guard: publish URL host should match .env.production (app bake-in)
+          APP_HOST=$(node -e "const fs=require('fs');const t=fs.existsSync('.env.production')?fs.readFileSync('.env.production','utf8'):'';const m=t.match(/^VITE_SUPABASE_URL=(.*)$/m);try{console.log(new URL((m&&m[1]||'').trim().replace(/^[\"']|[\"']$/g,'')).host)}catch{console.log('')}")
           PUB_HOST=$(node -e "try{console.log(new URL(process.env.OTA_PUBLISH_URL||'').host)}catch{console.log('')}")
+          echo "APP_HOST=$APP_HOST PUB_HOST=$PUB_HOST"
           if [ -n "$APP_HOST" ] && [ -n "$PUB_HOST" ] && [ "$APP_HOST" != "$PUB_HOST" ]; then
-            echo "::error::OTA_PUBLISH_URL host ($PUB_HOST) ≠ VITE_SUPABASE_URL host ($APP_HOST). Phone will never see this release."
+            echo "::error::OTA_PUBLISH_URL host ($PUB_HOST) ≠ app host ($APP_HOST). Phone will never see this release."
             exit 1
           fi
+          # Custom secret in X-OTA-Publish-Token (and Authorization). Function must have verify_jwt=false.
           HTTP=$(curl -sS -w "%{http_code}" -o /tmp/ota-resp.json \
             -X POST "$OTA_PUBLISH_URL" \
             -H "Authorization: Bearer $OTA_PUBLISH_TOKEN" \
+            -H "X-OTA-Publish-Token: $OTA_PUBLISH_TOKEN" \
             -H "Content-Type: application/zip" \
             -H "X-OTA-Version: $VERSION" \
             -H "X-OTA-Channel: $CHANNEL" \
@@ -149,7 +151,7 @@ jobs:
           echo "HTTP $HTTP"
           cat /tmp/ota-resp.json
           if [ "$HTTP" != "200" ]; then
-            echo "::error::OTA publish failed ($HTTP)"
+            echo "::error::OTA publish failed ($HTTP). If Invalid JWT: Dashboard → Edge Functions → publish-ota-release → Enforce JWT = OFF, then redeploy."
             exit 1
           fi
 

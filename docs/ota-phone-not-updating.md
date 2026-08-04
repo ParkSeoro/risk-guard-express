@@ -28,7 +28,13 @@
 
 Edge Function `publish-ota-release` 가 해당 프로젝트에 배포돼 있어야 합니다.
 
-## AAB (재설치로 확실히 맞추기)
-1. Actions → **Android AAB** 최신 run 완료 대기
-2. Artifacts 에서 `safenex-1.0.0-*.aab` 다운로드
-3. Play Console 내부 테스트에 업로드 → 테스터로 업데이트/재설치
+## CI가 401 Invalid JWT 로 실패할 때
+`publish-ota-release` 함수의 **Enforce JWT** 가 켜져 있으면, GitHub이 보내는 커스텀 토큰을
+게이트웨이가 JWT로 검사해 거부합니다.
+
+1. Supabase → Edge Functions → `publish-ota-release`
+2. **Enforce JWT** / Verify JWT → **OFF**
+3. Edge Secret `OTA_PUBLISH_TOKEN` = GitHub Secret 과 동일
+4. Actions → Mobile Release (OTA) → Run workflow 다시
+
+(에이전트가 API로 `verify_jwt=false` 로 바꾼 경우도 있음 — 그래도 Secret 일치는 필요)

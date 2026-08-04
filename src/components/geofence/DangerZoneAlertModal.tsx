@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { DANGER_MESSAGE, playDangerAlarm, stopSpeaking, unlockAlarmAudio } from "@/lib/tts";
 import type { AlarmRoleInput } from "@/lib/alarmRoleLabel";
 import { formatAlarmSubject } from "@/lib/alarmRoleLabel";
@@ -23,21 +23,46 @@ export default function DangerZoneAlertModal({
   workerRole,
   onDismiss,
 }: Props) {
+  const playingRef = useRef(false);
+
   useEffect(() => {
     if (!open) {
+      playingRef.current = false;
       stopSpeaking();
       return;
     }
+
+    let cancelled = false;
+    const runCycle = async (withTts: boolean) => {
+      if (cancelled || playingRef.current) return;
+      playingRef.current = true;
+      try {
+        await playDangerAlarm({
+          displayName: workerName,
+          role: workerRole,
+          skipSiren: false,
+          skipTts: !withTts,
+        });
+      } finally {
+        playingRef.current = false;
+      }
+    };
+
     void unlockAlarmAudio();
-    void playDangerAlarm({ displayName: workerName, role: workerRole });
+    // First cycle: siren + Korean TTS announcement
+    void runCycle(true);
     const stopHaptics = startDangerHapticsLoop(10_000);
-    // Repeat full sequence every 10s while open (siren ~2s + TTS)
+    // Later cycles: wait for prior sequence; announce TTS every other cycle
+    let cycle = 0;
     const id = window.setInterval(() => {
-      void playDangerAlarm({ displayName: workerName, role: workerRole });
-    }, 10_000);
+      cycle += 1;
+      void runCycle(cycle % 2 === 0);
+    }, 12_000);
     return () => {
+      cancelled = true;
       window.clearInterval(id);
       stopHaptics();
+      playingRef.current = false;
       stopSpeaking();
     };
   }, [open, workerName, workerRole]);

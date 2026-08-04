@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -48,37 +48,61 @@ export default function GeofenceAlertBridge({ projectId, subject, autoStart }: P
     subjectRef.current = subject || null;
   }, [subject]);
 
-  // Load restricted zones for project
-  useEffect(() => {
+  const loadZones = useCallback(async () => {
     if (!projectId) {
       zonesRef.current = [];
       return;
     }
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase
-        .from("restricted_zones")
-        .select(
-          "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, banned_worker_ids, banned_company_ids, banned_job_types, access_rules, rule_type, zone_category, zone_color, is_active"
-        )
-        .eq("project_id", projectId)
-        .eq("is_deleted", false)
-        .eq("is_active", true);
-      if (!cancelled) zonesRef.current = (data || []) as unknown as RestrictedZoneGeom[];
-    })();
-    return () => {
-      cancelled = true;
-    };
+    const { data } = await supabase
+      .from("restricted_zones")
+      .select(
+        "id, name, geometry_type, geo_polygon, center_lat, center_lng, radius_m, banned_worker_ids, banned_company_ids, banned_job_types, access_rules, rule_type, zone_category, zone_color, is_active",
+      )
+      .eq("project_id", projectId)
+      .eq("is_deleted", false)
+      .eq("is_active", true);
+    zonesRef.current = (data || []) as unknown as RestrictedZoneGeom[];
+    setAlertZone((prev) => {
+      if (!prev) return prev;
+      if (prev.id === "unknown" || prev.id === "zone") return null;
+      return zonesRef.current.some((z) => z.id === prev.id) ? prev : null;
+    });
+    if (activeZoneId.current && !zonesRef.current.some((z) => z.id === activeZoneId.current)) {
+      activeZoneId.current = null;
+    }
   }, [projectId]);
+
+  useEffect(() => {
+    void loadZones();
+  }, [loadZones]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    const channel = supabase
+      .channel(`bridge-rz-${projectId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "restricted_zones", filter: `project_id=eq.${projectId}` },
+        () => {
+          void loadZones();
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [projectId, loadZones]);
 
   const evaluate = (lat: number, lng: number) => {
     const sub = subjectRef.current || {};
     const hit = findViolatingRestrictedZone(lat, lng, zonesRef.current, sub);
     if (!hit) {
-      activeZoneId.current = null;
+      if (activeZoneId.current) {
+        activeZoneId.current = null;
+        setAlertZone(null);
+      }
       return;
     }
-    // Debounce re-alert for same zone (30s) but keep modal if already open
     const now = Date.now();
     if (activeZoneId.current === hit.id && now - lastAlertAt.current < 30_000) return;
     activeZoneId.current = hit.id;
@@ -126,10 +150,21 @@ export default function GeofenceAlertBridge({ projectId, subject, autoStart }: P
           intervals: { moving: 8_000, idle: 45_000, danger: 4_000 },
           onUpdate: (u) => {
             if (cancelled) return;
-            if ((u as any).event_type === "unauthorized_entry" || (u as any).restricted_zone_id) {
+            const anyU = u as {
+              event_type?: string;
+              restricted_zone_id?: string;
+              zone_id?: string | null;
+              zone_name?: string;
+            };
+            const et = String(anyU.event_type || "");
+            if (/^(exit|leave|depart)/i.test(et)) {
+              activeZoneId.current = null;
+              setAlertZone(null);
+            } else if (et === "unauthorized_entry") {
+              // Only entry events from server re-open — not mere presence of restricted_zone_id
               setAlertZone({
-                id: (u as any).restricted_zone_id || u.zone_id || "unknown",
-                name: (u as any).zone_name || "위험 구역",
+                id: anyU.restricted_zone_id || anyU.zone_id || "unknown",
+                name: anyU.zone_name || "위험 구역",
               });
             }
             evaluate(u.lat, u.lng);

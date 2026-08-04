@@ -17,6 +17,7 @@ import {
   boostAlarmVolumeMax,
   isNativeAlarmAvailable,
   playNativeAlarmSiren,
+  playNativeTts,
   restoreAlarmVolume,
   stopNativeAlarmSiren,
 } from "@/lib/alarmVolume";
@@ -208,44 +209,107 @@ async function playSiren(): Promise<void> {
   await playSirenViaHtmlAudio();
 }
 
-function speakTts(message: string): Promise<void> {
+function waitForVoices(timeoutMs = 1500): Promise<SpeechSynthesisVoice[]> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) {
+      resolve([]);
+      return;
+    }
+    const existing = window.speechSynthesis.getVoices();
+    if (existing.length) {
+      resolve(existing);
+      return;
+    }
+    const done = () => {
+      window.speechSynthesis.removeEventListener("voiceschanged", onVoices);
+      window.clearTimeout(timer);
+      resolve(window.speechSynthesis.getVoices());
+    };
+    const onVoices = () => done();
+    window.speechSynthesis.addEventListener("voiceschanged", onVoices);
+    const timer = window.setTimeout(done, timeoutMs);
+  });
+}
+
+function speakWebTts(message: string): Promise<void> {
   return new Promise((resolve) => {
     if (typeof window === "undefined" || !window.speechSynthesis) {
       console.warn("[tts] speechSynthesis unavailable");
       resolve();
       return;
     }
-    try {
-      window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(message);
-      utter.lang = "ko-KR";
-      utter.rate = 0.95;
-      utter.pitch = 1.05;
-      utter.volume = 1.0;
-
-      const voices = window.speechSynthesis.getVoices();
-      const ko = voices.find((v) => v.lang?.startsWith("ko"));
-      if (ko) utter.voice = ko;
-
-      utter.onend = () => resolve();
-      utter.onerror = () => resolve();
-
-      if (!ko && voices.length === 0) {
-        const onVoices = () => {
-          window.speechSynthesis.removeEventListener("voiceschanged", onVoices);
-          const later = window.speechSynthesis.getVoices().find((v) => v.lang?.startsWith("ko"));
-          if (later) utter.voice = later;
-          window.speechSynthesis.speak(utter);
-        };
-        window.speechSynthesis.addEventListener("voiceschanged", onVoices);
-      }
-      window.speechSynthesis.speak(utter);
-      window.setTimeout(() => resolve(), 12_000);
-    } catch (e) {
-      console.warn("[tts] speak failed", e);
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      window.clearInterval(resumeHack);
+      window.clearTimeout(hardCap);
       resolve();
-    }
+    };
+
+    // Chrome bug: speechSynthesis pauses mid-utterance — nudge resume
+    const resumeHack = window.setInterval(() => {
+      try {
+        if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+      } catch {
+        /* ignore */
+      }
+    }, 250);
+    const hardCap = window.setTimeout(finish, 18_000);
+
+    void (async () => {
+      try {
+        const voices = await waitForVoices();
+        if (cancelled) {
+          finish();
+          return;
+        }
+        // cancel() then immediate speak() often drops the utterance on Chromium/WebView
+        try {
+          window.speechSynthesis.cancel();
+        } catch {
+          /* ignore */
+        }
+        await new Promise((r) => setTimeout(r, 80));
+        if (cancelled) {
+          finish();
+          return;
+        }
+
+        const utter = new SpeechSynthesisUtterance(message);
+        utter.lang = "ko-KR";
+        utter.rate = 0.95;
+        utter.pitch = 1.05;
+        utter.volume = 1.0;
+        const ko =
+          voices.find((v) => v.lang?.toLowerCase() === "ko-kr") ||
+          voices.find((v) => v.lang?.toLowerCase().startsWith("ko"));
+        if (ko) utter.voice = ko;
+
+        utter.onend = () => finish();
+        utter.onerror = () => finish();
+        window.speechSynthesis.speak(utter);
+        // Some WebViews need an explicit resume after speak
+        try {
+          window.speechSynthesis.resume();
+        } catch {
+          /* ignore */
+        }
+      } catch (e) {
+        console.warn("[tts] speak failed", e);
+        finish();
+      }
+    })();
   });
+}
+
+async function speakTts(message: string): Promise<void> {
+  // Prefer native TTS on Capacitor (WebView speechSynthesis is unreliable)
+  if (isNativeAlarmAvailable()) {
+    const ok = await playNativeTts(message, "ko-KR");
+    if (ok) return;
+  }
+  await speakWebTts(message);
 }
 
 export type DangerAlarmOpts = {
@@ -254,6 +318,8 @@ export type DangerAlarmOpts = {
   role?: AlarmRoleInput;
   /** Skip siren (TTS only). Default false. */
   skipSiren?: boolean;
+  /** Skip TTS (siren only). Default false. */
+  skipTts?: boolean;
 };
 
 /**
@@ -275,8 +341,13 @@ export async function playDangerAlarm(opts: DangerAlarmOpts = {}): Promise<void>
     if (!opts.skipSiren) {
       await playSiren();
       if (cancelled) return;
+      // Let alarm stream settle before TTS (native + WebView)
+      await new Promise((r) => setTimeout(r, 200));
+      if (cancelled) return;
     }
-    await speakTts(message);
+    if (!opts.skipTts) {
+      await speakTts(message);
+    }
   } finally {
     // Keep boost until stopSpeaking / modal dismiss (repeat loop may re-enter)
   }

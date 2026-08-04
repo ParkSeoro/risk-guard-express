@@ -4,9 +4,9 @@ Danger-zone alarm helpers for native shells.
 
 | Platform | Behavior |
 |----------|----------|
-| **Android** | `STREAM_ALARM` + `STREAM_MUSIC` → max; siren via `USAGE_ALARM` |
-| **iOS** | `AVAudioSession.playback` (ignores mute switch); optional **Critical Alerts** push |
-| **Web/PWA** | Cannot force system volume — JS falls back to web audio + haptics |
+| **Android** | `STREAM_ALARM` + `STREAM_MUSIC` → max; siren via `USAGE_ALARM`; **`speak`** → `TextToSpeech` (ko-KR) |
+| **iOS** | `AVAudioSession.playback` (ignores mute switch); **`speak`** → `AVSpeechSynthesizer`; optional **Critical Alerts** push |
+| **Web/PWA** | Cannot force system volume — JS falls back to web audio + `speechSynthesis` + haptics |
 
 ## Install
 

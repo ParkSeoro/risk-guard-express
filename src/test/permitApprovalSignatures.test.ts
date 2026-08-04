@@ -14,6 +14,8 @@ describe('resolveSigKey', () => {
     expect(resolveSigKey(null, 'contractor_safety_manager')).toBe('safety_pic');
     expect(resolveSigKey(null, 'gc_manager')).toBe('gc_manager');
     expect(resolveSigKey('시공사 관리자', null)).toBe('gc_manager');
+    expect(resolveSigKey(null, 'closure_sm')).toBe('closure_approver');
+    expect(resolveSigKey('closure_approver', null)).toBe('closure_approver');
   });
 });
 
@@ -85,5 +87,19 @@ describe('mergeApprovalSignatures — independent timestamps', () => {
     };
     expect(slotSignedAt(sig, 'cm')).toBe('2026-07-28T14:00:00.000Z');
     expect(slotSignedAt(sig, 'sm')).toBeUndefined();
+  });
+
+  it('maps closure_sm approval into closure_approver (not sm)', () => {
+    const closedAt = '2026-08-03T18:00:00.000Z';
+    const merged = mergeApprovalSignatures(
+      { sm: { name: '발급SM', signature: '', signed_at: t5 }, approved_at: t5 },
+      [{ position: 'closure_sm', approver_name: '종료SM', status: '승인', approved_at: closedAt }],
+    );
+    expect(merged.closure_approver?.name).toBe('종료SM');
+    expect(merged.closure_approver?.signed_at).toBe(closedAt);
+    expect(merged.closed_at).toBe(closedAt);
+    // Issuance SM stamp must remain independent
+    expect(merged.sm?.name).toBe('발급SM');
+    expect(merged.sm?.signed_at).toBe(t5);
   });
 });

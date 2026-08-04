@@ -45,6 +45,7 @@ function PreviewInnerRoutes() {
           <Route path="home" element={<Navigate to="today" replace />} />
           <Route path="menu" element={<Navigate to="today" replace />} />
           <Route path="alerts" element={<P.LazyMobileAlerts />} />
+          <Route path="notifications" element={<P.LazySettingsNotifications />} />
           <Route path="actions" element={<P.LazyMobileActions />} />
           <Route path="approvals" element={<P.LazyMobileApprovals />} />
           <Route path="approvals/:approvalId" element={<P.LazyMobileApprovalDetail />} />

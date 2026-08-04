@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -16,6 +16,8 @@ import {
   CheckCircle2, XCircle, Clock, BellRing, Lock, AlertTriangle,
 } from 'lucide-react';
 import { isPushSupported, subscribeToPush, unsubscribeFromPush } from '@/lib/pushSubscription';
+import { isNativeApp } from '@/lib/native/isNativeApp';
+import { Capacitor } from '@capacitor/core';
 
 interface NotifPrefs {
   // 채널
@@ -53,9 +55,11 @@ const defaults: NotifPrefs = {
 
 // 시스템 강제(끌 수 없음) 이벤트 — DB의 should_push_notify와 동기화
 const MANDATORY_EVENTS = [
-  { key: 'incident',         label: '중대재해 / 사고 보고',     desc: '안전관리책임자에게 즉시 전달' },
-  { key: 'approval_request', label: '결재 상신 요청',           desc: '결재선에 포함된 사용자에게 전달' },
-  { key: 'approval_result',  label: '결재 승인 / 반려',         desc: '기안자에게 결과 전달' },
+  { key: 'incident',           label: '중대재해 / 사고 보고',   desc: '안전관리책임자에게 즉시 전달' },
+  { key: 'approval_request',   label: '결재 상신 요청',         desc: '결재선 지정 결재자에게 전달 (일반 알림 채널)' },
+  { key: 'approval_result',    label: '결재 승인 / 반려',       desc: '기안자에게 결과 전달' },
+  { key: 'danger_zone_entry',  label: '위험구역 진입',         desc: '지오펜스 경보 (사이렌 채널)' },
+  { key: 'work_stop',          label: '작업중지 요청',         desc: '긴급 작업중지 알림' },
 ];
 
 interface EmailLogEntry {
@@ -65,6 +69,7 @@ interface EmailLogEntry {
 
 const SettingsNotifications = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, hasRole } = useAuth();
   const { toast } = useToast();
   const { log } = useAuditLog();
@@ -72,17 +77,40 @@ const SettingsNotifications = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const isMaster = hasRole('master');
+  const isMobileShell = location.pathname.startsWith('/app/worker');
+  const native = isNativeApp();
 
   // 푸시 상태
-  const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported' | 'granted' | 'denied' | 'prompt'>('default');
   const [pushSubscribed, setPushSubscribed] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
+  const [nativeToken, setNativeToken] = useState<{ platform: string; last_used_at: string | null } | null>(null);
 
   // 이메일 로그
   const [emailLogs, setEmailLogs] = useState<EmailLogEntry[]>([]);
   const [showLogs, setShowLogs] = useState(false);
   const [logsLoading, setLogsLoading] = useState(false);
   const [testSending, setTestSending] = useState(false);
+
+  const refreshNativeToken = async (uid: string) => {
+    const { data } = await supabase
+      .from('device_push_tokens' as any)
+      .select('platform, last_used_at, token')
+      .eq('user_id', uid)
+      .order('last_used_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) {
+      setNativeToken({
+        platform: (data as any).platform || Capacitor.getPlatform(),
+        last_used_at: (data as any).last_used_at || null,
+      });
+      setPushSubscribed(true);
+    } else {
+      setNativeToken(null);
+      if (native) setPushSubscribed(false);
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -93,18 +121,27 @@ const SettingsNotifications = () => {
         const d = data as any;
         setPrefs({ ...defaults, ...d });
       }
+
+      if (native) {
+        try {
+          const mod: any = await import('@capacitor/push-notifications');
+          const perm = await mod.PushNotifications.checkPermissions();
+          setPushPermission(perm.receive === 'granted' ? 'granted' : perm.receive === 'denied' ? 'denied' : 'prompt');
+        } catch {
+          setPushPermission('unsupported');
+        }
+        await refreshNativeToken(user.id);
+      } else if (!isPushSupported()) {
+        setPushPermission('unsupported');
+      } else {
+        setPushPermission(Notification.permission);
+        navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription())
+          .then(sub => setPushSubscribed(!!sub))
+          .catch(() => setPushSubscribed(false));
+      }
       setLoading(false);
     })();
-    // 푸시 권한/구독 상태 점검
-    if (!isPushSupported()) {
-      setPushPermission('unsupported');
-    } else {
-      setPushPermission(Notification.permission);
-      navigator.serviceWorker.ready.then(reg => reg.pushManager.getSubscription())
-        .then(sub => setPushSubscribed(!!sub))
-        .catch(() => setPushSubscribed(false));
-    }
-  }, [user]);
+  }, [user, native]);
 
   const handleSave = async () => {
     if (!user) return;
@@ -127,24 +164,58 @@ const SettingsNotifications = () => {
   const handleEnablePush = async () => {
     if (!user) return;
     setPushBusy(true);
-    const r = await subscribeToPush(user.id);
-    setPushBusy(false);
-    if (r.ok) {
-      setPushPermission('granted');
-      setPushSubscribed(true);
-      setPrefs(p => ({ ...p, channel_push: true }));
-      toast({ title: '브라우저 푸시 알림이 활성화되었습니다.' });
-    } else {
-      const map: Record<string, string> = {
-        unsupported: '이 브라우저는 푸시 알림을 지원하지 않습니다.',
-        denied: '브라우저에서 알림 권한이 거부되어 있습니다. 브라우저 설정에서 허용해주세요.',
-        no_sw: 'Service Worker 등록에 실패했습니다. (운영 환경에서만 작동)',
-      };
-      toast({ title: '푸시 활성화 실패', description: map[r.reason ?? ''] ?? r.reason, variant: 'destructive' });
+    try {
+      if (native) {
+        const mod: any = await import('@capacitor/push-notifications');
+        const PushNotifications = mod.PushNotifications;
+        let perm = await PushNotifications.checkPermissions();
+        if (perm.receive !== 'granted') {
+          perm = await PushNotifications.requestPermissions();
+        }
+        if (perm.receive !== 'granted') {
+          setPushPermission('denied');
+          toast({
+            title: '알림 권한이 필요합니다',
+            description: '기기 설정 → 앱 → 알림을 허용한 뒤 다시 시도하세요.',
+            variant: 'destructive',
+          });
+          return;
+        }
+        setPushPermission('granted');
+        await PushNotifications.register();
+        setPrefs((p) => ({ ...p, channel_push: true }));
+        // registration listener in PushNotificationBridge upserts token; refresh shortly
+        setTimeout(() => { void refreshNativeToken(user.id); }, 1500);
+        toast({ title: '앱 푸시가 활성화되었습니다.', description: '결재·경보 알림을 받을 수 있습니다.' });
+      } else {
+        const r = await subscribeToPush(user.id);
+        if (r.ok) {
+          setPushPermission('granted');
+          setPushSubscribed(true);
+          setPrefs((p) => ({ ...p, channel_push: true }));
+          toast({ title: '브라우저 푸시 알림이 활성화되었습니다.' });
+        } else {
+          const map: Record<string, string> = {
+            unsupported: '이 브라우저는 푸시 알림을 지원하지 않습니다.',
+            denied: '브라우저에서 알림 권한이 거부되어 있습니다. 브라우저 설정에서 허용해주세요.',
+            no_sw: 'Service Worker 등록에 실패했습니다. (운영 환경에서만 작동)',
+          };
+          toast({ title: '푸시 활성화 실패', description: map[r.reason ?? ''] ?? r.reason, variant: 'destructive' });
+        }
+      }
+    } finally {
+      setPushBusy(false);
     }
   };
 
   const handleDisablePush = async () => {
+    if (native) {
+      toast({
+        title: '앱 알림 해제',
+        description: '기기 설정에서 SafeNex 알림을 끄면 푸시가 중단됩니다.',
+      });
+      return;
+    }
     setPushBusy(true);
     await unsubscribeFromPush();
     setPushBusy(false);
@@ -155,12 +226,41 @@ const SettingsNotifications = () => {
   const handleTestPush = async () => {
     if (!user) return;
     setPushBusy(true);
-    const { error } = await supabase.functions.invoke('send-push', {
-      body: { user_id: user.id, title: '🔔 테스트 푸시', body: '푸시 알림이 정상 작동합니다.', url: '/m/alerts' },
-    });
-    setPushBusy(false);
-    if (error) toast({ title: '발송 실패', description: error.message, variant: 'destructive' });
-    else toast({ title: '테스트 푸시 전송됨', description: '잠시 후 알림이 표시됩니다.' });
+    try {
+      if (native) {
+        // Hits the same notifications → dispatch-notification-push → FCM path as real approvals
+        const { error } = await supabase.from('notifications').insert({
+          user_id: user.id,
+          title: '테스트 푸시 (결재 경로)',
+          message: 'SafeNex 앱 푸시가 정상 작동합니다. 결재 알림도 이 경로로 옵니다.',
+          type: 'approval_request',
+          link: '/app/worker/approvals',
+          related_type: 'test',
+        } as any);
+        if (error) throw error;
+        toast({
+          title: '테스트 푸시 전송됨',
+          description: nativeToken
+            ? '잠시 후 알림이 표시됩니다.'
+            : 'FCM 토큰이 없습니다. 위에서 「푸시 켜기」를 먼저 실행하세요.',
+        });
+      } else {
+        const { error } = await supabase.functions.invoke('send-push', {
+          body: {
+            user_id: user.id,
+            title: '테스트 푸시',
+            body: '푸시 알림이 정상 작동합니다.',
+            url: '/app/worker/alerts',
+          },
+        });
+        if (error) throw error;
+        toast({ title: '테스트 푸시 전송됨', description: '잠시 후 알림이 표시됩니다.' });
+      }
+    } catch (e: any) {
+      toast({ title: '발송 실패', description: e?.message || String(e), variant: 'destructive' });
+    } finally {
+      setPushBusy(false);
+    }
   };
 
   const fetchEmailLogs = async () => {
@@ -206,16 +306,26 @@ const SettingsNotifications = () => {
   ];
 
   return (
-    <div className="space-y-4 animate-fade-in max-w-2xl">
+    <div className={`space-y-4 animate-fade-in ${isMobileShell ? 'max-w-md mx-auto p-4 pb-24' : 'max-w-2xl'}`}>
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/settings')}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => navigate(isMobileShell ? '/app/worker/more' : '/settings')}
+        >
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <div className="flex items-center gap-2 text-muted-foreground text-xs">
-            <span>설정</span><span>/</span><span>알림 설정</span>
-          </div>
-          <h1 className="text-xl font-bold flex items-center gap-2"><Bell className="h-5 w-5" /> 알림 설정</h1>
+          {!isMobileShell && (
+            <div className="flex items-center gap-2 text-muted-foreground text-xs">
+              <span>설정</span><span>/</span><span>알림 설정</span>
+            </div>
+          )}
+          <h1 className="text-xl font-bold flex items-center gap-2"><Bell className="h-5 w-5" /> 알림 · 알람 설정</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            어떤 기능 알림을 받을지 선택하고, 앱 푸시가 켜져 있는지 확인합니다.
+          </p>
         </div>
       </div>
 
@@ -223,53 +333,77 @@ const SettingsNotifications = () => {
       <Card className="border-primary/30">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
-            <BellRing className="h-4 w-4 text-primary" /> 휴대폰 푸시 알림
+            <BellRing className="h-4 w-4 text-primary" /> {native ? '앱 푸시 알림 (FCM)' : '휴대폰 푸시 알림'}
           </CardTitle>
           <CardDescription className="text-xs">
-            앱을 닫아도 휴대폰 알림창으로 즉시 받을 수 있습니다.
-            iOS는 <strong>홈 화면에 추가</strong> 후 활성화하세요(iOS 16.4 이상).
+            {native
+              ? '앱을 닫아도 알림창으로 결재·경보를 받습니다. 권한이 꺼져 있으면 결재가 와도 푸시가 오지 않습니다.'
+              : '앱을 닫아도 알림창으로 받을 수 있습니다. iOS는 홈 화면 추가 후 활성화하세요(iOS 16.4+).'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {pushPermission === 'unsupported' && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
-              <AlertDescription className="text-xs">이 브라우저는 푸시 알림을 지원하지 않습니다.</AlertDescription>
+              <AlertDescription className="text-xs">이 환경은 푸시 알림을 지원하지 않습니다.</AlertDescription>
             </Alert>
           )}
           {pushPermission === 'denied' && (
             <Alert variant="destructive">
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription className="text-xs">
-                브라우저 설정에서 이 사이트의 <strong>알림 권한</strong>이 거부되어 있습니다. 권한 허용 후 다시 시도하세요.
+                {native
+                  ? '기기 설정에서 SafeNex 알림 권한이 거부되어 있습니다. 허용 후 「푸시 켜기」를 다시 누르세요.'
+                  : '브라우저 설정에서 이 사이트의 알림 권한이 거부되어 있습니다. 권한 허용 후 다시 시도하세요.'}
+              </AlertDescription>
+            </Alert>
+          )}
+          {native && pushPermission === 'granted' && !nativeToken && (
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription className="text-xs">
+                알림 권한은 허용됐지만 FCM 토큰이 없습니다. 「푸시 켜기」로 재등록하세요. (Play 빌드·google-services 확인)
               </AlertDescription>
             </Alert>
           )}
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
               <p className="text-sm font-medium flex items-center gap-1.5">
-                {pushSubscribed ? <CheckCircle2 className="h-4 w-4 text-success" /> : <XCircle className="h-4 w-4 text-muted-foreground" />}
-                {pushSubscribed ? '활성화됨' : '비활성'}
+                {(native ? !!nativeToken : pushSubscribed)
+                  ? <CheckCircle2 className="h-4 w-4 text-success" />
+                  : <XCircle className="h-4 w-4 text-muted-foreground" />}
+                {(native ? !!nativeToken : pushSubscribed) ? '활성화됨' : '비활성'}
               </p>
-              <p className="text-[10px] text-muted-foreground">권한: {pushPermission}</p>
+              <p className="text-[10px] text-muted-foreground">
+                권한: {pushPermission}
+                {native && nativeToken
+                  ? ` · ${nativeToken.platform}${nativeToken.last_used_at ? ` · ${new Date(nativeToken.last_used_at).toLocaleString('ko-KR')}` : ''}`
+                  : ''}
+              </p>
             </div>
             <div className="flex gap-1.5">
-              {!pushSubscribed ? (
-                <Button size="sm" onClick={handleEnablePush} disabled={pushBusy || pushPermission === 'unsupported' || pushPermission === 'denied'} className="text-xs">
-                  푸시 켜기
+              <Button
+                size="sm"
+                onClick={handleEnablePush}
+                disabled={pushBusy || pushPermission === 'unsupported'}
+                className="text-xs"
+                variant={(native ? !!nativeToken : pushSubscribed) ? 'outline' : 'default'}
+              >
+                {(native ? !!nativeToken : pushSubscribed) ? '다시 등록' : '푸시 켜기'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleTestPush} disabled={pushBusy} className="text-xs gap-1">
+                <Send className="h-3 w-3" /> 테스트
+              </Button>
+              {!native && pushSubscribed && (
+                <Button size="sm" variant="ghost" onClick={handleDisablePush} disabled={pushBusy} className="text-xs">
+                  해제
                 </Button>
-              ) : (
-                <>
-                  <Button size="sm" variant="outline" onClick={handleTestPush} disabled={pushBusy} className="text-xs gap-1">
-                    <Send className="h-3 w-3" /> 테스트
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={handleDisablePush} disabled={pushBusy} className="text-xs">
-                    해제
-                  </Button>
-                </>
               )}
             </div>
           </div>
+          <p className="text-[10px] text-muted-foreground">
+            결재 알림은 <strong>일반 알림</strong> 채널입니다. 위험구역 진입만 사이렌(경보) 채널을 씁니다.
+          </p>
         </CardContent>
       </Card>
 
@@ -282,7 +416,7 @@ const SettingsNotifications = () => {
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2"><BellRing className="h-4 w-4 text-muted-foreground" />
-              <Label className="text-sm">브라우저 푸시 (앱 닫혀도 옴)</Label>
+              <Label className="text-sm">{native ? '앱 푸시 (닫혀도 옴)' : '브라우저 푸시 (앱 닫혀도 옴)'}</Label>
             </div>
             <Switch checked={prefs.channel_push} onCheckedChange={() => toggle('channel_push')} />
           </div>

@@ -16,6 +16,7 @@ import {
   ScanLine,
   User,
   BookOpen,
+  Bell,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -88,14 +89,16 @@ export default function MobileMore() {
         <CardContent className="p-0 divide-y">
           {(manager
             ? [
+                { label: "알림 · 알람 설정", to: "/app/worker/notifications", icon: Bell },
                 { label: "QR 스캔", to: "/app/worker/scan", icon: ScanLine },
-                { label: "근로자 QR", to: "/app/worker/workers", icon: QrCode },
+                { label: "근로자·출입", to: "/app/worker/workers", icon: QrCode },
                 { label: "계정 정보", to: "/app/worker/account", icon: User },
                 ...(!isNativeApp()
                   ? [{ label: "사용 설명서", to: "/manual", icon: BookOpen }]
                   : []),
               ]
             : [
+                { label: "알림 · 알람 설정", to: "/app/worker/notifications", icon: Bell },
                 { label: "QR 스캔", to: "/app/worker/scan", icon: ScanLine },
                 { label: "계정 정보", to: "/app/worker/account", icon: User },
                 ...(!isNativeApp()

@@ -31,8 +31,8 @@ export const MOBILE_ROUTES: Array<{
   { path: "/m/permits", label: "허가서 결재", requires: { kind: "table", name: "work_permits", project_scoped: true } },
   { path: "/m/incident", label: "사고 신고", requires: { kind: "table", name: "incident_reports", project_scoped: true } },
   { path: "/m/scan", label: "QR 스캔(카메라)", requires: { kind: "browser", cap: "camera" } },
-  { path: "/worker/register", label: "근로자 등록", requires: { kind: "rpc", name: "register_worker", sample_args: { _project_id: "00000000-0000-0000-0000-000000000000", _name: "", _phone: "", _company_name: "" } } },
-  { path: "/worker/portal/:token", label: "근로자 포털(QR)", requires: { kind: "rpc", name: "get_worker_by_token", sample_args: { _token: "__qa__" } } },
+  { path: "/worker/register", label: "근로자 등록(Auth)", requires: { kind: "rpc", name: "complete_worker_roster_signup", sample_args: {} } },
+  { path: "/worker/portal/:token", label: "레거시 포털→로그인 리다이렉트", requires: { kind: "static" } },
   { path: "/tbm/:token", label: "TBM 참여(QR)", requires: { kind: "rpc", name: "get_tbm_by_token", sample_args: { _token: "__qa__" } } },
 ];
 

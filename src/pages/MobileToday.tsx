@@ -146,7 +146,7 @@ function ManagerToday({ projectId, role }: { projectId: string; role: string }) 
       title: "현재 현장 인원",
       value: onSite,
       icon: Users,
-      to: "/app/worker/workers",
+      to: "/app/worker/workers?tab=attendance",
       tone: "text-emerald-600",
     },
   ];
@@ -200,7 +200,7 @@ function ManagerToday({ projectId, role }: { projectId: string; role: string }) 
             { label: "안전점검", to: "/app/worker/inspect" },
             { label: "사고 신고", to: "/app/worker/incident" },
             { label: "TBM 진행", to: "/app/worker/tbm" },
-            { label: "근로자 · 출입 관리", to: "/app/worker/workers" },
+            { label: "근로자 · 출입 관리", to: "/app/worker/workers?tab=roster" },
             { label: "승인 자료 보기", to: "/app/worker/docs" },
           ].map((row) => (
             <Link

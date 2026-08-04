@@ -129,18 +129,23 @@ export default function MobileScan() {
   useEffect(() => () => { stop(); }, []);
 
   const onDetect = async (text: string) => {
-    // 지원 포맷: 풀URL 또는 단순 토큰
-    let token = text.trim();
-    const m = token.match(/\/worker\/portal\/([A-Za-z0-9]+)/);
-    if (m) token = m[1];
-    if (!/^[A-Za-z0-9]{16,}$/.test(token)) {
-      setError("인식된 QR이 근로자 토큰 형식이 아닙니다: " + text.slice(0, 60));
+    const raw = text.trim();
+    // Signup / register QR (Auth path)
+    if (/\/worker\/register/i.test(raw) || /\/register\?.*audience=worker/i.test(raw)) {
+      setLast({ token: "register", url: raw.startsWith("http") ? raw : `${window.location.origin}${raw.startsWith("/") ? raw : `/${raw}`}` });
+      await stop();
+      toast.success("등록 QR 인식 — 회원가입으로 이동");
       return;
     }
-    const url = `${window.location.origin}/worker/portal/${token}`;
-    setLast({ token, url });
-    await stop();
-    toast.success("QR 인식 완료 — 포털로 이동");
+    // Legacy QR-only portal — retired; send to login
+    const m = raw.match(/\/worker\/portal\/([A-Za-z0-9]+)/);
+    if (m || /^[A-Za-z0-9]{16,}$/.test(raw)) {
+      setLast({ token: m?.[1] || raw, url: `${window.location.origin}/login` });
+      await stop();
+      toast.message("QR 전용 포털은 종료되었습니다. 로그인하세요.");
+      return;
+    }
+    setError("지원하지 않는 QR입니다: " + raw.slice(0, 60));
   };
 
   return (
@@ -157,7 +162,7 @@ export default function MobileScan() {
         <Card>
           <CardContent className="pt-4 space-y-3">
             <p className="text-sm text-muted-foreground">
-              근로자 QR을 카메라로 비추면 자동 인식되어 출입(입/퇴장) 포털로 이동합니다.
+              근로자 등록 QR을 스캔하면 회원가입으로 이동합니다. QR 전용 포털은 종료되어 계정 로그인이 필요합니다.
             </p>
 
             <div id={containerId}
@@ -191,7 +196,8 @@ export default function MobileScan() {
               <div className="space-y-2 border-t pt-3">
                 <div className="text-xs text-muted-foreground break-all">토큰: {last.token}</div>
                 <Button className="w-full h-14 text-base" onClick={() => { window.location.href = last.url; }}>
-                  <ExternalLink className="h-5 w-5 mr-2" /> 포털 열기 (입퇴장)
+                  <ExternalLink className="h-5 w-5 mr-2" />
+                  {last.token === "register" ? "회원가입 열기" : "로그인 열기"}
                 </Button>
                 <Button variant="outline" className="w-full" onClick={() => { setLast(null); void start(); }}>
                   다시 스캔

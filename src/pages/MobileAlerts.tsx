@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Bell, CheckCheck } from "lucide-react";
+import { ArrowLeft, Bell, CheckCheck, Settings } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { resolveNotificationRoute } from "@/lib/notificationRoutes";
@@ -44,6 +44,15 @@ export default function MobileAlerts() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="font-bold text-lg flex-1">알림</div>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="text-primary-foreground"
+          onClick={() => navigate("/app/worker/notifications")}
+          title="알림 설정"
+        >
+          <Settings className="h-5 w-5" />
+        </Button>
         <Button size="sm" variant="ghost" className="text-primary-foreground" onClick={markAll}>
           <CheckCheck className="h-4 w-4 mr-1" /> 모두 읽음
         </Button>

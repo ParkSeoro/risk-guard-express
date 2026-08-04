@@ -26,7 +26,7 @@ export default function MobileTasks() {
     { label: "조치 관리", sub: "진행·완료 확인", to: "/app/worker/actions", icon: Wrench },
     { label: "사고 신고", sub: "아차/경미/중대", to: "/app/worker/incident", icon: AlertOctagon },
     { label: "TBM 진행", sub: "QR·참여 관리", to: "/app/worker/tbm", icon: Users },
-    { label: "근로자·출입", sub: "QR·출입정지", to: "/app/worker/workers", icon: Users },
+    { label: "근로자·출입", sub: "명부·입퇴장", to: "/app/worker/workers", icon: Users },
   ];
 
   const items = manager ? managerItems : workerItems;

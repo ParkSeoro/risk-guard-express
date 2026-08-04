@@ -38,10 +38,9 @@ export function mobileEntityPath(
     case "work_plan":
       return { path: id ? `${WORKER}/work-plans/${id}` : `${WORKER}/work-plans` };
     case "work_permit":
-      // Approvals inbox is the action surface; permits route is document viewer only.
+      // Document viewer with optional deep link; approvals inbox remains the action surface.
       return {
-        path: id ? `${WORKER}/approvals` : `${WORKER}/permits`,
-        desktopOnly: !!id,
+        path: id ? `${WORKER}/permits?id=${id}` : `${WORKER}/permits`,
         desktopPath: id ? `/app/admin/work-permits/${id}` : "/app/admin/work-permits",
       };
     case "approval":

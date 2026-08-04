@@ -5,6 +5,11 @@
 // authoritative geofence + Wi-Fi zone match server-side.
 
 import { supabase } from "@/integrations/supabase/client";
+import {
+  applyGpsCalibration,
+  fetchProjectGpsCalibration,
+  type GpsCalibration,
+} from "@/lib/tracking/gpsCalibration";
 
 export type TrackingIdentity = {
   worker_id?: string | null;
@@ -13,6 +18,21 @@ export type TrackingIdentity = {
   worker_phone?: string | null;
   project_id: string;
 };
+
+async function loadCalibration(projectId: string): Promise<GpsCalibration | null> {
+  try {
+    return await fetchProjectGpsCalibration(projectId, async (id) => {
+      const { data } = await supabase
+        .from("projects")
+        .select("gps_calibration")
+        .eq("id", id)
+        .maybeSingle();
+      return data?.gps_calibration ?? null;
+    });
+  } catch {
+    return null;
+  }
+}
 
 export type TrackerOptions = {
   identity: TrackingIdentity;
@@ -41,6 +61,8 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
     const { registerPlugin } = await import("@capacitor/core");
     const BackgroundGeolocation = registerPlugin<any>("BackgroundGeolocation");
     if (!BackgroundGeolocation?.addWatcher) return null;
+    // UI bias only — track-location applies the same project offset server-side on raw GPS.
+    let cal = await loadCalibration(opts.identity.project_id);
     const watcherId = await BackgroundGeolocation.addWatcher(
       {
         backgroundMessage: "위험구역 자동감지를 위해 위치를 추적 중입니다.",
@@ -54,19 +76,25 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
         if (error) { opts.onError?.(new Error(error.message || String(error))); return; }
         if (!location) return;
         try {
+          // Refresh occasionally (cache TTL inside fetchProjectGpsCalibration).
+          cal = await loadCalibration(opts.identity.project_id);
+          const rawLat = location.latitude;
+          const rawLng = location.longitude;
+          const disp = applyGpsCalibration(rawLat, rawLng, cal);
           const { data } = await supabase.functions.invoke("track-location", {
             body: {
               ...opts.identity,
-              lat: location.latitude,
-              lng: location.longitude,
+              // Send RAW GPS — server applies project bias authoritatively.
+              lat: rawLat,
+              lng: rawLng,
               accuracy_m: location.accuracy,
               wifi_scan: [],
               device_ts: new Date(location.time || Date.now()).toISOString(),
             },
           });
           opts.onUpdate?.({
-            lat: location.latitude,
-            lng: location.longitude,
+            lat: disp.lat,
+            lng: disp.lng,
             accuracy: location.accuracy,
             zone_id: (data as any)?.zone_id ?? null,
             source: (data as any)?.source ?? "gps-bg",
@@ -161,6 +189,8 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   let lastMovedAt = Date.now();
   let currentMode: "moving" | "idle" | "danger" = "moving";
   let stopped = false;
+  // UI bias only — send RAW GPS to track-location (server applies the same offset).
+  let cal = await loadCalibration(identity.project_id);
 
   // 네이티브 환경: 백그라운드 워처가 가능하면 그쪽으로 위임 (앱 종료/잠금 상태에서도 동작)
   const bgStop = await tryNativeBackground(opts);
@@ -173,9 +203,12 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
     async (pos) => {
       if (stopped) return;
       const now = Date.now();
-      const here = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: now };
+      const raw = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: now };
+      cal = await loadCalibration(identity.project_id);
+      const disp = applyGpsCalibration(raw.lat, raw.lng, cal);
+      const here = { lat: disp.lat, lng: disp.lng, ts: now };
 
-      // 이동/정지 판단
+      // 이동/정지 판단 (표시 좌표 기준 — 보정량은 상수라 상대 이동은 동일)
       if (lastPos) {
         const d = distanceM(lastPos, here);
         if (d >= movementThresholdM) {
@@ -209,8 +242,9 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
         const { data, error } = await supabase.functions.invoke("track-location", {
           body: {
             ...identity,
-            lat: here.lat,
-            lng: here.lng,
+            // RAW GPS — server applies project bias authoritatively.
+            lat: raw.lat,
+            lng: raw.lng,
             accuracy_m: pos.coords.accuracy,
             wifi_scan: [],
             device_ts: new Date(pos.timestamp || now).toISOString(),

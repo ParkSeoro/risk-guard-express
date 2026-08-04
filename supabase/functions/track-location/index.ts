@@ -5,6 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { z } from "https://esm.sh/zod@3.23.8";
 import { isAccessForbidden } from "../_shared/accessRules.ts";
+import { applyGpsCalibration, parseGpsCalibration } from "../_shared/gpsCalibration.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -124,6 +125,8 @@ Deno.serve(async (req) => {
       });
     }
     const body = parsed.data;
+    const rawLat = body.lat;
+    const rawLng = body.lng;
 
     if (body.accuracy_m > 100 && (!body.wifi_scan || body.wifi_scan.length === 0) && !body.force_restricted_check) {
       return new Response(
@@ -136,6 +139,19 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
+
+    // Project GPS bias (master 1-point field align). Clients send RAW GPS.
+    {
+      const { data: proj } = await supabase
+        .from("projects")
+        .select("gps_calibration")
+        .eq("id", body.project_id)
+        .maybeSingle();
+      const cal = parseGpsCalibration(proj?.gps_calibration);
+      const fixed = applyGpsCalibration(body.lat, body.lng, cal);
+      body.lat = fixed.lat;
+      body.lng = fixed.lng;
+    }
 
     // Resolve worker subject for ban matching
     let subject = {
@@ -347,6 +363,11 @@ Deno.serve(async (req) => {
           : zoneMeta?.zone_type || null,
         source,
         event_type: eventType,
+        lat: body.lat,
+        lng: body.lng,
+        raw_lat: rawLat,
+        raw_lng: rawLng,
+        calibrated: body.lat !== rawLat || body.lng !== rawLng,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

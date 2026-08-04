@@ -4662,6 +4662,7 @@ export type Database = {
           deleted_reason: string | null
           gc_company_id: string | null
           gc_company_ids: string[]
+          gps_calibration: Json | null
           id: string
           is_deleted: boolean
           name: string
@@ -4687,6 +4688,7 @@ export type Database = {
           deleted_reason?: string | null
           gc_company_id?: string | null
           gc_company_ids?: string[]
+          gps_calibration?: Json | null
           id?: string
           is_deleted?: boolean
           name: string
@@ -4712,6 +4714,7 @@ export type Database = {
           deleted_reason?: string | null
           gc_company_id?: string | null
           gc_company_ids?: string[]
+          gps_calibration?: Json | null
           id?: string
           is_deleted?: boolean
           name?: string

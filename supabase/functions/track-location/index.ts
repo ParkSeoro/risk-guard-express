@@ -314,6 +314,29 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Always refresh last-known position when we can identify the worker.
+    // Distribution map aggregates from this table (company/zone/count only).
+    if (subject.worker_id) {
+      const lastZone =
+        eventType === "exit"
+          ? null
+          : matchedZoneId ?? lastEvent?.zone_id ?? null;
+      await supabase.from("worker_last_positions").upsert(
+        {
+          worker_id: subject.worker_id,
+          project_id: body.project_id,
+          company_id: subject.company_id,
+          zone_id: lastZone,
+          lat: body.lat,
+          lng: body.lng,
+          accuracy_m: body.accuracy_m,
+          source,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "worker_id" },
+      );
+    }
+
     return new Response(
       JSON.stringify({
         zone_id: matchedZoneId,

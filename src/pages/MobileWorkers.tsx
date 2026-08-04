@@ -9,21 +9,17 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft,
-  QrCode,
   Search,
   UserPlus,
   Loader2,
-  Copy,
   Ban,
   Unlock,
   LogIn,
   LogOut,
 } from "lucide-react";
 import { toast } from "sonner";
-import QRCode from "qrcode";
 
 import { useMobileAccess } from "@/hooks/useMobileAccess";
-import { useAuditLog } from "@/hooks/useAuditLog";
 import { isManagerMobileRole } from "@/lib/mobileShell";
 import { usePreview, usePreviewWriteBlock } from "@/contexts/PreviewContext";
 import SuspendWorkerDialog from "@/components/workers/SuspendWorkerDialog";
@@ -65,14 +61,12 @@ export default function MobileWorkers() {
   const { projectId, applyCompanyFilter, role, isMaster, accessibleCompanyIds } = useMobileAccess();
   const preview = usePreview();
   const blockWrite = usePreviewWriteBlock();
-  const { log: auditLog } = useAuditLog();
   const [workers, setWorkers] = useState<any[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [attLoading, setAttLoading] = useState(false);
   const [q, setQ] = useState("");
   const [attQ, setAttQ] = useState("");
-  const [qr, setQr] = useState<{ name: string; img: string; url: string } | null>(null);
   const [suspendTarget, setSuspendTarget] = useState<{ id: string; name: string } | null>(null);
 
   const initialTab = (searchParams.get("tab") === "attendance" ? "attendance" : "roster") as TabKey;
@@ -159,26 +153,6 @@ export default function MobileWorkers() {
 
   const onSiteCount = attendance.filter((r) => r.attended && !r.exited).length;
 
-  const showQr = async (w: any) => {
-    try {
-      const url = `${window.location.origin}/worker/portal/${w.qr_token}`;
-      const img = await QRCode.toDataURL(url, { width: 320, margin: 1 });
-      setQr({ name: w.name, img, url });
-      await auditLog("view_qr", "worker", w.id, projectId || undefined, { name: w.name });
-    } catch (e: any) {
-      toast.error("QR 생성 실패: " + (e?.message || ""));
-    }
-  };
-
-  const copy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success("복사됨");
-    } catch {
-      toast.error("복사 실패");
-    }
-  };
-
   const lift = async (w: any) => {
     if (blockWrite()) {
       toast.message("프리뷰 모드에서는 데이터를 변경할 수 없습니다.");
@@ -235,8 +209,8 @@ export default function MobileWorkers() {
 
           <TabsContent value="roster" className="space-y-3 mt-3">
             <p className="text-xs text-muted-foreground">
-              현장 근로자 명부입니다. 관리자는 출입을 1일·3일·영구 정지할 수 있습니다.
-              (일일 QR·시공사 게시판 QR은 PC에서만 제공합니다.)
+              현장 근로자 명부입니다. QR 전용 포털은 종료되었고 계정 로그인이 필요합니다.
+              관리자는 출입을 1일·3일·영구 정지할 수 있습니다. (일일·시공사 게시판 QR은 PC)
             </p>
             <div className="relative">
               <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -280,9 +254,6 @@ export default function MobileWorkers() {
                           </Badge>
                         )}
                       </div>
-                      <Button size="sm" variant="outline" onClick={() => showQr(w)}>
-                        <QrCode className="h-4 w-4 mr-1" /> QR
-                      </Button>
                     </div>
                     {suspended && (
                       <div className="text-[11px] text-destructive/90">
@@ -385,26 +356,6 @@ export default function MobileWorkers() {
         onDone={loadRoster}
       />
 
-      {qr && (
-        <div
-          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
-          onClick={() => setQr(null)}
-        >
-          <Card className="w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <CardContent className="pt-4 space-y-3 text-center">
-              <div className="font-bold">{qr.name}</div>
-              <img src={qr.img} alt="QR" className="mx-auto rounded border" />
-              <div className="text-xs text-muted-foreground break-all">{qr.url}</div>
-              <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" onClick={() => copy(qr.url)}>
-                  <Copy className="h-4 w-4 mr-1" /> 링크 복사
-                </Button>
-                <Button onClick={() => setQr(null)}>닫기</Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   );
 }

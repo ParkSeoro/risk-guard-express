@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  CREW_PRINT_ROWS_PER_PAGE,
   buildPersonnelCountPatch,
+  chunkForPrintPages,
   filterPermitAssignableWorkers,
   formatWorkerPhone,
 } from "@/lib/permitWorkers";
@@ -48,4 +50,11 @@ describe("permitWorkers helpers", () => {
     ).toEqual([]);
   });
 
+  it("paginates 15 crew onto separate print pages without dropping rows", () => {
+    const rows = Array.from({ length: 15 }, (_, i) => ({ id: String(i + 1) }));
+    const pages = chunkForPrintPages(rows, CREW_PRINT_ROWS_PER_PAGE);
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages.flat()).toHaveLength(15);
+    expect(pages[0].length).toBeLessThanOrEqual(CREW_PRINT_ROWS_PER_PAGE);
+  });
 });

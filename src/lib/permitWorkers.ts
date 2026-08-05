@@ -51,3 +51,12 @@ export function formatWorkerPhone(phone?: string | null): string {
   if (d.length === 10) return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
   return phone;
 }
+
+/** Split list into print pages (empty input → one empty page). */
+export function chunkForPrintPages<T>(rows: T[], size: number): T[][] {
+  if (size <= 0) return [rows];
+  if (rows.length === 0) return [[]];
+  const out: T[][] = [];
+  for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
+  return out;
+}

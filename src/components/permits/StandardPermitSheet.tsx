@@ -28,7 +28,8 @@ export default function StandardPermitSheet({ children, mode = 'screen', classNa
         }
         @media print {
           @page { size: A4 portrait; margin: 6mm; }
-          html, body { width: 210mm; height: 297mm; margin: 0 !important; padding: 0 !important; background: white !important; }
+          /* height:auto — 을지(인원 명단) 다페이지 인쇄가 body 297mm 고정에 잘리지 않도록 */
+          html, body { width: 210mm; height: auto !important; margin: 0 !important; padding: 0 !important; background: white !important; overflow: visible !important; }
           .standard-permit-sheet-wrap { overflow: visible !important; width: 100% !important; }
           .standard-permit-sheet {
             width: 198mm !important;

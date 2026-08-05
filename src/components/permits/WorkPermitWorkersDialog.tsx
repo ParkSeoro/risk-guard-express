@@ -11,6 +11,7 @@ import {
   buildPersonnelCountPatch,
   filterPermitAssignableWorkers,
 } from "@/lib/permitWorkers";
+import { syncPermitCrewToTbm } from "@/lib/syncPermitCrewToTbm";
 
 type Props = {
   permit: any | null;
@@ -168,6 +169,19 @@ export default function WorkPermitWorkersDialog({
       toast.error("작업인원 동기화 실패: " + countErr.message);
       setSaving(false);
       return;
+    }
+
+    // Linked TBM: keep participant roster in sync with permit crew
+    if (permit.tbm_session_id) {
+      const sync = await syncPermitCrewToTbm({
+        permitId: permit.id,
+        tbmSessionId: permit.tbm_session_id,
+      });
+      if (!sync.ok) {
+        toast.error("TBM 참석자 동기화 실패: " + sync.error);
+        setSaving(false);
+        return;
+      }
     }
 
     setSaving(false);

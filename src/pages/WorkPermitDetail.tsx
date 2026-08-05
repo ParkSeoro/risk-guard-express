@@ -23,6 +23,7 @@ import PermitWorkersPrintPage, {
 import type { PermitWorkerRow } from '@/lib/permitWorkers';
 import { canManagePermitCrew, ensureTbmForPermit } from '@/lib/tbmFromPermit';
 import { syncPermitCrewFromOnSite } from '@/lib/permitCrewSync';
+import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import PermitKindSelector from '@/components/permits/PermitKindSelector';
@@ -129,11 +130,15 @@ export default function WorkPermitDetail() {
     const ids = ((links as any[]) || []).map((r) => r.worker_id).filter(Boolean);
     let rows: PermitWorkerRow[] = [];
     if (ids.length > 0) {
-      const { data: ws } = await supabase
-        .from('workers')
-        .select('id, name, phone, company_name')
-        .in('id', ids);
-      const byId = new Map(((ws as any[]) || []).map((w) => [w.id, w]));
+      const byId = new Map<string, any>();
+      for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        const { data: ws } = await supabase
+          .from('workers')
+          .select('id, name, phone, company_name')
+          .in('id', chunk);
+        for (const w of (ws as any[]) || []) byId.set(w.id, w);
+      }
       rows = ids
         .map((id) => byId.get(id))
         .filter(Boolean)
@@ -147,6 +152,10 @@ export default function WorkPermitDetail() {
     setAssignedWorkers(rows);
 
     if (tbmSessionId) {
+      // Heal missing TBM participants when permit already has a crew
+      if (rows.length > 0) {
+        await syncPermitCrewToTbm({ permitId, tbmSessionId });
+      }
       const [{ data: sess }, { data: parts }] = await Promise.all([
         supabase.from('tbm_sessions' as any).select('id, title').eq('id', tbmSessionId).maybeSingle(),
         supabase
@@ -708,6 +717,19 @@ export default function WorkPermitDetail() {
                       toast({ title: '출근자 반영 실패', description: res.error, variant: 'destructive' });
                       return;
                     }
+                    if (permit.tbm_session_id) {
+                      const tbmSync = await syncPermitCrewToTbm({
+                        permitId: permit.id,
+                        tbmSessionId: permit.tbm_session_id,
+                      });
+                      if (!tbmSync.ok) {
+                        toast({
+                          title: '출근 반영됨 · TBM 동기화 실패',
+                          description: tbmSync.error,
+                          variant: 'destructive',
+                        });
+                      }
+                    }
                     toast({ title: `실출근 ${res.count}명으로 명단 갱신` });
                     setData((d) => ({ ...d, personnel_count: res.count }));
                     await load();
@@ -790,9 +812,9 @@ export default function WorkPermitDetail() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            1허가서 = 1 TBM. 허가서 작업내용·위험요인을 가져와 일지를 만들고, AI는 브리핑 초안만 채웁니다.
+            1허가서 = 1 TBM. 배정 근로자는 TBM 참석자로 자동 연동됩니다. AI는 브리핑 초안만 채웁니다.
             {permit?.tbm_session_id && tbmTitle
-              ? ` 현재: 「${tbmTitle}」 · 참여자 ${tbmParticipants.length}명`
+              ? ` 현재: 「${tbmTitle}」 · 참여자 ${tbmParticipants.length}명 / 배정 ${assignedWorkers.length}명`
               : ''}
           </p>
         </CardContent>

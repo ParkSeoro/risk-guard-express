@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildPersonnelCountPatch,
+  chunkForPrintPages,
   filterPermitAssignableWorkers,
   formatWorkerPhone,
 } from "@/lib/permitWorkers";
@@ -46,5 +47,14 @@ describe("permitWorkers helpers", () => {
         null,
       ),
     ).toEqual([]);
+  });
+
+  it("paginates crew for print without dropping the remainder", () => {
+    const rows = Array.from({ length: 15 }, (_, i) => i + 1);
+    const pages = chunkForPrintPages(rows, 10);
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toHaveLength(10);
+    expect(pages[1]).toEqual([11, 12, 13, 14, 15]);
+    expect(pages.flat()).toHaveLength(15);
   });
 });

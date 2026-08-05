@@ -6,6 +6,7 @@ import {
   syncPermitDateFromWorkStart,
   permitValidityKind,
   shouldShowPermitValidityBadge,
+  shouldShowPermitRejectionReason,
   canViewPermitInList,
   isUserInvolvedInPermit,
 } from '@/lib/permitWorkDate';
@@ -134,5 +135,19 @@ describe('isUserInvolvedInPermit', () => {
 describe('todayKst', () => {
   it('returns YYYY-MM-DD', () => {
     expect(todayKst()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+describe('shouldShowPermitRejectionReason', () => {
+  it('hides stale rejection on issued/approved permits', () => {
+    expect(shouldShowPermitRejectionReason('승인', '첨부서류 누락')).toBe(false);
+    expect(shouldShowPermitRejectionReason('발행완료', '반려')).toBe(false);
+    expect(shouldShowPermitRejectionReason('결재중', '첨부서류 누락')).toBe(false);
+  });
+
+  it('shows only while currently rejected with a reason', () => {
+    expect(shouldShowPermitRejectionReason('반려', '첨부서류 누락')).toBe(true);
+    expect(shouldShowPermitRejectionReason('반려', '  ')).toBe(false);
+    expect(shouldShowPermitRejectionReason('반려', null)).toBe(false);
   });
 });

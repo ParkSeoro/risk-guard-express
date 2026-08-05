@@ -16,6 +16,18 @@ export const APPROVED_PERMIT_STATUSES_FOR_VALIDITY = new Set([
   '마감',
 ]);
 
+/**
+ * 반려 사유는 현재 상태가 반려일 때만 표시.
+ * 재상신·발행 완료 후에도 rejection_reason 컬럼이 남아 있어도 UI에 노출하지 않음.
+ */
+export function shouldShowPermitRejectionReason(
+  status?: string | null,
+  rejectionReason?: string | null,
+): boolean {
+  if (!REJECTED_PERMIT_STATUSES.has(status || '')) return false;
+  return Boolean(String(rejectionReason || '').trim());
+}
+
 /** Today's date in Asia/Seoul as YYYY-MM-DD. */
 export function todayKst(now: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', {

@@ -27,10 +27,30 @@ export default function TbmPrintSection({ runId }: { runId: string }) {
   if (data.length === 0) return null;
 
   return (
-    <div className="hidden print:block mt-6 page-break-before">
+    <div className="hidden print:block mt-6 page-break-before tbm-print-signatures">
+      <style>{`
+        @media print {
+          .tbm-print-signatures {
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+            page-break-inside: auto !important;
+          }
+          .tbm-print-signatures table,
+          .tbm-print-signatures tbody {
+            page-break-inside: auto !important;
+            break-inside: auto !important;
+          }
+          .tbm-print-signatures thead { display: table-header-group; }
+          .tbm-print-signatures tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+        }
+      `}</style>
       <h2 className="text-lg font-bold mb-3 border-b-2 border-foreground pb-1">근로자 TBM 참여 및 서명</h2>
       {data.map(({ session, participants }) => (
-        <div key={session.id} className="mb-6 break-inside-avoid">
+        <div key={session.id} className="mb-6">
           <div className="flex justify-between text-sm mb-2 border-b pb-1">
             <strong>{session.title}</strong>
             <span>{session.tbm_date} · {session.location} · 주관: {session.leader_name}</span>

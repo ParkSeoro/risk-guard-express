@@ -52,9 +52,9 @@ export function formatWorkerPhone(phone?: string | null): string {
   return phone;
 }
 
-/** Safe fit for A4 portrait crew sheet (header + signature column). */
-export const CREW_PRINT_ROWS_PER_PAGE = 14;
-export const TBM_PRINT_ROWS_PER_PAGE = 12;
+/** Safe fit for A4 portrait crew sheet (header + tall signature column). */
+export const CREW_PRINT_ROWS_PER_PAGE = 12;
+export const TBM_PRINT_ROWS_PER_PAGE = 10;
 
 /** Split rows into print pages (empty → one empty page). */
 export function chunkForPrintPages<T>(rows: T[], size: number): T[][] {

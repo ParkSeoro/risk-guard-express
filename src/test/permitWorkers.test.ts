@@ -53,8 +53,9 @@ describe("permitWorkers helpers", () => {
   it("paginates 15 crew onto separate print pages without dropping rows", () => {
     const rows = Array.from({ length: 15 }, (_, i) => ({ id: String(i + 1) }));
     const pages = chunkForPrintPages(rows, CREW_PRINT_ROWS_PER_PAGE);
-    expect(pages.length).toBeGreaterThan(1);
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toHaveLength(CREW_PRINT_ROWS_PER_PAGE);
+    expect(pages[1]).toHaveLength(15 - CREW_PRINT_ROWS_PER_PAGE);
     expect(pages.flat()).toHaveLength(15);
-    expect(pages[0].length).toBeLessThanOrEqual(CREW_PRINT_ROWS_PER_PAGE);
   });
 });

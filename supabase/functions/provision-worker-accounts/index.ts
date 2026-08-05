@@ -123,14 +123,19 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Ensure company is linked to project
-    const { data: pc } = await admin
+    // Ensure company is linked to project (dual-role: prefer access_edge; never maybeSingle on multi rows)
+    const { data: pcRows, error: pcErr } = await admin
       .from("project_companies")
-      .select("id")
+      .select("id, access_edge")
       .eq("project_id", projectId)
       .eq("company_id", companyId)
       .eq("is_deleted", false)
-      .maybeSingle();
+      .order("access_edge", { ascending: false })
+      .limit(1);
+    if (pcErr) {
+      return fail("invalid_company", pcErr.message, "업체-프로젝트 연결을 확인할 수 없습니다.");
+    }
+    const pc = (pcRows && pcRows[0]) || null;
     if (!pc) {
       return fail(
         "invalid_company",

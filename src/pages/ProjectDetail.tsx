@@ -521,7 +521,7 @@ const ProjectDetail = () => {
       if (linked.secondary) {
         toast({
           title: '이중 역할로 등록했습니다',
-          description: '조직도에만 추가됩니다. 결재·권한·문서 범위는 기존 시공사(법인) 소속을 그대로 유지합니다.',
+          description: '조직도에만 추가됩니다. 결재·권한·문서 범위는 해당 법인의 기존 기본 소속(권한 자리)을 그대로 유지합니다.',
         });
       } else {
         toast({ title: '업체가 프로젝트에 등록되었습니다.' });
@@ -547,24 +547,42 @@ const ProjectDetail = () => {
     const remaining = companies.filter(
       (c) => c.id === companyId && c.project_company_id !== linkId,
     );
+
+    // Delete first, then promote — avoids one_access_edge unique violation
+    // (cannot set a second access_edge=true while primary still exists).
+    const { error } = await (supabase as any).from('project_companies')
+      .delete().eq('id', linkId);
+    if (error) { toast({ title: '제외 실패', description: error.message, variant: 'destructive' }); return; }
+
     if (remaining.length === 0) {
-      // Last persona for this legal company — clear child parents
       await (supabase as any).from('project_companies')
         .update({ parent_company_id: null })
         .eq('project_id', projectId).eq('parent_company_id', companyId);
     } else if (persona.access_edge !== false) {
-      // Promote another persona so one access_edge remains
-      const promoteId = remaining[0].project_company_id;
-      if (promoteId) {
-        await (supabase as any).from('project_companies')
+      // Prefer GC / master-aligned persona over org-chart contractor when promoting
+      const rank = (c: any) => {
+        const t = normalizeCompanyType(c.type) || c.type;
+        if (t === 'gc') return 0;
+        if (t === 'client') return 1;
+        return 2;
+      };
+      const promote = [...remaining].sort((a, b) => rank(a) - rank(b))[0];
+      if (promote?.project_company_id) {
+        const { error: promoErr } = await (supabase as any).from('project_companies')
           .update({ access_edge: true })
-          .eq('id', promoteId);
+          .eq('id', promote.project_company_id);
+        if (promoErr) {
+          toast({
+            title: '제외됨 · 권한 자리 승계 실패',
+            description: promoErr.message,
+            variant: 'destructive',
+          });
+          fetchAll();
+          return;
+        }
       }
     }
 
-    const { error } = await (supabase as any).from('project_companies')
-      .delete().eq('id', linkId);
-    if (error) { toast({ title: '제외 실패', description: error.message, variant: 'destructive' }); return; }
     toast({ title: '프로젝트에서 제외되었습니다.' });
     await log('업체 프로젝트 제외', 'project_company', linkId, projectId);
     fetchAll();
@@ -596,10 +614,27 @@ const ProjectDetail = () => {
       toast({ title: '수정 실패', description: '페르소나 ID를 찾을 수 없습니다.', variant: 'destructive' });
       return;
     }
+    const nextParent = editForm.parent_company_id || null;
+    const nextRole = normalizeCompanyType(editForm.type) || editForm.type;
+    const siblingClash = companies.find((c) =>
+      c.id === editingCompany.id
+      && c.project_company_id
+      && c.project_company_id !== linkId
+      && (normalizeCompanyType(c.type) || c.type) === nextRole
+      && (c.parent_company_id || null) === nextParent,
+    );
+    if (siblingClash) {
+      toast({
+        title: '수정 실패',
+        description: '같은 역할·상위 조합의 자리가 이미 있습니다. 기존 자리를 수정하거나 제외한 뒤 다시 시도하세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const { error: linkErr } = await (supabase as any).from('project_companies')
       .update({
         role_in_project: editForm.type,
-        parent_company_id: editForm.parent_company_id || null,
+        parent_company_id: nextParent,
       })
       .eq('id', linkId);
     if (linkErr) { toast({ title: '수정 실패', description: linkErr.message, variant: 'destructive' }); return; }
@@ -976,7 +1011,7 @@ const ProjectDetail = () => {
                 <CardTitle className="text-sm">업체 목록 (발주처 → 시공사 → 협력사)</CardTitle>
                 <p className="text-[10px] text-muted-foreground">
                   이 프로젝트에 <b>참여</b>하는 업체입니다. 신규 등록 시 <b>설정 &gt; 업체 관리</b>의 전역 마스터에서 검색해 선택하세요.
-                  같은 법인을 다른 역할(예: 시공사 + 타 시공사 협력사)로 추가할 수 있으며, 추가 자리는 조직도용입니다. 결재·권한은 기존 법인 소속을 유지합니다.
+                  어떤 시공사든 같은 법인을 다른 역할(시공사 + 타 시공사 협력사 등)로 추가할 수 있습니다. 추가 자리는 조직도용이며, 결재·권한은 법인 기본 소속(권한 자리)을 유지합니다.
                 </p>
               </div>
               {canManage && (
@@ -1314,9 +1349,15 @@ const ProjectDetail = () => {
               ) : companyForm.name.trim() ? (
                 <p className="text-[10px] text-muted-foreground">목록에서 고르지 않으면 신규 업체로 등록됩니다.</p>
               ) : null}
+              {companyForm.source_company_id && companies.some((c) => c.id === companyForm.source_company_id) && (
+                <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                  이미 이 프로젝트에 등록된 업체입니다. 아래에서 <b>다른 역할·상위</b>를 선택하면 이중 역할(조직도)로 추가됩니다.
+                  기존 결재·권한 자리는 덮어쓰지 않습니다.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">업체 구분</Label>
+              <Label className="text-xs">업체 구분 <span className="text-muted-foreground font-normal">(이 프로젝트에서의 역할 — 마스터 유형과 달라도 됨)</span></Label>
               <Select value={companyForm.type} onValueChange={v => setCompanyForm({ ...companyForm, type: v, parent_company_id: '' })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>

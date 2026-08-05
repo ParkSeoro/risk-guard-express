@@ -17,15 +17,29 @@ ALTER TABLE public.project_companies
 COMMENT ON COLUMN public.project_companies.access_edge IS
   'When true, this persona edge is used for RLS tree access and primary parent resolution. Secondary dual-role personas must stay false until Phase 2 (persona-scoped docs).';
 
--- Existing rows: exactly one access edge per (project, company) among active rows
+-- Existing rows: exactly one access edge per (project, company) among active rows.
+-- Prefer persona whose role matches master companies.type, then GC, then oldest.
 WITH ranked AS (
-  SELECT id,
+  SELECT pc.id,
          ROW_NUMBER() OVER (
-           PARTITION BY project_id, company_id
-           ORDER BY created_at ASC NULLS LAST, id ASC
+           PARTITION BY pc.project_id, pc.company_id
+           ORDER BY
+             CASE
+               WHEN lower(trim(COALESCE(pc.role_in_project, '')))
+                    = lower(trim(COALESCE(c.type, ''))) THEN 0
+               ELSE 1
+             END,
+             CASE
+               WHEN lower(trim(COALESCE(pc.role_in_project, '')))
+                    IN ('gc', '시공사', '원도급', '원청', 'general_contractor') THEN 0
+               ELSE 1
+             END,
+             pc.created_at ASC NULLS LAST,
+             pc.id ASC
          ) AS rn
-    FROM public.project_companies
-   WHERE COALESCE(is_deleted, false) = false
+    FROM public.project_companies pc
+    LEFT JOIN public.companies c ON c.id = pc.company_id
+   WHERE COALESCE(pc.is_deleted, false) = false
 )
 UPDATE public.project_companies pc
    SET access_edge = (ranked.rn = 1)
@@ -266,6 +280,10 @@ BEGIN
         UNION ALL
         SELECT child.id
         FROM (
+          -- Project-scoped access edges only (never secondary dual-role org-chart edges).
+          -- Prefer pc.parent_company_id; fall back to companies.parent only when pc.parent is null
+          -- so legacy single-role trees still work without letting a stale global parent
+          -- re-attach a peer-GC path under a secondary dual-role placement.
           SELECT pc.company_id AS id,
                  COALESCE(pc.parent_company_id, c.parent_company_id) AS parent_id
             FROM public.project_companies pc
@@ -273,9 +291,6 @@ BEGIN
            WHERE pc.project_id = _project_id
              AND COALESCE(pc.is_deleted, false) = false
              AND COALESCE(pc.access_edge, true) = true
-          UNION
-          SELECT c2.id, c2.parent_company_id AS parent_id
-            FROM public.companies c2
         ) child
         JOIN tree t ON child.parent_id = t.id
         WHERE child.id IS NOT NULL
@@ -400,3 +415,55 @@ $function$;
 
 GRANT EXECUTE ON FUNCTION public.can_access_company_data(uuid, uuid, uuid) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.can_write_company_data(uuid, uuid, uuid) TO authenticated, service_role;
+
+-- 7) Signup directory: one row per legal company (access_edge only).
+--    Dual-role org-chart personas must not appear twice in manager/worker signup pickers.
+CREATE OR REPLACE FUNCTION public.get_signup_company_directory()
+RETURNS TABLE (
+  project_id uuid,
+  project_name text,
+  company_id uuid,
+  company_name text,
+  company_type text
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+  SELECT
+    p.id,
+    p.name,
+    c.id,
+    c.name,
+    COALESCE(NULLIF(btrim(c.type), ''), pc.role_in_project::text) AS company_type
+  FROM public.project_companies pc
+  JOIN public.projects p ON p.id = pc.project_id
+  JOIN public.companies c ON c.id = pc.company_id
+  WHERE pc.is_deleted = false
+    AND COALESCE(pc.access_edge, true) = true
+    AND c.is_deleted = false
+    AND COALESCE(p.is_deleted, false) = false
+    AND COALESCE(NULLIF(btrim(p.status), ''), '진행중') NOT IN ('완료', '폐기', '삭제')
+  ORDER BY p.name, c.name;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_signup_company_directory() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_signup_company_directory() TO anon, authenticated, service_role;
+
+COMMENT ON FUNCTION public.get_signup_company_directory() IS
+  'Signup company picker — one access_edge persona per legal company (dual-role safe).';
+
+-- Keep view aligned (legacy readers / FK type refs)
+CREATE OR REPLACE VIEW public.signup_company_directory AS
+SELECT p.id AS project_id, p.name AS project_name,
+       c.id AS company_id, c.name AS company_name,
+       COALESCE(NULLIF(btrim(c.type), ''), pc.role_in_project) AS company_type
+FROM public.project_companies pc
+JOIN public.projects p ON p.id = pc.project_id
+JOIN public.companies c ON c.id = pc.company_id
+WHERE pc.is_deleted = false
+  AND COALESCE(pc.access_edge, true) = true
+  AND c.is_deleted = false;
+
+GRANT SELECT ON public.signup_company_directory TO anon, authenticated;

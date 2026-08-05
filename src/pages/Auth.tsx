@@ -226,15 +226,22 @@ const Auth = () => {
     return Array.from(map, ([id, name]) => ({ id, name }));
   }, [signupProjects, directory]);
 
-  /** 근로자: 협력사/공급사 우선, 없으면 전체 */
+  /** 근로자: 협력사/공급사 우선, 없으면 전체. Dual-role: company_id당 1행. */
   const companyOptions = useMemo(() => {
     const inProject = directory.filter((d) => d.project_id === selectedProject);
-    if (signupAudience !== 'worker') return inProject;
-    const contractors = inProject.filter((d) => {
+    const deduped: typeof inProject = [];
+    const seen = new Set<string>();
+    for (const d of inProject) {
+      if (!d.company_id || seen.has(d.company_id)) continue;
+      seen.add(d.company_id);
+      deduped.push(d);
+    }
+    if (signupAudience !== 'worker') return deduped;
+    const contractors = deduped.filter((d) => {
       const t = normalizeCompanyType(d.company_type);
       return t === 'contractor' || t === 'vendor';
     });
-    return contractors.length > 0 ? contractors : inProject;
+    return contractors.length > 0 ? contractors : deduped;
   }, [directory, selectedProject, signupAudience]);
 
   const selectedCompanyRow = useMemo(

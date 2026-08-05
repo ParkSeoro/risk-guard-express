@@ -1766,7 +1766,7 @@ const AssessmentRunDetail = () => {
     : '';
 
   return (
-    <div className="space-y-4 animate-fade-in print:space-y-2">
+    <div className="space-y-4 animate-fade-in print:space-y-2 print-a4-landscape">
       {(autoGenLoading || (autoGenJob.status === 'running' && autoGenJob.runId === runId)) && (
         <div className="print:hidden sticky top-0 z-30 rounded-lg border border-accent/40 bg-accent/10 px-4 py-3 shadow-sm backdrop-blur-sm">
           <div className="flex items-start gap-3">

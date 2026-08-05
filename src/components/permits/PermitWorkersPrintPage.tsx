@@ -1,9 +1,19 @@
 /**
- * Permit print appendix (뒷장) — assigned crew + optional linked TBM signatures.
- * Hidden on screen; sibling of DigPermitForm print pages (outer page-break).
- * Flows across as many A4 pages as needed — no single-page clip.
+ * Permit print appendix — 작업 인원 명단 (을지) + optional TBM signatures.
+ *
+ * CRITICAL: Always starts on a NEW page after the permit form(s).
+ * Paginated into discrete A4 sheets so rows are never clipped mid-list.
  */
-import { formatWorkerPhone, type PermitWorkerRow } from "@/lib/permitWorkers";
+import type { ReactNode } from "react";
+import {
+  CREW_PRINT_ROWS_PER_PAGE,
+  TBM_PRINT_ROWS_PER_PAGE,
+  chunkForPrintPages,
+  formatWorkerPhone,
+  type PermitWorkerRow,
+} from "@/lib/permitWorkers";
+
+export { CREW_PRINT_ROWS_PER_PAGE, TBM_PRINT_ROWS_PER_PAGE };
 
 export type TbmParticipantPrint = {
   id: string;
@@ -31,147 +41,189 @@ export default function PermitWorkersPrintPage({
   tbmTitle,
   tbmParticipants = [],
 }: Props) {
+  const crewPages = chunkForPrintPages(workers, CREW_PRINT_ROWS_PER_PAGE);
+  const tbmPages =
+    tbmParticipants.length > 0
+      ? chunkForPrintPages(tbmParticipants, TBM_PRINT_ROWS_PER_PAGE)
+      : [];
+
+  let crewOffset = 0;
+  let tbmOffset = 0;
+
   return (
     <div
-      className="hidden print:block text-foreground permit-crew-print"
+      className="hidden print:block text-foreground permit-crew-print-root"
       data-testid="permit-workers-print-page"
     >
       <style>{`
         @media print {
-          .permit-crew-print {
-            width: 210mm;
-            margin: 0 auto;
-            padding: 0 2mm;
-            color: #111;
+          @page { size: A4 portrait; margin: 10mm; }
+          .permit-crew-print-root {
+            display: block !important;
+            width: 100%;
             height: auto !important;
             max-height: none !important;
             overflow: visible !important;
-            page-break-inside: auto !important;
-            break-inside: auto !important;
+            /* Hard separation from 허가서 pages */
+            break-before: page !important;
+            page-break-before: always !important;
           }
-          .permit-crew-print,
-          .permit-crew-print table,
-          .permit-crew-print tbody,
-          .permit-crew-print thead {
-            page-break-inside: auto !important;
+          .permit-crew-sheet {
+            width: 190mm;
+            margin: 0 auto;
+            padding: 0;
+            box-sizing: border-box;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+            break-after: page !important;
+            page-break-after: always !important;
             break-inside: auto !important;
+            page-break-inside: auto !important;
           }
-          .permit-crew-print tr {
-            page-break-inside: avoid !important;
+          .permit-crew-sheet:last-child {
+            break-after: auto !important;
+            page-break-after: auto !important;
+          }
+          .permit-crew-sheet table,
+          .permit-crew-sheet tbody {
+            break-inside: auto !important;
+            page-break-inside: auto !important;
+          }
+          .permit-crew-sheet tr {
             break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
-          .permit-crew-print thead {
+          .permit-crew-sheet thead {
             display: table-header-group;
-          }
-          .permit-crew-print .crew-section-title {
-            page-break-after: avoid;
-            break-after: avoid;
-          }
-          .permit-crew-tbm {
-            page-break-before: always;
-            break-before: page;
           }
         }
       `}</style>
 
-      <h2 className="text-base font-bold border-b-2 border-foreground pb-1 mb-3 crew-section-title">
-        작업 인원 명단 (을지)
-      </h2>
-      <div className="text-xs mb-3 space-y-0.5">
-        {projectName && (
-          <div>
-            <span className="font-semibold">현장: </span>
-            {projectName}
-          </div>
-        )}
-        {workTitle && (
-          <div>
-            <span className="font-semibold">작업: </span>
-            {workTitle}
-          </div>
-        )}
-        {permitDate && (
-          <div>
-            <span className="font-semibold">일자: </span>
-            {permitDate}
-          </div>
-        )}
-        <div>
-          <span className="font-semibold">인원: </span>
-          {workers.length}명
-        </div>
-      </div>
+      {crewPages.map((pageWorkers, pageIdx) => {
+        const startNo = crewOffset;
+        crewOffset += pageWorkers.length;
+        return (
+          <CrewSheet key={`crew-${pageIdx}`}>
+            <h2 className="text-base font-bold border-b-2 border-foreground pb-1 mb-3">
+              작업 인원 명단 (을지)
+              {crewPages.length > 1 ? (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {pageIdx + 1}/{crewPages.length}
+                </span>
+              ) : null}
+            </h2>
+            <div className="text-xs mb-3 space-y-0.5">
+              {projectName && (
+                <div>
+                  <span className="font-semibold">현장: </span>
+                  {projectName}
+                </div>
+              )}
+              {workTitle && (
+                <div>
+                  <span className="font-semibold">작업: </span>
+                  {workTitle}
+                </div>
+              )}
+              {permitDate && (
+                <div>
+                  <span className="font-semibold">일자: </span>
+                  {permitDate}
+                </div>
+              )}
+              <div>
+                <span className="font-semibold">인원: </span>
+                {workers.length}명
+              </div>
+            </div>
 
-      {workers.length === 0 ? (
-        <p className="text-xs text-muted-foreground">배정된 근로자가 없습니다.</p>
-      ) : (
-        <table className="w-full text-xs border-collapse mb-6">
-          <thead>
-            <tr className="bg-muted">
-              <th className="border p-1 w-8">#</th>
-              <th className="border p-1">성명</th>
-              <th className="border p-1">소속</th>
-              <th className="border p-1">연락처</th>
-              <th className="border p-1 w-28">확인/서명</th>
-            </tr>
-          </thead>
-          <tbody>
-            {workers.map((w, i) => (
-              <tr key={w.id}>
-                <td className="border p-1 text-center">{i + 1}</td>
-                <td className="border p-1">{w.name}</td>
-                <td className="border p-1">{w.company_name || "-"}</td>
-                <td className="border p-1">{formatWorkerPhone(w.phone)}</td>
-                <td className="border p-1 h-10" />
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            {workers.length === 0 ? (
+              <p className="text-xs text-muted-foreground">배정된 근로자가 없습니다.</p>
+            ) : (
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-muted">
+                    <th className="border p-1 w-8">#</th>
+                    <th className="border p-1">성명</th>
+                    <th className="border p-1">소속</th>
+                    <th className="border p-1">연락처</th>
+                    <th className="border p-1 w-28">확인/서명</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageWorkers.map((w, i) => (
+                    <tr key={w.id}>
+                      <td className="border p-1 text-center">{startNo + i + 1}</td>
+                      <td className="border p-1">{w.name}</td>
+                      <td className="border p-1">{w.company_name || "-"}</td>
+                      <td className="border p-1">{formatWorkerPhone(w.phone)}</td>
+                      <td className="border p-1 h-10" />
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CrewSheet>
+        );
+      })}
 
-      {tbmParticipants.length > 0 && (
-        <div className="permit-crew-tbm">
-          <h3 className="text-sm font-bold border-b border-foreground pb-1 mb-2 crew-section-title">
-            TBM 참여·서명{tbmTitle ? ` — ${tbmTitle}` : ""}
-          </h3>
-          <table className="w-full text-xs border-collapse">
-            <thead>
-              <tr className="bg-muted">
-                <th className="border p-1 w-8">#</th>
-                <th className="border p-1">성명</th>
-                <th className="border p-1">소속</th>
-                <th className="border p-1">참여시각</th>
-                <th className="border p-1 w-28">서명</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tbmParticipants.map((p, i) => (
-                <tr key={p.id}>
-                  <td className="border p-1 text-center">{i + 1}</td>
-                  <td className="border p-1">{p.worker_name || "-"}</td>
-                  <td className="border p-1">{p.company_name || "-"}</td>
-                  <td className="border p-1">
-                    {p.participated_at
-                      ? new Date(p.participated_at).toLocaleString("ko-KR")
-                      : "-"}
-                  </td>
-                  <td className="border p-1 text-center">
-                    {p.signature_data ? (
-                      <img
-                        src={p.signature_data}
-                        alt="서명"
-                        className="inline-block h-8 max-w-full object-contain"
-                      />
-                    ) : (
-                      ""
-                    )}
-                  </td>
+      {tbmPages.map((pageParts, pageIdx) => {
+        const startNo = tbmOffset;
+        tbmOffset += pageParts.length;
+        return (
+          <CrewSheet key={`tbm-${pageIdx}`}>
+            <h3 className="text-sm font-bold border-b border-foreground pb-1 mb-2">
+              TBM 참여·서명{tbmTitle ? ` — ${tbmTitle}` : ""}
+              {tbmPages.length > 1 ? (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  {pageIdx + 1}/{tbmPages.length}
+                </span>
+              ) : null}
+            </h3>
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-muted">
+                  <th className="border p-1 w-8">#</th>
+                  <th className="border p-1">성명</th>
+                  <th className="border p-1">소속</th>
+                  <th className="border p-1">참여시각</th>
+                  <th className="border p-1 w-28">서명</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {pageParts.map((p, i) => (
+                  <tr key={p.id}>
+                    <td className="border p-1 text-center">{startNo + i + 1}</td>
+                    <td className="border p-1">{p.worker_name || "-"}</td>
+                    <td className="border p-1">{p.company_name || "-"}</td>
+                    <td className="border p-1">
+                      {p.participated_at
+                        ? new Date(p.participated_at).toLocaleString("ko-KR")
+                        : "-"}
+                    </td>
+                    <td className="border p-1 text-center">
+                      {p.signature_data ? (
+                        <img
+                          src={p.signature_data}
+                          alt="서명"
+                          className="inline-block h-8 max-w-full object-contain"
+                        />
+                      ) : (
+                        ""
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CrewSheet>
+        );
+      })}
     </div>
   );
+}
+
+function CrewSheet({ children }: { children: ReactNode }) {
+  return <div className="permit-crew-sheet">{children}</div>;
 }

@@ -253,18 +253,46 @@
     print-color-adjust: exact;
   }
   
-  /* Force A4 landscape */
+  /*
+   * Default print page = A4 portrait.
+   * (Previously forced landscape globally, which glued permit forms to the
+   * crew appendix and clipped worker rows. Landscape jobs opt in via
+   * .print-a4-landscape or their own window/@page.)
+   */
   @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+  .print-a4-landscape {
+    page: landscape-sheet;
+  }
+  @page landscape-sheet {
     size: A4 landscape;
     margin: 12mm;
   }
-  
-  /* Ensure tables don't overflow */
+
+  /* Ensure tables don't overflow — but allow multi-page crew lists */
   table {
     table-layout: fixed !important;
     width: 100% !important;
   }
-  
+
+  html, body {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Layout shells must not clip print content */
+  .min-h-screen,
+  .overflow-x-hidden,
+  [data-sidebar="sidebar"],
+  main, [role="main"] {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
   /* Hide non-essential UI */
   nav, aside, footer, .sidebar,
   button, [role="dialog"], [role="navigation"] {

@@ -638,7 +638,7 @@ export default function WorkPermitDetail() {
             size="sm"
             onClick={print}
             disabled={!canPrint}
-            title={!isApproved ? '결재 승인 후 인쇄 가능' : '허가서 + 인원 명단(뒷장) 연속 출력'}
+            title={!isApproved ? '결재 승인 후 인쇄 가능' : '허가서 인쇄 후 인원 명단(을지)은 별도 페이지로 출력'}
           >
             <Printer className="h-4 w-4 mr-1" />{canPrint ? '인쇄 / PDF' : '인쇄 불가'}
           </Button>
@@ -743,7 +743,7 @@ export default function WorkPermitDetail() {
           </div>
           {assignedWorkers.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              전날: 예상 인원 배정 → 당일: 「실출근으로 갱신」으로 맞춥니다. 인쇄 뒷장(을지)에 명단이 나갑니다.
+              전날: 예상 인원 배정 → 당일: 「실출근으로 갱신」으로 맞춥니다. 인쇄 시 인원 명단(을지)은 허가서와 별도 페이지로 나갑니다.
             </p>
           ) : (
             <ul className="text-xs grid sm:grid-cols-2 gap-1">
@@ -889,10 +889,26 @@ export default function WorkPermitDetail() {
         </StandardPermitSheet>
       </div>
 
-      {/* Print-only: consecutive kind pages + crew/TBM appendix (뒷장) */}
-      <div className="hidden print:block">
+      {/* Print-only: 허가서 종류별 페이지 + 별도 을지(인원 명단) — never same sheet */}
+      <div className="hidden print:block permit-print-job">
+        <style>{`
+          @media print {
+            @page { size: A4 portrait; margin: 8mm; }
+            .permit-print-job {
+              height: auto !important;
+              max-height: none !important;
+              overflow: visible !important;
+            }
+            .permit-print-form-page {
+              break-after: page !important;
+              page-break-after: always !important;
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+          }
+        `}</style>
         {selectedKinds.map((kind) => (
-          <div key={kind} className="page-break" style={{ pageBreakAfter: 'always' }}>
+          <div key={kind} className="permit-print-form-page">
             <StandardPermitSheet>
               <DigPermitForm
                 permitType={kind}
@@ -908,6 +924,7 @@ export default function WorkPermitDetail() {
             </StandardPermitSheet>
           </div>
         ))}
+        {/* 을지 = 별도 문서 블록 (page-break-before inside component) */}
         <PermitWorkersPrintPage
           workTitle={data.work_name || data.work_description || permit.work_description}
           permitDate={resolvePermitWorkDate(permit) || permit.permit_date}

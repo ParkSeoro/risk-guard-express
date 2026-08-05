@@ -24,6 +24,7 @@ export async function runHealthScenario(ctx: TestContext): Promise<StepResult[]>
       worker_name: "__QA__테스트근로자",
       type: "일반",
       scheduled_date: future.toISOString().slice(0, 10),
+      created_by: ctx.userId ?? null,
     }).select().single();
     if (error) {
       return {
@@ -92,8 +93,25 @@ export async function runHealthScenario(ctx: TestContext): Promise<StepResult[]>
     }
 
     const { data: risk, error: rErr } = await supabase.from("risk_items").insert({
-      project_id: projectId, process: "__QA__환경연계", severity: 1, probability: 2,
+      project_id: projectId,
+      process: "__QA__환경연계",
+      severity: 1,
+      frequency: 2,
+      likelihood_grade: "중",
+      severity_grade: "하",
+      risk_grade: "중",
+      improved_frequency: 1,
+      improved_severity: 1,
+      improved_likelihood_grade: "하",
+      improved_severity_grade: "하",
+      improved_risk_grade: "하",
+      status: "작성중",
+      item_category: "manual",
+      source_type: "manual",
+      is_user_reviewed: false,
+      is_excluded: false,
       linked_env_factor_ids: [factor.id],
+      created_by: ctx.userId ?? null,
     } as any).select().single();
     if (rErr) {
       await supabase.from("work_env_factors").delete().eq("id", factor.id);

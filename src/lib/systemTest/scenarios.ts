@@ -653,13 +653,20 @@ export async function runCrossTableScenario(ctx: TestContext): Promise<StepResul
           : []) as Array<{
         code: string; severity: string; count: number; detail?: string; message?: string;
       }>;
-      const high = findings.filter((f) => f.severity === "high" || f.severity === "critical");
+      // RPC returns one row per check — count=0 means that check is clean.
+      const high = findings.filter(
+        (f) =>
+          (f.severity === "high" || f.severity === "critical") &&
+          Number(f.count) > 0,
+      );
       return {
         pass: high.length === 0,
         error_location: high.length > 0
-          ? `${high.length} high-severity integrity issue(s): ${high.map((f) => f.code).join(", ")}`
+          ? `교차 무결성 ${high.length}건: ${high
+              .map((f) => `${f.code}(${f.count})`)
+              .join(", ")} — /admin/data-audit 확인`
           : undefined,
-        details: { total: findings.length, findings },
+        details: { total: findings.length, actionable: high.length, findings },
       };
     })
   );

@@ -24,6 +24,7 @@ import type { PermitWorkerRow } from '@/lib/permitWorkers';
 import { canManagePermitCrew, ensureTbmForPermit } from '@/lib/tbmFromPermit';
 import { syncPermitCrewFromOnSite } from '@/lib/permitCrewSync';
 import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
+import { printPermitBundle } from '@/lib/printPermitBundle';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import PermitKindSelector from '@/components/permits/PermitKindSelector';
@@ -576,14 +577,19 @@ export default function WorkPermitDetail() {
       });
       return;
     }
-    document.title = `안전작업허가서_${permit?.work_description || permit?.id || ''}`;
+    const title = `안전작업허가서_${permit?.work_description || permit?.id || ''}`;
+    document.title = title;
     try {
       await (document as any).fonts?.load?.('16px "Noto Sans KR"');
       await (document as any).fonts?.ready;
     } catch { /* ignore */ }
 
-    // DigPermitForm 연속 페이지 인쇄만 사용 (PDF 오버레이 경로 제거)
-    window.print();
+    // Isolated iframe print — escapes AppLayout flex so page breaks work
+    const res = await printPermitBundle({ title });
+    if (!res.ok) {
+      toast({ title: '인쇄 준비 실패', description: res.error, variant: 'destructive' });
+      window.print();
+    }
   };
 
   if (!permit) return <div className="p-6 text-sm text-muted-foreground">불러오는 중...</div>;
@@ -895,11 +901,15 @@ export default function WorkPermitDetail() {
           @media print {
             @page { size: A4 portrait; margin: 8mm; }
             .permit-print-job {
+              display: block !important;
               height: auto !important;
               max-height: none !important;
               overflow: visible !important;
             }
             .permit-print-form-page {
+              display: block !important;
+              /* Fill sheet so 을지 cannot share the same physical page */
+              min-height: 270mm;
               break-after: page !important;
               page-break-after: always !important;
               break-inside: avoid !important;

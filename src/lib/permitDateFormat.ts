@@ -1,10 +1,14 @@
-/** Approval stamp with time — e.g. `2026. 7. 28. 15:30` (month/day unpadded). */
+/**
+ * Approval stamp with time including seconds —
+ * e.g. `2026. 7. 28. 15:30:07` (month/day unpadded).
+ * Seconds are required so distinct approver clocks do not collapse to the same minute.
+ */
 export function formatPermitStamp(iso?: string | null): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}. ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}. ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 /**
@@ -45,4 +49,4 @@ export function formatPermitReviewDate(iso?: string | null): string {
 }
 
 /** Default overlay slot format matching print stamps */
-export const PERMIT_STAMP_FORMAT = 'YYYY. M. D. HH:mm';
+export const PERMIT_STAMP_FORMAT = 'YYYY. M. D. HH:mm:ss';

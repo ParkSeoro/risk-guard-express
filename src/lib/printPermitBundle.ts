@@ -1,14 +1,8 @@
 /**
  * Print work-permit forms + crew appendix from an isolated iframe.
- *
- * Rules:
- * - Each permit kind = exactly one A4 page (scale-to-fit)
- * - Crew (을지) starts on a new page after all kinds
- * - Escapes AppLayout flex so Chrome honors page breaks
+ * Escapes AppLayout flex so page breaks work. Does NOT rescale/reshape
+ * the DigPermitForm sheet (양식 틀 유지).
  */
-
-const PAGE_WIDTH_MM = 198;
-const PAGE_HEIGHT_MM = 277; // A4 297 − margins
 
 function collectHeadHtml(): string {
   const parts: string[] = [];
@@ -28,59 +22,6 @@ function unhidePrintNodes(root: HTMLElement) {
     }
     el.classList.remove("hidden");
     el.style.display = "block";
-  });
-}
-
-/**
- * Fit each kind sheet onto one A4.
- * - Natural size when content already fits (do NOT shrink and leave a huge bottom gap)
- * - Scale down only when content would overflow the printable area
- */
-export function fitPermitKindPagesToOneSheet(
-  root: ParentNode,
-  opts?: { pageWidthMm?: number; pageHeightMm?: number },
-): void {
-  const pageWmm = opts?.pageWidthMm ?? PAGE_WIDTH_MM;
-  const pageHmm = opts?.pageHeightMm ?? PAGE_HEIGHT_MM;
-  const mmToPx = 96 / 25.4;
-  const maxW = pageWmm * mmToPx;
-  const maxH = pageHmm * mmToPx;
-
-  root.querySelectorAll<HTMLElement>(".permit-print-form-page").forEach((page) => {
-    page.style.display = "block";
-    page.style.width = `${pageWmm}mm`;
-    page.style.height = `${pageHmm}mm`;
-    page.style.overflow = "hidden";
-    page.style.breakAfter = "page";
-    page.style.pageBreakAfter = "always";
-    page.style.breakInside = "avoid";
-    page.style.pageBreakInside = "avoid";
-    page.style.position = "relative";
-
-    const sheet =
-      (page.querySelector(".standard-permit-sheet") as HTMLElement | null) ||
-      (page.querySelector(".dig-permit-form") as HTMLElement | null);
-    if (!sheet) return;
-
-    sheet.style.transform = "none";
-    sheet.style.width = `${pageWmm}mm`;
-    sheet.style.maxWidth = `${pageWmm}mm`;
-    sheet.style.boxSizing = "border-box";
-
-    const rect = sheet.getBoundingClientRect();
-    const cssH = Number.parseFloat(String(sheet.style.height || "")) || 0;
-    const cssW = Number.parseFloat(String(sheet.style.width || "")) || 0;
-    const h = Math.max(sheet.scrollHeight, sheet.offsetHeight, rect.height, cssH);
-    const w = Math.max(sheet.scrollWidth, sheet.offsetWidth, rect.width, cssW || maxW);
-    if (!h || !w) return;
-
-    // Only shrink when overflowing; keep full size otherwise (fills page better)
-    let scale = 1;
-    if (h > maxH || w > maxW) {
-      scale = Math.min(maxH / h, maxW / w) * 0.99;
-    }
-    sheet.style.transformOrigin = "top left";
-    sheet.style.transform = scale < 0.999 ? `scale(${scale})` : "none";
   });
 }
 
@@ -114,7 +55,7 @@ export async function printPermitBundle(opts?: {
 <title>${title.replace(/[<>&"]/g, "")}</title>
 ${collectHeadHtml()}
 <style>
-  @page { size: A4 portrait; margin: 6mm; }
+  @page { size: A4 portrait; margin: 8mm; }
   html, body {
     margin: 0 !important;
     padding: 0 !important;
@@ -123,28 +64,20 @@ ${collectHeadHtml()}
     overflow: visible !important;
     display: block !important;
   }
-  .permit-print-job {
-    display: block !important;
-  }
+  .permit-print-job { display: block !important; }
   .permit-print-form-page {
     display: block !important;
-    width: ${PAGE_WIDTH_MM}mm;
-    height: ${PAGE_HEIGHT_MM}mm;
-    overflow: hidden !important;
+    width: 100%;
     break-after: page !important;
     page-break-after: always !important;
-    break-inside: avoid !important;
-    page-break-inside: avoid !important;
   }
   .standard-permit-sheet-wrap,
   .standard-permit-sheet {
     display: block !important;
     position: static !important;
     box-shadow: none !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    min-height: auto !important;
-    max-height: none !important;
+    margin: 0 auto !important;
+    transform: none !important;
   }
   .permit-crew-print-root {
     display: block !important;
@@ -171,10 +104,6 @@ ${collectHeadHtml()}
   unhidePrintNodes(clone);
   idoc.body.appendChild(clone);
 
-  // Wait a tick for layout, then scale each kind to one sheet
-  await new Promise((r) => setTimeout(r, 50));
-  fitPermitKindPagesToOneSheet(idoc);
-
   try {
     await (idoc as any).fonts?.ready;
   } catch {
@@ -192,7 +121,7 @@ ${collectHeadHtml()}
       } catch {
         resolve();
       }
-    }, 300);
+    }, 250);
   });
 
   iframe.remove();

@@ -225,7 +225,7 @@ export default function WorkPermitDetail() {
     // Latest approval version rows for this permit
     const { data: aps } = await supabase
       .from('approvals')
-      .select('position, approver_name, approver_id, status, approved_at, step_order, approval_version')
+      .select('position, approver_name, approver_id, status, approved_at, updated_at, step_order, approval_version')
       .eq('entity_type', 'work_permit')
       .eq('entity_id', id)
       .order('approval_version', { ascending: false })
@@ -236,7 +236,12 @@ export default function WorkPermitDetail() {
       const latestVersion = versioned[0].approval_version;
       versioned = versioned.filter((a: any) => a.approval_version === latestVersion);
     }
-    setSignatures(mergeApprovalSignatures(baseSig, versioned as any[]));
+    // Prefer each approvals row clock; fall back to updated_at when approved_at missing
+    const stampRows = (versioned as any[]).map((a) => ({
+      ...a,
+      approved_at: a.approved_at || a.updated_at || null,
+    }));
+    setSignatures(mergeApprovalSignatures(baseSig, stampRows));
 
     // Autofill 안전관리자/관리감독자 연락처 from approver profiles (when empty)
     try {
@@ -899,23 +904,17 @@ export default function WorkPermitDetail() {
       <div className="hidden print:block permit-print-job">
         <style>{`
           @media print {
-            @page { size: A4 portrait; margin: 6mm; }
+            @page { size: A4 portrait; margin: 8mm; }
             .permit-print-job {
               display: block !important;
               height: auto !important;
-              max-height: none !important;
               overflow: visible !important;
             }
-            /* 종류별 무조건 1장 — 실제 scale-to-fit 은 printPermitBundle 이 수행 */
+            /* 종류별 새 장 — 양식 폭/스케일은 StandardPermitSheet 원형 유지 */
             .permit-print-form-page {
               display: block !important;
-              width: 198mm;
-              height: 277mm;
-              overflow: hidden !important;
               break-after: page !important;
               page-break-after: always !important;
-              break-inside: avoid !important;
-              page-break-inside: avoid !important;
             }
           }
         `}</style>

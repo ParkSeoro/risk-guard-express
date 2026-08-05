@@ -7,9 +7,15 @@ import {
 } from '@/lib/permitDateFormat';
 
 describe('formatPermitStamp', () => {
-  it('formats approval datetime with time', () => {
-    const s = formatPermitStamp('2026-07-28T15:30:00');
-    expect(s).toMatch(/^2026\. 7\. 28\. \d{2}:\d{2}$/);
+  it('formats approval datetime with time including seconds', () => {
+    const s = formatPermitStamp('2026-07-28T15:30:07');
+    expect(s).toMatch(/^2026\. \d{1,2}\. \d{1,2}\. \d{2}:\d{2}:\d{2}$/);
+  });
+
+  it('keeps distinct seconds for near-simultaneous stamps', () => {
+    const a = formatPermitStamp('2026-08-05T04:28:01.000Z');
+    const b = formatPermitStamp('2026-08-05T04:28:45.000Z');
+    expect(a).not.toBe(b);
   });
 
   it('returns empty for invalid', () => {

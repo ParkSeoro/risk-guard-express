@@ -1,9 +1,9 @@
 # Feature Card #17 — 현장 사이트맵 / 구역 (`site_maps` + `site_zones` + `zone_qr_codes`)
 
 ## 1. Happy Path
-- 마스터/관리자/안전관리자가 평면도(PNG/JPG)를 업로드 → 구역(폴리곤) 그리기 → 입구/출구 QR 발급 → 인쇄·부착.
-- 근로자가 PWA로 QR 스캔하면 `worker_zone_events` 가 자동 기록되고, 위험·제한구역 입장은 즉시 알림.
-- (선택) NW/SE 위경도 입력 시 폴리곤을 GPS 다각형으로 자동 투영 → 백그라운드 지오펜스 활성.
+- PC 「통합 현장 관제맵」에서 평면도/드론 사진 업로드 → **모바일 워킹 보정**으로 지오레프 → 구역(폴리곤) 그리기 → QR 발급.
+- 위성 TL/TR/BL 수동 정렬은 **선택(고급)** — 필수가 아님.
+- 근로자 GPS/지오펜스는 워킹 보정(또는 고급 위성 정렬) 이후 활성.
 
 ## 2. Permission
 - 사이트맵·구역 작성/수정/삭제: `master`, `project_admin`, `safety_manager` (storage RLS는 `project_id/*` 경로로 격리).

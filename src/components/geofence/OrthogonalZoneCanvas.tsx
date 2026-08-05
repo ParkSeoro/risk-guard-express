@@ -304,7 +304,7 @@ export default function OrthogonalZoneCanvas({
       )}
       {offImageCount > 0 && (
         <div className="pointer-events-none absolute top-3 right-3 z-[1100] max-w-[14rem] rounded-md border border-amber-500/50 bg-amber-50/95 px-2.5 py-1.5 text-[10px] text-amber-950 shadow dark:bg-amber-950/90 dark:text-amber-50">
-          도면 밖 구역 {offImageCount}개 — 목록에서 선택하거나 맵핑 탭 위성에서 확인. 모바일
+          도면 밖 구역 {offImageCount}개 — 목록에서 선택하거나 고급 위성 정렬에서 확인. 모바일
           Walk&amp;Drop은 GPS 보정 후 재등록하세요.
         </div>
       )}

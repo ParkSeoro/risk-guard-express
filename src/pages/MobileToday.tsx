@@ -241,13 +241,18 @@ function ManagerToday({
       </Card>
 
       {isMaster && (
-        <Button
-          className="w-full h-11"
-          disabled={!projectId}
-          onClick={() => navigate("/app/worker/map-calibration")}
-        >
-          <Crosshair className="h-4 w-4 mr-2" /> 맵·GPS 맞추기
-        </Button>
+        <div className="space-y-1.5">
+          <Button
+            className="w-full h-11"
+            disabled={!projectId}
+            onClick={() => navigate("/app/worker/map-calibration")}
+          >
+            <Crosshair className="h-4 w-4 mr-2" /> 맵·GPS 맞추기
+          </Button>
+          <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+            도면 업로드 후 워킹 보정 · 위성 맵핑 불필요
+          </p>
+        </div>
       )}
     </div>
   );

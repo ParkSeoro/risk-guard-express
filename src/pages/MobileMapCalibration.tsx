@@ -562,7 +562,7 @@ export default function MobileMapCalibration() {
               </>
             ) : (
               <>
-                <p>도면 georef가 이미 맞을 때 잔여 오차만 1점으로 보정합니다.</p>
+                <p>워킹 보정 후 남는 수 m 오차만 1점으로 보정합니다.</p>
                 <p>
                   GPS ≤{GPS_CAL_MAX_ACCURACY_M}m, 보정량 ≤{GPS_CAL_MAX_OFFSET_M}m 일 때만
                   저장됩니다.
@@ -624,9 +624,9 @@ export default function MobileMapCalibration() {
           <Card>
             <CardContent className="p-4 text-sm text-muted-foreground">
               {maps.length === 0
-                ? "등록된 사이트맵이 없습니다. PC 현장통제맵에서 드론 맵을 먼저 올리세요."
+                ? "등록된 현장 도면이 없습니다. PC 「통합 현장 관제맵」에서 도면을 먼저 업로드하세요."
                 : mode === "bias"
-                  ? "이 맵에 TL/TR/BL 좌표가 없습니다. 워킹 보정으로 먼저 맞추거나 PC 맵핑을 저장하세요."
+                  ? "이 맵에 지오레프가 없습니다. 워킹 보정(권장)을 먼저 하세요. PC 위성 정렬은 선택입니다."
                   : "맵 이미지를 불러올 수 없습니다."}
             </CardContent>
           </Card>

@@ -117,8 +117,8 @@ export default function MobileMore() {
               <MapPin className="h-4 w-4 mr-2" /> 내 위치를 위험 구역으로
             </Button>
             <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-              워킹 보정: 시스템이 갈 수 있는 위치를 추천 → 현장에서 좌표 잡기. 1점 보정은 잔여
-              오차용. 프로젝트를 먼저 선택하세요.
+              PC에서 도면만 올리면 됩니다. 위성 맵핑은 필수가 아닙니다. 워킹 보정으로 A·B·C
+              좌표를 잡으세요. (프로젝트를 먼저 선택)
             </p>
             <MasterAlarmSimulator projectId={projectId || preview.previewProjectId || ""} />
           </CardContent>

@@ -296,7 +296,7 @@ export default function MobileHome() {
                   <Crosshair className="h-4 w-4 mr-2" /> 맵·GPS 맞추기
                 </Button>
                 <p className="text-[11px] text-muted-foreground text-center">
-                  마스터 전용 · 현장에서 도면 지점과 현재 GPS를 맞춰 지오펜스 오차를 보정합니다.
+                  마스터 전용 · PC 도면 업로드 후 워킹 보정(권장). 위성 맵핑은 필수가 아닙니다.
                 </p>
                 <MasterAlarmSimulator projectId={selectedProjectId} />
                 <p className="text-[11px] text-muted-foreground text-center">

@@ -5206,7 +5206,6 @@ export type Database = {
           submitted_at: string | null
           submitted_by: string | null
           updated_at: string
-          version_number: number | null
         }
         Insert: {
           assignee?: string | null
@@ -5262,7 +5261,6 @@ export type Database = {
           submitted_at?: string | null
           submitted_by?: string | null
           updated_at?: string
-          version_number?: number | null
         }
         Update: {
           assignee?: string | null
@@ -5318,7 +5316,6 @@ export type Database = {
           submitted_at?: string | null
           submitted_by?: string | null
           updated_at?: string
-          version_number?: number | null
         }
         Relationships: [
           {

@@ -1438,9 +1438,10 @@ const AssessmentRunDetail = () => {
     if (!newRun) { toast({ title: '생성 실패', variant: 'destructive' }); return; }
     const { data: srcItems } = await supabase.from('risk_items').select('*').eq('run_id', runId).eq('is_deleted', false).order('sort_order');
     if (srcItems && srcItems.length > 0) {
-      const copies = srcItems.map(({ id, created_at, updated_at, risk, improved_risk, is_locked, submitted_at, submitted_by, version_number, batch_id, ...rest }) => ({
-        ...rest, run_id: newRun.id, status: '미착수', is_locked: false, created_by: user.id,
-      }));
+      const copies = srcItems.map(({ id, created_at, updated_at, risk, improved_risk, is_locked, submitted_at, submitted_by, batch_id, ...rest }: any) => {
+        const { version_number: _vn, ...safe } = rest;
+        return { ...safe, run_id: newRun.id, status: '미착수', is_locked: false, created_by: user.id };
+      });
       await supabase.from('risk_items').insert(copies);
     }
     setShowRevision(false);

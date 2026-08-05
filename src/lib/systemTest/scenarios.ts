@@ -535,9 +535,9 @@ export async function runIntegrityScenario(ctx: TestContext): Promise<StepResult
     })
   );
 
-  // Version trigger on risk_items: changing process should increment version_number
+  // Version history SSOT: risk_item_versions (not risk_items.version_number)
   out.push(
-    await runStep("integ", "version_trigger_bumps", async () => {
+    await runStep("integ", "version_history_table", async () => {
       const { data: ins, error: eIns } = await supabase
         .from("risk_items")
         .insert({
@@ -560,29 +560,36 @@ export async function runIntegrityScenario(ctx: TestContext): Promise<StepResult
           is_excluded: false,
           created_by: ctx.userId,
         } as any)
-        .select("id, version_number")
+        .select("id, process")
         .single();
       if (eIns) return { pass: false, error_location: eIns.message };
       riskItemId = ins.id;
       await trackArtifact(ctx.runId, "risk_item", "risk_items", ins.id);
-      const v0 = ins.version_number || 1;
 
-      const { error: eUpd } = await supabase
-        .from("risk_items")
-        .update({ process: `${QA_PREFIX}V2` } as any)
-        .eq("id", ins.id);
-      if (eUpd) return { pass: false, error_location: eUpd.message };
-
-      const { data: chk } = await supabase
-        .from("risk_items")
-        .select("version_number")
-        .eq("id", ins.id)
+      const { data: ver, error: eVer } = await supabase
+        .from("risk_item_versions")
+        .insert({
+          risk_item_id: ins.id,
+          version_number: 1,
+          data: { process: ins.process },
+          changed_by: ctx.userId,
+          change_reason: `${QA_PREFIX}version_history`,
+        } as any)
+        .select("id, version_number, risk_item_id")
         .single();
-      const v1 = chk?.version_number || 1;
+      if (eVer) return { pass: false, error_location: eVer.message };
+      await trackArtifact(ctx.runId, "risk_item_version", "risk_item_versions", ver.id);
+
+      const { data: chk, error: eChk } = await supabase
+        .from("risk_item_versions")
+        .select("id, version_number")
+        .eq("risk_item_id", ins.id)
+        .eq("version_number", 1)
+        .maybeSingle();
       return {
-        pass: v1 > v0,
-        details: { v0, v1 },
-        error_location: v1 > v0 ? undefined : "version trigger did not bump",
+        pass: !eChk && !!chk,
+        details: { version_id: ver.id, found: !!chk },
+        error_location: eChk?.message || (!chk ? "version row not readable" : undefined),
       };
     })
   );

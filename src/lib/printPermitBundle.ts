@@ -31,7 +31,11 @@ function unhidePrintNodes(root: HTMLElement) {
   });
 }
 
-/** Scale each kind sheet so it fits on a single A4 printable area. */
+/**
+ * Fit each kind sheet onto one A4.
+ * - Natural size when content already fits (do NOT shrink and leave a huge bottom gap)
+ * - Scale down only when content would overflow the printable area
+ */
 export function fitPermitKindPagesToOneSheet(
   root: ParentNode,
   opts?: { pageWidthMm?: number; pageHeightMm?: number },
@@ -70,10 +74,13 @@ export function fitPermitKindPagesToOneSheet(
     const w = Math.max(sheet.scrollWidth, sheet.offsetWidth, rect.width, cssW || maxW);
     if (!h || !w) return;
 
-    const scale = Math.min(1, (maxH * 0.995) / h, (maxW * 0.995) / w);
+    // Only shrink when overflowing; keep full size otherwise (fills page better)
+    let scale = 1;
+    if (h > maxH || w > maxW) {
+      scale = Math.min(maxH / h, maxW / w) * 0.99;
+    }
     sheet.style.transformOrigin = "top left";
-    sheet.style.transform = `scale(${scale})`;
-    // Keep layout box of page fixed; scaled content paints inside overflow:hidden
+    sheet.style.transform = scale < 0.999 ? `scale(${scale})` : "none";
   });
 }
 

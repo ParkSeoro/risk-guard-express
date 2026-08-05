@@ -51,11 +51,11 @@ export default function StandardPermitSheet({ children, mode = 'screen', classNa
             /* scale is applied by printPermitBundle to fit one page per kind */
             transform-origin: top left;
           }
-          .dig-permit-form { font-size: 8.5pt !important; }
-          .dig-permit-form td, .dig-permit-form th { padding: 1px 3px !important; }
-          .dig-permit-form tr, .dig-permit-form td { height: 16px !important; min-height: 15px !important; }
-          .dig-permit-form h2.title { font-size: 13pt !important; margin: 2px 0 !important; letter-spacing: 1px !important; }
-          .dig-permit-form .form-header .logo { max-height: 30px !important; }
+          .dig-permit-form { font-size: 9.5pt !important; }
+          .dig-permit-form td, .dig-permit-form th { padding: 2px 4px !important; }
+          .dig-permit-form tr, .dig-permit-form td { height: 20px !important; min-height: 18px !important; }
+          .dig-permit-form h2.title { font-size: 15pt !important; margin: 4px 0 !important; letter-spacing: 2px !important; }
+          .dig-permit-form .form-header .logo { max-height: 40px !important; }
         }
       `}</style>
       <div className="standard-permit-sheet">

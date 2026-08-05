@@ -502,39 +502,34 @@ export default function DigPermitForm({
           width: 100% !important;
           max-width: 100%;
         }
-        /* printMode / iframe print: pack one kind onto one A4 */
+        /* printMode: readable size; only shrink via scale-to-fit when overflowing */
         .dig-permit-form.print-mode {
-          font-size: 8.5pt !important;
+          font-size: 9.5pt !important;
         }
         .dig-permit-form.print-mode td,
         .dig-permit-form.print-mode th {
-          padding: 1px 3px !important;
+          padding: 2px 4px !important;
         }
         .dig-permit-form.print-mode tr,
         .dig-permit-form.print-mode td {
-          height: 16px !important;
-          min-height: 15px !important;
+          height: 20px !important;
+          min-height: 18px !important;
         }
         .dig-permit-form.print-mode h2.title {
-          font-size: 13pt !important;
-          margin: 2px 0 !important;
-          letter-spacing: 1px !important;
+          font-size: 15pt !important;
+          margin: 4px 0 !important;
+          letter-spacing: 2px !important;
         }
         .dig-permit-form.print-mode .form-header {
-          margin-bottom: 3px !important;
+          margin-bottom: 6px !important;
         }
         .dig-permit-form.print-mode .form-header .logo {
-          max-height: 30px !important;
-        }
-        .dig-permit-form.print-mode .text-\\[10px\\],
-        .dig-permit-form.print-mode .text-\\[11px\\] {
-          font-size: 8px !important;
-          line-height: 1.2 !important;
+          max-height: 40px !important;
         }
         @media print {
           .page-break { page-break-after: always; }
           .dig-permit-form.print-mode {
-            font-size: 8.5pt !important;
+            font-size: 9.5pt !important;
           }
         }
       `}</style>

@@ -29,4 +29,15 @@ describe("fitPermitKindPagesToOneSheet", () => {
     expect(scale).toBeLessThan(1);
     expect(scale).toBeGreaterThan(0);
   });
+
+  it("does not shrink a sheet that already fits (avoids large bottom gap)", () => {
+    host.innerHTML = `
+      <div class="permit-print-form-page">
+        <div class="standard-permit-sheet" style="width:198mm;height:400px;background:#fff"></div>
+      </div>
+    `;
+    fitPermitKindPagesToOneSheet(host, { pageWidthMm: 198, pageHeightMm: 277 });
+    const sheet = host.querySelector(".standard-permit-sheet") as HTMLElement;
+    expect(sheet.style.transform === "none" || sheet.style.transform === "").toBe(true);
+  });
 });

@@ -414,8 +414,12 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         .center { text-align: center; }
         .muted { color: #777; }
         td img { height: 14mm; max-width: 40mm; object-fit: contain; }
-        tr { page-break-inside: avoid; }
+        /* 서명표는 한 장에 맞추지 않고 인원 수만큼 다음 장으로 이어짐 */
+        html, body { height: auto; overflow: visible; }
+        table, thead, tbody { page-break-inside: auto; }
+        tr { page-break-inside: avoid; break-inside: avoid; }
         thead { display: table-header-group; }
+        h2 { page-break-after: avoid; }
         .footer { margin-top: 6mm; font-size: 9pt; color: #555; text-align: right; }
       </style></head><body>
       <h1>TBM (Tool Box Meeting) 일지</h1>

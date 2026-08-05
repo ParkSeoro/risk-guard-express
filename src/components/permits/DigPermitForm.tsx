@@ -18,7 +18,11 @@ import {
   normalizeDisplayTemplate,
   type PermitDisplayTemplate,
 } from '@/lib/permitDisplayTemplate';
-import { formatPermitStamp, formatPermitReviewDate } from '@/lib/permitDateFormat';
+import {
+  formatPermitStamp,
+  formatPermitReviewDate,
+  formatPermitDateTimeRange,
+} from '@/lib/permitDateFormat';
 import {
   resolveSpecialFormSigSlot,
   sigSlotHasContent,
@@ -498,8 +502,40 @@ export default function DigPermitForm({
           width: 100% !important;
           max-width: 100%;
         }
+        /* printMode / iframe print: pack one kind onto one A4 */
+        .dig-permit-form.print-mode {
+          font-size: 8.5pt !important;
+        }
+        .dig-permit-form.print-mode td,
+        .dig-permit-form.print-mode th {
+          padding: 1px 3px !important;
+        }
+        .dig-permit-form.print-mode tr,
+        .dig-permit-form.print-mode td {
+          height: 16px !important;
+          min-height: 15px !important;
+        }
+        .dig-permit-form.print-mode h2.title {
+          font-size: 13pt !important;
+          margin: 2px 0 !important;
+          letter-spacing: 1px !important;
+        }
+        .dig-permit-form.print-mode .form-header {
+          margin-bottom: 3px !important;
+        }
+        .dig-permit-form.print-mode .form-header .logo {
+          max-height: 30px !important;
+        }
+        .dig-permit-form.print-mode .text-\\[10px\\],
+        .dig-permit-form.print-mode .text-\\[11px\\] {
+          font-size: 8px !important;
+          line-height: 1.2 !important;
+        }
         @media print {
           .page-break { page-break-after: always; }
+          .dig-permit-form.print-mode {
+            font-size: 8.5pt !important;
+          }
         }
       `}</style>
 
@@ -568,7 +604,7 @@ export default function DigPermitForm({
                 <th className="hd">{L('general.workDatetime', '작업일시')}</th>
                 <td colSpan={5}>
                   {readOnly || printMode ? (
-                    <span>{data.work_start || ''} ~ {data.work_end || ''}</span>
+                    <span>{formatPermitDateTimeRange(data.work_start, data.work_end)}</span>
                   ) : (
                     <div className="flex gap-2 items-center flex-wrap">
                       <DateTimePicker
@@ -875,7 +911,7 @@ export default function DigPermitForm({
                 <td>성명 : <Inp value={applicantNameShown} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
                 <td><SigCell k="applicant" /></td>
               </tr>
-              <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
+              <tr><th className="hd">작업 기간</th><td colSpan={3}>{formatPermitDateTimeRange(data.work_start, data.work_end)}</td></tr>
               <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>
               {!hide('cs_type') && (
               <tr>
@@ -993,7 +1029,7 @@ export default function DigPermitForm({
                 <td>성명 : <Inp value={applicantNameShown} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
                 <td><SigCell k="applicant" /></td>
               </tr>
-              <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
+              <tr><th className="hd">작업 기간</th><td colSpan={3}>{formatPermitDateTimeRange(data.work_start, data.work_end)}</td></tr>
               <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>
               {!hide('hw_type') && (
               <tr>
@@ -1100,7 +1136,7 @@ export default function DigPermitForm({
                 <td>성명 : <Inp value={applicantNameShown} onChangeText={(v: string) => update({ applicant_name: v })} /></td>
                 <td><SigCell k="applicant" /></td>
               </tr>
-              <tr><th className="hd">작업 기간</th><td colSpan={3}>{data.work_start || ''} ~ {data.work_end || ''}</td></tr>
+              <tr><th className="hd">작업 기간</th><td colSpan={3}>{formatPermitDateTimeRange(data.work_start, data.work_end)}</td></tr>
               <tr><th className="hd">작업 장소</th><td colSpan={3}><Inp value={data.work_location} onChangeText={(v: string) => update({ work_location: v })} /></td></tr>
               {!hide('ex_dims') && (
               <tr>

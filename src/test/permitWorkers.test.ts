@@ -50,12 +50,19 @@ describe("permitWorkers helpers", () => {
     ).toEqual([]);
   });
 
-  it("paginates 15 crew onto separate print pages without dropping rows", () => {
+  it("keeps 15 crew on one print page at current density", () => {
     const rows = Array.from({ length: 15 }, (_, i) => ({ id: String(i + 1) }));
     const pages = chunkForPrintPages(rows, CREW_PRINT_ROWS_PER_PAGE);
+    expect(pages).toHaveLength(1);
+    expect(pages[0]).toHaveLength(15);
+  });
+
+  it("paginates when crew exceeds one page without dropping rows", () => {
+    const rows = Array.from({ length: CREW_PRINT_ROWS_PER_PAGE + 3 }, (_, i) => ({
+      id: String(i + 1),
+    }));
+    const pages = chunkForPrintPages(rows, CREW_PRINT_ROWS_PER_PAGE);
     expect(pages).toHaveLength(2);
-    expect(pages[0]).toHaveLength(CREW_PRINT_ROWS_PER_PAGE);
-    expect(pages[1]).toHaveLength(15 - CREW_PRINT_ROWS_PER_PAGE);
-    expect(pages.flat()).toHaveLength(15);
+    expect(pages.flat()).toHaveLength(CREW_PRINT_ROWS_PER_PAGE + 3);
   });
 });

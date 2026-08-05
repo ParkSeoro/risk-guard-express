@@ -899,17 +899,19 @@ export default function WorkPermitDetail() {
       <div className="hidden print:block permit-print-job">
         <style>{`
           @media print {
-            @page { size: A4 portrait; margin: 8mm; }
+            @page { size: A4 portrait; margin: 6mm; }
             .permit-print-job {
               display: block !important;
               height: auto !important;
               max-height: none !important;
               overflow: visible !important;
             }
+            /* 종류별 무조건 1장 — 실제 scale-to-fit 은 printPermitBundle 이 수행 */
             .permit-print-form-page {
               display: block !important;
-              /* Fill sheet so 을지 cannot share the same physical page */
-              min-height: 270mm;
+              width: 198mm;
+              height: 277mm;
+              overflow: hidden !important;
               break-after: page !important;
               page-break-after: always !important;
               break-inside: avoid !important;

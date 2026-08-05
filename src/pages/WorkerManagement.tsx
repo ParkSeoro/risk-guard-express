@@ -26,6 +26,8 @@ import {
 import { isManagementJobType, isRosterManagementRow } from "@/lib/jobCategories";
 import { ADMIN_PROJECT_ROLES } from "@/lib/permissions";
 import { digitsOnlyPhone } from "@/lib/workerAuth";
+import { isClaimableOrphanWorker } from "@/lib/companyLabel";
+import { companyDocScopeMode } from "@/lib/companyDocScope";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
 
@@ -158,7 +160,8 @@ export default function WorkerManagement() {
       .eq("project_id", projectId)
       .eq("is_active", true)
       .order("created_at", { ascending: false });
-    if (access?.applyCompanyFilter) q = access.applyCompanyFilter(q);
+    // Include company_id NULL orphans; filter by company label so other firms stay hidden.
+    if (access?.applyCompanyFilter) q = access.applyCompanyFilter(q, { includeOrphans: true });
     const [{ data, error }, membersRes] = await Promise.all([
       q,
       supabase
@@ -223,7 +226,34 @@ export default function WorkerManagement() {
 
     setLoading(false);
     if (error) { toast.error(error.message); return; }
-    setWorkers(workerList);
+
+    // Full-project roles: keep query result. Own/tree scope: drop other firms' orphans.
+    // Label match is company-agnostic (any firm name, not a hardcoded company).
+    const scopeMode = companyDocScopeMode({
+      role: access?.userRole as any,
+      companyType: access?.userCompanyType,
+      isMaster: access?.isMaster,
+    });
+    if (scopeMode === "all") {
+      setWorkers(workerList);
+      return;
+    }
+    const ownCompanyId = companyId || access?.userCompanyId || null;
+    let ownName =
+      companies.find((c) => c.id === ownCompanyId)?.name
+      || workerList.find((w: any) => w.company_id === ownCompanyId)?.company_name
+      || null;
+    if (!ownName && ownCompanyId) {
+      const { data: cRow } = await supabase
+        .from("companies")
+        .select("name")
+        .eq("id", ownCompanyId)
+        .maybeSingle();
+      ownName = (cRow as { name?: string } | null)?.name || null;
+    }
+    setWorkers(
+      workerList.filter((w: any) => isClaimableOrphanWorker(w, ownCompanyId, ownName)),
+    );
   };
 
   const remove = async (w: any) => {

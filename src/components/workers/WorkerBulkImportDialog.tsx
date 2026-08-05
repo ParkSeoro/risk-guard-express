@@ -12,6 +12,7 @@ import {
   STANDARD_JOB_TYPES,
 } from "@/lib/jobCategories";
 import { provisionWorkerAccounts } from "@/lib/provisionWorkerAccounts";
+import { isClaimableOrphanWorker } from "@/lib/companyLabel";
 
 type Props = {
   projectId: string;
@@ -43,7 +44,7 @@ type Parsed = {
   _row: number;
   _error?: string;
   /** set after existing lookup preview */
-  _action?: "insert" | "update";
+  _action?: "insert" | "update" | "claim";
 };
 
 const TEMPLATE_HEADERS = [
@@ -206,20 +207,52 @@ export default function WorkerBulkImportDialog({
       const variants = [...new Set(valid.flatMap((r) => phoneLookupVariants(r.phone)))];
       const { data: existing, error } = await supabase
         .from("workers")
-        .select("id, phone")
+        .select("id, phone, company_id, company_name")
         .eq("project_id", projectId)
         .in("phone", variants);
       if (error) throw error;
-      const byDigits = new Map<string, string>();
-      for (const w of (existing as { id: string; phone: string }[]) || []) {
-        byDigits.set(phoneDigits(w.phone), w.id);
+      const byDigits = new Map<
+        string,
+        { id: string; company_id: string | null; company_name: string | null }
+      >();
+      for (const w of (existing as {
+        id: string;
+        phone: string;
+        company_id: string | null;
+        company_name: string | null;
+      }[]) || []) {
+        const d = phoneDigits(w.phone);
+        if (!byDigits.has(d)) {
+          byDigits.set(d, {
+            id: w.id,
+            company_id: w.company_id,
+            company_name: w.company_name,
+          });
+        }
       }
       setRows(
-        parsed.map((r) =>
-          r._error
-            ? r
-            : { ...r, _action: byDigits.has(r.phoneDigits) ? "update" : "insert" },
-        ),
+        parsed.map((r) => {
+          if (r._error) return r;
+          const hit = byDigits.get(r.phoneDigits);
+          if (!hit) return { ...r, _action: "insert" as const };
+          if (hit.company_id == null) {
+            // Company-agnostic: claim only when orphan label empty or matches importer company
+            if (isClaimableOrphanWorker(hit, companyId, companyName)) {
+              return { ...r, _action: "claim" as const };
+            }
+            return {
+              ...r,
+              _error: "동일 연락처의 기존 근로자 업체명과 일치하지 않아 귀속할 수 없습니다",
+            };
+          }
+          if (hit.company_id === companyId) {
+            return { ...r, _action: "update" as const };
+          }
+          return {
+            ...r,
+            _error: "동일 연락처가 다른 업체에 이미 등록되어 있습니다",
+          };
+        }),
       );
     } catch {
       setRows(parsed);
@@ -287,95 +320,30 @@ export default function WorkerBulkImportDialog({
     }
     setImporting(true);
     try {
-      // Re-resolve existing by digit-normalized phone (RLS + format safe)
-      const variants = [...new Set(valid.flatMap((r) => phoneLookupVariants(r.phone)))];
-      const { data: existing, error: exErr } = await supabase
-        .from("workers")
-        .select("id, phone, qr_token")
-        .eq("project_id", projectId)
-        .in("phone", variants);
-      if (exErr) throw exErr;
+      // Server-side upsert: inserts, updates, and claims company_id NULL orphans
+      // (label-matched). Avoids silent 0-row client updates blocked by RLS.
+      const { data: res, error: rpcErr } = await (supabase as any).rpc(
+        "upsert_project_workers_bulk",
+        {
+          _project_id: projectId,
+          _company_id: companyId,
+          _company_name: companyName || "",
+          _rows: valid.map((r) => ({
+            name: r.name,
+            phone: r.phone,
+            job_type: r.job_type,
+            birth_date: r.birth_date,
+            hire_date: r.hire_date,
+          })),
+        },
+      );
+      if (rpcErr) throw rpcErr;
+      if (res?.error) throw new Error(String(res.error));
 
-      const byDigits = new Map<string, { id: string; qr_token: string | null }>();
-      for (const w of (existing as any[]) || []) {
-        byDigits.set(phoneDigits(w.phone), {
-          id: w.id as string,
-          qr_token: (w.qr_token as string) || null,
-        });
-      }
-
-      const toInsert: any[] = [];
-      const toUpdate: Array<{ id: string; patch: Record<string, unknown> }> = [];
-
-      for (const r of valid) {
-        const patch = {
-          company_id: companyId,
-          company_name: companyName || "",
-          name: r.name,
-          phone: r.phone,
-          job_type: r.job_type,
-          birth_date: r.birth_date,
-          hire_date: r.hire_date,
-          is_active: true,
-        };
-        const hit = byDigits.get(r.phoneDigits);
-        if (hit) {
-          toUpdate.push({ id: hit.id, patch });
-        } else {
-          toInsert.push({
-            ...patch,
-            project_id: projectId,
-            qr_token: crypto.randomUUID(),
-          });
-        }
-      }
-
-      let inserted = 0;
-      let updated = 0;
-      const CHUNK = 100;
-
-      for (let i = 0; i < toInsert.length; i += CHUNK) {
-        const slice = toInsert.slice(i, i + CHUNK);
-        const { error } = await supabase.from("workers").insert(slice);
-        if (error) {
-          // Race / RLS-hidden existing row → upsert by unique (project_id, phone)
-          if (/workers_project_id_phone_key|duplicate key/i.test(error.message || "")) {
-            const { error: upErr } = await supabase.from("workers").upsert(slice, {
-              onConflict: "project_id,phone",
-              ignoreDuplicates: false,
-            });
-            if (upErr) throw upErr;
-            updated += slice.length;
-          } else {
-            throw error;
-          }
-        } else {
-          inserted += slice.length;
-        }
-      }
-
-      for (let i = 0; i < toUpdate.length; i += CHUNK) {
-        const slice = toUpdate.slice(i, i + CHUNK);
-        // Parallel chunk updates
-        const results = await Promise.all(
-          slice.map((u) =>
-            supabase.from("workers").update(u.patch).eq("id", u.id),
-          ),
-        );
-        for (let j = 0; j < results.length; j++) {
-          const { error } = results[j];
-          if (error) {
-            // Fallback: upsert by natural key
-            const u = slice[j];
-            const { error: upErr } = await supabase.from("workers").upsert(
-              { ...u.patch, project_id: projectId, id: u.id },
-              { onConflict: "project_id,phone" },
-            );
-            if (upErr) throw upErr;
-          }
-          updated += 1;
-        }
-      }
+      const inserted = Number(res?.inserted || 0);
+      const updated = Number(res?.updated || 0);
+      const claimed = Number(res?.claimed || 0);
+      const failed = Array.isArray(res?.failed) ? res.failed : [];
 
       const provision = await provisionWorkerAccounts({
         projectId,
@@ -394,9 +362,19 @@ export default function WorkerBulkImportDialog({
         : `로그인계정 생성 실패: ${provision.error || "unknown"}`;
 
       toast.success(
-        `명부 신규 ${inserted} · 업데이트 ${updated} · 오류 ${rows.length - valid.length}건 · ${provisionMsg}`,
-        { duration: 6000 },
+        `명부 신규 ${inserted} · 업데이트 ${updated}` +
+          (claimed ? ` · 고아인수 ${claimed}` : "") +
+          (failed.length ? ` · 실패 ${failed.length}` : "") +
+          ` · ${provisionMsg}`,
+        { duration: 7000 },
       );
+      if (failed.length) {
+        const sample = failed
+          .slice(0, 3)
+          .map((f: any) => `${f.phone || "?"}(${f.error || "?"})`)
+          .join(", ");
+        toast.error(`일부 행 실패: ${sample}`, { duration: 8000 });
+      }
       if (provision.ok && (provision.created > 0 || provision.linked > 0)) {
         toast.message("근로자 로그인", {
           description: "아이디=전화번호, 비밀번호=전화 뒤 4자리",
@@ -409,9 +387,9 @@ export default function WorkerBulkImportDialog({
       setFileName("");
     } catch (e: any) {
       const msg = e?.message || String(e);
-      if (/workers_project_id_phone_key|duplicate key/i.test(msg)) {
+      if (/workers_project_id_phone_key|duplicate key|OTHER_COMPANY/i.test(msg)) {
         toast.error(
-          "등록 실패: 이미 등록된 전화번호가 있습니다. 파일을 다시 선택하면 미리보기에 ‘업데이트’로 표시됩니다. 그래도 실패하면 해당 번호가 다른 회사 소속으로 잠겨 있을 수 있습니다.",
+          "등록 실패: 이미 다른 회사 소속인 전화번호가 있습니다. 미리보기의 ‘업데이트/고아인수’를 확인하세요.",
           { duration: 8000 },
         );
       } else {
@@ -425,6 +403,7 @@ export default function WorkerBulkImportDialog({
   const validCount = rows.filter((r) => !r._error).length;
   const errorCount = rows.length - validCount;
   const updateCount = rows.filter((r) => !r._error && r._action === "update").length;
+  const claimCount = rows.filter((r) => !r._error && r._action === "claim").length;
   const insertCount = rows.filter((r) => !r._error && r._action === "insert").length;
 
   return (
@@ -481,7 +460,8 @@ export default function WorkerBulkImportDialog({
             </div>
             <div>
               직종은 양식의 <strong>직종목록</strong> 시트에서 골라 입력하세요. 동일 전화번호는{" "}
-              <strong>기존 근로자 업데이트</strong>합니다.
+              <strong>기존 근로자 업데이트</strong>합니다. 회사 미배정(고아) 명부는 자사로{" "}
+              <strong>인수</strong>됩니다.
             </div>
             <div>
               등록 시 로그인 계정 자동 생성 — <strong>아이디=전화번호</strong>,{" "}
@@ -501,6 +481,11 @@ export default function WorkerBulkImportDialog({
                 )}
                 {updateCount > 0 && (
                   <Badge variant="outline">업데이트 {updateCount}</Badge>
+                )}
+                {claimCount > 0 && (
+                  <Badge variant="outline" className="border-amber-500/50 text-amber-700">
+                    고아인수 {claimCount}
+                  </Badge>
                 )}
                 {errorCount > 0 && (
                   <Badge variant="destructive" className="gap-1">
@@ -537,6 +522,8 @@ export default function WorkerBulkImportDialog({
                         <td className="p-2">
                           {r._error ? (
                             <span className="text-destructive">{r._error}</span>
+                          ) : r._action === "claim" ? (
+                            <span className="text-amber-700 dark:text-amber-400">고아인수</span>
                           ) : r._action === "update" ? (
                             <span className="text-amber-700 dark:text-amber-400">업데이트</span>
                           ) : (

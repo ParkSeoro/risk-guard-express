@@ -152,17 +152,31 @@ export function applyOwnCompanyFilter(
     isMaster?: boolean;
     /** Precomputed ids for tree mode; if missing, falls back to own-only for GC */
     accessibleCompanyIds?: string[] | null;
+    /**
+     * Also select company_id IS NULL rows (legacy orphans).
+     * Caller must filter by normalizeCompanyLabel — do not use for unrelated modules.
+     */
+    includeOrphans?: boolean;
   },
 ): any {
   const mode = companyDocScopeMode(opts);
   if (mode === 'all') return query;
 
   if (mode === 'tree' && opts.accessibleCompanyIds && opts.accessibleCompanyIds.length > 0) {
+    if (opts.includeOrphans) {
+      const ids = opts.accessibleCompanyIds.join(',');
+      return query.or(`company_id.in.(${ids}),company_id.is.null`);
+    }
     return query.in('company_id', opts.accessibleCompanyIds);
   }
 
-  // own, or tree without ids loaded yet → own only (safe)
-  if (opts.companyId) return query.eq('company_id', opts.companyId);
+  // own, or tree without ids loaded yet → own only (safe).
+  if (opts.companyId) {
+    if (opts.includeOrphans) {
+      return query.or(`company_id.eq.${opts.companyId},company_id.is.null`);
+    }
+    return query.eq('company_id', opts.companyId);
+  }
   return query.eq('company_id', NIL_COMPANY);
 }
 

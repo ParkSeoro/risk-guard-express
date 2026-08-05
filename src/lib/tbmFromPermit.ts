@@ -3,6 +3,7 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 import { PERMIT_KIND_LABEL, normalizePermitKinds, type PermitKindId } from "@/lib/permitKinds";
+import { syncPermitCrewToTbm } from "@/lib/syncPermitCrewToTbm";
 
 export type TbmFromPermitResult =
   | { ok: true; tbmId: string; reused: boolean }
@@ -137,7 +138,10 @@ export async function ensureTbmForPermit(opts: {
   if (perr || !permit) return { ok: false, error: perr?.message || "허가서를 찾을 수 없습니다." };
 
   if ((permit as any).tbm_session_id) {
-    return { ok: true, tbmId: (permit as any).tbm_session_id, reused: true };
+    const tbmId = (permit as any).tbm_session_id as string;
+    // Keep participants aligned even when reusing an existing link
+    await syncPermitCrewToTbm({ permitId: opts.permitId, tbmSessionId: tbmId });
+    return { ok: true, tbmId, reused: true };
   }
 
   const seed = buildTbmSeedFromPermit(permit);
@@ -214,7 +218,11 @@ export async function ensureTbmForPermit(opts: {
     return { ok: false, error: linkErr.message };
   }
 
-  return { ok: true, tbmId: (linkedId as string) || tbmId, reused: false };
+  const finalTbmId = (linkedId as string) || tbmId;
+  // Seed TBM participants from work_permit_workers (was missing → 0명 연동 끊김)
+  await syncPermitCrewToTbm({ permitId: opts.permitId, tbmSessionId: finalTbmId });
+
+  return { ok: true, tbmId: finalTbmId, reused: false };
 }
 
 export function canManagePermitCrew(role: string | null | undefined, isMaster?: boolean): boolean {

@@ -1,8 +1,9 @@
 /**
- * Sync work_permit_workers to today's on-site (checked-in) workers.
+ * Sync work_permit_workers to today's on-site (checked-in) workers
+ * scoped to the permit's company (never mix peer contractors).
  */
 import { supabase } from "@/integrations/supabase/client";
-import { buildPersonnelCountPatch } from "@/lib/permitWorkers";
+import { buildPersonnelCountPatch, filterPermitAssignableWorkers } from "@/lib/permitWorkers";
 import { todaySeoulDate } from "@/lib/dailyWorkAck";
 
 export async function syncPermitCrewFromOnSite(opts: {
@@ -11,6 +12,32 @@ export async function syncPermitCrewFromOnSite(opts: {
   formData?: Record<string, unknown> | null;
 }): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
   const day = todaySeoulDate();
+
+  const { data: permit, error: perr } = await supabase
+    .from("work_permits" as any)
+    .select("id, company_id, contractor_company, form_data")
+    .eq("id", opts.permitId)
+    .maybeSingle();
+  if (perr || !permit) return { ok: false, error: perr?.message || "허가서를 찾을 수 없습니다." };
+
+  const companyId = (permit as any).company_id as string | null;
+  if (!companyId) {
+    return { ok: false, error: "허가서에 소속 회사가 없어 출근자를 반영할 수 없습니다." };
+  }
+
+  let companyName: string | null =
+    ((permit as any).form_data || {}).contractor_company ||
+    (permit as any).contractor_company ||
+    null;
+  if (!companyName) {
+    const { data: cRow } = await supabase
+      .from("companies")
+      .select("name")
+      .eq("id", companyId)
+      .maybeSingle();
+    companyName = (cRow as any)?.name || null;
+  }
+
   const { data: logs, error: lerr } = await supabase
     .from("worker_entry_logs" as any)
     .select("worker_id, exit_at, entry_at")
@@ -19,11 +46,40 @@ export async function syncPermitCrewFromOnSite(opts: {
     .lte("entry_at", `${day}T23:59:59.999`);
   if (lerr) return { ok: false, error: lerr.message };
 
-  const onSite = new Set<string>();
+  const onSiteIds = new Set<string>();
   for (const row of (logs as any[]) || []) {
-    if (row.worker_id && !row.exit_at) onSite.add(row.worker_id);
+    if (row.worker_id && !row.exit_at) onSiteIds.add(row.worker_id);
   }
-  const ids = [...onSite];
+  const candidateIds = [...onSiteIds];
+  if (candidateIds.length === 0) {
+    // Clear crew + count when nobody on site
+    const { error: delEmpty } = await supabase
+      .from("work_permit_workers" as any)
+      .delete()
+      .eq("work_permit_id", opts.permitId);
+    if (delEmpty) return { ok: false, error: delEmpty.message };
+    const patch = buildPersonnelCountPatch(opts.formData ?? (permit as any).form_data, 0);
+    const { error: uerr } = await supabase
+      .from("work_permits" as any)
+      .update(patch as any)
+      .eq("id", opts.permitId);
+    if (uerr) return { ok: false, error: uerr.message };
+    return { ok: true, count: 0 };
+  }
+
+  const workers: any[] = [];
+  for (let i = 0; i < candidateIds.length; i += 100) {
+    const chunk = candidateIds.slice(i, i + 100);
+    const { data: ws, error: werr } = await supabase
+      .from("workers")
+      .select("id, company_id, company_name")
+      .in("id", chunk);
+    if (werr) return { ok: false, error: werr.message };
+    workers.push(...((ws as any[]) || []));
+  }
+
+  const scoped = filterPermitAssignableWorkers(workers, companyId, companyName);
+  const ids = scoped.map((w) => w.id);
 
   const { error: delErr } = await supabase
     .from("work_permit_workers" as any)
@@ -42,7 +98,7 @@ export async function syncPermitCrewFromOnSite(opts: {
     if (insErr) return { ok: false, error: insErr.message };
   }
 
-  const patch = buildPersonnelCountPatch(opts.formData, ids.length);
+  const patch = buildPersonnelCountPatch(opts.formData ?? (permit as any).form_data, ids.length);
   const { error: uerr } = await supabase
     .from("work_permits" as any)
     .update(patch as any)

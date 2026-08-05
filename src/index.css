@@ -283,14 +283,42 @@
     overflow: visible !important;
   }
 
-  /* Layout shells must not clip print content */
+  /*
+   * Chrome ignores page-break-* inside flex/grid. AppLayout is nested flex,
+   * which glued 허가서 + 을지 onto one sheet and clipped worker rows.
+   * Flatten layout shells for print only.
+   */
+  body,
+  #root,
+  #root > div,
+  [data-sidebar="provider"],
+  [data-sidebar="provider"] > div,
+  .group\/sidebar-wrapper,
   .min-h-screen,
+  .min-h-screen > div,
+  main,
+  main > div,
+  [role="main"] {
+    display: block !important;
+    float: none !important;
+    position: static !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    transform: none !important;
+  }
+
   .overflow-x-hidden,
-  [data-sidebar="sidebar"],
-  main, [role="main"] {
+  [data-sidebar="sidebar"] {
     overflow: visible !important;
     max-height: none !important;
     height: auto !important;
+  }
+
+  /* Keep sidebar out of paper */
+  [data-sidebar="sidebar"],
+  [data-sidebar="gap"] {
+    display: none !important;
   }
 
   /* Hide non-essential UI */

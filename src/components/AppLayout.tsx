@@ -48,9 +48,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     <ProjectAccessContext.Provider value={projectAccess}>
       <SidebarProvider>
         {/* min-w-0 + overflow-x-hidden: prevent desktop-width children from forcing phone pinch-zoom layout */}
-        <div className="min-h-screen flex w-full max-w-[100vw] overflow-x-hidden">
+        <div className="min-h-screen flex w-full max-w-[100vw] overflow-x-hidden print:block print:overflow-visible print:max-w-none print:h-auto">
           <AppSidebar />
-          <div className="flex-1 flex flex-col min-w-0 w-full max-w-full">
+          <div className="flex-1 flex flex-col min-w-0 w-full max-w-full print:block print:w-full print:h-auto print:overflow-visible">
             <header className="h-14 flex items-center justify-between gap-2 border-b bg-card px-2 sm:px-4 shrink-0 print:hidden min-w-0">
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <SidebarTrigger className="text-muted-foreground shrink-0" aria-label="메뉴 열기" />
@@ -116,9 +116,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </header>
             <TutorialOverlay />
-            <main className="flex-1 overflow-auto overflow-x-hidden p-3 sm:p-4 md:p-6 bg-background w-full min-w-0">
+            <main className="flex-1 overflow-auto overflow-x-hidden p-3 sm:p-4 md:p-6 bg-background w-full min-w-0 print:block print:overflow-visible print:p-0 print:h-auto print:max-h-none">
               <AppErrorBoundary>
-                <div className="w-full max-w-full min-w-0">{children}</div>
+                <div className="w-full max-w-full min-w-0 print:block print:w-full">{children}</div>
               </AppErrorBoundary>
             </main>
 

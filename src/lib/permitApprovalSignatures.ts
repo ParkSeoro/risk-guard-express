@@ -120,11 +120,13 @@ export function mergeApprovalSignatures(
 
     const existing = (merged as Record<string, any>)[sigKey];
     // Always overwrite name + signed_at from THIS approval row (independent clock).
+    // Never reuse a shared/stale signed_at from baseSig when this row has approved_at.
     // Keep hand-drawn signature image if present.
+    const rowAt = a.approved_at ? String(a.approved_at) : '';
     const slot = {
       name: a.approver_name || existing?.name || '',
       signature: existing?.signature || '',
-      signed_at: a.approved_at || existing?.signed_at || '',
+      signed_at: rowAt || existing?.signed_at || '',
     };
     (merged as Record<string, any>)[sigKey] = slot;
 

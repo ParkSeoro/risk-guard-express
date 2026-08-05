@@ -8,8 +8,8 @@ interface StandardPermitSheetProps {
 
 /**
  * 표준 SF003 렌더링 공통 시트.
- * 인쇄 시 종류별 1장 고정은 `.permit-print-form-page` + printPermitBundle 스케일이 담당.
- * 여기서는 과도한 page-break-inside:avoid 로 공백 장을 만들지 않는다.
+ * 양식 틀(폭·표 구조)은 화면과 동일하게 유지한다. 인쇄 시 축소(scale)로
+ * 오른쪽 여백을 만들지 않는다.
  */
 export default function StandardPermitSheet({ children, mode = 'screen', className = '' }: StandardPermitSheetProps) {
   const isPrintPreview = mode === 'print';
@@ -28,7 +28,7 @@ export default function StandardPermitSheet({ children, mode = 'screen', classNa
           box-shadow: ${isPrintPreview ? '0 0 8px rgba(0,0,0,0.15)' : '0 1px 3px rgba(0,0,0,0.10)'};
         }
         @media print {
-          @page { size: A4 portrait; margin: 6mm; }
+          @page { size: A4 portrait; margin: 8mm; }
           html, body {
             width: auto;
             height: auto !important;
@@ -42,20 +42,19 @@ export default function StandardPermitSheet({ children, mode = 'screen', classNa
             width: 100% !important;
           }
           .standard-permit-sheet {
-            width: 198mm !important;
+            width: 100% !important;
+            max-width: 194mm !important;
             min-height: auto !important;
-            max-height: none !important;
             margin: 0 auto !important;
             padding: 0 !important;
             box-shadow: none !important;
-            /* scale is applied by printPermitBundle to fit one page per kind */
-            transform-origin: top left;
+            /* no transform:scale — that left a large right-side gap */
           }
-          .dig-permit-form { font-size: 9.5pt !important; }
-          .dig-permit-form td, .dig-permit-form th { padding: 2px 4px !important; }
+          .dig-permit-form { font-size: 9pt !important; }
+          .dig-permit-form td, .dig-permit-form th { padding: 2px 3px !important; }
           .dig-permit-form tr, .dig-permit-form td { height: 20px !important; min-height: 18px !important; }
-          .dig-permit-form h2.title { font-size: 15pt !important; margin: 4px 0 !important; letter-spacing: 2px !important; }
-          .dig-permit-form .form-header .logo { max-height: 40px !important; }
+          .dig-permit-form h2.title { font-size: 15pt !important; margin: 2px 0 !important; letter-spacing: 2px !important; }
+          .dig-permit-form .form-header .logo { max-height: 36px !important; }
         }
       `}</style>
       <div className="standard-permit-sheet">

@@ -8,6 +8,31 @@ export function formatPermitStamp(iso?: string | null): string {
 }
 
 /**
+ * Form/print display for work_start / work_end.
+ * Prefer datetime-local calendar intent (`YYYY-MM-DDTHH:mm` → `YYYY-MM-DD HH:mm`)
+ * so ISO `T` does not leak onto the printed sheet.
+ */
+export function formatPermitDateTime(value?: string | null): string {
+  if (!value || typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const local = trimmed.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::\d{2})?/);
+  if (local) return `${local[1]} ${local[2]}`;
+  const stamped = formatPermitStamp(trimmed);
+  return stamped || trimmed;
+}
+
+export function formatPermitDateTimeRange(
+  start?: string | null,
+  end?: string | null,
+): string {
+  const a = formatPermitDateTime(start);
+  const b = formatPermitDateTime(end);
+  if (a && b) return `${a} ~ ${b}`;
+  return a || b || '';
+}
+
+/**
  * "전일 검토, 당일 작업 전 승인" — review date = approval datetime minus 1 calendar day.
  * Format: `YYYY. M. D.` (no time), e.g. `2026. 7. 27.`
  */

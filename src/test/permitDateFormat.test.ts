@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { formatPermitStamp, formatPermitReviewDate } from '@/lib/permitDateFormat';
+import {
+  formatPermitStamp,
+  formatPermitReviewDate,
+  formatPermitDateTime,
+  formatPermitDateTimeRange,
+} from '@/lib/permitDateFormat';
 
 describe('formatPermitStamp', () => {
   it('formats approval datetime with time', () => {
@@ -29,5 +34,18 @@ describe('formatPermitReviewDate', () => {
   it('returns empty for invalid', () => {
     expect(formatPermitReviewDate(null)).toBe('');
     expect(formatPermitReviewDate('bad')).toBe('');
+  });
+});
+
+describe('formatPermitDateTime', () => {
+  it('formats datetime-local without leaking T', () => {
+    expect(formatPermitDateTime('2026-08-06T07:00')).toBe('2026-08-06 07:00');
+    expect(formatPermitDateTime('2026-08-06T17:00:00')).toBe('2026-08-06 17:00');
+  });
+
+  it('builds a range', () => {
+    expect(formatPermitDateTimeRange('2026-08-06T07:00', '2026-08-06T17:00')).toBe(
+      '2026-08-06 07:00 ~ 2026-08-06 17:00',
+    );
   });
 });

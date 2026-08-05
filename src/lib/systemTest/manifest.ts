@@ -44,7 +44,7 @@ export const FEATURE_COVERAGE: Record<string, string[]> = {
     "integ.insert_then_read",
     "integ.update_reflects",
     "integ.soft_delete_hides_row",
-    "integ.version_trigger_bumps",
+    "integ.version_history_table",
     "integ.fk_project_enforced",
   ],
   "감사 로그": ["audit.log_writable", "audit.log_readable_and_filtered"],
@@ -111,9 +111,10 @@ export const REQUIRED_COLUMNS: Record<string, string[]> = {
     "frequency",
     "severity",
     "risk_grade",
-    "version_number",
     "status",
   ],
+  // Version history lives on risk_item_versions (not a column on risk_items).
+  risk_item_versions: ["id", "risk_item_id", "version_number", "data"],
   work_plans: ["id", "project_id", "title", "work_type", "status", "version"],
   work_permits: [
     "id",

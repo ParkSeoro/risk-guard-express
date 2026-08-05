@@ -61,14 +61,17 @@ const CloneRunDialog = ({ open, onOpenChange, run, onCloned }: CloneRunDialogPro
       .eq('run_id', run.id);
 
     if (items && items.length > 0) {
-      const clonedItems = items.map(({ id, created_at, updated_at, submitted_at, submitted_by, is_locked, version_number, batch_id, ...rest }) => ({
-        ...rest,
-        run_id: newRun.id,
-        status: '미착수',
-        is_locked: false,
-        version_number: 1,
-        created_by: user.id,
-      }));
+      const clonedItems = items.map(({ id, created_at, updated_at, submitted_at, submitted_by, is_locked, batch_id, ...rest }: any) => {
+        // version_number lives on risk_item_versions, not risk_items
+        const { version_number: _vn, ...safe } = rest;
+        return {
+          ...safe,
+          run_id: newRun.id,
+          status: '미착수',
+          is_locked: false,
+          created_by: user.id,
+        };
+      });
       await supabase.from('risk_items').insert(clonedItems);
     }
 

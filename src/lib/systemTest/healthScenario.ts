@@ -25,7 +25,13 @@ export async function runHealthScenario(ctx: TestContext): Promise<StepResult[]>
       type: "일반",
       scheduled_date: future.toISOString().slice(0, 10),
     }).select().single();
-    if (error) return { pass: false, error_location: "health_checkups insert", details: { error: error.message } };
+    if (error) {
+      return {
+        pass: false,
+        error_location: `health_checkups insert: ${error.message}`,
+        details: { error: error.message, code: error.code ?? null },
+      };
+    }
     checkupId = data.id;
     const { data: todos } = await supabase
       .from("todo_items")
@@ -69,11 +75,21 @@ export async function runHealthScenario(ctx: TestContext): Promise<StepResult[]>
 
   // 4. env measurement exceedance → risk grade upgrade
   out.push(await runStep("health", "env_exceedance_upgrades_risk", async () => {
-    // create env factor + linked risk item + exceeding measurement
+    // Live columns: exposure_limit_value / exposure_limit_unit (not exposure_limit / unit)
     const { data: factor, error: fErr } = await supabase.from("work_env_factors").insert({
-      project_id: projectId, category: "소음", name: "__QA__테스트소음", exposure_limit: 90, unit: "dB",
+      project_id: projectId,
+      category: "소음",
+      name: "__QA__테스트소음",
+      exposure_limit_value: 90,
+      exposure_limit_unit: "dB",
     }).select().single();
-    if (fErr) return { pass: false, error_location: "env_factor", details: { error: fErr.message } };
+    if (fErr) {
+      return {
+        pass: false,
+        error_location: `env_factor: ${fErr.message}`,
+        details: { error: fErr.message, code: fErr.code ?? null },
+      };
+    }
 
     const { data: risk, error: rErr } = await supabase.from("risk_items").insert({
       project_id: projectId, process: "__QA__환경연계", severity: 1, probability: 2,
@@ -81,7 +97,7 @@ export async function runHealthScenario(ctx: TestContext): Promise<StepResult[]>
     } as any).select().single();
     if (rErr) {
       await supabase.from("work_env_factors").delete().eq("id", factor.id);
-      return { pass: false, error_location: "risk_item insert", details: { error: rErr.message } };
+      return { pass: false, error_location: `risk_item insert: ${rErr.message}`, details: { error: rErr.message } };
     }
 
     const { error: mErr } = await supabase.from("work_env_measurements").insert({
@@ -98,7 +114,7 @@ export async function runHealthScenario(ctx: TestContext): Promise<StepResult[]>
     if (mErr) {
       await supabase.from("risk_items").delete().eq("id", risk.id);
       await supabase.from("work_env_factors").delete().eq("id", factor.id);
-      return { pass: false, error_location: "measurement insert", details: { error: mErr.message } };
+      return { pass: false, error_location: `measurement insert: ${mErr.message}`, details: { error: mErr.message } };
     }
 
     const { data: updated } = await supabase.from("risk_items").select("severity, auto_adjust_reason").eq("id", risk.id).single();

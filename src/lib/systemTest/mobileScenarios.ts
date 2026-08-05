@@ -40,7 +40,23 @@ export const MOBILE_ROUTES: Array<{
   { path: "/app/worker/geofence-drop", label: "Walk&Drop 구역", requires: { kind: "table", name: "restricted_zones", project_scoped: true } },
   { path: "/app/worker/map-calibration", label: "지도 GPS 보정", requires: { kind: "table", name: "site_maps", project_scoped: true } },
   // Public / auth entry points outside the shell
-  { path: "/worker/register", label: "근로자 등록(Auth)", requires: { kind: "rpc", name: "complete_worker_roster_signup", sample_args: {} } },
+  {
+    path: "/worker/register",
+    label: "근로자 등록(Auth)",
+    requires: {
+      kind: "rpc",
+      name: "complete_worker_roster_signup",
+      // Required args so PostgREST resolves the function (empty {} looks like "missing RPC").
+      sample_args: {
+        _user_id: "00000000-0000-0000-0000-000000000000",
+        _project_id: "00000000-0000-0000-0000-000000000000",
+        _company_id: "00000000-0000-0000-0000-000000000000",
+        _name: "__qa__",
+        _phone: "01000000000",
+        _job_type: null,
+      },
+    },
+  },
   { path: "/worker/portal/:token", label: "레거시 포털→로그인 리다이렉트", requires: { kind: "static" } },
   { path: "/tbm/:token", label: "TBM 참여(QR)", requires: { kind: "rpc", name: "get_tbm_by_token", sample_args: { _token: "__qa__" } } },
 ];

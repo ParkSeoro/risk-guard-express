@@ -1,6 +1,6 @@
 /**
  * Worker daily life-cycle dashboard:
- * GPS 100m check-in → (optional) confirm today's permits/RA + sign → check-out.
+ * GPS check-in (site_maps footprint or 100m pin) → confirm permits/RA + sign → check-out.
  * Signature stored in worker_daily_acks and reused for linked TBM sessions.
  * v1: no hard gate if unsigned (checkout still allowed).
  */
@@ -9,7 +9,12 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSystemRealtime } from "@/providers/SystemRealtimeProvider";
-import { calculateDistance, isWithinSiteRadius } from "@/lib/geo/calculateDistance";
+import { calculateDistance } from "@/lib/geo/calculateDistance";
+import {
+  resolveSiteCheckInFence,
+  SITE_CHECKIN_MIN_M,
+  type SiteTrackingFence,
+} from "@/lib/tracking/siteTrackBounds";
 import {
   buildRiskSummary,
   buildWorkSummary,
@@ -33,7 +38,6 @@ import { HardHat, MapPin, LogIn, LogOut, FileSignature, ShieldCheck } from "luci
 import { toast } from "sonner";
 
 const PROJECT_KEY = "selectedProjectId";
-const SITE_RADIUS_M = 100;
 
 type EntryLog = {
   id: string;
@@ -47,8 +51,7 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
   const { user, profile } = useAuth();
   const { lastGpsFix, gpsTracking, gpsError, startGpsTracking, stopGpsTracking } = useSystemRealtime();
   const [projectId, setProjectId] = useState(() => localStorage.getItem(PROJECT_KEY) || "");
-  const [siteLat, setSiteLat] = useState<number | null>(null);
-  const [siteLng, setSiteLng] = useState<number | null>(null);
+  const [checkInFence, setCheckInFence] = useState<SiteTrackingFence | null>(null);
   const [projectName, setProjectName] = useState("");
   const [workerId, setWorkerId] = useState<string | null>(null);
   const [todayLog, setTodayLog] = useState<EntryLog | null>(null);
@@ -71,14 +74,19 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
   } | null>(null);
 
   const distanceM = useMemo(() => {
-    if (siteLat == null || siteLng == null || !lastGpsFix) return null;
-    return calculateDistance(siteLat, siteLng, lastGpsFix.lat, lastGpsFix.lng);
-  }, [siteLat, siteLng, lastGpsFix]);
+    if (!checkInFence || !lastGpsFix) return null;
+    return calculateDistance(
+      checkInFence.lat,
+      checkInFence.lng,
+      lastGpsFix.lat,
+      lastGpsFix.lng,
+    );
+  }, [checkInFence, lastGpsFix]);
 
-  const within100m = useMemo(() => {
-    if (siteLat == null || siteLng == null || !lastGpsFix) return false;
-    return isWithinSiteRadius(siteLat, siteLng, lastGpsFix.lat, lastGpsFix.lng, SITE_RADIUS_M);
-  }, [siteLat, siteLng, lastGpsFix]);
+  const withinCheckIn = useMemo(() => {
+    if (!checkInFence || !lastGpsFix || distanceM == null) return false;
+    return distanceM <= checkInFence.radiusM;
+  }, [checkInFence, lastGpsFix, distanceM]);
 
   const isCheckedIn = !!todayLog && !todayLog.exit_at;
   const checkedOut = !!todayLog?.exit_at;
@@ -95,9 +103,10 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
       .maybeSingle();
     if (proj) {
       setProjectName(proj.name || "");
-      setSiteLat(proj.site_lat);
-      setSiteLng(proj.site_lng);
     }
+    // Prefer georeferenced site_maps footprint over address-geocoded pin
+    const fence = await resolveSiteCheckInFence(pid);
+    setCheckInFence(fence);
 
     let wid: string | null = null;
     if (profile?.phone) {
@@ -208,8 +217,9 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
       );
       return;
     }
-    if (!within100m) {
-      toast.error("현장 사무실 반경 100m 이내에서만 출근할 수 있습니다");
+    if (!withinCheckIn || !checkInFence) {
+      const allow = checkInFence ? Math.round(checkInFence.radiusM) : SITE_CHECKIN_MIN_M;
+      toast.error(`현장 반경 ${allow}m 이내에서만 출근할 수 있습니다`);
       return;
     }
     if (!workerId || !projectId) {
@@ -353,13 +363,16 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
         <section className="rounded-2xl bg-white/80 backdrop-blur border border-slate-200 p-4 space-y-3 shadow-sm">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <MapPin className="h-4 w-4 text-emerald-600" />
-            GPS · 출근 100m / 추적 펜스는 현장 맵 기준
+            GPS · 출근{" "}
+            {checkInFence
+              ? `${Math.round(checkInFence.radiusM)}m (${checkInFence.source === "site_map" ? "현장맵" : "주소핀"})`
+              : `${SITE_CHECKIN_MIN_M}m`}
           </div>
           <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
             <div>추적: {gpsTracking ? "ON" : "OFF"}</div>
             <div>
               거리:{" "}
-              {siteLat == null || siteLng == null
+              {!checkInFence
                 ? "현장 좌표 미설정"
                 : !lastGpsFix
                   ? (gpsError ? "GPS 오류" : "GPS 대기…")
@@ -373,19 +386,19 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
             </div>
             <div className="col-span-2">
               현장 기준:{" "}
-              {siteLat != null && siteLng != null
-                ? `${siteLat.toFixed(5)}, ${siteLng.toFixed(5)}`
-                : "projects.site_lat/lng 미설정 — 관리자가 프로젝트에 현장 좌표를 넣어야 합니다"}
+              {checkInFence
+                ? `${checkInFence.lat.toFixed(5)}, ${checkInFence.lng.toFixed(5)}`
+                : "현장맵 지오레프 또는 projects.site_lat/lng 필요"}
             </div>
             {gpsError && (
               <div className="col-span-2 text-destructive">GPS: {gpsError}</div>
             )}
           </div>
-          <Badge variant={within100m ? "default" : "secondary"}>
-            {siteLat == null || siteLng == null
+          <Badge variant={withinCheckIn ? "default" : "secondary"}>
+            {!checkInFence
               ? "현장 좌표 없음 — 출근 불가"
-              : within100m
-                ? "반경 100m 이내 — 출근 가능"
+              : withinCheckIn
+                ? `반경 ${Math.round(checkInFence.radiusM)}m 이내 — 출근 가능`
                 : "반경 밖 — 출근 비활성"}
           </Badge>
           {!gpsTracking && (
@@ -419,7 +432,7 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
             {!isCheckedIn && !checkedOut && (
               <Button
                 className="h-12 gap-2"
-                disabled={!within100m || busy || !workerId || !!suspension}
+                disabled={!withinCheckIn || busy || !workerId || !!suspension}
                 onClick={() => void handleCheckIn()}
               >
                 <LogIn className="h-4 w-4" />

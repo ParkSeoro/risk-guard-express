@@ -143,37 +143,52 @@ export default function SettingsCompanies() {
       return;
     }
 
-    // Sync project_companies links (SSOT for project participation)
+    // Sync project_companies links (SSOT for project participation).
+    // Dual-role: never upsert-overwrite; only touch the access_edge (primary) persona.
+    // Secondary org-chart personas are left untouched when editing global master type.
     const desired = new Set(form.project_ids);
     const { data: existingLinks } = await (supabase as any)
       .from('project_companies')
-      .select('id, project_id, is_deleted')
+      .select('id, project_id, is_deleted, access_edge, role_in_project, parent_company_id')
       .eq('company_id', companyId);
-    const byProject = new Map<string, any>((existingLinks || []).map((l: any) => [l.project_id, l]));
+
+    const linksByProject = new Map<string, any[]>();
+    for (const l of existingLinks || []) {
+      const list = linksByProject.get(l.project_id) || [];
+      list.push(l);
+      linksByProject.set(l.project_id, list);
+    }
 
     for (const projectId of desired) {
-      const cur = byProject.get(projectId);
-      if (cur) {
-        if (cur.is_deleted) {
+      const links = linksByProject.get(projectId) || [];
+      const active = links.filter((l: any) => !l.is_deleted);
+      const primary = active.find((l: any) => l.access_edge !== false) || active[0];
+      if (primary) {
+        // Sync master type onto primary persona only — do not collapse dual-role rows
+        await (supabase as any).from('project_companies').update({
+          role_in_project: type,
+          access_edge: true,
+        }).eq('id', primary.id);
+      } else {
+        const softPrimary = links.find((l: any) => l.is_deleted && l.access_edge !== false) || links.find((l: any) => l.is_deleted);
+        if (softPrimary) {
           await (supabase as any).from('project_companies').update({
             is_deleted: false,
             role_in_project: type,
-          }).eq('id', cur.id);
+            access_edge: true,
+          }).eq('id', softPrimary.id);
         } else {
-          await (supabase as any).from('project_companies').update({
+          await (supabase as any).from('project_companies').insert({
+            project_id: projectId,
+            company_id: companyId,
             role_in_project: type,
-          }).eq('id', cur.id);
+            is_deleted: false,
+            access_edge: true,
+          });
         }
-      } else {
-        await (supabase as any).from('project_companies').upsert({
-          project_id: projectId,
-          company_id: companyId,
-          role_in_project: type,
-          is_deleted: false,
-        }, { onConflict: 'project_id,company_id' });
       }
     }
-    // Soft-remove unchecked projects (is_deleted only — no deleted_at on project_companies)
+    // Soft-remove unchecked projects (all personas for that project)
     for (const link of existingLinks || []) {
       if (!desired.has(link.project_id) && !link.is_deleted) {
         await (supabase as any).from('project_companies').update({

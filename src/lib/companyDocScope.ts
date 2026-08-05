@@ -90,10 +90,10 @@ export async function resolveAccessibleCompanyIds(opts: {
   if (!opts.companyId) return [NIL_COMPANY];
   if (mode === 'own') return [opts.companyId];
 
-  // tree
+  // tree — only access_edge personas (secondary dual-role edges must not expand scope)
   const { data, error } = await (supabase as any)
     .from('project_companies')
-    .select('company_id, parent_company_id')
+    .select('company_id, parent_company_id, access_edge')
     .eq('project_id', opts.projectId)
     .eq('is_deleted', false);
 
@@ -110,10 +110,12 @@ export async function resolveAccessibleCompanyIds(opts: {
   }
 
   return collectDescendants(
-    (data as any[]).map((r) => ({
-      id: r.company_id as string,
-      parent_id: (r.parent_company_id as string | null) || null,
-    })),
+    (data as any[])
+      .filter((r) => r.access_edge !== false)
+      .map((r) => ({
+        id: r.company_id as string,
+        parent_id: (r.parent_company_id as string | null) || null,
+      })),
     opts.companyId,
   );
 }

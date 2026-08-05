@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Building2, Users, ChevronRight, Search, Network, HardHat, AlertCircle } from 'lucide-react';
 import { COMPANY_TYPE_LABELS, resolveProjectCompanyType } from '@/lib/companyTypes';
+import { dedupeProjectCompaniesByCompanyId } from '@/lib/projectCompanies';
 
 interface CompanyRow {
   id: string;
@@ -43,13 +44,18 @@ export default function Companies() {
     // Read via project_companies (SSOT) so global companies linked to this project appear once.
     const { data: links } = await (supabase as any)
       .from('project_companies')
-      .select('company_id, role_in_project, companies:company_id(id, name, type, scope, is_deleted)')
+      .select('company_id, role_in_project, access_edge, companies:company_id(id, name, type, scope, is_deleted)')
       .eq('project_id', selectedProject)
       .eq('is_deleted', false);
-    const list = (links || [])
-      .map((l: any) => l.companies ? { ...l.companies, type: resolveProjectCompanyType(l.role_in_project, l.companies.type) } : null)
-      .filter((c: any) => c && c.is_deleted === false)
-      .sort((a: any, b: any) => (a.type || '').localeCompare(b.type || '') || (a.name || '').localeCompare(b.name || ''));
+    const list = dedupeProjectCompaniesByCompanyId(
+      (links || [])
+        .map((l: any) => l.companies ? {
+          ...l.companies,
+          type: resolveProjectCompanyType(l.role_in_project, l.companies.type),
+          access_edge: l.access_edge !== false,
+        } : null)
+        .filter((c: any) => c && c.is_deleted === false),
+    ).sort((a: any, b: any) => (a.type || '').localeCompare(b.type || '') || (a.name || '').localeCompare(b.name || ''));
 
     const ids = list.map(c => c.id);
     const counts: Record<string, { m: number; d: number; w: number }> = {};

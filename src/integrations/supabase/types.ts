@@ -588,6 +588,7 @@ export type Database = {
           is_deleted: boolean
           name: string
           owner_user_id: string | null
+          project_company_id: string | null
           project_id: string
           steps: Json
           updated_at: string
@@ -606,6 +607,7 @@ export type Database = {
           is_deleted?: boolean
           name?: string
           owner_user_id?: string | null
+          project_company_id?: string | null
           project_id: string
           steps?: Json
           updated_at?: string
@@ -624,6 +626,7 @@ export type Database = {
           is_deleted?: boolean
           name?: string
           owner_user_id?: string | null
+          project_company_id?: string | null
           project_id?: string
           steps?: Json
           updated_at?: string
@@ -4246,6 +4249,7 @@ export type Database = {
       }
       project_companies: {
         Row: {
+          access_edge: boolean
           company_id: string
           created_at: string
           created_by: string | null
@@ -4257,6 +4261,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          access_edge?: boolean
           company_id: string
           created_at?: string
           created_by?: string | null
@@ -4268,6 +4273,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          access_edge?: boolean
           company_id?: string
           created_at?: string
           created_by?: string | null
@@ -4582,6 +4588,7 @@ export type Database = {
           created_at: string
           id: string
           position_new: Database["public"]["Enums"]["project_position"] | null
+          project_company_id: string | null
           project_id: string
           role_new: Database["public"]["Enums"]["project_role"]
           user_id: string
@@ -4592,6 +4599,7 @@ export type Database = {
           created_at?: string
           id?: string
           position_new?: Database["public"]["Enums"]["project_position"] | null
+          project_company_id?: string | null
           project_id: string
           role_new?: Database["public"]["Enums"]["project_role"]
           user_id: string
@@ -4602,6 +4610,7 @@ export type Database = {
           created_at?: string
           id?: string
           position_new?: Database["public"]["Enums"]["project_position"] | null
+          project_company_id?: string | null
           project_id?: string
           role_new?: Database["public"]["Enums"]["project_role"]
           user_id?: string

@@ -23,6 +23,10 @@ import {
   normalizeCompanyType,
   resolveProjectCompanyType,
 } from '@/lib/companyTypes';
+import {
+  dedupeProjectCompaniesByCompanyId,
+  linkProjectCompanyPersona,
+} from '@/lib/projectCompanies';
 import { POSITION_LABELS, positionsForCompanyType, syncMembershipRolePosition } from '@/lib/projectPositions';
 
 const roleLabels: Record<string, string> = {
@@ -93,6 +97,12 @@ const ProjectDetail = () => {
 
   const canManage = isMaster || projectRole === 'project_admin';
 
+  /** Dropdowns / membership: one row per legal company (primary access_edge). */
+  const companiesForSelect = useMemo(
+    () => dedupeProjectCompaniesByCompanyId(companies),
+    [companies],
+  );
+
   useEffect(() => {
     if (!projectId || !user) return;
     fetchAll();
@@ -121,7 +131,7 @@ const ProjectDetail = () => {
       supabase.from('project_members').select('*').eq('project_id', projectId),
       supabase.from('profiles').select('user_id, display_name, company, phone, position'),
       (supabase as any).from('project_companies')
-        .select('company_id, role_in_project, parent_company_id, companies:company_id(*)')
+        .select('id, company_id, role_in_project, parent_company_id, access_edge, companies:company_id(*)')
         .eq('project_id', projectId).eq('is_deleted', false),
       supabase.from('project_invites').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
       supabase.from('project_join_requests').select('*, profiles:user_id(display_name, company)').eq('project_id', projectId).eq('status', 'pending'),
@@ -141,9 +151,12 @@ const ProjectDetail = () => {
     const projCompanies = (projCompaniesRes.data || [])
       .map((l: any) => l.companies ? {
         ...l.companies,
+        project_company_id: l.id,
         type: resolveProjectCompanyType(l.role_in_project, l.companies.type),
+        role_in_project: l.role_in_project,
         // Project-scoped parent overrides global companies.parent_company_id
         parent_company_id: l.parent_company_id ?? null,
+        access_edge: l.access_edge !== false,
       } : null)
       .filter((c: any) => c && c.is_deleted === false);
     setCompanies(projCompanies);
@@ -203,6 +216,9 @@ const ProjectDetail = () => {
     companies.forEach((c) => {
       const t = normalizeCompanyType(c.type) || c.type;
       if (!allowed.has(t) || c.id === excludeId) return;
+      const prev = byId.get(c.id);
+      // Prefer access-edge / gc persona when the same legal company has dual roles
+      if (prev && (prev.type === 'gc' || c.access_edge === false)) return;
       byId.set(c.id, { id: c.id, name: c.name, type: t, inProject: true });
     });
     globalCompanies.forEach((g) => {
@@ -220,14 +236,13 @@ const ProjectDetail = () => {
     if (already) return null;
     const g = globalCompanies.find((c) => c.id === parentId);
     const role = normalizeCompanyType(g?.type) || parentTypesFor(childType)[0] || 'client';
-    const { error } = await (supabase as any).from('project_companies').upsert({
-      project_id: projectId,
-      company_id: parentId,
-      role_in_project: role,
-      is_deleted: false,
-      parent_company_id: null,
-    }, { onConflict: 'project_id,company_id' });
-    if (error) return error.message as string;
+    const linked = await linkProjectCompanyPersona({
+      projectId,
+      companyId: parentId,
+      roleInProject: role,
+      parentCompanyId: null,
+    });
+    if (!linked.ok) return linked.error;
     return null;
   };
 
@@ -370,7 +385,8 @@ const ProjectDetail = () => {
         return;
       }
     }
-    const companyType = companies.find((c) => c.id === target?.company_id)?.type;
+    const companyType = (companiesForSelect.find((c) => c.id === target?.company_id)
+      || companies.find((c) => c.id === target?.company_id))?.type;
     const updateData = syncMembershipRolePosition({
       field: 'role_new',
       value: newRole,
@@ -487,40 +503,70 @@ const ProjectDetail = () => {
       linkCompanyId = inserted?.id || '';
     }
     if (linkCompanyId) {
-      const linkPayload: any = {
-        project_id: projectId,
-        company_id: linkCompanyId,
-        role_in_project: companyForm.type,
-        parent_company_id: companyForm.parent_company_id || null,
-        is_deleted: false,
-      };
-      const { error: linkErr } = await (supabase as any).from('project_companies').upsert(
-        linkPayload,
-        { onConflict: 'project_id,company_id' }
-      );
-      if (linkErr) { toast({ title: '프로젝트 연결 실패', description: linkErr.message, variant: 'destructive' }); return; }
+      const linked = await linkProjectCompanyPersona({
+        projectId,
+        companyId: linkCompanyId,
+        roleInProject: companyForm.type,
+        parentCompanyId: companyForm.parent_company_id || null,
+      });
+      if (!linked.ok) {
+        toast({ title: '프로젝트 연결 실패', description: linked.error, variant: 'destructive' });
+        return;
+      }
+      if (!linked.created) {
+        toast({ title: '이미 동일 역할로 등록되어 있습니다.' });
+        setShowAddCompany(false);
+        return;
+      }
+      if (linked.secondary) {
+        toast({
+          title: '이중 역할로 등록했습니다',
+          description: '조직도에만 추가됩니다. 결재·권한·문서 범위는 기존 시공사(법인) 소속을 그대로 유지합니다.',
+        });
+      } else {
+        toast({ title: '업체가 프로젝트에 등록되었습니다.' });
+      }
+    } else {
+      toast({ title: '업체가 프로젝트에 등록되었습니다.' });
     }
-    toast({ title: '업체가 프로젝트에 등록되었습니다.' });
     setShowAddCompany(false);
     setCompanyForm({ name: '', type: 'gc', business_no: '', contact: '', scope: '', period: '', parent_company_id: '', source_company_id: '' });
     fetchAll();
   };
 
   const { softDelete } = useSoftDelete();
-  // Remove company from this project ONLY. Does NOT touch the global companies master.
-  const handleUnlinkCompany = async (id: string) => {
+  // Remove one persona from this project ONLY. Does NOT touch the global companies master.
+  const handleUnlinkCompany = async (persona: any) => {
     if (!projectId) return;
-    const target = companies.find(c => c.id === id);
-    if (!confirm(`"${target?.name || ''}" 업체를 이 프로젝트에서 제외하시겠습니까?\n\n※ 설정 > 업체 관리의 전역 마스터 목록에서는 삭제되지 않습니다.`)) return;
-    // Clear children pointing to this company within this project
-    await (supabase as any).from('project_companies')
-      .update({ parent_company_id: null })
-      .eq('project_id', projectId).eq('parent_company_id', id);
+    const linkId = persona?.project_company_id;
+    const companyId = persona?.id;
+    if (!linkId || !companyId) return;
+    const roleLabel = companyTypes[persona.type] || persona.type || '';
+    if (!confirm(`"${persona?.name || ''}"${roleLabel ? ` (${roleLabel})` : ''} 자리를 이 프로젝트에서 제외하시겠습니까?\n\n※ 설정 > 업체 관리의 전역 마스터 목록에서는 삭제되지 않습니다.`)) return;
+
+    const remaining = companies.filter(
+      (c) => c.id === companyId && c.project_company_id !== linkId,
+    );
+    if (remaining.length === 0) {
+      // Last persona for this legal company — clear child parents
+      await (supabase as any).from('project_companies')
+        .update({ parent_company_id: null })
+        .eq('project_id', projectId).eq('parent_company_id', companyId);
+    } else if (persona.access_edge !== false) {
+      // Promote another persona so one access_edge remains
+      const promoteId = remaining[0].project_company_id;
+      if (promoteId) {
+        await (supabase as any).from('project_companies')
+          .update({ access_edge: true })
+          .eq('id', promoteId);
+      }
+    }
+
     const { error } = await (supabase as any).from('project_companies')
-      .delete().eq('project_id', projectId).eq('company_id', id);
+      .delete().eq('id', linkId);
     if (error) { toast({ title: '제외 실패', description: error.message, variant: 'destructive' }); return; }
     toast({ title: '프로젝트에서 제외되었습니다.' });
-    await log('업체 프로젝트 제외', 'project_company', id, projectId);
+    await log('업체 프로젝트 제외', 'project_company', linkId, projectId);
     fetchAll();
   };
 
@@ -544,14 +590,18 @@ const ProjectDetail = () => {
       toast({ title: '상위 업체 연결 실패', description: parentLinkErr, variant: 'destructive' });
       return;
     }
-    // Project-scoped fields
+    // Project-scoped fields — update THIS persona only (never overwrite a sibling dual-role row)
+    const linkId = editingCompany.project_company_id;
+    if (!linkId) {
+      toast({ title: '수정 실패', description: '페르소나 ID를 찾을 수 없습니다.', variant: 'destructive' });
+      return;
+    }
     const { error: linkErr } = await (supabase as any).from('project_companies')
       .update({
         role_in_project: editForm.type,
         parent_company_id: editForm.parent_company_id || null,
       })
-      .eq('project_id', projectId)
-      .eq('company_id', editingCompany.id);
+      .eq('id', linkId);
     if (linkErr) { toast({ title: '수정 실패', description: linkErr.message, variant: 'destructive' }); return; }
     // Global master fields (name / business_no / contact) — master only
     if (isMaster) {
@@ -790,7 +840,7 @@ const ProjectDetail = () => {
                     <SelectTrigger><SelectValue placeholder="시공사 선택" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__none__">미지정</SelectItem>
-                      {companies.filter(c => c.type === 'gc').map(c => (
+                      {companiesForSelect.filter(c => normalizeCompanyType(c.type) === 'gc').map(c => (
                         <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -885,7 +935,8 @@ const ProjectDetail = () => {
                             <SelectContent>
                               <SelectItem value="_none">직책 미지정</SelectItem>
                               {(() => {
-                                const co = companies.find((c) => c.id === m.company_id);
+                                const co = companiesForSelect.find((c) => c.id === m.company_id)
+                                  || companies.find((c) => c.id === m.company_id);
                                 const allowed = positionsForCompanyType(co?.type);
                                 const keys = [...allowed];
                                 if (m.position_new && !keys.includes(m.position_new)) keys.unshift(m.position_new);
@@ -925,6 +976,7 @@ const ProjectDetail = () => {
                 <CardTitle className="text-sm">업체 목록 (발주처 → 시공사 → 협력사)</CardTitle>
                 <p className="text-[10px] text-muted-foreground">
                   이 프로젝트에 <b>참여</b>하는 업체입니다. 신규 등록 시 <b>설정 &gt; 업체 관리</b>의 전역 마스터에서 검색해 선택하세요.
+                  같은 법인을 다른 역할(예: 시공사 + 타 시공사 협력사)로 추가할 수 있으며, 추가 자리는 조직도용입니다. 결재·권한은 기존 법인 소속을 유지합니다.
                 </p>
               </div>
               {canManage && (
@@ -950,7 +1002,7 @@ const ProjectDetail = () => {
                         .sort((a, b) => (companyTypeOrder[a.type] || 99) - (companyTypeOrder[b.type] || 99));
 
                     const renderCompany = (c: any, depth: number) => (
-                      <div key={c.id}>
+                      <div key={c.project_company_id || `${c.id}-${c.type}-${c.parent_company_id || 'root'}`}>
                         <div className={`flex items-center justify-between p-2.5 rounded-lg border ${depth === 0 ? '' : depth === 1 ? 'ml-6 border-l-2 border-l-primary/30' : 'ml-12 border-l-2 border-l-accent/30'}`}>
                           <div className="space-y-0.5">
                             <div className="flex items-center gap-2">
@@ -959,6 +1011,11 @@ const ProjectDetail = () => {
                               <Badge variant="outline" className={`text-[10px] ${c.type === 'client' ? 'border-primary/50 text-primary' : c.type === 'gc' ? 'border-accent/50 text-accent' : ''}`}>
                                 {companyTypes[c.type] || c.type}
                               </Badge>
+                              {c.access_edge === false && (
+                                <Badge variant="secondary" className="text-[10px]" title="결재·권한은 법인 기본 소속을 유지합니다">
+                                  조직도
+                                </Badge>
+                              )}
                             </div>
                             {(c.scope || c.contact) && (
                               <p className="text-xs text-muted-foreground">
@@ -972,13 +1029,14 @@ const ProjectDetail = () => {
                               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditCompany(c)} title="수정">
                                 <Settings2 className="h-3.5 w-3.5" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleUnlinkCompany(c.id)} title="프로젝트에서 제외">
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleUnlinkCompany(c)} title="프로젝트에서 제외">
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </div>
                           )}
                         </div>
-                        {getChildren(c.id).map(child => renderCompany(child, depth + 1))}
+                        {/* Children hang under access-edge persona only — avoids duplicating under secondary dual-role nodes */}
+                        {c.access_edge !== false && getChildren(c.id).map(child => renderCompany(child, depth + 1))}
                       </div>
                     );
 
@@ -1144,7 +1202,7 @@ const ProjectDetail = () => {
                 // Auto-fill company from user's profile company name → match to project companies
                 const p = allProfiles.find(x => x.user_id === v);
                 if (p?.company) {
-                  const match = companies.find(c => (c.name || '').trim() === (p.company || '').trim());
+                  const match = companiesForSelect.find(c => (c.name || '').trim() === (p.company || '').trim());
                   if (match) setMemberCompanyId(match.id);
                 }
               }}>
@@ -1177,10 +1235,10 @@ const ProjectDetail = () => {
               <Select value={memberCompanyId} onValueChange={setMemberCompanyId}>
                 <SelectTrigger><SelectValue placeholder="업체 선택 (선택 사항)" /></SelectTrigger>
                 <SelectContent>
-                  {companies.length === 0 && (
+                  {companiesForSelect.length === 0 && (
                     <div className="p-2 text-xs text-muted-foreground">이 프로젝트에 등록된 업체가 없습니다. 먼저 "업체 관리" 탭에서 등록하세요.</div>
                   )}
-                  {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  {companiesForSelect.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -1390,16 +1448,17 @@ const ProjectDetail = () => {
                 <SelectTrigger><SelectValue placeholder="업체 선택" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">(업체 연결 안 함)</SelectItem>
-                  {companies
+                  {companiesForSelect
                     .filter(c => {
+                      const t = normalizeCompanyType(c.type) || c.type;
                       if (inviteForm.role === 'worker' || inviteForm.role === 'site_manager' || inviteForm.role === 'supervisor' || inviteForm.role === 'site_supervisor') {
-                        return c.type === 'contractor' || c.type === 'gc' || c.type === 'vendor';
+                        return t === 'contractor' || t === 'gc' || t === 'vendor';
                       }
-                      if (inviteForm.role === 'safety_manager' || inviteForm.role === 'project_admin') return c.type === 'gc' || c.type === 'client';
+                      if (inviteForm.role === 'safety_manager' || inviteForm.role === 'project_admin') return t === 'gc' || t === 'client';
                       return true;
                     })
                     .map(c => (
-                      <SelectItem key={c.id} value={c.id}>{c.name} ({companyTypes[c.type] || c.type})</SelectItem>
+                      <SelectItem key={c.id} value={c.id}>{c.name} ({companyTypes[c.type as string] || c.type})</SelectItem>
                     ))}
                 </SelectContent>
               </Select>

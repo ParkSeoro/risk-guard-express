@@ -50,6 +50,20 @@ describe('collectDescendants', () => {
     expect(ids).not.toContain('gc-b');
     expect(ids).not.toContain('c3');
   });
+
+  it('does not grant peer GC access via secondary dual-role edges when filtered out', () => {
+    // Mimic resolveAccessibleCompanyIds: only access_edge rows are passed in.
+    // 진남 under 하이테크 is org-chart-only (excluded), so Hi-Tech tree must not include 진남.
+    const accessEdgesOnly = [
+      { id: 'hitech', parent_id: 'client' },
+      { id: 'jinnam-gc', parent_id: 'client' }, // different id for clarity in unit graph
+      { id: 'partner-of-hitech', parent_id: 'hitech' },
+      // secondary { id: 'jinnam', parent_id: 'hitech' } intentionally omitted
+    ];
+    const ids = collectDescendants(accessEdgesOnly, 'hitech');
+    expect(ids.sort()).toEqual(['hitech', 'partner-of-hitech'].sort());
+    expect(ids).not.toContain('jinnam-gc');
+  });
 });
 
 describe('applyOwnCompanyFilter', () => {

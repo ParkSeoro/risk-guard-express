@@ -7,12 +7,28 @@ import { Button } from "@/components/ui/button";
 
 type Uv = { u: number; v: number };
 
+export type MapMarker = Uv & {
+  label?: string;
+  /** Tailwind-ish tone: blue | amber | emerald | rose */
+  tone?: "blue" | "amber" | "emerald" | "rose";
+};
+
 type Props = {
   src: string;
   alt?: string;
+  /** Single pick marker (1-point mode). */
   marker?: Uv | null;
+  /** Extra labeled markers (walk recommendations / captured). */
+  markers?: MapMarker[];
   onPick: (uv: Uv) => void;
   className?: string;
+};
+
+const TONE_CLASS: Record<NonNullable<MapMarker["tone"]>, string> = {
+  blue: "bg-blue-500",
+  amber: "bg-amber-500",
+  emerald: "bg-emerald-500",
+  rose: "bg-rose-500",
 };
 
 const MIN_SCALE = 1;
@@ -30,6 +46,7 @@ export default function ZoomableSiteMapImage({
   src,
   alt = "",
   marker,
+  markers,
   onPick,
   className,
 }: Props) {
@@ -236,6 +253,22 @@ export default function ZoomableSiteMapImage({
               style={{ left: `${marker.u * 100}%`, top: `${marker.v * 100}%` }}
             />
           )}
+          {(markers || []).map((m, i) => (
+            <div
+              key={`${m.label || i}-${m.u}-${m.v}`}
+              className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2 flex flex-col items-center"
+              style={{ left: `${m.u * 100}%`, top: `${m.v * 100}%` }}
+            >
+              <div
+                className={`w-4 h-4 rounded-full border-2 border-white shadow ${TONE_CLASS[m.tone || "amber"]}`}
+              />
+              {m.label && (
+                <span className="mt-0.5 rounded bg-black/70 px-1 text-[10px] font-semibold text-white leading-tight">
+                  {m.label}
+                </span>
+              )}
+            </div>
+          ))}
         </div>
         <div className="pointer-events-none absolute bottom-2 left-2 rounded bg-black/60 px-2 py-1 text-[10px] text-white">
           핀치·더블탭·휠로 확대 · {scale.toFixed(1)}×

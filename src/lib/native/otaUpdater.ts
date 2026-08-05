@@ -216,7 +216,10 @@ async function runAutoCheck(reason: string) {
   }
 }
 
-/** Boot + foreground auto OTA. Silent; applies immediately when a newer bundle exists. */
+/**
+ * Foreground auto OTA. Boot check is handled by runBootOtaGate() in main.tsx
+ * (pre-login splash) — this only hooks resume to avoid double work on cold start.
+ */
 export async function initOtaUpdater() {
   if (!isNativeApp()) return;
   try {
@@ -227,7 +230,8 @@ export async function initOtaUpdater() {
     /* plugin missing in some builds */
   }
 
-  void runAutoCheck("boot");
+  // Cold-start download already ran in bootOtaGate; skip immediate re-check.
+  lastCheckAt = Date.now();
 
   if (resumeHooked) return;
   resumeHooked = true;

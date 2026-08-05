@@ -2,6 +2,8 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import { registerSWSafely } from "./lib/registerServiceWorker";
 import { initOtaUpdater } from "./lib/native/otaUpdater";
+import { runBootOtaGate } from "./lib/native/bootOtaGate";
+import { isNativeApp } from "./lib/native/platform";
 
 const rootEl = document.getElementById("root");
 
@@ -21,9 +23,19 @@ function showBootError(err: unknown) {
 
 async function boot() {
   try {
+    // Native: OTA before login UI. Web: skip.
+    if (isNativeApp()) {
+      const gate = await runBootOtaGate({ preferImmediate: true, paint: true });
+      if (gate.phase === "applying") {
+        // Capgo set() should reload; if it didn't, fall through to app after splash wait.
+        console.warn("[boot] OTA apply did not reload — continuing to app");
+      }
+    }
+
     const { default: App } = await import("./App.tsx");
     createRoot(rootEl!).render(<App />);
     registerSWSafely();
+    // Resume / foreground checks only (boot already handled above)
     initOtaUpdater();
   } catch (err) {
     console.error("[boot]", err);

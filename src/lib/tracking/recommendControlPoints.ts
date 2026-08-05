@@ -194,9 +194,20 @@ export function recommendControlPoints(
     picked.push(best);
   }
 
-  // Relabel A/B/C…
-  return picked.map((p, i) => ({
+  // Relabel is caller's job — keep stable unique ids so captures never collide.
+  return picked;
+}
+
+/**
+ * Assign fixed slot labels (A/B/C…) without changing UV.
+ * Labels are stable for the session — never reassign after capture.
+ */
+export function withSlotLabels(
+  points: ControlPointCandidate[],
+  labels: string[] = ["A", "B", "C"],
+): ControlPointCandidate[] {
+  return points.map((p, i) => ({
     ...p,
-    id: String.fromCharCode(65 + i), // A, B, C
+    id: labels[i] || `P${i + 1}`,
   }));
 }

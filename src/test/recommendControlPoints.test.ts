@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   pointInRing,
   recommendControlPoints,
+  withSlotLabels,
 } from "@/lib/tracking/recommendControlPoints";
 
 describe("recommendControlPoints", () => {
@@ -46,6 +47,14 @@ describe("recommendControlPoints", () => {
         expect(Math.hypot(n.u - e.u, n.v - e.v)).toBeGreaterThan(0.07);
       }
     }
+  });
+  it("withSlotLabels assigns A/B/C once without recycling", () => {
+    const pts = recommendControlPoints({ count: 3 });
+    const labeled = withSlotLabels(pts);
+    expect(labeled.map((p) => p.id)).toEqual(["A", "B", "C"]);
+    // UV unchanged
+    expect(labeled[0].u).toBe(pts[0].u);
+    expect(labeled[1].v).toBe(pts[1].v);
   });
 });
 

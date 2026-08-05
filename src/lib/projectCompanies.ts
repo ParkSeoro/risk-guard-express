@@ -132,6 +132,30 @@ export function dedupeProjectCompaniesByCompanyId(rows: ProjectCompany[]): Proje
  * - First link → access_edge=true
  * Never mutates companies.type (keeps approval/RLS SSOT intact).
  */
+/**
+ * Guard: the first/access-edge persona must not be "contractor under another GC"
+ * when the legal company is a GC/client master — that would grant peer-GC document access.
+ */
+export function wouldCreateUnsafeAccessEdge(opts: {
+  hasAccess: boolean;
+  role: string;
+  parentCompanyId: string | null;
+  masterType: string | null;
+}): string | null {
+  if (opts.hasAccess) return null; // secondary org-chart row is always access_edge=false
+  const master = normalizeCompanyType(opts.masterType);
+  const role = normalizeCompanyType(opts.role) || opts.role;
+  // GC/client legal entity first-linked as peer-contractor → peer GC would inherit docs via RLS tree
+  if ((master === 'gc' || master === 'client') && role === 'contractor' && opts.parentCompanyId) {
+    return (
+      '이 업체의 마스터 유형이 시공사/발주처입니다. ' +
+      '먼저 기본 역할(시공사/발주처)로 등록한 뒤, 같은 업체를 다시 협력사(조직도)로 추가하세요. ' +
+      '기본 자리를 타 시공사 협력사로 두면 문서·권한 범위가 넘어갑니다.'
+    );
+  }
+  return null;
+}
+
 export async function linkProjectCompanyPersona(opts: {
   projectId: string;
   companyId: string;
@@ -141,14 +165,19 @@ export async function linkProjectCompanyPersona(opts: {
   const role = normalizeCompanyType(opts.roleInProject) || opts.roleInProject || 'contractor';
   const parent = opts.parentCompanyId || null;
 
-  const { data: existing, error: readErr } = await (supabase as any)
-    .from('project_companies')
-    .select('id, role_in_project, parent_company_id, access_edge, is_deleted')
-    .eq('project_id', opts.projectId)
-    .eq('company_id', opts.companyId);
+  const [{ data: existing, error: readErr }, { data: masterRow, error: masterErr }] = await Promise.all([
+    (supabase as any)
+      .from('project_companies')
+      .select('id, role_in_project, parent_company_id, access_edge, is_deleted')
+      .eq('project_id', opts.projectId)
+      .eq('company_id', opts.companyId),
+    (supabase as any).from('companies').select('type').eq('id', opts.companyId).maybeSingle(),
+  ]);
 
   if (readErr) return { ok: false, error: readErr.message };
+  if (masterErr) return { ok: false, error: masterErr.message };
 
+  const masterType = (masterRow?.type as string | null) || null;
   const rows = (existing || []) as any[];
   const active = rows.filter((r) => !r.is_deleted);
   const same = active.find(
@@ -169,6 +198,13 @@ export async function linkProjectCompanyPersona(opts: {
   );
   if (softSame) {
     const hasAccess = active.some((r) => r.access_edge !== false);
+    const unsafe = wouldCreateUnsafeAccessEdge({
+      hasAccess,
+      role,
+      parentCompanyId: parent,
+      masterType,
+    });
+    if (unsafe) return { ok: false, error: unsafe };
     const { error } = await (supabase as any)
       .from('project_companies')
       .update({
@@ -183,6 +219,14 @@ export async function linkProjectCompanyPersona(opts: {
   }
 
   const hasAccess = active.some((r) => r.access_edge !== false);
+  const unsafe = wouldCreateUnsafeAccessEdge({
+    hasAccess,
+    role,
+    parentCompanyId: parent,
+    masterType,
+  });
+  if (unsafe) return { ok: false, error: unsafe };
+
   const { data: inserted, error } = await (supabase as any)
     .from('project_companies')
     .insert({

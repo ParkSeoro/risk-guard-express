@@ -284,7 +284,10 @@ export default function SettingsCompanies() {
         <Card className="border-warning/40">
           <CardHeader className="pb-2"><CardTitle className="text-sm">중복 업체 병합</CardTitle></CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-xs text-muted-foreground">원본(사라질 업체)을 대상(남을 업체)에 병합합니다. 관리자·부서·근로자·프로젝트 연결이 모두 대상으로 이관됩니다.</p>
+            <p className="text-xs text-muted-foreground">
+              원본(사라질 업체)을 대상(남을 업체)에 병합합니다. 관리자·부서·근로자·프로젝트 연결이 모두 대상으로 이관됩니다.
+              이중 역할(같은 프로젝트에 여러 자리)이 있는 업체는 병합 전 프로젝트 상세에서 자리를 정리하는 것을 권장합니다.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">원본 (Source)</Label>
@@ -375,7 +378,10 @@ export default function SettingsCompanies() {
                   {COMPANY_TYPE_OPTIONS.map(o => <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <p className="text-[10px] text-muted-foreground mt-1">시공사 = 원도급(gc), 협력사 = 하청(contractor)</p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                전역 마스터 유형입니다(결재·권한 SSOT). 프로젝트 안 이중 역할(시공사+협력사 등)은
+                프로젝트 상세 → 업체 관리에서 추가하며, 여기서 기존 프로젝트 역할/상위를 덮어쓰지 않습니다.
+              </p>
             </div>
             <div>
               <Label className="text-xs">사업자등록번호</Label>
@@ -409,7 +415,8 @@ export default function SettingsCompanies() {
                 })}
               </div>
               <p className="text-[10px] text-muted-foreground mt-1">
-                선택한 프로젝트의 업체관리에 {companyTypeLabel(form.type)} 역할로 연결됩니다.
+                신규 연결 시에만 {companyTypeLabel(form.type)} 역할로 추가됩니다.
+                이미 연결된 프로젝트의 이중 역할·상위 관계는 유지되며, 체크 해제 시 해당 프로젝트의 모든 자리가 함께 해제됩니다.
               </p>
             </div>
           </div>

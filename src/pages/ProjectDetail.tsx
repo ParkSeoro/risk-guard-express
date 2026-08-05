@@ -631,6 +631,27 @@ const ProjectDetail = () => {
       });
       return;
     }
+    // Block turning the access-edge (permission) persona into peer-GC contractor —
+    // that would expand the parent's document tree to this legal company.
+    if (
+      editingCompany.access_edge !== false
+      && nextRole === 'contractor'
+      && nextParent
+    ) {
+      const parentCo = companiesForSelect.find((c) => c.id === nextParent)
+        || companies.find((c) => c.id === nextParent);
+      const parentType = normalizeCompanyType(parentCo?.type) || parentCo?.type;
+      if (parentType === 'gc') {
+        toast({
+          title: '수정 실패',
+          description:
+            '권한 자리(기본 소속)를 타 시공사 협력사로 바꾸면 문서·권한 범위가 넘어갑니다. ' +
+            '기존 권한 자리는 유지하고, 업체 등록에서 같은 법인을 협력사(조직도)로 추가하세요.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
     const { error: linkErr } = await (supabase as any).from('project_companies')
       .update({
         role_in_project: editForm.type,

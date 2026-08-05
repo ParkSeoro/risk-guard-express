@@ -1,13 +1,33 @@
 /**
  * Work permit crew helpers — keep personnel_count in sync with work_permit_workers.
  */
+import { isClaimableOrphanWorker } from "@/lib/companyLabel";
 
 export type PermitWorkerRow = {
   id: string;
   name: string;
   phone?: string | null;
   company_name?: string | null;
+  company_id?: string | null;
 };
+
+/**
+ * Workers eligible to assign on a permit = same company as the permit.
+ * Orphans (company_id null) only if company_name matches (normalized).
+ * Never mix peer contractors into another firm's permit crew.
+ */
+export function filterPermitAssignableWorkers<
+  T extends { company_id?: string | null; company_name?: string | null },
+>(
+  workers: T[],
+  permitCompanyId: string | null | undefined,
+  permitCompanyName: string | null | undefined,
+): T[] {
+  if (!permitCompanyId) return [];
+  return workers.filter((w) =>
+    isClaimableOrphanWorker(w, permitCompanyId, permitCompanyName),
+  );
+}
 
 /** Merge assigned crew size into form_data + column payload. */
 export function buildPersonnelCountPatch(

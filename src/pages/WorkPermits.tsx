@@ -26,6 +26,7 @@ import {
   resolvePermitWorkDate,
   permitValidityKind,
   shouldShowPermitValidityBadge,
+  shouldShowPermitRejectionReason,
   canViewPermitInList,
   isUserInvolvedInPermit,
 } from '@/lib/permitWorkDate';
@@ -449,6 +450,7 @@ export default function WorkPermits() {
       approved_by_name: userLabel(user),
       approved_at: new Date().toISOString(),
       approval_comment: comment,
+      rejection_reason: '',
     }).eq('id', permit.id);
     toast({ title: '승인되었습니다.' });
     load();
@@ -506,7 +508,9 @@ export default function WorkPermits() {
                     .map((k) => PERMIT_KIND_LABEL[k])
                     .join(' · ')}
                 </p>
-                {p.rejection_reason && <p className="text-xs text-destructive mt-1">반려: {p.rejection_reason}</p>}
+                {shouldShowPermitRejectionReason(p.status, p.rejection_reason) && (
+                  <p className="text-xs text-destructive mt-1">반려: {p.rejection_reason}</p>
+                )}
                 {p.form_data?.work_extend_requested_until && (
                   <p className="text-xs text-amber-700 mt-1 flex items-center gap-1"><Clock className="h-3 w-3" />연장 승인 대기</p>
                 )}

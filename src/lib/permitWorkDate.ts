@@ -28,6 +28,32 @@ export function shouldShowPermitRejectionReason(
   return Boolean(String(rejectionReason || '').trim());
 }
 
+/** Display label for the contractor / submitting company on permit list cards. */
+export function resolvePermitCompanyName(
+  permit: {
+    contractor_company?: string | null;
+    company_id?: string | null;
+    form_data?: Record<string, unknown> | null;
+  } | null | undefined,
+  companyNameById?: Map<string, string> | Record<string, string> | null,
+): string {
+  if (!permit) return '';
+  const fd = (permit.form_data || {}) as Record<string, unknown>;
+  const fromFields = [
+    permit.contractor_company,
+    fd.contractor_company,
+    fd.applicant_company,
+  ]
+    .map((v) => String(v || '').trim())
+    .find(Boolean);
+  if (fromFields) return fromFields;
+
+  const companyId = permit.company_id || null;
+  if (!companyId || !companyNameById) return '';
+  if (companyNameById instanceof Map) return companyNameById.get(companyId) || '';
+  return companyNameById[companyId] || '';
+}
+
 /** Today's date in Asia/Seoul as YYYY-MM-DD. */
 export function todayKst(now: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', {

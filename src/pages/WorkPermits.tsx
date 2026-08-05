@@ -27,6 +27,7 @@ import {
   permitValidityKind,
   shouldShowPermitValidityBadge,
   shouldShowPermitRejectionReason,
+  resolvePermitCompanyName,
   canViewPermitInList,
   isUserInvolvedInPermit,
 } from '@/lib/permitWorkDate';
@@ -150,6 +151,7 @@ export default function WorkPermits() {
   const [extendUntil, setExtendUntil] = useState('');
   const [extending, setExtending] = useState(false);
   const [companyName, setCompanyName] = useState('');
+  const [companyNameById, setCompanyNameById] = useState<Map<string, string>>(new Map());
   const [previousPermits, setPreviousPermits] = useState<any[]>([]);
   const [loadingPrevious, setLoadingPrevious] = useState(false);
 
@@ -203,7 +205,8 @@ export default function WorkPermits() {
             .eq('approver_id', user.id)
         : Promise.resolve({ data: [] as any[] }),
     ]);
-    setPermits((p as any) || []);
+    const permitRows = (p as any[]) || [];
+    setPermits(permitRows);
     setInvolvedPermitIds(
       new Set(
         ((myApprovals as any[]) || [])
@@ -220,6 +223,24 @@ export default function WorkPermits() {
       }),
     );
     setTbms((tb as any) || []);
+
+    // Resolve company names for list cards (contractor_company may be empty on older rows)
+    const companyIds = Array.from(
+      new Set(permitRows.map((row) => row.company_id).filter(Boolean)),
+    ) as string[];
+    if (companyIds.length === 0) {
+      setCompanyNameById(new Map());
+    } else {
+      const nameMap = new Map<string, string>();
+      for (let i = 0; i < companyIds.length; i += 100) {
+        const chunk = companyIds.slice(i, i + 100);
+        const { data: cos } = await supabase.from('companies').select('id, name').in('id', chunk);
+        for (const c of (cos as any[]) || []) {
+          if (c.id && c.name) nameMap.set(c.id, c.name);
+        }
+      }
+      setCompanyNameById(nameMap);
+    }
   };
 
   useEffect(() => { load(); }, [projectId, user?.id, applyCompanyFilter, accessibleCompanyIds]);
@@ -490,6 +511,7 @@ export default function WorkPermits() {
           const workDate = resolvePermitWorkDate(p);
           const today = todayKst();
           const validity = shouldShowPermitValidityBadge(p.status) ? permitValidityKind(workDate, today) : null;
+          const companyLabel = resolvePermitCompanyName(p, companyNameById);
           return (
           <Card key={p.id}>
             <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
@@ -502,6 +524,12 @@ export default function WorkPermits() {
                   {validity === 'scheduled' && workDate && <Badge variant="outline" className="text-muted-foreground">예정 ({workDate})</Badge>}
                 </div>
                 <p className="text-xs text-muted-foreground">
+                  {companyLabel ? (
+                    <>
+                      <span className="font-medium text-foreground/80">{companyLabel}</span>
+                      {' · '}
+                    </>
+                  ) : null}
                   {workDate || '-'} · {p.location || '-'}
                   {' · '}
                   {normalizePermitKinds(p.permit_kinds, (p.permit_type || 'general') as PermitKindId)

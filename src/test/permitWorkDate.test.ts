@@ -7,6 +7,7 @@ import {
   permitValidityKind,
   shouldShowPermitValidityBadge,
   shouldShowPermitRejectionReason,
+  resolvePermitCompanyName,
   canViewPermitInList,
   isUserInvolvedInPermit,
 } from '@/lib/permitWorkDate';
@@ -149,5 +150,30 @@ describe('shouldShowPermitRejectionReason', () => {
     expect(shouldShowPermitRejectionReason('반려', '첨부서류 누락')).toBe(true);
     expect(shouldShowPermitRejectionReason('반려', '  ')).toBe(false);
     expect(shouldShowPermitRejectionReason('반려', null)).toBe(false);
+  });
+});
+
+describe('resolvePermitCompanyName', () => {
+  it('prefers contractor_company then form_data then company map', () => {
+    expect(
+      resolvePermitCompanyName({
+        contractor_company: '청원산기(주)',
+        company_id: 'co-1',
+        form_data: { contractor_company: '다른회사' },
+      }),
+    ).toBe('청원산기(주)');
+    expect(
+      resolvePermitCompanyName({
+        contractor_company: '',
+        company_id: 'co-1',
+        form_data: { applicant_company: '알파산업(주)' },
+      }),
+    ).toBe('알파산업(주)');
+    expect(
+      resolvePermitCompanyName(
+        { contractor_company: null, company_id: 'co-1', form_data: {} },
+        new Map([['co-1', '정엔지니어링(주)']]),
+      ),
+    ).toBe('정엔지니어링(주)');
   });
 });

@@ -164,7 +164,7 @@ export interface ProjectAccess {
    */
   accessibleCompanyIds: string[] | null;
   /** Apply to supabase query builder for company-scoped filtering. */
-  applyCompanyFilter: (query: any) => any;
+  applyCompanyFilter: (query: any, opts?: { includeOrphans?: boolean }) => any;
   canCreate: (feature: FeatureKey) => boolean;
   canEdit: (feature: FeatureKey) => boolean;
   canDelete: (feature: FeatureKey) => boolean;
@@ -313,13 +313,14 @@ export function useProjectAccess(): ProjectAccess {
   }, [isMaster, selectedProject, memberInfo, userRole]);
 
   const applyCompanyFilter = useCallback(
-    (query: any): any =>
+    (query: any, opts?: { includeOrphans?: boolean }): any =>
       applyOwnCompanyFilter(query, {
         role: userRole,
         companyType: userCompanyType,
         companyId: userCompanyId,
         isMaster,
         accessibleCompanyIds,
+        includeOrphans: opts?.includeOrphans,
       }),
     [userRole, userCompanyType, userCompanyId, isMaster, accessibleCompanyIds],
   );

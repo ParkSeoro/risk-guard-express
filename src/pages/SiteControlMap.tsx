@@ -30,6 +30,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import ZoneAccessRulesDialog, {
   type ZoneDraftPayload,
   type ZoneEditSeed,
@@ -295,7 +301,8 @@ function VisualCornerMarkers({
 }
 
 /**
- * 통합 현장 관제맵 — 위성 + 회전 가능 드론 오버레이 + 위험구역.
+ * 통합 현장 관제맵 — 도면 업로드(기본) → 모바일 워킹 보정.
+ * PC 위성 TL/TR/BL은 선택(고급).
  */
 export default function SiteControlMap() {
   const [projectId, setProjectId] = useState(() => localStorage.getItem("currentProjectId") || "");
@@ -456,7 +463,7 @@ export default function SiteControlMap() {
       return;
     }
     const { data: pub } = supabase.storage.from("attachments").getPublicUrl(path);
-    const name = file.name.replace(/\.[^.]+$/, "") || "드론 현장사진";
+    const name = file.name.replace(/\.[^.]+$/, "") || "현장 도면";
     const { data, error } = await supabase
       .from("site_maps")
       .insert({
@@ -474,7 +481,10 @@ export default function SiteControlMap() {
       toast.error("맵 등록 실패: " + error.message);
       return;
     }
-    toast.success("업로드 완료 — TL/TR/BL 마커·회전으로 위성에 맞춰 주세요");
+    toast.success("업로드 완료 — 모바일 「맵·GPS 맞추기」워킹 보정으로 좌표를 맞추세요", {
+      description: "PC 위성 TL/TR/BL 수동 정렬은 선택(고급)입니다.",
+      duration: 7000,
+    });
     setLayers((l) => ({ ...l, drone: true }));
     setActiveMap(data as SiteMap);
     setSeedRequest((n) => n + 1);
@@ -491,7 +501,7 @@ export default function SiteControlMap() {
       toast.error("저장 실패: " + error.message + " (geo_transform 마이그레이션 적용 여부 확인)");
       return;
     }
-    toast.success("드론 오버레이(회전 포함)가 저장되었습니다");
+    toast.success("위성 정렬(고급)이 저장되었습니다");
     setActiveMap({ ...activeMap, ...payload });
     setFitToken(`saved-${Date.now()}`);
     void loadMaps();
@@ -625,7 +635,7 @@ export default function SiteControlMap() {
       setFocusZoneId(z.id);
       const off = isZoneOffImage(z, draftCorners);
       if (off) {
-        toast.message("도면 밖 구역 — 맵핑 탭 위성에서도 확인하세요", {
+        toast.message("도면 밖 구역 — 필요하면 고급 위성 정렬을 확인하세요", {
           description:
             "모바일 Walk&Drop이 GPS 보정 없이 저장된 경우 도면과 어긋납니다. 보정 후 재등록하세요.",
           duration: 5000,
@@ -802,7 +812,8 @@ export default function SiteControlMap() {
             통합 현장 관제맵
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            맵핑 탭에서 위성에 드론을 맞추고, 위험구역 탭에서는 평면 도면 위에 구역을 그립니다.
+            현장 도면을 업로드한 뒤 모바일 워킹 보정으로 좌표를 맞춥니다. 위성 TL/TR/BL 정렬은
+            선택(고급)입니다.
           </p>
           {gpsCal && (
             <div className="mt-2">
@@ -848,7 +859,7 @@ export default function SiteControlMap() {
             >
               <TabsList className="grid w-full grid-cols-2 h-auto">
                 <TabsTrigger value="mapping" className="text-[11px] px-1 py-2 whitespace-normal leading-tight">
-                  [1] 드론/도면 맵핑
+                  [1] 도면 업로드
                 </TabsTrigger>
                 <TabsTrigger value="zones" className="text-[11px] px-1 py-2 whitespace-normal leading-tight">
                   [2] 위험구역 설정
@@ -873,7 +884,7 @@ export default function SiteControlMap() {
 
                 <label className="flex items-center justify-center gap-2 h-11 border border-dashed rounded-md cursor-pointer text-sm hover:bg-muted/50">
                   {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  드론 사진 업로드
+                  현장 도면 업로드
                   <input
                     type="file"
                     accept="image/*"
@@ -886,11 +897,28 @@ export default function SiteControlMap() {
                   />
                 </label>
 
-                {draftCorners && activeMap?.image_url ? (
-                  <div className="rounded-md border bg-muted/40 p-2.5 space-y-3">
+                {activeMap?.image_url && (
+                  <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2.5 space-y-1.5">
+                    <p className="text-[11px] font-medium text-emerald-900 dark:text-emerald-100">
+                      권장 다음 단계 · 모바일 워킹 보정
+                    </p>
                     <p className="text-[11px] text-muted-foreground leading-relaxed">
-                      <b>TL·TR·BL</b> 마커를 드래그하거나, 현장 모서리에 서서{" "}
-                      <b>현재 위치로 찍기</b>하면 GPS와 도면이 맞춰집니다.
+                      마스터 앱 → <b>더보기</b> → <b>맵·GPS 맞추기</b> → 워킹 보정(A·B·C).
+                      PC에서 위성에 사진을 입힐 필요는 없습니다.
+                    </p>
+                  </div>
+                )}
+
+                {draftCorners && activeMap?.image_url ? (
+                  <Accordion type="single" collapsible className="rounded-md border bg-muted/40 px-2.5">
+                    <AccordionItem value="advanced-sat" className="border-0">
+                      <AccordionTrigger className="py-2.5 text-xs hover:no-underline">
+                        고급 · PC 위성 TL/TR/BL 수동 정렬
+                      </AccordionTrigger>
+                      <AccordionContent className="space-y-3 pb-3">
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      선택 기능입니다. 모바일 워킹 보정 대신 PC에서 <b>TL·TR·BL</b> 마커를
+                      드래그하거나 <b>현재 위치로 찍기</b>할 때 사용합니다.
                     </p>
 
                     <div className="space-y-1.5 rounded-md border bg-background/80 p-2">
@@ -955,7 +983,7 @@ export default function SiteControlMap() {
                       </div>
                       <p className="text-[10px] text-muted-foreground leading-relaxed">
                         도면의 좌상→우상→좌하 모서리에 순서대로 서서 찍으면 회전·스케일이
-                        함께 맞춰집니다. 저장 후 구역을 그리세요.
+                        맞춰집니다. 모서리에 못 가면 모바일 워킹 보정을 권장합니다.
                       </p>
                     </div>
 
@@ -1025,12 +1053,15 @@ export default function SiteControlMap() {
 
                     <Button className="w-full" size="sm" onClick={() => void saveBounds()} disabled={savingBounds}>
                       {savingBounds ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-                      오버레이 저장 (회전 포함)
+                      위성 정렬 저장 (고급)
                     </Button>
-                  </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
                 ) : (
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    드론 사진을 업로드하면 TL/TR/BL 정렬 도구가 나타납니다.
+                    도면을 업로드하면 모바일 워킹 보정으로 좌표를 맞출 수 있습니다. PC 위성
+                    수동 정렬(고급)은 업로드 후 이 탭에서 펼칠 수 있습니다.
                   </p>
                 )}
               </TabsContent>
@@ -1042,12 +1073,13 @@ export default function SiteControlMap() {
                 </p>
                 {!activeMap?.image_url && (
                   <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
-                    먼저 [1] 맵핑 탭에서 드론 사진을 업로드하세요.
+                    먼저 [1] 도면 업로드 탭에서 현장 도면을 올리세요.
                   </div>
                 )}
                 {activeMap?.image_url && !draftCorners && (
                   <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
-                    맵핑 탭에서 TL/TR/BL 정렬을 저장해야 좌표 역산이 가능합니다.
+                    구역을 그리려면 지오레프가 필요합니다. 모바일 워킹 보정(권장) 또는 PC 위성
+                    TL/TR/BL(고급)을 저장하세요.
                   </div>
                 )}
 
@@ -1146,8 +1178,8 @@ export default function SiteControlMap() {
               {panelTab === "zones" && (
                 <div className="absolute inset-0 z-[900] flex items-center justify-center bg-muted/80 p-6 text-center text-sm text-muted-foreground">
                   {activeMap?.image_url
-                    ? "맵핑 탭에서 TL/TR/BL 정렬을 저장하면 평면 도면에서 구역을 그릴 수 있습니다."
-                    : "드론 도면을 먼저 업로드·맵핑하세요."}
+                    ? "지오레프가 필요합니다. 모바일 워킹 보정(권장) 또는 PC 위성 TL/TR/BL(고급)을 저장하세요."
+                    : "현장 도면을 먼저 업로드하세요."}
                 </div>
               )}
               <div className="absolute top-3 right-3 z-[1000] w-52 rounded-lg border bg-background/95 shadow-md p-3 space-y-2.5 backdrop-blur-sm">
@@ -1166,7 +1198,7 @@ export default function SiteControlMap() {
                 </label>
                 <label className="flex items-center justify-between gap-2 text-xs cursor-pointer">
                   <span className="flex items-center gap-1.5">
-                    <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" /> 드론 오버레이
+                    <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" /> 현장 도면
                   </span>
                   <Switch
                     checked={layers.drone}
@@ -1280,7 +1312,7 @@ export default function SiteControlMap() {
 
               {activeMap?.image_url && !draftCorners && panelTab === "mapping" && (
                 <div className="absolute inset-x-0 bottom-3 mx-auto max-w-md rounded-lg bg-background/95 border p-3 text-xs text-center shadow z-[500]">
-                  뷰포트 중앙에 TL/TR/BL 마커를 배치하는 중…
+                  고급 정렬용 마커 준비 중…
                 </div>
               )}
             </div>

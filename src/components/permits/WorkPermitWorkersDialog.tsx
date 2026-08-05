@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Users, Search, UserCheck } from "lucide-react";
 import { toast } from "sonner";
-import { buildPersonnelCountPatch } from "@/lib/permitWorkers";
+import {
+  buildPersonnelCountPatch,
+  filterPermitAssignableWorkers,
+} from "@/lib/permitWorkers";
 
 type Props = {
   permit: any | null;
@@ -26,6 +29,7 @@ export default function WorkPermitWorkersDialog({
   onSaved,
 }: Props) {
   const [workers, setWorkers] = useState<any[]>([]);
+  const [companyName, setCompanyName] = useState<string | null>(null);
   const [assigned, setAssigned] = useState<Set<string>>(new Set());
   const [initialAssigned, setInitialAssigned] = useState<Set<string>>(new Set());
   const [onSiteIds, setOnSiteIds] = useState<Set<string>>(new Set());
@@ -33,18 +37,42 @@ export default function WorkPermitWorkersDialog({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const permitCompanyId: string | null = permit?.company_id || null;
+
   useEffect(() => {
     if (!open || !permit || !projectId) return;
     (async () => {
       setLoading(true);
+      setQ("");
       const today = new Date().toISOString().slice(0, 10);
+      const companyId = (permit as { company_id?: string | null }).company_id || null;
+
+      let companyLabel: string | null = null;
+      if (companyId) {
+        const { data: cRow } = await supabase
+          .from("companies")
+          .select("name")
+          .eq("id", companyId)
+          .maybeSingle();
+        companyLabel = (cRow as { name?: string } | null)?.name || null;
+      }
+      setCompanyName(companyLabel);
+
+      // Scope query to permit company (+ orphans for label match). No company → empty list.
+      let workersQ: any = supabase
+        .from("workers")
+        .select("id, name, phone, company_name, company_id")
+        .eq("project_id", projectId)
+        .eq("is_active", true)
+        .order("name");
+      if (companyId) {
+        workersQ = workersQ.or(`company_id.eq.${companyId},company_id.is.null`);
+      } else {
+        workersQ = workersQ.eq("company_id", "00000000-0000-0000-0000-000000000000");
+      }
+
       const [{ data: ws }, { data: wpw }, { data: logs }] = await Promise.all([
-        supabase
-          .from("workers")
-          .select("id, name, phone, company_name, company_id")
-          .eq("project_id", projectId)
-          .eq("is_active", true)
-          .order("name"),
+        workersQ,
         supabase
           .from("work_permit_workers" as any)
           .select("worker_id")
@@ -56,13 +84,20 @@ export default function WorkPermitWorkersDialog({
           .gte("entry_at", `${today}T00:00:00`)
           .lte("entry_at", `${today}T23:59:59`),
       ]);
-      setWorkers(ws || []);
+
+      const scoped = filterPermitAssignableWorkers(ws || [], companyId, companyLabel);
+      setWorkers(scoped);
+
       const ids = new Set((wpw || []).map((r: any) => r.worker_id as string));
       setAssigned(ids);
       setInitialAssigned(new Set(ids));
       const site = new Set<string>();
+      const scopedIds = new Set(scoped.map((w) => w.id));
       for (const row of (logs as any[]) || []) {
-        if (row.worker_id && !row.exit_at) site.add(row.worker_id);
+        // Only count on-site workers that belong to this permit's company
+        if (row.worker_id && !row.exit_at && scopedIds.has(row.worker_id)) {
+          site.add(row.worker_id);
+        }
       }
       setOnSiteIds(site);
       setLoading(false);
@@ -77,20 +112,25 @@ export default function WorkPermitWorkersDialog({
 
   const selectOnSite = () => {
     if (onSiteIds.size === 0) {
-      toast.message("오늘 출근(미퇴근) 근로자가 없습니다.");
+      toast.message("오늘 출근(미퇴근)한 자사 근로자가 없습니다.");
       return;
     }
     const next = new Set(assigned);
     onSiteIds.forEach((id) => next.add(id));
     setAssigned(next);
-    toast.success(`출근자 ${onSiteIds.size}명 선택에 반영`);
+    toast.success(`자사 출근자 ${onSiteIds.size}명 선택에 반영`);
   };
 
   const save = async () => {
     if (!permit) return;
     setSaving(true);
-    const toAdd = [...assigned].filter((id) => !initialAssigned.has(id));
-    const toRemove = [...initialAssigned].filter((id) => !assigned.has(id));
+    const allowed = new Set(workers.map((w) => w.id));
+    // Never persist a selection outside permit company (stale / race)
+    const safeAssigned = new Set([...assigned].filter((id) => allowed.has(id) || initialAssigned.has(id)));
+    // Drop initial assignments that are no longer in allowed only if user unchecked —
+    // keep initialAssigned removals as usual
+    const toAdd = [...safeAssigned].filter((id) => !initialAssigned.has(id) && allowed.has(id));
+    const toRemove = [...initialAssigned].filter((id) => !safeAssigned.has(id));
 
     if (toAdd.length > 0) {
       const rows = toAdd.map((worker_id) => ({
@@ -119,8 +159,7 @@ export default function WorkPermitWorkersDialog({
       }
     }
 
-    // Keep 작업인원 in sync with named crew
-    const patch = buildPersonnelCountPatch(permit.form_data, assigned.size);
+    const patch = buildPersonnelCountPatch(permit.form_data, safeAssigned.size);
     const { error: countErr } = await supabase
       .from("work_permits" as any)
       .update(patch as any)
@@ -132,17 +171,21 @@ export default function WorkPermitWorkersDialog({
     }
 
     setSaving(false);
-    toast.success(`근로자 ${assigned.size}명 배정 · 작업인원 반영`);
-    onSaved?.(assigned.size);
+    toast.success(`근로자 ${safeAssigned.size}명 배정 · 작업인원 반영`);
+    onSaved?.(safeAssigned.size);
     onClose();
   };
 
-  const filtered = workers.filter(
-    (w) =>
-      !q ||
-      w.name?.includes(q) ||
-      w.phone?.includes(q) ||
-      w.company_name?.includes(q),
+  const filtered = useMemo(
+    () =>
+      workers.filter(
+        (w) =>
+          !q ||
+          w.name?.includes(q) ||
+          w.phone?.includes(q) ||
+          w.company_name?.includes(q),
+      ),
+    [workers, q],
   );
 
   return (
@@ -163,7 +206,16 @@ export default function WorkPermitWorkersDialog({
           <div className="text-sm text-muted-foreground">
             {permit?.work_description} · {permit?.permit_date}
             <span className="block text-xs mt-0.5">
-              저장 시 작업인원(명)이 선택 인원과 자동으로 맞춰집니다. 인쇄 뒷장에 명단이 출력됩니다.
+              {permitCompanyId ? (
+                <>
+                  <b className="text-foreground">{companyName || "자사"}</b> 근로자만 표시합니다.
+                  저장 시 작업인원이 선택 인원과 맞춰집니다.
+                </>
+              ) : (
+                <span className="text-destructive">
+                  허가서에 소속 회사가 없어 배정할 수 없습니다. 허가서 회사 정보를 확인하세요.
+                </span>
+              )}
             </span>
           </div>
           <div className="flex gap-2">
@@ -171,9 +223,10 @@ export default function WorkPermitWorkersDialog({
               <Search className="h-4 w-4 absolute left-2 top-2.5 text-muted-foreground" />
               <Input
                 className="pl-8"
-                placeholder="이름·전화·회사 검색"
+                placeholder="이름·전화 검색"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
+                disabled={!permitCompanyId}
               />
             </div>
             <Button
@@ -182,8 +235,8 @@ export default function WorkPermitWorkersDialog({
               size="sm"
               className="shrink-0"
               onClick={selectOnSite}
-              disabled={loading || onSiteIds.size === 0}
-              title="오늘 출근·미퇴근 근로자 선택"
+              disabled={loading || onSiteIds.size === 0 || !permitCompanyId}
+              title="오늘 출근·미퇴근 자사 근로자 선택"
             >
               <UserCheck className="h-4 w-4 mr-1" />
               출근자
@@ -195,9 +248,13 @@ export default function WorkPermitWorkersDialog({
             </div>
           ) : (
             <div className="max-h-96 overflow-y-auto border rounded divide-y">
-              {filtered.length === 0 ? (
+              {!permitCompanyId ? (
                 <div className="p-4 text-sm text-muted-foreground text-center">
-                  등록된 근로자가 없습니다.
+                  허가서 소속 회사가 없습니다.
+                </div>
+              ) : filtered.length === 0 ? (
+                <div className="p-4 text-sm text-muted-foreground text-center">
+                  이 회사로 등록된 근로자가 없습니다.
                 </div>
               ) : (
                 filtered.map((w) => (
@@ -219,7 +276,7 @@ export default function WorkPermitWorkersDialog({
                         )}
                       </div>
                       <div className="text-xs text-muted-foreground truncate">
-                        {w.company_name || "-"} · {w.phone}
+                        {w.company_name || companyName || "-"} · {w.phone}
                       </div>
                     </div>
                   </label>
@@ -231,7 +288,7 @@ export default function WorkPermitWorkersDialog({
             <Button variant="outline" onClick={onClose}>
               취소
             </Button>
-            <Button onClick={save} disabled={saving || loading}>
+            <Button onClick={save} disabled={saving || loading || !permitCompanyId}>
               {saving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
               저장
             </Button>

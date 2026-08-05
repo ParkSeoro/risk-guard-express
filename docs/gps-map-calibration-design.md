@@ -1,50 +1,37 @@
 # 마스터 현장 GPS·맵 정렬 (설계)
 
-목표: 마스터가 현장에서 **현재 GPS**와 **등록된 사이트맵 위 지점**을 맞추면,
-시스템이 오프셋을 계산해 지오펜스/분포 GPS 정확도를 높인다.
+목표: 마스터가 현장에서 **갈 수 있는 위치**를 따라가며 GPS를 찍으면,
+시스템이 맵 지오레프(및 잔여 1점 바이어스)를 맞춘다.  
+모서리(산·하천) 강제 금지 — **추천 지점 + 못 감 교체**.
 
-## 현재 상태
-| 기능 | 위치 | 한계 |
+## 상태
+
+| 기능 | 위치 | 상태 |
 |------|------|------|
-| TL/TR/BL 모서리 GPS 찍기 | PC 현장통제맵 맵핑 탭 | 데스크톱; 도면 자체를 Earth에 맞춤 |
-| Walk & Drop | 모바일 구역 드롭 | 맵 정렬 아님, 구역만 생성 |
-| GPS 바이어스 보정 | **없음** | 폰 raw GPS 그대로 사용 |
+| 부팅 OTA 게이트 (로그인 전) | `bootOtaGate` + `main.tsx` | 구현 |
+| 워킹 보정 (추천 N점 → affine) | `MobileMapCalibration` 워킹 탭 | 구현 |
+| 1점 잔여 바이어스 | 같은 화면 1점 탭 | 구현 (Phase A) |
+| PC TL/TR/BL 맵핑 | `SiteControlMap` | 기존 |
 
-## 추천: 1점 보정 (Phase A) — 먼저 만들기
-**가정:** 드론 오버레이 georef(TL/TR/BL)는 이미 PC에서 맞춰 둠.  
-현장에선 **잔여 오차(수~수십 m)** 만 보정.
+## 워킹 보정 UX
+1. 더보기 → **맵·GPS 맞추기** → 워킹 보정
+2. 시스템이 UV 후보를 점수화해 A/B/C 추천  
+   - 위험/작업 구역(UV 투영) · 최근 `worker_last_positions` · 맵 분산  
+   - 가장자리(모서리) inset 제외
+3. 추천 지점 도착 → **여기 좌표 잡기** (정확도 게이트)
+4. **여기 못 감** → 제외 반경 두고 다음 후보
+5. 핀 탭으로 미세 조정 가능
+6. 3점 이상 → 최소제곱 affine → `site_maps.geo_transform` 저장
+7. 잔여 수 m는 **1점 보정** (`projects.gps_calibration`)
 
-### UX (마스터 전용 모바일)
-1. 더보기/홈 → **맵·GPS 맞추기**
-2. 활성 사이트맵 도면 표시
-3. 지금 서 있는 지점을 도면에서 **탭**
-4. 「현재 GPS로 맞추기」 → 고정밀 위치 수신 (정확도 > 30~40m면 저장 거부)
-5. `Δlat/Δlng = 맵WGS84 − 폰GPS` 저장 (`projects.gps_calibration` 또는 `site_maps`)
-6. 이후 `track-location` / 클라이언트 추적에 `gps + Δ` 적용
-7. 「보정 초기화」 버튼
+## OTA
+- 네이티브 콜드스타트: 로그인 UI 전에 스플래시에서 확인·다운로드·즉시 적용
+- `app-updates` Storage SELECT: anon + authenticated (프리로그인 다운로드)
+- 더보기 OTA 카드: 수동 재시도 전용
 
-### 왜 1점이 먼저인가
-- 질문(“현재 위치와 맵 위치를 특정 → 자동 계산”)에 정확히 대응
-- TL/TR/BL 재촬영보다 현장 부담 적음
-- **OTA만으로 가능** (새 네이티브 플러그인 불필요)
-
-### 위험
-- GPS 멀티패스 오차가 Δ에 구워지면 **전 근로자** 지오펜스가 밀림 → 정확도 게이트 필수
-- 도면 georef가 크게 틀리면 1점으로 부족 → Phase B
-
-## Phase B: 모바일 3모서리 찍기
-PC SiteControlMap의 TL/TR/BL 찍기를 폰으로 이식.  
-도면 자체가 틀렸을 때. 구역 WGS84는 재그리기/재변환 필요할 수 있음.
-
-## Phase C: N점 최소제곱 (나중)
-4~6점 탭+GPS로 affine 추정. 정확도는 좋지만 UX 무거움.
-
-## 구현 시 건드릴 파일 (A)
-- `src/pages/MobileMapCalibration.tsx` (신규)
-- `src/lib/tracking/gpsCalibration.ts` + 테스트
-- `src/lib/tracking/imageSpaceGeo.ts` (uv→WGS84 재사용)
-- `locationTracker.ts` + `track-location` Edge (오프셋 적용)
-- migration: `gps_calibration jsonb`
-- `MobileHome` 마스터 CTA
-
-**AAB 불필요** (기존 Geolocation 사용).
+## 핵심 파일
+- `src/lib/native/bootOtaGate.ts`, `src/main.tsx`
+- `src/lib/tracking/recommendControlPoints.ts`
+- `src/lib/tracking/fitAffineFromControlPoints.ts`
+- `src/pages/MobileMapCalibration.tsx`
+- `supabase/migrations/20260805060000_ota_anon_read_app_updates.sql`

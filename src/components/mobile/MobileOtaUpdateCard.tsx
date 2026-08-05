@@ -55,8 +55,8 @@ export default function MobileOtaUpdateCard() {
           앱 화면 업데이트 (OTA)
         </div>
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          앱을 열거나 다시 돌아올 때 <b>자동으로</b> 새 화면을 받아 적용합니다.
-          스토어 재설치는 필요 없습니다.
+          앱 실행 직후(로그인 전)와 다시 돌아올 때 <b>자동으로</b> 새 화면을 받아 적용합니다.
+          아래는 수동 재확인용입니다. 스토어 재설치는 필요 없습니다.
           {!isNativeApp() && " (지금 화면은 웹/미리보기라 OTA 대상이 아닙니다.)"}
         </p>
         {status && (

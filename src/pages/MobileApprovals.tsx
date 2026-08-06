@@ -156,6 +156,19 @@ export default function MobileApprovals() {
               ? (action === "approve" ? "연장 승인 완료" : "연장 요청 반려")
               : (action === "approve" ? "승인 완료" : "반려 처리됨"),
       );
+      if (action === "approve" && kind === "normal" && r.entity_type === "work_permit") {
+        try {
+          const { ensureTbmAfterPermitIssued } = await import("@/lib/tbmLifecycle");
+          await ensureTbmAfterPermitIssued({
+            rpcResult: result,
+            entityType: r.entity_type,
+            entityId: r.entity_id,
+            projectId: r.project_id,
+          });
+        } catch (e) {
+          console.warn("ensureTbmAfterPermitIssued", e);
+        }
+      }
       setOpenId(null); setComment("");
       load();
     } catch (e: any) {

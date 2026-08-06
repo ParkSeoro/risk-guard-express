@@ -17,6 +17,9 @@ import { toast } from "sonner";
 import {
   resolvePermitWorkDate,
   canViewPermitInList,
+  todayKst,
+  permitValidityKind,
+  shouldShowPermitValidityBadge,
 } from "@/lib/permitWorkDate";
 import DigPermitForm, {
   type PermitFormData,
@@ -31,12 +34,25 @@ const STATUS_BADGE: Record<string, string> = {
   대기: "bg-warning/20 text-warning",
   검토중: "bg-primary/20 text-primary",
   승인: "bg-success/20 text-success",
+  승인완료: "bg-success/20 text-success",
+  발행완료: "bg-success/20 text-success",
   반려: "bg-destructive/20 text-destructive",
   작성중: "bg-muted text-muted-foreground",
   결재중: "bg-primary/20 text-primary",
   종료대기: "bg-amber-500/20 text-amber-700",
+  종료완료: "bg-muted text-muted-foreground",
   종료: "bg-success/20 text-success",
 };
+
+function permitStatusLabel(status?: string | null) {
+  if (status === "종료완료" || status === "CLOSED" || status === "마감") return "종료 완료";
+  if (status === "종료대기" || status === "CLOSURE_PENDING") return "작업 완료 확인 대기";
+  if (status === "승인" || status === "승인완료" || status === "발행완료" || status === "approved") {
+    return "발행 완료";
+  }
+  if (status === "결재중" || status === "결재진행") return "결재 진행중";
+  return status || "-";
+}
 
 const getForm = (p: any) => (p?.form_data && typeof p.form_data === "object" ? p.form_data : {});
 const permitTitle = (p: any) =>
@@ -283,14 +299,35 @@ export default function MobilePermits() {
                     <div className="text-xs text-muted-foreground mt-1">
                       {p.permit_type} · {permitLocation(p)} · {permitCompany(p)}
                     </div>
-                    <div className="text-xs mt-1">
-                      {resolvePermitWorkDate(p) || p.permit_date} · 인원 {permitPersonnel(p)}명
+                    <div className="text-xs mt-1 flex flex-wrap items-center gap-1">
+                      <span>{resolvePermitWorkDate(p) || p.permit_date} · 인원 {permitPersonnel(p)}명</span>
+                      {(() => {
+                        const workDate = resolvePermitWorkDate(p);
+                        const validity = shouldShowPermitValidityBadge(p.status)
+                          ? permitValidityKind(workDate, todayKst())
+                          : null;
+                        if (validity === "expired") {
+                          return (
+                            <Badge variant="outline" className="text-[10px] text-destructive border-destructive/40">
+                              만료
+                            </Badge>
+                          );
+                        }
+                        if (validity === "today") {
+                          return (
+                            <Badge variant="outline" className="text-[10px] text-emerald-700 border-emerald-500/40">
+                              오늘 유효
+                            </Badge>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   </div>
                   <span
-                    className={`text-xs px-2 py-1 rounded ${STATUS_BADGE[p.status] || "bg-muted"}`}
+                    className={`text-xs px-2 py-1 rounded shrink-0 ${STATUS_BADGE[p.status] || "bg-muted"}`}
                   >
-                    {p.status}
+                    {permitStatusLabel(p.status)}
                   </span>
                 </div>
               </CardContent>
@@ -303,7 +340,7 @@ export default function MobilePermits() {
               <CardContent className="pt-4 space-y-2">
                 <div className="font-bold text-base">{permitTitle(active)}</div>
                 <div className="text-xs text-muted-foreground space-y-0.5">
-                  <div>상태: {active.status}</div>
+                  <div>상태: {permitStatusLabel(active.status)}</div>
                   <div>일자: {resolvePermitWorkDate(active) || active.permit_date}</div>
                   <div>장소: {permitLocation(active)}</div>
                   <div>업체: {permitCompany(active)}</div>

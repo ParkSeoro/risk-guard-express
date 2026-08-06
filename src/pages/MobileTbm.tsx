@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import IMESafeInput from "@/components/IMESafeInput";
 import IMESafeTextarea from "@/components/IMESafeTextarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   ArrowLeft,
@@ -27,6 +28,8 @@ import { toast } from "sonner";
 import QRCode from "qrcode";
 import { z } from "zod";
 import { correctTerms } from "@/lib/termCorrection";
+import { todayKst } from "@/lib/permitWorkDate";
+import { closeExpiredTbmSessions } from "@/lib/tbmLifecycle";
 
 const tbmSchema = z.object({
   title: z.string().trim().min(2, "TBM 제목을 2자 이상 입력하세요").max(200),
@@ -35,10 +38,6 @@ const tbmSchema = z.object({
 });
 
 const PUBLIC_TBM_BASE = "https://safenex.org";
-
-function todaySeoul(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
-}
 
 function buildTbmUrl(token: string) {
   return `${PUBLIC_TBM_BASE}/tbm/${encodeURIComponent(token)}`;
@@ -79,9 +78,11 @@ export default function MobileTbm() {
   const [participants, setParticipants] = useState<any[]>([]);
   const [form, setForm] = useState({ title: "", location: "", summary: "" });
   const [myParticipatedIds, setMyParticipatedIds] = useState<Set<string>>(new Set());
+  const [selectedDate, setSelectedDate] = useState(() => todayKst());
 
-  const today = useMemo(() => todaySeoul(), []);
+  const today = useMemo(() => todayKst(), []);
   const portalUrl = session?.qr_token ? buildTbmUrl(session.qr_token) : "";
+  const viewingToday = selectedDate === today;
 
   const loadSessions = async () => {
     if (!projectId) {
@@ -90,11 +91,13 @@ export default function MobileTbm() {
       return;
     }
     setLoading(true);
+    await closeExpiredTbmSessions(projectId);
     let q: any = supabase
       .from("tbm_sessions" as any)
       .select("id, title, location, briefing_summary, leader_name, qr_token, tbm_date, is_active, created_at")
       .eq("project_id", projectId)
-      .eq("tbm_date", today)
+      .eq("tbm_date", selectedDate)
+      .or("is_deleted.is.null,is_deleted.eq.false")
       .order("created_at", { ascending: false })
       .limit(50);
     q = applyCompanyFilter(q);
@@ -126,7 +129,7 @@ export default function MobileTbm() {
   useEffect(() => {
     loadSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, today, isManager, profile?.user_id]);
+  }, [projectId, selectedDate, isManager, profile?.user_id]);
 
   useEffect(() => {
     if (!portalUrl) {
@@ -214,8 +217,12 @@ export default function MobileTbm() {
       ? "TBM 생성"
       : mode === "qr"
         ? "TBM QR"
-        : "TBM 진행"
-    : "오늘 TBM 참여";
+        : viewingToday
+          ? "TBM 진행"
+          : "지난 TBM 일지"
+    : viewingToday
+      ? "오늘 TBM 참여"
+      : "지난 TBM 일지";
 
   const back = () => {
     if (isManager && (mode === "create" || mode === "qr")) {
@@ -236,7 +243,7 @@ export default function MobileTbm() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="font-bold text-lg flex-1">{headerTitle}</div>
-        {isManager && mode === "list" && (
+        {isManager && mode === "list" && viewingToday && (
           <Button size="sm" variant="secondary" onClick={() => setMode("create")}>
             <Plus className="h-4 w-4 mr-1" /> 생성
           </Button>
@@ -249,6 +256,30 @@ export default function MobileTbm() {
             <CardContent className="pt-3 pb-3 text-sm">
               프로젝트를 먼저 선택하세요.{" "}
               <Button variant="link" size="sm" onClick={() => goMobileHome()}>홈으로</Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {mode === "list" && projectId && (
+          <Card>
+            <CardContent className="pt-3 pb-3 space-y-2">
+              <Label className="text-xs text-muted-foreground">일지 일자</Label>
+              <div className="flex gap-2 items-center">
+                <Input
+                  type="date"
+                  className="h-11 text-base flex-1"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant={viewingToday ? "default" : "outline"}
+                  className="h-11 shrink-0"
+                  onClick={() => setSelectedDate(today)}
+                >
+                  오늘
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -344,14 +375,20 @@ export default function MobileTbm() {
         {/* Manager list */}
         {isManager && mode === "list" && !loading && (
           <>
-            <p className="text-xs text-muted-foreground">오늘({today}) 진행 중인 TBM을 관리합니다.</p>
+            <p className="text-xs text-muted-foreground">
+              {viewingToday
+                ? `오늘(${today}) 진행 중인 TBM을 관리합니다.`
+                : `${selectedDate} 일지를 조회합니다. (지난 일자는 종료된 세션입니다)`}
+            </p>
             {sessions.length === 0 && (
               <Card>
                 <CardContent className="py-8 text-center text-sm text-muted-foreground space-y-3">
-                  <div>오늘 생성된 TBM이 없습니다.</div>
-                  <Button onClick={() => setMode("create")}>
-                    <Plus className="h-4 w-4 mr-1" /> TBM 생성
-                  </Button>
+                  <div>{viewingToday ? "오늘 생성된 TBM이 없습니다." : "해당 일자 TBM이 없습니다."}</div>
+                  {viewingToday && (
+                    <Button onClick={() => setMode("create")}>
+                      <Plus className="h-4 w-4 mr-1" /> TBM 생성
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -378,22 +415,32 @@ export default function MobileTbm() {
           </>
         )}
 
-        {/* Worker: today’s participate */}
+        {/* Worker: participate (today) or browse past */}
         {!isManager && !loading && (
           <>
             <p className="text-xs text-muted-foreground">
-              오늘 진행 중인 TBM에 참여·서명합니다. 새 TBM 생성은 관리자만 가능합니다.
+              {viewingToday
+                ? "오늘 진행 중인 TBM에 참여·서명합니다. 새 TBM 생성은 관리자만 가능합니다."
+                : `${selectedDate} 일지를 조회합니다. 참여·서명은 당일 진행중 세션에서만 가능합니다.`}
             </p>
-            {activeToday.length === 0 && (
+            {viewingToday && activeToday.length === 0 && (
               <Card>
                 <CardContent className="py-10 text-center text-sm text-muted-foreground">
                   오늘 참여 가능한 TBM이 없습니다.
                 </CardContent>
               </Card>
             )}
-            {activeToday.map((s) => {
+            {!viewingToday && sessions.length === 0 && (
+              <Card>
+                <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                  해당 일자 TBM이 없습니다.
+                </CardContent>
+              </Card>
+            )}
+            {(viewingToday ? activeToday : sessions).map((s) => {
               const done = myParticipatedIds.has(s.id);
               const token = s.qr_token;
+              const canJoin = viewingToday && s.is_active !== false && !done && !!token;
               return (
                 <Card key={s.id}>
                   <CardContent className="pt-4 space-y-2">
@@ -408,6 +455,8 @@ export default function MobileTbm() {
                         <Badge className="bg-emerald-500/15 text-emerald-700 border-emerald-500/30" variant="outline">
                           <CheckCircle2 className="h-3 w-3 mr-1" /> 참여완료
                         </Badge>
+                      ) : s.is_active === false ? (
+                        <Badge variant="secondary">종료</Badge>
                       ) : (
                         <Badge variant="secondary">미참여</Badge>
                       )}
@@ -417,20 +466,22 @@ export default function MobileTbm() {
                         {s.briefing_summary}
                       </div>
                     )}
-                    <Button
-                      className="w-full"
-                      disabled={!token || done}
-                      onClick={() => {
-                        if (!token) {
-                          toast.error("QR 토큰이 아직 없습니다. 관리자에게 문의하세요.");
-                          return;
-                        }
-                        window.location.href = buildTbmUrl(token);
-                      }}
-                    >
-                      <ExternalLink className="h-4 w-4 mr-1" />
-                      {done ? "이미 참여함" : "참여 · 서명하기"}
-                    </Button>
+                    {viewingToday && (
+                      <Button
+                        className="w-full"
+                        disabled={!canJoin}
+                        onClick={() => {
+                          if (!token) {
+                            toast.error("QR 토큰이 아직 없습니다. 관리자에게 문의하세요.");
+                            return;
+                          }
+                          window.location.href = buildTbmUrl(token);
+                        }}
+                      >
+                        <ExternalLink className="h-4 w-4 mr-1" />
+                        {done ? "이미 참여함" : "참여 · 서명하기"}
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               );

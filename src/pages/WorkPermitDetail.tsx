@@ -201,6 +201,37 @@ export default function WorkPermitDetail() {
 
     await loadAssignedCrew((p as any).id, (p as any).tbm_session_id);
 
+    // Heal: already-issued permits without TBM get one on open (covers older docs / missed hooks)
+    if (
+      !(p as any).tbm_session_id &&
+      (p as any).project_id &&
+      APPROVED_PERMIT_STATUSES.has((p as any).status)
+    ) {
+      try {
+        const { ensureTbmAfterPermitIssued } = await import('@/lib/tbmLifecycle');
+        const res = await ensureTbmAfterPermitIssued({
+          force: true,
+          entityType: 'work_permit',
+          entityId: (p as any).id,
+          projectId: (p as any).project_id,
+          companyId: (p as any).company_id,
+        });
+        if (res && 'ok' in res && res.ok && !('skipped' in res && res.skipped)) {
+          const { data: refreshed } = await supabase
+            .from('work_permits' as any)
+            .select('*')
+            .eq('id', (p as any).id)
+            .maybeSingle();
+          if (refreshed) {
+            setPermit(refreshed);
+            await loadAssignedCrew((refreshed as any).id, (refreshed as any).tbm_session_id);
+          }
+        }
+      } catch (e) {
+        console.warn('ensureTbmAfterPermitIssued heal', e);
+      }
+    }
+
     const briefing = (p as any).ai_briefing || ((p as any).form_data || {}).ai_briefing || null;
     setAiBriefing(briefing);
 

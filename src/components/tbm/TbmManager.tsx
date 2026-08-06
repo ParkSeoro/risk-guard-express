@@ -14,6 +14,8 @@ import AssigneeSelect from '@/components/AssigneeSelect';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
 import { ensureTbmForPermit } from '@/lib/tbmFromPermit';
+import { closeExpiredTbmSessions } from '@/lib/tbmLifecycle';
+import { todayKst } from '@/lib/permitWorkDate';
 import { useAuth } from '@/contexts/AuthContext';
 
 
@@ -85,13 +87,18 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'closed'>('all');
   const [companyFilter, setCompanyFilter] = useState('all');
+  /** '' = all dates; otherwise YYYY-MM-DD */
+  const [dateFilter, setDateFilter] = useState(() => todayKst());
 
   const load = async () => {
     setLoading(true);
+    // Past-dated sessions → 종료 (idempotent)
+    await closeExpiredTbmSessions(projectId);
     let q = supabase.from('tbm_sessions' as any)
       .select('*')
       .eq('project_id', projectId)
       .or('is_deleted.is.null,is_deleted.eq.false')
+      .order('tbm_date', { ascending: false })
       .order('created_at', { ascending: false });
     if (runId) q = q.eq('run_id', runId);
     if (access?.applyCompanyFilter) q = access.applyCompanyFilter(q);
@@ -574,7 +581,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
 
       {/* KPI summary */}
       {(() => {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayKst();
         const totalParts = Object.values(participantCounts).reduce((a, b) => a + b, 0);
         const activeN = sessions.filter(s => s.is_active).length;
         const todayN = sessions.filter(s => s.tbm_date === today).length;
@@ -594,6 +601,31 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
           <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
           <Input className="h-9 text-xs pl-7" placeholder="제목·장소·주관자·공종 검색…" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
+        <Input
+          type="date"
+          className="h-9 w-[140px] text-xs"
+          value={dateFilter}
+          onChange={(e) => setDateFilter(e.target.value)}
+          title="일자 필터"
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant={dateFilter === todayKst() ? 'default' : 'outline'}
+          className="h-9 text-xs"
+          onClick={() => setDateFilter(todayKst())}
+        >
+          오늘
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={dateFilter === '' ? 'default' : 'outline'}
+          className="h-9 text-xs"
+          onClick={() => setDateFilter('')}
+        >
+          전체 일자
+        </Button>
         <select className="h-9 rounded-md border bg-background px-2 text-xs" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}>
           <option value="all">상태: 전체</option>
           <option value="active">진행중</option>
@@ -626,6 +658,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         </div>
       ) : (() => {
         const filtered = sessions.filter(s => {
+          if (dateFilter && s.tbm_date !== dateFilter) return false;
           if (statusFilter === 'active' && !s.is_active) return false;
           if (statusFilter === 'closed' && s.is_active) return false;
           if (companyFilter !== 'all' && s.company_id !== companyFilter) return false;

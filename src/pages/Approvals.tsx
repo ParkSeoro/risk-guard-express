@@ -71,6 +71,7 @@ const Approvals = () => {
     action: 'approve' | 'reject',
     stepKind: ReturnType<typeof permitPostStepKind> = 'normal',
     comment = '',
+    stepMeta?: { entity_type?: string; entity_id?: string; project_id?: string } | null,
   ) => {
     const { data, error } = await supabase.rpc('act_on_entity_approval', {
       _approval_id: id,
@@ -97,6 +98,20 @@ const Approvals = () => {
             ? (action === 'approve' ? '연장 승인 완료' : '연장 요청 반려')
             : (action === 'approve' ? '승인 완료' : '반려 완료');
     toast({ title });
+    // 발행 최종 승인 시 TBM 일지 자동 생성·연결
+    if (action === 'approve' && stepKind === 'normal') {
+      try {
+        const { ensureTbmAfterPermitIssued } = await import('@/lib/tbmLifecycle');
+        await ensureTbmAfterPermitIssued({
+          rpcResult: r,
+          entityType: stepMeta?.entity_type,
+          entityId: stepMeta?.entity_id,
+          projectId: stepMeta?.project_id || selectedProject,
+        });
+      } catch (e) {
+        console.warn('ensureTbmAfterPermitIssued', e);
+      }
+    }
     fetchEntityPending();
     fetchData();
     return true;
@@ -114,7 +129,7 @@ const Approvals = () => {
     const comment = action === 'reject' ? (prompt('반려 사유') || '') : '';
     if (action === 'reject' && !comment) return;
 
-    await runEntityApproval(id, action, stepKind, comment);
+    await runEntityApproval(id, action, stepKind, comment, stepMeta);
   };
 
   const handleWithdraw = async (steps: any[]) => {

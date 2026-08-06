@@ -113,8 +113,26 @@ Deno.serve(async (req) => {
       console.warn("promote_permits_to_closure_pending", e);
     }
 
+    // 6) TBM: 작업일(tbm_date) 지난 세션 자동 종료
+    let tbmClosed = 0;
+    try {
+      const { data: tCount } = await supabase.rpc("close_expired_tbm_sessions");
+      tbmClosed = (tCount as number) || 0;
+    } catch (e) {
+      console.warn("close_expired_tbm_sessions", e);
+    }
+
     return new Response(
-      JSON.stringify({ ok: true, overdue, dailyLogsCreated, notified, legalDutyTodos, closurePromoted, date: todayStr }),
+      JSON.stringify({
+        ok: true,
+        overdue,
+        dailyLogsCreated,
+        notified,
+        legalDutyTodos,
+        closurePromoted,
+        tbmClosed,
+        date: todayStr,
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e: any) {

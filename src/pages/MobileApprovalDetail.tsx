@@ -109,6 +109,19 @@ export default function MobileApprovalDetail() {
               ? action === "approve" ? "연장 승인 완료" : "연장 요청 반려"
               : action === "approve" ? "승인 완료" : "반려 처리됨",
       );
+      if (action === "approve" && stepKind === "normal" && row.entity_type === "work_permit") {
+        try {
+          const { ensureTbmAfterPermitIssued } = await import("@/lib/tbmLifecycle");
+          await ensureTbmAfterPermitIssued({
+            rpcResult: r,
+            entityType: row.entity_type,
+            entityId: row.entity_id,
+            projectId: row.project_id,
+          });
+        } catch (e) {
+          console.warn("ensureTbmAfterPermitIssued", e);
+        }
+      }
       navigate("/app/worker/approvals", { replace: true });
     } catch (e: any) {
       toast.error(e.message || "처리 실패");

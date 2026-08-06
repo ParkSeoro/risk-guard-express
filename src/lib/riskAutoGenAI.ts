@@ -764,7 +764,7 @@ async function fetchRiskItemsOneShot(
       itemsSoFar: 0,
       phaseId: 'oneshot',
       phaseTitle: 'JSA One-Shot SSE',
-      message: 'DeepSeek JSA 스트리밍 연결 중…',
+      message: '위험성평가 AI 스트리밍 연결 중…',
       normalizedEquipment: bag.normalizedEquipment.value,
     },
     bag.items,

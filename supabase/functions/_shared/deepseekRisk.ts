@@ -1,14 +1,21 @@
 /**
- * Risk-assessment-only DeepSeek V4 Flash client (NVIDIA NIM).
- * Completely separate from the generic Nemotron adapter in gemini.ts.
+ * Risk-assessment AI client (NVIDIA NIM).
+ * DeepSeek V4 Flash/Pro hosted endpoints were deprecated on NIM (2026-08-07);
+ * risk generation now uses the same Nemotron Super model as other SafeNex AI.
+ * Filename/exports kept for import stability.
  *
  * Env (Supabase Edge Secrets / local Deno env):
- *   DEEPSEEK_API_KEY   — NVIDIA NIM API key (nvapi-...)
+ *   NVIDIA_API_KEY     — preferred NIM key (nvapi-...)
+ *   DEEPSEEK_API_KEY   — legacy alias (same nvapi-... key still works)
+ *   RISK_AI_MODEL      — optional override (default Nemotron Super)
  *   DEEPSEEK_BASE_URL  — default https://integrate.api.nvidia.com/v1
- *   DEEPSEEK_TIMEOUT_MS — request abort timeout (default 90000; 3s is too short for multi-row gen)
+ *   DEEPSEEK_TIMEOUT_MS — request abort timeout (default 90000)
  */
 const DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
-const DEEPSEEK_MODEL = "deepseek-ai/deepseek-v4-flash";
+/** Same model as supabase/functions/_shared/gemini.ts — one NIM endpoint for all AI. */
+const DEFAULT_RISK_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1.5";
+const DEEPSEEK_MODEL =
+  (typeof Deno !== "undefined" ? Deno.env.get("RISK_AI_MODEL")?.trim() : "") || DEFAULT_RISK_MODEL;
 /** One-shot JSA abort — full prep→main→finish coverage needs longer than fatal-only. */
 const DEFAULT_TIMEOUT_MS = 90_000;
 
@@ -41,10 +48,10 @@ export type DeepseekRiskRequest = {
 };
 
 function resolveConfig(): { apiKey: string; baseUrl: string; timeoutMs: number } {
-  const apiKey = Deno.env.get("DEEPSEEK_API_KEY") || Deno.env.get("NVIDIA_API_KEY") || "";
+  const apiKey = Deno.env.get("NVIDIA_API_KEY") || Deno.env.get("DEEPSEEK_API_KEY") || "";
   if (!apiKey) {
     throw new DeepseekRiskError(
-      "DEEPSEEK_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 등록해야 합니다.",
+      "NVIDIA_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 nvapi- 키를 등록해야 합니다.",
       500,
       "INVALID_KEY",
     );
@@ -72,12 +79,16 @@ function mapHttpError(status: number, text: string): never {
     if (/quota|exceed|exhausted|credit/i.test(text)) {
       throw new DeepseekRiskError("NVIDIA API 할당량이 소진되었습니다. 사용량을 확인해주세요.", 402, "QUOTA_EXHAUSTED");
     }
-    throw new DeepseekRiskError("DeepSeek API 키가 유효하지 않습니다. DEEPSEEK_API_KEY를 확인해주세요.", 403, "INVALID_KEY");
+    throw new DeepseekRiskError(
+      "NVIDIA API 키가 유효하지 않습니다. NVIDIA_API_KEY(Supabase Edge Secrets)를 확인해주세요.",
+      403,
+      "INVALID_KEY",
+    );
   }
   if (status === 400) {
-    throw new DeepseekRiskError(`DeepSeek 요청 오류: ${text.slice(0, 200)}`, 400, "BAD_REQUEST");
+    throw new DeepseekRiskError(`NVIDIA 요청 오류: ${text.slice(0, 200)}`, 400, "BAD_REQUEST");
   }
-  throw new DeepseekRiskError(`DeepSeek 서버 오류 (${status})`, status, "SERVER_ERROR");
+  throw new DeepseekRiskError(`NVIDIA AI 서버 오류 (${status})`, status, "SERVER_ERROR");
 }
 
 function isRetryableStatus(status: number): boolean {
@@ -156,10 +167,8 @@ function withTimeoutSignal(timeoutMs: number): { signal: AbortSignal; clear: () 
 }
 
 /**
- * NVIDIA NIM DeepSeek-V4 defaults to "thinking" mode, which streams
- * reasoning_content for tens of seconds before any JSON content.
- * That looks like a hung SSE (0 items) and then disconnects at ~90s.
- * Disable thinking so JSONL tokens start immediately.
+ * Nemotron (and legacy DeepSeek-V4) can spend a long time in "thinking" before
+ * any JSON content — looks like a hung SSE. Disable thinking for JSONL.
  */
 function deepseekChatBody(req: DeepseekRiskRequest, stream: boolean): Record<string, unknown> {
   return {
@@ -168,7 +177,8 @@ function deepseekChatBody(req: DeepseekRiskRequest, stream: boolean): Record<str
     temperature: typeof req.temperature === "number" ? req.temperature : stream ? 0.45 : 0.4,
     max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 6000,
     stream,
-    chat_template_kwargs: { thinking: false },
+    // Nemotron uses enable_thinking; keep thinking:false for any DeepSeek-compatible hosts.
+    chat_template_kwargs: { enable_thinking: false, thinking: false },
   };
 }
 
@@ -185,8 +195,7 @@ function extractContentDelta(parsed: any): string {
 }
 
 /**
- * Non-streaming OpenAI-compatible chat completion → DeepSeek V4 Flash.
- * model is hard-fixed to deepseek-ai/deepseek-v4-flash.
+ * Non-streaming OpenAI-compatible chat completion → risk AI (Nemotron by default).
  */
 export async function callDeepseekRiskChat(req: DeepseekRiskRequest): Promise<{
   content: string;
@@ -235,7 +244,7 @@ export async function callDeepseekRiskChat(req: DeepseekRiskRequest): Promise<{
       }
       if ((e as Error)?.name === "AbortError") {
         throw new DeepseekRiskError(
-          `DeepSeek 요청이 ${timeoutMs}ms 내 완료되지 않아 중단되었습니다.`,
+          `AI 요청이 ${timeoutMs}ms 내 완료되지 않아 중단되었습니다.`,
           504,
           "TIMEOUT",
         );

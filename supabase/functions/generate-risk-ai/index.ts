@@ -1135,7 +1135,7 @@ serve(async (req) => {
             if (emitted === 0) {
               send({
                 type: "status",
-                message: `DeepSeek 응답 대기 중… ${elapsedSec}초`,
+                message: `AI 응답 대기 중… ${elapsedSec}초`,
                 items_so_far: 0,
                 elapsed_sec: elapsedSec,
               });
@@ -1157,7 +1157,7 @@ serve(async (req) => {
             jsa: true,
             thinking: false,
           });
-          send({ type: "status", message: "DeepSeek JSA 스트리밍 생성 시작…" });
+          send({ type: "status", message: "위험성평가 AI 스트리밍 생성 시작…" });
 
           const { count } = await streamOneShotRiskItems(
             process_name,
@@ -1218,7 +1218,7 @@ serve(async (req) => {
             (e instanceof DeepseekRiskError && e.code === "INVALID_KEY")
           ) {
             error =
-              "DeepSeek API 키가 유효하지 않습니다. DEEPSEEK_API_KEY(Supabase Edge Secrets)를 확인해야 합니다.";
+              "NVIDIA API 키가 유효하지 않습니다. NVIDIA_API_KEY(Supabase Edge Secrets)를 확인해야 합니다.";
           } else if (e instanceof DeepseekRiskError && e.code === "TIMEOUT") {
             error = e.message;
           }
@@ -1252,7 +1252,7 @@ serve(async (req) => {
     }
     if (msg === "INVALID_KEY") {
       return new Response(
-        JSON.stringify({ error: "DeepSeek API 키가 유효하지 않습니다. DEEPSEEK_API_KEY(Supabase Edge Secrets)를 확인해야 합니다." }),
+        JSON.stringify({ error: "NVIDIA API 키가 유효하지 않습니다. NVIDIA_API_KEY(Supabase Edge Secrets)를 확인해야 합니다." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
       );
     }

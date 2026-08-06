@@ -5,7 +5,10 @@
 // existing callers keep working unchanged.
 
 const NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions";
-const NVIDIA_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1.5";
+/** Shared with risk AI (deepseekRisk.ts). Override via NVIDIA_MODEL secret if needed. */
+const NVIDIA_MODEL =
+  (typeof Deno !== "undefined" ? Deno.env.get("NVIDIA_MODEL")?.trim() : "") ||
+  "nvidia/llama-3.3-nemotron-super-49b-v1.5";
 
 // Retained exports (values unused now — model is forced) so imports don't break.
 export const GEMINI_DEFAULT_MODEL = NVIDIA_MODEL;

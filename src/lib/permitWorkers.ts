@@ -9,6 +9,8 @@ export type PermitWorkerRow = {
   phone?: string | null;
   company_name?: string | null;
   company_id?: string | null;
+  /** 을지 명단용 관리자 (TBM 참석 제외) */
+  isManager?: boolean;
 };
 
 /**

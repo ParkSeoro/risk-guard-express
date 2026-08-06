@@ -4,7 +4,9 @@ import {
   normalizeDisplayTemplate,
   pickCompanyDisplayTemplate,
   pickGlobalStandardTemplate,
+  pickPermitDisplayTemplateCascade,
   resolveFormOwnerCompanyId,
+  resolveProjectGcCompanyId,
   emptyDisplayTemplate,
   LOCKED_DISPLAY_SECTIONS,
 } from '@/lib/permitDisplayTemplate';
@@ -82,5 +84,89 @@ describe('permitDisplayTemplate', () => {
 
   it('emptyDisplayTemplate starts with no hidden sections', () => {
     expect(emptyDisplayTemplate().hiddenSections).toEqual([]);
+  });
+
+  it('resolveProjectGcCompanyId reads gc_company_id then gc_company_ids', () => {
+    expect(resolveProjectGcCompanyId({ gc_company_id: 'gc1' })).toBe('gc1');
+    expect(resolveProjectGcCompanyId({ gc_company_ids: ['gc2'] })).toBe('gc2');
+    expect(resolveProjectGcCompanyId({ gc_company_id: null, gc_company_ids: [] })).toBeNull();
+  });
+
+  it('pickPermitDisplayTemplateCascade: own → GC inherit → global', () => {
+    const list = [
+      {
+        id: 'global',
+        project_id: null,
+        company_id: null,
+        code: 'G',
+        name: 'global',
+        version: '1',
+        layout_json: {},
+        is_default: true,
+        is_active: true,
+        permit_type: 'general',
+      },
+      {
+        id: 'gc-tpl',
+        project_id: null,
+        company_id: 'gc1',
+        code: 'GC',
+        name: 'GC form',
+        version: '1',
+        layout_json: {},
+        is_default: true,
+        is_active: true,
+        permit_type: 'general',
+      },
+      {
+        id: 'partner-tpl',
+        project_id: null,
+        company_id: 'sub1',
+        code: 'P',
+        name: 'Partner form',
+        version: '1',
+        layout_json: {},
+        is_default: true,
+        is_active: true,
+        permit_type: 'general',
+      },
+    ] as any[];
+
+    expect(
+      pickPermitDisplayTemplateCascade({
+        templates: list,
+        permitCompanyId: 'sub1',
+        gcCompanyId: 'gc1',
+        permitType: 'general',
+      })?.id,
+    ).toBe('partner-tpl');
+
+    expect(
+      pickPermitDisplayTemplateCascade({
+        templates: list.filter((t) => t.id !== 'partner-tpl'),
+        permitCompanyId: 'sub1',
+        gcCompanyId: 'gc1',
+        permitType: 'general',
+      })?.id,
+    ).toBe('gc-tpl');
+
+    expect(
+      pickPermitDisplayTemplateCascade({
+        templates: list.filter((t) => t.id === 'global'),
+        permitCompanyId: 'sub1',
+        gcCompanyId: 'gc1',
+        permitType: 'general',
+      })?.id,
+    ).toBe('global');
+
+    // GC 작성: 자사 템플릿만 (GC inherit 스킵 — 동일 company)
+    expect(
+      pickPermitDisplayTemplateCascade({
+        templates: list,
+        permitCompanyId: 'gc1',
+        gcCompanyId: 'gc1',
+        permitType: 'general',
+      })?.id,
+    ).toBe('gc-tpl');
   });
 });

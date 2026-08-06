@@ -44,15 +44,16 @@ export type ApprovalPositionKey =
   | 'cooperator';
 
 export const POSITION_LABELS: Record<string, string> = {
-  contractor_supervisor: '관리감독자 (상신)',
-  contractor_safety_manager: '안전관리자 (검토)',
-  contractor_site_director: '현장소장 (승인)',
+  // Work-permit stamp vocabulary (DigPermitForm) — keep in sync with paper headers
+  contractor_supervisor: '담당자(시공)',
+  contractor_safety_manager: '담당자(안전)',
+  contractor_site_director: '책임자(소장)',
   gc: '시공사',
   gc_manager: '시공사 관리자',
   gc_pm: '시공사 PM',
-  owner_cm: '발주처 CM (공사관리)',
-  owner_sm: '발주처 SM (안전관리)',
-  cooperator: '협조',
+  owner_cm: '담당자(CM)',
+  owner_sm: '담당자(SM)',
+  cooperator: '협조부서',
 
   // legacy — 옛 데이터가 남아있을 수 있어 라벨만 유지 (신규 사용 금지)
   project_admin: '프로젝트 관리자',
@@ -68,28 +69,37 @@ export const POSITION_LABELS: Record<string, string> = {
   sm: '담당자(SM)',
 };
 
-/** Dynamic step label: 협력사 vs 시공사(직영) 기안자 */
+/**
+ * Step display label aligned with permit stamp headers.
+ * Does NOT change POSITION_TO_SIG / approval→stamp slot mapping.
+ * Renaming a step in the UI still does not rewrite DigPermitForm headers.
+ */
 export function stepLabelForAuthor(
   positionKey: string,
-  authorCompanyType: CompanyTypeCode | string | null | undefined,
+  _authorCompanyType?: CompanyTypeCode | string | null | undefined,
 ): string {
-  const t = normalizeCompanyType(authorCompanyType);
-  const org = t === 'gc' ? '시공사' : '협력사';
   switch ((positionKey || '').toLowerCase()) {
     case 'contractor_supervisor':
-      return `${org} 관리감독자 (상신)`;
+    case 'contractor_pic':
+      return '담당자(시공)';
     case 'contractor_safety_manager':
-      return `${org} 안전관리자 (검토)`;
+    case 'safety_pic':
+      return '담당자(안전)';
     case 'contractor_site_director':
-      return `${org} 현장소장 (승인)`;
+    case 'site_director':
+      return '책임자(소장)';
     case 'gc_manager':
     case 'gc':
     case 'gc_pm':
       return '시공사 관리자';
     case 'owner_cm':
-      return '발주처 CM (검토)';
+    case 'cm':
+      return '담당자(CM)';
     case 'owner_sm':
-      return '발주처 SM (승인)';
+    case 'sm':
+      return '담당자(SM)';
+    case 'cooperator':
+      return '협조부서';
     default:
       return POSITION_LABELS[positionKey] || positionKey || '결재';
   }
@@ -100,23 +110,26 @@ export interface DefaultStep {
   position: ApprovalPositionKey | string;
 }
 
-/** 기본 5단계 고정 결재선 (위평/계획서 등) — 협력사 기안 가정 */
+/** 기본 5단계 고정 결재선 (위평/계획서 등) */
 export const FIXED_APPROVAL_STEPS: DefaultStep[] = [
-  { label: '협력사 관리감독자 (상신)', position: 'contractor_supervisor' },
-  { label: '협력사 안전관리자 (검토)', position: 'contractor_safety_manager' },
-  { label: '협력사 현장소장 (승인)', position: 'contractor_site_director' },
-  { label: '발주처 CM (공사관리)', position: 'owner_cm' },
-  { label: '발주처 SM (안전 최종승인)', position: 'owner_sm' },
+  { label: '담당자(시공)', position: 'contractor_supervisor' },
+  { label: '담당자(안전)', position: 'contractor_safety_manager' },
+  { label: '책임자(소장)', position: 'contractor_site_director' },
+  { label: '담당자(CM)', position: 'owner_cm' },
+  { label: '담당자(SM)', position: 'owner_sm' },
 ];
 
-/** 작업허가서: 내부(1~3) → 시공사(GC) → 발주처(CM/SM) */
+/**
+ * 작업허가서 기본 결재선 — 양식 서명란과 동일 명칭.
+ * 시공사 관리자(gc_manager) 단계 없음.
+ * 회사 범위: 시공=기안사 / 안전·소장=GC / CM·SM=발주처 (filterApproversForStep).
+ */
 export const WORK_PERMIT_APPROVAL_STEPS: DefaultStep[] = [
-  { label: '협력사 관리감독자 (상신)', position: 'contractor_supervisor' },
-  { label: '협력사 안전관리자 (검토)', position: 'contractor_safety_manager' },
-  { label: '협력사 현장소장 (승인)', position: 'contractor_site_director' },
-  { label: '시공사 관리자', position: 'gc_manager' },
-  { label: '발주처 CM (검토)', position: 'owner_cm' },
-  { label: '발주처 SM (승인)', position: 'owner_sm' },
+  { label: '담당자(시공)', position: 'contractor_supervisor' },
+  { label: '담당자(안전)', position: 'contractor_safety_manager' },
+  { label: '책임자(소장)', position: 'contractor_site_director' },
+  { label: '담당자(CM)', position: 'owner_cm' },
+  { label: '담당자(SM)', position: 'owner_sm' },
 ];
 
 /** 엔티티 → 기본 결재선 */
@@ -335,13 +348,17 @@ function matchesStepPosition(a: EligibleApprover, stepKey: string): boolean {
 }
 
 /**
- * 단계별 결재자 후보 필터 (회사 유형 + 직책 이중 필터).
+ * 단계별 결재자 후보 필터 (회사 범위 + 직책).
  *
- * CASE A 협력사 기안 / CASE B 시공사 기안 공통:
- *   contractor_* → authorCompanyId 일치 + 직책 화이트리스트
- *   (시공사 직영도 동일: 기안자 회사 내부만)
- * gc_* → company_type=gc (시공사 기안 시 이 단계는 adaptSteps에서 생략)
- * owner_cm/sm → company_type=client + OWNER_CM/SM
+ * Work-permit stamp alignment:
+ *   contractor_supervisor      → 기안사(작성 회사) only — 담당자(시공)
+ *   contractor_safety_manager  → 시공사(GC) — 담당자(안전)
+ *   contractor_site_director   → 시공사(GC) — 책임자(소장)
+ *   owner_cm / owner_sm        → 발주처(client)
+ *   gc_*                       → 시공사 (레거시 단계; 기본 결재선에서는 제거)
+ *
+ * Soft fallback: 직책 미스 시 같은 회사 범위의 비근로자 관리자까지 허용.
+ * POSITION_TO_SIG 키는 변경하지 않음.
  */
 export interface ApproverFilterContext {
   /** 문서 기안자(또는 문서 귀속) 회사 id */
@@ -349,6 +366,12 @@ export interface ApproverFilterContext {
   /** 기안자 회사 유형 client|gc|contractor|vendor */
   authorCompanyType?: string | null;
 }
+
+/** 안전·소장 단계는 양식상 시공사 칸 — GC 범위 */
+const GC_SCOPED_PERMIT_STEPS = new Set<string>([
+  'contractor_safety_manager',
+  'contractor_site_director',
+]);
 
 export function filterApproversForStep(
   approvers: EligibleApprover[],
@@ -363,28 +386,34 @@ export function filterApproversForStep(
   const authorCompanyId = ctx?.authorCompanyId ?? null;
   const authorType = normalizeCompanyType(ctx?.authorCompanyType);
 
-  // 시공사 기안 시 GC 확인 단계는 목록 비움 (UI에서 단계 자체 생략 권장)
+  // 시공사 기안 시 레거시 GC 확인 단계는 목록 비움 (기본 결재선에도 없음)
   if (authorType === 'gc' && GC_STEP_KEYS.has(key)) {
     return [];
   }
 
-  const strict = approvers.filter((a) => {
-    const t = normalizeCompanyType(a.out_company_type);
+  const inAuthorCompany = (a: EligibleApprover) =>
+    !!authorCompanyId && a.out_company_id === authorCompanyId;
+  const inGc = (a: EligibleApprover) => normalizeCompanyType(a.out_company_type) === 'gc';
+  const inClient = (a: EligibleApprover) => normalizeCompanyType(a.out_company_type) === 'client';
 
-    if (CONTRACTOR_STEP_KEYS.has(key)) {
-      if (!authorCompanyId) return false;
-      if (!a.out_company_id || a.out_company_id !== authorCompanyId) return false;
+  const strict = approvers.filter((a) => {
+    if (key === 'contractor_supervisor') {
+      if (!inAuthorCompany(a)) return false;
+      return matchesStepPosition(a, key);
+    }
+
+    if (GC_SCOPED_PERMIT_STEPS.has(key)) {
+      if (!inGc(a)) return false;
       return matchesStepPosition(a, key);
     }
 
     if (GC_STEP_KEYS.has(key)) {
-      if (t !== 'gc') return false;
-      // 시공사 단계: 기안자가 협력사이면 GC 전원 중 직책 일치만
+      if (!inGc(a)) return false;
       return matchesStepPosition(a, key);
     }
 
     if (CLIENT_STEP_KEYS.has(key)) {
-      if (t !== 'client') return false;
+      if (!inClient(a)) return false;
       return matchesStepPosition(a, key);
     }
 
@@ -394,12 +423,15 @@ export function filterApproversForStep(
 
   if (strict.length > 0) return strict;
 
-  // Soft fallback — 관리감독자(상신) 슬롯에 SITE_SUPERVISOR가 없으면
-  // 기안 회사의 비근로자 멤버라도 선택 가능해야 결재상신이 막히지 않는다.
+  // Soft fallback within the same company scope (never cross partner↔GC↔client).
   if (key === 'contractor_supervisor' && authorCompanyId) {
-    return approvers.filter(
-      (a) => a.out_company_id === authorCompanyId && !isWorkerApprover(a),
-    );
+    return approvers.filter((a) => inAuthorCompany(a) && !isWorkerApprover(a));
+  }
+  if (GC_SCOPED_PERMIT_STEPS.has(key) || GC_STEP_KEYS.has(key)) {
+    return approvers.filter((a) => inGc(a) && !isWorkerApprover(a));
+  }
+  if (CLIENT_STEP_KEYS.has(key)) {
+    return approvers.filter((a) => inClient(a) && !isWorkerApprover(a));
   }
 
   return strict;
@@ -490,6 +522,8 @@ export function isSubmitterApprovalStep(step: {
   if (pos === 'contractor_supervisor' || pos === 'contractor_pic') return true;
   const label = `${step.step || ''}${step.step_label || ''}`;
   if (label.includes('상신')) return true;
+  // Stamp-aligned default label (no longer contains 「상신」)
+  if (label.includes('담당자(시공)')) return true;
   return false;
 }
 

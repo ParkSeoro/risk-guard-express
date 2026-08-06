@@ -45,7 +45,7 @@ import {
   parseLayoutJson,
   pickPermitDisplayTemplateCascade,
   resolveFormOwnerCompanyId,
-  resolveProjectGcCompanyId,
+  resolvePermitFormGcCompanyId,
   type PermitDisplayTemplate,
 } from '@/lib/permitDisplayTemplate';
 import {
@@ -339,9 +339,20 @@ export default function WorkPermitDetail() {
           .select('gc_company_id, gc_company_ids')
           .eq('id', projectId)
           .maybeSingle();
+        // SSOT: 협력사→시공사 연결은 project_companies.parent_company_id
+        // (projects.gc_company_id 가 비어 있는 현장이 많음)
+        const { data: pcLinks } = await (supabase as any)
+          .from('project_companies')
+          .select('company_id, parent_company_id, role_in_project')
+          .eq('project_id', projectId)
+          .eq('is_deleted', false);
         const permitCompanyId =
           resolveFormOwnerCompanyId(proj as any, (permit as any)?.company_id || null);
-        const gcCompanyId = resolveProjectGcCompanyId(proj as any);
+        const gcCompanyId = resolvePermitFormGcCompanyId({
+          permitCompanyId,
+          projectCompanyLinks: (pcLinks || []) as any[],
+          project: proj as any,
+        });
         const companyIds = [...new Set([permitCompanyId, gcCompanyId].filter(Boolean))] as string[];
 
         let companyRows: any[] = [];

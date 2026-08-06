@@ -6,6 +6,7 @@ import {
   pickGlobalStandardTemplate,
   pickPermitDisplayTemplateCascade,
   resolveFormOwnerCompanyId,
+  resolvePermitFormGcCompanyId,
   resolveProjectGcCompanyId,
   emptyDisplayTemplate,
   LOCKED_DISPLAY_SECTIONS,
@@ -90,6 +91,49 @@ describe('permitDisplayTemplate', () => {
     expect(resolveProjectGcCompanyId({ gc_company_id: 'gc1' })).toBe('gc1');
     expect(resolveProjectGcCompanyId({ gc_company_ids: ['gc2'] })).toBe('gc2');
     expect(resolveProjectGcCompanyId({ gc_company_id: null, gc_company_ids: [] })).toBeNull();
+  });
+
+  it('resolvePermitFormGcCompanyId prefers project_companies parent for partners', () => {
+    const links = [
+      { company_id: 'client1', parent_company_id: null, role_in_project: 'client' },
+      { company_id: 'hitech', parent_company_id: 'client1', role_in_project: 'gc' },
+      { company_id: 'jinnam_gc', parent_company_id: 'client1', role_in_project: 'gc' },
+      { company_id: 'jinnam_sub', parent_company_id: 'hitech', role_in_project: 'contractor' },
+      { company_id: 'taeyeong', parent_company_id: 'hitech', role_in_project: 'contractor' },
+    ];
+    // projects.gc_* empty — real GSC 여수 shape
+    const emptyProj = { gc_company_id: null, gc_company_ids: [] as string[] };
+
+    expect(
+      resolvePermitFormGcCompanyId({
+        permitCompanyId: 'jinnam_sub',
+        projectCompanyLinks: links,
+        project: emptyProj,
+      }),
+    ).toBe('hitech');
+    expect(
+      resolvePermitFormGcCompanyId({
+        permitCompanyId: 'taeyeong',
+        projectCompanyLinks: links,
+        project: emptyProj,
+      }),
+    ).toBe('hitech');
+    // GC 작성: parent가 발주처면 상속 대상 아님 (자기 양식/글로벌)
+    expect(
+      resolvePermitFormGcCompanyId({
+        permitCompanyId: 'hitech',
+        projectCompanyLinks: links,
+        project: emptyProj,
+      }),
+    ).toBeNull();
+    // projects.gc_company_id fallback
+    expect(
+      resolvePermitFormGcCompanyId({
+        permitCompanyId: 'hitech',
+        projectCompanyLinks: links,
+        project: { gc_company_id: 'hitech', gc_company_ids: [] },
+      }),
+    ).toBe('hitech');
   });
 
   it('pickPermitDisplayTemplateCascade: own → GC inherit → global', () => {

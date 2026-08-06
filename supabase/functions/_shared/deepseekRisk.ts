@@ -1,29 +1,40 @@
 /**
  * Risk-assessment AI client (NVIDIA NIM).
  * DeepSeek V4 Flash/Pro hosted endpoints were deprecated on NIM (2026-08-07);
- * risk generation now uses the same Nemotron Super model as other SafeNex AI.
+ * risk generation uses Nemotron Super by default, with ordered model failover
+ * via nvidiaChat.ts (same API key, per-model free-tier limits).
+ *
  * Filename/exports kept for import stability.
  *
- * Env (Supabase Edge Secrets / local Deno env):
- *   NVIDIA_API_KEY     — preferred NIM key (nvapi-...)
- *   DEEPSEEK_API_KEY   — legacy alias (same nvapi-... key still works)
- *   RISK_AI_MODEL      — optional override (default Nemotron Super)
- *   DEEPSEEK_BASE_URL  — default https://integrate.api.nvidia.com/v1
- *   DEEPSEEK_TIMEOUT_MS — request abort timeout (default 90000)
+ * Env:
+ *   NVIDIA_API_KEY / DEEPSEEK_API_KEY
+ *   NVIDIA_MODEL_CHAIN — optional comma-separated override
+ *   NVIDIA_FAILOVER — default true
+ *   RISK_AI_MODEL — legacy primary hint (peekPrimaryModelSync)
+ *   DEEPSEEK_TIMEOUT_MS / NVIDIA_TIMEOUT_MS
  */
-const DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1";
-/** Same model as supabase/functions/_shared/gemini.ts — one NIM endpoint for all AI. */
-const DEFAULT_RISK_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1.5";
-const DEEPSEEK_MODEL =
-  (typeof Deno !== "undefined" ? Deno.env.get("RISK_AI_MODEL")?.trim() : "") || DEFAULT_RISK_MODEL;
-/** One-shot JSA abort — full prep→main→finish coverage needs longer than fatal-only. */
+import {
+  callNvidiaChat,
+  streamNvidiaChatText,
+  peekPrimaryModelSync,
+  NvidiaChatError,
+  type ChatMessage,
+} from "./nvidiaChat.ts";
+
 const DEFAULT_TIMEOUT_MS = 90_000;
 
-export const RISK_DEEPSEEK_MODEL = DEEPSEEK_MODEL;
+export const RISK_DEEPSEEK_MODEL = peekPrimaryModelSync();
 
 export class DeepseekRiskError extends Error {
   status: number;
-  code: "RATE_LIMIT" | "QUOTA_EXHAUSTED" | "INVALID_KEY" | "TIMEOUT" | "BAD_REQUEST" | "SERVER_ERROR" | "PARSE_ERROR";
+  code:
+    | "RATE_LIMIT"
+    | "QUOTA_EXHAUSTED"
+    | "INVALID_KEY"
+    | "TIMEOUT"
+    | "BAD_REQUEST"
+    | "SERVER_ERROR"
+    | "PARSE_ERROR";
   constructor(message: string, status: number, code: DeepseekRiskError["code"]) {
     super(message);
     this.name = "DeepseekRiskError";
@@ -32,67 +43,30 @@ export class DeepseekRiskError extends Error {
   }
 }
 
-type ChatMessage = {
-  role: "system" | "user" | "assistant";
-  content: string;
-};
-
 export type DeepseekRiskRequest = {
   messages: ChatMessage[];
   temperature?: number;
   max_tokens?: number;
   /** Abort after N ms (default DEEPSEEK_TIMEOUT_MS or 90000). */
   timeoutMs?: number;
-  /** Override retry count (default 3). Use 1 for fast draft calls. */
+  /** Override retry count per model (default via nvidiaChat). */
   maxAttempts?: number;
 };
 
-function resolveConfig(): { apiKey: string; baseUrl: string; timeoutMs: number } {
-  const apiKey = Deno.env.get("NVIDIA_API_KEY") || Deno.env.get("DEEPSEEK_API_KEY") || "";
-  if (!apiKey) {
-    throw new DeepseekRiskError(
-      "NVIDIA_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 nvapi- 키를 등록해야 합니다.",
-      500,
-      "INVALID_KEY",
-    );
+function wrapNvidiaError(e: unknown): never {
+  if (e instanceof DeepseekRiskError) throw e;
+  if (e instanceof NvidiaChatError) {
+    const code =
+      e.code === "MODEL_NOT_FOUND" || e.code === "DISABLED"
+        ? "SERVER_ERROR"
+        : (e.code as DeepseekRiskError["code"]);
+    throw new DeepseekRiskError(e.message, e.status, code);
   }
-  const baseUrl = (Deno.env.get("DEEPSEEK_BASE_URL") || DEFAULT_BASE_URL).replace(/\/+$/, "");
-  const timeoutRaw = Number(Deno.env.get("DEEPSEEK_TIMEOUT_MS") || DEFAULT_TIMEOUT_MS);
-  const timeoutMs = Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? timeoutRaw : DEFAULT_TIMEOUT_MS;
-  return { apiKey, baseUrl, timeoutMs };
-}
-
-function mapHttpError(status: number, text: string): never {
-  console.error(`[DeepSeek-Risk] ${status}:`, text.slice(0, 500));
-  if (status === 429) {
-    throw new DeepseekRiskError("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", 429, "RATE_LIMIT");
-  }
-  // NVIDIA NIM overload / capacity (often transient)
-  if (status === 529 || status === 503) {
-    throw new DeepseekRiskError(
-      "AI 서버가 일시적으로 과부하입니다. 잠시 후 다시 시도해주세요.",
-      status,
-      "RATE_LIMIT",
-    );
-  }
-  if (status === 401 || status === 403) {
-    if (/quota|exceed|exhausted|credit/i.test(text)) {
-      throw new DeepseekRiskError("NVIDIA API 할당량이 소진되었습니다. 사용량을 확인해주세요.", 402, "QUOTA_EXHAUSTED");
-    }
-    throw new DeepseekRiskError(
-      "NVIDIA API 키가 유효하지 않습니다. NVIDIA_API_KEY(Supabase Edge Secrets)를 확인해주세요.",
-      403,
-      "INVALID_KEY",
-    );
-  }
-  if (status === 400) {
-    throw new DeepseekRiskError(`NVIDIA 요청 오류: ${text.slice(0, 200)}`, 400, "BAD_REQUEST");
-  }
-  throw new DeepseekRiskError(`NVIDIA AI 서버 오류 (${status})`, status, "SERVER_ERROR");
-}
-
-function isRetryableStatus(status: number): boolean {
-  return status === 429 || status === 503 || status === 529;
+  throw new DeepseekRiskError(
+    e instanceof Error ? e.message : "NVIDIA 네트워크 오류",
+    500,
+    "SERVER_ERROR",
+  );
 }
 
 /** Strip ```json fences and extract first JSON value. */
@@ -139,7 +113,6 @@ export function safeParseDeepseekRiskItems(raw: string): any[] {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("[DeepSeek-Risk] JSON parse failed → []:", msg, String(raw).slice(0, 400));
-    // Second chance: extract first [...] or {...} substring
     try {
       const m = String(raw || "").match(/\[[\s\S]*\]|\{[\s\S]*\}/);
       if (m) {
@@ -157,195 +130,55 @@ export function safeParseDeepseekRiskItems(raw: string): any[] {
   }
 }
 
-function withTimeoutSignal(timeoutMs: number): { signal: AbortSignal; clear: () => void } {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return {
-    signal: controller.signal,
-    clear: () => clearTimeout(timer),
-  };
-}
-
 /**
- * Nemotron (and legacy DeepSeek-V4) can spend a long time in "thinking" before
- * any JSON content — looks like a hung SSE. Disable thinking for JSONL.
- */
-function deepseekChatBody(req: DeepseekRiskRequest, stream: boolean): Record<string, unknown> {
-  return {
-    model: DEEPSEEK_MODEL,
-    messages: req.messages,
-    temperature: typeof req.temperature === "number" ? req.temperature : stream ? 0.45 : 0.4,
-    max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 6000,
-    stream,
-    // Nemotron uses enable_thinking; keep thinking:false for any DeepSeek-compatible hosts.
-    chat_template_kwargs: { enable_thinking: false, thinking: false },
-  };
-}
-
-/** Extract assistant text delta from an OpenAI-compatible SSE chunk. */
-function extractContentDelta(parsed: any): string {
-  const choice = parsed?.choices?.[0];
-  const delta = choice?.delta;
-  if (typeof delta?.content === "string" && delta.content) return delta.content;
-  // Some gateways put the final message on non-delta frames
-  if (typeof choice?.message?.content === "string" && choice.message.content) {
-    return choice.message.content;
-  }
-  return "";
-}
-
-/**
- * Non-streaming OpenAI-compatible chat completion → risk AI (Nemotron by default).
+ * Non-streaming OpenAI-compatible chat completion → risk AI (model chain).
  */
 export async function callDeepseekRiskChat(req: DeepseekRiskRequest): Promise<{
   content: string;
   usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+  model?: string;
+  fallbackFrom?: string;
 }> {
-  const { apiKey, baseUrl, timeoutMs: defaultTimeout } = resolveConfig();
-  const timeoutMs = req.timeoutMs ?? defaultTimeout;
-  const maxAttempts = Math.max(1, Math.min(4, req.maxAttempts ?? 3));
-  let lastErr: unknown;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const { signal, clear } = withTimeoutSignal(timeoutMs);
-    try {
-      const resp = await fetch(`${baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-          Authorization: `Bearer ${apiKey}`,
-          Accept: "application/json",
-        },
-        signal,
-        body: JSON.stringify(deepseekChatBody(req, false)),
-      });
-
-      if (!resp.ok) {
-        const text = await resp.text();
-        if (isRetryableStatus(resp.status) && attempt < maxAttempts) {
-          console.warn(`[DeepSeek-Risk] retryable ${resp.status}, attempt ${attempt}/${maxAttempts}`);
-          await new Promise((r) => setTimeout(r, 800 * attempt));
-          continue;
-        }
-        mapHttpError(resp.status, text);
-      }
-
-      const data = await resp.json();
-      const content = String(data?.choices?.[0]?.message?.content ?? "").trim();
-      return { content, usage: data?.usage };
-    } catch (e) {
-      lastErr = e;
-      if (e instanceof DeepseekRiskError) {
-        if (e.code === "RATE_LIMIT" && attempt < maxAttempts) {
-          await new Promise((r) => setTimeout(r, 800 * attempt));
-          continue;
-        }
-        throw e;
-      }
-      if ((e as Error)?.name === "AbortError") {
-        throw new DeepseekRiskError(
-          `AI 요청이 ${timeoutMs}ms 내 완료되지 않아 중단되었습니다.`,
-          504,
-          "TIMEOUT",
-        );
-      }
-      throw new DeepseekRiskError(
-        e instanceof Error ? e.message : "DeepSeek 네트워크 오류",
-        500,
-        "SERVER_ERROR",
-      );
-    } finally {
-      clear();
-    }
+  const timeoutRaw = Number(Deno.env.get("DEEPSEEK_TIMEOUT_MS") || DEFAULT_TIMEOUT_MS);
+  const defaultTimeout = Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? timeoutRaw : DEFAULT_TIMEOUT_MS;
+  try {
+    const result = await callNvidiaChat({
+      messages: req.messages,
+      temperature: req.temperature,
+      max_tokens: req.max_tokens,
+      timeoutMs: req.timeoutMs ?? defaultTimeout,
+      maxAttemptsPerModel: req.maxAttempts,
+    });
+    return {
+      content: result.content,
+      usage: result.usage,
+      model: result.model,
+      fallbackFrom: result.fallbackFrom,
+    };
+  } catch (e) {
+    wrapNvidiaError(e);
   }
-
-  if (lastErr instanceof DeepseekRiskError) throw lastErr;
-  throw new DeepseekRiskError("DeepSeek 요청 재시도 실패", 500, "SERVER_ERROR");
 }
 
 /**
  * Streaming chat completions — yields UTF-8 content deltas.
- * Used by generate-risk-ai SSE phases.
+ * Failover only if the initial HTTP response fails (see nvidiaChat).
  */
 export async function* streamDeepseekRiskChatText(
   req: DeepseekRiskRequest,
 ): AsyncGenerator<string, void, unknown> {
-  const { apiKey, baseUrl, timeoutMs: defaultTimeout } = resolveConfig();
-  // Wall clock for the whole completion. Idle abort is enforced separately below
-  // so slow-but-progressing streams are not killed mid-JSONL.
-  const timeoutMs = Math.max(req.timeoutMs ?? defaultTimeout, 120_000);
-  const idleMs = Math.min(45_000, timeoutMs);
-  const controller = new AbortController();
-  let idleTimer = setTimeout(() => controller.abort(), idleMs);
-  const bumpIdle = () => {
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => controller.abort(), idleMs);
-  };
-  const wallTimer = setTimeout(() => controller.abort(), timeoutMs);
-
+  const timeoutRaw = Number(Deno.env.get("DEEPSEEK_TIMEOUT_MS") || DEFAULT_TIMEOUT_MS);
+  const defaultTimeout = Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? timeoutRaw : DEFAULT_TIMEOUT_MS;
   try {
-    const resp = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "text/event-stream",
-      },
-      signal: controller.signal,
-      body: JSON.stringify(deepseekChatBody(req, true)),
+    yield* streamNvidiaChatText({
+      messages: req.messages,
+      temperature: req.temperature,
+      max_tokens: req.max_tokens,
+      timeoutMs: req.timeoutMs ?? defaultTimeout,
+      maxAttemptsPerModel: req.maxAttempts,
     });
-
-    if (!resp.ok) {
-      const text = await resp.text();
-      mapHttpError(resp.status, text);
-    }
-    if (!resp.body) {
-      throw new DeepseekRiskError("DeepSeek 스트림 응답이 비어 있습니다.", 500, "SERVER_ERROR");
-    }
-
-    bumpIdle();
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder("utf-8", { stream: true } as TextDecoderOptions);
-    let carry = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      bumpIdle();
-      carry += decoder.decode(value, { stream: true });
-      const lines = carry.split("\n");
-      carry = lines.pop() || "";
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        const payload = trimmed.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-        try {
-          const parsed = JSON.parse(payload);
-          const delta = extractContentDelta(parsed);
-          if (delta) yield delta;
-        } catch {
-          /* ignore partial SSE JSON */
-        }
-      }
-    }
   } catch (e) {
-    if (e instanceof DeepseekRiskError) throw e;
-    if ((e as Error)?.name === "AbortError") {
-      throw new DeepseekRiskError(
-        `DeepSeek 스트림이 ${timeoutMs}ms 내 완료되지 않아 중단되었습니다.`,
-        504,
-        "TIMEOUT",
-      );
-    }
-    throw new DeepseekRiskError(
-      e instanceof Error ? e.message : "DeepSeek 스트림 네트워크 오류",
-      500,
-      "SERVER_ERROR",
-    );
-  } finally {
-    clearTimeout(idleTimer);
-    clearTimeout(wallTimer);
+    wrapNvidiaError(e);
   }
 }
 

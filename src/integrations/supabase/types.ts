@@ -404,6 +404,33 @@ export type Database = {
           },
         ]
       }
+      ai_runtime_settings: {
+        Row: {
+          id: number
+          is_enabled: boolean
+          failover_enabled: boolean
+          model_chain: Json
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          id?: number
+          is_enabled?: boolean
+          failover_enabled?: boolean
+          model_chain?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          id?: number
+          is_enabled?: boolean
+          failover_enabled?: boolean
+          model_chain?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       ai_test_runs: {
         Row: {
           created_at: string

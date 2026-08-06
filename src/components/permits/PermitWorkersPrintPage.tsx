@@ -155,7 +155,10 @@ export default function PermitWorkersPrintPage({
                   {pageWorkers.map((w, i) => (
                     <tr key={w.id}>
                       <td className="border p-1 text-center">{startNo + i + 1}</td>
-                      <td className="border p-1">{w.name}</td>
+                      <td className="border p-1">
+                        {w.name}
+                        {w.isManager ? " (관리)" : ""}
+                      </td>
                       <td className="border p-1">{w.company_name || "-"}</td>
                       <td className="border p-1">{formatWorkerPhone(w.phone)}</td>
                       <td className="border p-1 h-10" />

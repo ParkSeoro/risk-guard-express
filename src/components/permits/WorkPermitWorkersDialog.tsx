@@ -11,6 +11,11 @@ import {
   buildPersonnelCountPatch,
   filterPermitAssignableWorkers,
 } from "@/lib/permitWorkers";
+import {
+  loadPermitCompanyManagerCandidates,
+  mergePermitRosterCandidates,
+  type PermitRosterCandidate,
+} from "@/lib/permitRosterManagers";
 import { syncPermitCrewToTbm } from "@/lib/syncPermitCrewToTbm";
 
 type Props = {
@@ -29,16 +34,22 @@ export default function WorkPermitWorkersDialog({
   onClose,
   onSaved,
 }: Props) {
-  const [workers, setWorkers] = useState<any[]>([]);
+  const [workers, setWorkers] = useState<PermitRosterCandidate[]>([]);
   const [companyName, setCompanyName] = useState<string | null>(null);
   const [assigned, setAssigned] = useState<Set<string>>(new Set());
   const [initialAssigned, setInitialAssigned] = useState<Set<string>>(new Set());
+  const [initialExcludeTbm, setInitialExcludeTbm] = useState<Set<string>>(new Set());
   const [onSiteIds, setOnSiteIds] = useState<Set<string>>(new Set());
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const permitCompanyId: string | null = permit?.company_id || null;
+  const managerById = useMemo(() => {
+    const m = new Map<string, boolean>();
+    for (const w of workers) m.set(w.id, !!w.isManager);
+    return m;
+  }, [workers]);
 
   useEffect(() => {
     if (!open || !permit || !projectId) return;
@@ -59,7 +70,6 @@ export default function WorkPermitWorkersDialog({
       }
       setCompanyName(companyLabel);
 
-      // Scope query to permit company (+ orphans for label match). No company → empty list.
       let workersQ: any = supabase
         .from("workers")
         .select("id, name, phone, company_name, company_id")
@@ -72,11 +82,11 @@ export default function WorkPermitWorkersDialog({
         workersQ = workersQ.eq("company_id", "00000000-0000-0000-0000-000000000000");
       }
 
-      const [{ data: ws }, { data: wpw }, { data: logs }] = await Promise.all([
+      const [{ data: ws }, { data: wpw }, { data: logs }, mgrRes] = await Promise.all([
         workersQ,
         supabase
           .from("work_permit_workers" as any)
-          .select("worker_id")
+          .select("worker_id, exclude_from_tbm")
           .eq("work_permit_id", permit.id),
         supabase
           .from("worker_entry_logs" as any)
@@ -84,18 +94,33 @@ export default function WorkPermitWorkersDialog({
           .eq("project_id", projectId)
           .gte("entry_at", `${today}T00:00:00`)
           .lte("entry_at", `${today}T23:59:59`),
+        companyId
+          ? loadPermitCompanyManagerCandidates({
+              projectId,
+              companyId,
+              companyName: companyLabel,
+            })
+          : Promise.resolve({ ok: true as const, managers: [] }),
       ]);
 
-      const scoped = filterPermitAssignableWorkers(ws || [], companyId, companyLabel);
-      setWorkers(scoped);
+      if (!mgrRes.ok) {
+        toast.error("관리자 목록 로드 실패: " + mgrRes.error);
+      }
+
+      const field = filterPermitAssignableWorkers(ws || [], companyId, companyLabel);
+      const merged = mergePermitRosterCandidates(field, mgrRes.ok ? mgrRes.managers : []);
+      setWorkers(merged);
 
       const ids = new Set((wpw || []).map((r: any) => r.worker_id as string));
+      const excl = new Set(
+        (wpw || []).filter((r: any) => r.exclude_from_tbm === true).map((r: any) => r.worker_id as string),
+      );
       setAssigned(ids);
       setInitialAssigned(new Set(ids));
+      setInitialExcludeTbm(excl);
       const site = new Set<string>();
-      const scopedIds = new Set(scoped.map((w) => w.id));
+      const scopedIds = new Set(merged.map((w) => w.id));
       for (const row of (logs as any[]) || []) {
-        // Only count on-site workers that belong to this permit's company
         if (row.worker_id && !row.exit_at && scopedIds.has(row.worker_id)) {
           site.add(row.worker_id);
         }
@@ -126,12 +151,10 @@ export default function WorkPermitWorkersDialog({
     if (!permit) return;
     setSaving(true);
     const allowed = new Set(workers.map((w) => w.id));
-    // Never persist a selection outside permit company (stale / race)
     const safeAssigned = new Set([...assigned].filter((id) => allowed.has(id) || initialAssigned.has(id)));
-    // Drop initial assignments that are no longer in allowed only if user unchecked —
-    // keep initialAssigned removals as usual
     const toAdd = [...safeAssigned].filter((id) => !initialAssigned.has(id) && allowed.has(id));
     const toRemove = [...initialAssigned].filter((id) => !safeAssigned.has(id));
+    const stay = [...safeAssigned].filter((id) => initialAssigned.has(id));
 
     if (toAdd.length > 0) {
       const rows = toAdd.map((worker_id) => ({
@@ -139,6 +162,7 @@ export default function WorkPermitWorkersDialog({
         worker_id,
         project_id: projectId,
         notification_status: "pending",
+        exclude_from_tbm: managerById.get(worker_id) === true,
       }));
       const { error } = await supabase.from("work_permit_workers" as any).insert(rows);
       if (error) {
@@ -159,6 +183,22 @@ export default function WorkPermitWorkersDialog({
         return;
       }
     }
+    // Refresh exclude_from_tbm flags for people who stayed (manager status may have changed)
+    for (const worker_id of stay) {
+      const want = managerById.get(worker_id) === true;
+      const had = initialExcludeTbm.has(worker_id);
+      if (want === had) continue;
+      const { error } = await supabase
+        .from("work_permit_workers" as any)
+        .update({ exclude_from_tbm: want })
+        .eq("work_permit_id", permit.id)
+        .eq("worker_id", worker_id);
+      if (error) {
+        toast.error("명단 구분 저장 실패: " + error.message);
+        setSaving(false);
+        return;
+      }
+    }
 
     const patch = buildPersonnelCountPatch(permit.form_data, safeAssigned.size);
     const { error: countErr } = await supabase
@@ -171,7 +211,7 @@ export default function WorkPermitWorkersDialog({
       return;
     }
 
-    // Linked TBM: keep participant roster in sync with permit crew
+    // Linked TBM: field crew only (managers excluded via exclude_from_tbm)
     if (permit.tbm_session_id) {
       const sync = await syncPermitCrewToTbm({
         permitId: permit.id,
@@ -185,7 +225,12 @@ export default function WorkPermitWorkersDialog({
     }
 
     setSaving(false);
-    toast.success(`근로자 ${safeAssigned.size}명 배정 · 작업인원 반영`);
+    const mgrCount = [...safeAssigned].filter((id) => managerById.get(id)).length;
+    toast.success(
+      mgrCount > 0
+        ? `명단 ${safeAssigned.size}명 배정 (관리자 ${mgrCount}명 · TBM 미포함)`
+        : `근로자 ${safeAssigned.size}명 배정 · 작업인원 반영`,
+    );
     onSaved?.(safeAssigned.size);
     onClose();
   };
@@ -207,7 +252,7 @@ export default function WorkPermitWorkersDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" /> 근로자 배정
+            <Users className="h-5 w-5" /> 인원 명단 배정
             <Badge variant="secondary">{assigned.size}명 선택</Badge>
             {onSiteIds.size > 0 && (
               <Badge variant="outline" className="text-[10px]">
@@ -222,8 +267,8 @@ export default function WorkPermitWorkersDialog({
             <span className="block text-xs mt-0.5">
               {permitCompanyId ? (
                 <>
-                  <b className="text-foreground">{companyName || "자사"}</b> 근로자만 표시합니다.
-                  저장 시 작업인원이 선택 인원과 맞춰집니다.
+                  <b className="text-foreground">{companyName || "자사"}</b> 근로자·관리자를 표시합니다.
+                  관리자는 을지 명단에만 들어가며 TBM 참석에는 넣지 않습니다.
                 </>
               ) : (
                 <span className="text-destructive">
@@ -268,7 +313,7 @@ export default function WorkPermitWorkersDialog({
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="p-4 text-sm text-muted-foreground text-center">
-                  이 회사로 등록된 근로자가 없습니다.
+                  이 회사로 등록된 근로자·관리자가 없습니다.
                 </div>
               ) : (
                 filtered.map((w) => (
@@ -283,6 +328,11 @@ export default function WorkPermitWorkersDialog({
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium flex items-center gap-1.5">
                         {w.name}
+                        {w.isManager && (
+                          <Badge variant="outline" className="text-[9px] px-1 py-0">
+                            관리
+                          </Badge>
+                        )}
                         {onSiteIds.has(w.id) && (
                           <Badge variant="secondary" className="text-[9px] px-1 py-0">
                             출근
@@ -291,6 +341,7 @@ export default function WorkPermitWorkersDialog({
                       </div>
                       <div className="text-xs text-muted-foreground truncate">
                         {w.company_name || companyName || "-"} · {w.phone}
+                        {w.isManager ? " · 을지만 (TBM 제외)" : ""}
                       </div>
                     </div>
                   </label>

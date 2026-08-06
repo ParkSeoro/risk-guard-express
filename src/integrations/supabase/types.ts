@@ -8054,6 +8054,7 @@ export type Database = {
       work_permit_workers: {
         Row: {
           created_at: string
+          exclude_from_tbm: boolean
           id: string
           notification_status: string
           notified_at: string | null
@@ -8063,6 +8064,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          exclude_from_tbm?: boolean
           id?: string
           notification_status?: string
           notified_at?: string | null
@@ -8072,6 +8074,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          exclude_from_tbm?: boolean
           id?: string
           notification_status?: string
           notified_at?: string | null

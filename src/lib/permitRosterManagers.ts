@@ -1,5 +1,5 @@
 /**
- * Include company managers on permit 을지 roster (not TBM attendance).
+ * Include company managers on permit 을지 roster (same list as field workers).
  * Managers = project_members with admin roles for the permit company.
  * Ensures a workers row exists so work_permit_workers FK still works.
  */

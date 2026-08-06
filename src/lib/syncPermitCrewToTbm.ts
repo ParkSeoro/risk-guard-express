@@ -2,7 +2,6 @@
  * Keep tbm_participations aligned with work_permit_workers for a linked TBM.
  * - Adds missing crew as unsigned participants
  * - Removes unsigned participants no longer on the crew (keeps signed rows)
- * - Skips rows with exclude_from_tbm (company managers on 을지 only)
  */
 import { supabase } from "@/integrations/supabase/client";
 
@@ -12,17 +11,11 @@ export async function syncPermitCrewToTbm(opts: {
 }): Promise<{ ok: true; added: number; removed: number } | { ok: false; error: string }> {
   const { data: links, error: lerr } = await supabase
     .from("work_permit_workers" as any)
-    .select("worker_id, exclude_from_tbm")
+    .select("worker_id")
     .eq("work_permit_id", opts.permitId);
   if (lerr) return { ok: false, error: lerr.message };
 
-  const workerIds = [
-    ...new Set(
-      ((links as any[]) || [])
-        .filter((r) => r.worker_id && r.exclude_from_tbm !== true)
-        .map((r) => r.worker_id as string),
-    ),
-  ];
+  const workerIds = [...new Set(((links as any[]) || []).map((r) => r.worker_id).filter(Boolean))];
   let crew: Array<{
     id: string;
     name: string;
@@ -76,13 +69,6 @@ export async function syncPermitCrewToTbm(opts: {
     added = rows.length;
   }
 
-  // Manager worker ids on this permit — never leave them as TBM participants
-  const managerIds = new Set(
-    ((links as any[]) || [])
-      .filter((r) => r.worker_id && r.exclude_from_tbm === true)
-      .map((r) => r.worker_id as string),
-  );
-
   const crewIdSet = new Set(crew.map((w) => w.id));
   const crewPhoneSet = new Set(
     crew.map((w) => String(w.phone || "").replace(/\D/g, "")).filter(Boolean),
@@ -90,12 +76,10 @@ export async function syncPermitCrewToTbm(opts: {
   const removable = parts.filter((p) => {
     const signed = String(p.signature_data || "").length > 10;
     if (signed) return false;
-    // Drop unsigned managers that were previously synced
-    if (p.worker_id && managerIds.has(p.worker_id)) return true;
     if (p.worker_id && crewIdSet.has(p.worker_id)) return false;
     const digits = String(p.worker_phone || "").replace(/\D/g, "");
     if (digits && crewPhoneSet.has(digits)) return false;
-    return crew.length > 0 || managerIds.size > 0;
+    return crew.length > 0;
   });
 
   let removed = 0;

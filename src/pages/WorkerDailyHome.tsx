@@ -51,6 +51,8 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
   const { user, profile } = useAuth();
   const { lastGpsFix, gpsTracking, gpsError, startGpsTracking, stopGpsTracking } = useSystemRealtime();
   const [projectId, setProjectId] = useState(() => localStorage.getItem(PROJECT_KEY) || "");
+  /** One-shot / polled fix for check-in distance UI before full tracking starts. */
+  const [probeFix, setProbeFix] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [checkInFence, setCheckInFence] = useState<SiteTrackingFence | null>(null);
   const [projectName, setProjectName] = useState("");
   const [workerId, setWorkerId] = useState<string | null>(null);
@@ -73,20 +75,22 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
     kind: string | null;
   } | null>(null);
 
+  const effectiveFix = lastGpsFix || probeFix;
+
   const distanceM = useMemo(() => {
-    if (!checkInFence || !lastGpsFix) return null;
+    if (!checkInFence || !effectiveFix) return null;
     return calculateDistance(
       checkInFence.lat,
       checkInFence.lng,
-      lastGpsFix.lat,
-      lastGpsFix.lng,
+      effectiveFix.lat,
+      effectiveFix.lng,
     );
-  }, [checkInFence, lastGpsFix]);
+  }, [checkInFence, effectiveFix]);
 
   const withinCheckIn = useMemo(() => {
-    if (!checkInFence || !lastGpsFix || distanceM == null) return false;
+    if (!checkInFence || !effectiveFix || distanceM == null) return false;
     return distanceM <= checkInFence.radiusM;
-  }, [checkInFence, lastGpsFix, distanceM]);
+  }, [checkInFence, effectiveFix, distanceM]);
 
   const isCheckedIn = !!todayLog && !todayLog.exit_at;
   const checkedOut = !!todayLog?.exit_at;
@@ -162,25 +166,8 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
       setDayPermits([]);
     }
 
-    // Start GPS even before workers-row match so distance UI can update
-    if (pid && !gpsTracking) {
-      const { setTrackingConsent, hasTrackingConsent, normalizeTrackingConsentStorage } =
-        await import("@/lib/tracking/locationTracker");
-      const { isGpsPausedOffsite } = await import("@/lib/tracking/siteTrackBounds");
-      normalizeTrackingConsentStorage();
-      if (isGpsPausedOffsite(pid)) {
-        // Left site earlier — don't auto-restart until check-in / near-site resume
-      } else if (profile?.agreed_to_location === true || hasTrackingConsent()) {
-        setTrackingConsent(true);
-        startGpsTracking({
-          project_id: pid,
-          worker_id: wid,
-          worker_name: profile?.display_name || null,
-          worker_phone: profile?.phone || null,
-        });
-      }
-    }
-  }, [user, profile, gpsTracking, startGpsTracking]);
+    // Full GPS is owned by WorkerGlobalGps (checked-in workers / on-site managers only).
+  }, [user, profile]);
 
   useEffect(() => {
     void refresh();
@@ -191,22 +178,49 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
     if (isCheckedIn && !ackDone) setAckOpen(true);
   }, [isCheckedIn, ackDone]);
 
+  // Lightweight position for check-in distance — not background tracking.
+  useEffect(() => {
+    if (!projectId || isCheckedIn || gpsTracking) return;
+    if (!("geolocation" in navigator)) return;
+    let cancelled = false;
+    const probe = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (cancelled) return;
+          setProbeFix({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          });
+        },
+        () => {
+          /* ignore — UI stays on GPS 대기 */
+        },
+        { enableHighAccuracy: true, maximumAge: 15_000, timeout: 12_000 },
+      );
+    };
+    probe();
+    const t = window.setInterval(probe, 20_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [projectId, isCheckedIn, gpsTracking]);
+
   const ensureConsentAndGps = async () => {
     const { setTrackingConsent } = await import("@/lib/tracking/locationTracker");
-    const { setGpsPausedOffsite } = await import("@/lib/tracking/siteTrackBounds");
     setTrackingConsent(true);
     if (!projectId) {
       toast.error("현장을 먼저 선택하세요");
       return false;
     }
-    setGpsPausedOffsite(projectId, false);
-    window.dispatchEvent(new Event("mobile:resume-gps-tracking"));
     startGpsTracking({
       project_id: projectId,
       worker_id: workerId,
       worker_name: profile?.display_name || null,
       worker_phone: profile?.phone || null,
     });
+    window.dispatchEvent(new Event("mobile:resume-gps-tracking"));
     return true;
   };
 
@@ -246,6 +260,11 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
       if (error) throw error;
       setTodayLog(data as EntryLog);
       setAckOpen(true);
+      try {
+        window.dispatchEvent(new Event("mobile:resume-gps-tracking"));
+      } catch {
+        /* ignore */
+      }
       toast.success("출근이 기록되었습니다. 작업·위험 내용을 확인해 주세요.");
     } catch (e: any) {
       toast.error(e?.message || "출근 기록 실패");
@@ -315,6 +334,11 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
       setTodayLog(data as EntryLog);
       setExitOpen(false);
       stopGpsTracking();
+      try {
+        window.dispatchEvent(new Event("mobile:worker-checked-out"));
+      } catch {
+        /* ignore */
+      }
       toast.success("퇴근이 기록되었습니다. GPS 추적을 종료합니다.");
     } catch (e: any) {
       toast.error(e?.message || "퇴근 기록 실패");
@@ -374,14 +398,14 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
               거리:{" "}
               {!checkInFence
                 ? "현장 좌표 미설정"
-                : !lastGpsFix
+                : !effectiveFix
                   ? (gpsError ? "GPS 오류" : "GPS 대기…")
                   : `${Math.round(distanceM!)}m`}
             </div>
             <div className="col-span-2">
               좌표:{" "}
-              {lastGpsFix
-                ? `${lastGpsFix.lat.toFixed(5)}, ${lastGpsFix.lng.toFixed(5)} (±${Math.round(lastGpsFix.accuracy)}m)`
+              {effectiveFix
+                ? `${effectiveFix.lat.toFixed(5)}, ${effectiveFix.lng.toFixed(5)} (±${Math.round(effectiveFix.accuracy)}m)`
                 : "대기"}
             </div>
             <div className="col-span-2">
@@ -401,7 +425,7 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
                 ? `반경 ${Math.round(checkInFence.radiusM)}m 이내 — 출근 가능`
                 : "반경 밖 — 출근 비활성"}
           </Badge>
-          {!gpsTracking && (
+          {!gpsTracking && isCheckedIn && (
             <Button
               size="sm"
               variant="outline"

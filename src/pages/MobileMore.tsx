@@ -27,9 +27,10 @@ import { supabase } from "@/integrations/supabase/client";
 import MobileOtaUpdateCard from "@/components/mobile/MobileOtaUpdateCard";
 import MasterAlarmSimulator from "@/components/geofence/MasterAlarmSimulator";
 import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
+import { dedupeProjectsById, projectsFromMembershipRows } from "@/lib/mobileProjects";
 
 export default function MobileMore() {
-  const { signOut, profile, hasRole } = useAuth();
+  const { signOut, profile, hasRole, user } = useAuth();
   const { role, isMaster, projectId, setProjectId } = useMobileAccess();
   const preview = usePreview();
   const navigate = useNavigate();
@@ -45,21 +46,31 @@ export default function MobileMore() {
   useEffect(() => {
     (async () => {
       if (hasRole("master") || preview.isPreview) {
-        const { data } = await supabase.from("projects").select("id, name").order("name").limit(50);
-        setProjects((data as any) || []);
+        const { data } = await supabase
+          .from("projects")
+          .select("id, name")
+          .eq("is_deleted", false)
+          .order("name")
+          .limit(50);
+        setProjects(dedupeProjectsById((data as any) || []));
         return;
       }
+      if (!user?.id) {
+        setProjects([]);
+        return;
+      }
+      // Own memberships only — RLS can otherwise return every peer row on the project.
       const { data } = await supabase
         .from("project_members")
-        .select("project_id, projects(id, name)")
-        .limit(50);
-      const list = ((data as any) || [])
-        .map((r: any) => r.projects)
-        .filter(Boolean)
-        .map((p: any) => ({ id: p.id, name: p.name }));
+        .select("project_id, projects(id, name, is_deleted)")
+        .eq("user_id", user.id)
+        .limit(100);
+      const list = projectsFromMembershipRows(
+        ((data as any) || []).filter((r: any) => r.projects && !r.projects.is_deleted),
+      );
       setProjects(list);
     })();
-  }, [hasRole, preview.isPreview]);
+  }, [hasRole, preview.isPreview, user?.id]);
 
   return (
     <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="mobile-more">

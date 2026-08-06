@@ -19,7 +19,6 @@ import {
   notifyDangerZoneOs,
   saveStickyDangerAlert,
 } from "@/lib/tracking/dangerAlertSticky";
-import { isGpsPausedOffsite } from "@/lib/tracking/siteTrackBounds";
 import DangerZoneAlertModal from "@/components/geofence/DangerZoneAlertModal";
 
 /** Require this many consecutive "outside" GPS hits before clearing (jitter). */
@@ -36,7 +35,7 @@ function isExitEventType(t: string): boolean {
 export default function ShellGeofenceAlerts() {
   const { profile } = useAuth();
   const { projectId, role } = useMobileAccess();
-  const { lastGpsFix, lastZoneEvent } = useSystemRealtime();
+  const { lastGpsFix, lastZoneEvent, gpsTracking } = useSystemRealtime();
   const [alertZone, setAlertZone] = useState<{ id: string; name: string } | null>(null);
   const zonesRef = useRef<RestrictedZoneGeom[]>([]);
   const exitStreak = useRef(0);
@@ -101,10 +100,10 @@ export default function ShellGeofenceAlerts() {
     void loadZones();
   }, [loadZones]);
 
-  // Restore sticky alert after remount / OTA — never while offsite-paused
+  // Restore sticky alert after remount / OTA — only while GPS tracking is active
   useEffect(() => {
     if (!projectId) return;
-    if (isGpsPausedOffsite(projectId)) {
+    if (!gpsTracking) {
       clearStickyDangerAlert();
       setAlertZone(null);
       return;
@@ -113,7 +112,7 @@ export default function ShellGeofenceAlerts() {
     if (sticky) {
       setAlertZone({ id: sticky.zoneId, name: sticky.zoneName });
     }
-  }, [projectId]);
+  }, [projectId, gpsTracking]);
 
   useEffect(() => {
     if (!projectId) return;

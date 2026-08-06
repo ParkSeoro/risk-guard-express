@@ -118,9 +118,9 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
 
     // company_id → type 룩업
     const companyTypeById = new Map(companies.map(c => [c.id, (c.type || '').toLowerCase()]));
-    const isContractorCo = (id: string | null) => {
+    const isGcCo = (id: string | null) => {
       const t = id ? companyTypeById.get(id) : '';
-      return t === 'contractor' || t === 'vendor';
+      return t === 'gc';
     };
     const isClientCo = (id: string | null) => {
       const t = id ? companyTypeById.get(id) : '';
@@ -152,36 +152,29 @@ export default function ApprovalLineManager({ projectId, projectMembers, compani
     const newLines: ApprovalLine[] = [];
     const steps = FIXED_APPROVAL_STEPS;
 
-    // Step 1: 협력사 관리감독자 — SITE_SUPERVISOR 우선 (감리 SUPERVISOR와 분리)
-    const contractorSupervisorPos = ['SITE_SUPERVISOR', 'SUPERVISOR', 'FOREMAN', 'FIELD_ENGINEER', 'CONSTRUCTION_MGR'];
+    // Step 1: 담당자(시공) — 기안 회사 SITE_SUPERVISOR 우선 (감리 SUPERVISOR와 분리)
+    const supervisorPos = ['SITE_SUPERVISOR', 'FOREMAN', 'FIELD_ENGINEER', 'CONSTRUCTION_MGR'];
     const s1Author =
-      authorMember && isContractorCo(authorMember.company_id) &&
-      contractorSupervisorPos.includes(POS(authorMember.position))
+      authorMember &&
+      authorCompanyId &&
+      authorMember.company_id === authorCompanyId &&
+      supervisorPos.includes(POS(authorMember.position))
         ? authorMember
         : undefined;
     const s1 = s1Author || findMember(m =>
-      isContractorCo(m.company_id) &&
-      contractorSupervisorPos.includes(POS(m.position)) &&
-      (authorCompanyId ? m.company_id === authorCompanyId : true),
-    ) || findMember(m =>
-      isContractorCo(m.company_id) &&
-      contractorSupervisorPos.includes(POS(m.position)),
+      !!authorCompanyId &&
+      m.company_id === authorCompanyId &&
+      supervisorPos.includes(POS(m.position)),
     );
     pushStep(0, steps[0].label, steps[0].position, s1);
 
-    // Step 2: 협력사 안전관리자 (HSE_MANAGER)
-    const s2 = findMember(m =>
-      isContractorCo(m.company_id) && POS(m.position) === 'HSE_MANAGER' &&
-      (authorCompanyId ? m.company_id === authorCompanyId : true),
-    ) || findMember(m => isContractorCo(m.company_id) && POS(m.position) === 'HSE_MANAGER');
+    // Step 2: 담당자(안전) — 시공사(GC) HSE_MANAGER
+    const s2 = findMember(m => isGcCo(m.company_id) && POS(m.position) === 'HSE_MANAGER');
     pushStep(1, steps[1].label, steps[1].position, s2);
 
-    // Step 3: 협력사 현장소장
+    // Step 3: 책임자(소장) — 시공사(GC) SITE_MANAGER
     const s3 = findMember(m =>
-      isContractorCo(m.company_id) && ['SITE_MANAGER', 'CEO', 'EXECUTIVE'].includes(POS(m.position)) &&
-      (authorCompanyId ? m.company_id === authorCompanyId : true),
-    ) || findMember(m =>
-      isContractorCo(m.company_id) && ['SITE_MANAGER', 'CEO', 'EXECUTIVE'].includes(POS(m.position)),
+      isGcCo(m.company_id) && ['SITE_MANAGER', 'CEO', 'EXECUTIVE'].includes(POS(m.position)),
     );
     pushStep(2, steps[2].label, steps[2].position, s3);
 

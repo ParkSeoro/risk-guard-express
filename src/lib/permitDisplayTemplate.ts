@@ -286,10 +286,8 @@ export function pickProjectDisplayTemplate(
 }
 
 /**
- * 표시 양식을 적용할 회사 id.
- * 허가서 작성 회사(permit.company_id)를 우선한다.
- * 프로젝트 원청(gc_company_id)을 쓰면 원청 라벨(예: 협조부서→GSCaltex)이
- * 모든 협력사 허가서에 덮이므로, 회사별 표시 양식은 해당 회사 문서에만 적용한다.
+ * 표시 양식을 먼저 찾을 회사 id (= 허가서 작성 회사).
+ * 없으면 프로젝트 시공사(GC).
  */
 export function resolveFormOwnerCompanyId(project: {
   gc_company_id?: string | null;
@@ -300,6 +298,48 @@ export function resolveFormOwnerCompanyId(project: {
   const ids = project?.gc_company_ids || [];
   if (ids.length > 0 && ids[0]) return ids[0];
   return null;
+}
+
+/** 프로젝트 시공사(GC) company id */
+export function resolveProjectGcCompanyId(project: {
+  gc_company_id?: string | null;
+  gc_company_ids?: string[] | null;
+} | null | undefined): string | null {
+  if (project?.gc_company_id) return project.gc_company_id;
+  const ids = project?.gc_company_ids || [];
+  if (ids.length > 0 && ids[0]) return ids[0];
+  return null;
+}
+
+/**
+ * 표시 양식 선택 순서:
+ * 1) 작성 회사 전용 템플릿
+ * 2) 없으면 프로젝트 시공사(GC) 템플릿 (협력사 → 시공사 양식 상속)
+ * 3) 공통 글로벌 표준
+ *
+ * form_data / signatures 키는 변경하지 않음 — 라벨·숨김만.
+ */
+export function pickPermitDisplayTemplateCascade(opts: {
+  templates: PermitTemplateRow[];
+  permitCompanyId: string | null | undefined;
+  gcCompanyId: string | null | undefined;
+  permitType: PermitType;
+}): PermitTemplateRow | null {
+  const own = pickCompanyDisplayTemplate(
+    opts.templates,
+    opts.permitCompanyId,
+    opts.permitType,
+  );
+  if (own) return own;
+
+  const gcId = opts.gcCompanyId || null;
+  const permitId = opts.permitCompanyId || null;
+  if (gcId && gcId !== permitId) {
+    const gcTpl = pickCompanyDisplayTemplate(opts.templates, gcId, opts.permitType);
+    if (gcTpl) return gcTpl;
+  }
+
+  return pickGlobalStandardTemplate(opts.templates, opts.permitType);
 }
 
 export const PERMIT_KIND_CLONE_META: Array<{

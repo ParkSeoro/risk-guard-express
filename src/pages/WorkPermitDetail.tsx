@@ -43,9 +43,9 @@ import { syncPermitDateFromWorkStart, resolvePermitWorkDate } from '@/lib/permit
 import {
   normalizeDisplayTemplate,
   parseLayoutJson,
-  pickCompanyDisplayTemplate,
-  pickGlobalStandardTemplate,
+  pickPermitDisplayTemplateCascade,
   resolveFormOwnerCompanyId,
+  resolveProjectGcCompanyId,
   type PermitDisplayTemplate,
 } from '@/lib/permitDisplayTemplate';
 import {
@@ -339,37 +339,41 @@ export default function WorkPermitDetail() {
           .select('gc_company_id, gc_company_ids')
           .eq('id', projectId)
           .maybeSingle();
-        const ownerCompanyId = resolveFormOwnerCompanyId(
-          proj as any,
-          (permit as any)?.company_id || null,
-        );
+        const permitCompanyId =
+          resolveFormOwnerCompanyId(proj as any, (permit as any)?.company_id || null);
+        const gcCompanyId = resolveProjectGcCompanyId(proj as any);
+        const companyIds = [...new Set([permitCompanyId, gcCompanyId].filter(Boolean))] as string[];
 
-        let holder: any = null;
-        if (ownerCompanyId) {
+        let companyRows: any[] = [];
+        if (companyIds.length > 0) {
           const { data: tpls } = await supabase
             .from('permit_form_templates')
             .select('id, name, code, version, layout_json, is_default, is_active, permit_type, project_id, company_id')
             .eq('is_deleted', false)
             .eq('is_active', true)
-            .eq('company_id', ownerCompanyId)
+            .in('company_id', companyIds)
             .order('is_default', { ascending: false })
             .order('updated_at', { ascending: false });
-          holder = pickCompanyDisplayTemplate((tpls || []) as any[], ownerCompanyId, activeKind as PermitType);
+          companyRows = (tpls || []) as any[];
         }
 
-        // No company clone → shared global standard (company_id/project_id null)
-        if (!holder) {
-          const { data: globals } = await supabase
-            .from('permit_form_templates')
-            .select('id, name, code, version, layout_json, is_default, is_active, permit_type, project_id, company_id')
-            .eq('is_deleted', false)
-            .eq('is_active', true)
-            .is('company_id', null)
-            .is('project_id', null)
-            .order('is_default', { ascending: false })
-            .order('updated_at', { ascending: false });
-          holder = pickGlobalStandardTemplate((globals || []) as any[], activeKind as PermitType);
-        }
+        const { data: globals } = await supabase
+          .from('permit_form_templates')
+          .select('id, name, code, version, layout_json, is_default, is_active, permit_type, project_id, company_id')
+          .eq('is_deleted', false)
+          .eq('is_active', true)
+          .is('company_id', null)
+          .is('project_id', null)
+          .order('is_default', { ascending: false })
+          .order('updated_at', { ascending: false });
+
+        // 작성사 템플릿 → 없으면 시공사(GC) 양식 상속 → 글로벌 표준
+        const holder = pickPermitDisplayTemplateCascade({
+          templates: [...companyRows, ...((globals || []) as any[])],
+          permitCompanyId,
+          gcCompanyId,
+          permitType: activeKind as PermitType,
+        });
 
         if (!holder) {
           // No DB standard either → DigPermitForm code defaults

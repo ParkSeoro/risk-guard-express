@@ -68,6 +68,8 @@ function canRequestPermitExtend(p: any): boolean {
 }
 
 function permitStatusLabel(status?: string | null) {
+  if (CLOSED_PERMIT_STATUSES.has(status || '')) return '종료 완료';
+  if (CLOSURE_PENDING_STATUSES.has(status || '')) return '작업 완료 확인 대기';
   if (APPROVED_PERMIT_STATUSES.has(status || '')) return '발행 완료';
   if (status === '결재중' || status === '결재진행') return '결재 진행중';
   return status || '-';
@@ -473,6 +475,18 @@ export default function WorkPermits() {
       approval_comment: comment,
       rejection_reason: '',
     }).eq('id', permit.id);
+    try {
+      const { ensureTbmAfterPermitIssued } = await import('@/lib/tbmLifecycle');
+      await ensureTbmAfterPermitIssued({
+        force: true,
+        entityType: 'work_permit',
+        entityId: permit.id,
+        projectId: permit.project_id || projectId,
+        companyId: permit.company_id,
+      });
+    } catch (e) {
+      console.warn('ensureTbmAfterPermitIssued', e);
+    }
     toast({ title: '승인되었습니다.' });
     load();
   };
@@ -519,7 +533,14 @@ export default function WorkPermits() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge className={STATUS_COLOR[p.status] || ''}>{permitStatusLabel(p.status)}</Badge>
                   <button className="font-semibold text-left hover:underline" onClick={() => navigate(`/work-permits/${p.id}`)}>{p.work_description}</button>
-                  {validity === 'expired' && <Badge variant="outline" className="text-destructive border-destructive/40">만료 (유효기간 경과)</Badge>}
+                  {CLOSURE_PENDING_STATUSES.has(p.status) && (
+                    <Badge variant="outline" className="text-amber-700 border-amber-500/40">종료 결재 필요</Badge>
+                  )}
+                  {validity === 'expired' && !CLOSED_PERMIT_STATUSES.has(p.status) && (
+                    <Badge variant="outline" className="text-destructive border-destructive/40">
+                      만료 (작업일 경과)
+                    </Badge>
+                  )}
                   {validity === 'today' && <Badge variant="outline" className="text-success border-success/40">오늘 유효</Badge>}
                   {validity === 'scheduled' && workDate && <Badge variant="outline" className="text-muted-foreground">예정 ({workDate})</Badge>}
                 </div>

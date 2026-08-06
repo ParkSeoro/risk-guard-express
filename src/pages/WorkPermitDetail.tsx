@@ -126,13 +126,10 @@ export default function WorkPermitDetail() {
   const loadAssignedCrew = async (permitId: string, tbmSessionId?: string | null) => {
     const { data: links } = await supabase
       .from('work_permit_workers' as any)
-      .select('worker_id, exclude_from_tbm')
+      .select('worker_id')
       .eq('work_permit_id', permitId);
     const linkRows = (links as any[]) || [];
     const ids = linkRows.map((r) => r.worker_id).filter(Boolean);
-    const managerIds = new Set(
-      linkRows.filter((r) => r.exclude_from_tbm === true).map((r) => r.worker_id as string),
-    );
     let rows: PermitWorkerRow[] = [];
     if (ids.length > 0) {
       const byId = new Map<string, any>();
@@ -152,7 +149,6 @@ export default function WorkPermitDetail() {
           name: w.name || '-',
           phone: w.phone,
           company_name: w.company_name,
-          isManager: managerIds.has(w.id),
         }));
     }
     setAssignedWorkers(rows);
@@ -766,9 +762,6 @@ export default function WorkPermitDetail() {
               {assignedWorkers.map((w) => (
                 <li key={w.id} className="truncate border rounded px-2 py-1 bg-muted/40">
                   <span className="font-medium">{w.name}</span>
-                  {w.isManager && (
-                    <Badge variant="outline" className="ml-1 text-[9px] px-1 py-0">관리</Badge>
-                  )}
                   <span className="text-muted-foreground"> · {w.company_name || '-'}</span>
                 </li>
               ))}

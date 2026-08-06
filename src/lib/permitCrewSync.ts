@@ -51,30 +51,34 @@ export async function syncPermitCrewFromOnSite(opts: {
     if (row.worker_id && !row.exit_at) onSiteSet.add(row.worker_id);
   }
   const candidateIds = [...onSiteSet];
-
-  // Keep company managers already on the 을지 roster (exclude_from_tbm)
-  const { data: keepRows, error: keepErr } = await supabase
-    .from("work_permit_workers" as any)
-    .select("worker_id")
-    .eq("work_permit_id", opts.permitId)
-    .eq("exclude_from_tbm", true);
-  if (keepErr) return { ok: false, error: keepErr.message };
-  const managerIds = [...new Set(((keepRows as any[]) || []).map((r) => r.worker_id).filter(Boolean))];
-
-  let fieldIds: string[] = [];
-  if (candidateIds.length > 0) {
-    const workers: any[] = [];
-    for (let i = 0; i < candidateIds.length; i += 100) {
-      const chunk = candidateIds.slice(i, i + 100);
-      const { data: ws, error: werr } = await supabase
-        .from("workers")
-        .select("id, company_id, company_name")
-        .in("id", chunk);
-      if (werr) return { ok: false, error: werr.message };
-      workers.push(...((ws as any[]) || []));
-    }
-    fieldIds = filterPermitAssignableWorkers(workers, companyId, companyName).map((w) => w.id);
+  if (candidateIds.length === 0) {
+    const { error: delEmpty } = await supabase
+      .from("work_permit_workers" as any)
+      .delete()
+      .eq("work_permit_id", opts.permitId);
+    if (delEmpty) return { ok: false, error: delEmpty.message };
+    const patch = buildPersonnelCountPatch(opts.formData ?? (permit as any).form_data, 0);
+    const { error: uerr } = await supabase
+      .from("work_permits" as any)
+      .update(patch as any)
+      .eq("id", opts.permitId);
+    if (uerr) return { ok: false, error: uerr.message };
+    return { ok: true, count: 0 };
   }
+
+  const workers: any[] = [];
+  for (let i = 0; i < candidateIds.length; i += 100) {
+    const chunk = candidateIds.slice(i, i + 100);
+    const { data: ws, error: werr } = await supabase
+      .from("workers")
+      .select("id, company_id, company_name")
+      .in("id", chunk);
+    if (werr) return { ok: false, error: werr.message };
+    workers.push(...((ws as any[]) || []));
+  }
+
+  const scoped = filterPermitAssignableWorkers(workers, companyId, companyName);
+  const ids = scoped.map((w) => w.id);
 
   const { error: delErr } = await supabase
     .from("work_permit_workers" as any)
@@ -82,37 +86,23 @@ export async function syncPermitCrewFromOnSite(opts: {
     .eq("work_permit_id", opts.permitId);
   if (delErr) return { ok: false, error: delErr.message };
 
-  const fieldIdSet = new Set(fieldIds);
-  const rows = [
-    ...fieldIds.map((worker_id) => ({
+  if (ids.length > 0) {
+    const rows = ids.map((worker_id) => ({
       work_permit_id: opts.permitId,
       worker_id,
       project_id: opts.projectId,
       notification_status: "pending",
-      exclude_from_tbm: false,
-    })),
-    ...managerIds
-      .filter((id) => !fieldIdSet.has(id))
-      .map((worker_id) => ({
-        work_permit_id: opts.permitId,
-        worker_id,
-        project_id: opts.projectId,
-        notification_status: "pending",
-        exclude_from_tbm: true,
-      })),
-  ];
-  if (rows.length > 0) {
+    }));
     const { error: insErr } = await supabase.from("work_permit_workers" as any).insert(rows);
     if (insErr) return { ok: false, error: insErr.message };
   }
 
-  const total = rows.length;
-  const patch = buildPersonnelCountPatch(opts.formData ?? (permit as any).form_data, total);
+  const patch = buildPersonnelCountPatch(opts.formData ?? (permit as any).form_data, ids.length);
   const { error: uerr } = await supabase
     .from("work_permits" as any)
     .update(patch as any)
     .eq("id", opts.permitId);
   if (uerr) return { ok: false, error: uerr.message };
 
-  return { ok: true, count: total };
+  return { ok: true, count: ids.length };
 }

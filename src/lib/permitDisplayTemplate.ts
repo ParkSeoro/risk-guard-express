@@ -300,7 +300,7 @@ export function resolveFormOwnerCompanyId(project: {
   return null;
 }
 
-/** 프로젝트 시공사(GC) company id */
+/** 프로젝트 시공사(GC) company id (projects 컬럼만 — 비어 있을 수 있음) */
 export function resolveProjectGcCompanyId(project: {
   gc_company_id?: string | null;
   gc_company_ids?: string[] | null;
@@ -311,10 +311,68 @@ export function resolveProjectGcCompanyId(project: {
   return null;
 }
 
+export type ProjectCompanyLink = {
+  company_id: string;
+  parent_company_id?: string | null;
+  role_in_project?: string | null;
+};
+
+/**
+ * 허가서 표시양식 상속용 시공사(GC) id.
+ *
+ * 우선순위 (다수 GC 프로젝트 대응):
+ * 1) 작성 회사의 project_companies.parent_company_id (협력사 → 소속 시공사)
+ * 2) projects.gc_company_id / gc_company_ids
+ * 3) 프로젝트에 GC가 정확히 1곳일 때만 그 회사
+ *
+ * ※ projects.gc_* 가 비어 있어도 project_companies 트리로 상속되게 함.
+ */
+function isGcRole(role?: string | null): boolean {
+  const r = (role || '').toLowerCase();
+  return r === 'gc' || r === 'general_contractor';
+}
+
+function isPartnerRole(role?: string | null): boolean {
+  const r = (role || '').toLowerCase();
+  return r === 'contractor' || r === 'subcontractor' || r === 'vendor' || r === 'partner';
+}
+
+export function resolvePermitFormGcCompanyId(opts: {
+  permitCompanyId?: string | null;
+  projectCompanyLinks?: ProjectCompanyLink[] | null;
+  project?: {
+    gc_company_id?: string | null;
+    gc_company_ids?: string[] | null;
+  } | null;
+}): string | null {
+  const permitId = opts.permitCompanyId || null;
+  const links = opts.projectCompanyLinks || [];
+
+  if (permitId) {
+    const mine = links.find((l) => l.company_id === permitId);
+    const parentId = mine?.parent_company_id || null;
+    if (parentId && parentId !== permitId) {
+      const parentLink = links.find((l) => l.company_id === parentId);
+      // 협력사→시공사 트리, 또는 parent가 프로젝트 GC 역할인 경우만 상속
+      if (isPartnerRole(mine?.role_in_project) || isGcRole(parentLink?.role_in_project)) {
+        return parentId;
+      }
+    }
+  }
+
+  const fromProject = resolveProjectGcCompanyId(opts.project);
+  if (fromProject) return fromProject;
+
+  const gcLinks = links.filter((l) => isGcRole(l.role_in_project));
+  if (gcLinks.length === 1) return gcLinks[0].company_id;
+
+  return null;
+}
+
 /**
  * 표시 양식 선택 순서:
  * 1) 작성 회사 전용 템플릿
- * 2) 없으면 프로젝트 시공사(GC) 템플릿 (협력사 → 시공사 양식 상속)
+ * 2) 없으면 소속 시공사(GC) 템플릿 (협력사 → 시공사 양식 상속)
  * 3) 공통 글로벌 표준
  *
  * form_data / signatures 키는 변경하지 않음 — 라벨·숨김만.

@@ -227,13 +227,39 @@ Deno.serve(async (req) => {
           })
           .eq("user_id", userId);
 
-        // Project membership as WORKER / viewer
-        await admin.rpc("process_signup_company_selection", {
-          _user_id: userId,
-          _project_id: projectId,
-          _company_id: companyId,
-          _position: "WORKER",
-        });
+        // Membership: only create WORKER if none exists.
+        // Never clobber an existing manager role (PA/SM/현장/감리/관리감독자).
+        const { data: existingMem } = await admin
+          .from("project_members")
+          .select("id, role_new, company_id")
+          .eq("project_id", projectId)
+          .eq("user_id", userId)
+          .maybeSingle();
+
+        const elevated = new Set([
+          "project_admin",
+          "safety_manager",
+          "site_manager",
+          "supervisor",
+          "site_supervisor",
+        ]);
+        if (!existingMem) {
+          await admin.rpc("process_signup_company_selection", {
+            _user_id: userId,
+            _project_id: projectId,
+            _company_id: companyId,
+            _position: "WORKER",
+          });
+        } else if (
+          !elevated.has(String(existingMem.role_new || "")) &&
+          !existingMem.company_id &&
+          companyId
+        ) {
+          await admin
+            .from("project_members")
+            .update({ company_id: companyId, company: companyName || null })
+            .eq("id", existingMem.id);
+        }
 
         // Re-assert active after process_signup (it may set pending)
         await admin

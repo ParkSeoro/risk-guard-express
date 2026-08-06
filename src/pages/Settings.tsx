@@ -44,7 +44,7 @@ const settingsCards = [
   {
     id: 'ai',
     title: 'AI 설정',
-    description: 'AI API Key, 모델 선택, AI 사용 여부를 설정합니다.',
+    description: 'NVIDIA 모델 순위·자동 폴백·AI 사용 여부를 설정합니다.',
     icon: Bot,
     path: '/settings/ai',
     requires: 'master' as const,

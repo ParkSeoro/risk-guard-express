@@ -91,7 +91,7 @@ function mapErrorMessage(rawMsg: string): string {
     return 'AI 무료 할당량이 소진되었습니다. 관리자에게 문의하거나 잠시 후 다시 시도해주세요.';
   }
   if (/INVALID_KEY|api[_ ]?key|NVIDIA_API_KEY|DEEPSEEK_API_KEY|키가 유효하지/i.test(rawMsg)) {
-    return 'AI API 키가 설정되지 않았거나 유효하지 않습니다. 마스터가 DEEPSEEK_API_KEY(위험성평가) / NVIDIA_API_KEY를 Edge Secrets에 등록해야 합니다.';
+    return 'AI API 키가 설정되지 않았거나 유효하지 않습니다. 마스터가 NVIDIA_API_KEY를 Supabase Edge Secrets에 등록해야 합니다. (설정 > AI 설정)';
   }
   if (/RATE_LIMIT|429|503|529|too many|너무 많|과부하/i.test(rawMsg)) {
     return 'AI 서버가 일시적으로 바쁩니다. 잠시 후 다시 시도해주세요.';

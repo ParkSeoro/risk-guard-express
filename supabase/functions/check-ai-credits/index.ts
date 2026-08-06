@@ -1,5 +1,6 @@
-// Health check for NVIDIA_API_KEY (primary AI provider).
-import { callGeminiChat, GeminiError } from '../_shared/gemini.ts';
+// Health check for NVIDIA_API_KEY + primary model in the failover chain.
+import { callGeminiChat, GeminiError, GEMINI_DEFAULT_MODEL } from '../_shared/gemini.ts';
+import { peekPrimaryModelSync, resolveApiKey } from '../_shared/nvidiaChat.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,13 +10,14 @@ const corsHeaders = {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
-  const key = Deno.env.get('NVIDIA_API_KEY');
+  const model = peekPrimaryModelSync() || GEMINI_DEFAULT_MODEL;
+  const key = resolveApiKey();
   if (!key) {
     return new Response(
       JSON.stringify({
         status: 'error',
         provider: 'nvidia',
-        model: 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
+        model,
         message: 'NVIDIA_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 등록해야 합니다.',
         signup_url: 'https://build.nvidia.com/settings/api-keys',
       }),
@@ -28,13 +30,14 @@ Deno.serve(async (req) => {
       messages: [{ role: 'user', content: 'ping' }],
       max_tokens: 8,
       temperature: 0,
+      compact: true,
     });
     return new Response(
       JSON.stringify({
         status: 'ok',
         provider: 'nvidia',
-        model: 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
-        message: 'NVIDIA API 키가 정상 동작합니다.',
+        model,
+        message: 'NVIDIA API 키가 정상 동작합니다. (모델 체인 폴백 활성 시 한도 초과 시 다음 순위로 전환)',
         checked_at: new Date().toISOString(),
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
@@ -48,7 +51,7 @@ Deno.serve(async (req) => {
         JSON.stringify({
           status,
           provider: 'nvidia',
-          model: 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
+          model,
           message: e.message,
           http_status: e.status,
           checked_at: new Date().toISOString(),
@@ -57,7 +60,7 @@ Deno.serve(async (req) => {
       );
     }
     return new Response(
-      JSON.stringify({ status: 'error', provider: 'nvidia', message: (e as Error).message }),
+      JSON.stringify({ status: 'error', provider: 'nvidia', model, message: (e as Error).message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }

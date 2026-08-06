@@ -1,16 +1,18 @@
 // Shared AI client — NVIDIA NIM (OpenAI-compatible) adapter.
-// Filename kept for backward compatibility; internal logic targets
-// NVIDIA integrate.api.nvidia.com with Nemotron Super (reasoning off via /no_think).
-// All request/response shapes remain OpenAI chat-completions compatible so
-// existing callers keep working unchanged.
+// Filename kept for backward compatibility. Uses nvidiaChat.ts for keyed
+// calls + ordered model failover (same API key, per-model free-tier limits).
+// Primary default remains Nemotron Super (reasoning off via /no_think).
 
-const NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions";
-/** Shared with risk AI (deepseekRisk.ts). Override via NVIDIA_MODEL secret if needed. */
-const NVIDIA_MODEL =
-  (typeof Deno !== "undefined" ? Deno.env.get("NVIDIA_MODEL")?.trim() : "") ||
-  "nvidia/llama-3.3-nemotron-super-49b-v1.5";
+import {
+  callNvidiaChat,
+  streamNvidiaChatText,
+  peekPrimaryModelSync,
+  NvidiaChatError,
+} from "./nvidiaChat.ts";
 
-// Retained exports (values unused now — model is forced) so imports don't break.
+const NVIDIA_MODEL = peekPrimaryModelSync();
+
+// Retained exports so imports don't break.
 export const GEMINI_DEFAULT_MODEL = NVIDIA_MODEL;
 export const GEMINI_LITE_MODEL = NVIDIA_MODEL;
 
@@ -132,26 +134,31 @@ function injectSystemRules(messages: OAIMessage[], wantsJson: boolean, compact =
 }
 
 
+function wrapNvidiaAsGemini(e: unknown): never {
+  if (e instanceof GeminiError) throw e;
+  if (e instanceof NvidiaChatError) {
+    const code =
+      e.code === "MODEL_NOT_FOUND" || e.code === "DISABLED" || e.code === "TIMEOUT"
+        ? "SERVER_ERROR"
+        : (e.code as GeminiError["code"]);
+    throw new GeminiError(e.message, e.status, code);
+  }
+  throw new GeminiError(
+    e instanceof Error ? e.message : "NVIDIA 네트워크 오류",
+    500,
+    "SERVER_ERROR",
+  );
+}
+
 /**
  * Call NVIDIA NIM using an OpenAI-style chat body.
- * Returns an OpenAI-style response object.
+ * Returns an OpenAI-style response object. Uses model-chain failover.
  */
 export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
-  const apiKey = Deno.env.get("NVIDIA_API_KEY");
-  if (!apiKey) {
-    throw new GeminiError(
-      "NVIDIA_API_KEY가 설정되지 않았습니다. 마스터가 설정 > 시크릿에서 등록해야 합니다.",
-      500,
-      "INVALID_KEY",
-    );
-  }
-
   const wantsJson = req.response_format?.type === "json_object";
   const imagePresent = hasImageInput(req.messages);
   const compact = !!req.compact;
 
-  // If caller explicitly needs vision (image is the primary payload) — signal clearly.
-  // Heuristic: image present AND user text is short/empty (< 40 chars of real text).
   if (imagePresent) {
     const totalText = req.messages
       .filter((m) => m.role === "user")
@@ -165,85 +172,51 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
         "BAD_REQUEST",
       );
     }
-    // Otherwise strip images silently and continue with text.
   }
 
   const preparedMessages = injectSystemRules(req.messages, wantsJson, compact);
   const messages = preparedMessages.map((m) => ({
-    role: m.role,
+    role: m.role as "system" | "user" | "assistant",
     content: flattenContent(m.content),
   }));
 
-  const body: Record<string, unknown> = {
-    model: NVIDIA_MODEL, // forced
-    messages,
-    // Reasoning OFF: greedy decoding recommended by NVIDIA for /no_think
-    temperature: typeof req.temperature === "number" ? req.temperature : 0,
-    max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 4096,
-    stream: false,
-    chat_template_kwargs: { enable_thinking: false },
-  };
-  // NVIDIA NIM may not honor response_format reliably; rely on prompt injection instead.
+  try {
+    const result = await callNvidiaChat({
+      messages,
+      temperature: typeof req.temperature === "number" ? req.temperature : 0,
+      max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 4096,
+      extraBody: { chat_template_kwargs: { enable_thinking: false } },
+    });
 
-
-  const resp = await fetch(NVIDIA_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-      "Accept": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    console.error(`[NVIDIA] ${resp.status}:`, text.slice(0, 500));
-    if (resp.status === 429) {
-      throw new GeminiError("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", 429, "RATE_LIMIT");
-    }
-    if (resp.status === 401 || resp.status === 403) {
-      if (/quota|exceed|exhausted|credit/i.test(text)) {
-        throw new GeminiError("NVIDIA API 할당량이 소진되었습니다. 사용량을 확인해주세요.", 402, "QUOTA_EXHAUSTED");
+    let rawContent = (result.content || "").trim();
+    if (!rawContent && result.raw) {
+      const msg = (result.raw as any)?.choices?.[0]?.message || {};
+      const reasoning = String(msg.reasoning_content || msg.reasoning || "").trim();
+      if (reasoning) {
+        const extracted = reasoning.match(/[\[{][\s\S]*[\]}]/);
+        rawContent = extracted ? extracted[0] : reasoning;
       }
-      throw new GeminiError("NVIDIA API 키가 유효하지 않습니다. 키를 다시 등록해주세요.", 403, "INVALID_KEY");
     }
-    if (resp.status === 400) {
-      throw new GeminiError(`NVIDIA 요청 오류: ${text.slice(0, 200)}`, 400, "BAD_REQUEST");
-    }
-    throw new GeminiError(`NVIDIA 서버 오류 (${resp.status})`, resp.status, "SERVER_ERROR");
-  }
+    const content = wantsJson ? stripCodeFences(rawContent) : rawContent;
 
-  const data = await resp.json();
-  const choice = data.choices?.[0];
-  const msg = choice?.message || {};
-  // Prefer content; if the model still only returned reasoning, fall back carefully.
-  let rawContent: string = (msg.content || "").trim();
-  if (!rawContent) {
-    const reasoning = String(msg.reasoning_content || msg.reasoning || "").trim();
-    if (reasoning) {
-      const extracted = reasoning.match(/[\[{][\s\S]*[\]}]/);
-      rawContent = extracted ? extracted[0] : reasoning;
-    }
+    return {
+      choices: [
+        {
+          message: { role: "assistant", content },
+          finish_reason: "stop",
+        },
+      ],
+      usage: result.usage
+        ? {
+            prompt_tokens: result.usage.prompt_tokens || 0,
+            completion_tokens: result.usage.completion_tokens || 0,
+            total_tokens: result.usage.total_tokens || 0,
+          }
+        : undefined,
+    };
+  } catch (e) {
+    wrapNvidiaAsGemini(e);
   }
-  // Defensive: strip any ```json / ``` fences before returning to callers.
-  const content = wantsJson ? stripCodeFences(rawContent) : rawContent;
-
-  return {
-    choices: [
-      {
-        message: { role: "assistant", content },
-        finish_reason: choice?.finish_reason || "stop",
-      },
-    ],
-    usage: data.usage
-      ? {
-          prompt_tokens: data.usage.prompt_tokens || 0,
-          completion_tokens: data.usage.completion_tokens || 0,
-          total_tokens: data.usage.total_tokens || 0,
-        }
-      : undefined,
-  };
 }
 
 /**
@@ -273,109 +246,25 @@ export async function geminiChatFetch(body: OAIRequest): Promise<Response> {
 
 /**
  * Stream NVIDIA chat completions as UTF-8 text deltas (OpenAI SSE compatible).
- * Yields content string chunks; does not buffer the full response.
+ * Model-chain failover only on initial HTTP failure.
  */
 export async function* streamGeminiChatText(req: OAIRequest): AsyncGenerator<string, void, unknown> {
-  const apiKey = Deno.env.get("NVIDIA_API_KEY");
-  if (!apiKey) {
-    throw new GeminiError(
-      "NVIDIA_API_KEY가 설정되지 않았습니다. 마스터가 설정 > 시크릿에서 등록해야 합니다.",
-      500,
-      "INVALID_KEY",
-    );
-  }
-
   const wantsJson = req.response_format?.type === "json_object";
   const compact = !!req.compact;
   const preparedMessages = injectSystemRules(req.messages, wantsJson, compact);
   const messages = preparedMessages.map((m) => ({
-    role: m.role,
+    role: m.role as "system" | "user" | "assistant",
     content: flattenContent(m.content),
   }));
 
-  const body: Record<string, unknown> = {
-    model: NVIDIA_MODEL,
-    messages,
-    temperature: typeof req.temperature === "number" ? req.temperature : 0.35,
-    max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 4096,
-    stream: true,
-    chat_template_kwargs: { enable_thinking: false },
-  };
-
-  const resp = await fetch(NVIDIA_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Authorization": `Bearer ${apiKey}`,
-      "Accept": "text/event-stream",
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    console.error(`[NVIDIA stream] ${resp.status}:`, text.slice(0, 500));
-    if (resp.status === 429) {
-      throw new GeminiError("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", 429, "RATE_LIMIT");
-    }
-    if (resp.status === 401 || resp.status === 403) {
-      if (/quota|exceed|exhausted|credit/i.test(text)) {
-        throw new GeminiError("NVIDIA API 할당량이 소진되었습니다. 사용량을 확인해주세요.", 402, "QUOTA_EXHAUSTED");
-      }
-      throw new GeminiError("NVIDIA API 키가 유효하지 않습니다. 키를 다시 등록해주세요.", 403, "INVALID_KEY");
-    }
-    throw new GeminiError(`NVIDIA 서버 오류 (${resp.status})`, resp.status, "SERVER_ERROR");
-  }
-
-  if (!resp.body) {
-    throw new GeminiError("NVIDIA 스트림 응답이 비어 있습니다.", 500, "SERVER_ERROR");
-  }
-
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  let carry = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    carry += decoder.decode(value, { stream: true });
-    const parts = carry.split("\n");
-    carry = parts.pop() || "";
-    for (const line of parts) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith(":")) continue;
-      if (!trimmed.startsWith("data:")) continue;
-      const payload = trimmed.slice(5).trim();
-      if (!payload || payload === "[DONE]") continue;
-      try {
-        const parsed = JSON.parse(payload);
-        const delta =
-          parsed?.choices?.[0]?.delta?.content ??
-          parsed?.choices?.[0]?.message?.content ??
-          "";
-        if (typeof delta === "string" && delta.length > 0) {
-          yield delta;
-        }
-      } catch {
-        // partial JSON line — ignore
-      }
-    }
-  }
-
-  // Flush decoder
-  const tail = decoder.decode();
-  if (tail) {
-    carry += tail;
-    for (const line of carry.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const payload = trimmed.slice(5).trim();
-      if (!payload || payload === "[DONE]") continue;
-      try {
-        const parsed = JSON.parse(payload);
-        const delta = parsed?.choices?.[0]?.delta?.content ?? "";
-        if (typeof delta === "string" && delta.length > 0) yield delta;
-      } catch { /* ignore */ }
-    }
+  try {
+    yield* streamNvidiaChatText({
+      messages,
+      temperature: typeof req.temperature === "number" ? req.temperature : 0.35,
+      max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 4096,
+      extraBody: { chat_template_kwargs: { enable_thinking: false } },
+    });
+  } catch (e) {
+    wrapNvidiaAsGemini(e);
   }
 }

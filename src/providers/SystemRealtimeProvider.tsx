@@ -16,10 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import PushNotificationBridge from "@/components/PushNotificationBridge";
 import type { TrackingIdentity } from "@/lib/tracking/locationTracker";
-import {
-  resolveSiteTrackingFence,
-  setGpsPausedOffsite,
-} from "@/lib/tracking/siteTrackBounds";
+import { resolveSiteTrackingFence } from "@/lib/tracking/siteTrackBounds";
 import { clearStickyDangerAlert } from "@/lib/tracking/dangerAlertSticky";
 import { toast } from "sonner";
 
@@ -220,13 +217,22 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
           identity,
           siteCenter,
           onLeaveSite: (info) => {
-            setGpsPausedOffsite(identity.project_id, true);
             clearStickyDangerAlert();
             stopGpsTracking();
             toast.message("현장 이탈 · GPS 추적 자동 종료", {
-              description: `현장 기준 약 ${Math.round(info.distanceM)}m (허용 ${Math.round(info.radiusM)}m). 백그라운드 추적·위험 경고를 종료했습니다. 다시 출근하거나 현장 안으로 오면 재개됩니다.`,
+              id: `gps-leave-${identity.project_id}`,
+              description: `현장 기준 약 ${Math.round(info.distanceM)}m (허용 ${Math.round(info.radiusM)}m). 백그라운드 추적·위험 경고를 종료했습니다. 근로자는 다시 출근하면, 관리자는 현장 안으로 오면 재개됩니다.`,
               duration: 6000,
             });
+            try {
+              window.dispatchEvent(
+                new CustomEvent("mobile:gps-auto-stopped", {
+                  detail: { projectId: identity.project_id },
+                }),
+              );
+            } catch {
+              /* ignore */
+            }
           },
           onUpdate: (info) => {
             setLastGpsFix({

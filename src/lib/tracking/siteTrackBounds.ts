@@ -1,10 +1,13 @@
 /**
- * Site fence for GPS auto-stop + offsite pause session flag + check-in.
+ * Site fence for GPS auto-stop + check-in.
  *
  * Important: projects.site_lat/lng is often an address geocode (office / lot
  * pin) that can be hundreds of meters from the actual work pad. When
  * site_maps are georeferenced, use the map footprint as the site reference
  * (any project — not a single company hardcoded).
+ *
+ * Offsite "pause" session flags were removed — start policy is role-based
+ * (worker = checked in, manager = inside fence) in WorkerGlobalGps.
  */
 import { supabase } from "@/integrations/supabase/client";
 import { calculateDistance } from "@/lib/geo/calculateDistance";
@@ -14,8 +17,6 @@ import {
   loadCornersFromMap,
   type GeoCorners,
 } from "@/lib/mapBounds";
-
-const PREFIX = "safenex-gps-offsite-pause:";
 
 /** Minimum tracking fence when only site_lat/lng exists (not check-in radius). */
 export const SITE_TRACK_EXIT_M = 500;
@@ -169,28 +170,6 @@ async function fetchProjectSiteAndMaps(projectId: string): Promise<{
     .limit(8);
 
   return { siteLat, siteLng, maps: (maps || []) as MapRow[] };
-}
-
-export function offsitePauseKey(projectId: string) {
-  return `${PREFIX}${projectId}`;
-}
-
-export function isGpsPausedOffsite(projectId: string | null | undefined): boolean {
-  if (!projectId) return false;
-  try {
-    return sessionStorage.getItem(offsitePauseKey(projectId)) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function setGpsPausedOffsite(projectId: string, paused: boolean) {
-  try {
-    if (paused) sessionStorage.setItem(offsitePauseKey(projectId), "1");
-    else sessionStorage.removeItem(offsitePauseKey(projectId));
-  } catch {
-    /* ignore */
-  }
 }
 
 /**

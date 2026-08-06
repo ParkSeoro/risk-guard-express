@@ -431,7 +431,7 @@ const Dashboard = () => {
               }
             />
             <KpiCard
-              label="To-Do 완료율"
+              label="할 일 완료율"
               value={`${data.todoCompletionRate}%`}
               icon={<ListTodo className="h-5 w-5 text-success" />}
               iconBg="bg-success/10"
@@ -449,9 +449,9 @@ const Dashboard = () => {
             <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {[
-                  { label: 'Daily', ...data.legalDutyDaily },
-                  { label: 'Weekly', ...data.legalDutyWeekly },
-                  { label: 'Monthly', ...data.legalDutyMonthly },
+                  { label: '일간', ...data.legalDutyDaily },
+                  { label: '주간', ...data.legalDutyWeekly },
+                  { label: '월간', ...data.legalDutyMonthly },
                 ].map(d => (
                   <div key={d.label} className="text-center space-y-1">
                     <p className="text-xs text-muted-foreground font-medium">{d.label}</p>

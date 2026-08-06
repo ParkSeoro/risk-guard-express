@@ -103,7 +103,7 @@ export default function SystemTestEngine() {
       const passed = finalResults.filter((r) => r.pass_fail === "pass").length;
       toast({
         title: `테스트 완료: ${passed}/${finalResults.length} PASS`,
-        description: `Run ID: ${runId.slice(0, 8)}`,
+        description: `실행 ID: ${runId.slice(0, 8)}`,
       });
     } catch (err: any) {
       toast({ title: "테스트 오류", description: err?.message, variant: "destructive" });
@@ -159,7 +159,7 @@ export default function SystemTestEngine() {
     <div className="space-y-4 max-w-6xl mx-auto animate-fade-in">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
-          <FlaskConical className="h-6 w-6" /> 시스템 테스트 엔진 <Badge variant="outline">Master</Badge>
+          <FlaskConical className="h-6 w-6" /> 시스템 테스트 엔진 <Badge variant="outline">마스터</Badge>
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
           시나리오/권한/연동/알림/무결성을 자동 검증합니다. 생성된 테스트 데이터는 종료 시 자동 정리됩니다.

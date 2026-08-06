@@ -96,7 +96,7 @@ export const HELP: Record<string, HelpEntry> = {
     title: "법적업무 (안전관리자 22대 의무)",
     steps: [
       "법정 의무 22항목의 이행 현황 확인",
-      "주기별 To-Do 자동 생성",
+      "주기별 할 일 자동 생성",
       "이행 증빙 첨부 후 완료 처리",
     ],
   },

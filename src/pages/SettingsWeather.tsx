@@ -12,12 +12,12 @@ import { toast } from 'sonner';
 const SECRET_KEYS = [
   {
     key: 'KMA_API_KEY',
-    label: '기상청(KMA) API Key',
+    label: '기상청(KMA) API 키',
     help: 'data.go.kr 공공데이터포털 VilageFcst 서비스 키',
   },
   {
     key: 'OPENWEATHER_API_KEY',
-    label: 'OpenWeather API Key',
+    label: 'OpenWeather API 키',
     help: '지오코딩·보조 날씨·기압/일출일몰 보강용',
   },
 ] as const;

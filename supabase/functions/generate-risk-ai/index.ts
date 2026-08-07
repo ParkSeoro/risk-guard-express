@@ -14,6 +14,7 @@ import {
   callOpenAiChat,
   isOpenAiFallbackEnabled,
   preferOpenAiForDraft,
+  preferOpenAiForFill,
   OpenAiChatError,
 } from "./openaiChat.ts";
 
@@ -1007,12 +1008,26 @@ serve(async (req) => {
       };
 
       try {
-        // Primary: NVIDIA. Last resort: OpenAI when key set and NIM fails / empty.
+        // Same provider switch as draft (RISK_AI_DRAFT_PROVIDER=openai → ChatGPT first).
+        // Do NOT burn 40s on NVIDIA when OpenAI was already chosen for speed.
+        const openaiFirst = preferOpenAiForFill();
         let content = "";
         let usedModel = "";
-        let provider: "nvidia" | "openai" = "nvidia";
+        let provider: "nvidia" | "openai" = openaiFirst ? "openai" : "nvidia";
 
-        try {
+        const runOpenAiFill = async () =>
+          callOpenAiChat({
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: user },
+            ],
+            temperature: 0.2,
+            max_tokens: maxTokens,
+            timeoutMs: 45_000,
+            purpose: "fill",
+          });
+
+        const runNvidiaFill = async () => {
           const deep = await callDeepseekRiskChat({
             messages: [
               { role: "system", content: sys },
@@ -1026,46 +1041,60 @@ serve(async (req) => {
           if (deep.fallbackFrom) {
             console.log(`risk_fill used model=${deep.model} (from ${deep.fallbackFrom})`);
           }
-          content = deep.content;
-          usedModel = deep.model || "";
-        } catch (nvidiaErr) {
-          console.warn("risk_fill NVIDIA failed:", nvidiaErr);
-          if (!isOpenAiFallbackEnabled()) throw nvidiaErr;
-          console.warn("risk_fill falling back to OpenAI ChatGPT (last resort)");
-          const oa = await callOpenAiChat({
-            messages: [
-              { role: "system", content: sys },
-              { role: "user", content: user },
-            ],
-            temperature: 0.2,
-            max_tokens: maxTokens,
-            timeoutMs: 45_000,
-            purpose: "fill",
-          });
-          content = oa.content;
-          usedModel = oa.model;
-          provider = "openai";
+          return deep;
+        };
+
+        if (openaiFirst) {
+          try {
+            console.log("risk_fill primary=openai (RISK_AI_DRAFT_PROVIDER)");
+            const oa = await runOpenAiFill();
+            content = oa.content;
+            usedModel = oa.model;
+            provider = "openai";
+          } catch (oaErr) {
+            console.warn("risk_fill OpenAI failed, falling back to NVIDIA:", oaErr);
+            const deep = await runNvidiaFill();
+            content = deep.content;
+            usedModel = deep.model || "";
+            provider = "nvidia";
+          }
+        } else {
+          try {
+            const deep = await runNvidiaFill();
+            content = deep.content;
+            usedModel = deep.model || "";
+            provider = "nvidia";
+          } catch (nvidiaErr) {
+            console.warn("risk_fill NVIDIA failed:", nvidiaErr);
+            if (!isOpenAiFallbackEnabled()) throw nvidiaErr;
+            console.warn("risk_fill falling back to OpenAI ChatGPT (last resort)");
+            const oa = await runOpenAiFill();
+            content = oa.content;
+            usedModel = oa.model;
+            provider = "openai";
+          }
         }
 
         let items = mapFillItems(content);
         if (items.length === 0 && provider === "nvidia" && isOpenAiFallbackEnabled()) {
           console.warn("risk_fill NVIDIA returned 0 items → OpenAI fallback");
           try {
-            const oa = await callOpenAiChat({
-              messages: [
-                { role: "system", content: sys },
-                { role: "user", content: user },
-              ],
-              temperature: 0.2,
-              max_tokens: maxTokens,
-              timeoutMs: 45_000,
-              purpose: "fill",
-            });
+            const oa = await runOpenAiFill();
             items = mapFillItems(oa.content);
             usedModel = oa.model;
             provider = "openai";
           } catch (oaErr) {
             console.error("risk_fill OpenAI fallback failed:", oaErr);
+          }
+        } else if (items.length === 0 && provider === "openai") {
+          console.warn("risk_fill OpenAI returned 0 items → NVIDIA fallback");
+          try {
+            const deep = await runNvidiaFill();
+            items = mapFillItems(deep.content);
+            usedModel = deep.model || "";
+            provider = "nvidia";
+          } catch (nvErr) {
+            console.error("risk_fill NVIDIA fallback failed:", nvErr);
           }
         }
 

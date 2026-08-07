@@ -30,6 +30,8 @@ interface DeleteOptions {
   promptReason?: boolean;
   /** prompt 없이 바로 삭제할 때 사유 */
   reason?: string;
+  /** toast / audit 는 하되, 성공 toast 만 생략 (일괄 삭제용) */
+  quiet?: boolean;
 }
 
 export function useSoftDelete() {
@@ -64,6 +66,7 @@ export function useSoftDelete() {
         return { ok: false, error: 'REASON_REQUIRED' };
       }
     }
+    if (!reason) reason = '사용자 삭제';
 
     const { error } = await (supabase.from(table) as any)
       .update(softDeletePayload(user.id, reason))
@@ -84,10 +87,12 @@ export function useSoftDelete() {
       actor: profile?.display_name || user.email,
     });
 
-    toast({
-      title: `${itemLabel} 삭제됨`,
-      description: '휴지통에서 복구할 수 있습니다.',
-    });
+    if (!opts.quiet) {
+      toast({
+        title: `${itemLabel} 삭제됨`,
+        description: '휴지통에서 복구할 수 있습니다.',
+      });
+    }
     return { ok: true, reason };
   };
 

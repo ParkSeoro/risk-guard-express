@@ -593,15 +593,10 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     if (wantMoreAi) {
       try {
         console.log('[AutoGenJob] fetchScopeDraft → generate-risk-ai (scope_draft)', proc);
-        // Client wall-clock: avoid 90s+ spinner at 0 rows when Edge/model hangs
-        const draftCtrl = new AbortController();
-        const draftTimer = window.setTimeout(() => draftCtrl.abort(), 55_000);
-        let draft;
-        try {
-          draft = await fetchScopeDraft(opts, draftCtrl.signal);
-        } finally {
-          window.clearTimeout(draftTimer);
-        }
+        // Slow success is common (~60–120s with model failover). Do NOT abort early —
+        // a short client timeout cuts off runs that would still return rows.
+        // Edge / nvidiaChat per-model timeout + failover remain the real backstop.
+        const draft = await fetchScopeDraft(opts);
         const { filterDraftGaps } = await import('@/lib/riskReuseFromPast');
         const { data: existing } = await supabase
           .from('risk_items')
@@ -612,15 +607,12 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
         draftItems = filterDraftGaps(draft?.items || [], (existing as any[]) || []);
         console.log('[AutoGenJob] scope_draft ok', draftItems.length, '(after reuse gap filter)');
       } catch (err: any) {
-        const aborted = err?.name === 'AbortError' || /aborted|취소|중단/i.test(String(err?.message || ''));
-        const msg = aborted
-          ? 'AI 초안 생성이 55초 내 끝나지 않아 중단되었습니다. 네트워크·API 키를 확인한 뒤 다시 시도하세요.'
-          : (err?.message || String(err));
+        const msg = err?.message || String(err);
         console.error('[AutoGenJob] scope_draft failed:', msg, err);
         if (reusedCount === 0) {
           interrupted = true;
           if (insertedTotal > 0) break;
-          throw aborted ? new Error(msg) : err;
+          throw err;
         }
       }
     }

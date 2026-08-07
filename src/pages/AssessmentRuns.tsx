@@ -14,14 +14,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, ShieldAlert, Calendar, Filter, Search, ClipboardList, Upload } from 'lucide-react';
+import { Plus, ShieldAlert, Calendar, Filter, Search, ClipboardList, Upload, Building2 } from 'lucide-react';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { format } from 'date-fns';
 import RunCardActions from '@/components/assessment-runs/RunCardActions';
 import EditRunDialog from '@/components/assessment-runs/EditRunDialog';
 import DeleteRunDialog from '@/components/assessment-runs/DeleteRunDialog';
 import CloneRunDialog from '@/components/assessment-runs/CloneRunDialog';
-import { filterRunsByCompanyScope } from '@/lib/companyDocScope';
+import {
+  filterRunsByCompanyScope,
+  formatCompanyLabelsShort,
+  resolveAssessmentRunCompanyLabels,
+} from '@/lib/companyDocScope';
 
 const typeLabels: Record<string, string> = { '최초': '최초', '정기': '정기', '수시': '수시', '상시': '상시' };
 
@@ -267,7 +271,13 @@ const AssessmentRuns = () => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search) {
       const term = search.toLowerCase();
-      return r.period_label?.toLowerCase().includes(term) || r.notes?.toLowerCase().includes(term);
+      const companyHit = resolveAssessmentRunCompanyLabels(r, companyNameMap)
+        .some((n) => n.toLowerCase().includes(term));
+      return (
+        r.period_label?.toLowerCase().includes(term)
+        || r.notes?.toLowerCase().includes(term)
+        || companyHit
+      );
     }
     return true;
   });
@@ -320,7 +330,7 @@ const AssessmentRuns = () => {
             </Select>
             <div className="flex-1 relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input placeholder="기간, 메모 검색..." className="h-8 pl-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="기간, 업체, 메모 검색..." className="h-8 pl-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             {isMaster && (
               <div className="flex items-center gap-1.5">
@@ -362,6 +372,8 @@ const AssessmentRuns = () => {
           {filtered.map(run => {
             const stats = runStats[run.id] || { total: 0, high: 0, med: 0, low: 0 };
             const approval = getApprovalLabel(run);
+            const companyLabels = resolveAssessmentRunCompanyLabels(run, companyNameMap);
+            const companyShort = formatCompanyLabelsShort(companyLabels);
             return (
               <Card
                 key={run.id}
@@ -381,6 +393,24 @@ const AssessmentRuns = () => {
                         <StatusBadge status={run.status} />
                         {run.is_deleted && (
                           <Badge variant="destructive" className="text-[10px]">삭제됨</Badge>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 text-xs flex-wrap">
+                        <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                        {companyLabels.length > 0 ? (
+                          <>
+                            <span className="font-medium text-foreground" title={companyLabels.join(', ')}>
+                              {companyShort}
+                            </span>
+                            {companyLabels.length > 2 && (
+                              <span className="text-[10px] text-muted-foreground">
+                                ({companyLabels.length}개 업체)
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">대상 업체 미지정</span>
                         )}
                       </div>
 

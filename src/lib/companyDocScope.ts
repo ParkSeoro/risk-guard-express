@@ -200,3 +200,34 @@ export function filterRunsByCompanyScope<T extends {
     return targets.some((id) => allow.has(id));
   });
 }
+
+/**
+ * 위험성평가 회차 카드용 대상 업체 표시명.
+ * SSOT: target_company_ids → nameMap, 없으면 legacy target_contractors.
+ */
+export function resolveAssessmentRunCompanyLabels(
+  run: {
+    target_company_ids?: string[] | null;
+    target_contractors?: string[] | null;
+  },
+  nameMap?: Record<string, string> | null,
+): string[] {
+  const ids = Array.isArray(run.target_company_ids)
+    ? run.target_company_ids.map(String).map((s) => s.trim()).filter(Boolean)
+    : [];
+  if (ids.length > 0) {
+    return ids.map((id) => (nameMap && nameMap[id]) || id);
+  }
+  const legacy = Array.isArray(run.target_contractors)
+    ? run.target_contractors.map(String).map((s) => s.trim()).filter(Boolean)
+    : [];
+  return legacy;
+}
+
+/** 카드에 짧게 보여 줄 업체 라벨 (많을 때 +N) */
+export function formatCompanyLabelsShort(names: string[], maxVisible = 2): string {
+  if (names.length === 0) return '';
+  if (names.length <= maxVisible) return names.join(', ');
+  const head = names.slice(0, maxVisible).join(', ');
+  return `${head} 외 ${names.length - maxVisible}`;
+}

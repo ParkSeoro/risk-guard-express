@@ -6,9 +6,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Search, Loader2, Eye, FileText } from "lucide-react";
+import { ArrowLeft, Search, Loader2, Eye, FileText, Building2 } from "lucide-react";
 import { toast } from "sonner";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
+import {
+  formatCompanyLabelsShort,
+  resolveAssessmentRunCompanyLabels,
+} from "@/lib/companyDocScope";
+import { fetchProjectCompanies } from "@/lib/projectCompanies";
 
 /**
  * Mobile list: approved risk assessments only → Read-Only Viewer.
@@ -20,12 +25,18 @@ export default function MobileRiskAssessment() {
   const { projectId, role, companyId } = useMobileAccess();
   const [rows, setRows] = useState<any[]>([]);
   const [counts, setCounts] = useState<Record<string, { high: number; medium: number; low: number; total: number }>>({});
+  const [companyNameMap, setCompanyNameMap] = useState<Record<string, string>>({});
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
     if (!projectId) return;
     setLoading(true);
+    const companies = await fetchProjectCompanies(projectId).catch(() => []);
+    const map: Record<string, string> = {};
+    companies.forEach((c) => { map[c.id] = c.name; });
+    setCompanyNameMap(map);
+
     const { data, error } = await supabase
       .from("assessment_runs")
       .select("*")
@@ -71,9 +82,12 @@ export default function MobileRiskAssessment() {
     /* eslint-disable-next-line */
   }, [projectId, role, companyId]);
 
-  const filtered = rows.filter(
-    (r) => !q || r.period_label?.includes(q) || r.notes?.includes(q)
-  );
+  const filtered = rows.filter((r) => {
+    if (!q) return true;
+    const companyHit = resolveAssessmentRunCompanyLabels(r, companyNameMap)
+      .some((n) => n.includes(q));
+    return r.period_label?.includes(q) || r.notes?.includes(q) || companyHit;
+  });
 
   return (
     <div className="min-h-screen bg-muted/30 pb-24">
@@ -96,7 +110,7 @@ export default function MobileRiskAssessment() {
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="기간/메모 검색"
+            placeholder="기간/업체/메모 검색"
             className="pl-9 h-11"
           />
         </div>
@@ -121,6 +135,7 @@ export default function MobileRiskAssessment() {
 
         {filtered.map((r) => {
           const c = counts[r.id] || { high: 0, medium: 0, low: 0, total: 0 };
+          const companyLabels = resolveAssessmentRunCompanyLabels(r, companyNameMap);
           return (
             <Card
               key={r.id}
@@ -135,6 +150,14 @@ export default function MobileRiskAssessment() {
                   <Badge className="text-xs bg-success/10 text-success">승인완료</Badge>
                 </div>
                 <div className="font-medium text-sm">{r.period_label || "(기간 미지정)"}</div>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <Building2 className="h-3 w-3 shrink-0" />
+                  <span className="truncate" title={companyLabels.join(", ")}>
+                    {companyLabels.length > 0
+                      ? formatCompanyLabelsShort(companyLabels)
+                      : "대상 업체 미지정"}
+                  </span>
+                </div>
                 <div className="flex gap-3 text-xs">
                   <span className="text-destructive">상 {c.high}</span>
                   <span className="text-warning">중 {c.medium}</span>

@@ -5,6 +5,8 @@ import {
   applyOwnCompanyFilter,
   collectDescendants,
   filterRunsByCompanyScope,
+  resolveAssessmentRunCompanyLabels,
+  formatCompanyLabelsShort,
 } from '@/lib/companyDocScope';
 
 describe('companyDocScopeMode', () => {
@@ -88,5 +90,25 @@ describe('filterRunsByCompanyScope', () => {
       accessibleCompanyIds: ['gc-a', 'c1'],
     });
     expect(out.map((r: any) => r.id).sort()).toEqual(['2', '3']);
+  });
+});
+
+describe('resolveAssessmentRunCompanyLabels', () => {
+  it('resolves ids via name map', () => {
+    expect(resolveAssessmentRunCompanyLabels(
+      { target_company_ids: ['c1', 'c2'] },
+      { c1: '가협력', c2: '나협력' },
+    )).toEqual(['가협력', '나협력']);
+  });
+
+  it('falls back to legacy contractor names', () => {
+    expect(resolveAssessmentRunCompanyLabels(
+      { target_company_ids: [], target_contractors: ['옛업체'] },
+      {},
+    )).toEqual(['옛업체']);
+  });
+
+  it('shortens long company lists', () => {
+    expect(formatCompanyLabelsShort(['A', 'B', 'C', 'D'], 2)).toBe('A, B 외 2');
   });
 });

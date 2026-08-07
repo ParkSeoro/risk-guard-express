@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import ResponsiveSignaturePad, { type ResponsiveSignaturePadHandle } from '@/components/ResponsiveSignaturePad';
+import { normalizePpeItemKey } from '@/lib/safetyCostPpeStock';
 import { ClipboardList, Plus, Printer, Trash2 } from 'lucide-react';
 
 type Ledger = {
@@ -23,8 +24,10 @@ type Entry = {
   issued_at: string;
   worker_name: string;
   item_name: string;
+  quantity: number;
   signature_data: string;
   signed_at: string | null;
+  stock_movement_id?: string | null;
 };
 
 type Props = {
@@ -55,6 +58,7 @@ export function PpeLedgerPanel({
   const [workerName, setWorkerName] = useState('');
   const [issuedAt, setIssuedAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [itemName, setItemName] = useState('');
+  const [quantity, setQuantity] = useState('1');
   const sigRef = useRef<ResponsiveSignaturePadHandle | null>(null);
 
   const itemColumns = useMemo(
@@ -96,8 +100,10 @@ export function PpeLedgerPanel({
         issued_at: e.issued_at,
         worker_name: e.worker_name,
         item_name: e.item_name,
+        quantity: Number(e.quantity || 1),
         signature_data: e.signature_data || '',
         signed_at: e.signed_at,
+        stock_movement_id: e.stock_movement_id,
       })));
     } else {
       setLedger(null);
@@ -142,6 +148,27 @@ export function PpeLedgerPanel({
     onChanged?.();
   }
 
+  async function upsertSku(name: string) {
+    const item_key = normalizePpeItemKey({ item_name: name });
+    const { data: existing } = await supabase
+      .from('safety_cost_ppe_skus' as any)
+      .select('id')
+      .eq('construction_id', constructionId)
+      .eq('item_key', item_key)
+      .maybeSingle();
+    if (existing) return (existing as any).id as string;
+    const { data, error } = await supabase.from('safety_cost_ppe_skus' as any).insert({
+      project_id: projectId,
+      company_id: companyId,
+      construction_id: constructionId,
+      item_key,
+      item_name: name,
+      unit: '개',
+    }).select('id').single();
+    if (error) throw error;
+    return (data as any).id as string;
+  }
+
   async function addSignedEntry() {
     if (!workerName.trim() || !itemName.trim()) {
       toast({ title: '근로자명과 품목을 입력하세요.', variant: 'destructive' });
@@ -151,27 +178,54 @@ export function PpeLedgerPanel({
       toast({ title: '수령 서명이 필요합니다.', variant: 'destructive' });
       return;
     }
+    const qty = Math.max(1, Number(quantity) || 1);
     const ledgerId = await ensureLedger();
     if (!ledgerId) return;
     const signature = sigRef.current!.toDataURL('image/png');
-    const { error } = await supabase.from('safety_cost_ppe_ledger_entries' as any).insert({
+    const { data: entry, error } = await supabase.from('safety_cost_ppe_ledger_entries' as any).insert({
       ledger_id: ledgerId,
       project_id: projectId,
       company_id: companyId,
       issued_at: issuedAt,
       worker_name: workerName.trim(),
       item_name: itemName.trim(),
+      quantity: qty,
       signature_data: signature,
       signed_at: new Date().toISOString(),
       sort_order: entries.length,
-    });
+    }).select('id').single();
     if (error) {
       toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
       return;
     }
-    toast({ title: '지급·서명 기록됨' });
+    try {
+      const skuId = await upsertSku(itemName.trim());
+      const { data: mov } = await supabase.from('safety_cost_ppe_stock_movements' as any).insert({
+        project_id: projectId,
+        company_id: companyId,
+        construction_id: constructionId,
+        sku_id: skuId,
+        movement_type: 'out',
+        quantity: qty,
+        movement_date: issuedAt,
+        source_type: 'issuance',
+        source_issuance_id: (entry as any).id,
+        report_id: reportId,
+        note: `지급: ${workerName.trim()}`,
+        created_by: userId || null,
+      }).select('id').single();
+      if (mov) {
+        await supabase.from('safety_cost_ppe_ledger_entries' as any)
+          .update({ stock_movement_id: (mov as any).id })
+          .eq('id', (entry as any).id);
+      }
+    } catch (e: any) {
+      toast({ title: '지급은 저장됐으나 수불 출고 연동 실패', description: e.message, variant: 'destructive' });
+    }
+    toast({ title: '지급·서명 기록됨 (수불 출고)' });
     setSignOpen(false);
     setWorkerName('');
+    setQuantity('1');
     sigRef.current?.clear();
     await load();
     onChanged?.();
@@ -179,7 +233,17 @@ export function PpeLedgerPanel({
 
   async function removeEntry(id: string) {
     if (!window.confirm('이 지급 기록을 삭제할까요?')) return;
+    const row = entries.find((e) => e.id === id);
     await supabase.from('safety_cost_ppe_ledger_entries' as any).update({ is_deleted: true }).eq('id', id);
+    if (row?.stock_movement_id) {
+      await supabase.from('safety_cost_ppe_stock_movements' as any)
+        .update({ is_deleted: true })
+        .eq('id', row.stock_movement_id);
+    } else {
+      await supabase.from('safety_cost_ppe_stock_movements' as any)
+        .update({ is_deleted: true })
+        .eq('source_issuance_id', id);
+    }
     await load();
     onChanged?.();
   }
@@ -190,14 +254,15 @@ export function PpeLedgerPanel({
         <td>${e.issued_at}</td>
         <td>${escape(e.worker_name)}</td>
         <td>${escape(e.item_name)}</td>
-        <td>${e.signature_data ? `<img src="${e.signature_data}" style="height:36px"/>` : ''}</td>
+        <td>${e.quantity || 1}</td>
+        <td>${e.signature_data?.startsWith('data:') ? `<img src="${e.signature_data}" style="height:36px"/>` : escape(e.signature_data || '')}</td>
       </tr>`).join('');
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>보호구 지급대장</title>
       <style>body{font-family:'Malgun Gothic',sans-serif;padding:16px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #333;padding:6px;font-size:12px}th{background:#eef2f7}.meta{margin-bottom:12px;font-size:13px}.note{margin-top:16px;font-size:11px;line-height:1.5}</style></head>
       <body>
       <h1 style="text-align:center;font-size:20px">보호구 지급대장</h1>
       <div class="meta">현장명: ${escape(siteLabel)} · 안전관리자: ${escape(managerName)} · 서명 ${signedCount}건</div>
-      <table><thead><tr><th>지급일자</th><th>성명</th><th>품목</th><th>수령서명</th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th>지급일자</th><th>성명</th><th>품목</th><th>수량</th><th>수령서명</th></tr></thead><tbody>${rows}</tbody></table>
       <div class="note">
         ■ 근로자 준수 의무사항<br/>
         1. 산업안전보건기준에 관한 규칙에 따라 지급받은 보호구를 착용합니다.<br/>
@@ -263,6 +328,7 @@ export function PpeLedgerPanel({
                 <TableHead>지급일</TableHead>
                 <TableHead>성명</TableHead>
                 <TableHead>품목</TableHead>
+                <TableHead>수량</TableHead>
                 <TableHead>서명</TableHead>
                 <TableHead></TableHead>
               </TableRow>
@@ -273,10 +339,13 @@ export function PpeLedgerPanel({
                   <TableCell className="text-xs">{e.issued_at}</TableCell>
                   <TableCell className="text-sm font-medium">{e.worker_name}</TableCell>
                   <TableCell className="text-xs">{e.item_name}</TableCell>
+                  <TableCell className="text-xs">{e.quantity || 1}</TableCell>
                   <TableCell>
-                    {e.signature_data
+                    {e.signature_data?.startsWith('data:')
                       ? <img src={e.signature_data} alt="서명" className="h-8 max-w-[100px] object-contain" />
-                      : <span className="text-xs text-muted-foreground">없음</span>}
+                      : e.signature_data
+                        ? <Badge variant="secondary" className="text-[10px]">{e.signature_data === 'legacy-scan' ? '스캔서명' : e.signature_data}</Badge>
+                        : <span className="text-xs text-muted-foreground">없음</span>}
                   </TableCell>
                   <TableCell>
                     <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => removeEntry(e.id)}>
@@ -287,7 +356,7 @@ export function PpeLedgerPanel({
               ))}
               {entries.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-muted-foreground text-sm">
+                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground text-sm">
                     아직 지급 기록이 없습니다. 「지급·서명 추가」로 시작하세요.
                   </TableCell>
                 </TableRow>
@@ -309,6 +378,10 @@ export function PpeLedgerPanel({
                 <Input type="date" value={issuedAt} onChange={(e) => setIssuedAt(e.target.value)} />
               </div>
               <div className="space-y-1">
+                <Label>수량</Label>
+                <Input type="number" min={1} value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+              </div>
+              <div className="space-y-1 col-span-2">
                 <Label>품목</Label>
                 <Input list="ppe-items" value={itemName} onChange={(e) => setItemName(e.target.value)} />
                 <datalist id="ppe-items">

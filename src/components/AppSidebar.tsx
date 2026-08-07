@@ -97,7 +97,6 @@ const groups: Group[] = [
       { title: "현장 일기예보", url: "/site-weather", icon: CloudSun },
       { title: "회사 관리", url: "/companies", icon: Building2 },
       { title: "산업안전보건관리비", url: "/safety-cost", icon: ReceiptText },
-      { title: "산안비 검증", url: "/safety-cost-validation", icon: ShieldAlert },
       { title: "법적업무", url: "/legal-duties", icon: Scale },
       { title: "협력사 안전성적표", url: "/contractor-scorecard", icon: BarChart3 },
     ],

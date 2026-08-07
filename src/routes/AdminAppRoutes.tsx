@@ -103,6 +103,8 @@ function AdminAppRoutesInner() {
             <Route path="verification" element={<Navigate to="/app/admin/verification-center" replace />} />
             <Route path="verification-center" element={<P.LazyVerificationCenter />} />
             <Route path="master-data" element={<RoleGuard><P.LazyMasterData /></RoleGuard>} />
+            <Route path="risk-library" element={<RoleGuard masterOnly><P.LazyGlobalRiskLibrary /></RoleGuard>} />
+            <Route path="admin/risk-library" element={<RoleGuard masterOnly><P.LazyGlobalRiskLibrary /></RoleGuard>} />
             <Route path="approvals" element={<P.LazyApprovals />} />
             <Route path="audit-logs" element={<RoleGuard><P.LazyAuditLogs /></RoleGuard>} />
             <Route path="user-management" element={<Navigate to="/app/admin/settings/permissions" replace />} />

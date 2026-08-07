@@ -150,8 +150,17 @@ function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other" 
   s = s.replace(/[.。]+\s*$/, "").trim();
   s = normalizeCommaSpacing(s);
 
-  if (/(할\s*것|합니다|해야\s*한다)\s*$/.test(s)) {
-    s = s.replace(/(할\s*것|합니다|해야\s*한다)\s*$/g, "").trim();
+  // Force concise 음슴체 endings; strip polite/descriptive closings.
+  s = s
+    .replace(/(합니다|하십시오|하세요|해야\s*한다|할\s*것|하여야\s*함|바랍니다)\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  s = s.replace(/[.。]+\s*$/, "").trim();
+  // Soft length cap for narrative fields (keep library/PDF readable)
+  if ((kind === "situation" || kind === "measure") && s.length > 80) {
+    const cut = s.slice(0, 80);
+    const sp = cut.lastIndexOf(" ");
+    s = (sp > 40 ? cut.slice(0, sp) : cut).trim();
   }
 
   if (!s) return null;
@@ -643,24 +652,25 @@ serve(async (req) => {
       const softCap = jsaSoftCap(detailLevel);
       const depthHint =
         detailLevel === "comprehensive"
-          ? "실제 현장 작업 단위로 빠짐없이 분해한다. 동일 작업의 위치·장비가 다르면 분리한다."
+          ? "작업단계(준비/본작업/마무리/이상시)×장비×위치가 다르면 행을 분리한다. 문장을 늘리지 말고 행을 나눈다."
           : "준비→본작업→마무리 흐름의 실제 작업 단위로 분해한다. 불필요하게 잘게 쪼개지 않는다.";
       const sys =
         `너는 대한민국 건설현장 JSA(위험성평가) 전문가다. 반드시 JSON만 출력한다. 마크다운·서론 금지.\n` +
-        `출력 스키마: {"items":[{"sub_task":"세부작업","hazard":"위험요인"}]}\n` +
+        `출력 스키마: {"items":[{"sub_task":"세부작업","hazard":"위험요인","work_phase":"준비|본작업|마무리|이상시","hazard_type":"추락|낙하·비래|협착·끼임|충돌|전도·도괴|감전|화재·폭발|질식|화학·중독|붕괴·매몰|절단·베임|근골격|기타"}]}\n` +
         `대책·등급·PPE·법적근거·발생상황·사고사례는 절대 넣지 않는다.\n` +
         `항목 개수는 지정하지 않는다. 공종에 필요한 만큼만 쓴다.\n` +
-        `hazard는 반드시 "원인 + 재해·부상 결과" 구조의 한국어 현장용어로 쓴다.\n` +
-        `예: "굴착기 선회 반경 내 근로자 접근으로 인한 충돌·협착", "굴착면 붕괴로 인한 매몰".\n` +
+        `hazard는 반드시 "원인 + 재해·부상 결과" 구조의 짧은 한국어 현장용어(개조식).\n` +
+        `예: "굴착기 선회반경 내 접근으로 충돌·협착", "굴착면 붕괴로 매몰".\n` +
+        `어투: 음슴체/개조식. 합니다·할 것·서술형 금지.\n` +
         `금지: 작업중단·공정지연·생산성 저하를 위험요인으로 쓰기.\n` +
         `금지: 장비 고장만 언급하고 재해결과가 없는 문장.\n` +
-        `금지: 영어 음역·조어·알 수 없는 단어(예: 미스어린, 미즈얼라인).\n` +
-        `표준 한국어 안전용어만 사용(낙하·비래·전도·추락·협착·충돌·매몰·붕괴·감전 등).`;
+        `금지: 영어 음역·조어(예: 미스어린).\n` +
+        `산안법·산안기준규칙·KOSHA 기준으로 유해·위험요인을 유형별 누락 없이 분류.`;
       const user =
         `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
-        `위 공종을 시간순(준비→본작업→마무리)으로 세부작업·핵심 위험요인(hazard)만 작성하라.\n` +
+        `위 공종을 시간순(준비→본작업→마무리)으로 세부작업·위험요인·work_phase·hazard_type만 작성하라.\n` +
         `${depthHint}\n` +
-        `각 hazard는 근로자 부상·재해로 이어지는 구체적 위험만 적을 것.\n` +
+        `각 hazard는 근로자 부상·재해로 이어지는 구체적 위험만 짧게.\n` +
         `개수를 맞추려고 억지로 늘리거나 줄이지 말 것. 추상 문구·중복·음역어 금지.`;
 
       const parseDraftItems = (content: string) => {
@@ -673,6 +683,7 @@ serve(async (req) => {
             typeof s === "string" ? { sub_task: s, hazard: "" } : s,
           );
         }
+        const phaseOk = new Set(["준비", "본작업", "마무리", "이상시"]);
         const mapped = rawItems
           .map((it: any) => {
             const sub = sanitizeFieldText(
@@ -684,7 +695,15 @@ serve(async (req) => {
               "hazard",
             );
             if (!sub || !hazard) return null;
-            return { process: process_name, sub_task: sub, hazard };
+            const wp = String(it?.work_phase || "").trim();
+            const ht = String(it?.hazard_type || "").trim();
+            return {
+              process: process_name,
+              sub_task: sub,
+              hazard,
+              work_phase: phaseOk.has(wp) ? wp : undefined,
+              hazard_type: ht || undefined,
+            };
           })
           .filter(Boolean);
         // Soft ceiling only (runaway outputs) — not a target count
@@ -885,13 +904,15 @@ serve(async (req) => {
           `"existing_control":"현재안전대책","improvement_control":"개선대책"}]}\n` +
           `등급·PPE·법적근거는 넣지 않는다. 입력된 세부작업·위험요인을 유지한다.\n` +
           `단, 위험요인이 작업중단·공정지연이거나 음역어·조어면 원인+재해결과의 표준 한국어로만 교정한다.\n` +
-          `발생상황·대책은 현장 행위·위치·조건이 드러나게 구체적으로(각 2~3문장). 추상문구 금지.`;
+          `어투: 음슴체/개조식(~함, ~음, ~우려). 합니다·할 것·서술형 금지.\n` +
+          `발생상황·현재대책·개선대책은 각 1문장(최대 2절, 40자 내외). 긴 설명 금지.\n` +
+          `대책 우선순위: 제거·대체 → 공학 → 관리 → PPE. PPE만 나열 금지.`;
         user =
           `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
           `[초안 목록]\n${listText}\n\n` +
-          `위 ${cleaned.length}건 각각에 발생상황·현재대책·개선대책만 채워 JSON items로 반환하라.\n` +
-          `항목 수·순서 동일. 공학적·관리적 대책을 구분하여 쓸 것.`;
-        maxTokens = Math.min(3200, 900 * cleaned.length + 500);
+          `위 ${cleaned.length}건 각각에 발생상황·현재대책·개선대책만 짧게 채워 JSON items로 반환하라.\n` +
+          `항목 수·순서 동일.`;
+        maxTokens = Math.min(2400, 600 * cleaned.length + 400);
       } else {
         // all — single call (compat): richer narrative + meta
         sys =
@@ -901,13 +922,14 @@ serve(async (req) => {
           `"initial_likelihood":"상|중|하","initial_severity":"상|중|하",` +
           `"residual_likelihood":"상|중|하","residual_severity":"상|중|하",` +
           `"ppe":["보호구"],"legal_basis":["법적근거 조항"]}]}\n` +
-          `입력된 세부작업·위험요인을 유지한다. 발생상황·대책은 2~3문장으로 구체적으로.\n` +
+          `입력된 세부작업·위험요인을 유지한다.\n` +
+          `어투: 음슴체/개조식. 발생상황·대책은 각 1문장(짧게).\n` +
           `등급·PPE·법적근거는 짧게. legal_basis는 산안기준규칙 제OOO조 또는 KOSHA GUIDE.`;
         user =
           `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
           `[초안 목록]\n${listText}\n\n` +
-          `위 ${cleaned.length}건을 채워 JSON items로 반환하라. 항목 수·순서 동일.`;
-        maxTokens = Math.min(3600, 1000 * cleaned.length + 500);
+          `위 ${cleaned.length}건을 채워 JSON items로 반환하라. 항목 수·순서 동일. 길게 쓰지 말 것.`;
+        maxTokens = Math.min(2800, 700 * cleaned.length + 400);
       }
 
       const mapFillItems = (content: string) => {

@@ -526,8 +526,68 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
 
     const opts = buildOpts(input, proc);
 
-    // Reuse past approved items for this process (company-scoped) as full rows
+    // 1) System-wide global library (fast indexed process_key) — preferred for cost/latency
     let reusedCount = 0;
+    const seenKeys = new Set<string>();
+    try {
+      const { fetchGlobalRiskLibraryItems, inferHazardType, inferWorkPhase } = await import(
+        '@/lib/globalRiskLibrary'
+      );
+      const globalItems = await fetchGlobalRiskLibraryItems({
+        processName: proc,
+        equipmentTags: input.equipmentTags,
+        conditionTags: input.conditionTags,
+        limit: input.detailLevel === 'comprehensive' ? 48 : 32,
+      });
+      if (globalItems.length) {
+        const rows = globalItems.map((g) => {
+          const key = `${(g.sub_task || '').trim()}||${(g.hazard || '').trim()}`.toLowerCase();
+          seenKeys.add(key);
+          return {
+            project_id: input.projectId,
+            run_id: input.runId,
+            process: g.process || proc,
+            sub_task: g.sub_task,
+            hazard: g.hazard,
+            hazard_situation: g.hazard_situation,
+            existing_measure: g.existing_measure,
+            improvement_measure: g.improvement_measure,
+            frequency: g.frequency,
+            severity: g.severity,
+            improved_frequency: g.improved_frequency,
+            improved_severity: g.improved_severity,
+            likelihood_grade: g.likelihood_grade,
+            severity_grade: g.severity_grade,
+            risk_grade: g.risk_grade,
+            improved_likelihood_grade: g.improved_likelihood_grade,
+            improved_severity_grade: g.improved_severity_grade,
+            improved_risk_grade: g.improved_risk_grade,
+            status: '초안' as const,
+            ppe: g.ppe,
+            legal_basis: g.legal_basis,
+            department: '',
+            assignee: '',
+            created_by: input.userId,
+            sort_order: sortCursor++,
+            source_type: 'library',
+            note: '[GLOBAL_LIB] 시스템 라이브러리',
+            hazard_type: (g as any).hazard_type || inferHazardType(g.hazard),
+            work_phase: (g as any).work_phase || inferWorkPhase(g.sub_task),
+          };
+        });
+        const { data, error } = await supabase.from('risk_items').insert(rows as any).select('id');
+        if (error) console.warn('[AutoGenJob] global library insert failed:', error.message);
+        else {
+          reusedCount += data?.length || 0;
+          insertedTotal += data?.length || 0;
+          filledTotal += data?.length || 0;
+        }
+      }
+    } catch (e: any) {
+      console.warn('[AutoGenJob] global library skipped:', e?.message || e);
+    }
+
+    // 2) Past approved reuse (same project) — fill gaps only
     try {
       const { fetchPastApprovedRiskItems } = await import('@/lib/riskReuseFromPast');
       const past = await fetchPastApprovedRiskItems({
@@ -539,8 +599,15 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
         excludeRunId: input.runId,
         limit: input.detailLevel === 'comprehensive' ? 40 : 28,
       });
-      if (past.length) {
-        const rows = past.map((g) => ({
+      const pastGap = past.filter((g) => {
+        const key = `${(g.sub_task || '').trim()}||${(g.hazard || '').trim()}`.toLowerCase();
+        if (seenKeys.has(key)) return false;
+        seenKeys.add(key);
+        return true;
+      });
+      if (pastGap.length) {
+        const { inferHazardType, inferWorkPhase } = await import('@/lib/globalRiskLibrary');
+        const rows = pastGap.map((g) => ({
           project_id: input.projectId,
           run_id: input.runId,
           process: g.process || proc,
@@ -567,19 +634,22 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
           created_by: input.userId,
           sort_order: sortCursor++,
           source_type: 'reuse',
+          hazard_type: inferHazardType(g.hazard),
+          work_phase: inferWorkPhase(g.sub_task),
           note: '[REUSE] 이전 승인 평가에서 가져옴',
         }));
-        const { data, error } = await supabase.from('risk_items').insert(rows).select('id');
+        const { data, error } = await supabase.from('risk_items').insert(rows as any).select('id');
         if (error) console.warn('[AutoGenJob] reuse insert failed:', error.message);
         else {
-          reusedCount = data?.length || 0;
-          insertedTotal += reusedCount;
-          filledTotal += reusedCount;
+          const n = data?.length || 0;
+          reusedCount += n;
+          insertedTotal += n;
+          filledTotal += n;
           patch({
             insertedTotal,
             filledTotal,
             receivedTotal: filledTotal,
-            message: `「${proc}」 이전 평가 ${reusedCount}건 반영`,
+            message: `「${proc}」 라이브러리·재사용 ${reusedCount}건 반영`,
           });
         }
       }
@@ -587,8 +657,17 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       console.warn('[AutoGenJob] reuse skipped:', reuseErr?.message || reuseErr);
     }
 
-    // AI scope draft for gaps (when reuse is thin or empty)
-    let draftItems: { sub_task: string; hazard: string }[] = [];
+    if (reusedCount > 0) {
+      patch({
+        insertedTotal,
+        filledTotal,
+        receivedTotal: filledTotal,
+        message: `「${proc}」 라이브러리·재사용 ${reusedCount}건`,
+      });
+    }
+
+    // AI scope draft for gaps (when library/reuse is thin or empty)
+    let draftItems: { sub_task: string; hazard: string; work_phase?: string; hazard_type?: string }[] = [];
     const wantMoreAi = reusedCount < (input.detailLevel === 'comprehensive' ? 12 : 8);
     if (wantMoreAi) {
       try {
@@ -617,6 +696,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       continue;
     }
 
+    const { inferHazardType, inferWorkPhase } = await import('@/lib/globalRiskLibrary');
     const placeholders = draftItems.map((it) => ({
       project_id: input.projectId,
       run_id: input.runId,
@@ -647,11 +727,13 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       sort_order: sortCursor++,
       source_type: 'ai',
       note: AI_SCOPE_DRAFT_NOTE,
+      hazard_type: it.hazard_type || inferHazardType(it.hazard),
+      work_phase: it.work_phase || inferWorkPhase(it.sub_task),
     }));
 
     const { data: inserted, error: insertErr } = await supabase
       .from('risk_items')
-      .insert(placeholders)
+      .insert(placeholders as any)
       .select('id, sub_task, sort_order');
 
     if (insertErr || !inserted?.length) {

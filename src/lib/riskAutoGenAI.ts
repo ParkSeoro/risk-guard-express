@@ -263,6 +263,8 @@ export async function fetchJsaTimeline(
 export type ScopeDraftItem = {
   sub_task: string;
   hazard: string;
+  work_phase?: string;
+  hazard_type?: string;
 };
 
 /** Phase A — 공종(입력) + 세부작업 + 위험요인만 (대책·법적근거 없음). */
@@ -292,6 +294,8 @@ export async function fetchScopeDraft(
     .map((it) => ({
       sub_task: String(it?.sub_task || '').trim(),
       hazard: String(it?.hazard || '').trim(),
+      work_phase: String(it?.work_phase || '').trim() || undefined,
+      hazard_type: String(it?.hazard_type || '').trim() || undefined,
     }))
     .filter((it) => it.sub_task);
   if (items.length === 0) {

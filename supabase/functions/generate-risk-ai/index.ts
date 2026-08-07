@@ -659,34 +659,21 @@ serve(async (req) => {
       };
 
       try {
-        let content = "";
-        try {
-          const deep = await callDeepseekRiskChat({
-            messages: [
-              { role: "system", content: sys },
-              { role: "user", content: user },
-            ],
-            temperature: 0.15,
-            max_tokens: detailLevel === "comprehensive" ? 2200 : 1600,
-            timeoutMs: 45_000,
-            maxAttempts: 1,
-          });
-          content = deep.content;
-        } catch (deepErr) {
-          console.warn("scope_draft DeepSeek failed, falling back to Nemotron:", deepErr);
-          const resp = await geminiChatFetch({
-            messages: [
-              { role: "system", content: sys },
-              { role: "user", content: user },
-            ],
-            temperature: 0.15,
-          });
-          if (!resp.ok) {
-            const t = await resp.text();
-            throw new Error(`초안 AI 폴백 실패 (${resp.status}): ${t.slice(0, 160)}`);
-          }
-          const result = await resp.json();
-          content = String(result?.choices?.[0]?.message?.content || "").trim();
+        // Single NVIDIA chain call (per-model timeout). Do NOT call geminiChatFetch
+        // afterward — that re-hits the same Nemotron with a 90s budget and stalls UI at 0 rows.
+        const deep = await callDeepseekRiskChat({
+          messages: [
+            { role: "system", content: sys },
+            { role: "user", content: user },
+          ],
+          temperature: 0.15,
+          max_tokens: detailLevel === "comprehensive" ? 1800 : 1200,
+          timeoutMs: 32_000,
+          maxAttempts: 1,
+        });
+        const content = deep.content;
+        if (deep.fallbackFrom) {
+          console.log(`scope_draft used model=${deep.model} (from ${deep.fallbackFrom})`);
         }
 
         const items = parseDraftItems(content);
@@ -899,34 +886,19 @@ serve(async (req) => {
       };
 
       try {
-        let content = "";
-        try {
-          const deep = await callDeepseekRiskChat({
-            messages: [
-              { role: "system", content: sys },
-              { role: "user", content: user },
-            ],
-            temperature: 0.2,
-            max_tokens: maxTokens,
-            timeoutMs: 50_000,
-            maxAttempts: 1,
-          });
-          content = deep.content;
-        } catch (deepErr) {
-          console.warn("risk_fill DeepSeek failed, falling back to Nemotron:", deepErr);
-          const resp = await geminiChatFetch({
-            messages: [
-              { role: "system", content: sys },
-              { role: "user", content: user },
-            ],
-            temperature: 0.2,
-          });
-          if (!resp.ok) {
-            const t = await resp.text();
-            throw new Error(`채움 AI 폴백 실패 (${resp.status}): ${t.slice(0, 160)}`);
-          }
-          const result = await resp.json();
-          content = String(result?.choices?.[0]?.message?.content || "").trim();
+        const deep = await callDeepseekRiskChat({
+          messages: [
+            { role: "system", content: sys },
+            { role: "user", content: user },
+          ],
+          temperature: 0.2,
+          max_tokens: maxTokens,
+          timeoutMs: 40_000,
+          maxAttempts: 1,
+        });
+        const content = deep.content;
+        if (deep.fallbackFrom) {
+          console.log(`risk_fill used model=${deep.model} (from ${deep.fallbackFrom})`);
         }
 
         const items = mapFillItems(content);

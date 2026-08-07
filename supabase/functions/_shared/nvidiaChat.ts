@@ -325,7 +325,17 @@ export async function callNvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChat
         }
 
         const data = await resp.json();
-        const content = String(data?.choices?.[0]?.message?.content ?? "").trim();
+        let content = String(data?.choices?.[0]?.message?.content ?? "").trim();
+        // Thinking models sometimes leave content empty and put JSON in reasoning_*
+        if (!content) {
+          const msg = data?.choices?.[0]?.message || {};
+          const reasoning = String(msg.reasoning_content || msg.reasoning || "").trim();
+          if (reasoning) {
+            const extracted = reasoning.match(/[\[{][\s\S]*[\]}]/);
+            content = (extracted ? extracted[0] : reasoning).trim();
+            console.warn(`[NVIDIA] salvaged empty content from reasoning model=${model}`);
+          }
+        }
         if (mi > 0) {
           console.log(`[NVIDIA] used fallback model=${model} from=${firstModel}`);
         }
@@ -341,7 +351,8 @@ export async function callNvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChat
         if (e instanceof NvidiaChatError) {
           if (
             failoverEnabled &&
-            (e.code === "RATE_LIMIT" || e.code === "QUOTA_EXHAUSTED" || e.code === "MODEL_NOT_FOUND") &&
+            (e.code === "RATE_LIMIT" || e.code === "QUOTA_EXHAUSTED" || e.code === "MODEL_NOT_FOUND" ||
+              e.code === "TIMEOUT") &&
             mi < models.length - 1
           ) {
             break; // next model
@@ -353,12 +364,19 @@ export async function callNvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChat
           throw e;
         }
         if ((e as Error)?.name === "AbortError") {
-          throw new NvidiaChatError(
+          const timeoutErr = new NvidiaChatError(
             `AI 요청이 ${timeoutMs}ms 내 완료되지 않아 중단되었습니다.`,
             504,
             "TIMEOUT",
             model,
           );
+          // Slow primary must not block the whole chain (was: throw → outer same-model 90s retry)
+          if (failoverEnabled && mi < models.length - 1) {
+            console.warn(`[NVIDIA] timeout failover ${model} → ${models[mi + 1]}`);
+            lastErr = timeoutErr;
+            break;
+          }
+          throw timeoutErr;
         }
         throw new NvidiaChatError(
           e instanceof Error ? e.message : "NVIDIA 네트워크 오류",

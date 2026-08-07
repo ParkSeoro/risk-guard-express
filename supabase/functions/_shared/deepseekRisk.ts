@@ -21,6 +21,8 @@ import {
   type ChatMessage,
 } from "./nvidiaChat.ts";
 
+export { resolveDraftModelChain, DEFAULT_DRAFT_MODEL } from "./nvidiaChat.ts";
+
 const DEFAULT_TIMEOUT_MS = 90_000;
 
 export const RISK_DEEPSEEK_MODEL = peekPrimaryModelSync();
@@ -51,6 +53,8 @@ export type DeepseekRiskRequest = {
   timeoutMs?: number;
   /** Override retry count per model (default via nvidiaChat). */
   maxAttempts?: number;
+  /** Optional ordered model list (e.g. fast draft chain). */
+  models?: string[];
 };
 
 function wrapNvidiaError(e: unknown): never {
@@ -148,6 +152,7 @@ export async function callDeepseekRiskChat(req: DeepseekRiskRequest): Promise<{
       max_tokens: req.max_tokens,
       timeoutMs: req.timeoutMs ?? defaultTimeout,
       maxAttemptsPerModel: req.maxAttempts,
+      models: req.models,
     });
     return {
       content: result.content,

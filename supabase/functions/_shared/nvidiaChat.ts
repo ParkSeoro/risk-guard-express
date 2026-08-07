@@ -4,13 +4,14 @@
  * Same API key (NVIDIA_API_KEY). Different model IDs for per-model free-tier limits.
  * Primary default stays nvidia/llama-3.3-nemotron-super-49b-v1.5 (risk AI tuned).
  *
- * Failover triggers: 429 / 503 / 529 / QUOTA / model-not-found.
+ * Failover triggers: 429 / 503 / 529 / QUOTA / TIMEOUT / model-not-found.
  * Does NOT failover on prompt/parse/400 (except missing model).
  *
  * Chain sources (priority):
- * 1) ai_runtime_settings.model_chain (DB, cached ~60s)
- * 2) NVIDIA_MODEL_CHAIN env (comma-separated)
- * 3) built-in DEFAULT_MODEL_CHAIN
+ * 1) per-call `models` override (e.g. fast draft chain)
+ * 2) ai_runtime_settings.model_chain (DB, cached ~60s)
+ * 3) NVIDIA_MODEL_CHAIN env (comma-separated)
+ * 4) built-in DEFAULT_MODEL_CHAIN
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -27,6 +28,32 @@ export const DEFAULT_MODEL_CHAIN: string[] = [
   "nvidia/llama-3.1-nemotron-70b-instruct",
   "mistralai/mistral-small-3.1-24b-instruct-2503",
 ];
+
+/**
+ * Fast chain for risk scope_draft (세부작업·위험요인 초안).
+ * DeepSeek V4 Flash was retired on NIM — use a smaller instruct model first,
+ * then larger models only if the fast primary fails/times out.
+ */
+export const DEFAULT_DRAFT_MODEL = "mistralai/mistral-small-3.1-24b-instruct-2503";
+
+export const DEFAULT_DRAFT_MODEL_CHAIN: string[] = [
+  DEFAULT_DRAFT_MODEL,
+  "meta/llama-3.3-70b-instruct",
+  DEFAULT_PRIMARY_MODEL,
+];
+
+/** Resolve draft model chain (env override → built-in fast chain). */
+export function resolveDraftModelChain(): string[] {
+  const chainRaw = Deno.env.get("RISK_AI_DRAFT_MODEL_CHAIN")?.trim();
+  if (chainRaw) {
+    const list = chainRaw.split(",").map((s) => s.trim()).filter(Boolean);
+    if (list.length) return list;
+  }
+  const primary =
+    Deno.env.get("RISK_AI_DRAFT_MODEL")?.trim() || DEFAULT_DRAFT_MODEL;
+  const rest = DEFAULT_DRAFT_MODEL_CHAIN.filter((m) => m !== primary);
+  return [primary, ...rest];
+}
 
 export type NvidiaErrorCode =
   | "RATE_LIMIT"
@@ -225,6 +252,8 @@ export type NvidiaChatRequest = {
   maxAttemptsPerModel?: number;
   /** Extra body fields (e.g. chat_template_kwargs). */
   extraBody?: Record<string, unknown>;
+  /** Optional ordered model list — skips DB/env default chain when set. */
+  models?: string[];
 };
 
 export type NvidiaChatResult = {
@@ -267,7 +296,12 @@ export async function callNvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChat
     );
   }
 
-  const { models, failoverEnabled } = await resolveModelsForCall();
+  const resolved = await resolveModelsForCall();
+  const failoverEnabled = resolved.failoverEnabled;
+  const overrideModels = Array.isArray(req.models)
+    ? req.models.map((m) => String(m || "").trim()).filter(Boolean)
+    : [];
+  const models = overrideModels.length ? overrideModels : resolved.models;
   const timeoutMs = req.timeoutMs ??
     (Number(Deno.env.get("DEEPSEEK_TIMEOUT_MS") || Deno.env.get("NVIDIA_TIMEOUT_MS") || 90_000) || 90_000);
   const maxAttemptsPerModel = Math.max(
@@ -325,7 +359,17 @@ export async function callNvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChat
         }
 
         const data = await resp.json();
-        const content = String(data?.choices?.[0]?.message?.content ?? "").trim();
+        let content = String(data?.choices?.[0]?.message?.content ?? "").trim();
+        // Thinking models sometimes leave content empty and put JSON in reasoning_*
+        if (!content) {
+          const msg = data?.choices?.[0]?.message || {};
+          const reasoning = String(msg.reasoning_content || msg.reasoning || "").trim();
+          if (reasoning) {
+            const extracted = reasoning.match(/[\[{][\s\S]*[\]}]/);
+            content = (extracted ? extracted[0] : reasoning).trim();
+            console.warn(`[NVIDIA] salvaged empty content from reasoning model=${model}`);
+          }
+        }
         if (mi > 0) {
           console.log(`[NVIDIA] used fallback model=${model} from=${firstModel}`);
         }
@@ -341,7 +385,8 @@ export async function callNvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChat
         if (e instanceof NvidiaChatError) {
           if (
             failoverEnabled &&
-            (e.code === "RATE_LIMIT" || e.code === "QUOTA_EXHAUSTED" || e.code === "MODEL_NOT_FOUND") &&
+            (e.code === "RATE_LIMIT" || e.code === "QUOTA_EXHAUSTED" || e.code === "MODEL_NOT_FOUND" ||
+              e.code === "TIMEOUT") &&
             mi < models.length - 1
           ) {
             break; // next model
@@ -353,12 +398,18 @@ export async function callNvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChat
           throw e;
         }
         if ((e as Error)?.name === "AbortError") {
-          throw new NvidiaChatError(
+          const timeoutErr = new NvidiaChatError(
             `AI 요청이 ${timeoutMs}ms 내 완료되지 않아 중단되었습니다.`,
             504,
             "TIMEOUT",
             model,
           );
+          if (failoverEnabled && mi < models.length - 1) {
+            console.warn(`[NVIDIA] timeout failover ${model} → ${models[mi + 1]}`);
+            lastErr = timeoutErr;
+            break;
+          }
+          throw timeoutErr;
         }
         throw new NvidiaChatError(
           e instanceof Error ? e.message : "NVIDIA 네트워크 오류",

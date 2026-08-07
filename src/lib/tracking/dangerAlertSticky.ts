@@ -50,7 +50,7 @@ export async function notifyDangerZoneOs(zoneName: string) {
     if (typeof Notification === "undefined") return;
     if (Notification.permission !== "granted") return;
     const n = new Notification("위험 구역 진입", {
-      body: `${zoneName || "위험구역"} — 즉시 이탈하십시오. 화면을 켜면 경고가 다시 표시됩니다.`,
+      body: `${zoneName || "제한구역"}에 진입했습니다. 즉시 이탈하십시오. 화면을 켜면 경고가 다시 표시됩니다.`,
       tag: "safenex-danger-zone",
       renotify: true,
       requireInteraction: true,

@@ -142,15 +142,16 @@ const SafetyCost = () => {
     ppeLedgerSignedCount: ppeSignedCount,
   }), [filteredItems, evidence, selectedReportId, ppeSignedCount]);
   const auditChecklist = useMemo(() => [
-    { label: '월별 사용 항목 입력', ok: filteredItems.length > 0, detail: `${filteredItems.length}건` },
-    { label: '항목별 파일 첨부', ok: evidenceMissingCount === 0 && filteredItems.length > 0, detail: evidenceMissingCount ? `${evidenceMissingCount}건 누락` : '완료' },
-    { label: '비목별 필수 증빙 패키지', ok: evidencePack.ready && filteredItems.length > 0, detail: evidencePack.ready ? '완료' : `필수 ${evidencePack.hardMissing.length}건 누락` },
-    { label: '보호구 지급대장(3번)', ok: !filteredItems.some((it) => it.category_code === '3' && Number(it.amount || 0) > 0) || ppeSignedCount > 0, detail: ppeSignedCount > 0 ? `서명 ${ppeSignedCount}건` : (filteredItems.some((it) => it.category_code === '3' && Number(it.amount || 0) > 0) ? '서명 필요' : '해당 없음') },
-    { label: '사용 불가 항목 제거', ok: compliance.warningCount === 0, detail: compliance.warningCount ? `${compliance.warningCount}건 경고` : '이상 없음' },
-    { label: '검토 필요 항목 확인', ok: compliance.reviewCount === 0, detail: compliance.reviewCount ? `${compliance.reviewCount}건 검토` : '이상 없음' },
-    { label: '법적 근거 자동 기록', ok: compliance.missingBasisCount === 0 && filteredItems.length > 0, detail: compliance.missingBasisCount ? `${compliance.missingBasisCount}건 누락` : '완료' },
-    { label: '계상금액 초과 여부', ok: Number(selectedConstruction?.safety_cost_total || 0) === 0 || compliance.rate <= 100, detail: `${compliance.rate}%` },
+    { label: '월별 사용 항목 입력', ok: filteredItems.length > 0, detail: `${filteredItems.length}건`, tab: 'items' as const },
+    { label: '항목별 파일 첨부', ok: evidenceMissingCount === 0 && filteredItems.length > 0, detail: evidenceMissingCount ? `${evidenceMissingCount}건 누락` : '완료', tab: 'items' as const },
+    { label: '비목별 필수 증빙 패키지', ok: evidencePack.ready && filteredItems.length > 0, detail: evidencePack.ready ? '완료' : `필수 ${evidencePack.hardMissing.length}건 누락`, tab: 'pack' as const },
+    { label: '보호구 지급대장(3번)', ok: !filteredItems.some((it) => it.category_code === '3' && Number(it.amount || 0) > 0) || ppeSignedCount > 0, detail: ppeSignedCount > 0 ? `서명 ${ppeSignedCount}건` : (filteredItems.some((it) => it.category_code === '3' && Number(it.amount || 0) > 0) ? '서명 필요' : '해당 없음'), tab: 'ppe' as const },
+    { label: '사용 불가 항목 제거', ok: compliance.warningCount === 0, detail: compliance.warningCount ? `${compliance.warningCount}건 경고` : '이상 없음', tab: 'audit' as const },
+    { label: '검토 필요 항목 확인', ok: compliance.reviewCount === 0, detail: compliance.reviewCount ? `${compliance.reviewCount}건 검토` : '이상 없음', tab: 'audit' as const },
+    { label: '법적 근거 자동 기록', ok: compliance.missingBasisCount === 0 && filteredItems.length > 0, detail: compliance.missingBasisCount ? `${compliance.missingBasisCount}건 누락` : '완료', tab: 'items' as const },
+    { label: '계상금액 초과 여부', ok: Number(selectedConstruction?.safety_cost_total || 0) === 0 || compliance.rate <= 100, detail: `${compliance.rate}%`, tab: 'audit' as const },
   ], [filteredItems, evidenceMissingCount, compliance, selectedConstruction?.safety_cost_total, evidencePack, ppeSignedCount]);
+  const firstFailingAudit = auditChecklist.find((item) => !item.ok) || null;
   const approvalReady = auditChecklist.every((item) => item.ok) && selectedReport?.status === 'draft';
 
   useEffect(() => { if (access.selectedProject) fetchAll(); }, [access.selectedProject]);
@@ -609,7 +610,18 @@ const SafetyCost = () => {
   async function submitApproval() {
     if (!selectedReport || !selectedConstruction || !user || !profile) return;
     if (!approvalReady) {
-      toast({ title: '결재 상신 전 자동검토를 완료하세요.', description: evidencePack.hardMissing.length ? `필수 증빙 누락: ${evidencePack.hardMissing.slice(0, 3).map((r) => `${r.code}·${r.requirement.label}`).join(', ')}` : '사용 불가 항목, 증빙 패키지, 법적 근거를 먼저 보완해야 합니다.', variant: 'destructive' });
+      const fail = firstFailingAudit;
+      const packHint = evidencePack.hardMissing.length
+        ? ` · 필수 증빙: ${evidencePack.hardMissing.slice(0, 2).map((r) => `${r.code}·${r.requirement.label}`).join(', ')}`
+        : '';
+      toast({
+        title: fail ? `여기서 막힘: ${fail.label}` : '결재 상신 전 자동검토를 완료하세요.',
+        description: fail
+          ? `${fail.detail || '보완 필요'}${packHint} — 해당 탭으로 이동합니다.`
+          : '사용 불가 항목, 증빙 패키지, 법적 근거를 먼저 보완해야 합니다.',
+        variant: 'destructive',
+      });
+      if (fail?.tab) setReportTab(fail.tab);
       return;
     }
     const { data: lines } = await supabase.from('approval_lines').select('*').eq('project_id', selectedReport.project_id).order('step_order');

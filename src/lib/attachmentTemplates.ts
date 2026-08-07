@@ -235,22 +235,24 @@ export function withKind(item: AttachmentItem): AttachmentItem {
   if (item.kind) return item;
   const key = item.key.toLowerCase();
   const cat = item.category;
-  // 공통 결재차단 키 + 인허가·자격·검사증·MSDS → legal
+  // 결재차단 공통키 + 인허가·자격·석면/MSDS/허가 → legal
+  // (장비 보험·검사증·면허 등은 현장증빙 — 키워드로 legal 승격하지 않음)
   if (
     (APPROVAL_BLOCKING_COMMON_KEYS as readonly string[]).includes(item.key) ||
-    ['인허가', '자격', '점검'].includes(cat) ||
-    /permit|license|cert|inspection|insurance|biz_license|msds|asbestos/.test(key)
+    ['인허가', '자격'].includes(cat) ||
+    /(?:^|_)(msds|asbestos|permit)(?:_|$)/.test(key)
   ) return { ...item, kind: 'legal' };
-  // 계산·구조·계측·도면 → calc_evidence
+  // 계산·구조·계측·도면·장비제원 → calc_evidence
   if (
-    ['구조', '계획', '도면', '조사'].includes(cat) ||
-    /calc|plan|drawing|radius|ground_review|geo_report|monitoring|ventilation/.test(key)
+    ['구조', '계획', '도면', '조사', '장비', '장비서류'].includes(cat) ||
+    /calc|plan|drawing|radius|ground_review|geo_report|monitoring|ventilation|spec|chart/.test(key)
   ) return { ...item, kind: 'calc_evidence' };
   return { ...item, kind: 'site_proof' };
 }
 
 /**
- * 결재 차단용 — 법정 필수(legal & required) 항목만 반환
+ * 결재 차단용 — 기본 법정 필수(결재차단 공통키) + 프로젝트에서 legal로 남은 항목.
+ * 템플릿 required 플래그는 SSOT가 아님(거의 전부 true).
  */
 export function getMandatoryLegalAttachments(
   workType: string,
@@ -258,7 +260,10 @@ export function getMandatoryLegalAttachments(
 ): AttachmentItem[] {
   return generateAttachments(workType, conditions)
     .map(withKind)
-    .filter(a => a.required && a.kind === 'legal');
+    .filter((a) =>
+      (APPROVAL_BLOCKING_COMMON_KEYS as readonly string[]).includes(a.key)
+      || (a.kind === 'legal' && a.required && ['인허가', '자격'].includes(a.category)),
+    );
 }
 
 /**

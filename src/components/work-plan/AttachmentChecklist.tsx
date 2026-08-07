@@ -1,15 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
-import { generateAttachments, getAttachmentCategories, withKind, type AttachmentItem } from '@/lib/attachmentTemplates';
-import { syncTemplateRows } from '@/lib/workPlanAttachments';
+import { Link } from 'react-router-dom';
+import { generateAttachments, withKind, type AttachmentItem } from '@/lib/attachmentTemplates';
+import { syncTemplateRows, computeAttachmentProgress, type AttachmentProgress } from '@/lib/workPlanAttachments';
+import { upsertAttachmentDef } from '@/lib/workPlanAttachmentDefs';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Paperclip, Upload, CheckCircle2, Lock, Bot, FileWarning, Loader2, Printer } from 'lucide-react';
+import { Paperclip, Upload, CheckCircle2, Lock, Bot, FileWarning, Loader2, Printer, Settings2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { computeAttachmentProgress, type AttachmentProgress } from '@/lib/workPlanAttachments';
 import { uploadAttachmentFile, formatBytes } from '@/lib/compressUploadFile';
 
 interface Row {
@@ -30,9 +33,7 @@ interface Props {
   companyId?: string | null;
   workType: string;
   readOnly?: boolean;
-  /** 결재 상신 시 사용할 콜백 (예: setIsDirty) */
   onChange?: () => void;
-  /** 상단 액션바 진행률/결재 차단용 */
   onProgress?: (p: AttachmentProgress) => void;
 }
 
@@ -45,11 +46,23 @@ const KIND_LABEL: Record<Row['category'], { label: string; cls: string }> = {
 export default function AttachmentChecklist({
   workPlanId, projectId, companyId, workType, readOnly, onChange, onProgress,
 }: Props) {
+  const { hasRole, user } = useAuth();
+  const access = useGlobalProjectAccessOptional();
+  const canManage =
+    !readOnly
+    && (
+      hasRole('master')
+      || hasRole('project_admin')
+      || access?.userRole === 'project_admin'
+      || access?.userRole === 'safety_manager'
+    );
+
   const [conditions, setConditions] = useState<Record<string, string>>({});
   const [template, setTemplate] = useState<AttachmentItem[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     const { data, error } = await supabase
@@ -76,7 +89,7 @@ export default function AttachmentChecklist({
       try {
         await syncTemplateRows({ workPlanId, projectId, companyId, workType, conditions });
       } catch (e: any) {
-        toast({ title: '템플릿 동기화 실패', description: e?.message, variant: 'destructive' });
+        toast({ title: '첨부 목록 동기화 실패', description: e?.message, variant: 'destructive' });
       }
       await reload();
       if (!cancelled) setLoading(false);
@@ -86,6 +99,49 @@ export default function AttachmentChecklist({
 
   const toggleCondition = (field: string) => {
     setConditions(prev => ({ ...prev, [field]: prev[field] === 'true' ? 'false' : 'true' }));
+  };
+
+  const toggleMandatory = async (row: Row, next: boolean) => {
+    if (!canManage || row.locked) return;
+    setTogglingId(row.id);
+    try {
+      const { error } = await supabase
+        .from('work_plan_attachments')
+        .update({ is_mandatory: next })
+        .eq('id', row.id);
+      if (error) throw error;
+      // 프로젝트 설정에도 저장 → 이후 같은 공종 문서에 유지
+      try {
+        await upsertAttachmentDef({
+          projectId,
+          workType,
+          attachmentKey: row.attachment_key,
+          name: row.name,
+          description: row.description || '',
+          category: row.category,
+          isMandatory: next,
+          userId: user?.id,
+        });
+      } catch (e: any) {
+        // 행 토글은 성공 — defs 테이블 없으면 안내만
+        toast({
+          title: '이 문서에는 반영됨',
+          description: e?.message?.includes('relation') || e?.message?.includes('permission')
+            ? '프로젝트 공통 설정 저장 실패(마이그레이션 확인). 이 문서 첨부는 변경되었습니다.'
+            : `프로젝트 공통 설정 저장 실패: ${e?.message || e}`,
+        });
+      }
+      setRows((prev) => {
+        const nextRows = prev.map((r) => (r.id === row.id ? { ...r, is_mandatory: next } : r));
+        onProgress?.(computeAttachmentProgress(nextRows));
+        return nextRows;
+      });
+      onChange?.();
+    } catch (e: any) {
+      toast({ title: '필수 여부 변경 실패', description: e?.message || String(e), variant: 'destructive' });
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   const handleUpload = async (row: Row, file: File) => {
@@ -143,7 +199,6 @@ export default function AttachmentChecklist({
     reload();
   };
 
-  // group by 3-tier kind
   const groups: Row['category'][] = ['legal', 'calc_evidence', 'site_proof'];
   const uploaded = rows.filter(r => !!r.file_url).length;
   const mandatoryMissing = rows.filter(r => r.is_mandatory && !r.file_url).length;
@@ -151,11 +206,18 @@ export default function AttachmentChecklist({
   return (
     <Card>
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <CardTitle className="text-sm flex items-center gap-1.5">
-            <Paperclip className="h-4 w-4" /> 필수 첨부자료
+            <Paperclip className="h-4 w-4" /> 첨부파일
           </CardTitle>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {canManage && (
+              <Button asChild size="sm" variant="outline" className="h-7 text-[10px] gap-1">
+                <Link to="/settings/work-plan-attachments">
+                  <Settings2 className="h-3 w-3" /> 프로젝트 첨부 설정
+                </Link>
+              </Button>
+            )}
             {mandatoryMissing > 0 && (
               <Badge variant="destructive" className="text-[10px] gap-1">
                 <FileWarning className="h-3 w-3" /> 필수 미첨부 {mandatoryMissing}
@@ -167,12 +229,13 @@ export default function AttachmentChecklist({
           </div>
         </div>
         <p className="text-[11px] text-muted-foreground pt-1">
-          공종별 필수 서류를 모두 올리면 결재·인쇄에 포함됩니다. 법정필수 누락 시 결재가 차단됩니다.
-          사진(JPG/PNG/WebP)은 업로드 시 자동 압축됩니다. PDF는 원본(최대 20MB)입니다.
+          기본 필수는 사업자등록증·보험가입증명서·안전교육·위험성평가·작업지휘자 지정서 5종입니다.
+          그 외는 선택이며,
+          {canManage ? ' 오른쪽 스위치로 필수/선택을 바꿀 수 있습니다.' : ' 관리자가 필수/선택을 지정합니다.'}
+          {' '}사진(JPG/PNG/WebP)은 자동 압축, PDF는 원본(최대 20MB)입니다.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Condition toggles */}
         <div className="flex flex-wrap gap-4 p-3 bg-muted/30 rounded-lg">
           <span className="text-xs font-medium text-muted-foreground">작업 조건:</span>
           {[
@@ -200,18 +263,18 @@ export default function AttachmentChecklist({
               <div className="flex items-center gap-2 mb-2">
                 <Badge variant="outline" className={`text-[10px] ${k.cls}`}>{k.label}</Badge>
                 <span className="text-xs text-muted-foreground">
-                  {g === 'legal' && '결재 차단 — 법령상 첨부 필수'}
-                  {g === 'calc_evidence' && '계산서·도면·구조검토 등 (필수 표시 시 상신 차단)'}
-                  {g === 'site_proof' && '현장 증빙'}
+                  {g === 'legal' && '기본 필수 — 결재 차단'}
+                  {g === 'calc_evidence' && '기본 선택 — 필요 시 필수로 전환'}
+                  {g === 'site_proof' && '기본 선택 — 현장 증빙'}
                 </span>
               </div>
               <div className="space-y-1.5">
                 {items.map(row => {
-                  const uploaded = !!row.file_url;
+                  const isUploaded = !!row.file_url;
                   const isAuto = row.source_type && row.source_type !== 'manual';
                   return (
-                    <div key={row.id} className={`flex items-center gap-2 p-2 rounded border bg-card hover:bg-muted/20 ${row.is_mandatory && !uploaded ? 'border-destructive/40' : ''}`}>
-                      {uploaded
+                    <div key={row.id} className={`flex items-center gap-2 p-2 rounded border bg-card hover:bg-muted/20 ${row.is_mandatory && !isUploaded ? 'border-destructive/40' : ''}`}>
+                      {isUploaded
                         ? <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
                         : <div className={`h-4 w-4 rounded-full border-2 shrink-0 ${row.is_mandatory ? 'border-destructive/60' : 'border-muted-foreground/30'}`} />}
                       <div className="flex-1 min-w-0">
@@ -222,8 +285,22 @@ export default function AttachmentChecklist({
                         </p>
                         {row.description && <p className="text-[10px] text-muted-foreground truncate">{row.description}</p>}
                       </div>
-                      {row.is_mandatory && <Badge variant="destructive" className="text-[9px] h-4 shrink-0">필수</Badge>}
-                      {uploaded && (
+                      {canManage && !row.locked ? (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] text-muted-foreground">{row.is_mandatory ? '필수' : '선택'}</span>
+                          <Switch
+                            checked={row.is_mandatory}
+                            disabled={togglingId === row.id}
+                            onCheckedChange={(v) => toggleMandatory(row, v)}
+                            aria-label={`${row.name} 필수 여부`}
+                          />
+                        </div>
+                      ) : (
+                        row.is_mandatory
+                          ? <Badge variant="destructive" className="text-[9px] h-4 shrink-0">필수</Badge>
+                          : <Badge variant="secondary" className="text-[9px] h-4 shrink-0">선택</Badge>
+                      )}
+                      {isUploaded && (
                         <>
                           <a href={row.file_url!} target="_blank" rel="noopener"
                             className="text-[10px] text-primary hover:underline shrink-0">보기</a>
@@ -251,11 +328,11 @@ export default function AttachmentChecklist({
                               <span>
                                 {uploadingId === row.id
                                   ? <><Loader2 className="h-3 w-3 animate-spin" /> 업로드 중…</>
-                                  : <><Upload className="h-3 w-3" /> {uploaded ? '교체' : '업로드'}</>}
+                                  : <><Upload className="h-3 w-3" /> {isUploaded ? '교체' : '업로드'}</>}
                               </span>
                             </Button>
                           </label>
-                          {uploaded && uploadingId !== row.id && (
+                          {isUploaded && uploadingId !== row.id && (
                             <Button size="sm" variant="ghost" className="h-6 text-[10px] text-destructive"
                               onClick={() => handleRemove(row)}>제거</Button>
                           )}
@@ -268,6 +345,8 @@ export default function AttachmentChecklist({
             </div>
           );
         })}
+        {/* keep template unused warning away — reserved for future conditional hints */}
+        {template.length === 0 && null}
       </CardContent>
     </Card>
   );

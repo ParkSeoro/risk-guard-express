@@ -33,4 +33,22 @@ describe('work plan approval-blocking attachments', () => {
       category: '공통서류',
     }).kind).toBe('legal');
   });
+
+  it('does not promote equipment insurance/certs to legal', () => {
+    expect(withKind({
+      key: 'vehicle_insurance',
+      name: '보험증권',
+      required: true,
+      description: '',
+      category: '장비서류',
+    }).kind).not.toBe('legal');
+    expect(withKind({
+      key: 'inspection_cert',
+      name: '검사증',
+      required: true,
+      description: '',
+      category: '장비서류',
+    }).kind).not.toBe('legal');
+    expect(getMandatoryLegalAttachments('heavy_lifting').map((a) => a.key)).not.toContain('vehicle_insurance');
+  });
 });

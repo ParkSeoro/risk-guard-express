@@ -1,8 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { generateAttachments, withKind } from '@/lib/attachmentTemplates';
-import { mergeAttachmentDefs, slugifyAttachmentKey } from '@/lib/workPlanAttachmentDefs';
+import { APPROVAL_BLOCKING_COMMON_KEYS, generateAttachments, withKind } from '@/lib/attachmentTemplates';
+import {
+  defaultMandatoryWithoutOverride,
+  mergeAttachmentDefs,
+  slugifyAttachmentKey,
+} from '@/lib/workPlanAttachmentDefs';
 
 describe('workPlanAttachmentDefs', () => {
+  it('defaults only approval-blocking commons as mandatory without override', () => {
+    const base = generateAttachments('heavy_lifting').map(withKind);
+    const merged = mergeAttachmentDefs(base, [], 'heavy_lifting');
+    for (const k of APPROVAL_BLOCKING_COMMON_KEYS) {
+      expect(merged.find((m) => m.key === k)?.required).toBe(true);
+    }
+    expect(merged.find((m) => m.key === 'crane_spec')?.required).toBe(false);
+    expect(merged.find((m) => m.key === 'vehicle_insurance')?.required).toBe(false);
+    expect(defaultMandatoryWithoutOverride(withKind({
+      key: 'vehicle_insurance',
+      name: '보험증권',
+      required: true,
+      description: '',
+      category: '장비서류',
+    }))).toBe(false);
+  });
+
   it('overrides required flag from project defs', () => {
     const base = generateAttachments('heavy_lifting').map(withKind);
     const merged = mergeAttachmentDefs(base, [{
@@ -11,12 +32,12 @@ describe('workPlanAttachmentDefs', () => {
       name: '크레인 제원표',
       description: '',
       category: 'calc_evidence',
-      is_mandatory: false,
+      is_mandatory: true,
       is_enabled: true,
       is_custom: false,
       sort_order: 0,
     }], 'heavy_lifting');
-    expect(merged.find((m) => m.key === 'crane_spec')?.required).toBe(false);
+    expect(merged.find((m) => m.key === 'crane_spec')?.required).toBe(true);
     expect(merged.find((m) => m.key === 'biz_license')?.required).toBe(true);
   });
 

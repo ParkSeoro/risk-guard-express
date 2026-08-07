@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import {
+  APPROVAL_BLOCKING_COMMON_KEYS,
   generateAttachments,
   withKind,
   type AttachmentItem,
@@ -26,6 +27,16 @@ export type ResolvedAttachmentItem = AttachmentItem & {
   fromOverride?: boolean;
 };
 
+/**
+ * 프로젝트 오버라이드가 없을 때 기본 필수 여부.
+ * 코드 템플릿은 거의 전부 required=true 이고 withKind 추론도 넓어서,
+ * 기본 필수는 결재차단 공통키(APPROVAL_BLOCKING_COMMON_KEYS)만 허용한다.
+ * 나머지는 선택 — 첨부 탭 스위치 / 설정에서 필수로 올릴 수 있음.
+ */
+export function defaultMandatoryWithoutOverride(item: AttachmentItem): boolean {
+  return (APPROVAL_BLOCKING_COMMON_KEYS as readonly string[]).includes(item.key);
+}
+
 /** Pure merge: code template ⊕ project defs */
 export function mergeAttachmentDefs(
   baseItems: AttachmentItem[],
@@ -48,12 +59,13 @@ export function mergeAttachmentDefs(
     const ov = byKey.get(raw.key);
     seen.add(raw.key);
     if (ov && !ov.is_enabled) continue;
+    const kind = ((ov?.category as AttachmentKind) || raw.kind || 'site_proof') as AttachmentKind;
     result.push({
       ...raw,
       name: ov?.name || raw.name,
       description: ov?.description || raw.description,
-      kind: (ov?.category as AttachmentKind) || raw.kind,
-      required: ov ? !!ov.is_mandatory : !!raw.required,
+      kind,
+      required: ov ? !!ov.is_mandatory : defaultMandatoryWithoutOverride({ ...raw, kind }),
       enabled: true,
       fromOverride: !!ov,
       isCustom: false,
@@ -110,9 +122,45 @@ export async function resolveAttachmentsForProject(opts: {
   conditions?: Record<string, string>;
 }): Promise<ResolvedAttachmentItem[]> {
   const base = generateAttachments(opts.workType, opts.conditions).map(withKind);
-  // 테이블 미적용/권한 오류는 상위로 전달해 설정·동기화 실패를 숨기지 않음
-  const defs = await fetchProjectAttachmentDefs(opts.projectId);
+  let defs: WorkPlanAttachmentDefRow[] = [];
+  try {
+    defs = await fetchProjectAttachmentDefs(opts.projectId);
+  } catch (e) {
+    // 테이블 미적용 시에도 legal-only 기본값으로 동기화되게 함
+    console.warn('[workPlanAttachmentDefs] defs unavailable, using legal-only defaults', e);
+  }
   return mergeAttachmentDefs(base, defs, opts.workType);
+}
+
+/** 프로젝트 첨부 필수 설정 upsert (첨부 탭 토글·설정 화면 공용) */
+export async function upsertAttachmentDef(opts: {
+  projectId: string;
+  workType: string;
+  attachmentKey: string;
+  name: string;
+  description?: string;
+  category: AttachmentKind;
+  isMandatory: boolean;
+  isEnabled?: boolean;
+  isCustom?: boolean;
+  userId?: string | null;
+}) {
+  const payload = {
+    project_id: opts.projectId,
+    work_type: opts.workType || '*',
+    attachment_key: opts.attachmentKey,
+    name: opts.name,
+    description: opts.description || '',
+    category: opts.category,
+    is_mandatory: opts.isMandatory,
+    is_enabled: opts.isEnabled !== false,
+    is_custom: !!opts.isCustom,
+    created_by: opts.userId || null,
+  };
+  const { error } = await supabase.from('work_plan_attachment_defs' as any).upsert(payload, {
+    onConflict: 'project_id,work_type,attachment_key',
+  });
+  if (error) throw error;
 }
 
 export function slugifyAttachmentKey(name: string) {

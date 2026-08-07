@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { generateAttachments, withKind, type AttachmentKind } from '@/lib/attachmentTemplates';
 import { WORK_PLAN_TYPES } from '@/lib/workPlanTemplates';
 import {
+  defaultMandatoryWithoutOverride,
   fetchProjectAttachmentDefs,
   mergeAttachmentDefs,
   slugifyAttachmentKey,
@@ -100,10 +101,10 @@ export default function SettingsWorkPlanAttachments() {
           name: ov?.name || b.name,
           description: ov?.description || b.description,
           category: (ov?.category as AttachmentKind) || b.kind || 'legal',
-          is_mandatory: ov ? ov.is_mandatory : !!b.required,
+          is_mandatory: ov ? ov.is_mandatory : defaultMandatoryWithoutOverride(b),
           is_enabled: ov ? ov.is_enabled : true,
           is_custom: false,
-          templateDefaultRequired: !!b.required,
+          templateDefaultRequired: defaultMandatoryWithoutOverride(b),
           dirty: false,
           defId: ov?.id,
         });
@@ -130,18 +131,21 @@ export default function SettingsWorkPlanAttachments() {
         );
         // Prefer work-type specific def id
         const specific = nextDefs.find((d) => d.work_type === wt && d.attachment_key === m.key);
-        editor.push({
-          key: m.key,
-          name: m.name,
-          description: m.description || '',
-          category: m.kind || 'site_proof',
-          is_mandatory: !!m.required,
-          is_enabled: true,
-          is_custom: !!m.isCustom,
-          templateDefaultRequired: !!generateAttachments(wt).find((t) => t.key === m.key)?.required,
-          dirty: false,
-          defId: specific?.id || (ov?.work_type === wt ? ov.id : undefined),
-        });
+        {
+          const tpl = generateAttachments(wt).map(withKind).find((t) => t.key === m.key);
+          editor.push({
+            key: m.key,
+            name: m.name,
+            description: m.description || '',
+            category: m.kind || 'site_proof',
+            is_mandatory: !!m.required,
+            is_enabled: true,
+            is_custom: !!m.isCustom,
+            templateDefaultRequired: tpl ? defaultMandatoryWithoutOverride(tpl) : false,
+            dirty: false,
+            defId: specific?.id || (ov?.work_type === wt ? ov.id : undefined),
+          });
+        }
       }
       // disabled overrides for this work type (hidden from merge) — still show so admin can re-enable
       for (const d of nextDefs.filter((x) => x.work_type === wt && !x.is_enabled && !x.is_custom)) {
@@ -155,7 +159,7 @@ export default function SettingsWorkPlanAttachments() {
           is_mandatory: d.is_mandatory,
           is_enabled: false,
           is_custom: false,
-          templateDefaultRequired: !!tpl?.required,
+          templateDefaultRequired: tpl ? defaultMandatoryWithoutOverride(tpl) : false,
           dirty: false,
           defId: d.id,
         });

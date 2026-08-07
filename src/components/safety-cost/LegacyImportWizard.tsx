@@ -12,6 +12,7 @@ import {
 } from '@/lib/safetyCostLegacyImport';
 import { normalizePpeItemKey } from '@/lib/safetyCostPpeStock';
 import { formatKRW } from '@/lib/safetyCost';
+import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -123,12 +124,8 @@ export function LegacyImportWizard({
       const safeName = sanitizeStorageFileName(file.name);
       // storage RLS: path must contain project UUID
       const path = `safety-cost/${projectId}/${constructionId}/legacy-import/${Date.now()}_${safeName}`;
-      const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, {
-        upsert: true,
-        contentType: file.type || undefined,
-      });
-      if (upErr) throw upErr;
-      const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
+      const uploaded = await uploadAttachmentFile(path, file);
+      const urlData = { publicUrl: uploaded.publicUrl };
 
       const canAnalyzeFile = ext === 'pdf' || (file.type || '').startsWith('image/');
       let extracted: LegacyImportDraft = parseLegacyTextDraft(text);

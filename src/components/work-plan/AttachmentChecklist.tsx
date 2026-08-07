@@ -10,7 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Paperclip, Upload, CheckCircle2, Lock, Bot, FileWarning, Loader2, Printer } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { computeAttachmentProgress, type AttachmentProgress } from '@/lib/workPlanAttachments';
-import { compressUploadFile, formatBytes, DEFAULT_UPLOAD_MAX_BYTES } from '@/lib/compressUploadFile';
+import { uploadAttachmentFile, formatBytes } from '@/lib/compressUploadFile';
 
 interface Row {
   id: string;
@@ -91,32 +91,22 @@ export default function AttachmentChecklist({
   const handleUpload = async (row: Row, file: File) => {
     setUploadingId(row.id);
     try {
-      let prepared;
-      try {
-        prepared = await compressUploadFile(file, { maxBytes: DEFAULT_UPLOAD_MAX_BYTES });
-      } catch (e: any) {
-        toast({ title: '업로드 불가', description: e?.message || String(e), variant: 'destructive' });
-        return;
-      }
-      const uploadFile = prepared.file;
-      const safeName = uploadFile.name.replace(/[^\w.\-]+/g, '_');
+      const safeName = file.name.replace(/[^\w.\-]+/g, '_');
       const path = `${projectId}/work-plans/${workPlanId}/${row.attachment_key}_${Date.now()}_${safeName}`;
-      const { error: upErr } = await supabase.storage.from('attachments').upload(path, uploadFile, {
-        upsert: true,
-        contentType: uploadFile.type || undefined,
-      });
-      if (upErr) {
-        toast({ title: '업로드 실패', description: upErr.message, variant: 'destructive' });
+      let uploaded;
+      try {
+        uploaded = await uploadAttachmentFile(path, file);
+      } catch (e: any) {
+        toast({ title: '업로드 실패', description: e?.message || String(e), variant: 'destructive' });
         return;
       }
-      const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
       const { error } = await supabase
         .from('work_plan_attachments')
         .update({
-          file_url: urlData.publicUrl,
-          file_path: path,
-          file_size: uploadFile.size,
-          mime_type: uploadFile.type,
+          file_url: uploaded.publicUrl,
+          file_path: uploaded.path,
+          file_size: uploaded.finalBytes,
+          mime_type: uploaded.file.type,
         })
         .eq('id', row.id);
       if (error) {
@@ -125,8 +115,8 @@ export default function AttachmentChecklist({
       }
       toast({
         title: '업로드되었습니다.',
-        description: prepared.compressed
-          ? `이미지 압축 ${formatBytes(prepared.originalBytes)} → ${formatBytes(prepared.finalBytes)}`
+        description: uploaded.compressed
+          ? `이미지 압축 ${formatBytes(uploaded.originalBytes)} → ${formatBytes(uploaded.finalBytes)}`
           : undefined,
       });
       onChange?.();

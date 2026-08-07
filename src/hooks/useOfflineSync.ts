@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { listQueue, removeFromQueue, isOnline } from "@/lib/offlineQueue";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { uploadAttachmentFile } from "@/lib/compressUploadFile";
 
 // 온라인 복귀 시 큐 자동 동기화
 async function dataUrlToFile(dataUrl: string, name: string): Promise<File> {
@@ -24,8 +25,12 @@ async function flushOnce() {
           const f = await dataUrlToFile(ph.data, ph.name);
           const ext = (ph.name.split(".").pop() || "jpg");
           const path = `${p.projectId}/mobile-inspect/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-          const { error } = await supabase.storage.from("attachments").upload(path, f);
-          if (!error) urls.push(supabase.storage.from("attachments").getPublicUrl(path).data.publicUrl);
+          try {
+            const uploaded = await uploadAttachmentFile(path, f);
+            urls.push(uploaded.publicUrl);
+          } catch {
+            /* skip failed offline photo */
+          }
         }
         const { data: ins } = await supabase.from("safety_inspections" as any).insert({
           project_id: p.projectId, inspection_type: "patrol", process_category: "기타",

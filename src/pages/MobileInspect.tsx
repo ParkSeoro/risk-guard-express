@@ -18,6 +18,7 @@ import { buildChecklist, INSPECTION_TYPE_LABELS, PROCESS_CATEGORIES, type Inspec
 import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { correctTerms } from "@/lib/termCorrection";
+import { uploadAttachmentFile } from "@/lib/compressUploadFile";
 
 const inspectionSetupSchema = z.object({
   inspection_type: z.string().min(1),
@@ -141,9 +142,8 @@ export default function MobileInspect() {
   const uploadPhoto = async (file: File): Promise<string> => {
     const ext = file.name.split(".").pop() || "jpg";
     const path = `${projectId}/mobile-inspect/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const { error } = await supabase.storage.from("attachments").upload(path, file);
-    if (error) throw error;
-    return supabase.storage.from("attachments").getPublicUrl(path).data.publicUrl;
+    const uploaded = await uploadAttachmentFile(path, file);
+    return uploaded.publicUrl;
   };
 
   const setResult = async (item: any, result: "pass" | "fail" | "na") => {

@@ -12,6 +12,7 @@ import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { ArrowLeft, Camera, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { correctTerms } from "@/lib/termCorrection";
+import { uploadAttachmentFile } from "@/lib/compressUploadFile";
 
 type ActionRow = {
   id: string;
@@ -68,9 +69,8 @@ export default function MobileActions() {
       if (photo) {
         const ext = photo.name.split(".").pop() || "jpg";
         const path = `${projectId}/inspection-actions/${Date.now()}.${ext}`;
-        const { error: upErr } = await supabase.storage.from("attachments").upload(path, photo);
-        if (upErr) throw upErr;
-        photos.push(supabase.storage.from("attachments").getPublicUrl(path).data.publicUrl);
+        const uploaded = await uploadAttachmentFile(path, photo);
+        photos.push(uploaded.publicUrl);
       }
       const cleanNote = correctTerms(note);
       const { error } = await supabase.from("safety_inspection_actions" as any)

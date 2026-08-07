@@ -98,11 +98,11 @@ const settingsCards = [
   {
     id: 'work-plan-attachments',
     title: '작업계획서 증빙 설정',
-    description: '공종별 첨부 필수/선택을 지정하고, 현장 맞춤 증빙 항목을 추가합니다. 마스터·프로젝트관리자만 편집할 수 있습니다.',
+    description: '공종별 첨부 필수/선택을 지정하고, 현장 맞춤 증빙 항목을 추가합니다. 마스터·프로젝트관리자·안전관리자가 편집할 수 있습니다.',
     icon: ClipboardList,
     path: '/settings/work-plan-attachments',
-    requires: 'project_admin' as const,
-    badge: '마스터·PM',
+    requires: 'admin' as const,
+    badge: '관리자',
   },
 ];
 

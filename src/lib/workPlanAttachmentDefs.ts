@@ -110,12 +110,8 @@ export async function resolveAttachmentsForProject(opts: {
   conditions?: Record<string, string>;
 }): Promise<ResolvedAttachmentItem[]> {
   const base = generateAttachments(opts.workType, opts.conditions).map(withKind);
-  let defs: WorkPlanAttachmentDefRow[] = [];
-  try {
-    defs = await fetchProjectAttachmentDefs(opts.projectId);
-  } catch {
-    defs = [];
-  }
+  // 테이블 미적용/권한 오류는 상위로 전달해 설정·동기화 실패를 숨기지 않음
+  const defs = await fetchProjectAttachmentDefs(opts.projectId);
   return mergeAttachmentDefs(base, defs, opts.workType);
 }
 

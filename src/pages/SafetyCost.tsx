@@ -16,6 +16,7 @@ import { PpeLedgerPanel } from '@/components/safety-cost/PpeLedgerPanel';
 import { PpeStockPanel } from '@/components/safety-cost/PpeStockPanel';
 import SafetyCostValidationPanel from '@/components/safety-cost/SafetyCostValidationPanel';
 import { isPpeInboundItem, normalizePpeItemKey } from '@/lib/safetyCostPpeStock';
+import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -519,15 +520,19 @@ const SafetyCost = () => {
       const safeName = sanitizeStorageFileName(file.name);
       // storage RLS: path must contain project UUID (attachment_path_belongs_to_member)
       const path = `safety-cost/${selectedConstruction.project_id}/${selectedReport.id}/documents/${Date.now()}_${safeName}`;
-      const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { upsert: true, contentType: file.type || undefined });
-      if (upErr) { toast({ title: '거래명세표 업로드 실패', description: upErr.message, variant: 'destructive' }); return; }
-      const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
+      let uploaded;
+      try {
+        uploaded = await uploadAttachmentFile(path, file);
+      } catch (e: any) {
+        toast({ title: '거래명세표 업로드 실패', description: e?.message || String(e), variant: 'destructive' });
+        return;
+      }
       const { error: evidenceError } = await supabase.from('safety_cost_evidence_files' as any).insert({
         report_id: selectedReport.id, construction_id: selectedConstruction.id, project_id: selectedConstruction.project_id, company_id: selectedConstruction.company_id,
-        evidence_kind: 'transaction', file_name: file.name, file_path: path, file_url: urlData.publicUrl, mime_type: file.type || 'application/octet-stream', file_size: file.size, uploaded_by: user.id,
+        evidence_kind: 'transaction', file_name: uploaded.file.name, file_path: uploaded.path, file_url: uploaded.publicUrl, mime_type: uploaded.file.type || 'application/octet-stream', file_size: uploaded.finalBytes, uploaded_by: user.id,
       });
       if (evidenceError) { toast({ title: '거래명세표 기록 실패', description: evidenceError.message, variant: 'destructive' }); return; }
-      const canAnalyzeFile = ext === 'pdf' || file.type.startsWith('image/');
+      const canAnalyzeFile = ext === 'pdf' || file.type.startsWith('image/') || uploaded.file.type.startsWith('image/');
       const { data, error } = await supabase.functions.invoke('analyze-safety-cost-document', {
         body: {
           text,
@@ -552,10 +557,15 @@ const SafetyCost = () => {
     const rows = [];
     for (const file of Array.from(files)) {
       const path = `safety-cost/${item.project_id}/${item.report_id}/items/${item.id}/${Date.now()}_${sanitizeStorageFileName(file.name)}`;
-      const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: true, contentType: file.type || 'application/octet-stream' });
-      if (error) { toast({ title: '증빙 업로드 실패', description: error.message, variant: 'destructive' }); continue; }
-      const { data } = supabase.storage.from('attachments').getPublicUrl(path);
-      const kind = file.type.startsWith('image/') ? 'site_photo' : (file.name.includes('세금') || /tax/i.test(file.name) ? 'tax_invoice' : 'transaction'); rows.push({ report_id: item.report_id, item_id: item.id, construction_id: item.construction_id, project_id: item.project_id, company_id: item.company_id, category_code: item.category_code || '', evidence_kind: kind, file_name: file.name, file_path: path, file_url: data.publicUrl, mime_type: file.type, file_size: file.size, uploaded_by: user.id });
+      let uploaded;
+      try {
+        uploaded = await uploadAttachmentFile(path, file);
+      } catch (e: any) {
+        toast({ title: '증빙 업로드 실패', description: e?.message || String(e), variant: 'destructive' });
+        continue;
+      }
+      const kind = uploaded.file.type.startsWith('image/') || file.type.startsWith('image/') ? 'site_photo' : (file.name.includes('세금') || /tax/i.test(file.name) ? 'tax_invoice' : 'transaction');
+      rows.push({ report_id: item.report_id, item_id: item.id, construction_id: item.construction_id, project_id: item.project_id, company_id: item.company_id, category_code: item.category_code || '', evidence_kind: kind, file_name: uploaded.file.name, file_path: uploaded.path, file_url: uploaded.publicUrl, mime_type: uploaded.file.type, file_size: uploaded.finalBytes, uploaded_by: user.id });
     }
     if (rows.length) await supabase.from('safety_cost_evidence_files' as any).insert(rows);
     toast({ title: '항목별 증빙이 업로드되었습니다.' }); fetchAll();

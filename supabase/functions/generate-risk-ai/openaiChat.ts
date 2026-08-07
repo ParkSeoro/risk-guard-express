@@ -1,7 +1,8 @@
 /**
  * Optional OpenAI ChatGPT client — LAST-RESORT fallback for risk AI.
  *
- * Primary path remains NVIDIA NIM (see nvidiaChat.ts / deepseekRisk.ts).
+ * Primary path remains NVIDIA NIM (see ../_shared/nvidiaChat.ts).
+ * Lives next to index.ts so Supabase Dashboard bundling can find it.
  * This module is dormant unless OPENAI_API_KEY is set in Edge secrets.
  *
  * Env:

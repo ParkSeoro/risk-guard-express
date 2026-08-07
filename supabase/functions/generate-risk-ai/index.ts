@@ -14,7 +14,7 @@ import {
   callOpenAiChat,
   isOpenAiFallbackEnabled,
   OpenAiChatError,
-} from "../_shared/openaiChat.ts";
+} from "./openaiChat.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

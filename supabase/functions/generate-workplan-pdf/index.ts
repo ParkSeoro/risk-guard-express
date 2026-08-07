@@ -103,9 +103,10 @@ Deno.serve(async (req) => {
       supabase.from("approvals").select("*").eq("run_id", planId).order("approval_version", { ascending: false }),
       plan.company_id ? supabase.from("companies").select("name").eq("id", plan.company_id).single() : Promise.resolve({ data: null }),
       supabase.from("work_plan_attachments")
-        .select("id, name, category, attachment_key, file_url, mime_type, description")
+        .select("id, name, category, attachment_key, file_url, mime_type, description, is_mandatory")
         .eq("work_plan_id", planId)
         .eq("is_deleted", false)
+        .order("is_mandatory", { ascending: false })
         .order("created_at", { ascending: true }),
     ]);
 
@@ -122,20 +123,17 @@ Deno.serve(async (req) => {
     }
 
     const sections: any[] = Array.isArray(plan.sections) ? plan.sections : [];
-    const legacyAttachments: any[] = Array.isArray(plan.attachments) ? plan.attachments : [];
-    // Merge: prefer DB rows; keep legacy JSON entries that aren't already represented
-    const attachments: any[] = [
-      ...dbAttachments.map((a: any) => ({
-        name: a.name || a.attachment_key || "첨부파일",
-        key: a.attachment_key,
-        fileUrl: a.file_url,
-        mime: a.mime_type,
-        uploaded: !!a.file_url,
-        description: a.description,
-      })),
-      ...legacyAttachments.filter((a: any) => a.uploaded && a.fileUrl &&
-        !dbAttachments.some((d: any) => d.file_url === a.fileUrl)),
-    ];
+    // SSOT: work_plan_attachments only (legacy JSON ignored for print checklist)
+    const attachments: any[] = dbAttachments.map((a: any) => ({
+      name: a.name || a.attachment_key || "첨부파일",
+      key: a.attachment_key,
+      fileUrl: a.file_url,
+      mime: a.mime_type,
+      uploaded: !!a.file_url,
+      mandatory: !!a.is_mandatory,
+      category: a.category,
+      description: a.description,
+    }));
 
 
     const STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3 };
@@ -293,18 +291,23 @@ Deno.serve(async (req) => {
 
     let attachmentsHtml = "";
     const uploadedAttachments = attachments.filter((a: any) => a.uploaded && a.fileUrl);
-    if (uploadedAttachments.length > 0) {
+    const missingMandatory = attachments.filter((a: any) => a.mandatory && !a.uploaded);
+    if (attachments.length > 0) {
+      const catLabel = (c: string) =>
+        c === "legal" ? "법정필수" : c === "calc_evidence" ? "계산근거" : c === "site_proof" ? "현장증빙" : (c || "-");
       attachmentsHtml += `<div class="page-break"></div>
-        <div class="section-header">첨부서류 일람 (총 ${uploadedAttachments.length}건)</div>
-        <table><thead><tr><th style="width:30pt">No</th><th>구분</th><th>파일명</th><th>비고</th></tr></thead><tbody>
-        ${uploadedAttachments.map((a: any, i: number) => `
+        <div class="section-header">첨부서류 일람 (전체 ${attachments.length}건 · 첨부 ${uploadedAttachments.length} · 필수 미첨부 ${missingMandatory.length})</div>
+        <table><thead><tr><th style="width:30pt">No</th><th>구분</th><th>서류명</th><th>상태</th><th>비고</th></tr></thead><tbody>
+        ${attachments.map((a: any, i: number) => `
           <tr>
             <td class="center">${i + 1}</td>
-            <td>${escapeHtml(a.key || "")}</td>
-            <td>${escapeHtml(a.name || a.fileUrl?.split("/").pop() || "")}</td>
+            <td>${escapeHtml(catLabel(a.category))}${a.mandatory ? " ★" : ""}</td>
+            <td>${escapeHtml(a.name || a.key || "")}</td>
+            <td class="center" style="color:${a.uploaded ? "#16a34a" : (a.mandatory ? "#dc2626" : "#64748b")};">${a.uploaded ? "첨부완료" : (a.mandatory ? "미첨부(필수)" : "미첨부")}</td>
             <td style="font-size:7pt;color:#64748b;">${escapeHtml(a.description || "")}</td>
           </tr>`).join("")}
-        </tbody></table>`;
+        </tbody></table>
+        <p style="font-size:7.5pt;color:#64748b;margin-top:6pt;">★ = 필수 첨부. 아래 페이지에 첨부완료 파일만 본문으로 이어집니다.</p>`;
     }
     for (const att of uploadedAttachments) {
       const url: string = att.fileUrl || "";

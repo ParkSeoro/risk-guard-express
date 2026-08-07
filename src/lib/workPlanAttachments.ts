@@ -46,20 +46,22 @@ export async function syncTemplateRows(opts: {
       attachment_key: i.key,
       name: i.name,
       description: i.description,
-      is_mandatory: i.required && i.kind === 'legal',
+      // 공종별 required 전부 필수 — 결재·인쇄 누락 안내의 SSOT
+      is_mandatory: !!i.required,
       source_type: 'manual' as const,
     }));
 
-  // Repair mandatory flags on existing rows (e.g. biz_license / insurance_cert)
+  // Repair mandatory flags on existing rows (template drift / legacy legal-only flags)
   for (const i of items) {
     if (!existingKeys.has(i.key)) continue;
-    const mandatory = !!(i.required && i.kind === 'legal');
+    const mandatory = !!i.required;
     await supabase
       .from('work_plan_attachments')
       .update({
         is_mandatory: mandatory,
         category: i.kind ?? 'site_proof',
         name: i.name,
+        description: i.description,
       })
       .eq('work_plan_id', opts.workPlanId)
       .eq('attachment_key', i.key)
@@ -74,29 +76,116 @@ export async function syncTemplateRows(opts: {
   return { inserted: count ?? rows.length };
 }
 
+export type AttachmentProgress = {
+  total: number;
+  uploaded: number;
+  mandatoryTotal: number;
+  mandatoryMissing: number;
+  blockers: AttachmentBlocker[];
+};
+
+/** Pure helper — DB rows → progress / blockers (testable). */
+export function computeAttachmentProgress(
+  rows: Array<{
+    attachment_key?: string | null;
+    name?: string | null;
+    description?: string | null;
+    is_mandatory?: boolean | null;
+    file_url?: string | null;
+    category?: string | null;
+  }>,
+): AttachmentProgress {
+  const total = rows.length;
+  const uploaded = rows.filter((r) => !!r.file_url).length;
+  const mandatory = rows.filter((r) => !!r.is_mandatory);
+  const blockers = mandatory
+    .filter((r) => !r.file_url)
+    .map((r) => ({
+      key: r.attachment_key || '',
+      name: r.name || r.attachment_key || '첨부',
+      hint:
+        r.description ||
+        (r.category === 'legal'
+          ? '법정 필수 첨부입니다. 업로드 후 결재를 상신하세요.'
+          : '필수 첨부입니다. 업로드 후 결재를 상신하세요.'),
+    }));
+  return {
+    total,
+    uploaded,
+    mandatoryTotal: mandatory.length,
+    mandatoryMissing: blockers.length,
+    blockers,
+  };
+}
+
 /**
- * 결재 차단 검증 — 법정 필수 항목 중 file_url 미입력 행 반환.
- * 빈 배열이면 결재 진행 가능.
+ * 결재 차단 검증 — work_plan_attachments.is_mandatory && !file_url (SSOT).
+ * 템플릿 sync 전이면 legal 템플릿으로 fallback.
  */
 export async function getApprovalBlockers(workPlanId: string, workType: string): Promise<AttachmentBlocker[]> {
-  const required = getMandatoryLegalAttachments(workType);
-  if (required.length === 0) return [];
-
   const { data } = await supabase
     .from('work_plan_attachments')
-    .select('attachment_key, file_url')
+    .select('attachment_key, name, description, is_mandatory, file_url, category')
     .eq('work_plan_id', workPlanId)
     .eq('is_deleted', false);
-  const uploaded = new Set(
-    (data ?? []).filter((r: any) => r.file_url).map((r: any) => r.attachment_key),
-  );
-  return required
-    .filter(r => !uploaded.has(r.key))
-    .map(r => ({
-      key: r.key,
-      name: r.name,
-      hint: r.description || '법정 필수 첨부입니다. 업로드 후 결재를 상신하세요.',
-    }));
+
+  const rows = (data ?? []) as any[];
+  if (rows.length > 0) {
+    return computeAttachmentProgress(rows).blockers;
+  }
+
+  // Rows not synced yet — template fallback (legal required)
+  const required = getMandatoryLegalAttachments(workType);
+  return required.map((r) => ({
+    key: r.key,
+    name: r.name,
+    hint: r.description || '필수 첨부입니다. 업로드 후 결재를 상신하세요.',
+  }));
+}
+
+export async function getAttachmentProgress(workPlanId: string): Promise<AttachmentProgress> {
+  const { data } = await supabase
+    .from('work_plan_attachments')
+    .select('attachment_key, name, description, is_mandatory, file_url, category')
+    .eq('work_plan_id', workPlanId)
+    .eq('is_deleted', false);
+  return computeAttachmentProgress((data ?? []) as any[]);
+}
+
+/** Clone uploaded file refs onto a new plan (after syncTemplateRows). */
+export async function cloneAttachmentFiles(opts: {
+  fromPlanId: string;
+  toPlanId: string;
+  projectId: string;
+  companyId?: string | null;
+  workType: string;
+}) {
+  await syncTemplateRows({
+    workPlanId: opts.toPlanId,
+    projectId: opts.projectId,
+    companyId: opts.companyId,
+    workType: opts.workType,
+  });
+  const { data: src } = await supabase
+    .from('work_plan_attachments')
+    .select('attachment_key, file_url, file_path, file_size, mime_type')
+    .eq('work_plan_id', opts.fromPlanId)
+    .eq('is_deleted', false)
+    .not('file_url', 'is', null);
+  for (const row of (src ?? []) as any[]) {
+    if (!row.attachment_key || !row.file_url) continue;
+    await supabase
+      .from('work_plan_attachments')
+      .update({
+        file_url: row.file_url,
+        file_path: row.file_path,
+        file_size: row.file_size,
+        mime_type: row.mime_type,
+      })
+      .eq('work_plan_id', opts.toPlanId)
+      .eq('attachment_key', row.attachment_key)
+      .eq('is_deleted', false);
+  }
 }
 
 /**

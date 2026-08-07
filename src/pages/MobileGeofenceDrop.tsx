@@ -207,9 +207,19 @@ export default function MobileGeofenceDrop() {
                 GPS 보정 적용 중 ≈{calMag}m
               </Badge>
             ) : (
-              <Badge variant="outline" className="text-[10px] text-amber-700 border-amber-500/50">
-                GPS 보정 없음 — 도면과 어긋날 수 있음
-              </Badge>
+              <div className="space-y-2">
+                <Badge variant="outline" className="text-[10px] text-amber-700 border-amber-500/50">
+                  GPS 보정 없음 — 도면과 어긋날 수 있음
+                </Badge>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full h-9 text-xs"
+                  onClick={() => navigate("/app/worker/map-calibration")}
+                >
+                  먼저 맵·GPS 맞추기 (A·B·C)
+                </Button>
+              </div>
             )}
           </CardContent>
         </Card>

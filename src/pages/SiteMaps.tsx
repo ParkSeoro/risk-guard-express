@@ -143,7 +143,10 @@ export default function SiteMaps() {
       .select()
       .single();
     if (error) { toast.error(error.message); return; }
-    toast.success("사이트맵 등록 완료");
+    toast.success("사이트맵 등록 완료 — 다음: 모바일 「맵·GPS 맞추기」", {
+      description: "현장 A·B·C 워킹 보정을 해야 위험구역 GPS 알람이 도면과 맞습니다.",
+      duration: 8000,
+    });
     setActiveMap(data as any);
     loadMaps();
   };

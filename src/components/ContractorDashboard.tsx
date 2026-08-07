@@ -1,7 +1,11 @@
+/**
+ * Legacy contractor home — admin Dashboard now serves a unified ops view.
+ * Kept as a thin CTA fallback if any route still mounts it.
+ */
 import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import {
-  ShieldAlert, FileSignature, ClipboardCheck, AlertOctagon, FileText, HardHat,
+  FileSignature, ClipboardCheck, AlertOctagon, FileText, HardHat, FileCheck,
 } from 'lucide-react';
 
 interface CTA {
@@ -13,12 +17,12 @@ interface CTA {
 }
 
 const CTAS: CTA[] = [
-  { title: '오늘의 위험성 평가', desc: '작업 전 위험 요인 확인', to: '/risk-assessment', icon: ShieldAlert, color: 'bg-orange-500' },
-  { title: '작업허가서 상신', desc: '허가서 작성/결재 요청', to: '/work-permits', icon: FileSignature, color: 'bg-blue-600' },
-  { title: '작업계획서', desc: '오늘 작업 계획 등록', to: '/work-plans', icon: FileText, color: 'bg-emerald-600' },
-  { title: 'TBM 일지', desc: '작업 전 안전 미팅 기록', to: '/tbm-logs', icon: ClipboardCheck, color: 'bg-purple-600' },
-  { title: '사고/아차사고 보고', desc: '즉시 보고', to: '/incidents', icon: AlertOctagon, color: 'bg-red-600' },
-  { title: '근로자 명부', desc: '오늘 출역 인원 확인', to: '/workers', icon: HardHat, color: 'bg-slate-700' },
+  { title: '작업허가서', desc: '작성·상신·현황', to: '/work-permits', icon: FileSignature, color: 'bg-blue-600' },
+  { title: 'TBM 일지', desc: '작업 전 안전회의', to: '/tbm-logs', icon: ClipboardCheck, color: 'bg-emerald-600' },
+  { title: '작업계획서', desc: '오늘 작업 계획', to: '/work-plans', icon: FileText, color: 'bg-slate-700' },
+  { title: '전자결재', desc: '내 결재 대기', to: '/approvals', icon: FileCheck, color: 'bg-amber-600' },
+  { title: '근로자 명부', desc: '출역 인원 확인', to: '/workers', icon: HardHat, color: 'bg-indigo-600' },
+  { title: '사고/아차사고', desc: '즉시 보고', to: '/incidents', icon: AlertOctagon, color: 'bg-red-600' },
 ];
 
 export default function ContractorDashboard({ siteLabel }: { siteLabel?: string }) {
@@ -48,10 +52,6 @@ export default function ContractorDashboard({ siteLabel }: { siteLabel?: string 
           </Card>
         ))}
       </div>
-
-      <p className="text-center text-xs text-muted-foreground pt-4">
-        도움이 필요하면 좌측 상단 메뉴 → <b>사용 설명서</b> 를 확인하세요.
-      </p>
     </div>
   );
 }

@@ -11,8 +11,11 @@ import { SAFETY_COST_TEMPLATE_PATH, buildSafetyCostWorkbook, downloadSafetyCostW
 import { getEvidenceGuide } from '@/lib/safetyCostEvidenceGuide';
 import { evaluateEvidencePack } from '@/lib/safetyCostEvidencePack';
 import { EvidencePackPanel } from '@/components/safety-cost/EvidencePackPanel';
+import { LegacyImportWizard } from '@/components/safety-cost/LegacyImportWizard';
 import { PpeLedgerPanel } from '@/components/safety-cost/PpeLedgerPanel';
+import { PpeStockPanel } from '@/components/safety-cost/PpeStockPanel';
 import SafetyCostValidationPanel from '@/components/safety-cost/SafetyCostValidationPanel';
+import { isPpeInboundItem, normalizePpeItemKey } from '@/lib/safetyCostPpeStock';
 import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -332,9 +335,48 @@ const SafetyCost = () => {
       };
     }).filter((r) => r.item_name && r.amount > 0);
     if (!inserts.length) { toast({ title: '추가할 항목이 없습니다.', variant: 'destructive' }); return; }
-    const { error } = await supabase.from('safety_cost_items' as any).insert(inserts);
+    const { data: inserted, error } = await supabase.from('safety_cost_items' as any).insert(inserts).select('id, category_code, item_name, specification, maker, quantity, unit, transaction_date, usage_date');
     if (error) { toast({ title: '항목 추가 실패', description: error.message, variant: 'destructive' }); return; }
-    toast({ title: `${inserts.length}개 항목이 추가되었습니다.` });
+    const ppeRows = ((inserted as any[]) || []).filter((it) => isPpeInboundItem(it));
+    for (const it of ppeRows) {
+      try {
+        const item_key = normalizePpeItemKey(it);
+        let skuId: string | null = null;
+        const { data: existing } = await supabase.from('safety_cost_ppe_skus' as any).select('id').eq('construction_id', selectedConstruction.id).eq('item_key', item_key).maybeSingle();
+        if (existing) skuId = (existing as any).id;
+        else {
+          const { data: created, error: skuErr } = await supabase.from('safety_cost_ppe_skus' as any).insert({
+            project_id: selectedConstruction.project_id,
+            company_id: selectedConstruction.company_id,
+            construction_id: selectedConstruction.id,
+            item_key,
+            item_name: it.item_name,
+            specification: it.specification || '',
+            maker: it.maker || '',
+            unit: it.unit || '개',
+          }).select('id').single();
+          if (skuErr) throw skuErr;
+          skuId = (created as any).id;
+        }
+        await supabase.from('safety_cost_ppe_stock_movements' as any).insert({
+          project_id: selectedConstruction.project_id,
+          company_id: selectedConstruction.company_id,
+          construction_id: selectedConstruction.id,
+          sku_id: skuId,
+          movement_type: 'in',
+          quantity: Number(it.quantity || 1),
+          movement_date: it.transaction_date || it.usage_date || new Date().toISOString().slice(0, 10),
+          source_type: 'item',
+          source_item_id: it.id,
+          report_id: selectedReport.id,
+          note: '영수증/항목 자동입고',
+          created_by: user.id,
+        });
+      } catch (e: any) {
+        console.warn('PPE stock inbound failed', e);
+      }
+    }
+    toast({ title: `${inserts.length}개 항목이 추가되었습니다.${ppeRows.length ? ` (보호구 입고 ${ppeRows.length})` : ''}` });
     await updateReportTotal(selectedReport.id);
     await fetchAll();
   }
@@ -425,6 +467,11 @@ const SafetyCost = () => {
       deleted_by: user?.id || null,
     }).eq('id', item.id);
     if (error) { toast({ title: '항목 삭제 실패', description: error.message, variant: 'destructive' }); return; }
+    if (String(item.category_code) === '3') {
+      await supabase.from('safety_cost_ppe_stock_movements' as any)
+        .update({ is_deleted: true })
+        .eq('source_item_id', item.id);
+    }
     await supabase.from('safety_cost_audit_logs' as any).insert({
       project_id: item.project_id || access.selectedProject,
       company_id: item.company_id || selectedConstruction?.company_id,
@@ -670,9 +717,22 @@ const SafetyCost = () => {
       <div className="space-y-4">
         {selectedConstruction && <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center justify-between"><span>{selectedConstruction.construction_name}</span>{usageRate < 50 && <Badge variant="secondary" className="gap-1"><AlertTriangle className="h-3 w-3" /> 저사용 경고</Badge>}</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-4"><div><p className="text-xs text-muted-foreground">공사금액</p><p className="font-semibold">{formatKRW(selectedConstruction.construction_amount)}</p></div><div><p className="text-xs text-muted-foreground">산업안전보건관리비 총액</p><p className="font-semibold">{formatKRW(selectedConstruction.safety_cost_total)}</p></div><div><p className="text-xs text-muted-foreground">승인 누계</p><p className="font-semibold">{formatKRW(approvedTotal)}</p></div><div><p className="text-xs text-muted-foreground">잔여 금액</p><p className="font-semibold">{formatKRW(Number(selectedConstruction.safety_cost_total || 0) - approvedTotal)}</p></div></CardContent></Card>}
 
-        <Card><CardHeader className="pb-2"><div className="flex items-center justify-between"><CardTitle className="text-sm">월별 사용내역서</CardTitle><Dialog open={reportOpen} onOpenChange={setReportOpen}><DialogTrigger asChild><Button size="sm" variant="outline" disabled={!selectedConstruction}>월별 작성</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>월별 사용내역서 생성</DialogTitle></DialogHeader><Label>작성월</Label><Input type="month" value={newReportMonth} onChange={(e) => setNewReportMonth(e.target.value)} /><DialogFooter><Button onClick={createReport}>생성</Button></DialogFooter></DialogContent></Dialog></div></CardHeader><CardContent><div className="flex flex-wrap gap-2">{filteredReports.map((r) => <div key={r.id} className={`flex items-center rounded-md border ${r.id === selectedReportId ? 'border-primary bg-primary text-primary-foreground' : 'bg-card'}`}><button type="button" className="px-3 py-1.5 text-sm" onClick={() => setSelectedReportId(r.id)}>{String(r.report_month).slice(0, 7)} <Badge variant="secondary" className="ml-2">{getSafetyCostStatusLabel(r.status)}</Badge></button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => openReportEditor(r)} disabled={r.status === 'approved'} aria-label="월별 사용내역서 수정"><Pencil className="h-3.5 w-3.5" /></Button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => deleteReport(r)} disabled={r.status === 'approved'} aria-label="월별 사용내역서 삭제"><Trash2 className="h-3.5 w-3.5" /></Button></div>)}</div></CardContent></Card>
+        {selectedConstruction && (
+          <LegacyImportWizard
+            projectId={selectedConstruction.project_id}
+            companyId={selectedConstruction.company_id}
+            constructionId={selectedConstruction.id}
+            constructionName={selectedConstruction.construction_name}
+            safetyCostTotal={Number(selectedConstruction.safety_cost_total || 0)}
+            existingApprovedTotal={approvedTotal}
+            userId={user?.id}
+            onCommitted={() => fetchAll()}
+          />
+        )}
 
-        {selectedReport && <Tabs value={reportTab} onValueChange={setReportTab}><TabsList className="flex flex-wrap h-auto gap-1"><TabsTrigger value="items">사용 항목 <Badge variant="secondary" className="ml-2">{baseItems.length}</Badge></TabsTrigger><TabsTrigger value="pack">증빙패키지 {!evidencePack.ready && filteredItems.length > 0 && <Badge variant="destructive" className="ml-2">{evidencePack.hardMissing.length}</Badge>}</TabsTrigger><TabsTrigger value="ppe">보호구 지급대장 {ppeSignedCount > 0 && <Badge variant="secondary" className="ml-2">{ppeSignedCount}</Badge>}</TabsTrigger><TabsTrigger value="ai">AI 자동분석</TabsTrigger><TabsTrigger value="audit">자동검토 {(compliance.warningCount + evidenceMissingCount + evidencePack.hardMissing.length) > 0 && <Badge variant="destructive" className="ml-2">{compliance.warningCount + evidenceMissingCount + evidencePack.hardMissing.length}</Badge>}</TabsTrigger><TabsTrigger value="output">출력/결재</TabsTrigger></TabsList><TabsContent value="pack" className="space-y-3">
+        <Card><CardHeader className="pb-2"><div className="flex items-center justify-between"><CardTitle className="text-sm">월별 사용내역서</CardTitle><Dialog open={reportOpen} onOpenChange={setReportOpen}><DialogTrigger asChild><Button size="sm" variant="outline" disabled={!selectedConstruction}>월별 작성</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>월별 사용내역서 생성</DialogTitle></DialogHeader><Label>작성월</Label><Input type="month" value={newReportMonth} onChange={(e) => setNewReportMonth(e.target.value)} /><DialogFooter><Button onClick={createReport}>생성</Button></DialogFooter></DialogContent></Dialog></div></CardHeader><CardContent><div className="flex flex-wrap gap-2">{filteredReports.map((r) => <div key={r.id} className={`flex items-center rounded-md border ${r.id === selectedReportId ? 'border-primary bg-primary text-primary-foreground' : 'bg-card'}`}><button type="button" className="px-3 py-1.5 text-sm" onClick={() => setSelectedReportId(r.id)}>{String(r.report_month).slice(0, 7)} <Badge variant="secondary" className="ml-2">{getSafetyCostStatusLabel(r.status)}</Badge>{r.source === 'legacy_import' && <Badge variant="outline" className="ml-1">이관</Badge>}</button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => openReportEditor(r)} disabled={r.status === 'approved'} aria-label="월별 사용내역서 수정"><Pencil className="h-3.5 w-3.5" /></Button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => deleteReport(r)} disabled={r.status === 'approved'} aria-label="월별 사용내역서 삭제"><Trash2 className="h-3.5 w-3.5" /></Button></div>)}</div></CardContent></Card>
+
+        {selectedReport && <Tabs value={reportTab} onValueChange={setReportTab}><TabsList className="flex flex-wrap h-auto gap-1"><TabsTrigger value="items">사용 항목 <Badge variant="secondary" className="ml-2">{baseItems.length}</Badge></TabsTrigger><TabsTrigger value="pack">증빙패키지 {!evidencePack.ready && filteredItems.length > 0 && <Badge variant="destructive" className="ml-2">{evidencePack.hardMissing.length}</Badge>}</TabsTrigger><TabsTrigger value="ppe-stock">보호구 수불</TabsTrigger><TabsTrigger value="ppe">보호구 지급대장 {ppeSignedCount > 0 && <Badge variant="secondary" className="ml-2">{ppeSignedCount}</Badge>}</TabsTrigger><TabsTrigger value="ai">AI 자동분석</TabsTrigger><TabsTrigger value="audit">자동검토 {(compliance.warningCount + evidenceMissingCount + evidencePack.hardMissing.length) > 0 && <Badge variant="destructive" className="ml-2">{compliance.warningCount + evidenceMissingCount + evidencePack.hardMissing.length}</Badge>}</TabsTrigger><TabsTrigger value="output">출력/결재</TabsTrigger></TabsList><TabsContent value="pack" className="space-y-3">
           {selectedConstruction && selectedReport && (
             <EvidencePackPanel
               projectId={selectedConstruction.project_id}
@@ -685,6 +745,16 @@ const SafetyCost = () => {
               userId={user?.id}
               onChanged={() => { fetchAll(); refreshPpeSignedCount(selectedReport.id); }}
               onOpenPpeLedger={() => setReportTab('ppe')}
+            />
+          )}
+        </TabsContent>
+        <TabsContent value="ppe-stock" className="space-y-3">
+          {selectedConstruction && (
+            <PpeStockPanel
+              projectId={selectedConstruction.project_id}
+              companyId={selectedConstruction.company_id}
+              constructionId={selectedConstruction.id}
+              userId={user?.id}
             />
           )}
         </TabsContent>

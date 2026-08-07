@@ -191,7 +191,18 @@ async function invokeRiskJson<T = any>(
     return { resp, payload, contentType, text };
   };
 
-  let { resp, payload, contentType, text } = await doFetch(publishableKey);
+  let resp: Response;
+  let payload: any;
+  let contentType: string;
+  let text: string;
+  try {
+    ({ resp, payload, contentType, text } = await doFetch(publishableKey));
+  } catch (e: any) {
+    if (e?.name === 'AbortError' || signal?.aborted) {
+      throw new Error(mapErrorMessage('AbortError: AI 요청이 시간 초과로 중단되었습니다.'));
+    }
+    throw e;
+  }
 
   // Rare gateway mismatch: retry once via supabase.functions.invoke
   if (!resp.ok && (resp.status === 401 || resp.status === 403)) {

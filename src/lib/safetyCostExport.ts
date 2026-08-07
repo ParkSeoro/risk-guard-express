@@ -142,6 +142,13 @@ export function buildSafetyCostWorkbook(
     if (rows.length) XLSX.utils.sheet_add_aoa(detail, rows, { origin: 'A5' });
   }
 
+  // 증빙체크 시트 — TOC 안내 (정적 템플릿 위에 작성 월·작성자 기입)
+  const evidenceSheet = wb.Sheets['증빙체크'];
+  if (evidenceSheet) {
+    setCell(evidenceSheet, 'A14', `작성월: ${monthLabel} / 작성자: ${input.writerName}`);
+    setCell(evidenceSheet, 'A21', '철 순서: 총괄 → 월별집계 → 업체별집계 → 증빙목록 → 항목별+증빙(1~9) → 보호구 지급대장');
+  }
+
   // Per-category sheets
   SAFETY_COST_CATEGORIES.forEach((cat) => {
     const sheetName = CATEGORY_SHEET[cat.code];

@@ -25,6 +25,7 @@ import {
 } from '@/lib/workPlanTbmNotice';
 import AttachmentChecklist from '@/components/work-plan/AttachmentChecklist';
 import LegalCalculatorPanel from '@/components/work-plan/LegalCalculatorPanel';
+import { compressUploadFile, formatBytes } from '@/lib/compressUploadFile';
 import { formatSectionContent } from '@/lib/formatSectionContent';
 import EquipmentManager from '@/components/equipment/EquipmentManager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -476,9 +477,20 @@ const WorkPlanDetail = () => {
 
   const handleFileUpload = async (attIdx: number, file: File) => {
     if (!planId || !user || !plan?.project_id) return;
-    const safeName = file.name.replace(/[^\w.\-]+/g, '_');
+    let prepared;
+    try {
+      prepared = await compressUploadFile(file);
+    } catch (e: any) {
+      toast({ title: '업로드 불가', description: e?.message || String(e), variant: 'destructive' });
+      return;
+    }
+    const uploadFile = prepared.file;
+    const safeName = uploadFile.name.replace(/[^\w.\-]+/g, '_');
     const path = `${plan.project_id}/work-plans/${planId}/${attIdx}_${Date.now()}_${safeName}`;
-    const { error: uploadError } = await supabase.storage.from('attachments').upload(path, file, { upsert: true });
+    const { error: uploadError } = await supabase.storage.from('attachments').upload(path, uploadFile, {
+      upsert: true,
+      contentType: uploadFile.type || undefined,
+    });
     if (uploadError) {
       toast({ title: '업로드 실패', description: uploadError.message, variant: 'destructive' });
       return;
@@ -487,7 +499,12 @@ const WorkPlanDetail = () => {
     const updated = attachments.map((a, i) => i === attIdx ? { ...a, uploaded: true, fileUrl: urlData.publicUrl } : a);
     setAttachments(updated);
     setIsDirty(true);
-    toast({ title: '업로드 완료' });
+    toast({
+      title: '업로드 완료',
+      description: prepared.compressed
+        ? `이미지 압축 ${formatBytes(prepared.originalBytes)} → ${formatBytes(prepared.finalBytes)}`
+        : undefined,
+    });
   };
 
 

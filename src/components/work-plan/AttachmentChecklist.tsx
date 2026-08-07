@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Paperclip, Upload, CheckCircle2, Lock, Bot, FileWarning, Loader2, Printer } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { computeAttachmentProgress, type AttachmentProgress } from '@/lib/workPlanAttachments';
+import { compressUploadFile, formatBytes, DEFAULT_UPLOAD_MAX_BYTES } from '@/lib/compressUploadFile';
 
 interface Row {
   id: string;
@@ -49,7 +50,6 @@ export default function AttachmentChecklist({
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
-  const MAX_BYTES = 20 * 1024 * 1024; // 20MB
 
   const reload = useCallback(async () => {
     const { data, error } = await supabase
@@ -89,15 +89,22 @@ export default function AttachmentChecklist({
   };
 
   const handleUpload = async (row: Row, file: File) => {
-    if (file.size > MAX_BYTES) {
-      toast({ title: '파일이 너무 큽니다.', description: `최대 ${Math.round(MAX_BYTES / 1024 / 1024)}MB 까지 업로드할 수 있습니다.`, variant: 'destructive' });
-      return;
-    }
     setUploadingId(row.id);
     try {
-      const safeName = file.name.replace(/[^\w.\-]+/g, '_');
+      let prepared;
+      try {
+        prepared = await compressUploadFile(file, { maxBytes: DEFAULT_UPLOAD_MAX_BYTES });
+      } catch (e: any) {
+        toast({ title: '업로드 불가', description: e?.message || String(e), variant: 'destructive' });
+        return;
+      }
+      const uploadFile = prepared.file;
+      const safeName = uploadFile.name.replace(/[^\w.\-]+/g, '_');
       const path = `${projectId}/work-plans/${workPlanId}/${row.attachment_key}_${Date.now()}_${safeName}`;
-      const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { upsert: true });
+      const { error: upErr } = await supabase.storage.from('attachments').upload(path, uploadFile, {
+        upsert: true,
+        contentType: uploadFile.type || undefined,
+      });
       if (upErr) {
         toast({ title: '업로드 실패', description: upErr.message, variant: 'destructive' });
         return;
@@ -105,13 +112,23 @@ export default function AttachmentChecklist({
       const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
       const { error } = await supabase
         .from('work_plan_attachments')
-        .update({ file_url: urlData.publicUrl, file_path: path, file_size: file.size, mime_type: file.type })
+        .update({
+          file_url: urlData.publicUrl,
+          file_path: path,
+          file_size: uploadFile.size,
+          mime_type: uploadFile.type,
+        })
         .eq('id', row.id);
       if (error) {
         toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
         return;
       }
-      toast({ title: '업로드되었습니다.' });
+      toast({
+        title: '업로드되었습니다.',
+        description: prepared.compressed
+          ? `이미지 압축 ${formatBytes(prepared.originalBytes)} → ${formatBytes(prepared.finalBytes)}`
+          : undefined,
+      });
       onChange?.();
       await reload();
     } finally {
@@ -161,6 +178,7 @@ export default function AttachmentChecklist({
         </div>
         <p className="text-[11px] text-muted-foreground pt-1">
           공종별 필수 서류를 모두 올리면 결재·인쇄에 포함됩니다. 법정필수 누락 시 결재가 차단됩니다.
+          사진(JPG/PNG/WebP)은 업로드 시 자동 압축됩니다. PDF는 원본(최대 20MB)입니다.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">

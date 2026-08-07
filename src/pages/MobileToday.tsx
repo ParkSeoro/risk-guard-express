@@ -95,13 +95,14 @@ function ManagerToday({
   const [openActions, setOpenActions] = useState<number | null>(null);
   const [workStops, setWorkStops] = useState<number | null>(null);
   const [onSite, setOnSite] = useState<number | null>(null);
+  const [needsGpsCalibration, setNeedsGpsCalibration] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!projectId) return;
       try {
-        const [appr, acts, stops, att] = await Promise.all([
+        const [appr, acts, stops, att, proj] = await Promise.all([
           supabase.rpc("get_my_pending_entity_approvals" as any).then((r) => r.data),
           supabase
             .from("safety_inspection_actions" as any)
@@ -122,6 +123,11 @@ function ManagerToday({
             .eq("attended", true)
             .eq("exited", false)
             .then((r) => r.count),
+          supabase
+            .from("projects")
+            .select("gps_calibration")
+            .eq("id", projectId)
+            .maybeSingle(),
         ]);
         if (cancelled) return;
         const list = Array.isArray(appr) ? appr : appr ? [appr] : [];
@@ -129,6 +135,7 @@ function ManagerToday({
         setOpenActions(acts ?? 0);
         setWorkStops(stops ?? 0);
         setOnSite(att ?? 0);
+        setNeedsGpsCalibration(!(proj.data as { gps_calibration?: unknown } | null)?.gps_calibration);
       } catch {
         /* ignore partial failures */
       }
@@ -240,18 +247,44 @@ function ManagerToday({
         </CardContent>
       </Card>
 
-      {isMaster && (
+      {(isMaster || needsGpsCalibration) && (
         <div className="space-y-1.5">
-          <Button
-            className="w-full h-11"
-            disabled={!projectId}
-            onClick={() => navigate("/app/worker/map-calibration")}
-          >
-            <Crosshair className="h-4 w-4 mr-2" /> 맵·GPS 맞추기
-          </Button>
-          <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-            도면 업로드 후 워킹 보정 · 위성 맵핑 불필요
-          </p>
+          {needsGpsCalibration && (
+            <Card className="border-amber-500/40 bg-amber-500/5">
+              <CardContent className="p-3 space-y-2">
+                <p className="text-xs font-medium flex items-center gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+                  다음 단계: 맵·GPS 워킹 보정
+                </p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  도면만 올리면 위험구역 알람이 어긋날 수 있습니다. 현장에서 A·B·C 지점을 걸어 보정해 주세요.
+                </p>
+                <Button
+                  size="sm"
+                  className="w-full h-9"
+                  disabled={!projectId}
+                  onClick={() => navigate("/app/worker/map-calibration")}
+                >
+                  <Crosshair className="h-3.5 w-3.5 mr-1.5" /> 지금 보정하기
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+          {isMaster && !needsGpsCalibration && (
+            <>
+              <Button
+                className="w-full h-11"
+                variant="outline"
+                disabled={!projectId}
+                onClick={() => navigate("/app/worker/map-calibration")}
+              >
+                <Crosshair className="h-4 w-4 mr-2" /> 맵·GPS 맞추기
+              </Button>
+              <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
+                보정 완료됨 · 재보정은 언제든 가능
+              </p>
+            </>
+          )}
         </div>
       )}
     </div>

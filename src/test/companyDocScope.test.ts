@@ -7,6 +7,7 @@ import {
   filterRunsByCompanyScope,
   resolveAssessmentRunCompanyLabels,
   formatCompanyLabelsShort,
+  formatCreatorCompanyLabel,
 } from '@/lib/companyDocScope';
 
 describe('companyDocScopeMode', () => {
@@ -110,5 +111,16 @@ describe('resolveAssessmentRunCompanyLabels', () => {
 
   it('shortens long company lists', () => {
     expect(formatCompanyLabelsShort(['A', 'B', 'C', 'D'], 2)).toBe('A, B 외 2');
+  });
+});
+
+describe('formatCreatorCompanyLabel', () => {
+  it('formats name with company type', () => {
+    expect(formatCreatorCompanyLabel('진남토건(주)', 'contractor')).toBe('진남토건(주)(협력사)');
+    expect(formatCreatorCompanyLabel('대한건설', 'gc')).toBe('대한건설(시공사)');
+  });
+
+  it('returns empty when name missing', () => {
+    expect(formatCreatorCompanyLabel('', 'contractor')).toBe('');
   });
 });

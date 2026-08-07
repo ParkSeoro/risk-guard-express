@@ -22,9 +22,8 @@ import EditRunDialog from '@/components/assessment-runs/EditRunDialog';
 import DeleteRunDialog from '@/components/assessment-runs/DeleteRunDialog';
 import CloneRunDialog from '@/components/assessment-runs/CloneRunDialog';
 import {
+  fetchCreatorCompanyLabelMap,
   filterRunsByCompanyScope,
-  formatCompanyLabelsShort,
-  resolveAssessmentRunCompanyLabels,
 } from '@/lib/companyDocScope';
 
 const typeLabels: Record<string, string> = { '최초': '최초', '정기': '정기', '수시': '수시', '상시': '상시' };
@@ -85,6 +84,8 @@ const AssessmentRuns = () => {
   // Companies for contractor selection
   const [contractors, setContractors] = useState<{ id: string; name: string; type: string }[]>([]);
   const [companyNameMap, setCompanyNameMap] = useState<Record<string, string>>({});
+  /** created_by → 작성자 소속 업체 라벨 */
+  const [creatorCompanyMap, setCreatorCompanyMap] = useState<Record<string, string>>({});
 
   const [form, setForm] = useState({
     type: '정기', period_label: '', start_date: '', end_date: '', target_processes: '', target_company_ids: [] as string[], notes: '',
@@ -149,9 +150,14 @@ const AssessmentRuns = () => {
 
     if (list.length > 0) {
       const runIds = list.map((r: any) => r.id);
-      const { data: items } = await supabase.from('risk_items')
-        .select('run_id, risk_grade')
-        .in('run_id', runIds);
+      const creatorIds = list.map((r: any) => r.created_by).filter(Boolean);
+      const [{ data: items }, creatorMap] = await Promise.all([
+        supabase.from('risk_items')
+          .select('run_id, risk_grade')
+          .in('run_id', runIds),
+        fetchCreatorCompanyLabelMap(selectedProject, creatorIds).catch(() => ({})),
+      ]);
+      setCreatorCompanyMap(creatorMap);
       const stats: Record<string, { total: number; high: number; med: number; low: number }> = {};
       (items || []).forEach((item: any) => {
         if (!item.run_id) return;
@@ -162,6 +168,8 @@ const AssessmentRuns = () => {
         else stats[item.run_id].low++;
       });
       setRunStats(stats);
+    } else {
+      setCreatorCompanyMap({});
     }
     setLoading(false);
   };
@@ -271,12 +279,11 @@ const AssessmentRuns = () => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search) {
       const term = search.toLowerCase();
-      const companyHit = resolveAssessmentRunCompanyLabels(r, companyNameMap)
-        .some((n) => n.toLowerCase().includes(term));
+      const creatorCo = (r.created_by && creatorCompanyMap[r.created_by]) || '';
       return (
         r.period_label?.toLowerCase().includes(term)
         || r.notes?.toLowerCase().includes(term)
-        || companyHit
+        || creatorCo.toLowerCase().includes(term)
       );
     }
     return true;
@@ -330,7 +337,7 @@ const AssessmentRuns = () => {
             </Select>
             <div className="flex-1 relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input placeholder="기간, 업체, 메모 검색..." className="h-8 pl-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} />
+              <Input placeholder="기간, 작성사, 메모 검색..." className="h-8 pl-8 text-xs" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             {isMaster && (
               <div className="flex items-center gap-1.5">
@@ -372,8 +379,9 @@ const AssessmentRuns = () => {
           {filtered.map(run => {
             const stats = runStats[run.id] || { total: 0, high: 0, med: 0, low: 0 };
             const approval = getApprovalLabel(run);
-            const companyLabels = resolveAssessmentRunCompanyLabels(run, companyNameMap);
-            const companyShort = formatCompanyLabelsShort(companyLabels);
+            const creatorCompany = run.created_by
+              ? (creatorCompanyMap[run.created_by] || '')
+              : '';
             return (
               <Card
                 key={run.id}
@@ -398,19 +406,12 @@ const AssessmentRuns = () => {
 
                       <div className="flex items-center gap-1.5 text-xs flex-wrap">
                         <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
-                        {companyLabels.length > 0 ? (
-                          <>
-                            <span className="font-medium text-foreground" title={companyLabels.join(', ')}>
-                              {companyShort}
-                            </span>
-                            {companyLabels.length > 2 && (
-                              <span className="text-[10px] text-muted-foreground">
-                                ({companyLabels.length}개 업체)
-                              </span>
-                            )}
-                          </>
+                        {creatorCompany ? (
+                          <span className="font-medium text-foreground" title="작성자 소속 회사">
+                            {creatorCompany}
+                          </span>
                         ) : (
-                          <span className="text-muted-foreground">대상 업체 미지정</span>
+                          <span className="text-muted-foreground">작성사 미확인</span>
                         )}
                       </div>
 

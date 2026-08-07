@@ -7,7 +7,13 @@
  * - 협력사/공급사: own company only
  * - worker/viewer: own company only
  */
-import { isContractorType, isClientType, isGcType, normalizeCompanyType } from '@/lib/companyTypes';
+import {
+  companyTypeLabel,
+  isContractorType,
+  isClientType,
+  isGcType,
+  normalizeCompanyType,
+} from '@/lib/companyTypes';
 import { supabase } from '@/integrations/supabase/client';
 
 const NIL_COMPANY = '00000000-0000-0000-0000-000000000000';
@@ -230,4 +236,47 @@ export function formatCompanyLabelsShort(names: string[], maxVisible = 2): strin
   if (names.length <= maxVisible) return names.join(', ');
   const head = names.slice(0, maxVisible).join(', ');
   return `${head} 외 ${names.length - maxVisible}`;
+}
+
+/** 작성자 소속 표시: "진남토건(주)(협력사)" */
+export function formatCreatorCompanyLabel(
+  name?: string | null,
+  type?: string | null,
+): string {
+  const n = String(name || '').trim();
+  if (!n) return '';
+  const t = companyTypeLabel(type);
+  if (t && t !== '-') return `${n}(${t})`;
+  return n;
+}
+
+/**
+ * assessment_runs.created_by → 프로젝트 멤버십 소속 업체 라벨.
+ * userId → "업체명(구분)"
+ */
+export async function fetchCreatorCompanyLabelMap(
+  projectId: string,
+  userIds: string[],
+): Promise<Record<string, string>> {
+  const ids = [...new Set(userIds.map(String).filter(Boolean))];
+  if (!projectId || ids.length === 0) return {};
+
+  const { data, error } = await supabase
+    .from('project_members')
+    .select('user_id, company_id, companies:company_id(name, type)')
+    .eq('project_id', projectId)
+    .in('user_id', ids);
+  if (error) throw error;
+
+  const out: Record<string, string> = {};
+  for (const row of (data || []) as any[]) {
+    const uid = row.user_id as string;
+    if (!uid || out[uid]) continue;
+    const co = row.companies;
+    const name = co?.name || null;
+    const type = co?.type || null;
+    const label = formatCreatorCompanyLabel(name, type);
+    if (label) out[uid] = label;
+  }
+  return out;
 }

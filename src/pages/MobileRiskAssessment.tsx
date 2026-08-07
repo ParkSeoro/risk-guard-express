@@ -9,11 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Search, Loader2, Eye, FileText, Building2 } from "lucide-react";
 import { toast } from "sonner";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
-import {
-  formatCompanyLabelsShort,
-  resolveAssessmentRunCompanyLabels,
-} from "@/lib/companyDocScope";
-import { fetchProjectCompanies } from "@/lib/projectCompanies";
+import { fetchCreatorCompanyLabelMap } from "@/lib/companyDocScope";
 
 /**
  * Mobile list: approved risk assessments only → Read-Only Viewer.
@@ -25,17 +21,13 @@ export default function MobileRiskAssessment() {
   const { projectId, role, companyId } = useMobileAccess();
   const [rows, setRows] = useState<any[]>([]);
   const [counts, setCounts] = useState<Record<string, { high: number; medium: number; low: number; total: number }>>({});
-  const [companyNameMap, setCompanyNameMap] = useState<Record<string, string>>({});
+  const [creatorCompanyMap, setCreatorCompanyMap] = useState<Record<string, string>>({});
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
     if (!projectId) return;
     setLoading(true);
-    const companies = await fetchProjectCompanies(projectId).catch(() => []);
-    const map: Record<string, string> = {};
-    companies.forEach((c) => { map[c.id] = c.name; });
-    setCompanyNameMap(map);
 
     const { data, error } = await supabase
       .from("assessment_runs")
@@ -56,11 +48,13 @@ export default function MobileRiskAssessment() {
 
     if (scoped.length) {
       const ids = scoped.map((r: any) => r.id);
-      const { data: items, error: iErr } = await supabase
-        .from("risk_items")
-        .select("run_id, risk_grade")
-        .in("run_id", ids);
+      const creatorIds = scoped.map((r: any) => r.created_by).filter(Boolean);
+      const [{ data: items, error: iErr }, creatorMap] = await Promise.all([
+        supabase.from("risk_items").select("run_id, risk_grade").in("run_id", ids),
+        fetchCreatorCompanyLabelMap(projectId, creatorIds).catch(() => ({})),
+      ]);
       if (iErr) toast.error("위험항목 로드 실패: " + iErr.message);
+      setCreatorCompanyMap(creatorMap);
       const c: Record<string, any> = {};
       ids.forEach((id) => (c[id] = { high: 0, medium: 0, low: 0, total: 0 }));
       (items || []).forEach((it: any) => {
@@ -74,6 +68,7 @@ export default function MobileRiskAssessment() {
       setCounts(c);
     } else {
       setCounts({});
+      setCreatorCompanyMap({});
     }
     setLoading(false);
   };
@@ -84,9 +79,8 @@ export default function MobileRiskAssessment() {
 
   const filtered = rows.filter((r) => {
     if (!q) return true;
-    const companyHit = resolveAssessmentRunCompanyLabels(r, companyNameMap)
-      .some((n) => n.includes(q));
-    return r.period_label?.includes(q) || r.notes?.includes(q) || companyHit;
+    const creatorCo = (r.created_by && creatorCompanyMap[r.created_by]) || "";
+    return r.period_label?.includes(q) || r.notes?.includes(q) || creatorCo.includes(q);
   });
 
   return (
@@ -110,7 +104,7 @@ export default function MobileRiskAssessment() {
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="기간/업체/메모 검색"
+            placeholder="기간/작성사/메모 검색"
             className="pl-9 h-11"
           />
         </div>
@@ -135,7 +129,7 @@ export default function MobileRiskAssessment() {
 
         {filtered.map((r) => {
           const c = counts[r.id] || { high: 0, medium: 0, low: 0, total: 0 };
-          const companyLabels = resolveAssessmentRunCompanyLabels(r, companyNameMap);
+          const creatorCompany = r.created_by ? (creatorCompanyMap[r.created_by] || "") : "";
           return (
             <Card
               key={r.id}
@@ -152,10 +146,8 @@ export default function MobileRiskAssessment() {
                 <div className="font-medium text-sm">{r.period_label || "(기간 미지정)"}</div>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Building2 className="h-3 w-3 shrink-0" />
-                  <span className="truncate" title={companyLabels.join(", ")}>
-                    {companyLabels.length > 0
-                      ? formatCompanyLabelsShort(companyLabels)
-                      : "대상 업체 미지정"}
+                  <span className="truncate" title="작성자 소속 회사">
+                    {creatorCompany || "작성사 미확인"}
                   </span>
                 </div>
                 <div className="flex gap-3 text-xs">

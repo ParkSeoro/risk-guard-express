@@ -162,7 +162,7 @@ const AITestEngine = () => {
     <div className="space-y-4 max-w-5xl mx-auto animate-fade-in">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Beaker className="h-6 w-6" /> AI 테스트 엔진 <Badge variant="outline">Master</Badge>
+          <Beaker className="h-6 w-6" /> AI 테스트 엔진 <Badge variant="outline">마스터</Badge>
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
           위험성평가 AI 생성 시스템의 동작/속도/품질을 자동 검증합니다.

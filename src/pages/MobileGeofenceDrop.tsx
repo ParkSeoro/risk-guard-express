@@ -147,7 +147,7 @@ export default function MobileGeofenceDrop() {
     const { error } = await supabase.from("restricted_zones").insert({
       project_id: projectId,
       name: name.trim() || "현장 지정 위험구역",
-      description: `Walk&Drop · accuracy ±${Math.round(fixing.accuracy)}m${calNote}`,
+      description: `원터치 등록 · 정확도 ±${Math.round(fixing.accuracy)}m${calNote}`,
       geometry_type: "radius",
       geo_polygon: null,
       center_lat: fixing.lat,
@@ -192,7 +192,7 @@ export default function MobileGeofenceDrop() {
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div className="font-bold text-lg flex-1">원터치 위험구역 (Walk & Drop)</div>
+        <div className="font-bold text-lg flex-1">원터치 위험구역 등록</div>
       </header>
 
       <main className="p-4 space-y-4 max-w-md mx-auto">

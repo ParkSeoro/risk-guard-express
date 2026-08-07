@@ -518,7 +518,7 @@ export default function DigPermitForm({
               <h2 className="title" style={{ margin: 0 }}>{L('general.title', '안전작업허가서')}</h2>
               {projectName && <div className="text-[10px] text-muted-foreground mt-0.5">Project : {projectName}</div>}
             </div>
-            <div className="doc-meta">Doc. No<br/>{effectiveDocNo}</div>
+            <div className="doc-meta">문서번호<br/>{effectiveDocNo}</div>
           </div>
           )}
 
@@ -868,7 +868,7 @@ export default function DigPermitForm({
           <div className="form-header">
             {logoUrl ? <img src={logoUrl} alt="logo" className="logo" /> : <div style={{ width: 160 }} />}
             <div className="title-wrap"><h2 className="title" style={{ margin: 0 }}>{L('confined_space.title', '밀폐공간 작업허가서')}</h2></div>
-            <div className="doc-meta">Doc. No<br/>{effectiveDocNo}</div>
+            <div className="doc-meta">문서번호<br/>{effectiveDocNo}</div>
           </div>
           <table>
             <ColGroup widths={applicantCols} />
@@ -986,7 +986,7 @@ export default function DigPermitForm({
           <div className="form-header">
             {logoUrl ? <img src={logoUrl} alt="logo" className="logo" /> : <div style={{ width: 160 }} />}
             <div className="title-wrap"><h2 className="title" style={{ margin: 0 }}>{L('hot_work.title', '화기작업허가서')}</h2></div>
-            <div className="doc-meta">Doc. No<br/>{effectiveDocNo}</div>
+            <div className="doc-meta">문서번호<br/>{effectiveDocNo}</div>
           </div>
           <table>
             <ColGroup widths={applicantCols} />
@@ -1093,7 +1093,7 @@ export default function DigPermitForm({
           <div className="form-header">
             {logoUrl ? <img src={logoUrl} alt="logo" className="logo" /> : <div style={{ width: 160 }} />}
             <div className="title-wrap"><h2 className="title" style={{ margin: 0 }}>{L('excavation.title', '굴착·중장비 작업허가서')}</h2></div>
-            <div className="doc-meta">Doc. No<br/>{effectiveDocNo}</div>
+            <div className="doc-meta">문서번호<br/>{effectiveDocNo}</div>
           </div>
           <table>
             <ColGroup widths={applicantCols} />

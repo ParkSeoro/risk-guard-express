@@ -139,7 +139,7 @@ export const TABLE_LABELS: Record<SoftDeleteTable, string> = {
   safety_cost_monthly_reports: '산업안전보건관리비 월보고서',
   safety_education_materials: '안전교육 자료',
   legal_duties: '법적업무',
-  todo_items: 'To-Do',
+  todo_items: '할 일',
   equipment_master: '장비 마스터',
   environment_tags: '환경 태그',
   master_processes: '공정 마스터',

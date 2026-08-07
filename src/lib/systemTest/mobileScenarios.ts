@@ -37,7 +37,7 @@ export const MOBILE_ROUTES: Array<{
   { path: "/app/worker/scan", label: "QR 스캔(카메라)", requires: { kind: "browser", cap: "camera" } },
   { path: "/app/worker/work-stop", label: "작업중지", requires: { kind: "table", name: "work_stop_requests", project_scoped: true } },
   { path: "/app/worker/daily-health-log", label: "일일 건강일지", requires: { kind: "table", name: "worker_daily_health_logs", project_scoped: true } },
-  { path: "/app/worker/geofence-drop", label: "Walk&Drop 구역", requires: { kind: "table", name: "restricted_zones", project_scoped: true } },
+  { path: "/app/worker/geofence-drop", label: "원터치 위험구역", requires: { kind: "table", name: "restricted_zones", project_scoped: true } },
   { path: "/app/worker/map-calibration", label: "지도 GPS 보정", requires: { kind: "table", name: "site_maps", project_scoped: true } },
   // Public / auth entry points outside the shell
   {

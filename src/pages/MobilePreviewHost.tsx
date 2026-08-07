@@ -19,7 +19,7 @@ import { Smartphone, RefreshCw } from "lucide-react";
 const VIEWPORTS = [
   { id: "pixel7", label: "Pixel 7", w: 412, h: 915 },
   { id: "iphone14", label: "iPhone 14", w: 390, h: 844 },
-  { id: "small", label: "Small Android", w: 360, h: 740 },
+  { id: "small", label: "소형 안드로이드", w: 360, h: 740 },
 ] as const;
 
 const MODE_LABELS: Record<PreviewMode, string> = {

@@ -637,7 +637,7 @@ export default function SiteControlMap() {
       if (off) {
         toast.message("도면 밖 구역 — 필요하면 고급 위성 정렬을 확인하세요", {
           description:
-            "모바일 Walk&Drop이 GPS 보정 없이 저장된 경우 도면과 어긋납니다. 보정 후 재등록하세요.",
+            "모바일 원터치 등록이 GPS 보정 없이 저장된 경우 도면과 어긋납니다. 보정 후 재등록하세요.",
           duration: 5000,
         });
       }
@@ -1068,7 +1068,7 @@ export default function SiteControlMap() {
 
               <TabsContent value="zones" className="mt-3 space-y-3 focus-visible:outline-none">
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  아래 버튼으로 평면 도면에 구역을 그립니다. 완료 후 Whitelist/Blacklist 통제를 설정하면
+                  아래 버튼으로 평면 도면에 구역을 그립니다. 완료 후 허용/차단 목록 통제를 설정하면
                   GPS 좌표로 자동 변환·저장됩니다.
                 </p>
                 {!activeMap?.image_url && (

@@ -300,7 +300,7 @@ const SettingsNotifications = () => {
     { key: 'event_tbm',                 label: 'TBM 세션',              desc: 'TBM 시작 알림 및 참여 요청' },
     { key: 'event_health_warning',      label: '건강 경고 (유소견·미수검 출근)', desc: '안전관리자에게 출근 경고' },
     { key: 'event_health_checkup_due',  label: '건강검진 도래 / 만료',   desc: '대상자·관리자에게 사전 통지' },
-    { key: 'event_todo_due',            label: 'To-Do 마감 임박',        desc: '법정 의무 작업 마감 알림' },
+    { key: 'event_todo_due',            label: '할 일 마감 임박',        desc: '법정 의무 작업 마감 알림' },
     { key: 'event_assessment_result',   label: '위험성평가 결과 공유',    desc: '평가 완료 시 참가자에게' },
     { key: 'event_general',             label: '일반 공지',              desc: '시스템 공지 / 운영 안내' },
   ];

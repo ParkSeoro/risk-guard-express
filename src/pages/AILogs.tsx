@@ -75,7 +75,7 @@ const AILogs = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Activity className="h-6 w-6" /> AI 로그 <Badge variant="outline">Master</Badge>
+            <Activity className="h-6 w-6" /> AI 로그 <Badge variant="outline">마스터</Badge>
           </h1>
           <p className="text-sm text-muted-foreground mt-1">AI 생성 작업/배치 입출력/오류를 추적합니다.</p>
         </div>

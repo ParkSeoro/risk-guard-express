@@ -215,7 +215,7 @@ export default function ZoneAccessRulesDialog({
                   onChange={() => setRuleType("ALLOW")}
                 />
                 <span>
-                  <span className="font-medium">지정 대상만 출입 허용 (Whitelist)</span>
+                  <span className="font-medium">지정 대상만 출입 허용 (허용 목록)</span>
                   <span className="block text-[11px] text-muted-foreground">
                     선택한 업체·직종만 출입 가능 · 그 외 진입 시 알람
                   </span>
@@ -230,7 +230,7 @@ export default function ZoneAccessRulesDialog({
                   onChange={() => setRuleType("DENY")}
                 />
                 <span>
-                  <span className="font-medium">지정 대상 출입 전면 통제 (Blacklist)</span>
+                  <span className="font-medium">지정 대상 출입 전면 통제 (차단 목록)</span>
                   <span className="block text-[11px] text-muted-foreground">
                     선택한 업체·직종 진입 시 알람 · 그 외는 허용
                   </span>

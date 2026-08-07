@@ -99,7 +99,7 @@ export default function Index() {
           <div className="lg:col-span-5">
             <div className="relative rounded-2xl border border-[hsl(220,45%,28%)] bg-[hsl(220,55%,10%)] p-6 shadow-2xl">
               <div className="absolute -top-3 left-6 px-3 py-0.5 bg-[hsl(25,95%,53%)] text-[hsl(220,60%,12%)] text-[10px] font-black tracking-widest rounded">
-                PLATFORM SCOPE
+                플랫폼 범위
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <StatCard label="위험성평가" value="4" sub="종" icon={ShieldAlert} tone="brand" />
@@ -109,7 +109,7 @@ export default function Index() {
               </div>
               <div className="mt-4 pt-4 border-t border-[hsl(220,45%,22%)] space-y-2">
                 {[
-                  { t: "산업안전보건법 대응", s: "위험성평가·작업계획서·법정 To-Do 자동화", c: "hsl(145 63% 50%)" },
+                  { t: "산업안전보건법 대응", s: "위험성평가·작업계획서·법정 할 일 자동화", c: "hsl(145 63% 50%)" },
                   { t: "AI 위험성평가 엔진", s: "공정·작업별 자동 생성 + 검증센터 보완", c: "hsl(25 95% 53%)" },
                   { t: "QR 출입 · TBM · 사고/비상", s: "현장 데이터가 결재·감사 로그로 연결", c: "hsl(210 90% 60%)" },
                 ].map(e => (
@@ -134,7 +134,7 @@ export default function Index() {
           <div className="mb-14 flex items-end justify-between flex-wrap gap-4">
             <div>
               <div className="text-xs font-mono uppercase tracking-[0.3em] text-[hsl(25,95%,60%)] mb-3">
-                — MODULES
+                — 모듈
               </div>
               <h2 className="text-4xl md:text-5xl font-black tracking-tight">
                 여섯 개의 모듈, 하나의 흐름.
@@ -224,7 +224,7 @@ const MODULES = [
   { title: "작업허가서 (DIG 표준)", icon: FileSignature, desc: "밀폐·화기·굴착·중장비 카테고리, 디지털 결재 5단계." },
   { title: "TBM 일지", icon: ClipboardCheck, desc: "QR 한 번으로 참여 서명·교육 이수까지 자동 기록." },
   { title: "근로자 출입 / 위치", icon: QrCode, desc: "QR 출입, 위험구역 진입 경고, 퇴근 시 잔류자 확인." },
-  { title: "법적업무 To-Do", icon: ClipboardCheck, desc: "산업안전보건법 22개 법정 업무 일정·증빙 관리." },
+  { title: "법적업무 할 일", icon: ClipboardCheck, desc: "산업안전보건법 22개 법정 업무 일정·증빙 관리." },
   { title: "현장 사이트맵", icon: MapPin, desc: "구역·위험반경 시각화, 모바일 알림 연동." },
 ];
 

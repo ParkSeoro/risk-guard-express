@@ -61,9 +61,9 @@ export function isZoneCategory(value: string | null | undefined): value is ZoneC
 }
 
 export const ZONE_COLOR_OPTIONS = [
-  { value: "#ef4444", label: "Red", swatch: "bg-red-500" },
-  { value: "#eab308", label: "Yellow", swatch: "bg-yellow-500" },
-  { value: "#3b82f6", label: "Blue", swatch: "bg-blue-500" },
+  { value: "#ef4444", label: "빨강", swatch: "bg-red-500" },
+  { value: "#eab308", label: "노랑", swatch: "bg-yellow-500" },
+  { value: "#3b82f6", label: "파랑", swatch: "bg-blue-500" },
 ] as const;
 
 export type ZoneColor = (typeof ZONE_COLOR_OPTIONS)[number]["value"];

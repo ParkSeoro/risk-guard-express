@@ -10,6 +10,11 @@ import {
   safeParseDeepseekRiskItems,
   resolveDraftModelChain,
 } from "../_shared/deepseekRisk.ts";
+import {
+  callOpenAiChat,
+  isOpenAiFallbackEnabled,
+  OpenAiChatError,
+} from "../_shared/openaiChat.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -685,28 +690,74 @@ serve(async (req) => {
       };
 
       try {
-        // Single NVIDIA call with a FAST draft chain (Mistral Small first).
-        // Do NOT fall back via geminiChatFetch — that restarts the same heavy
-        // Nemotron path with a 90s budget and is why drafts often took ~90s.
+        // Primary: NVIDIA fast draft chain. Do NOT use geminiChatFetch (same NIM, ~90s stall).
+        // Last resort only: OpenAI ChatGPT when OPENAI_API_KEY is set and NIM fails / empty.
         const draftModels = resolveDraftModelChain();
-        const deep = await callDeepseekRiskChat({
-          messages: [
-            { role: "system", content: sys },
-            { role: "user", content: user },
-          ],
-          temperature: 0.15,
-          max_tokens: detailLevel === "comprehensive" ? 1800 : 1200,
-          timeoutMs: 28_000,
-          maxAttempts: 1,
-          models: draftModels,
-        });
-        if (deep.fallbackFrom) {
-          console.log(`scope_draft used model=${deep.model} (from ${deep.fallbackFrom})`);
-        } else {
-          console.log(`scope_draft used model=${deep.model}`);
+        let content = "";
+        let usedModel = "";
+        let provider: "nvidia" | "openai" = "nvidia";
+
+        try {
+          const deep = await callDeepseekRiskChat({
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: user },
+            ],
+            temperature: 0.15,
+            max_tokens: detailLevel === "comprehensive" ? 1800 : 1200,
+            timeoutMs: 28_000,
+            maxAttempts: 1,
+            models: draftModels,
+          });
+          if (deep.fallbackFrom) {
+            console.log(`scope_draft used model=${deep.model} (from ${deep.fallbackFrom})`);
+          } else {
+            console.log(`scope_draft used model=${deep.model}`);
+          }
+          content = deep.content;
+          usedModel = deep.model || "";
+        } catch (nvidiaErr) {
+          console.warn("scope_draft NVIDIA failed:", nvidiaErr);
+          if (!isOpenAiFallbackEnabled()) throw nvidiaErr;
+          console.warn("scope_draft falling back to OpenAI ChatGPT (last resort)");
+          const oa = await callOpenAiChat({
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: user },
+            ],
+            temperature: 0.15,
+            max_tokens: detailLevel === "comprehensive" ? 1800 : 1200,
+            timeoutMs: 45_000,
+            purpose: "draft",
+          });
+          content = oa.content;
+          usedModel = oa.model;
+          provider = "openai";
         }
 
-        const items = parseDraftItems(deep.content);
+        let items = parseDraftItems(content);
+        // Empty after sanitize → try OpenAI once if not already used
+        if (items.length === 0 && provider === "nvidia" && isOpenAiFallbackEnabled()) {
+          console.warn("scope_draft NVIDIA returned 0 usable items → OpenAI fallback");
+          try {
+            const oa = await callOpenAiChat({
+              messages: [
+                { role: "system", content: sys },
+                { role: "user", content: user },
+              ],
+              temperature: 0.15,
+              max_tokens: detailLevel === "comprehensive" ? 1800 : 1200,
+              timeoutMs: 45_000,
+              purpose: "draft",
+            });
+            items = parseDraftItems(oa.content);
+            usedModel = oa.model;
+            provider = "openai";
+          } catch (oaErr) {
+            console.error("scope_draft OpenAI fallback failed:", oaErr);
+          }
+        }
+
         if (items.length === 0) {
           return new Response(
             JSON.stringify({ error: "세부작업·위험요인 초안을 생성하지 못했습니다.", items: [] }),
@@ -721,15 +772,20 @@ serve(async (req) => {
             normalized_equipment: normalizedEquipment,
             mode: "scope_draft",
             soft_cap: softCap,
-            model: deep.model,
+            model: usedModel,
+            provider,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
         );
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Unknown error";
         console.error("scope_draft error:", e);
+        const status =
+          e instanceof DeepseekRiskError || e instanceof OpenAiChatError
+            ? e.status || 500
+            : 500;
         return new Response(JSON.stringify({ error: msg }), {
-          status: e instanceof DeepseekRiskError ? e.status || 500 : 500,
+          status,
           headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
         });
       }
@@ -918,22 +974,67 @@ serve(async (req) => {
       };
 
       try {
-        // Single NVIDIA chain call (quality primary). No geminiChatFetch double wait.
-        const deep = await callDeepseekRiskChat({
-          messages: [
-            { role: "system", content: sys },
-            { role: "user", content: user },
-          ],
-          temperature: 0.2,
-          max_tokens: maxTokens,
-          timeoutMs: 40_000,
-          maxAttempts: 1,
-        });
-        if (deep.fallbackFrom) {
-          console.log(`risk_fill used model=${deep.model} (from ${deep.fallbackFrom})`);
+        // Primary: NVIDIA. Last resort: OpenAI when key set and NIM fails / empty.
+        let content = "";
+        let usedModel = "";
+        let provider: "nvidia" | "openai" = "nvidia";
+
+        try {
+          const deep = await callDeepseekRiskChat({
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: user },
+            ],
+            temperature: 0.2,
+            max_tokens: maxTokens,
+            timeoutMs: 40_000,
+            maxAttempts: 1,
+          });
+          if (deep.fallbackFrom) {
+            console.log(`risk_fill used model=${deep.model} (from ${deep.fallbackFrom})`);
+          }
+          content = deep.content;
+          usedModel = deep.model || "";
+        } catch (nvidiaErr) {
+          console.warn("risk_fill NVIDIA failed:", nvidiaErr);
+          if (!isOpenAiFallbackEnabled()) throw nvidiaErr;
+          console.warn("risk_fill falling back to OpenAI ChatGPT (last resort)");
+          const oa = await callOpenAiChat({
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: user },
+            ],
+            temperature: 0.2,
+            max_tokens: maxTokens,
+            timeoutMs: 45_000,
+            purpose: "fill",
+          });
+          content = oa.content;
+          usedModel = oa.model;
+          provider = "openai";
         }
 
-        const items = mapFillItems(deep.content);
+        let items = mapFillItems(content);
+        if (items.length === 0 && provider === "nvidia" && isOpenAiFallbackEnabled()) {
+          console.warn("risk_fill NVIDIA returned 0 items → OpenAI fallback");
+          try {
+            const oa = await callOpenAiChat({
+              messages: [
+                { role: "system", content: sys },
+                { role: "user", content: user },
+              ],
+              temperature: 0.2,
+              max_tokens: maxTokens,
+              timeoutMs: 45_000,
+              purpose: "fill",
+            });
+            items = mapFillItems(oa.content);
+            usedModel = oa.model;
+            provider = "openai";
+          } catch (oaErr) {
+            console.error("risk_fill OpenAI fallback failed:", oaErr);
+          }
+        }
 
         if (items.length === 0) {
           return new Response(
@@ -949,14 +1050,20 @@ serve(async (req) => {
             normalized_equipment: normalizedEquipment,
             mode: "risk_fill",
             fill_stage: fillStage,
+            model: usedModel,
+            provider,
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
         );
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Unknown error";
         console.error("risk_fill error:", e);
+        const status =
+          e instanceof DeepseekRiskError || e instanceof OpenAiChatError
+            ? e.status || 500
+            : 500;
         return new Response(JSON.stringify({ error: msg }), {
-          status: e instanceof DeepseekRiskError ? e.status || 500 : 500,
+          status,
           headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
         });
       }

@@ -1,0 +1,50 @@
+import { describe, expect, it } from 'vitest';
+import {
+  CATEGORY_EVIDENCE_PACK,
+  evaluateEvidencePack,
+  sumByCategory,
+} from '@/lib/safetyCostEvidencePack';
+
+describe('safetyCostEvidencePack', () => {
+  it('defines packs for categories 1-9', () => {
+    expect(CATEGORY_EVIDENCE_PACK.map((p) => p.code)).toEqual(
+      ['1', '2', '3', '4', '5', '6', '7', '8', '9'],
+    );
+  });
+
+  it('requires PPE ledger when category 3 has spend', () => {
+    const result = evaluateEvidencePack({
+      items: [{ id: 'a', category_code: '3', amount: 100000 }],
+      files: [
+        { item_id: 'a', evidence_kind: 'transaction' },
+        { item_id: 'a', evidence_kind: 'tax_invoice' },
+        { item_id: 'a', evidence_kind: 'site_photo' },
+      ],
+      ppeLedgerSignedCount: 0,
+    });
+    expect(result.ready).toBe(false);
+    expect(result.hardMissing.some((r) => r.requirement.kind === 'ppe_ledger')).toBe(true);
+  });
+
+  it('accepts system PPE ledger signatures', () => {
+    const result = evaluateEvidencePack({
+      items: [{ id: 'a', category_code: '3', amount: 100000 }],
+      files: [
+        { item_id: 'a', evidence_kind: 'transaction' },
+        { item_id: 'a', evidence_kind: 'tax_invoice' },
+        { item_id: 'a', evidence_kind: 'site_photo' },
+      ],
+      ppeLedgerSignedCount: 2,
+    });
+    expect(result.hardMissing.some((r) => r.requirement.kind === 'ppe_ledger')).toBe(false);
+    expect(result.ready).toBe(true);
+  });
+
+  it('sums by category', () => {
+    expect(sumByCategory([
+      { id: '1', category_code: '2', amount: 100 },
+      { id: '2', category_code: '2', amount: 50 },
+      { id: '3', category_code: '5', amount: 20 },
+    ])).toEqual({ '2': 150, '5': 20 });
+  });
+});

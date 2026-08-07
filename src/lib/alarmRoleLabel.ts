@@ -52,12 +52,29 @@ export function encodeRoleLabelInNotes(baseNotes: string, role: AlarmRoleInput):
   return cleaned ? `${cleaned} | role_label=${label}` : `role_label=${label}`;
 }
 
+/**
+ * Entrant-facing copy (TTS + fullscreen).
+ * e.g. "박서로 근로자이(가) 펌프장 제한구역에 진입했습니다. 즉시 이탈하십시오."
+ */
 export function buildDangerTtsMessage(opts?: {
   displayName?: string | null;
   role?: AlarmRoleInput;
+  zoneName?: string | null;
 }): string {
-  const base = "경고. 위험 구역에 진입했습니다. 즉시 이탈하십시오.";
-  if (!opts?.displayName && !opts?.role) return base;
+  const zone = (opts?.zoneName || "").trim() || "제한구역";
+  const base = `${zone}에 진입했습니다. 즉시 이탈하십시오.`;
+  if (!opts?.displayName && !opts?.role) {
+    return `경고. ${base}`;
+  }
   const subject = formatAlarmSubject(opts.displayName, opts.role);
-  return `${subject}. ${base}`;
+  return `${subject}이(가) ${base}`;
+}
+
+/** Fullscreen body (same wording as TTS, without relying on split hacks). */
+export function buildDangerUiMessage(opts?: {
+  displayName?: string | null;
+  role?: AlarmRoleInput;
+  zoneName?: string | null;
+}): string {
+  return buildDangerTtsMessage(opts);
 }

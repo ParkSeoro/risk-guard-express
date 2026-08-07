@@ -17,10 +17,19 @@ describe("alarmRoleHonorific", () => {
     expect(formatAlarmSubject("박서로", "worker")).toBe("박서로 근로자");
   });
 
-  it("personalizes TTS", () => {
-    const msg = buildDangerTtsMessage({ displayName: "박서로", role: "master" });
-    expect(msg).toContain("박서로 관리자님");
-    expect(msg).toContain("위험 구역");
+  it("personalizes TTS with zone name", () => {
+    const msg = buildDangerTtsMessage({
+      displayName: "박서로",
+      role: "master",
+      zoneName: "펌프장 제한구역",
+    });
+    expect(msg).toContain("박서로 관리자님이(가) 펌프장 제한구역에 진입했습니다");
+    expect(msg).toContain("즉시 이탈");
     expect(msg).not.toMatch(/박서로 근로자/);
+  });
+
+  it("falls back to 제한구역 when zone missing", () => {
+    const msg = buildDangerTtsMessage({ displayName: "김현장", role: "worker" });
+    expect(msg).toContain("김현장 근로자이(가) 제한구역에 진입했습니다");
   });
 });

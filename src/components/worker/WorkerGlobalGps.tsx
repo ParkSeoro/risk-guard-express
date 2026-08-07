@@ -16,7 +16,7 @@ import {
   normalizeTrackingConsentStorage,
   setTrackingConsent,
 } from "@/lib/tracking/locationTracker";
-import { hasCompletedNativePermissions } from "@/lib/native/isNativeApp";
+import { hasCompletedNativePermissions, isNativeApp } from "@/lib/native/isNativeApp";
 import {
   resolveSiteTrackingFence,
   isInsideResumeFence,
@@ -46,7 +46,8 @@ export default function WorkerGlobalGps() {
       setTrackingConsent(true);
     }
     if (!hasTrackingConsent() && profile?.agreed_to_location !== true) return;
-    if (!hasCompletedNativePermissions()) return;
+    // Native onboarding flag is only required inside Capacitor (PWA/web must not soft-lock GPS).
+    if (isNativeApp() && !hasCompletedNativePermissions()) return;
 
     let cancelled = false;
     let resumeTimer: number | null = null;
@@ -116,10 +117,10 @@ export default function WorkerGlobalGps() {
       const digits = profile.phone.replace(/\D/g, "");
       const { data } = await supabase
         .from("workers")
-        .select("id, phone")
+        .select("id, phone, company_id, job_type")
         .eq("project_id", projectId)
         .eq("is_active", true)
-        .limit(50);
+        .limit(80);
       const match = (data || []).find((w) => (w.phone || "").replace(/\D/g, "") === digits);
       workerIdRef.current = match?.id || null;
       return workerIdRef.current;

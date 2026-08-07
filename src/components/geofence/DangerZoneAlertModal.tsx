@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { DANGER_MESSAGE, playDangerAlarm, stopSpeaking, unlockAlarmAudio } from "@/lib/tts";
+import { playDangerAlarm, stopSpeaking, unlockAlarmAudio } from "@/lib/tts";
 import type { AlarmRoleInput } from "@/lib/alarmRoleLabel";
-import { formatAlarmSubject } from "@/lib/alarmRoleLabel";
+import { buildDangerUiMessage, formatAlarmSubject } from "@/lib/alarmRoleLabel";
 import { startDangerHapticsLoop } from "@/lib/alarmHaptics";
 import { Button } from "@/components/ui/button";
 import { AlertOctagon, X } from "lucide-react";
@@ -42,6 +42,7 @@ export default function DangerZoneAlertModal({
         await playDangerAlarm({
           displayName: workerName,
           role: workerRole,
+          zoneName,
           skipSiren: false,
           skipTts: !withTts,
         });
@@ -59,7 +60,6 @@ export default function DangerZoneAlertModal({
       void runCycle(cycle % 2 === 0);
     }, 12_000);
 
-    // Keep screen awake while red alarm is showing (best-effort)
     try {
       const wl = (navigator as any)?.wakeLock;
       if (wl?.request) {
@@ -83,10 +83,15 @@ export default function DangerZoneAlertModal({
       stopSpeaking();
       void wakeLock?.release?.();
     };
-  }, [open, workerName, workerRole]);
+  }, [open, workerName, workerRole, zoneName]);
 
   if (!open) return null;
 
+  const message = buildDangerUiMessage({
+    displayName: workerName,
+    role: workerRole,
+    zoneName,
+  });
   const subjectLabel =
     workerName || workerRole ? formatAlarmSubject(workerName, workerRole) : null;
 
@@ -117,10 +122,8 @@ export default function DangerZoneAlertModal({
       <h1 className="text-4xl sm:text-5xl font-black text-center leading-tight mb-4">
         위험 구역 진입
       </h1>
-      <p className="text-xl sm:text-2xl font-bold text-center leading-snug max-w-md mb-2">
-        {DANGER_MESSAGE.split(". ").slice(0, 2).join(". ")}.
-        <br />
-        즉시 이탈하십시오.
+      <p className="text-xl sm:text-2xl font-bold text-center leading-snug max-w-lg mb-2">
+        {message}
       </p>
       {zoneName && (
         <p className="text-lg text-red-100 mt-4 text-center">구역: {zoneName}</p>

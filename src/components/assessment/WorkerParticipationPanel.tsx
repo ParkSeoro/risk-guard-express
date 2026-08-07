@@ -12,6 +12,7 @@ import { Plus, Trash2, Sparkles, Loader2, Upload, MessageSquare, HeartPulse, Ale
 import { detectHighRiskCategories, type RiskItemLike } from '@/lib/highRiskDetection';
 import { autoGenerateAccidentCases } from '@/lib/autoAccidentGeneration';
 import { generateAccidentCasesStreaming } from '@/lib/riskAutoGenAI';
+import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 
 interface Props {
   runId: string;
@@ -130,10 +131,12 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
   const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
     const path = `${projectId}/worker-sign/${Date.now()}_${f.name}`;
-    const { error } = await supabase.storage.from('attachments').upload(path, f);
-    if (error) { toast({ title: '업로드 실패', variant: 'destructive' }); return; }
-    const { data } = supabase.storage.from('attachments').getPublicUrl(path);
-    setNewOpinion(p => ({ ...p, signature_url: data.publicUrl }));
+    try {
+      const uploaded = await uploadAttachmentFile(path, f);
+      setNewOpinion(p => ({ ...p, signature_url: uploaded.publicUrl }));
+    } catch {
+      toast({ title: '업로드 실패', variant: 'destructive' });
+    }
   };
 
   // ---------- AI 분석 ----------
@@ -300,13 +303,15 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
   const photoUpload = async (e: React.ChangeEvent<HTMLInputElement>, accidentId: string) => {
     const f = e.target.files?.[0]; if (!f) return;
     const path = `${projectId}/accidents/${Date.now()}_${f.name}`;
-    const { error } = await supabase.storage.from('attachments').upload(path, f);
-    if (error) { toast({ title: '업로드 실패', variant: 'destructive' }); return; }
-    const { data } = supabase.storage.from('attachments').getPublicUrl(path);
-    const target = accidents.find(a => a.id === accidentId);
-    const urls = [...(target?.photo_urls || []), data.publicUrl];
-    await supabase.from('assessment_accidents' as any).update({ photo_urls: urls }).eq('id', accidentId);
-    await reload();
+    try {
+      const uploaded = await uploadAttachmentFile(path, f);
+      const target = accidents.find(a => a.id === accidentId);
+      const urls = [...(target?.photo_urls || []), uploaded.publicUrl];
+      await supabase.from('assessment_accidents' as any).update({ photo_urls: urls }).eq('id', accidentId);
+      await reload();
+    } catch {
+      toast({ title: '업로드 실패', variant: 'destructive' });
+    }
   };
 
   return (

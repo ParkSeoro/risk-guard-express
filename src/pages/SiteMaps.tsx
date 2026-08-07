@@ -17,6 +17,7 @@ import {
   GPS_COORDS_INVALID_MSG,
   looksLikeWgs84Ring,
 } from "@/lib/tracking/imageSpaceGeo";
+import { uploadAttachmentFile } from "@/lib/compressUploadFile";
 
 
 type SiteMap = {
@@ -127,13 +128,18 @@ export default function SiteMaps() {
     const ext = file.name.split(".").pop() || "png";
     // Storage RLS expects the first folder to be the project_id UUID
     const path = `${projectId}/site-maps/${Date.now()}.${ext}`;
-    const { error: upErr } = await supabase.storage.from("attachments").upload(path, file, { upsert: false, contentType: file.type });
-    if (upErr) { toast.error("업로드 실패: " + upErr.message); return; }
-    const { data: pub } = supabase.storage.from("attachments").getPublicUrl(path);
+    let publicUrl: string;
+    try {
+      const uploaded = await uploadAttachmentFile(path, file, { upsert: false });
+      publicUrl = uploaded.publicUrl;
+    } catch (e: any) {
+      toast.error("업로드 실패: " + (e?.message || String(e)));
+      return;
+    }
     const name = prompt("사이트맵 이름", "본관 1층 평면도") || "신규 사이트맵";
     const { data, error } = await supabase
       .from("site_maps")
-      .insert({ project_id: projectId, name, image_url: pub.publicUrl })
+      .insert({ project_id: projectId, name, image_url: publicUrl })
       .select()
       .single();
     if (error) { toast.error(error.message); return; }

@@ -26,6 +26,7 @@ import {
   Edit3, Archive, Clock, Pencil, Ban, Camera, Loader2,
 } from 'lucide-react';
 import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
+import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 import {
   acknowledgeRiskAutoGenJob,
   cancelRiskAutoGenJob,
@@ -1563,10 +1564,11 @@ const AssessmentRunDetail = () => {
       for (const file of Array.from(files)) {
         const ext = file.name.split('.').pop();
         const path = `worker-photos/${run.project_id}/${runId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error } = await supabase.storage.from('attachments').upload(path, file);
-        if (!error) {
-          const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
-          urls.push(urlData.publicUrl);
+        try {
+          const uploaded = await uploadAttachmentFile(path, file);
+          urls.push(uploaded.publicUrl);
+        } catch {
+          /* skip failed file */
         }
       }
       if (urls.length > 0) {

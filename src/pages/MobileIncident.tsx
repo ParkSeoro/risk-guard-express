@@ -15,6 +15,7 @@ import { ArrowLeft, Camera, Loader2, AlertOctagon, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { correctTerms } from "@/lib/termCorrection";
+import { uploadAttachmentFile } from "@/lib/compressUploadFile";
 
 const incidentSchema = z.object({
   type: z.enum(["near_miss", "minor", "major", "property"]),
@@ -79,9 +80,8 @@ export default function MobileIncident() {
   const upload = async (f: File) => {
     const ext = f.name.split(".").pop() || "jpg";
     const path = `${projectId}/incidents/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const { error } = await supabase.storage.from("attachments").upload(path, f);
-    if (error) throw error;
-    return supabase.storage.from("attachments").getPublicUrl(path).data.publicUrl;
+    const uploaded = await uploadAttachmentFile(path, f);
+    return uploaded.publicUrl;
   };
 
   const submit = async () => {

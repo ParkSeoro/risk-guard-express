@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Camera, CheckCircle2, Clock, AlertTriangle, Image as ImageIcon, Send } from 'lucide-react';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
+import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 
 interface FeedbackItem {
   id: string;
@@ -131,10 +132,11 @@ export default function FeedbackPanel({
     for (const file of files) {
       const ext = file.name.split('.').pop();
       const path = `feedback/${projectId}/${runId}/${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error } = await supabase.storage.from('attachments').upload(path, file);
-      if (!error) {
-        const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
-        urls.push(urlData.publicUrl);
+      try {
+        const uploaded = await uploadAttachmentFile(path, file);
+        urls.push(uploaded.publicUrl);
+      } catch {
+        /* skip failed file */
       }
     }
     return urls;

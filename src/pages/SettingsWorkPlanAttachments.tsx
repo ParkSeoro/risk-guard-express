@@ -52,7 +52,12 @@ export default function SettingsWorkPlanAttachments() {
   const access = useGlobalProjectAccess();
   const { toast } = useToast();
 
-  const canEdit = hasRole('master') || access.userRole === 'project_admin';
+  // 마스터·프로젝트관리자·안전관리자 (해당 프로젝트 역할)
+  const canEdit =
+    hasRole('master')
+    || hasRole('project_admin')
+    || access.userRole === 'project_admin'
+    || access.userRole === 'safety_manager';
   const projectId = access.selectedProject;
 
   const [workType, setWorkType] = useState('heavy_lifting');
@@ -168,7 +173,14 @@ export default function SettingsWorkPlanAttachments() {
       setDefs(data);
       rebuildRows(data, workType);
     } catch (e: any) {
-      toast({ title: '설정 로드 실패', description: e.message, variant: 'destructive' });
+      const msg = e?.message || String(e);
+      toast({
+        title: '설정 로드 실패',
+        description: /relation|does not exist|permission denied|schema cache/i.test(msg)
+          ? `${msg} — Supabase에 work_plan_attachment_defs 마이그레이션(GRANT 포함)을 적용했는지 확인하세요.`
+          : msg,
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
@@ -216,10 +228,20 @@ export default function SettingsWorkPlanAttachments() {
           if (error) throw error;
         }
       }
-      toast({ title: '저장됨', description: '새 작업계획서·동기화 시 반영됩니다. 기존 문서는 첨부 탭 진입 시 갱신됩니다.' });
+      toast({
+        title: '저장됨',
+        description: '작업계획서 「첨부」 탭을 다시 열면 필수/선택이 반영됩니다.',
+      });
       await load();
     } catch (e: any) {
-      toast({ title: '저장 실패', description: e.message, variant: 'destructive' });
+      const msg = e?.message || String(e);
+      toast({
+        title: '저장 실패',
+        description: /relation|does not exist|permission denied|schema cache/i.test(msg)
+          ? `${msg} — SQL 마이그레이션(20260807051000_fix_work_plan_attachment_defs_grants.sql)을 적용하세요.`
+          : msg,
+        variant: 'destructive',
+      });
     } finally {
       setSaving(false);
     }

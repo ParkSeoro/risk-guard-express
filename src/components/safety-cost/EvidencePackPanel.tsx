@@ -17,6 +17,7 @@ import {
   type EvidenceFileLike,
 } from '@/lib/safetyCostEvidencePack';
 import { formatKRW } from '@/lib/safetyCost';
+import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 
 type Props = {
   projectId: string;
@@ -62,15 +63,13 @@ export function EvidencePackPanel({
         const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
         // storage RLS: path must contain project UUID
         const path = `safety-cost/${projectId}/${reportId}/pack/${uploadCat}_${uploadKind}_${Date.now()}_${safe}`;
-        const { error } = await supabase.storage.from('attachments').upload(path, file, {
-          upsert: true,
-          contentType: file.type || 'application/octet-stream',
-        });
-        if (error) {
-          toast({ title: '업로드 실패', description: error.message, variant: 'destructive' });
+        let uploaded;
+        try {
+          uploaded = await uploadAttachmentFile(path, file);
+        } catch (e: any) {
+          toast({ title: '업로드 실패', description: e?.message || String(e), variant: 'destructive' });
           continue;
         }
-        const { data } = supabase.storage.from('attachments').getPublicUrl(path);
         rows.push({
           report_id: reportId,
           item_id: null,
@@ -79,11 +78,11 @@ export function EvidencePackPanel({
           company_id: companyId,
           category_code: uploadCat,
           evidence_kind: uploadKind,
-          file_name: file.name,
-          file_path: path,
-          file_url: data.publicUrl,
-          mime_type: file.type || 'application/octet-stream',
-          file_size: file.size,
+          file_name: uploaded.file.name,
+          file_path: uploaded.path,
+          file_url: uploaded.publicUrl,
+          mime_type: uploaded.file.type || 'application/octet-stream',
+          file_size: uploaded.finalBytes,
           uploaded_by: userId,
         });
       }

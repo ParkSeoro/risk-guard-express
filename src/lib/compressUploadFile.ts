@@ -1,8 +1,9 @@
 /**
- * 업로드 전 클라이언트 압축.
+ * 업로드 전 클라이언트 압축 + attachments 버킷 업로드 헬퍼.
  * - 이미지: 긴 변 maxEdge 이하로 리사이즈 + JPEG 품질 압축
  * - PDF/기타: 원본 유지 (용량 한도만 검사)
  */
+import { supabase } from '@/integrations/supabase/client';
 
 export const DEFAULT_UPLOAD_MAX_BYTES = 20 * 1024 * 1024; // 20MB hard cap
 export const DEFAULT_IMAGE_MAX_EDGE = 1920;
@@ -141,5 +142,39 @@ export async function compressUploadFile(
     compressed: true,
     originalBytes,
     finalBytes: outFile.size,
+  };
+}
+
+export type UploadAttachmentResult = CompressUploadResult & {
+  path: string;
+  publicUrl: string;
+};
+
+/** 압축 후 attachments 버킷 업로드 (전 기능 공통) */
+export async function uploadAttachmentFile(
+  path: string,
+  input: File,
+  opts?: {
+    upsert?: boolean;
+    maxBytes?: number;
+    maxEdge?: number;
+    quality?: number;
+  },
+): Promise<UploadAttachmentResult> {
+  const prepared = await compressUploadFile(input, {
+    maxBytes: opts?.maxBytes,
+    maxEdge: opts?.maxEdge,
+    quality: opts?.quality,
+  });
+  const { error } = await supabase.storage.from('attachments').upload(path, prepared.file, {
+    upsert: opts?.upsert ?? true,
+    contentType: prepared.file.type || undefined,
+  });
+  if (error) throw error;
+  const { data } = supabase.storage.from('attachments').getPublicUrl(path);
+  return {
+    ...prepared,
+    path,
+    publicUrl: data.publicUrl,
   };
 }

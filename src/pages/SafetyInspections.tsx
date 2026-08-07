@@ -18,6 +18,7 @@ import IMESafeInput from '@/components/IMESafeInput';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import MultiCompanyFilter from '@/components/MultiCompanyFilter';
 import AssigneeSelect from '@/components/AssigneeSelect';
+import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 
 type Inspection = {
   id: string;
@@ -221,10 +222,13 @@ export default function SafetyInspections() {
   const uploadPhoto = async (file: File, folder: string): Promise<string | null> => {
     const ext = file.name.split('.').pop() || 'jpg';
     const path = `${projectId}/safety-inspection/${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const { error } = await supabase.storage.from('attachments').upload(path, file);
-    if (error) { toast({ title: '업로드 실패', description: error.message, variant: 'destructive' }); return null; }
-    const { data } = supabase.storage.from('attachments').getPublicUrl(path);
-    return data.publicUrl;
+    try {
+      const uploaded = await uploadAttachmentFile(path, file);
+      return uploaded.publicUrl;
+    } catch (e: any) {
+      toast({ title: '업로드 실패', description: e?.message || String(e), variant: 'destructive' });
+      return null;
+    }
   };
 
   const onItemPhoto = async (item: InspItem, files: FileList | null) => {

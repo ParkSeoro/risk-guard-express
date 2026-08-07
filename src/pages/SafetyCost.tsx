@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { sendNotification } from '@/lib/notificationService';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { SAFETY_COST_CATEGORIES, analyzeSafetyCostCompliance, classifySafetyCostItem, formatKRW, getSafetyCostStatusLabel } from '@/lib/safetyCost';
+import { SAFETY_COST_TEMPLATE_PATH, buildSafetyCostWorkbook, downloadSafetyCostWorkbook } from '@/lib/safetyCostExport';
 import { getEvidenceGuide } from '@/lib/safetyCostEvidenceGuide';
 import SafetyCostValidationPanel from '@/components/safety-cost/SafetyCostValidationPanel';
 import { useSearchParams } from 'react-router-dom';
@@ -559,28 +560,45 @@ const SafetyCost = () => {
 
   async function exportExcel() {
     if (!selectedReport || !selectedConstruction) return;
-    const res = await fetch('/templates/safety-cost-template.xlsx');
-    const wb = XLSX.read(await res.arrayBuffer(), { type: 'array', cellStyles: true });
-    const companyName = companies.find((c) => c.id === selectedConstruction.company_id)?.name || '';
-    const summary = wb.Sheets['1.총괄'];
-    if (summary) {
-      XLSX.utils.sheet_add_aoa(summary, [[companyName]], { origin: 'C3' });
-      XLSX.utils.sheet_add_aoa(summary, [[selectedConstruction.construction_name]], { origin: 'C5' });
-      XLSX.utils.sheet_add_aoa(summary, [[selectedConstruction.construction_amount]], { origin: 'C7' });
-      XLSX.utils.sheet_add_aoa(summary, [[selectedConstruction.safety_cost_total]], { origin: 'C8' });
-      XLSX.utils.sheet_add_aoa(summary, [[Number(selectedConstruction.safety_cost_total || 0) - approvedTotal]], { origin: 'C9' });
-      XLSX.utils.sheet_add_aoa(summary, [[approvedTotal]], { origin: 'F9' });
-      SAFETY_COST_CATEGORIES.forEach((cat, idx) => {
-        const total = filteredItems.filter((it) => it.category_code === cat.code || it.category_name === cat.name).reduce((sum, it) => sum + Number(it.amount || 0), 0);
-        XLSX.utils.sheet_add_aoa(summary, [[total, total]], { origin: `E${13 + idx}` });
+    try {
+      const res = await fetch(SAFETY_COST_TEMPLATE_PATH);
+      if (!res.ok) throw new Error('공식 양식 템플릿을 불러오지 못했습니다.');
+      const companyName = companies.find((c) => c.id === selectedConstruction.company_id)?.name || '';
+      const monthKey = String(selectedReport.report_month).slice(0, 7);
+      const priorApproved = reports.filter((r) =>
+        r.construction_id === selectedConstruction.id
+        && r.status === 'approved'
+        && String(r.report_month).slice(0, 7) < monthKey,
+      );
+      const approvedCumulativeBeforeMonth = priorApproved.reduce((sum, r) => sum + Number(r.report_total || 0), 0);
+      const priorIds = new Set(priorApproved.map((r) => r.id));
+      const approvedByCategoryBefore: Record<string, number> = {};
+      SAFETY_COST_CATEGORIES.forEach((c) => { approvedByCategoryBefore[c.code] = 0; });
+      items.filter((it) => priorIds.has(it.report_id)).forEach((it) => {
+        const code = String(it.category_code || '');
+        if (approvedByCategoryBefore[code] != null) approvedByCategoryBefore[code] += Number(it.amount || 0);
       });
+
+      const wb = buildSafetyCostWorkbook(await res.arrayBuffer(), {
+        companyName,
+        constructionName: selectedConstruction.construction_name,
+        constructionAmount: Number(selectedConstruction.construction_amount || 0),
+        safetyCostTotal: Number(selectedConstruction.safety_cost_total || 0),
+        reportMonth: String(selectedReport.report_month),
+        writerName: profile?.display_name || '',
+        approvedCumulativeBeforeMonth,
+        approvedByCategoryBefore,
+        items: filteredItems,
+        statusLabel,
+        getDisplayDate: (it) => getDisplayDate(it, selectedReport),
+      });
+      downloadSafetyCostWorkbook(
+        wb,
+        `산업안전보건관리비_사용내역서_${selectedConstruction.construction_name}_${monthKey}.xlsx`,
+      );
+    } catch (e: any) {
+      toast({ title: '엑셀 출력 실패', description: e.message || String(e), variant: 'destructive' });
     }
-    const detail = wb.Sheets['2. 항목별'];
-    if (detail) {
-      const rows = filteredItems.map((it, idx) => [it.category_name, idx + 1, getDisplayDate(it, selectedReport), it.item_name, it.specification || '', it.maker || '', it.quantity, it.unit, it.unit_price, it.supply_amount || it.amount, it.vat_amount || 0, it.amount, it.supplier_name || '', statusLabel[it.classification_status] || it.classification_status]);
-      XLSX.utils.sheet_add_aoa(detail, rows, { origin: 'A5' });
-    }
-    XLSX.writeFile(wb, `산업안전보건관리비_${selectedConstruction.construction_name}_${selectedReport.report_month}.xlsx`);
   }
 
   function exportPDF() {
@@ -605,7 +623,7 @@ const SafetyCost = () => {
       <div><h1 className="text-xl font-bold flex items-center gap-2"><ShieldCheck className="h-5 w-5" /> 산업안전보건관리비</h1><p className="text-xs text-muted-foreground mt-1">사용내역 · AI 자동분류 · 증빙 · 결재 · 법정 비율 검증</p></div>
       {activeTab === 'reports' && (
       <div className="flex gap-2">
-        <a href="/templates/safety-cost-template.xls" download><Button variant="outline" size="sm" className="gap-1"><FileSpreadsheet className="h-4 w-4" /> 공식 양식</Button></a>
+        <a href="/templates/safety-cost-template.xlsx" download><Button variant="outline" size="sm" className="gap-1"><FileSpreadsheet className="h-4 w-4" /> 공식양식(별지1호)</Button></a>
         <Dialog open={constructionOpen} onOpenChange={setConstructionOpen}><DialogTrigger asChild><Button size="sm" className="gap-1"><Plus className="h-4 w-4" /> 공사 등록</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>산업안전보건관리비 공사 등록</DialogTitle></DialogHeader><div className="grid grid-cols-2 gap-3"><div className="col-span-2 space-y-1"><Label>회사</Label><Select value={newConstruction.company_id} onValueChange={(v) => setNewConstruction((p) => ({ ...p, company_id: v }))}><SelectTrigger><SelectValue placeholder="회사 선택" /></SelectTrigger><SelectContent>{scopedCompanies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></div><div className="col-span-2 space-y-1"><Label>공사명</Label><Input value={newConstruction.construction_name} onChange={(e) => setNewConstruction((p) => ({ ...p, construction_name: e.target.value }))} /></div><div className="space-y-1"><Label>공사종류</Label><Input value={newConstruction.construction_type} onChange={(e) => setNewConstruction((p) => ({ ...p, construction_type: e.target.value }))} /></div><div className="space-y-1"><Label>공사금액</Label><Input type="number" value={newConstruction.construction_amount} onChange={(e) => setNewConstruction((p) => ({ ...p, construction_amount: e.target.value }))} /></div><div className="space-y-1"><Label>산업안전보건관리비 총액</Label><Input type="number" value={newConstruction.safety_cost_total} onChange={(e) => setNewConstruction((p) => ({ ...p, safety_cost_total: e.target.value }))} /></div><div className="space-y-1"><Label>비고</Label><Input value={newConstruction.notes} onChange={(e) => setNewConstruction((p) => ({ ...p, notes: e.target.value }))} /></div></div><DialogFooter><Button onClick={createConstruction}>등록</Button></DialogFooter></DialogContent></Dialog>
       </div>
       )}

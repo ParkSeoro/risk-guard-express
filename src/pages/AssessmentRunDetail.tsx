@@ -760,8 +760,57 @@ const AssessmentRunDetail = () => {
   const { softDelete: _softDeleteARD } = useSoftDelete();
   const handleDelete = async (id: string) => {
     if (!canEdit && !canForceEdit) return;
-    const r = await _softDeleteARD('risk_items', id, { label: '위험성평가 항목', projectId: run?.project_id });
-    if (r.ok) setItems(prev => prev.filter(i => i.id !== id));
+    // AI 초안 정리에서 삭제 사유 입력은 과함 — 확인만
+    // eslint-disable-next-line no-alert
+    if (!window.confirm('이 행을 삭제할까요? (휴지통에서 30일간 복구 가능)')) return;
+    const r = await _softDeleteARD('risk_items', id, {
+      label: '위험성평가 항목',
+      projectId: run?.project_id,
+      promptReason: false,
+      reason: '행 삭제',
+    });
+    if (r.ok) {
+      setItems(prev => prev.filter(i => i.id !== id));
+      setSelectedRowIds(prev => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const handleBulkDeleteSelected = async () => {
+    if (!canEdit && !canForceEdit) return;
+    const ids = [...selectedRowIds];
+    if (ids.length === 0) return;
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(`선택한 ${ids.length}개 행을 삭제할까요? (휴지통에서 30일간 복구 가능)`)) return;
+    const removed = new Set<string>();
+    for (const id of ids) {
+      const r = await _softDeleteARD('risk_items', id, {
+        label: '위험성평가 항목',
+        projectId: run?.project_id,
+        promptReason: false,
+        reason: '선택 행 삭제',
+        quiet: true,
+      });
+      if (r.ok) removed.add(id);
+    }
+    if (removed.size === 0) return;
+    setItems(prev => prev.filter(i => !removed.has(i.id)));
+    setSelectedRowIds(prev => {
+      const next = new Set(prev);
+      for (const id of removed) next.delete(id);
+      return next;
+    });
+    toast({
+      title: removed.size === ids.length
+        ? `${removed.size}개 행 삭제됨`
+        : `${removed.size}/${ids.length}개 행 삭제됨`,
+      description: '휴지통에서 복구할 수 있습니다.',
+      variant: removed.size === ids.length ? 'default' : 'destructive',
+    });
   };
 
   const handleDuplicate = async (item: RiskItemRow) => {
@@ -2160,6 +2209,17 @@ const AssessmentRunDetail = () => {
             <Button size="sm" variant="outline" className="gap-1.5" onClick={handleAddNew}>
               <Plus className="h-3.5 w-3.5" /> 행 추가
             </Button>
+            {selectedRowIds.size > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 text-destructive border-destructive/40 hover:bg-destructive/10"
+                onClick={() => void handleBulkDeleteSelected()}
+              >
+                <Trash2 className="h-3.5 w-3.5" /> 선택 삭제
+                <Badge variant="secondary" className="ml-1 text-[9px] h-4 px-1">{selectedRowIds.size}건</Badge>
+              </Button>
+            )}
             <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setShowExcelUpload(true); setExcelStep('upload'); }}>
               <Upload className="h-3.5 w-3.5" /> 엑셀 업로드
             </Button>
@@ -2327,7 +2387,7 @@ const AssessmentRunDetail = () => {
               <thead className="sticky top-0 z-10 bg-background shadow-sm">
                 <tr>
                   {(canEdit || canForceEdit) && (
-                    <th className="w-8 text-center print:hidden">
+                    <th className="w-8 text-center print:hidden sticky left-0 z-20 bg-background shadow-[1px_0_0_0_hsl(var(--border))]">
                       <Checkbox
                         checked={filteredItems.length > 0 && filteredItems.every(i => selectedRowIds.has(i.id))}
                         onCheckedChange={(checked) => {
@@ -2335,6 +2395,11 @@ const AssessmentRunDetail = () => {
                           else setSelectedRowIds(new Set());
                         }}
                       />
+                    </th>
+                  )}
+                  {(canEdit || canForceEdit) && (
+                    <th className="w-20 text-center print:hidden sticky left-8 z-20 bg-background shadow-[1px_0_0_0_hsl(var(--border))]">
+                      작업
                     </th>
                   )}
                   <th className="w-8 text-center">#</th>
@@ -2350,7 +2415,6 @@ const AssessmentRunDetail = () => {
                   <th style={{ minWidth: '90px' }}>PPE</th><th style={{ minWidth: '110px' }}>법적근거</th>
                   <th style={{ minWidth: '100px' }}>책임부서</th><th style={{ minWidth: '100px' }}>담당자</th>
                   {validationReport && <th className="w-16 text-center">판정</th>}
-                  {(canEdit || canForceEdit) && <th className="w-20 text-center print:hidden">작업</th>}
                 </tr>
               </thead>
               <tbody>
@@ -2388,7 +2452,7 @@ const AssessmentRunDetail = () => {
                   return (
                     <tr key={item.id} className={`${itemVerdict?.verdict === '부적정' ? 'bg-destructive/5' : itemVerdict?.verdict === '조건부 적정' ? 'bg-warning/5' : ''} ${selectedRowIds.has(item.id) ? 'bg-accent/10' : ''} ${pending ? 'bg-muted/40' : ''} ${scopeDraft && !pending ? 'bg-primary/5' : ''}`}>
                       {(canEdit || canForceEdit) && (
-                        <td className="text-center print:hidden">
+                        <td className={`text-center print:hidden sticky left-0 z-[5] shadow-[1px_0_0_0_hsl(var(--border))] ${selectedRowIds.has(item.id) ? 'bg-accent/10' : pending ? 'bg-muted/40' : scopeDraft ? 'bg-primary/5' : 'bg-background'}`}>
                           <Checkbox
                             checked={selectedRowIds.has(item.id)}
                             onCheckedChange={(checked) => {
@@ -2399,6 +2463,15 @@ const AssessmentRunDetail = () => {
                               });
                             }}
                           />
+                        </td>
+                      )}
+                      {(canEdit || canForceEdit) && (
+                        <td className={`text-center print:hidden sticky left-8 z-[5] shadow-[1px_0_0_0_hsl(var(--border))] ${selectedRowIds.has(item.id) ? 'bg-accent/10' : pending ? 'bg-muted/40' : scopeDraft ? 'bg-primary/5' : 'bg-background'}`}>
+                          <div className="flex items-center gap-0.5 justify-center">
+                            <Button variant="ghost" size="icon" className="h-6 w-6" title="복제" onClick={() => handleDuplicate(item)}><Copy className="h-3 w-3" /></Button>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" title="해당없음 처리" onClick={() => { setExcludeDialogItem(item.id); setExcludeReason(''); }}><Ban className="h-3 w-3 text-muted-foreground" /></Button>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" title="삭제" onClick={() => handleDelete(item.id)}><Trash2 className="h-3 w-3" /></Button>
+                          </div>
                         </td>
                       )}
                       <td className="text-center text-muted-foreground">{idx + 1}</td>
@@ -2516,15 +2589,6 @@ const AssessmentRunDetail = () => {
                               'bg-warning/10 text-warning'
                             }`}>{itemVerdict.verdict}</Badge>
                           )}
-                        </td>
-                      )}
-                      {(canEdit || canForceEdit) && (
-                        <td className="text-center print:hidden">
-                          <div className="flex items-center gap-0.5 justify-center">
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDuplicate(item)}><Copy className="h-3 w-3" /></Button>
-                            <Button variant="ghost" size="icon" className="h-6 w-6" title="해당없음 처리" onClick={() => { setExcludeDialogItem(item.id); setExcludeReason(''); }}><Ban className="h-3 w-3 text-muted-foreground" /></Button>
-                            <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => handleDelete(item.id)}><Trash2 className="h-3 w-3" /></Button>
-                          </div>
                         </td>
                       )}
                     </tr>

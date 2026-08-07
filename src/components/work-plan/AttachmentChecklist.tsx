@@ -7,8 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Paperclip, Upload, CheckCircle2, Lock, Bot, FileWarning, Loader2 } from 'lucide-react';
+import { Paperclip, Upload, CheckCircle2, Lock, Bot, FileWarning, Loader2, Printer } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { computeAttachmentProgress, type AttachmentProgress } from '@/lib/workPlanAttachments';
 
 interface Row {
   id: string;
@@ -30,6 +31,8 @@ interface Props {
   readOnly?: boolean;
   /** 결재 상신 시 사용할 콜백 (예: setIsDirty) */
   onChange?: () => void;
+  /** 상단 액션바 진행률/결재 차단용 */
+  onProgress?: (p: AttachmentProgress) => void;
 }
 
 const KIND_LABEL: Record<Row['category'], { label: string; cls: string }> = {
@@ -38,7 +41,9 @@ const KIND_LABEL: Record<Row['category'], { label: string; cls: string }> = {
   site_proof:    { label: '현장증빙',  cls: 'bg-muted text-muted-foreground' },
 };
 
-export default function AttachmentChecklist({ workPlanId, projectId, companyId, workType, readOnly, onChange }: Props) {
+export default function AttachmentChecklist({
+  workPlanId, projectId, companyId, workType, readOnly, onChange, onProgress,
+}: Props) {
   const [conditions, setConditions] = useState<Record<string, string>>({});
   const [template, setTemplate] = useState<AttachmentItem[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
@@ -57,8 +62,10 @@ export default function AttachmentChecklist({ workPlanId, projectId, companyId, 
       toast({ title: '첨부 불러오기 실패', description: error.message, variant: 'destructive' });
       return;
     }
-    setRows((data ?? []) as Row[]);
-  }, [workPlanId]);
+    const next = (data ?? []) as Row[];
+    setRows(next);
+    onProgress?.(computeAttachmentProgress(next));
+  }, [workPlanId, onProgress]);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,12 +146,12 @@ export default function AttachmentChecklist({ workPlanId, projectId, companyId, 
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm flex items-center gap-1.5">
-            <Paperclip className="h-4 w-4" /> 첨부자료 (백데이터)
+            <Paperclip className="h-4 w-4" /> 필수 첨부자료
           </CardTitle>
           <div className="flex items-center gap-1.5">
             {mandatoryMissing > 0 && (
               <Badge variant="destructive" className="text-[10px] gap-1">
-                <FileWarning className="h-3 w-3" /> 법정 미첨부 {mandatoryMissing}
+                <FileWarning className="h-3 w-3" /> 필수 미첨부 {mandatoryMissing}
               </Badge>
             )}
             <Badge variant={uploaded === rows.length && rows.length > 0 ? 'default' : 'outline'} className="text-[10px]">
@@ -152,6 +159,9 @@ export default function AttachmentChecklist({ workPlanId, projectId, companyId, 
             </Badge>
           </div>
         </div>
+        <p className="text-[11px] text-muted-foreground pt-1">
+          공종별 필수 서류를 모두 올리면 결재·인쇄에 포함됩니다. 법정필수 누락 시 결재가 차단됩니다.
+        </p>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Condition toggles */}
@@ -182,9 +192,9 @@ export default function AttachmentChecklist({ workPlanId, projectId, companyId, 
               <div className="flex items-center gap-2 mb-2">
                 <Badge variant="outline" className={`text-[10px] ${k.cls}`}>{k.label}</Badge>
                 <span className="text-xs text-muted-foreground">
-                  {g === 'legal' && '결재 차단 항목 — 법령상 첨부 필수'}
-                  {g === 'calc_evidence' && '계산서·도면·구조검토 등 근거자료'}
-                  {g === 'site_proof' && '현장 증빙 (선택)'}
+                  {g === 'legal' && '결재 차단 — 법령상 첨부 필수'}
+                  {g === 'calc_evidence' && '계산서·도면·구조검토 등 (필수 표시 시 상신 차단)'}
+                  {g === 'site_proof' && '현장 증빙'}
                 </span>
               </div>
               <div className="space-y-1.5">
@@ -192,10 +202,10 @@ export default function AttachmentChecklist({ workPlanId, projectId, companyId, 
                   const uploaded = !!row.file_url;
                   const isAuto = row.source_type && row.source_type !== 'manual';
                   return (
-                    <div key={row.id} className="flex items-center gap-2 p-2 rounded border bg-card hover:bg-muted/20">
+                    <div key={row.id} className={`flex items-center gap-2 p-2 rounded border bg-card hover:bg-muted/20 ${row.is_mandatory && !uploaded ? 'border-destructive/40' : ''}`}>
                       {uploaded
                         ? <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
-                        : <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 shrink-0" />}
+                        : <div className={`h-4 w-4 rounded-full border-2 shrink-0 ${row.is_mandatory ? 'border-destructive/60' : 'border-muted-foreground/30'}`} />}
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium truncate flex items-center gap-1">
                           {row.name}
@@ -206,8 +216,21 @@ export default function AttachmentChecklist({ workPlanId, projectId, companyId, 
                       </div>
                       {row.is_mandatory && <Badge variant="destructive" className="text-[9px] h-4 shrink-0">필수</Badge>}
                       {uploaded && (
-                        <a href={row.file_url!} target="_blank" rel="noopener"
-                          className="text-[10px] text-primary hover:underline shrink-0">보기</a>
+                        <>
+                          <a href={row.file_url!} target="_blank" rel="noopener"
+                            className="text-[10px] text-primary hover:underline shrink-0">보기</a>
+                          <button
+                            type="button"
+                            className="text-[10px] text-muted-foreground hover:text-foreground shrink-0 inline-flex items-center gap-0.5"
+                            title="이 첨부만 인쇄"
+                            onClick={() => {
+                              const w = window.open(row.file_url!, '_blank');
+                              if (w) setTimeout(() => { try { w.print(); } catch { /* ignore */ } }, 800);
+                            }}
+                          >
+                            <Printer className="h-3 w-3" /> 인쇄
+                          </button>
+                        </>
                       )}
                       {!readOnly && !row.locked && (
                         <>

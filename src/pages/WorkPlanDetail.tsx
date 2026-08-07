@@ -11,7 +11,14 @@ import { WORK_PLAN_TYPES } from '@/lib/workPlanTemplates';
 import RiggingPlanForm from '@/components/rigging/RiggingPlanForm';
 import { generateAttachments, type AttachmentItem } from '@/lib/attachmentTemplates';
 import StructuredSectionForm, { validateSection } from '@/components/work-plan/StructuredSectionForm';
-import { fetchLatestApprovedRun, syncRaToWp, type LatestApprovedRun } from '@/lib/workPlanAttachments';
+import {
+  fetchLatestApprovedRun,
+  syncRaToWp,
+  cloneAttachmentFiles,
+  getApprovalBlockers,
+  type LatestApprovedRun,
+  type AttachmentProgress,
+} from '@/lib/workPlanAttachments';
 import {
   fetchWorkPlanTbmNoticeStatus,
   type WorkPlanNoticeStatus,
@@ -74,6 +81,8 @@ const WorkPlanDetail = () => {
   const [raSyncing, setRaSyncing] = useState(false);
   const [tbmNotice, setTbmNotice] = useState<WorkPlanNoticeStatus | null>(null);
   const [tbmNoticeLoading, setTbmNoticeLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('basic');
+  const [attProgress, setAttProgress] = useState<AttachmentProgress | null>(null);
 
   useEffect(() => {
     if (planId) loadPlan();
@@ -350,15 +359,15 @@ const WorkPlanDetail = () => {
       toast({ title: '필수 입력 항목을 확인해주세요.', variant: 'destructive' });
       return;
     }
-    // 법정 필수 첨부(legal & required) 검증 — 누락 시 결재 차단
-    const { getApprovalBlockers } = await import('@/lib/workPlanAttachments');
+    // 필수 첨부(SSOT: work_plan_attachments.is_mandatory) — 누락 시 결재 차단
     const blockers = await getApprovalBlockers(planId!, plan.work_type);
     if (blockers.length > 0) {
       const names = blockers.slice(0, 5).map(b => b.name).join(', ');
       const more = blockers.length > 5 ? ` 외 ${blockers.length - 5}건` : '';
+      setActiveTab('attachments');
       toast({
         title: '결재 상신이 차단되었습니다',
-        description: `법정 필수 첨부 누락: ${names}${more}. 첨부 후 다시 상신해주세요.`,
+        description: `필수 첨부 누락: ${names}${more}. 첨부 후 다시 상신해주세요.`,
         variant: 'destructive',
       });
       return;
@@ -382,8 +391,9 @@ const WorkPlanDetail = () => {
       const { renderAttachmentsToImages } = await import('@/lib/pdfRender');
       const { data: atts } = await supabase
         .from('work_plan_attachments')
-        .select('file_url, mime_type')
-        .eq('work_plan_id', planId);
+        .select('file_url, mime_type, name, attachment_key, is_mandatory')
+        .eq('work_plan_id', planId)
+        .eq('is_deleted', false);
       const renderedAttachments = await renderAttachmentsToImages(atts || []);
 
       const { data, error } = await supabase.functions.invoke('generate-workplan-pdf', {
@@ -437,13 +447,28 @@ const WorkPlanDetail = () => {
       work_type: plan.work_type,
       title: `${plan.title} (v${(plan.version || 1) + 1})`,
       sections: plan.sections,
-      attachments: plan.attachments,
+      attachments: [],
       created_by: user.id,
       parent_id: plan.id,
       version: (plan.version || 1) + 1,
       status: '작성중',
     }).select().single();
+    if (error) {
+      toast({ title: '복사 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
     if (data) {
+      try {
+        await cloneAttachmentFiles({
+          fromPlanId: plan.id,
+          toPlanId: data.id,
+          projectId: plan.project_id,
+          companyId: plan.company_id,
+          workType: plan.work_type,
+        });
+      } catch (e: any) {
+        console.warn('clone attachments failed', e);
+      }
       toast({ title: '새 회차가 생성되었습니다.' });
       navigate(`/work-plan/${data.id}`);
     }
@@ -521,6 +546,16 @@ const WorkPlanDetail = () => {
             <Copy className="h-3.5 w-3.5" /> 이 계획서로 새로 만들기
           </Button>
         )}
+        {attProgress && (
+          <Badge
+            variant={attProgress.mandatoryMissing > 0 ? 'destructive' : 'outline'}
+            className="text-[10px] cursor-pointer"
+            onClick={() => setActiveTab('attachments')}
+          >
+            첨부 {attProgress.uploaded}/{attProgress.total}
+            {attProgress.mandatoryMissing > 0 ? ` · 필수 미첨부 ${attProgress.mandatoryMissing}` : ' · 필수 완료'}
+          </Badge>
+        )}
         {['승인완료', '승인', '완료'].includes(plan.status) && (
           <>
             <Button size="sm" variant="outline" className="gap-1" onClick={async () => {
@@ -548,7 +583,18 @@ const WorkPlanDetail = () => {
           </>
         )}
         {plan.status === '작성중' && (
-          <Button size="sm" variant="default" onClick={handleSubmitApproval} className="gap-1 ml-auto">
+          <Button
+            size="sm"
+            variant="default"
+            onClick={handleSubmitApproval}
+            className="gap-1 ml-auto"
+            disabled={(attProgress?.mandatoryMissing ?? 0) > 0}
+            title={
+              (attProgress?.mandatoryMissing ?? 0) > 0
+                ? `필수 첨부 ${attProgress!.mandatoryMissing}건 누락`
+                : undefined
+            }
+          >
             <SendHorizontal className="h-3.5 w-3.5" /> 결재 상신
           </Button>
         )}
@@ -683,7 +729,7 @@ const WorkPlanDetail = () => {
         <p className="text-xs text-destructive">{validationErrors['_dates'][0]}</p>
       )}
 
-      <Tabs defaultValue="basic">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex-wrap">
           <TabsTrigger value="basic" className="text-xs gap-1"><ClipboardList className="h-3 w-3" />기본정보</TabsTrigger>
           <TabsTrigger value="sections" className="text-xs">내용 작성</TabsTrigger>
@@ -693,7 +739,12 @@ const WorkPlanDetail = () => {
           <TabsTrigger value="equipment" className="text-xs gap-1"><Wrench className="h-3 w-3" />장비</TabsTrigger>
           <TabsTrigger value="checklist" className="text-xs gap-1"><CheckCircle2 className="h-3 w-3" />체크리스트</TabsTrigger>
           <TabsTrigger value="calculator" className="text-xs gap-1"><Calculator className="h-3 w-3" />법정계산</TabsTrigger>
-          <TabsTrigger value="attachments" className="text-xs">첨부파일</TabsTrigger>
+          <TabsTrigger value="attachments" className="text-xs gap-1">
+            첨부파일
+            {(attProgress?.mandatoryMissing ?? 0) > 0 && (
+              <Badge variant="destructive" className="text-[9px] h-4 px-1">{attProgress!.mandatoryMissing}</Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="preview" className="text-xs gap-1"><Eye className="h-3 w-3" />미리보기</TabsTrigger>
         </TabsList>
 
@@ -853,6 +904,7 @@ const WorkPlanDetail = () => {
               workType={plan.work_type}
               readOnly={plan.status !== '작성중'}
               onChange={() => setIsDirty(true)}
+              onProgress={setAttProgress}
             />
           )}
         </TabsContent>

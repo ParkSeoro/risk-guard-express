@@ -115,10 +115,6 @@ const WorkPlans = () => {
     const sections = wpType.templateSections.map(s => ({
       key: s.key, title: s.title, type: s.type, content: '', placeholder: s.placeholder,
     }));
-    const attachments = wpType.requiredAttachments.map((name, i) => ({
-      id: `att-${i}`, name, uploaded: false, fileUrl: '',
-    }));
-
     const companyId = access.userCompanyId || selectedCompany || null;
 
     const { data, error } = await supabase.from('work_plans').insert({
@@ -127,7 +123,7 @@ const WorkPlans = () => {
       work_type: newPlan.workType,
       title,
       sections,
-      attachments,
+      attachments: [],
       created_by: user?.id,
       start_date: newPlan.startDate,
       end_date: newPlan.endDate,
@@ -138,8 +134,21 @@ const WorkPlans = () => {
     if (error) {
       toast({ title: '생성 실패', description: error.message, variant: 'destructive' });
     } else {
+      if (data) {
+        try {
+          const { syncTemplateRows } = await import('@/lib/workPlanAttachments');
+          await syncTemplateRows({
+            workPlanId: data.id,
+            projectId: access.selectedProject,
+            companyId,
+            workType: newPlan.workType,
+          });
+        } catch (e) {
+          console.warn('syncTemplateRows on create failed', e);
+        }
+        await auditLog('create', 'work_plan', data.id, access.selectedProject, { title, work_type: newPlan.workType });
+      }
       toast({ title: '작업계획서가 생성되었습니다.' });
-      if (data) await auditLog('create', 'work_plan', data.id, access.selectedProject, { title, work_type: newPlan.workType });
       setDialogOpen(false);
       setNewPlan({ workType: '', title: '', startDate: '', endDate: '', assessmentRunId: '' });
       setSelectedCompany('');
@@ -155,7 +164,7 @@ const WorkPlans = () => {
       work_type: plan.work_type,
       title: `${plan.title} (v${(plan.version || 1) + 1})`,
       sections: plan.sections,
-      attachments: plan.attachments,
+      attachments: [],
       created_by: user.id,
       parent_id: plan.id,
       version: (plan.version || 1) + 1,
@@ -165,6 +174,18 @@ const WorkPlans = () => {
     if (error) {
       toast({ title: '복사 실패', description: error.message, variant: 'destructive' });
     } else if (data) {
+      try {
+        const { cloneAttachmentFiles } = await import('@/lib/workPlanAttachments');
+        await cloneAttachmentFiles({
+          fromPlanId: plan.id,
+          toPlanId: data.id,
+          projectId: plan.project_id,
+          companyId: plan.company_id,
+          workType: plan.work_type,
+        });
+      } catch (e) {
+        console.warn('clone attachments failed', e);
+      }
       toast({ title: '새 회차가 생성되었습니다.' });
       await auditLog('clone', 'work_plan', data.id, plan.project_id, { from_id: plan.id, version: data.version });
       navigate(`/work-plan/${data.id}`);

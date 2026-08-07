@@ -60,7 +60,8 @@ export function EvidencePackPanel({
       const rows: any[] = [];
       for (const file of Array.from(files)) {
         const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const path = `safety-cost/${reportId}/pack/${uploadCat}_${uploadKind}_${Date.now()}_${safe}`;
+        // storage RLS: path must contain project UUID
+        const path = `safety-cost/${projectId}/${reportId}/pack/${uploadCat}_${uploadKind}_${Date.now()}_${safe}`;
         const { error } = await supabase.storage.from('attachments').upload(path, file, {
           upsert: true,
           contentType: file.type || 'application/octet-stream',

@@ -121,7 +121,8 @@ export function LegacyImportWizard({
       }
 
       const safeName = sanitizeStorageFileName(file.name);
-      const path = `safety-cost/${constructionId}/legacy-import/${Date.now()}_${safeName}`;
+      // storage RLS: path must contain project UUID
+      const path = `safety-cost/${projectId}/${constructionId}/legacy-import/${Date.now()}_${safeName}`;
       const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, {
         upsert: true,
         contentType: file.type || undefined,

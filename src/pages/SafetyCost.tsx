@@ -517,7 +517,8 @@ const SafetyCost = () => {
         text = await file.text();
       }
       const safeName = sanitizeStorageFileName(file.name);
-      const path = `safety-cost/${selectedReport.id}/documents/${Date.now()}_${safeName}`;
+      // storage RLS: path must contain project UUID (attachment_path_belongs_to_member)
+      const path = `safety-cost/${selectedConstruction.project_id}/${selectedReport.id}/documents/${Date.now()}_${safeName}`;
       const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { upsert: true, contentType: file.type || undefined });
       if (upErr) { toast({ title: '거래명세표 업로드 실패', description: upErr.message, variant: 'destructive' }); return; }
       const { data: urlData } = supabase.storage.from('attachments').getPublicUrl(path);
@@ -550,7 +551,7 @@ const SafetyCost = () => {
     if (!files || !selectedConstruction || !user) return;
     const rows = [];
     for (const file of Array.from(files)) {
-      const path = `safety-cost/${item.report_id}/items/${item.id}/${Date.now()}_${sanitizeStorageFileName(file.name)}`;
+      const path = `safety-cost/${item.project_id}/${item.report_id}/items/${item.id}/${Date.now()}_${sanitizeStorageFileName(file.name)}`;
       const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: true, contentType: file.type || 'application/octet-stream' });
       if (error) { toast({ title: '증빙 업로드 실패', description: error.message, variant: 'destructive' }); continue; }
       const { data } = supabase.storage.from('attachments').getPublicUrl(path);

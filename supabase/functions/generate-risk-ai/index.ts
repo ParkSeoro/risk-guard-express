@@ -13,6 +13,7 @@ import {
 import {
   callOpenAiChat,
   isOpenAiFallbackEnabled,
+  preferOpenAiForDraft,
   OpenAiChatError,
 } from "./openaiChat.ts";
 
@@ -690,21 +691,39 @@ serve(async (req) => {
       };
 
       try {
-        // Primary: NVIDIA fast draft chain. Do NOT use geminiChatFetch (same NIM, ~90s stall).
-        // Last resort only: OpenAI ChatGPT when OPENAI_API_KEY is set and NIM fails / empty.
+        // Draft provider order:
+        // - RISK_AI_DRAFT_PROVIDER=openai → ChatGPT first (when key set), NVIDIA backup
+        // - default → NVIDIA first, ChatGPT last-resort
+        // Never use geminiChatFetch (same NIM, ~90s stall).
         const draftModels = resolveDraftModelChain();
+        const openaiFirst = preferOpenAiForDraft();
+        const maxTok = detailLevel === "comprehensive" ? 1800 : 1200;
         let content = "";
         let usedModel = "";
-        let provider: "nvidia" | "openai" = "nvidia";
+        let provider: "nvidia" | "openai" = openaiFirst ? "openai" : "nvidia";
 
-        try {
+        const runOpenAiDraft = async () => {
+          const oa = await callOpenAiChat({
+            messages: [
+              { role: "system", content: sys },
+              { role: "user", content: user },
+            ],
+            temperature: 0.15,
+            max_tokens: maxTok,
+            timeoutMs: 45_000,
+            purpose: "draft",
+          });
+          return oa;
+        };
+
+        const runNvidiaDraft = async () => {
           const deep = await callDeepseekRiskChat({
             messages: [
               { role: "system", content: sys },
               { role: "user", content: user },
             ],
             temperature: 0.15,
-            max_tokens: detailLevel === "comprehensive" ? 1800 : 1200,
+            max_tokens: maxTok,
             timeoutMs: 28_000,
             maxAttempts: 1,
             models: draftModels,
@@ -714,47 +733,61 @@ serve(async (req) => {
           } else {
             console.log(`scope_draft used model=${deep.model}`);
           }
-          content = deep.content;
-          usedModel = deep.model || "";
-        } catch (nvidiaErr) {
-          console.warn("scope_draft NVIDIA failed:", nvidiaErr);
-          if (!isOpenAiFallbackEnabled()) throw nvidiaErr;
-          console.warn("scope_draft falling back to OpenAI ChatGPT (last resort)");
-          const oa = await callOpenAiChat({
-            messages: [
-              { role: "system", content: sys },
-              { role: "user", content: user },
-            ],
-            temperature: 0.15,
-            max_tokens: detailLevel === "comprehensive" ? 1800 : 1200,
-            timeoutMs: 45_000,
-            purpose: "draft",
-          });
-          content = oa.content;
-          usedModel = oa.model;
-          provider = "openai";
+          return deep;
+        };
+
+        if (openaiFirst) {
+          try {
+            console.log("scope_draft primary=openai (RISK_AI_DRAFT_PROVIDER)");
+            const oa = await runOpenAiDraft();
+            content = oa.content;
+            usedModel = oa.model;
+            provider = "openai";
+          } catch (oaErr) {
+            console.warn("scope_draft OpenAI failed, falling back to NVIDIA:", oaErr);
+            const deep = await runNvidiaDraft();
+            content = deep.content;
+            usedModel = deep.model || "";
+            provider = "nvidia";
+          }
+        } else {
+          try {
+            const deep = await runNvidiaDraft();
+            content = deep.content;
+            usedModel = deep.model || "";
+            provider = "nvidia";
+          } catch (nvidiaErr) {
+            console.warn("scope_draft NVIDIA failed:", nvidiaErr);
+            if (!isOpenAiFallbackEnabled()) throw nvidiaErr;
+            console.warn("scope_draft falling back to OpenAI ChatGPT (last resort)");
+            const oa = await runOpenAiDraft();
+            content = oa.content;
+            usedModel = oa.model;
+            provider = "openai";
+          }
         }
 
         let items = parseDraftItems(content);
-        // Empty after sanitize → try OpenAI once if not already used
+        // Empty after sanitize → try the other provider once
         if (items.length === 0 && provider === "nvidia" && isOpenAiFallbackEnabled()) {
           console.warn("scope_draft NVIDIA returned 0 usable items → OpenAI fallback");
           try {
-            const oa = await callOpenAiChat({
-              messages: [
-                { role: "system", content: sys },
-                { role: "user", content: user },
-              ],
-              temperature: 0.15,
-              max_tokens: detailLevel === "comprehensive" ? 1800 : 1200,
-              timeoutMs: 45_000,
-              purpose: "draft",
-            });
+            const oa = await runOpenAiDraft();
             items = parseDraftItems(oa.content);
             usedModel = oa.model;
             provider = "openai";
           } catch (oaErr) {
             console.error("scope_draft OpenAI fallback failed:", oaErr);
+          }
+        } else if (items.length === 0 && provider === "openai") {
+          console.warn("scope_draft OpenAI returned 0 usable items → NVIDIA fallback");
+          try {
+            const deep = await runNvidiaDraft();
+            items = parseDraftItems(deep.content);
+            usedModel = deep.model || "";
+            provider = "nvidia";
+          } catch (nvErr) {
+            console.error("scope_draft NVIDIA fallback failed:", nvErr);
           }
         }
 

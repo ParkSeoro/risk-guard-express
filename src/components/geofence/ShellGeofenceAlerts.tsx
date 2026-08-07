@@ -11,8 +11,10 @@ import { useSystemRealtime } from "@/providers/SystemRealtimeProvider";
 import { supabase } from "@/integrations/supabase/client";
 import {
   findViolatingRestrictedZone,
+  type BanSubject,
   type RestrictedZoneGeom,
 } from "@/lib/tracking/restrictedZoneGeom";
+import { resolveBanSubject } from "@/lib/tracking/resolveBanSubject";
 import {
   clearStickyDangerAlert,
   loadStickyDangerAlert,
@@ -34,10 +36,11 @@ function isExitEventType(t: string): boolean {
 
 export default function ShellGeofenceAlerts() {
   const { profile } = useAuth();
-  const { projectId, role } = useMobileAccess();
+  const { projectId, role, companyId } = useMobileAccess();
   const { lastGpsFix, lastZoneEvent, gpsTracking } = useSystemRealtime();
   const [alertZone, setAlertZone] = useState<{ id: string; name: string } | null>(null);
   const zonesRef = useRef<RestrictedZoneGeom[]>([]);
+  const subjectRef = useRef<BanSubject>({});
   const exitStreak = useRef(0);
   /** User tapped dismiss — suppress until they leave that zone. */
   const dismissedZoneId = useRef<string | null>(null);
@@ -96,6 +99,19 @@ export default function ShellGeofenceAlerts() {
     });
   }, [projectId]);
 
+  // Resolve BanSubject (worker_id / company_id / job_type) — not name/phone/role
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const sub = await resolveBanSubject(projectId, {
+        phone: profile?.phone,
+        companyId,
+      });
+      if (!cancelled) subjectRef.current = sub;
+    })();
+    return () => { cancelled = true; };
+  }, [projectId, profile?.phone, companyId]);
+
   useEffect(() => {
     void loadZones();
   }, [loadZones]);
@@ -142,14 +158,9 @@ export default function ShellGeofenceAlerts() {
 
     const recheck = () => {
       const sticky = loadStickyDangerAlert(projectId);
-      const sub = {
-        worker_name: profile?.display_name || null,
-        worker_phone: profile?.phone || null,
-        worker_role: role || null,
-      };
       const fix = lastGpsFixRef.current;
       if (fix && zonesRef.current.length) {
-        const hit = findViolatingRestrictedZone(fix.lat, fix.lng, zonesRef.current, sub);
+        const hit = findViolatingRestrictedZone(fix.lat, fix.lng, zonesRef.current, subjectRef.current);
         if (hit) {
           dismissedZoneId.current = null;
           exitStreak.current = 0;
@@ -184,20 +195,15 @@ export default function ShellGeofenceAlerts() {
       window.removeEventListener("focus", onVis);
       remove?.();
     };
-  }, [projectId, profile?.display_name, profile?.phone, role, openAlert]);
+  }, [projectId, openAlert]);
 
   useEffect(() => {
     if (!lastGpsFix || !projectId) return;
-    const sub = {
-      worker_name: profile?.display_name || null,
-      worker_phone: profile?.phone || null,
-      worker_role: role || null,
-    };
     const hit = findViolatingRestrictedZone(
       lastGpsFix.lat,
       lastGpsFix.lng,
       zonesRef.current,
-      sub,
+      subjectRef.current,
     );
     if (!hit) {
       // Ignore sparse "outside" blips while accuracy is poor (common on wake)
@@ -212,7 +218,7 @@ export default function ShellGeofenceAlerts() {
     exitStreak.current = 0;
     if (dismissedZoneId.current === hit.id) return;
     openAlert({ id: hit.id, name: hit.name });
-  }, [lastGpsFix, projectId, profile?.display_name, profile?.phone, role, openAlert, clearAlert]);
+  }, [lastGpsFix, projectId, openAlert, clearAlert]);
 
   useEffect(() => {
     if (!lastZoneEvent) return;
@@ -225,16 +231,11 @@ export default function ShellGeofenceAlerts() {
     if (isExitEventType(t)) {
       // Don't clear sticky UI from a single server exit if GPS still says inside
       if (lastGpsFix && zonesRef.current.length) {
-        const sub = {
-          worker_name: profile?.display_name || null,
-          worker_phone: profile?.phone || null,
-          worker_role: role || null,
-        };
         const hit = findViolatingRestrictedZone(
           lastGpsFix.lat,
           lastGpsFix.lng,
           zonesRef.current,
-          sub,
+          subjectRef.current,
         );
         if (hit) return;
       }
@@ -251,7 +252,7 @@ export default function ShellGeofenceAlerts() {
       id: zoneId || "zone",
       name: (lastZoneEvent as { zone_name?: string }).zone_name || "위험 구역",
     });
-  }, [lastZoneEvent, lastGpsFix, profile?.display_name, profile?.phone, role, openAlert, clearAlert]);
+  }, [lastZoneEvent, lastGpsFix, openAlert, clearAlert]);
 
   return (
     <DangerZoneAlertModal

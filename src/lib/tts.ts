@@ -316,6 +316,7 @@ export type DangerAlarmOpts = {
   message?: string;
   displayName?: string | null;
   role?: AlarmRoleInput;
+  zoneName?: string | null;
   /** Skip siren (TTS only). Default false. */
   skipSiren?: boolean;
   /** Skip TTS (siren only). Default false. */
@@ -330,7 +331,11 @@ export async function playDangerAlarm(opts: DangerAlarmOpts = {}): Promise<void>
   cancelled = false;
   const message =
     opts.message ||
-    buildDangerTtsMessage({ displayName: opts.displayName, role: opts.role });
+    buildDangerTtsMessage({
+      displayName: opts.displayName,
+      role: opts.role,
+      zoneName: opts.zoneName,
+    });
 
   // Ensure volume boost / iOS playback session covers TTS as well as siren
   if (isNativeAlarmAvailable() && !volumeBoosted) {

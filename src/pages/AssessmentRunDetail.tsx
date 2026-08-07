@@ -1843,7 +1843,7 @@ const AssessmentRunDetail = () => {
               </p>
               <p className="text-xs text-muted-foreground break-words">
                 {autoGenJob.phase === 'draft'
-                  ? (autoGenJob.message || '초안 생성 중… 보통 20~40초 걸립니다. 완료되면 표에 행이 나타납니다.')
+                  ? (autoGenJob.message || '초안 생성 중… 보통 수 초~20초, 모델 전환 시 더 걸릴 수 있습니다.')
                   : (autoGenJob.message || autoGenPhaseLabel || '생성 대기 중…')}
               </p>
               {(() => {
@@ -1863,7 +1863,7 @@ const AssessmentRunDetail = () => {
                     <p className="text-[11px] text-muted-foreground">
                       초안 {autoGenJob.insertedTotal || 0}행 · 채움 {filled}행
                       {autoGenJob.pendingIds?.length ? ` · 대기 ${autoGenJob.pendingIds.length}` : ''}
-                      {' · '}이 탭을 닫지 마세요. 보통 20~40초 걸립니다.
+                      {' · '}이 탭을 닫지 마세요. 초안은 보통 수 초~20초입니다.
                     </p>
                   </div>
                 );
@@ -2361,7 +2361,7 @@ const AssessmentRunDetail = () => {
                         <>
                           <Loader2 className="h-6 w-6 animate-spin text-accent" />
                           <div className="font-medium text-foreground">AI가 초안을 만들고 있습니다…</div>
-                          <div className="text-xs">보통 20~40초 걸립니다. 완료되면 여기에 행이 나타납니다.</div>
+                          <div className="text-xs">보통 수 초~20초입니다. 완료되면 여기에 행이 나타납니다.</div>
                           <div className="text-xs">{autoGenJob.elapsedSec || 0}초 경과 · {autoGenJob.message || '대기 중'}</div>
                         </>
                       ) : (

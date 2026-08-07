@@ -36,7 +36,7 @@ export const NVIDIA_MODEL_CATALOG: AiModelCatalogEntry[] = [
   {
     id: 'mistralai/mistral-small-3.1-24b-instruct-2503',
     label: 'Mistral Small 3.1 24B',
-    note: '가벼운 여유분',
+    note: '위험성평가 초안(scope_draft) 기본 · 속도 우선',
   },
 ];
 

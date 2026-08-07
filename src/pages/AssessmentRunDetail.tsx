@@ -60,6 +60,7 @@ import FeedbackPanel from '@/components/FeedbackPanel';
 import ApprovalLineManager, { type ApprovalLine } from '@/components/ApprovalLineManager';
 import WorkerParticipationPanel from '@/components/assessment/WorkerParticipationPanel';
 import { evaluateResidualHigh } from '@/lib/residualRiskGuardrails';
+import { buildAssessmentSubmitPreflight } from '@/lib/assessmentSubmitPreflight';
 import * as XLSX from 'xlsx';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 
@@ -130,6 +131,11 @@ const AssessmentRunDetail = () => {
 
   // Approval
   const [showApproval, setShowApproval] = useState(false);
+  const [approvalPreflightMeta, setApprovalPreflightMeta] = useState<{
+    lineCount: number;
+    missingLabels: string[];
+    ssotInvalid: string[];
+  }>({ lineCount: 0, missingLabels: [], ssotInvalid: [] });
   const [approvalComment, setApprovalComment] = useState('');
   const [latestApprovals, setLatestApprovals] = useState<any[]>([]);
   const [rejectCommentDialog, setRejectCommentDialog] = useState(false);
@@ -1043,6 +1049,58 @@ const AssessmentRunDetail = () => {
   // Position-based step order for 4-step approval
   const APPROVAL_STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };
 
+  const refreshApprovalPreflightMeta = useCallback(async () => {
+    if (!run?.project_id) return;
+    const { data: savedLines } = await supabase
+      .from('approval_lines')
+      .select('*')
+      .eq('project_id', run.project_id)
+      .order('step_order');
+    const linesToUse = (savedLines && savedLines.length > 0) ? savedLines : approvalLines;
+    const missingLabels = (linesToUse || []).filter((l: any) => !l.user_id).map((l: any) => l.step_label || '단계');
+    const { validateApprovalLinesSSOT } = await import('@/lib/approvalRules');
+    const ssot = validateApprovalLinesSSOT((linesToUse || []) as any);
+    setApprovalPreflightMeta({
+      lineCount: (linesToUse || []).length,
+      missingLabels,
+      ssotInvalid: ssot.ok ? [] : Array.from(new Set(ssot.invalid)),
+    });
+  }, [run?.project_id, approvalLines]);
+
+  useEffect(() => {
+    if (showApproval) void refreshApprovalPreflightMeta();
+  }, [showApproval, refreshApprovalPreflightMeta]);
+
+  const submitPreflight = useMemo(() => buildAssessmentSubmitPreflight({
+    itemCount: activeItems.length,
+    opinionRequired: run?.opinion_required ?? true,
+    healthRequired: run?.health_required ?? true,
+    opinions: participationCounts.opinions,
+    healths: participationCounts.healths,
+    unreviewedAi: participationCounts.unreviewedAi,
+    unreviewedHealth: participationCounts.unreviewedHealth,
+    approvalLineCount: Math.max(approvalPreflightMeta.lineCount, approvalLines.length),
+    missingApproverLabels: approvalPreflightMeta.missingLabels,
+    ssotInvalidKeys: approvalPreflightMeta.ssotInvalid,
+  }), [
+    activeItems.length,
+    run?.opinion_required,
+    run?.health_required,
+    participationCounts,
+    approvalPreflightMeta,
+    approvalLines.length,
+  ]);
+
+  const jumpFromPreflight = (jump?: 'items' | 'participation' | 'approval') => {
+    if (!jump || jump === 'approval') return;
+    setShowApproval(false);
+    setActiveMainTab('assessment');
+    window.setTimeout(() => {
+      const id = jump === 'participation' ? 'ra-worker-participation' : 'ra-risk-items';
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  };
+
   // Submit for approval — uses approval_lines as single source
   const handleSubmitForApproval = async () => {
     if (!run || !user || !profile) return;
@@ -1930,7 +1988,7 @@ const AssessmentRunDetail = () => {
       </Card>
 
       {/* Worker Opinion / Health / Accident Panel */}
-      <div className="print:hidden">
+      <div id="ra-worker-participation" className="print:hidden scroll-mt-20">
         <WorkerParticipationPanel
           runId={runId!}
           projectId={run.project_id}
@@ -2262,7 +2320,7 @@ const AssessmentRunDetail = () => {
       </Card>
 
       {/* Risk Table */}
-      <Card>
+      <Card id="ra-risk-items" className="scroll-mt-20">
         <CardContent className="p-0">
           <div className="overflow-x-auto overflow-y-auto scrollbar-thin max-h-[70vh]" style={{ WebkitOverflowScrolling: 'touch' }}>
             <table className="data-table text-xs" style={{ minWidth: '1600px', tableLayout: 'auto' }}>
@@ -2851,6 +2909,40 @@ const AssessmentRunDetail = () => {
           <DialogHeader><DialogTitle>결재 상신 · {run.period_label}</DialogTitle></DialogHeader>
           <div className="space-y-3 max-h-[70vh] overflow-y-auto">
             <p className="text-sm text-muted-foreground">이 회차 전체({activeItems.length}건)를 결재 상신합니다.</p>
+
+            <div className={`rounded-lg border p-3 space-y-2 ${submitPreflight.ready ? 'border-success/30 bg-success/5' : 'border-destructive/30 bg-destructive/5'}`}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold">
+                  상신 전 점검 {submitPreflight.ready ? '· 준비됨' : `· 미완료 ${submitPreflight.items.filter(i => !i.ok).length}건`}
+                </p>
+                <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => void refreshApprovalPreflightMeta()}>
+                  새로고침
+                </Button>
+              </div>
+              <ul className="space-y-1.5">
+                {submitPreflight.items.map((it) => (
+                  <li key={it.id} className="flex items-start gap-2 text-xs">
+                    {it.ok
+                      ? <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0 mt-0.5" />
+                      : <XCircle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />}
+                    <div className="min-w-0 flex-1">
+                      <p className={it.ok ? 'text-muted-foreground' : 'font-medium text-foreground'}>{it.label}</p>
+                      {it.detail && <p className="text-[10px] text-muted-foreground">{it.detail}</p>}
+                    </div>
+                    {!it.ok && it.jump && it.jump !== 'approval' && (
+                      <button
+                        type="button"
+                        className="text-[10px] text-primary underline shrink-0"
+                        onClick={() => jumpFromPreflight(it.jump)}
+                      >
+                        바로가기
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
             {run.validation_verdict && run.validation_verdict !== '적정' && (
               <div className={`p-2 rounded text-sm flex items-start gap-2 ${run.validation_verdict === '부적정' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning'}`}>
                 <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -2902,10 +2994,21 @@ const AssessmentRunDetail = () => {
               projectId={run.project_id}
               projectMembers={projectMembers}
               companies={projectCompanies}
-              onLinesChanged={setApprovalLines}
+              onLinesChanged={(lines) => {
+                setApprovalLines(lines);
+                void refreshApprovalPreflightMeta();
+              }}
             />
             <div className="space-y-1"><Label>코멘트 (선택)</Label><Textarea value={approvalComment} onChange={e => setApprovalComment(e.target.value)} placeholder="결재 메모..." /></div>
-            <Button onClick={handleSubmitForApproval} className="w-full gap-1.5"><Send className="h-3.5 w-3.5" /> 결재 상신</Button>
+            <Button
+              onClick={handleSubmitForApproval}
+              className="w-full gap-1.5"
+              disabled={!submitPreflight.ready}
+              title={submitPreflight.ready ? undefined : '위 점검 항목을 모두 완료하세요'}
+            >
+              <Send className="h-3.5 w-3.5" />
+              {submitPreflight.ready ? '결재 상신' : '점검 미완료 — 상신 불가'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

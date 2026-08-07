@@ -65,6 +65,7 @@ export const LazySettingsAI = L(() => import("@/pages/SettingsAI"));
 export const LazySettingsWeather = L(() => import("@/pages/SettingsWeather"));
 export const LazyMobileReleases = L(() => import("@/pages/MobileReleases"));
 export const LazySettingsPermitForms = L(() => import("@/pages/SettingsPermitForms"));
+export const LazySettingsWorkPlanAttachments = L(() => import("@/pages/SettingsWorkPlanAttachments"));
 export const LazySettingsCompanies = L(() => import("@/pages/SettingsCompanies"));
 export const LazyWorkPlans = L(() => import("@/pages/WorkPlans"));
 export const LazyWorkPlanDetail = L(() => import("@/pages/WorkPlanDetail"));

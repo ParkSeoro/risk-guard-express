@@ -1,8 +1,9 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature, Building2, CloudSun, Eye } from 'lucide-react';
+import { User, Shield, Bell, Bot, ChevronRight, Settings as SettingsIcon, Smartphone, GitBranch, FileSignature, Building2, CloudSun, Eye, ClipboardList } from 'lucide-react';
 import { E2ETestAccountsSetup } from '@/components/E2ETestAccountsSetup';
 
 const settingsCards = [
@@ -94,11 +95,22 @@ const settingsCards = [
     requires: 'master' as const,
     badge: '마스터 전용',
   },
+  {
+    id: 'work-plan-attachments',
+    title: '작업계획서 증빙 설정',
+    description: '공종별 첨부 필수/선택을 지정하고, 현장 맞춤 증빙 항목을 추가합니다. 마스터·프로젝트관리자만 편집할 수 있습니다.',
+    icon: ClipboardList,
+    path: '/settings/work-plan-attachments',
+    requires: 'project_admin' as const,
+    badge: '마스터·PM',
+  },
 ];
 
 const Settings = () => {
   const navigate = useNavigate();
   const { hasRole } = useAuth();
+  const access = useGlobalProjectAccessOptional();
+  const isProjectAdmin = hasRole('master') || access?.userRole === 'project_admin' || hasRole('project_admin');
 
   return (
     <div className="space-y-6 animate-fade-in max-w-3xl">
@@ -114,13 +126,19 @@ const Settings = () => {
 
       <div className="grid gap-4">
         {settingsCards
-          .filter((card) => card.requires !== 'master' || hasRole('master'))
+          .filter((card) => {
+            if (card.requires === 'master') return hasRole('master');
+            if (card.requires === 'project_admin') return isProjectAdmin;
+            return true;
+          })
           .map((card) => {
           const disabled =
             card.requires === 'master'
               ? !hasRole('master')
+              : card.requires === 'project_admin'
+                ? !isProjectAdmin
               : card.requires === 'admin'
-                ? !(hasRole('master') || hasRole('project_admin') || hasRole('safety_manager'))
+                ? !(hasRole('master') || hasRole('project_admin') || hasRole('safety_manager') || access?.userRole === 'project_admin' || access?.userRole === 'safety_manager')
                 : false;
           return (
             <Card

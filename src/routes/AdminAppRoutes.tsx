@@ -118,6 +118,7 @@ function AdminAppRoutesInner() {
             <Route path="settings/mobile-preview" element={<RoleGuard masterOnly><P.LazyMobilePreviewHost /></RoleGuard>} />
             <Route path="settings/mobile-releases" element={<RoleGuard masterOnly><P.LazyMobileReleases /></RoleGuard>} />
             <Route path="settings/permit-forms" element={<RoleGuard><P.LazySettingsPermitForms /></RoleGuard>} />
+            <Route path="settings/work-plan-attachments" element={<RoleGuard><P.LazySettingsWorkPlanAttachments /></RoleGuard>} />
             <Route path="settings/companies" element={<RoleGuard><P.LazySettingsCompanies /></RoleGuard>} />
             <Route path="work-plans" element={<P.LazyWorkPlans />} />
             <Route path="work-plan/:planId" element={<P.LazyWorkPlanDetail />} />

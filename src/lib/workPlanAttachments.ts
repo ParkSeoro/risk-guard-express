@@ -11,6 +11,7 @@ import {
   generateAttachments, withKind, getMandatoryLegalAttachments,
   type AttachmentItem,
 } from './attachmentTemplates';
+import { resolveAttachmentsForProject } from './workPlanAttachmentDefs';
 
 export interface AttachmentBlocker {
   key: string;
@@ -19,8 +20,9 @@ export interface AttachmentBlocker {
 }
 
 /**
- * 작업계획서 생성/공종 변경 시 호출 — 템플릿 기반 빈 행을 미리 만들어 둠.
+ * 작업계획서 생성/공종 변경 시 호출 — 템플릿 + 프로젝트 설정 기반 빈 행을 미리 만들어 둠.
  * file_url 은 비워두고, 사용자가 업로드하면 update.
+ * 필수 여부 SSOT: 프로젝트 work_plan_attachment_defs 오버라이드 후 is_mandatory.
  */
 export async function syncTemplateRows(opts: {
   workPlanId: string;
@@ -29,16 +31,24 @@ export async function syncTemplateRows(opts: {
   workType: string;
   conditions?: Record<string, string>;
 }) {
-  const items = generateAttachments(opts.workType, opts.conditions).map(withKind);
+  const items = await resolveAttachmentsForProject({
+    projectId: opts.projectId,
+    workType: opts.workType,
+    conditions: opts.conditions,
+  });
+  const enabledKeys = new Set(items.map((i) => i.key));
+
   const { data: existing } = await supabase
     .from('work_plan_attachments')
-    .select('attachment_key')
+    .select('id, attachment_key, file_url')
     .eq('work_plan_id', opts.workPlanId)
     .eq('is_deleted', false);
-  const existingKeys = new Set((existing ?? []).map((r: any) => r.attachment_key));
+  const existingRows = (existing ?? []) as Array<{ id: string; attachment_key: string; file_url: string | null }>;
+  const existingKeys = new Set(existingRows.map((r) => r.attachment_key));
+
   const rows = items
-    .filter(i => !existingKeys.has(i.key))
-    .map(i => ({
+    .filter((i) => !existingKeys.has(i.key))
+    .map((i) => ({
       work_plan_id: opts.workPlanId,
       project_id: opts.projectId,
       company_id: opts.companyId ?? null,
@@ -46,19 +56,17 @@ export async function syncTemplateRows(opts: {
       attachment_key: i.key,
       name: i.name,
       description: i.description,
-      // 공종별 required 전부 필수 — 결재·인쇄 누락 안내의 SSOT
       is_mandatory: !!i.required,
       source_type: 'manual' as const,
     }));
 
-  // Repair mandatory flags on existing rows (template drift / legacy legal-only flags)
+  // Repair flags from resolved project config
   for (const i of items) {
     if (!existingKeys.has(i.key)) continue;
-    const mandatory = !!i.required;
     await supabase
       .from('work_plan_attachments')
       .update({
-        is_mandatory: mandatory,
+        is_mandatory: !!i.required,
         category: i.kind ?? 'site_proof',
         name: i.name,
         description: i.description,
@@ -66,6 +74,22 @@ export async function syncTemplateRows(opts: {
       .eq('work_plan_id', opts.workPlanId)
       .eq('attachment_key', i.key)
       .eq('is_deleted', false);
+  }
+
+  // 설정에서 비활성(제외)된 항목: 파일 없으면 soft-delete, 있으면 선택으로 강등
+  for (const row of existingRows) {
+    if (enabledKeys.has(row.attachment_key)) continue;
+    if (!row.file_url) {
+      await supabase
+        .from('work_plan_attachments')
+        .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+        .eq('id', row.id);
+    } else {
+      await supabase
+        .from('work_plan_attachments')
+        .update({ is_mandatory: false })
+        .eq('id', row.id);
+    }
   }
 
   if (rows.length === 0) return { inserted: 0 };

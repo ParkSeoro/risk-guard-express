@@ -360,11 +360,25 @@ export async function fetchRiskFillBatch(
   return items;
 }
 
-/** Narrative → meta two-step fill for one chunk; merge by sub_task order. */
+/**
+ * Fill one chunk in a single Edge call (fill_stage=all).
+ * Previously narrative→meta (2 sequential calls) which doubled wait even when the model was fine.
+ * Name kept for callers; falls back to two-stage only if the one-shot returns empty.
+ */
 export async function fetchRiskFillTwoStage(
   opts: AIGenerateOptions & { draftItems: ScopeDraftItem[] },
   signal?: AbortSignal,
 ): Promise<GeneratedRiskItem[]> {
+  try {
+    const oneshot = await fetchRiskFillBatch(
+      { ...opts, draftItems: opts.draftItems, fillStage: 'all' },
+      signal,
+    );
+    if (oneshot.length > 0) return oneshot;
+  } catch (err) {
+    console.warn('[AI Engine] risk_fill all-stage failed, trying narrative→meta:', (err as any)?.message || err);
+  }
+
   const narratives = await fetchRiskFillBatch(
     { ...opts, draftItems: opts.draftItems, fillStage: 'narrative' },
     signal,

@@ -12,7 +12,8 @@
  *   OPENAI_DRAFT_MODEL      — optional override for scope_draft
  *   OPENAI_FILL_MODEL       — optional override for risk_fill
  *   RISK_AI_OPENAI_FALLBACK — default true when key present; set 0/false to disable
- *   RISK_AI_DRAFT_PROVIDER  — openai | nvidia (default nvidia). Use openai to try ChatGPT first on scope_draft.
+ *   RISK_AI_DRAFT_PROVIDER  — openai | nvidia (default nvidia).
+ *     When openai: ChatGPT first for BOTH scope_draft and risk_fill.
  *   OPENAI_TIMEOUT_MS       — default 45000
  */
 
@@ -52,12 +53,15 @@ export function isOpenAiFallbackEnabled(): boolean {
   return envFlag("RISK_AI_OPENAI_FALLBACK", true);
 }
 
-/** Prefer OpenAI before NVIDIA for scope_draft when explicitly configured. */
+/** Prefer OpenAI before NVIDIA for draft/fill when explicitly configured. */
 export function preferOpenAiForDraft(): boolean {
   if (!isOpenAiFallbackEnabled()) return false;
   const raw = (Deno.env.get("RISK_AI_DRAFT_PROVIDER") || "nvidia").trim().toLowerCase();
   return raw === "openai" || raw === "chatgpt" || raw === "gpt";
 }
+
+/** Alias — same switch drives risk_fill when OpenAI is the chosen primary. */
+export const preferOpenAiForFill = preferOpenAiForDraft;
 
 function resolveBaseUrl(): string {
   return (Deno.env.get("OPENAI_BASE_URL") || "https://api.openai.com/v1").replace(/\/+$/, "");

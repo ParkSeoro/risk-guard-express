@@ -848,8 +848,9 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
 
         try {
           patch({
-            message: `「${proc}」 ${filledTotal + failed}/${rows.length} · 서술 채움→등급·법규…`,
+            message: `「${proc}」 ${filledTotal + failed}/${rows.length} · 대책·등급·법규 일괄 채움…`,
           });
+          // One Edge call per chunk (fill_stage=all). Avoid narrative→meta double wait.
           const filled = await fetchRiskFillTwoStage({
             ...opts,
             draftItems: chunk.map((r) => ({

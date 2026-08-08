@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
-  TileLayer,
   Polygon,
   Circle,
   Marker,
@@ -41,6 +40,7 @@ import ZoneAccessRulesDialog, {
   type ZoneEditSeed,
 } from "@/components/geofence/ZoneAccessRulesDialog";
 import RotatedImageOverlay from "@/components/geofence/RotatedImageOverlay";
+import VWorldBasemap from "@/components/geofence/VWorldBasemap";
 import OrthogonalZoneCanvas, {
   isZoneOffImage,
 } from "@/components/geofence/OrthogonalZoneCanvas";
@@ -1204,7 +1204,7 @@ export default function SiteControlMap() {
                 </div>
                 <label className="flex items-center justify-between gap-2 text-xs cursor-pointer">
                   <span className="flex items-center gap-1.5">
-                    <Satellite className="h-3.5 w-3.5 text-muted-foreground" /> 위성 베이스맵
+                    <Satellite className="h-3.5 w-3.5 text-muted-foreground" /> VWorld 위성
                   </span>
                   <Switch
                     checked={layers.satellite}
@@ -1212,6 +1212,9 @@ export default function SiteControlMap() {
                     disabled={panelTab === "zones"}
                   />
                 </label>
+                <p className="text-[10px] text-muted-foreground leading-snug -mt-1">
+                  ON: 국토부 항공+라벨 · OFF: VWorld 도로
+                </p>
                 <label className="flex items-center justify-between gap-2 text-xs cursor-pointer">
                   <span className="flex items-center gap-1.5">
                     <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" /> 현장 도면
@@ -1232,18 +1235,8 @@ export default function SiteControlMap() {
                 </label>
               </div>
 
-              <MapContainer center={center} zoom={17} className="h-full w-full" scrollWheelZoom>
-                {layers.satellite ? (
-                  <TileLayer
-                    attribution="&copy; Esri"
-                    url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                  />
-                ) : (
-                  <TileLayer
-                    attribution="&copy; OpenStreetMap"
-                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  />
-                )}
+              <MapContainer center={center} zoom={17} maxZoom={19} className="h-full w-full" scrollWheelZoom>
+                <VWorldBasemap satellite={layers.satellite} />
 
                 <MapBridge onMap={onMapReady} seedRequest={seedRequest} onSeedCorners={onSeedCorners} />
 

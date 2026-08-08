@@ -129,6 +129,7 @@ export default function MobilePermits() {
         .map((a) => a.entity_id)
         .filter((id): id is string => !!id),
     );
+    // Feature ACL + upstream company filter — SM is not project-wide company scope.
     const rows = ((data as any[]) || []).filter((p) =>
       canViewPermitInList(p, {
         userId,

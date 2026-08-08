@@ -159,6 +159,8 @@ export default function WorkPermits() {
 
   const [form, setForm] = useState<any>(() => makeBlankForm());
 
+  // Feature ACL: SM/PA may see drafts in their company-filtered query (applyCompanyFilter).
+  // Do not treat isProjectAdmin as project-wide company visibility.
   const visibilityOpts = useMemo(
     () => ({
       userId: user?.id || null,

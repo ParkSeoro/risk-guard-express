@@ -246,7 +246,13 @@ export default function ZoneAccessRulesDialog({
             )}
             {ruleType === "DENY" && companyIds.length > 0 && (
               <p className="text-[11px] text-destructive/90 bg-destructive/5 border border-destructive/20 rounded-md px-2 py-1.5">
-                차단 목록 업체 인원이 구역에 들어가면 사이렌·알림이 울립니다.
+                차단 목록에 넣은 업체만 알람이 울립니다. 목록에 없는 업체(예: 시공사)로
+                들어가면 알람이 없습니다 — 테스트 계정의 소속 업체를 확인하세요.
+              </p>
+            )}
+            {ruleType === "DENY" && companyIds.length === 0 && jobTypes.length === 0 && (
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                대상 미지정 = 전면 통제(전원 알람). 특정 업체만 막을 때는 업체를 선택하세요.
               </p>
             )}
           </div>

@@ -18,23 +18,16 @@ SSOT: `src/lib/companyDocScope.ts`
 
 **회사 가시성 SSOT:** `accessibleCompanyIds === null` / `seesAllCompanies` / `applyCompanyFilter`.
 
-## Fixed in this pass
+## Fixed
 
 - `WorkerEducation`, `WorkerAttendance`, `Chemicals` write/picker
 - `CompanyDetail` canEdit, `SafetyCost` scoped lists, `SafetyCostValidationPanel`
 - `AssessmentRunDetail` GC label, `Dashboard` showOpsWide, `Trash` row filter, `WorkPlans` company picker
 - Helper `seesProjectWideCompanies` + hook `seesAllCompanies`
-
-## Remaining (permission / medium — not auto-fixed)
-
-| 위치 | 메모 |
-|------|------|
-| `WorkPermits` / `MobilePermits` `isPermitAdmin` | draft 가시성 확장 — 회사 필터는 쿼리에 있음 |
-| `Approvals` withdraw `isProjectAdmin` | 권한 버튼 |
-| `WorkStopRequests` canHandle | 프로젝트 단위 테이블 |
-| `Settings*` SM 카드 | 설정 접근 |
-| DB `can_access_safety_cost` | 서버 RLS가 PA+SM을 타입 없이 true — 후속 |
-| `HealthDashboard` 집계 | RLS 의존 — 후속 |
+- `HealthDashboard` worker/chemical counts via `applyCompanyFilter`
+- DB `can_access_safety_cost` → delegates to `can_access_company_data` (client all / GC tree / contractor own)
+- `WorkPermits` / `MobilePermits` / `Approvals` withdraw: feature ACL kept; company filter upstream; comments clarify SSOT
+- Settings admin cards: SM already on feature ACL (`requires: 'admin'`); no project-wide company leak
 
 ## Rule for new code
 

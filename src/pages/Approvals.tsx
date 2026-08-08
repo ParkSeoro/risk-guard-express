@@ -47,7 +47,18 @@ const ENTITY_LINK = (t?: string | null, id?: string | null): string | null => {
 const Approvals = () => {
   const navigate = useNavigate();
   const { user, profile, isAdmin, hasRole } = useAuth();
-  const { projects, selectedProject, setSelectedProject, isMaster, isProjectAdmin, userCompanyId, userCompanyType, userRole, accessibleCompanyIds } = useGlobalProjectAccess();
+  const {
+    projects,
+    selectedProject,
+    setSelectedProject,
+    isMaster,
+    isProjectAdmin,
+    seesAllCompanies,
+    userCompanyId,
+    userCompanyType,
+    userRole,
+    accessibleCompanyIds,
+  } = useGlobalProjectAccess();
   const { toast } = useToast();
   const { log } = useAuditLog();
   const [approvals, setApprovals] = useState<any[]>([]);
@@ -553,7 +564,9 @@ const Approvals = () => {
                             && arr.some(s => s.status === '진행중')
                             // 상신 자동승인 후 1단계가 승인이어도 회수 가능(아직 후속 실결재 전)
                             && !arr.some(s => s.status === '승인' && !isSubmitterApprovalStep(s) && (s.step_order ?? 0) > 1)
-                            && (isMaster || isProjectAdmin
+                            // Company-scoped list already applied; SM/PA may withdraw within scope.
+                            // Do not treat isProjectAdmin as project-wide — seesAllCompanies is SSOT.
+                            && (isMaster || seesAllCompanies || isProjectAdmin
                                 || arr.some(s => s.approver_id === user.id && (s.step_order === 1 || isSubmitterApprovalStep(s))));
                           return canWithdraw ? (
                             <Button variant="outline" size="sm" className="h-7 text-xs gap-1 text-destructive" onClick={() => handleWithdraw(arr)}>

@@ -1,10 +1,10 @@
 /**
  * Worker daily life-cycle dashboard:
- * GPS check-in (site_maps footprint or 100m pin) → confirm permits/RA + sign → check-out.
+ * GPS fence check → work/risk confirm + handwritten signature → entry logged → check-out pledge.
  * Signature stored in worker_daily_acks and reused for linked TBM sessions.
- * v1: no hard gate if unsigned (checkout still allowed).
+ * Hard gate: no entry without signature; no checkout without daily ack + 무재해 서약.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -23,6 +23,9 @@ import {
   saveDailyWorkAck,
   type DailyPermitBrief,
 } from "@/lib/dailyWorkAck";
+import ResponsiveSignaturePad, {
+  type ResponsiveSignaturePadHandle,
+} from "@/components/ResponsiveSignaturePad";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -36,6 +39,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { HardHat, MapPin, LogIn, LogOut, FileSignature, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
+
+const NO_ACCIDENT_PLEDGE =
+  "금일 무재해로 작업을 완료하였으며, 작업 중 사고·부상·아차사고가 없었음을 확인합니다. 이상 발생 시 즉시 관리감독자·안전관리자에게 보고하겠습니다.";
+const HEALTH_PLEDGE =
+  "현재 건강상태에 이상이 없으며, 발열·어지러움·흉통 등 작업에 지장이 있는 증상이 없음을 확인합니다. 이상 시 작업을 중단하고 보고하겠습니다.";
+const WORK_ACK_PLEDGE =
+  "오늘 배정된 작업내용과 위험요인·안전대책을 확인하였으며, 안전수칙·PPE를 준수하여 작업하겠습니다. 궁금한 사항은 작업 전 관리감독자에게 문의합니다.";
 
 const PROJECT_KEY = "selectedProjectId";
 
@@ -64,7 +74,10 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
   const [riskSummary, setRiskSummary] = useState("");
   const [ackWorkOk, setAckWorkOk] = useState(false);
   const [ackRiskOk, setAckRiskOk] = useState(false);
-  const [ackSig, setAckSig] = useState("");
+  const [ackPledgeOk, setAckPledgeOk] = useState(false);
+  const [pendingEntry, setPendingEntry] = useState(false);
+  const ackSigRef = useRef<ResponsiveSignaturePadHandle | null>(null);
+  const exitSigRef = useRef<ResponsiveSignaturePadHandle | null>(null);
   const [exitOpen, setExitOpen] = useState(false);
   const [noAccident, setNoAccident] = useState(false);
   const [healthOk, setHealthOk] = useState(false);
@@ -174,8 +187,11 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
   }, [refresh]);
 
   useEffect(() => {
-    // Soft prompt after check-in — dismissible (no gate)
-    if (isCheckedIn && !ackDone) setAckOpen(true);
+    // Incomplete day: force signature before work continues
+    if (isCheckedIn && !ackDone) {
+      setPendingEntry(false);
+      setAckOpen(true);
+    }
   }, [isCheckedIn, ackDone]);
 
   // Lightweight position for check-in distance — not background tracking.
@@ -241,66 +257,69 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
       return;
     }
     if (!(await ensureConsentAndGps())) return;
-    setBusy(true);
-    try {
-      const { data, error } = await supabase.rpc("worker_gps_daily_lifecycle", {
-        _action: "entry",
-        _worker_id: workerId,
-        _project_id: projectId,
-        _lat: effectiveFix?.lat ?? null,
-        _lng: effectiveFix?.lng ?? null,
-        _accuracy: effectiveFix?.accuracy ?? null,
-      });
-      if (error) throw error;
-      const res = data as any;
-      if (res?.error) {
-        if (res.error === "SUSPENDED") {
-          throw new Error(
-            `출입 정지 상태입니다${res.reason ? ` · ${res.reason}` : ""}`,
-          );
-        }
-        throw new Error(res.message || res.error || "출근 기록 실패");
-      }
-      const log = res?.log as EntryLog | undefined;
-      if (!log?.id) throw new Error("출근 기록 응답이 비어 있습니다");
-      setTodayLog(log);
-      setAckOpen(true);
-      try {
-        window.dispatchEvent(new Event("mobile:resume-gps-tracking"));
-      } catch {
-        /* ignore */
-      }
-      toast.success(
-        res?.already
-          ? "이미 출근 상태입니다. 작업·위험 내용을 확인해 주세요."
-          : "출근이 기록되었습니다. 작업·위험 내용을 확인해 주세요.",
-      );
-    } catch (e: any) {
-      toast.error(e?.message || "출근 기록 실패");
-    } finally {
-      setBusy(false);
-    }
+    // Signature required before entry is written
+    setPendingEntry(true);
+    setAckWorkOk(false);
+    setAckRiskOk(false);
+    setAckPledgeOk(false);
+    ackSigRef.current?.clear();
+    setAckOpen(true);
   };
 
   const handleDailyAck = async () => {
-    if (!ackWorkOk || !ackRiskOk || !ackSig.trim()) {
-      toast.error("작업내용·위험요인을 확인하고 서명해 주세요");
+    if (!ackWorkOk || !ackRiskOk || !ackPledgeOk) {
+      toast.error("작업내용·위험요인·안전수칙 확인에 모두 체크해 주세요");
       return;
     }
-    if (!todayLog || !workerId || !projectId) return;
+    if (!ackSigRef.current || ackSigRef.current.isEmpty()) {
+      toast.error("손가락으로 서명란에 서명해 주세요");
+      return;
+    }
+    if (!workerId || !projectId) return;
+    const signatureData = ackSigRef.current.toDataURL("image/png");
+    if (!signatureData || signatureData.length < 100) {
+      toast.error("서명이 유효하지 않습니다. 다시 서명해 주세요");
+      return;
+    }
+
     setBusy(true);
     try {
+      let log = todayLog;
+      if (!log || pendingEntry) {
+        const { data, error } = await supabase.rpc("worker_gps_daily_lifecycle", {
+          _action: "entry",
+          _worker_id: workerId,
+          _project_id: projectId,
+          _lat: effectiveFix?.lat ?? null,
+          _lng: effectiveFix?.lng ?? null,
+          _accuracy: effectiveFix?.accuracy ?? null,
+        });
+        if (error) throw error;
+        const res = data as any;
+        if (res?.error) {
+          if (res.error === "SUSPENDED") {
+            throw new Error(
+              `출입 정지 상태입니다${res.reason ? ` · ${res.reason}` : ""}`,
+            );
+          }
+          throw new Error(res.message || res.error || "출근 기록 실패");
+        }
+        log = res?.log as EntryLog | undefined;
+        if (!log?.id) throw new Error("출근 기록 응답이 비어 있습니다");
+        setTodayLog(log);
+      }
+
       const saved = await saveDailyWorkAck({
         projectId,
         workerId,
         userId: user?.id,
-        workerName: profile?.display_name || ackSig.trim(),
+        workerName: profile?.display_name || "근로자",
         workerPhone: profile?.phone || "",
-        entryLogId: todayLog.id,
+        entryLogId: log.id,
         permitIds: dayPermits.map((p) => p.id),
         workSummary,
         riskSummary,
-        signatureData: ackSig.trim(),
+        signatureData,
       });
       if ("error" in saved) throw new Error(saved.error);
 
@@ -312,22 +331,37 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
       if (error) throw error;
       const res = data as any;
       if (res?.error) throw new Error(res.message || res.error || "확인 저장 실패");
-      const log = res?.log as EntryLog | undefined;
-      if (!log?.id) throw new Error("확인 저장 응답이 비어 있습니다");
-      setTodayLog(log);
+      const nextLog = res?.log as EntryLog | undefined;
+      if (!nextLog?.id) throw new Error("확인 저장 응답이 비어 있습니다");
+      setTodayLog(nextLog);
       setAckDone(true);
+      setPendingEntry(false);
       setAckOpen(false);
-      toast.success("오늘 작업·위험 확인 및 서명 완료");
+      try {
+        window.dispatchEvent(new Event("mobile:resume-gps-tracking"));
+      } catch {
+        /* ignore */
+      }
+      toast.success("서명 확인 완료 — 출근이 기록되었습니다");
     } catch (e: any) {
-      toast.error(e?.message || "확인 저장 실패");
+      toast.error(e?.message || "서명·출근 저장 실패");
     } finally {
       setBusy(false);
     }
   };
 
   const handleCheckOut = async () => {
+    if (!ackDone) {
+      toast.error("작업·위험 확인 서명 후에만 퇴근할 수 있습니다");
+      setAckOpen(true);
+      return;
+    }
     if (!noAccident || !healthOk) {
       toast.error("무재해 서약과 건강상태 확인에 체크해야 퇴근할 수 있습니다");
+      return;
+    }
+    if (!exitSigRef.current || exitSigRef.current.isEmpty()) {
+      toast.error("퇴근 서명을 해 주세요");
       return;
     }
     if (!todayLog || !workerId || !projectId) return;
@@ -460,7 +494,7 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
               1. 출근 {todayLog?.entry_at ? `· ${new Date(todayLog.entry_at).toLocaleTimeString("ko-KR")}` : ""}
             </li>
             <li className={ackDone ? "text-emerald-700" : "text-slate-500"}>
-              2. 작업·위험 확인 서명 {ackDone ? "완료" : isCheckedIn ? "권장" : "—"}
+              2. 작업·위험 확인 서명 {ackDone ? "완료" : "필수"}
               {dayPermits.length > 0 && !ackDone ? ` · 허가서 ${dayPermits.length}건` : ""}
             </li>
             <li className={checkedOut ? "text-emerald-700" : "text-slate-500"}>
@@ -490,8 +524,18 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
                 <Button
                   variant="destructive"
                   className="h-12 gap-2"
-                  disabled={busy}
-                  onClick={() => setExitOpen(true)}
+                  disabled={busy || !ackDone}
+                  onClick={() => {
+                    if (!ackDone) {
+                      toast.error("작업·위험 확인 서명 후에만 퇴근할 수 있습니다");
+                      setAckOpen(true);
+                      return;
+                    }
+                    setNoAccident(false);
+                    setHealthOk(false);
+                    exitSigRef.current?.clear();
+                    setExitOpen(true);
+                  }}
                 >
                   <LogOut className="h-4 w-4" />
                   퇴근하기
@@ -508,12 +552,25 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
         </section>
       </main>
 
-      <Dialog open={ackOpen} onOpenChange={setAckOpen}>
+      <Dialog
+        open={ackOpen}
+        onOpenChange={(open) => {
+          if (!open && pendingEntry && !isCheckedIn) {
+            setPendingEntry(false);
+          }
+          // Incomplete checked-in day cannot dismiss without signature
+          if (!open && isCheckedIn && !ackDone) {
+            toast.error("서명 확인 없이 작업을 진행할 수 없습니다");
+            return;
+          }
+          setAckOpen(open);
+        }}
+      >
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>오늘 작업·위험 확인</DialogTitle>
+            <DialogTitle>{pendingEntry ? "출근 · 작업·위험 확인 서명" : "오늘 작업·위험 확인"}</DialogTitle>
             <DialogDescription>
-              배정된 허가서를 한 번에 확인하고 서명합니다. (지금은 서명 없이도 퇴근 가능)
+              배정된 허가서를 확인하고 손글씨로 서명해야 {pendingEntry ? "출근이 기록됩니다" : "작업을 이어갈 수 있습니다"}.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-sm">
@@ -533,39 +590,68 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
               <Checkbox checked={ackRiskOk} onCheckedChange={(v) => setAckRiskOk(v === true)} />
               <span>위험요인·대책을 확인했습니다.</span>
             </label>
-            <input
-              className="w-full h-10 rounded-md border px-3 text-sm"
-              placeholder="서명 (성명)"
-              value={ackSig}
-              onChange={(e) => setAckSig(e.target.value)}
-            />
+            <label className="flex items-start gap-2">
+              <Checkbox checked={ackPledgeOk} onCheckedChange={(v) => setAckPledgeOk(v === true)} />
+              <span>{WORK_ACK_PLEDGE}</span>
+            </label>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="font-medium text-xs">전자서명 *</div>
+                <Button type="button" variant="ghost" size="sm" onClick={() => ackSigRef.current?.clear()}>
+                  지우기
+                </Button>
+              </div>
+              <div className="border-2 rounded-md bg-background">
+                <ResponsiveSignaturePad ref={ackSigRef} height={150} />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">손가락으로 위 영역에 서명해 주세요.</p>
+            </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="ghost" onClick={() => setAckOpen(false)}>
-              나중에
-            </Button>
+          <DialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row">
+            {pendingEntry && !isCheckedIn ? (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setPendingEntry(false);
+                  setAckOpen(false);
+                }}
+              >
+                취소
+              </Button>
+            ) : null}
             <Button disabled={busy} onClick={() => void handleDailyAck()}>
-              서명 · 확인
+              {pendingEntry ? "서명 후 출근" : "서명 · 확인"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={exitOpen} onOpenChange={setExitOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>일일 무재해 서약서 및 건강상태 확인</DialogTitle>
-            <DialogDescription>퇴근 전 필수 확인입니다.</DialogDescription>
+            <DialogDescription>퇴근 전 필수 서약·서명입니다. (회사 QR 퇴근과 동일 수준)</DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-sm">
             <label className="flex items-start gap-2">
               <Checkbox checked={noAccident} onCheckedChange={(v) => setNoAccident(v === true)} />
-              <span>오늘 사고나 다친 곳이 없습니다.</span>
+              <span>{NO_ACCIDENT_PLEDGE}</span>
             </label>
             <label className="flex items-start gap-2">
               <Checkbox checked={healthOk} onCheckedChange={(v) => setHealthOk(v === true)} />
-              <span>현재 건강상태에 이상 없음을 확인합니다.</span>
+              <span>{HEALTH_PLEDGE}</span>
             </label>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <div className="font-medium text-xs">퇴근 서명 *</div>
+                <Button type="button" variant="ghost" size="sm" onClick={() => exitSigRef.current?.clear()}>
+                  지우기
+                </Button>
+              </div>
+              <div className="border-2 rounded-md bg-background">
+                <ResponsiveSignaturePad ref={exitSigRef} height={140} />
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setExitOpen(false)}>취소</Button>

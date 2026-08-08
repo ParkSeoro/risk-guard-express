@@ -88,7 +88,13 @@ export function buildWorkSummary(permits: DailyPermitBrief[]): string {
 export async function buildRiskSummary(permits: DailyPermitBrief[]): Promise<string> {
   const runIds = [...new Set(permits.map((p) => p.assessment_run_id).filter(Boolean))] as string[];
   if (runIds.length === 0) {
-    return "연결된 위험성평가가 없으면 관리자 브리핑·현장 지시에 따르세요. PPE 착용, 위험구역 출입 금지, 이상 시 즉시 보고.";
+    return [
+      "연결된 위험성평가가 배정되지 않았습니다. 아래 기본 안전수칙을 반드시 준수하세요.",
+      "1. 안전모·안전화·필요 PPE를 착용하고 작업에 임합니다.",
+      "2. 위험구역·제한구역에 무단 진입하지 않습니다.",
+      "3. 관리자 TBM·현장 지시에 따르고, 이상 징후·아차사고는 즉시 보고합니다.",
+      "4. 작업 전 주변 위험요인(추락·협착·화재·중독 등)을 재확인합니다.",
+    ].join("\n");
   }
   const { data: items } = await supabase
     .from("risk_items")

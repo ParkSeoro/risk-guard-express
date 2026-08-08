@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { isPureWorkerUser } from '@/components/AuthGuard';
 import { useToast } from '@/hooks/use-toast';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -54,13 +55,13 @@ const defaults: NotifPrefs = {
 };
 
 // 시스템 강제(끌 수 없음) 이벤트 — DB의 should_push_notify와 동기화
-const MANDATORY_EVENTS = [
-  { key: 'incident',           label: '중대재해 / 사고 보고',   desc: '안전관리책임자에게 즉시 전달' },
-  { key: 'approval_request',   label: '결재 상신 요청',         desc: '결재선 지정 결재자에게 전달 (일반 알림 채널)' },
-  { key: 'approval_result',    label: '결재 승인 / 반려',       desc: '기안자에게 결과 전달' },
-  { key: 'danger_zone_entry',  label: '위험구역 진입',         desc: '지오펜스 경보 (사이렌 채널)' },
-  { key: 'work_stop',          label: '작업중지 요청',         desc: '긴급 작업중지 알림' },
-];
+const MANDATORY_EVENTS_ALL = [
+  { key: 'incident',           label: '중대재해 / 사고 보고',   desc: '안전관리책임자에게 즉시 전달', worker: false },
+  { key: 'approval_request',   label: '결재 상신 요청',         desc: '결재선 지정 결재자에게 전달 (일반 알림 채널)', worker: false },
+  { key: 'approval_result',    label: '결재 승인 / 반려',       desc: '기안자에게 결과 전달', worker: false },
+  { key: 'danger_zone_entry',  label: '위험구역 진입',         desc: '지오펜스 경보 (사이렌 채널)', worker: true },
+  { key: 'work_stop',          label: '작업중지 요청',         desc: '긴급 작업중지 알림', worker: true },
+] as const;
 
 interface EmailLogEntry {
   id: string; created_at: string; action: string; user_name: string;
@@ -70,13 +71,14 @@ interface EmailLogEntry {
 const SettingsNotifications = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, roles } = useAuth();
   const { toast } = useToast();
   const { log } = useAuditLog();
   const [prefs, setPrefs] = useState<NotifPrefs>(defaults);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const isMaster = hasRole('master');
+  const pureWorker = isPureWorkerUser(roles || []);
   const isMobileShell = location.pathname.startsWith('/app/worker');
   const native = isNativeApp();
 
@@ -291,19 +293,31 @@ const SettingsNotifications = () => {
 
   if (loading) return <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">로딩 중...</div>;
 
-  // 사용자 토글 가능 이벤트
-  const userEvents: { key: keyof NotifPrefs; label: string; desc: string }[] = [
-    { key: 'event_return_request',      label: '보완 요청 / 재제출',     desc: '결재 보완 요청을 받았을 때' },
-    { key: 'event_validation_complete', label: '검증 완료 / 부적정',     desc: '데이터 검증 결과 통지' },
-    { key: 'event_safety_inspection',   label: '안전점검 지적사항',      desc: '점검 부적합 및 조치 요청' },
-    { key: 'event_work_permit',         label: '작업허가서',            desc: '작업허가 요청·승인·만료' },
-    { key: 'event_tbm',                 label: 'TBM 세션',              desc: 'TBM 시작 알림 및 참여 요청' },
-    { key: 'event_health_warning',      label: '건강 경고 (유소견·미수검 출근)', desc: '안전관리자에게 출근 경고' },
-    { key: 'event_health_checkup_due',  label: '건강검진 도래 / 만료',   desc: '대상자·관리자에게 사전 통지' },
-    { key: 'event_todo_due',            label: '할 일 마감 임박',        desc: '법정 의무 작업 마감 알림' },
-    { key: 'event_assessment_result',   label: '위험성평가 결과 공유',    desc: '평가 완료 시 참가자에게' },
-    { key: 'event_general',             label: '일반 공지',              desc: '시스템 공지 / 운영 안내' },
-  ];
+  // 사용자 토글 가능 이벤트 (근로자는 결재·검증·관리자용 항목 숨김)
+  const userEvents: { key: keyof NotifPrefs; label: string; desc: string }[] = pureWorker
+    ? [
+        { key: 'event_work_permit',         label: '작업허가서',            desc: '배정된 작업허가·현장 안내' },
+        { key: 'event_tbm',                 label: 'TBM 세션',              desc: 'TBM 시작 알림 및 참여 요청' },
+        { key: 'event_health_warning',      label: '건강 이상 안내',         desc: '일일 건강일지·이상소견 관련 안내' },
+        { key: 'event_assessment_result',   label: '위험성평가 결과 공유',    desc: '평가 완료 시 참가자에게' },
+        { key: 'event_general',             label: '일반 공지',              desc: '시스템 공지 / 운영 안내' },
+      ]
+    : [
+        { key: 'event_return_request',      label: '보완 요청 / 재제출',     desc: '결재 보완 요청을 받았을 때' },
+        { key: 'event_validation_complete', label: '검증 완료 / 부적정',     desc: '데이터 검증 결과 통지' },
+        { key: 'event_safety_inspection',   label: '안전점검 지적사항',      desc: '점검 부적합 및 조치 요청' },
+        { key: 'event_work_permit',         label: '작업허가서',            desc: '작업허가 요청·승인·만료' },
+        { key: 'event_tbm',                 label: 'TBM 세션',              desc: 'TBM 시작 알림 및 참여 요청' },
+        { key: 'event_health_warning',      label: '건강 경고 (유소견·미수검 출근)', desc: '안전관리자에게 출근 경고' },
+        { key: 'event_health_checkup_due',  label: '건강검진 도래 / 만료',   desc: '대상자·관리자에게 사전 통지' },
+        { key: 'event_todo_due',            label: '할 일 마감 임박',        desc: '법정 의무 작업 마감 알림' },
+        { key: 'event_assessment_result',   label: '위험성평가 결과 공유',    desc: '평가 완료 시 참가자에게' },
+        { key: 'event_general',             label: '일반 공지',              desc: '시스템 공지 / 운영 안내' },
+      ];
+
+  const mandatoryEvents = pureWorker
+    ? MANDATORY_EVENTS_ALL.filter((e) => e.worker)
+    : MANDATORY_EVENTS_ALL;
 
   return (
     <div className={`space-y-4 animate-fade-in ${isMobileShell ? 'max-w-md mx-auto p-4 pb-24' : 'max-w-2xl'}`}>
@@ -460,7 +474,7 @@ const SettingsNotifications = () => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2.5">
-          {MANDATORY_EVENTS.map(e => (
+          {mandatoryEvents.map(e => (
             <div key={e.key} className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-medium">{e.label}</p>

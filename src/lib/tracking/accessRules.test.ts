@@ -29,6 +29,12 @@ describe("zone whitelist / blacklist", () => {
     expect(isAccessForbidden(rules, { job_type: "배관공" })).toBe(false);
   });
 
+  it("DENY: unresolved company_id fail-closes when companies are targeted", () => {
+    const rules = buildAccessRules("DENY", [companyA], []);
+    expect(isAccessForbidden(rules, { company_id: null })).toBe(true);
+    expect(isAccessForbidden(rules, {})).toBe(true);
+  });
+
   it("parses legacy allow_companies as ALLOW", () => {
     const parsed = parseAccessRules({
       mode: "allow_companies",

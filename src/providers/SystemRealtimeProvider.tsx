@@ -204,11 +204,15 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
         normalizeTrackingConsentStorage();
         if (startGenRef.current !== gen) return;
 
+        // Masters keep tracking for danger-zone alarms — do not auto-stop on fence leave.
+        const isMasterRole = String(identity.worker_role || "").toLowerCase() === "master";
         let siteCenter: Awaited<ReturnType<typeof resolveSiteTrackingFence>> = null;
-        try {
-          siteCenter = await resolveSiteTrackingFence(identity.project_id);
-        } catch {
-          /* tracking still works without site center */
+        if (!isMasterRole) {
+          try {
+            siteCenter = await resolveSiteTrackingFence(identity.project_id);
+          } catch {
+            /* tracking still works without site center */
+          }
         }
 
         if (startGenRef.current !== gen) return;

@@ -475,15 +475,25 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
                 ? `반경 ${Math.round(checkInFence.radiusM)}m 이내 — 출근 가능`
                 : "반경 밖 — 출근 비활성"}
           </Badge>
-          {!gpsTracking && isCheckedIn && (
+          {!gpsTracking && (
             <Button
               size="sm"
               variant="outline"
               className="w-full"
-              onClick={() => void ensureConsentAndGps()}
+              onClick={() => {
+                try {
+                  window.dispatchEvent(new Event("mobile:resume-gps-tracking"));
+                } catch { /* ignore */ }
+                void ensureConsentAndGps();
+              }}
             >
-              GPS 다시 시작
+              GPS 추적 켜기 (알람 필수)
             </Button>
+          )}
+          {!gpsTracking && (
+            <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+              추적 OFF면 위험구역에 들어가도 알람이 울리지 않습니다. 위 버튼으로 켠 뒤 구역 중앙에서 다시 확인하세요.
+            </p>
           )}
         </section>
 

@@ -189,6 +189,17 @@ export function isAccessForbidden(
     return false;
   }
 
+  // No identity at all while companies are on the DENY list → fail closed
+  // (masters / unresolved roster). Subjects with job_type still evaluate normally.
+  if (
+    (rules.company_ids?.length || 0) > 0 &&
+    !subject.company_id &&
+    !subject.job_type &&
+    !subject.worker_id
+  ) {
+    return true;
+  }
+
   return subjectMatchesTargets(rules, subject);
 }
 

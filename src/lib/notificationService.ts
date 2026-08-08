@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { ADMIN_PROJECT_ROLES } from '@/lib/permissions';
 
 interface SendNotificationParams {
   user_id: string;
@@ -9,6 +10,21 @@ interface SendNotificationParams {
   related_type?: string;
   project_id?: string;
 }
+
+export type NotifyProjectRolesParams = {
+  projectId: string;
+  title: string;
+  message: string;
+  type?: string;
+  link?: string | null;
+  companyId?: string | null;
+  excludeUserId?: string | null;
+  relatedType?: string | null;
+  relatedId?: string | null;
+  severity?: string | null;
+  roles?: string[];
+  positions?: string[] | null;
+};
 
 /**
  * Send a notification (in-app + email via edge function).
@@ -44,4 +60,48 @@ export async function sendNotification(params: SendNotificationParams): Promise<
       project_id: params.project_id,
     }]);
   }
+}
+
+/** Role-based fan-out via SECURITY DEFINER router (bypasses notifications RLS). */
+export async function notifyProjectRoles(params: NotifyProjectRolesParams): Promise<number> {
+  const { data, error } = await supabase.rpc('notify_project_roles', {
+    _project_id: params.projectId,
+    _roles: params.roles?.length ? params.roles : [...ADMIN_PROJECT_ROLES],
+    _title: params.title,
+    _message: params.message,
+    _type: params.type || 'task_assigned',
+    _link: params.link ?? null,
+    _company_id: params.companyId ?? null,
+    _exclude_user_id: params.excludeUserId ?? null,
+    _related_type: params.relatedType ?? null,
+    _related_id: params.relatedId ?? null,
+    _severity: params.severity ?? null,
+    _positions: params.positions ?? null,
+  });
+  if (error) throw error;
+  return typeof data === 'number' ? data : Number(data) || 0;
+}
+
+export async function notifyMasters(params: {
+  title: string;
+  message: string;
+  type?: string;
+  link?: string | null;
+  projectId?: string | null;
+  relatedType?: string | null;
+  relatedId?: string | null;
+  severity?: string | null;
+}): Promise<number> {
+  const { data, error } = await supabase.rpc('notify_masters', {
+    _title: params.title,
+    _message: params.message,
+    _type: params.type || 'warning',
+    _link: params.link ?? null,
+    _project_id: params.projectId ?? null,
+    _related_type: params.relatedType ?? null,
+    _related_id: params.relatedId ?? null,
+    _severity: params.severity ?? null,
+  });
+  if (error) throw error;
+  return typeof data === 'number' ? data : Number(data) || 0;
 }

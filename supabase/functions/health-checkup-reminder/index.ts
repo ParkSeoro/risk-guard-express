@@ -1,6 +1,6 @@
 // Health Checkup Reminder — daily cron edge function
 // Scans upcoming/overdue health checkups & special-education expirations,
-// then sends notifications to the project's safety managers.
+// then sends notifications to the project's safety managers (role_new / positions).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
@@ -11,6 +11,9 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+const MANAGER_ROLES = ["project_admin", "safety_manager", "site_manager"];
+const MANAGER_POSITIONS = ["HSE_MANAGER", "OWNER_HSE", "OWNER_SM", "SITE_MANAGER"];
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -51,17 +54,8 @@ Deno.serve(async (req) => {
       byProject.set(row.project_id, arr);
     }
 
-    // 2) For each project, find safety managers & dispatch single grouped notification
+    // 2) For each project, notify managers via role router (not bogus position values)
     for (const [projectId, rows] of byProject.entries()) {
-      const { data: members } = await supabase
-        .from("project_members")
-        .select("user_id, position_new, role_new")
-        .eq("project_id", projectId)
-        .in("position_new", ["safety_manager", "health_manager"]);
-
-      const recipients = (members ?? []).map((m) => m.user_id).filter(Boolean);
-      if (recipients.length === 0) continue;
-
       const overdue = rows.filter((r: any) => r.overdue).length;
       const upcoming = rows.length - overdue;
       const title = `[건강진단] 예정 ${upcoming}건 · 지연 ${overdue}건`;
@@ -70,17 +64,51 @@ Deno.serve(async (req) => {
         .map((r: any) => `• ${r.worker_name} (${r.type}) - ${r.scheduled_date}${r.overdue ? " [지연]" : ""}`)
         .join("\n") + (rows.length > 5 ? `\n…외 ${rows.length - 5}건` : "");
 
-      for (const uid of recipients) {
-        await supabase.from("notifications").insert({
-          user_id: uid,
-          project_id: projectId,
-          type: "health_checkup_reminder",
-          title,
-          body,
-          link: "/health/checkups",
-          is_read: false,
-        });
-        summary.notifications_sent++;
+      const { data: n, error: rpcErr } = await supabase.rpc("notify_project_roles", {
+        _project_id: projectId,
+        _roles: MANAGER_ROLES,
+        _title: title,
+        _message: body,
+        _type: "health_checkup_reminder",
+        _link: "/health/checkups",
+        _company_id: null,
+        _exclude_user_id: null,
+        _related_type: "health_checkup",
+        _related_id: null,
+        _severity: overdue > 0 ? "high" : "medium",
+        _positions: MANAGER_POSITIONS,
+      });
+      if (rpcErr) {
+        // Fallback: direct role_new filter if RPC not yet migrated
+        const { data: members } = await supabase
+          .from("project_members")
+          .select("user_id, role_new, position_new")
+          .eq("project_id", projectId)
+          .or(
+            `role_new.in.(${MANAGER_ROLES.join(",")}),position_new.in.(${MANAGER_POSITIONS.join(",")})`,
+          );
+
+        const recipients = [...new Set(
+          (members ?? [])
+            .filter((m: any) => m.user_id && !["worker", "viewer"].includes(String(m.role_new || "")))
+            .map((m: any) => m.user_id),
+        )];
+        for (const uid of recipients) {
+          await supabase.from("notifications").insert({
+            user_id: uid,
+            project_id: projectId,
+            type: "health_checkup_reminder",
+            title,
+            message: body,
+            body,
+            link: "/health/checkups",
+            is_read: false,
+            severity: overdue > 0 ? "high" : "medium",
+          });
+          summary.notifications_sent++;
+        }
+      } else {
+        summary.notifications_sent += typeof n === "number" ? n : Number(n) || 0;
       }
     }
 

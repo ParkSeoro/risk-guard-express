@@ -9925,6 +9925,36 @@ export type Database = {
         Returns: undefined
       }
       migrate_legacy_to_ssot: { Args: { _project_id?: string }; Returns: Json }
+      notify_masters: {
+        Args: {
+          _title: string
+          _message: string
+          _type?: string
+          _link?: string
+          _project_id?: string
+          _related_type?: string
+          _related_id?: string
+          _severity?: string
+        }
+        Returns: number
+      }
+      notify_project_roles: {
+        Args: {
+          _project_id: string
+          _roles?: string[]
+          _title?: string
+          _message?: string
+          _type?: string
+          _link?: string
+          _company_id?: string
+          _exclude_user_id?: string
+          _related_type?: string
+          _related_id?: string
+          _severity?: string
+          _positions?: string[]
+        }
+        Returns: number
+      }
       preview_required_education: {
         Args: { _job_type: string; _project_id: string }
         Returns: {

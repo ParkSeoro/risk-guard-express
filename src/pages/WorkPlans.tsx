@@ -285,13 +285,16 @@ const WorkPlans = () => {
                       <Input type="date" value={newPlan.endDate} onChange={e => setNewPlan(p => ({ ...p, endDate: e.target.value }))} className="h-9" />
                     </div>
                   </div>
-                  {access.isProjectAdmin && companies.length > 0 && (
+                  {(access.seesAllCompanies || (access.accessibleCompanyIds?.length ?? 0) > 0) && companies.length > 0 && (
                     <div className="space-y-1.5">
                       <Label className="text-xs font-medium">소속 업체</Label>
                       <Select value={selectedCompany} onValueChange={setSelectedCompany}>
                         <SelectTrigger><SelectValue placeholder="업체 선택 (선택사항)" /></SelectTrigger>
                         <SelectContent>
-                          {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                          {(access.seesAllCompanies
+                            ? companies
+                            : companies.filter((c) => access.accessibleCompanyIds?.includes(c.id))
+                          ).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>

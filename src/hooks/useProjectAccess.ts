@@ -1,7 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { applyOwnCompanyFilter, resolveAccessibleCompanyIds } from '@/lib/companyDocScope';
+import {
+  applyOwnCompanyFilter,
+  resolveAccessibleCompanyIds,
+  seesProjectWideCompanies,
+} from '@/lib/companyDocScope';
 
 /**
  * Project-scoped role (new model).
@@ -159,10 +163,17 @@ export interface ProjectAccess {
   isContractor: boolean; // legacy alias = isWorker
   loading: boolean;
   /**
-   * null = project-wide (master/client admin).
+   * null = project-wide (master / 발주처 PA·SM).
    * string[] = allowed company_ids (own or own+descendants for GC).
+   * [] = restrictive (loading / no membership).
    */
   accessibleCompanyIds: string[] | null;
+  /**
+   * True only when company data is project-wide (accessibleCompanyIds === null).
+   * Do NOT use isProjectAdmin / isSafetyManager for company visibility —
+   * 시공사·협력사 SM/PA 는 여기 false 여야 한다.
+   */
+  seesAllCompanies: boolean;
   /** Apply to supabase query builder for company-scoped filtering. */
   applyCompanyFilter: (query: any, opts?: { includeOrphans?: boolean }) => any;
   canCreate: (feature: FeatureKey) => boolean;
@@ -188,7 +199,8 @@ export function useProjectAccess(): ProjectAccess {
   });
   const [memberInfo, setMemberInfo] = useState<MemberInfo | null>(null);
   const [loading, setLoading] = useState(true);
-  const [accessibleCompanyIds, setAccessibleCompanyIds] = useState<string[] | null>(null);
+  // [] until resolved — never flash "all" for non-master
+  const [accessibleCompanyIds, setAccessibleCompanyIds] = useState<string[] | null>([]);
 
   const setSelectedProject = (id: string) => {
     setSelectedProjectState(id);
@@ -276,9 +288,19 @@ export function useProjectAccess(): ProjectAccess {
     [isMaster, memberInfo],
   );
 
-  // Parity with DB `is_project_admin()`: master + project_admin + safety_manager
+  /**
+   * Feature ACL flag (parity with DB is_project_admin): includes safety_manager.
+   * WARNING: NOT a company-scope flag. For data visibility use seesAllCompanies /
+   * accessibleCompanyIds / applyCompanyFilter. 발주·시공·협력 각각 SM이 있다.
+   */
   const isProjectAdmin = userRole === 'project_admin' || userRole === 'master' || userRole === 'safety_manager';
   const isSafetyManager = userRole === 'safety_manager';
+  const seesAllCompanies = seesProjectWideCompanies({
+    isMaster,
+    role: userRole,
+    companyType: isMaster ? null : memberInfo?.company_type,
+    accessibleCompanyIds: isMaster ? null : accessibleCompanyIds,
+  });
   const isSiteManager = userRole === 'site_manager';
   const isSupervisor = userRole === 'supervisor' || userRole === 'site_supervisor';
   const isWorker = userRole === 'worker';
@@ -349,6 +371,7 @@ export function useProjectAccess(): ProjectAccess {
     ),
     loading,
     accessibleCompanyIds,
+    seesAllCompanies,
     applyCompanyFilter,
     canCreate: (f) => getPermissions(f).create,
     canEdit: (f) => getPermissions(f).edit,

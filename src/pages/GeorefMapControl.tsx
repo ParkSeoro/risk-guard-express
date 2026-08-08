@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, ImageOverlay, Polygon, Circle, useMap } from "react-leaflet";
+import { MapContainer, ImageOverlay, Polygon, Circle, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet-draw/dist/leaflet.draw.css";
+import VWorldBasemap from "@/components/geofence/VWorldBasemap";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -389,13 +390,11 @@ export default function GeorefMapControl() {
               <MapContainer
                 center={center}
                 zoom={17}
+                maxZoom={19}
                 className="h-full w-full"
                 scrollWheelZoom
               >
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> · Esri'
-                  url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                />
+                <VWorldBasemap satellite />
                 {activeMap?.image_url && bounds && (
                   <ImageOverlay url={activeMap.image_url} bounds={bounds} opacity={0.85} />
                 )}

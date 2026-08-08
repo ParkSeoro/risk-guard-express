@@ -47,6 +47,7 @@ import OrthogonalZoneCanvas, {
 import { fetchProjectCompanies } from "@/lib/projectCompanies";
 import {
   applyGpsCalibration,
+  clearGpsCalibrationCache,
   fetchProjectGpsCalibration,
   offsetMagnitudeM,
   type GpsCalibration,
@@ -496,12 +497,27 @@ export default function SiteControlMap() {
     setSavingBounds(true);
     const payload = cornersToPersistPayload(draftCorners, opacity);
     const { error } = await supabase.from("site_maps").update(payload as any).eq("id", activeMap.id);
-    setSavingBounds(false);
     if (error) {
+      setSavingBounds(false);
       toast.error("저장 실패: " + error.message + " (geo_transform 마이그레이션 적용 여부 확인)");
       return;
     }
-    toast.success("위성 정렬(고급)이 저장되었습니다");
+    // Georef change invalidates residual phone bias — clear so GPS isn't double-shifted.
+    if (projectId) {
+      const { error: clearErr } = await supabase
+        .from("projects")
+        .update({ gps_calibration: null as any })
+        .eq("id", projectId);
+      if (!clearErr) clearGpsCalibrationCache(projectId);
+    }
+    setSavingBounds(false);
+    toast.success("위성 정렬(고급)이 저장되었습니다", {
+      description:
+        zones.length > 0
+          ? `1점 GPS 보정 초기화 · 위험구역 ${zones.length}개는 좌표가 어긋날 수 있어 다시 그려 주세요.`
+          : "1점 GPS 보정은 초기화했습니다. 잔여 오차는 모바일 1점 보정으로.",
+      duration: 8000,
+    });
     setActiveMap({ ...activeMap, ...payload });
     setFitToken(`saved-${Date.now()}`);
     void loadMaps();

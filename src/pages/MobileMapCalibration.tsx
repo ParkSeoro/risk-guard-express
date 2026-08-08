@@ -482,11 +482,32 @@ export default function MobileMapCalibration() {
         .eq("id", active.id);
       if (error) throw error;
 
+      // Walk georef is the spatial SSOT — stale 1-point bias would double-shift GPS
+      // and pull points outside freshly drawn DENY polygons.
+      const hadBias = !!existing;
+      const { error: clearErr } = await supabase
+        .from("projects")
+        .update({ gps_calibration: null as any })
+        .eq("id", projectId);
+      if (clearErr) {
+        console.warn("[map-cal] failed to clear stale gps_calibration", clearErr);
+      } else {
+        clearGpsCalibrationCache(projectId);
+        setExisting(null);
+      }
+
+      const zoneCount = zoneRingsUv.length;
       setFitPreview({ rmsM: fit.rmsM });
       toast.success(`현장맵 지오레프 저장 · 잔차 RMS ≈${Math.round(fit.rmsM)}m`, {
-        description:
-          "A/B/C 기록은 유지됩니다. 다시 맞추려면 ‘워킹 초기화’ 후 재측정하세요.",
-        duration: 7000,
+        description: [
+          hadBias ? "기존 1점 보정은 자동 초기화했습니다." : null,
+          zoneCount > 0
+            ? `위험구역 ${zoneCount}개 — 좌표가 바뀌었으니 PC 관제맵에서 구역을 다시 그려 주세요.`
+            : "A/B/C 기록은 유지됩니다. 잔여 오차만 있을 때 1점 보정을 쓰세요.",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        duration: 9000,
       });
       // Refresh map meta but keep walk slots (forceWalkReset false via dirty)
       walkDirtyRef.current = true;

@@ -1,5 +1,5 @@
--- Daily work acknowledgment: after check-in, worker confirms today's permits + RA and signs once.
--- Signature can be reused for linked TBM participations. No hard gate in app v1.
+-- Daily work acknowledgment: worker confirms today's permits + RA and signs once (hard gate before entry/checkout).
+-- Signature can be reused for linked TBM participations.
 
 CREATE TABLE IF NOT EXISTS public.worker_daily_acks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -61,6 +61,9 @@ CREATE POLICY "worker_daily_acks_update"
     OR public.is_project_member(auth.uid(), project_id)
     OR user_id = auth.uid()
   );
+
+GRANT SELECT, INSERT, UPDATE ON public.worker_daily_acks TO authenticated;
+GRANT ALL ON public.worker_daily_acks TO service_role;
 
 COMMENT ON TABLE public.worker_daily_acks IS
   'Worker confirms assigned permits + risk summary and signs once per day; reusable for TBM.';

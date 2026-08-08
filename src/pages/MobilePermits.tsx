@@ -27,8 +27,11 @@ import DigPermitForm, {
   type PermitType,
 } from "@/components/permits/DigPermitForm";
 import StandardPermitSheet from "@/components/permits/StandardPermitSheet";
+import PermitAiBriefingCard from "@/components/permits/PermitAiBriefingCard";
 import { contactPhonesFromApprovals, mergeApprovalSignatures } from "@/lib/permitApprovalSignatures";
 import { normalizePermitKinds, type PermitKindId } from "@/lib/permitKinds";
+import type { PermitAiBriefing } from "@/lib/permitBriefing";
+import { isPureWorkerUser } from "@/components/AuthGuard";
 
 const STATUS_BADGE: Record<string, string> = {
   대기: "bg-warning/20 text-warning",
@@ -83,13 +86,15 @@ export default function MobilePermits() {
   const [searchParams, setSearchParams] = useSearchParams();
   const deepId = searchParams.get("id");
   const goMobileHome = useNavigateMobileHome();
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, roles } = useAuth();
   const { projectId, applyCompanyFilter, isProjectAdmin } = useMobileAccess();
+  const pureWorker = isPureWorkerUser(roles || []);
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState<any | null>(null);
   const [formData, setFormData] = useState<PermitFormData>({});
   const [signatures, setSignatures] = useState<PermitSignatures>({});
+  const [briefing, setBriefing] = useState<PermitAiBriefing | null>(null);
   const [activeKind, setActiveKind] = useState<PermitKindId>("general");
   const [kinds, setKinds] = useState<PermitKindId[]>(["general"]);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -142,6 +147,7 @@ export default function MobilePermits() {
   const openPermit = async (p: any) => {
     setDetailLoading(true);
     setActive(p);
+    setBriefing((p.ai_briefing as PermitAiBriefing) || null);
     const nextKinds = normalizePermitKinds(
       p.permit_kinds,
       (p.permit_type || "general") as PermitKindId,
@@ -153,6 +159,20 @@ export default function MobilePermits() {
         : nextKinds[0],
     );
     setFormData(toFormData(p));
+
+    // Refresh AI briefing if list row was stale/partial
+    try {
+      const { data: fresh } = await supabase
+        .from("work_permits" as any)
+        .select("ai_briefing")
+        .eq("id", p.id)
+        .maybeSingle();
+      if ((fresh as any)?.ai_briefing) {
+        setBriefing((fresh as any).ai_briefing as PermitAiBriefing);
+      }
+    } catch {
+      /* keep list briefing */
+    }
 
     const baseSig: PermitSignatures = p.signatures || {};
     const { data: aps } = await supabase
@@ -220,6 +240,7 @@ export default function MobilePermits() {
     setActive(null);
     setSignatures({});
     setFormData({});
+    setBriefing(null);
     if (deepId) {
       const next = new URLSearchParams(searchParams);
       next.delete("id");
@@ -248,15 +269,21 @@ export default function MobilePermits() {
         {!active && (
           <Card className="border-primary/20 bg-primary/5">
             <CardContent className="pt-3 pb-3 text-xs space-y-2">
-              <p>모바일에서는 승인된·진행 중 허가서를 조회합니다. 승인·반려는 통합 결재함에서 합니다.</p>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="w-full"
-                onClick={() => navigate("/app/worker/approvals")}
-              >
-                <Inbox className="h-4 w-4 mr-1" /> 결재함 열기
-              </Button>
+              <p>
+                {pureWorker
+                  ? "승인·진행 중 허가서와 AI 핵심 요약을 조회합니다. 작성·결재는 PC/관리자 화면에서 합니다."
+                  : "모바일에서는 승인된·진행 중 허가서를 조회합니다. 승인·반려는 통합 결재함에서 합니다."}
+              </p>
+              {!pureWorker && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => navigate("/app/worker/approvals")}
+                >
+                  <Inbox className="h-4 w-4 mr-1" /> 결재함 열기
+                </Button>
+              )}
             </CardContent>
           </Card>
         )}
@@ -359,13 +386,15 @@ export default function MobilePermits() {
                     ))}
                   </div>
                 )}
-                <Button
-                  className="w-full"
-                  variant="secondary"
-                  onClick={() => navigate("/app/worker/approvals")}
-                >
-                  결재함으로
-                </Button>
+                {!pureWorker && (
+                  <Button
+                    className="w-full"
+                    variant="secondary"
+                    onClick={() => navigate("/app/worker/approvals")}
+                  >
+                    결재함으로
+                  </Button>
+                )}
               </CardContent>
             </Card>
 
@@ -374,16 +403,26 @@ export default function MobilePermits() {
                 <Loader2 className="h-5 w-5 animate-spin inline" />
               </div>
             ) : (
-              <div className="bg-white border rounded shadow-sm p-2 overflow-x-auto">
-                <StandardPermitSheet>
-                  <DigPermitForm
-                    permitType={activeKind as PermitType}
-                    data={formData}
-                    signatures={signatures}
-                    readOnly
-                  />
-                </StandardPermitSheet>
-              </div>
+              <>
+                <PermitAiBriefingCard briefing={briefing} />
+                {!briefing && (
+                  <Card>
+                    <CardContent className="pt-4 text-xs text-muted-foreground">
+                      AI 핵심 요약이 아직 생성되지 않았습니다. 아래 허가서 본문을 확인하세요.
+                    </CardContent>
+                  </Card>
+                )}
+                <div className="bg-white border rounded shadow-sm p-2 overflow-x-auto">
+                  <StandardPermitSheet>
+                    <DigPermitForm
+                      permitType={activeKind as PermitType}
+                      data={formData}
+                      signatures={signatures}
+                      readOnly
+                    />
+                  </StandardPermitSheet>
+                </div>
+              </>
             )}
           </div>
         )}

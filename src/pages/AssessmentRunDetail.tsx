@@ -297,10 +297,11 @@ const AssessmentRunDetail = () => {
 
       // E1: 담당자/부서는 작성자(현재 사용자) 소속회사만. 마스터는 프로젝트 전체.
       const allCompanyIds = companies.map((c) => c.id);
-      const assigneeCompanyIds =
-        isMaster || !userCompanyId
-          ? allCompanyIds
-          : allCompanyIds.filter((id) => id === userCompanyId);
+      const assigneeCompanyIds = isMaster
+        ? allCompanyIds
+        : userCompanyId
+          ? allCompanyIds.filter((id) => id === userCompanyId)
+          : [];
       let deptRows: any[] = [];
       let companyManagerRows: any[] = [];
       if (assigneeCompanyIds.length > 0) {

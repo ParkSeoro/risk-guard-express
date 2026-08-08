@@ -112,35 +112,35 @@ export default function GlobalRiskLibrary() {
       const wb = XLSX.read(buf, { type: 'array' });
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' });
+      const splitList = (v: unknown) =>
+        String(v ?? '')
+          .split(/[,;\n|/]+/)
+          .map((x) => x.trim())
+          .filter(Boolean);
+      const cell = (r: Record<string, any>, ...keys: string[]) => {
+        for (const k of keys) {
+          const v = r[k];
+          if (v != null && String(v).trim() !== '') return String(v).trim();
+        }
+        return '';
+      };
       const mapped = json
         .map((r) => ({
-          process: String(r['공종'] || r.process || r.process_label || '').trim(),
-          sub_task: String(r['세부작업'] || r.sub_task || '').trim(),
-          hazard: String(r['위험요인'] || r.hazard || '').trim(),
-          hazard_situation: String(r['위험발생상황'] || r.hazard_situation || '').trim(),
-          existing_measure: String(r['현재대책'] || r.existing_measure || '').trim(),
-          improvement_measure: String(r['개선대책'] || r.improvement_measure || '').trim(),
-          work_phase: String(r['작업단계'] || r.work_phase || '').trim(),
-          hazard_type: String(r['위험유형'] || r.hazard_type || '').trim(),
-          likelihood_grade: String(r['가능성'] || r.likelihood_grade || '중').trim(),
-          severity_grade: String(r['중대성'] || r.severity_grade || '중').trim(),
-          risk_grade: String(r['위험도'] || r.risk_grade || '중').trim(),
-          ppe: String(r['PPE'] || r.ppe || '')
-            .split(/[,，]/)
-            .map((x) => x.trim())
-            .filter(Boolean),
-          legal_basis: String(r['법적근거'] || r.legal_basis || '')
-            .split(/[,，|;]/
-            .map((x) => x.trim())
-            .filter(Boolean),
-          equipment_keys: String(r['장비'] || r.equipment || '')
-            .split(/[,，]/
-            .map((x) => x.trim())
-            .filter(Boolean),
-          condition_keys: String(r['환경'] || r.condition || '')
-            .split(/[,，]/
-            .map((x) => x.trim())
-            .filter(Boolean),
+          process: cell(r, '공종', 'process', 'process_label'),
+          sub_task: cell(r, '세부작업', 'sub_task'),
+          hazard: cell(r, '위험요인', 'hazard'),
+          hazard_situation: cell(r, '위험발생상황', 'hazard_situation'),
+          existing_measure: cell(r, '현재대책', 'existing_measure'),
+          improvement_measure: cell(r, '개선대책', 'improvement_measure'),
+          work_phase: cell(r, '작업단계', 'work_phase'),
+          hazard_type: cell(r, '위험유형', 'hazard_type'),
+          likelihood_grade: cell(r, '가능성', 'likelihood_grade') || '중',
+          severity_grade: cell(r, '중대성', 'severity_grade') || '중',
+          risk_grade: cell(r, '위험도', 'risk_grade') || '중',
+          ppe: splitList(cell(r, 'PPE', 'ppe')),
+          legal_basis: splitList(cell(r, '법적근거', 'legal_basis')),
+          equipment_keys: splitList(cell(r, '장비', 'equipment')),
+          condition_keys: splitList(cell(r, '환경', 'condition')),
         }))
         .filter((r) => r.process && r.sub_task && r.hazard);
 

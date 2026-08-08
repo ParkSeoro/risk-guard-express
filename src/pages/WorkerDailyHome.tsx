@@ -243,29 +243,38 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
     if (!(await ensureConsentAndGps())) return;
     setBusy(true);
     try {
-      const { data, error } = await supabase
-        .from("worker_entry_logs")
-        .insert({
-          worker_id: workerId,
-          project_id: projectId,
-          entry_at: new Date().toISOString(),
-          entry_method: "gps",
-          tbm_confirmed: false,
-          no_accident_confirmed: false,
-          risk_assessment_confirmed: false,
-          education_confirmed: false,
-        })
-        .select("id, entry_at, exit_at, tbm_confirmed, no_accident_confirmed")
-        .single();
+      const { data, error } = await supabase.rpc("worker_gps_daily_lifecycle", {
+        _action: "entry",
+        _worker_id: workerId,
+        _project_id: projectId,
+        _lat: effectiveFix?.lat ?? null,
+        _lng: effectiveFix?.lng ?? null,
+        _accuracy: effectiveFix?.accuracy ?? null,
+      });
       if (error) throw error;
-      setTodayLog(data as EntryLog);
+      const res = data as any;
+      if (res?.error) {
+        if (res.error === "SUSPENDED") {
+          throw new Error(
+            `출입 정지 상태입니다${res.reason ? ` · ${res.reason}` : ""}`,
+          );
+        }
+        throw new Error(res.message || res.error || "출근 기록 실패");
+      }
+      const log = res?.log as EntryLog | undefined;
+      if (!log?.id) throw new Error("출근 기록 응답이 비어 있습니다");
+      setTodayLog(log);
       setAckOpen(true);
       try {
         window.dispatchEvent(new Event("mobile:resume-gps-tracking"));
       } catch {
         /* ignore */
       }
-      toast.success("출근이 기록되었습니다. 작업·위험 내용을 확인해 주세요.");
+      toast.success(
+        res?.already
+          ? "이미 출근 상태입니다. 작업·위험 내용을 확인해 주세요."
+          : "출근이 기록되었습니다. 작업·위험 내용을 확인해 주세요.",
+      );
     } catch (e: any) {
       toast.error(e?.message || "출근 기록 실패");
     } finally {
@@ -295,14 +304,17 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
       });
       if ("error" in saved) throw new Error(saved.error);
 
-      const { data, error } = await supabase
-        .from("worker_entry_logs")
-        .update({ tbm_confirmed: true, risk_assessment_confirmed: true })
-        .eq("id", todayLog.id)
-        .select("id, entry_at, exit_at, tbm_confirmed, no_accident_confirmed")
-        .single();
+      const { data, error } = await supabase.rpc("worker_gps_daily_lifecycle", {
+        _action: "ack",
+        _worker_id: workerId,
+        _project_id: projectId,
+      });
       if (error) throw error;
-      setTodayLog(data as EntryLog);
+      const res = data as any;
+      if (res?.error) throw new Error(res.message || res.error || "확인 저장 실패");
+      const log = res?.log as EntryLog | undefined;
+      if (!log?.id) throw new Error("확인 저장 응답이 비어 있습니다");
+      setTodayLog(log);
       setAckDone(true);
       setAckOpen(false);
       toast.success("오늘 작업·위험 확인 및 서명 완료");
@@ -318,20 +330,20 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
       toast.error("무재해 서약과 건강상태 확인에 체크해야 퇴근할 수 있습니다");
       return;
     }
-    if (!todayLog) return;
+    if (!todayLog || !workerId || !projectId) return;
     setBusy(true);
     try {
-      const { data, error } = await supabase
-        .from("worker_entry_logs")
-        .update({
-          exit_at: new Date().toISOString(),
-          no_accident_confirmed: true,
-        })
-        .eq("id", todayLog.id)
-        .select("id, entry_at, exit_at, tbm_confirmed, no_accident_confirmed")
-        .single();
+      const { data, error } = await supabase.rpc("worker_gps_daily_lifecycle", {
+        _action: "exit",
+        _worker_id: workerId,
+        _project_id: projectId,
+      });
       if (error) throw error;
-      setTodayLog(data as EntryLog);
+      const res = data as any;
+      if (res?.error) throw new Error(res.message || res.error || "퇴근 기록 실패");
+      const log = res?.log as EntryLog | undefined;
+      if (!log?.id) throw new Error("퇴근 기록 응답이 비어 있습니다");
+      setTodayLog(log);
       setExitOpen(false);
       stopGpsTracking();
       try {
@@ -339,7 +351,11 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
       } catch {
         /* ignore */
       }
-      toast.success("퇴근이 기록되었습니다. GPS 추적을 종료합니다.");
+      toast.success(
+        res?.already
+          ? "이미 퇴근 처리되었습니다."
+          : "퇴근이 기록되었습니다. GPS 추적을 종료합니다.",
+      );
     } catch (e: any) {
       toast.error(e?.message || "퇴근 기록 실패");
     } finally {

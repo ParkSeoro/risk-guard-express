@@ -9955,6 +9955,17 @@ export type Database = {
         }
         Returns: number
       }
+      worker_gps_daily_lifecycle: {
+        Args: {
+          _action: string
+          _worker_id: string
+          _project_id: string
+          _lat?: number
+          _lng?: number
+          _accuracy?: number
+        }
+        Returns: Json
+      }
       preview_required_education: {
         Args: { _job_type: string; _project_id: string }
         Returns: {

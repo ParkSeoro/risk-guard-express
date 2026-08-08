@@ -33,16 +33,17 @@ const positionLabel = (v: string) => POSITION_OPTIONS.find(p => p.value === v)?.
 export default function CompanyDetail() {
   const { id: companyId } = useParams<{ id: string }>();
   const { toast } = useToast();
-  const { isMaster, isProjectAdmin, isSafetyManager, userCompanyId } = useGlobalProjectAccess();
+  const { seesAllCompanies, accessibleCompanyIds, userCompanyId } = useGlobalProjectAccess();
   const { user } = useAuth();
   const [company, setCompany] = useState<Company | null>(null);
   const [loading, setLoading] = useState(true);
 
   const canEdit = useMemo(() => {
     if (!company) return false;
-    if (isMaster || isProjectAdmin || isSafetyManager) return true;
+    if (seesAllCompanies) return true;
+    if (accessibleCompanyIds?.includes(company.id)) return true;
     return userCompanyId === company.id;
-  }, [company, isMaster, isProjectAdmin, isSafetyManager, userCompanyId]);
+  }, [company, seesAllCompanies, accessibleCompanyIds, userCompanyId]);
 
   useEffect(() => {
     if (!companyId) return;

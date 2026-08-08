@@ -26,7 +26,13 @@ type Worker = { id: string; name: string; company_id: string | null };
 const TYPES = ['정기', '채용시', '작업변경시', '특별', '관리감독자', '기초안전보건'];
 
 export default function WorkerEducation() {
-  const { selectedProject: projectId, isMaster, isProjectAdmin, isSafetyManager, userCompanyId } = useGlobalProjectAccess();
+  const {
+    selectedProject: projectId,
+    userCompanyId,
+    accessibleCompanyIds,
+    seesAllCompanies,
+    applyCompanyFilter,
+  } = useGlobalProjectAccess();
   const { softDelete } = useSoftDelete();
   const [rows, setRows] = useState<Row[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
@@ -40,7 +46,6 @@ export default function WorkerEducation() {
     completed_at: new Date().toISOString().slice(0, 10), instructor: "", notes: "", evidence_url: "",
   });
 
-  const canSeeAllCompanies = !!(isMaster || isProjectAdmin || isSafetyManager);
   const myCompanyId: string | null = userCompanyId ?? null;
 
   async function load() {
@@ -48,10 +53,9 @@ export default function WorkerEducation() {
     setLoading(true);
     let rq = supabase.from("worker_education_records").select("*").eq("project_id", projectId).eq("is_deleted", false);
     let wq = supabase.from("workers").select("id, name, company_id").eq("project_id", projectId);
-    if (!canSeeAllCompanies && myCompanyId) {
-      rq = rq.eq("company_id", myCompanyId);
-      wq = wq.eq("company_id", myCompanyId);
-    }
+    // SSOT: 발주처 PA·SM만 전체. 시공/협력 SM·PA는 tree/own.
+    rq = applyCompanyFilter(rq);
+    wq = applyCompanyFilter(wq);
     const [{ data: rs, error: e1 }, { data: ws }] = await Promise.all([
       rq.order("completed_at", { ascending: false }),
       wq,
@@ -61,7 +65,7 @@ export default function WorkerEducation() {
     setWorkers((ws as Worker[]) || []);
     setLoading(false);
   }
-  useEffect(() => { load(); }, [projectId, canSeeAllCompanies, myCompanyId]);
+  useEffect(() => { load(); }, [projectId, accessibleCompanyIds, seesAllCompanies]);
 
   const today = new Date().toISOString().slice(0, 10);
   const workerMap = useMemo(() => Object.fromEntries(workers.map(w => [w.id, w])), [workers]);

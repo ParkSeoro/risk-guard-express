@@ -32,6 +32,26 @@ export type CompanyScopeRole =
 
 export type CompanyDocScopeMode = 'all' | 'own' | 'tree';
 
+/**
+ * Project-wide company visibility (master / 발주처 PA·SM).
+ *
+ * NEVER derive this from `isProjectAdmin` or `isSafetyManager` alone —
+ * 시공사·협력사에도 safety_manager / project_admin 이 따로 있다.
+ * Prefer `accessibleCompanyIds === null` from useProjectAccess (already SSOT-resolved).
+ */
+export function seesProjectWideCompanies(opts: {
+  role?: CompanyScopeRole | null;
+  companyType?: string | null;
+  isMaster?: boolean;
+  /** Precomputed allowlist: null = all, [] = none yet / denied, string[] = scoped */
+  accessibleCompanyIds?: string[] | null;
+}): boolean {
+  if (opts.accessibleCompanyIds !== undefined) {
+    return opts.accessibleCompanyIds === null;
+  }
+  return companyDocScopeMode(opts) === 'all';
+}
+
 export function companyDocScopeMode(opts: {
   role?: CompanyScopeRole | null;
   companyType?: string | null;

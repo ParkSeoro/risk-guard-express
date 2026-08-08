@@ -80,7 +80,10 @@ function getLabel(table: SoftDeleteTable, row: DeletedRow): string {
 
 export default function Trash() {
   const { user } = useAuth();
-  const { isMaster, isProjectAdmin, selectedProject, userRole, userCompanyId, loading } = useGlobalProjectAccess();
+  const {
+    isMaster, isProjectAdmin, selectedProject, userRole, userCompanyId, loading,
+    seesAllCompanies, applyCompanyFilter, accessibleCompanyIds,
+  } = useGlobalProjectAccess();
   const { restore } = useSoftDelete();
   const { log } = useAuditLog();
   const { toast } = useToast();
@@ -88,6 +91,7 @@ export default function Trash() {
   const [rows, setRows] = useState<DeletedRow[]>([]);
   const [busy, setBusy] = useState(false);
 
+  // Feature gate: managers may open trash; company rows still scoped below
   const canAccess = isMaster || isProjectAdmin;
 
   const fetchDeleted = async (table: SoftDeleteTable) => {
@@ -107,7 +111,16 @@ export default function Trash() {
       toast({ title: `불러오기 실패: ${error.message}`, variant: 'destructive' });
       setRows([]);
     } else {
-      setRows((data as DeletedRow[]) || []);
+      let next = (data as DeletedRow[]) || [];
+      // Client-side company SSOT when row has company_id (tables without it stay visible)
+      if (!seesAllCompanies && accessibleCompanyIds) {
+        const allow = new Set(accessibleCompanyIds);
+        next = next.filter((row: any) => {
+          if (row.company_id == null || row.company_id === undefined) return true;
+          return allow.has(row.company_id);
+        });
+      }
+      setRows(next);
     }
     setBusy(false);
   };

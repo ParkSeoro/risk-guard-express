@@ -1,7 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { applyOwnCompanyFilter, resolveAccessibleCompanyIds } from "@/lib/companyDocScope";
+import {
+  applyOwnCompanyFilter,
+  resolveAccessibleCompanyIds,
+  seesProjectWideCompanies,
+} from "@/lib/companyDocScope";
 import { normalizeCompanyType, type CompanyTypeCode } from "@/lib/companyTypes";
 import { usePreview } from "@/contexts/PreviewContext";
 
@@ -25,7 +29,8 @@ export function useMobileAccess() {
   );
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [companyType, setCompanyType] = useState<CompanyTypeCode | null>(null);
-  const [accessibleCompanyIds, setAccessibleCompanyIds] = useState<string[] | null>(null);
+  // [] until resolved — never flash "all" for non-master
+  const [accessibleCompanyIds, setAccessibleCompanyIds] = useState<string[] | null>([]);
   const [loading, setLoading] = useState(!preview.isPreview);
 
   useEffect(() => {
@@ -123,8 +128,18 @@ export function useMobileAccess() {
     return () => { cancelled = true; };
   }, [user, projectId, isMaster, preview.isPreview, preview.syntheticRole]);
 
+  /**
+   * Feature ACL (includes safety_manager). NOT company-scope —
+   * use seesAllCompanies / accessibleCompanyIds / applyCompanyFilter.
+   */
   const isProjectAdmin = role === 'project_admin' || isMaster || role === 'safety_manager';
   const isContractor = role === 'worker' || role === 'contractor';
+  const seesAllCompanies = seesProjectWideCompanies({
+    isMaster,
+    role,
+    companyType,
+    accessibleCompanyIds: isMaster ? null : accessibleCompanyIds,
+  });
 
   const applyCompanyFilter = useCallback(<T,>(query: T): T => {
     return applyOwnCompanyFilter(query, {
@@ -143,6 +158,7 @@ export function useMobileAccess() {
     companyId,
     companyType,
     accessibleCompanyIds,
+    seesAllCompanies,
     isMaster,
     isProjectAdmin,
     isContractor,

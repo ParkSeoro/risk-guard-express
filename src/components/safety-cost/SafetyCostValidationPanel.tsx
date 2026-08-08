@@ -58,10 +58,8 @@ export default function SafetyCostValidationPanel({ focusReportId }: Props) {
       .order('report_month', { ascending: false })
       .limit(24);
 
-    // UI defense-in-depth (RLS도 동일 정책)
-    if (!access.isMaster && !access.isProjectAdmin && access.userCompanyId) {
-      q = q.eq('company_id', access.userCompanyId);
-    }
+    // UI defense-in-depth — SSOT company scope (not isProjectAdmin/SM)
+    q = access.applyCompanyFilter(q);
 
     const { data: r } = await q;
     let reps = (r as Report[]) || [];
@@ -89,7 +87,7 @@ export default function SafetyCostValidationPanel({ focusReportId }: Props) {
 
   useEffect(() => {
     load();
-  }, [access.selectedProject, access.userCompanyId, access.isMaster, access.isProjectAdmin, focusReportId]);
+  }, [access.selectedProject, access.userCompanyId, access.accessibleCompanyIds, access.seesAllCompanies, focusReportId]);
 
   const handleValidate = async (reportId: string) => {
     setValidating(reportId);

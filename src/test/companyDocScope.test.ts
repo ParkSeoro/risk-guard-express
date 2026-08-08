@@ -8,6 +8,7 @@ import {
   resolveAssessmentRunCompanyLabels,
   formatCompanyLabelsShort,
   formatCreatorCompanyLabel,
+  seesProjectWideCompanies,
 } from '@/lib/companyDocScope';
 
 describe('companyDocScopeMode', () => {
@@ -25,6 +26,32 @@ describe('companyDocScopeMode', () => {
   it('scopes contractor/vendor to own', () => {
     expect(companyDocScopeMode({ role: 'site_manager', companyType: 'contractor' })).toBe('own');
     expect(companyDocScopeMode({ role: 'project_admin', companyType: 'vendor' })).toBe('own');
+  });
+
+  it('treats safety_manager differently by company type (발주/시공/협력)', () => {
+    expect(companyDocScopeMode({ role: 'safety_manager', companyType: 'client' })).toBe('all');
+    expect(companyDocScopeMode({ role: 'safety_manager', companyType: 'gc' })).toBe('tree');
+    expect(companyDocScopeMode({ role: 'safety_manager', companyType: 'contractor' })).toBe('own');
+  });
+});
+
+describe('seesProjectWideCompanies', () => {
+  it('uses accessibleCompanyIds null as project-wide', () => {
+    expect(seesProjectWideCompanies({ accessibleCompanyIds: null })).toBe(true);
+    expect(seesProjectWideCompanies({ accessibleCompanyIds: ['a'] })).toBe(false);
+    expect(seesProjectWideCompanies({ accessibleCompanyIds: [] })).toBe(false);
+  });
+
+  it('never treats GC/contractor SM as project-wide without allowlist', () => {
+    expect(
+      seesProjectWideCompanies({ role: 'safety_manager', companyType: 'gc' }),
+    ).toBe(false);
+    expect(
+      seesProjectWideCompanies({ role: 'safety_manager', companyType: 'contractor' }),
+    ).toBe(false);
+    expect(
+      seesProjectWideCompanies({ role: 'safety_manager', companyType: 'client' }),
+    ).toBe(true);
   });
 });
 

@@ -2012,8 +2012,14 @@ const AssessmentRunDetail = () => {
                 if (creatorMember?.company) return creatorMember.company;
               }
               // 3) 마스터/관리자에게만 전체 목록 노출, 일반 사용자는 미지정 표시
-              const seesAll = isMaster || userRole === 'project_admin' || userRole === 'safety_manager';
-              return seesAll ? (gcs.map(c => c.name).join(', ') || '(미지정)') : '(미지정)';
+              // 발주처 PA·SM만 전체 GC 표시 — 시공/협력 SM은 자사 범위
+              const seesAll = accessibleCompanyIds === null || isMaster;
+              if (!seesAll) {
+                const allow = new Set(accessibleCompanyIds || []);
+                const names = gcs.filter((c) => allow.has(c.id)).map((c) => c.name);
+                return names.join(', ') || '(미지정)';
+              }
+              return gcs.map(c => c.name).join(', ') || '(미지정)';
             })()}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">기간:</span><span>{run.start_date || project?.period_start || ''} ~ {run.end_date || project?.period_end || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">항목 수:</span><span>{stats.total}건</span></div>

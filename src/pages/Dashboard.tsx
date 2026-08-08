@@ -85,10 +85,11 @@ const Dashboard = () => {
   const {
     projects, selectedProject,
     userCompanyType, isMaster, isProjectAdmin, isContractor, isWorker,
-    applyCompanyFilter, loading: accessLoading,
+    applyCompanyFilter, loading: accessLoading, seesAllCompanies,
   } = useGlobalProjectAccess();
   const isContractorCo = !isMaster && (userCompanyType === "contractor" || userCompanyType === "vendor");
-  const showOpsWide = isMaster || isProjectAdmin;
+  // Ops-wide tiles = project-wide company visibility only (발주처 PA·SM / master)
+  const showOpsWide = seesAllCompanies;
   const [data, setData] = useState<DashboardData>(EMPTY);
   const [loading, setLoading] = useState(true);
 

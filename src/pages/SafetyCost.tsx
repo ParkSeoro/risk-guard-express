@@ -119,14 +119,20 @@ const SafetyCost = () => {
   const usageRate = selectedConstruction?.safety_cost_total ? Math.min(100, Math.round((approvedTotal / Number(selectedConstruction.safety_cost_total)) * 100)) : 0;
 
   const scopedCompanies = useMemo(() => {
-    if (access.isMaster || access.isProjectAdmin) return companies;
-    return companies.filter((c) => c.id === access.userCompanyId);
-  }, [companies, access.isMaster, access.isProjectAdmin, access.userCompanyId]);
+    if (access.seesAllCompanies) return companies;
+    const allow = new Set(access.accessibleCompanyIds || []);
+    if (allow.size === 0 && access.userCompanyId) return companies.filter((c) => c.id === access.userCompanyId);
+    return companies.filter((c) => allow.has(c.id));
+  }, [companies, access.seesAllCompanies, access.accessibleCompanyIds, access.userCompanyId]);
 
   const scopedConstructions = useMemo(() => {
-    if (access.isMaster || access.isProjectAdmin) return constructions;
-    return constructions.filter((c) => c.company_id === access.userCompanyId);
-  }, [constructions, access.isMaster, access.isProjectAdmin, access.userCompanyId]);
+    if (access.seesAllCompanies) return constructions;
+    const allow = new Set(access.accessibleCompanyIds || []);
+    if (allow.size === 0 && access.userCompanyId) {
+      return constructions.filter((c) => c.company_id === access.userCompanyId);
+    }
+    return constructions.filter((c) => c.company_id && allow.has(c.company_id));
+  }, [constructions, access.seesAllCompanies, access.accessibleCompanyIds, access.userCompanyId]);
   const filteredReports = reports.filter((r) => r.construction_id === selectedConstructionId);
   const baseItems = items.filter((i) => i.report_id === selectedReportId).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   const filteredItems = useMemo(() => {

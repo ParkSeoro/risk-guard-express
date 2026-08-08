@@ -34,9 +34,9 @@ type UsagePlan = {
 
 export default function Chemicals() {
   const handle = useToastError();
-  const { userCompanyId, applyCompanyFilter, isMaster, isProjectAdmin, isSafetyManager } =
+  const { userCompanyId, applyCompanyFilter, seesAllCompanies, accessibleCompanyIds } =
     useGlobalProjectAccess();
-  const canSeeAllCompanies = isMaster || isProjectAdmin || isSafetyManager;
+  const canSeeAllCompanies = seesAllCompanies;
 
   const projectId = typeof window !== "undefined" ? localStorage.getItem(ACTIVE_PROJECT_KEY) : null;
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -89,8 +89,16 @@ export default function Chemicals() {
   const submitChemical = async () => {
     if (!projectId || !chemForm.name) { toast.error("물질명은 필수입니다"); return; }
     const company_id = canSeeAllCompanies ? (chemForm.company_id || null) : userCompanyId;
-    if (!company_id && !isMaster && !isProjectAdmin && !isSafetyManager) {
+    if (!company_id && !canSeeAllCompanies) {
       toast.error("소속 회사를 확인할 수 없습니다"); return;
+    }
+    if (
+      company_id &&
+      !canSeeAllCompanies &&
+      accessibleCompanyIds &&
+      !accessibleCompanyIds.includes(company_id)
+    ) {
+      toast.error("권한이 없는 회사입니다"); return;
     }
     try {
       let msdsUrl: string | null = null;

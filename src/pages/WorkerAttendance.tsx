@@ -87,7 +87,7 @@ export default function WorkerAttendance() {
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [selected, setSelected] = useState<EntryLog | null>(null);
-  const { isMaster, isProjectAdmin, isSafetyManager, userCompanyId } = useGlobalProjectAccess();
+  const { accessibleCompanyIds, seesAllCompanies, applyCompanyFilter } = useGlobalProjectAccess();
 
   useEffect(() => {
     supabase
@@ -116,12 +116,17 @@ export default function WorkerAttendance() {
       }
 
       const ids = Array.from(new Set((data || []).map((l) => l.worker_id).filter(Boolean)));
-      let workersMap: Record<string, { id: string; name?: string; phone?: string; company_name?: string }> = {};
+      let workersMap: Record<
+        string,
+        { id: string; name?: string; phone?: string; company_name?: string; company_id?: string | null }
+      > = {};
       if (ids.length) {
-        const { data: ws } = await supabase
+        let wq = supabase
           .from("workers")
-          .select("id,name,phone,company_name")
+          .select("id,name,phone,company_name,company_id")
           .in("id", ids);
+        wq = applyCompanyFilter(wq);
+        const { data: ws } = await wq;
         workersMap = Object.fromEntries((ws || []).map((w) => [w.id, w]));
       }
 
@@ -180,24 +185,27 @@ export default function WorkerAttendance() {
       }
 
       setLogs(
-        (data || []).map((l) => {
-          const w = workersMap[l.worker_id];
-          const phoneDig = digits(w?.phone);
-          const tbmAt = tbmByWorkerId.get(l.worker_id) || (phoneDig ? tbmByPhone.get(phoneDig) : undefined) || null;
-          const tbmAttended = !!l.tbm_confirmed || !!tbmAt;
-          return {
-            ...l,
-            workers: w,
-            tbmAttended,
-            tbmParticipationAt: tbmAt,
-            consent: phoneDig ? consentByPhone.get(phoneDig) || null : null,
-          } as EntryLog;
-        }),
+        (data || [])
+          // Drop logs for workers outside company scope (workersMap already filtered)
+          .filter((l) => !!workersMap[l.worker_id] || seesAllCompanies)
+          .map((l) => {
+            const w = workersMap[l.worker_id];
+            const phoneDig = digits(w?.phone);
+            const tbmAt = tbmByWorkerId.get(l.worker_id) || (phoneDig ? tbmByPhone.get(phoneDig) : undefined) || null;
+            const tbmAttended = !!l.tbm_confirmed || !!tbmAt;
+            return {
+              ...l,
+              workers: w,
+              tbmAttended,
+              tbmParticipationAt: tbmAt,
+              consent: phoneDig ? consentByPhone.get(phoneDig) || null : null,
+            } as EntryLog;
+          }),
       );
     } finally {
       setLoading(false);
     }
-  }, [projectId, date]);
+  }, [projectId, date, applyCompanyFilter, seesAllCompanies]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -242,10 +250,17 @@ export default function WorkerAttendance() {
     return c;
   }, [logs]);
 
+  // Logs whose worker is outside company scope are dropped (workersMap already scoped).
   const scopedLogs = useMemo(() => {
-    if (isMaster || isProjectAdmin || isSafetyManager) return logs;
-    return logs;
-  }, [logs, isMaster, isProjectAdmin, isSafetyManager, userCompanyId]);
+    if (seesAllCompanies) return logs;
+    const allow = new Set(accessibleCompanyIds || []);
+    return logs.filter((l) => {
+      const cid = (l as any).workers?.company_id as string | null | undefined;
+      // Prefer company_id when present; else keep only if worker survived applyCompanyFilter join
+      if (cid) return allow.has(cid);
+      return !!(l as any).workers;
+    });
+  }, [logs, seesAllCompanies, accessibleCompanyIds]);
 
   const filteredLogs = useMemo(() => {
     const q = search.trim().toLowerCase();

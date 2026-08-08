@@ -14,8 +14,6 @@ import { HardHat, QrCode, Trash2, ExternalLink, Settings2, AlertTriangle, FileSp
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
 import WorkerAttendance from "./WorkerAttendance";
-import WorkerDailyQR from "./WorkerDailyQR";
-import CompanyDailyQR from "./CompanyDailyQR";
 import WorkerBulkImportDialog from "@/components/workers/WorkerBulkImportDialog";
 import SuspendWorkerDialog from "@/components/workers/SuspendWorkerDialog";
 import {
@@ -41,17 +39,24 @@ export default function WorkerManagement() {
   const access = useGlobalProjectAccessOptional();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const resolveTab = (v: string | null) =>
-    v === "attendance" ? "attendance"
-    : v === "daily-qr" ? "daily-qr"
-    : v === "company-qr" ? "company-qr"
-    : "register";
+  const resolveTab = (v: string | null) => (v === "attendance" ? "attendance" : "register");
   const [tab, setTab] = useState<string>(resolveTab(tabParam));
 
-  // URL → state 동기화 (사이드바에서 다른 탭 링크 클릭 시 화면 전환되도록)
+  // URL → state 동기화. 레거시 일일/게시판 QR 탭은 앱 출근으로 대체 → 등록 탭으로 정리.
   useEffect(() => {
+    if (tabParam === "daily-qr" || tabParam === "company-qr") {
+      const p = new URLSearchParams(searchParams);
+      p.delete("tab");
+      setSearchParams(p, { replace: true });
+      setTab("register");
+      toast.message("일일·게시판 QR은 앱 출근으로 대체되었습니다", {
+        description: "등록 QR로 계정 가입 후 근로자 앱에서 출근하세요.",
+        duration: 5000,
+      });
+      return;
+    }
     setTab(resolveTab(tabParam));
-  }, [tabParam]);
+  }, [tabParam, searchParams, setSearchParams]);
 
   const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
@@ -308,8 +313,6 @@ export default function WorkerManagement() {
             등록 정보 {workers.length > 0 && <Badge variant="secondary">{workers.length}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="attendance">입퇴장 현황</TabsTrigger>
-          <TabsTrigger value="daily-qr">근로자별 일일 QR</TabsTrigger>
-          <TabsTrigger value="company-qr">시공사 게시판 QR</TabsTrigger>
         </TabsList>
 
         <TabsContent value="register" className="space-y-4 mt-4">
@@ -527,14 +530,6 @@ export default function WorkerManagement() {
 
         <TabsContent value="attendance" className="mt-4">
           <WorkerAttendance />
-        </TabsContent>
-
-        <TabsContent value="daily-qr" className="mt-4">
-          <WorkerDailyQR />
-        </TabsContent>
-
-        <TabsContent value="company-qr" className="mt-4">
-          <CompanyDailyQR />
         </TabsContent>
       </Tabs>
 

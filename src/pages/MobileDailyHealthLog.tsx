@@ -100,22 +100,23 @@ export default function MobileDailyHealthLog() {
     if (error) { toast.error(error.message); return; }
     toast.success("오늘 일일 건강일지가 저장되었습니다");
 
-    // 이상 소견 시 관리자에게 알림
+    // 이상 소견 시 관리자에게 알림 (RLS-safe role router)
     if (!fitToWork || symptoms.length >= 2 || Number(bodyTemp) >= 37.5) {
-      const { data: mgrs } = await supabase
-        .from("project_members")
-        .select("user_id")
-        .eq("project_id", worker.project_id)
-        .in("role_new", ["project_admin", "safety_manager"]);
-      if (mgrs && mgrs.length > 0) {
-        await supabase.from("notifications").insert(mgrs.map((m: any) => ({
-          user_id: m.user_id,
-          type: "health_warning",
+      try {
+        const { notifyProjectRoles } = await import("@/lib/notificationService");
+        await notifyProjectRoles({
+          projectId: worker.project_id,
+          roles: ["project_admin", "safety_manager", "site_manager"],
           title: `일일 건강일지 이상소견: ${worker.name}`,
           message: `${fitToWork ? "" : "[작업제한] "}체온 ${bodyTemp}°C${symptoms.length ? ` / 증상: ${symptoms.join(", ")}` : ""}`,
-          related_id: worker.id,
-          related_type: "worker",
-        })));
+          type: "health_warning",
+          relatedType: "worker",
+          relatedId: worker.id,
+          severity: "high",
+          positions: ["HSE_MANAGER", "OWNER_HSE", "OWNER_SM", "SITE_MANAGER"],
+        });
+      } catch (e: any) {
+        if (import.meta.env.DEV) console.warn("health warning notify failed:", e?.message || e);
       }
     }
     nav(-1);

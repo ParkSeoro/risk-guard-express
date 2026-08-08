@@ -4,7 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
-import { sendNotification } from '@/lib/notificationService';
+import { notifyProjectRoles } from '@/lib/notificationService';
+import { ADMIN_PROJECT_ROLES } from '@/lib/permissions';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { SAFETY_COST_CATEGORIES, analyzeSafetyCostCompliance, classifySafetyCostItem, formatKRW, getSafetyCostStatusLabel } from '@/lib/safetyCost';
 import { SAFETY_COST_TEMPLATE_PATH, buildSafetyCostWorkbook, downloadSafetyCostWorkbook } from '@/lib/safetyCostExport';
@@ -577,33 +578,37 @@ const SafetyCost = () => {
       toast({ title: '요청할 누락 증빙이 없습니다.' }); return;
     }
     setRequestingEvidence(true);
-    const { data: members, error } = await supabase
-      .from('project_members')
-      .select('user_id')
-      .eq('project_id', selectedReport.project_id)
-      .eq('company_id', selectedReport.company_id);
-    if (error) { toast({ title: '증빙 요청 실패', description: error.message, variant: 'destructive' }); setRequestingEvidence(false); return; }
-    const recipients = [...new Set((members || []).map((m: any) => m.user_id).filter(Boolean))];
-    if (!recipients.length) { toast({ title: '요청 대상자가 없습니다.', description: '해당 회사의 프로젝트 멤버를 먼저 지정하세요.', variant: 'destructive' }); setRequestingEvidence(false); return; }
-    await Promise.all(recipients.map((userId) => sendNotification({
-      user_id: userId,
-      title: '산업안전보건관리비 증빙 보완 요청',
-      message: `${selectedConstruction.construction_name} ${String(selectedReport.report_month).slice(0, 7)} 사용내역서에 항목별 증빙 ${evidenceMissingCount}건이 누락되었습니다.`,
-      type: 'safety_cost',
-      related_id: selectedReport.id,
-      related_type: 'safety_cost_report',
-      project_id: selectedReport.project_id,
-    })));
-    await supabase.from('audit_logs').insert({
-      project_id: selectedReport.project_id,
-      user_id: user.id,
-      user_name: profile?.display_name || '',
-      action: '산업안전보건관리비 증빙 보완 요청',
-      target_type: 'safety_cost_report',
-      target_id: selectedReport.id,
-      details: { missing_count: evidenceMissingCount, item_names: evidenceMissingItems.map((it) => it.item_name), recipients },
-    });
-    toast({ title: '증빙 보완 요청 발송 완료', description: `${recipients.length}명에게 알림을 보냈습니다.` });
+    try {
+      // Same-company managers only (never workers/viewers)
+      const notified = await notifyProjectRoles({
+        projectId: selectedReport.project_id,
+        companyId: selectedReport.company_id,
+        roles: [...ADMIN_PROJECT_ROLES],
+        title: '산업안전보건관리비 증빙 보완 요청',
+        message: `${selectedConstruction.construction_name} ${String(selectedReport.report_month).slice(0, 7)} 사용내역서에 항목별 증빙 ${evidenceMissingCount}건이 누락되었습니다.`,
+        type: 'safety_cost',
+        relatedType: 'safety_cost_report',
+        relatedId: selectedReport.id,
+        link: '/safety-cost',
+      });
+      if (!notified) {
+        toast({ title: '요청 대상자가 없습니다.', description: '해당 회사의 관리자(안전·현장·감리)를 먼저 지정하세요.', variant: 'destructive' });
+        setRequestingEvidence(false);
+        return;
+      }
+      await supabase.from('audit_logs').insert({
+        project_id: selectedReport.project_id,
+        user_id: user.id,
+        user_name: profile?.display_name || '',
+        action: '산업안전보건관리비 증빙 보완 요청',
+        target_type: 'safety_cost_report',
+        target_id: selectedReport.id,
+        details: { missing_count: evidenceMissingCount, item_names: evidenceMissingItems.map((it) => it.item_name), notified },
+      });
+      toast({ title: '증빙 보완 요청 발송 완료', description: `${notified}명(관리자)에게 알림을 보냈습니다.` });
+    } catch (e: any) {
+      toast({ title: '증빙 요청 실패', description: e?.message || String(e), variant: 'destructive' });
+    }
     setRequestingEvidence(false);
   }
 

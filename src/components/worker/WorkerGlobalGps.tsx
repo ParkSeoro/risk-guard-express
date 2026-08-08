@@ -195,8 +195,9 @@ export default function WorkerGlobalGps() {
           void startForProject(projectId);
         });
       };
-      // Do not probe immediately after leave — wait one interval to avoid toast loops.
-      resumeTimer = window.setInterval(tick, 60_000);
+      // First probe soon (cold GPS), then every 20s — 60s was too slow for field re-entry.
+      resumeTimer = window.setInterval(tick, 20_000);
+      window.setTimeout(tick, 3_000);
     };
 
     const boot = async () => {
@@ -212,7 +213,16 @@ export default function WorkerGlobalGps() {
       if (cancelled) return;
       managerRef.current = isManager;
 
+      // Platform master: always track (field alarm tests must not depend on site-fence probe).
+      // Non-master managers: only while inside the site resume fence.
+      const isMaster =
+        hasRole("master") || (roles || []).some((r) => String(r).toLowerCase() === "master");
       if (isManager) {
+        if (isMaster) {
+          clearStickyDangerAlert();
+          await startForProject(projectId);
+          return;
+        }
         const inside = await probeInsideSite(projectId);
         if (cancelled) return;
         if (inside) {

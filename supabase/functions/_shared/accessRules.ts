@@ -87,5 +87,15 @@ export function isAccessForbidden(
     return false;
   }
 
+  // No identity while companies are targeted → fail closed (masters / missing roster)
+  if (
+    (rules.company_ids?.length || 0) > 0 &&
+    !subject.company_id &&
+    !subject.job_type &&
+    !subject.worker_id
+  ) {
+    return true;
+  }
+
   return subjectMatchesTargets(rules, subject);
 }

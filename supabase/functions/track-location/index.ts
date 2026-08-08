@@ -19,6 +19,8 @@ const BodySchema = z.object({
   worker_qr_id: z.string().uuid().optional().nullable(),
   worker_name: z.string().max(120).optional().nullable(),
   worker_phone: z.string().max(40).optional().nullable(),
+  /** Membership company hint (masters often have no workers row) */
+  company_id: z.string().uuid().optional().nullable(),
   /** Optional role code for alarm honorific (master / project_admin / worker …) */
   worker_role: z.string().max(64).optional().nullable(),
   lat: z.number().min(-90).max(90),
@@ -32,6 +34,10 @@ const BodySchema = z.object({
   restricted_zone_id: z.string().uuid().optional().nullable(),
   force_restricted_check: z.boolean().optional().default(false),
 });
+
+function digitsOnly(phone: string | null | undefined): string {
+  return String(phone || "").replace(/\D/g, "");
+}
 
 function roleHonorific(role: string | null | undefined): string {
   const r = String(role || "").trim().toLowerCase();
@@ -156,7 +162,7 @@ Deno.serve(async (req) => {
     // Resolve worker subject for ban matching
     let subject = {
       worker_id: body.worker_id || body.worker_qr_id || null,
-      company_id: null as string | null,
+      company_id: body.company_id || null,
       job_type: null as string | null,
     };
     const workerLookupId = body.worker_id || body.worker_qr_id;
@@ -167,22 +173,80 @@ Deno.serve(async (req) => {
         .eq("id", workerLookupId)
         .maybeSingle();
       if (w) {
-        subject = { worker_id: w.id, company_id: w.company_id, job_type: w.job_type };
+        subject = {
+          worker_id: w.id,
+          company_id: w.company_id || subject.company_id,
+          job_type: w.job_type,
+        };
         if (!body.worker_name) body.worker_name = w.name;
         if (!body.worker_phone) body.worker_phone = w.phone;
       }
     } else if (body.worker_phone) {
-      const { data: w } = await supabase
+      const want = digitsOnly(body.worker_phone);
+      const { data: workers } = await supabase
         .from("workers")
         .select("id, company_id, job_type, name, phone")
         .eq("project_id", body.project_id)
-        .eq("phone", body.worker_phone)
         .eq("is_active", true)
+        .limit(100);
+      const w = (workers || []).find((row: any) => digitsOnly(row.phone) === want);
+      if (w) {
+        subject = {
+          worker_id: w.id,
+          company_id: w.company_id || subject.company_id,
+          job_type: w.job_type,
+        };
+        if (!body.worker_name) body.worker_name = w.name;
+      }
+    }
+
+    // Masters / managers often have no workers roster row — fall back to JWT → project_members
+    if (!subject.company_id) {
+      try {
+        const authHeader = req.headers.get("Authorization") || "";
+        if (authHeader.startsWith("Bearer ")) {
+          const userSb = createClient(
+            Deno.env.get("SUPABASE_URL")!,
+            Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+            { global: { headers: { Authorization: authHeader } } },
+          );
+          const { data: userData } = await userSb.auth.getUser();
+          const uid = userData?.user?.id;
+          if (uid) {
+            const { data: pm } = await supabase
+              .from("project_members")
+              .select("company_id, role_new")
+              .eq("project_id", body.project_id)
+              .eq("user_id", uid)
+              .maybeSingle();
+            if (pm?.company_id) subject.company_id = pm.company_id;
+            if (!body.worker_role && pm?.role_new) body.worker_role = pm.role_new;
+          }
+        }
+      } catch {
+        /* keep subject as-is */
+      }
+    }
+
+    // Last resort: profile phone variants → project_members
+    if (!subject.company_id && body.worker_phone) {
+      const raw = String(body.worker_phone).trim();
+      const want = digitsOnly(raw);
+      const variants = [...new Set([raw, want, want.replace(/^82/, "0")].filter(Boolean))];
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("user_id, phone")
+        .in("phone", variants)
         .limit(1)
         .maybeSingle();
-      if (w) {
-        subject = { worker_id: w.id, company_id: w.company_id, job_type: w.job_type };
-        if (!body.worker_name) body.worker_name = w.name;
+      if (prof?.user_id) {
+        const { data: pm } = await supabase
+          .from("project_members")
+          .select("company_id")
+          .eq("project_id", body.project_id)
+          .eq("user_id", prof.user_id)
+          .maybeSingle();
+        if (pm?.company_id) subject.company_id = pm.company_id;
       }
     }
 

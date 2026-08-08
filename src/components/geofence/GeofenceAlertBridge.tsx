@@ -118,6 +118,7 @@ export default function GeofenceAlertBridge({ projectId, subject, autoStart }: P
           worker_qr_id: sub.worker_qr_id,
           worker_name: sub.worker_name,
           worker_phone: sub.worker_phone,
+          company_id: sub.company_id,
           worker_role: sub.worker_role,
           lat,
           lng,

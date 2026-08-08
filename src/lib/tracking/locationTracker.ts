@@ -28,6 +28,9 @@ export type TrackingIdentity = {
   worker_qr_id?: string | null;
   worker_name?: string | null;
   worker_phone?: string | null;
+  /** Membership / roster company — used by track-location DENY/ALLOW matching */
+  company_id?: string | null;
+  worker_role?: string | null;
   project_id: string;
 };
 

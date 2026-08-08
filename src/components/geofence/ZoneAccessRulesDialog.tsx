@@ -217,7 +217,8 @@ export default function ZoneAccessRulesDialog({
                 <span>
                   <span className="font-medium">지정 대상만 출입 허용 (허용 목록)</span>
                   <span className="block text-[11px] text-muted-foreground">
-                    선택한 업체·직종만 출입 가능 · 그 외 진입 시 알람
+                    선택한 업체·직종만 출입 가능 · 그 외 진입 시 알람.
+                    내 업체를 넣으면 나는 알람이 안 울립니다.
                   </span>
                 </span>
               </label>
@@ -232,11 +233,22 @@ export default function ZoneAccessRulesDialog({
                 <span>
                   <span className="font-medium">지정 대상 출입 전면 통제 (차단 목록)</span>
                   <span className="block text-[11px] text-muted-foreground">
-                    선택한 업체·직종 진입 시 알람 · 그 외는 허용
+                    선택한 업체·직종 진입 시 알람 · 그 외는 허용.
+                    내 업체로 직접 테스트하려면 이 방식을 쓰세요.
                   </span>
                 </span>
               </label>
             </div>
+            {ruleType === "ALLOW" && companyIds.length > 0 && (
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                허용 목록에 포함된 업체 인원은 이 구역에 들어가도 경고가 울리지 않습니다.
+              </p>
+            )}
+            {ruleType === "DENY" && companyIds.length > 0 && (
+              <p className="text-[11px] text-destructive/90 bg-destructive/5 border border-destructive/20 rounded-md px-2 py-1.5">
+                차단 목록 업체 인원이 구역에 들어가면 사이렌·알림이 울립니다.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">

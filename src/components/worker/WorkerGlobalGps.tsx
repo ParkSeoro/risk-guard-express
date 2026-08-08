@@ -161,14 +161,26 @@ export default function WorkerGlobalGps() {
     const startForProject = async (projectId: string) => {
       const workerId = await resolveWorkerId(projectId);
       if (cancelled) return;
-      const key = `${projectId}:${workerId || ""}`;
+      const { resolveBanSubject } = await import("@/lib/tracking/resolveBanSubject");
+      const ban = await resolveBanSubject(projectId, {
+        phone: profile?.phone,
+        userId: user?.id,
+      });
+      if (cancelled) return;
+      const key = `${projectId}:${workerId || ban.worker_id || ""}:${ban.company_id || ""}`;
       if (lastKeyRef.current === key) return;
       lastKeyRef.current = key;
+      const roleHint =
+        (hasRole("master") && "master") ||
+        (roles || []).find((r) => r && r !== "master") ||
+        null;
       startGpsTracking({
         project_id: projectId,
-        worker_id: workerId,
+        worker_id: workerId || ban.worker_id || null,
         worker_name: profile?.display_name || null,
         worker_phone: profile?.phone || null,
+        company_id: ban.company_id || null,
+        worker_role: roleHint,
       });
     };
 

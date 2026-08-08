@@ -35,7 +35,7 @@ function isExitEventType(t: string): boolean {
 }
 
 export default function ShellGeofenceAlerts() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const { projectId, role, companyId } = useMobileAccess();
   const { lastGpsFix, lastZoneEvent, gpsTracking } = useSystemRealtime();
   const [alertZone, setAlertZone] = useState<{ id: string; name: string } | null>(null);
@@ -99,18 +99,20 @@ export default function ShellGeofenceAlerts() {
     });
   }, [projectId]);
 
-  // Resolve BanSubject (worker_id / company_id / job_type) — not name/phone/role
+  // Resolve BanSubject (worker_id / company_id / job_type) — not name/phone/role.
+  // Masters get companyId=null from useMobileAccess; resolveBanSubject falls back to membership.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const sub = await resolveBanSubject(projectId, {
         phone: profile?.phone,
         companyId,
+        userId: user?.id,
       });
       if (!cancelled) subjectRef.current = sub;
     })();
     return () => { cancelled = true; };
-  }, [projectId, profile?.phone, companyId]);
+  }, [projectId, profile?.phone, companyId, user?.id]);
 
   useEffect(() => {
     void loadZones();

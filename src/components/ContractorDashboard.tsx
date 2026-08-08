@@ -21,7 +21,7 @@ const CTAS: CTA[] = [
   { title: 'TBM 일지', desc: '작업 전 안전회의', to: '/tbm-logs', icon: ClipboardCheck, color: 'bg-emerald-600' },
   { title: '작업계획서', desc: '오늘 작업 계획', to: '/work-plans', icon: FileText, color: 'bg-slate-700' },
   { title: '전자결재', desc: '내 결재 대기', to: '/approvals', icon: FileCheck, color: 'bg-amber-600' },
-  { title: '근로자 명부', desc: '출역 인원 확인', to: '/workers', icon: HardHat, color: 'bg-indigo-600' },
+  { title: '근로자 관리', desc: '출역 인원 확인', to: '/workers', icon: HardHat, color: 'bg-indigo-600' },
   { title: '사고/아차사고', desc: '즉시 보고', to: '/incidents', icon: AlertOctagon, color: 'bg-red-600' },
 ];
 

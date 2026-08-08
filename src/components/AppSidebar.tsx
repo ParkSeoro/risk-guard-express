@@ -73,16 +73,19 @@ const groups: Group[] = [
     ],
   },
   {
+    // 명부·입퇴장·(레거시)일일/게시판 QR은 /workers 안 탭 — 사이드바는 진입점 1개만
     label: "사람", key: "people",
     items: [
-      { title: "근로자 명부", url: "/workers", icon: HardHat },
-      { title: "입퇴장 현황", url: "/workers?tab=attendance", icon: ClipboardList },
-      { title: "근로자별 일일 QR", url: "/workers?tab=daily-qr", icon: QrCode },
-      { title: "시공사 게시판 QR", url: "/workers?tab=company-qr", icon: QrCode },
+      { title: "근로자 관리", url: "/workers", icon: HardHat },
       { title: "안전보건교육 이수", url: "/worker-education", icon: GraduationCap },
       { title: "교육자료", url: "/education-materials", icon: FileText },
       { title: "공개 자료실", url: "/project-library", icon: FolderOpen },
       { title: "안전관리자 선임", url: "/safety-appointments", icon: UserCheck },
+    ],
+  },
+  {
+    label: "위치", key: "location",
+    items: [
       { title: "통합 현장 관제맵", url: "/site-control-map", icon: Map },
       { title: "구역 출입 모니터링", url: "/zone-events", icon: ShieldAlert },
       { title: "근로자 분포", url: "/worker-distribution", icon: Users },
@@ -159,7 +162,7 @@ export function AppSidebar() {
     '/work-plans', '/work-permits', '/tbm-logs',
     '/risk-assessment', '/ai-assistant', '/verification-center',
     '/incidents', '/work-stop',
-    '/workers', '/workers?tab=attendance',
+    '/workers',
     '/project-library', '/education-materials', '/worker-education',
     '/profile', '/settings/account', '/manual',
   ]);
@@ -170,7 +173,17 @@ export function AppSidebar() {
         .filter((g) => g.items.length > 0)
     : groups;
 
-  const DEFAULT_OPEN = { priority: true, field: true, risk: true, inspect_incident: true, people: true, ops: true, health: true, admin: false };
+  const DEFAULT_OPEN = {
+    priority: true,
+    field: true,
+    risk: true,
+    inspect_incident: true,
+    people: true,
+    location: true,
+    ops: true,
+    health: true,
+    admin: false,
+  };
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem('sidebar:groups') || JSON.stringify(DEFAULT_OPEN)); }
     catch { return DEFAULT_OPEN; }
@@ -188,6 +201,8 @@ export function AppSidebar() {
       return location.pathname === ADMIN_APP_BASE || location.pathname === `${ADMIN_APP_BASE}/`;
     }
     if (location.pathname !== pathPart) return false;
+    // /workers 진입점은 하위 탭(?tab=attendance 등)에서도 활성
+    if (pathPart === toAdminUrl("/workers") && !queryPart) return true;
     const itemParams = new URLSearchParams(queryPart);
     const currentParams = new URLSearchParams(location.search);
     const itemTab = itemParams.get("tab");

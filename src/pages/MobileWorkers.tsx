@@ -210,7 +210,7 @@ export default function MobileWorkers() {
           <TabsContent value="roster" className="space-y-3 mt-3">
             <p className="text-xs text-muted-foreground">
               현장 근로자 명부입니다. QR 전용 포털은 종료되었고 계정 로그인이 필요합니다.
-              관리자는 출입을 1일·3일·영구 정지할 수 있습니다. (일일·시공사 게시판 QR은 PC)
+              관리자는 출입을 1일·3일·영구 정지할 수 있습니다. 출근은 앱 GPS로 합니다.
             </p>
             <div className="relative">
               <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />

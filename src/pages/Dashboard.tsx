@@ -697,7 +697,7 @@ function QuickStartCards({ navigate, isMaster, isProjectAdmin, isContractor, isW
       { title: "작업허가서", desc: "작성·상신", icon: FileSignature, path: "/work-permits", tone: "warning" },
       { title: "TBM 일지", desc: "오늘 TBM 기록", icon: ClipboardCheck, path: "/tbm-logs", tone: "primary" },
       { title: "작업계획서", desc: "계획 등록", icon: FileText, path: "/work-plans", tone: "success" },
-      { title: "근로자 명부", desc: "출역 인원", icon: HardHat, path: "/workers", tone: "destructive" },
+      { title: "근로자 관리", desc: "출역 인원", icon: HardHat, path: "/workers", tone: "destructive" },
     ];
   } else if (isWorker) {
     items = [

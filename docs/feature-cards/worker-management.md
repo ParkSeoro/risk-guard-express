@@ -1,16 +1,17 @@
-# Feature Card — 근로자 관리 / QR (#7)
+# Feature Card — 근로자 관리 (#7)
 
-- 관련 라우트: `/workers`, `/worker/register`, `/c/:token`, `/worker-portal`
-- 관련 테이블: `workers`, `worker_daily_qr`, `company_daily_qr`, `worker_attendance`, `worker_entry_logs`
-- 관련 컴포넌트: `WorkerManagement.tsx`, `WorkerDailyQR.tsx`, `CompanyDailyQR.tsx`, `WorkerBulkImportDialog.tsx`
+- 관련 라우트: `/workers`, `/worker/register` (레거시 `/c/:token`, `/worker-portal` 유지·비권장)
+- 관련 테이블: `workers`, `worker_attendance`, `worker_entry_logs`
+- 관련 컴포넌트: `WorkerManagement.tsx`, `WorkerBulkImportDialog.tsx`
+- 사이드바: **근로자 관리** 1항목 → 페이지 탭(등록 정보 / 입퇴장 현황)
 
 ---
 
 ## 1. Happy path
-- [x] 4개 탭(등록정보 / 입퇴장 / 일일QR / 시공사 QR)이 URL 쿼리(`?tab=`)와 동기화
+- [x] 2개 탭(등록정보 / 입퇴장)이 URL 쿼리(`?tab=`)와 동기화
 - [x] 등록 QR / 엑셀 일괄등록 / 법정교육 매핑 진입
-- [x] 일일 QR / 시공사 게시판 QR 일괄 발급·인쇄
-- [x] 출퇴근 QR 스캔 시 위험성평가·교육·TBM 확인 체크박스 + 서명
+- [x] 레거시 일일·게시판 QR 탭 URL은 등록 탭으로 리다이렉트 (앱 출근으로 대체)
+- [x] 출퇴근은 근로자 앱 계정·GPS 출근이 SSOT
 
 ## 2. Permission
 - [x] 협력사 권한(`site_manager`/`supervisor`/`worker`)은 본인 소속사로 자동 잠금

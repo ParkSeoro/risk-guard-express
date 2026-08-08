@@ -123,6 +123,7 @@ const adminItems: Item[] = [
 ];
 
 const masterOnlyItems: Item[] = [
+  { title: "위평 라이브러리", url: "/risk-library", icon: Database },
   { title: "데이터 정합성 (단일 기준)", url: "/admin/data-audit", icon: Database },
   { title: "시스템 테스트 엔진", url: "/admin/system-test", icon: FlaskConical },
   { title: "휴지통", url: "/admin/trash", icon: Trash2 },

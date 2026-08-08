@@ -295,28 +295,33 @@ const AssessmentRunDetail = () => {
       setEnvironmentTags((envTagsRes.data || []) as any);
       setDeptAssignees(deptAssigneeRes.data || []);
 
-      // Departments now come from company_departments scoped to this project's companies
-      const companyIds = companies.map((c) => c.id);
+      // E1: 담당자/부서는 작성자(현재 사용자) 소속회사만. 마스터는 프로젝트 전체.
+      const allCompanyIds = companies.map((c) => c.id);
+      const assigneeCompanyIds = isMaster
+        ? allCompanyIds
+        : userCompanyId
+          ? allCompanyIds.filter((id) => id === userCompanyId)
+          : [];
       let deptRows: any[] = [];
       let companyManagerRows: any[] = [];
-      if (companyIds.length > 0) {
+      if (assigneeCompanyIds.length > 0) {
         const [cdRes, cmRes] = await Promise.all([
           supabase
             .from('company_departments' as any)
             .select('id, name, company_id')
-            .in('company_id', companyIds)
+            .in('company_id', assigneeCompanyIds)
             .eq('is_deleted', false)
             .order('sort_order', { ascending: true }),
           supabase
             .from('company_managers' as any)
             .select('id, name, user_id, department_id, company_id, position, is_primary')
-            .in('company_id', companyIds)
+            .in('company_id', assigneeCompanyIds)
             .eq('is_deleted', false),
         ]);
         const companyName = new Map(companies.map((c) => [c.id, c.name]));
         deptRows = (cdRes.data || []).map((d: any) => ({
           id: d.id,
-          name: companies.length > 1 ? `${companyName.get(d.company_id) || ''} · ${d.name}` : d.name,
+          name: assigneeCompanyIds.length > 1 ? `${companyName.get(d.company_id) || ''} · ${d.name}` : d.name,
           company_id: d.company_id,
         }));
         companyManagerRows = (cmRes.data || []) as any[];
@@ -348,9 +353,11 @@ const AssessmentRunDetail = () => {
       const companyNameById = new Map(companies.map((c: any) => [c.id, c.name]));
       // key strategy: real user_id wins; otherwise synthetic `mgr:<manager_id>`
       const byKey = new Map<string, any>();
-      // a) unified pool (has user_id only)
+      // a) unified pool (has user_id only) — E1 company filter
+      const assigneeCompanySet = new Set(assigneeCompanyIds);
       for (const r of poolRows) {
         if (!r.user_id) continue;
+        if (assigneeCompanySet.size > 0 && r.company_id && !assigneeCompanySet.has(r.company_id)) continue;
         const existing = byKey.get(r.user_id);
         if (!existing || (r.source === 'company_manager' && existing.source !== 'company_manager')) {
           byKey.set(r.user_id, {
@@ -520,7 +527,7 @@ const AssessmentRunDetail = () => {
 
     hasLoadedRef.current = true;
     setLoading(false);
-  }, [runId]);
+  }, [runId, isMaster, userCompanyId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 

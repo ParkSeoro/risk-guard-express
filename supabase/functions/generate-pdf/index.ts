@@ -438,14 +438,23 @@ body { font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; font-size: 9pt;
   width: 100%;
   overflow-x: visible;
 }
-table { width: 100%; border-collapse: collapse; font-size: 7.5pt; margin-bottom: 10pt; table-layout: auto; }
-th, td { border: 1px solid #cbd5e1; padding: 2pt 4pt; text-align: left; vertical-align: top; word-break: break-all; }
-th { background: #1e293b; color: white; font-weight: 500; text-align: center; white-space: nowrap; font-size: 7pt; }
+/* fixed layout prevents landscape column squash / right-edge clipping */
+table { width: 100%; border-collapse: collapse; font-size: 7pt; margin-bottom: 10pt; table-layout: fixed; }
+th, td {
+  border: 1px solid #cbd5e1;
+  padding: 2pt 3pt;
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+th { background: #1e293b; color: white; font-weight: 500; text-align: center; white-space: normal; font-size: 6.5pt; }
 .center { text-align: center; }
 .nowrap { white-space: nowrap; }
-.grade { font-weight: 600; text-align: center; min-width: 18pt; }
+.grade { font-weight: 600; text-align: center; }
 
-.sig-table { width: auto; margin-top: 8pt; }
+.sig-table { width: auto; margin-top: 8pt; table-layout: auto; }
 .sig-table th { background: #475569; }
 .sig-table td { min-width: 60pt; height: 24pt; }
 .sig-role { background: #f8fafc; font-weight: 500; }
@@ -453,8 +462,13 @@ th { background: #1e293b; color: white; font-weight: 500; text-align: center; wh
 
 thead { display: table-header-group; }
 img { max-width: 100%; height: auto; display: inline-block; }
-tr { page-break-inside: avoid; }
-@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+/* Allow tall rows to split across pages instead of clipping */
+tr { page-break-inside: auto; }
+td, th { page-break-inside: auto; }
+@media print {
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  table { page-break-inside: auto; }
+}
 </style>
 </head>
 <body>

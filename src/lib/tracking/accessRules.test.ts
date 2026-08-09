@@ -33,6 +33,13 @@ describe("zone whitelist / blacklist", () => {
     const rules = buildAccessRules("DENY", [companyA], []);
     expect(isAccessForbidden(rules, { company_id: null })).toBe(true);
     expect(isAccessForbidden(rules, {})).toBe(true);
+    // worker_id without company must NOT silently pass a company DENY
+    expect(
+      isAccessForbidden(rules, {
+        worker_id: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        company_id: null,
+      }),
+    ).toBe(true);
   });
 
   it("parses legacy allow_companies as ALLOW", () => {

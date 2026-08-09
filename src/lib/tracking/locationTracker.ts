@@ -68,6 +68,12 @@ async function loadRestrictedZones(projectId: string): Promise<RestrictedZoneGeo
 export type TrackerOptions = {
   identity: TrackingIdentity;
   /**
+   * Live identity for each track-location invoke.
+   * Prefer this over the frozen `identity` snapshot so company_id / role updates
+   * take effect without restarting the watch loop.
+   */
+  getIdentity?: () => TrackingIdentity;
+  /**
    * 적응형 주기 (밀리초). 미지정 시 근접도 기반 기본값:
    *  - eco (위험구역에서 멀리): moving 45s / idle 180s
    *  - near (80m 이내): moving 12s / idle 60s
@@ -251,9 +257,10 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
           if (now - lastSentAt < minInterval) return;
           lastSentAt = now;
 
+          const liveId = opts.getIdentity?.() ?? opts.identity;
           const { data } = await supabase.functions.invoke("track-location", {
             body: {
-              ...opts.identity,
+              ...liveId,
               lat: rawLat,
               lng: rawLng,
               accuracy_m: accuracy,
@@ -460,9 +467,10 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
       lastPos = here;
 
       try {
+        const liveId = opts.getIdentity?.() ?? identity;
         const { data, error } = await supabase.functions.invoke("track-location", {
           body: {
-            ...identity,
+            ...liveId,
             lat: raw.lat,
             lng: raw.lng,
             accuracy_m: accuracy,

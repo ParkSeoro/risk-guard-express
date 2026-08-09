@@ -34,6 +34,33 @@ function isExitEventType(t: string): boolean {
   return /^(exit|leave|depart)/i.test(t) || /_exit$/i.test(t);
 }
 
+function digitsOnly(phone: string | null | undefined): string {
+  return (phone || "").replace(/\D/g, "");
+}
+
+/** Local TTS/siren is for the violator only — admins get push, not this modal. */
+function isZoneEventAboutMe(
+  ev: {
+    worker_phone?: string | null;
+    worker_qr_id?: string | null;
+    worker_name?: string | null;
+  },
+  opts: {
+    phone?: string | null;
+    workerId?: string | null;
+    displayName?: string | null;
+  },
+): boolean {
+  const evPhone = digitsOnly(ev.worker_phone);
+  const myPhone = digitsOnly(opts.phone);
+  if (evPhone && myPhone && evPhone === myPhone) return true;
+  if (ev.worker_qr_id && opts.workerId && ev.worker_qr_id === opts.workerId) return true;
+  const evName = (ev.worker_name || "").trim();
+  const myName = (opts.displayName || "").trim();
+  if (evName && myName && evName === myName) return true;
+  return false;
+}
+
 export default function ShellGeofenceAlerts() {
   const { user, profile } = useAuth();
   const { projectId, role, companyId } = useMobileAccess();
@@ -224,11 +251,28 @@ export default function ShellGeofenceAlerts() {
 
   useEffect(() => {
     if (!lastZoneEvent) return;
-    const t = String((lastZoneEvent as { event_type?: string }).event_type || "");
-    const zoneId =
-      (lastZoneEvent as { restricted_zone_id?: string; zone_id?: string }).restricted_zone_id ||
-      (lastZoneEvent as { zone_id?: string }).zone_id ||
-      null;
+    const ev = lastZoneEvent as {
+      event_type?: string;
+      restricted_zone_id?: string;
+      zone_id?: string;
+      zone_name?: string;
+      worker_phone?: string | null;
+      worker_qr_id?: string | null;
+      worker_name?: string | null;
+    };
+    // Realtime fan-out can reach other members — never open violator siren for them.
+    if (
+      !isZoneEventAboutMe(ev, {
+        phone: profile?.phone,
+        workerId: subjectRef.current.worker_id,
+        displayName: profile?.display_name,
+      })
+    ) {
+      return;
+    }
+
+    const t = String(ev.event_type || "");
+    const zoneId = ev.restricted_zone_id || ev.zone_id || null;
 
     if (isExitEventType(t)) {
       // Don't clear sticky UI from a single server exit if GPS still says inside
@@ -252,9 +296,9 @@ export default function ShellGeofenceAlerts() {
     dismissedZoneId.current = null;
     openAlert({
       id: zoneId || "zone",
-      name: (lastZoneEvent as { zone_name?: string }).zone_name || "위험 구역",
+      name: ev.zone_name || "위험 구역",
     });
-  }, [lastZoneEvent, lastGpsFix, openAlert, clearAlert]);
+  }, [lastZoneEvent, lastGpsFix, openAlert, clearAlert, profile?.phone, profile?.display_name]);
 
   return (
     <DangerZoneAlertModal

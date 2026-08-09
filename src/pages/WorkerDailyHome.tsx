@@ -225,16 +225,24 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
 
   const ensureConsentAndGps = async () => {
     const { setTrackingConsent } = await import("@/lib/tracking/locationTracker");
+    const { resolveBanSubject } = await import("@/lib/tracking/resolveBanSubject");
     setTrackingConsent(true);
     if (!projectId) {
       toast.error("현장을 먼저 선택하세요");
       return false;
     }
+    // DENY/ALLOW company match needs company_id on every track-location invoke.
+    const ban = await resolveBanSubject(projectId, {
+      phone: profile?.phone,
+      userId: user?.id,
+    });
     startGpsTracking({
       project_id: projectId,
-      worker_id: workerId,
+      worker_id: workerId || ban.worker_id || null,
       worker_name: profile?.display_name || null,
       worker_phone: profile?.phone || null,
+      company_id: ban.company_id || null,
+      worker_role: "worker",
     });
     window.dispatchEvent(new Event("mobile:resume-gps-tracking"));
     return true;

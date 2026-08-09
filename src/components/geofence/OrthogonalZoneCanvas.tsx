@@ -51,6 +51,14 @@ type Props = {
   onFocusZone?: (id: string) => void;
   /** When set, fly the CRS canvas to this zone id. */
   focusZoneId?: string | null;
+  /**
+   * Zone currently in vertex/move edit (hidden from static layers; editable overlay).
+   * Geometry is CRS-converted before callbacks.
+   */
+  editingZoneId?: string | null;
+  /** Bump to flush edited CRS geometry → WGS84 via onGeoShapeEdited. */
+  editCommitToken?: number;
+  onGeoShapeEdited?: (shape: DrawnShape) => void;
   className?: string;
 };
 
@@ -153,6 +161,9 @@ export default function OrthogonalZoneCanvas({
   onGeoShapeCreated,
   onFocusZone,
   focusZoneId,
+  editingZoneId = null,
+  editCommitToken = 0,
+  onGeoShapeEdited,
   className,
 }: Props) {
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
@@ -223,9 +234,9 @@ export default function OrthogonalZoneCanvas({
     return zones.filter((z) => isZoneOffImage(z, corners)).length;
   }, [zones, corners, size]);
 
-  const onCrsShape = useCallback(
-    (shape: DrawnShape) => {
-      if (!size) return;
+  const crsToGeoShape = useCallback(
+    (shape: DrawnShape): DrawnShape | null => {
+      if (!size) return null;
       if (shape.kind === "polygon") {
         const latlngs = crsPolygonToGeo(shape.latlngs, corners, size.w, size.h);
         if (!looksLikeWgs84Ring(latlngs)) {
@@ -235,10 +246,9 @@ export default function OrthogonalZoneCanvas({
             corners,
             size,
           });
-          return;
+          return null;
         }
-        onGeoShapeCreated({ kind: "polygon", latlngs });
-        return;
+        return { kind: "polygon", latlngs };
       }
       const geo = crsCircleToGeo(shape.center, shape.radius_m, corners, size.w, size.h);
       if (!looksLikeWgs84(geo.center)) {
@@ -248,16 +258,60 @@ export default function OrthogonalZoneCanvas({
           corners,
           size,
         });
-        return;
+        return null;
       }
-      onGeoShapeCreated({
+      return {
         kind: "circle",
         center: geo.center,
         radius_m: geo.radius_m,
-      });
+      };
     },
-    [corners, onGeoShapeCreated, size],
+    [corners, size],
   );
+
+  const onCrsShape = useCallback(
+    (shape: DrawnShape) => {
+      const geo = crsToGeoShape(shape);
+      if (geo) onGeoShapeCreated(geo);
+    },
+    [crsToGeoShape, onGeoShapeCreated],
+  );
+
+  const onCrsEdited = useCallback(
+    (shape: DrawnShape) => {
+      const geo = crsToGeoShape(shape);
+      if (geo) onGeoShapeEdited?.(geo);
+    },
+    [crsToGeoShape, onGeoShapeEdited],
+  );
+
+  const editCrsShape = useMemo((): DrawnShape | null => {
+    if (!size || !editingZoneId) return null;
+    const z = zones.find((x) => x.id === editingZoneId);
+    if (!z) return null;
+    if (
+      z.geometry_type === "radius" &&
+      z.center_lat != null &&
+      z.center_lng != null &&
+      z.radius_m
+    ) {
+      const c = geoCircleToCrs(
+        { lat: z.center_lat, lng: z.center_lng },
+        Number(z.radius_m),
+        corners,
+        size.w,
+        size.h,
+      );
+      return { kind: "circle", center: c.center, radius_m: c.radius };
+    }
+    if (z.geo_polygon && z.geo_polygon.length >= 3) {
+      return {
+        kind: "polygon",
+        latlngs: geoPolygonToCrs(z.geo_polygon, corners, size.w, size.h),
+      };
+    }
+    return null;
+  }, [size, editingZoneId, zones, corners]);
 
   if (!size || !imageBounds || !maxBounds) {
     return (
@@ -286,8 +340,9 @@ export default function OrthogonalZoneCanvas({
           }
         : null;
 
-  const guideText =
-    activeTool === "polygon"
+  const guideText = editingZoneId
+    ? "도형 수정: 흰 꼭짓점을 드래그하거나 도형 내부를 끌어 이동하세요. 끝나면 「도형 저장」."
+    : activeTool === "polygon"
       ? "다각형: 클릭할 때마다 꼭짓점(Vertex)이 찍히고, 더블클릭 시 닫히며(Finish) 완료됩니다. · 지도 이동(Panning) 일시 차단"
       : activeTool === "rectangle"
         ? "사각형: 클릭 후 드래그로 영역을 지정하세요. · 지도 이동(Panning) 일시 차단"
@@ -327,10 +382,13 @@ export default function OrthogonalZoneCanvas({
         <LeafletDrawControl
           showToolbar={false}
           enabled
-          activeTool={activeTool}
-          drawColor={drawColor}
+          activeTool={editingZoneId ? null : activeTool}
+          drawColor={editingZoneId ? drawColor : drawColor}
           onShapeCreated={onCrsShape}
           onToolFinished={onToolFinished}
+          editShape={editCrsShape}
+          editCommitToken={editCommitToken}
+          onShapeEdited={onGeoShapeEdited ? onCrsEdited : undefined}
         />
 
         {crsPending?.kind === "polygon" && (
@@ -348,6 +406,7 @@ export default function OrthogonalZoneCanvas({
         )}
 
         {zones.map((z) => {
+          if (editingZoneId && z.id === editingZoneId) return null; // editable overlay owns this layer
           const active = z.is_active !== false;
           const off = isZoneOffImage(z, corners);
           const color = active ? (z.zone_color || (off ? "#f97316" : "#ef4444")) : "#94a3b8";
@@ -399,7 +458,7 @@ export default function OrthogonalZoneCanvas({
         })}
       </MapContainer>
       <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] rounded-md bg-background/90 px-2 py-1 text-[10px] text-muted-foreground shadow">
-        평면 도면 (CRS.Simple) · 픽셀→WGS84 역산 · 좌측 버튼으로 그리기
+        평면 도면 (CRS.Simple) · 픽셀→WGS84 역산 · 그리기 / 꼭짓점·이동 편집
       </div>
     </div>
   );

@@ -189,14 +189,14 @@ export function isAccessForbidden(
     return false;
   }
 
-  // No identity at all while companies are on the DENY list → fail closed
-  // (masters / unresolved roster). Subjects with job_type still evaluate normally.
-  if (
-    (rules.company_ids?.length || 0) > 0 &&
-    !subject.company_id &&
-    !subject.job_type &&
-    !subject.worker_id
-  ) {
+  // Company-targeted DENY needs a resolvable company_id.
+  // worker_id alone used to skip this gate → identified workers with null
+  // roster company silently passed. Fail closed unless job targets can still
+  // evaluate (job_type present).
+  if ((rules.company_ids?.length || 0) > 0 && !subject.company_id) {
+    if ((rules.job_types?.length || 0) > 0 && subject.job_type) {
+      return subjectMatchesTargets(rules, subject);
+    }
     return true;
   }
 

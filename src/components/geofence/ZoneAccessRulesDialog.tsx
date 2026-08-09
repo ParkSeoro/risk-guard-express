@@ -246,13 +246,15 @@ export default function ZoneAccessRulesDialog({
             )}
             {ruleType === "DENY" && companyIds.length > 0 && (
               <p className="text-[11px] text-destructive/90 bg-destructive/5 border border-destructive/20 rounded-md px-2 py-1.5">
-                차단 목록에 넣은 업체만 알람이 울립니다. 목록에 없는 업체(예: 시공사)로
-                들어가면 알람이 없습니다 — 테스트 계정의 소속 업체를 확인하세요.
+                <b>중요:</b> 차단 목록에 넣은 업체 소속만 알람이 울립니다. 다른 업체·앱
+                설치자(소속 불일치)는 경고가 없습니다. 현장에 있는{" "}
+                <b>모든 사람</b>에게 울리려면 아래 업체 선택을 모두 해제하세요(전면 통제).
               </p>
             )}
             {ruleType === "DENY" && companyIds.length === 0 && jobTypes.length === 0 && (
               <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
-                대상 미지정 = 전면 통제(전원 알람). 특정 업체만 막을 때는 업체를 선택하세요.
+                대상 미지정 = <b>전면 통제(전원 알람)</b>. GPS 추적이 켜진 모든 인원이 진입 시
+                경고를 받습니다. 특정 업체만 막을 때만 업체를 선택하세요.
               </p>
             )}
           </div>

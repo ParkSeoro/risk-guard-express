@@ -184,12 +184,15 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
   const startGpsTracking = useCallback(
     (identity: TrackingIdentity) => {
       const prev = identityRef.current;
-      if (
-        stopTrackerRef.current &&
-        prev &&
+      const sameSession =
+        !!stopTrackerRef.current &&
+        !!prev &&
         prev.project_id === identity.project_id &&
-        (prev.worker_id || null) === (identity.worker_id || null)
-      ) {
+        (prev.worker_id || null) === (identity.worker_id || null) &&
+        (prev.worker_role || null) === (identity.worker_role || null);
+      // company_id can arrive later (roster resolve) — refresh live identity without
+      // tearing down the watch when project/worker/role are unchanged.
+      if (sameSession) {
         identityRef.current = identity;
         setGpsTracking(true);
         return;
@@ -219,6 +222,7 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
 
         const stop = await startTracking({
           identity,
+          getIdentity: () => identityRef.current || identity,
           siteCenter,
           onLeaveSite: (info) => {
             clearStickyDangerAlert();

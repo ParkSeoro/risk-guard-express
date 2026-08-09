@@ -392,6 +392,10 @@ export default function SiteControlMap() {
     }
   }, [panelTab]);
 
+  const activeMapGeorefKey = activeMap
+    ? `${activeMap.id}:${JSON.stringify(activeMap.geo_transform ?? null)}:${activeMap.geo_anchor_nw_lat}:${activeMap.geo_anchor_nw_lng}:${activeMap.geo_anchor_se_lat}:${activeMap.geo_anchor_se_lng}`
+    : "";
+
   useEffect(() => {
     if (!activeMap) {
       setDraftCorners(null);
@@ -408,7 +412,9 @@ export default function SiteControlMap() {
     } else {
       setDraftCorners(null);
     }
-  }, [activeMap?.id]);
+    // Reload corners when walk/PC georef payload changes, not only map id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMapGeorefKey]);
 
   const loadMaps = async () => {
     const { data } = await supabase
@@ -421,10 +427,17 @@ export default function SiteControlMap() {
       .order("created_at", { ascending: false });
     const list = (data || []) as SiteMap[];
     setMaps(list);
-    if (list.length && (!activeMap || activeMap.project_id !== projectId)) {
-      setActiveMap(list[0]);
+    if (!list.length) {
+      setActiveMap(null);
+      return;
     }
-    if (!list.length) setActiveMap(null);
+    // Refresh the open map row so mobile walk georef updates the overlay without remount.
+    if (!activeMap || activeMap.project_id !== projectId) {
+      setActiveMap(list[0]);
+      return;
+    }
+    const refreshed = list.find((m) => m.id === activeMap.id) || list[0];
+    setActiveMap(refreshed);
   };
 
   const loadZones = async () => {
@@ -913,13 +926,15 @@ export default function SiteControlMap() {
       if (myGps.accuracy > 40) {
         toast.message(`GPS 정확도 ±${Math.round(myGps.accuracy)}m — 가능하면 야외에서 다시 찍어 주세요`);
       }
+      // Snap to the marker the operator sees (calibrated WGS84). Using raw while
+      // the blue marker shows corrected coords was shifting the drone off satellite.
       setDraftCorners({
         ...draftCorners,
-        [key]: { lat: myGps.rawLat, lng: myGps.rawLng },
+        [key]: { lat: myGps.lat, lng: myGps.lng },
       });
       const label = key === "tl" ? "좌상(TL)" : key === "tr" ? "우상(TR)" : "좌하(BL)";
       toast.success(
-        `${label}을 현재 GPS(원시)로 찍었습니다${myGps.calibrated ? " · 표시 위치는 보정됨" : ""}`,
+        `${label}을 현재 표시 위치로 찍었습니다${myGps.calibrated ? " (맵 정렬 보정 적용)" : ""}`,
       );
     },
     [myGps, draftCorners, locateOnce],

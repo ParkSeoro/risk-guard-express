@@ -87,13 +87,12 @@ export function isAccessForbidden(
     return false;
   }
 
-  // No identity while companies are targeted → fail closed (masters / missing roster)
-  if (
-    (rules.company_ids?.length || 0) > 0 &&
-    !subject.company_id &&
-    !subject.job_type &&
-    !subject.worker_id
-  ) {
+  // Company-targeted DENY needs company_id — worker_id alone must not bypass.
+  // Job-only subjects can still be evaluated when job targets exist.
+  if ((rules.company_ids?.length || 0) > 0 && !subject.company_id) {
+    if ((rules.job_types?.length || 0) > 0 && subject.job_type) {
+      return subjectMatchesTargets(rules, subject);
+    }
     return true;
   }
 

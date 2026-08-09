@@ -9,6 +9,7 @@ import {
  * Master-only alarm simulator: skip GPS, force full alert cycle.
  * - Local TTS/siren: caller opens DangerZoneAlertModal (single playback owner)
  * - Server: insert unauthorized_entry → trg_zone_event_notify → FCM push
+ *   Recipients: violator self + project_admin (project-wide) + violator company managers
  */
 export async function simulateDangerZoneAlert(opts: {
   projectId: string;

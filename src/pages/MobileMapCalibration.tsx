@@ -75,7 +75,9 @@ type WalkSlot = {
 
 const SLOT_LABELS = ["A", "B", "C"] as const;
 
-async function getCurrentPosition(): Promise<{ lat: number; lng: number; accuracy: number }> {
+type GpsFix = { lat: number; lng: number; accuracy: number };
+
+async function getCurrentPosition(): Promise<GpsFix> {
   if (Capacitor.isNativePlatform()) {
     try {
       const { Geolocation } = await import("@capacitor/geolocation");
@@ -109,6 +111,53 @@ async function getCurrentPosition(): Promise<{ lat: number; lng: number; accurac
       { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 },
     );
   });
+}
+
+/** Continuous high-accuracy watch — returns stop(). */
+async function watchPosition(
+  onFix: (fix: GpsFix) => void,
+  onError?: (msg: string) => void,
+): Promise<() => void> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { Geolocation } = await import("@capacitor/geolocation");
+      await Geolocation.requestPermissions();
+      const id = await Geolocation.watchPosition(
+        { enableHighAccuracy: true, timeout: 20000 },
+        (pos, err) => {
+          if (err || !pos) {
+            onError?.(err?.message || "위치 수신 실패");
+            return;
+          }
+          onFix({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy ?? 20,
+          });
+        },
+      );
+      return () => {
+        void Geolocation.clearWatch({ id });
+      };
+    } catch {
+      /* fall through to browser */
+    }
+  }
+  if (!navigator.geolocation) {
+    onError?.("이 기기는 위치를 지원하지 않습니다");
+    return () => undefined;
+  }
+  const id = navigator.geolocation.watchPosition(
+    (p) =>
+      onFix({
+        lat: p.coords.latitude,
+        lng: p.coords.longitude,
+        accuracy: p.coords.accuracy ?? 20,
+      }),
+    (e) => onError?.(e.message || "위치 수신 실패"),
+    { enableHighAccuracy: true, maximumAge: 1000, timeout: 25000 },
+  );
+  return () => navigator.geolocation.clearWatch(id);
 }
 
 function buildSlots(
@@ -148,8 +197,14 @@ export default function MobileMapCalibration() {
   const [maps, setMaps] = useState<SiteMapRow[]>([]);
   const [mapId, setMapId] = useState("");
   const [existing, setExisting] = useState<GpsCalibration | null>(null);
+  /** True standing point on the map (user taps / nudges). */
   const [tapUv, setTapUv] = useState<{ u: number; v: number } | null>(null);
+  /** Live raw GPS projected onto the map image. */
+  const [liveGps, setLiveGps] = useState<GpsFix | null>(null);
+  const [liveWatching, setLiveWatching] = useState(false);
   const [busy, setBusy] = useState(false);
+  const stopWatchRef = useRef<(() => void) | null>(null);
+  const liveGpsRef = useRef<GpsFix | null>(null);
 
   const [zoneRingsUv, setZoneRingsUv] = useState<{ u: number; v: number }[][]>([]);
   const [gpsHistoryUv, setGpsHistoryUv] = useState<{ u: number; v: number }[]>([]);
@@ -275,6 +330,57 @@ export default function MobileMapCalibration() {
     void reload();
   }, [isMaster, projectId]); // intentionally not mapId — map select handler calls reload
 
+  const hasCorners = !!corners;
+
+  // Live GPS watch while in map-align mode (deps: mode/map — not corners object identity)
+  useEffect(() => {
+    if (!isMaster || mode !== "bias" || !hasCorners) {
+      stopWatchRef.current?.();
+      stopWatchRef.current = null;
+      setLiveWatching(false);
+      setLiveGps(null);
+      liveGpsRef.current = null;
+      return;
+    }
+    let cancelled = false;
+    setLiveWatching(true);
+    void watchPosition(
+      (fix) => {
+        if (cancelled) return;
+        liveGpsRef.current = fix;
+        setLiveGps(fix);
+      },
+      (msg) => {
+        if (!cancelled) toast.error(msg);
+      },
+    ).then((stop) => {
+      if (cancelled) {
+        stop();
+        return;
+      }
+      stopWatchRef.current = stop;
+    });
+    return () => {
+      cancelled = true;
+      stopWatchRef.current?.();
+      stopWatchRef.current = null;
+      setLiveWatching(false);
+    };
+  }, [isMaster, mode, hasCorners, mapId]);
+
+  const liveGpsUv = useMemo(() => {
+    if (!liveGps || !corners) return null;
+    return latLngToUv({ lat: liveGps.lat, lng: liveGps.lng }, corners);
+  }, [liveGps, corners]);
+
+  /** After aligning, preview where GPS would sit once bias is applied. */
+  const previewOffsetM = useMemo(() => {
+    if (!tapUv || !liveGps || !corners) return null;
+    const mapPt = uvToLatLng(tapUv, corners);
+    const { d_lat, d_lng } = computeGpsOffset(mapPt, liveGps);
+    return offsetMagnitudeM(d_lat, d_lng, mapPt.lat);
+  }, [tapUv, liveGps, corners]);
+
   const walkMarkers: MapMarker[] = useMemo(() => {
     return slots.map((s) => ({
       u: s.u,
@@ -289,6 +395,27 @@ export default function MobileMapCalibration() {
     }));
   }, [slots, activeSlot?.label]);
 
+  const biasMarkers: MapMarker[] = useMemo(() => {
+    const list: MapMarker[] = [];
+    if (liveGpsUv) {
+      list.push({
+        u: liveGpsUv.u,
+        v: liveGpsUv.v,
+        label: liveGps ? `GPS±${Math.round(liveGps.accuracy)}` : "GPS",
+        tone: "rose",
+      });
+    }
+    if (tapUv) {
+      list.push({
+        u: tapUv.u,
+        v: tapUv.v,
+        label: "참위치",
+        tone: "blue",
+      });
+    }
+    return list;
+  }, [liveGpsUv, liveGps, tapUv]);
+
   if (!isMaster) {
     return (
       <div className="p-6 text-sm text-muted-foreground">
@@ -302,7 +429,7 @@ export default function MobileMapCalibration() {
 
   const saveBias = async () => {
     if (!projectId || !active || !corners || !tapUv) {
-      toast.error("맵을 탭해 현재 선 자리를 지정하세요");
+      toast.error("맵에서 내가 서 있는 참위치를 탭하세요");
       return;
     }
     if (!active.image_url) {
@@ -312,7 +439,11 @@ export default function MobileMapCalibration() {
     setBusy(true);
     try {
       const mapPt = uvToLatLng(tapUv, corners);
-      const raw = await getCurrentPosition();
+      // Prefer live watch fix; fall back to a fresh one-shot.
+      let raw = liveGpsRef.current;
+      if (!raw || raw.accuracy > GPS_CAL_MAX_ACCURACY_M) {
+        raw = await getCurrentPosition();
+      }
       if (raw.accuracy > GPS_CAL_MAX_ACCURACY_M) {
         toast.error(
           `GPS 정확도 ±${Math.round(raw.accuracy)}m — ${GPS_CAL_MAX_ACCURACY_M}m 이하일 때만 저장합니다`,
@@ -344,7 +475,10 @@ export default function MobileMapCalibration() {
       if (error) throw error;
       clearGpsCalibrationCache(projectId);
       setExisting(payload);
-      toast.success(`1점 보정 저장 · 약 ${Math.round(mag)}m`, { duration: 5000 });
+      toast.success(`맵 정렬 보정 저장 · 약 ${Math.round(mag)}m`, {
+        description: "이후 트래킹 GPS에 이 오프셋이 적용됩니다.",
+        duration: 5000,
+      });
     } catch (e: any) {
       toast.error(e?.message || "저장 실패");
     } finally {
@@ -543,10 +677,10 @@ export default function MobileMapCalibration() {
         </Button>
         <div className="flex-1">
           <h1 className="font-bold text-base">맵·GPS 맞추기</h1>
-          <p className="text-[11px] opacity-90">마스터 · 추천 워킹 / 1점 보정</p>
+          <p className="text-[11px] opacity-90">마스터 · 워킹 지오레프 / 실시간 맵 정렬</p>
         </div>
         <Badge variant="secondary" className="text-[10px]">
-          {mode === "walk" ? "워킹" : "1점"}
+          {mode === "walk" ? "워킹" : "정렬"}
         </Badge>
       </header>
 
@@ -564,7 +698,7 @@ export default function MobileMapCalibration() {
             className="h-10"
             onClick={() => setMode("bias")}
           >
-            <Crosshair className="h-4 w-4 mr-1.5" /> 1점 보정
+            <Crosshair className="h-4 w-4 mr-1.5" /> 맵 정렬
           </Button>
         </div>
 
@@ -583,10 +717,13 @@ export default function MobileMapCalibration() {
               </>
             ) : (
               <>
-                <p>워킹 보정 후 남는 수 m 오차만 1점으로 보정합니다.</p>
                 <p>
-                  GPS ≤{GPS_CAL_MAX_ACCURACY_M}m, 보정량 ≤{GPS_CAL_MAX_OFFSET_M}m 일 때만
-                  저장됩니다.
+                  <b>실시간 GPS(분홍)</b>가 도면에 표시됩니다. 지금 서 있는{" "}
+                  <b>참위치(파란)</b>를 탭하면 시스템이 오프셋을 재계산합니다.
+                </p>
+                <p>
+                  워킹 보정 후 남는 수 m 오차용입니다. GPS ≤{GPS_CAL_MAX_ACCURACY_M}m, 보정량 ≤
+                  {GPS_CAL_MAX_OFFSET_M}m 일 때만 저장됩니다.
                 </p>
               </>
             )}
@@ -622,8 +759,8 @@ export default function MobileMapCalibration() {
           <ZoomableSiteMapImage
             src={active.image_url}
             alt={active.name}
-            marker={mode === "bias" ? tapUv : null}
-            markers={mode === "walk" ? walkMarkers : undefined}
+            marker={null}
+            markers={mode === "walk" ? walkMarkers : biasMarkers}
             onPick={(uv) => {
               if (mode === "bias") {
                 setTapUv(uv);
@@ -762,16 +899,45 @@ export default function MobileMapCalibration() {
 
         {mode === "bias" && (
           <>
-            {tapUv && (
+            <Card className="border-rose-500/30 bg-rose-500/5">
+              <CardContent className="p-3 text-xs space-y-1">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <Crosshair className="h-3.5 w-3.5 text-rose-600" />
+                  {liveWatching ? "실시간 GPS 수신 중" : "GPS 대기…"}
+                  {liveGps && (
+                    <Badge variant="secondary" className="text-[10px] ml-auto">
+                      ±{Math.round(liveGps.accuracy)}m
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-muted-foreground">
+                  분홍 = 폰 GPS가 가리키는 자리 · 파란 = 내가 탭한 참위치
+                </p>
+                {tapUv && previewOffsetM != null && (
+                  <p className="text-foreground">
+                    예상 보정량 ≈ <b>{Math.round(previewOffsetM)}m</b>
+                    {previewOffsetM > GPS_CAL_MAX_OFFSET_M && (
+                      <span className="text-destructive"> (한도 초과)</span>
+                    )}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+            {tapUv ? (
               <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <MapPin className="h-3.5 w-3.5" /> 도면 지점 선택됨 — 그 자리에 서서 저장하세요
+                <MapPin className="h-3.5 w-3.5" /> 참위치 선택됨 — 저장하면 GPS↔맵 오프셋을
+                재계산합니다
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <MapPin className="h-3.5 w-3.5" /> 지금 서 있는 자리를 도면에서 탭하세요
               </p>
             )}
             {existing && (
               <Card className="border-emerald-500/40 bg-emerald-500/5">
                 <CardContent className="p-3 text-xs space-y-1">
                   <div className="font-medium text-emerald-800 dark:text-emerald-200">
-                    1점 보정 적용 중
+                    맵 정렬 보정 적용 중
                   </div>
                   <div className="text-muted-foreground">
                     ≈{previewMag != null ? Math.round(previewMag) : "?"}m · GPS ±
@@ -783,7 +949,13 @@ export default function MobileMapCalibration() {
             <div className="grid gap-2">
               <Button
                 className="h-12"
-                disabled={busy || !tapUv || !corners || !projectId}
+                disabled={
+                  busy ||
+                  !tapUv ||
+                  !corners ||
+                  !projectId ||
+                  (previewOffsetM != null && previewOffsetM > GPS_CAL_MAX_OFFSET_M)
+                }
                 onClick={() => void saveBias()}
               >
                 {busy ? (
@@ -791,7 +963,7 @@ export default function MobileMapCalibration() {
                 ) : (
                   <Crosshair className="h-4 w-4 mr-2" />
                 )}
-                현재 GPS로 1점 보정 저장
+                맵 정렬 보정 저장
               </Button>
               <Button
                 variant="outline"
@@ -799,7 +971,7 @@ export default function MobileMapCalibration() {
                 disabled={busy || !existing || !projectId}
                 onClick={() => void clearBias()}
               >
-                <Trash2 className="h-4 w-4 mr-2" /> 1점 보정 초기화
+                <Trash2 className="h-4 w-4 mr-2" /> 정렬 보정 초기화
               </Button>
             </div>
           </>

@@ -25,7 +25,7 @@ import {
 import {
   Map, Upload, Save, Loader2, Layers, Satellite, Image as ImageIcon, ShieldAlert, Trash2, Pencil,
   RotateCcw, RotateCw, Move, ZoomIn, ZoomOut, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
-  Square, Pentagon, Circle as CircleIcon, Crosshair, MapPin,
+  Square, Pentagon, Circle as CircleIcon, Crosshair, MapPin, PencilRuler,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -318,6 +318,12 @@ export default function SiteControlMap() {
   const [zoneModalOpen, setZoneModalOpen] = useState(false);
   const [drawTool, setDrawTool] = useState<DrawTool | null>(null);
   const [drawColor, setDrawColor] = useState<string>("#ef4444");
+  /** Vertex/move edit target (CRS canvas). */
+  const [geometryEditZoneId, setGeometryEditZoneId] = useState<string | null>(null);
+  /** Redraw: next drawn shape replaces this zone's geometry. */
+  const [redrawZoneId, setRedrawZoneId] = useState<string | null>(null);
+  const [editCommitToken, setEditCommitToken] = useState(0);
+  const [savingGeometry, setSavingGeometry] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [savingBounds, setSavingBounds] = useState(false);
@@ -381,6 +387,8 @@ export default function SiteControlMap() {
       setLayers((l) => ({ ...l, satellite: true }));
       setDrawTool(null);
       setFocusZoneId(null);
+      setGeometryEditZoneId(null);
+      setRedrawZoneId(null);
     }
   }, [panelTab]);
 
@@ -523,14 +531,119 @@ export default function SiteControlMap() {
     void loadMaps();
   };
 
-  const onShapeCreated = useCallback((shape: DrawnShape) => {
-    setEditingZone(null);
-    setPendingShape(shape);
-    setDrawTool(null);
-    setZoneModalOpen(true);
-    setLayers((l) => ({ ...l, zones: true }));
+  const updateZoneGeometry = useCallback(
+    async (zoneId: string, shape: DrawnShape) => {
+      const gpsOk =
+        shape.kind === "circle"
+          ? looksLikeWgs84(shape.center)
+          : looksLikeWgs84Ring(shape.latlngs);
+      if (!gpsOk) {
+        toast.error(GPS_COORDS_INVALID_MSG);
+        return;
+      }
+      setSavingGeometry(true);
+      const row =
+        shape.kind === "circle"
+          ? {
+              geometry_type: "radius" as const,
+              center_lat: shape.center.lat,
+              center_lng: shape.center.lng,
+              radius_m: shape.radius_m,
+              geo_polygon: null,
+            }
+          : {
+              geometry_type: "polygon" as const,
+              geo_polygon: shape.latlngs,
+              center_lat: null,
+              center_lng: null,
+              radius_m: null,
+            };
+      const { error } = await supabase
+        .from("restricted_zones")
+        .update(row as any)
+        .eq("id", zoneId);
+      setSavingGeometry(false);
+      if (error) {
+        toast.error("도형 저장 실패: " + error.message);
+        return;
+      }
+      toast.success("구역 도형이 업데이트되었습니다");
+      setGeometryEditZoneId(null);
+      setRedrawZoneId(null);
+      setDrawTool(null);
+      setPendingShape(null);
+      void loadZones();
+    },
+    // loadZones is stable enough for this page; intentionally omit to avoid churn
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const onShapeCreated = useCallback(
+    (shape: DrawnShape) => {
+      setDrawTool(null);
+      // Redraw path: replace geometry of existing zone (keep name/rules)
+      if (redrawZoneId) {
+        void updateZoneGeometry(redrawZoneId, shape);
+        return;
+      }
+      setEditingZone(null);
+      setPendingShape(shape);
+      setZoneModalOpen(true);
+      setLayers((l) => ({ ...l, zones: true }));
+      setPanelTab("zones");
+    },
+    [redrawZoneId, updateZoneGeometry],
+  );
+
+  const onGeoShapeEdited = useCallback(
+    (shape: DrawnShape) => {
+      if (!geometryEditZoneId) return;
+      void updateZoneGeometry(geometryEditZoneId, shape);
+    },
+    [geometryEditZoneId, updateZoneGeometry],
+  );
+
+  const startGeometryEdit = (z: Zone) => {
+    if (!draftCorners || !activeMap?.image_url) {
+      toast.error("지오레프된 도면이 필요합니다");
+      return;
+    }
     setPanelTab("zones");
-  }, []);
+    setRedrawZoneId(null);
+    setDrawTool(null);
+    setGeometryEditZoneId(z.id);
+    setFocusZoneId(z.id);
+    setDrawColor(z.zone_color || "#ef4444");
+    toast.message("꼭짓점·이동 편집", {
+      description: "도형을 수정한 뒤 「도형 저장」을 누르세요.",
+      duration: 4000,
+    });
+  };
+
+  const startRedrawZone = (z: Zone) => {
+    if (!draftCorners || !activeMap?.image_url) {
+      toast.error("지오레프된 도면이 필요합니다");
+      return;
+    }
+    setPanelTab("zones");
+    setGeometryEditZoneId(null);
+    setRedrawZoneId(z.id);
+    setFocusZoneId(z.id);
+    setDrawColor(z.zone_color || "#ef4444");
+    const tool: DrawTool = z.geometry_type === "radius" ? "circle" : "polygon";
+    setDrawTool(tool);
+    toast.message("다시 그리기", {
+      description: `${z.name} — ${tool === "circle" ? "원형" : "다각형"}으로 새 도형을 그리면 기존 도형을 교체합니다.`,
+      duration: 5000,
+    });
+  };
+
+  const cancelGeometryEdit = () => {
+    setGeometryEditZoneId(null);
+    setRedrawZoneId(null);
+    setDrawTool(null);
+  };
 
   const openEditZone = (z: Zone) => {
     setPendingShape(null);
@@ -1125,8 +1238,14 @@ export default function SiteControlMap() {
                       type="button"
                       variant={drawTool === "rectangle" ? "default" : "outline"}
                       className="h-11 justify-start"
-                      disabled={!activeMap?.image_url || !draftCorners}
-                      onClick={() => setDrawTool((t) => (t === "rectangle" ? null : "rectangle"))}
+                      disabled={
+                        !activeMap?.image_url || !draftCorners || !!geometryEditZoneId
+                      }
+                      onClick={() => {
+                        setGeometryEditZoneId(null);
+                        setRedrawZoneId(null);
+                        setDrawTool((t) => (t === "rectangle" ? null : "rectangle"));
+                      }}
                     >
                       <Square className="h-4 w-4 mr-2" /> 사각형 그리기
                     </Button>
@@ -1134,8 +1253,14 @@ export default function SiteControlMap() {
                       type="button"
                       variant={drawTool === "polygon" ? "default" : "outline"}
                       className="h-11 justify-start"
-                      disabled={!activeMap?.image_url || !draftCorners}
-                      onClick={() => setDrawTool((t) => (t === "polygon" ? null : "polygon"))}
+                      disabled={
+                        !activeMap?.image_url || !draftCorners || !!geometryEditZoneId
+                      }
+                      onClick={() => {
+                        setGeometryEditZoneId(null);
+                        setRedrawZoneId(null);
+                        setDrawTool((t) => (t === "polygon" ? null : "polygon"));
+                      }}
                     >
                       <Pentagon className="h-4 w-4 mr-2" /> 다각형 그리기
                     </Button>
@@ -1143,13 +1268,70 @@ export default function SiteControlMap() {
                       type="button"
                       variant={drawTool === "circle" ? "default" : "outline"}
                       className="h-11 justify-start"
-                      disabled={!activeMap?.image_url || !draftCorners}
-                      onClick={() => setDrawTool((t) => (t === "circle" ? null : "circle"))}
+                      disabled={
+                        !activeMap?.image_url || !draftCorners || !!geometryEditZoneId
+                      }
+                      onClick={() => {
+                        setGeometryEditZoneId(null);
+                        setRedrawZoneId(null);
+                        setDrawTool((t) => (t === "circle" ? null : "circle"));
+                      }}
                     >
                       <CircleIcon className="h-4 w-4 mr-2" /> 원형 그리기
                     </Button>
                   </div>
-                  {drawTool && (
+                  {geometryEditZoneId && (
+                    <div className="rounded-md border border-primary/40 bg-primary/5 p-2 space-y-2">
+                      <p className="text-[10px] text-primary">
+                        꼭짓점·이동 편집 중 — 맵에서 도형을 수정하세요
+                      </p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-9"
+                          disabled={savingGeometry}
+                          onClick={() => setEditCommitToken((n) => n + 1)}
+                        >
+                          {savingGeometry ? (
+                            <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                          ) : (
+                            <Save className="h-3.5 w-3.5 mr-1" />
+                          )}
+                          도형 저장
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-9"
+                          disabled={savingGeometry}
+                          onClick={cancelGeometryEdit}
+                        >
+                          취소
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {redrawZoneId && !geometryEditZoneId && (
+                    <div className="rounded-md border border-amber-500/40 bg-amber-50/80 p-2 space-y-1.5 dark:bg-amber-950/40">
+                      <p className="text-[10px] text-amber-900 dark:text-amber-100">
+                        다시 그리기 — 새 도형을 그리면 「
+                        {zones.find((z) => z.id === redrawZoneId)?.name || "구역"}」 도형을
+                        교체합니다
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 w-full"
+                        onClick={cancelGeometryEdit}
+                      >
+                        다시 그리기 취소
+                      </Button>
+                    </div>
+                  )}
+                  {drawTool && !geometryEditZoneId && (
                     <p className="text-[10px] text-primary space-y-0.5">
                       <span className="block">
                         {drawTool === "rectangle"
@@ -1188,6 +1370,9 @@ export default function SiteControlMap() {
                 onGeoShapeCreated={onShapeCreated}
                 focusZoneId={focusZoneId}
                 onFocusZone={(id) => setFocusZoneId(id)}
+                editingZoneId={geometryEditZoneId}
+                editCommitToken={editCommitToken}
+                onGeoShapeEdited={onGeoShapeEdited}
               />
             ) : (
             <div className="h-[70vh] min-h-[420px] w-full relative z-0">
@@ -1391,6 +1576,28 @@ export default function SiteControlMap() {
                         </div>
                       </button>
                       <div className="flex shrink-0">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          title="꼭짓점·이동 편집"
+                          disabled={!draftCorners || !!savingGeometry}
+                          onClick={() => startGeometryEdit(z)}
+                        >
+                          <Move className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          title="다시 그리기"
+                          disabled={!draftCorners || !!savingGeometry}
+                          onClick={() => startRedrawZone(z)}
+                        >
+                          <PencilRuler className="h-3.5 w-3.5" />
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"

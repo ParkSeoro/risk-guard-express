@@ -35,6 +35,14 @@ type Props = {
    */
   showToolbar?: boolean;
   position?: "topleft" | "topright" | "bottomleft" | "bottomright";
+  /**
+   * CRS (or WGS84) shape to edit in-place — vertices + whole-shape drag.
+   * Mutually exclusive with activeTool drawing.
+   */
+  editShape?: DrawnShape | null;
+  /** Bump to flush current edited geometry via onShapeEdited. */
+  editCommitToken?: number;
+  onShapeEdited?: (shape: DrawnShape) => void;
 };
 
 function applyKoreanDrawTooltips() {
@@ -61,6 +69,36 @@ function applyKoreanDrawTooltips() {
       start: "클릭·드래그로 원형을 그리세요",
     },
   };
+  if (local.edit?.handlers?.edit) {
+    local.edit.handlers.edit = {
+      ...local.edit.handlers.edit,
+      tooltip: {
+        text: "꼭짓점을 드래그하거나 도형을 이동하세요",
+        subtext: "완료 후 「도형 저장」을 누르세요",
+      },
+    };
+  }
+}
+
+function layerToShape(layer: L.Layer): DrawnShape | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const anyLayer = layer as any;
+  if (typeof anyLayer.getRadius === "function" && typeof anyLayer.getLatLng === "function") {
+    const c = anyLayer.getLatLng() as L.LatLng;
+    const r = Number(anyLayer.getRadius());
+    if (!(r > 0) || !Number.isFinite(c.lat) || !Number.isFinite(c.lng)) return null;
+    return {
+      kind: "circle",
+      center: { lat: c.lat, lng: c.lng },
+      radius_m: Math.round(r * 10) / 10,
+    };
+  }
+  if (typeof anyLayer.getLatLngs !== "function") return null;
+  const rings = anyLayer.getLatLngs();
+  const ring = Array.isArray(rings[0]) ? rings[0] : rings;
+  const latlngs = (ring as L.LatLng[]).map((p) => ({ lat: p.lat, lng: p.lng }));
+  if (latlngs.length < 3) return null;
+  return { kind: "polygon", latlngs };
 }
 
 /**
@@ -76,10 +114,24 @@ export default function LeafletDrawControl({
   onToolFinished,
   showToolbar = false,
   position = "topleft",
+  editShape = null,
+  editCommitToken = 0,
+  onShapeEdited,
 }: Props) {
   const map = useMap();
   const handlerRef = useRef<{ disable: () => void } | null>(null);
   const draggingWasEnabled = useRef(true);
+  const editLayerRef = useRef<L.Layer | null>(null);
+  const editGroupRef = useRef<L.FeatureGroup | null>(null);
+  const editHandlerRef = useRef<{ enable: () => void; disable: () => void; save?: () => void } | null>(
+    null,
+  );
+  const lastCommitTokenRef = useRef(0);
+  const editShapeKey = editShape
+    ? editShape.kind === "circle"
+      ? `c:${editShape.center.lat},${editShape.center.lng},${editShape.radius_m}`
+      : `p:${editShape.latlngs.map((p) => `${p.lat},${p.lng}`).join(";")}`
+    : "";
 
   const suspendMapGestures = () => {
     draggingWasEnabled.current = map.dragging.enabled();
@@ -168,6 +220,7 @@ export default function LeafletDrawControl({
   // Programmatic draw via activeTool (no toolbar)
   useEffect(() => {
     if (!enabled || showToolbar) return;
+    if (editShape) return; // edit mode owns the map interactions
     if (!activeTool) {
       handlerRef.current?.disable();
       handlerRef.current = null;
@@ -240,7 +293,102 @@ export default function LeafletDrawControl({
     onShapeCreated,
     onPolygonCreated,
     onToolFinished,
+    editShape,
   ]);
+
+  // In-place vertex / move edit (no default toolbar)
+  useEffect(() => {
+    if (!enabled || showToolbar || !editShape || !onShapeEdited) {
+      return;
+    }
+
+    applyKoreanDrawTooltips();
+
+    const fg = new L.FeatureGroup();
+    map.addLayer(fg);
+    editGroupRef.current = fg;
+
+    const shapeOptions = {
+      color: drawColor,
+      weight: 3,
+      fillOpacity: 0.28,
+      dashArray: "6 3",
+    };
+
+    let layer: L.Layer;
+    if (editShape.kind === "circle") {
+      layer = L.circle([editShape.center.lat, editShape.center.lng], {
+        radius: editShape.radius_m,
+        ...shapeOptions,
+      });
+    } else {
+      layer = L.polygon(
+        editShape.latlngs.map((p) => [p.lat, p.lng] as [number, number]),
+        shapeOptions,
+      );
+    }
+    fg.addLayer(layer);
+    editLayerRef.current = layer;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const EditToolbar = (L as any).EditToolbar;
+    if (!EditToolbar?.Edit) {
+      console.error("[LeafletDrawControl] EditToolbar.Edit unavailable");
+      return () => {
+        map.removeLayer(fg);
+        editGroupRef.current = null;
+        editLayerRef.current = null;
+      };
+    }
+
+    const editHandler = new EditToolbar.Edit(map, {
+      featureGroup: fg,
+      selectedPathOptions: {
+        dashArray: "8 4",
+        fill: true,
+        fillColor: drawColor,
+        fillOpacity: 0.2,
+        maintainColor: true,
+      },
+    });
+    editHandler.enable();
+    editHandlerRef.current = editHandler;
+
+    // Soft-disable double-click zoom so it doesn't fight vertex clicks.
+    map.doubleClickZoom?.disable?.();
+
+    return () => {
+      try {
+        editHandler.disable();
+      } catch {
+        /* ignore */
+      }
+      editHandlerRef.current = null;
+      map.removeLayer(fg);
+      editGroupRef.current = null;
+      editLayerRef.current = null;
+      map.doubleClickZoom?.enable?.();
+    };
+    // editShapeKey stabilizes object identity so mid-drag remounts don't wipe edits
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, enabled, showToolbar, editShapeKey, drawColor, onShapeEdited]);
+
+  // Commit edited geometry when parent bumps token (not on callback identity churn)
+  useEffect(() => {
+    if (!editCommitToken || editCommitToken === lastCommitTokenRef.current) return;
+    lastCommitTokenRef.current = editCommitToken;
+    if (!onShapeEdited) return;
+    const layer = editLayerRef.current;
+    if (!layer) return;
+    try {
+      editHandlerRef.current?.save?.();
+    } catch {
+      /* ignore */
+    }
+    const shape = layerToShape(layer);
+    if (shape) onShapeEdited(shape);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editCommitToken]);
 
   return null;
 }

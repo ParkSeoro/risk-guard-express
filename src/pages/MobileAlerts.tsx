@@ -1,29 +1,37 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useNavigateMobileHome } from "@/lib/mobileNav";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Bell, CheckCheck, Settings } from "lucide-react";
+import { Bell, CheckCheck, Settings } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { resolveNotificationRoute } from "@/lib/notificationRoutes";
+import MobilePageHeader from "@/components/mobile/MobilePageHeader";
 
 export default function MobileAlerts() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const goMobileHome = useNavigateMobileHome();
   const [items, setItems] = useState<any[]>([]);
 
   const load = async () => {
     if (!user) return;
-    const { data, error } = await supabase.from("notifications").select("*")
-      .eq("user_id", user.id).order("created_at", { ascending: false }).limit(50);
-    if (error) { (await import("sonner")).toast.error("알림 불러오기 실패: " + error.message); return; }
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) {
+      (await import("sonner")).toast.error("알림 불러오기 실패: " + error.message);
+      return;
+    }
     setItems(data || []);
   };
-  useEffect(() => { load(); }, [user]);
+  useEffect(() => {
+    load();
+  }, [user]);
 
   const handle = async (n: any) => {
     if (!n.is_read) await supabase.from("notifications").update({ is_read: true }).eq("id", n.id);
@@ -33,38 +41,43 @@ export default function MobileAlerts() {
 
   const markAll = async () => {
     if (!user) return;
-    await supabase.from("notifications").update({ is_read: true }).eq("user_id", user.id).eq("is_read", false);
+    await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("user_id", user.id)
+      .eq("is_read", false);
     load();
   };
 
   return (
-    <div className="min-h-screen bg-muted/30 pb-24">
-      <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
-        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => goMobileHome()}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="font-bold text-lg flex-1">알림</div>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="text-primary-foreground"
-          onClick={() => navigate("/app/worker/notifications")}
-          title="알림 설정"
-        >
-          <Settings className="h-5 w-5" />
-        </Button>
-        <Button size="sm" variant="ghost" className="text-primary-foreground" onClick={markAll}>
-          <CheckCheck className="h-4 w-4 mr-1" /> 모두 읽음
-        </Button>
-      </header>
-      <main className="p-4 space-y-2 max-w-md mx-auto">
+    <div className="max-w-md mx-auto" data-testid="mobile-alerts">
+      <MobilePageHeader
+        title="알림"
+        actions={
+          <>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8"
+              onClick={() => navigate("/app/worker/notifications")}
+              title="알림 설정"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+            <Button size="sm" variant="ghost" className="h-8 px-2 text-xs" onClick={markAll}>
+              <CheckCheck className="h-3.5 w-3.5 mr-1" /> 모두 읽음
+            </Button>
+          </>
+        }
+      />
+      <main className="px-4 pb-4 space-y-2">
         {items.length === 0 && (
           <div className="py-12 text-center text-muted-foreground">
             <Bell className="h-10 w-10 mx-auto opacity-30" />
             <div className="mt-2 text-sm">알림이 없습니다</div>
           </div>
         )}
-        {items.map(n => (
+        {items.map((n) => (
           <Card key={n.id} className={!n.is_read ? "border-primary/50 bg-primary/5" : ""}>
             <CardContent className="pt-3 pb-3 cursor-pointer active:bg-muted" onClick={() => handle(n)}>
               <div className="flex justify-between items-start gap-2">

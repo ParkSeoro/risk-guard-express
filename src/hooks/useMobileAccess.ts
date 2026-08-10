@@ -8,6 +8,7 @@ import {
 } from "@/lib/companyDocScope";
 import { normalizeCompanyType, type CompanyTypeCode } from "@/lib/companyTypes";
 import { usePreview } from "@/contexts/PreviewContext";
+import { resolveGlobalMobileRole } from "@/lib/mobileShell";
 
 export type MobileRole = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor' | 'site_supervisor' | 'worker' | 'viewer' | 'contractor';
 
@@ -90,7 +91,8 @@ export function useMobileAccess() {
       }
       if (!user || !projectId) {
         if (!cancelled) {
-          setRole('viewer');
+          // Keep manager/master bucket from global roles — do not drop to worker UI
+          setRole(resolveGlobalMobileRole(hasRole) as MobileRole);
           setCompanyId(null);
           setCompanyType(null);
           setAccessibleCompanyIds([]); // restrictive until known
@@ -126,7 +128,7 @@ export function useMobileAccess() {
       }
     })();
     return () => { cancelled = true; };
-  }, [user, projectId, isMaster, preview.isPreview, preview.syntheticRole]);
+  }, [user, projectId, isMaster, preview.isPreview, preview.syntheticRole, hasRole]);
 
   /**
    * Feature ACL (includes safety_manager). NOT company-scope —

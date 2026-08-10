@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mobileTabsForBucket, resolveMobileShellBucket } from "@/lib/mobileShell";
+import {
+  mobileTabsForBucket,
+  resolveGlobalMobileRole,
+  resolveMobileShellBucket,
+} from "@/lib/mobileShell";
 import { canMobileApprove, mobileCapabilities } from "@/lib/mobileCapabilities";
 import { previewModeToRole } from "@/contexts/PreviewContext";
 
@@ -9,6 +13,14 @@ describe("mobile shell role buckets", () => {
     expect(resolveMobileShellBucket("supervisor")).toBe("manager");
     expect(resolveMobileShellBucket("safety_manager")).toBe("manager");
     expect(resolveMobileShellBucket("master", true)).toBe("master");
+  });
+
+  it("keeps manager tabs when project unset via global role fallback", () => {
+    expect(resolveGlobalMobileRole((r) => r === "site_manager")).toBe("site_manager");
+    expect(resolveMobileShellBucket(resolveGlobalMobileRole((r) => r === "site_manager"))).toBe(
+      "manager",
+    );
+    expect(resolveGlobalMobileRole(() => false)).toBe("viewer");
   });
 
   it("gives managers approvals + alerts inbox; workers get alerts not approvals", () => {
@@ -22,6 +34,8 @@ describe("mobile shell role buckets", () => {
     expect(masterTabs).toContain("alerts");
     expect(workerTabs).toContain("today");
     expect(managerTabs).toContain("today");
+    expect(mobileTabsForBucket("manager").find((t) => t.key === "tasks")?.label).toBe("현장");
+    expect(mobileTabsForBucket("worker").find((t) => t.key === "tasks")?.label).toBe("할 일");
   });
 
   it("approval capability follows manager bucket", () => {

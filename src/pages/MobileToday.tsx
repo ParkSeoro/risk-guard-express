@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
@@ -18,9 +18,13 @@ import {
   AlertTriangle,
   Crosshair,
   Bell,
+  Share,
 } from "lucide-react";
 import WorkerDailyHome from "@/pages/WorkerDailyHome";
 import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
+import { isIosSafariTab } from "@/lib/pushSubscription";
+import { isIosWebClient, isWebStandalone } from "@/lib/iosWebPath";
+import { isNativeApp } from "@/lib/native/isNativeApp";
 
 export default function MobileToday() {
   const { role, isMaster, projectId, loading } = useMobileAccess();
@@ -38,6 +42,7 @@ export default function MobileToday() {
   if (!manager) {
     return (
       <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="worker-today">
+        <IosWebPathBanner />
         <MobileWeatherCard projectId={projectId || preview.previewProjectId} />
         <HealthDueCard projectId={projectId || preview.previewProjectId} />
         <div className="rounded-xl border bg-background overflow-hidden">
@@ -56,6 +61,29 @@ export default function MobileToday() {
       role={effectiveRole}
       isMaster={preview.isPreview ? effectiveRole === "master" : isMaster}
     />
+  );
+}
+
+/** iPhone Safari tab: nudge PWA + honest native-only gaps. Hidden in Capacitor / standalone. */
+function IosWebPathBanner() {
+  const show = useMemo(
+    () => !isNativeApp() && isIosWebClient() && !isWebStandalone(),
+    [],
+  );
+  if (!show) return null;
+  return (
+    <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2.5 text-[11px] text-muted-foreground leading-relaxed space-y-1">
+      <p className="font-medium text-foreground flex items-center gap-1.5">
+        <Share className="h-3.5 w-3.5" /> iPhone · 홈 화면 추가 권장
+      </p>
+      <p>
+        Safari 공유 → 「홈 화면에 추가」하면 앱처럼 쓰고 푸시도 받을 수 있습니다.
+        {isIosSafariTab() ? " (지금 Safari 탭에서는 푸시가 제한됩니다)" : ""}
+      </p>
+      <p className="text-[10px]">
+        Android 앱과 화면·기능은 동일합니다. 백그라운드 GPS·무음 사이렌만 앱 전용입니다.
+      </p>
+    </div>
   );
 }
 
@@ -185,6 +213,7 @@ function ManagerToday({
 
   return (
     <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="manager-today">
+      <IosWebPathBanner />
       <div className="flex items-center justify-between">
         <div>
           <div className="text-base font-bold">오늘</div>

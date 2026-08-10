@@ -2,7 +2,7 @@
   "name": "Safenex",
   "short_name": "Safenex",
   "description": "현장 산업안전 통합관리 모바일 앱",
-  "start_url": "/app/worker/menu",
+  "start_url": "/app/worker/today",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

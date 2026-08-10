@@ -16,7 +16,9 @@ function isAllowedPath(pathname: string): boolean {
     pathname === "/login" ||
     pathname === "/register" ||
     pathname.startsWith("/login/") ||
-    pathname.startsWith("/register/")
+    pathname.startsWith("/register/") ||
+    pathname === "/worker/register" ||
+    pathname.startsWith("/worker/register")
   ) {
     return true;
   }
@@ -135,13 +137,17 @@ export default function InstallPrompt() {
           <Download className="h-5 w-5" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-sm">홈 화면에 앱 설치</div>
+          <div className="font-semibold text-sm">
+            {platform === "ios" ? "홈 화면에 추가 (iPhone)" : "홈 화면에 앱 설치"}
+          </div>
           <button
             onClick={copyUrl}
             className="text-xs text-muted-foreground truncate block w-full text-left hover:text-primary"
             title="주소 복사"
           >
-            {deployUrl.replace(/^https?:\/\//, "")}
+            {platform === "ios"
+              ? "Safari 공유 → 홈 화면에 추가 · Android 앱과 동일 화면"
+              : deployUrl.replace(/^https?:\/\//, "")}
           </button>
         </div>
         <Button size="sm" onClick={() => void install()}>

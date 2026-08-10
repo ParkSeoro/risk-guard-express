@@ -1,10 +1,26 @@
 /**
  * Sync work_permit_workers to today's on-site (checked-in) workers
  * scoped to the permit's company (never mix peer contractors).
+ *
+ * Policy:
+ * - Early day: expected assignment on the permit is SSOT → keep TBM aligned via syncPermitCrewToTbm.
+ * - When real check-ins exist: this replace is safe.
+ * - Never wipe an existing crew when on-site (or company-scoped) count is 0.
  */
 import { supabase } from "@/integrations/supabase/client";
 import { buildPersonnelCountPatch, filterPermitAssignableWorkers } from "@/lib/permitWorkers";
 import { todaySeoulDate } from "@/lib/dailyWorkAck";
+import {
+  EMPTY_ONSITE_CREW_GUARD,
+  EMPTY_SCOPED_ONSITE_GUARD,
+  shouldRefuseEmptyCrewReplace,
+} from "@/lib/permitCrewPolicy";
+
+export {
+  EMPTY_ONSITE_CREW_GUARD,
+  EMPTY_SCOPED_ONSITE_GUARD,
+  shouldRefuseEmptyCrewReplace,
+} from "@/lib/permitCrewPolicy";
 
 export async function syncPermitCrewFromOnSite(opts: {
   permitId: string;
@@ -51,19 +67,8 @@ export async function syncPermitCrewFromOnSite(opts: {
     if (row.worker_id && !row.exit_at) onSiteSet.add(row.worker_id);
   }
   const candidateIds = [...onSiteSet];
-  if (candidateIds.length === 0) {
-    const { error: delEmpty } = await supabase
-      .from("work_permit_workers" as any)
-      .delete()
-      .eq("work_permit_id", opts.permitId);
-    if (delEmpty) return { ok: false, error: delEmpty.message };
-    const patch = buildPersonnelCountPatch(opts.formData ?? (permit as any).form_data, 0);
-    const { error: uerr } = await supabase
-      .from("work_permits" as any)
-      .update(patch as any)
-      .eq("id", opts.permitId);
-    if (uerr) return { ok: false, error: uerr.message };
-    return { ok: true, count: 0 };
+  if (shouldRefuseEmptyCrewReplace(candidateIds.length)) {
+    return { ok: false, error: EMPTY_ONSITE_CREW_GUARD };
   }
 
   const workers: any[] = [];
@@ -79,6 +84,9 @@ export async function syncPermitCrewFromOnSite(opts: {
 
   const scoped = filterPermitAssignableWorkers(workers, companyId, companyName);
   const ids = scoped.map((w) => w.id);
+  if (shouldRefuseEmptyCrewReplace(ids.length)) {
+    return { ok: false, error: EMPTY_SCOPED_ONSITE_GUARD };
+  }
 
   const { error: delErr } = await supabase
     .from("work_permit_workers" as any)
@@ -86,16 +94,14 @@ export async function syncPermitCrewFromOnSite(opts: {
     .eq("work_permit_id", opts.permitId);
   if (delErr) return { ok: false, error: delErr.message };
 
-  if (ids.length > 0) {
-    const rows = ids.map((worker_id) => ({
-      work_permit_id: opts.permitId,
-      worker_id,
-      project_id: opts.projectId,
-      notification_status: "pending",
-    }));
-    const { error: insErr } = await supabase.from("work_permit_workers" as any).insert(rows);
-    if (insErr) return { ok: false, error: insErr.message };
-  }
+  const rows = ids.map((worker_id) => ({
+    work_permit_id: opts.permitId,
+    worker_id,
+    project_id: opts.projectId,
+    notification_status: "pending",
+  }));
+  const { error: insErr } = await supabase.from("work_permit_workers" as any).insert(rows);
+  if (insErr) return { ok: false, error: insErr.message };
 
   const patch = buildPersonnelCountPatch(opts.formData ?? (permit as any).form_data, ids.length);
   const { error: uerr } = await supabase

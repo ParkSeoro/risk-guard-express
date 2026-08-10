@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +16,7 @@ import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
 import { ensureTbmForPermit } from '@/lib/tbmFromPermit';
 import { closeExpiredTbmSessions } from '@/lib/tbmLifecycle';
+import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import { todayKst } from '@/lib/permitWorkDate';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -50,6 +52,9 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   const { profile } = useAuth();
   const { toast } = useToast();
   const { softDelete } = useSoftDelete();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusSessionId = searchParams.get('session');
+  const focusHandledRef = useRef<string | null>(null);
   const [sessions, setSessions] = useState<TbmSession[]>([]);
   const [participantCounts, setParticipantCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -346,6 +351,51 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     const { data } = await supabase.from('tbm_participations' as any).select('*').eq('tbm_session_id', s.id).order('participated_at');
     setParticipants((data as any) || []);
   };
+
+  // Deep-link from permit detail: ?session=<tbmId> → heal from permit crew, open participants
+  useEffect(() => {
+    if (!focusSessionId || loading || sessions.length === 0) return;
+    if (focusHandledRef.current === focusSessionId) return;
+    const target = sessions.find((s) => s.id === focusSessionId);
+    if (!target) return;
+    focusHandledRef.current = focusSessionId;
+
+    let cancelled = false;
+    (async () => {
+      const { data: linked } = await supabase
+        .from('work_permits' as any)
+        .select('id')
+        .eq('tbm_session_id', focusSessionId)
+        .or('is_deleted.is.null,is_deleted.eq.false')
+        .maybeSingle();
+      if (cancelled) return;
+      if ((linked as any)?.id) {
+        const sync = await syncPermitCrewToTbm({
+          permitId: (linked as any).id,
+          tbmSessionId: focusSessionId,
+        });
+        if (!cancelled && sync.ok && (sync.added > 0 || sync.removed > 0)) {
+          toast({
+            title: '허가서 명단 → TBM 맞춤',
+            description: `추가 ${sync.added} · 정리 ${sync.removed}`,
+          });
+        }
+      }
+      if (!cancelled) {
+        await openParts(target);
+        if (target.tbm_date) setDateFilter(target.tbm_date);
+        const next = new URLSearchParams(searchParams);
+        next.delete('session');
+        setSearchParams(next, { replace: true });
+        await load();
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot deep link
+  }, [focusSessionId, loading, sessions]);
 
   const printQr = () => {
     if (!qrSession || !qrDataUrl) return;

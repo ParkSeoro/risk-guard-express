@@ -12,7 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock, Users, ClipboardList, UserCheck, Sparkles, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock, Users, ClipboardList, UserCheck, Sparkles, CheckCircle2, RefreshCw } from 'lucide-react';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
@@ -23,6 +23,7 @@ import PermitWorkersPrintPage, {
 import type { PermitWorkerRow } from '@/lib/permitWorkers';
 import { canManagePermitCrew, ensureTbmForPermit } from '@/lib/tbmFromPermit';
 import { syncPermitCrewFromOnSite } from '@/lib/permitCrewSync';
+import { syncPermitCrewFromTbm } from '@/lib/syncPermitCrewFromTbm';
 import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import { printPermitBundle } from '@/lib/printPermitBundle';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
@@ -756,12 +757,41 @@ export default function WorkPermitDetail() {
               <Button size="sm" variant="outline" onClick={() => setWorkersDialogOpen(true)}>
                 예상 인원 배정
               </Button>
+              {canEditCrew && permit?.tbm_session_id && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={crewBusy}
+                  title="연결된 TBM 참석자로 허가서 명단을 맞춥니다"
+                  onClick={async () => {
+                    if (!permit?.tbm_session_id) return;
+                    setCrewBusy(true);
+                    const res = await syncPermitCrewFromTbm({
+                      permitId: permit.id,
+                      projectId: permit.project_id,
+                      tbmSessionId: permit.tbm_session_id,
+                      formData: data as any,
+                    });
+                    setCrewBusy(false);
+                    if (!res.ok) {
+                      toast({ title: 'TBM→허가서 맞춤 실패', description: res.error, variant: 'destructive' });
+                      return;
+                    }
+                    toast({ title: `TBM 참석 ${res.count}명으로 허가서 맞춤` });
+                    setData((d) => ({ ...d, personnel_count: res.count }));
+                    await load();
+                  }}
+                >
+                  <RefreshCw className="h-4 w-4 mr-1" />
+                  TBM으로 맞추기
+                </Button>
+              )}
               {canEditCrew && (
                 <Button
                   size="sm"
                   variant="secondary"
                   disabled={crewBusy}
-                  title="오늘 출근(미퇴근) 근로자로 명단을 갱신합니다"
+                  title="오늘 출근(미퇴근) 근로자로 명단을 갱신한 뒤 TBM과 맞춥니다. 출근 0명이면 기존 배정을 유지합니다."
                   onClick={async () => {
                     if (!permit) return;
                     setCrewBusy(true);
@@ -770,9 +800,17 @@ export default function WorkPermitDetail() {
                       projectId: permit.project_id,
                       formData: data as any,
                     });
-                    setCrewBusy(false);
                     if (!res.ok) {
-                      toast({ title: '출근자 반영 실패', description: res.error, variant: 'destructive' });
+                      // Keep expected crew; still push permit → TBM so both stay aligned
+                      if (permit.tbm_session_id && assignedWorkers.length > 0) {
+                        await syncPermitCrewToTbm({
+                          permitId: permit.id,
+                          tbmSessionId: permit.tbm_session_id,
+                        });
+                      }
+                      setCrewBusy(false);
+                      toast({ title: '명단 유지', description: res.error });
+                      await load();
                       return;
                     }
                     if (permit.tbm_session_id) {
@@ -781,14 +819,18 @@ export default function WorkPermitDetail() {
                         tbmSessionId: permit.tbm_session_id,
                       });
                       if (!tbmSync.ok) {
+                        setCrewBusy(false);
                         toast({
                           title: '출근 반영됨 · TBM 동기화 실패',
                           description: tbmSync.error,
                           variant: 'destructive',
                         });
+                        await load();
+                        return;
                       }
                     }
-                    toast({ title: `실출근 ${res.count}명으로 명단 갱신` });
+                    setCrewBusy(false);
+                    toast({ title: `실출근 ${res.count}명 · TBM과 맞춤` });
                     setData((d) => ({ ...d, personnel_count: res.count }));
                     await load();
                   }}
@@ -801,7 +843,7 @@ export default function WorkPermitDetail() {
           </div>
           {assignedWorkers.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              전날: 예상 인원 배정 → 당일: 「실출근으로 갱신」으로 맞춥니다. 인쇄 시 인원 명단(을지)은 허가서와 별도 페이지로 나갑니다.
+              지금은 예상 배정 ↔ TBM을 맞춥니다. 출퇴근·TBM 참여가 쌓이면 「TBM으로 맞추기」또는 「실출근으로 갱신」으로 허가서를 맞추세요. 출근 0명이면 배정을 지우지 않습니다.
             </p>
           ) : (
             <ul className="text-xs grid sm:grid-cols-2 gap-1">
@@ -833,7 +875,16 @@ export default function WorkPermitDetail() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => navigate('/app/admin/tbm-logs')}
+                  onClick={async () => {
+                    // Align TBM attendees to current permit crew before opening
+                    if (assignedWorkers.length > 0) {
+                      await syncPermitCrewToTbm({
+                        permitId: permit.id,
+                        tbmSessionId: permit.tbm_session_id!,
+                      });
+                    }
+                    navigate(`/app/admin/tbm-logs?session=${encodeURIComponent(permit.tbm_session_id!)}`);
+                  }}
                 >
                   TBM 일지 열기
                 </Button>

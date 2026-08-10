@@ -50,11 +50,12 @@ describe("permitWorkers helpers", () => {
     ).toEqual([]);
   });
 
-  it("keeps 15 crew on one print page at current density", () => {
-    const rows = Array.from({ length: 15 }, (_, i) => ({ id: String(i + 1) }));
+  it("keeps 20 crew on one print page at signature-safe density (22/page)", () => {
+    const rows = Array.from({ length: 20 }, (_, i) => ({ id: String(i + 1) }));
     const pages = chunkForPrintPages(rows, CREW_PRINT_ROWS_PER_PAGE);
+    expect(CREW_PRINT_ROWS_PER_PAGE).toBe(22);
     expect(pages).toHaveLength(1);
-    expect(pages[0]).toHaveLength(15);
+    expect(pages[0]).toHaveLength(20);
   });
 
   it("paginates when crew exceeds one page without dropping rows", () => {

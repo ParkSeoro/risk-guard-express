@@ -54,8 +54,12 @@ export function formatWorkerPhone(phone?: string | null): string {
   return phone;
 }
 
-/** Dense A4 portrait crew sheet (header + signature column). */
-export const CREW_PRINT_ROWS_PER_PAGE = 18;
+/**
+ * A4 portrait crew sheet (을지).
+ * Sized for ~10mm signature rows (h-10) — do not raise without keeping row height.
+ * ~22 fits remaining printable height after title/meta; 30 would force shrinking signatures.
+ */
+export const CREW_PRINT_ROWS_PER_PAGE = 22;
 export const TBM_PRINT_ROWS_PER_PAGE = 14;
 
 /** Split rows into print pages (empty → one empty page). */

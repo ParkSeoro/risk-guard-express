@@ -27,7 +27,8 @@ import {
 } from '@/lib/workerAuth';
 import { writeLoginIntent } from '@/components/AuthGuard';
 import { isNativeApp } from '@/lib/native/isNativeApp';
-import { openPlayStore, playStoreWebUrl } from '@/lib/playStore';
+import { openPlayStore } from '@/lib/playStore';
+import { isIosWebClient } from '@/lib/iosWebPath';
 
 type Mode = 'login' | 'signup';
 type Audience = 'worker' | 'manager';
@@ -576,7 +577,19 @@ const Auth = () => {
                     </p>
                   </div>
                 )}
-                {!isNativeApp() && (
+                {!isNativeApp() && isIosWebClient() && (
+                  <div className="rounded-lg border bg-muted/40 p-3 text-xs text-muted-foreground leading-relaxed space-y-1">
+                    <p className="font-medium text-foreground">iPhone · Safari 웹 이용</p>
+                    <p>
+                      App Store 앱이 없습니다. 이 화면에서 가입하면 Android 앱과 같은 메뉴를
+                      씁니다. 가입 후 Safari 공유 → 「홈 화면에 추가」를 권장합니다.
+                    </p>
+                    <p className="text-[11px]">
+                      참고: 백그라운드 GPS·무음 강제 사이렌은 Android 앱 전용입니다.
+                    </p>
+                  </div>
+                )}
+                {!isNativeApp() && !isIosWebClient() && (
                   <Button
                     type="button"
                     variant="secondary"

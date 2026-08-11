@@ -61,7 +61,13 @@ import ApprovalLineManager, { type ApprovalLine } from '@/components/ApprovalLin
 import WorkerParticipationPanel from '@/components/assessment/WorkerParticipationPanel';
 import { evaluateResidualHigh } from '@/lib/residualRiskGuardrails';
 import { buildAssessmentSubmitPreflight } from '@/lib/assessmentSubmitPreflight';
-import { validateApprovalLinesSSOT } from '@/lib/approvalRules';
+import {
+  POSITION_LABELS as SSOT_POSITION_LABELS,
+  isSubmitterApprovalStep,
+  sequentialDisplayStatus,
+  sortStepsByHierarchy,
+  validateApprovalLinesSSOT,
+} from '@/lib/approvalRules';
 import * as XLSX from 'xlsx';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 
@@ -1154,8 +1160,11 @@ const AssessmentRunDetail = () => {
     log('제출', 'assessment_run', runId!, run?.project_id);
   };
 
-  // Position-based step order for 4-step approval
-  const APPROVAL_STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };
+  /** Sort approval rows: step_order first, then hierarchy SSOT (시공→안전→소장→CM→SM) */
+  const sortApprovalRows = (rows: any[]) =>
+    sortStepsByHierarchy(
+      [...rows].sort((a, b) => (a.step_order ?? 99) - (b.step_order ?? 99)),
+    );
 
   const applyApprovalPreflightFromLines = useCallback((linesToUse: ApprovalLine[]) => {
     const missingLabels = (linesToUse || [])
@@ -1725,23 +1734,15 @@ const AssessmentRunDetail = () => {
     }
   };
 
-  const POSITION_LABELS_EXPORT: Record<string, string> = {
-    site_supervisor: '관리감독자', supervisor: '감리', safety_manager: '안전관리자',
-    site_manager: '현장대리인', project_admin: '프로젝트 관리자',
-  };
-
   const handleExportXLSX = async () => {
     if (!project) return;
     try {
       // Build approval rows from latestApprovals (SSOT) to match PDF
-      const approvalRows = latestApprovals
-        .filter(a => a.status !== '취소')
-        .sort((a: any, b: any) => (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99))
-        .map(a => ({
+      const approvalRows = sortApprovalRows(latestApprovals.filter((a) => a.status !== '취소')).map((a) => ({
           step: a.step || '',
           approver_name: a.approver_name || '',
           company_name: a.company_name || '',
-          position_label: POSITION_LABELS_EXPORT[a.position] || a.position || '',
+          position_label: SSOT_POSITION_LABELS[a.position] || a.position || '',
           status: a.status,
           approved_at: a.approved_at,
         }));
@@ -2266,34 +2267,46 @@ const AssessmentRunDetail = () => {
       </div>
 
       {/* Approval Status Display (SSOT) */}
-      {latestApprovals.length > 0 && (
+      {latestApprovals.length > 0 && (() => {
+        const activeApprovals = sortApprovalRows(
+          latestApprovals.filter((a) => a.status !== '취소'),
+        );
+        const version = Math.max(
+          0,
+          ...latestApprovals.map((a) => Number(a.approval_version) || 1),
+        );
+        return (
         <div className="space-y-2 print:hidden">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-muted-foreground font-medium">결재현황:</span>
-            {latestApprovals
-              .filter(a => a.status !== '취소')
-              .sort((a: any, b: any) => (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99))
-              .map((a: any) => (
+            {activeApprovals.map((a: any) => {
+                const displayStatus = sequentialDisplayStatus(activeApprovals, a);
+                const submitter = isSubmitterApprovalStep(a);
+                return (
                 <Badge key={a.id} variant="outline" className={`text-[10px] gap-1 ${
-                  a.status === '승인' ? 'bg-success/10 text-success border-success/30' :
-                  a.status === '반려' ? 'bg-destructive/10 text-destructive border-destructive/30' :
-                  a.status === '대기' ? 'bg-muted text-muted-foreground' :
-                  'bg-muted/50 text-muted-foreground/50'
+                  displayStatus === '승인' ? 'bg-success/10 text-success border-success/30' :
+                  displayStatus === '반려' ? 'bg-destructive/10 text-destructive border-destructive/30' :
+                  displayStatus === '진행중' ? 'bg-primary/10 text-primary border-primary/30' :
+                  'bg-muted text-muted-foreground'
                 }`}>
-                  {a.status === '승인' ? <CheckCircle2 className="h-3 w-3" /> :
-                   a.status === '반려' ? <XCircle className="h-3 w-3" /> :
+                  {displayStatus === '승인' ? <CheckCircle2 className="h-3 w-3" /> :
+                   displayStatus === '반려' ? <XCircle className="h-3 w-3" /> :
                    <Clock className="h-3 w-3" />}
                   {a.step}: {a.approver_name || '미지정'}
                   {a.company_name ? ` (${a.company_name})` : ''}
-                  {a.status !== '대기' && ` [${a.status}]`}
+                  {displayStatus === '승인' && submitter ? ' [상신완료]'
+                    : displayStatus === '진행중' ? ' [결재중]'
+                    : displayStatus === '대기' ? ' [순번대기]'
+                    : displayStatus !== '대기' ? ` [${displayStatus}]` : ''}
                 </Badge>
-              ))}
-            {latestApprovals[0]?.approval_version > 1 && (
-              <Badge variant="outline" className="text-[9px]">{latestApprovals[0].approval_version}차 상신</Badge>
+                );
+              })}
+            {version > 1 && (
+              <Badge variant="outline" className="text-[9px]">재상신 {version}차</Badge>
             )}
           </div>
           {/* Signature Table - 서명란 (auto-populated from approval data) */}
-          {latestApprovals.filter(a => a.status !== '취소').length > 0 && (
+          {activeApprovals.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-[10px] border-collapse">
                 <thead>
@@ -2306,26 +2319,30 @@ const AssessmentRunDetail = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {latestApprovals
-                    .filter(a => a.status !== '취소')
-                    .sort((a: any, b: any) => (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99))
-                    .map((a: any) => {
-                      const positionLabel = a.position === 'site_supervisor' ? '관리감독자' :
-                        a.position === 'supervisor' ? '감리' :
-                        a.position === 'safety_manager' ? '안전관리자' :
-                        a.position === 'site_manager' ? '현장대리인' :
-                        a.position === 'project_admin' ? '프로젝트 관리자' : a.position || '';
+                  {activeApprovals.map((a: any) => {
+                      const positionLabel = SSOT_POSITION_LABELS[a.position]
+                        || SSOT_POSITION_LABELS[(a.position || '').toLowerCase()]
+                        || a.position
+                        || '—';
+                      const displayStatus = sequentialDisplayStatus(activeApprovals, a);
+                      const submitter = isSubmitterApprovalStep(a);
                       return (
-                        <tr key={a.id}>
+                        <tr key={a.id} className={displayStatus === '진행중' ? 'bg-primary/5' : undefined}>
                           <td className="border px-2 py-1 font-medium">{a.step}</td>
                           <td className="border px-2 py-1">{a.approver_name || '—'}</td>
                           <td className="border px-2 py-1">{a.company_name || '—'}</td>
-                          <td className="border px-2 py-1">{positionLabel || '—'}</td>
+                          <td className="border px-2 py-1">{positionLabel}</td>
                           <td className="border px-2 py-1">
-                            {a.status === '승인' && a.approved_at
-                              ? new Date(a.approved_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-                              : a.status === '반려' ? <span className="text-destructive">반려</span>
-                              : <span className="text-muted-foreground">대기</span>}
+                            {displayStatus === '승인' && a.approved_at
+                              ? (
+                                <span>
+                                  {new Date(a.approved_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                  {submitter ? <span className="text-muted-foreground"> · 상신</span> : null}
+                                </span>
+                              )
+                              : displayStatus === '반려' ? <span className="text-destructive">반려</span>
+                              : displayStatus === '진행중' ? <span className="text-primary font-medium">결재중</span>
+                              : <span className="text-muted-foreground">순번대기</span>}
                           </td>
                         </tr>
                       );
@@ -2334,8 +2351,15 @@ const AssessmentRunDetail = () => {
               </table>
             </div>
           )}
+          {activeApprovals.length > 0
+            && !activeApprovals.some((a) => a.position === 'owner_cm' || a.position === 'owner_sm') && (
+            <p className="text-[10px] text-warning">
+              발주처(CM/SM) 단계가 이 상신 버전에 없습니다. 결재선에 CM·SM을 넣고 재상신하세요.
+            </p>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Action Buttons — strict state machine */}
       <div className="flex items-center gap-2 print:hidden flex-wrap">
@@ -2472,13 +2496,13 @@ const AssessmentRunDetail = () => {
       )}
 
       {/* Status notices */}
-      {['보완요청', '보완중', '반려'].includes(run.status) && (
+      {isReturned && (
         <Card className="border-warning print:hidden">
           <CardContent className="py-3">
             <div className="flex items-center gap-2 text-sm text-warning">
               <AlertTriangle className="h-4 w-4" />
-              <span className="font-medium">보완 필요:</span>
-              <span>지적사항을 수정한 후 재제출 → 재검증 → 재상신하세요.</span>
+              <span className="font-medium">반려·보완 필요:</span>
+              <span>수정한 뒤 [재제출] 또는 [결재 상신]으로 다시 올리세요. (상신 취소가 아닙니다)</span>
             </div>
           </CardContent>
         </Card>

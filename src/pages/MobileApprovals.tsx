@@ -16,6 +16,7 @@ import MobilePageHeader from "@/components/mobile/MobilePageHeader";
 import MobileProjectPicker from "@/components/mobile/MobileProjectPicker";
 import {
   approvalTimelineGroupKey,
+  entityTypeLabel,
   isSubmitterApprovalStep,
 } from "@/lib/approvalRules";
 import {
@@ -23,16 +24,6 @@ import {
   permitPostStepBadge,
   permitPostStepApproveLabel,
 } from "@/lib/permitPostApproval";
-
-const ENTITY_LABEL: Record<string, string> = {
-  work_plan: "작업계획서",
-  work_permit: "작업허가서",
-  assessment_run: "위험성평가",
-  safety_cost: "산업안전보건관리비",
-  incident: "사고보고",
-  emergency_drill: "비상대피훈련",
-  tbm: "TBM 일지",
-};
 
 type TabKey = "mine" | "submitted" | "completed" | "rejected";
 
@@ -186,7 +177,7 @@ export default function MobileApprovals() {
       <Card key={r.approval_id}>
         <CardContent className="pt-4 space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="secondary" className="text-xs">{ENTITY_LABEL[r.entity_type] || r.entity_type}</Badge>
+            <Badge variant="secondary" className="text-xs">{entityTypeLabel(r.entity_type)}</Badge>
             {badge && (
               <Badge className="text-xs bg-amber-500/15 text-amber-700 border-amber-500/30" variant="outline">
                 {badge}
@@ -263,14 +254,14 @@ export default function MobileApprovals() {
       const first = arr[0];
       const entityType = first?.entity_type || "";
       const entityId = first?.entity_id || "";
-      const title = first?.step || ENTITY_LABEL[entityType] || entityType || "결재";
+      const title = first?.step || entityTypeLabel(entityType);
       const rejected = arr.some((s) => s.status === "반려");
       const allApproved = arr.every((s) => s.status === "승인" || s.status === "취소");
       return (
         <Card key={key}>
           <CardContent className="pt-4 space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="secondary" className="text-xs">{ENTITY_LABEL[entityType] || entityType || "문서"}</Badge>
+              <Badge variant="secondary" className="text-xs">{entityTypeLabel(entityType)}</Badge>
               <Badge
                 variant="outline"
                 className={`text-xs ${

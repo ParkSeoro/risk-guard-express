@@ -196,11 +196,13 @@ const Approvals = () => {
     const r: any = data;
     if (error || r?.error) {
       const code = r?.error || error?.message || '';
-      const msg = code === 'ALREADY_DECIDED' ? '이미 승인/반려된 단계가 있어 회수할 수 없습니다.'
+      const msg = code === 'ALREADY_REJECTED' ? '이미 반려된 결재입니다. 문서를 수정한 뒤 재상신하세요.'
+        : code === 'ALREADY_DECIDED' ? '이미 승인/반려된 단계가 있어 회수할 수 없습니다.'
         : code === 'NOT_SUBMITTER' ? '상신자 본인만 회수할 수 있습니다.'
         : code === 'NO_APPROVAL' ? '결재 정보를 찾을 수 없습니다.'
         : code;
       toast({ title: '회수 실패', description: msg, variant: 'destructive' });
+      fetchData(); fetchEntityPending();
       return;
     }
     toast({ title: '결재 회수 완료', description: '문서가 작성중 상태로 되돌아갔습니다.' });

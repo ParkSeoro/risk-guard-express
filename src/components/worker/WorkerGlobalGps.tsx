@@ -7,7 +7,7 @@
  * Leave-site stops tracking; managers poll occasionally to resume when back on site.
  * Workers resume on next check-in (mobile:resume-gps-tracking).
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSystemRealtime } from "@/providers/SystemRealtimeProvider";
 import { supabase } from "@/integrations/supabase/client";
@@ -28,26 +28,63 @@ import { todaySeoulDate } from "@/lib/dailyWorkAck";
 
 const PROJECT_KEY = "selectedProjectId";
 
+export type GpsBlockReason =
+  | "no_consent"
+  | "no_permission"
+  | "no_checkin"
+  | "fence_probe_failed"
+  | null;
+
+const BLOCK_LABEL: Record<Exclude<GpsBlockReason, null>, string> = {
+  no_consent: "GPS 꺼짐 · 위치 동의 필요",
+  no_permission: "GPS 꺼짐 · 앱 권한 미완료",
+  no_checkin: "GPS 꺼짐 · 출근 후 추적",
+  fence_probe_failed: "GPS 꺼짐 · 현장 밖(펜스)",
+};
+
+/** Small amber badge — also used when WorkerGlobalGps is not mounted (no consent gate). */
+export function GpsBlockBadge({ reason }: { reason: GpsBlockReason }) {
+  if (!reason) return null;
+  return (
+    <div
+      className="fixed right-3 z-[45] max-w-[min(100%-1.5rem,16rem)] rounded-md border border-amber-500/40 bg-amber-50 text-amber-950 px-2.5 py-1.5 text-[11px] font-medium shadow-sm pointer-events-none bottom-[calc(5.75rem+var(--sab))]"
+      data-testid="gps-block-reason"
+      data-gps-block={reason}
+      role="status"
+    >
+      {BLOCK_LABEL[reason]}
+    </div>
+  );
+}
+
 export default function WorkerGlobalGps() {
   const { user, profile, roles, hasRole } = useAuth();
   const { startGpsTracking, stopGpsTracking, gpsTracking } = useSystemRealtime();
   const workerIdRef = useRef<string | null>(null);
   const lastKeyRef = useRef<string | null>(null);
   const managerRef = useRef(false);
+  const [gpsBlockReason, setGpsBlockReason] = useState<GpsBlockReason>(null);
 
   useEffect(() => {
     if (!user) {
       stopGpsTracking();
       lastKeyRef.current = null;
+      setGpsBlockReason(null);
       return;
     }
     normalizeTrackingConsentStorage();
     if (profile?.agreed_to_location === true && !hasTrackingConsent()) {
       setTrackingConsent(true);
     }
-    if (!hasTrackingConsent() && profile?.agreed_to_location !== true) return;
+    if (!hasTrackingConsent() && profile?.agreed_to_location !== true) {
+      setGpsBlockReason("no_consent");
+      return;
+    }
     // Native onboarding flag is only required inside Capacitor (PWA/web must not soft-lock GPS).
-    if (isNativeApp() && !hasCompletedNativePermissions()) return;
+    if (isNativeApp() && !hasCompletedNativePermissions()) {
+      setGpsBlockReason("no_permission");
+      return;
+    }
 
     let cancelled = false;
     let resumeTimer: number | null = null;
@@ -174,6 +211,7 @@ export default function WorkerGlobalGps() {
         (hasRole("master") && "master") ||
         (roles || []).find((r) => r && r !== "master") ||
         null;
+      setGpsBlockReason(null);
       startGpsTracking({
         project_id: projectId,
         worker_id: workerId || ban.worker_id || null,
@@ -229,6 +267,7 @@ export default function WorkerGlobalGps() {
           clearStickyDangerAlert();
           await startForProject(projectId);
         } else {
+          setGpsBlockReason("fence_probe_failed");
           stopGpsTracking();
           clearStickyDangerAlert();
           lastKeyRef.current = null;
@@ -245,6 +284,7 @@ export default function WorkerGlobalGps() {
         clearStickyDangerAlert();
         await startForProject(projectId);
       } else {
+        setGpsBlockReason("no_checkin");
         stopGpsTracking();
         clearStickyDangerAlert();
         lastKeyRef.current = null;
@@ -277,6 +317,7 @@ export default function WorkerGlobalGps() {
       if (!pid) return;
       lastKeyRef.current = null;
       if (managerRef.current) {
+        setGpsBlockReason("fence_probe_failed");
         stopGpsTracking();
         clearStickyDangerAlert();
         watchResumeNearSite(pid);
@@ -285,6 +326,7 @@ export default function WorkerGlobalGps() {
     const onCheckedOut = () => {
       clearResumePoll();
       lastKeyRef.current = null;
+      setGpsBlockReason("no_checkin");
       stopGpsTracking();
       clearStickyDangerAlert();
     };
@@ -317,8 +359,17 @@ export default function WorkerGlobalGps() {
 
   useEffect(() => () => stopGpsTracking(), [stopGpsTracking]);
 
-  if (import.meta.env.DEV && gpsTracking) {
-    return <span className="sr-only" data-gps="on" />;
-  }
-  return null;
+  // Clear badge once tracking is actually on (covers race / resume)
+  useEffect(() => {
+    if (gpsTracking) setGpsBlockReason(null);
+  }, [gpsTracking]);
+
+  return (
+    <>
+      <GpsBlockBadge reason={gpsBlockReason} />
+      {import.meta.env.DEV && gpsTracking ? (
+        <span className="sr-only" data-gps="on" />
+      ) : null}
+    </>
+  );
 }

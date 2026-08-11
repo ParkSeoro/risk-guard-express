@@ -3215,7 +3215,7 @@ const AssessmentRunDetail = () => {
                   { key: 'legal_basis', label: '법적근거' },
                 ].map(({ key, label }) => (
                   <div key={key} className="flex items-center gap-2">
-                    <span className="text-xs w-20 shrink-0">{label}</span>
+                    <span className="text-xs w-28 shrink-0">{label}</span>
                     <Select value={excelColumnMap[key] || '__none__'} onValueChange={v => setExcelColumnMap(prev => ({ ...prev, [key]: v === '__none__' ? '' : v }))}>
                       <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="선택" /></SelectTrigger>
                       <SelectContent>

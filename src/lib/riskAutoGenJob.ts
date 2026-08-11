@@ -305,11 +305,12 @@ async function assertCanInsertRiskItems(projectId: string, userId: string): Prom
   }
 
   const role = String((mem as any)?.role_new || '');
-  const allowed = new Set(['project_admin', 'safety_manager', 'site_manager', 'supervisor']);
+  // SSOT: 작성 주체 = site_supervisor(관리감독자). supervisor(감리)는 RO.
+  const allowed = new Set(['project_admin', 'safety_manager', 'site_manager', 'site_supervisor']);
   // masters may not have project_members row — allow empty and let insert RLS decide
   if (mem && role && !allowed.has(role)) {
     throw new Error(
-      `위험성평가 항목을 저장할 권한이 없습니다. 현재 역할: ${role || '없음'}. project_admin / safety_manager / site_manager / supervisor 계정이 필요합니다.`,
+      `위험성평가 항목을 저장할 권한이 없습니다. 현재 역할: ${role || '없음'}. project_admin / safety_manager / site_manager / site_supervisor(관리감독자) 계정이 필요합니다.`,
     );
   }
 }
@@ -743,7 +744,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
         const raw = insertErr?.message || '초안 행 저장에 실패했습니다.';
         if (/42501|row-level security|RLS/i.test(raw)) {
           throw new Error(
-            '위험성평가 항목을 저장할 권한이 없습니다. project_admin / safety_manager / site_manager / supervisor 계정으로 다시 시도하세요.',
+            '위험성평가 항목을 저장할 권한이 없습니다. project_admin / safety_manager / site_manager / site_supervisor(관리감독자) 계정으로 다시 시도하세요.',
           );
         }
         throw new Error(raw);

@@ -455,35 +455,29 @@ Deno.serve(async (req) => {
       }
     }
 
-    const payload = {
-      zone_id: matchedZoneId,
-      restricted_zone_id: matchedRestricted?.id ?? null,
-      zone_name: matchedRestricted?.name || zoneMeta?.name || null,
-      zone_type: matchedRestricted
-        ? "danger"
-        : zoneMeta?.zone_type || null,
-      source,
-      event_type: eventType,
-      event_insert_ok: eventType ? eventInsertError == null : null,
-      event_insert_error: eventInsertError,
-      lat: body.lat,
-      lng: body.lng,
-      raw_lat: rawLat,
-      raw_lng: rawLng,
-      calibrated: body.lat !== rawLat || body.lng !== rawLng,
-    };
-
-    // Zone event write failed → do not look like a clean success (alarms depend on INSERT)
-    if (eventInsertError) {
-      return new Response(JSON.stringify({ ...payload, error: eventInsertError }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    return new Response(JSON.stringify(payload), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // Always HTTP 200 with zone judgment fields so clients (locationTracker) can
+    // read zone_type / event_type even when the audit-log INSERT failed.
+    // Insert failures are surfaced via event_insert_* + console.error only.
+    return new Response(
+      JSON.stringify({
+        zone_id: matchedZoneId,
+        restricted_zone_id: matchedRestricted?.id ?? null,
+        zone_name: matchedRestricted?.name || zoneMeta?.name || null,
+        zone_type: matchedRestricted
+          ? "danger"
+          : zoneMeta?.zone_type || null,
+        source,
+        event_type: eventType,
+        event_insert_ok: eventType ? eventInsertError == null : null,
+        event_insert_error: eventInsertError,
+        lat: body.lat,
+        lng: body.lng,
+        raw_lat: rawLat,
+        raw_lng: rawLng,
+        calibrated: body.lat !== rawLat || body.lng !== rawLng,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || String(e) }), {
       status: 500,

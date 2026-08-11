@@ -1251,14 +1251,39 @@ const AssessmentRunDetail = () => {
       toast({ title: 'AI 자동 생성 항목 검토가 필요합니다.', description: `미검토 ${participationCounts.unreviewedAi + participationCounts.unreviewedHealth}건을 검토해주세요.`, variant: 'destructive' }); return;
     }
 
-    // Fetch latest approval_lines from DB
+    // Fetch latest approval_lines from DB — but do NOT ignore richer in-dialog draft
+    // (발주처 SM을 화면에서만 넣고 저장 안 한 채 상신하면 DB 3단계만 올라가던 버그)
     const { data: savedLines } = await supabase
       .from('approval_lines')
       .select('*')
       .eq('project_id', run.project_id)
       .order('step_order');
 
-    const linesToUse = (savedLines && savedLines.length > 0) ? savedLines : approvalLines;
+    const isCompleteLine = (lines: any[] | null | undefined) =>
+      !!lines
+      && lines.length >= 2
+      && lines.every((l) => !!l.user_id && !!l.position);
+
+    const hasClientStep = (lines: any[]) =>
+      lines.some((l) => {
+        const p = (l.position || '').toLowerCase();
+        return p === 'owner_cm' || p === 'owner_sm';
+      });
+
+    const dbLines = (savedLines || []) as any[];
+    const memLines = (approvalLines || []) as any[];
+    let linesToUse: any[] = [];
+    if (isCompleteLine(memLines) && isCompleteLine(dbLines)) {
+      if (hasClientStep(memLines) && !hasClientStep(dbLines)) linesToUse = memLines;
+      else if (memLines.length > dbLines.length) linesToUse = memLines;
+      else linesToUse = dbLines;
+    } else if (isCompleteLine(memLines)) {
+      linesToUse = memLines;
+    } else if (isCompleteLine(dbLines)) {
+      linesToUse = dbLines;
+    } else {
+      linesToUse = memLines.length >= dbLines.length ? memLines : dbLines;
+    }
 
     if (!linesToUse || linesToUse.length < 2) {
       toast({ title: '결재라인이 설정되지 않았습니다.', description: '결재라인 설정에서 [자동 생성] 후 [저장]을 먼저 해주세요.', variant: 'destructive' });
@@ -1270,6 +1295,46 @@ const AssessmentRunDetail = () => {
     if (missingUser.length > 0) {
       toast({ title: '결재자가 미지정된 단계가 있습니다.', description: `${missingUser.map(l => l.step_label).join(', ')} 단계에 결재자를 지정해주세요.`, variant: 'destructive' });
       return;
+    }
+
+    if (!hasClientStep(linesToUse)) {
+      toast({
+        title: '발주처(CM/SM) 결재자가 없습니다.',
+        description: '결재라인에 담당자(SM) 또는 담당자(CM)를 넣은 뒤 [저장]하고 상신하세요. (SM만 있어도 됩니다)',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Persist draft line before submit when UI is ahead of DB (e.g. SM just added)
+    const usingMemoryDraft =
+      isCompleteLine(memLines)
+      && (
+        !isCompleteLine(dbLines)
+        || (hasClientStep(memLines) && !hasClientStep(dbLines))
+        || memLines.length > dbLines.length
+      );
+    if (usingMemoryDraft) {
+      const { error: delErr } = await supabase.from('approval_lines').delete().eq('project_id', run.project_id);
+      if (delErr) {
+        toast({ title: '결재라인 저장 실패', description: delErr.message, variant: 'destructive' });
+        return;
+      }
+      const inserts = linesToUse.map((l: any, i: number) => ({
+        project_id: run.project_id,
+        step_order: i,
+        step_label: l.step_label || l.label || '',
+        position: l.position || '',
+        company_id: l.company_id || null,
+        user_id: l.user_id || null,
+        user_name: l.user_name || '',
+        company_name: l.company_name || '',
+      }));
+      const { error: insErr } = await supabase.from('approval_lines').insert(inserts);
+      if (insErr) {
+        toast({ title: '결재라인 저장 실패', description: insErr.message, variant: 'destructive' });
+        return;
+      }
     }
 
     // SSOT 방어: 레거시 결재 키(safety_manager 등) 상신 차단
@@ -2352,9 +2417,14 @@ const AssessmentRunDetail = () => {
             </div>
           )}
           {activeApprovals.length > 0
-            && !activeApprovals.some((a) => a.position === 'owner_cm' || a.position === 'owner_sm') && (
+            && !activeApprovals.some((a) => {
+              const p = (a.position || '').toLowerCase();
+              return p === 'owner_cm' || p === 'owner_sm';
+            }) && (
             <p className="text-[10px] text-warning">
-              발주처(CM/SM) 단계가 이 상신 버전에 없습니다. 결재선에 CM·SM을 넣고 재상신하세요.
+              이 상신({version > 1 ? `${version}차` : '1차'}) 결재 기록에는 발주처 SM/CM이 없습니다.
+              결재선에 담당자(SM)을 넣고 [저장]한 뒤, 회수 또는 반려 후 다시 상신해야 반영됩니다.
+              (지금 보이는 표는 저장된 결재선이 아니라 이미 올라간 상신 버전입니다)
             </p>
           )}
         </div>

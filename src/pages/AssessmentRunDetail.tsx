@@ -477,26 +477,49 @@ const AssessmentRunDetail = () => {
     setParticipants(partRes.data || []);
     setUserDirectory((profilesRes.data || []) as any);
 
-    // Fetch latest approval records for SSOT
+    // Fetch latest approval records (run_id 또는 entity 키 — 둘 다 SSOT)
     if (runId) {
-      const { data: approvalsData } = await supabase.from('approvals')
+      const { data: byRun } = await supabase.from('approvals')
         .select('*').eq('run_id', runId).order('approval_version', { ascending: false });
-      if (approvalsData && approvalsData.length > 0) {
+      let approvalsData = byRun || [];
+      if (approvalsData.length === 0) {
+        const { data: byEntity } = await supabase.from('approvals')
+          .select('*')
+          .eq('entity_type', 'assessment_run')
+          .eq('entity_id', runId)
+          .order('approval_version', { ascending: false });
+        approvalsData = byEntity || [];
+      }
+      if (approvalsData.length > 0) {
         const maxVersion = approvalsData[0].approval_version || 1;
         const latestVersionApprovals = approvalsData.filter(a => (a.approval_version || 1) === maxVersion);
         setLatestApprovals(latestVersionApprovals);
-        // Sync run status from approval records (SSOT)
-        const allApproved = latestVersionApprovals.filter(a => a.status !== '취소').every(a => a.status === '승인');
+        // Sync run status from approval records — never overwrite 반려 back to 결재진행
+        const activeRows = latestVersionApprovals.filter(a => a.status !== '취소');
+        const allApproved = activeRows.length > 0 && activeRows.every(a => a.status === '승인');
         const anyRejected = latestVersionApprovals.some(a => a.status === '반려');
-        const anyPending = latestVersionApprovals.some(a => a.status === '대기');
+        const anyInFlight = latestVersionApprovals.some(a => a.status === '대기' || a.status === '진행중');
         if (runRes.data) {
-          let expectedStatus = runRes.data.status;
-          if (allApproved && latestVersionApprovals.filter(a => a.status !== '취소').length > 0) expectedStatus = '승인완료';
-          else if (anyRejected) expectedStatus = '보완중';
-          else if (anyPending) expectedStatus = '결재진행';
-          if (expectedStatus !== runRes.data.status) {
-            await supabase.from('assessment_runs').update({ status: expectedStatus }).eq('id', runId);
-            setRun((prev: any) => prev ? { ...prev, status: expectedStatus } : prev);
+          const dbStatus = runRes.data.status as string;
+          let expectedStatus = dbStatus;
+          if (anyRejected) {
+            // RPC SSOT is 반려; keep 보완중/보완요청 if already returned
+            expectedStatus = ['보완중', '보완요청', '반려'].includes(dbStatus) ? dbStatus : '반려';
+          } else if (allApproved) {
+            expectedStatus = '승인완료';
+          } else if (anyInFlight) {
+            expectedStatus = '결재진행';
+          }
+          // Do not client-heal 승인완료/폐기 into something else here
+          if (dbStatus === '폐기') expectedStatus = '폐기';
+          if (expectedStatus !== dbStatus) {
+            const { error: syncErr } = await supabase.from('assessment_runs').update({ status: expectedStatus }).eq('id', runId);
+            if (!syncErr) {
+              setRun((prev: any) => prev ? { ...prev, status: expectedStatus } : prev);
+            } else {
+              // Still reflect approval-derived status in UI even if write blocked
+              setRun((prev: any) => prev ? { ...prev, status: expectedStatus } : prev);
+            }
           }
         }
       } else {
@@ -531,6 +554,32 @@ const AssessmentRunDetail = () => {
   }, [runId, isMaster, userCompanyId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // 결재 반려/승인 시 작성자 화면이 즉시 작성·재상신 상태로 돌아오도록
+  useEffect(() => {
+    if (!runId) return;
+    const channel = supabase
+      .channel(`assessment-run-approval-${runId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'assessment_runs', filter: `id=eq.${runId}` },
+        () => { void fetchAll(); },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'approvals', filter: `run_id=eq.${runId}` },
+        () => { void fetchAll(); },
+      )
+      .subscribe();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void fetchAll();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [runId, fetchAll]);
 
   // After reload: restore [나머지 채우기] banner if fillable drafts already exist in DB
   useEffect(() => {
@@ -1277,11 +1326,22 @@ const AssessmentRunDetail = () => {
     }
     const r = data as any;
     if (r?.error) {
+      if (r.error === 'ALREADY_REJECTED') {
+        setRun((prev: any) => ({ ...prev, status: '반려' }));
+        toast({
+          title: '이미 반려된 결재입니다.',
+          description: r.message || '문서를 수정한 뒤 재상신하세요.',
+          variant: 'destructive',
+        });
+        fetchAll();
+        return;
+      }
       const msg =
-        r.error === 'ALREADY_DECIDED' ? '이미 결재가 진행된 문서는 회수할 수 없습니다.'
+        r.error === 'ALREADY_DECIDED' ? '이미 결재가 진행된 문서는 회수할 수 없습니다. 반려 후 재상신하세요.'
         : r.error === 'NOT_SUBMITTER' ? '상신자 또는 관리자만 회수할 수 있습니다.'
         : r.error;
       toast({ title: '상신 취소 실패', description: msg, variant: 'destructive' });
+      fetchAll();
       return;
     }
     setRun((prev: any) => ({ ...prev, status: '검증완료' }));
@@ -1348,11 +1408,15 @@ const AssessmentRunDetail = () => {
       }
       const r = data as any;
       if (r?.error && r.error !== 'NO_APPROVAL') {
-        const msg =
-          r.error === 'ALREADY_DECIDED' ? '이미 결재가 진행된 문서는 회수할 수 없습니다. 반려 후 재제출하세요.'
-          : r.error;
-        toast({ title: '회수 실패', description: msg, variant: 'destructive' });
-        return;
+        if (r.error === 'ALREADY_REJECTED') {
+          // Already rejected — continue into 제출됨 resubmit path below
+        } else {
+          const msg =
+            r.error === 'ALREADY_DECIDED' ? '이미 결재가 진행된 문서는 회수할 수 없습니다. 반려 후 재제출하세요.'
+            : r.error;
+          toast({ title: '회수 실패', description: msg, variant: 'destructive' });
+          return;
+        }
       }
     }
     const { error: updErr } = await supabase.from('assessment_runs').update({ status: '제출됨' }).eq('id', runId);
@@ -1914,12 +1978,16 @@ const AssessmentRunDetail = () => {
   }
 
   // ===== CTA conditions (strict state machine) =====
-  const isDraft = run.status === '작성중';
-  const isSubmitted = run.status === '제출됨';
-  const isReturned = ['보완요청', '보완중', '반려'].includes(run.status);
-  const isValidating = run.status === '검증중';
-  const isValidated = run.status === '검증완료';
-  const isInApproval = run.status === '결재진행';
+  // 결재 행에 반려가 있으면 DB status가 아직 결재진행이어도 작성/재상신 UI로 취급
+  const hasRejectedApproval = latestApprovals.some((a) => a.status === '반려');
+  const uiStatus =
+    hasRejectedApproval && run.status === '결재진행' ? '반려' : run.status;
+  const isDraft = uiStatus === '작성중';
+  const isSubmitted = uiStatus === '제출됨';
+  const isReturned = ['보완요청', '보완중', '반려'].includes(uiStatus);
+  const isValidating = uiStatus === '검증중';
+  const isValidated = uiStatus === '검증완료';
+  const isInApproval = uiStatus === '결재진행';
 
   // approval_lines 기반 체크 — 라인이 있으면 결재 가능, 없어도 상신 다이얼로그에서 자동 생성 유도
   const hasApprovalLine = approvalLines.length >= 2 || (projectMembers.some(m => m.position === 'safety_manager') || projectMembers.some(m => m.role === 'project_admin' || m.role === 'master'));
@@ -1931,21 +1999,24 @@ const AssessmentRunDetail = () => {
   // 재제출: 보완중/반려 상태에서만
   const canResubmit = isReturned;
   // 결재 상신: 승인완료/폐기/결재진행 제외하고 항상 가능
-  const canSubmitApproval = !isInApproval && !isApproved && run.status !== '폐기' && activeItems.length > 0;
+  const canSubmitApproval = !isInApproval && !isApproved && uiStatus !== '폐기' && activeItems.length > 0;
   // 재상신: 보완중/반려 상태에서도 가능
   const canResubmitApproval = false; // canSubmitApproval로 통합
-  // 상신 취소
-  const canCancelApproval = isInApproval && (!!isAdmin || (user && run.created_by === user.id));
+  // 상신 취소 — 실제 결재 진행중일 때만 (반려 있으면 숨김)
+  const canCancelApproval =
+    isInApproval
+    && !hasRejectedApproval
+    && (!!isAdmin || (user && run.created_by === user.id));
   // 자동 보완: 검증 결과가 있고 적정이 아닐 때 (참고용)
   const canAutoRemediate = validationReport && validationReport.verdict !== '적정' && (canEdit || canForceEdit) && !isInApproval && !isApproved;
-  // 결재자 승인/반려: ONLY assigned approver
-  const isMyApprovalPending = user && latestApprovals.some(a => a.status === '대기' && a.approver_id === user.id);
-  const statusInfo = STATUS_FLOW[run.status as keyof typeof STATUS_FLOW] || { label: run.status, color: '' };
+  // 결재자 승인/반려: ONLY assigned approver (활성 단계는 진행중)
+  const isMyApprovalPending = user && latestApprovals.some(a => a.status === '진행중' && a.approver_id === user.id);
+  const statusInfo = STATUS_FLOW[uiStatus as keyof typeof STATUS_FLOW] || { label: uiStatus, color: '' };
 
   // Status guide message
   const statusGuide = isDraft ? '작성 완료 후 [제출]을 누르세요.'
     : isSubmitted ? '검증자가 [검증 실행]을 진행합니다. 결재 상신도 가능합니다.'
-    : isReturned ? '수정 후 [재제출] 또는 바로 [결재 상신]이 가능합니다.'
+    : isReturned ? '반려·보완 상태입니다. 수정 후 [재제출] 또는 [결재 상신]하세요.'
     : isValidating ? '검증 진행 중입니다...'
     : isValidated ? '검증 완료. [결재 상신]을 진행하세요.'
     : isInApproval ? '결재 진행 중입니다.'

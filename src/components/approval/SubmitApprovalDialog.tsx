@@ -97,6 +97,10 @@ export default function SubmitApprovalDialog({
   const [reason, setReason] = useState('');
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [authorCompanyType, setAuthorCompanyType] = useState<string | null>(null);
+  /** Resolved SSOT company for pool/filter (prop or project_members). */
+  const [resolvedSubmitterCompanyId, setResolvedSubmitterCompanyId] = useState<string | null>(
+    submitterCompanyId,
+  );
   const [isResubmit, setIsResubmit] = useState(false);
 
   useEffect(() => {
@@ -109,6 +113,7 @@ export default function SubmitApprovalDialog({
         const resolvedCompanyId =
           submitterCompanyId ||
           (await resolveSubmitterCompanyId(projectId, uid || user?.id || null));
+        setResolvedSubmitterCompanyId(resolvedCompanyId);
 
         let authorType: string | null = null;
         if (resolvedCompanyId) {
@@ -243,10 +248,10 @@ export default function SubmitApprovalDialog({
 
   const filterCtx = useMemo(
     () => ({
-      authorCompanyId: submitterCompanyId,
+      authorCompanyId: resolvedSubmitterCompanyId || submitterCompanyId,
       authorCompanyType,
     }),
-    [submitterCompanyId, authorCompanyType],
+    [resolvedSubmitterCompanyId, submitterCompanyId, authorCompanyType],
   );
 
   const sortedApprovers = useMemo(() => {
@@ -318,7 +323,7 @@ export default function SubmitApprovalDialog({
         _entity_type: entityType,
         _entity_id: entityId,
         _project_id: projectId,
-        _company_id: submitterCompanyId,
+        _company_id: resolvedSubmitterCompanyId || submitterCompanyId,
         _steps: orderedSteps as any,
         _reason: reason || null,
       });

@@ -374,8 +374,9 @@ Deno.serve(async (req) => {
       eventType = "exit";
     }
 
+    let eventInsertError: string | null = null;
     if (eventType) {
-      await supabase.from("worker_zone_events").insert({
+      const { error: wzeErr } = await supabase.from("worker_zone_events").insert({
         project_id: body.project_id,
         zone_id: matchedZoneId ?? lastEvent?.zone_id ?? null,
         restricted_zone_id:
@@ -392,6 +393,18 @@ Deno.serve(async (req) => {
         lng: body.lng,
         accuracy_m: body.accuracy_m,
       });
+      if (wzeErr) {
+        eventInsertError = wzeErr.message || String(wzeErr);
+        console.error("[track-location] worker_zone_events insert failed", {
+          code: wzeErr.code,
+          message: wzeErr.message,
+          details: wzeErr.details,
+          hint: wzeErr.hint,
+          event_type: eventType,
+          worker_qr_id: body.worker_qr_id ?? subject.worker_id ?? null,
+          project_id: body.project_id,
+        });
+      }
     }
 
     // Always refresh last-known position when we can identify the worker.
@@ -442,24 +455,35 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(
-      JSON.stringify({
-        zone_id: matchedZoneId,
-        restricted_zone_id: matchedRestricted?.id ?? null,
-        zone_name: matchedRestricted?.name || zoneMeta?.name || null,
-        zone_type: matchedRestricted
-          ? "danger"
-          : zoneMeta?.zone_type || null,
-        source,
-        event_type: eventType,
-        lat: body.lat,
-        lng: body.lng,
-        raw_lat: rawLat,
-        raw_lng: rawLng,
-        calibrated: body.lat !== rawLat || body.lng !== rawLng,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    const payload = {
+      zone_id: matchedZoneId,
+      restricted_zone_id: matchedRestricted?.id ?? null,
+      zone_name: matchedRestricted?.name || zoneMeta?.name || null,
+      zone_type: matchedRestricted
+        ? "danger"
+        : zoneMeta?.zone_type || null,
+      source,
+      event_type: eventType,
+      event_insert_ok: eventType ? eventInsertError == null : null,
+      event_insert_error: eventInsertError,
+      lat: body.lat,
+      lng: body.lng,
+      raw_lat: rawLat,
+      raw_lng: rawLng,
+      calibrated: body.lat !== rawLat || body.lng !== rawLng,
+    };
+
+    // Zone event write failed → do not look like a clean success (alarms depend on INSERT)
+    if (eventInsertError) {
+      return new Response(JSON.stringify({ ...payload, error: eventInsertError }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify(payload), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || String(e) }), {
       status: 500,

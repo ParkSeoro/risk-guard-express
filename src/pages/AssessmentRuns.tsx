@@ -127,7 +127,12 @@ const AssessmentRuns = () => {
     setProjectRole(data?.role_new || null);
   };
 
-  const canCreateRun = isMaster || projectRole === 'project_admin' || projectRole === 'safety_manager';
+  // 고시 §7: 작성 주체 = 관리감독자(site_supervisor). SM은 보좌·검토로 생성도 가능.
+  const canCreateRun =
+    isMaster ||
+    projectRole === 'project_admin' ||
+    projectRole === 'site_supervisor' ||
+    projectRole === 'safety_manager';
 
   const fetchRuns = async () => {
     if (!selectedProject) return;
@@ -262,7 +267,13 @@ const AssessmentRuns = () => {
   const canEditRun = (run: any) => {
     if (isMaster) return true;
     if (run.created_by === user?.id) return true;
-    if (projectRole === 'project_admin' || projectRole === 'safety_manager') return true;
+    if (
+      projectRole === 'project_admin' ||
+      projectRole === 'site_supervisor' ||
+      projectRole === 'safety_manager'
+    ) {
+      return true;
+    }
     return false;
   };
 

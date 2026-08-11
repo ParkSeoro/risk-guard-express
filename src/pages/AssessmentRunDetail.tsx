@@ -1643,7 +1643,7 @@ const AssessmentRunDetail = () => {
   };
 
   const POSITION_LABELS_EXPORT: Record<string, string> = {
-    supervisor: '관리감독자', safety_manager: '안전관리자',
+    site_supervisor: '관리감독자', supervisor: '감리', safety_manager: '안전관리자',
     site_manager: '현장대리인', project_admin: '프로젝트 관리자',
   };
 
@@ -2168,7 +2168,8 @@ const AssessmentRunDetail = () => {
                     .filter(a => a.status !== '취소')
                     .sort((a: any, b: any) => (APPROVAL_STEP_ORDER[a.step] ?? 99) - (APPROVAL_STEP_ORDER[b.step] ?? 99))
                     .map((a: any) => {
-                      const positionLabel = a.position === 'supervisor' ? '관리감독자' :
+                      const positionLabel = a.position === 'site_supervisor' ? '관리감독자' :
+                        a.position === 'supervisor' ? '감리' :
                         a.position === 'safety_manager' ? '안전관리자' :
                         a.position === 'site_manager' ? '현장대리인' :
                         a.position === 'project_admin' ? '프로젝트 관리자' : a.position || '';

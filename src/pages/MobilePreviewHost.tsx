@@ -24,8 +24,8 @@ const VIEWPORTS = [
 
 const MODE_LABELS: Record<PreviewMode, string> = {
   worker: "근로자",
-  supervisor: "관리감독자",
-  site_supervisor: "감리",
+  supervisor: "감리",
+  site_supervisor: "관리감독자",
   site_manager: "현장관리자",
   project_admin: "프로젝트 관리자",
   safety_manager: "안전관리자",

@@ -58,8 +58,9 @@ const EXPECTED: Record<Role, Record<Feature, Perm>> = {
     safety_cost: RO, legal_duty: RO, todo: CRU_NO_APPROVE,
     approval: APPROVE_ONLY, company: RO, member: RO, master_data: RO, audit_log: RO,
   },
+  // 관리감독자 — 위험성평가 작성 주체 (고시 §7)
   site_supervisor: {
-    risk_assessment: RO, work_plan: RO, work_permit: APPROVE_ONLY,
+    risk_assessment: CRUD_NO_APPROVE, work_plan: RO, work_permit: APPROVE_ONLY,
     safety_inspection: CRU_NO_APPROVE, tbm: RO, incident: CRU_NO_APPROVE,
     safety_cost: RO, legal_duty: RO, todo: CRU_NO_APPROVE,
     approval: APPROVE_ONLY, company: RO, member: RO, master_data: RO, audit_log: RO,
@@ -113,5 +114,12 @@ describe("권한 매트릭스 회귀 (Role × Feature × Action)", () => {
     for (const f of FEATURES) {
       expect(EXPECTED.safety_manager[f]).toEqual(EXPECTED.master[f]);
     }
+  });
+
+  it("site_supervisor(관리감독자)는 위험성평가를 작성할 수 있고 감리(supervisor)는 못 한다", () => {
+    expect(EXPECTED.site_supervisor.risk_assessment.create).toBe(true);
+    expect(EXPECTED.site_supervisor.risk_assessment.edit).toBe(true);
+    expect(EXPECTED.supervisor.risk_assessment.create).toBe(false);
+    expect(EXPECTED.supervisor.risk_assessment.edit).toBe(false);
   });
 });

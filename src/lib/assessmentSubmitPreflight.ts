@@ -24,6 +24,12 @@ export function buildAssessmentSubmitPreflight(opts: {
   approvalLineCount: number;
   missingApproverLabels?: string[];
   ssotInvalidKeys?: string[];
+  /**
+   * 전자결재 플랫폼 draft 가 ready 인지.
+   * 지정되면 결재선 항목은 이 값으로 판정한다 (미저장 메모리 라인으로 상신 불가).
+   */
+  approvalDraftReady?: boolean;
+  approvalDraftDetail?: string;
 }): { items: AssessmentPreflightItem[]; ready: boolean } {
   const items: AssessmentPreflightItem[] = [];
 
@@ -66,13 +72,22 @@ export function buildAssessmentSubmitPreflight(opts: {
 
   const missing = opts.missingApproverLabels || [];
   const ssotInvalid = opts.ssotInvalidKeys || [];
-  const linesOk =
-    opts.approvalLineCount >= 2
-    && missing.length === 0
-    && ssotInvalid.length === 0;
+  const useDraftGate = typeof opts.approvalDraftReady === 'boolean';
+  const linesOk = useDraftGate
+    ? !!opts.approvalDraftReady
+    : (
+      opts.approvalLineCount >= 2
+      && missing.length === 0
+      && ssotInvalid.length === 0
+    );
 
-  let approvalDetail = `${opts.approvalLineCount}단계`;
-  if (opts.approvalLineCount < 2) {
+  let approvalDetail = opts.approvalDraftDetail
+    || `${opts.approvalLineCount}단계`;
+  if (useDraftGate) {
+    approvalDetail = opts.approvalDraftReady
+      ? (opts.approvalDraftDetail || `draft 저장 완료 · ${opts.approvalLineCount}단계`)
+      : (opts.approvalDraftDetail || '결재선 [저장] 후 상신 가능');
+  } else if (opts.approvalLineCount < 2) {
     approvalDetail = '결재선 [자동 생성] 후 [저장] 필요';
   } else if (ssotInvalid.length > 0) {
     approvalDetail = `구형 단계 키: ${Array.from(new Set(ssotInvalid)).join(', ')}`;
@@ -82,7 +97,7 @@ export function buildAssessmentSubmitPreflight(opts: {
 
   items.push({
     id: 'approval',
-    label: '결재선 설정·결재자 지정',
+    label: useDraftGate ? '결재선 저장 완료 (상신 가능)' : '결재선 설정·결재자 지정',
     ok: linesOk,
     detail: approvalDetail,
     jump: 'approval',

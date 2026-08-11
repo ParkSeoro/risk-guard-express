@@ -13,10 +13,17 @@ import {
   filterApproversForStep,
   preferAuthorCompany,
   validateApprovalLinesSSOT,
+  type ApprovalEntityType,
   type EligibleApprover,
 } from '@/lib/approvalRules';
 import { normalizeCompanyType } from '@/lib/companyTypes';
 import { fetchEligibleApprovers, resolveSubmitterCompanyId } from '@/lib/eligibleApprovers';
+import {
+  fetchDocumentApprovalDraft,
+  upsertDocumentApprovalDraft,
+  type ApprovalDraftStep,
+  type DocumentApprovalDraftStatus,
+} from '@/lib/approvalPlatform';
 
 interface ApprovalLine {
   id?: string;
@@ -45,6 +52,21 @@ interface Company {
   type: string;
 }
 
+/** 전자결재 플랫폼 — 문서별 draft 저장 대상 (프로젝트 approval_lines 와 분리) */
+export type DocumentDraftTarget = {
+  entityType: ApprovalEntityType;
+  entityId: string;
+  companyId?: string | null;
+};
+
+export type DraftStatusInfo = {
+  status: DocumentApprovalDraftStatus | 'none';
+  ready: boolean;
+  stepCount: number;
+  errors: string[];
+  dirty: boolean;
+};
+
 interface Props {
   projectId: string;
   /** Used only to resolve the current user's company when RPC submitter id is needed. */
@@ -52,6 +74,36 @@ interface Props {
   companies: Company[];
   readOnly?: boolean;
   onLinesChanged?: (lines: ApprovalLine[]) => void;
+  /**
+   * 설정되면 결재선을 document_approval_drafts 에 저장한다.
+   * (전자결재 플랫폼 소비자 모드 — 상신과 분리)
+   */
+  documentDraft?: DocumentDraftTarget;
+  onDraftStatusChange?: (info: DraftStatusInfo) => void;
+}
+
+function linesToDraftSteps(lines: ApprovalLine[]): ApprovalDraftStep[] {
+  return lines.map((l) => ({
+    label: l.step_label || '',
+    position: l.position || '',
+    user_id: l.user_id || '',
+    user_name: l.user_name || '',
+    company_id: l.company_id || null,
+    company_name: l.company_name || '',
+  }));
+}
+
+function draftStepsToLines(projectId: string, steps: ApprovalDraftStep[]): ApprovalLine[] {
+  return steps.map((s, i) => ({
+    project_id: projectId,
+    step_order: i,
+    step_label: s.label || '',
+    position: s.position || '',
+    company_id: s.company_id || null,
+    user_id: s.user_id || null,
+    user_name: s.user_name || '',
+    company_name: s.company_name || '',
+  }));
 }
 
 const POSITION_LABELS: Record<string, string> = {
@@ -94,12 +146,18 @@ export default function ApprovalLineManager({
   companies,
   readOnly,
   onLinesChanged,
+  documentDraft,
+  onDraftStatusChange,
 }: Props) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [lines, setLines] = useState<ApprovalLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draftStatus, setDraftStatus] = useState<DocumentApprovalDraftStatus | 'none'>('none');
+  const [draftErrors, setDraftErrors] = useState<string[]>([]);
+  const [draftReady, setDraftReady] = useState(false);
   /** When off: 시공(상신) 단계에서 기안 회사만. 발주처/시공사 단계는 항상 해당 회사 유형 표시. */
   const [showPeerContractors, setShowPeerContractors] = useState(false);
   const [eligible, setEligible] = useState<EligibleApprover[]>([]);
@@ -152,6 +210,31 @@ export default function ApprovalLineManager({
   }, [projectId, user?.id, projectMembers, companies]);
 
   const fetchLines = useCallback(async () => {
+    setLoading(true);
+    if (documentDraft) {
+      const draft = await fetchDocumentApprovalDraft(documentDraft.entityType, documentDraft.entityId);
+      if (draft && draft.steps.length > 0) {
+        setLines(draftStepsToLines(projectId, draft.steps));
+        setDraftStatus(draft.status);
+        setDraftReady(draft.status === 'ready');
+        setDraftErrors(draft.validation_errors || []);
+      } else {
+        // 시드: 프로젝트 기본 결재선 (있을 때만). ready 로 올리지 않음 — [저장] 필수.
+        const { data } = await supabase
+          .from('approval_lines')
+          .select('*')
+          .eq('project_id', projectId)
+          .order('step_order');
+        setLines((data && data.length > 0) ? (data as ApprovalLine[]) : []);
+        setDraftStatus('none');
+        setDraftReady(false);
+        setDraftErrors([]);
+      }
+      setDirty(false);
+      setLoading(false);
+      return;
+    }
+
     const { data } = await supabase
       .from('approval_lines')
       .select('*')
@@ -163,7 +246,7 @@ export default function ApprovalLineManager({
       setLines([]);
     }
     setLoading(false);
-  }, [projectId]);
+  }, [projectId, documentDraft?.entityType, documentDraft?.entityId]);
 
   useEffect(() => {
     void fetchLines();
@@ -176,6 +259,16 @@ export default function ApprovalLineManager({
   useEffect(() => {
     onLinesChanged?.(lines);
   }, [lines, onLinesChanged]);
+
+  useEffect(() => {
+    onDraftStatusChange?.({
+      status: draftStatus,
+      ready: draftReady && !dirty,
+      stepCount: lines.length,
+      errors: draftErrors,
+      dirty,
+    });
+  }, [draftStatus, draftReady, dirty, lines.length, draftErrors, onDraftStatusChange]);
 
   const optionsForStep = useCallback(
     (position: string): EligibleApprover[] => {
@@ -290,6 +383,49 @@ export default function ApprovalLineManager({
         description: '발주처/시공사 멤버가 프로젝트에 등록돼 있는지 확인하세요.',
         variant: 'destructive',
       });
+      return;
+    }
+
+    // ---- 전자결재 플랫폼: 문서 draft 저장 (상신과 분리) ----
+    if (documentDraft) {
+      setSaving(true);
+      const companyId =
+        documentDraft.companyId
+        || authorCompanyId
+        || projectMembers.find((m) => m.user_id === user?.id)?.company_id
+        || null;
+      const { data, error } = await upsertDocumentApprovalDraft({
+        entityType: documentDraft.entityType,
+        entityId: documentDraft.entityId,
+        projectId,
+        companyId,
+        steps: linesToDraftSteps(lines),
+      });
+      setSaving(false);
+      if (error || !data) {
+        toast({
+          title: '결재선 저장 실패',
+          description: error || 'document_approval_drafts RPC를 확인하세요. (Dashboard SQL 적용 여부)',
+          variant: 'destructive',
+        });
+        return;
+      }
+      setDraftStatus(data.status);
+      setDraftReady(!!data.ready);
+      setDraftErrors(data.errors || []);
+      setDirty(false);
+      if (data.ready) {
+        toast({
+          title: '결재선 저장 완료 — 상신 가능',
+          description: `${data.steps.length}단계가 이 문서 draft에 저장되었습니다. [결재 상신]은 별도 버튼입니다.`,
+        });
+      } else {
+        toast({
+          title: '결재선 임시 저장 (상신 불가)',
+          description: (data.errors || []).join(' · ') || '요건을 보완한 뒤 다시 저장하세요.',
+          variant: 'destructive',
+        });
+      }
       return;
     }
 
@@ -424,15 +560,32 @@ export default function ApprovalLineManager({
   const clientCount = eligible.filter((a) => normalizeCompanyType(a.out_company_type) === 'client').length;
   const gcCount = eligible.filter((a) => normalizeCompanyType(a.out_company_type) === 'gc').length;
 
+  const statusBadge = (() => {
+    if (!documentDraft) return null;
+    if (dirty) return <Badge variant="secondary" className="text-[10px]">수정됨 · 저장 필요</Badge>;
+    if (draftStatus === 'ready' && draftReady) {
+      return <Badge className="text-[10px] bg-emerald-600 hover:bg-emerald-600">상신 가능</Badge>;
+    }
+    if (draftStatus === 'submitted') {
+      return <Badge variant="outline" className="text-[10px]">상신됨</Badge>;
+    }
+    if (draftStatus === 'draft') {
+      return <Badge variant="destructive" className="text-[10px]">미완 · 보완 후 저장</Badge>;
+    }
+    return <Badge variant="secondary" className="text-[10px]">미저장</Badge>;
+  })();
+
   return (
     <Card>
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <CardTitle className="text-sm flex items-center gap-1.5">
-            <Users className="h-4 w-4" /> 결재라인 설정
+            <Users className="h-4 w-4" />
+            {documentDraft ? '결재선 설정 (이 문서)' : '결재라인 설정'}
+            {statusBadge}
           </CardTitle>
           {!readOnly && (
-            <div className="flex gap-1.5 items-center">
+            <div className="flex gap-1.5 items-center flex-wrap">
               <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer select-none mr-1">
                 <input
                   type="checkbox"
@@ -448,18 +601,30 @@ export default function ApprovalLineManager({
               <Button size="sm" variant="outline" className="gap-1 text-xs h-7" onClick={addStep}>
                 <Plus className="h-3 w-3" /> 단계 추가
               </Button>
-              {dirty && (
-                <Button size="sm" className="gap-1 text-xs h-7" onClick={handleSave}>
-                  <Save className="h-3 w-3" /> 저장
+              {(dirty || documentDraft) && (
+                <Button
+                  size="sm"
+                  className="gap-1 text-xs h-7"
+                  onClick={handleSave}
+                  disabled={saving || (!dirty && documentDraft && draftReady)}
+                >
+                  <Save className="h-3 w-3" />
+                  {saving ? '저장 중…' : documentDraft ? '결재선 저장' : '저장'}
                 </Button>
               )}
             </div>
           )}
         </div>
         <p className="text-[10px] text-muted-foreground mt-1">
-          결재 후보(소속+상위): 발주처 {clientCount}명 · 시공사 {gcCount}명 · 전체 {eligible.length}명
+          {documentDraft
+            ? '이 문서의 결재선만 저장합니다. 저장과 상신은 별개입니다. 미저장 상태로 상신할 수 없습니다.'
+            : '프로젝트 기본 결재선입니다.'}
+          {' '}결재 후보(소속+상위): 발주처 {clientCount}명 · 시공사 {gcCount}명 · 전체 {eligible.length}명
           {eligibleError ? ` · RPC 실패(폴백): ${eligibleError}` : ''}
         </p>
+        {documentDraft && draftErrors.length > 0 && !dirty && (
+          <p className="text-[10px] text-destructive mt-1">{draftErrors.join(' · ')}</p>
+        )}
       </CardHeader>
       <CardContent>
         {lines.length === 0 ? (

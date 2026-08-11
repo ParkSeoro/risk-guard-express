@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   filterApproversForStep,
+  preferAuthorCompany,
   buildDefaultStepsForAuthor,
   stepLabelForAuthor,
   isSubmitterApprovalStep,
@@ -116,6 +117,40 @@ describe("filterApproversForStep — 시공사 기안", () => {
     expect(filterApproversForStep(pool, "contractor_site_director", ctx).map((x) => x.out_user_id)).toEqual([
       "gc-admin",
     ]);
+  });
+
+  it("시공사 기안: 타 GC 회사 안전/소장 제외", () => {
+    const multi = [
+      ...pool,
+      mk({
+        out_user_id: "other-gc-hse",
+        out_company_id: "gc2",
+        out_company_type: "gc",
+        out_position: "HSE_MANAGER",
+        out_display_name: "타시공안전",
+      }),
+      mk({
+        out_user_id: "other-gc-sm",
+        out_company_id: "gc2",
+        out_company_type: "gc",
+        out_position: "SITE_MANAGER",
+        out_display_name: "타시공소장",
+      }),
+    ];
+    expect(filterApproversForStep(multi, "contractor_safety_manager", ctx).map((x) => x.out_user_id)).toEqual([
+      "gc-hse",
+    ]);
+    expect(filterApproversForStep(multi, "contractor_site_director", ctx).map((x) => x.out_user_id)).toEqual([
+      "gc-admin",
+    ]);
+  });
+
+  it("preferAuthorCompany puts own company first", () => {
+    const list = [
+      mk({ out_user_id: "a", out_company_id: "gc2" }),
+      mk({ out_user_id: "b", out_company_id: "gc1" }),
+    ];
+    expect(preferAuthorCompany(list, "gc1").map((x) => x.out_user_id)).toEqual(["b", "a"]);
   });
 
   it("default work-permit steps omit gc_manager and use stamp labels", () => {

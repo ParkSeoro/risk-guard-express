@@ -398,6 +398,13 @@ export function filterApproversForStep(
   const inGc = (a: EligibleApprover) => normalizeCompanyType(a.out_company_type) === 'gc';
   const inClient = (a: EligibleApprover) => normalizeCompanyType(a.out_company_type) === 'client';
 
+  // 시공사 기안: 안전·소장도 자사만 (프로젝트에 GC가 여러 개여도 타 GC 제외)
+  // 협력사 기안: 안전·소장은 상위/프로젝트 시공사(GC) 범위
+  const inGcScopedCompany = (a: EligibleApprover) => {
+    if (authorType === 'gc' && authorCompanyId) return inAuthorCompany(a);
+    return inGc(a);
+  };
+
   const strict = approvers.filter((a) => {
     if (key === 'contractor_supervisor') {
       if (!inAuthorCompany(a)) return false;
@@ -405,12 +412,12 @@ export function filterApproversForStep(
     }
 
     if (GC_SCOPED_PERMIT_STEPS.has(key)) {
-      if (!inGc(a)) return false;
+      if (!inGcScopedCompany(a)) return false;
       return matchesStepPosition(a, key);
     }
 
     if (GC_STEP_KEYS.has(key)) {
-      if (!inGc(a)) return false;
+      if (!inGcScopedCompany(a)) return false;
       return matchesStepPosition(a, key);
     }
 
@@ -423,20 +430,41 @@ export function filterApproversForStep(
     return false;
   });
 
-  if (strict.length > 0) return strict;
+  if (strict.length > 0) return preferAuthorCompany(strict, authorCompanyId);
 
   // Soft fallback within the same company scope (never cross partner↔GC↔client).
   if (key === 'contractor_supervisor' && authorCompanyId) {
-    return approvers.filter((a) => inAuthorCompany(a) && !isWorkerApprover(a));
+    return preferAuthorCompany(
+      approvers.filter((a) => inAuthorCompany(a) && !isWorkerApprover(a)),
+      authorCompanyId,
+    );
   }
   if (GC_SCOPED_PERMIT_STEPS.has(key) || GC_STEP_KEYS.has(key)) {
-    return approvers.filter((a) => inGc(a) && !isWorkerApprover(a));
+    return preferAuthorCompany(
+      approvers.filter((a) => inGcScopedCompany(a) && !isWorkerApprover(a)),
+      authorCompanyId,
+    );
   }
   if (CLIENT_STEP_KEYS.has(key)) {
     return approvers.filter((a) => inClient(a) && !isWorkerApprover(a));
   }
 
   return strict;
+}
+
+/** 자동생성·드롭다운: 기안 회사 멤버를 앞에 둔다. */
+export function preferAuthorCompany(
+  list: EligibleApprover[],
+  authorCompanyId?: string | null,
+): EligibleApprover[] {
+  if (!authorCompanyId || list.length <= 1) return list;
+  const own: EligibleApprover[] = [];
+  const other: EligibleApprover[] = [];
+  for (const a of list) {
+    if (a.out_company_id === authorCompanyId) own.push(a);
+    else other.push(a);
+  }
+  return own.length > 0 ? [...own, ...other] : list;
 }
 
 

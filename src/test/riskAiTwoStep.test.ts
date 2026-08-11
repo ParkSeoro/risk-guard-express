@@ -6,6 +6,7 @@ import {
   AI_ROW_FAILED_HAZARD,
   mapPool,
   withRetry,
+  createLlmCallBudget,
   RISK_ROW_MAX_ATTEMPTS,
   RISK_ROW_CONCURRENCY,
 } from "@/lib/riskAutoGenAI";
@@ -65,5 +66,29 @@ describe("two-step risk AI helpers", () => {
       }, { attempts: 3 }),
     ).rejects.toThrow(/TIMEOUT/);
     expect(n).toBe(3);
+  });
+
+  it("withRetry does not retry CALL_CAP", async () => {
+    let n = 0;
+    await expect(
+      withRetry(async () => {
+        n += 1;
+        throw new Error("AI 호출 상한(6회/요청)에 도달했습니다. CALL_CAP");
+      }, { attempts: 3 }),
+    ).rejects.toThrow(/호출 상한|CALL_CAP/);
+    expect(n).toBe(1);
+  });
+
+  it("withRetry respects shared budget ceiling", async () => {
+    const budget = createLlmCallBudget(2);
+    let n = 0;
+    await expect(
+      withRetry(async () => {
+        n += 1;
+        throw new Error("RATE_LIMIT 429");
+      }, { attempts: 5, budget }),
+    ).rejects.toThrow(/호출 상한/);
+    expect(n).toBe(2);
+    expect(budget.used).toBe(2);
   });
 });

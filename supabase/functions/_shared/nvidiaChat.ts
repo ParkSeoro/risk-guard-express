@@ -63,7 +63,23 @@ export type NvidiaErrorCode =
   | "BAD_REQUEST"
   | "SERVER_ERROR"
   | "MODEL_NOT_FOUND"
-  | "DISABLED";
+  | "DISABLED"
+  | "CALL_CAP";
+
+/**
+ * Hard ceiling on NVIDIA HTTP calls inside one callNvidiaChat (model × retry).
+ * Without this: DEFAULT_MODEL_CHAIN(4) × maxAttemptsPerModel(2) = 8 per edge request;
+ * × client withRetry(3) ≈ 24 LLM calls per risk row.
+ * Cap 6: primary 2 attempts + up to 2 failover models × 2 — enough failover, cuts runaway.
+ * Override: env NVIDIA_MAX_LLM_CALLS_PER_REQUEST (1–16).
+ */
+export const DEFAULT_MAX_LLM_CALLS_PER_REQUEST = 6;
+
+export function resolveMaxLlmCallsPerRequest(): number {
+  const raw = Number(Deno.env.get("NVIDIA_MAX_LLM_CALLS_PER_REQUEST") || "");
+  if (Number.isFinite(raw) && raw >= 1) return Math.min(16, Math.floor(raw));
+  return DEFAULT_MAX_LLM_CALLS_PER_REQUEST;
+}
 
 export class NvidiaChatError extends Error {
   status: number;
@@ -308,6 +324,8 @@ export async function callNvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChat
     1,
     Math.min(4, req.maxAttemptsPerModel ?? (failoverEnabled ? 2 : 3)),
   );
+  const maxLlmCalls = resolveMaxLlmCallsPerRequest();
+  let llmCalls = 0;
 
   let lastErr: unknown;
   let firstModel = models[0];
@@ -315,6 +333,15 @@ export async function callNvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChat
   for (let mi = 0; mi < models.length; mi++) {
     const model = models[mi];
     for (let attempt = 1; attempt <= maxAttemptsPerModel; attempt++) {
+      if (llmCalls >= maxLlmCalls) {
+        throw new NvidiaChatError(
+          `AI 호출 상한(${maxLlmCalls}회/요청)에 도달했습니다. 재시도를 중단합니다.`,
+          429,
+          "CALL_CAP",
+          model,
+        );
+      }
+      llmCalls++;
       const { signal, clear } = withTimeoutSignal(timeoutMs);
       try {
         const body: Record<string, unknown> = {
@@ -343,7 +370,7 @@ export async function callNvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChat
           const failover = failoverEnabled && isFailoverHttp(resp.status, text);
           if (failover && mi < models.length - 1) {
             console.warn(
-              `[NVIDIA] failover ${model} → ${models[mi + 1]} status=${resp.status}`,
+              `[NVIDIA] failover ${model} → ${models[mi + 1]} status=${resp.status} calls=${llmCalls}/${maxLlmCalls}`,
             );
             lastErr = new NvidiaChatError(text.slice(0, 200), resp.status, "RATE_LIMIT", model);
             break; // next model
@@ -351,7 +378,7 @@ export async function callNvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChat
           // Same-model retry for transient limits when no next model or failover off
           if ((resp.status === 429 || resp.status === 503 || resp.status === 529) &&
             attempt < maxAttemptsPerModel) {
-            console.warn(`[NVIDIA] retry ${model} attempt ${attempt}/${maxAttemptsPerModel}`);
+            console.warn(`[NVIDIA] retry ${model} attempt ${attempt}/${maxAttemptsPerModel} calls=${llmCalls}/${maxLlmCalls}`);
             await new Promise((r) => setTimeout(r, 800 * attempt));
             continue;
           }
@@ -370,6 +397,16 @@ export async function callNvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChat
             console.warn(`[NVIDIA] salvaged empty content from reasoning model=${model}`);
           }
         }
+        const usage = data?.usage as NvidiaChatResult["usage"];
+        console.log("[NVIDIA] usage", {
+          model,
+          prompt_tokens: usage?.prompt_tokens,
+          completion_tokens: usage?.completion_tokens,
+          total_tokens: usage?.total_tokens,
+          llm_calls: llmCalls,
+          max_llm_calls: maxLlmCalls,
+          fallback_from: mi > 0 ? firstModel : undefined,
+        });
         if (mi > 0) {
           console.log(`[NVIDIA] used fallback model=${model} from=${firstModel}`);
         }
@@ -377,7 +414,7 @@ export async function callNvidiaChat(req: NvidiaChatRequest): Promise<NvidiaChat
           content,
           model,
           fallbackFrom: mi > 0 ? firstModel : undefined,
-          usage: data?.usage,
+          usage,
           raw: data,
         };
       } catch (e) {

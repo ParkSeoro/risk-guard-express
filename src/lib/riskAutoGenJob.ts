@@ -14,9 +14,11 @@ import {
   fetchRiskFillTwoStage,
   fetchRiskRowDetailWithRetry,
   isFillableRiskItem,
+  resolveBatchEdgeCallBudget,
   RISK_FILL_CHUNK,
   type AIGenerateOptions,
   type DetailLevel,
+  type LlmCallBudget,
 } from '@/lib/riskAutoGenAI';
 import type { GeneratedRiskItem } from '@/lib/riskAutoGen';
 import { enrichLegalBasis } from '@/lib/enrichLegalBasis';
@@ -395,11 +397,16 @@ async function markRowFailed(
 async function fillOneRow(
   row: { id: string; sub_task: string | null; process: string | null; hazard?: string | null; hazard_situation?: string | null },
   opts: AIGenerateOptions,
+  budget?: LlmCallBudget,
 ): Promise<boolean> {
   const subTask = row.sub_task || '';
   const proc = row.process || opts.processName;
   try {
-    const detail = await fetchRiskRowDetailWithRetry({ ...opts, processName: proc, subTask });
+    const detail = await fetchRiskRowDetailWithRetry(
+      { ...opts, processName: proc, subTask },
+      undefined,
+      budget,
+    );
     return await applyFilledDetail(row.id, proc, subTask, row.hazard, detail);
   } catch (err: any) {
     console.warn('[AutoGenJob] risk_row failed after retries:', subTask, err?.message || err);
@@ -918,6 +925,8 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
 
     let filledTotal = 0;
     let failed = 0;
+    // Per-row Edge fallback budget for this fill batch (chunk path is separate)
+    const rowFallbackBudget = resolveBatchEdgeCallBudget(rows.length);
 
     for (const [proc, procRows] of byProcess) {
       if (state.status !== 'running') return;
@@ -949,7 +958,7 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
             const detail = matched.get(row.id);
             if (!detail) {
               // Fallback single-row for unmatched
-              const ok = await fillOneRow(row, opts);
+              const ok = await fillOneRow(row, opts, rowFallbackBudget);
               if (ok) filledTotal += 1;
               else failed += 1;
             } else {
@@ -970,7 +979,7 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
           console.warn('[AutoGenJob] risk_fill two-stage failed, falling back per-row:', err?.message || err);
           for (const row of chunk) {
             if (state.status !== 'running') return;
-            const ok = await fillOneRow(row, opts);
+            const ok = await fillOneRow(row, opts, rowFallbackBudget);
             if (ok) filledTotal += 1;
             else failed += 1;
             const idx = pending.indexOf(row.id);

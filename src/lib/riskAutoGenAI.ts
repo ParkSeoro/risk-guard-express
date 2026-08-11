@@ -87,6 +87,9 @@ function mapAIItemToGenerated(item: any, processName: string): GeneratedRiskItem
 }
 
 function mapErrorMessage(rawMsg: string): string {
+  if (/호출 상한|CALL_CAP/i.test(rawMsg)) {
+    return 'AI 호출 상한에 도달했습니다. 잠시 후 다시 시도해주세요.';
+  }
   if (/크레딧|CREDITS_EXHAUSTED|credit_limit|402|QUOTA_EXHAUSTED|할당량/i.test(rawMsg)) {
     return 'AI 무료 할당량이 소진되었습니다. 관리자에게 문의하거나 잠시 후 다시 시도해주세요.';
   }
@@ -461,8 +464,26 @@ export async function fetchRiskRowDetail(
 /** Max auto-retries for a single risk_row call (attempt 1 + 2 retries = 3 total). */
 export const RISK_ROW_MAX_ATTEMPTS = 3;
 
+/**
+ * Hard ceiling on Edge invocations for one two-step / fill batch (all rows).
+ * Per-row still uses RISK_ROW_MAX_ATTEMPTS; this stops runaway across many rows.
+ * Edge-side NVIDIA HTTP is separately capped (nvidiaChat DEFAULT_MAX_LLM_CALLS_PER_REQUEST=6).
+ */
+export const RISK_AI_MAX_EDGE_CALLS_PER_BATCH = 36;
+
 /** Strict parallel cap for Phase-2 row fills (avoids NVIDIA/Edge rate limits). */
 export const RISK_ROW_CONCURRENCY = 2;
+
+export type LlmCallBudget = { used: number; max: number };
+
+export function createLlmCallBudget(max: number): LlmCallBudget {
+  return { used: 0, max: Math.max(1, Math.floor(max)) };
+}
+
+export function resolveBatchEdgeCallBudget(rowCount: number): LlmCallBudget {
+  const perRows = Math.max(RISK_ROW_MAX_ATTEMPTS, rowCount * RISK_ROW_MAX_ATTEMPTS);
+  return createLlmCallBudget(Math.min(RISK_AI_MAX_EDGE_CALLS_PER_BATCH, perRows));
+}
 
 export const AI_ROW_FAILED_HAZARD = 'API 과부하로 생성 지연. [재시도] 버튼을 눌러주세요';
 export const AI_ROW_FAILED_NOTE_PREFIX = '[AI_ROW_FAILED]';
@@ -491,21 +512,37 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 /**
  * Retry wrapper — up to RISK_ROW_MAX_ATTEMPTS, with backoff.
  * Rate-limit / timeout errors wait longer before the next attempt.
+ * Optional `budget` counts each attempt (Edge invoke); stops clearly at ceiling.
  */
 export async function withRetry<T>(
   fn: () => Promise<T>,
-  opts?: { attempts?: number; signal?: AbortSignal; label?: string },
+  opts?: {
+    attempts?: number;
+    signal?: AbortSignal;
+    label?: string;
+    budget?: LlmCallBudget;
+  },
 ): Promise<T> {
   const attempts = Math.max(1, opts?.attempts ?? RISK_ROW_MAX_ATTEMPTS);
   let lastErr: unknown;
   for (let i = 1; i <= attempts; i++) {
     if (opts?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    if (opts?.budget && opts.budget.used >= opts.budget.max) {
+      throw new Error(
+        `AI 호출 상한(${opts.budget.max}회)에 도달했습니다. 더 이상 재시도하지 않습니다.`,
+      );
+    }
+    if (opts?.budget) opts.budget.used += 1;
     try {
       return await fn();
     } catch (err: any) {
       lastErr = err;
       const msg = String(err?.message || err || '');
-      const retryable = /RATE_LIMIT|429|TIMEOUT|중단|과부하|NETWORK|fetch|서버 오류|5\d\d/i.test(msg);
+      // CALL_CAP / 호출 상한: do not burn more retries (edge already stopped)
+      const hitCap = /호출 상한|CALL_CAP/i.test(msg);
+      const retryable =
+        !hitCap &&
+        /RATE_LIMIT|429|TIMEOUT|중단|과부하|NETWORK|fetch|서버 오류|5\d\d/i.test(msg);
       console.warn(`[AI Engine] retry ${i}/${attempts}${opts?.label ? ` (${opts.label})` : ''}:`, msg);
       if (i >= attempts || !retryable) throw err;
       const delayMs = /RATE_LIMIT|429|과부하/i.test(msg)
@@ -520,11 +557,13 @@ export async function withRetry<T>(
 export async function fetchRiskRowDetailWithRetry(
   opts: AIGenerateOptions & { subTask: string },
   signal?: AbortSignal,
+  budget?: LlmCallBudget,
 ): Promise<GeneratedRiskItem> {
   return withRetry(() => fetchRiskRowDetail(opts, signal), {
     attempts: RISK_ROW_MAX_ATTEMPTS,
     signal,
     label: opts.subTask,
+    budget,
   });
 }
 
@@ -588,6 +627,7 @@ export async function generateRiskItemsTwoStep(
   const items: GeneratedRiskItem[] = [];
   let interrupted = false;
   const concurrency = Math.max(1, Math.min(handlers?.concurrency ?? RISK_ROW_CONCURRENCY, 3));
+  const edgeBudget = resolveBatchEdgeCallBudget(subTasks.length);
 
   await mapPool(subTasks, concurrency, async (subTask, index) => {
     if (handlers?.signal?.aborted) {
@@ -595,7 +635,11 @@ export async function generateRiskItemsTwoStep(
       return null as any;
     }
     try {
-      const row = await fetchRiskRowDetailWithRetry({ ...opts, subTask }, handlers?.signal);
+      const row = await fetchRiskRowDetailWithRetry(
+        { ...opts, subTask },
+        handlers?.signal,
+        edgeBudget,
+      );
       items.push(row);
       await handlers?.onRow?.(row, index, subTask);
       handlers?.onProgress?.(

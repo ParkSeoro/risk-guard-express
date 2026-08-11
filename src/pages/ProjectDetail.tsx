@@ -574,14 +574,14 @@ const ProjectDetail = () => {
 
 
   const STEP_LABEL_OPTIONS = [
-    { label: '작성', position: 'supervisor' },
+    { label: '작성', position: 'site_supervisor' },
     { label: '안전관리자 검토', position: 'safety_manager' },
     { label: '현장대리인 확인', position: 'site_manager' },
     { label: '최종승인', position: 'project_admin' },
   ];
 
   const POSITION_LABELS: Record<string, string> = {
-    supervisor: '관리감독자', safety_manager: '안전관리자',
+    site_supervisor: '관리감독자', supervisor: '감리', safety_manager: '안전관리자',
     site_manager: '현장대리인', project_admin: '프로젝트 관리자',
   };
 
@@ -592,7 +592,7 @@ const ProjectDetail = () => {
     const authorStep = {
       step_order: 0,
       step_label: '작성',
-      position: 'supervisor',
+      position: 'site_supervisor',
       user_id: user?.id || '',
       user_name: myProfile?.display_name || '',
       company_name: myMember?.company || myProfile?.company || '',

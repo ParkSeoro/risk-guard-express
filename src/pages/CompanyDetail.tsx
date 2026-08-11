@@ -24,7 +24,8 @@ const POSITION_OPTIONS = [
   { value: 'construction_mgr', label: '공사팀장' },
   { value: 'field_engineer', label: '공무팀장' },
   { value: 'foreman', label: '직장/반장' },
-  { value: 'supervisor', label: '관리감독자' },
+  { value: 'site_supervisor', label: '관리감독자' },
+  { value: 'supervisor', label: '감리' },
   { value: 'manager', label: '기타 관리자' },
 ];
 

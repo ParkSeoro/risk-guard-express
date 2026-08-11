@@ -14,6 +14,7 @@ import {
   type EligibleApprover,
 } from '@/lib/approvalRules';
 import { normalizeCompanyType } from '@/lib/companyTypes';
+import { fetchEligibleApprovers, resolveSubmitterCompanyId } from '@/lib/eligibleApprovers';
 
 interface ApprovalLine {
   id?: string;
@@ -102,11 +103,9 @@ export default function ApprovalLineManager({
   const [eligible, setEligible] = useState<EligibleApprover[]>([]);
   const [eligibleError, setEligibleError] = useState<string | null>(null);
 
-  const currentMember = projectMembers.find((m) => m.user_id === user?.id);
-  const authorCompanyId =
-    currentMember?.company_id ||
-    eligible.find((a) => a.out_user_id === user?.id)?.out_company_id ||
-    null;
+  const [authorCompanyId, setAuthorCompanyId] = useState<string | null>(
+    () => projectMembers.find((m) => m.user_id === user?.id)?.company_id || null,
+  );
   const authorCompanyType = useMemo(() => {
     if (!authorCompanyId) return null;
     const fromEligible = eligible.find((a) => a.out_company_id === authorCompanyId)?.out_company_type;
@@ -122,15 +121,16 @@ export default function ApprovalLineManager({
 
   const loadEligible = useCallback(async () => {
     setEligibleError(null);
-    const submitterCompanyId = authorCompanyId || currentMember?.company_id || null;
-    const { data, error } = await supabase.rpc('get_eligible_approvers', {
-      _project_id: projectId,
-      _submitter_company_id: submitterCompanyId,
-    });
+    // SSOT: always resolve submitter company from project_members (not assignee-scoped list)
+    const fromDb = await resolveSubmitterCompanyId(projectId, user?.id || null);
+    const fromProp = projectMembers.find((m) => m.user_id === user?.id)?.company_id || null;
+    const submitterCompanyId = fromDb || fromProp || null;
+    setAuthorCompanyId(submitterCompanyId);
+
+    const { data, error } = await fetchEligibleApprovers(projectId, submitterCompanyId);
     if (error) {
-      console.warn('[ApprovalLineManager] get_eligible_approvers failed:', error.message);
-      setEligibleError(error.message);
-      // Fallback: projectMembers (may be company-scoped by parent) so UI still works
+      console.warn('[ApprovalLineManager] get_eligible_approvers failed:', error);
+      setEligibleError(error);
       setEligible(
         projectMembers
           .filter((m) => m.user_id && !String(m.user_id).startsWith('mgr:'))
@@ -139,16 +139,15 @@ export default function ApprovalLineManager({
             out_display_name: m.display_name,
             out_company_id: m.company_id,
             out_company_name: m.company,
-            out_company_type:
-              companies.find((c) => c.id === m.company_id)?.type || '',
+            out_company_type: companies.find((c) => c.id === m.company_id)?.type || '',
             out_position: m.position,
             out_role: m.role,
           })),
       );
       return;
     }
-    setEligible(((data as EligibleApprover[]) || []).filter((a) => !!a.out_user_id));
-  }, [projectId, authorCompanyId, currentMember?.company_id, projectMembers, companies]);
+    setEligible(data);
+  }, [projectId, user?.id, projectMembers, companies]);
 
   const fetchLines = useCallback(async () => {
     const { data } = await supabase
@@ -382,7 +381,7 @@ export default function ApprovalLineManager({
                   checked={showPeerContractors}
                   onChange={(e) => setShowPeerContractors(e.target.checked)}
                 />
-                타 협력사 포함
+                타 협력사(동급) 포함
               </label>
               <Button size="sm" variant="outline" className="gap-1 text-xs h-7" onClick={autoGenerate}>
                 <RefreshCw className="h-3 w-3" /> 자동 생성
@@ -399,7 +398,7 @@ export default function ApprovalLineManager({
           )}
         </div>
         <p className="text-[10px] text-muted-foreground mt-1">
-          후보: 발주처 {clientCount}명 · 시공사 {gcCount}명 · 전체 {eligible.length}명
+          결재 후보(소속+상위): 발주처 {clientCount}명 · 시공사 {gcCount}명 · 전체 {eligible.length}명
           {eligibleError ? ` · RPC 실패(폴백): ${eligibleError}` : ''}
         </p>
       </CardHeader>

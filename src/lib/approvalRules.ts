@@ -190,9 +190,10 @@ export function buildDefaultStepsForAuthor(
 }
 
 /**
- * 단계별 결재자 후보 필터.
- * get_eligible_approvers RPC 가 돌려주는 { out_company_type, out_position, out_role }
- * 를 기준으로 UI 드롭다운을 좁힌다.
+ * 단계별 결재자 후보 필터 (직책·회사유형).
+ * Pool SSOT는 get_eligible_approvers / fetchEligibleApprovers:
+ *   소속 회사 + 상위 체인 + 프로젝트 발주처·시공사 (전 모듈 공통).
+ * 이 함수는 그 pool 위에서 단계 키로만 추가 축소한다.
  */
 export interface EligibleApprover {
   out_user_id: string;

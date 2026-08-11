@@ -26,6 +26,7 @@ import {
 } from '@/lib/approvalRules';
 import { positionLabel } from '@/lib/projectPositions';
 import { normalizeCompanyType } from '@/lib/companyTypes';
+import { fetchEligibleApprovers, resolveSubmitterCompanyId } from '@/lib/eligibleApprovers';
 import {
   generatePermitAiBriefing,
   buildLocalPermitBriefing,
@@ -96,6 +97,10 @@ export default function SubmitApprovalDialog({
   const [reason, setReason] = useState('');
   const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [authorCompanyType, setAuthorCompanyType] = useState<string | null>(null);
+  /** Resolved SSOT company for pool/filter (prop or project_members). */
+  const [resolvedSubmitterCompanyId, setResolvedSubmitterCompanyId] = useState<string | null>(
+    submitterCompanyId,
+  );
   const [isResubmit, setIsResubmit] = useState(false);
 
   useEffect(() => {
@@ -103,23 +108,26 @@ export default function SubmitApprovalDialog({
     (async () => {
       setLoading(true);
       try {
-        // Resolve author company type for dynamic filters / labels
+        // SSOT submitter company: prop → project_members (전 모듈 동일)
+        const uid = (await supabase.auth.getUser()).data.user?.id;
+        const resolvedCompanyId =
+          submitterCompanyId ||
+          (await resolveSubmitterCompanyId(projectId, uid || user?.id || null));
+        setResolvedSubmitterCompanyId(resolvedCompanyId);
+
         let authorType: string | null = null;
-        if (submitterCompanyId) {
+        if (resolvedCompanyId) {
           const { data: co } = await supabase
             .from('companies')
             .select('type')
-            .eq('id', submitterCompanyId)
+            .eq('id', resolvedCompanyId)
             .maybeSingle();
           authorType = normalizeCompanyType(co?.type) || co?.type || null;
         }
         setAuthorCompanyType(authorType);
 
         const [{ data: ap, error: apErr }, { data: tpl }, { count: priorCount }] = await Promise.all([
-          supabase.rpc('get_eligible_approvers', {
-            _project_id: projectId,
-            _submitter_company_id: submitterCompanyId,
-          }),
+          fetchEligibleApprovers(projectId, resolvedCompanyId),
           supabase
             .from('approval_route_templates')
             .select('*')
@@ -133,22 +141,21 @@ export default function SubmitApprovalDialog({
             .eq('entity_type', entityType)
             .eq('entity_id', entityId),
         ]);
-        if (apErr) throw apErr;
-        setApprovers((ap as any) || []);
+        if (apErr) throw new Error(apErr);
+        setApprovers(ap as ApproverOption[]);
         setTemplates(tpl || []);
         setIsResubmit((priorCount || 0) > 0);
 
         const list = (tpl || []) as any[];
-        const uid = (await supabase.auth.getUser()).data.user?.id;
         const mine = list.filter((t) => t.owner_user_id === uid);
-        const co = list.filter((t) => !t.owner_user_id && t.company_id === submitterCompanyId);
+        const co = list.filter((t) => !t.owner_user_id && t.company_id === resolvedCompanyId);
         const shared = list.filter((t) => !t.owner_user_id && !t.company_id);
         const def =
           mine.find((t) => t.is_default) || mine[0] ||
           co.find((t) => t.is_default) || co[0] ||
           shared.find((t) => t.is_default) || shared[0];
 
-        const approverList = ((ap as any) || []) as ApproverOption[];
+        const approverList = ap as ApproverOption[];
         let nextSteps: Step[] = def
           ? sortStepsByHierarchy(adaptStepsForAuthor(normalizeSteps(def.steps), authorType))
           : sortStepsByHierarchy(buildDefaultStepsForAuthor(entityType, authorType));
@@ -241,10 +248,10 @@ export default function SubmitApprovalDialog({
 
   const filterCtx = useMemo(
     () => ({
-      authorCompanyId: submitterCompanyId,
+      authorCompanyId: resolvedSubmitterCompanyId || submitterCompanyId,
       authorCompanyType,
     }),
-    [submitterCompanyId, authorCompanyType],
+    [resolvedSubmitterCompanyId, submitterCompanyId, authorCompanyType],
   );
 
   const sortedApprovers = useMemo(() => {
@@ -316,7 +323,7 @@ export default function SubmitApprovalDialog({
         _entity_type: entityType,
         _entity_id: entityId,
         _project_id: projectId,
-        _company_id: submitterCompanyId,
+        _company_id: resolvedSubmitterCompanyId || submitterCompanyId,
         _steps: orderedSteps as any,
         _reason: reason || null,
       });

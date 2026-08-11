@@ -97,10 +97,9 @@ export default function SettingsApprovalRoutes() {
   };
 
   const refreshApproversFor = async (cid: string | null) => {
-    const { data } = await supabase.rpc('get_eligible_approvers', {
-      _project_id: projectId, _submitter_company_id: cid,
-    });
-    setApprovers((data as any) || []);
+    const { fetchEligibleApprovers } = await import('@/lib/eligibleApprovers');
+    const { data } = await fetchEligibleApprovers(projectId, cid);
+    setApprovers(data as any);
   };
 
   const startEdit = async (t: any) => {

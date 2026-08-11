@@ -396,13 +396,25 @@ export function validateImportedItems(rows: Record<string, string>[]): Validatio
     if (!row['세부작업'] && !row['sub_task']) {
       issues.push({ riskItemId: id, ruleType: 'missing_field', severity: 'warning', message: `행 ${i + 1}: 세부작업 미기재`, field: 'sub_task' });
     }
-    const lg = row['가능성'] || row['likelihood_grade'] || '';
-    const sg = row['중대성'] || row['severity_grade'] || '';
-    if (lg && !validGrades.includes(lg)) {
-      issues.push({ riskItemId: id, ruleType: 'invalid_grade', severity: 'error', message: `행 ${i + 1}: 가능성 등급 '${lg}' 유효하지 않음 (상/중/하)`, field: 'likelihood_grade' });
-    }
-    if (sg && !validGrades.includes(sg)) {
-      issues.push({ riskItemId: id, ruleType: 'invalid_grade', severity: 'error', message: `행 ${i + 1}: 중대성 등급 '${sg}' 유효하지 않음 (상/중/하)`, field: 'severity_grade' });
+    const gradeFields: Array<{ keys: string[]; field: string; label: string }> = [
+      { keys: ['가능성', 'likelihood_grade'], field: 'likelihood_grade', label: '가능성' },
+      { keys: ['중대성', 'severity_grade'], field: 'severity_grade', label: '중대성' },
+      { keys: ['위험도', 'risk_grade'], field: 'risk_grade', label: '위험도' },
+      { keys: ['개선후 가능성', 'improved_likelihood_grade'], field: 'improved_likelihood_grade', label: '개선후 가능성' },
+      { keys: ['개선후 중대성', 'improved_severity_grade'], field: 'improved_severity_grade', label: '개선후 중대성' },
+      { keys: ['개선후 위험도', 'improved_risk_grade'], field: 'improved_risk_grade', label: '개선후 위험도' },
+    ];
+    for (const { keys, field, label } of gradeFields) {
+      const val = keys.map(k => row[k]).find(v => v != null && String(v).trim() !== '') || '';
+      if (val && !validGrades.includes(String(val).trim())) {
+        issues.push({
+          riskItemId: id,
+          ruleType: 'invalid_grade',
+          severity: 'error',
+          message: `행 ${i + 1}: ${label} 등급 '${val}' 유효하지 않음 (상/중/하)`,
+          field,
+        });
+      }
     }
     if (!row['개선대책'] && !row['improvement_measure']) {
       issues.push({ riskItemId: id, ruleType: 'missing_field', severity: 'warning', message: `행 ${i + 1}: 개선대책 미기재`, field: 'improvement_measure' });

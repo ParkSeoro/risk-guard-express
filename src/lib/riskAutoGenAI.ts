@@ -2,6 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { calculateRiskGrade, type RiskGrade } from './riskGrade';
 import { correctTerms } from './termCorrection';
 import { generateRiskItems, type GeneratedRiskItem } from './riskAutoGen';
+import { normalizeLegalBasisList } from './enrichLegalBasis';
 
 export type DetailLevel = 'core' | 'comprehensive';
 
@@ -78,7 +79,16 @@ function mapAIItemToGenerated(item: any, processName: string): GeneratedRiskItem
     improved_frequency: ilg === '상' ? 3 : ilg === '중' ? 2 : 1,
     improved_severity: isg === '상' ? 4 : isg === '중' ? 3 : 2,
     ppe,
-    legal_basis: Array.isArray(item.legal_basis) ? item.legal_basis : [],
+    // AI often returns legal_basis as a string or only embeds citations in narrative
+    legal_basis: normalizeLegalBasisList(
+      item.legal_basis ?? item['법적근거'],
+      [
+        item.hazard_situation,
+        item.existing_measure || item.existing_control,
+        item.improvement_measure || item.improvement_control,
+        item.hazard || item.hazard_factor,
+      ],
+    ),
     department: '',
     assignee: '',
     status: '초안',

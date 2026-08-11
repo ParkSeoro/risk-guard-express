@@ -23,6 +23,7 @@ import {
 import type { GeneratedRiskItem } from '@/lib/riskAutoGen';
 import { enrichLegalBasis } from '@/lib/enrichLegalBasis';
 import { calculateRiskGrade } from '@/lib/riskGrade';
+import { canWriteRiskItems, riskItemsWriteDeniedMessage } from '@/lib/riskWriteAccess';
 
 const JOB_STORAGE_KEY = 'safenex.riskAutoGenJob.v1';
 
@@ -292,28 +293,29 @@ export async function recoverRiskAutoGenReview(runId: string, projectId?: string
 }
 
 async function assertCanInsertRiskItems(projectId: string, userId: string): Promise<void> {
-  // Lightweight probe: insert+delete a soft-marked row is heavy; use RPC/role if available.
-  // Fallback: attempt a no-op update path via selecting membership.
-  const { data: mem, error } = await supabase
+  // Must stay aligned with risk_items RLS + src/lib/riskWriteAccess SSOT.
+  // Excel upload does NOT call this — it hits RLS only. Keep allowlist = RLS roles.
+  const { data: rows, error } = await supabase
     .from('project_members')
     .select('role_new')
     .eq('project_id', projectId)
     .eq('user_id', userId)
-    .maybeSingle();
+    .limit(5);
 
   if (error) {
     console.warn('[AutoGenJob] role precheck failed:', error.message);
-    return; // don't block on precheck failure
+    return; // don't block on precheck failure — RLS is source of truth
   }
 
-  const role = String((mem as any)?.role_new || '');
-  // SSOT: 작성 주체 = site_supervisor(관리감독자). supervisor(감리)는 RO.
-  const allowed = new Set(['project_admin', 'safety_manager', 'site_manager', 'site_supervisor']);
-  // masters may not have project_members row — allow empty and let insert RLS decide
-  if (mem && role && !allowed.has(role)) {
-    throw new Error(
-      `위험성평가 항목을 저장할 권한이 없습니다. 현재 역할: ${role || '없음'}. project_admin / safety_manager / site_manager / site_supervisor(관리감독자) 계정이 필요합니다.`,
-    );
+  const roles = ((rows as { role_new?: string }[]) || [])
+    .map((r) => String(r.role_new || ''))
+    .filter(Boolean);
+
+  // masters / missing membership — let insert RLS decide
+  if (roles.length === 0) return;
+
+  if (!roles.some((r) => canWriteRiskItems(r))) {
+    throw new Error(riskItemsWriteDeniedMessage(roles.join(',')));
   }
 }
 
@@ -752,9 +754,7 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       if (insertedTotal === 0) {
         const raw = insertErr?.message || '초안 행 저장에 실패했습니다.';
         if (/42501|row-level security|RLS/i.test(raw)) {
-          throw new Error(
-            '위험성평가 항목을 저장할 권한이 없습니다. project_admin / safety_manager / site_manager / site_supervisor(관리감독자) 계정으로 다시 시도하세요.',
-          );
+          throw new Error(riskItemsWriteDeniedMessage());
         }
         throw new Error(raw);
       }

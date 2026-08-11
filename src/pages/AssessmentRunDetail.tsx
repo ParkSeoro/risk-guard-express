@@ -1817,10 +1817,25 @@ const AssessmentRunDetail = () => {
         status: '초안', created_by: user.id, sort_order: items.length + i,
       };
     });
-    const { data } = await supabase.from('risk_items').insert(inserts).select();
-    if (data) {
+    const { data, error } = await supabase.from('risk_items').insert(inserts).select();
+    if (error) {
+      // Same RLS gate as AI auto-gen — surface instead of silent no-op
+      const rls = /42501|row-level security|RLS/i.test(error.message);
+      toast({
+        title: rls ? '엑셀 반영 권한 없음' : '엑셀 반영 실패',
+        description: rls
+          ? '위험성평가 항목 저장 RLS와 동일합니다. 관리감독자(site_supervisor) 등 작성 역할인지 확인하세요.'
+          : error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (data?.length) {
       setItems(prev => [...prev, ...data]);
       toast({ title: `${data.length}건 반영 완료` });
+    } else {
+      toast({ title: '반영된 행이 없습니다.', variant: 'destructive' });
+      return;
     }
     setShowExcelUpload(false); setExcelStep('upload'); setExcelData([]);
   };

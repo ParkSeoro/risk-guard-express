@@ -3,6 +3,7 @@ import { calculateRiskGrade, type RiskGrade } from './riskGrade';
 import { correctTerms } from './termCorrection';
 import { generateRiskItems, type GeneratedRiskItem } from './riskAutoGen';
 import { normalizeLegalBasisList } from './enrichLegalBasis';
+import { riskItemsWriteDeniedMessage } from './riskWriteAccess';
 
 export type DetailLevel = 'core' | 'comprehensive';
 
@@ -113,7 +114,7 @@ function mapErrorMessage(rawMsg: string): string {
     return 'AI 응답이 너무 오래 걸려 중단되었습니다. 공종을 하나만 넣고 다시 시도해주세요.';
   }
   if (/42501|row-level security|RLS|권한이 없습니다|Forbidden/i.test(rawMsg)) {
-    return '위험성평가 항목을 저장할 권한이 없습니다. project_admin / safety_manager / site_manager / site_supervisor(관리감독자) 권한이 필요합니다.';
+    return riskItemsWriteDeniedMessage();
   }
   return rawMsg || 'AI 생성에 실패했습니다.';
 }

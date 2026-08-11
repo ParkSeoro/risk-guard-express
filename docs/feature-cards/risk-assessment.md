@@ -17,6 +17,10 @@
 
 ## 2. Permission ✅
 - [x] `useProjectAccess.canEdit('risk_assessment')` / `canApprove('risk_assessment')` 사용
+- [x] **작성 주체 = 관리감독자(`site_supervisor`)** — 위험성평가 고시 §7 (유해·위험요인 파악·개선조치)
+- [x] 안전관리자(`safety_manager`) = 보좌·지도·조언·검토 (매트릭스 ALL 유지, 단독 작성자 아님)
+- [x] 감리(`supervisor`) = 위험성평가 RO (작성 주체 아님)
+- [x] 회차 생성 UI: `AssessmentRuns` `canCreateRun`에 `site_supervisor` 포함
 - [x] worker = CRU(승인 제외), viewer = RO 매트릭스 (`useProjectAccess.ts` `PERMISSION_MATRIX`)
 - 회귀: `src/test/permissions.matrix.test.ts`
 

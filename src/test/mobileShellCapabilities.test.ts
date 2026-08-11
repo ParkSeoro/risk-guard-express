@@ -3,6 +3,7 @@ import {
   mobileTabsForBucket,
   resolveGlobalMobileRole,
   resolveMobileShellBucket,
+  roleLabelKo,
 } from "@/lib/mobileShell";
 import { canMobileApprove, mobileCapabilities } from "@/lib/mobileCapabilities";
 import { previewModeToRole } from "@/contexts/PreviewContext";
@@ -49,5 +50,10 @@ describe("mobile shell role buckets", () => {
     expect(previewModeToRole("project_admin")).toBe("project_admin");
     expect(previewModeToRole("site_supervisor")).toBe("site_supervisor");
     expect(previewModeToRole("worker")).toBe("worker");
+  });
+
+  it("labels site_supervisor as 관리감독자 and supervisor as 감리 (SSOT)", () => {
+    expect(roleLabelKo("site_supervisor")).toBe("관리감독자");
+    expect(roleLabelKo("supervisor")).toBe("감리");
   });
 });

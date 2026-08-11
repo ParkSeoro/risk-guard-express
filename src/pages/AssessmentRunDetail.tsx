@@ -1722,19 +1722,35 @@ const AssessmentRunDetail = () => {
         setExcelHeaders(headers);
         setExcelData(json);
         const autoMap: Record<string, string> = {};
-        const knownMappings: Record<string, string[]> = {
-          process: ['공정', 'Process', '공종'],
-          sub_task: ['세부작업', 'Sub Task', '세부공종'],
-          hazard: ['위험요인', 'Hazard', '유해위험요인'],
-          hazard_situation: ['위험발생상황', 'Hazard Situation', '위험상황'],
-          existing_measure: ['기존대책', 'Existing Measure', '현재대책'],
-          improvement_measure: ['개선대책', 'Improvement', '추가대책'],
-          likelihood_grade: ['가능성', 'Likelihood', '빈도'],
-          severity_grade: ['중대성', 'Severity', '강도'],
-          legal_basis: ['법적근거', 'Legal', '관련법령'],
+        // 개선후/프라임(') 헤더는 기존 가능성·중대성·위험도와 분리
+        const isImprovedGradeHeader = (h: string) =>
+          h.includes('개선') || /['′'']\s*$/.test(h.trim()) || h.includes("'");
+        const findHeader = (aliases: string[], excludeImproved = false) => {
+          const candidates = excludeImproved
+            ? headers.filter(h => !isImprovedGradeHeader(h))
+            : headers;
+          const exact = candidates.find(h => aliases.some(a => h.trim() === a));
+          if (exact) return exact;
+          return candidates.find(h => aliases.some(a => h.includes(a)));
         };
-        for (const [field, aliases] of Object.entries(knownMappings)) {
-          const found = headers.find(h => aliases.some(a => h.includes(a)));
+        const knownMappings: Array<{ field: string; aliases: string[]; excludeImproved?: boolean }> = [
+          { field: 'process', aliases: ['공정', 'Process', '공종'] },
+          { field: 'sub_task', aliases: ['세부작업', 'Sub Task', '세부공종'] },
+          { field: 'hazard', aliases: ['위험요인', 'Hazard', '유해위험요인'] },
+          { field: 'hazard_situation', aliases: ['위험발생상황', 'Hazard Situation', '위험상황'] },
+          { field: 'existing_measure', aliases: ['기존대책', 'Existing Measure', '현재대책'] },
+          { field: 'improvement_measure', aliases: ['개선대책', 'Improvement', '추가대책'] },
+          // 개선후 필드를 먼저 매칭해 기존 칸과 헤더 충돌 방지
+          { field: 'improved_likelihood_grade', aliases: ['개선후 가능성', "가능성'", '개선가능성', 'Improved Likelihood'] },
+          { field: 'improved_severity_grade', aliases: ['개선후 중대성', "중대성'", '개선중대성', 'Improved Severity'] },
+          { field: 'improved_risk_grade', aliases: ['개선후 위험도', "위험도'", '개선위험도', 'Improved Risk'] },
+          { field: 'likelihood_grade', aliases: ['가능성', 'Likelihood', '빈도'], excludeImproved: true },
+          { field: 'severity_grade', aliases: ['중대성', 'Severity', '강도'], excludeImproved: true },
+          { field: 'risk_grade', aliases: ['위험도', 'Risk Level', 'Risk'], excludeImproved: true },
+          { field: 'legal_basis', aliases: ['법적근거', 'Legal', '관련법령'] },
+        ];
+        for (const { field, aliases, excludeImproved } of knownMappings) {
+          const found = findHeader(aliases, !!excludeImproved);
           if (found) autoMap[field] = found;
         }
         setExcelColumnMap(autoMap);
@@ -1761,19 +1777,40 @@ const AssessmentRunDetail = () => {
 
   const handleExcelImport = async () => {
     if (!run || !user || !runId) return;
+    const parseGrade = (raw: string, fallback: '상' | '중' | '하'): '상' | '중' | '하' => {
+      const t = String(raw || '').trim();
+      return (['상', '중', '하'] as const).includes(t as '상' | '중' | '하') ? (t as '상' | '중' | '하') : fallback;
+    };
     const inserts = excelData.map((row, i) => {
       const get = (field: string) => row[excelColumnMap[field] || ''] || '';
-      const lg = get('likelihood_grade') || '중';
-      const sg = get('severity_grade') || '중';
+      const lg = parseGrade(get('likelihood_grade'), '중');
+      const sg = parseGrade(get('severity_grade'), '중');
+      const rgRaw = String(get('risk_grade') || '').trim();
+      const rg = (['상', '중', '하'] as const).includes(rgRaw as '상' | '중' | '하')
+        ? (rgRaw as '상' | '중' | '하')
+        : calculateRiskGrade(lg, sg);
+      // 개선후 칸이 비면 기존처럼 하 — 값이 있으면 엑셀 반영
+      const hasImprovedL = String(get('improved_likelihood_grade') || '').trim().length > 0;
+      const hasImprovedS = String(get('improved_severity_grade') || '').trim().length > 0;
+      const ilg = parseGrade(get('improved_likelihood_grade'), '하');
+      const isg = parseGrade(get('improved_severity_grade'), '하');
+      const irgRaw = String(get('improved_risk_grade') || '').trim();
+      const irg = (['상', '중', '하'] as const).includes(irgRaw as '상' | '중' | '하')
+        ? (irgRaw as '상' | '중' | '하')
+        : (hasImprovedL || hasImprovedS)
+          ? calculateRiskGrade(ilg, isg)
+          : '하';
       return {
         project_id: run.project_id, run_id: runId,
         process: get('process') || '미분류', sub_task: get('sub_task'), hazard: get('hazard'),
         hazard_situation: get('hazard_situation'), existing_measure: get('existing_measure'),
         improvement_measure: get('improvement_measure'),
-        likelihood_grade: ['상', '중', '하'].includes(lg) ? lg : '중',
-        severity_grade: ['상', '중', '하'].includes(sg) ? sg : '중',
-        risk_grade: calculateRiskGrade((['상', '중', '하'].includes(lg) ? lg : '중') as '상' | '중' | '하', (['상', '중', '하'].includes(sg) ? sg : '중') as '상' | '중' | '하'),
-        improved_likelihood_grade: '하', improved_severity_grade: '하', improved_risk_grade: '하',
+        likelihood_grade: lg,
+        severity_grade: sg,
+        risk_grade: rg,
+        improved_likelihood_grade: ilg,
+        improved_severity_grade: isg,
+        improved_risk_grade: irg,
         legal_basis: get('legal_basis') ? get('legal_basis').split(',').map(s => s.trim()) : [],
         status: '초안', created_by: user.id, sort_order: items.length + i,
       };
@@ -3171,6 +3208,10 @@ const AssessmentRunDetail = () => {
                   { key: 'hazard', label: '위험요인' }, { key: 'hazard_situation', label: '위험발생상황' },
                   { key: 'existing_measure', label: '기존대책' }, { key: 'improvement_measure', label: '개선대책' },
                   { key: 'likelihood_grade', label: '가능성' }, { key: 'severity_grade', label: '중대성' },
+                  { key: 'risk_grade', label: '위험도' },
+                  { key: 'improved_severity_grade', label: '개선후 중대성' },
+                  { key: 'improved_likelihood_grade', label: '개선후 가능성' },
+                  { key: 'improved_risk_grade', label: '개선후 위험도' },
                   { key: 'legal_basis', label: '법적근거' },
                 ].map(({ key, label }) => (
                   <div key={key} className="flex items-center gap-2">

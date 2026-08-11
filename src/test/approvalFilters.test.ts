@@ -8,6 +8,7 @@ import {
   dedupeApprovalSteps,
   approvalTimelineGroupKey,
   sequentialDisplayStatus,
+  entityTypeLabel,
   WORK_PERMIT_APPROVAL_STEPS,
   type EligibleApprover,
 } from "@/lib/approvalRules";
@@ -198,5 +199,13 @@ describe("approval timeline helpers — self-lock / sequential", () => {
     expect(approvalTimelineGroupKey({ entity_type: "work_permit", entity_id: "p1" })).toBe(
       "work_permit:p1",
     );
+  });
+
+  it("entityTypeLabel covers all approval document types", () => {
+    expect(entityTypeLabel("assessment_run")).toBe("위험성평가");
+    expect(entityTypeLabel("work_permit")).toBe("작업허가서");
+    expect(entityTypeLabel("work_plan")).toBe("작업계획서");
+    expect(entityTypeLabel("")).toBe("문서");
+    expect(entityTypeLabel("unknown_x")).toBe("unknown_x");
   });
 });

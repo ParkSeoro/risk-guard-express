@@ -17,9 +17,12 @@ import { CheckCircle2, Clock, XCircle, FileCheck, MessageSquare, FileText, Exter
 import { exportToPDF } from "@/lib/exportUtils";
 import { useMemo } from "react";
 import {
+  APPROVAL_ENTITY_FILTER_OPTIONS,
   approvalTimelineGroupKey,
+  entityTypeLabel,
   isSubmitterApprovalStep,
   sequentialDisplayStatus,
+  type ApprovalEntityType,
 } from "@/lib/approvalRules";
 import { filterRunsByCompanyScope } from "@/lib/companyDocScope";
 import {
@@ -43,6 +46,35 @@ const ENTITY_LINK = (t?: string | null, id?: string | null): string | null => {
     default: return null;
   }
 };
+
+function resolveLinkedRun(
+  runs: any[],
+  groupKey: string,
+  steps: any[],
+): any | null {
+  if (groupKey.startsWith('run:')) {
+    return runs.find((r) => r.id === groupKey.slice(4)) || null;
+  }
+  const first = steps[0];
+  if (
+    first?.entity_id &&
+    (first.entity_type === 'assessment_run' || first.entity_type === 'assessment_run_feedback')
+  ) {
+    return runs.find((r) => r.id === first.entity_id) || null;
+  }
+  return null;
+}
+
+function documentCardTitle(run: any | null, steps: any[]): string {
+  if (run) {
+    return `[${entityTypeLabel('assessment_run')}] ${run.period_label || run.type || ''}`.trim();
+  }
+  const first = steps[0];
+  const typeLabel = entityTypeLabel(first?.entity_type);
+  // Prefer RPC-enriched title when present on a step row (some views denormalize it)
+  const title = first?.entity_title || first?.title || '';
+  return title ? `${typeLabel} · ${title}` : typeLabel;
+}
 
 const Approvals = () => {
   const navigate = useNavigate();
@@ -69,7 +101,7 @@ const Approvals = () => {
   const [entityPending, setEntityPending] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [entityTypeFilter, setEntityTypeFilter] = useState<'all' | 'work_plan' | 'work_permit'>('all');
+  const [entityTypeFilter, setEntityTypeFilter] = useState<'all' | ApprovalEntityType>('all');
 
   const fetchEntityPending = async () => {
     try { await (supabase as any).rpc('promote_permits_to_closure_pending'); } catch { /* ignore */ }
@@ -227,7 +259,13 @@ const Approvals = () => {
       if (entityTypeFilter !== 'all' && e.entity_type !== entityTypeFilter) return false;
       if (!search.trim()) return true;
       const q = search.toLowerCase();
-      return (e.entity_title || '').toLowerCase().includes(q) || (e.step || '').toLowerCase().includes(q);
+      const typeLabel = entityTypeLabel(e.entity_type).toLowerCase();
+      return (
+        (e.entity_title || '').toLowerCase().includes(q)
+        || (e.step || '').toLowerCase().includes(q)
+        || typeLabel.includes(q)
+        || (e.entity_type || '').toLowerCase().includes(q)
+      );
     });
   }, [entityPending, entityTypeFilter, search]);
 
@@ -256,15 +294,27 @@ const Approvals = () => {
     if (!q) return group;
     const out: Record<string, any[]> = {};
     for (const [groupKey, steps] of Object.entries(group)) {
-      const runId = groupKey.startsWith('run:') ? groupKey.slice(4) : null;
-      const run = runId ? runs.find((r: any) => r.id === runId) : null;
+      const run = resolveLinkedRun(runs, groupKey, steps as any[]);
+      const typeLabel = entityTypeLabel((steps as any[])[0]?.entity_type || (run ? 'assessment_run' : null));
       const text = [
+        typeLabel,
         run?.type, run?.period_label,
-        ...(steps as any[]).map(s => `${s.step} ${s.approver_name || ''} ${s.company_name || ''} ${s.comment || ''} ${s.entity_type || ''}`),
+        ...(steps as any[]).map(s => `${s.step} ${s.approver_name || ''} ${s.company_name || ''} ${s.comment || ''} ${s.entity_type || ''} ${entityTypeLabel(s.entity_type)}`),
       ].join(' ').toLowerCase();
       if (text.includes(q)) out[groupKey] = steps;
     }
     return out;
+  };
+
+  const matchesEntityTypeFilter = (groupKey: string, steps: any[]) => {
+    if (entityTypeFilter === 'all') return true;
+    const t = steps[0]?.entity_type;
+    if (t) return t === entityTypeFilter;
+    // Legacy run:* groups without entity_type → 위험성평가
+    if (entityTypeFilter === 'assessment_run') {
+      return groupKey.startsWith('run:') || steps.some((s) => !!s.run_id);
+    }
+    return false;
   };
 
   // Filter tabs
@@ -274,7 +324,7 @@ const Approvals = () => {
       for (const [runId, steps] of Object.entries(grouped)) {
         // 순차 결재: 오직 현재 활성(진행중) 단계 담당자에게만 노출
         const myActive = (steps as any[]).filter(s => s.approver_id === user.id && s.status === '진행중');
-        if (myActive.length > 0) filtered[runId] = steps as any[];
+        if (myActive.length > 0 && matchesEntityTypeFilter(runId, steps as any[])) filtered[runId] = steps as any[];
       }
       return applySearch(filtered);
     }
@@ -284,7 +334,7 @@ const Approvals = () => {
         const submitted = (steps as any[]).some(s =>
           s.approver_id === user.id && isSubmitterApprovalStep(s)
         );
-        if (submitted) filtered[runId] = steps as any[];
+        if (submitted && matchesEntityTypeFilter(runId, steps as any[])) filtered[runId] = steps as any[];
       }
       return applySearch(filtered);
     }
@@ -293,19 +343,26 @@ const Approvals = () => {
       for (const [runId, steps] of Object.entries(grouped)) {
         const arr = steps as any[];
         const allDecided = arr.every(s => s.status === '승인' || s.status === '반려' || s.status === '취소');
-        if (allDecided) filtered[runId] = arr;
+        if (allDecided && matchesEntityTypeFilter(runId, arr)) filtered[runId] = arr;
       }
       return applySearch(filtered);
     }
     if (tab === 'rejected') {
       const filtered: Record<string, any[]> = {};
       for (const [runId, steps] of Object.entries(grouped)) {
-        if ((steps as any[]).some(s => s.status === '반려')) filtered[runId] = steps as any[];
+        if ((steps as any[]).some(s => s.status === '반려') && matchesEntityTypeFilter(runId, steps as any[])) {
+          filtered[runId] = steps as any[];
+        }
       }
       return applySearch(filtered);
     }
     // 'all' tab — read-only overview (admin only)
-    return applySearch(grouped);
+    if (entityTypeFilter === 'all') return applySearch(grouped);
+    const filtered: Record<string, any[]> = {};
+    for (const [runId, steps] of Object.entries(grouped)) {
+      if (matchesEntityTypeFilter(runId, steps as any[])) filtered[runId] = steps as any[];
+    }
+    return applySearch(filtered);
 
   };
 
@@ -393,7 +450,9 @@ const Approvals = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><FileCheck className="h-6 w-6" /> 전자결재</h1>
-          <p className="text-sm text-muted-foreground mt-1">직책 기반 순차 결재: 작성(관리감독자) → 안전관리자 검토 → 현장대리인 확인 → 최종승인</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            위험성평가·작업계획서·작업허가서 등 공통 순차 결재: 담당자(시공) → 담당자(안전) → 책임자(소장) → 담당자(CM) → 담당자(SM)
+          </p>
         </div>
         <Select value={selectedProject} onValueChange={setSelectedProject}>
           <SelectTrigger className="w-60 text-xs"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
@@ -446,12 +505,13 @@ const Approvals = () => {
               <Input className="pl-8" placeholder="제목·결재자·코멘트 검색" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
           </div>
-          <Select value={entityTypeFilter} onValueChange={(v) => setEntityTypeFilter(v as any)}>
-            <SelectTrigger className="w-44 text-xs"><SelectValue /></SelectTrigger>
+          <Select value={entityTypeFilter} onValueChange={(v) => setEntityTypeFilter(v as 'all' | ApprovalEntityType)}>
+            <SelectTrigger className="w-52 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">전체 유형</SelectItem>
-              <SelectItem value="work_plan">작업계획서</SelectItem>
-              <SelectItem value="work_permit">작업허가서</SelectItem>
+              {APPROVAL_ENTITY_FILTER_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </CardContent>
@@ -461,7 +521,7 @@ const Approvals = () => {
         <Card className="border-primary/40 bg-primary/5">
           <CardContent className="p-3 space-y-2">
             <div className="text-sm font-bold flex items-center gap-2">
-              <FileCheck className="h-4 w-4" /> 작업계획서·작업허가서 결재 대기 ({filteredEntityPending.length}/{entityPending.length})
+              <FileCheck className="h-4 w-4" /> 결재 대기 ({filteredEntityPending.length}/{entityPending.length})
             </div>
             {filteredEntityPending.map((e: any) => {
               const stepKind = permitPostStepKind(e.step_position);
@@ -469,7 +529,7 @@ const Approvals = () => {
               return (
               <div key={e.approval_id} className="flex items-center gap-2 p-2 border rounded bg-background">
                 <Badge variant="outline" className="text-[10px]">
-                  {e.entity_type === 'work_plan' ? '작업계획서' : '작업허가서'}
+                  {entityTypeLabel(e.entity_type)}
                 </Badge>
                 {badge && (
                   <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-700">
@@ -529,30 +589,36 @@ const Approvals = () => {
             <Card><CardContent className="py-12 text-center text-muted-foreground space-y-2">
               <FileCheck className="h-10 w-10 mx-auto opacity-30" />
               <div>{tab === 'mine' ? '대기 중인 결재가 없습니다.' : tab === 'submitted' ? '상신한 결재가 없습니다.' : '결재 내역이 없습니다.'}</div>
-              {tab === 'mine' && <div className="text-xs">위험성평가·작업계획서·작업허가서를 상신하면 이 곳에 표시됩니다.</div>}
+              {tab === 'mine' && (
+                <div className="text-xs">
+                  위험성평가·작업계획서·작업허가서 등 상신 문서가 유형별로 표시됩니다.
+                </div>
+              )}
             </CardContent></Card>
           ) : (
             Object.entries(filteredGrouped).map(([groupKey, steps]) => {
-              const runId = groupKey.startsWith('run:') ? groupKey.slice(4) : null;
-              const run = runId ? runs.find((r: any) => r.id === runId) : null;
               const isAllTab = tab === 'all';
               const sortedSteps = (steps as any[]).slice().sort((a, b) => {
                 return (a.step_order ?? 99) - (b.step_order ?? 99);
               });
-              const entityTitle = !run ? (() => {
-                const first = sortedSteps[0];
-                const typeLabel = first?.entity_type === 'work_plan' ? '작업계획서'
-                  : first?.entity_type === 'work_permit' ? '작업허가서'
-                  : first?.entity_type || '문서';
-                return typeLabel;
-              })() : null;
+              const run = resolveLinkedRun(runs, groupKey, sortedSteps);
+              const cardTitle = documentCardTitle(run, sortedSteps);
+              const firstStep = sortedSteps[0];
+              const docHref = run
+                ? `/assessment-run/${run.id}`
+                : ENTITY_LINK(firstStep?.entity_type, firstStep?.entity_id);
               return (
                 <Card key={groupKey}>
                   <CardContent className="pt-5">
                     <div className="flex items-center justify-between mb-4">
                       <div>
-                        <h3 className="font-semibold">{run ? `[${run.type}] ${run.period_label}` : entityTitle || '일반'}</h3>
-                        {run && <p className="text-xs text-muted-foreground">상태: {run.status}</p>}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline" className="text-[10px]">
+                            {entityTypeLabel(firstStep?.entity_type || (run ? 'assessment_run' : null))}
+                          </Badge>
+                          <h3 className="font-semibold">{cardTitle}</h3>
+                        </div>
+                        {run && <p className="text-xs text-muted-foreground mt-0.5">상태: {run.status}</p>}
                       </div>
                       <div className="flex items-center gap-2">
                         {(() => {
@@ -575,24 +641,15 @@ const Approvals = () => {
                           ) : null;
                         })()}
                         {run && (
-                          <>
-                            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleDownloadRunPDF(runId!)}>
-                              <FileText className="h-3 w-3" /> PDF
-                            </Button>
-                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate(`/assessment-run/${runId}`)}>
-                              <ExternalLink className="h-3 w-3" /> 상세
-                            </Button>
-                          </>
+                          <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => handleDownloadRunPDF(run.id)}>
+                            <FileText className="h-3 w-3" /> PDF
+                          </Button>
                         )}
-                        {!run && (() => {
-                          const first = sortedSteps[0];
-                          const href = ENTITY_LINK(first?.entity_type, first?.entity_id);
-                          return href ? (
-                            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate(href)}>
-                              <ExternalLink className="h-3 w-3" /> 문서 보기
-                            </Button>
-                          ) : null;
-                        })()}
+                        {docHref && (
+                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate(docHref)}>
+                            <ExternalLink className="h-3 w-3" /> {run ? '상세' : '문서 보기'}
+                          </Button>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">

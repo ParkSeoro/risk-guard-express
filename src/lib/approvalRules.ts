@@ -31,6 +31,18 @@ export const ENTITY_LABELS: Record<ApprovalEntityType, string> = {
   tbm: 'TBM 일지',
 };
 
+/** 전자결재 UI 공통 — 알 수 없는 키는 원문, 빈 값은 '문서' */
+export function entityTypeLabel(entityType?: string | null): string {
+  const key = (entityType || '').trim();
+  if (!key) return '문서';
+  return (ENTITY_LABELS as Record<string, string>)[key] || key;
+}
+
+/** 필터/셀렉트용 문서 유형 목록 (표시명 순) */
+export const APPROVAL_ENTITY_FILTER_OPTIONS: { value: ApprovalEntityType; label: string }[] = (
+  Object.entries(ENTITY_LABELS) as [ApprovalEntityType, string][]
+).map(([value, label]) => ({ value, label }));
+
 /** 고정 결재선 포지션 키 + GC / 협조 슬롯 */
 export type ApprovalPositionKey =
   | 'contractor_supervisor'

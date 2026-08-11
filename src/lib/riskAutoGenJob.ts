@@ -344,6 +344,8 @@ async function applyFilledDetail(
     processName: proc,
     hazard: detail.hazard || rowHazard || '',
     hazardSituation: detail.hazard_situation || '',
+    existingMeasure: detail.existing_measure || '',
+    improvementMeasure: detail.improvement_measure || '',
     existing: detail.legal_basis || [],
   });
   const { error: updErr } = await supabase

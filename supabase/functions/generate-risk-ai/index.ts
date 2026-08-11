@@ -141,6 +141,39 @@ function normalizeCommaSpacing(text: string): string {
     .trim();
 }
 
+const LEGAL_CITATION_RE =
+  /[\[(]?산업안전보건기준에\s*관한\s*규칙\s*제\s*\d+\s*조(?:\s*의\s*\d+)?[\])]?|[\[(]?산안기준규칙\s*제\s*\d+\s*조(?:\s*의\s*\d+)?[\])]?|[\[(]?KOSHA\s*GUIDE[^\])\n,]{0,60}[\])]?/gi;
+
+function stripLegalCiteWrappers(s: string): string {
+  return s.replace(/^[\[(]+/, "").replace(/[\])]+$/, "").replace(/\s+/g, " ").trim();
+}
+
+/** Normalize legal_basis (array|string|법적근거) and harvest citations from raw narrative. */
+function normalizeLegalBasis(raw: unknown, harvestFrom: string[] = []): string[] {
+  let out: string[] = [];
+  if (Array.isArray(raw)) {
+    out = raw.map(String).map((s) => s.trim()).filter(Boolean);
+  } else if (typeof raw === "string" && raw.trim()) {
+    out = raw.split(/[,，;；\n|/]+/).map((s) => s.trim()).filter(Boolean);
+  }
+  if (out.length === 0 && harvestFrom.length) {
+    const blob = harvestFrom.join("\n");
+    const found = blob.match(LEGAL_CITATION_RE);
+    if (found?.length) {
+      out = found.map(stripLegalCiteWrappers).filter(Boolean);
+    }
+  }
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const s of out) {
+    const key = stripLegalCiteWrappers(s) || s.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(key);
+  }
+  return deduped;
+}
+
 /** Strip schema/prompt instruction leaks and reject macro templates. */
 function sanitizeFieldText(raw: string, kind: "situation" | "measure" | "other" | "hazard"): string | null {
   let s = String(raw ?? "").trim();
@@ -199,18 +232,22 @@ function mapRawItem(item: any, processName: string): any | null {
   );
   if (!sub_task || !hazard) return null;
 
-  const hazard_situation = sanitizeFieldText(
-    String(item.hazard_situation || item["발생상황"] || ""),
-    "situation",
+  // Harvest legal cites from RAW narrative before 80-char sanitize truncates them
+  const rawSituation = String(item.hazard_situation || item["발생상황"] || "");
+  const rawExisting = String(item.existing_control || item["기존대책"] || item.existing_measure || "");
+  const rawImprovement = String(
+    item.improvement_control || item["개선대책"] || item.improvement_measure || "",
   );
-  const existing_measure = sanitizeFieldText(
-    String(item.existing_control || item["기존대책"] || item.existing_measure || ""),
-    "measure",
-  );
-  const improvement_measure = sanitizeFieldText(
-    String(item.improvement_control || item["개선대책"] || item.improvement_measure || ""),
-    "measure",
-  );
+  const legal_basis = normalizeLegalBasis(item.legal_basis ?? item["법적근거"], [
+    rawSituation,
+    rawExisting,
+    rawImprovement,
+    String(item.hazard_factor || item["위험요인"] || item.hazard || ""),
+  ]);
+
+  const hazard_situation = sanitizeFieldText(rawSituation, "situation");
+  const existing_measure = sanitizeFieldText(rawExisting, "measure");
+  const improvement_measure = sanitizeFieldText(rawImprovement, "measure");
   if (!hazard_situation || !existing_measure || !improvement_measure) return null;
 
   let likelihood = String(
@@ -232,24 +269,6 @@ function mapRawItem(item: any, processName: string): any | null {
   const ppe = Array.isArray(ppeRaw)
     ? ppeRaw.map(String).map((s) => s.trim()).filter(Boolean)
     : String(ppeRaw).split(/[,，]/).map((s) => s.trim()).filter(Boolean);
-
-  const legalRaw = item.legal_basis ?? item["법적근거"] ?? "";
-  let legal_basis = Array.isArray(legalRaw)
-    ? legalRaw.map(String).filter(Boolean)
-    : String(legalRaw).trim()
-    ? [String(legalRaw).trim()]
-    : [];
-
-  // Harvest inline citations if legal_basis array was empty
-  if (legal_basis.length === 0) {
-    const blob = `${hazard_situation}\n${existing_measure}\n${improvement_measure}`;
-    const found = blob.match(
-      /[\[(]?산업안전보건기준에\s*관한\s*규칙\s*제\s*\d+\s*조[\])]?|[\[(]?산안기준규칙\s*제\s*\d+\s*조[\])]?|[\[(]?KOSHA\s*GUIDE[^\])\n,]{0,40}[\])]?/gi,
-    );
-    if (found?.length) {
-      legal_basis = [...new Set(found.map((s) => s.replace(/^[\[(]|[\])]$/g, "").trim()))];
-    }
-  }
 
   const improvedLikelihood = String(
     item.residual_likelihood || item["개선후위험도"] || item.improved_likelihood_grade || item.residual_risk_level || "",
@@ -891,12 +910,12 @@ serve(async (req) => {
           `"residual_likelihood":"상|중|하","residual_severity":"상|중|하",` +
           `"ppe":["보호구"],"legal_basis":["법적근거 조항"]}]}\n` +
           `세부작업·위험·서술 필드는 바꾸지 말고, 등급·PPE·법적근거만 채운다.\n` +
-          `legal_basis에는 산안기준규칙 제OOO조 또는 KOSHA GUIDE. 추상문구 금지.`;
+          `legal_basis는 1개 이상 필수(빈 배열 금지). 산안기준규칙 제OOO조 또는 KOSHA GUIDE. 추상문구 금지.`;
         user =
           `[입력] 공종:${process_name} / 장비:${equipText} / 위치:${locationText}\n\n` +
           `[항목]\n${withNarrative}\n\n` +
-          `위 ${cleaned.length}건의 등급·PPE·법적근거만 JSON items로 반환하라. 항목 수·순서 동일.`;
-        maxTokens = Math.min(1600, 400 * cleaned.length + 400);
+          `위 ${cleaned.length}건의 등급·PPE·법적근거만 JSON items로 반환하라. 항목 수·순서 동일. legal_basis 비우지 말 것.`;
+        maxTokens = Math.min(2200, 500 * cleaned.length + 500);
       } else if (fillStage === "narrative") {
         sys =
           `너는 대한민국 건설안전 기술사다. 반드시 JSON만 출력한다. 마크다운·서론 금지.\n` +
@@ -924,12 +943,12 @@ serve(async (req) => {
           `"ppe":["보호구"],"legal_basis":["법적근거 조항"]}]}\n` +
           `입력된 세부작업·위험요인을 유지한다.\n` +
           `어투: 음슴체/개조식. 발생상황·대책은 각 1문장(짧게).\n` +
-          `등급·PPE·법적근거는 짧게. legal_basis는 산안기준규칙 제OOO조 또는 KOSHA GUIDE.`;
+          `등급·PPE·법적근거는 짧게. legal_basis는 1개 이상 필수(빈 배열 금지). 산안기준규칙 제OOO조 또는 KOSHA GUIDE.`;
         user =
           `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
           `[초안 목록]\n${listText}\n\n` +
-          `위 ${cleaned.length}건을 채워 JSON items로 반환하라. 항목 수·순서 동일. 길게 쓰지 말 것.`;
-        maxTokens = Math.min(2800, 700 * cleaned.length + 400);
+          `위 ${cleaned.length}건을 채워 JSON items로 반환하라. 항목 수·순서 동일. 길게 쓰지 말 것. legal_basis 비우지 말 것.`;
+        maxTokens = Math.min(3200, 800 * cleaned.length + 500);
       }
 
       const mapFillItems = (content: string) => {
@@ -958,8 +977,12 @@ serve(async (req) => {
               const improvedSeverity = String(raw.residual_severity || raw.improved_severity_grade || "하").trim();
               const ppeRaw = raw.ppe ?? [];
               const ppe = Array.isArray(ppeRaw) ? ppeRaw.map(String).filter(Boolean) : [];
-              const legalRaw = raw.legal_basis ?? [];
-              const legal_basis = Array.isArray(legalRaw) ? legalRaw.map(String).filter(Boolean) : [];
+              const legal_basis = normalizeLegalBasis(raw.legal_basis ?? raw["법적근거"], [
+                fallback?.hazard_situation || "",
+                fallback?.existing_measure || "",
+                fallback?.improvement_measure || "",
+                hazard,
+              ]);
               return {
                 process: process_name,
                 sub_task: sub,
@@ -1021,7 +1044,12 @@ serve(async (req) => {
                 improved_frequency: 1,
                 improved_severity: 1,
                 ppe: Array.isArray(raw.ppe) ? raw.ppe.map(String) : ["안전모", "안전화"],
-                legal_basis: Array.isArray(raw.legal_basis) ? raw.legal_basis.map(String).filter(Boolean) : [],
+                legal_basis: normalizeLegalBasis(raw.legal_basis ?? raw["법적근거"], [
+                  String(raw.hazard_situation || fallback.hazard_situation || ""),
+                  String(raw.existing_control || raw.existing_measure || fallback.existing_measure || ""),
+                  String(raw.improvement_control || raw.improvement_measure || fallback.improvement_measure || ""),
+                  fallback.hazard || "",
+                ]),
               };
             }
             return mapped;
@@ -1266,26 +1294,33 @@ serve(async (req) => {
         const mapped = mapRawItem(raw, process_name);
         if (!mapped) {
           // Soft-accept minimally filled row rather than fail the whole parallel batch
+          const softHazard =
+            String(raw.hazard_factor || raw.hazard || "위험요인 확인 필요").trim() || "위험요인 확인 필요";
+          const softSituation = String(raw.hazard_situation || "").trim() || `${st} 중 위험 상황 발생`;
+          const softExisting =
+            String(raw.existing_control || raw.existing_measure || "").trim() || "작업 전 점검 및 보호구 착용";
+          const softImprove =
+            String(raw.improvement_control || raw.improvement_measure || "").trim() ||
+            "공학적 방호·관리적 통제·PPE를 병행한다";
           const soft = {
             process: process_name,
             sub_task: st,
-            hazard: String(raw.hazard_factor || raw.hazard || "위험요인 확인 필요").trim() || "위험요인 확인 필요",
-            hazard_situation: String(raw.hazard_situation || "").trim() || `${st} 중 위험 상황 발생`,
-            existing_measure: String(raw.existing_control || raw.existing_measure || "").trim() || "작업 전 점검 및 보호구 착용",
-            improvement_measure:
-              String(raw.improvement_control || raw.improvement_measure || "").trim() ||
-              "공학적 방호·관리적 통제·PPE를 병행한다",
+            hazard: softHazard,
+            hazard_situation: softSituation,
+            existing_measure: softExisting,
+            improvement_measure: softImprove,
             likelihood_grade: "중",
             severity_grade: "중",
             improved_likelihood_grade: "하",
             improved_severity_grade: "하",
             ppe: ["안전모", "안전화"],
-            legal_basis: [] as string[],
+            legal_basis: normalizeLegalBasis(raw.legal_basis ?? raw["법적근거"], [
+              softSituation,
+              softExisting,
+              softImprove,
+              softHazard,
+            ]),
           };
-          // Soft row: still try to keep any legal strings the model emitted
-          const softLegal = raw.legal_basis ?? raw["법적근거"];
-          if (Array.isArray(softLegal)) soft.legal_basis = softLegal.map(String).filter(Boolean);
-          else if (typeof softLegal === "string" && softLegal.trim()) soft.legal_basis = [softLegal.trim()];
           return new Response(
             JSON.stringify({ item: soft, normalized_equipment: normalizedEquipment, mode: "risk_row" }),
             { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },

@@ -7,9 +7,7 @@ import { usePreview } from "@/contexts/PreviewContext";
 import MobileWeatherCard from "@/components/mobile/MobileWeatherCard";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
-  ChevronRight,
   ClipboardCheck,
   FileCheck2,
   HeartPulse,
@@ -21,6 +19,7 @@ import {
   Share,
 } from "lucide-react";
 import WorkerDailyHome from "@/pages/WorkerDailyHome";
+import MobileProjectPicker from "@/components/mobile/MobileProjectPicker";
 import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
 import { isIosSafariTab } from "@/lib/pushSubscription";
 import { isIosWebClient, isWebStandalone } from "@/lib/iosWebPath";
@@ -192,7 +191,7 @@ function ManagerToday({
       title: "미완료 조치",
       value: openActions,
       icon: ClipboardCheck,
-      to: "/app/worker/tasks",
+      to: "/app/worker/actions",
       tone: "text-amber-600",
     },
     {
@@ -217,14 +216,11 @@ function ManagerToday({
       <div className="flex items-center justify-between">
         <div>
           <div className="text-base font-bold">오늘</div>
-          <div className="text-xs text-muted-foreground">{roleLabelKo(role)} 뷰</div>
+          <div className="text-xs text-muted-foreground">{roleLabelKo(role)}</div>
         </div>
-        {!projectId && (
-          <Badge variant="destructive" className="text-[10px]">
-            프로젝트 선택 필요
-          </Badge>
-        )}
       </div>
+
+      {!projectId && <MobileProjectPicker />}
 
       {(workStops ?? 0) > 0 && (
         <Card className="border-destructive/40 bg-destructive/5">
@@ -255,26 +251,9 @@ function ManagerToday({
         ))}
       </div>
 
-      <Card>
-        <CardContent className="p-0 divide-y">
-          {[
-            { label: "안전점검", to: "/app/worker/inspect" },
-            { label: "사고 신고", to: "/app/worker/incident" },
-            { label: "TBM 진행", to: "/app/worker/tbm" },
-            { label: "근로자 · 출입 관리", to: "/app/worker/workers?tab=roster" },
-            { label: "승인 자료 보기", to: "/app/worker/docs" },
-          ].map((row) => (
-            <Link
-              key={row.to}
-              to={row.to}
-              className="flex items-center gap-2 px-3 py-3 text-sm hover:bg-muted/50"
-            >
-              <span className="flex-1">{row.label}</span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </Link>
-          ))}
-        </CardContent>
-      </Card>
+      <p className="text-[11px] text-muted-foreground text-center">
+        점검·TBM·출입 등은 하단 <span className="font-medium text-foreground">현장</span> 탭
+      </p>
 
       {(isMaster || needsGpsCalibration) && (
         <div className="space-y-1.5">

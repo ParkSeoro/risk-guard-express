@@ -27,6 +27,7 @@ export default function MobileTasks() {
     { label: "사고 신고", sub: "아차/경미/중대", to: "/app/worker/incident", icon: AlertOctagon },
     { label: "TBM 진행", sub: "QR·참여 관리", to: "/app/worker/tbm", icon: Users },
     { label: "근로자·출입", sub: "명부·입퇴장", to: "/app/worker/workers", icon: Users },
+    { label: "작업중지", sub: "접수·처리중 확인", to: "/app/worker/work-stop", icon: AlertOctagon },
   ];
 
   const items = manager ? managerItems : workerItems;
@@ -34,9 +35,9 @@ export default function MobileTasks() {
   return (
     <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="mobile-tasks">
       <div>
-        <h1 className="text-base font-bold">할 일</h1>
+        <h1 className="text-base font-bold">{manager ? "현장" : "할 일"}</h1>
         <p className="text-xs text-muted-foreground">
-          {manager ? "현장 관리·조치 작업" : "오늘 수행해야 할 작업"}
+          {manager ? "점검·조치·TBM·출입 바로가기" : "오늘 수행해야 할 작업"}
         </p>
       </div>
       <Card>

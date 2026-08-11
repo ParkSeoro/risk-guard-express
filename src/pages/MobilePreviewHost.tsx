@@ -33,6 +33,7 @@ const MODE_LABELS: Record<PreviewMode, string> = {
 };
 
 function PreviewInnerRoutes() {
+  // Keep in sync with WorkerAppRoutes — missing paths bounce to today and look broken.
   return (
     <MobileShell>
       <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">화면 로딩…</div>}>
@@ -42,8 +43,10 @@ function PreviewInnerRoutes() {
           <Route path="tasks" element={<P.LazyMobileTasks />} />
           <Route path="docs" element={<P.LazyMobileDocs />} />
           <Route path="more" element={<P.LazyMobileMore />} />
+          <Route path="account" element={<P.LazySettingsAccount />} />
           <Route path="home" element={<Navigate to="today" replace />} />
           <Route path="menu" element={<Navigate to="today" replace />} />
+          <Route path="inspect" element={<P.LazyMobileInspect />} />
           <Route path="alerts" element={<P.LazyMobileAlerts />} />
           <Route path="notifications" element={<P.LazySettingsNotifications />} />
           <Route path="actions" element={<P.LazyMobileActions />} />
@@ -60,6 +63,8 @@ function PreviewInnerRoutes() {
           <Route path="scan" element={<P.LazyMobileScan />} />
           <Route path="daily-health-log" element={<P.LazyMobileDailyHealthLog />} />
           <Route path="work-stop" element={<P.LazyMobileWorkStop />} />
+          <Route path="geofence-drop" element={<P.LazyMobileGeofenceDrop />} />
+          <Route path="map-calibration" element={<P.LazyMobileMapCalibration />} />
           <Route path="*" element={<Navigate to="today" replace />} />
         </Routes>
       </Suspense>
@@ -98,12 +103,23 @@ export default function MobilePreviewHost() {
 
   useEffect(() => {
     if (!projectId) return;
+    let prev: string | null = null;
     try {
+      prev = localStorage.getItem("selectedProjectId");
       localStorage.setItem("selectedProjectId", projectId);
       window.dispatchEvent(new Event("mobile:project-changed"));
     } catch {
       /* ignore */
     }
+    return () => {
+      try {
+        if (prev != null) localStorage.setItem("selectedProjectId", prev);
+        else localStorage.removeItem("selectedProjectId");
+        window.dispatchEvent(new Event("mobile:project-changed"));
+      } catch {
+        /* ignore */
+      }
+    };
   }, [projectId]);
 
   const diag = useMemo(

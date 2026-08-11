@@ -49,6 +49,12 @@ export default function MobileShell({ children }: { children: ReactNode }) {
     location.pathname.includes("/risk-assessment/") ||
     location.pathname.includes("/work-plans/");
 
+  // Legal CTA for field workers; managers process via Today / 현장
+  const showWorkStopFab = !hideChrome && bucket === "worker";
+  const contentPad = showWorkStopFab
+    ? "pb-[calc(7rem+var(--sab))]"
+    : "pb-[calc(5rem+var(--sab))]";
+
   return (
     <div
       className="min-h-dvh bg-muted/30 flex flex-col overflow-x-clip"
@@ -68,7 +74,7 @@ export default function MobileShell({ children }: { children: ReactNode }) {
             <div className="font-bold text-sm leading-tight">SafeNex</div>
             <div className="text-[10px] opacity-80 truncate">
               {loading ? "역할 확인 중…" : roleLabelKo(displayRole)}
-              {projectId ? "" : " · 프로젝트 미선택"}
+              {!projectId ? " · 프로젝트 미선택" : ""}
             </div>
           </div>
           <Badge variant="secondary" className="text-[10px] shrink-0">
@@ -77,10 +83,9 @@ export default function MobileShell({ children }: { children: ReactNode }) {
         </header>
       )}
 
-      <div className="flex-1 pb-[calc(7rem+var(--sab))]">{children}</div>
+      <div className={cn("flex-1", !hideChrome && contentPad)}>{children}</div>
 
-      {/* Work-stop: above tab bar, clear of safe-area — left side so it doesn't cover 자료/더보기 */}
-      {!hideChrome && (
+      {showWorkStopFab && (
         <Button
           type="button"
           size="sm"
@@ -98,7 +103,10 @@ export default function MobileShell({ children }: { children: ReactNode }) {
           className="fixed bottom-0 inset-x-0 z-30 border-t bg-background pb-[var(--sab)]"
           data-testid="mobile-bottom-nav"
         >
-          <ul className="mx-auto max-w-md grid" style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}>
+          <ul
+            className="mx-auto max-w-md grid"
+            style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}
+          >
             {tabs.map((tab) => {
               const Icon = ICONS[tab.key] || Home;
               const active =

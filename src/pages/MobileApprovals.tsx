@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useNavigateMobileHome, mobileEntityPath } from "@/lib/mobileNav";
+import { mobileEntityPath } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePreviewWriteBlock } from "@/contexts/PreviewContext";
@@ -10,8 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import IMESafeTextarea from "@/components/IMESafeTextarea";
-import { ArrowLeft, CheckCircle2, XCircle, Loader2, FileCheck2 } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, FileCheck2 } from "lucide-react";
 import { toast } from "sonner";
+import MobilePageHeader from "@/components/mobile/MobilePageHeader";
+import MobileProjectPicker from "@/components/mobile/MobileProjectPicker";
 import {
   approvalTimelineGroupKey,
   isSubmitterApprovalStep,
@@ -36,7 +38,6 @@ type TabKey = "mine" | "submitted" | "completed" | "rejected";
 
 export default function MobileApprovals() {
   const navigate = useNavigate();
-  const goMobileHome = useNavigateMobileHome();
   const { user } = useAuth();
   const blockWrite = usePreviewWriteBlock();
   const { projectId } = useMobileAccess();
@@ -314,16 +315,19 @@ export default function MobileApprovals() {
   };
 
   return (
-    <div className="min-h-screen bg-muted/30 pb-24">
-      <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
-        <Button size="icon" variant="ghost" className="text-primary-foreground" onClick={() => goMobileHome()}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="font-bold text-lg flex-1">전자결재</div>
-        <Badge variant="secondary">{counts[tab]}건</Badge>
-      </header>
+    <div className="max-w-md mx-auto" data-testid="mobile-approvals">
+      <MobilePageHeader
+        title="결재"
+        actions={<Badge variant="secondary">{counts[tab]}건</Badge>}
+      />
 
-      <main className="p-4 space-y-3 max-w-md mx-auto">
+      <main className="px-4 pb-4 space-y-3">
+        {!projectId && (
+          <MobileProjectPicker
+            title="결재 이력을 보려면 프로젝트 선택"
+            hint="대기 결재는 전체에 표시되고, 상신·완료·반려 이력은 선택한 프로젝트 기준입니다."
+          />
+        )}
         <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
           <TabsList className="grid w-full grid-cols-4 h-auto">
             <TabsTrigger value="mine" className="text-xs px-1 py-2">대기 {counts.mine}</TabsTrigger>

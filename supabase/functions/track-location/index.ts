@@ -374,8 +374,9 @@ Deno.serve(async (req) => {
       eventType = "exit";
     }
 
+    let eventInsertError: string | null = null;
     if (eventType) {
-      await supabase.from("worker_zone_events").insert({
+      const { error: wzeErr } = await supabase.from("worker_zone_events").insert({
         project_id: body.project_id,
         zone_id: matchedZoneId ?? lastEvent?.zone_id ?? null,
         restricted_zone_id:
@@ -392,6 +393,18 @@ Deno.serve(async (req) => {
         lng: body.lng,
         accuracy_m: body.accuracy_m,
       });
+      if (wzeErr) {
+        eventInsertError = wzeErr.message || String(wzeErr);
+        console.error("[track-location] worker_zone_events insert failed", {
+          code: wzeErr.code,
+          message: wzeErr.message,
+          details: wzeErr.details,
+          hint: wzeErr.hint,
+          event_type: eventType,
+          worker_qr_id: body.worker_qr_id ?? subject.worker_id ?? null,
+          project_id: body.project_id,
+        });
+      }
     }
 
     // Always refresh last-known position when we can identify the worker.
@@ -442,6 +455,9 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Always HTTP 200 with zone judgment fields so clients (locationTracker) can
+    // read zone_type / event_type even when the audit-log INSERT failed.
+    // Insert failures are surfaced via event_insert_* + console.error only.
     return new Response(
       JSON.stringify({
         zone_id: matchedZoneId,
@@ -452,13 +468,15 @@ Deno.serve(async (req) => {
           : zoneMeta?.zone_type || null,
         source,
         event_type: eventType,
+        event_insert_ok: eventType ? eventInsertError == null : null,
+        event_insert_error: eventInsertError,
         lat: body.lat,
         lng: body.lng,
         raw_lat: rawLat,
         raw_lng: rawLng,
         calibrated: body.lat !== rawLat || body.lng !== rawLng,
       }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e: any) {
     return new Response(JSON.stringify({ error: e?.message || String(e) }), {

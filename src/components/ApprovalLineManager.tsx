@@ -11,6 +11,8 @@ import {
   FIXED_APPROVAL_STEPS,
   POSITION_LABELS as SSOT_POSITION_LABELS,
   filterApproversForStep,
+  preferAuthorCompany,
+  validateApprovalLinesSSOT,
   type EligibleApprover,
 } from '@/lib/approvalRules';
 import { normalizeCompanyType } from '@/lib/companyTypes';
@@ -199,14 +201,17 @@ export default function ApprovalLineManager({
           if (!seen.has(p.out_user_id)) list = [...list, p];
         }
       }
-      return list;
+      return preferAuthorCompany(list, authorCompanyId);
     },
     [eligible, filterCtx, showPeerContractors, authorCompanyId],
   );
 
   const autoGenerate = () => {
     if (!user) return;
-    const find = (positionKey: string) => optionsForStep(positionKey)[0];
+    const find = (positionKey: string) => {
+      const pool = optionsForStep(positionKey);
+      return pool.find((a) => a.out_company_id === authorCompanyId) || pool[0];
+    };
     const pushStep = (
       stepOrder: number,
       label: string,
@@ -247,13 +252,35 @@ export default function ApprovalLineManager({
       description:
         filled < 5
           ? hasClient
-            ? '미지정 단계는 수동으로 결재자를 선택하세요.'
+            ? '미지정 단계는 수동으로 결재자를 선택하세요. [저장]을 눌러야 반영됩니다.'
             : '발주처(client) 멤버가 프로젝트에 없거나 직책이 비어 있습니다. 멤버·직책을 확인하세요.'
-          : undefined,
+          : '[저장]을 눌러야 상신 점검에 반영됩니다.',
     });
   };
 
   const handleSave = async () => {
+    if (lines.length === 0) {
+      toast({ title: '저장할 결재라인이 없습니다.', variant: 'destructive' });
+      return;
+    }
+    const incomplete = lines.filter((l) => !l.position || !l.step_label || !l.user_id);
+    if (incomplete.length > 0) {
+      toast({
+        title: '구분·결재자가 비어 있는 단계가 있습니다.',
+        description: '단계 추가 후 구분과 결재자를 모두 지정하거나, 빈 단계를 삭제한 뒤 저장하세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const ssot = validateApprovalLinesSSOT(lines);
+    if (!ssot.ok) {
+      toast({
+        title: '구형/잘못된 단계 키가 있습니다.',
+        description: `자동 생성으로 다시 만들거나 구분을 다시 선택하세요: ${Array.from(new Set(ssot.invalid)).join(', ')}`,
+        variant: 'destructive',
+      });
+      return;
+    }
     const invalidLines = lines.filter(
       (l) => l.user_id && !eligible.some((a) => a.out_user_id === l.user_id),
     );
@@ -266,23 +293,55 @@ export default function ApprovalLineManager({
       return;
     }
 
-    await supabase.from('approval_lines').delete().eq('project_id', projectId);
-    if (lines.length > 0) {
-      const inserts = lines.map((l, i) => ({
-        project_id: projectId,
-        step_order: i,
-        step_label: l.step_label,
-        position: l.position,
-        company_id: l.company_id || null,
-        user_id: l.user_id || null,
-        user_name: l.user_name || '',
-        company_name: l.company_name || '',
-      }));
-      await supabase.from('approval_lines').insert(inserts);
+    const inserts = lines.map((l, i) => ({
+      project_id: projectId,
+      step_order: i,
+      step_label: l.step_label,
+      position: l.position,
+      company_id: l.company_id || null,
+      user_id: l.user_id || null,
+      user_name: l.user_name || '',
+      company_name: l.company_name || '',
+    }));
+
+    // Snapshot for rollback if delete succeeds but insert fails
+    const { data: previous, error: prevErr } = await supabase
+      .from('approval_lines')
+      .select('project_id, step_order, step_label, position, company_id, user_id, user_name, company_name')
+      .eq('project_id', projectId)
+      .order('step_order');
+    if (prevErr) {
+      toast({ title: '결재라인 저장 실패', description: prevErr.message, variant: 'destructive' });
+      return;
     }
+
+    const { error: delErr } = await supabase.from('approval_lines').delete().eq('project_id', projectId);
+    if (delErr) {
+      toast({
+        title: '결재라인 저장 권한이 없습니다.',
+        description: delErr.message || '관리감독자/안전관리자/관리자만 저장할 수 있습니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const { error: insErr } = await supabase.from('approval_lines').insert(inserts);
+    if (insErr) {
+      if (previous && previous.length > 0) {
+        await supabase.from('approval_lines').insert(previous);
+      }
+      toast({
+        title: '결재라인 저장 실패',
+        description: insErr.message || '권한 또는 데이터 오류로 저장되지 않았습니다. 이전 결재선을 복구했습니다.',
+        variant: 'destructive',
+      });
+      await fetchLines();
+      return;
+    }
+
     setDirty(false);
     toast({ title: '결재라인 저장 완료' });
-    fetchLines();
+    await fetchLines();
   };
 
   const addStep = () => {

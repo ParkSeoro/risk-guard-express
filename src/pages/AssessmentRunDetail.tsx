@@ -61,6 +61,7 @@ import ApprovalLineManager, { type ApprovalLine } from '@/components/ApprovalLin
 import WorkerParticipationPanel from '@/components/assessment/WorkerParticipationPanel';
 import { evaluateResidualHigh } from '@/lib/residualRiskGuardrails';
 import { buildAssessmentSubmitPreflight } from '@/lib/assessmentSubmitPreflight';
+import { validateApprovalLinesSSOT } from '@/lib/approvalRules';
 import * as XLSX from 'xlsx';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 
@@ -1107,23 +1108,33 @@ const AssessmentRunDetail = () => {
   // Position-based step order for 4-step approval
   const APPROVAL_STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };
 
-  const refreshApprovalPreflightMeta = useCallback(async () => {
-    if (!run?.project_id) return;
-    const { data: savedLines } = await supabase
-      .from('approval_lines')
-      .select('*')
-      .eq('project_id', run.project_id)
-      .order('step_order');
-    const linesToUse = (savedLines && savedLines.length > 0) ? savedLines : approvalLines;
-    const missingLabels = (linesToUse || []).filter((l: any) => !l.user_id).map((l: any) => l.step_label || '단계');
-    const { validateApprovalLinesSSOT } = await import('@/lib/approvalRules');
+  const applyApprovalPreflightFromLines = useCallback((linesToUse: ApprovalLine[]) => {
+    const missingLabels = (linesToUse || [])
+      .filter((l) => !l.user_id || !l.position)
+      .map((l) => l.step_label || '단계');
     const ssot = validateApprovalLinesSSOT((linesToUse || []) as any);
     setApprovalPreflightMeta({
       lineCount: (linesToUse || []).length,
       missingLabels,
       ssotInvalid: ssot.ok ? [] : Array.from(new Set(ssot.invalid)),
     });
-  }, [run?.project_id, approvalLines]);
+  }, []);
+
+  const refreshApprovalPreflightMeta = useCallback(async () => {
+    if (!run?.project_id) return;
+    // Prefer in-memory lines when the dialog already has a draft (avoids stale DB
+    // incomplete lines blocking submit while the UI shows a complete line).
+    if (approvalLines.length > 0) {
+      applyApprovalPreflightFromLines(approvalLines);
+      return;
+    }
+    const { data: savedLines } = await supabase
+      .from('approval_lines')
+      .select('*')
+      .eq('project_id', run.project_id)
+      .order('step_order');
+    applyApprovalPreflightFromLines((savedLines || []) as ApprovalLine[]);
+  }, [run?.project_id, approvalLines, applyApprovalPreflightFromLines]);
 
   useEffect(() => {
     if (showApproval) void refreshApprovalPreflightMeta();
@@ -1148,6 +1159,12 @@ const AssessmentRunDetail = () => {
     approvalPreflightMeta,
     approvalLines.length,
   ]);
+
+  const submitBlockedReason = useMemo(() => {
+    const bad = submitPreflight.items.filter((i) => !i.ok);
+    if (bad.length === 0) return undefined;
+    return bad.map((i) => `${i.label}${i.detail ? ` (${i.detail})` : ''}`).join(' · ');
+  }, [submitPreflight]);
 
   const jumpFromPreflight = (jump?: 'items' | 'participation' | 'approval') => {
     if (!jump || jump === 'approval') return;
@@ -3128,15 +3145,18 @@ const AssessmentRunDetail = () => {
               companies={projectCompanies}
               onLinesChanged={(lines) => {
                 setApprovalLines(lines);
-                void refreshApprovalPreflightMeta();
+                applyApprovalPreflightFromLines(lines);
               }}
             />
             <div className="space-y-1"><Label>코멘트 (선택)</Label><Textarea value={approvalComment} onChange={e => setApprovalComment(e.target.value)} placeholder="결재 메모..." /></div>
+            {!submitPreflight.ready && submitBlockedReason && (
+              <p className="text-[11px] text-destructive">{submitBlockedReason}</p>
+            )}
             <Button
               onClick={handleSubmitForApproval}
               className="w-full gap-1.5"
               disabled={!submitPreflight.ready}
-              title={submitPreflight.ready ? undefined : '위 점검 항목을 모두 완료하세요'}
+              title={submitPreflight.ready ? undefined : submitBlockedReason || '위 점검 항목을 모두 완료하세요'}
             >
               <Send className="h-3.5 w-3.5" />
               {submitPreflight.ready ? '결재 상신' : '점검 미완료 — 상신 불가'}

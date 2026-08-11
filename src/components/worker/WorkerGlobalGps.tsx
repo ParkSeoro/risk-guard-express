@@ -42,6 +42,21 @@ const BLOCK_LABEL: Record<Exclude<GpsBlockReason, null>, string> = {
   fence_probe_failed: "GPS 꺼짐 · 현장 밖(펜스)",
 };
 
+/** Small amber badge — also used when WorkerGlobalGps is not mounted (no consent gate). */
+export function GpsBlockBadge({ reason }: { reason: GpsBlockReason }) {
+  if (!reason) return null;
+  return (
+    <div
+      className="fixed right-3 z-[45] max-w-[min(100%-1.5rem,16rem)] rounded-md border border-amber-500/40 bg-amber-50 text-amber-950 px-2.5 py-1.5 text-[11px] font-medium shadow-sm pointer-events-none bottom-[calc(5.75rem+var(--sab))]"
+      data-testid="gps-block-reason"
+      data-gps-block={reason}
+      role="status"
+    >
+      {BLOCK_LABEL[reason]}
+    </div>
+  );
+}
+
 export default function WorkerGlobalGps() {
   const { user, profile, roles, hasRole } = useAuth();
   const { startGpsTracking, stopGpsTracking, gpsTracking } = useSystemRealtime();
@@ -351,16 +366,7 @@ export default function WorkerGlobalGps() {
 
   return (
     <>
-      {gpsBlockReason && (
-        <div
-          className="fixed right-3 z-[45] max-w-[min(100%-1.5rem,16rem)] rounded-md border border-amber-500/40 bg-amber-50 text-amber-950 px-2.5 py-1.5 text-[11px] font-medium shadow-sm pointer-events-none bottom-[calc(5.75rem+var(--sab))]"
-          data-testid="gps-block-reason"
-          data-gps-block={gpsBlockReason}
-          role="status"
-        >
-          {BLOCK_LABEL[gpsBlockReason]}
-        </div>
-      )}
+      <GpsBlockBadge reason={gpsBlockReason} />
       {import.meta.env.DEV && gpsTracking ? (
         <span className="sr-only" data-gps="on" />
       ) : null}

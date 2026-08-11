@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import * as P from "@/routes/lazyPages";
 import AuthGuard from "@/components/AuthGuard";
-import WorkerGlobalGps from "@/components/worker/WorkerGlobalGps";
+import WorkerGlobalGps, { GpsBlockBadge } from "@/components/worker/WorkerGlobalGps";
 import ShellGeofenceAlerts from "@/components/geofence/ShellGeofenceAlerts";
 import MobileShell from "@/components/mobile/MobileShell";
 import { MobilePreviewGate } from "@/contexts/PreviewContext";
@@ -19,8 +19,9 @@ function Fallback() {
 
 function WorkerGpsGate() {
   const { profile, roles } = useAuth();
+  // Pure worker without location consent: do not mount GPS tracker — badge only.
   if (isPureWorkerUser(roles) && profile?.agreed_to_location !== true) {
-    return null;
+    return <GpsBlockBadge reason="no_consent" />;
   }
   return <WorkerGlobalGps />;
 }

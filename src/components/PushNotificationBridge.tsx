@@ -10,6 +10,7 @@ import { Capacitor } from '@capacitor/core';
 import { resolveNotificationRoute } from '@/lib/notificationRoutes';
 import { isPushSupported, subscribeToPush } from '@/lib/pushSubscription';
 import { isIosNativeAlarmAvailable, requestIosCriticalAlerts } from '@/lib/alarmVolume';
+import { playDangerAlarm } from '@/lib/tts';
 
 export default function PushNotificationBridge() {
   const { user } = useAuth();
@@ -162,10 +163,23 @@ export default function PushNotificationBridge() {
           },
         );
 
+        // Foreground: danger push must siren even when user is on another screen
+        // (tap handler only runs after notification is opened).
+        const receivedHandle = await PushNotifications.addListener(
+          'pushNotificationReceived',
+          (notification: any) => {
+            const data = notification?.data || {};
+            if (data.type === 'danger_zone_entry') {
+              void playDangerAlarm();
+            }
+          },
+        );
+
         cleanup = () => {
           regHandle?.remove?.();
           errHandle?.remove?.();
           tapHandle?.remove?.();
+          receivedHandle?.remove?.();
         };
       } catch (e) {
         console.warn('[PushBridge/native] init failed', e);

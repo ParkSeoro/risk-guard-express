@@ -57,16 +57,16 @@ import IMESafeInput from '@/components/IMESafeInput';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { Checkbox } from '@/components/ui/checkbox';
 import FeedbackPanel from '@/components/FeedbackPanel';
-import ApprovalLineManager, { type ApprovalLine } from '@/components/ApprovalLineManager';
+import ApprovalLineManager, { type ApprovalLine, type DraftStatusInfo } from '@/components/ApprovalLineManager';
 import WorkerParticipationPanel from '@/components/assessment/WorkerParticipationPanel';
 import { evaluateResidualHigh } from '@/lib/residualRiskGuardrails';
 import { buildAssessmentSubmitPreflight } from '@/lib/assessmentSubmitPreflight';
+import { submitApprovalFromDraft } from '@/lib/approvalPlatform';
 import {
   POSITION_LABELS as SSOT_POSITION_LABELS,
   isSubmitterApprovalStep,
   sequentialDisplayStatus,
   sortStepsByHierarchy,
-  validateApprovalLinesSSOT,
 } from '@/lib/approvalRules';
 import * as XLSX from 'xlsx';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
@@ -148,6 +148,13 @@ const AssessmentRunDetail = () => {
   const [rejectCommentDialog, setRejectCommentDialog] = useState(false);
   const [rejectComment, setRejectComment] = useState('');
   const [approvalLines, setApprovalLines] = useState<ApprovalLine[]>([]);
+  const [approvalDraftInfo, setApprovalDraftInfo] = useState<DraftStatusInfo>({
+    status: 'none',
+    ready: false,
+    stepCount: 0,
+    errors: [],
+    dirty: false,
+  });
   const [projectCompanies, setProjectCompanies] = useState<{ id: string; name: string; type: string }[]>([]);
 
   // Excel upload
@@ -1180,18 +1187,12 @@ const AssessmentRunDetail = () => {
 
   const refreshApprovalPreflightMeta = useCallback(async () => {
     if (!run?.project_id) return;
-    // Prefer in-memory lines when the dialog already has a draft (avoids stale DB
-    // incomplete lines blocking submit while the UI shows a complete line).
+    // Platform draft status is SSOT for approval-line gate; keep meta for display only.
     if (approvalLines.length > 0) {
       applyApprovalPreflightFromLines(approvalLines);
       return;
     }
-    const { data: savedLines } = await supabase
-      .from('approval_lines')
-      .select('*')
-      .eq('project_id', run.project_id)
-      .order('step_order');
-    applyApprovalPreflightFromLines((savedLines || []) as ApprovalLine[]);
+    applyApprovalPreflightFromLines([]);
   }, [run?.project_id, approvalLines, applyApprovalPreflightFromLines]);
 
   useEffect(() => {
@@ -1206,9 +1207,14 @@ const AssessmentRunDetail = () => {
     healths: participationCounts.healths,
     unreviewedAi: participationCounts.unreviewedAi,
     unreviewedHealth: participationCounts.unreviewedHealth,
-    approvalLineCount: Math.max(approvalPreflightMeta.lineCount, approvalLines.length),
+    approvalLineCount: Math.max(approvalDraftInfo.stepCount, approvalLines.length),
     missingApproverLabels: approvalPreflightMeta.missingLabels,
     ssotInvalidKeys: approvalPreflightMeta.ssotInvalid,
+    approvalDraftReady: approvalDraftInfo.ready,
+    approvalDraftDetail: approvalDraftInfo.dirty
+      ? '결재선이 수정됨 — [결재선 저장] 필요'
+      : approvalDraftInfo.errors[0]
+        || (approvalDraftInfo.ready ? `draft 저장 완료 · ${approvalDraftInfo.stepCount}단계` : '결재선 [저장] 후 상신 가능'),
   }), [
     activeItems.length,
     run?.opinion_required,
@@ -1216,6 +1222,7 @@ const AssessmentRunDetail = () => {
     participationCounts,
     approvalPreflightMeta,
     approvalLines.length,
+    approvalDraftInfo,
   ]);
 
   const submitBlockedReason = useMemo(() => {
@@ -1225,164 +1232,61 @@ const AssessmentRunDetail = () => {
   }, [submitPreflight]);
 
   const jumpFromPreflight = (jump?: 'items' | 'participation' | 'approval') => {
-    if (!jump || jump === 'approval') return;
+    if (!jump) return;
     setShowApproval(false);
     setActiveMainTab('assessment');
     window.setTimeout(() => {
-      const id = jump === 'participation' ? 'ra-worker-participation' : 'ra-risk-items';
+      const id =
+        jump === 'participation' ? 'ra-worker-participation'
+          : jump === 'approval' ? 'ra-approval-line'
+            : 'ra-risk-items';
       document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 80);
   };
 
-  // Submit for approval — uses approval_lines as single source
+  // Submit for approval — 전자결재 플랫폼 draft 만 사용 (설정과 상신 분리)
   const handleSubmitForApproval = async () => {
-    if (!run || !user || !profile) return;
-    if (activeItems.length === 0) {
-      toast({ title: '항목이 1건 이상 있어야 결재 상신이 가능합니다.', variant: 'destructive' }); return;
-    }
-    // 근로자 참여 / 보건 / AI 검토 게이트
-    if ((run.opinion_required ?? true) && participationCounts.opinions === 0) {
-      toast({ title: '근로자 의견이 없습니다.', description: '근로자 참여 탭에서 의견을 1건 이상 등록해야 결재 상신이 가능합니다.', variant: 'destructive' }); return;
-    }
-    if ((run.health_required ?? true) && participationCounts.healths === 0) {
-      toast({ title: '보건 항목이 없습니다.', description: '보건 유해요인을 1건 이상 등록해주세요.', variant: 'destructive' }); return;
-    }
-    if (participationCounts.unreviewedAi > 0 || participationCounts.unreviewedHealth > 0) {
-      toast({ title: 'AI 자동 생성 항목 검토가 필요합니다.', description: `미검토 ${participationCounts.unreviewedAi + participationCounts.unreviewedHealth}건을 검토해주세요.`, variant: 'destructive' }); return;
-    }
-
-    // Fetch latest approval_lines from DB — but do NOT ignore richer in-dialog draft
-    // (발주처 SM을 화면에서만 넣고 저장 안 한 채 상신하면 DB 3단계만 올라가던 버그)
-    const { data: savedLines } = await supabase
-      .from('approval_lines')
-      .select('*')
-      .eq('project_id', run.project_id)
-      .order('step_order');
-
-    const isCompleteLine = (lines: any[] | null | undefined) =>
-      !!lines
-      && lines.length >= 2
-      && lines.every((l) => !!l.user_id && !!l.position);
-
-    const hasClientStep = (lines: any[]) =>
-      lines.some((l) => {
-        const p = (l.position || '').toLowerCase();
-        return p === 'owner_cm' || p === 'owner_sm';
-      });
-
-    const dbLines = (savedLines || []) as any[];
-    const memLines = (approvalLines || []) as any[];
-    let linesToUse: any[] = [];
-    if (isCompleteLine(memLines) && isCompleteLine(dbLines)) {
-      if (hasClientStep(memLines) && !hasClientStep(dbLines)) linesToUse = memLines;
-      else if (memLines.length > dbLines.length) linesToUse = memLines;
-      else linesToUse = dbLines;
-    } else if (isCompleteLine(memLines)) {
-      linesToUse = memLines;
-    } else if (isCompleteLine(dbLines)) {
-      linesToUse = dbLines;
-    } else {
-      linesToUse = memLines.length >= dbLines.length ? memLines : dbLines;
-    }
-
-    if (!linesToUse || linesToUse.length < 2) {
-      toast({ title: '결재라인이 설정되지 않았습니다.', description: '결재라인 설정에서 [자동 생성] 후 [저장]을 먼저 해주세요.', variant: 'destructive' });
-      return;
-    }
-
-    // Validate all steps have user_id
-    const missingUser = linesToUse.filter(l => !l.user_id);
-    if (missingUser.length > 0) {
-      toast({ title: '결재자가 미지정된 단계가 있습니다.', description: `${missingUser.map(l => l.step_label).join(', ')} 단계에 결재자를 지정해주세요.`, variant: 'destructive' });
-      return;
-    }
-
-    if (!hasClientStep(linesToUse)) {
+    if (!run || !user || !profile || !runId) return;
+    if (!submitPreflight.ready) {
       toast({
-        title: '발주처(CM/SM) 결재자가 없습니다.',
-        description: '결재라인에 담당자(SM) 또는 담당자(CM)를 넣은 뒤 [저장]하고 상신하세요. (SM만 있어도 됩니다)',
+        title: '상신 불가',
+        description: submitBlockedReason || '점검 항목을 완료하세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!approvalDraftInfo.ready || approvalDraftInfo.dirty) {
+      toast({
+        title: '결재선이 저장되지 않았습니다.',
+        description: '본문의 [결재선 설정]에서 [결재선 저장]을 먼저 하세요. 미저장 상태로 상신할 수 없습니다.',
         variant: 'destructive',
       });
       return;
     }
 
-    // Persist draft line before submit when UI is ahead of DB (e.g. SM just added)
-    const usingMemoryDraft =
-      isCompleteLine(memLines)
-      && (
-        !isCompleteLine(dbLines)
-        || (hasClientStep(memLines) && !hasClientStep(dbLines))
-        || memLines.length > dbLines.length
-      );
-    if (usingMemoryDraft) {
-      const { error: delErr } = await supabase.from('approval_lines').delete().eq('project_id', run.project_id);
-      if (delErr) {
-        toast({ title: '결재라인 저장 실패', description: delErr.message, variant: 'destructive' });
-        return;
-      }
-      const inserts = linesToUse.map((l: any, i: number) => ({
-        project_id: run.project_id,
-        step_order: i,
-        step_label: l.step_label || l.label || '',
-        position: l.position || '',
-        company_id: l.company_id || null,
-        user_id: l.user_id || null,
-        user_name: l.user_name || '',
-        company_name: l.company_name || '',
-      }));
-      const { error: insErr } = await supabase.from('approval_lines').insert(inserts);
-      if (insErr) {
-        toast({ title: '결재라인 저장 실패', description: insErr.message, variant: 'destructive' });
-        return;
-      }
-    }
-
-    // SSOT 방어: 레거시 결재 키(safety_manager 등) 상신 차단
-    const { validateApprovalLinesSSOT } = await import('@/lib/approvalRules');
-    const ssot = validateApprovalLinesSSOT(linesToUse as any);
-    if (!ssot.ok) {
-      toast({
-        title: '레거시 결재선입니다.',
-        description: `구형 단계 키(${Array.from(new Set(ssot.invalid)).join(', ')})가 감지되었습니다. [자동 생성]으로 새 5단계 결재선을 만든 뒤 [저장]하고 다시 상신하세요.`,
-        variant: 'destructive',
-      });
-      return;
-    }
-
-
-    // Same path as SubmitApprovalDialog: full line incl. 상신 → RPC auto-approves submitter step
-    const { dedupeApprovalSteps, sortStepsByHierarchy, validateStepsHierarchy } = await import('@/lib/approvalRules');
-    const rawSteps = linesToUse.map((line: any) => ({
-      label: line.step_label,
-      user_id: line.user_id,
-      user_name: line.user_name || '',
-      position: line.position || '',
-      company_id: line.company_id || null,
-      company_name: line.company_name || '',
-    }));
-    const orderedSteps = dedupeApprovalSteps(sortStepsByHierarchy(rawSteps));
-    const hierarchy = validateStepsHierarchy(orderedSteps);
-    if (!hierarchy.ok) {
-      toast({ title: '결재선 순서 오류', description: hierarchy.message, variant: 'destructive' });
-      return;
-    }
-    const { error: submitErr } = await supabase.rpc('submit_approval', {
-      _entity_type: 'assessment_run',
-      _entity_id: runId,
-      _project_id: run.project_id,
-      _company_id: null,
-      _steps: orderedSteps as any,
-      _reason: approvalComment || null,
+    const { inserted, error: submitErr } = await submitApprovalFromDraft({
+      entityType: 'assessment_run',
+      entityId: runId,
+      reason: approvalComment || null,
     });
     if (submitErr) {
-      toast({ title: '상신 실패', description: submitErr.message, variant: 'destructive' });
+      const msg = submitErr.includes('draft_not_ready')
+        ? '결재선 draft가 상신 가능 상태가 아닙니다. [결재선 저장]을 다시 해주세요.'
+        : submitErr.includes('draft_not_found')
+          ? '저장된 결재선이 없습니다. 결재선을 설정·저장한 뒤 상신하세요.'
+          : submitErr.includes('submit_step_mismatch')
+            ? '결재 단계 일부가 누락되어 상신이 취소되었습니다. 결재선을 다시 저장하세요.'
+            : submitErr;
+      toast({ title: '상신 실패', description: msg, variant: 'destructive' });
       return;
     }
 
     setRun((prev: any) => ({ ...prev, status: '결재진행' }));
-    setShowApproval(false); setApprovalComment('');
-    toast({ title: `결재 상신 완료 (${orderedSteps.length}단계 순차 결재)` });
-    log('결재상신', 'assessment_run', runId!, run.project_id, { steps: orderedSteps.length });
+    setShowApproval(false);
+    setApprovalComment('');
+    setApprovalDraftInfo((prev) => ({ ...prev, status: 'submitted', ready: false, dirty: false }));
+    toast({ title: `결재 상신 완료 (${inserted ?? approvalDraftInfo.stepCount}단계 순차 결재)` });
+    log('결재상신', 'assessment_run', runId, run.project_id, { steps: inserted, via: 'approval_platform_draft' });
     fetchAll();
   };
 
@@ -2431,6 +2335,28 @@ const AssessmentRunDetail = () => {
         );
       })()}
 
+      {/* 전자결재 플랫폼 — 결재선 설정 (상신과 분리, 이 문서 draft) */}
+      {runId && run?.project_id && !isApproved && uiStatus !== '폐기' && (
+        <div id="ra-approval-line" className="print:hidden space-y-1">
+          <ApprovalLineManager
+            projectId={run.project_id}
+            projectMembers={projectMembers}
+            companies={projectCompanies}
+            readOnly={isInApproval && !hasRejectedApproval}
+            documentDraft={{
+              entityType: 'assessment_run',
+              entityId: runId,
+              companyId: userCompanyId || null,
+            }}
+            onLinesChanged={(lines) => {
+              setApprovalLines(lines);
+              applyApprovalPreflightFromLines(lines);
+            }}
+            onDraftStatusChange={setApprovalDraftInfo}
+          />
+        </div>
+      )}
+
       {/* Action Buttons — strict state machine */}
       <div className="flex items-center gap-2 print:hidden flex-wrap">
         {(canEdit || canForceEdit) && !isInApproval && !isApproved && (
@@ -3243,7 +3169,7 @@ const AssessmentRunDetail = () => {
                       <p className={it.ok ? 'text-muted-foreground' : 'font-medium text-foreground'}>{it.label}</p>
                       {it.detail && <p className="text-[10px] text-muted-foreground">{it.detail}</p>}
                     </div>
-                    {!it.ok && it.jump && it.jump !== 'approval' && (
+                    {!it.ok && it.jump && (
                       <button
                         type="button"
                         className="text-[10px] text-primary underline shrink-0"
@@ -3255,6 +3181,38 @@ const AssessmentRunDetail = () => {
                   </li>
                 ))}
               </ul>
+            </div>
+
+            {/* 결재선은 본문에서만 편집 — 상신 Dialog 는 읽기 전용 요약 */}
+            <div className="rounded-lg border p-3 space-y-2 bg-muted/30">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold">결재선 (저장된 draft)</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-[10px]"
+                  onClick={() => jumpFromPreflight('approval')}
+                >
+                  결재선 수정
+                </Button>
+              </div>
+              {approvalDraftInfo.ready && approvalLines.length > 0 ? (
+                <ol className="space-y-1 text-xs">
+                  {approvalLines.map((l, i) => (
+                    <li key={`${l.position}-${i}`} className="flex gap-2">
+                      <span className="text-muted-foreground w-4 shrink-0">{i + 1}.</span>
+                      <span className="font-medium">{l.step_label || l.position}</span>
+                      <span>{l.user_name || '—'}</span>
+                      <span className="text-muted-foreground">{l.company_name || ''}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="text-[11px] text-destructive">
+                  저장된 결재선이 없습니다. 본문 [결재선 설정]에서 저장하세요.
+                </p>
+              )}
             </div>
 
             {run.validation_verdict && run.validation_verdict !== '적정' && (
@@ -3303,16 +3261,6 @@ const AssessmentRunDetail = () => {
                 </div>
               );
             })()}
-            {/* Approval Line Manager — inline */}
-            <ApprovalLineManager
-              projectId={run.project_id}
-              projectMembers={projectMembers}
-              companies={projectCompanies}
-              onLinesChanged={(lines) => {
-                setApprovalLines(lines);
-                applyApprovalPreflightFromLines(lines);
-              }}
-            />
             <div className="space-y-1"><Label>코멘트 (선택)</Label><Textarea value={approvalComment} onChange={e => setApprovalComment(e.target.value)} placeholder="결재 메모..." /></div>
             {!submitPreflight.ready && submitBlockedReason && (
               <p className="text-[11px] text-destructive">{submitBlockedReason}</p>
@@ -3320,11 +3268,17 @@ const AssessmentRunDetail = () => {
             <Button
               onClick={handleSubmitForApproval}
               className="w-full gap-1.5"
-              disabled={!submitPreflight.ready}
-              title={submitPreflight.ready ? undefined : submitBlockedReason || '위 점검 항목을 모두 완료하세요'}
+              disabled={!submitPreflight.ready || !approvalDraftInfo.ready || approvalDraftInfo.dirty}
+              title={
+                submitPreflight.ready && approvalDraftInfo.ready && !approvalDraftInfo.dirty
+                  ? undefined
+                  : submitBlockedReason || '결재선 저장 후 상신하세요'
+              }
             >
               <Send className="h-3.5 w-3.5" />
-              {submitPreflight.ready ? '결재 상신' : '점검 미완료 — 상신 불가'}
+              {submitPreflight.ready && approvalDraftInfo.ready && !approvalDraftInfo.dirty
+                ? '결재 상신'
+                : '점검/결재선 미완료 — 상신 불가'}
             </Button>
           </div>
         </DialogContent>

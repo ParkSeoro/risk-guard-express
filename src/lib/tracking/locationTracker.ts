@@ -88,8 +88,12 @@ export type TrackerOptions = {
   siteCenter?: SiteTrackingFence | null;
   onLeaveSite?: (info: { distanceM: number; lat: number; lng: number; radiusM: number }) => void;
   onUpdate?: (info: {
+    /** Map-aligned (calibrated) coordinates for local UI / zone preview. */
     lat: number;
     lng: number;
+    /** Device raw GPS — send these to track-location (server calibrates once). */
+    raw_lat: number;
+    raw_lng: number;
     accuracy: number;
     zone_id: string | null;
     source: string;
@@ -247,6 +251,8 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
           opts.onUpdate?.({
             lat: disp.lat,
             lng: disp.lng,
+            raw_lat: rawLat,
+            raw_lng: rawLng,
             accuracy,
             zone_id: null,
             source: "gps-bg-local",
@@ -281,6 +287,8 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
           opts.onUpdate?.({
             lat: disp.lat,
             lng: disp.lng,
+            raw_lat: rawLat,
+            raw_lng: rawLng,
             accuracy,
             zone_id: (data as any)?.zone_id ?? null,
             source: (data as any)?.source ?? "gps-bg",
@@ -455,6 +463,8 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
       onUpdate?.({
         lat: here.lat,
         lng: here.lng,
+        raw_lat: raw.lat,
+        raw_lng: raw.lng,
         accuracy,
         zone_id: null,
         source: "gps-local",
@@ -494,6 +504,8 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
         onUpdate?.({
           lat: here.lat,
           lng: here.lng,
+          raw_lat: raw.lat,
+          raw_lng: raw.lng,
           accuracy,
           zone_id: (data as any)?.zone_id ?? null,
           source: (data as any)?.source ?? "gps",

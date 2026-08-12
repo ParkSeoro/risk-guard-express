@@ -4,6 +4,10 @@
 -- 반려→재상신→작업완료 시 같은 version에 closure 가 붙어
 -- 전자결재 타임라인이 꼬이던 전역 결함 수정.
 -- submit_approval(발행 5단) 본문은 변경하지 않음.
+--
+-- SQL Editor: large paste may truncate → unterminated dollar-quote.
+-- Apply split parts instead:
+--   docs/supabase-apply-permit-post-approval-version-split-part{1..4}-*.sql
 -- ============================================================
 
 -- ---------- request_work_permit_closure ----------

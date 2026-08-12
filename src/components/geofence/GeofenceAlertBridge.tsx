@@ -10,6 +10,7 @@ import {
   findViolatingRestrictedZone,
   type RestrictedZoneGeom,
 } from "@/lib/tracking/restrictedZoneGeom";
+import { buildGeofenceAdminPushBody } from "@/lib/tracking/geofenceAdminPush";
 import DangerZoneAlertModal from "./DangerZoneAlertModal";
 
 type Subject = {
@@ -93,9 +94,21 @@ export default function GeofenceAlertBridge({ projectId, subject, autoStart }: P
     };
   }, [projectId, loadZones]);
 
-  const evaluate = (lat: number, lng: number) => {
+  /** Local zone hit uses map-aligned coords; admin push uses device raw GPS. */
+  const evaluate = (args: {
+    calibratedLat: number;
+    calibratedLng: number;
+    rawLat: number;
+    rawLng: number;
+    accuracyM: number;
+  }) => {
     const sub = subjectRef.current || {};
-    const hit = findViolatingRestrictedZone(lat, lng, zonesRef.current, sub);
+    const hit = findViolatingRestrictedZone(
+      args.calibratedLat,
+      args.calibratedLng,
+      zonesRef.current,
+      sub,
+    );
     if (!hit) {
       if (activeZoneId.current) {
         activeZoneId.current = null;
@@ -112,20 +125,14 @@ export default function GeofenceAlertBridge({ projectId, subject, autoStart }: P
     // Fire server event for admin push (idempotent-ish via track-location unauthorized path)
     if (projectId) {
       void supabase.functions.invoke("track-location", {
-        body: {
-          project_id: projectId,
-          worker_id: sub.worker_id,
-          worker_qr_id: sub.worker_qr_id,
-          worker_name: sub.worker_name,
-          worker_phone: sub.worker_phone,
-          company_id: sub.company_id,
-          worker_role: sub.worker_role,
-          lat,
-          lng,
-          accuracy_m: 10,
-          restricted_zone_id: hit.id,
-          force_restricted_check: true,
-        },
+        body: buildGeofenceAdminPushBody({
+          projectId,
+          subject: sub,
+          rawLat: args.rawLat,
+          rawLng: args.rawLng,
+          accuracyM: args.accuracyM,
+          restrictedZoneId: hit.id,
+        }),
       });
     }
   };
@@ -168,7 +175,13 @@ export default function GeofenceAlertBridge({ projectId, subject, autoStart }: P
                 name: anyU.zone_name || "위험 구역",
               });
             }
-            evaluate(u.lat, u.lng);
+            evaluate({
+              calibratedLat: u.lat,
+              calibratedLng: u.lng,
+              rawLat: u.raw_lat,
+              rawLng: u.raw_lng,
+              accuracyM: Number(u.accuracy) || 30,
+            });
           },
         });
         if (cancelled) {

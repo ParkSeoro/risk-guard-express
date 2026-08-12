@@ -23,6 +23,9 @@ import {
   permitPostStepKind,
   permitPostStepBadge,
   permitPostStepApproveLabel,
+  splitApprovalTimeline,
+  currentTimelineSteps,
+  isPostApprovalStep,
 } from "@/lib/permitPostApproval";
 
 type TabKey = "mine" | "submitted" | "completed" | "rejected";
@@ -86,16 +89,18 @@ export default function MobileApprovals() {
     if (tab === "mine") return out;
     for (const [key, steps] of Object.entries(groupedHistory)) {
       const arr = steps as any[];
+      const { issuanceSteps, postSteps, priorIssuanceSteps } = splitApprovalTimeline(arr);
+      const current = [...issuanceSteps, ...postSteps];
       if (tab === "submitted" && user) {
-        if (arr.some((s) => s.approver_id === user.id && isSubmitterApprovalStep(s))) {
+        if (issuanceSteps.some((s) => s.approver_id === user.id && isSubmitterApprovalStep(s))) {
           out[key] = arr;
         }
       } else if (tab === "completed") {
-        if (arr.every((s) => s.status === "승인" || s.status === "반려" || s.status === "취소")) {
+        if (current.length > 0 && current.every((s) => s.status === "승인" || s.status === "반려")) {
           out[key] = arr;
         }
       } else if (tab === "rejected") {
-        if (arr.some((s) => s.status === "반려")) out[key] = arr;
+        if ([...current, ...priorIssuanceSteps].some((s) => s.status === "반려")) out[key] = arr;
       }
     }
     return out;
@@ -107,9 +112,11 @@ export default function MobileApprovals() {
     let rejected = 0;
     for (const steps of Object.values(groupedHistory)) {
       const arr = steps as any[];
-      if (user && arr.some((s) => s.approver_id === user.id && isSubmitterApprovalStep(s))) submitted += 1;
-      if (arr.every((s) => s.status === "승인" || s.status === "반려" || s.status === "취소")) completed += 1;
-      if (arr.some((s) => s.status === "반려")) rejected += 1;
+      const { issuanceSteps } = splitApprovalTimeline(arr);
+      const current = currentTimelineSteps(arr);
+      if (user && issuanceSteps.some((s) => s.approver_id === user.id && isSubmitterApprovalStep(s))) submitted += 1;
+      if (current.length > 0 && current.every((s) => s.status === "승인" || s.status === "반려")) completed += 1;
+      if (current.some((s) => s.status === "반려")) rejected += 1;
     }
     return { mine: pendingRows.length, submitted, completed, rejected };
   }, [groupedHistory, pendingRows.length, user]);
@@ -250,13 +257,26 @@ export default function MobileApprovals() {
       );
     }
     return entries.map(([key, steps]) => {
-      const arr = [...steps].sort((a, b) => (a.step_order ?? 99) - (b.step_order ?? 99));
-      const first = arr[0];
+      const timeline = splitApprovalTimeline(steps as any[]);
+      const current = [...timeline.issuanceSteps, ...timeline.postSteps];
+      const first = current[0] || (steps as any[])[0];
       const entityType = first?.entity_type || "";
       const entityId = first?.entity_id || "";
       const title = first?.step || entityTypeLabel(entityType);
-      const rejected = arr.some((s) => s.status === "반려");
-      const allApproved = arr.every((s) => s.status === "승인" || s.status === "취소");
+      const rejected = current.some((s) => s.status === "반려");
+      const allApproved = current.length > 0 && current.every((s) => s.status === "승인");
+      const postIsExtend = timeline.postSteps.some((s) =>
+        isPostApprovalStep(s) && String((s as any).position || "").toLowerCase().startsWith("extend"),
+      );
+      const renderLines = (section: any[]) =>
+        section.map((s) => (
+          <div key={s.id}>
+            {s.step_order != null ? `${s.step_order}. ` : ""}
+            {s.step || s.position || "단계"} · {s.status}
+            {s.approver_name ? ` · ${s.approver_name}` : ""}
+            {s.comment ? ` · "${s.comment}"` : ""}
+          </div>
+        ));
       return (
         <Card key={key}>
           <CardContent className="pt-4 space-y-2">
@@ -276,15 +296,32 @@ export default function MobileApprovals() {
               </Badge>
             </div>
             <div className="font-medium text-sm">{title}</div>
-            <div className="text-xs text-muted-foreground space-y-0.5">
-              {arr.map((s) => (
-                <div key={s.id}>
-                  {s.step_order != null ? `${s.step_order}. ` : ""}
-                  {s.step || s.position || "단계"} · {s.status}
-                  {s.approver_name ? ` · ${s.approver_name}` : ""}
+            {timeline.issuanceSteps.length > 0 && (
+              <div className="text-xs text-muted-foreground space-y-0.5">
+                {entityType === "work_permit" && (
+                  <div className="font-medium text-foreground/70">발행 결재</div>
+                )}
+                {renderLines(timeline.issuanceSteps)}
+              </div>
+            )}
+            {timeline.postSteps.length > 0 && (
+              <div className="text-xs text-muted-foreground space-y-0.5 pt-1 border-t border-dashed">
+                <div className="font-medium text-foreground/70">
+                  {postIsExtend ? "연장 결재" : "작업완료 결재"}
                 </div>
-              ))}
-            </div>
+                {renderLines(timeline.postSteps)}
+              </div>
+            )}
+            {timeline.priorIssuanceSteps.length > 0 && (
+              <details className="rounded border bg-muted/5 px-2 py-1.5">
+                <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">
+                  이전 상신 ({timeline.priorIssuanceSteps.length}건)
+                </summary>
+                <div className="mt-1 text-xs text-muted-foreground space-y-0.5">
+                  {renderLines(timeline.priorIssuanceSteps)}
+                </div>
+              </details>
+            )}
             {entityType && entityId && (
               <Button
                 variant="outline"

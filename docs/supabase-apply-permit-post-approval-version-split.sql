@@ -1,0 +1,19 @@
+-- SafeNex: permit post-approval version split
+-- Source: supabase/migrations/20260812060000_permit_post_approval_version_split.sql
+--
+-- Supabase SQL Editor often truncates large pastes → "unterminated dollar-quoted string".
+-- Apply these FOUR files in order (each is a small CREATE OR REPLACE):
+--
+--   1) docs/supabase-apply-permit-post-approval-version-split-part1-closure.sql
+--   2) docs/supabase-apply-permit-post-approval-version-split-part2-promote.sql
+--   3) docs/supabase-apply-permit-post-approval-version-split-part3-extension.sql
+--   4) docs/supabase-apply-permit-post-approval-version-split-part4-act-on.sql
+--
+-- After all four succeed, optional check:
+--   select proname from pg_proc
+--    where proname in (
+--      'request_work_permit_closure',
+--      'promote_permits_to_closure_pending',
+--      'request_work_permit_extension',
+--      'act_on_entity_approval'
+--    );

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useNavigateMobileHome } from "@/lib/mobileNav";
 import { Capacitor } from "@capacitor/core";
 import { supabase } from "@/integrations/supabase/client";
@@ -64,6 +65,7 @@ type Fixing = {
  * (map-aligned when project GPS calibration exists).
  */
 export default function MobileGeofenceDrop() {
+  const navigate = useNavigate();
   const goMobileHome = useNavigateMobileHome();
   const { projectId } = useMobileAccess();
   const [name, setName] = useState("현장 지정 위험구역");

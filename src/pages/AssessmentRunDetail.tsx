@@ -67,6 +67,7 @@ import {
   isSubmitterApprovalStep,
   sequentialDisplayStatus,
   sortStepsByHierarchy,
+  validateApprovalLinesSSOT,
 } from '@/lib/approvalRules';
 import * as XLSX from 'xlsx';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';

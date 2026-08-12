@@ -12,7 +12,7 @@ RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
-AS $$
+AS $body$
 DECLARE
   v_uid uuid := auth.uid();
   r public.work_permits%ROWTYPE;
@@ -196,7 +196,7 @@ BEGIN
     'title', v_title
   );
 END;
-$$;
+$body$;
 
 -- ---------- promote_permits_to_closure_pending ----------
 CREATE OR REPLACE FUNCTION public.promote_permits_to_closure_pending()
@@ -204,7 +204,7 @@ RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
-AS $$
+AS $body$
 DECLARE
   r record;
   v_count integer := 0;
@@ -356,7 +356,7 @@ BEGIN
 
   RETURN v_count;
 END;
-$$;
+$body$;
 
 -- ---------- request_work_permit_extension ----------
 CREATE OR REPLACE FUNCTION public.request_work_permit_extension(
@@ -367,7 +367,7 @@ RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
-AS $$
+AS $body$
 DECLARE
   v_uid uuid := auth.uid();
   r public.work_permits%ROWTYPE;
@@ -484,7 +484,7 @@ BEGIN
     'title', v_title
   );
 END;
-$$;
+$body$;
 
 -- ---------- act_on_entity_approval: prior-step only blocks 대기/진행중 ----------
 -- Full body from 20260801120000 with prior-step filter tightened.
@@ -497,7 +497,7 @@ RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
-AS $function$
+AS $body$
 DECLARE
   _a record;
   _next record;
@@ -751,7 +751,7 @@ BEGIN
 
   RETURN jsonb_build_object('success', true, 'action','approved', 'finalized', false);
 END;
-$function$;
+$body$;
 
 CREATE OR REPLACE FUNCTION public.act_on_approval(
   _approval_id uuid,
@@ -762,9 +762,9 @@ RETURNS jsonb
 LANGUAGE sql
 SECURITY DEFINER
 SET search_path TO 'public'
-AS $function$
+AS $body$
   SELECT public.act_on_entity_approval(_approval_id, _action, _comment);
-$function$;
+$body$;
 
 COMMENT ON FUNCTION public.request_work_permit_closure(uuid) IS
   '작업완료 결재 요청 — closure 단계는 항상 새 approval_version 에 생성';

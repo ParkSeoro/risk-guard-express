@@ -107,6 +107,7 @@ const Approvals = () => {
   const [entityTypeFilter, setEntityTypeFilter] = useState<'all' | ApprovalEntityType>('all');
 
   const fetchEntityPending = async () => {
+    try { await (supabase as any).rpc('repair_stuck_permit_closure_sm'); } catch { /* ignore */ }
     try { await (supabase as any).rpc('promote_permits_to_closure_pending'); } catch { /* ignore */ }
     const { data } = await supabase.rpc('get_my_pending_entity_approvals');
     setEntityPending((data as any[]) || []);

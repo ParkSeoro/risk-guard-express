@@ -8,6 +8,13 @@ import { notifyProjectRoles } from '@/lib/notificationService';
 import { ADMIN_PROJECT_ROLES } from '@/lib/permissions';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { SAFETY_COST_CATEGORIES, analyzeSafetyCostCompliance, classifySafetyCostItem, formatKRW, getSafetyCostStatusLabel } from '@/lib/safetyCost';
+import {
+  isPostgresUniqueViolation,
+  monthlyReportExistsCopy,
+  planCreateMonthlyReport,
+  toSafetyCostMonthStart,
+} from '@/lib/safetyCostMonthly';
+import { softRestorePayload } from '@/lib/dataAccess';
 import { SAFETY_COST_TEMPLATE_PATH, buildSafetyCostWorkbook, downloadSafetyCostWorkbook } from '@/lib/safetyCostExport';
 import { getEvidenceGuide } from '@/lib/safetyCostEvidenceGuide';
 import { evaluateEvidencePack } from '@/lib/safetyCostEvidencePack';
@@ -103,6 +110,7 @@ const SafetyCost = () => {
   const [constructionEditOpen, setConstructionEditOpen] = useState(false);
   const [editingConstruction, setEditingConstruction] = useState({ id: '', company_id: '', construction_name: '', construction_type: '', construction_amount: '', safety_cost_total: '', notes: '' });
   const [newReportMonth, setNewReportMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [creatingReport, setCreatingReport] = useState(false);
   const [reportEditOpen, setReportEditOpen] = useState(false);
   const [editingReport, setEditingReport] = useState({ id: '', report_month: '', title: '' });
   const [itemEditOpen, setItemEditOpen] = useState(false);
@@ -134,6 +142,9 @@ const SafetyCost = () => {
     return constructions.filter((c) => c.company_id && allow.has(c.company_id));
   }, [constructions, access.seesAllCompanies, access.accessibleCompanyIds, access.userCompanyId]);
   const filteredReports = reports.filter((r) => r.construction_id === selectedConstructionId);
+  const existingLiveForNewMonth = filteredReports.some(
+    (r) => toSafetyCostMonthStart(String(r.report_month)) === toSafetyCostMonthStart(newReportMonth),
+  );
   const baseItems = items.filter((i) => i.report_id === selectedReportId).sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   const filteredItems = useMemo(() => {
     if (!itemSearch.trim()) return baseItems;
@@ -265,17 +276,107 @@ const SafetyCost = () => {
   }
 
   async function createReport() {
-    if (!selectedConstruction || !user) return;
-    const { data, error } = await supabase.from('safety_cost_monthly_reports' as any).insert({
-      construction_id: selectedConstruction.id,
-      project_id: selectedConstruction.project_id,
-      company_id: selectedConstruction.company_id,
-      report_month: `${newReportMonth}-01`,
-      title: `${newReportMonth} 산업안전보건관리비 사용내역서`,
-      created_by: user.id,
-    }).select().single();
-    if (error) { toast({ title: '월별 내역서 생성 실패', description: error.message, variant: 'destructive' }); return; }
-    setReportOpen(false); setSelectedReportId((data as any).id); toast({ title: '월별 사용내역서가 생성되었습니다.' }); fetchAll();
+    if (!selectedConstruction || !user || creatingReport) return;
+    const monthStart = toSafetyCostMonthStart(newReportMonth);
+    if (!/^\d{4}-\d{2}-01$/.test(monthStart)) {
+      toast({ title: '작성월을 선택하세요.', variant: 'destructive' });
+      return;
+    }
+    setCreatingReport(true);
+    try {
+      const { data: existingRows, error: findError } = await supabase
+        .from('safety_cost_monthly_reports' as any)
+        .select('id, is_deleted, created_at, approval_version, status')
+        .eq('construction_id', selectedConstruction.id)
+        .eq('report_month', monthStart)
+        .order('created_at', { ascending: false });
+      if (findError) {
+        toast({ title: '월별 내역서 조회 실패', description: findError.message, variant: 'destructive' });
+        return;
+      }
+
+      const plan = planCreateMonthlyReport((existingRows || []) as any[]);
+      if (plan.action === 'open') {
+        setReportOpen(false);
+        setSelectedReportId(plan.row.id);
+        toast(monthlyReportExistsCopy('create'));
+        return;
+      }
+      if (plan.action === 'restore') {
+        const { data: restored, error: restoreError } = await supabase
+          .from('safety_cost_monthly_reports' as any)
+          .update(softRestorePayload())
+          .eq('id', plan.row.id)
+          .select('id')
+          .single();
+        if (restoreError) {
+          toast({ title: '월별 내역서 복구 실패', description: restoreError.message, variant: 'destructive' });
+          return;
+        }
+        setReportOpen(false);
+        setSelectedReportId((restored as any).id);
+        toast({
+          title: '삭제했던 해당 월 내역서를 다시 열었습니다',
+          description: '기존 항목이 있으면 그대로 이어서 작성하세요.',
+        });
+        fetchAll();
+        return;
+      }
+
+      const { data, error } = await supabase.from('safety_cost_monthly_reports' as any).insert({
+        construction_id: selectedConstruction.id,
+        project_id: selectedConstruction.project_id,
+        company_id: selectedConstruction.company_id,
+        report_month: monthStart,
+        title: `${newReportMonth} 산업안전보건관리비 사용내역서`,
+        created_by: user.id,
+      }).select().single();
+      if (error) {
+        if (isPostgresUniqueViolation(error)) {
+          const { data: raced } = await supabase
+            .from('safety_cost_monthly_reports' as any)
+            .select('id, is_deleted, created_at, approval_version, status')
+            .eq('construction_id', selectedConstruction.id)
+            .eq('report_month', monthStart)
+            .order('created_at', { ascending: false });
+          const racedPlan = planCreateMonthlyReport((raced || []) as any[]);
+          if (racedPlan.action === 'open') {
+            setReportOpen(false);
+            setSelectedReportId(racedPlan.row.id);
+            toast(monthlyReportExistsCopy('create'));
+            return;
+          }
+          if (racedPlan.action === 'restore') {
+            const { data: restored, error: restoreError } = await supabase
+              .from('safety_cost_monthly_reports' as any)
+              .update(softRestorePayload())
+              .eq('id', racedPlan.row.id)
+              .select('id')
+              .single();
+            if (!restoreError && restored) {
+              setReportOpen(false);
+              setSelectedReportId((restored as any).id);
+              toast({
+                title: '삭제했던 해당 월 내역서를 다시 열었습니다',
+                description: '기존 항목이 있으면 그대로 이어서 작성하세요.',
+              });
+              fetchAll();
+              return;
+            }
+          }
+          toast({ ...monthlyReportExistsCopy('create'), variant: 'destructive' });
+          return;
+        }
+        toast({ title: '월별 내역서 생성 실패', description: error.message, variant: 'destructive' });
+        return;
+      }
+      setReportOpen(false);
+      setSelectedReportId((data as any).id);
+      toast({ title: '월별 사용내역서가 생성되었습니다.' });
+      fetchAll();
+    } finally {
+      setCreatingReport(false);
+    }
   }
 
   function openReportEditor(report: Report) {
@@ -291,7 +392,14 @@ const SafetyCost = () => {
       report_month: `${editingReport.report_month}-01`,
       title: editingReport.title.trim() || `${editingReport.report_month} 산업안전보건관리비 사용내역서`,
     }).eq('id', editingReport.id);
-    if (error) { toast({ title: '월별 사용내역서 수정 실패', description: error.message, variant: 'destructive' }); return; }
+    if (error) {
+      toast({
+        title: isPostgresUniqueViolation(error) ? monthlyReportExistsCopy('update').title : '월별 사용내역서 수정 실패',
+        description: isPostgresUniqueViolation(error) ? monthlyReportExistsCopy('update').description : error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
     setReportEditOpen(false); toast({ title: '월별 사용내역서가 수정되었습니다.' }); fetchAll();
   }
 
@@ -764,7 +872,7 @@ const SafetyCost = () => {
           />
         )}
 
-        <Card><CardHeader className="pb-2"><div className="flex items-center justify-between"><CardTitle className="text-sm">월별 사용내역서</CardTitle><Dialog open={reportOpen} onOpenChange={setReportOpen}><DialogTrigger asChild><Button size="sm" variant="outline" disabled={!selectedConstruction}>월별 작성</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>월별 사용내역서 생성</DialogTitle></DialogHeader><Label>작성월</Label><Input type="month" value={newReportMonth} onChange={(e) => setNewReportMonth(e.target.value)} /><DialogFooter><Button onClick={createReport}>생성</Button></DialogFooter></DialogContent></Dialog></div></CardHeader><CardContent><div className="flex flex-wrap gap-2">{filteredReports.map((r) => <div key={r.id} className={`flex items-center rounded-md border ${r.id === selectedReportId ? 'border-primary bg-primary text-primary-foreground' : 'bg-card'}`}><button type="button" className="px-3 py-1.5 text-sm" onClick={() => setSelectedReportId(r.id)}>{String(r.report_month).slice(0, 7)} <Badge variant="secondary" className="ml-2">{getSafetyCostStatusLabel(r.status)}</Badge>{r.source === 'legacy_import' && <Badge variant="outline" className="ml-1">이관</Badge>}</button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => openReportEditor(r)} disabled={r.status === 'approved'} aria-label="월별 사용내역서 수정"><Pencil className="h-3.5 w-3.5" /></Button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => deleteReport(r)} disabled={r.status === 'approved'} aria-label="월별 사용내역서 삭제"><Trash2 className="h-3.5 w-3.5" /></Button></div>)}</div></CardContent></Card>
+        <Card><CardHeader className="pb-2"><div className="flex items-center justify-between"><CardTitle className="text-sm">월별 사용내역서</CardTitle><Dialog open={reportOpen} onOpenChange={setReportOpen}><DialogTrigger asChild><Button size="sm" variant="outline" disabled={!selectedConstruction}>월별 작성</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>월별 사용내역서 생성</DialogTitle></DialogHeader><Label>작성월</Label><Input type="month" value={newReportMonth} onChange={(e) => setNewReportMonth(e.target.value)} />{existingLiveForNewMonth && <p className="text-sm text-muted-foreground">이미 해당 월 내역서가 있습니다. 생성을 누르면 기존 내역서를 엽니다.</p>}<DialogFooter><Button onClick={createReport} disabled={creatingReport}>{creatingReport ? '처리 중…' : '생성'}</Button></DialogFooter></DialogContent></Dialog></div></CardHeader><CardContent><div className="flex flex-wrap gap-2">{filteredReports.map((r) => <div key={r.id} className={`flex items-center rounded-md border ${r.id === selectedReportId ? 'border-primary bg-primary text-primary-foreground' : 'bg-card'}`}><button type="button" className="px-3 py-1.5 text-sm" onClick={() => setSelectedReportId(r.id)}>{String(r.report_month).slice(0, 7)} <Badge variant="secondary" className="ml-2">{getSafetyCostStatusLabel(r.status)}</Badge>{r.source === 'legacy_import' && <Badge variant="outline" className="ml-1">이관</Badge>}</button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => openReportEditor(r)} disabled={r.status === 'approved'} aria-label="월별 사용내역서 수정"><Pencil className="h-3.5 w-3.5" /></Button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => deleteReport(r)} disabled={r.status === 'approved'} aria-label="월별 사용내역서 삭제"><Trash2 className="h-3.5 w-3.5" /></Button></div>)}</div></CardContent></Card>
 
         {selectedReport && <Tabs value={reportTab} onValueChange={setReportTab}><TabsList className="flex flex-wrap h-auto gap-1"><TabsTrigger value="items">사용 항목 <Badge variant="secondary" className="ml-2">{baseItems.length}</Badge></TabsTrigger><TabsTrigger value="pack">증빙패키지 {!evidencePack.ready && filteredItems.length > 0 && <Badge variant="destructive" className="ml-2">{evidencePack.hardMissing.length}</Badge>}</TabsTrigger><TabsTrigger value="ppe-stock">보호구 수불</TabsTrigger><TabsTrigger value="ppe">보호구 지급대장 {ppeSignedCount > 0 && <Badge variant="secondary" className="ml-2">{ppeSignedCount}</Badge>}</TabsTrigger><TabsTrigger value="ai">AI 자동분석</TabsTrigger><TabsTrigger value="audit">자동검토 {(compliance.warningCount + evidenceMissingCount + evidencePack.hardMissing.length) > 0 && <Badge variant="destructive" className="ml-2">{compliance.warningCount + evidenceMissingCount + evidencePack.hardMissing.length}</Badge>}</TabsTrigger><TabsTrigger value="output">출력/결재</TabsTrigger></TabsList><TabsContent value="pack" className="space-y-3">
           {selectedConstruction && selectedReport && (

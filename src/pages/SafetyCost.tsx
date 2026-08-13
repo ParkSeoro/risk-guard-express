@@ -8,6 +8,8 @@ import { notifyProjectRoles } from '@/lib/notificationService';
 import { ADMIN_PROJECT_ROLES } from '@/lib/permissions';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { SAFETY_COST_CATEGORIES, analyzeSafetyCostCompliance, classifySafetyCostItem, formatKRW, getSafetyCostStatusLabel } from '@/lib/safetyCost';
+import { groupSafetyCostByCompany } from '@/lib/safetyCostScope';
+import { companyTypeLabel } from '@/lib/companyTypes';
 import {
   isPostgresUniqueViolation,
   monthlyReportExistsCopy,
@@ -111,6 +113,7 @@ const SafetyCost = () => {
   const [editingConstruction, setEditingConstruction] = useState({ id: '', company_id: '', construction_name: '', construction_type: '', construction_amount: '', safety_cost_total: '', notes: '' });
   const [newReportMonth, setNewReportMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [creatingReport, setCreatingReport] = useState(false);
+  const [companyFilter, setCompanyFilter] = useState('all');
   const [reportEditOpen, setReportEditOpen] = useState(false);
   const [editingReport, setEditingReport] = useState({ id: '', report_month: '', title: '' });
   const [itemEditOpen, setItemEditOpen] = useState(false);
@@ -141,6 +144,16 @@ const SafetyCost = () => {
     }
     return constructions.filter((c) => c.company_id && allow.has(c.company_id));
   }, [constructions, access.seesAllCompanies, access.accessibleCompanyIds, access.userCompanyId]);
+  const companyGroups = useMemo(
+    () => groupSafetyCostByCompany(scopedCompanies, scopedConstructions, {
+      includeEmptyExecCompanies: !!access.seesAllCompanies,
+    }),
+    [scopedCompanies, scopedConstructions, access.seesAllCompanies],
+  );
+  const visibleCompanyGroups = useMemo(
+    () => (companyFilter === 'all' ? companyGroups : companyGroups.filter((g) => g.companyId === companyFilter)),
+    [companyGroups, companyFilter],
+  );
   const filteredReports = reports.filter((r) => r.construction_id === selectedConstructionId);
   const existingLiveForNewMonth = filteredReports.some(
     (r) => toSafetyCostMonthStart(String(r.report_month)) === toSafetyCostMonthStart(newReportMonth),
@@ -230,6 +243,11 @@ const SafetyCost = () => {
     if (error) { toast({ title: '공사 등록 실패', description: error.message, variant: 'destructive' }); return; }
     setConstructionOpen(false); setNewConstruction({ company_id: '', construction_name: '', construction_type: '', construction_amount: '', safety_cost_total: '', notes: '' });
     toast({ title: '산업안전보건관리비 공사가 등록되었습니다.' }); fetchAll();
+  }
+
+  function openNewConstruction(companyId?: string) {
+    if (companyId) setNewConstruction((p) => ({ ...p, company_id: companyId }));
+    setConstructionOpen(true);
   }
 
   function openConstructionEditor(construction: Construction) {
@@ -834,7 +852,7 @@ const SafetyCost = () => {
 
   return <div className="space-y-4 animate-fade-in">
     <div className="flex items-center justify-between gap-3">
-      <div><h1 className="text-xl font-bold flex items-center gap-2"><ShieldCheck className="h-5 w-5" /> 산업안전보건관리비</h1><p className="text-xs text-muted-foreground mt-1">사용내역 · AI 자동분류 · 증빙 · 결재 · 법정 비율 검증</p></div>
+      <div><h1 className="text-xl font-bold flex items-center gap-2"><ShieldCheck className="h-5 w-5" /> 산업안전보건관리비</h1><p className="text-xs text-muted-foreground mt-1">{access.seesAllCompanies ? '프로젝트 관리자·안전관리자·마스터는 전체 시공사를 조회합니다.' : '사용내역 · AI 자동분류 · 증빙 · 결재 · 법정 비율 검증'}</p></div>
       {activeTab === 'reports' && (
       <div className="flex gap-2">
         <a href="/templates/safety-cost-template.xlsx" download><Button variant="outline" size="sm" className="gap-1"><FileSpreadsheet className="h-4 w-4" /> 공식양식(별지1호)</Button></a>
@@ -854,7 +872,60 @@ const SafetyCost = () => {
       <SafetyCostValidationPanel focusReportId={selectedReportId || null} />
     ) : (
     <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-      <div className="space-y-3">{loading ? Array.from({length:3}).map((_,i) => <Skeleton key={i} className="h-28 w-full" />) : scopedConstructions.map((c) => { const selected = c.id === selectedConstructionId; const constructionReports = reports.filter((r) => r.construction_id === c.id && r.status === 'approved'); const total = constructionReports.reduce((sum, r) => sum + Number(r.report_total || 0), 0); const rate = c.safety_cost_total ? Math.round((total / Number(c.safety_cost_total)) * 100) : 0; return <div key={c.id} className={`rounded-lg border p-3 transition-colors ${selected ? 'border-primary bg-primary/5' : 'bg-card hover:bg-muted/50'}`}><button type="button" onClick={() => setSelectedConstructionId(c.id)} className="w-full text-left"><div className="flex items-start justify-between gap-2"><div><div className="font-medium text-sm">{c.construction_name}</div><div className="text-xs text-muted-foreground mt-1">{companies.find((co) => co.id === c.company_id)?.name || ''}</div></div><Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={(e) => { e.stopPropagation(); openConstructionEditor(c); }} aria-label="공사 정보 수정"><Pencil className="h-3.5 w-3.5" /></Button></div><div className="mt-3 space-y-1"><div className="flex justify-between text-xs"><span>사용률</span><span>{rate}%</span></div><Progress value={Math.min(100, rate)} className="h-2" /></div><div className="grid grid-cols-2 gap-2 mt-3 text-xs"><span>총액 {formatKRW(c.safety_cost_total)}</span><span>잔여 {formatKRW(Number(c.safety_cost_total || 0) - total)}</span></div></button></div>; })}{!loading && scopedConstructions.length === 0 && <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">등록된 공사가 없습니다.<div className="mt-2"><Button size="sm" onClick={() => setConstructionOpen(true)}><Plus className="h-3 w-3 mr-1" /> 공사 등록</Button></div></CardContent></Card>}</div>
+      <div className="space-y-3">
+        {access.seesAllCompanies && companyGroups.length > 1 && (
+          <Select value={companyFilter} onValueChange={setCompanyFilter}>
+            <SelectTrigger><SelectValue placeholder="시공사 선택" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체 시공사 ({companyGroups.length})</SelectItem>
+              {companyGroups.map((g) => (
+                <SelectItem key={g.companyId} value={g.companyId}>{g.companyName}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {loading ? Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 w-full" />) : visibleCompanyGroups.map((group) => (
+          <div key={group.companyId} className="space-y-2">
+            <div className="flex items-center justify-between gap-2 px-0.5">
+              <div>
+                <div className="text-sm font-semibold">{group.companyName}</div>
+                <div className="text-[11px] text-muted-foreground">{companyTypeLabel(group.companyType)} · {group.constructions.length}건</div>
+              </div>
+              {access.seesAllCompanies && (
+                <Button type="button" size="sm" variant="ghost" className="h-7 px-2" onClick={() => openNewConstruction(group.companyId)}>
+                  <Plus className="h-3 w-3 mr-1" /> 공사
+                </Button>
+              )}
+            </div>
+            {group.constructions.length === 0 && (
+              <Card><CardContent className="py-4 text-center text-xs text-muted-foreground">등록된 공사가 없습니다.</CardContent></Card>
+            )}
+            {group.constructions.map((c) => {
+              const selected = c.id === selectedConstructionId;
+              const constructionReports = reports.filter((r) => r.construction_id === c.id && r.status === 'approved');
+              const total = constructionReports.reduce((sum, r) => sum + Number(r.report_total || 0), 0);
+              const rate = c.safety_cost_total ? Math.round((total / Number(c.safety_cost_total)) * 100) : 0;
+              return (
+                <div key={c.id} className={`rounded-lg border p-3 transition-colors ${selected ? 'border-primary bg-primary/5' : 'bg-card hover:bg-muted/50'}`}>
+                  <button type="button" onClick={() => setSelectedConstructionId(c.id)} className="w-full text-left">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-medium text-sm">{c.construction_name}</div>
+                      </div>
+                      <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={(e) => { e.stopPropagation(); openConstructionEditor(c); }} aria-label="공사 정보 수정"><Pencil className="h-3.5 w-3.5" /></Button>
+                    </div>
+                    <div className="mt-3 space-y-1"><div className="flex justify-between text-xs"><span>사용률</span><span>{rate}%</span></div><Progress value={Math.min(100, rate)} className="h-2" /></div>
+                    <div className="grid grid-cols-2 gap-2 mt-3 text-xs"><span>총액 {formatKRW(c.safety_cost_total)}</span><span>잔여 {formatKRW(Number(c.safety_cost_total || 0) - total)}</span></div>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+        {!loading && visibleCompanyGroups.length === 0 && (
+          <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">등록된 공사가 없습니다.<div className="mt-2"><Button size="sm" onClick={() => openNewConstruction()}><Plus className="h-3 w-3 mr-1" /> 공사 등록</Button></div></CardContent></Card>
+        )}
+      </div>
 
       <div className="space-y-4">
         {selectedConstruction && <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center justify-between"><span>{selectedConstruction.construction_name}</span>{usageRate < 50 && <Badge variant="secondary" className="gap-1"><AlertTriangle className="h-3 w-3" /> 저사용 경고</Badge>}</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-4"><div><p className="text-xs text-muted-foreground">공사금액</p><p className="font-semibold">{formatKRW(selectedConstruction.construction_amount)}</p></div><div><p className="text-xs text-muted-foreground">산업안전보건관리비 총액</p><p className="font-semibold">{formatKRW(selectedConstruction.safety_cost_total)}</p></div><div><p className="text-xs text-muted-foreground">승인 누계</p><p className="font-semibold">{formatKRW(approvedTotal)}</p></div><div><p className="text-xs text-muted-foreground">잔여 금액</p><p className="font-semibold">{formatKRW(Number(selectedConstruction.safety_cost_total || 0) - approvedTotal)}</p></div></CardContent></Card>}

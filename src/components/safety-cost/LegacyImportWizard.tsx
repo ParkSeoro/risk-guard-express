@@ -12,6 +12,8 @@ import {
 } from '@/lib/safetyCostLegacyImport';
 import { normalizePpeItemKey } from '@/lib/safetyCostPpeStock';
 import { formatKRW } from '@/lib/safetyCost';
+import { planCreateMonthlyReport } from '@/lib/safetyCostMonthly';
+import { softRestorePayload } from '@/lib/dataAccess';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -210,16 +212,26 @@ export function LegacyImportWizard({
         const reportMonth = `${month.report_month}-01`;
         const lineTotal = month.items.reduce((s, it) => s + Number(it.amount || 0), 0);
 
-        const { data: existing } = await supabase
+        const { data: existingRows } = await supabase
           .from('safety_cost_monthly_reports' as any)
-          .select('id, status')
+          .select('id, status, is_deleted, created_at, approval_version')
           .eq('construction_id', constructionId)
-          .eq('report_month', reportMonth)
-          .maybeSingle();
+          .eq('report_month', reportMonth);
 
-        let reportId = (existing as any)?.id as string | undefined;
-        if (reportId && (existing as any).status === 'approved') {
-          throw new Error(`${month.report_month}: 이미 승인된 월보가 있어 이관할 수 없습니다.`);
+        const plan = planCreateMonthlyReport((existingRows || []) as any[]);
+        let reportId: string | undefined;
+        if (plan.action === 'open') {
+          reportId = plan.row.id;
+          if ((plan.row as any).status === 'approved') {
+            throw new Error(`${month.report_month}: 이미 승인된 월보가 있어 이관할 수 없습니다.`);
+          }
+        } else if (plan.action === 'restore') {
+          const { error: restoreError } = await supabase
+            .from('safety_cost_monthly_reports' as any)
+            .update(softRestorePayload())
+            .eq('id', plan.row.id);
+          if (restoreError) throw restoreError;
+          reportId = plan.row.id;
         }
 
         if (!reportId) {

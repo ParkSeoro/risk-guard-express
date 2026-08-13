@@ -4,6 +4,7 @@ import {
   splitApprovalTimeline,
   currentTimelineSteps,
   approvalStepPosition,
+  isStuckClosureSmInbox,
 } from "@/lib/permitPostApproval";
 
 const step = (partial: {
@@ -164,5 +165,26 @@ describe("permitPostApproval timeline split", () => {
     expect(split.postSteps.map((s) => s.id)).toEqual(["close-sm"]);
     expect(split.postSteps[0]?.comment).toBeFalsy();
     expect(split.priorIssuanceSteps[0]?.comment).toBe("장비명 기재 누락");
+  });
+
+  it("detects supervisor-approved + SM still 대기 (inbox miss, any contractor)", () => {
+    expect(
+      isStuckClosureSmInbox([
+        { position: "closure_supervisor", status: "승인" },
+        { position: "closure_sm", status: "대기" },
+      ]),
+    ).toBe(true);
+    expect(
+      isStuckClosureSmInbox([
+        { position: "closure_supervisor", status: "승인" },
+        { position: "closure_sm", status: "진행중" },
+      ]),
+    ).toBe(false);
+    expect(
+      isStuckClosureSmInbox([
+        { position: "closure_supervisor", status: "진행중" },
+        { position: "closure_sm", status: "대기" },
+      ]),
+    ).toBe(false);
   });
 });

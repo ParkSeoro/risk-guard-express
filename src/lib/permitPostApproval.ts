@@ -42,6 +42,22 @@ export function permitPostStepApproveLabel(kind: PermitPostStepKind): string {
   return '승인';
 }
 
+/**
+ * Supervisor already approved completion, but SM row is still 대기 (not 진행중).
+ * Inbox RPCs only return 진행중, so SM never sees these until repair.
+ */
+export function isStuckClosureSmInbox(
+  rows: Array<{ position?: string | null; status?: string | null }>,
+): boolean {
+  const pos = (r: { position?: string | null }) => (r.position || '').toLowerCase();
+  const supApproved = rows.some(
+    (r) => pos(r) === 'closure_supervisor' && (r.status === '승인' || (r.status || '').toLowerCase() === 'approved'),
+  );
+  const smWaiting = rows.some((r) => pos(r) === 'closure_sm' && r.status === '대기');
+  const smActive = rows.some((r) => pos(r) === 'closure_sm' && r.status === '진행중');
+  return supApproved && smWaiting && !smActive;
+}
+
 export type ApprovalTimelineStep = {
   id?: string;
   step_order?: number | null;

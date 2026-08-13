@@ -11,8 +11,9 @@ import {
 } from '@/lib/permitListQuery';
 
 describe('permit list date window', () => {
-  it('14d is inclusive 14 calendar days ending today', () => {
-    expect(addCalendarDaysYmd('2026-08-13', -13)).toBe('2026-07-31');
+  it('7d is inclusive 7 calendar days ending today', () => {
+    expect(addCalendarDaysYmd('2026-08-13', -6)).toBe('2026-08-07');
+    expect(permitListDateFrom('7d', '2026-08-13')).toBe('2026-08-07');
     expect(permitListDateFrom('14d', '2026-08-13')).toBe('2026-07-31');
     expect(permitListDateFrom('month', '2026-08-13')).toBe('2026-08-01');
     expect(permitListDateFrom('all', '2026-08-13')).toBeNull();
@@ -37,13 +38,14 @@ describe('permit list status/search', () => {
     expect(matchesPermitSearch(p, '없는단어')).toBe(false);
   });
 
-  it('defaults 14d window and keeps older out', () => {
+  it('defaults 7d window and keeps older out', () => {
     const rows = [
       { id: 'a', status: '종료대기', permit_date: '2026-08-12', work_description: '가로등' },
+      { id: 'old7', status: '승인', permit_date: '2026-08-06', work_description: '8일 전' },
       { id: 'b', status: '승인', permit_date: '2026-06-01', work_description: '옛 작업' },
     ];
     const filtered = filterPermitsForList(rows, {
-      period: '14d',
+      period: '7d',
       statusFilter: 'all',
       search: '',
       today: '2026-08-13',

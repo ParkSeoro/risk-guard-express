@@ -153,7 +153,7 @@ export default function WorkPermits() {
   const [involvedPermitIds, setInvolvedPermitIds] = useState<Set<string>>(new Set());
   const [listTab, setListTab] = useState<'all' | 'involved'>('all');
   const [listSearch, setListSearch] = useState('');
-  const [listPeriod, setListPeriod] = useState<PermitListPeriod>('14d');
+  const [listPeriod, setListPeriod] = useState<PermitListPeriod>('7d');
   const [listStatus, setListStatus] = useState<PermitListStatusFilter>('all');
   const [plans, setPlans] = useState<any[]>([]);
   const [runs, setRuns] = useState<any[]>([]);
@@ -558,6 +558,7 @@ export default function WorkPermits() {
           <Select value={listPeriod} onValueChange={(v) => setListPeriod(v as PermitListPeriod)}>
             <SelectTrigger className="w-36 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
+              <SelectItem value="7d">최근 7일</SelectItem>
               <SelectItem value="14d">최근 14일</SelectItem>
               <SelectItem value="month">이번 달</SelectItem>
               <SelectItem value="all">전체 기간</SelectItem>

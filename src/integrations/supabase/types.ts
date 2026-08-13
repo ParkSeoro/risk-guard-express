@@ -10004,10 +10004,12 @@ export type Database = {
         }
         Returns: Json
       }
+      reactivate_user_account: { Args: { _user_id: string }; Returns: Json }
       reject_pending_user: {
         Args: { _reason: string; _user_id: string }
         Returns: Json
       }
+      retire_user_account: { Args: { _user_id: string }; Returns: Json }
       request_work_permit_closure: {
         Args: { _permit_id: string }
         Returns: Json
@@ -10023,6 +10025,10 @@ export type Database = {
       shares_project_with: {
         Args: { _target: string; _viewer: string }
         Returns: boolean
+      }
+      signup_identity_available: {
+        Args: { _email?: string; _phone?: string }
+        Returns: Json
       }
       should_push_notify: {
         Args: { _type: string; _user_id: string }

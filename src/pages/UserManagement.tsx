@@ -54,7 +54,7 @@ const projectRoleToLegacy = (r: string): string => {
 const statusLabels: Record<string, { label: string; color: string }> = {
   pending: { label: '승인대기', color: 'bg-warning/10 text-warning border-warning/30' },
   active: { label: '활성', color: 'bg-success/10 text-success border-success/30' },
-  inactive: { label: '비활성', color: 'bg-muted text-muted-foreground' },
+  inactive: { label: '로그인 차단', color: 'bg-muted text-muted-foreground' },
 };
 
 interface UserWithRole {
@@ -330,7 +330,32 @@ const UserManagement = () => {
       if (!reason || !reason.trim()) { setSaving(null); return; }
       const { error } = await (supabase as any).rpc('reject_pending_user', { _user_id: userId, _reason: reason.trim() });
       if (error) toast({ title: '반려 실패', description: error.message, variant: 'destructive' });
-      else toast({ title: '가입이 반려되었습니다.' });
+      else toast({ title: '가입이 반려되었습니다. 해당 계정은 로그인할 수 없습니다.' });
+    } else if (parsed.data === 'inactive') {
+      const { data, error } = await (supabase as any).rpc('retire_user_account', { _user_id: userId });
+      const code = (data as any)?.error || error?.message;
+      if (code) {
+        const msg = code === 'CANNOT_RETIRE_SELF' ? '본인 계정은 차단할 수 없습니다.'
+          : code === 'LAST_MASTER' ? '마지막 마스터는 차단할 수 없습니다.'
+          : code === 'FORBIDDEN' ? '권한이 없습니다.'
+          : String(code);
+        toast({ title: '로그인 차단 실패', description: msg, variant: 'destructive' });
+      } else {
+        toast({
+          title: '로그인을 차단했습니다.',
+          description: '과거 결재·도장 이름은 남습니다. 결재 후보에서는 빠집니다.',
+        });
+        log('계정로그인차단', 'profile', userId, undefined, { cancelled: (data as any)?.cancelled_open_approvals });
+      }
+    } else if (parsed.data === 'active' && target?.account_status === 'inactive') {
+      const { data, error } = await (supabase as any).rpc('reactivate_user_account', { _user_id: userId });
+      const code = (data as any)?.error || error?.message;
+      if (code) {
+        toast({ title: '재활성화 실패', description: String(code), variant: 'destructive' });
+      } else {
+        toast({ title: '계정을 다시 활성화했습니다.' });
+        log('계정재활성화', 'profile', userId);
+      }
     } else {
       const { error } = await supabase.from('profiles').update({ account_status: parsed.data }).eq('user_id', userId);
       if (error) {
@@ -549,7 +574,7 @@ const UserManagement = () => {
           <TabsTrigger value="all" className="text-xs">전체 ({kpis.total})</TabsTrigger>
           <TabsTrigger value="pending" className="text-xs">승인대기 ({kpis.pending})</TabsTrigger>
           <TabsTrigger value="active" className="text-xs">활성 ({kpis.active})</TabsTrigger>
-          <TabsTrigger value="inactive" className="text-xs">비활성 ({users.filter(u => u.account_status === 'inactive').length})</TabsTrigger>
+          <TabsTrigger value="inactive" className="text-xs">로그인 차단 ({users.filter(u => u.account_status === 'inactive').length})</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -704,8 +729,11 @@ const UserManagement = () => {
                       )}
                       {u.account_status === 'active' && (
                         <Button size="sm" variant="outline" className="h-6 text-xs gap-1 text-destructive" disabled={saving === u.user_id}
-                          onClick={() => handleStatusChange(u.user_id, 'inactive')}>
-                          <UserX className="h-3 w-3" /> 비활성화
+                          onClick={() => {
+                            if (!confirm('이 계정의 로그인을 차단할까요?\n\n· 지금 세션이 끊기고 다시 로그인할 수 없습니다.\n· 과거 허가서 결재·도장 이름은 그대로 남습니다.\n· 결재 후보 목록에서는 빠집니다.\n· 사용자를 삭제하지는 않습니다.')) return;
+                            handleStatusChange(u.user_id, 'inactive');
+                          }}>
+                          <UserX className="h-3 w-3" /> 로그인 차단
                         </Button>
                       )}
                       {u.account_status === 'inactive' && (

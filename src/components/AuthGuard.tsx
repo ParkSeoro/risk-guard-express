@@ -11,6 +11,7 @@ import {
   hasCompletedNativePermissions,
   isNativeApp,
 } from "@/lib/native/isNativeApp";
+import { isAccountLoginBlocked, isAccountPending } from "@/lib/accountStatus";
 
 export const ADMIN_SHELL_ROLES = [
   "master",
@@ -170,6 +171,33 @@ function LoadingSpinner() {
   );
 }
 
+function AccountBlockedScreen({
+  title,
+  body,
+  destructive = true,
+}: {
+  title: string;
+  body: string;
+  destructive?: boolean;
+}) {
+  const { signOut } = useAuth();
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="text-center space-y-4 max-w-md">
+        <h2 className={`text-xl font-bold ${destructive ? "text-destructive" : ""}`}>{title}</h2>
+        <p className="text-sm text-muted-foreground">{body}</p>
+        <button
+          type="button"
+          className="text-sm text-accent hover:underline"
+          onClick={() => void signOut()}
+        >
+          로그아웃
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Strict waterfall (no DB):
  * ① isAuthLoading → spinner
@@ -184,6 +212,29 @@ export default function AuthGuard({ children, shell, allowAnonymous = false }: A
 
   // ① Global auth bootstrap
   if (isAuthLoading) return <LoadingSpinner />;
+
+  const status = (profile as { account_status?: string | null } | null)?.account_status;
+  const path = location.pathname.replace(/\/+$/, "") || "/";
+  const onAuthPage = path === "/login" || path === "/auth" || path === "/register";
+  if (session && !onAuthPage) {
+    if (isAccountPending(status)) {
+      return (
+        <AccountBlockedScreen
+          title="승인 대기 중"
+          body="관리자가 계정을 승인한 후에 시스템을 이용하실 수 있습니다."
+          destructive={false}
+        />
+      );
+    }
+    if (isAccountLoginBlocked(status)) {
+      return (
+        <AccountBlockedScreen
+          title="로그인 차단된 계정"
+          body="이 계정은 관리자가 로그인을 차단했습니다. 다른 아이디로 접속하지 말고 관리자에게 재활성화를 요청하세요."
+        />
+      );
+    }
+  }
 
   // ② Public auth/consent routes always render
   if (isAuthSystemPath(location.pathname)) {

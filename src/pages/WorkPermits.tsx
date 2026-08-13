@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, CheckCircle2, XCircle, FileSignature, Pencil, Trash2, Users, Copy, Clock } from 'lucide-react';
+import { Plus, CheckCircle2, XCircle, FileSignature, Pencil, Trash2, Users, Copy, Clock, Search } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialog';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
@@ -33,6 +33,15 @@ import {
 } from '@/lib/permitWorkDate';
 import { filterRunsByCompanyScope } from '@/lib/companyDocScope';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
+import {
+  filterPermitsForList,
+  closureListProgress,
+  resolvePermitSubmittedByName,
+  resolvePermitApprovedByName,
+  type PermitListPeriod,
+  type PermitListStatusFilter,
+  type PermitApprovalNameRow,
+} from '@/lib/permitListQuery';
 
 
 const STATUS_COLOR: Record<string, string> = {
@@ -140,8 +149,12 @@ export default function WorkPermits() {
   } = useGlobalProjectAccess();
 
   const [permits, setPermits] = useState<any[]>([]);
+  const [approvalNameRows, setApprovalNameRows] = useState<PermitApprovalNameRow[]>([]);
   const [involvedPermitIds, setInvolvedPermitIds] = useState<Set<string>>(new Set());
   const [listTab, setListTab] = useState<'all' | 'involved'>('all');
+  const [listSearch, setListSearch] = useState('');
+  const [listPeriod, setListPeriod] = useState<PermitListPeriod>('14d');
+  const [listStatus, setListStatus] = useState<PermitListStatusFilter>('all');
   const [plans, setPlans] = useState<any[]>([]);
   const [runs, setRuns] = useState<any[]>([]);
   const [tbms, setTbms] = useState<any[]>([]);
@@ -172,11 +185,16 @@ export default function WorkPermits() {
 
   const visiblePermits = useMemo(() => {
     const scoped = permits.filter((p) => canViewPermitInList(p, visibilityOpts));
-    if (listTab === 'involved') {
-      return scoped.filter((p) => isUserInvolvedInPermit(p, visibilityOpts));
-    }
-    return scoped;
-  }, [permits, visibilityOpts, listTab]);
+    const tabbed = listTab === 'involved'
+      ? scoped.filter((p) => isUserInvolvedInPermit(p, visibilityOpts))
+      : scoped;
+    return filterPermitsForList(tabbed, {
+      period: listPeriod,
+      statusFilter: listStatus,
+      search: listSearch,
+      companyNameById,
+    });
+  }, [permits, visibilityOpts, listTab, listPeriod, listStatus, listSearch, companyNameById]);
 
   const load = async () => {
     if (!projectId) return;
@@ -195,7 +213,7 @@ export default function WorkPermits() {
     // assessment_runs: no company_id — filter by target_company_ids / creator for subordinates
     let runsQ: any = supabase.from('assessment_runs').select('id, period_label, status, created_by, target_company_ids').eq('project_id', projectId).eq('is_deleted', false).order('created_at', { ascending: false }).limit(100);
 
-    const [{ data: p }, { data: wp }, { data: ar }, { data: tb }, { data: myApprovals }] = await Promise.all([
+    const [{ data: p }, { data: wp }, { data: ar }, { data: tb }, { data: myApprovals }, { data: nameApprovals }] = await Promise.all([
       permitQuery,
       plansQ,
       runsQ,
@@ -208,9 +226,15 @@ export default function WorkPermits() {
             .eq('entity_type', 'work_permit')
             .eq('approver_id', user.id)
         : Promise.resolve({ data: [] as any[] }),
+      supabase
+        .from('approvals')
+        .select('entity_id, position, status, approver_name, approved_at')
+        .eq('project_id', projectId)
+        .eq('entity_type', 'work_permit'),
     ]);
     const permitRows = (p as any[]) || [];
     setPermits(permitRows);
+    setApprovalNameRows((nameApprovals as PermitApprovalNameRow[]) || []);
     setInvolvedPermitIds(
       new Set(
         ((myApprovals as any[]) || [])
@@ -518,16 +542,61 @@ export default function WorkPermits() {
         </TabsList>
       </Tabs>
 
+      <Card>
+        <CardContent className="pt-4 flex gap-2 items-end flex-wrap">
+          <div className="flex-1 min-w-[220px]">
+            <div className="relative">
+              <Search className="h-4 w-4 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-8"
+                placeholder="작업명·업체·장소 검색"
+                value={listSearch}
+                onChange={(e) => setListSearch(e.target.value)}
+              />
+            </div>
+          </div>
+          <Select value={listPeriod} onValueChange={(v) => setListPeriod(v as PermitListPeriod)}>
+            <SelectTrigger className="w-36 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="14d">최근 14일</SelectItem>
+              <SelectItem value="month">이번 달</SelectItem>
+              <SelectItem value="all">전체 기간</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={listStatus} onValueChange={(v) => setListStatus(v as PermitListStatusFilter)}>
+            <SelectTrigger className="w-36 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체 상태</SelectItem>
+              <SelectItem value="draft">작성중</SelectItem>
+              <SelectItem value="in_approval">결재중</SelectItem>
+              <SelectItem value="issued">발행</SelectItem>
+              <SelectItem value="closure_pending">종료대기</SelectItem>
+              <SelectItem value="closed">종료</SelectItem>
+              <SelectItem value="rejected">반려</SelectItem>
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-3">
         {visiblePermits.length === 0 ? (
           <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">
-            {listTab === 'involved' ? '내가 작성·결재한 작업허가서가 없습니다.' : '등록된 작업허가서가 없습니다.'}
+            {listTab === 'involved'
+              ? '내가 작성·결재한 작업허가서가 없습니다.'
+              : listPeriod !== 'all' || listSearch || listStatus !== 'all'
+                ? '조건에 맞는 작업허가서가 없습니다. 기간을 「전체 기간」으로 바꿔 보세요.'
+                : '등록된 작업허가서가 없습니다.'}
           </CardContent></Card>
         ) : visiblePermits.map((p) => {
           const workDate = resolvePermitWorkDate(p);
           const today = todayKst();
           const validity = shouldShowPermitValidityBadge(p.status) ? permitValidityKind(workDate, today) : null;
           const companyLabel = resolvePermitCompanyName(p, companyNameById);
+          const submittedName = resolvePermitSubmittedByName(p, approvalNameRows);
+          const approvedName = resolvePermitApprovedByName(p, approvalNameRows);
+          const closureProg = CLOSURE_PENDING_STATUSES.has(p.status)
+            ? closureListProgress(p.id, approvalNameRows)
+            : null;
           return (
           <Card key={p.id}>
             <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
@@ -566,9 +635,12 @@ export default function WorkPermits() {
                   <p className="text-xs text-amber-700 mt-1 flex items-center gap-1"><Clock className="h-3 w-3" />연장 승인 대기</p>
                 )}
                 <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
-                  {p.submitted_at && <div>📤 상신: {p.submitted_by_name || '-'} · {new Date(p.submitted_at).toLocaleString('ko-KR')}</div>}
+                  {p.submitted_at && <div>📤 상신: {submittedName || '-'} · {new Date(p.submitted_at).toLocaleString('ko-KR')}</div>}
                   {p.reviewed_at && <div>🔍 검토: {p.reviewed_by_name || '-'} · {new Date(p.reviewed_at).toLocaleString('ko-KR')}{p.review_comment ? ` · ${p.review_comment}` : ''}</div>}
-                  {p.approved_at && <div>✅ 승인: {p.approved_by_name || '-'} · {new Date(p.approved_at).toLocaleString('ko-KR')}{p.approval_comment ? ` · ${p.approval_comment}` : ''}</div>}
+                  {p.approved_at && <div>✅ 발행 승인: {approvedName || '-'} · {new Date(p.approved_at).toLocaleString('ko-KR')}{p.approval_comment ? ` · ${p.approval_comment}` : ''}</div>}
+                  {closureProg && (
+                    <div className="text-amber-700">종료 결재: {closureProg.label}</div>
+                  )}
                 </div>
               </div>
               <div className="flex gap-1 flex-wrap">

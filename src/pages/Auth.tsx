@@ -29,6 +29,7 @@ import { writeLoginIntent } from '@/components/AuthGuard';
 import { isNativeApp } from '@/lib/native/isNativeApp';
 import { openPlayStore } from '@/lib/playStore';
 import { isIosWebClient } from '@/lib/iosWebPath';
+import { authBannedErrorMessage, signupIdentityErrorMessage } from '@/lib/accountStatus';
 
 type Mode = 'login' | 'signup';
 type Audience = 'worker' | 'manager';
@@ -256,7 +257,11 @@ const Auth = () => {
         writeLoginIntent('worker');
         const { error } = await signInWorkerWithPhone(phone, pin);
         if (error) {
-          toast({ title: '로그인 실패', description: error.message, variant: 'destructive' });
+          toast({
+            title: '로그인 실패',
+            description: authBannedErrorMessage(error.message) || error.message,
+            variant: 'destructive',
+          });
         }
         // AuthRoute waits for rolesReady then routes to /app/worker/*
         return;
@@ -265,7 +270,13 @@ const Auth = () => {
       // 관리자: 표준 이메일/비밀번호
       writeLoginIntent('admin');
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) toast({ title: '로그인 실패', description: error.message, variant: 'destructive' });
+      if (error) {
+        toast({
+          title: '로그인 실패',
+          description: authBannedErrorMessage(error.message) || error.message,
+          variant: 'destructive',
+        });
+      }
       // AuthRoute → postLoginPath → /consent 또는 모바일=/app/worker/menu · 데스크톱=/app/admin
     } finally {
       setLoading(false);
@@ -318,6 +329,15 @@ const Auth = () => {
 
     setLoading(true);
     try {
+      const { data: ident } = await (supabase as any).rpc('signup_identity_available', {
+        _email: dummyEmail,
+        _phone: digits,
+      });
+      const identErr = signupIdentityErrorMessage((ident as any)?.error);
+      if (identErr) {
+        toast({ title: '회원가입 불가', description: identErr, variant: 'destructive' });
+        return;
+      }
       const { data: signUpData, error } = await supabase.auth.signUp({
         email: dummyEmail,
         password: pinParsed.data,
@@ -389,6 +409,15 @@ const Auth = () => {
 
     setLoading(true);
     try {
+      const { data: ident } = await (supabase as any).rpc('signup_identity_available', {
+        _email: email,
+        _phone: phone || null,
+      });
+      const identErr = signupIdentityErrorMessage((ident as any)?.error);
+      if (identErr) {
+        toast({ title: '회원가입 불가', description: identErr, variant: 'destructive' });
+        return;
+      }
       const selectedCompanyName =
         directory.find((d) => d.company_id === selectedCompany)?.company_name || '';
       const { data: signUpData, error } = await supabase.auth.signUp({

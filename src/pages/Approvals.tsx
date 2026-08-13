@@ -132,6 +132,8 @@ const Approvals = () => {
         ? '상신(기안) 단계는 승인/반려할 수 없습니다.'
         : code === 'WORK_PERMIT_LOCKED' || String(code).includes('WORK_PERMIT_LOCKED')
           ? '문서 잠금 충돌이 발생했습니다. 페이지를 새로고침 후 다시 시도하세요.'
+        : code === 'ACCOUNT_INACTIVE'
+          ? '로그인 차단된 계정은 결재할 수 없습니다.'
           : (r?.error || error?.message);
       toast({ title: '처리 실패', description: msg, variant: 'destructive' });
       return false;

@@ -18,6 +18,7 @@ describe('resolveSigKey', () => {
     expect(resolveSigKey('시공사 관리자', null)).toBe('gc_manager');
     expect(resolveSigKey(null, 'closure_sm')).toBe('closure_approver');
     expect(resolveSigKey('closure_approver', null)).toBe('closure_approver');
+    expect(resolveSigKey(null, 'closure_supervisor')).toBe('site_supervisor');
   });
 });
 

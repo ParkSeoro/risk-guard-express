@@ -1,6 +1,6 @@
 import { resolvePermitCompanyName, resolvePermitWorkDate, todayKst } from '@/lib/permitWorkDate';
 
-export type PermitListPeriod = '14d' | 'month' | 'all';
+export type PermitListPeriod = '7d' | '14d' | 'month' | 'all';
 
 export type PermitListStatusFilter =
   | 'all'
@@ -31,7 +31,8 @@ export function permitListDateFrom(
 ): string | null {
   if (period === 'all') return null;
   if (period === 'month') return `${today.slice(0, 7)}-01`;
-  return addCalendarDaysYmd(today, -13);
+  if (period === '14d') return addCalendarDaysYmd(today, -13);
+  return addCalendarDaysYmd(today, -6);
 }
 
 export function matchesPermitDateRange(

@@ -32,6 +32,22 @@ describe('buildAssessmentSubmitPreflight', () => {
     expect(items.every((i) => i.ok)).toBe(true);
   });
 
+  it('uses saved draft ready instead of the dead >=2 fallback', () => {
+    const { ready, items } = buildAssessmentSubmitPreflight({
+      itemCount: 2,
+      opinionRequired: false,
+      healthRequired: false,
+      opinions: 0,
+      healths: 0,
+      unreviewedAi: 0,
+      unreviewedHealth: 0,
+      approvalLineCount: 1,
+      approvalDraftReady: true,
+    });
+    expect(ready).toBe(true);
+    expect(items.find((i) => i.id === 'approval')?.detail).toContain('임시 저장');
+  });
+
   it('flags unreviewed AI', () => {
     const { ready, items } = buildAssessmentSubmitPreflight({
       itemCount: 2,

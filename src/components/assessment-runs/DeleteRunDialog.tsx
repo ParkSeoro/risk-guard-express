@@ -37,10 +37,7 @@ const DeleteRunDialog = ({ open, onOpenChange, run, onDeleted }: DeleteRunDialog
   const [deleting, setDeleting] = useState(false);
 
   const handleDelete = async () => {
-    if (!run || !reason.trim()) {
-      toast({ title: '삭제 사유를 입력해주세요.', variant: 'destructive' });
-      return;
-    }
+    if (!run) return;
     setDeleting(true);
 
     const { error } = await supabase
@@ -48,7 +45,7 @@ const DeleteRunDialog = ({ open, onOpenChange, run, onDeleted }: DeleteRunDialog
       .update({
         is_deleted: true,
         deleted_at: new Date().toISOString(),
-        deleted_reason: reason,
+        deleted_reason: reason.trim() || null,
         deleted_by: user?.id || null,
       })
       .eq('id', run.id);
@@ -96,11 +93,11 @@ const DeleteRunDialog = ({ open, onOpenChange, run, onDeleted }: DeleteRunDialog
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-2 py-2">
-          <Label className="text-destructive">삭제 사유 (필수) *</Label>
+          <Label>삭제 사유 (선택)</Label>
           <Textarea
             value={reason}
             onChange={e => setReason(e.target.value)}
-            placeholder="삭제 사유를 입력하세요..."
+            placeholder="필요하면 사유를 남겨 두세요..."
             rows={3}
           />
         </div>
@@ -109,7 +106,7 @@ const DeleteRunDialog = ({ open, onOpenChange, run, onDeleted }: DeleteRunDialog
           <Button
             variant="destructive"
             onClick={handleDelete}
-            disabled={!reason.trim() || deleting}
+            disabled={deleting}
           >
             {deleting ? '삭제 중...' : '삭제'}
           </Button>

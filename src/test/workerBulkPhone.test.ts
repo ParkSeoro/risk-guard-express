@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatWorkerBulkRowError } from "@/lib/workerBulk";
 
 /** Mirror of WorkerBulkImportDialog phone helpers (keep in sync). */
 function phoneDigits(s: string): string {
@@ -30,5 +31,17 @@ describe("worker bulk phone normalize", () => {
 
   it("restores leading 0 lost by Excel numbers", () => {
     expect(normalizePhone(1036462260)).toBe("010-3646-2260");
+  });
+});
+
+describe("formatWorkerBulkRowError", () => {
+  it("maps gen_random_bytes SQL error to a short Korean label", () => {
+    expect(formatWorkerBulkRowError("function gen_random_bytes(integer) does not exist"))
+      .toBe("QR 토큰 생성 실패(DB)");
+  });
+
+  it("maps known RPC codes", () => {
+    expect(formatWorkerBulkRowError("INVALID_ROW")).toBe("이름·전화·직종이 올바르지 않음");
+    expect(formatWorkerBulkRowError("OTHER_COMPANY")).toBe("다른 회사 소속 전화번호");
   });
 });

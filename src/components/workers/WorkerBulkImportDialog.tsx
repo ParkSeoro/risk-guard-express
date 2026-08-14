@@ -13,6 +13,7 @@ import {
 } from "@/lib/jobCategories";
 import { provisionWorkerAccounts } from "@/lib/provisionWorkerAccounts";
 import { isClaimableOrphanWorker } from "@/lib/companyLabel";
+import { formatWorkerBulkRowError } from "@/lib/workerBulk";
 
 type Props = {
   projectId: string;
@@ -371,7 +372,7 @@ export default function WorkerBulkImportDialog({
       if (failed.length) {
         const sample = failed
           .slice(0, 3)
-          .map((f: any) => `${f.phone || "?"}(${f.error || "?"})`)
+          .map((f: any) => `${f.phone || "?"}(${formatWorkerBulkRowError(f.error)})`)
           .join(", ");
         toast.error(`일부 행 실패: ${sample}`, { duration: 8000 });
       }

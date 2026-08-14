@@ -35,14 +35,18 @@ export function permitListDateFrom(
   return addCalendarDaysYmd(today, -6);
 }
 
+/**
+ * Recent-window lower bound only.
+ * Upcoming work (tomorrow+) stays visible — drafts are usually written before the work day.
+ * Undated rows stay visible. Old work before `fromYmd` is hidden unless period is 전체.
+ */
 export function matchesPermitDateRange(
   workDate: string | null,
   fromYmd: string | null,
-  toYmd: string,
 ): boolean {
   if (!fromYmd) return true;
   if (!workDate) return true;
-  return workDate >= fromYmd && workDate <= toYmd;
+  return workDate >= fromYmd;
 }
 
 export function matchesPermitStatusFilter(
@@ -214,7 +218,9 @@ export function filterPermitsForList<T extends {
     if (!matchesPermitStatusFilter(p.status, opts.statusFilter)) return false;
     if (!matchesPermitSearch(p, opts.search, opts.companyNameById)) return false;
     const workDate = resolvePermitWorkDate(p as any);
-    if (!matchesPermitDateRange(workDate, from, today)) return false;
+    const isOpenDraft = DRAFT.has(p.status || '');
+    // 작성중/임시저장: 이전 허가서 복사로 work_start 가 과거여도 목록에 유지
+    if (!isOpenDraft && !matchesPermitDateRange(workDate, from)) return false;
     return true;
   });
 }

@@ -38,7 +38,7 @@ describe('permit list status/search', () => {
     expect(matchesPermitSearch(p, '없는단어')).toBe(false);
   });
 
-  it('defaults 7d window and keeps older out', () => {
+  it('defaults 7d window and keeps older issued out', () => {
     const rows = [
       { id: 'a', status: '종료대기', permit_date: '2026-08-12', work_description: '가로등' },
       { id: 'old7', status: '승인', permit_date: '2026-08-06', work_description: '8일 전' },
@@ -51,6 +51,22 @@ describe('permit list status/search', () => {
       today: '2026-08-13',
     });
     expect(filtered.map((r) => r.id)).toEqual(['a']);
+  });
+
+  it('keeps upcoming and in-progress drafts in the 7d window', () => {
+    const rows = [
+      { id: 'future-draft', status: '작성중', permit_date: '2026-08-20', work_description: '내일 이후 작업' },
+      { id: 'copied-old-draft', status: '작성중', permit_date: '2026-06-01', form_data: { work_start: '2026-06-01T08:00' }, work_description: '이전 건 복사' },
+      { id: 'future-issued', status: '승인', permit_date: '2026-08-20', work_description: '예정 발행' },
+      { id: 'old-issued', status: '승인', permit_date: '2026-06-01', work_description: '옛 발행' },
+    ];
+    const filtered = filterPermitsForList(rows, {
+      period: '7d',
+      statusFilter: 'all',
+      search: '',
+      today: '2026-08-13',
+    });
+    expect(filtered.map((r) => r.id).sort()).toEqual(['copied-old-draft', 'future-draft', 'future-issued']);
   });
 });
 

@@ -379,6 +379,48 @@ export interface ApproverFilterContext {
   authorCompanyId?: string | null;
   /** 기안자 회사 유형 client|gc|contractor|vendor */
   authorCompanyType?: string | null;
+  /**
+   * 협력사 기안 시 안전·소장 단계에 쓸 상위 시공사(GC) id.
+   * 있으면 프로젝트의 다른 GC는 제외한다.
+   */
+  parentGcCompanyId?: string | null;
+}
+
+/** 회사 트리에서 기안 회사의 상위 시공사(GC)를 고른다. */
+export type CompanyHierarchyNode = {
+  id: string;
+  type?: string | null;
+  parent_company_id?: string | null;
+};
+
+export function resolveParentGcCompanyId(
+  authorCompanyId: string | null | undefined,
+  companies: CompanyHierarchyNode[],
+  projectGcCompanyId?: string | null,
+): string | null {
+  const byId = new Map(companies.map((c) => [c.id, c]));
+  const author = authorCompanyId ? byId.get(authorCompanyId) : undefined;
+  if (author && normalizeCompanyType(author.type) === 'gc') return author.id;
+
+  const walk = (startId: string | null | undefined): string | null => {
+    let cur = startId || null;
+    const seen = new Set<string>();
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      const node = byId.get(cur);
+      if (!node) break;
+      if (normalizeCompanyType(node.type) === 'gc') return node.id;
+      cur = node.parent_company_id || null;
+    }
+    return null;
+  };
+
+  const fromParent = walk(author?.parent_company_id);
+  if (fromParent) return fromParent;
+  if (projectGcCompanyId && byId.has(projectGcCompanyId)) return projectGcCompanyId;
+  const gcs = companies.filter((c) => normalizeCompanyType(c.type) === 'gc');
+  if (gcs.length === 1) return gcs[0].id;
+  return null;
 }
 
 /** 안전·소장 단계는 양식상 시공사 칸 — GC 범위 */
@@ -399,6 +441,7 @@ export function filterApproversForStep(
 
   const authorCompanyId = ctx?.authorCompanyId ?? null;
   const authorType = normalizeCompanyType(ctx?.authorCompanyType);
+  const parentGcCompanyId = ctx?.parentGcCompanyId ?? null;
 
   // 시공사 기안 시 레거시 GC 확인 단계는 목록 비움 (기본 결재선에도 없음)
   if (authorType === 'gc' && GC_STEP_KEYS.has(key)) {
@@ -411,9 +454,10 @@ export function filterApproversForStep(
   const inClient = (a: EligibleApprover) => normalizeCompanyType(a.out_company_type) === 'client';
 
   // 시공사 기안: 안전·소장도 자사만 (프로젝트에 GC가 여러 개여도 타 GC 제외)
-  // 협력사 기안: 안전·소장은 상위/프로젝트 시공사(GC) 범위
+  // 협력사 기안: 안전·소장은 상위 GC만 (parentGcCompanyId). 없으면 프로젝트 GC 전체.
   const inGcScopedCompany = (a: EligibleApprover) => {
     if (authorType === 'gc' && authorCompanyId) return inAuthorCompany(a);
+    if (parentGcCompanyId) return a.out_company_id === parentGcCompanyId;
     return inGc(a);
   };
 
@@ -477,6 +521,54 @@ export function preferAuthorCompany(
     else other.push(a);
   }
   return own.length > 0 ? [...own, ...other] : list;
+}
+
+/**
+ * 자동생성 한 단계 배정.
+ * - 시공(상신): 현재 사용자가 기안 회사 풀에 있을 때만. 없으면 비움 (타사 1등 추측 금지).
+ * - 안전·소장: 상위 GC가 여러 회사이면 비움. 한 회사이면 그 회사 1명.
+ * - CM/SM: 풀 첫 사람 (발주처).
+ */
+export function pickAutoGenerateApprover(
+  position: string,
+  pool: EligibleApprover[],
+  opts?: {
+    currentUserId?: string | null;
+    authorCompanyId?: string | null;
+    parentGcCompanyId?: string | null;
+  },
+): EligibleApprover | undefined {
+  if (!pool.length) return undefined;
+  const key = (position || '').toLowerCase();
+  const currentUserId = opts?.currentUserId || null;
+  const authorCompanyId = opts?.authorCompanyId || null;
+
+  if (key === 'contractor_supervisor' || key === 'contractor_pic' || key === 'site_supervisor') {
+    if (currentUserId) {
+      const me = pool.find((a) => a.out_user_id === currentUserId);
+      if (me) return me;
+    }
+    return undefined;
+  }
+
+  if (GC_SCOPED_PERMIT_STEPS.has(key) || GC_STEP_KEYS.has(key)) {
+    const scoped = opts?.parentGcCompanyId
+      ? pool.filter((a) => a.out_company_id === opts.parentGcCompanyId)
+      : pool;
+    const companyIds = new Set(scoped.map((a) => a.out_company_id).filter(Boolean));
+    if (companyIds.size > 1) return undefined;
+    if (authorCompanyId) {
+      const own = scoped.find((a) => a.out_company_id === authorCompanyId);
+      if (own) return own;
+    }
+    return scoped[0];
+  }
+
+  if (authorCompanyId) {
+    const own = pool.find((a) => a.out_company_id === authorCompanyId);
+    if (own) return own;
+  }
+  return pool[0];
 }
 
 

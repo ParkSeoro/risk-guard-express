@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   filterApproversForStep,
   preferAuthorCompany,
+  pickAutoGenerateApprover,
+  resolveParentGcCompanyId,
   buildDefaultStepsForAuthor,
   stepLabelForAuthor,
   isSubmitterApprovalStep,
@@ -95,6 +97,33 @@ describe("filterApproversForStep — 협력사 기안", () => {
     ];
     const r = filterApproversForStep(odd, "contractor_safety_manager", ctx);
     expect(r.map((x) => x.out_user_id)).toEqual(["gc-odd"]);
+  });
+
+  it("담당자(안전)/소장: parentGcCompanyId 있으면 그 GC만 — 타 시공사 제외", () => {
+    const multi = [
+      ...pool,
+      mk({
+        out_user_id: "other-gc-hse",
+        out_company_id: "gc2",
+        out_company_type: "gc",
+        out_position: "HSE_MANAGER",
+        out_display_name: "타시공안전",
+      }),
+      mk({
+        out_user_id: "other-gc-sm",
+        out_company_id: "gc2",
+        out_company_type: "gc",
+        out_position: "SITE_MANAGER",
+        out_display_name: "타시공소장",
+      }),
+    ];
+    const ctx = { authorCompanyId: "sub1", authorCompanyType: "contractor", parentGcCompanyId: "gc1" };
+    expect(filterApproversForStep(multi, "contractor_safety_manager", ctx).map((x) => x.out_user_id)).toEqual([
+      "gc-hse",
+    ]);
+    expect(filterApproversForStep(multi, "contractor_site_director", ctx).map((x) => x.out_user_id)).toEqual([
+      "gc-admin",
+    ]);
   });
 
   it("담당자(CM)/(SM): 발주처 only", () => {
@@ -207,5 +236,73 @@ describe("approval timeline helpers — self-lock / sequential", () => {
     expect(entityTypeLabel("work_plan")).toBe("작업계획서");
     expect(entityTypeLabel("")).toBe("문서");
     expect(entityTypeLabel("unknown_x")).toBe("unknown_x");
+  });
+});
+
+describe("resolveParentGcCompanyId", () => {
+  const companies = [
+    { id: "sub1", type: "contractor", parent_company_id: "gc1" },
+    { id: "gc1", type: "gc", parent_company_id: null },
+    { id: "gc2", type: "gc", parent_company_id: null },
+    { id: "cl1", type: "client", parent_company_id: null },
+  ];
+
+  it("returns author company when author is GC", () => {
+    expect(resolveParentGcCompanyId("gc2", companies, "gc1")).toBe("gc2");
+  });
+
+  it("walks parent_company_id to the parent GC — not the first GC in the list", () => {
+    expect(resolveParentGcCompanyId("sub1", companies, null)).toBe("gc1");
+  });
+
+  it("falls back to project GC when parent is missing and multiple GCs exist", () => {
+    const orphan = [{ id: "sub9", type: "contractor", parent_company_id: null }, ...companies];
+    expect(resolveParentGcCompanyId("sub9", orphan, "gc2")).toBe("gc2");
+  });
+
+  it("does not guess when multiple GCs and no parent/project GC", () => {
+    const orphan = [{ id: "sub9", type: "contractor", parent_company_id: null }, ...companies];
+    expect(resolveParentGcCompanyId("sub9", orphan, null)).toBeNull();
+  });
+});
+
+describe("pickAutoGenerateApprover", () => {
+  it("시공: current user in pool → that person", () => {
+    const r = pickAutoGenerateApprover("contractor_supervisor", pool, {
+      currentUserId: "sup",
+      authorCompanyId: "sub1",
+    });
+    expect(r?.out_user_id).toBe("sup");
+  });
+
+  it("시공: current user not in pool → empty (no first-person guess)", () => {
+    const r = pickAutoGenerateApprover("contractor_supervisor", pool, {
+      currentUserId: "someone-else",
+      authorCompanyId: "sub1",
+    });
+    expect(r).toBeUndefined();
+  });
+
+  it("안전: parent GC only — does not pick another GC", () => {
+    const multi = [
+      mk({ out_user_id: "jinnam", out_company_id: "gc2", out_company_type: "gc", out_position: "HSE_MANAGER" }),
+      mk({ out_user_id: "gc-hse", out_company_id: "gc1", out_company_type: "gc", out_position: "HSE_MANAGER" }),
+    ];
+    const r = pickAutoGenerateApprover("contractor_safety_manager", multi, {
+      authorCompanyId: "sub1",
+      parentGcCompanyId: "gc1",
+    });
+    expect(r?.out_user_id).toBe("gc-hse");
+  });
+
+  it("안전: multiple GCs and no parent → empty", () => {
+    const multi = [
+      mk({ out_user_id: "jinnam", out_company_id: "gc2", out_company_type: "gc", out_position: "HSE_MANAGER" }),
+      mk({ out_user_id: "gc-hse", out_company_id: "gc1", out_company_type: "gc", out_position: "HSE_MANAGER" }),
+    ];
+    const r = pickAutoGenerateApprover("contractor_safety_manager", multi, {
+      authorCompanyId: "sub1",
+    });
+    expect(r).toBeUndefined();
   });
 });

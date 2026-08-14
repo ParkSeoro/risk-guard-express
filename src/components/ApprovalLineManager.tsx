@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useImperativeHandle, forwardRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useImperativeHandle, useRef, forwardRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -11,7 +11,9 @@ import {
   FIXED_APPROVAL_STEPS,
   POSITION_LABELS as SSOT_POSITION_LABELS,
   filterApproversForStep,
+  pickAutoGenerateApprover,
   preferAuthorCompany,
+  resolveParentGcCompanyId,
   validateApprovalLinesSSOT,
   type ApprovalEntityType,
   type EligibleApprover,
@@ -50,6 +52,7 @@ interface Company {
   id: string;
   name: string;
   type: string;
+  parent_company_id?: string | null;
 }
 
 /** 전자결재 플랫폼 — 문서별 draft 저장 대상 (프로젝트 approval_lines 와 분리) */
@@ -72,6 +75,10 @@ interface Props {
   /** Used only to resolve the current user's company when RPC submitter id is needed. */
   projectMembers: ProjectMember[];
   companies: Company[];
+  /** 세션 소속 회사 — 기안 회사 SSOT. 없으면 project_members 폴백. */
+  submitterCompanyId?: string | null;
+  /** 프로젝트 기본 시공사. 협력사 기안 시 안전·소장 범위. */
+  projectGcCompanyId?: string | null;
   readOnly?: boolean;
   onLinesChanged?: (lines: ApprovalLine[]) => void;
   /**
@@ -149,6 +156,8 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
   projectId,
   projectMembers,
   companies,
+  submitterCompanyId,
+  projectGcCompanyId,
   readOnly,
   onLinesChanged,
   documentDraft,
@@ -167,9 +176,19 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
   const [showPeerContractors, setShowPeerContractors] = useState(false);
   const [eligible, setEligible] = useState<EligibleApprover[]>([]);
   const [eligibleError, setEligibleError] = useState<string | null>(null);
+  const [eligibleLoading, setEligibleLoading] = useState(true);
+  const eligibleReqRef = useRef(0);
+  const eligibleRef = useRef<EligibleApprover[]>([]);
+  const projectMembersRef = useRef(projectMembers);
+  const companiesRef = useRef(companies);
+  projectMembersRef.current = projectMembers;
+  companiesRef.current = companies;
+  eligibleRef.current = eligible;
 
   const [authorCompanyId, setAuthorCompanyId] = useState<string | null>(
-    () => projectMembers.find((m) => m.user_id === user?.id)?.company_id || null,
+    () => submitterCompanyId
+      || projectMembers.find((m) => m.user_id === user?.id)?.company_id
+      || null,
   );
   const authorCompanyType = useMemo(() => {
     if (!authorCompanyId) return null;
@@ -178,41 +197,63 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
     const co = companies.find((c) => c.id === authorCompanyId);
     return normalizeCompanyType(co?.type) || co?.type || null;
   }, [authorCompanyId, eligible, companies]);
+  const parentGcCompanyId = useMemo(
+    () => resolveParentGcCompanyId(authorCompanyId, companies, projectGcCompanyId),
+    [authorCompanyId, companies, projectGcCompanyId],
+  );
+  const authorCompanyName = useMemo(() => {
+    if (!authorCompanyId) return '';
+    return companies.find((c) => c.id === authorCompanyId)?.name
+      || eligible.find((a) => a.out_company_id === authorCompanyId)?.out_company_name
+      || '';
+  }, [authorCompanyId, companies, eligible]);
 
   const filterCtx = useMemo(
-    () => ({ authorCompanyId, authorCompanyType }),
-    [authorCompanyId, authorCompanyType],
+    () => ({ authorCompanyId, authorCompanyType, parentGcCompanyId }),
+    [authorCompanyId, authorCompanyType, parentGcCompanyId],
   );
 
   const loadEligible = useCallback(async () => {
+    const req = ++eligibleReqRef.current;
     setEligibleError(null);
-    // SSOT: always resolve submitter company from project_members (not assignee-scoped list)
-    const fromDb = await resolveSubmitterCompanyId(projectId, user?.id || null);
-    const fromProp = projectMembers.find((m) => m.user_id === user?.id)?.company_id || null;
-    const submitterCompanyId = fromDb || fromProp || null;
-    setAuthorCompanyId(submitterCompanyId);
+    const members = projectMembersRef.current;
+    const fromProp = members.find((m) => m.user_id === user?.id)?.company_id || null;
+    const resolved = await resolveSubmitterCompanyId(
+      projectId,
+      user?.id || null,
+      submitterCompanyId || fromProp || null,
+    );
+    if (req !== eligibleReqRef.current) return;
+    const companyId = resolved || submitterCompanyId || fromProp || null;
+    setAuthorCompanyId(companyId);
 
-    const { data, error } = await fetchEligibleApprovers(projectId, submitterCompanyId);
+    const { data, error } = await fetchEligibleApprovers(projectId, companyId);
+    if (req !== eligibleReqRef.current) return;
     if (error) {
       console.warn('[ApprovalLineManager] get_eligible_approvers failed:', error);
       setEligibleError(error);
-      setEligible(
-        projectMembers
-          .filter((m) => m.user_id && !String(m.user_id).startsWith('mgr:'))
-          .map((m) => ({
-            out_user_id: m.user_id,
-            out_display_name: m.display_name,
-            out_company_id: m.company_id,
-            out_company_name: m.company,
-            out_company_type: companies.find((c) => c.id === m.company_id)?.type || '',
-            out_position: m.position,
-            out_role: m.role,
-          })),
-      );
+      if (eligibleRef.current.length === 0) {
+        const cos = companiesRef.current;
+        setEligible(
+          members
+            .filter((m) => m.user_id && !String(m.user_id).startsWith('mgr:'))
+            .map((m) => ({
+              out_user_id: m.user_id,
+              out_display_name: m.display_name,
+              out_company_id: m.company_id,
+              out_company_name: m.company,
+              out_company_type: cos.find((c) => c.id === m.company_id)?.type || '',
+              out_position: m.position,
+              out_role: m.role,
+            })),
+        );
+      }
+      setEligibleLoading(false);
       return;
     }
     setEligible(data);
-  }, [projectId, user?.id, projectMembers, companies]);
+    setEligibleLoading(false);
+  }, [projectId, user?.id, submitterCompanyId]);
 
   const fetchLines = useCallback(async () => {
     setLoading(true);
@@ -306,10 +347,12 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
 
   const autoGenerate = () => {
     if (!user) return;
-    const find = (positionKey: string) => {
-      const pool = optionsForStep(positionKey);
-      return pool.find((a) => a.out_company_id === authorCompanyId) || pool[0];
-    };
+    const pick = (positionKey: string) =>
+      pickAutoGenerateApprover(positionKey, optionsForStep(positionKey), {
+        currentUserId: user.id,
+        authorCompanyId,
+        parentGcCompanyId,
+      });
     const pushStep = (
       stepOrder: number,
       label: string,
@@ -330,14 +373,11 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
 
     const newLines: ApprovalLine[] = [];
     const steps = FIXED_APPROVAL_STEPS;
-    // Prefer current user on 시공(상신) when eligible
-    const s1Pool = optionsForStep(steps[0].position);
-    const s1 = s1Pool.find((a) => a.out_user_id === user.id) || s1Pool[0];
-    pushStep(0, steps[0].label, steps[0].position, s1);
-    pushStep(1, steps[1].label, steps[1].position, find(steps[1].position));
-    pushStep(2, steps[2].label, steps[2].position, find(steps[2].position));
-    pushStep(3, steps[3].label, steps[3].position, find(steps[3].position));
-    pushStep(4, steps[4].label, steps[4].position, find(steps[4].position));
+    pushStep(0, steps[0].label, steps[0].position, pick(steps[0].position));
+    pushStep(1, steps[1].label, steps[1].position, pick(steps[1].position));
+    pushStep(2, steps[2].label, steps[2].position, pick(steps[2].position));
+    pushStep(3, steps[3].label, steps[3].position, pick(steps[3].position));
+    pushStep(4, steps[4].label, steps[4].position, pick(steps[4].position));
 
     setLines(newLines);
     setDirty(true);
@@ -345,14 +385,15 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
     const hasClient = eligible.some(
       (a) => normalizeCompanyType(a.out_company_type) === 'client',
     );
+    const hint =
+      filled < 5
+        ? hasClient
+          ? '미지정 단계는 수동으로 결재자를 선택하세요. [저장]을 눌러야 반영됩니다.'
+          : '발주처(client) 멤버가 프로젝트에 없거나 직책이 비어 있습니다. 멤버·직책을 확인하세요.'
+        : '[저장]을 눌러야 상신 점검에 반영됩니다.';
     toast({
       title: `결재라인 5단계 생성 (지정 ${filled}/5)`,
-      description:
-        filled < 5
-          ? hasClient
-            ? '미지정 단계는 수동으로 결재자를 선택하세요. [저장]을 눌러야 반영됩니다.'
-            : '발주처(client) 멤버가 프로젝트에 없거나 직책이 비어 있습니다. 멤버·직책을 확인하세요.'
-          : '[저장]을 눌러야 상신 점검에 반영됩니다.',
+      description: authorCompanyName ? `기안 회사: ${authorCompanyName}. ${hint}` : hint,
     });
   };
 
@@ -632,7 +673,9 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
           {documentDraft
             ? '이 문서의 결재선만 저장합니다. 저장과 상신은 별개입니다. 미저장 상태로 상신할 수 없습니다.'
             : '프로젝트 기본 결재선입니다.'}
-          {' '}결재 후보(소속+상위): 발주처 {clientCount}명 · 시공사 {gcCount}명 · 전체 {eligible.length}명
+          {' '}결재 후보(소속+상위): {eligibleLoading && eligible.length === 0
+            ? '불러오는 중…'
+            : `발주처 ${clientCount}명 · 시공사 ${gcCount}명 · 전체 ${eligible.length}명`}
           {eligibleError ? ` · RPC 실패(폴백): ${eligibleError}` : ''}
         </p>
         {documentDraft && draftErrors.length > 0 && !dirty && (

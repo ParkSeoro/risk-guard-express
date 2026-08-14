@@ -9,6 +9,8 @@ export type ProjectCompany = {
   contact?: string | null;
   address?: string | null;
   is_deleted?: boolean | null;
+  /** 프로젝트 링크 또는 회사 전역 상위. 협력사→시공사 결재 범위에 사용. */
+  parent_company_id?: string | null;
 };
 
 /**
@@ -23,7 +25,7 @@ export async function fetchProjectCompanies(
 
   let q = (supabase as any)
     .from('project_companies')
-    .select('company_id, role_in_project, companies:company_id(id, name, type, scope, business_no, contact, address, is_deleted)')
+    .select('company_id, parent_company_id, role_in_project, companies:company_id(id, name, type, scope, business_no, contact, address, is_deleted, parent_company_id)')
     .eq('project_id', projectId);
 
   if (!opts?.includeDeleted) {
@@ -35,7 +37,7 @@ export async function fetchProjectCompanies(
     console.warn('fetchProjectCompanies failed, falling back to companies.project_id:', error.message);
     let fallback = supabase
       .from('companies')
-      .select('id, name, type, scope, business_no, contact, address, is_deleted')
+      .select('id, name, type, scope, business_no, contact, address, is_deleted, parent_company_id')
       .eq('project_id', projectId)
       .order('name');
     if (!opts?.includeDeleted) fallback = fallback.eq('is_deleted', false) as typeof fallback;
@@ -50,6 +52,7 @@ export async function fetchProjectCompanies(
       return {
         ...c,
         type: c.type || l.role_in_project || null,
+        parent_company_id: l.parent_company_id ?? c.parent_company_id ?? null,
       } as ProjectCompany;
     })
     .filter((c: ProjectCompany | null): c is ProjectCompany => !!c && (opts?.includeDeleted || c.is_deleted !== true))

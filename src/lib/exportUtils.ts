@@ -43,29 +43,6 @@ interface RunInfo {
   period_label: string;
 }
 
-// ========== Signature Row Builder ==========
-function buildSignatureRows(participants: Participant[]): string[][] {
-  const roles = ['작성자', '검토자', '승인자', '협력사 담당자', '안전관리자'];
-  const grouped: Record<string, Participant[]> = {};
-  roles.forEach(r => { grouped[r] = []; });
-  (participants || []).forEach(p => {
-    if (!grouped[p.role]) grouped[p.role] = [];
-    grouped[p.role].push(p);
-  });
-  const rows: string[][] = [['구분', '성명', '소속', '서명/일자']];
-  roles.forEach(role => {
-    const people = grouped[role] || [];
-    if (people.length === 0) {
-      rows.push([role, '', '', '']);
-    } else {
-      people.forEach(p => {
-        rows.push([role, p.user_name, p.company || '', p.signed_at ? new Date(p.signed_at).toLocaleDateString() : '']);
-      });
-    }
-  });
-  return rows;
-}
-
 // ========== Server-based PDF: mode = 'print' | 'download' ==========
 // IMPORTANT: For mode='print', the caller SHOULD pass `preOpenedWindow` opened
 // synchronously inside the click handler (window.open()) to avoid popup blockers.
@@ -370,22 +347,16 @@ export async function exportToXLSX(items: RiskRow[], project: ProjectInfo, maste
     [],
   ];
 
-  // Signature block from approvals (SSOT) — matches PDF
+  // Signature block from approval line (SSOT) — 상신 후 approvals, 상신 전 결재선 초안
   if (approvals && approvals.length > 0) {
     wsData.push(['서명란']);
     wsData.push(['구분', '성명', '소속', '직책', '서명/일자']);
     approvals.forEach(a => {
       const dateStr = a.status === '승인' && a.approved_at
         ? formatKSTExcel(a.approved_at)
-        : (a.status === '반려' ? '반려' : '대기');
+        : (a.status === '반려' ? '반려' : (a.status ? '대기' : ''));
       wsData.push([a.step, a.approver_name || '', a.company_name || '', a.position_label || '', dateStr]);
     });
-    wsData.push([]);
-  } else if (participants && participants.length > 0) {
-    // Fallback to participants
-    const sigRows = buildSignatureRows(participants);
-    wsData.push(['서명란']);
-    sigRows.forEach(r => wsData.push(r));
     wsData.push([]);
   }
 

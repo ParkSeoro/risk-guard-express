@@ -81,11 +81,13 @@ import {
 import { ADMIN_PROJECT_ROLES } from '@/lib/permissions';
 import {
   POSITION_LABELS as SSOT_POSITION_LABELS,
+  canManuallyActOnApprovalStep,
   isSubmitterApprovalStep,
   sequentialDisplayStatus,
   sortStepsByHierarchy,
   validateApprovalLinesSSOT,
 } from '@/lib/approvalRules';
+import { buildAssessmentSignatureRows } from '@/lib/approvalSignatureRows';
 import * as XLSX from 'xlsx';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 
@@ -177,7 +179,7 @@ const AssessmentRunDetail = () => {
   const [showResidualCols, setShowResidualCols] = useState(false);
   const [showCloneRun, setShowCloneRun] = useState(false);
   const [showEditRun, setShowEditRun] = useState(false);
-  const [projectCompanies, setProjectCompanies] = useState<{ id: string; name: string; type: string }[]>([]);
+  const [projectCompanies, setProjectCompanies] = useState<{ id: string; name: string; type: string; parent_company_id?: string | null }[]>([]);
 
   // Excel upload
   const [showExcelUpload, setShowExcelUpload] = useState(false);
@@ -1159,6 +1161,21 @@ const AssessmentRunDetail = () => {
     });
   }, []);
 
+  const handleApprovalLinesChanged = useCallback((lines: ApprovalLine[]) => {
+    setApprovalLines(lines);
+    applyApprovalPreflightFromLines(lines);
+  }, [applyApprovalPreflightFromLines]);
+
+  const approvalLineMembers = useMemo(
+    () => projectMembers
+      .filter((m) => m.real_user_id)
+      .map((m) => ({
+        ...m,
+        user_id: m.real_user_id as string,
+      })),
+    [projectMembers],
+  );
+
   const refreshApprovalPreflightMeta = useCallback(async () => {
     if (!run?.project_id) return;
     // Platform draft status is SSOT for approval-line gate; keep meta for display only.
@@ -1321,15 +1338,25 @@ const AssessmentRunDetail = () => {
       .select('approval_version').eq('run_id', runId).order('approval_version', { ascending: false }).limit(1);
     const currentVersion = latestVersionData?.[0]?.approval_version || 1;
 
-    // Find current step assigned to me (진행중)
-    const { data: myStep } = await supabase.from('approvals')
-      .select('id, step')
+    // Find current step assigned to me (진행중) — 상신칸은 수동 결재 불가
+    const { data: mySteps } = await supabase.from('approvals')
+      .select('id, step, position, status, approver_id')
       .eq('run_id', runId).eq('approval_version', currentVersion)
-      .eq('status', '진행중').eq('approver_id', user.id)
-      .limit(1).maybeSingle();
+      .eq('status', '진행중').eq('approver_id', user.id);
 
+    const myStep = (mySteps || []).find((s) =>
+      canManuallyActOnApprovalStep({ actorUserId: user.id, step: s }).ok,
+    );
     if (!myStep) {
-      toast({ title: '결재 권한이 없습니다.', description: '현재 진행중 단계의 지정된 결재자만 승인/반려할 수 있습니다.', variant: 'destructive' });
+      const blocked = (mySteps || [])[0];
+      const why = blocked
+        ? canManuallyActOnApprovalStep({ actorUserId: user.id, step: blocked }).reason
+        : 'NOT_ACTIVE_STEP';
+      const desc =
+        why === 'SUBMITTER_STEP_NO_SELF_APPROVE'
+          ? '담당자(시공) 상신 단계는 상신 시 자동 완료됩니다. 다음 결재자의 순서를 기다리세요.'
+          : '현재 진행중 단계의 지정된 결재자만 승인/반려할 수 있습니다.';
+      toast({ title: '결재 권한이 없습니다.', description: desc, variant: 'destructive' });
       return;
     }
 
@@ -1634,16 +1661,25 @@ const AssessmentRunDetail = () => {
   const handleExportXLSX = async () => {
     if (!project) return;
     try {
-      // Build approval rows from latestApprovals (SSOT) to match PDF
-      const approvalRows = sortApprovalRows(latestApprovals.filter((a) => a.status !== '취소')).map((a) => ({
-          step: a.step || '',
-          approver_name: a.approver_name || '',
-          company_name: a.company_name || '',
-          position_label: SSOT_POSITION_LABELS[a.position] || a.position || '',
-          status: a.status,
-          approved_at: a.approved_at,
-        }));
-      await exportToXLSX(buildRiskRows(), buildProjectInfo(), undefined, participants, { type: run?.type, period_label: run?.period_label }, approvalRows);
+      const signatureRows = buildAssessmentSignatureRows({
+        approvals: latestApprovals,
+        draftSteps: approvalLines.map((l) => ({
+          label: l.step_label,
+          position: l.position,
+          user_id: l.user_id,
+          user_name: l.user_name,
+          company_id: l.company_id,
+          company_name: l.company_name,
+        })),
+      }).map((a) => ({
+        step: a.step,
+        approver_name: a.approver_name,
+        company_name: a.company_name,
+        position_label: a.position_label,
+        status: a.status,
+        approved_at: a.approved_at,
+      }));
+      await exportToXLSX(buildRiskRows(), buildProjectInfo(), undefined, participants, { type: run?.type, period_label: run?.period_label }, signatureRows);
     } catch (err) {
       toast({ title: 'XLSX 다운로드 실패', variant: 'destructive' });
     }
@@ -2230,6 +2266,45 @@ const AssessmentRunDetail = () => {
         );
       })()}
 
+      {latestApprovals.length === 0 && approvalLines.length > 0 && (
+        <div className="space-y-2 print:hidden">
+          <span className="text-xs text-muted-foreground font-medium">서명란 (결재선)</span>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[10px] border-collapse">
+              <thead>
+                <tr className="bg-muted/50">
+                  <th className="border px-2 py-1 text-left font-medium">구분</th>
+                  <th className="border px-2 py-1 text-left font-medium">성명</th>
+                  <th className="border px-2 py-1 text-left font-medium">소속</th>
+                  <th className="border px-2 py-1 text-left font-medium">직책</th>
+                  <th className="border px-2 py-1 text-left font-medium">서명/일자</th>
+                </tr>
+              </thead>
+              <tbody>
+                {buildAssessmentSignatureRows({
+                  draftSteps: approvalLines.map((l) => ({
+                    label: l.step_label,
+                    position: l.position,
+                    user_id: l.user_id,
+                    user_name: l.user_name,
+                    company_id: l.company_id,
+                    company_name: l.company_name,
+                  })),
+                }).map((row, i) => (
+                  <tr key={`${row.position}-${i}`}>
+                    <td className="border px-2 py-1 font-medium">{row.step || '—'}</td>
+                    <td className="border px-2 py-1">{row.approver_name || '—'}</td>
+                    <td className="border px-2 py-1">{row.company_name || '—'}</td>
+                    <td className="border px-2 py-1">{row.position_label || '—'}</td>
+                    <td className="border px-2 py-1 text-muted-foreground">미상신</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Action Buttons — strict state machine */}
       <div className="flex items-center gap-2 print:hidden flex-wrap">
         {(canEdit || canForceEdit) && !isInApproval && !isApproved && (
@@ -2786,18 +2861,17 @@ const AssessmentRunDetail = () => {
           <ApprovalLineManager
             ref={approvalLineRef}
             projectId={run.project_id}
-            projectMembers={projectMembers.filter((m: any) => m.real_user_id)}
+            projectMembers={approvalLineMembers}
             companies={projectCompanies}
+            submitterCompanyId={userCompanyId || null}
+            projectGcCompanyId={(project as any)?.gc_company_id || null}
             readOnly={isInApproval && !hasRejectedApproval}
             documentDraft={{
               entityType: 'assessment_run',
               entityId: runId,
               companyId: userCompanyId || null,
             }}
-            onLinesChanged={(lines) => {
-              setApprovalLines(lines);
-              applyApprovalPreflightFromLines(lines);
-            }}
+            onLinesChanged={handleApprovalLinesChanged}
             onDraftStatusChange={setApprovalDraftInfo}
           />
         </div>

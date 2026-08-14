@@ -43,11 +43,46 @@ function formatKST(d: string | null | undefined): string {
 }
 
 const POSITION_LABELS: Record<string, string> = {
-  supervisor: '관리감독자',
-  safety_manager: '안전관리자',
-  site_manager: '현장대리인',
-  project_admin: '프로젝트 관리자',
+  contractor_supervisor: "담당자(시공)",
+  contractor_safety_manager: "담당자(안전)",
+  contractor_site_director: "책임자(소장)",
+  owner_cm: "담당자(CM)",
+  owner_sm: "담당자(SM)",
+  gc: "시공사",
+  gc_manager: "시공사 관리자",
+  gc_pm: "시공사 PM",
+  cooperator: "협조부서",
+  supervisor: "관리감독자",
+  safety_manager: "안전관리자",
+  site_manager: "현장대리인",
+  project_admin: "프로젝트 관리자",
+  contractor_pic: "담당자(시공)",
+  safety_pic: "담당자(안전)",
+  site_director: "책임자(소장)",
+  cm: "담당자(CM)",
+  sm: "담당자(SM)",
 };
+
+const POSITION_RANK: Record<string, number> = {
+  contractor_supervisor: 10,
+  contractor_safety_manager: 11,
+  contractor_site_director: 12,
+  gc: 20,
+  gc_manager: 21,
+  gc_pm: 22,
+  owner_cm: 30,
+  owner_sm: 31,
+  cooperator: 40,
+};
+
+function positionRank(pos?: string | null): number {
+  return POSITION_RANK[(pos || "").toLowerCase()] ?? 99;
+}
+
+function positionLabel(pos?: string | null): string {
+  const key = pos || "";
+  return POSITION_LABELS[key] || POSITION_LABELS[key.toLowerCase()] || key || "";
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -141,14 +176,28 @@ Deno.serve(async (req) => {
 
 
 
-    // ===== SIGNATURE: Build from Approvals (SSOT) =====
-    const STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3, '검토': 1, '승인': 3 };
-    
+    // ===== SIGNATURE: 결재선 SSOT (상신 후 approvals, 상신 전 document_approval_drafts) =====
     const latestVersion = approvals.length > 0 ? approvals[0].approval_version || 1 : 0;
-    const latestApprovals = approvals.filter((a: any) => (a.approval_version || 1) === latestVersion && a.status !== '취소');
+    const latestApprovals = approvals
+      .filter((a: any) => (a.approval_version || 1) === latestVersion && a.status !== "취소")
+      .sort((a: any, b: any) => {
+        const so = (a.step_order ?? 99) - (b.step_order ?? 99);
+        if (so !== 0) return so;
+        return positionRank(a.position) - positionRank(b.position);
+      });
 
-    // Sort by step order
-    latestApprovals.sort((a: any, b: any) => (STEP_ORDER[a.step] ?? 99) - (STEP_ORDER[b.step] ?? 99));
+    let draftSteps: any[] = [];
+    const { data: draftRow, error: draftErr } = await supabase
+      .from("document_approval_drafts")
+      .select("steps, status")
+      .eq("entity_type", "assessment_run")
+      .eq("entity_id", runId)
+      .maybeSingle();
+    if (draftErr) {
+      console.warn("document_approval_drafts unavailable:", draftErr.message);
+    } else if (Array.isArray((draftRow as any)?.steps)) {
+      draftSteps = (draftRow as any).steps;
+    }
 
     // Resolve company names for each approval step
     async function resolveCompanyName(userId: string, projectId: string): Promise<string> {
@@ -162,38 +211,34 @@ Deno.serve(async (req) => {
       return prof?.company || "";
     }
 
-    // Build signature rows from approval data
     const sigRows: string[] = [];
     if (latestApprovals.length > 0) {
       for (const ap of latestApprovals) {
-        let companyName = ap.company_name || '';
+        let companyName = ap.company_name || "";
         if (!companyName && ap.approver_id) {
           companyName = await resolveCompanyName(ap.approver_id, run.project_id);
         }
-        const posLabel = POSITION_LABELS[ap.position] || ap.position || '';
-        const dateStr = ap.status === '승인' && ap.approved_at ? formatKST(ap.approved_at) : (ap.status === '반려' ? '반려' : '대기');
+        const dateStr = ap.status === "승인" && ap.approved_at ? formatKST(ap.approved_at) : (ap.status === "반려" ? "반려" : "대기");
         sigRows.push(`<tr>
-          <td class="sig-role">${ap.step || ''}</td>
-          <td>${ap.approver_name || ''}</td>
+          <td class="sig-role">${ap.step || ""}</td>
+          <td>${ap.approver_name || ""}</td>
           <td>${companyName}</td>
-          <td>${posLabel}</td>
+          <td>${positionLabel(ap.position)}</td>
           <td class="sig-stamp">${dateStr}</td>
         </tr>`);
       }
-    } else {
-      // Fallback: show creator if no approvals
-      let creatorName = "";
-      let creatorCompany = "";
-      if (run.created_by) {
-        const { data: creatorProfile } = await supabase.from("profiles").select("display_name, company").eq("user_id", run.created_by).single();
-        if (creatorProfile) {
-          creatorName = creatorProfile.display_name || "";
-        }
-        creatorCompany = await resolveCompanyName(run.created_by, run.project_id);
+    } else if (draftSteps.length > 0) {
+      for (const s of draftSteps) {
+        sigRows.push(`<tr>
+          <td class="sig-role">${s.label || s.step_label || ""}</td>
+          <td>${s.user_name || ""}</td>
+          <td>${s.company_name || ""}</td>
+          <td>${positionLabel(s.position)}</td>
+          <td class="sig-stamp"></td>
+        </tr>`);
       }
-      sigRows.push(`<tr><td class="sig-role">작성</td><td>${creatorName}</td><td>${creatorCompany}</td><td></td><td class="sig-stamp">${formatKST(run.created_at)}</td></tr>`);
-      sigRows.push(`<tr><td class="sig-role">검토</td><td></td><td></td><td></td><td class="sig-stamp"></td></tr>`);
-      sigRows.push(`<tr><td class="sig-role">승인</td><td></td><td></td><td></td><td class="sig-stamp"></td></tr>`);
+    } else {
+      sigRows.push(`<tr><td colspan="5" class="center" style="color:#64748b">저장된 결재선이 없습니다. 상신 전 결재선을 저장하세요.</td></tr>`);
     }
 
     const sigRowsHtml = sigRows.join("");
@@ -504,7 +549,7 @@ td, th { page-break-inside: auto; }
     </div>
   </div>
 
-  <!-- Signature Section — from Approvals (SSOT) -->
+  <!-- Signature Section — from approval line (draft or submitted) -->
   <div class="section-header">서명란</div>
   <table class="sig-table">
     <thead><tr><th>구분</th><th>성명</th><th>소속</th><th>직책</th><th>서명 / 일자</th></tr></thead>

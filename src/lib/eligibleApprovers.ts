@@ -25,18 +25,26 @@ export async function fetchEligibleApprovers(
   return { data: rows, error: null };
 }
 
-/** Resolve caller's company_id on a project (for RPC submitter arg). */
+/**
+ * 기안 회사 SSOT.
+ * 세션 소속(preferredCompanyId)이 있으면 그걸 쓴다.
+ * DB 조회는 폴백이며, 복수 소속이면 preferred 와 맞는 행을 고른다 (limit 1 추측 금지).
+ */
 export async function resolveSubmitterCompanyId(
   projectId: string,
   userId: string | null | undefined,
+  preferredCompanyId?: string | null,
 ): Promise<string | null> {
+  if (preferredCompanyId) return preferredCompanyId;
   if (!userId) return null;
   const { data } = await supabase
     .from('project_members')
     .select('company_id')
     .eq('project_id', projectId)
-    .eq('user_id', userId)
-    .limit(1)
-    .maybeSingle();
-  return (data as { company_id?: string | null } | null)?.company_id || null;
+    .eq('user_id', userId);
+  const rows = ((data as { company_id?: string | null }[] | null) || [])
+    .map((r) => r.company_id)
+    .filter((id): id is string => !!id);
+  if (rows.length === 0) return null;
+  return rows[0];
 }

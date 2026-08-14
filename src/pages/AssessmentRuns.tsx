@@ -194,11 +194,8 @@ const AssessmentRuns = () => {
     if (!user || !selectedProject) return;
 
     const errors: Record<string, string> = {};
-    if (!form.type) errors.type = '종류를 선택해주세요.';
-    if (!form.period_label.trim()) errors.period_label = '적용기간을 입력해주세요.';
-    if (form.period_label.trim().length > 100) errors.period_label = '적용기간은 100자 이내로 입력해주세요.';
-    if (!form.start_date) errors.start_date = '시작일을 선택해주세요.';
-    if (!form.end_date) errors.end_date = '종료일을 선택해주세요.';
+    if (!form.period_label.trim()) errors.period_label = '회차명을 입력해주세요.';
+    if (form.period_label.trim().length > 100) errors.period_label = '회차명은 100자 이내로 입력해주세요.';
     if (form.start_date && form.end_date && form.start_date > form.end_date) errors.end_date = '종료일이 시작일보다 이전입니다.';
     if (form.notes.length > 2000) errors.notes = '비고는 2000자 이내로 입력해주세요.';
     if (Object.keys(errors).length > 0) {
@@ -217,8 +214,8 @@ const AssessmentRuns = () => {
         project_id: selectedProject,
         type: form.type,
         period_label: form.period_label.trim(),
-        start_date: form.start_date,
-        end_date: form.end_date,
+        start_date: form.start_date || null,
+        end_date: form.end_date || null,
         target_processes: form.target_processes.split(',').map(s => s.trim()).filter(Boolean),
         target_contractors: contractorNames, // legacy compat
         target_company_ids: form.target_company_ids, // new SSOT
@@ -487,42 +484,45 @@ const AssessmentRuns = () => {
             </div>
           )}
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">종류 *</Label>
-                <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
-                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="최초">최초평가</SelectItem>
-                    <SelectItem value="정기">정기평가</SelectItem>
-                    <SelectItem value="수시">수시평가</SelectItem>
-                    <SelectItem value="상시">상시평가</SelectItem>
-                  </SelectContent>
-                </Select>
-                {fieldErrors.type && <p className="text-xs text-destructive">{fieldErrors.type}</p>}
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">회차명 *</Label>
-                <Input className="h-9" value={form.period_label} onChange={e => setForm(p => ({ ...p, period_label: e.target.value }))} placeholder="예: 2026년 3월 1주차" />
-                {fieldErrors.period_label && <p className="text-xs text-destructive">{fieldErrors.period_label}</p>}
-              </div>
+            <div className="space-y-1">
+              <Label className="text-xs">회차명 *</Label>
+              <Input className="h-9" value={form.period_label} onChange={e => setForm(p => ({ ...p, period_label: e.target.value }))} placeholder="예: 2026년 3월 1주차" />
+              {fieldErrors.period_label && <p className="text-xs text-destructive">{fieldErrors.period_label}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs">시작일 *</Label>
+                <Label className="text-xs">시작일</Label>
                 <Input type="date" className="h-9" value={form.start_date} onChange={e => setForm(p => ({ ...p, start_date: e.target.value }))} />
                 {fieldErrors.start_date && <p className="text-xs text-destructive">{fieldErrors.start_date}</p>}
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">종료일 *</Label>
+                <Label className="text-xs">종료일</Label>
                 <Input type="date" className="h-9" value={form.end_date} onChange={e => setForm(p => ({ ...p, end_date: e.target.value }))} />
                 {fieldErrors.end_date && <p className="text-xs text-destructive">{fieldErrors.end_date}</p>}
               </div>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">대상 공정 (쉼표 구분)</Label>
-              <Input className="h-9" value={form.target_processes} onChange={e => setForm(p => ({ ...p, target_processes: e.target.value }))} placeholder="배관, 철골, 용접" />
-            </div>
+            <p className="text-[10px] text-muted-foreground -mt-1">날짜는 비워 두어도 생성됩니다.</p>
+            <details className="text-xs space-y-2">
+              <summary className="cursor-pointer text-muted-foreground">종류 · 대상 공정 (기본: 정기)</summary>
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">종류</Label>
+                  <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="최초">최초평가</SelectItem>
+                      <SelectItem value="정기">정기평가</SelectItem>
+                      <SelectItem value="수시">수시평가</SelectItem>
+                      <SelectItem value="상시">상시평가</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">대상 공정 (쉼표 구분)</Label>
+                  <Input className="h-9" value={form.target_processes} onChange={e => setForm(p => ({ ...p, target_processes: e.target.value }))} placeholder="배관, 철골, 용접" />
+                </div>
+              </div>
+            </details>
             <div className="space-y-1">
               <Label className="text-xs">대상 협력사 (등록 업체에서 선택)</Label>
               {contractors.length > 0 ? (

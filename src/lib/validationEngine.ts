@@ -159,14 +159,10 @@ export async function validateRiskItems(
       }
     }
 
-    // 6) Missing department/assignee
-    if (!item.department || item.department.trim() === '') {
-      itemIssues.push({ riskItemId: item.id, ruleType: 'missing_field', severity: 'warning',
-        message: '책임부서 미지정', field: 'department', recommendation: '책임부서를 지정하세요. 부서 선택 시 담당자가 자동 채워집니다.' });
-    }
+    // 6) Missing assignee (department is auto-filled from org chart)
     if (!item.assignee || item.assignee.trim() === '') {
       itemIssues.push({ riskItemId: item.id, ruleType: 'missing_field', severity: 'warning',
-        message: '담당자 미지정', field: 'assignee', recommendation: '담당자를 지정하세요. 책임부서 선택 시 자동 채워집니다.' });
+        message: '담당자 미지정', field: 'assignee', recommendation: '담당자를 지정하세요.' });
     }
 
     // Per-item verdict

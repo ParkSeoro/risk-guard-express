@@ -76,6 +76,8 @@ export function buildAssessmentSubmitPreflight(opts: {
   const linesOk = useDraftGate
     ? !!opts.approvalDraftReady
     : (
+      // Fallback only when the page does not pass draft status.
+      // Live SSOT is ENTITY_APPROVAL_POLICIES.assessment_run.minSteps (not this 2).
       opts.approvalLineCount >= 2
       && missing.length === 0
       && ssotInvalid.length === 0
@@ -85,7 +87,7 @@ export function buildAssessmentSubmitPreflight(opts: {
     || `${opts.approvalLineCount}단계`;
   if (useDraftGate) {
     approvalDetail = opts.approvalDraftReady
-      ? (opts.approvalDraftDetail || `draft 저장 완료 · ${opts.approvalLineCount}단계`)
+      ? (opts.approvalDraftDetail || `임시 저장 완료 · ${opts.approvalLineCount}단계`)
       : (opts.approvalDraftDetail || '결재선 [저장] 후 상신 가능');
   } else if (opts.approvalLineCount < 2) {
     approvalDetail = '결재선 [자동 생성] 후 [저장] 필요';

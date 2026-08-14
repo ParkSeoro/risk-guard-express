@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useImperativeHandle, forwardRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -82,6 +82,11 @@ interface Props {
   onDraftStatusChange?: (info: DraftStatusInfo) => void;
 }
 
+export type ApprovalLineManagerHandle = {
+  /** Save when dirty. Returns false if save failed or was invalid. */
+  saveIfDirty: () => Promise<boolean>;
+};
+
 function linesToDraftSteps(lines: ApprovalLine[]): ApprovalDraftStep[] {
   return lines.map((l) => ({
     label: l.step_label || '',
@@ -140,7 +145,7 @@ function toMemberLike(a: EligibleApprover): ProjectMember {
   };
 }
 
-export default function ApprovalLineManager({
+const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(function ApprovalLineManager({
   projectId,
   projectMembers,
   companies,
@@ -148,7 +153,7 @@ export default function ApprovalLineManager({
   onLinesChanged,
   documentDraft,
   onDraftStatusChange,
-}: Props) {
+}: Props, ref) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [lines, setLines] = useState<ApprovalLine[]>([]);
@@ -351,10 +356,10 @@ export default function ApprovalLineManager({
     });
   };
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<boolean> => {
     if (lines.length === 0) {
       toast({ title: '저장할 결재라인이 없습니다.', variant: 'destructive' });
-      return;
+      return false;
     }
     const incomplete = lines.filter((l) => !l.position || !l.step_label || !l.user_id);
     if (incomplete.length > 0) {
@@ -363,7 +368,7 @@ export default function ApprovalLineManager({
         description: '단계 추가 후 구분과 결재자를 모두 지정하거나, 빈 단계를 삭제한 뒤 저장하세요.',
         variant: 'destructive',
       });
-      return;
+      return false;
     }
     const ssot = validateApprovalLinesSSOT(lines);
     if (!ssot.ok) {
@@ -372,7 +377,7 @@ export default function ApprovalLineManager({
         description: `자동 생성으로 다시 만들거나 구분을 다시 선택하세요: ${Array.from(new Set(ssot.invalid)).join(', ')}`,
         variant: 'destructive',
       });
-      return;
+      return false;
     }
     const invalidLines = lines.filter(
       (l) => l.user_id && !eligible.some((a) => a.out_user_id === l.user_id),
@@ -383,7 +388,7 @@ export default function ApprovalLineManager({
         description: '발주처/시공사 멤버가 프로젝트에 등록돼 있는지 확인하세요.',
         variant: 'destructive',
       });
-      return;
+      return false;
     }
 
     // ---- 전자결재 플랫폼: 문서 draft 저장 (상신과 분리) ----
@@ -408,7 +413,7 @@ export default function ApprovalLineManager({
           description: error || 'document_approval_drafts RPC를 확인하세요. (Dashboard SQL 적용 여부)',
           variant: 'destructive',
         });
-        return;
+        return false;
       }
       setDraftStatus(data.status);
       setDraftReady(!!data.ready);
@@ -417,16 +422,16 @@ export default function ApprovalLineManager({
       if (data.ready) {
         toast({
           title: '결재선 저장 완료 — 상신 가능',
-          description: `${data.steps.length}단계가 이 문서 draft에 저장되었습니다. [결재 상신]은 별도 버튼입니다.`,
+          description: `${data.steps.length}단계가 이 문서에 저장되었습니다. [결재 상신]은 별도 버튼입니다.`,
         });
-      } else {
-        toast({
-          title: '결재선 임시 저장 (상신 불가)',
-          description: (data.errors || []).join(' · ') || '요건을 보완한 뒤 다시 저장하세요.',
-          variant: 'destructive',
-        });
+        return true;
       }
-      return;
+      toast({
+        title: '결재선 임시 저장 (상신 불가)',
+        description: (data.errors || []).join(' · ') || '요건을 보완한 뒤 다시 저장하세요.',
+        variant: 'destructive',
+      });
+      return false;
     }
 
     const inserts = lines.map((l, i) => ({
@@ -448,7 +453,7 @@ export default function ApprovalLineManager({
       .order('step_order');
     if (prevErr) {
       toast({ title: '결재라인 저장 실패', description: prevErr.message, variant: 'destructive' });
-      return;
+      return false;
     }
 
     const { error: delErr } = await supabase.from('approval_lines').delete().eq('project_id', projectId);
@@ -458,7 +463,7 @@ export default function ApprovalLineManager({
         description: delErr.message || '관리감독자/안전관리자/관리자만 저장할 수 있습니다.',
         variant: 'destructive',
       });
-      return;
+      return false;
     }
 
     const { error: insErr } = await supabase.from('approval_lines').insert(inserts);
@@ -472,13 +477,21 @@ export default function ApprovalLineManager({
         variant: 'destructive',
       });
       await fetchLines();
-      return;
+      return false;
     }
 
     setDirty(false);
     toast({ title: '결재라인 저장 완료' });
     await fetchLines();
+    return true;
   };
+
+  useImperativeHandle(ref, () => ({
+    saveIfDirty: async () => {
+      if (!dirty) return true;
+      return handleSave();
+    },
+  }), [dirty, handleSave]);
 
   const addStep = () => {
     setLines((prev) => [
@@ -769,6 +782,7 @@ export default function ApprovalLineManager({
       </CardContent>
     </Card>
   );
-}
+});
 
+export default ApprovalLineManager;
 export type { ApprovalLine };

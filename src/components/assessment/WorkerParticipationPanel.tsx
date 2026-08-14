@@ -21,6 +21,8 @@ interface Props {
   canEdit: boolean;
   onChanged?: () => void;
   riskItems?: RiskItemLike[];
+  opinionRequired?: boolean;
+  healthRequired?: boolean;
 }
 
 const HEALTH_CATEGORIES = ['분진', '소음', '화학물질', '고온/저온', '밀폐공간', '진동', '기타'];
@@ -42,7 +44,10 @@ async function edgeFnErrorMessage(error: unknown, data?: { error?: string | { me
   return (error as Error)?.message || '알 수 없는 오류';
 }
 
-export default function WorkerParticipationPanel({ runId, projectId, userId, canEdit, onChanged, riskItems = [] }: Props) {
+export default function WorkerParticipationPanel({
+  runId, projectId, userId, canEdit, onChanged, riskItems = [],
+  opinionRequired = true, healthRequired = true,
+}: Props) {
   const { toast } = useToast();
   const [opinions, setOpinions] = useState<any[]>([]);
   const [healths, setHealths] = useState<any[]>([]);
@@ -71,7 +76,7 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
   const [aiEquipment, setAiEquipment] = useState('');
   const [accidentAICount, setAccidentAICount] = useState(0);
 
-  // 고위험 작업 사고사례 — 버튼으로만 생성 (공종 자동작성과 분리)
+  // 고위험 작업 사고사례 — 버튼으로만 생성 (초안 생성과 분리)
   const [autoAccidentLoading, setAutoAccidentLoading] = useState(false);
   const detectedHighRisk = useMemo(() => detectHighRiskCategories(riskItems), [riskItems]);
   const autoCases = (accidents || []).filter(a => a.source_type === 'auto');
@@ -320,7 +325,7 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <MessageSquare className="h-4 w-4 text-primary" /> 근로자 의견 (필수)
+            <MessageSquare className="h-4 w-4 text-primary" /> 근로자 의견 ({opinionRequired ? '필수' : '선택'})
             <Badge variant="outline" className="text-[10px]">{opinions.length}건</Badge>
           </CardTitle>
         </CardHeader>
@@ -442,8 +447,24 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <HeartPulse className="h-4 w-4 text-primary" /> 보건 유해요인 (최소 1건)
+            <HeartPulse className="h-4 w-4 text-primary" /> 보건 유해요인 ({healthRequired ? '최소 1건' : '선택'})
             <Badge variant="outline" className="text-[10px]">{healths.length}건</Badge>
+            {canEdit && healths.some((h: any) => !h.is_user_reviewed) && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 text-[10px] ml-auto"
+                onClick={async () => {
+                  await supabase.from('health_hazards' as any).update({ is_user_reviewed: true }).eq('run_id', runId).eq('is_user_reviewed', false);
+                  await supabase.from('risk_items').update({ is_user_reviewed: true }).eq('run_id', runId).eq('source_type', 'ai_opinion').eq('is_user_reviewed', false);
+                  toast({ title: '미검토 항목을 일괄 검토 완료했습니다.' });
+                  reload();
+                  onChanged?.();
+                }}
+              >
+                일괄 검토완료
+              </Button>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
@@ -544,7 +565,7 @@ export default function WorkerParticipationPanel({ runId, projectId, userId, can
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs space-y-0.5">
                   <p className="font-medium">고위험 작업 사고사례 (라이브러리)</p>
-                  <p className="text-[10px] text-muted-foreground">공종 자동작성 시 자동으로 붙지 않습니다. 필요할 때만 생성하세요.</p>
+                  <p className="text-[10px] text-muted-foreground">초안 생성 시 자동으로 붙지 않습니다. 필요할 때만 생성하세요.</p>
                 </div>
                 <Button
                   size="sm"

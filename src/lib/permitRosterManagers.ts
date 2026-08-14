@@ -20,12 +20,6 @@ function roleToJobType(role: string): string {
   return "관리감독자";
 }
 
-function randomQrToken(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
 /** Synthetic unique phone when profile has none — keeps UNIQUE(project_id, phone). */
 function syntheticManagerPhone(userId: string): string {
   const hex = userId.replace(/-/g, "").slice(0, 8);
@@ -106,7 +100,6 @@ export async function loadPermitCompanyManagerCandidates(opts: {
         company_name: companyName,
         job_type: roleToJobType(role),
         is_active: true,
-        qr_token: randomQrToken(),
         hire_date: new Date().toISOString().slice(0, 10),
       };
       const { data: inserted, error: iErr } = await supabase

@@ -1,51 +1,11 @@
--- gen_random_bytes comes from pgcrypto (schema `extensions` on hosted Supabase).
--- SECURITY DEFINER RPCs use SET search_path TO public, so unqualified
--- gen_random_bytes() raises: function gen_random_bytes(integer) does not exist.
--- That is why worker bulk-import failed only on NEW rows (INSERT needs qr_token);
--- existing phones took the UPDATE path and succeeded.
+-- QR-only worker identity was retired (see docs/worker-qr-only-retired.md).
+-- Bulk insert still minted workers.qr_token via gen_random_bytes(), which
+-- fails under SET search_path = public. Do not generate worker QR tokens.
 
-DO $$
-BEGIN
-  EXECUTE 'CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions';
-EXCEPTION WHEN OTHERS THEN
-  RAISE NOTICE 'pgcrypto extension skipped: %', SQLERRM;
-END $$;
+ALTER TABLE public.workers
+  ALTER COLUMN qr_token DROP NOT NULL,
+  ALTER COLUMN qr_token DROP DEFAULT;
 
-DO $wrap$
-BEGIN
-  IF to_regprocedure('public.gen_random_bytes(integer)') IS NOT NULL THEN
-    RETURN;
-  END IF;
-  EXECUTE $fn$
-    CREATE FUNCTION public.gen_random_bytes(p_count integer)
-    RETURNS bytea
-    LANGUAGE plpgsql
-    VOLATILE
-    SET search_path TO pg_catalog, public, extensions
-    AS $body$
-    DECLARE
-      n int := GREATEST(COALESCE(p_count, 1), 1);
-      acc bytea := '\x'::bytea;
-    BEGIN
-      BEGIN
-        RETURN extensions.gen_random_bytes(n);
-      EXCEPTION
-        WHEN undefined_function THEN NULL;
-        WHEN invalid_schema_name THEN NULL;
-      END;
-      WHILE length(acc) < n LOOP
-        acc := acc || decode(replace(gen_random_uuid()::text, '-', ''), 'hex');
-      END LOOP;
-      RETURN substring(acc FROM 1 FOR n);
-    END;
-    $body$;
-  $fn$;
-  EXECUTE 'COMMENT ON FUNCTION public.gen_random_bytes(integer) IS ''pgcrypto shim for search_path=public SECURITY DEFINER functions''';
-  EXECUTE 'GRANT EXECUTE ON FUNCTION public.gen_random_bytes(integer) TO authenticated, service_role';
-END;
-$wrap$;
-
--- Prefer the workers.qr_token column default (gen_random_uuid) — no pgcrypto needed.
 CREATE OR REPLACE FUNCTION public.upsert_project_workers_bulk(
   _project_id uuid,
   _company_id uuid,

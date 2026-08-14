@@ -1069,7 +1069,8 @@ export default function WorkPermitDetail() {
             workName: data.work_name || permit.work_name,
             workDescription: data.work_description || permit.work_description,
             workLocation: data.work_location || permit.location,
-            permitDate: permit.permit_date,
+            permitDate: resolvePermitWorkDate({ ...permit, form_data: data }) || permit.permit_date,
+            contractorCompany: data.contractor_company || data.applicant_company || permit.contractor_company,
           }}
           onSubmitted={() => { setApprovalOpen(false); load(); }}
         />

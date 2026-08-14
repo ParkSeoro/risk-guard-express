@@ -48,7 +48,9 @@ export default function PermitAiBriefingCard({ briefing, compact, className }: P
             <AlertTriangle className="h-3 w-3 text-destructive" /> 3) 치명적 위험 요인 Top 3
           </div>
           <ol className="list-decimal list-inside space-y-1 text-sm">
-            {(briefing.top_risks || []).slice(0, 3).map((r, i) => (
+            {(briefing.top_risks || []).length === 0 ? (
+              <li className="text-muted-foreground list-none">본문에 표시된 위험요인이 없습니다.</li>
+            ) : (briefing.top_risks || []).slice(0, 3).map((r, i) => (
               <li key={i} className="leading-snug">{r}</li>
             ))}
           </ol>
@@ -59,7 +61,9 @@ export default function PermitAiBriefingCard({ briefing, compact, className }: P
             <ShieldCheck className="h-3 w-3 text-emerald-600" /> 4) 필수 점검 안전 조치
           </div>
           <ul className="space-y-1 text-sm">
-            {(briefing.required_controls || []).map((c, i) => (
+            {(briefing.required_controls || []).length === 0 ? (
+              <li className="text-muted-foreground">본문에 표시된 안전조치를 원본에서 확인하세요.</li>
+            ) : (briefing.required_controls || []).map((c, i) => (
               <li key={i} className="flex gap-2 leading-snug">
                 <span className="text-emerald-600 shrink-0">✓</span>
                 <span>{c}</span>

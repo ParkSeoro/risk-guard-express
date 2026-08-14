@@ -4,7 +4,12 @@
 -- That is why worker bulk-import failed only on NEW rows (INSERT needs qr_token);
 -- existing phones took the UPDATE path and succeeded.
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+DO $$
+BEGIN
+  EXECUTE 'CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions';
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pgcrypto extension skipped: %', SQLERRM;
+END $$;
 
 DO $wrap$
 BEGIN

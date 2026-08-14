@@ -14,9 +14,116 @@ import {
   isGcType,
   normalizeCompanyType,
 } from '@/lib/companyTypes';
+import { resolveParentGcCompanyId } from '@/lib/approvalRules';
 import { supabase } from '@/integrations/supabase/client';
 
 const NIL_COMPANY = '00000000-0000-0000-0000-000000000000';
+
+/** Company allowlist has finished resolving (null = project-wide, string[] = scoped). */
+export type CompanyScopeStatus = 'pending' | 'ready';
+
+const MEMBER_ROLE_RANK: Record<string, number> = {
+  master: 100,
+  project_admin: 90,
+  safety_manager: 80,
+  site_manager: 70,
+  site_supervisor: 60,
+  supervisor: 50,
+  worker: 20,
+  contractor: 20,
+  viewer: 10,
+};
+
+export type ProjectMemberPickRow = {
+  company_id?: string | null;
+  role_new?: string | null;
+  role?: string | null;
+  [key: string]: unknown;
+};
+
+/** Dual-persona: pick preferred company, else higher role, else first row with a company. */
+export function pickProjectMemberRow<T extends ProjectMemberPickRow>(
+  rows: T[] | null | undefined,
+  preferredCompanyId?: string | null,
+): T | null {
+  const list = (rows || []).filter(Boolean);
+  if (list.length === 0) return null;
+  const preferred = String(preferredCompanyId || '').trim();
+  if (preferred) {
+    const hit = list.find((r) => String(r.company_id || '') === preferred);
+    if (hit) return hit;
+  }
+  const ranked = [...list].sort((a, b) => {
+    const ra = MEMBER_ROLE_RANK[String(a.role_new || a.role || '').toLowerCase()] ?? 0;
+    const rb = MEMBER_ROLE_RANK[String(b.role_new || b.role || '').toLowerCase()] ?? 0;
+    if (rb !== ra) return rb - ra;
+    const ac = a.company_id ? 1 : 0;
+    const bc = b.company_id ? 1 : 0;
+    return bc - ac;
+  });
+  return ranked[0] ?? null;
+}
+
+export function readPreferredCompanyId(): string | null {
+  try {
+    return localStorage.getItem('selectedCompanyId') || null;
+  } catch {
+    return null;
+  }
+}
+
+export type AssessmentDocumentCompanyInfo = {
+  authorCompanyId: string | null;
+  authorCompanyName: string;
+  gcCompanyId: string | null;
+  gcCompanyName: string;
+  clientCompanyName: string;
+};
+
+/**
+ * 위험성평가표 헤더용 회사.
+ * 작성 회사 = 작성자 소속. 시공사 = 그 회사의 상위 GC만 (프로젝트 전체 업체 나열 금지).
+ */
+export function resolveAssessmentDocumentCompanies(opts: {
+  authorCompanyId?: string | null;
+  authorCompanyName?: string | null;
+  authorCompanyType?: string | null;
+  companies: Array<{
+    id: string;
+    name?: string | null;
+    type?: string | null;
+    parent_company_id?: string | null;
+  }>;
+}): AssessmentDocumentCompanyInfo {
+  const companies = opts.companies || [];
+  const byId = new Map(companies.map((c) => [c.id, c]));
+  const client = companies.find((c) => normalizeCompanyType(c.type) === 'client');
+  const clientCompanyName = String(client?.name || '').trim() || '(미지정)';
+
+  const authorCompanyId = opts.authorCompanyId || null;
+  const authorNode = authorCompanyId ? byId.get(authorCompanyId) : undefined;
+  const authorCompanyName =
+    String(authorNode?.name || opts.authorCompanyName || '').trim() || '(미지정)';
+
+  const gcCompanyId = resolveParentGcCompanyId(
+    authorCompanyId,
+    companies.map((c) => ({
+      id: c.id,
+      type: c.type,
+      parent_company_id: c.parent_company_id,
+    })),
+  );
+  const gcNode = gcCompanyId ? byId.get(gcCompanyId) : undefined;
+  const gcCompanyName = String(gcNode?.name || '').trim() || '(미지정)';
+
+  return {
+    authorCompanyId,
+    authorCompanyName,
+    gcCompanyId,
+    gcCompanyName,
+    clientCompanyName,
+  };
+}
 
 export type CompanyScopeRole =
   | 'master'
@@ -283,19 +390,25 @@ export async function fetchCreatorCompanyLabelMap(
 
   const { data, error } = await supabase
     .from('project_members')
-    .select('user_id, company_id, companies:company_id(name, type)')
+    .select('user_id, company_id, role_new, companies:company_id(name, type)')
     .eq('project_id', projectId)
     .in('user_id', ids);
   if (error) throw error;
 
-  const out: Record<string, string> = {};
+  const byUser = new Map<string, any[]>();
   for (const row of (data || []) as any[]) {
     const uid = row.user_id as string;
-    if (!uid || out[uid]) continue;
-    const co = row.companies;
-    const name = co?.name || null;
-    const type = co?.type || null;
-    const label = formatCreatorCompanyLabel(name, type);
+    if (!uid) continue;
+    const list = byUser.get(uid) || [];
+    list.push(row);
+    byUser.set(uid, list);
+  }
+
+  const out: Record<string, string> = {};
+  for (const [uid, rows] of byUser) {
+    const picked = pickProjectMemberRow(rows);
+    const co = picked?.companies;
+    const label = formatCreatorCompanyLabel(co?.name || null, co?.type || null);
     if (label) out[uid] = label;
   }
   return out;

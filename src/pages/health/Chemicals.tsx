@@ -34,7 +34,7 @@ type UsagePlan = {
 
 export default function Chemicals() {
   const handle = useToastError();
-  const { userCompanyId, applyCompanyFilter, seesAllCompanies, accessibleCompanyIds } =
+  const { userCompanyId, applyCompanyFilter, seesAllCompanies, accessibleCompanyIds, scopeStatus } =
     useGlobalProjectAccess();
   const canSeeAllCompanies = seesAllCompanies;
 
@@ -78,10 +78,13 @@ export default function Chemicals() {
   };
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== "ready") {
+      if (scopeStatus !== "ready") setLoading(true);
+      return;
+    }
     setLoading(true);
     Promise.all([loadCompanies(), loadChemicals(), loadPlans()]).finally(() => setLoading(false));
-  }, [projectId, userCompanyId]);
+  }, [projectId, userCompanyId, accessibleCompanyIds, scopeStatus]);
 
   const chemicalCompany = (id: string | null) =>
     companies.find(c => c.id === id)?.name || "-";

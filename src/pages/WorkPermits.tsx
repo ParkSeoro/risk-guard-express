@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -146,9 +146,12 @@ export default function WorkPermits() {
     applyCompanyFilter,
     isProjectAdmin,
     accessibleCompanyIds,
+    scopeStatus,
   } = useGlobalProjectAccess();
 
   const [permits, setPermits] = useState<any[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const loadSeqRef = useRef(0);
   const [approvalNameRows, setApprovalNameRows] = useState<PermitApprovalNameRow[]>([]);
   const [involvedPermitIds, setInvolvedPermitIds] = useState<Set<string>>(new Set());
   const [listTab, setListTab] = useState<'all' | 'involved'>('all');
@@ -197,7 +200,9 @@ export default function WorkPermits() {
   }, [permits, visibilityOpts, listTab, listPeriod, listStatus, listSearch, companyNameById]);
 
   const load = async () => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== 'ready') return;
+    const seq = ++loadSeqRef.current;
+    setListLoading(true);
     let permitQuery: any = supabase
       .from('work_permits' as any)
       .select('*')
@@ -233,6 +238,7 @@ export default function WorkPermits() {
         .eq('entity_type', 'work_permit'),
     ]);
     const permitRows = (p as any[]) || [];
+    if (seq !== loadSeqRef.current) return;
     setPermits(permitRows);
     setApprovalNameRows((nameApprovals as PermitApprovalNameRow[]) || []);
     setInvolvedPermitIds(
@@ -269,9 +275,17 @@ export default function WorkPermits() {
       }
       setCompanyNameById(nameMap);
     }
+    if (seq !== loadSeqRef.current) return;
+    setListLoading(false);
   };
 
-  useEffect(() => { load(); }, [projectId, user?.id, applyCompanyFilter, accessibleCompanyIds]);
+  useEffect(() => {
+    if (scopeStatus !== 'ready') {
+      setListLoading(true);
+      return;
+    }
+    load();
+  }, [projectId, user?.id, applyCompanyFilter, accessibleCompanyIds, scopeStatus]);
 
   useEffect(() => {
     if (!userCompanyId) { setCompanyName(''); return; }
@@ -580,7 +594,9 @@ export default function WorkPermits() {
       </Card>
 
       <div className="grid gap-3">
-        {visiblePermits.length === 0 ? (
+        {listLoading ? (
+          <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">로딩 중...</CardContent></Card>
+        ) : visiblePermits.length === 0 ? (
           <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">
             {listTab === 'involved'
               ? '내가 작성·결재한 작업허가서가 없습니다.'

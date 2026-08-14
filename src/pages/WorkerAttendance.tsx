@@ -87,7 +87,7 @@ export default function WorkerAttendance() {
   const [companyFilter, setCompanyFilter] = useState<string>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [selected, setSelected] = useState<EntryLog | null>(null);
-  const { accessibleCompanyIds, seesAllCompanies, applyCompanyFilter } = useGlobalProjectAccess();
+  const { accessibleCompanyIds, seesAllCompanies, applyCompanyFilter, scopeStatus } = useGlobalProjectAccess();
 
   useEffect(() => {
     supabase
@@ -98,7 +98,7 @@ export default function WorkerAttendance() {
   }, []);
 
   const load = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== 'ready') return;
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -205,7 +205,7 @@ export default function WorkerAttendance() {
     } finally {
       setLoading(false);
     }
-  }, [projectId, date, applyCompanyFilter, seesAllCompanies]);
+  }, [projectId, date, applyCompanyFilter, seesAllCompanies, scopeStatus]);
 
   useEffect(() => {
     if (!projectId) return;

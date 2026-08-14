@@ -3,6 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   applyOwnCompanyFilter,
+  pickProjectMemberRow,
+  readPreferredCompanyId,
   resolveAccessibleCompanyIds,
   seesProjectWideCompanies,
 } from "@/lib/companyDocScope";
@@ -32,6 +34,7 @@ export function useMobileAccess() {
   const [companyType, setCompanyType] = useState<CompanyTypeCode | null>(null);
   // [] until resolved — never flash "all" for non-master
   const [accessibleCompanyIds, setAccessibleCompanyIds] = useState<string[] | null>([]);
+  const [scopeStatus, setScopeStatus] = useState<'pending' | 'ready'>(preview.isPreview ? 'ready' : 'pending');
   const [loading, setLoading] = useState(!preview.isPreview);
 
   useEffect(() => {
@@ -74,17 +77,20 @@ export function useMobileAccess() {
           setCompanyType(null);
           // Preview shows real project rows for UX review; writes are blocked separately.
           setAccessibleCompanyIds(null);
+          setScopeStatus('ready');
           setLoading(false);
         }
         return;
       }
       setLoading(true);
+      setScopeStatus('pending');
       if (isMaster) {
         if (!cancelled) {
           setRole('master');
           setCompanyId(null);
           setCompanyType(null);
           setAccessibleCompanyIds(null);
+          setScopeStatus('ready');
           setLoading(false);
         }
         return;
@@ -96,6 +102,7 @@ export function useMobileAccess() {
           setCompanyId(null);
           setCompanyType(null);
           setAccessibleCompanyIds([]); // restrictive until known
+          setScopeStatus(user && !projectId ? 'pending' : 'ready');
           setLoading(false);
         }
         return;
@@ -104,10 +111,10 @@ export function useMobileAccess() {
         .from('project_members')
         .select('role_new, company_id, companies(type)' as any)
         .eq('user_id', user.id)
-        .eq('project_id', projectId)
-        .maybeSingle();
+        .eq('project_id', projectId);
       if (cancelled) return;
-      const d = data as any;
+      const picked = pickProjectMemberRow((data || []) as any[], readPreferredCompanyId());
+      const d = picked as any;
       const raw = (d?.role_new as MobileRole) || 'viewer';
       const nextRole = raw === 'contractor' ? 'worker' : raw;
       const nextCid = d?.company_id || null;
@@ -124,6 +131,7 @@ export function useMobileAccess() {
       });
       if (!cancelled) {
         setAccessibleCompanyIds(ids);
+        setScopeStatus('ready');
         setLoading(false);
       }
     })();
@@ -160,6 +168,7 @@ export function useMobileAccess() {
     companyId,
     companyType,
     accessibleCompanyIds,
+    scopeStatus,
     seesAllCompanies,
     isMaster,
     isProjectAdmin,

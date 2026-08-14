@@ -185,7 +185,13 @@ const SafetyCost = () => {
   const firstFailingAudit = auditChecklist.find((item) => !item.ok) || null;
   const approvalReady = auditChecklist.every((item) => item.ok) && selectedReport?.status === 'draft';
 
-  useEffect(() => { if (access.selectedProject) fetchAll(); }, [access.selectedProject]);
+  useEffect(() => {
+    if (access.scopeStatus !== 'ready') {
+      setLoading(true);
+      return;
+    }
+    if (access.selectedProject) fetchAll();
+  }, [access.selectedProject, access.scopeStatus, access.accessibleCompanyIds]);
   useEffect(() => {
     if (!selectedConstructionId && scopedConstructions.length) setSelectedConstructionId(scopedConstructions[0].id);
   }, [scopedConstructions, selectedConstructionId]);

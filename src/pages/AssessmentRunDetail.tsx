@@ -65,6 +65,7 @@ import { generateRemediationActions, applyRemediationActions, buildRemediationSu
 import type { Database } from '@/integrations/supabase/types';
 import IMESafeInput from '@/components/IMESafeInput';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
+import { pickProjectMemberRow, resolveAssessmentDocumentCompanies } from '@/lib/companyDocScope';
 import FeedbackPanel from '@/components/FeedbackPanel';
 import ApprovalLineManager, { type ApprovalLine, type ApprovalLineManagerHandle, type DraftStatusInfo } from '@/components/ApprovalLineManager';
 import WorkerParticipationPanel from '@/components/assessment/WorkerParticipationPanel';
@@ -180,6 +181,11 @@ const AssessmentRunDetail = () => {
   const [showCloneRun, setShowCloneRun] = useState(false);
   const [showEditRun, setShowEditRun] = useState(false);
   const [projectCompanies, setProjectCompanies] = useState<{ id: string; name: string; type: string; parent_company_id?: string | null }[]>([]);
+  const [creatorCompany, setCreatorCompany] = useState<{
+    company_id: string | null;
+    company_name: string | null;
+    company_type: string | null;
+  } | null>(null);
 
   // Excel upload
   const [showExcelUpload, setShowExcelUpload] = useState(false);
@@ -327,10 +333,19 @@ const AssessmentRunDetail = () => {
       const { data: creatorRows } = runRes.data.created_by
         ? await supabase
             .from('project_members')
-            .select('user_id, company_id')
+            .select('user_id, company_id, role_new, companies:company_id(name, type)')
             .eq('project_id', projectId)
             .eq('user_id', runRes.data.created_by)
         : { data: [] as any[] };
+      const creatorPicked = pickProjectMemberRow((creatorRows || []) as any[]);
+      const creatorCo = (creatorPicked as any)?.companies;
+      setCreatorCompany(creatorPicked
+        ? {
+            company_id: (creatorPicked as any).company_id || null,
+            company_name: creatorCo?.name || null,
+            company_type: creatorCo?.type || null,
+          }
+        : null);
       const assigneeCompanyIds = resolveAuthorCompanyIds({
         createdBy: runRes.data.created_by,
         creatorMembers: (creatorRows || []) as any[],
@@ -1176,6 +1191,17 @@ const AssessmentRunDetail = () => {
     [projectMembers],
   );
 
+  const docCompanies = useMemo(
+    () =>
+      resolveAssessmentDocumentCompanies({
+        authorCompanyId: creatorCompany?.company_id,
+        authorCompanyName: creatorCompany?.company_name,
+        authorCompanyType: creatorCompany?.company_type,
+        companies: projectCompanies,
+      }),
+    [creatorCompany, projectCompanies],
+  );
+
   const refreshApprovalPreflightMeta = useCallback(async () => {
     if (!run?.project_id) return;
     // Platform draft status is SSOT for approval-line gate; keep meta for display only.
@@ -1592,8 +1618,9 @@ const AssessmentRunDetail = () => {
   const buildProjectInfo = () => ({
     name: project?.name || '', site_name: project?.site_name || '',
     period_start: project?.period_start || '', period_end: project?.period_end || '',
-    client: projectCompanies.find(c => c.type === 'client')?.name || '',
-    contractor: projectCompanies.filter(c => c.type === 'gc').map(c => c.name).join(', ') || '',
+    client: docCompanies.clientCompanyName === '(미지정)' ? '' : docCompanies.clientCompanyName,
+    contractor: docCompanies.gcCompanyName === '(미지정)' ? '' : docCompanies.gcCompanyName,
+    author_company: docCompanies.authorCompanyName === '(미지정)' ? '' : docCompanies.authorCompanyName,
   });
 
   const handleExportPDF = async () => {
@@ -2089,35 +2116,9 @@ const AssessmentRunDetail = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-1 text-xs">
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">프로젝트:</span><span>{project?.name || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">현장명:</span><span>{project?.site_name || ''}</span></div>
-            <div className="flex gap-1"><span className="font-medium text-muted-foreground">발주처:</span><span>{projectCompanies.find(c => c.type === 'client')?.name || '(미지정)'}</span></div>
-            <div className="flex gap-1"><span className="font-medium text-muted-foreground">시공사:</span><span>{(() => {
-              const gcs = projectCompanies.filter(c => c.type === 'gc' || c.type === 'contractor');
-              // 1) 명시적으로 지정된 대상 회사가 있으면 그것만
-              const targetIds: string[] = (run as any).target_company_ids || [];
-              if (targetIds.length > 0) {
-                const named = gcs.filter(c => targetIds.includes(c.id)).map(c => c.name);
-                if (named.length > 0) return named.join(', ');
-              }
-              const targetNames: string[] = (run as any).target_contractors || [];
-              if (targetNames.length > 0) return targetNames.join(', ');
-              // 2) 작성자(또는 현재 사용자)의 소속 회사로 한정
-              const creatorMember = projectMembers.find(m => m.user_id === run.created_by);
-              const ownerCompanyId = creatorMember?.company_id || userCompanyId;
-              if (ownerCompanyId) {
-                const own = gcs.find(c => c.id === ownerCompanyId);
-                if (own) return own.name;
-                if (creatorMember?.company) return creatorMember.company;
-              }
-              // 3) 마스터/관리자에게만 전체 목록 노출, 일반 사용자는 미지정 표시
-              // 발주처 PA·SM만 전체 GC 표시 — 시공/협력 SM은 자사 범위
-              const seesAll = accessibleCompanyIds === null || isMaster;
-              if (!seesAll) {
-                const allow = new Set(accessibleCompanyIds || []);
-                const names = gcs.filter((c) => allow.has(c.id)).map((c) => c.name);
-                return names.join(', ') || '(미지정)';
-              }
-              return gcs.map(c => c.name).join(', ') || '(미지정)';
-            })()}</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">발주처:</span><span>{docCompanies.clientCompanyName}</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">시공사:</span><span>{docCompanies.gcCompanyName}</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">작성 회사:</span><span>{docCompanies.authorCompanyName}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">기간:</span><span>{run.start_date || project?.period_start || ''} ~ {run.end_date || project?.period_end || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">항목 수:</span><span>{stats.total}건</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">상태:</span>

@@ -58,7 +58,7 @@ export default function MobileWorkers() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const goMobileHome = useNavigateMobileHome();
-  const { projectId, applyCompanyFilter, role, isMaster, accessibleCompanyIds } = useMobileAccess();
+  const { projectId, applyCompanyFilter, role, isMaster, accessibleCompanyIds, scopeStatus } = useMobileAccess();
   const preview = usePreview();
   const blockWrite = usePreviewWriteBlock();
   const [workers, setWorkers] = useState<any[]>([]);
@@ -78,7 +78,7 @@ export default function MobileWorkers() {
   );
 
   const loadRoster = async () => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== 'ready') return;
     setLoading(true);
     let query: any = supabase
       .from("workers")
@@ -95,7 +95,7 @@ export default function MobileWorkers() {
   };
 
   const loadAttendance = async () => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== 'ready') return;
     setAttLoading(true);
     let query: any = supabase
       .from("v_worker_attendance_today" as any)
@@ -116,14 +116,18 @@ export default function MobileWorkers() {
   };
 
   useEffect(() => {
+    if (scopeStatus !== 'ready') {
+      setLoading(true);
+      return;
+    }
     loadRoster();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [projectId, accessibleCompanyIds, scopeStatus]);
 
   useEffect(() => {
     if (tab === "attendance") loadAttendance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, projectId, accessibleCompanyIds]);
+  }, [tab, projectId, accessibleCompanyIds, scopeStatus]);
 
   useEffect(() => {
     const t = searchParams.get("tab");

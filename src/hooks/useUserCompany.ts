@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { useGlobalProjectAccessOptional } from '@/components/AppLayout';
+import { pickProjectMemberRow, readPreferredCompanyId } from '@/lib/companyDocScope';
 
 /**
  * Returns the logged-in user's company for the currently selected project.
@@ -31,13 +31,13 @@ export function useUserCompany() {
       setLoading(true);
       const { data } = await (supabase as any)
         .from('project_members')
-        .select('company_id, companies:company_id(name)')
+        .select('company_id, role_new, companies:company_id(name)')
         .eq('user_id', user.id)
-        .eq('project_id', selectedProject)
-        .maybeSingle();
+        .eq('project_id', selectedProject);
       if (cancelled) return;
-      setCompanyId(data?.company_id || null);
-      setCompanyName(data?.companies?.name || null);
+      const picked = pickProjectMemberRow((data || []) as any[], readPreferredCompanyId());
+      setCompanyId(picked?.company_id || null);
+      setCompanyName((picked as any)?.companies?.name || null);
       setLoading(false);
     })();
     return () => { cancelled = true; };

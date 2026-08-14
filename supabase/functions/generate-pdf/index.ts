@@ -79,6 +79,77 @@ function positionRank(pos?: string | null): number {
   return POSITION_RANK[(pos || "").toLowerCase()] ?? 99;
 }
 
+function normalizeCoType(t?: string | null): string {
+  const s = String(t || "").toLowerCase().trim();
+  if (s === "client" || s === "발주처" || s === "owner") return "client";
+  if (s === "gc" || s === "시공사" || s === "원도급" || s === "원청" || s === "general_contractor") return "gc";
+  if (s === "contractor" || s === "협력사" || s === "하청" || s === "subcontractor") return "contractor";
+  if (s === "vendor" || s === "공급사" || s === "납품사") return "vendor";
+  return s;
+}
+
+function pickMemberRow(rows: any[], preferredCompanyId?: string | null): any | null {
+  const list = (rows || []).filter(Boolean);
+  if (list.length === 0) return null;
+  const preferred = String(preferredCompanyId || "").trim();
+  if (preferred) {
+    const hit = list.find((r) => String(r.company_id || "") === preferred);
+    if (hit) return hit;
+  }
+  const rank: Record<string, number> = {
+    master: 100, project_admin: 90, safety_manager: 80, site_manager: 70,
+    site_supervisor: 60, supervisor: 50, worker: 20, contractor: 20, viewer: 10,
+  };
+  const sorted = [...list].sort((a, b) => {
+    const ra = rank[String(a.role_new || a.role || "").toLowerCase()] ?? 0;
+    const rb = rank[String(b.role_new || b.role || "").toLowerCase()] ?? 0;
+    if (rb !== ra) return rb - ra;
+    return (b.company_id ? 1 : 0) - (a.company_id ? 1 : 0);
+  });
+  return sorted[0] ?? null;
+}
+
+function resolveParentGcId(
+  authorCompanyId: string | null,
+  companies: Array<{ id: string; type?: string | null; parent_company_id?: string | null }>,
+): string | null {
+  const byId = new Map(companies.map((c) => [c.id, c]));
+  const author = authorCompanyId ? byId.get(authorCompanyId) : undefined;
+  if (author && normalizeCoType(author.type) === "gc") return author.id;
+  const walk = (startId: string | null | undefined): string | null => {
+    let cur = startId || null;
+    const seen = new Set<string>();
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      const node = byId.get(cur);
+      if (!node) break;
+      if (normalizeCoType(node.type) === "gc") return node.id;
+      cur = node.parent_company_id || null;
+    }
+    return null;
+  };
+  const fromParent = walk(author?.parent_company_id);
+  if (fromParent) return fromParent;
+  const gcs = companies.filter((c) => normalizeCoType(c.type) === "gc");
+  if (gcs.length === 1) return gcs[0].id;
+  return null;
+}
+
+function mapProjectCompanies(links: any[]): Array<{ id: string; name: string; type: string | null; parent_company_id: string | null }> {
+  return (links || [])
+    .map((l: any) => {
+      const c = l.companies;
+      if (!c || c.is_deleted === true) return null;
+      return {
+        id: c.id as string,
+        name: c.name as string,
+        type: c.type || l.role_in_project || null,
+        parent_company_id: l.parent_company_id ?? c.parent_company_id ?? null,
+      };
+    })
+    .filter(Boolean) as Array<{ id: string; name: string; type: string | null; parent_company_id: string | null }>;
+}
+
 function positionLabel(pos?: string | null): string {
   const key = pos || "";
   return POSITION_LABELS[key] || POSITION_LABELS[key.toLowerCase()] || key || "";
@@ -129,7 +200,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const [projectRes, itemsRes, participantsRes, feedbackRes, validationRes, approvalsRes, companiesRes] = await Promise.all([
+    const [projectRes, itemsRes, participantsRes, feedbackRes, validationRes, approvalsRes, companyLinksRes] = await Promise.all([
       supabase.from("projects").select("*").eq("id", run.project_id).single(),
       supabase.from("risk_items").select("*").eq("run_id", runId).order("sort_order"),
       supabase.from("assessment_run_participants").select("*").eq("run_id", runId),
@@ -138,7 +209,10 @@ Deno.serve(async (req) => {
         ? supabase.from("validation_results").select("*").eq("run_id", runId)
         : Promise.resolve({ data: [] }),
       supabase.from("approvals").select("*").eq("run_id", runId).order("approval_version", { ascending: false }),
-      supabase.from("companies").select("id, name, type").eq("project_id", run.project_id),
+      supabase.from("project_companies")
+        .select("company_id, parent_company_id, role_in_project, companies:company_id(id, name, type, parent_company_id, is_deleted)")
+        .eq("project_id", run.project_id)
+        .eq("is_deleted", false),
     ]);
 
     const project = projectRes.data;
@@ -147,32 +221,35 @@ Deno.serve(async (req) => {
     const feedbackItems = feedbackRes.data || [];
     const validationResults = (validationRes as any).data || [];
     const approvals = approvalsRes.data || [];
-    const projectCompanies = companiesRes.data || [];
+    let projectCompanies = mapProjectCompanies(companyLinksRes.data || []);
+    if (projectCompanies.length === 0) {
+      const { data: legacyCos } = await supabase
+        .from("companies")
+        .select("id, name, type, parent_company_id")
+        .eq("project_id", run.project_id)
+        .eq("is_deleted", false);
+      projectCompanies = (legacyCos || []).map((c: any) => ({
+        id: c.id, name: c.name, type: c.type, parent_company_id: c.parent_company_id || null,
+      }));
+    }
 
-    // Derive client/contractor from companies table (SSOT) — no fallback to legacy text fields
-    const clientCompanyName = projectCompanies.find((c: any) => c.type === 'client')?.name || '';
+    const clientCompanyName = projectCompanies.find((c) => normalizeCoType(c.type) === "client")?.name || "(미지정)";
 
-    // Scope GC display: 1) target_company_ids 2) target_contractors 명단 3) 작성자 소속 회사 4) (미지정)
-    let gcCompanyNames = '';
-    const targetIds: string[] = Array.isArray((run as any).target_company_ids) ? (run as any).target_company_ids : [];
-    const gcLike = projectCompanies.filter((c: any) => c.type === 'gc' || c.type === 'contractor');
-    if (targetIds.length > 0) {
-      gcCompanyNames = gcLike.filter((c: any) => targetIds.includes(c.id)).map((c: any) => c.name).join(', ');
+    let authorCompanyName = "(미지정)";
+    let gcCompanyNames = "(미지정)";
+    if (run.created_by) {
+      const { data: pmRows } = await supabase
+        .from("project_members")
+        .select("company_id, role_new, companies:company_id(name, type)")
+        .eq("user_id", run.created_by)
+        .eq("project_id", run.project_id);
+      const pm = pickMemberRow(pmRows || []);
+      const co = (pm as any)?.companies;
+      const authorCompanyId = (pm as any)?.company_id || null;
+      authorCompanyName = String(co?.name || "").trim() || "(미지정)";
+      const gcId = resolveParentGcId(authorCompanyId, projectCompanies);
+      gcCompanyNames = String(projectCompanies.find((c) => c.id === gcId)?.name || "").trim() || "(미지정)";
     }
-    if (!gcCompanyNames) {
-      const targetNames: string[] = Array.isArray((run as any).target_contractors) ? (run as any).target_contractors : [];
-      if (targetNames.length > 0) gcCompanyNames = targetNames.join(', ');
-    }
-    if (!gcCompanyNames && run.created_by) {
-      const { data: pm } = await supabase
-        .from('project_members')
-        .select('company_id, company, companies(name)')
-        .eq('user_id', run.created_by)
-        .eq('project_id', run.project_id)
-        .maybeSingle();
-      gcCompanyNames = (pm as any)?.companies?.name || (pm as any)?.company || '';
-    }
-    if (!gcCompanyNames) gcCompanyNames = '(미지정)';
 
 
 
@@ -535,14 +612,18 @@ td, th { page-break-inside: auto; }
         <div class="report-info-value">${gcCompanyNames}</div>
       </div>
       <div class="report-info-row">
+        <div class="report-info-label">작성 회사</div>
+        <div class="report-info-value">${authorCompanyName}</div>
         <div class="report-info-label">적용기간</div>
         <div class="report-info-value">${runPeriod}</div>
-        <div class="report-info-label">항목수</div>
-        <div class="report-info-value">${items.length}건 (상 ${highCount} / 중 ${medCount} / 하 ${lowCount})</div>
       </div>
       <div class="report-info-row">
+        <div class="report-info-label">항목수</div>
+        <div class="report-info-value">${items.length}건 (상 ${highCount} / 중 ${medCount} / 하 ${lowCount})</div>
         <div class="report-info-label">검증결과</div>
         <div class="report-info-value">${run.validation_verdict || "-"} ${run.validation_score != null ? `(${run.validation_score}점)` : ""}</div>
+      </div>
+      <div class="report-info-row">
         <div class="report-info-label">출력일</div>
         <div class="report-info-value">${today}</div>
       </div>

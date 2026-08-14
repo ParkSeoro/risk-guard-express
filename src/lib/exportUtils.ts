@@ -27,6 +27,8 @@ interface ProjectInfo {
   site_name: string;
   client: string;
   contractor: string;
+  /** 작성자 소속 회사 (시공사와 다를 수 있음) */
+  author_company?: string;
   period_start: string;
   period_end: string;
 }
@@ -171,7 +173,7 @@ export async function exportToPDF(
     doc.setFontSize(10);
     doc.text(`Project: ${project.name}`, 14, 32);
     doc.text(`Site: ${project.site_name}`, 14, 37);
-    doc.text(`Client: ${project.client} / Contractor: ${project.contractor}`, 14, 42);
+    doc.text(`Client: ${project.client} / GC: ${project.contractor}${project.author_company ? ` / Author: ${project.author_company}` : ''}`, 14, 42);
     doc.text(`Period: ${project.period_start || ''} ~ ${project.period_end || ''}`, 14, 47);
     doc.text(`Date: ${new Date().toISOString().slice(0, 10)}`, 14, 52);
 
@@ -342,7 +344,7 @@ export async function exportToXLSX(items: RiskRow[], project: ProjectInfo, maste
 
   const wsData: any[][] = [
     [title],
-    [`현장명: ${project.site_name}`, '', '', `발주사: ${project.client}`, '', '', `시공사: ${project.contractor}`],
+    [`현장명: ${project.site_name}`, '', '', `발주사: ${project.client}`, '', '', `시공사: ${project.contractor}`, '', '', `작성 회사: ${project.author_company || ''}`],
     [`기간: ${project.period_start || ''} ~ ${project.period_end || ''}`],
     [],
   ];

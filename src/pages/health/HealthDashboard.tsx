@@ -18,12 +18,13 @@ type Stats = {
 
 export default function HealthDashboard() {
   const handle = useToastError();
-  const { selectedProject: projectId, applyCompanyFilter, accessibleCompanyIds } =
+  const { selectedProject: projectId, applyCompanyFilter, accessibleCompanyIds, scopeStatus } =
     useGlobalProjectAccess();
   const [stats, setStats] = useState<Stats | null>(null);
 
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== 'ready') return;
+    let cancelled = false;
     (async () => {
       try {
         const workersBase = () =>
@@ -70,6 +71,7 @@ export default function HealthDashboard() {
             .eq("is_active", true)
             .eq("is_deleted", false),
         ]);
+        if (cancelled) return;
         setStats({
           workers: w || 0,
           notChecked: notC || 0,
@@ -83,7 +85,8 @@ export default function HealthDashboard() {
         handle(e, "보건 통계 조회");
       }
     })();
-  }, [projectId, applyCompanyFilter, accessibleCompanyIds, handle]);
+    return () => { cancelled = true; };
+  }, [projectId, applyCompanyFilter, accessibleCompanyIds, scopeStatus, handle]);
 
   if (!projectId) return <div className="p-6 text-muted-foreground">프로젝트를 선택해주세요.</div>;
 

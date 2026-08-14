@@ -8,6 +8,8 @@ import {
   resolveAssessmentRunCompanyLabels,
   formatCompanyLabelsShort,
   formatCreatorCompanyLabel,
+  pickProjectMemberRow,
+  resolveAssessmentDocumentCompanies,
   seesProjectWideCompanies,
 } from '@/lib/companyDocScope';
 
@@ -138,6 +140,81 @@ describe('resolveAssessmentRunCompanyLabels', () => {
 
   it('shortens long company lists', () => {
     expect(formatCompanyLabelsShort(['A', 'B', 'C', 'D'], 2)).toBe('A, B 외 2');
+  });
+});
+
+describe('pickProjectMemberRow', () => {
+  it('prefers selectedCompanyId when dual persona rows exist', () => {
+    const rows = [
+      { company_id: 'gc-a', role_new: 'site_supervisor' },
+      { company_id: 'c1', role_new: 'worker' },
+    ];
+    expect(pickProjectMemberRow(rows, 'c1')?.company_id).toBe('c1');
+  });
+
+  it('picks higher role when no preferred company', () => {
+    const rows = [
+      { company_id: 'c1', role_new: 'worker' },
+      { company_id: 'gc-a', role_new: 'site_supervisor' },
+    ];
+    expect(pickProjectMemberRow(rows)?.company_id).toBe('gc-a');
+  });
+
+  it('returns null for empty', () => {
+    expect(pickProjectMemberRow([])).toBeNull();
+    expect(pickProjectMemberRow(null)).toBeNull();
+  });
+});
+
+describe('resolveAssessmentDocumentCompanies', () => {
+  const companies = [
+    { id: 'client-1', name: '발주A', type: 'client', parent_company_id: null },
+    { id: 'gc-a', name: '시공A', type: 'gc', parent_company_id: null },
+    { id: 'gc-b', name: '시공B', type: 'gc', parent_company_id: null },
+    { id: 'c1', name: '정원이엔씨', type: 'contractor', parent_company_id: 'gc-a' },
+    { id: 'c2', name: '다른협력', type: 'contractor', parent_company_id: 'gc-b' },
+  ];
+
+  it('uses creator company as 작성 회사 and parent GC only as 시공사', () => {
+    const out = resolveAssessmentDocumentCompanies({
+      authorCompanyId: 'c1',
+      authorCompanyName: '정원이엔씨',
+      authorCompanyType: 'contractor',
+      companies,
+    });
+    expect(out.authorCompanyName).toBe('정원이엔씨');
+    expect(out.gcCompanyName).toBe('시공A');
+    expect(out.clientCompanyName).toBe('발주A');
+    expect(out.gcCompanyName).not.toContain('시공B');
+    expect(out.gcCompanyName).not.toContain('다른협력');
+  });
+
+  it('does not dump all gc/contractor names for master-like viewers', () => {
+    const out = resolveAssessmentDocumentCompanies({
+      authorCompanyId: 'c1',
+      companies,
+    });
+    expect(out.gcCompanyName).toBe('시공A');
+    expect(out.gcCompanyName.split(',').length).toBe(1);
+  });
+
+  it('uses the author company itself when the author is GC', () => {
+    const out = resolveAssessmentDocumentCompanies({
+      authorCompanyId: 'gc-a',
+      companies,
+    });
+    expect(out.authorCompanyName).toBe('시공A');
+    expect(out.gcCompanyName).toBe('시공A');
+  });
+
+  it('returns 미지정 instead of listing every company when parent GC is unknown', () => {
+    const out = resolveAssessmentDocumentCompanies({
+      authorCompanyId: 'orphan',
+      authorCompanyName: '고아업체',
+      companies,
+    });
+    expect(out.authorCompanyName).toBe('고아업체');
+    expect(out.gcCompanyName).toBe('(미지정)');
   });
 });
 

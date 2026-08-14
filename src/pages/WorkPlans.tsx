@@ -50,12 +50,13 @@ const WorkPlans = () => {
   const [runs, setRuns] = useState<any[]>([]);
 
   useEffect(() => {
+    if (access.scopeStatus !== 'ready') return;
     if (access.selectedProject) {
       loadPlans();
       loadCompanies();
       loadRuns();
     }
-  }, [access.selectedProject, access.userCompanyId]);
+  }, [access.selectedProject, access.userCompanyId, access.accessibleCompanyIds, access.scopeStatus]);
 
   const loadRuns = async () => {
     if (!access.selectedProject) return;
@@ -230,7 +231,7 @@ const WorkPlans = () => {
       ? plans.filter(p => APPROVED_PLAN_STATUSES.has(p.status))
       : plans.filter(p => p.status === statusFilter);
 
-  if (access.loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
+  if (access.loading || access.scopeStatus !== 'ready') return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
 
   return (
     <div className="space-y-4 animate-fade-in">

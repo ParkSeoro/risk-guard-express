@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -93,6 +93,7 @@ const Approvals = () => {
     userCompanyType,
     userRole,
     accessibleCompanyIds,
+    scopeStatus,
   } = useGlobalProjectAccess();
   const { toast } = useToast();
   const { log } = useAuditLog();
@@ -103,6 +104,7 @@ const Approvals = () => {
   const [tab, setTab] = useState('mine');
   const [entityPending, setEntityPending] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const fetchSeqRef = useRef(0);
   const [search, setSearch] = useState('');
   const [entityTypeFilter, setEntityTypeFilter] = useState<'all' | ApprovalEntityType>('all');
 
@@ -216,13 +218,15 @@ const Approvals = () => {
   };
 
   const fetchData = async () => {
-    if (!selectedProject) { setLoading(false); return; }
+    if (!selectedProject || scopeStatus !== 'ready') return;
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     try {
       const [a, r] = await Promise.all([
         supabase.from('approvals').select('*').eq('project_id', selectedProject).order('created_at', { ascending: false }),
         supabase.from('assessment_runs').select('*').eq('project_id', selectedProject).eq('is_deleted', false).neq('status', '폐기'),
       ]);
+      if (seq !== fetchSeqRef.current) return;
       let approvalsData = a.data || [];
       let runsData = r.data || [];
 
@@ -242,11 +246,18 @@ const Approvals = () => {
       setApprovals(approvalsData);
       setRuns(runsData);
     } finally {
-      setLoading(false);
+      if (seq === fetchSeqRef.current) setLoading(false);
     }
   };
 
-  useEffect(() => { fetchData(); fetchEntityPending(); }, [selectedProject, userCompanyId, accessibleCompanyIds]);
+  useEffect(() => {
+    if (scopeStatus !== 'ready') {
+      setLoading(true);
+      return;
+    }
+    fetchData();
+    fetchEntityPending();
+  }, [selectedProject, userCompanyId, accessibleCompanyIds, scopeStatus]);
 
   // Realtime: approvals 변경 시 즉시 갱신
   useEffect(() => {

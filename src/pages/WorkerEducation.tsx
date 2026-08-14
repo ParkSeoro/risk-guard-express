@@ -32,6 +32,7 @@ export default function WorkerEducation() {
     accessibleCompanyIds,
     seesAllCompanies,
     applyCompanyFilter,
+    scopeStatus,
   } = useGlobalProjectAccess();
   const { softDelete } = useSoftDelete();
   const [rows, setRows] = useState<Row[]>([]);
@@ -49,7 +50,7 @@ export default function WorkerEducation() {
   const myCompanyId: string | null = userCompanyId ?? null;
 
   async function load() {
-    if (!projectId) return;
+    if (!projectId || scopeStatus !== 'ready') return;
     setLoading(true);
     let rq = supabase.from("worker_education_records").select("*").eq("project_id", projectId).eq("is_deleted", false);
     let wq = supabase.from("workers").select("id, name, company_id").eq("project_id", projectId);
@@ -65,7 +66,13 @@ export default function WorkerEducation() {
     setWorkers((ws as Worker[]) || []);
     setLoading(false);
   }
-  useEffect(() => { load(); }, [projectId, accessibleCompanyIds, seesAllCompanies]);
+  useEffect(() => {
+    if (scopeStatus !== 'ready') {
+      setLoading(true);
+      return;
+    }
+    load();
+  }, [projectId, accessibleCompanyIds, seesAllCompanies, scopeStatus]);
 
   const today = new Date().toISOString().slice(0, 10);
   const workerMap = useMemo(() => Object.fromEntries(workers.map(w => [w.id, w])), [workers]);

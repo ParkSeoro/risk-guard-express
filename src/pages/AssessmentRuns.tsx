@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -24,6 +24,8 @@ import CloneRunDialog from '@/components/assessment-runs/CloneRunDialog';
 import {
   fetchCreatorCompanyLabelMap,
   filterRunsByCompanyScope,
+  pickProjectMemberRow,
+  readPreferredCompanyId,
 } from '@/lib/companyDocScope';
 
 const typeLabels: Record<string, string> = { '최초': '최초', '정기': '정기', '수시': '수시', '상시': '상시' };
@@ -72,7 +74,7 @@ const AssessmentRuns = () => {
   const { log } = useAuditLog();
   const [projectRole, setProjectRole] = useState<string | null>(null);
 
-  const { selectedProject, userCompanyId, userCompanyType, userRole, isMaster, accessibleCompanyIds } = useGlobalProjectAccess();
+  const { selectedProject, isMaster, accessibleCompanyIds, scopeStatus } = useGlobalProjectAccess();
   const [runs, setRuns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -101,6 +103,8 @@ const AssessmentRuns = () => {
   const [cloneRun, setCloneRun] = useState<any>(null);
 
 
+  const fetchSeqRef = useRef(0);
+
   // Fetch contractors for selected project (contractor + vendor types)
   const [allProjectCompanies, setAllProjectCompanies] = useState<{ id: string; name: string; type: string }[]>([]);
   const fetchContractors = async () => {
@@ -120,11 +124,11 @@ const AssessmentRuns = () => {
     if (isMaster) { setProjectRole('master'); return; }
     const { data } = await supabase
       .from('project_members')
-      .select('role_new')
+      .select('role_new, company_id')
       .eq('project_id', selectedProject)
-      .eq('user_id', user.id)
-      .maybeSingle();
-    setProjectRole(data?.role_new || null);
+      .eq('user_id', user.id);
+    const picked = pickProjectMemberRow((data || []) as any[], readPreferredCompanyId());
+    setProjectRole((picked as any)?.role_new || null);
   };
 
   // 고시 §7: 작성 주체 = 관리감독자(site_supervisor). SM은 보좌·검토로 생성도 가능.
@@ -135,7 +139,8 @@ const AssessmentRuns = () => {
     projectRole === 'safety_manager';
 
   const fetchRuns = async () => {
-    if (!selectedProject) return;
+    if (!selectedProject || scopeStatus !== 'ready') return;
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     let query = supabase.from('assessment_runs')
       .select('*')
@@ -147,6 +152,7 @@ const AssessmentRuns = () => {
       query = query.eq('is_deleted', false).neq('status', '폐기');
     }
     const { data } = await query;
+    if (seq !== fetchSeqRef.current) return;
     const list = filterRunsByCompanyScope(data || [], {
       userId: user?.id,
       accessibleCompanyIds,
@@ -162,6 +168,7 @@ const AssessmentRuns = () => {
           .in('run_id', runIds),
         fetchCreatorCompanyLabelMap(selectedProject, creatorIds).catch(() => ({})),
       ]);
+      if (seq !== fetchSeqRef.current) return;
       setCreatorCompanyMap(creatorMap);
       const stats: Record<string, { total: number; high: number; med: number; low: number }> = {};
       (items || []).forEach((item: any) => {
@@ -176,10 +183,19 @@ const AssessmentRuns = () => {
     } else {
       setCreatorCompanyMap({});
     }
+    if (seq !== fetchSeqRef.current) return;
     setLoading(false);
   };
 
-  useEffect(() => { fetchProjectRole(); fetchRuns(); fetchContractors(); }, [selectedProject, showDeleted, accessibleCompanyIds]);
+  useEffect(() => {
+    if (scopeStatus !== 'ready') {
+      setLoading(true);
+      return;
+    }
+    fetchProjectRole();
+    fetchRuns();
+    fetchContractors();
+  }, [selectedProject, showDeleted, accessibleCompanyIds, scopeStatus]);
 
   const toggleContractor = (id: string) => {
     setForm(prev => ({

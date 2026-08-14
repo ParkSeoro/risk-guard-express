@@ -3,6 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   applyOwnCompanyFilter,
+  pickProjectMemberRow,
+  readPreferredCompanyId,
   resolveAccessibleCompanyIds,
   seesProjectWideCompanies,
 } from '@/lib/companyDocScope';
@@ -165,6 +167,11 @@ export interface ProjectAccess {
   isContractor: boolean; // legacy alias = isWorker
   loading: boolean;
   /**
+   * pending until member + allowlist resolve. Lists must not fetch while pending
+   * (empty [] allowlist would look like "no documents").
+   */
+  scopeStatus: 'pending' | 'ready';
+  /**
    * null = project-wide (master / 발주처 PA·SM).
    * string[] = allowed company_ids (own or own+descendants for GC).
    * [] = restrictive (loading / no membership).
@@ -201,6 +208,7 @@ export function useProjectAccess(): ProjectAccess {
   });
   const [memberInfo, setMemberInfo] = useState<MemberInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [scopeStatus, setScopeStatus] = useState<'pending' | 'ready'>('pending');
   // [] until resolved — never flash "all" for non-master
   const [accessibleCompanyIds, setAccessibleCompanyIds] = useState<string[] | null>([]);
 
@@ -214,11 +222,69 @@ export function useProjectAccess(): ProjectAccess {
   }, [user, isMaster]);
 
   useEffect(() => {
-    if (selectedProject && user && !isMaster) {
-      loadMemberInfo();
-    } else if (isMaster) {
-      setMemberInfo({ role: 'master', position: null, company_id: null, company_type: null });
-    }
+    let cancelled = false;
+    (async () => {
+      if (isMaster) {
+        if (!cancelled) {
+          setMemberInfo({ role: 'master', position: null, company_id: null, company_type: null });
+          setAccessibleCompanyIds(null);
+          setScopeStatus('ready');
+        }
+        return;
+      }
+      if (!user) {
+        if (!cancelled) {
+          setMemberInfo(null);
+          setAccessibleCompanyIds([]);
+          setScopeStatus('ready');
+        }
+        return;
+      }
+      if (!selectedProject) {
+        if (!cancelled) {
+          setMemberInfo(null);
+          setAccessibleCompanyIds([]);
+          setScopeStatus('pending');
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setScopeStatus('pending');
+        setAccessibleCompanyIds([]);
+      }
+
+      const { data } = await supabase
+        .from('project_members')
+        .select('company_id, role_new, position_new, companies(type)' as any)
+        .eq('user_id', user.id)
+        .eq('project_id', selectedProject);
+
+      if (cancelled) return;
+
+      const picked = pickProjectMemberRow((data || []) as any[], readPreferredCompanyId());
+      const nextMember: MemberInfo | null = picked
+        ? {
+            role: normalizeRole((picked as any).role_new),
+            position: ((picked as any).position_new || null) as ProjectPosition,
+            company_id: (picked as any).company_id || null,
+            company_type: ((picked as any).companies?.type as CompanyType) || null,
+          }
+        : null;
+
+      const ids = await resolveAccessibleCompanyIds({
+        projectId: selectedProject,
+        companyId: nextMember?.company_id,
+        companyType: nextMember?.company_type,
+        role: nextMember?.role || 'viewer',
+        isMaster: false,
+      });
+      if (cancelled) return;
+      setMemberInfo(nextMember);
+      setAccessibleCompanyIds(ids === null ? null : ids);
+      setScopeStatus('ready');
+    })();
+    return () => { cancelled = true; };
   }, [selectedProject, user, isMaster]);
 
   const loadProjects = async () => {
@@ -264,27 +330,6 @@ export function useProjectAccess(): ProjectAccess {
     setLoading(false);
   };
 
-  const loadMemberInfo = async () => {
-    if (!user || !selectedProject) return;
-    // Read project-scoped role/position columns.
-    const { data } = await supabase
-      .from('project_members')
-      .select('company_id, role_new, position_new, companies(type)' as any)
-      .eq('user_id', user.id)
-      .eq('project_id', selectedProject)
-      .maybeSingle();
-
-    if (data) {
-      const d = data as any;
-      setMemberInfo({
-        role: normalizeRole(d.role_new),
-        position: (d.position_new || null) as ProjectPosition,
-        company_id: d.company_id || null,
-        company_type: (d.companies?.type as CompanyType) || null,
-      });
-    }
-  };
-
   const userRole = useMemo<ProjectRole>(
     () => (isMaster ? 'master' : memberInfo?.role || 'viewer'),
     [isMaster, memberInfo],
@@ -310,31 +355,6 @@ export function useProjectAccess(): ProjectAccess {
   const userCompanyId = isMaster ? null : (memberInfo?.company_id || null);
   const userCompanyType: CompanyType = isMaster ? null : (memberInfo?.company_type ?? null);
   const userPosition: ProjectPosition = isMaster ? null : (memberInfo?.position ?? null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (isMaster) {
-        if (!cancelled) setAccessibleCompanyIds(null); // null = project-wide
-        return;
-      }
-      // Restrictive until member/scope resolves — never treat unknown as "all"
-      if (!selectedProject || !memberInfo) {
-        if (!cancelled) setAccessibleCompanyIds([]);
-        return;
-      }
-      const ids = await resolveAccessibleCompanyIds({
-        projectId: selectedProject,
-        companyId: memberInfo.company_id,
-        companyType: memberInfo.company_type,
-        role: memberInfo.role || userRole,
-        isMaster: false,
-      });
-      // null only when mode=all (발주처 admin); otherwise string[]
-      if (!cancelled) setAccessibleCompanyIds(ids === null ? null : ids);
-    })();
-    return () => { cancelled = true; };
-  }, [isMaster, selectedProject, memberInfo, userRole]);
 
   const applyCompanyFilter = useCallback(
     (query: any, opts?: { includeOrphans?: boolean }): any =>
@@ -372,6 +392,7 @@ export function useProjectAccess(): ProjectAccess {
       userRole === 'site_supervisor' || userRole === 'worker'
     ),
     loading,
+    scopeStatus,
     accessibleCompanyIds,
     seesAllCompanies,
     applyCompanyFilter,

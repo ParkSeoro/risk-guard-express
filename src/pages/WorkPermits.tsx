@@ -841,6 +841,15 @@ export default function WorkPermits() {
           entityId={approvalTarget.id}
           projectId={projectId}
           submitterCompanyId={approvalTarget.company_id || userCompanyId || null}
+          permitBriefingContext={{
+            permitKinds: normalizePermitKinds(approvalTarget.permit_kinds, approvalTarget.permit_type),
+            formData: (approvalTarget.form_data || {}) as Record<string, unknown>,
+            workName: approvalTarget.work_name,
+            workDescription: approvalTarget.work_description,
+            workLocation: approvalTarget.location || approvalTarget.form_data?.work_location,
+            permitDate: resolvePermitWorkDate(approvalTarget) || approvalTarget.permit_date,
+            contractorCompany: resolvePermitCompanyName(approvalTarget, companyNameById) || approvalTarget.contractor_company,
+          }}
           onSubmitted={() => { setApprovalTarget(null); load(); }}
         />
       )}

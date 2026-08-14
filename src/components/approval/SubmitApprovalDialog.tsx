@@ -64,6 +64,7 @@ export interface PermitBriefingContext {
   workDescription?: string;
   workLocation?: string;
   permitDate?: string;
+  contractorCompany?: string;
 }
 
 interface Props {
@@ -294,26 +295,55 @@ export default function SubmitApprovalDialog({
     setSubmitting(true);
     try {
       // 작업허가서: 상신 직전 AI 결재 브리핑 생성·저장 (실패해도 로컬 폴백 후 상신 진행)
-      if (entityType === 'work_permit' && permitBriefingContext) {
+      if (entityType === 'work_permit') {
+        const ctx = permitBriefingContext;
         try {
           await generatePermitAiBriefing({
             permitId: entityId,
             projectId,
-            formData: permitBriefingContext.formData,
-            permitKinds: permitBriefingContext.permitKinds,
-            workName: permitBriefingContext.workName,
-            workDescription: permitBriefingContext.workDescription,
-            workLocation: permitBriefingContext.workLocation,
-            permitDate: permitBriefingContext.permitDate,
+            formData: ctx?.formData || {},
+            permitKinds: ctx?.permitKinds,
+            workName: ctx?.workName,
+            workDescription: ctx?.workDescription,
+            workLocation: ctx?.workLocation,
+            permitDate: ctx?.permitDate,
+            contractorCompany: ctx?.contractorCompany,
           });
         } catch (briefErr) {
           console.warn('AI briefing fallback', briefErr);
+          let formData = ctx?.formData || {};
+          let permitKinds = ctx?.permitKinds;
+          let workName = ctx?.workName;
+          let workDescription = ctx?.workDescription;
+          let workLocation = ctx?.workLocation;
+          let permitDate = ctx?.permitDate;
+          let contractorCompany = ctx?.contractorCompany;
+          let workStartAt: string | undefined;
+          if (!ctx) {
+            const { data: p } = await supabase
+              .from('work_permits' as any)
+              .select('permit_kinds, permit_type, form_data, work_name, work_description, location, permit_date, contractor_company, work_start_at')
+              .eq('id', entityId)
+              .maybeSingle();
+            const row = p as any;
+            formData = row?.form_data || {};
+            permitKinds = row?.permit_kinds || (row?.permit_type ? [row.permit_type] : []);
+            workName = row?.work_name;
+            workDescription = row?.work_description;
+            workLocation = row?.location;
+            permitDate = row?.permit_date;
+            contractorCompany = row?.contractor_company;
+            workStartAt = row?.work_start_at;
+          }
           const local = buildLocalPermitBriefing({
-            formData: permitBriefingContext.formData,
-            permitKinds: permitBriefingContext.permitKinds,
-            workName: permitBriefingContext.workName,
-            workDescription: permitBriefingContext.workDescription,
-            workLocation: permitBriefingContext.workLocation,
+            formData,
+            permitKinds,
+            workName,
+            workDescription,
+            workLocation,
+            permitDate,
+            contractorCompany,
+            workStartAt,
           });
           await supabase.from('work_permits' as any).update({ ai_briefing: local }).eq('id', entityId);
         }

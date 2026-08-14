@@ -81,6 +81,7 @@ import {
 import { ADMIN_PROJECT_ROLES } from '@/lib/permissions';
 import {
   POSITION_LABELS as SSOT_POSITION_LABELS,
+  canManuallyActOnApprovalStep,
   isSubmitterApprovalStep,
   sequentialDisplayStatus,
   sortStepsByHierarchy,
@@ -1337,15 +1338,25 @@ const AssessmentRunDetail = () => {
       .select('approval_version').eq('run_id', runId).order('approval_version', { ascending: false }).limit(1);
     const currentVersion = latestVersionData?.[0]?.approval_version || 1;
 
-    // Find current step assigned to me (진행중)
-    const { data: myStep } = await supabase.from('approvals')
-      .select('id, step')
+    // Find current step assigned to me (진행중) — 상신칸은 수동 결재 불가
+    const { data: mySteps } = await supabase.from('approvals')
+      .select('id, step, position, status, approver_id')
       .eq('run_id', runId).eq('approval_version', currentVersion)
-      .eq('status', '진행중').eq('approver_id', user.id)
-      .limit(1).maybeSingle();
+      .eq('status', '진행중').eq('approver_id', user.id);
 
+    const myStep = (mySteps || []).find((s) =>
+      canManuallyActOnApprovalStep({ actorUserId: user.id, step: s }).ok,
+    );
     if (!myStep) {
-      toast({ title: '결재 권한이 없습니다.', description: '현재 진행중 단계의 지정된 결재자만 승인/반려할 수 있습니다.', variant: 'destructive' });
+      const blocked = (mySteps || [])[0];
+      const why = blocked
+        ? canManuallyActOnApprovalStep({ actorUserId: user.id, step: blocked }).reason
+        : 'NOT_ACTIVE_STEP';
+      const desc =
+        why === 'SUBMITTER_STEP_NO_SELF_APPROVE'
+          ? '담당자(시공) 상신 단계는 상신 시 자동 완료됩니다. 다음 결재자의 순서를 기다리세요.'
+          : '현재 진행중 단계의 지정된 결재자만 승인/반려할 수 있습니다.';
+      toast({ title: '결재 권한이 없습니다.', description: desc, variant: 'destructive' });
       return;
     }
 

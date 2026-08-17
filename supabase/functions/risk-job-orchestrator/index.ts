@@ -2,6 +2,11 @@
 // 비동기 백그라운드로 batch 분할 + 병렬 호출 + 진행률 업데이트
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  buildRiskAiBatchRequestBody,
+  isJsonContentType,
+  parseRiskAiBatchJsonResult,
+} from "../_shared/riskAiBatchContract.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -70,30 +75,42 @@ async function runBatch(
         Authorization: `Bearer ${serviceKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        ...baseBody,
-        process_name: task.subProcess,
-        target_count: task.count,
-        batch_index: 0,
-        batch_size: task.count,
-      }),
+      body: JSON.stringify(
+        buildRiskAiBatchRequestBody(baseBody || {}, {
+          subProcess: task.subProcess,
+          count: task.count,
+          index: task.index,
+        }),
+      ),
     });
 
     const latency = Date.now() - startTime;
+    const contentType = resp.headers.get("content-type");
+    if (!resp.ok) {
+      const preview = (await resp.text()).slice(0, 400);
+      throw new Error(`generate-risk-ai HTTP ${resp.status}: ${preview}`);
+    }
+    if (!isJsonContentType(contentType)) {
+      throw new Error(
+        `generate-risk-ai expected application/json, got ${contentType || "(missing)"}`,
+      );
+    }
+
     const result = await resp.json();
-    const items = Array.isArray(result?.items) ? result.items : [];
+    const parsed = parseRiskAiBatchJsonResult(result);
+    const items = parsed.items;
 
     await admin.from("ai_generation_logs").insert({
       job_id: jobId,
       batch_index: task.index,
       prompt: `subProcess=${task.subProcess}, count=${task.count}`,
-      raw_response: { itemCount: items.length, source: result?.source } as any,
-      model: result?.source || "ai",
+      raw_response: { itemCount: items.length, source: parsed.source } as any,
+      model: parsed.source || "ai",
       latency_ms: latency,
-      error: result?.error || null,
+      error: parsed.error || (items.length === 0 ? "empty_items" : null),
     });
 
-    return items;
+    return items as any[];
   } catch (err: any) {
     await admin.from("ai_generation_logs").insert({
       job_id: jobId,

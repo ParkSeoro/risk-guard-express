@@ -236,8 +236,22 @@ serve(async (req) => {
       source: string,
     ) => {
       send({ type: "meta", source, mode: "accident", process: processName });
-      for (const c of cases) send({ type: "item", item: c, mode: "accident" });
-      send({ type: "done", source, count: cases.length, mode: "accident", is_complete: true });
+      const normalized: any[] = [];
+      for (const c of cases) {
+        const mapped = normalizeAccident(c);
+        if (!mapped) continue;
+        normalized.push(mapped);
+        // Same event shape as live AI path — clients only accumulate type:"accident".
+        send({ type: "accident", accident: mapped, mode: "accident" });
+      }
+      send({
+        type: "done",
+        source,
+        count: normalized.length,
+        mode: "accident",
+        is_complete: true,
+        accident_cases: normalized,
+      });
       if (source === "library") {
         await adminClient.from("ai_accident_cache").upsert(
           {

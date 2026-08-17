@@ -75,8 +75,11 @@ export default function MasterAlarmSimulator({ projectId, className }: Props) {
         ) : (
           <Siren className="h-5 w-5 mr-2" />
         )}
-        육성/푸시 알람 테스트
+        알람 시뮬레이션 (내 이름으로 테스트)
       </Button>
+      <p className="text-[11px] text-muted-foreground text-center mt-1">
+        GPS·현장 진입과 무관합니다. 사이렌에 로그인 이름이 나오는 것이 정상입니다.
+      </p>
     </>
   );
 }

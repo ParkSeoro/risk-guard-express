@@ -15,6 +15,12 @@ import {
   type RestrictedZoneGeom,
 } from "@/lib/tracking/restrictedZoneGeom";
 import { resolveBanSubject } from "@/lib/tracking/resolveBanSubject";
+import { isZoneEventAboutMe } from "@/lib/tracking/zoneEventAboutMe";
+import { shouldSuppressLocalSirenOffsite } from "@/lib/tracking/geofenceLocalAlarm";
+import {
+  resolveSiteTrackingFence,
+  type SiteTrackingFence,
+} from "@/lib/tracking/siteTrackBounds";
 import {
   clearStickyDangerAlert,
   loadStickyDangerAlert,
@@ -34,39 +40,13 @@ function isExitEventType(t: string): boolean {
   return /^(exit|leave|depart)/i.test(t) || /_exit$/i.test(t);
 }
 
-function digitsOnly(phone: string | null | undefined): string {
-  return (phone || "").replace(/\D/g, "");
-}
-
-/** Local TTS/siren is for the violator only — admins get push, not this modal. */
-function isZoneEventAboutMe(
-  ev: {
-    worker_phone?: string | null;
-    worker_qr_id?: string | null;
-    worker_name?: string | null;
-  },
-  opts: {
-    phone?: string | null;
-    workerId?: string | null;
-    displayName?: string | null;
-  },
-): boolean {
-  const evPhone = digitsOnly(ev.worker_phone);
-  const myPhone = digitsOnly(opts.phone);
-  if (evPhone && myPhone && evPhone === myPhone) return true;
-  if (ev.worker_qr_id && opts.workerId && ev.worker_qr_id === opts.workerId) return true;
-  const evName = (ev.worker_name || "").trim();
-  const myName = (opts.displayName || "").trim();
-  if (evName && myName && evName === myName) return true;
-  return false;
-}
-
 export default function ShellGeofenceAlerts() {
   const { user, profile } = useAuth();
   const { projectId, role, companyId } = useMobileAccess();
   const { lastGpsFix, lastZoneEvent, gpsTracking } = useSystemRealtime();
   const [alertZone, setAlertZone] = useState<{ id: string; name: string } | null>(null);
   const zonesRef = useRef<RestrictedZoneGeom[]>([]);
+  const fenceRef = useRef<SiteTrackingFence | null>(null);
   const subjectRef = useRef<BanSubject>({});
   const exitStreak = useRef(0);
   /** User tapped dismiss — suppress until they leave that zone. */
@@ -118,6 +98,11 @@ export default function ShellGeofenceAlerts() {
       .eq("is_deleted", false)
       .eq("is_active", true);
     zonesRef.current = (data || []) as unknown as RestrictedZoneGeom[];
+    try {
+      fenceRef.current = await resolveSiteTrackingFence(projectId);
+    } catch {
+      fenceRef.current = null;
+    }
     setAlertZone((prev) => {
       if (!prev) return prev;
       if (prev.id === "zone") return prev;
@@ -186,8 +171,24 @@ export default function ShellGeofenceAlerts() {
     let remove: (() => void) | undefined;
 
     const recheck = () => {
+      if (!gpsTracking) return;
       const sticky = loadStickyDangerAlert(projectId);
       const fix = lastGpsFixRef.current;
+      if (fix) {
+        const rawLat = fix.raw_lat ?? fix.lat;
+        const rawLng = fix.raw_lng ?? fix.lng;
+        if (
+          shouldSuppressLocalSirenOffsite({
+            fence: fenceRef.current,
+            rawLat,
+            rawLng,
+            accuracyM: fix.accuracy,
+          })
+        ) {
+          clearAlert();
+          return;
+        }
+      }
       if (fix && zonesRef.current.length) {
         const hit = findViolatingRestrictedZone(fix.lat, fix.lng, zonesRef.current, subjectRef.current);
         if (hit) {
@@ -224,10 +225,23 @@ export default function ShellGeofenceAlerts() {
       window.removeEventListener("focus", onVis);
       remove?.();
     };
-  }, [projectId, openAlert]);
+  }, [projectId, gpsTracking, openAlert, clearAlert]);
 
   useEffect(() => {
-    if (!lastGpsFix || !projectId) return;
+    if (!gpsTracking || !lastGpsFix || !projectId) return;
+    const rawLat = lastGpsFix.raw_lat ?? lastGpsFix.lat;
+    const rawLng = lastGpsFix.raw_lng ?? lastGpsFix.lng;
+    if (
+      shouldSuppressLocalSirenOffsite({
+        fence: fenceRef.current,
+        rawLat,
+        rawLng,
+        accuracyM: lastGpsFix.accuracy,
+      })
+    ) {
+      clearAlert();
+      return;
+    }
     const hit = findViolatingRestrictedZone(
       lastGpsFix.lat,
       lastGpsFix.lng,
@@ -247,7 +261,7 @@ export default function ShellGeofenceAlerts() {
     exitStreak.current = 0;
     if (dismissedZoneId.current === hit.id) return;
     openAlert({ id: hit.id, name: hit.name });
-  }, [lastGpsFix, projectId, openAlert, clearAlert]);
+  }, [lastGpsFix, projectId, gpsTracking, openAlert, clearAlert]);
 
   useEffect(() => {
     if (!lastZoneEvent) return;
@@ -265,7 +279,6 @@ export default function ShellGeofenceAlerts() {
       !isZoneEventAboutMe(ev, {
         phone: profile?.phone,
         workerId: subjectRef.current.worker_id,
-        displayName: profile?.display_name,
       })
     ) {
       return;
@@ -293,12 +306,27 @@ export default function ShellGeofenceAlerts() {
 
     if (!isEntryEventType(t)) return;
 
+    if (lastGpsFix) {
+      const rawLat = lastGpsFix.raw_lat ?? lastGpsFix.lat;
+      const rawLng = lastGpsFix.raw_lng ?? lastGpsFix.lng;
+      if (
+        shouldSuppressLocalSirenOffsite({
+          fence: fenceRef.current,
+          rawLat,
+          rawLng,
+          accuracyM: lastGpsFix.accuracy,
+        })
+      ) {
+        return;
+      }
+    }
+
     dismissedZoneId.current = null;
     openAlert({
       id: zoneId || "zone",
       name: ev.zone_name || "위험 구역",
     });
-  }, [lastZoneEvent, lastGpsFix, openAlert, clearAlert, profile?.phone, profile?.display_name]);
+  }, [lastZoneEvent, lastGpsFix, openAlert, clearAlert, profile?.phone]);
 
   return (
     <DangerZoneAlertModal

@@ -194,32 +194,27 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
     }
   }, [isCheckedIn, ackDone]);
 
-  // Lightweight position for check-in distance — not background tracking.
+  // One-shot check-in distance — do not poll (keeps the OS GPS icon on at home).
   useEffect(() => {
     if (!projectId || isCheckedIn || gpsTracking) return;
     if (!("geolocation" in navigator)) return;
     let cancelled = false;
-    const probe = () => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          if (cancelled) return;
-          setProbeFix({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-          });
-        },
-        () => {
-          /* ignore — UI stays on GPS 대기 */
-        },
-        { enableHighAccuracy: true, maximumAge: 15_000, timeout: 12_000 },
-      );
-    };
-    probe();
-    const t = window.setInterval(probe, 20_000);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (cancelled) return;
+        setProbeFix({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        });
+      },
+      () => {
+        /* ignore — UI stays on GPS 대기 */
+      },
+      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 12_000 },
+    );
     return () => {
       cancelled = true;
-      window.clearInterval(t);
     };
   }, [projectId, isCheckedIn, gpsTracking]);
 
@@ -488,19 +483,20 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
               size="sm"
               variant="outline"
               className="w-full"
-              onClick={() => {
+              onClick={async () => {
+                const { setTrackingConsent } = await import("@/lib/tracking/locationTracker");
+                setTrackingConsent(true);
                 try {
                   window.dispatchEvent(new Event("mobile:resume-gps-tracking"));
                 } catch { /* ignore */ }
-                void ensureConsentAndGps();
               }}
             >
-              GPS 추적 켜기 (알람 필수)
+              GPS 추적 다시 평가
             </Button>
           )}
           {!gpsTracking && (
             <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
-              추적 OFF면 위험구역에 들어가도 알람이 울리지 않습니다. 위 버튼으로 켠 뒤 구역 중앙에서 다시 확인하세요.
+              집·현장 밖에서는 추적이 켜지지 않습니다. 근로자는 출근 후, 관리자는 현장 펜스 안에서만 위험구역 알람이 동작합니다.
             </p>
           )}
         </section>

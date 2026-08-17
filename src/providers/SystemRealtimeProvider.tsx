@@ -25,6 +25,9 @@ export type GpsFix = {
   lng: number;
   accuracy: number;
   at: number;
+  /** Device raw GPS — site-fence / leave-site must use this, not calibrated. */
+  raw_lat?: number;
+  raw_lng?: number;
 };
 
 type ZoneEventPayload = {
@@ -35,6 +38,8 @@ type ZoneEventPayload = {
   zone_name?: string;
   event_type?: string;
   worker_name?: string;
+  worker_phone?: string | null;
+  worker_qr_id?: string | null;
   created_at?: string;
 };
 
@@ -125,9 +130,11 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
         { event: "INSERT", schema: "public", table: "worker_zone_events" },
         (payload) => {
           const row = payload.new as ZoneEventPayload;
-          const pid = identityRef.current?.project_id;
-          // Only surface this project's events (avoids cross-site fan-out noise/load)
-          if (pid && row.project_id && row.project_id !== pid) return;
+          const pid =
+            identityRef.current?.project_id ||
+            (typeof localStorage !== "undefined" ? localStorage.getItem("selectedProjectId") : null);
+          // Require a project match — never fan-out every site's events when GPS is off.
+          if (!pid || !row.project_id || row.project_id !== pid) return;
           setLastZoneEvent(row);
         },
       )
@@ -160,7 +167,14 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
     } catch {
       /* keep raw for UI if calibration fetch fails */
     }
-    setLastGpsFix({ lat: dispLat, lng: dispLng, accuracy, at: Date.now() });
+    setLastGpsFix({
+      lat: dispLat,
+      lng: dispLng,
+      raw_lat: lat,
+      raw_lng: lng,
+      accuracy,
+      at: Date.now(),
+    });
     try {
       await supabase.functions.invoke("track-location", {
         body: { ...identity, lat, lng, accuracy_m: accuracy, source },
@@ -178,6 +192,7 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
     workerRef.current = null;
     identityRef.current = null;
     setGpsTracking(false);
+    setLastGpsFix(null);
     setGpsError(null);
   }, []);
 
@@ -207,15 +222,12 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
         normalizeTrackingConsentStorage();
         if (startGenRef.current !== gen) return;
 
-        // Masters keep tracking for danger-zone alarms — do not auto-stop on fence leave.
-        const isMasterRole = String(identity.worker_role || "").toLowerCase() === "master";
+        // All roles (including platform master) auto-stop when raw GPS leaves the site fence.
         let siteCenter: Awaited<ReturnType<typeof resolveSiteTrackingFence>> = null;
-        if (!isMasterRole) {
-          try {
-            siteCenter = await resolveSiteTrackingFence(identity.project_id);
-          } catch {
-            /* tracking still works without site center */
-          }
+        try {
+          siteCenter = await resolveSiteTrackingFence(identity.project_id);
+        } catch {
+          /* tracking still works without site center */
         }
 
         if (startGenRef.current !== gen) return;
@@ -246,6 +258,8 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
             setLastGpsFix({
               lat: info.lat,
               lng: info.lng,
+              raw_lat: info.raw_lat,
+              raw_lng: info.raw_lng,
               accuracy: info.accuracy,
               at: Date.now(),
             });

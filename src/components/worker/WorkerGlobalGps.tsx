@@ -233,8 +233,9 @@ export default function WorkerGlobalGps() {
           void startForProject(projectId);
         });
       };
-      // First probe soon (cold GPS), then every 20s — 60s was too slow for field re-entry.
-      resumeTimer = window.setInterval(tick, 20_000);
+      // Off-site: do not hammer GPS (home OS icon). One cold probe, then 2 min.
+      // Foreground return also re-probes via visibility listener below.
+      resumeTimer = window.setInterval(tick, 120_000);
       window.setTimeout(tick, 3_000);
     };
 
@@ -251,16 +252,9 @@ export default function WorkerGlobalGps() {
       if (cancelled) return;
       managerRef.current = isManager;
 
-      // Platform master: always track (field alarm tests must not depend on site-fence probe).
-      // Non-master managers: only while inside the site resume fence.
-      const isMaster =
-        hasRole("master") || (roles || []).some((r) => String(r).toLowerCase() === "master");
+      // Managers + platform master: only while inside the site resume fence.
+      // Home / off-site must not keep the OS GPS icon or last-position map alive.
       if (isManager) {
-        if (isMaster) {
-          clearStickyDangerAlert();
-          await startForProject(projectId);
-          return;
-        }
         const inside = await probeInsideSite(projectId);
         if (cancelled) return;
         if (inside) {
@@ -331,11 +325,17 @@ export default function WorkerGlobalGps() {
       clearStickyDangerAlert();
     };
 
+    const onVisResume = () => {
+      if (document.visibilityState !== "visible") return;
+      void boot();
+    };
+
     window.addEventListener("storage", onStorage);
     window.addEventListener("mobile:project-changed", onProjectChanged);
     window.addEventListener("mobile:resume-gps-tracking", onResumeTracking);
     window.addEventListener("mobile:gps-auto-stopped", onAutoStopped as EventListener);
     window.addEventListener("mobile:worker-checked-out", onCheckedOut);
+    document.addEventListener("visibilitychange", onVisResume);
 
     return () => {
       cancelled = true;
@@ -345,6 +345,7 @@ export default function WorkerGlobalGps() {
       window.removeEventListener("mobile:resume-gps-tracking", onResumeTracking);
       window.removeEventListener("mobile:gps-auto-stopped", onAutoStopped as EventListener);
       window.removeEventListener("mobile:worker-checked-out", onCheckedOut);
+      document.removeEventListener("visibilitychange", onVisResume);
     };
   }, [
     user,
@@ -367,8 +368,15 @@ export default function WorkerGlobalGps() {
   return (
     <>
       <GpsBlockBadge reason={gpsBlockReason} />
-      {import.meta.env.DEV && gpsTracking ? (
-        <span className="sr-only" data-gps="on" />
+      {gpsTracking ? (
+        <div
+          className="fixed right-3 z-[45] max-w-[min(100%-1.5rem,16rem)] rounded-md border border-emerald-500/40 bg-emerald-50 text-emerald-950 px-2.5 py-1.5 text-[11px] font-medium shadow-sm pointer-events-none bottom-[calc(5.75rem+var(--sab))]"
+          data-testid="gps-tracking-on"
+          data-gps="on"
+          role="status"
+        >
+          GPS 추적 중 · 현장
+        </div>
       ) : null}
     </>
   );

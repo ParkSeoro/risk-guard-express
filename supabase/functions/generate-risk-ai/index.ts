@@ -1342,6 +1342,79 @@ serve(async (req) => {
 
     // ============ Legacy Risk Assessment Mode: One-Shot JSA + SSE ============
     // Kept for compatibility; UI prefers jsa_timeline + risk_row parallel path.
+    // Batch orchestrator must force JSON (`stream: false` / `response_mode: "json"`).
+    const wantJson =
+      body.stream === false ||
+      body.response_mode === "json" ||
+      body.response_format === "json";
+
+    if (wantJson) {
+      try {
+        const items: any[] = [];
+        const { count } = await streamOneShotRiskItems(
+          process_name,
+          equipText,
+          descText,
+          locationText,
+          envText,
+          detailLevel,
+          (item) => {
+            items.push(item);
+          },
+        );
+        if (count === 0) {
+          return new Response(
+            JSON.stringify({
+              error: "AI가 유효한 위험성평가 항목을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.",
+              items: [],
+              source: "ai",
+              mode: "risk",
+            }),
+            {
+              status: 502,
+              headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+            },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            items,
+            source: "ai",
+            count,
+            is_complete: true,
+            normalized_equipment: normalizedEquipment,
+            detail_level: detailLevel,
+            mode: "risk",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
+        );
+      } catch (e) {
+        console.error("generate-risk-ai json batch error:", e);
+        const msg = e instanceof Error ? e.message : "Unknown error";
+        let error = msg;
+        if (msg === "RATE_LIMIT" || (e instanceof DeepseekRiskError && e.code === "RATE_LIMIT")) {
+          error = "요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
+        } else if (
+          msg === "CREDITS_EXHAUSTED" ||
+          (e instanceof DeepseekRiskError && e.code === "QUOTA_EXHAUSTED")
+        ) {
+          error = "AI 크레딧이 부족합니다. 워크스페이스 크레딧을 충전해주세요.";
+        } else if (
+          msg === "INVALID_KEY" ||
+          (e instanceof DeepseekRiskError && e.code === "INVALID_KEY")
+        ) {
+          error =
+            "NVIDIA API 키가 유효하지 않습니다. NVIDIA_API_KEY(Supabase Edge Secrets)를 확인해야 합니다.";
+        } else if (e instanceof DeepseekRiskError && e.code === "TIMEOUT") {
+          error = e.message;
+        }
+        return new Response(JSON.stringify({ error, items: [], mode: "risk" }), {
+          status: e instanceof DeepseekRiskError ? e.status || 500 : 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+        });
+      }
+    }
+
     // Stream DeepSeek deltas; emit each completed item over SSE to avoid 150s idle/non-stream timeout.
 
     const encoder = new TextEncoder();

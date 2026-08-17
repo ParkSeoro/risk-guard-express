@@ -1050,8 +1050,14 @@ export async function generateAccidentCasesStreaming(
     },
     {
       onEvent: async (payload) => {
-        if (payload.type === 'accident' && payload.accident) {
-          const a = mapAccidentPayload(payload.accident);
+        const accidentRaw =
+          payload.type === 'accident' && payload.accident
+            ? payload.accident
+            : payload.type === 'item' && payload.mode === 'accident' && payload.item
+              ? payload.item
+              : null;
+        if (accidentRaw) {
+          const a = mapAccidentPayload(accidentRaw);
           if (!a) return;
           if (a.title && seen.has(a.title)) return;
           if (a.title) seen.add(a.title);

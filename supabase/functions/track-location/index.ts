@@ -6,6 +6,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { z } from "https://esm.sh/zod@3.23.8";
 import { isAccessForbidden } from "../_shared/accessRules.ts";
 import { applyGpsCalibration, parseGpsCalibration } from "../_shared/gpsCalibration.ts";
+import {
+  digitsOnlyPhone,
+  trackIdentityClaimMismatch,
+} from "../_shared/trackLocationIdentity.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,7 +23,7 @@ const BodySchema = z.object({
   worker_qr_id: z.string().uuid().optional().nullable(),
   worker_name: z.string().max(120).optional().nullable(),
   worker_phone: z.string().max(40).optional().nullable(),
-  /** Membership company hint (masters often have no workers row) */
+  /** Membership company hint (masters often have no workers row) — ignored for writes; JWT wins */
   company_id: z.string().uuid().optional().nullable(),
   /** Optional role code for alarm honorific (master / project_admin / worker …) */
   worker_role: z.string().max(64).optional().nullable(),
@@ -34,10 +38,6 @@ const BodySchema = z.object({
   restricted_zone_id: z.string().uuid().optional().nullable(),
   force_restricted_check: z.boolean().optional().default(false),
 });
-
-function digitsOnly(phone: string | null | undefined): string {
-  return String(phone || "").replace(/\D/g, "");
-}
 
 function roleHonorific(role: string | null | undefined): string {
   const r = String(role || "").trim().toLowerCase();
@@ -134,6 +134,38 @@ Deno.serve(async (req) => {
     const rawLat = body.lat;
     const rawLng = body.lng;
 
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || serviceKey;
+
+    // Require end-user JWT — body identity alone must not author zone events / last_positions.
+    const authHeader = req.headers.get("Authorization") || "";
+    if (!authHeader.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const bearer = authHeader.slice(7).trim();
+    if (!bearer || bearer === serviceKey) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const userSb = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: userData, error: userErr } = await userSb.auth.getUser();
+    const uid = userData?.user?.id;
+    if (userErr || !uid) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (body.accuracy_m > 100 && (!body.wifi_scan || body.wifi_scan.length === 0) && !body.force_restricted_check) {
       return new Response(
         JSON.stringify({ zone_id: null, source: null, event_type: null, ignored: "low_accuracy" }),
@@ -141,10 +173,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    const [{ data: isMaster }, { data: isMember }] = await Promise.all([
+      supabase.rpc("is_master", { _user_id: uid }),
+      supabase.rpc("is_project_member", { _user_id: uid, _project_id: body.project_id }),
+    ]);
+    if (!isMaster && !isMember) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Project GPS bias (master 1-point field align). Clients send RAW GPS.
     {
@@ -159,95 +199,78 @@ Deno.serve(async (req) => {
       body.lng = fixed.lng;
     }
 
-    // Resolve worker subject for ban matching
-    let subject = {
-      worker_id: body.worker_id || body.worker_qr_id || null,
-      company_id: body.company_id || null,
-      job_type: null as string | null,
-    };
-    const workerLookupId = body.worker_id || body.worker_qr_id;
-    if (workerLookupId) {
-      const { data: w } = await supabase
-        .from("workers")
-        .select("id, company_id, job_type, name, phone")
-        .eq("id", workerLookupId)
-        .maybeSingle();
-      if (w) {
-        subject = {
-          worker_id: w.id,
-          company_id: w.company_id || subject.company_id,
-          job_type: w.job_type,
-        };
-        if (!body.worker_name) body.worker_name = w.name;
-        if (!body.worker_phone) body.worker_phone = w.phone;
-      }
-    } else if (body.worker_phone) {
-      const want = digitsOnly(body.worker_phone);
+    // Resolve subject from JWT profile + roster — never trust body worker/company for writes.
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("phone, display_name")
+      .eq("user_id", uid)
+      .maybeSingle();
+    const profilePhoneDigits = digitsOnlyPhone(profile?.phone);
+
+    const { data: pm } = await supabase
+      .from("project_members")
+      .select("company_id, role_new")
+      .eq("project_id", body.project_id)
+      .eq("user_id", uid)
+      .maybeSingle();
+
+    let resolvedWorker: {
+      id: string;
+      company_id: string | null;
+      job_type: string | null;
+      name: string | null;
+      phone: string | null;
+    } | null = null;
+
+    if (profilePhoneDigits) {
       const { data: workers } = await supabase
         .from("workers")
         .select("id, company_id, job_type, name, phone")
         .eq("project_id", body.project_id)
         .eq("is_active", true)
-        .limit(100);
-      const w = (workers || []).find((row: any) => digitsOnly(row.phone) === want);
-      if (w) {
-        subject = {
-          worker_id: w.id,
-          company_id: w.company_id || subject.company_id,
-          job_type: w.job_type,
-        };
-        if (!body.worker_name) body.worker_name = w.name;
-      }
+        .limit(300);
+      resolvedWorker =
+        (workers || []).find(
+          (row: { phone?: string | null }) => digitsOnlyPhone(row.phone) === profilePhoneDigits,
+        ) || null;
     }
 
-    // Masters / managers often have no workers roster row — fall back to JWT → project_members
-    if (!subject.company_id) {
-      try {
-        const authHeader = req.headers.get("Authorization") || "";
-        if (authHeader.startsWith("Bearer ")) {
-          const userSb = createClient(
-            Deno.env.get("SUPABASE_URL")!,
-            Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-            { global: { headers: { Authorization: authHeader } } },
-          );
-          const { data: userData } = await userSb.auth.getUser();
-          const uid = userData?.user?.id;
-          if (uid) {
-            const { data: pm } = await supabase
-              .from("project_members")
-              .select("company_id, role_new")
-              .eq("project_id", body.project_id)
-              .eq("user_id", uid)
-              .maybeSingle();
-            if (pm?.company_id) subject.company_id = pm.company_id;
-            if (!body.worker_role && pm?.role_new) body.worker_role = pm.role_new;
-          }
-        }
-      } catch {
-        /* keep subject as-is */
-      }
+    const claimedWorkerId = body.worker_id || body.worker_qr_id || null;
+    if (
+      trackIdentityClaimMismatch({
+        profilePhoneDigits,
+        resolvedWorkerId: resolvedWorker?.id ?? null,
+        resolvedWorkerPhoneDigits: digitsOnlyPhone(resolvedWorker?.phone),
+        claimedWorkerId,
+        claimedWorkerPhone: body.worker_phone,
+      })
+    ) {
+      return new Response(
+        JSON.stringify({ error: "Identity mismatch: body worker does not match authenticated user" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
-    // Last resort: profile phone variants → project_members
-    if (!subject.company_id && body.worker_phone) {
-      const raw = String(body.worker_phone).trim();
-      const want = digitsOnly(raw);
-      const variants = [...new Set([raw, want, want.replace(/^82/, "0")].filter(Boolean))];
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("user_id, phone")
-        .in("phone", variants)
-        .limit(1)
-        .maybeSingle();
-      if (prof?.user_id) {
-        const { data: pm } = await supabase
-          .from("project_members")
-          .select("company_id")
-          .eq("project_id", body.project_id)
-          .eq("user_id", prof.user_id)
-          .maybeSingle();
-        if (pm?.company_id) subject.company_id = pm.company_id;
-      }
+    const subject = {
+      worker_id: resolvedWorker?.id ?? null,
+      company_id: resolvedWorker?.company_id || pm?.company_id || null,
+      job_type: resolvedWorker?.job_type ?? null,
+    };
+
+    body.worker_name =
+      resolvedWorker?.name ||
+      profile?.display_name ||
+      body.worker_name ||
+      null;
+    body.worker_phone = resolvedWorker?.phone || profile?.phone || null;
+    if (pm?.role_new) body.worker_role = pm.role_new;
+    // Keep event keys consistent with resolved roster id (QR-only identity retired).
+    if (resolvedWorker?.id) {
+      body.worker_id = resolvedWorker.id;
+      body.worker_qr_id = resolvedWorker.id;
+    } else {
+      body.worker_id = null;
+      body.worker_qr_id = null;
     }
 
     // ---- restricted_zones (primary for voice/push ban targeting) ----

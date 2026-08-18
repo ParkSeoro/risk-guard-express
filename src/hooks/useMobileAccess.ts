@@ -11,6 +11,12 @@ import {
 import { normalizeCompanyType, type CompanyTypeCode } from "@/lib/companyTypes";
 import { usePreview } from "@/contexts/PreviewContext";
 import { resolveGlobalMobileRole } from "@/lib/mobileShell";
+import {
+  ACTIVE_PROJECT_CHANGED_EVENT,
+  isActiveProjectStorageKey,
+  readActiveProjectId,
+  writeActiveProjectId,
+} from "@/lib/activeProject";
 
 export type MobileRole = 'master' | 'project_admin' | 'safety_manager' | 'site_manager' | 'supervisor' | 'site_supervisor' | 'worker' | 'viewer' | 'contractor';
 
@@ -25,7 +31,7 @@ export function useMobileAccess() {
   const isMaster = preview.isPreview ? preview.syntheticRole === "master" : hasRole('master');
   const [projectId, setProjectIdState] = useState<string>(() => {
     if (preview.isPreview && preview.previewProjectId) return preview.previewProjectId;
-    try { return localStorage.getItem("selectedProjectId") || ""; } catch { return ""; }
+    try { return readActiveProjectId(); } catch { return ""; }
   });
   const [role, setRole] = useState<MobileRole>(
     preview.isPreview ? preview.syntheticRole : 'viewer',
@@ -39,25 +45,26 @@ export function useMobileAccess() {
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === 'selectedProjectId') setProjectIdState(e.newValue || "");
+      if (isActiveProjectStorageKey(e.key) || e.key == null) {
+        setProjectIdState(readActiveProjectId());
+      }
     };
     const onCustom = () => {
-      try { setProjectIdState(localStorage.getItem("selectedProjectId") || ""); } catch {}
+      try { setProjectIdState(readActiveProjectId()); } catch {}
     };
     window.addEventListener('storage', onStorage);
-    window.addEventListener('mobile:project-changed', onCustom);
+    window.addEventListener(ACTIVE_PROJECT_CHANGED_EVENT, onCustom);
     window.addEventListener('focus', onCustom);
     return () => {
       window.removeEventListener('storage', onStorage);
-      window.removeEventListener('mobile:project-changed', onCustom);
+      window.removeEventListener(ACTIVE_PROJECT_CHANGED_EVENT, onCustom);
       window.removeEventListener('focus', onCustom);
     };
   }, []);
 
   const setProjectId = useCallback((id: string) => {
     setProjectIdState(id);
-    try { localStorage.setItem("selectedProjectId", id); } catch {}
-    try { window.dispatchEvent(new Event('mobile:project-changed')); } catch {}
+    writeActiveProjectId(id);
   }, []);
 
   useEffect(() => {

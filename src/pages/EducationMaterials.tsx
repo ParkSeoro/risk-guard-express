@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, FileText, Presentation, Sparkles, Plus, Trash2, Save } from "lucide-react";
 import { toast } from "sonner";
+import { useActiveProject } from "@/hooks/useActiveProject";
 import pptxgen from "pptxgenjs";
 
 type Material = {
@@ -38,9 +39,7 @@ const empty = (project_id: string): Material => ({
 
 export default function EducationMaterials() {
   const [params] = useSearchParams();
-  const [projectId, setProjectId] = useState<string>(() =>
-    params.get("project") || localStorage.getItem("currentProjectId") || ""
-  );
+  const { projectId, setProjectId } = useActiveProject();
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [list, setList] = useState<Material[]>([]);
   const [runs, setRuns] = useState<Array<{ id: string; period_label: string }>>([]);
@@ -50,12 +49,16 @@ export default function EducationMaterials() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    const fromUrl = params.get("project");
+    if (fromUrl && fromUrl !== projectId) setProjectId(fromUrl);
+  }, [params, projectId, setProjectId]);
+
+  useEffect(() => {
     supabase.from("projects").select("id,name").eq('is_deleted', false).then(({ data }) => setProjects(data || []));
   }, []);
 
   useEffect(() => {
     if (!projectId) return;
-    localStorage.setItem("currentProjectId", projectId);
     loadMaterials();
     supabase.from("assessment_runs")
       .select("id,period_label")

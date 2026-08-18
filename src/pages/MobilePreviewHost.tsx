@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Smartphone, RefreshCw } from "lucide-react";
+import { readActiveProjectId, writeActiveProjectId } from "@/lib/activeProject";
 
 const VIEWPORTS = [
   { id: "pixel7", label: "Pixel 7", w: 412, h: 915 },
@@ -104,19 +105,16 @@ export default function MobilePreviewHost() {
 
   useEffect(() => {
     if (!projectId) return;
-    let prev: string | null = null;
+    let prev = "";
     try {
-      prev = localStorage.getItem("selectedProjectId");
-      localStorage.setItem("selectedProjectId", projectId);
-      window.dispatchEvent(new Event("mobile:project-changed"));
+      prev = readActiveProjectId();
+      writeActiveProjectId(projectId);
     } catch {
       /* ignore */
     }
     return () => {
       try {
-        if (prev != null) localStorage.setItem("selectedProjectId", prev);
-        else localStorage.removeItem("selectedProjectId");
-        window.dispatchEvent(new Event("mobile:project-changed"));
+        writeActiveProjectId(prev);
       } catch {
         /* ignore */
       }

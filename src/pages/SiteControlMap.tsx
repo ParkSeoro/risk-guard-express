@@ -52,6 +52,7 @@ import {
   type GpsCalibration,
 } from "@/lib/tracking/gpsCalibration";
 import { notifyGpsCalibrationChanged } from "@/lib/tracking/gpsCalibrationRealtime";
+import { useActiveProject } from "@/hooks/useActiveProject";
 import {
   accessRulesSummary,
   parseAccessRules,
@@ -308,7 +309,7 @@ function VisualCornerMarkers({
  * PC 위성 TL/TR/BL은 선택(고급).
  */
 export default function SiteControlMap() {
-  const [projectId, setProjectId] = useState(() => localStorage.getItem("currentProjectId") || "");
+  const { projectId, setProjectId } = useActiveProject();
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [maps, setMaps] = useState<SiteMap[]>([]);
   const [activeMap, setActiveMap] = useState<SiteMap | null>(null);
@@ -364,7 +365,6 @@ export default function SiteControlMap() {
 
   useEffect(() => {
     if (!projectId) return;
-    localStorage.setItem("currentProjectId", projectId);
     void loadMaps();
     void loadZones();
     void fetchProjectCompanies(projectId).then((rows) =>

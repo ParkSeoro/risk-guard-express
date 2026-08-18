@@ -8,6 +8,12 @@ import {
   resolveAccessibleCompanyIds,
   seesProjectWideCompanies,
 } from '@/lib/companyDocScope';
+import {
+  ACTIVE_PROJECT_CHANGED_EVENT,
+  isActiveProjectStorageKey,
+  readActiveProjectId,
+  writeActiveProjectId,
+} from '@/lib/activeProject';
 
 /**
  * Project-scoped role (new model).
@@ -204,7 +210,7 @@ export function useProjectAccess(): ProjectAccess {
   const isMaster = hasRole('master');
   const [projects, setProjects] = useState<{ id: string; name: string; site_name: string }[]>([]);
   const [selectedProject, setSelectedProjectState] = useState(() => {
-    try { return localStorage.getItem('selectedProjectId') || ''; } catch { return ''; }
+    try { return readActiveProjectId(); } catch { return ''; }
   });
   const [memberInfo, setMemberInfo] = useState<MemberInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -214,8 +220,21 @@ export function useProjectAccess(): ProjectAccess {
 
   const setSelectedProject = (id: string) => {
     setSelectedProjectState(id);
-    try { localStorage.setItem('selectedProjectId', id); } catch {}
+    writeActiveProjectId(id);
   };
+
+  useEffect(() => {
+    const sync = () => setSelectedProjectState(readActiveProjectId());
+    const onStorage = (e: StorageEvent) => {
+      if (isActiveProjectStorageKey(e.key) || e.key == null) sync();
+    };
+    window.addEventListener('storage', onStorage);
+    window.addEventListener(ACTIVE_PROJECT_CHANGED_EVENT, sync);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(ACTIVE_PROJECT_CHANGED_EVENT, sync);
+    };
+  }, []);
 
   useEffect(() => {
     loadProjects();
@@ -297,7 +316,7 @@ export function useProjectAccess(): ProjectAccess {
         .order('created_at', { ascending: false });
       if (data && data.length > 0) {
         setProjects(data);
-        const saved = localStorage.getItem('selectedProjectId');
+        const saved = readActiveProjectId();
         const validSaved = saved && data.some(p => p.id === saved);
         if (!selectedProject || !data.some(p => p.id === selectedProject)) {
           setSelectedProject(validSaved ? saved! : data[0].id);
@@ -317,7 +336,7 @@ export function useProjectAccess(): ProjectAccess {
           .filter((p: any) => p && p.is_deleted !== true)
           .map((p: any) => ({ id: p.id, name: p.name, site_name: p.site_name }));
         setProjects(projs);
-        const saved = localStorage.getItem('selectedProjectId');
+        const saved = readActiveProjectId();
         const validSaved = saved && projs.some((p: any) => p.id === saved);
         if (!selectedProject || !projs.some((p: any) => p.id === selectedProject)) {
           setSelectedProject(validSaved ? saved! : (projs[0]?.id || ''));

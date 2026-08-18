@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { pickProjectMemberRow, readPreferredCompanyId } from '@/lib/companyDocScope';
+import { readActiveProjectId } from '@/lib/activeProject';
 
 /**
  * Returns the logged-in user's company for the currently selected project.
@@ -15,7 +16,7 @@ export function useUserCompany() {
   const access = useGlobalProjectAccessOptional();
   const selectedProject =
     access?.selectedProject ??
-    (typeof window !== 'undefined' ? localStorage.getItem('selectedProjectId') : null);
+    (typeof window !== 'undefined' ? readActiveProjectId() : null);
 
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [companyName, setCompanyName] = useState<string | null>(null);

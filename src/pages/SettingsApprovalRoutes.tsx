@@ -10,9 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ArrowLeft, GitBranch, Plus, Trash2, ArrowUp, ArrowDown, Save, Loader2, Copy, Search, User, Building2, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { ENTITY_LABELS, type ApprovalEntityType } from '@/components/approval/SubmitApprovalDialog';
-
-const PROJECT_KEY = 'selected_project_id';
 
 interface Step { label: string; position: string; user_id: string; user_name: string; company_id: string | null; company_name: string }
 
@@ -22,7 +21,7 @@ export default function SettingsApprovalRoutes() {
   const navigate = useNavigate();
   const { hasRole, user, profile } = useAuth();
   const canEdit = !!user; // 누구나 본인 전용 템플릿 관리 가능. 회사/프로젝트 공용은 isOwnerSide 만.
-  const projectId = localStorage.getItem(PROJECT_KEY) || '';
+  const { selectedProject: projectId } = useGlobalProjectAccess();
   const myCompanyId: string | null = (profile as any)?.company_id || null;
   const isOwnerSide = hasRole('master') || hasRole('project_admin');
 

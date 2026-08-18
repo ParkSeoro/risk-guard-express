@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { QRCodeSVG } from "qrcode.react";
 import { Map, Plus, Trash2, Upload, QrCode, Check, X, Search } from "lucide-react";
 import { toast } from "sonner";
+import { useActiveProject } from "@/hooks/useActiveProject";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSoftDelete } from "@/hooks/useSoftDelete";
 import {
@@ -51,7 +52,7 @@ const ZONE_LABEL: Record<Zone["zone_type"], string> = {
 };
 
 export default function SiteMaps() {
-  const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
+  const { projectId, setProjectId } = useActiveProject();
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [maps, setMaps] = useState<SiteMap[]>([]);
   const [activeMap, setActiveMap] = useState<SiteMap | null>(null);
@@ -80,7 +81,6 @@ export default function SiteMaps() {
 
   useEffect(() => {
     if (!projectId) return;
-    localStorage.setItem("currentProjectId", projectId);
     loadMaps();
   }, [projectId]);
 

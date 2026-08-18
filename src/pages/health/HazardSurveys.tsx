@@ -13,17 +13,15 @@ import { toast } from "sonner";
 import { Plus, ClipboardList, Copy } from "lucide-react";
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 
-const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const TYPES = ["근골격계", "뇌심혈관", "직무스트레스", "감정노동"];
 
 export default function HazardSurveys() {
   const handle = useToastError();
-  const { applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
+  const { selectedProject: projectId, applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
   const [list, setList] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<any>({ type: "근골격계", survey_date: new Date().toISOString().slice(0, 10) });
   const [loading, setLoading] = useState(true);
-  const projectId = typeof window !== "undefined" ? localStorage.getItem(ACTIVE_PROJECT_KEY) : null;
 
   const load = async () => {
     if (!projectId) return;

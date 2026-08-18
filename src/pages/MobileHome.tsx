@@ -15,6 +15,8 @@ import { toast } from "sonner";
 import { ALL_TILES, MobileTileKey, getMobileTiles, setMobileTiles, resetMobileTiles, detectRole } from "@/lib/mobileMenuPrefs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useActiveProject } from "@/hooks/useActiveProject";
+import { readActiveProjectId } from "@/lib/activeProject";
 
 // 모바일 통합 홈 — 로그인 사용자(관리자) / 비로그인(근로자 안내)
 export default function MobileHome() {
@@ -28,14 +30,10 @@ export default function MobileHome() {
   const [projects, setProjects] = useState<{ id: string; name: string; site_name: string }[]>([]);
   const [tiles, setTiles] = useState<MobileTileKey[]>(() => getMobileTiles(role));
   const [editOpen, setEditOpen] = useState(false);
-  const [selectedProjectId, setSelectedProjectIdState] = useState<string>(() => {
-    try { return localStorage.getItem("selectedProjectId") || ""; } catch { return ""; }
-  });
+  const { projectId: selectedProjectId, setProjectId } = useActiveProject();
 
   const setSelectedProjectId = (id: string) => {
-    setSelectedProjectIdState(id);
-    try { localStorage.setItem("selectedProjectId", id); } catch {}
-    try { window.dispatchEvent(new Event('mobile:project-changed')); } catch {}
+    setProjectId(id);
     const p = projects.find(x => x.id === id);
     toast.success("프로젝트 선택: " + (p?.name || ""));
   };
@@ -82,16 +80,15 @@ export default function MobileHome() {
           .filter((p: any) => p && !p.is_deleted);
       }
       setProjects(list);
-      const cur = localStorage.getItem("selectedProjectId");
+      const cur = readActiveProjectId();
       const validCur = cur && list.some(p => p.id === cur);
       if (validCur) {
-        setSelectedProjectIdState(cur!);
+        setProjectId(cur);
       } else if (list.length > 0) {
         // 마스터: 다중 프로젝트면 직접 선택, 단일이면 자동
         // 일반: 항상 첫 프로젝트 자동 설정
         if (!isMaster || list.length === 1) {
-          localStorage.setItem("selectedProjectId", list[0].id);
-          setSelectedProjectIdState(list[0].id);
+          setProjectId(list[0].id);
           if (!isMaster) toast.message("프로젝트 자동 선택: " + list[0].name);
         }
       } else {

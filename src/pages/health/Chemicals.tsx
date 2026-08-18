@@ -15,8 +15,6 @@ import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { toast } from "sonner";
 import { Plus, FlaskConical, FileText, CalendarRange } from "lucide-react";
 
-const ACTIVE_PROJECT_KEY = "selectedProjectId";
-
 type Company = { id: string; name: string };
 type Chemical = {
   id: string; name: string; cas_no: string | null; trade_name: string | null;
@@ -34,11 +32,15 @@ type UsagePlan = {
 
 export default function Chemicals() {
   const handle = useToastError();
-  const { userCompanyId, applyCompanyFilter, seesAllCompanies, accessibleCompanyIds, scopeStatus } =
-    useGlobalProjectAccess();
+  const {
+    selectedProject: projectId,
+    userCompanyId,
+    applyCompanyFilter,
+    seesAllCompanies,
+    accessibleCompanyIds,
+    scopeStatus,
+  } = useGlobalProjectAccess();
   const canSeeAllCompanies = seesAllCompanies;
-
-  const projectId = typeof window !== "undefined" ? localStorage.getItem(ACTIVE_PROJECT_KEY) : null;
   const [companies, setCompanies] = useState<Company[]>([]);
   const [list, setList] = useState<Chemical[]>([]);
   const [plans, setPlans] = useState<UsagePlan[]>([]);

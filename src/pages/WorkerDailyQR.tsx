@@ -7,13 +7,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { QRCodeSVG } from "qrcode.react";
 import { QrCode, Printer, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
+import { useActiveProject } from "@/hooks/useActiveProject";
 
 /**
  * 일일 QR 발급/인쇄 — 매일 출퇴근용 QR을 근로자별로 발급하고 카드 형태로 인쇄.
  * issue_daily_qr() RPC를 사용해 당일 자정 만료 QR을 생성한다.
  */
 export default function WorkerDailyQR() {
-  const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
+  const { projectId, setProjectId } = useActiveProject();
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
   const [companyFilter, setCompanyFilter] = useState<string>("__all__");
@@ -29,7 +30,6 @@ export default function WorkerDailyQR() {
 
   useEffect(() => {
     if (!projectId) return;
-    localStorage.setItem("currentProjectId", projectId);
     import("@/lib/projectCompanies").then(({ fetchProjectCompanies }) =>
       fetchProjectCompanies(projectId).then((rows) => setCompanies(rows.map(c => ({ id: c.id, name: c.name }))))
     );

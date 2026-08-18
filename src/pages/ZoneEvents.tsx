@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ShieldAlert, LogIn, LogOut, Check, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { useActiveProject } from "@/hooks/useActiveProject";
 
 type Event = {
   id: string;
@@ -28,7 +29,7 @@ const EVENT_BADGE: Record<string, { label: string; color: string; icon: any }> =
 };
 
 export default function ZoneEvents() {
-  const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
+  const { projectId, setProjectId } = useActiveProject();
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [residual, setResidual] = useState<Event[]>([]);
@@ -40,7 +41,6 @@ export default function ZoneEvents() {
 
   useEffect(() => {
     if (!projectId) return;
-    localStorage.setItem("currentProjectId", projectId);
     load();
     const ch = supabase
       .channel(`wze:${projectId}`)

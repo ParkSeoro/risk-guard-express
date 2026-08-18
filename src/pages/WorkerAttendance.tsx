@@ -30,6 +30,7 @@ import { ClipboardList, Download, Search, AlertTriangle, CheckCircle2, LogIn, Sh
 import { toast } from "sonner";
 import { useGlobalProjectAccess } from "@/components/AppLayout";
 import { seoulDayRange, todaySeoulDate } from "@/lib/dailyWorkAck";
+import { useActiveProject } from "@/hooks/useActiveProject";
 
 type ConsentInfo = {
   agreed_to_terms: boolean;
@@ -79,7 +80,7 @@ function Mark({ ok }: { ok: boolean }) {
 }
 
 export default function WorkerAttendance() {
-  const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
+  const { projectId, setProjectId } = useActiveProject();
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [date, setDate] = useState(() => todaySeoulDate());
   const [logs, setLogs] = useState<EntryLog[]>([]);
@@ -211,7 +212,6 @@ export default function WorkerAttendance() {
 
   useEffect(() => {
     if (!projectId) return;
-    localStorage.setItem("currentProjectId", projectId);
     void load();
     const ch = supabase
       .channel(`worker_entry_logs:${projectId}:${date}`)

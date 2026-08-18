@@ -16,7 +16,6 @@ import { Plus, Stethoscope, Search, Trash2 } from "lucide-react";
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useSoftDelete } from "@/hooks/useSoftDelete";
 
-const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const TYPES = ["일반", "특수", "배치전", "수시", "임시"];
 const RESULTS = ["정상A", "정상B", "요관찰C", "유소견D1", "유소견D2", "판정불가", "미수검"];
 
@@ -27,7 +26,7 @@ function daysUntil(d?: string | null) {
 
 export default function HealthCheckups() {
   const handle = useToastError();
-  const { applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
+  const { selectedProject: projectId, applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
   const { softDelete } = useSoftDelete();
   const [list, setList] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
@@ -36,7 +35,6 @@ export default function HealthCheckups() {
   const [form, setForm] = useState<any>({ type: "일반", result: "미수검" });
   const [tab, setTab] = useState<"all" | "findings" | "untested" | "due">("all");
   const [search, setSearch] = useState("");
-  const projectId = typeof window !== "undefined" ? localStorage.getItem(ACTIVE_PROJECT_KEY) : null;
 
   const load = async () => {
     if (!projectId) return;

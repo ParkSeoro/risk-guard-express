@@ -40,6 +40,18 @@ describe("track-location identity binding", () => {
     ).toBe(true);
   });
 
+  it("does not 403 when a worker_id is claimed but the roster row was not found", () => {
+    expect(
+      trackIdentityClaimMismatch({
+        profilePhoneDigits: "01012345678",
+        resolvedWorkerId: null,
+        resolvedWorkerPhoneDigits: null,
+        claimedWorkerId: "w-stale",
+        claimedWorkerPhone: null,
+      }),
+    ).toBe(false);
+  });
+
   it("rejects claimed phone that differs from profile", () => {
     expect(
       trackIdentityClaimMismatch({

@@ -76,6 +76,18 @@ describe("shouldSuppressLocalSirenOffsite", () => {
       }),
     ).toBe(false);
   });
+
+  it("allows off-site sirens when master alarm-test mode is on", () => {
+    expect(
+      shouldSuppressLocalSirenOffsite({
+        fence,
+        rawLat: 37.5665,
+        rawLng: 126.978,
+        accuracyM: 12,
+        allowOffsite: true,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("isGpsAccurateEnoughForSiren (F-02)", () => {

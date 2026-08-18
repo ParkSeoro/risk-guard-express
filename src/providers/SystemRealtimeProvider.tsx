@@ -174,7 +174,8 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
         !!prev &&
         prev.project_id === identity.project_id &&
         (prev.worker_id || null) === (identity.worker_id || null) &&
-        (prev.worker_role || null) === (identity.worker_role || null);
+        (prev.worker_role || null) === (identity.worker_role || null) &&
+        !!prev.suppress_last_position === !!identity.suppress_last_position;
       // company_id can arrive later (roster resolve) — refresh live identity without
       // tearing down the watch when project/worker/role are unchanged.
       if (sameSession) {
@@ -193,12 +194,18 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
         normalizeTrackingConsentStorage();
         if (startGenRef.current !== gen) return;
 
-        // All roles (including platform master) auto-stop when raw GPS leaves the site fence.
+        // Default: every role auto-stops when raw GPS leaves the site fence.
+        // Master "현장 외 알람 테스트" is the only exception (no last-position write).
         let siteCenter: Awaited<ReturnType<typeof resolveSiteTrackingFence>> = null;
-        try {
-          siteCenter = await resolveSiteTrackingFence(identity.project_id);
-        } catch {
-          /* tracking still works without site center */
+        const skipFence =
+          identity.worker_role === "master" &&
+          (await import("@/lib/tracking/masterOffsiteAlarmTest")).readMasterOffsiteAlarmTest();
+        if (!skipFence) {
+          try {
+            siteCenter = await resolveSiteTrackingFence(identity.project_id);
+          } catch {
+            /* tracking still works without site center */
+          }
         }
 
         if (startGenRef.current !== gen) return;

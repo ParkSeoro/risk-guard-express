@@ -20,6 +20,7 @@ export const GPS_BLOCK_REASON_ADMIN: Record<Exclude<GpsBlockReason, null>, strin
   no_permission: "앱 위치 권한 없음",
   no_checkin: "미출근",
   fence_probe_failed: "현장 펜스 밖",
+  identity_mismatch: "명부 신원 불일치",
 };
 
 export function gpsAgeBucket(updatedAt: string | Date | null | undefined, now = Date.now()): GpsAgeBucket {

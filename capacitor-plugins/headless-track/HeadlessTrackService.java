@@ -14,7 +14,9 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -45,8 +47,11 @@ public class HeadlessTrackService extends Service implements LocationListener {
 
   private LocationManager locationManager;
   private final ExecutorService io = Executors.newSingleThreadExecutor();
+  private final Handler main = new Handler(Looper.getMainLooper());
   private long lastSentAt = 0;
   private int outsideStreak = 0;
+  /** True = no track-location posts; GPS interval is resumePollMs until back inside. */
+  private volatile boolean watchMode = false;
 
   @Override
   public IBinder onBind(Intent intent) {
@@ -60,7 +65,7 @@ public class HeadlessTrackService extends Service implements LocationListener {
       return START_NOT_STICKY;
     }
     startAsForeground();
-    startUpdates();
+    applyLocationUpdates();
     return START_STICKY;
   }
 
@@ -110,15 +115,28 @@ public class HeadlessTrackService extends Service implements LocationListener {
     nm.createNotificationChannel(ch);
   }
 
-  private void startUpdates() {
+  private void setWatchMode(boolean next) {
+    if (watchMode == next) return;
+    watchMode = next;
+    main.post(this::applyLocationUpdates);
+  }
+
+  private void applyLocationUpdates() {
     try {
       if (locationManager == null) {
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
       }
       if (locationManager == null) return;
-      locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 12_000, 8f, this);
+      locationManager.removeUpdates(this);
+      SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+      long minTime = watchMode
+          ? Math.max(30_000, p.getInt("resume_poll_ms", 300_000))
+          : Math.max(5_000, p.getInt("interval_ms", 45_000));
+      float minDist = watchMode ? 40f : 8f;
+      locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, minTime, minDist, this);
       if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-        locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 20_000, 15f, this);
+        locationManager.requestLocationUpdates(
+            LocationManager.NETWORK_PROVIDER, Math.max(minTime, 20_000), watchMode ? 50f : 15f, this);
       }
     } catch (SecurityException e) {
       Log.w(TAG, "location permission missing", e);
@@ -164,18 +182,38 @@ public class HeadlessTrackService extends Service implements LocationListener {
     double fenceLat = Double.longBitsToDouble(p.getLong("fence_lat_bits", 0));
     double fenceLng = Double.longBitsToDouble(p.getLong("fence_lng_bits", 0));
     float fenceR = p.getFloat("fence_radius_m", 0f);
-    if (fenceR > 0 && fenceLat != 0 && fenceLng != 0 && acc <= 55f) {
+    boolean skipFence = p.getBoolean("skip_fence", false);
+    int exitStreakNeed = Math.max(1, p.getInt("exit_streak", 5));
+    float maxAcc = p.getFloat("max_accuracy_m", 55f);
+    // Same hysteresis as TS isDefinitelyOutsideSite / isInsideResumeFence:
+    // leave uses radius + accuracy pad; resume requires being inside radius with a good fix.
+    if (!skipFence && fenceR > 0 && fenceLat != 0 && fenceLng != 0) {
       double d = haversineM(fenceLat, fenceLng, lat, lng);
-      if (d > fenceR + Math.max(acc, 25f)) {
+      boolean accOk = acc <= maxAcc;
+      boolean definitelyOutside = accOk && d > fenceR + Math.max(acc, 25f);
+      boolean insideResume = accOk && d <= fenceR;
+      if (watchMode) {
+        if (insideResume) {
+          Log.i(TAG, "re-entered site fence — resuming posts");
+          outsideStreak = 0;
+          setWatchMode(false);
+        } else {
+          return;
+        }
+      } else if (definitelyOutside) {
         outsideStreak += 1;
-        if (outsideStreak >= 5) {
-          Log.i(TAG, "left site fence — stopping");
-          stopSelf();
+        if (outsideStreak >= exitStreakNeed) {
+          Log.i(TAG, "left site fence — low-power watch (no stopSelf)");
+          outsideStreak = 0;
+          setWatchMode(true);
           return;
         }
       } else {
         outsideStreak = 0;
       }
+    } else if (watchMode && skipFence) {
+      outsideStreak = 0;
+      setWatchMode(false);
     }
 
     long now = System.currentTimeMillis();
@@ -194,6 +232,9 @@ public class HeadlessTrackService extends Service implements LocationListener {
       body.put("lat", lat);
       body.put("lng", lng);
       body.put("accuracy_m", acc);
+      if (p.getBoolean("suppress_last_position", false)) {
+        body.put("suppress_last_position", true);
+      }
       body.put("device_ts", new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US)
           .format(new java.util.Date(now)));
 
@@ -309,6 +350,11 @@ public class HeadlessTrackService extends Service implements LocationListener {
     putStr(e, "company_id", cfg.optString("companyId", null));
     putStr(e, "worker_role", cfg.optString("workerRole", null));
     e.putInt("interval_ms", cfg.optInt("intervalMs", 45_000));
+    e.putInt("exit_streak", cfg.optInt("exitStreak", 5));
+    e.putFloat("max_accuracy_m", (float) cfg.optDouble("maxAccuracyM", 55));
+    e.putInt("resume_poll_ms", cfg.optInt("resumePollMs", 300_000));
+    e.putBoolean("skip_fence", cfg.optBoolean("skipFence", false));
+    e.putBoolean("suppress_last_position", cfg.optBoolean("suppressLastPosition", false));
     if (cfg.has("fenceLat") && cfg.has("fenceLng") && cfg.has("fenceRadiusM")) {
       e.putLong("fence_lat_bits", Double.doubleToRawLongBits(cfg.optDouble("fenceLat")));
       e.putLong("fence_lng_bits", Double.doubleToRawLongBits(cfg.optDouble("fenceLng")));

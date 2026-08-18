@@ -42,6 +42,8 @@ const BodySchema = z.object({
   restricted_zone_id: z.string().uuid().optional().nullable(),
   /** Names a unified zone; must not skip the accuracy discard gate. */
   force_restricted_check: z.boolean().optional().default(false),
+  /** Master off-site alarm test: evaluate zones, do not upsert worker_last_positions. */
+  suppress_last_position: z.boolean().optional().default(false),
 });
 
 function roleHonorific(role: string | null | undefined): string {
@@ -205,6 +207,10 @@ Deno.serve(async (req) => {
     }
 
     // Resolve subject from JWT profile + roster — never trust body worker/company for writes.
+    //
+    // 403 Identity mismatch: body worker_id/phone is proven to be someone else.
+    // Not 403: no roster row (manager/master) or empty claims — server fills,
+    // worker_id may be null. A failed page-scan lookup must not look like impersonation.
     const { data: profile } = await supabase
       .from("profiles")
       .select("phone, display_name")
@@ -227,17 +233,21 @@ Deno.serve(async (req) => {
       phone: string | null;
     } | null = null;
 
-    if (profilePhoneDigits) {
-      const { data: workers } = await supabase
-        .from("workers")
-        .select("id, company_id, job_type, name, phone")
-        .eq("project_id", body.project_id)
-        .eq("is_active", true)
-        .limit(300);
-      resolvedWorker =
-        (workers || []).find(
-          (row: { phone?: string | null }) => digitsOnlyPhone(row.phone) === profilePhoneDigits,
-        ) || null;
+    if (profile?.phone) {
+      const { data: found } = await supabase.rpc("lookup_project_worker_by_phone", {
+        _project_id: body.project_id,
+        _phone: profile.phone,
+      });
+      const row = Array.isArray(found) ? found[0] : found;
+      if (row?.id) {
+        resolvedWorker = {
+          id: row.id,
+          company_id: row.company_id ?? null,
+          job_type: row.job_type ?? null,
+          name: row.name ?? null,
+          phone: row.phone ?? null,
+        };
+      }
     }
 
     const claimedWorkerId = body.worker_id || body.worker_qr_id || null;
@@ -443,7 +453,8 @@ Deno.serve(async (req) => {
     // Always refresh last-known position when we can identify the worker.
     // Distribution map aggregates from this table (company/zone/count only).
     // Coalesce: skip upsert if same zone and moved <5m within 8s (cut write amplification).
-    if (subject.worker_id) {
+    // suppress_last_position: master off-site alarm test must not appear on the map.
+    if (subject.worker_id && !body.suppress_last_position) {
       const lastZone =
         eventType === "exit"
           ? null

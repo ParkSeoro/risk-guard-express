@@ -24,6 +24,12 @@ export type HeadlessTrackStartOpts = {
   fenceLng?: number | null;
   fenceRadiusM?: number | null;
   intervalMs?: number;
+  /** Consecutive outside samples before low-power watch. Default matches SITE_EXIT_STREAK. */
+  exitStreak?: number;
+  maxAccuracyM?: number;
+  resumePollMs?: number;
+  skipFence?: boolean;
+  suppressLastPosition?: boolean;
 };
 
 export function isHeadlessTrackAvailable(): boolean {
@@ -47,6 +53,11 @@ export async function startHeadlessTrack(opts: HeadlessTrackStartOpts): Promise<
       companyId: opts.companyId || "",
       workerRole: opts.workerRole || "",
       intervalMs: opts.intervalMs ?? 45_000,
+      exitStreak: opts.exitStreak ?? 5,
+      maxAccuracyM: opts.maxAccuracyM ?? 55,
+      resumePollMs: opts.resumePollMs ?? 300_000,
+      skipFence: opts.skipFence === true,
+      suppressLastPosition: opts.suppressLastPosition === true,
       fenceLat: opts.fenceLat ?? undefined,
       fenceLng: opts.fenceLng ?? undefined,
       fenceRadiusM: opts.fenceRadiusM ?? undefined,

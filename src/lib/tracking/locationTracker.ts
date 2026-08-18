@@ -7,7 +7,8 @@
 // Power policy: eco intervals far from danger zones; high-rate only near/inside.
 
 import { supabase } from "@/integrations/supabase/client";
-import { startHeadlessTrack, stopHeadlessTrack } from "@/lib/native/headlessTrack";
+import { isHeadlessTrackAvailable, startHeadlessTrack, stopHeadlessTrack } from "@/lib/native/headlessTrack";
+import { androidGpsPipelineOwner } from "@/lib/tracking/androidGpsPipeline";
 import {
   applyGpsCalibration,
   fetchProjectGpsCalibration,
@@ -18,11 +19,13 @@ import {
   DANGER_PROXIMITY_M,
   isDefinitelyOutsideSite,
   isInsideResumeFence,
+  SITE_EXIT_MAX_ACCURACY_M,
+  SITE_EXIT_STREAK,
   SITE_RESUME_FIRST_PROBE_MS,
   SITE_RESUME_POLL_MS,
   type SiteTrackingFence,
 } from "@/lib/tracking/siteTrackBounds";
-import { nextOutsideStreak, type SiteTrackPhase } from "@/lib/tracking/siteTrackPhase";
+import { trackLocationInvokeUserMessage } from "@/lib/tracking/trackLocationClient";
 import {
   createMotionIdleState,
   nextMotionIdle,
@@ -41,6 +44,8 @@ export type TrackingIdentity = {
   company_id?: string | null;
   worker_role?: string | null;
   project_id: string;
+  /** Master off-site alarm test: zone events yes, last-position map no. */
+  suppress_last_position?: boolean;
 };
 
 async function loadCalibration(projectId: string): Promise<GpsCalibration | null> {
@@ -230,6 +235,8 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
     let resumeTimer: ReturnType<typeof setInterval> | null = null;
     let resumeFirstTimer: ReturnType<typeof setTimeout> | null = null;
     let sessionStopped = false;
+    /** False while Android HeadlessTrack owns GPS (app backgrounded). */
+    let webviewOwnsPipeline = true;
     const idleAfterMs = opts.idleAfterMs ?? 2 * 60_000;
     const movementThresholdM = opts.movementThresholdM ?? 12;
     const site = opts.siteCenter;
@@ -265,8 +272,7 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
       outsideStreak = 0;
       clearResumeTimers();
       opts.onResumeSite?.();
-      void startHeadlessCompanion(opts);
-      await attachWatcher();
+      if (webviewOwnsPipeline) await attachWatcher();
     };
 
     const enterSuspended = (info: {
@@ -280,7 +286,6 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
       outsideStreak = 0;
       clearResumeTimers();
       void detachWatcher();
-      void stopHeadlessTrack();
       opts.onLeaveSite?.(info);
       resumeFirstTimer = setTimeout(() => {
         void probeResume();
@@ -361,7 +366,7 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
         lastSentAt = now;
 
         const liveId = opts.getIdentity?.() ?? opts.identity;
-        const { data } = await supabase.functions.invoke("track-location", {
+        const { data, error } = await supabase.functions.invoke("track-location", {
           body: {
             ...liveId,
             lat: rawLat,
@@ -371,6 +376,11 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
             device_ts: new Date(location.time || Date.now()).toISOString(),
           },
         });
+        const invokeMsg = trackLocationInvokeUserMessage(error);
+        if (invokeMsg) {
+          opts.onError?.(new Error(invokeMsg));
+          return;
+        }
         const zoneType = (data as any)?.zone_type as string | undefined;
         inDangerFromServer =
           zoneType === "danger" ||
@@ -417,6 +427,21 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
     };
 
     await attachWatcher();
+    const detachHeadlessGate = await attachAndroidHeadlessGate(opts, {
+      isStopped: () => sessionStopped,
+      pauseForeground: async () => {
+        webviewOwnsPipeline = false;
+        await detachWatcher();
+      },
+      resumeForeground: async () => {
+        webviewOwnsPipeline = true;
+        if (phase === "suspended") {
+          void probeResume();
+          return;
+        }
+        await attachWatcher();
+      },
+    });
     const onVisResume = () => {
       if (typeof document === "undefined") return;
       if (document.visibilityState !== "visible") return;
@@ -428,6 +453,7 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
     return () => {
       sessionStopped = true;
       clearResumeTimers();
+      detachHeadlessGate();
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisResume);
       }
@@ -508,10 +534,59 @@ async function startHeadlessCompanion(opts: TrackerOptions): Promise<void> {
       fenceLng: site?.lng ?? null,
       fenceRadiusM: site?.radiusM ?? null,
       intervalMs: 45_000,
+      exitStreak: SITE_EXIT_STREAK,
+      maxAccuracyM: SITE_EXIT_MAX_ACCURACY_M,
+      resumePollMs: SITE_RESUME_POLL_MS,
+      skipFence: !site || !!live.suppress_last_position,
+      suppressLastPosition: !!live.suppress_last_position,
     });
   } catch (e) {
     if (import.meta.env.DEV) console.warn("[HeadlessTrack] companion start skipped", e);
   }
+}
+
+/**
+ * Foreground: WebView / BackgroundGeolocation only.
+ * Background: HeadlessTrack only. Overlap is allowed only at the switch.
+ */
+async function attachAndroidHeadlessGate(
+  opts: TrackerOptions,
+  hooks: {
+    isStopped: () => boolean;
+    pauseForeground: () => void | Promise<void>;
+    resumeForeground: () => void | Promise<void>;
+  },
+): Promise<() => void> {
+  if (!isHeadlessTrackAvailable()) return () => {};
+
+  const apply = async (isActive: boolean) => {
+    if (hooks.isStopped()) return;
+    if (androidGpsPipelineOwner(isActive) === "webview") {
+      await stopHeadlessTrack();
+      await hooks.resumeForeground();
+    } else {
+      await hooks.pauseForeground();
+      await startHeadlessCompanion(opts);
+    }
+  };
+
+  let remove: (() => void) | undefined;
+  try {
+    const { App } = await import("@capacitor/app");
+    const handle = await App.addListener("appStateChange", ({ isActive }) => {
+      void apply(!!isActive);
+    });
+    remove = () => {
+      void handle.remove();
+    };
+  } catch {
+    /* Capacitor App plugin missing */
+  }
+
+  return () => {
+    remove?.();
+    void stopHeadlessTrack();
+  };
 }
 
 export async function startTracking(opts: TrackerOptions): Promise<() => void> {
@@ -540,6 +615,7 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   let zonesAt: number;
   let resumeTimer: ReturnType<typeof setInterval> | null = null;
   let resumeFirstTimer: ReturnType<typeof setTimeout> | null = null;
+  let webviewOwnsPipeline = true;
 
   try {
     cal = await loadCalibration(identity.project_id);
@@ -552,12 +628,10 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
 
   const bgStop = await tryNativeBackground(opts);
   if (bgStop) {
-    void startHeadlessCompanion(opts);
     const stop = () => {
       stopped = true;
       unsubCal();
       bgStop();
-      void stopHeadlessTrack();
     };
     (stop as any).__usedBackground = true;
     return stop;
@@ -613,8 +687,7 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
     outsideStreak = 0;
     clearResumeTimers();
     opts.onResumeSite?.();
-    void startHeadlessCompanion(opts);
-    await attachWatch();
+    if (webviewOwnsPipeline) await attachWatch();
   };
 
   const enterSuspended = (info: {
@@ -628,7 +701,6 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
     outsideStreak = 0;
     clearResumeTimers();
     detachWatch();
-    void stopHeadlessTrack();
     opts.onLeaveSite?.(info);
     resumeFirstTimer = setTimeout(() => {
       void probeResume();
@@ -715,7 +787,8 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
           device_ts: new Date(pos.timestamp || now).toISOString(),
         },
       });
-      if (error) throw error;
+      const invokeMsg = trackLocationInvokeUserMessage(error);
+      if (invokeMsg) throw new Error(invokeMsg);
 
       const zoneType = (data as any)?.zone_type as string | undefined;
       inDangerFromServer =
@@ -764,17 +837,31 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   }
 
   await attachWatch();
-  void startHeadlessCompanion(opts);
+  const detachHeadlessGate = await attachAndroidHeadlessGate(opts, {
+    isStopped: () => stopped,
+    pauseForeground: () => {
+      webviewOwnsPipeline = false;
+      detachWatch();
+    },
+    resumeForeground: async () => {
+      webviewOwnsPipeline = true;
+      if (phase === "suspended") {
+        void probeResume();
+        return;
+      }
+      await attachWatch();
+    },
+  });
 
   return () => {
     stopped = true;
     unsubCal();
     clearResumeTimers();
+    detachHeadlessGate();
     detachWatch();
     if (typeof document !== "undefined") {
       document.removeEventListener("visibilitychange", onVisResume);
     }
-    void stopHeadlessTrack();
   };
 }
 

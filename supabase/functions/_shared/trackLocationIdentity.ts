@@ -36,8 +36,17 @@ export function resolveZoneEventWorkerKey(args: {
 }
 
 /**
- * Returns true when the client claim disagrees with the JWT-resolved identity.
- * Empty claims are allowed (server fills from profile/roster).
+ * 403 only when a body claim is *proven* wrong against JWT identity.
+ *
+ * 403:
+ *   - claimed worker_id differs from the roster row resolved by JWT phone
+ *   - claimed phone digits differ from profile and/or resolved roster phone
+ *
+ * NOT 403 (server fills identity, worker_id may be null):
+ *   - empty claims
+ *   - claimed worker_id but no roster row (manager/master, or lookup miss —
+ *     a LIMIT+JS scan miss must never look like impersonation)
+ *   - no profile phone
  */
 export function trackIdentityClaimMismatch(args: {
   profilePhoneDigits: string;
@@ -47,8 +56,8 @@ export function trackIdentityClaimMismatch(args: {
   claimedWorkerPhone?: string | null;
 }): boolean {
   const claimedId = String(args.claimedWorkerId || "").trim();
-  if (claimedId) {
-    if (!args.resolvedWorkerId || claimedId !== args.resolvedWorkerId) return true;
+  if (claimedId && args.resolvedWorkerId && claimedId !== args.resolvedWorkerId) {
+    return true;
   }
 
   const claimDigits = digitsOnlyPhone(args.claimedWorkerPhone);

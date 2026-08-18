@@ -32,6 +32,13 @@ public class HeadlessTrackPlugin extends Plugin {
       copy(call, cfg, "companyId");
       copy(call, cfg, "workerRole");
       if (call.getInt("intervalMs") != null) cfg.put("intervalMs", call.getInt("intervalMs"));
+      if (call.getInt("exitStreak") != null) cfg.put("exitStreak", call.getInt("exitStreak"));
+      if (call.getDouble("maxAccuracyM") != null) cfg.put("maxAccuracyM", call.getDouble("maxAccuracyM"));
+      if (call.getInt("resumePollMs") != null) cfg.put("resumePollMs", call.getInt("resumePollMs"));
+      if (call.getBoolean("skipFence") != null) cfg.put("skipFence", call.getBoolean("skipFence"));
+      if (call.getBoolean("suppressLastPosition") != null) {
+        cfg.put("suppressLastPosition", call.getBoolean("suppressLastPosition"));
+      }
       if (call.getDouble("fenceLat") != null) cfg.put("fenceLat", call.getDouble("fenceLat"));
       if (call.getDouble("fenceLng") != null) cfg.put("fenceLng", call.getDouble("fenceLng"));
       if (call.getDouble("fenceRadiusM") != null) cfg.put("fenceRadiusM", call.getDouble("fenceRadiusM"));

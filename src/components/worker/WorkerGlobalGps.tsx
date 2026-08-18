@@ -4,8 +4,8 @@
  * Policy (no offsite-pause flag):
  * - Worker: full tracking only while checked in today (open entry log).
  * - Manager/master: full tracking only when currently inside the site resume fence.
- * Leave-site stops tracking; managers poll occasionally to resume when back on site.
- * Workers resume on next check-in (mobile:resume-gps-tracking).
+ * Leave-site suspends tracking inside the tracker (5 min resume probe).
+ * Managers who open the app off-site still need a boot-time probe to start.
  */
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -43,11 +43,10 @@ export function GpsBlockBadge({ reason }: { reason: GpsBlockReason }) {
 
 export default function WorkerGlobalGps() {
   const { user, profile, roles, hasRole } = useAuth();
-  const { startGpsTracking, stopGpsTracking, gpsTracking } = useSystemRealtime();
+  const { startGpsTracking, stopGpsTracking, gpsTracking, gpsSuspended } = useSystemRealtime();
   const setGpsUi = useSetGpsUi();
   const workerIdRef = useRef<string | null>(null);
   const lastKeyRef = useRef<string | null>(null);
-  const managerRef = useRef(false);
   const [gpsBlockReason, setGpsBlockReason] = useState<GpsBlockReason>(null);
 
   useEffect(() => {
@@ -240,7 +239,6 @@ export default function WorkerGlobalGps() {
 
       const isManager = await resolveIsManager(projectId);
       if (cancelled) return;
-      managerRef.current = isManager;
 
       // Managers + platform master: only while inside the site resume fence.
       // Home / off-site must not keep the OS GPS icon or last-position map alive.
@@ -252,8 +250,12 @@ export default function WorkerGlobalGps() {
           await startForProject(projectId);
         } else {
           setGpsBlockReason("fence_probe_failed");
-          stopGpsTracking();
           clearStickyDangerAlert();
+          if (lastKeyRef.current) {
+            // Tracker already owns the session (possibly suspended). Don't tear it down.
+            return;
+          }
+          stopGpsTracking();
           lastKeyRef.current = null;
           watchResumeNearSite(projectId);
         }
@@ -294,18 +296,10 @@ export default function WorkerGlobalGps() {
       lastKeyRef.current = null;
       void boot();
     };
-    /** Auto-stop after leave-site: managers may poll to resume; workers wait for check-in. */
-    const onAutoStopped = (ev: Event) => {
-      const pid =
-        (ev as CustomEvent)?.detail?.projectId || localStorage.getItem(PROJECT_KEY);
-      if (!pid) return;
-      lastKeyRef.current = null;
-      if (managerRef.current) {
-        setGpsBlockReason("fence_probe_failed");
-        stopGpsTracking();
-        clearStickyDangerAlert();
-        watchResumeNearSite(pid);
-      }
+    /** Auto-stop after leave-site: tracker stays in low-power resume; do not tear it down. */
+    const onAutoStopped = () => {
+      setGpsBlockReason("fence_probe_failed");
+      clearStickyDangerAlert();
     };
     const onCheckedOut = () => {
       clearResumePoll();
@@ -323,7 +317,7 @@ export default function WorkerGlobalGps() {
     window.addEventListener("storage", onStorage);
     window.addEventListener("mobile:project-changed", onProjectChanged);
     window.addEventListener("mobile:resume-gps-tracking", onResumeTracking);
-    window.addEventListener("mobile:gps-auto-stopped", onAutoStopped as EventListener);
+    window.addEventListener("mobile:gps-auto-stopped", onAutoStopped);
     window.addEventListener("mobile:worker-checked-out", onCheckedOut);
     document.addEventListener("visibilitychange", onVisResume);
 
@@ -333,7 +327,7 @@ export default function WorkerGlobalGps() {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener("mobile:project-changed", onProjectChanged);
       window.removeEventListener("mobile:resume-gps-tracking", onResumeTracking);
-      window.removeEventListener("mobile:gps-auto-stopped", onAutoStopped as EventListener);
+      window.removeEventListener("mobile:gps-auto-stopped", onAutoStopped);
       window.removeEventListener("mobile:worker-checked-out", onCheckedOut);
       document.removeEventListener("visibilitychange", onVisResume);
     };
@@ -352,13 +346,16 @@ export default function WorkerGlobalGps() {
 
   // Clear badge once tracking is actually on (covers race / resume)
   useEffect(() => {
-    if (gpsTracking) setGpsBlockReason(null);
-  }, [gpsTracking]);
+    if (gpsTracking && !gpsSuspended) setGpsBlockReason(null);
+  }, [gpsTracking, gpsSuspended]);
 
   useEffect(() => {
-    setGpsUi({ tracking: gpsTracking, block: gpsTracking ? null : gpsBlockReason });
+    setGpsUi({
+      tracking: gpsTracking && !gpsSuspended,
+      block: gpsSuspended ? "fence_probe_failed" : gpsTracking ? null : gpsBlockReason,
+    });
     return () => setGpsUi({ tracking: false, block: null });
-  }, [gpsTracking, gpsBlockReason, setGpsUi]);
+  }, [gpsTracking, gpsSuspended, gpsBlockReason, setGpsUi]);
 
   return null;
 }

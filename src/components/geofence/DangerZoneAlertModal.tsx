@@ -9,6 +9,8 @@ import { AlertOctagon, X } from "lucide-react";
 type Props = {
   open: boolean;
   zoneName?: string | null;
+  /** Client preview waiting for track-location (S-01). */
+  confirming?: boolean;
   workerName?: string | null;
   /** project_role / global role for honorific (관리자님 / 근로자 …) */
   workerRole?: AlarmRoleInput;
@@ -19,6 +21,7 @@ type Props = {
 export default function DangerZoneAlertModal({
   open,
   zoneName,
+  confirming = false,
   workerName,
   workerRole,
   onDismiss,
@@ -120,11 +123,14 @@ export default function DangerZoneAlertModal({
       `}</style>
       <AlertOctagon className="h-28 w-28 mb-6 danger-icon-pulse" strokeWidth={1.5} />
       <h1 className="text-4xl sm:text-5xl font-black text-center leading-tight mb-4">
-        위험 구역 진입
+        {confirming ? "위험 구역 확인 중" : "위험 구역 진입"}
       </h1>
       <p className="text-xl sm:text-2xl font-bold text-center leading-snug max-w-lg mb-2">
         {message}
       </p>
+      {confirming && (
+        <p className="text-sm text-red-100/90 mt-2 text-center">서버에서 위치를 확인하는 중입니다</p>
+      )}
       {zoneName && (
         <p className="text-lg text-red-100 mt-4 text-center">구역: {zoneName}</p>
       )}

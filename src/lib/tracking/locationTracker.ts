@@ -16,9 +16,12 @@ import {
 import {
   DANGER_PROXIMITY_M,
   isDefinitelyOutsideSite,
-  SITE_EXIT_STREAK,
+  isInsideResumeFence,
+  SITE_RESUME_FIRST_PROBE_MS,
+  SITE_RESUME_POLL_MS,
   type SiteTrackingFence,
 } from "@/lib/tracking/siteTrackBounds";
+import { nextOutsideStreak, type SiteTrackPhase } from "@/lib/tracking/siteTrackPhase";
 import {
   minDistanceToRestrictedZoneEdge,
   type RestrictedZoneGeom,
@@ -66,6 +69,25 @@ async function loadRestrictedZones(projectId: string): Promise<RestrictedZoneGeo
   }
 }
 
+export type TrackerFixInfo = {
+  /** Map-aligned (calibrated) coordinates for local UI / zone preview. */
+  lat: number;
+  lng: number;
+  /** Device raw GPS — send these to track-location (server calibrates once). */
+  raw_lat: number;
+  raw_lng: number;
+  accuracy: number;
+  zone_id: string | null;
+  source: string;
+  mode: string;
+  kind: "preview" | "fix";
+  restricted_zone_id?: string | null;
+  zone_name?: string | null;
+  zone_type?: string | null;
+  event_type?: string | null;
+  ignored?: string | null;
+};
+
 export type TrackerOptions = {
   identity: TrackingIdentity;
   /**
@@ -85,23 +107,64 @@ export type TrackerOptions = {
   idleAfterMs?: number;
   /** 이동으로 판단할 최소 이동 거리 (m). 기본 12m. */
   movementThresholdM?: number;
-  /** 현장 펜스 — raw GPS 기준 밖이면 onLeaveSite. */
+  /** 현장 펜스 — raw GPS 기준 밖이면 onLeaveSite 후 저전력 재개 감시. */
   siteCenter?: SiteTrackingFence | null;
   onLeaveSite?: (info: { distanceM: number; lat: number; lng: number; radiusM: number }) => void;
-  onUpdate?: (info: {
-    /** Map-aligned (calibrated) coordinates for local UI / zone preview. */
-    lat: number;
-    lng: number;
-    /** Device raw GPS — send these to track-location (server calibrates once). */
-    raw_lat: number;
-    raw_lng: number;
-    accuracy: number;
-    zone_id: string | null;
-    source: string;
-    mode: string;
-  }) => void;
+  onResumeSite?: () => void;
+  onPreview?: (info: TrackerFixInfo) => void;
+  onFix?: (info: TrackerFixInfo) => void;
+  /** Fires for preview and fix. Prefer onPreview/onFix. */
+  onUpdate?: (info: TrackerFixInfo) => void;
   onError?: (err: Error) => void;
 };
+
+function emitPreview(opts: TrackerOptions, info: TrackerFixInfo) {
+  opts.onPreview?.(info);
+  opts.onUpdate?.(info);
+}
+
+function emitFix(opts: TrackerOptions, info: TrackerFixInfo) {
+  opts.onFix?.(info);
+  opts.onUpdate?.(info);
+}
+
+async function probeCurrentPosition(): Promise<{
+  lat: number;
+  lng: number;
+  accuracy: number;
+} | null> {
+  try {
+    const cap = (globalThis as any).Capacitor as Capacitor | undefined;
+    if (cap?.isNativePlatform?.()) {
+      const { Geolocation } = await import("@capacitor/geolocation");
+      const pos = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 15_000,
+        maximumAge: 8_000,
+      });
+      return {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy ?? 30,
+      };
+    }
+  } catch {
+    /* browser fallback */
+  }
+  if (typeof navigator === "undefined" || !("geolocation" in navigator)) return null;
+  return await new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) =>
+        resolve({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy ?? 30,
+        }),
+      () => resolve(null),
+      { enableHighAccuracy: true, maximumAge: 8_000, timeout: 15_000 },
+    );
+  });
+}
 
 type Capacitor = { isNativePlatform?: () => boolean; getPlatform?: () => string };
 type PowerMode = "eco" | "near" | "danger" | "idle";
@@ -168,145 +231,216 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
     let lastMovedAt = Date.now();
     let currentMode: PowerMode = "eco";
     let outsideStreak = 0;
-    let leftSite = false;
+    let phase: SiteTrackPhase = "tracking";
     let inDangerFromServer = false;
+    let watcherId: string | null = null;
+    let resumeTimer: ReturnType<typeof setInterval> | null = null;
+    let resumeFirstTimer: ReturnType<typeof setTimeout> | null = null;
+    let sessionStopped = false;
     const idleAfterMs = opts.idleAfterMs ?? 2 * 60_000;
     const movementThresholdM = opts.movementThresholdM ?? 12;
     const site = opts.siteCenter;
 
-    const watcherId = await BackgroundGeolocation.addWatcher(
-      {
-        backgroundMessage: "현장 안전 위치 추적 중 (위험구역 근처에서만 고정밀)",
-        backgroundTitle: "SafeNex 위치 추적",
-        requestPermissions: false,
-        stale: false,
-        // Wider filter = fewer wakeups far from zones (near-zone still uses time throttle)
-        distanceFilter: 15,
-      },
-      async (location: any, error: any) => {
-        if (leftSite) return;
-        if (error) {
-          opts.onError?.(new Error(error.message || String(error)));
-          return;
-        }
-        if (!location) return;
-        try {
-          const now = Date.now();
-          if (now - zonesAt > 120_000) {
-            zones = await loadRestrictedZones(opts.identity.project_id);
-            zonesAt = now;
-          }
-          cal = await loadCalibration(opts.identity.project_id);
-          const rawLat = location.latitude;
-          const rawLng = location.longitude;
-          const accuracy = Number(location.accuracy) || 30;
-          const disp = applyGpsCalibration(rawLat, rawLng, cal);
+    const clearResumeTimers = () => {
+      if (resumeTimer != null) {
+        clearInterval(resumeTimer);
+        resumeTimer = null;
+      }
+      if (resumeFirstTimer != null) {
+        clearTimeout(resumeFirstTimer);
+        resumeFirstTimer = null;
+      }
+    };
 
-          // Site leave: RAW GPS vs fence (do not mix map calibration)
-          if (site && Number.isFinite(site.lat) && Number.isFinite(site.lng)) {
-            const { outside, distanceM: d } = isDefinitelyOutsideSite(
-              site,
-              rawLat,
-              rawLng,
-              accuracy,
-            );
-            if (outside) {
-              outsideStreak += 1;
-              if (outsideStreak >= SITE_EXIT_STREAK) {
-                leftSite = true;
-                opts.onLeaveSite?.({
-                  distanceM: d,
-                  lat: rawLat,
-                  lng: rawLng,
-                  radiusM: site.radiusM,
-                });
-                try {
-                  await BackgroundGeolocation.removeWatcher({ id: watcherId });
-                } catch {
-                  /* ignore */
-                }
-                return;
-              }
-            } else {
-              outsideStreak = 0;
-            }
-          }
-
-          const distToZone = minDistanceToRestrictedZoneEdge(disp.lat, disp.lng, zones);
-          let idle = false;
-          if (lastPos) {
-            const moved = distanceM(lastPos, { lat: disp.lat, lng: disp.lng });
-            if (moved >= movementThresholdM) {
-              lastMovedAt = now;
-            } else if (now - lastMovedAt >= idleAfterMs) {
-              idle = true;
-            }
-          }
-          lastPos = { lat: disp.lat, lng: disp.lng };
-          currentMode = resolvePowerMode({
-            distToZoneM: distToZone,
-            inDangerFromServer,
-            idle,
-          });
-
-          opts.onUpdate?.({
-            lat: disp.lat,
-            lng: disp.lng,
-            raw_lat: rawLat,
-            raw_lng: rawLng,
-            accuracy,
-            zone_id: null,
-            source: "gps-bg-local",
-            mode: currentMode,
-          });
-
-          const minInterval = pickIntervalMs(currentMode, intervals);
-          if (now - lastSentAt < minInterval) return;
-          lastSentAt = now;
-
-          const liveId = opts.getIdentity?.() ?? opts.identity;
-          const { data } = await supabase.functions.invoke("track-location", {
-            body: {
-              ...liveId,
-              lat: rawLat,
-              lng: rawLng,
-              accuracy_m: accuracy,
-              wifi_scan: [],
-              device_ts: new Date(location.time || Date.now()).toISOString(),
-            },
-          });
-          const zoneType = (data as any)?.zone_type as string | undefined;
-          inDangerFromServer =
-            zoneType === "danger" ||
-            zoneType === "restricted" ||
-            (data as any)?.event_type === "unauthorized_entry";
-          currentMode = resolvePowerMode({
-            distToZoneM: distToZone,
-            inDangerFromServer,
-            idle,
-          });
-          opts.onUpdate?.({
-            lat: disp.lat,
-            lng: disp.lng,
-            raw_lat: rawLat,
-            raw_lng: rawLng,
-            accuracy,
-            zone_id: (data as any)?.zone_id ?? null,
-            source: (data as any)?.source ?? "gps-bg",
-            mode: currentMode,
-            ...(data as any),
-          } as any);
-        } catch (e: any) {
-          opts.onError?.(new Error(e?.message || String(e)));
-        }
-      },
-    );
-    return () => {
+    const detachWatcher = async () => {
+      if (!watcherId) return;
+      const id = watcherId;
+      watcherId = null;
       try {
-        BackgroundGeolocation.removeWatcher({ id: watcherId });
+        await BackgroundGeolocation.removeWatcher({ id });
       } catch {
         /* ignore */
       }
+    };
+
+    const probeResume = async () => {
+      if (sessionStopped || phase !== "suspended" || !site) return;
+      const pos = await probeCurrentPosition();
+      if (!pos || sessionStopped || phase !== "suspended") return;
+      if (!isInsideResumeFence(site, pos.lat, pos.lng, pos.accuracy)) return;
+      phase = "tracking";
+      outsideStreak = 0;
+      clearResumeTimers();
+      opts.onResumeSite?.();
+      void startHeadlessCompanion(opts);
+      await attachWatcher();
+    };
+
+    const enterSuspended = (info: {
+      distanceM: number;
+      lat: number;
+      lng: number;
+      radiusM: number;
+    }) => {
+      if (phase === "suspended" || sessionStopped) return;
+      phase = "suspended";
+      outsideStreak = 0;
+      clearResumeTimers();
+      void detachWatcher();
+      void stopHeadlessTrack();
+      opts.onLeaveSite?.(info);
+      resumeFirstTimer = setTimeout(() => {
+        void probeResume();
+      }, SITE_RESUME_FIRST_PROBE_MS);
+      resumeTimer = setInterval(() => {
+        void probeResume();
+      }, SITE_RESUME_POLL_MS);
+    };
+
+    const onLocation = async (location: any, error: any) => {
+      if (sessionStopped || phase !== "tracking") return;
+      if (error) {
+        opts.onError?.(new Error(error.message || String(error)));
+        return;
+      }
+      if (!location) return;
+      try {
+        const now = Date.now();
+        if (now - zonesAt > 120_000) {
+          zones = await loadRestrictedZones(opts.identity.project_id);
+          zonesAt = now;
+        }
+        cal = await loadCalibration(opts.identity.project_id);
+        const rawLat = location.latitude;
+        const rawLng = location.longitude;
+        const accuracy = Number(location.accuracy) || 30;
+        const disp = applyGpsCalibration(rawLat, rawLng, cal);
+
+        if (site && Number.isFinite(site.lat) && Number.isFinite(site.lng)) {
+          const { outside, distanceM: d } = isDefinitelyOutsideSite(
+            site,
+            rawLat,
+            rawLng,
+            accuracy,
+          );
+          const bump = nextOutsideStreak(outside, outsideStreak);
+          outsideStreak = bump.streak;
+          if (bump.suspend) {
+            enterSuspended({
+              distanceM: d,
+              lat: rawLat,
+              lng: rawLng,
+              radiusM: site.radiusM,
+            });
+            return;
+          }
+        }
+
+        const distToZone = minDistanceToRestrictedZoneEdge(disp.lat, disp.lng, zones);
+        let idle = false;
+        if (lastPos) {
+          const moved = distanceM(lastPos, { lat: disp.lat, lng: disp.lng });
+          if (moved >= movementThresholdM) {
+            lastMovedAt = now;
+          } else if (now - lastMovedAt >= idleAfterMs) {
+            idle = true;
+          }
+        }
+        lastPos = { lat: disp.lat, lng: disp.lng };
+        currentMode = resolvePowerMode({
+          distToZoneM: distToZone,
+          inDangerFromServer,
+          idle,
+        });
+
+        emitPreview(opts, {
+          lat: disp.lat,
+          lng: disp.lng,
+          raw_lat: rawLat,
+          raw_lng: rawLng,
+          accuracy,
+          zone_id: null,
+          source: "gps-bg-local",
+          mode: currentMode,
+          kind: "preview",
+        });
+
+        const minInterval = pickIntervalMs(currentMode, intervals);
+        if (now - lastSentAt < minInterval) return;
+        lastSentAt = now;
+
+        const liveId = opts.getIdentity?.() ?? opts.identity;
+        const { data } = await supabase.functions.invoke("track-location", {
+          body: {
+            ...liveId,
+            lat: rawLat,
+            lng: rawLng,
+            accuracy_m: accuracy,
+            wifi_scan: [],
+            device_ts: new Date(location.time || Date.now()).toISOString(),
+          },
+        });
+        const zoneType = (data as any)?.zone_type as string | undefined;
+        inDangerFromServer =
+          zoneType === "danger" ||
+          zoneType === "restricted" ||
+          (data as any)?.event_type === "unauthorized_entry";
+        currentMode = resolvePowerMode({
+          distToZoneM: distToZone,
+          inDangerFromServer,
+          idle,
+        });
+        emitFix(opts, {
+          lat: disp.lat,
+          lng: disp.lng,
+          raw_lat: rawLat,
+          raw_lng: rawLng,
+          accuracy,
+          zone_id: (data as any)?.zone_id ?? null,
+          source: (data as any)?.source ?? "gps-bg",
+          mode: currentMode,
+          kind: "fix",
+          restricted_zone_id: (data as any)?.restricted_zone_id ?? null,
+          zone_name: (data as any)?.zone_name ?? null,
+          zone_type: zoneType ?? null,
+          event_type: (data as any)?.event_type ?? null,
+          ignored: (data as any)?.ignored ?? null,
+        });
+      } catch (e: any) {
+        opts.onError?.(new Error(e?.message || String(e)));
+      }
+    };
+
+    const attachWatcher = async () => {
+      if (sessionStopped || watcherId) return;
+      watcherId = await BackgroundGeolocation.addWatcher(
+        {
+          backgroundMessage: "현장 안전 위치 추적 중 (위험구역 근처에서만 고정밀)",
+          backgroundTitle: "SafeNex 위치 추적",
+          requestPermissions: false,
+          stale: false,
+          distanceFilter: 15,
+        },
+        onLocation,
+      );
+    };
+
+    await attachWatcher();
+    const onVisResume = () => {
+      if (typeof document === "undefined") return;
+      if (document.visibilityState !== "visible") return;
+      if (phase === "suspended") void probeResume();
+    };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", onVisResume);
+    }
+    return () => {
+      sessionStopped = true;
+      clearResumeTimers();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisResume);
+      }
+      void detachWatcher();
     };
   } catch (e) {
     if (import.meta.env.DEV) console.warn("background-geo not available, falling back", e);
@@ -390,7 +524,7 @@ async function startHeadlessCompanion(opts: TrackerOptions): Promise<void> {
 }
 
 export async function startTracking(opts: TrackerOptions): Promise<() => void> {
-  const { identity, onUpdate, onError } = opts;
+  const { identity, onError } = opts;
   const intervals = {
     moving: opts.intervals?.moving ?? 12_000,
     idle: opts.intervals?.idle ?? 60_000,
@@ -407,11 +541,14 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   let lastMovedAt = Date.now();
   let currentMode: PowerMode = "eco";
   let stopped = false;
+  let phase: SiteTrackPhase = "tracking";
   let outsideStreak = 0;
   let inDangerFromServer = false;
   let cal = await loadCalibration(identity.project_id);
   let zones = await loadRestrictedZones(identity.project_id);
   let zonesAt = Date.now();
+  let resumeTimer: ReturnType<typeof setInterval> | null = null;
+  let resumeFirstTimer: ReturnType<typeof setTimeout> | null = null;
 
   const bgStop = await tryNativeBackground(opts);
   if (bgStop) {
@@ -427,142 +564,212 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
 
   const geo = await getGeolocation();
   let watchHandle: { remove: () => void } | null = null;
-  const handle = await geo.watch(
-    async (pos) => {
-      if (stopped) return;
-      const now = Date.now();
-      if (now - zonesAt > 120_000) {
-        zones = await loadRestrictedZones(identity.project_id);
-        zonesAt = now;
-      }
-      const raw = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: now };
-      const accuracy = pos.coords.accuracy ?? 30;
-      cal = await loadCalibration(identity.project_id);
-      const disp = applyGpsCalibration(raw.lat, raw.lng, cal);
-      const here = { lat: disp.lat, lng: disp.lng, ts: now };
 
-      if (site && Number.isFinite(site.lat) && Number.isFinite(site.lng)) {
-        const { outside, distanceM: d } = isDefinitelyOutsideSite(
-          site,
-          raw.lat,
-          raw.lng,
-          accuracy,
-        );
-        if (outside) {
-          outsideStreak += 1;
-          if (outsideStreak >= SITE_EXIT_STREAK) {
-            stopped = true;
-            try {
-              watchHandle?.remove();
-            } catch {
-              /* ignore */
-            }
-            opts.onLeaveSite?.({
-              distanceM: d,
-              lat: raw.lat,
-              lng: raw.lng,
-              radiusM: site.radiusM,
-            });
-            return;
-          }
-        } else {
-          outsideStreak = 0;
-        }
-      }
+  const clearResumeTimers = () => {
+    if (resumeTimer != null) {
+      clearInterval(resumeTimer);
+      resumeTimer = null;
+    }
+    if (resumeFirstTimer != null) {
+      clearTimeout(resumeFirstTimer);
+      resumeFirstTimer = null;
+    }
+  };
 
-      let idle = false;
-      if (lastPos) {
-        const d = distanceM(lastPos, here);
-        if (d >= movementThresholdM) {
-          lastMovedAt = now;
-        } else if (now - lastMovedAt >= idleAfterMs) {
-          idle = true;
-        }
-      } else {
-        lastPos = here;
-      }
+  const detachWatch = () => {
+    try {
+      watchHandle?.remove();
+    } catch {
+      /* ignore */
+    }
+    watchHandle = null;
+  };
 
-      const distToZone = minDistanceToRestrictedZoneEdge(here.lat, here.lng, zones);
+  const onGeoError = (e: any) => {
+    const msg =
+      e?.code === 1
+        ? "위치 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요."
+        : e?.code === 2
+          ? "위치를 사용할 수 없습니다. GPS를 켜 주세요."
+          : e?.code === 3
+            ? "위치 수신 시간 초과. 야외에서 다시 시도해 주세요."
+            : e?.message || String(e);
+    onError?.(new Error(msg));
+  };
+
+  const probeResume = async () => {
+    if (stopped || phase !== "suspended" || !site) return;
+    const pos = await probeCurrentPosition();
+    if (!pos || stopped || phase !== "suspended") return;
+    if (!isInsideResumeFence(site, pos.lat, pos.lng, pos.accuracy)) return;
+    phase = "tracking";
+    outsideStreak = 0;
+    clearResumeTimers();
+    opts.onResumeSite?.();
+    void startHeadlessCompanion(opts);
+    await attachWatch();
+  };
+
+  const enterSuspended = (info: {
+    distanceM: number;
+    lat: number;
+    lng: number;
+    radiusM: number;
+  }) => {
+    if (phase === "suspended" || stopped) return;
+    phase = "suspended";
+    outsideStreak = 0;
+    clearResumeTimers();
+    detachWatch();
+    void stopHeadlessTrack();
+    opts.onLeaveSite?.(info);
+    resumeFirstTimer = setTimeout(() => {
+      void probeResume();
+    }, SITE_RESUME_FIRST_PROBE_MS);
+    resumeTimer = setInterval(() => {
+      void probeResume();
+    }, SITE_RESUME_POLL_MS);
+  };
+
+  const onWatchPos = async (pos: GeolocationPosition) => {
+    if (stopped || phase !== "tracking") return;
+    const now = Date.now();
+    if (now - zonesAt > 120_000) {
+      zones = await loadRestrictedZones(identity.project_id);
+      zonesAt = now;
+    }
+    const raw = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: now };
+    const accuracy = pos.coords.accuracy ?? 30;
+    cal = await loadCalibration(identity.project_id);
+    const disp = applyGpsCalibration(raw.lat, raw.lng, cal);
+    const here = { lat: disp.lat, lng: disp.lng, ts: now };
+
+    if (site && Number.isFinite(site.lat) && Number.isFinite(site.lng)) {
+      const { outside, distanceM: d } = isDefinitelyOutsideSite(
+        site,
+        raw.lat,
+        raw.lng,
+        accuracy,
+      );
+      const bump = nextOutsideStreak(outside, outsideStreak);
+      outsideStreak = bump.streak;
+      if (bump.suspend) {
+        enterSuspended({
+          distanceM: d,
+          lat: raw.lat,
+          lng: raw.lng,
+          radiusM: site.radiusM,
+        });
+        return;
+      }
+    }
+
+    let idle = false;
+    if (lastPos) {
+      const d = distanceM(lastPos, here);
+      if (d >= movementThresholdM) {
+        lastMovedAt = now;
+      } else if (now - lastMovedAt >= idleAfterMs) {
+        idle = true;
+      }
+    } else {
+      lastPos = here;
+    }
+
+    const distToZone = minDistanceToRestrictedZoneEdge(here.lat, here.lng, zones);
+    currentMode = resolvePowerMode({
+      distToZoneM: distToZone,
+      inDangerFromServer,
+      idle,
+    });
+
+    emitPreview(opts, {
+      lat: here.lat,
+      lng: here.lng,
+      raw_lat: raw.lat,
+      raw_lng: raw.lng,
+      accuracy,
+      zone_id: null,
+      source: "gps-local",
+      mode: currentMode,
+      kind: "preview",
+    });
+
+    const minInterval = pickIntervalMs(currentMode, intervals);
+    if (now - lastSentAt < minInterval) return;
+    lastSentAt = now;
+    lastPos = here;
+
+    try {
+      const liveId = opts.getIdentity?.() ?? identity;
+      const { data, error } = await supabase.functions.invoke("track-location", {
+        body: {
+          ...liveId,
+          lat: raw.lat,
+          lng: raw.lng,
+          accuracy_m: accuracy,
+          wifi_scan: [],
+          device_ts: new Date(pos.timestamp || now).toISOString(),
+        },
+      });
+      if (error) throw error;
+
+      const zoneType = (data as any)?.zone_type as string | undefined;
+      inDangerFromServer =
+        zoneType === "danger" ||
+        zoneType === "restricted" ||
+        (data as any)?.event_type === "unauthorized_entry";
       currentMode = resolvePowerMode({
         distToZoneM: distToZone,
         inDangerFromServer,
         idle,
       });
 
-      onUpdate?.({
+      emitFix(opts, {
         lat: here.lat,
         lng: here.lng,
         raw_lat: raw.lat,
         raw_lng: raw.lng,
         accuracy,
-        zone_id: null,
-        source: "gps-local",
+        zone_id: (data as any)?.zone_id ?? null,
+        source: (data as any)?.source ?? "gps",
         mode: currentMode,
+        kind: "fix",
+        restricted_zone_id: (data as any)?.restricted_zone_id ?? null,
+        zone_name: (data as any)?.zone_name ?? null,
+        zone_type: zoneType ?? null,
+        event_type: (data as any)?.event_type ?? null,
+        ignored: (data as any)?.ignored ?? null,
       });
+    } catch (e: any) {
+      onError?.(new Error(e?.message || String(e)));
+    }
+  };
 
-      const minInterval = pickIntervalMs(currentMode, intervals);
-      if (now - lastSentAt < minInterval) return;
-      lastSentAt = now;
-      lastPos = here;
+  const attachWatch = async () => {
+    if (stopped || watchHandle) return;
+    watchHandle = await geo.watch(onWatchPos, onGeoError);
+  };
 
-      try {
-        const liveId = opts.getIdentity?.() ?? identity;
-        const { data, error } = await supabase.functions.invoke("track-location", {
-          body: {
-            ...liveId,
-            lat: raw.lat,
-            lng: raw.lng,
-            accuracy_m: accuracy,
-            wifi_scan: [],
-            device_ts: new Date(pos.timestamp || now).toISOString(),
-          },
-        });
-        if (error) throw error;
+  const onVisResume = () => {
+    if (typeof document === "undefined") return;
+    if (document.visibilityState !== "visible") return;
+    if (phase === "suspended") void probeResume();
+  };
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", onVisResume);
+  }
 
-        const zoneType = (data as any)?.zone_type as string | undefined;
-        inDangerFromServer =
-          zoneType === "danger" ||
-          zoneType === "restricted" ||
-          (data as any)?.event_type === "unauthorized_entry";
-        currentMode = resolvePowerMode({
-          distToZoneM: distToZone,
-          inDangerFromServer,
-          idle,
-        });
-
-        onUpdate?.({
-          lat: here.lat,
-          lng: here.lng,
-          raw_lat: raw.lat,
-          raw_lng: raw.lng,
-          accuracy,
-          zone_id: (data as any)?.zone_id ?? null,
-          source: (data as any)?.source ?? "gps",
-          mode: currentMode,
-          ...(data as any),
-        } as any);
-      } catch (e: any) {
-        onError?.(new Error(e?.message || String(e)));
-      }
-    },
-    (e) => {
-      const msg =
-        e?.code === 1
-          ? "위치 권한이 거부되었습니다. 브라우저 설정에서 허용해 주세요."
-          : e?.code === 2
-            ? "위치를 사용할 수 없습니다. GPS를 켜 주세요."
-            : e?.code === 3
-              ? "위치 수신 시간 초과. 야외에서 다시 시도해 주세요."
-              : e?.message || String(e);
-      onError?.(new Error(msg));
-    },
-  );
-  watchHandle = handle;
+  await attachWatch();
   void startHeadlessCompanion(opts);
 
   return () => {
     stopped = true;
-    handle.remove();
+    clearResumeTimers();
+    detachWatch();
+    if (typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", onVisResume);
+    }
     void stopHeadlessTrack();
   };
 }

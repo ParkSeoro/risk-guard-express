@@ -1,8 +1,5 @@
-import {
-  isDefinitelyOutsideSite,
-  SIREN_MAX_ACCURACY_M,
-  type SiteTrackingFence,
-} from "./siteTrackBounds";
+import { isDefinitelyOutsideSite, type SiteTrackingFence } from "./siteTrackBounds";
+export { isGpsAccurateEnoughForSiren } from "./sirenHysteresis";
 
 /**
  * Home / off-site GPS must not open the violator siren.
@@ -20,8 +17,3 @@ export function shouldSuppressLocalSirenOffsite(opts: {
   return isDefinitelyOutsideSite(opts.fence, opts.rawLat, opts.rawLng, acc).outside;
 }
 
-/** Symmetric with exit: a 300m wakeup blip must not open the fullscreen siren. */
-export function isGpsAccurateEnoughForSiren(accuracyM?: number): boolean {
-  const acc = Number.isFinite(accuracyM) ? Number(accuracyM) : 999;
-  return acc <= SIREN_MAX_ACCURACY_M;
-}

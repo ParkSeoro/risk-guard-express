@@ -23,7 +23,7 @@ export const GPS_BLOCK_HINT: Record<Exclude<GpsBlockReason, null>, string> = {
   no_consent: "위치 동의가 필요합니다",
   no_permission: "앱 위치 권한을 완료하세요",
   no_checkin: "출근 후 추적이 시작됩니다",
-  fence_probe_failed: "현장 펜스 밖에서 추적이 꺼져 있습니다",
+  fence_probe_failed: "현장 밖 · 복귀하면 자동 재개",
 };
 
 const DEFAULT: GpsUiState = { tracking: false, block: null };

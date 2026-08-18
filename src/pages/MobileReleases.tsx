@@ -85,6 +85,19 @@ export default function MobileReleases() {
     }
   };
 
+  const setMinNative = async (r: Release) => {
+    const next = window.prompt(
+      `Play 스토어 최소 네이티브 버전 (versionName 또는 versionCode)\n현재: ${r.min_native_version || "(없음)"}`,
+      r.min_native_version || "",
+    );
+    if (next == null) return;
+    const { error } = await supabase.from("app_releases" as any)
+      .update({ min_native_version: next.trim() || null })
+      .eq("id", r.id);
+    if (error) toast.error(error.message);
+    else { toast.success("최소 네이티브 버전 저장됨"); load(); }
+  };
+
   const remove = async (r: Release) => {
     if (!confirm(`v${r.version} (${r.channel}) 릴리스를 삭제할까요?`)) return;
     const { error } = await supabase.from("app_releases" as any)
@@ -98,7 +111,9 @@ export default function MobileReleases() {
         <Smartphone className="h-6 w-6" /> 모바일 앱 릴리스 (OTA)
       </h1>
       <p className="text-sm text-muted-foreground">
-        네이티브 쉘은 그대로 두고 JS 번들만 무선 업데이트합니다. 권한·플러그인 추가 등 네이티브 변경 시에는 스토어 재제출이 필요합니다.
+        화면(JS)은 OTA로 바뀝니다. GPS 플러그인처럼 네이티브가 바뀐 AAB를 Play에 올린 뒤에는
+        아래 <b>최소 네이티브 버전</b>을 새 versionName(예: 1.1.1) 또는 versionCode(예: 470)로 저장하세요.
+        그보다 낮은 앱은 실행 시 Play 스토어 업데이트 안내가 뜹니다.
       </p>
 
       <Card>
@@ -119,8 +134,11 @@ export default function MobileReleases() {
           <div><Label>번들 zip ( dist/ 폴더 압축 )</Label>
             <Input type="file" accept=".zip" onChange={e => setFile(e.target.files?.[0] || null)} />
           </div>
-          <div><Label>최소 네이티브 버전 (선택)</Label>
-            <Input value={form.min_native_version} onChange={e => setForm({ ...form, min_native_version: e.target.value })} placeholder="1.0.0" />
+          <div><Label>최소 네이티브 버전 (Play 스토어 안내)</Label>
+            <Input value={form.min_native_version} onChange={e => setForm({ ...form, min_native_version: e.target.value })} placeholder="1.1.1 또는 versionCode 470" />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              폰의 versionName 또는 versionCode가 이 값보다 낮으면 Play 스토어로 보냅니다. 비우면 안내 없음.
+            </p>
           </div>
           <div className="md:col-span-2 flex items-center gap-2">
             <Switch checked={form.mandatory} onCheckedChange={c => setForm({ ...form, mandatory: c })} />
@@ -145,7 +163,7 @@ export default function MobileReleases() {
             list.length === 0 ? <div className="text-sm text-muted-foreground">아직 릴리스가 없습니다.</div> :
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-muted-foreground">
-                <tr><th className="py-2">버전</th><th>채널</th><th>필수</th><th>게시일</th><th>노트</th><th></th></tr>
+                <tr><th className="py-2">버전</th><th>채널</th><th>필수</th><th>네이티브 최소</th><th>게시일</th><th>노트</th><th></th></tr>
               </thead>
               <tbody>
                 {list.map(r => (
@@ -153,6 +171,16 @@ export default function MobileReleases() {
                     <td className="py-2 font-mono">{r.version}</td>
                     <td><Badge variant={r.channel === "stable" ? "default" : "secondary"}>{r.channel}</Badge></td>
                     <td>{r.mandatory ? <Badge variant="destructive">필수</Badge> : "-"}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="text-xs underline-offset-2 hover:underline font-mono"
+                        onClick={() => setMinNative(r)}
+                        title="Play 스토어 안내 기준 수정"
+                      >
+                        {r.min_native_version || "미설정"}
+                      </button>
+                    </td>
                     <td>{new Date(r.released_at).toLocaleString("ko-KR")}</td>
                     <td className="text-xs text-muted-foreground">{r.notes || "-"}</td>
                     <td><Button size="sm" variant="ghost" onClick={() => remove(r)}><Trash2 className="h-4 w-4" /></Button></td>

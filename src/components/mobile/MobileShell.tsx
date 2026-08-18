@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
+import { GpsStatusChip, useGpsUi } from "@/lib/tracking/gpsStatusUi";
 
 const ICONS: Record<string, typeof Home> = {
   today: Home,
@@ -43,6 +44,7 @@ export default function MobileShell({ children }: { children: ReactNode }) {
   const tabs = mobileTabsForBucket(bucket);
   const displayRole = preview.isPreview ? preview.syntheticRole : role;
   const unread = useSystemRealtimeOptional()?.unreadNotifications ?? 0;
+  const gpsUi = useGpsUi();
 
   const hideChrome =
     location.pathname.includes("/approvals/") ||
@@ -77,6 +79,7 @@ export default function MobileShell({ children }: { children: ReactNode }) {
               {!projectId ? " · 프로젝트 미선택" : ""}
             </div>
           </div>
+          <GpsStatusChip tracking={gpsUi.tracking} block={gpsUi.block} />
           <Badge variant="secondary" className="text-[10px] shrink-0">
             {bucket === "worker" ? "근로자" : bucket === "master" ? "마스터" : "관리자"}
           </Badge>

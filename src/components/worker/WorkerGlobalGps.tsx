@@ -25,41 +25,26 @@ import { clearStickyDangerAlert } from "@/lib/tracking/dangerAlertSticky";
 import { isManagerMobileRole } from "@/lib/mobileShell";
 import type { MobileRole } from "@/hooks/useMobileAccess";
 import { todaySeoulDate } from "@/lib/dailyWorkAck";
+import { useSetGpsUi, type GpsBlockReason } from "@/lib/tracking/gpsStatusUi";
 
 const PROJECT_KEY = "selectedProjectId";
 
-export type GpsBlockReason =
-  | "no_consent"
-  | "no_permission"
-  | "no_checkin"
-  | "fence_probe_failed"
-  | null;
+export type { GpsBlockReason };
 
-const BLOCK_LABEL: Record<Exclude<GpsBlockReason, null>, string> = {
-  no_consent: "GPS 꺼짐 · 위치 동의 필요",
-  no_permission: "GPS 꺼짐 · 앱 권한 미완료",
-  no_checkin: "GPS 꺼짐 · 출근 후 추적",
-  fence_probe_failed: "GPS 꺼짐 · 현장 밖(펜스)",
-};
-
-/** Small amber badge — also used when WorkerGlobalGps is not mounted (no consent gate). */
+/** Sets header chip when WorkerGlobalGps is not mounted (no consent). */
 export function GpsBlockBadge({ reason }: { reason: GpsBlockReason }) {
-  if (!reason) return null;
-  return (
-    <div
-      className="fixed right-3 z-[45] max-w-[min(100%-1.5rem,16rem)] rounded-md border border-amber-500/40 bg-amber-50 text-amber-950 px-2.5 py-1.5 text-[11px] font-medium shadow-sm pointer-events-none bottom-[calc(5.75rem+var(--sab))]"
-      data-testid="gps-block-reason"
-      data-gps-block={reason}
-      role="status"
-    >
-      {BLOCK_LABEL[reason]}
-    </div>
-  );
+  const setUi = useSetGpsUi();
+  useEffect(() => {
+    setUi({ tracking: false, block: reason });
+    return () => setUi({ tracking: false, block: null });
+  }, [reason, setUi]);
+  return null;
 }
 
 export default function WorkerGlobalGps() {
   const { user, profile, roles, hasRole } = useAuth();
   const { startGpsTracking, stopGpsTracking, gpsTracking } = useSystemRealtime();
+  const setGpsUi = useSetGpsUi();
   const workerIdRef = useRef<string | null>(null);
   const lastKeyRef = useRef<string | null>(null);
   const managerRef = useRef(false);
@@ -365,22 +350,10 @@ export default function WorkerGlobalGps() {
     if (gpsTracking) setGpsBlockReason(null);
   }, [gpsTracking]);
 
-  return (
-    <>
-      <GpsBlockBadge reason={gpsBlockReason} />
-      {gpsTracking ? (
-        <div
-          className="fixed right-3 z-[45] max-w-[min(100%-1.5rem,16rem)] rounded-md border border-emerald-500/40 bg-emerald-50 text-emerald-950 px-2.5 py-1.5 text-[11px] font-medium shadow-sm pointer-events-none bottom-[calc(5.75rem+var(--sab))]"
-          data-testid="gps-tracking-on"
-          data-gps="on"
-          role="status"
-        >
-          GPS 추적 중 · 현장
-          <span className="block text-[10px] font-normal opacity-80 mt-0.5 leading-snug">
-            홈으로 나가도 유지 · 최근 목록에서 지우면 알람이 멈춥니다
-          </span>
-        </div>
-      ) : null}
-    </>
-  );
+  useEffect(() => {
+    setGpsUi({ tracking: gpsTracking, block: gpsTracking ? null : gpsBlockReason });
+    return () => setGpsUi({ tracking: false, block: null });
+  }, [gpsTracking, gpsBlockReason, setGpsUi]);
+
+  return null;
 }

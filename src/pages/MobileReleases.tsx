@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Trash2, Smartphone, Loader2 } from "lucide-react";
+import { Upload, Trash2, Smartphone, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { Navigate } from "react-router-dom";
@@ -29,6 +29,8 @@ export default function MobileReleases() {
     min_native_version: "", notes: "",
   });
   const [file, setFile] = useState<File | null>(null);
+  const [minDraft, setMinDraft] = useState("");
+  const [savingMin, setSavingMin] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -38,10 +40,15 @@ export default function MobileReleases() {
       .eq("is_deleted", false)
       .order("released_at", { ascending: false });
     if (error) toast.error(error.message);
-    setList((data as any) || []);
+    const rows = ((data as any) || []) as Release[];
+    setList(rows);
+    const latest = rows.find((r) => r.channel === "stable") || rows[0];
+    if (latest) setMinDraft(latest.min_native_version || "");
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+
+  const latestRelease = list.find((r) => r.channel === "stable") || list[0] || null;
 
   if (!isMaster) return <Navigate to="/" replace />;
 
@@ -85,17 +92,18 @@ export default function MobileReleases() {
     }
   };
 
-  const setMinNative = async (r: Release) => {
-    const next = window.prompt(
-      `Play 스토어 최소 네이티브 버전 (versionName 또는 versionCode)\n현재: ${r.min_native_version || "(없음)"}`,
-      r.min_native_version || "",
-    );
-    if (next == null) return;
+  const saveMinNative = async (releaseId: string, value: string) => {
+    const next = value.trim() || null;
+    setSavingMin(true);
     const { error } = await supabase.from("app_releases" as any)
-      .update({ min_native_version: next.trim() || null })
-      .eq("id", r.id);
+      .update({ min_native_version: next })
+      .eq("id", releaseId);
+    setSavingMin(false);
     if (error) toast.error(error.message);
-    else { toast.success("최소 네이티브 버전 저장됨"); load(); }
+    else {
+      toast.success(next ? `최소 네이티브 버전 ${next} 저장됨` : "최소 네이티브 버전 지움");
+      load();
+    }
   };
 
   const remove = async (r: Release) => {
@@ -115,6 +123,40 @@ export default function MobileReleases() {
         <b>네이티브 최소</b>를 그 AAB의 <b>versionCode</b>(정수, 예: 470)로 저장하세요.
         비워 두면 Play 스토어 링크만 업데이트를 보여주고, 앱 실행 화면은 안 뜹니다.
       </p>
+
+      {latestRelease && (
+        <Card className="border-primary/40 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="text-base">Play 스토어 최소 앱 (versionCode)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              최신 OTA <span className="font-mono">{latestRelease.version}</span> ({latestRelease.channel})에 저장합니다.
+              폰 <b>더보기 → 앱 버전</b> 괄호 숫자보다 <b>큰</b> Play versionCode를 넣으세요. 예: 설치됨 468이면 새 AAB가 470이면 <span className="font-mono">470</span>.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+              <div className="flex-1">
+                <Label htmlFor="min-native-code">네이티브 최소 versionCode</Label>
+                <Input
+                  id="min-native-code"
+                  inputMode="numeric"
+                  placeholder="예: 470"
+                  value={minDraft}
+                  onChange={(e) => setMinDraft(e.target.value)}
+                />
+              </div>
+              <Button
+                type="button"
+                disabled={savingMin}
+                onClick={() => saveMinNative(latestRelease.id, minDraft)}
+              >
+                {savingMin ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                저장
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader><CardTitle className="text-base">새 릴리스 게시</CardTitle></CardHeader>
@@ -171,16 +213,7 @@ export default function MobileReleases() {
                     <td className="py-2 font-mono">{r.version}</td>
                     <td><Badge variant={r.channel === "stable" ? "default" : "secondary"}>{r.channel}</Badge></td>
                     <td>{r.mandatory ? <Badge variant="destructive">필수</Badge> : "-"}</td>
-                    <td>
-                      <button
-                        type="button"
-                        className="text-xs underline-offset-2 hover:underline font-mono"
-                        onClick={() => setMinNative(r)}
-                        title="Play 스토어 안내 기준 수정"
-                      >
-                        {r.min_native_version || "미설정"}
-                      </button>
-                    </td>
+                    <td className="font-mono text-xs">{r.min_native_version || "미설정"}</td>
                     <td>{new Date(r.released_at).toLocaleString("ko-KR")}</td>
                     <td className="text-xs text-muted-foreground">{r.notes || "-"}</td>
                     <td><Button size="sm" variant="ghost" onClick={() => remove(r)}><Trash2 className="h-4 w-4" /></Button></td>

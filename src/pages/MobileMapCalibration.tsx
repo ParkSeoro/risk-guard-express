@@ -637,15 +637,13 @@ export default function MobileMapCalibration() {
           hadBias ? "기존 1점 보정은 자동 초기화했습니다." : null,
           zoneCount > 0
             ? `위험구역 ${zoneCount}개 — 좌표가 바뀌었으니 PC 관제맵에서 구역을 다시 그려 주세요.`
-            : "A/B/C 기록은 유지됩니다. 잔여 오차만 있을 때 1점 보정을 쓰세요.",
+            : "재보정은 더보기 → 맵·GPS 재보정에서 할 수 있습니다.",
         ]
           .filter(Boolean)
           .join(" "),
         duration: 9000,
       });
-      // Refresh map meta but keep walk slots (forceWalkReset false via dirty)
-      walkDirtyRef.current = true;
-      await reload();
+      goHome();
     } catch (e: any) {
       toast.error(e?.message || "저장 실패");
     } finally {

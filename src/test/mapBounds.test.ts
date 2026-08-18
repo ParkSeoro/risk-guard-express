@@ -6,6 +6,7 @@ import {
   scaleCorners,
   cornersToPersistPayload,
   loadCornersFromMap,
+  anyMapHasGeoref,
 } from "@/lib/mapBounds";
 
 describe("mapBounds corners / rotation", () => {
@@ -42,6 +43,25 @@ describe("mapBounds corners / rotation", () => {
     expect(p.geo_transform.opacity).toBe(0.7);
     expect(p.geo_transform.tl).toEqual(c.tl);
     expect(p.geo_anchor_nw_lat).toBe(37.6);
+  });
+
+  it("anyMapHasGeoref treats walk geo_transform as done (not gps_calibration)", () => {
+    expect(anyMapHasGeoref([])).toBe(false);
+    expect(
+      anyMapHasGeoref([
+        {
+          geo_anchor_nw_lat: null,
+          geo_anchor_nw_lng: null,
+          geo_anchor_se_lat: null,
+          geo_anchor_se_lng: null,
+          geo_transform: {
+            tl: { lat: 34.85, lng: 127.70 },
+            tr: { lat: 34.85, lng: 127.71 },
+            bl: { lat: 34.84, lng: 127.70 },
+          },
+        },
+      ]),
+    ).toBe(true);
   });
 
   it("loads from geo_transform preferentially", () => {

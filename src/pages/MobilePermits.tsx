@@ -16,6 +16,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, FileCheck2, Loader2, Inbox } from "lucide-react";
+import MobileApprovalActions, {
+  canActOnPendingApproval,
+  type PendingApprovalRow,
+} from "@/components/mobile/MobileApprovalActions";
 import { toast } from "sonner";
 import {
   resolvePermitWorkDate,
@@ -77,6 +81,7 @@ export default function MobilePermits() {
   const [signatures, setSignatures] = useState<PermitSignatures>({});
   const [briefing, setBriefing] = useState<PermitAiBriefing | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [pendingRow, setPendingRow] = useState<PendingApprovalRow | null>(null);
 
   const load = async () => {
     if (!projectId) {
@@ -124,6 +129,17 @@ export default function MobilePermits() {
     load(); /* eslint-disable-next-line */
   }, [projectId, profile?.user_id]);
 
+  const loadPendingForPermit = async (permitId: string) => {
+    const { data } = await supabase.rpc("get_my_pending_entity_approvals");
+    const found = ((data as any[]) || []).find(
+      (r) =>
+        r.entity_type === "work_permit" &&
+        r.entity_id === permitId &&
+        canActOnPendingApproval(r),
+    );
+    setPendingRow(found || null);
+  };
+
   const openPermit = async (p: any) => {
     setDetailLoading(true);
     setActive(p);
@@ -132,8 +148,10 @@ export default function MobilePermits() {
       setFormData(hydrated.formData);
       setSignatures(hydrated.signatures);
       setBriefing(hydrated.briefing);
+      await loadPendingForPermit(p.id);
     } catch (e: any) {
       toast.error(e?.message || "허가서 상세를 불러오지 못했습니다.");
+      setPendingRow(null);
     }
     setDetailLoading(false);
   };
@@ -166,11 +184,22 @@ export default function MobilePermits() {
     setSignatures({});
     setFormData({});
     setBriefing(null);
+    setPendingRow(null);
     if (deepId) {
       const next = new URLSearchParams(searchParams);
       next.delete("id");
       setSearchParams(next, { replace: true });
     }
+  };
+
+  const afterDecide = () => {
+    const backTo = resolvePermitViewerBackPath(fromParam);
+    if (backTo) {
+      navigate(backTo, { replace: true });
+      return;
+    }
+    closeDetail();
+    load();
   };
 
   const onBack = () => {
@@ -303,7 +332,7 @@ export default function MobilePermits() {
 
         {active && (
           <div className="space-y-3">
-            <Card>
+            <Card className="sticky top-16 z-20 border-primary/30 shadow-md bg-background">
               <CardContent className="pt-4 space-y-2">
                 <div className="font-bold text-base">{permitTitle(active)}</div>
                 <div className="text-xs text-muted-foreground space-y-0.5">
@@ -312,15 +341,9 @@ export default function MobilePermits() {
                   <div>장소: {permitLocation(active)}</div>
                   <div>업체: {permitCompany(active)}</div>
                 </div>
-                {!pureWorker && (
-                  <Button
-                    className="w-full"
-                    variant="secondary"
-                    onClick={() => navigate("/app/worker/approvals")}
-                  >
-                    결재함으로
-                  </Button>
-                )}
+                {pendingRow ? (
+                  <MobileApprovalActions pending={pendingRow} onDone={afterDecide} />
+                ) : null}
               </CardContent>
             </Card>
 

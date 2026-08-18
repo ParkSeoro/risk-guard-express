@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { mobileEntityPath } from "@/lib/mobileNav";
-import { permitViewerPath } from "@/lib/permitViewerNav";
+import { mobileDocumentPath } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePreviewWriteBlock } from "@/contexts/PreviewContext";
@@ -215,20 +214,19 @@ export default function MobileApprovals() {
                 </Button>
               </div>
             </div>
-          ) : r.entity_type === "work_permit" ? (
-            <Button className="w-full mt-2" onClick={() => openRow(r)}>
-              {kind === "normal" ? "결재하기" : permitPostStepApproveLabel(kind)}
-            </Button>
           ) : (
             <div className="grid grid-cols-2 gap-2 pt-2">
               <Button
                 variant="outline"
-                onClick={() => navigate(mobileEntityPath(r.entity_type, r.entity_id).path)}
+                disabled={!r.entity_id}
+                onClick={() => navigate(mobileDocumentPath(r.entity_type, r.entity_id, "approvals"))}
               >
                 문서 보기
               </Button>
               <Button onClick={() => openRow(r)}>
-                {kind === "normal" ? "결재 처리" : permitPostStepApproveLabel(kind)}
+                {r.entity_type === "work_permit"
+                  ? (kind === "normal" ? "결재하기" : permitPostStepApproveLabel(kind))
+                  : (kind === "normal" ? "결재 처리" : permitPostStepApproveLabel(kind))}
               </Button>
             </div>
           )}
@@ -329,11 +327,7 @@ export default function MobileApprovals() {
                 variant="outline"
                 size="sm"
                 className="w-full"
-                onClick={() => navigate(
-                  entityType === "work_permit"
-                    ? permitViewerPath(entityId, "approvals")
-                    : mobileEntityPath(entityType, entityId).path,
-                )}
+                onClick={() => navigate(mobileDocumentPath(entityType, entityId, "approvals"))}
               >
                 문서 보기
               </Button>

@@ -11,7 +11,7 @@ import {
   resolveNotificationRoute,
   toMobileShellPath,
 } from "@/lib/notificationRoutes";
-import { resolveMobileHomePath, mobileEntityPath } from "@/lib/mobileNav";
+import { resolveMobileHomePath, mobileEntityPath, mobileDocumentPath } from "@/lib/mobileNav";
 
 describe("postConsentHomePath — mobile admin routing", () => {
   const originalInnerWidth = window.innerWidth;
@@ -146,6 +146,18 @@ describe("notification + entity mobile routes", () => {
     expect(mobileEntityPath("work_permit", "p1").path).toBe("/app/worker/permits?id=p1");
     expect(mobileEntityPath("work_permit").path).toBe("/app/worker/permits");
     expect(mobileEntityPath("assessment_run", "r1").path).toBe("/app/worker/risk-assessment/r1");
+  });
+
+  it("mobileDocumentPath keeps 문서 보기 on permits with inbox return", () => {
+    expect(mobileDocumentPath("work_permit", "p1", "approvals")).toBe(
+      "/app/worker/permits?id=p1&from=approvals",
+    );
+    expect(mobileDocumentPath("assessment_run", "r1")).toBe("/app/worker/risk-assessment/r1");
+  });
+
+  it("toMobileShellPath keeps work-permit document ids", () => {
+    expect(toMobileShellPath("/app/admin/work-permits/p1")).toBe("/app/worker/permits?id=p1");
+    expect(toMobileShellPath("/app/admin/work-permits")).toBe("/app/worker/permits");
   });
 
   it("mobile work_permit notifications open approvals inbox", () => {

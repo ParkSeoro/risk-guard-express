@@ -26,6 +26,10 @@ import { isManagerMobileRole } from "@/lib/mobileShell";
 import type { MobileRole } from "@/hooks/useMobileAccess";
 import { seoulDayRange, todaySeoulDate } from "@/lib/dailyWorkAck";
 import { useSetGpsUi, type GpsBlockReason } from "@/lib/tracking/gpsStatusUi";
+import {
+  gpsStatusReportPayload,
+  useReportWorkerGpsStatus,
+} from "@/lib/tracking/reportGpsStatus";
 
 const PROJECT_KEY = "selectedProjectId";
 
@@ -38,6 +42,7 @@ export function GpsBlockBadge({ reason }: { reason: GpsBlockReason }) {
     setUi({ tracking: false, block: reason });
     return () => setUi({ tracking: false, block: null });
   }, [reason, setUi]);
+  useReportWorkerGpsStatus(reason ?? undefined);
   return null;
 }
 
@@ -348,6 +353,13 @@ export default function WorkerGlobalGps() {
   useEffect(() => {
     if (gpsTracking && !gpsSuspended) setGpsBlockReason(null);
   }, [gpsTracking, gpsSuspended]);
+
+  const reportPayload = gpsStatusReportPayload({
+    tracking: gpsTracking,
+    suspended: gpsSuspended,
+    block: gpsBlockReason,
+  });
+  useReportWorkerGpsStatus(reportPayload);
 
   useEffect(() => {
     setGpsUi({

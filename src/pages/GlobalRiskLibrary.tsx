@@ -12,11 +12,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import {
   createLibraryImportDraft,
+  downloadGlobalRiskLibraryExcelTemplate,
   ingestApprovedRunsToLibrary,
+  mapGlobalRiskLibraryExcelRows,
   publishLibraryImport,
 } from '@/lib/globalRiskLibrary';
 import * as XLSX from 'xlsx';
-import { Loader2, Upload, Database, FileSpreadsheet, FileText } from 'lucide-react';
+import { Loader2, Database, FileSpreadsheet, FileText, Download } from 'lucide-react';
 
 type LibRow = {
   id: string;
@@ -111,40 +113,10 @@ export default function GlobalRiskLibrary() {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: 'array' });
       const sheet = wb.Sheets[wb.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' });
-      const splitList = (v: unknown) =>
-        String(v ?? '')
-          .split(/[,;\n|/]+/)
-          .map((x) => x.trim())
-          .filter(Boolean);
-      const cell = (r: Record<string, any>, ...keys: string[]) => {
-        for (const k of keys) {
-          const v = r[k];
-          if (v != null && String(v).trim() !== '') return String(v).trim();
-        }
-        return '';
-      };
-      const mapped = json
-        .map((r) => ({
-          process: cell(r, '공종', 'process', 'process_label'),
-          sub_task: cell(r, '세부작업', 'sub_task'),
-          hazard: cell(r, '위험요인', 'hazard'),
-          hazard_situation: cell(r, '위험발생상황', 'hazard_situation'),
-          existing_measure: cell(r, '현재대책', 'existing_measure'),
-          improvement_measure: cell(r, '개선대책', 'improvement_measure'),
-          work_phase: cell(r, '작업단계', 'work_phase'),
-          hazard_type: cell(r, '위험유형', 'hazard_type'),
-          likelihood_grade: cell(r, '가능성', 'likelihood_grade') || '중',
-          severity_grade: cell(r, '중대성', 'severity_grade') || '중',
-          risk_grade: cell(r, '위험도', 'risk_grade') || '중',
-          ppe: splitList(cell(r, 'PPE', 'ppe')),
-          legal_basis: splitList(cell(r, '법적근거', 'legal_basis')),
-          equipment_keys: splitList(cell(r, '장비', 'equipment')),
-          condition_keys: splitList(cell(r, '환경', 'condition')),
-        }))
-        .filter((r) => r.process && r.sub_task && r.hazard);
+      const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+      const mapped = mapGlobalRiskLibraryExcelRows(json);
 
-      if (!mapped.length) throw new Error('유효한 행이 없습니다. 컬럼: 공종, 세부작업, 위험요인 …');
+      if (!mapped.length) throw new Error('유효한 행이 없습니다. 「양식 다운로드」로 헤더를 맞춘 뒤 다시 올려 주세요.');
 
       const id = await createLibraryImportDraft({
         sourceKind: 'excel',
@@ -212,6 +184,15 @@ export default function GlobalRiskLibrary() {
         </Button>
         <Button
           size="sm"
+          variant="outline"
+          disabled={!!busy}
+          onClick={() => downloadGlobalRiskLibraryExcelTemplate()}
+        >
+          <Download className="h-4 w-4 mr-1" />
+          양식 다운로드
+        </Button>
+        <Button
+          size="sm"
           variant="secondary"
           disabled={!!busy}
           onClick={() => document.getElementById('grl-excel')?.click()}
@@ -250,9 +231,8 @@ export default function GlobalRiskLibrary() {
             e.target.value = '';
           }}
         />
-        <Upload className="h-4 w-4 text-muted-foreground" />
         <span className="text-xs text-muted-foreground">
-          엑셀 권장 컬럼: 공종, 세부작업, 위험요인, 위험발생상황, 현재대책, 개선대책, 작업단계, 위험유형, 장비, 환경
+          양식을 받아 채운 뒤 업로드하세요. 필수: 공종, 세부작업, 위험요인
         </span>
       </div>
 

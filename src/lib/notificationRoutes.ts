@@ -109,6 +109,8 @@ export function toMobileShellPath(path: string): string {
   if (wp) return `${WORKER}/work-plans/${wp[1]}`;
 
   if (p.startsWith("/approvals")) return `${WORKER}/approvals`;
+  const permit = p.match(/^\/work-permits\/([^/?#]+)/);
+  if (permit) return `${WORKER}/permits?id=${permit[1]}`;
   if (p.startsWith("/work-permits")) return `${WORKER}/permits`;
   if (p.startsWith("/work-plans")) return `${WORKER}/work-plans`;
   if (p.startsWith("/risk-assessment")) return `${WORKER}/risk-assessment`;

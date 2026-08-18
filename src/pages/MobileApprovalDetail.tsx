@@ -231,7 +231,7 @@ export default function MobileApprovalDetail() {
                       )
                     }
                   >
-                    전체 화면으로 보기
+                    문서 보기
                   </Button>
                 </CardContent>
               </Card>

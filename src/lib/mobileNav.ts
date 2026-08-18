@@ -6,6 +6,7 @@ import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { MOBILE_ADMIN_HOME, WORKER_HOME } from "@/components/AuthGuard";
+import { permitViewerPath } from "@/lib/permitViewerNav";
 
 const WORKER = "/app/worker";
 
@@ -70,4 +71,16 @@ export function mobileEntityPath(
     default:
       return { path: `${WORKER}/alerts` };
   }
+}
+
+/** 문서 보기 — 결재함에서 원문 뷰어로. 허가서는 from= 으로 결재함/상세로 복귀. */
+export function mobileDocumentPath(
+  entityType: string,
+  entityId?: string | null,
+  from?: string | null,
+): string {
+  if (entityType === "work_permit" && entityId) {
+    return permitViewerPath(entityId, from);
+  }
+  return mobileEntityPath(entityType, entityId).path;
 }

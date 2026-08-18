@@ -553,7 +553,7 @@ const Approvals = () => {
               const stepKind = permitPostStepKind(e.step_position);
               const badge = permitPostStepBadge(stepKind);
               return (
-              <div key={e.approval_id} className="flex items-center gap-2 p-2 border rounded bg-background">
+              <div key={e.approval_id} className="flex items-center gap-2 p-2 border rounded bg-background flex-wrap">
                 <Badge variant="outline" className="text-[10px]">
                   {entityTypeLabel(e.entity_type)}
                 </Badge>

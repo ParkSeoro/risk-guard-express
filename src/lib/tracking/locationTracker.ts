@@ -19,6 +19,8 @@ import {
   DANGER_PROXIMITY_M,
   isDefinitelyOutsideSite,
   isInsideResumeFence,
+  SITE_EXIT_MAX_ACCURACY_M,
+  SITE_EXIT_STREAK,
   SITE_RESUME_FIRST_PROBE_MS,
   SITE_RESUME_POLL_MS,
   type SiteTrackingFence,
@@ -525,6 +527,10 @@ async function startHeadlessCompanion(opts: TrackerOptions): Promise<void> {
       fenceLng: site?.lng ?? null,
       fenceRadiusM: site?.radiusM ?? null,
       intervalMs: 45_000,
+      exitStreak: SITE_EXIT_STREAK,
+      maxAccuracyM: SITE_EXIT_MAX_ACCURACY_M,
+      resumePollMs: SITE_RESUME_POLL_MS,
+      skipFence: !site,
     });
   } catch (e) {
     if (import.meta.env.DEV) console.warn("[HeadlessTrack] companion start skipped", e);

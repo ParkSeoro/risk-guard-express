@@ -27,4 +27,10 @@ describe("site track phase (F-03)", () => {
   it("uses a 5-minute off-site probe, not a continuous watch", () => {
     expect(SITE_RESUME_POLL_MS).toBe(5 * 60_000);
   });
+
+  it("exports the same fence numbers Java HeadlessTrack defaults to", () => {
+    expect(SITE_EXIT_STREAK).toBe(5);
+    expect(SITE_EXIT_MAX_ACCURACY_M).toBe(55);
+    expect(SITE_RESUME_POLL_MS).toBe(300_000);
+  });
 });

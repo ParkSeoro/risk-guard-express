@@ -535,11 +535,20 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   let phase: SiteTrackPhase = "tracking";
   let outsideStreak = 0;
   let inDangerFromServer = false;
-  let cal = await loadCalibration(identity.project_id);
-  let zones = await loadRestrictedZones(identity.project_id);
-  let zonesAt = Date.now();
+  let cal: GpsCalibration | null;
+  let zones: RestrictedZoneGeom[];
+  let zonesAt: number;
   let resumeTimer: ReturnType<typeof setInterval> | null = null;
   let resumeFirstTimer: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    cal = await loadCalibration(identity.project_id);
+    zones = await loadRestrictedZones(identity.project_id);
+    zonesAt = Date.now();
+  } catch (e) {
+    unsubCal();
+    throw e;
+  }
 
   const bgStop = await tryNativeBackground(opts);
   if (bgStop) {

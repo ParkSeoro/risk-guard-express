@@ -17,6 +17,7 @@ import {
   postConsentHomePath,
   readLoginIntent,
   resolvePostLoginShell,
+  WORKER_HOME,
 } from "@/components/AuthGuard";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
@@ -69,7 +70,8 @@ export default function ConsentPage() {
   if (!session || !user) return <Navigate to="/login?next=/consent" replace />;
   if (!needsConsent(profile, roles)) {
     const home = postConsentHomePath(roles, { loginIntent: readLoginIntent() });
-    if (home === "/consent") return null; // belt: never loop
+    // Never render a blank page — /consent looping would look like a white freeze.
+    if (home === "/consent") return <Navigate to={WORKER_HOME} replace />;
     return <Navigate to={home} replace />;
   }
 

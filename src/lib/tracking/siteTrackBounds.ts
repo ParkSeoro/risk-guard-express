@@ -45,6 +45,15 @@ export const SITE_EXIT_MAX_ACCURACY_M = 55;
 /** Local danger siren: ignore junk fixes on both open and close. */
 export const SIREN_MAX_ACCURACY_M = 40;
 
+/**
+ * Off-site low-power resume probe (F-03).
+ * ~12 samples/hour at home vs ~80/hour at 45s eco — keeps the OS GPS icon off
+ * between probes. Foreground visibility still probes immediately.
+ */
+export const SITE_RESUME_POLL_MS = 5 * 60_000;
+/** First resume probe after suspend (avoid bouncing back on the exit sample). */
+export const SITE_RESUME_FIRST_PROBE_MS = 30_000;
+
 /** High-precision tracking only within this distance of a restricted zone edge. */
 export const DANGER_PROXIMITY_M = 80;
 

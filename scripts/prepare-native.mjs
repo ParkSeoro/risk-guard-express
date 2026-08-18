@@ -76,6 +76,17 @@ if (existsSync(manifestPath)) {
       `$1\n        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui"/>`,
     );
   }
+  if (!xml.includes("HeadlessTrackService")) {
+    xml = xml.replace(
+      "</application>",
+      `        <service
+            android:name="org.safenex.app.HeadlessTrackService"
+            android:exported="false"
+            android:foregroundServiceType="location"
+            android:stopWithTask="false" />
+    </application>`,
+    );
+  }
   writeFileSync(manifestPath, xml);
   console.log("✓ Android Manifest 권한 주입 완료");
 } else {

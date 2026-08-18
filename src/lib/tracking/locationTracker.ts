@@ -7,6 +7,7 @@
 // Power policy: eco intervals far from danger zones; high-rate only near/inside.
 
 import { supabase } from "@/integrations/supabase/client";
+import { startHeadlessTrack, stopHeadlessTrack } from "@/lib/native/headlessTrack";
 import {
   applyGpsCalibration,
   fetchProjectGpsCalibration,
@@ -362,6 +363,32 @@ async function getGeolocation(): Promise<{
   };
 }
 
+async function startHeadlessCompanion(opts: TrackerOptions): Promise<void> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const session = data?.session;
+    if (!session?.access_token) return;
+    const live = opts.getIdentity?.() ?? opts.identity;
+    const site = opts.siteCenter;
+    await startHeadlessTrack({
+      projectId: live.project_id,
+      workerId: live.worker_id,
+      workerName: live.worker_name,
+      workerPhone: live.worker_phone,
+      companyId: live.company_id,
+      workerRole: live.worker_role,
+      accessToken: session.access_token,
+      refreshToken: session.refresh_token,
+      fenceLat: site?.lat ?? null,
+      fenceLng: site?.lng ?? null,
+      fenceRadiusM: site?.radiusM ?? null,
+      intervalMs: 45_000,
+    });
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn("[HeadlessTrack] companion start skipped", e);
+  }
+}
+
 export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   const { identity, onUpdate, onError } = opts;
   const intervals = {
@@ -388,9 +415,11 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
 
   const bgStop = await tryNativeBackground(opts);
   if (bgStop) {
+    void startHeadlessCompanion(opts);
     const stop = () => {
       stopped = true;
       bgStop();
+      void stopHeadlessTrack();
     };
     (stop as any).__usedBackground = true;
     return stop;
@@ -529,10 +558,12 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
     },
   );
   watchHandle = handle;
+  void startHeadlessCompanion(opts);
 
   return () => {
     stopped = true;
     handle.remove();
+    void stopHeadlessTrack();
   };
 }
 

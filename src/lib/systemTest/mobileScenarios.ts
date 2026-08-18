@@ -39,6 +39,7 @@ export const MOBILE_ROUTES: Array<{
   { path: "/app/worker/daily-health-log", label: "일일 건강일지", requires: { kind: "table", name: "worker_daily_health_logs", project_scoped: true } },
   { path: "/app/worker/geofence-drop", label: "원터치 위험구역", requires: { kind: "table", name: "restricted_zones", project_scoped: true } },
   { path: "/app/worker/map-calibration", label: "지도 GPS 보정", requires: { kind: "table", name: "site_maps", project_scoped: true } },
+  { path: "/app/worker/site-weather", label: "현장 일기예보", requires: { kind: "static" } },
   // Public / auth entry points outside the shell
   {
     path: "/worker/register",

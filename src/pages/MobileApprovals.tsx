@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { mobileEntityPath } from "@/lib/mobileNav";
+import { permitViewerPath } from "@/lib/permitViewerNav";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePreviewWriteBlock } from "@/contexts/PreviewContext";
@@ -214,15 +215,15 @@ export default function MobileApprovals() {
                 </Button>
               </div>
             </div>
+          ) : r.entity_type === "work_permit" ? (
+            <Button className="w-full mt-2" onClick={() => openRow(r)}>
+              {kind === "normal" ? "결재하기" : permitPostStepApproveLabel(kind)}
+            </Button>
           ) : (
             <div className="grid grid-cols-2 gap-2 pt-2">
               <Button
                 variant="outline"
-                onClick={() => navigate(
-                  r.entity_type === "work_permit" && r.entity_id
-                    ? `/app/worker/permits?id=${r.entity_id}`
-                    : mobileEntityPath(r.entity_type, r.entity_id).path,
-                )}
+                onClick={() => navigate(mobileEntityPath(r.entity_type, r.entity_id).path)}
               >
                 문서 보기
               </Button>
@@ -330,7 +331,7 @@ export default function MobileApprovals() {
                 className="w-full"
                 onClick={() => navigate(
                   entityType === "work_permit"
-                    ? `/app/worker/permits?id=${entityId}`
+                    ? permitViewerPath(entityId, "approvals")
                     : mobileEntityPath(entityType, entityId).path,
                 )}
               >

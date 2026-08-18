@@ -70,6 +70,7 @@ export default function WorkerAppRoutes() {
               <Route path="work-stop" element={<P.LazyMobileWorkStop />} />
               <Route path="geofence-drop" element={<P.LazyMobileGeofenceDrop />} />
               <Route path="map-calibration" element={<P.LazyMobileMapCalibration />} />
+              <Route path="site-weather" element={<P.LazyMobileSiteWeather />} />
               <Route path="*" element={<Navigate to="today" replace />} />
             </Routes>
           </Suspense>

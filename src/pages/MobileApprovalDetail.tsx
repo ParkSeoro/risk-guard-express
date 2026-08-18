@@ -9,8 +9,11 @@ import { Badge } from "@/components/ui/badge";
 import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { ArrowLeft, CheckCircle2, XCircle, Loader2, FileText } from "lucide-react";
 import { toast } from "sonner";
-import PermitAiBriefingCard from "@/components/permits/PermitAiBriefingCard";
+import PermitReadOnlyPreview from "@/components/permits/PermitReadOnlyPreview";
+import type { PermitFormData, PermitSignatures } from "@/components/permits/DigPermitForm";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
+import { hydratePermitPreview } from "@/lib/permitPreviewHydrate";
+import { permitViewerPath } from "@/lib/permitViewerNav";
 import { isSubmitterApprovalStep } from "@/lib/approvalRules";
 import {
   permitPostStepKind,
@@ -21,8 +24,8 @@ import { formatPermitStamp } from "@/lib/permitDateFormat";
 import { resolvePermitWorkDate } from "@/lib/permitWorkDate";
 
 /**
- * Mobile approval detail — summary + AI briefing, then action buttons.
- * Full permit document opens read-only via /app/worker/permits?id=
+ * Mobile approval detail — decide on the same screen as the document.
+ * Full-screen viewer stays at /app/worker/permits?id= for deep links.
  * Route: /app/worker/approvals/:approvalId
  */
 export default function MobileApprovalDetail() {
@@ -37,6 +40,9 @@ export default function MobileApprovalDetail() {
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [permitRow, setPermitRow] = useState<any | null>(null);
+  const [formData, setFormData] = useState<PermitFormData>({});
+  const [signatures, setSignatures] = useState<PermitSignatures>({});
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const stepKind = permitPostStepKind(row?.step_position);
   const badge = permitPostStepBadge(stepKind);
@@ -61,13 +67,13 @@ export default function MobileApprovalDetail() {
       }
       setRow(found);
       if (found?.entity_type === "work_permit" && found.entity_id) {
+        setPreviewLoading(true);
         const { data: p } = await supabase
           .from("work_permits" as any)
           .select("id, ai_briefing, work_name, work_description, location, work_location, permit_date, status, form_data, extension_until, permit_kinds, permit_type, contractor_company, personnel_count, signatures")
           .eq("id", found.entity_id)
           .maybeSingle();
         setPermitRow(p || null);
-        setBriefing(((p as any)?.ai_briefing as PermitAiBriefing) || null);
         const fd = ((p as any)?.form_data || {}) as any;
         setExtendUntil(
           fd.work_extend_requested_until ||
@@ -75,8 +81,23 @@ export default function MobileApprovalDetail() {
           (p as any)?.extension_until ||
           null,
         );
+        if (p) {
+          try {
+            const hydrated = await hydratePermitPreview(p);
+            setFormData(hydrated.formData);
+            setSignatures(hydrated.signatures);
+            setBriefing(hydrated.briefing);
+          } catch {
+            setBriefing(((p as any)?.ai_briefing as PermitAiBriefing) || null);
+          }
+        } else {
+          setBriefing(null);
+        }
+        setPreviewLoading(false);
       } else {
         setPermitRow(null);
+        setFormData({});
+        setSignatures({});
       }
       setLoading(false);
     })();
@@ -181,16 +202,12 @@ export default function MobileApprovalDetail() {
         )}
         {row && (
           <>
-            {row.entity_type === "work_permit" && (
-              <PermitAiBriefingCard briefing={briefing} />
-            )}
-
             {row.entity_type === "work_permit" && permitRow && (
               <Card>
                 <CardContent className="pt-4 space-y-2">
                   <div className="flex items-center gap-2">
                     <FileText className="h-4 w-4 text-primary" />
-                    <div className="font-semibold text-sm">허가서 요약</div>
+                    <div className="font-semibold text-sm">허가서</div>
                   </div>
                   <div className="font-medium text-base">{summaryTitle}</div>
                   <div className="text-xs text-muted-foreground space-y-0.5">
@@ -202,20 +219,33 @@ export default function MobileApprovalDetail() {
                     <div>인원: {summaryPersonnel}명</div>
                     {closureName && <div>작업완료 SM: {closureName}</div>}
                   </div>
-                  {(permitRow.work_description || form.work_description) && (
-                    <div className="text-sm bg-muted/40 rounded p-2 whitespace-pre-wrap">
-                      {permitRow.work_description || form.work_description}
-                    </div>
-                  )}
                   <Button
                     variant="outline"
                     className="w-full"
-                    onClick={() => navigate(`/app/worker/permits?id=${permitRow.id}`)}
+                    onClick={() =>
+                      navigate(
+                        permitViewerPath(
+                          permitRow.id,
+                          `/app/worker/approvals/${approvalId}`,
+                        ),
+                      )
+                    }
                   >
-                    전체 문서 보기
+                    전체 화면으로 보기
                   </Button>
                 </CardContent>
               </Card>
+            )}
+
+            {row.entity_type === "work_permit" && permitRow && (
+              <PermitReadOnlyPreview
+                formData={formData}
+                signatures={signatures}
+                briefing={briefing}
+                permitType={permitRow.permit_type}
+                permitKinds={permitRow.permit_kinds}
+                loading={previewLoading}
+              />
             )}
 
             <Card>

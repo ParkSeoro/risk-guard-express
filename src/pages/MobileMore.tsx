@@ -28,6 +28,7 @@ import MobileOtaUpdateCard from "@/components/mobile/MobileOtaUpdateCard";
 import MasterAlarmSimulator from "@/components/geofence/MasterAlarmSimulator";
 import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
 import { anyMapHasGeoref } from "@/lib/mapBounds";
+import { useGpsUi } from "@/lib/tracking/gpsStatusUi";
 
 export default function MobileMore() {
   const { signOut, profile, hasRole, user } = useAuth();
@@ -36,6 +37,7 @@ export default function MobileMore() {
   const navigate = useNavigate();
   const realtime = useSystemRealtimeOptional();
   const unread = realtime?.unreadNotifications ?? 0;
+  const gpsUi = useGpsUi();
   const effectiveRole = preview.isPreview ? preview.syntheticRole : role;
   const manager = isManagerMobileRole(
     effectiveRole,
@@ -130,6 +132,12 @@ export default function MobileMore() {
       )}
 
       <MobileOtaUpdateCard />
+
+      {gpsUi.tracking && (
+        <p className="text-[11px] text-muted-foreground leading-relaxed px-0.5">
+          GPS는 홈으로 나가도 유지됩니다. 최근 목록에서 앱을 지우면 추적·알람이 멈춥니다.
+        </p>
+      )}
 
       {/* Master field tools — MobileHome is orphaned (redirects to today); live here. */}
       {(isMaster || (preview.isPreview && effectiveRole === "master")) && (

@@ -5,6 +5,7 @@ import AuthGuard from "@/components/AuthGuard";
 import WorkerGlobalGps, { GpsBlockBadge } from "@/components/worker/WorkerGlobalGps";
 import ShellGeofenceAlerts from "@/components/geofence/ShellGeofenceAlerts";
 import MobileShell from "@/components/mobile/MobileShell";
+import { GpsUiProvider } from "@/lib/tracking/gpsStatusUi";
 import { MobilePreviewGate } from "@/contexts/PreviewContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { isPureWorkerUser } from "@/components/AuthGuard";
@@ -34,10 +35,11 @@ export default function WorkerAppRoutes() {
   return (
     <AuthGuard shell="worker">
       <MobilePreviewGate>
-        <WorkerGpsGate />
-        <ShellGeofenceAlerts />
-        <MobileShell>
-          <Suspense fallback={<Fallback />}>
+        <GpsUiProvider>
+          <WorkerGpsGate />
+          <ShellGeofenceAlerts />
+          <MobileShell>
+            <Suspense fallback={<Fallback />}>
             <Routes>
               <Route index element={<Navigate to="today" replace />} />
               <Route path="onboarding" element={<Navigate to="/consent" replace />} />
@@ -73,8 +75,9 @@ export default function WorkerAppRoutes() {
               <Route path="site-weather" element={<P.LazyMobileSiteWeather />} />
               <Route path="*" element={<Navigate to="today" replace />} />
             </Routes>
-          </Suspense>
-        </MobileShell>
+            </Suspense>
+          </MobileShell>
+        </GpsUiProvider>
       </MobilePreviewGate>
     </AuthGuard>
   );

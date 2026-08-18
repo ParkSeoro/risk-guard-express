@@ -54,6 +54,13 @@ export async function getNativeIdentity(): Promise<NativeIdentity | null> {
   }
 }
 
+/** e.g. "1.1.1 (470)" — what testers compare against Play / AAB. */
+export function formatNativeVersionLabel(current: NativeIdentity | null | undefined): string {
+  if (!current?.version) return "확인 불가";
+  const build = String(current.build || "").trim();
+  return build && build !== "0" ? `${current.version} (${build})` : current.version;
+}
+
 export type NativeStoreUpdateState = {
   applicable: boolean;
   needed: boolean;

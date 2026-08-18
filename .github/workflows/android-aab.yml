@@ -284,12 +284,24 @@ jobs:
           NDK="${{ steps.ndk.outputs.ndk-path }}"
           echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$NDK" >> "$GITHUB_ENV"
-          # Capacitor CI often has no local.properties — create/merge ndk.dir
-          PROP=android/local.properties
-          touch "$PROP"
-          grep -q '^ndk.dir=' "$PROP" && sed -i "s|^ndk.dir=.*|ndk.dir=$NDK|" "$PROP" || echo "ndk.dir=$NDK" >> "$PROP"
-          echo "NDK → $NDK"
-          cat "$PROP"
+          # AGP 8: ndkPath in Gradle, not deprecated ndk.dir
+          python3 - <<PY
+          from pathlib import Path
+          ndk = r"""${{ steps.ndk.outputs.ndk-path }}"""
+          p = Path("android/app/build.gradle")
+          s = p.read_text(encoding="utf-8")
+          if "ndkPath" not in s:
+              if "ndkVersion" in s:
+                  s = s.replace(
+                      'ndkVersion "27.2.12479018"',
+                      'ndkVersion "27.2.12479018"\n    ndkPath "' + ndk.replace("\\\\", "/") + '"',
+                      1,
+                  )
+              else:
+                  s = s.replace("android {", 'android {\n    ndkPath "' + ndk.replace("\\\\", "/") + '"', 1)
+              p.write_text(s, encoding="utf-8")
+          print("ndkPath →", ndk)
+          PY
 
       - name: Build release AAB
         env:
@@ -316,23 +328,7 @@ jobs:
           retention-days: 90
 
       - name: Collect Play mapping + native symbols
-        run: |
-          mkdir -p play-symbols
-          MAP=$(find android/app/build/outputs/mapping -name mapping.txt 2>/dev/null | head -n1 || true)
-          SYM=$(find android/app/build/outputs -name 'native-debug-symbols.zip' 2>/dev/null | head -n1 || true)
-          if [ -n "$MAP" ]; then
-            cp "$MAP" play-symbols/mapping.txt
-            echo "mapping.txt → play-symbols ($(wc -c < play-symbols/mapping.txt) bytes)"
-          else
-            echo "::warning::mapping.txt not found — R8 may have been skipped"
-          fi
-          if [ -n "$SYM" ]; then
-            cp "$SYM" play-symbols/native-debug-symbols.zip
-            echo "native-debug-symbols.zip → play-symbols"
-          else
-            echo "::warning::native-debug-symbols.zip not beside AAB (AGP may have packed symbols into the bundle only)"
-          fi
-          ls -la play-symbols || true
+        run: python3 scripts/collect-play-symbols.py android/app/build play-symbols
 
       - name: Upload Play deobfuscation artifacts
         uses: actions/upload-artifact@v6

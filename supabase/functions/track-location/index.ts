@@ -306,7 +306,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ---- legacy site_zones ----
+    // ---- legacy site_zones (site enter/exit + QR). GPS sirens SSOT is restricted_zones. ----
     const { data: zones, error: zErr } = await supabase
       .from("site_zones")
       .select("id, name, zone_type, geo_polygon, wifi_fingerprint")
@@ -314,11 +314,26 @@ Deno.serve(async (req) => {
       .eq("is_deleted", false);
     if (zErr) throw zErr;
 
+    const { count: everUnified } = await supabase
+      .from("restricted_zones")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", body.project_id);
+    // Policy: src/lib/tracking/zoneAlarmPolicy.ts
+    const unifiedSsot = (everUnified ?? 0) > 0;
+
     let matchedZoneId: string | null = null;
     let source: "gps" | "wifi" | "restricted" = "gps";
 
     if (body.accuracy_m <= 50 || body.force_restricted_check) {
       for (const z of zones || []) {
+        // After the unified map is used, leftover Site Maps danger/restricted
+        // polygons must not keep matching — they survived add/edit/delete there.
+        if (
+          unifiedSsot &&
+          (z.zone_type === "danger" || z.zone_type === "restricted")
+        ) {
+          continue;
+        }
         if (z.geo_polygon && pointInPolygon(body.lng, body.lat, z.geo_polygon as any)) {
           matchedZoneId = z.id;
           break;
@@ -329,6 +344,12 @@ Deno.serve(async (req) => {
     if (!matchedZoneId && body.wifi_scan?.length) {
       let best: { id: string; score: number } | null = null;
       for (const z of zones || []) {
+        if (
+          unifiedSsot &&
+          (z.zone_type === "danger" || z.zone_type === "restricted")
+        ) {
+          continue;
+        }
         const fp = (z.wifi_fingerprint as any[]) || [];
         if (!fp.length) continue;
         const score = cosineSimilarity(body.wifi_scan, fp);
@@ -377,23 +398,20 @@ Deno.serve(async (req) => {
 
     const zoneMeta = (zones || []).find((z) => z.id === matchedZoneId);
     let eventType: string | null = null;
+    const lastWasExit =
+      !!lastEvent && /^(exit|leave|depart)/i.test(String(lastEvent.event_type || ""));
+    const lastRestrictedId = lastWasExit ? null : lastEvent?.restricted_zone_id ?? null;
+    const lastSiteId = lastWasExit ? null : lastEvent?.zone_id ?? null;
 
-    // Restricted zone unauthorized entry (ban match)
-    if (
-      matchedRestricted &&
-      matchedRestricted.id !== lastEvent?.restricted_zone_id
-    ) {
+    // Restricted zone unauthorized entry (ban match) — unified map SSOT
+    if (matchedRestricted && matchedRestricted.id !== lastRestrictedId) {
       eventType = "unauthorized_entry";
-    } else if (matchedZoneId && matchedZoneId !== lastEvent?.zone_id) {
-      eventType =
-        zoneMeta?.zone_type === "danger" || zoneMeta?.zone_type === "restricted"
-          ? "unauthorized_entry"
-          : "entry";
-    } else if (
-      !matchedZoneId &&
-      !matchedRestricted &&
-      (lastEvent?.zone_id || lastEvent?.restricted_zone_id)
-    ) {
+    } else if (matchedZoneId && matchedZoneId !== lastSiteId) {
+      const legacyDanger =
+        zoneMeta?.zone_type === "danger" || zoneMeta?.zone_type === "restricted";
+      // Never siren from leftover site_zones once restricted_zones exist.
+      eventType = legacyDanger && !unifiedSsot ? "unauthorized_entry" : "entry";
+    } else if (!matchedZoneId && !matchedRestricted && (lastRestrictedId || lastSiteId)) {
       eventType = "exit";
     }
 

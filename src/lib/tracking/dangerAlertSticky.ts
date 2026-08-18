@@ -44,6 +44,33 @@ export function clearStickyDangerAlert() {
   }
 }
 
+/** Placeholder ids used when a server event has no live zone UUID. */
+export function isPlaceholderZoneId(zoneId: string | null | undefined): boolean {
+  return !zoneId || zoneId === "zone" || zoneId === "unknown";
+}
+
+export function isLiveRestrictedZoneId(
+  zoneId: string | null | undefined,
+  zones: Array<{ id: string }>,
+): boolean {
+  if (isPlaceholderZoneId(zoneId)) return false;
+  return zones.some((z) => z.id === zoneId);
+}
+
+/**
+ * Sticky banners must not reopen after the zone was deleted/moved.
+ * Require the zone to still exist AND current GPS to still be inside it.
+ */
+export function shouldRestoreStickyDangerAlert(opts: {
+  sticky: StickyDangerAlert | null;
+  liveZones: Array<{ id: string }>;
+  gpsInsideZoneId: string | null | undefined;
+}): boolean {
+  if (!opts.sticky) return false;
+  if (!isLiveRestrictedZoneId(opts.sticky.zoneId, opts.liveZones)) return false;
+  return opts.gpsInsideZoneId === opts.sticky.zoneId;
+}
+
 /** Best-effort OS banner when WebView cannot paint (screen off). */
 export async function notifyDangerZoneOs(zoneName: string) {
   try {

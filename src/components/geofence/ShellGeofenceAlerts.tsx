@@ -23,9 +23,11 @@ import {
 } from "@/lib/tracking/siteTrackBounds";
 import {
   clearStickyDangerAlert,
+  isLiveRestrictedZoneId,
   loadStickyDangerAlert,
   notifyDangerZoneOs,
   saveStickyDangerAlert,
+  shouldRestoreStickyDangerAlert,
 } from "@/lib/tracking/dangerAlertSticky";
 import DangerZoneAlertModal from "@/components/geofence/DangerZoneAlertModal";
 
@@ -45,7 +47,9 @@ export default function ShellGeofenceAlerts() {
   const { projectId, role, companyId } = useMobileAccess();
   const { lastGpsFix, lastZoneEvent, gpsTracking } = useSystemRealtime();
   const [alertZone, setAlertZone] = useState<{ id: string; name: string } | null>(null);
+  const [zonesGen, setZonesGen] = useState(0);
   const zonesRef = useRef<RestrictedZoneGeom[]>([]);
+  const zonesProjectRef = useRef<string | null>(null);
   const fenceRef = useRef<SiteTrackingFence | null>(null);
   const subjectRef = useRef<BanSubject>({});
   const exitStreak = useRef(0);
@@ -87,6 +91,8 @@ export default function ShellGeofenceAlerts() {
   const loadZones = useCallback(async () => {
     if (!projectId) {
       zonesRef.current = [];
+      zonesProjectRef.current = null;
+      setZonesGen((n) => n + 1);
       return;
     }
     const { data } = await supabase
@@ -98,17 +104,23 @@ export default function ShellGeofenceAlerts() {
       .eq("is_deleted", false)
       .eq("is_active", true);
     zonesRef.current = (data || []) as unknown as RestrictedZoneGeom[];
+    zonesProjectRef.current = projectId;
     try {
       fenceRef.current = await resolveSiteTrackingFence(projectId);
     } catch {
       fenceRef.current = null;
     }
+
+    const live = zonesRef.current;
+    const sticky = loadStickyDangerAlert(projectId);
+    if (sticky && !isLiveRestrictedZoneId(sticky.zoneId, live)) {
+      clearStickyDangerAlert();
+    }
     setAlertZone((prev) => {
       if (!prev) return prev;
-      if (prev.id === "zone") return prev;
-      const still = zonesRef.current.some((z) => z.id === prev.id);
-      return still ? prev : null;
+      return isLiveRestrictedZoneId(prev.id, live) ? prev : null;
     });
+    setZonesGen((n) => n + 1);
   }, [projectId]);
 
   // Resolve BanSubject (worker_id / company_id / job_type) — not name/phone/role.
@@ -130,7 +142,8 @@ export default function ShellGeofenceAlerts() {
     void loadZones();
   }, [loadZones]);
 
-  // Restore sticky alert after remount / OTA — only while GPS tracking is active
+  // Restore sticky alert after remount / OTA only if the zone is still live
+  // AND current GPS is still inside it — never reopen a deleted/moved fence.
   useEffect(() => {
     if (!projectId) return;
     if (!gpsTracking) {
@@ -139,10 +152,27 @@ export default function ShellGeofenceAlerts() {
       return;
     }
     const sticky = loadStickyDangerAlert(projectId);
-    if (sticky) {
-      setAlertZone({ id: sticky.zoneId, name: sticky.zoneName });
+    if (zonesProjectRef.current !== projectId) return;
+    const fix = lastGpsFixRef.current;
+    const hit =
+      fix && zonesRef.current.length
+        ? findViolatingRestrictedZone(fix.lat, fix.lng, zonesRef.current, subjectRef.current)
+        : null;
+    if (
+      shouldRestoreStickyDangerAlert({
+        sticky,
+        liveZones: zonesRef.current,
+        gpsInsideZoneId: hit?.id,
+      })
+    ) {
+      openAlert({ id: sticky!.zoneId, name: sticky!.zoneName }, { osNotify: false });
+      return;
     }
-  }, [projectId, gpsTracking]);
+    if (sticky && !isLiveRestrictedZoneId(sticky.zoneId, zonesRef.current)) {
+      clearStickyDangerAlert();
+      setAlertZone(null);
+    }
+  }, [projectId, gpsTracking, openAlert, zonesGen]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -158,7 +188,7 @@ export default function ShellGeofenceAlerts() {
       .subscribe();
     const poll = window.setInterval(() => {
       void loadZones();
-    }, 60_000);
+    }, 15_000);
     return () => {
       window.clearInterval(poll);
       void supabase.removeChannel(channel);
@@ -198,8 +228,8 @@ export default function ShellGeofenceAlerts() {
           return;
         }
       }
-      if (sticky) {
-        openAlert({ id: sticky.zoneId, name: sticky.zoneName }, { osNotify: true });
+      if (sticky && !isLiveRestrictedZoneId(sticky.zoneId, zonesRef.current)) {
+        clearAlert();
       }
     };
 
@@ -306,27 +336,52 @@ export default function ShellGeofenceAlerts() {
 
     if (!isEntryEventType(t)) return;
 
-    if (lastGpsFix) {
-      const rawLat = lastGpsFix.raw_lat ?? lastGpsFix.lat;
-      const rawLng = lastGpsFix.raw_lng ?? lastGpsFix.lng;
-      if (
-        shouldSuppressLocalSirenOffsite({
-          fence: fenceRef.current,
-          rawLat,
-          rawLng,
-          accuracyM: lastGpsFix.accuracy,
-        })
-      ) {
+    let cancelled = false;
+    void (async () => {
+      await loadZones();
+      if (cancelled) return;
+      if (zoneId && !isLiveRestrictedZoneId(zoneId, zonesRef.current)) {
+        // Deleted / inactive unified zone, or leftover site_zones id.
         return;
       }
-    }
-
-    dismissedZoneId.current = null;
-    openAlert({
-      id: zoneId || "zone",
-      name: ev.zone_name || "위험 구역",
-    });
-  }, [lastZoneEvent, lastGpsFix, openAlert, clearAlert, profile?.phone]);
+      if (lastGpsFixRef.current) {
+        const fix = lastGpsFixRef.current;
+        const rawLat = fix.raw_lat ?? fix.lat;
+        const rawLng = fix.raw_lng ?? fix.lng;
+        if (
+          shouldSuppressLocalSirenOffsite({
+            fence: fenceRef.current,
+            rawLat,
+            rawLng,
+            accuracyM: fix.accuracy,
+          })
+        ) {
+          return;
+        }
+        if (zonesRef.current.length) {
+          const hit = findViolatingRestrictedZone(
+            fix.lat,
+            fix.lng,
+            zonesRef.current,
+            subjectRef.current,
+          );
+          if (!hit) return;
+          dismissedZoneId.current = null;
+          openAlert({ id: hit.id, name: hit.name || ev.zone_name || "위험 구역" });
+          return;
+        }
+      }
+      if (!zoneId) return;
+      dismissedZoneId.current = null;
+      openAlert({
+        id: zoneId,
+        name: ev.zone_name || "위험 구역",
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lastZoneEvent, lastGpsFix, openAlert, clearAlert, loadZones, profile?.phone]);
 
   return (
     <DangerZoneAlertModal

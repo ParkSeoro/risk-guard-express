@@ -28,6 +28,14 @@ export type GpsFix = {
   /** Device raw GPS — site-fence / leave-site must use this, not calibrated. */
   raw_lat?: number;
   raw_lng?: number;
+  /** preview = local watch; fix = after track-location. Sirens use preview hysteresis + fix veto. */
+  kind?: "preview" | "fix";
+  zone_id?: string | null;
+  restricted_zone_id?: string | null;
+  zone_name?: string | null;
+  zone_type?: string | null;
+  event_type?: string | null;
+  ignored?: string | null;
 };
 
 type ZoneEventPayload = {
@@ -48,6 +56,8 @@ type SystemRealtimeValue = {
   lastZoneEvent: ZoneEventPayload | null;
   gpsTracking: boolean;
   lastGpsFix: GpsFix | null;
+  /** Low-power off-site wait — session alive, not sending (F-03). */
+  gpsSuspended: boolean;
   /** Last geolocation / track-location error message (null when healthy). */
   gpsError: string | null;
   startGpsTracking: (identity: TrackingIdentity) => void;
@@ -74,6 +84,7 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
   const [lastZoneEvent, setLastZoneEvent] = useState<ZoneEventPayload | null>(null);
   const [gpsTracking, setGpsTracking] = useState(false);
   const [lastGpsFix, setLastGpsFix] = useState<GpsFix | null>(null);
+  const [gpsSuspended, setGpsSuspended] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const stopTrackerRef = useRef<null | (() => void)>(null);
   const identityRef = useRef<TrackingIdentity | null>(null);
@@ -149,6 +160,7 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
     stopTrackerRef.current = null;
     identityRef.current = null;
     setGpsTracking(false);
+    setGpsSuspended(false);
     setLastGpsFix(null);
     setGpsError(null);
   }, []);
@@ -173,6 +185,7 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
       const gen = startGenRef.current;
       identityRef.current = identity;
       setGpsTracking(true);
+      setGpsSuspended(false);
       setGpsError(null);
 
       void import("@/lib/tracking/locationTracker").then(async ({ startTracking, normalizeTrackingConsentStorage }) => {
@@ -195,23 +208,31 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
           siteCenter,
           onLeaveSite: (info) => {
             clearStickyDangerAlert();
-            stopGpsTracking();
-            toast.message("현장 이탈 · GPS 추적 자동 종료", {
+            setGpsSuspended(true);
+            setLastGpsFix(null);
+            toast.message("현장 이탈 · GPS 저전력 대기", {
               id: `gps-leave-${identity.project_id}`,
-              description: `현장 기준 약 ${Math.round(info.distanceM)}m (허용 ${Math.round(info.radiusM)}m). 백그라운드 추적·위험 경고를 종료했습니다. 근로자는 다시 출근하면, 관리자는 현장 안으로 오면 재개됩니다.`,
+              description: `현장 기준 약 ${Math.round(info.distanceM)}m (허용 ${Math.round(info.radiusM)}m). 추적을 잠시 멈추고, 현장 안으로 돌아오면 자동 재개합니다.`,
               duration: 6000,
             });
             try {
               window.dispatchEvent(
                 new CustomEvent("mobile:gps-auto-stopped", {
-                  detail: { projectId: identity.project_id },
+                  detail: { projectId: identity.project_id, suspended: true },
                 }),
               );
             } catch {
               /* ignore */
             }
           },
-          onUpdate: (info) => {
+          onResumeSite: () => {
+            setGpsSuspended(false);
+            toast.message("현장 복귀 · GPS 추적 재개", {
+              id: `gps-resume-${identity.project_id}`,
+              duration: 4000,
+            });
+          },
+          onPreview: (info) => {
             setLastGpsFix({
               lat: info.lat,
               lng: info.lng,
@@ -219,10 +240,28 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
               raw_lng: info.raw_lng,
               accuracy: info.accuracy,
               at: Date.now(),
+              kind: "preview",
             });
             if (info.source === "gps-local" || info.source === "gps" || info.source?.startsWith("gps-bg")) {
               setGpsError((prev) => (prev && /권한|거부|시간 초과|사용할 수 없/.test(prev) ? null : prev));
             }
+          },
+          onFix: (info) => {
+            setLastGpsFix({
+              lat: info.lat,
+              lng: info.lng,
+              raw_lat: info.raw_lat,
+              raw_lng: info.raw_lng,
+              accuracy: info.accuracy,
+              at: Date.now(),
+              kind: "fix",
+              zone_id: info.zone_id,
+              restricted_zone_id: info.restricted_zone_id,
+              zone_name: info.zone_name,
+              zone_type: info.zone_type,
+              event_type: info.event_type,
+              ignored: info.ignored,
+            });
           },
           onError: (err) => {
             setGpsError(err.message || String(err));
@@ -246,11 +285,12 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
       lastZoneEvent,
       gpsTracking,
       lastGpsFix,
+      gpsSuspended,
       gpsError,
       startGpsTracking,
       stopGpsTracking,
     }),
-    [unreadNotifications, lastZoneEvent, gpsTracking, lastGpsFix, gpsError, startGpsTracking, stopGpsTracking],
+    [unreadNotifications, lastZoneEvent, gpsTracking, lastGpsFix, gpsSuspended, gpsError, startGpsTracking, stopGpsTracking],
   );
 
   return (

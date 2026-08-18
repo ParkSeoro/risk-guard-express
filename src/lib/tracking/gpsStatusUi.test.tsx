@@ -8,6 +8,6 @@ describe("GPS header chip copy", () => {
       expect(label.startsWith("GPS")).toBe(true);
     }
     expect(GPS_BLOCK_CHIP.no_checkin).toBe("GPS 출근 전");
-    expect(GPS_BLOCK_HINT.fence_probe_failed).toMatch(/펜스/);
+    expect(GPS_BLOCK_HINT.fence_probe_failed).toMatch(/복귀/);
   });
 });

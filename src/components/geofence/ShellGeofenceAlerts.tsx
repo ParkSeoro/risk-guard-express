@@ -18,6 +18,11 @@ import { resolveBanSubject } from "@/lib/tracking/resolveBanSubject";
 import { isZoneEventAboutMe } from "@/lib/tracking/zoneEventAboutMe";
 import { shouldSuppressLocalSirenOffsite, isGpsAccurateEnoughForSiren } from "@/lib/tracking/geofenceLocalAlarm";
 import {
+  nextSirenHysteresis,
+  serverConfirmsRestricted,
+  SIREN_EXIT_STREAK_NEEDED,
+} from "@/lib/tracking/sirenHysteresis";
+import {
   resolveSiteTrackingFence,
   type SiteTrackingFence,
 } from "@/lib/tracking/siteTrackBounds";
@@ -31,9 +36,6 @@ import {
 } from "@/lib/tracking/dangerAlertSticky";
 import DangerZoneAlertModal from "@/components/geofence/DangerZoneAlertModal";
 
-/** Require this many consecutive "outside" GPS hits before clearing (jitter). */
-const EXIT_STREAK_NEEDED = 3;
-
 function isEntryEventType(t: string): boolean {
   return /unauthorized|restricted|danger|ban/i.test(t) && !/exit|leave|depart/i.test(t);
 }
@@ -46,13 +48,14 @@ export default function ShellGeofenceAlerts() {
   const { user, profile } = useAuth();
   const { projectId, role, companyId } = useMobileAccess();
   const { lastGpsFix, lastZoneEvent, gpsTracking } = useSystemRealtime();
-  const [alertZone, setAlertZone] = useState<{ id: string; name: string } | null>(null);
+  const [alertZone, setAlertZone] = useState<{ id: string; name: string; confirming?: boolean } | null>(null);
   const [zonesGen, setZonesGen] = useState(0);
   const zonesRef = useRef<RestrictedZoneGeom[]>([]);
   const zonesProjectRef = useRef<string | null>(null);
   const fenceRef = useRef<SiteTrackingFence | null>(null);
   const subjectRef = useRef<BanSubject>({});
   const exitStreak = useRef(0);
+  const entryStreak = useRef(0);
   /** User tapped dismiss — suppress until they leave that zone. */
   const dismissedZoneId = useRef<string | null>(null);
   const lastOsNotifyAt = useRef(0);
@@ -60,9 +63,12 @@ export default function ShellGeofenceAlerts() {
   lastGpsFixRef.current = lastGpsFix;
 
   const openAlert = useCallback(
-    (zone: { id: string; name: string }, opts?: { osNotify?: boolean }) => {
+    (zone: { id: string; name: string; confirming?: boolean }, opts?: { osNotify?: boolean }) => {
       if (dismissedZoneId.current && dismissedZoneId.current === zone.id) return;
-      setAlertZone(zone);
+      setAlertZone((prev) => {
+        if (prev?.id === zone.id && prev.confirming === false && zone.confirming) return prev;
+        return zone;
+      });
       if (projectId) {
         saveStickyDangerAlert({
           projectId,
@@ -84,6 +90,7 @@ export default function ShellGeofenceAlerts() {
 
   const clearAlert = useCallback(() => {
     exitStreak.current = 0;
+    entryStreak.current = 0;
     setAlertZone(null);
     clearStickyDangerAlert();
   }, []);
@@ -225,7 +232,8 @@ export default function ShellGeofenceAlerts() {
         if (hit) {
           dismissedZoneId.current = null;
           exitStreak.current = 0;
-          openAlert({ id: hit.id, name: hit.name }, { osNotify: true });
+          entryStreak.current = 0;
+          openAlert({ id: hit.id, name: hit.name, confirming: false }, { osNotify: true });
           return;
         }
       }
@@ -273,26 +281,61 @@ export default function ShellGeofenceAlerts() {
       clearAlert();
       return;
     }
-    const hit = findViolatingRestrictedZone(
+
+    const accurate = isGpsAccurateEnoughForSiren(lastGpsFix.accuracy);
+    const clientHit = findViolatingRestrictedZone(
       lastGpsFix.lat,
       lastGpsFix.lng,
       zonesRef.current,
       subjectRef.current,
     );
-    if (!hit) {
-      // Ignore sparse "outside" blips while accuracy is poor (common on wake)
-      if (!isGpsAccurateEnoughForSiren(lastGpsFix.accuracy)) return;
-      exitStreak.current += 1;
-      if (exitStreak.current >= EXIT_STREAK_NEEDED) {
+
+    // Server veto always wins (S-01). Unknown (low_accuracy) leaves the preview up.
+    if (lastGpsFix.kind === "fix") {
+      const judgment = serverConfirmsRestricted({
+        ignored: lastGpsFix.ignored,
+        zone_type: lastGpsFix.zone_type,
+        event_type: lastGpsFix.event_type,
+        restricted_zone_id: lastGpsFix.restricted_zone_id,
+      });
+      if (judgment === "outside") {
+        entryStreak.current = 0;
+        exitStreak.current = 0;
         dismissedZoneId.current = null;
         clearAlert();
+        return;
       }
+      if (judgment === "inside") {
+        const zoneId = lastGpsFix.restricted_zone_id || clientHit?.id;
+        const zoneName = lastGpsFix.zone_name || clientHit?.name || "위험 구역";
+        if (!zoneId) return;
+        entryStreak.current = 0;
+        exitStreak.current = 0;
+        if (dismissedZoneId.current === zoneId) return;
+        openAlert({ id: zoneId, name: zoneName, confirming: false });
+        return;
+      }
+    }
+
+    // Local preview hysteresis — preview samples only so a ping is not counted twice (F-04).
+    if (lastGpsFix.kind === "fix") return;
+
+    const next = nextSirenHysteresis({
+      inside: !!clientHit,
+      accurate,
+      entryStreak: entryStreak.current,
+      exitStreak: exitStreak.current,
+    });
+    entryStreak.current = next.entryStreak;
+    exitStreak.current = next.exitStreak;
+    if (next.close) {
+      dismissedZoneId.current = null;
+      clearAlert();
       return;
     }
-    if (!isGpsAccurateEnoughForSiren(lastGpsFix.accuracy)) return;
-    exitStreak.current = 0;
-    if (dismissedZoneId.current === hit.id) return;
-    openAlert({ id: hit.id, name: hit.name });
+    if (!next.open || !clientHit) return;
+    if (dismissedZoneId.current === clientHit.id) return;
+    openAlert({ id: clientHit.id, name: clientHit.name, confirming: true });
   }, [lastGpsFix, projectId, gpsTracking, openAlert, clearAlert]);
 
   useEffect(() => {
@@ -330,7 +373,7 @@ export default function ShellGeofenceAlerts() {
         );
         if (hit) return;
       }
-      exitStreak.current = EXIT_STREAK_NEEDED;
+      exitStreak.current = SIREN_EXIT_STREAK_NEEDED;
       dismissedZoneId.current = null;
       clearAlert();
       return;
@@ -370,7 +413,7 @@ export default function ShellGeofenceAlerts() {
           );
           if (!hit) return;
           dismissedZoneId.current = null;
-          openAlert({ id: hit.id, name: hit.name || ev.zone_name || "위험 구역" });
+          openAlert({ id: hit.id, name: hit.name || ev.zone_name || "위험 구역", confirming: false });
           return;
         }
       }
@@ -379,6 +422,7 @@ export default function ShellGeofenceAlerts() {
       openAlert({
         id: zoneId,
         name: ev.zone_name || "위험 구역",
+        confirming: false,
       });
     })();
     return () => {
@@ -390,6 +434,7 @@ export default function ShellGeofenceAlerts() {
     <DangerZoneAlertModal
       open={!!alertZone}
       zoneName={alertZone?.name}
+      confirming={!!alertZone?.confirming}
       workerName={profile?.display_name}
       workerRole={role}
       onDismiss={() => {

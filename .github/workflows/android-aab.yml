@@ -302,7 +302,7 @@ PY
           ls -lh "$AAB"
 
       - name: Upload AAB artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: safenex-${{ steps.ver.outputs.version_name }}-${{ steps.ver.outputs.version_code }}.aab
           path: ${{ steps.aab.outputs.path }}

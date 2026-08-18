@@ -61,10 +61,10 @@ jobs:
       github.ref == 'refs/heads/build/android-aab'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
 
@@ -74,7 +74,7 @@ jobs:
           bun-version: latest
 
       - name: Setup JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           # Capacitor 8 / AGP 8.x templates compile with sourceCompatibility 21
@@ -193,11 +193,39 @@ jobs:
             cp capacitor-plugins/headless-track/HeadlessTrackService.java \
               android/app/src/main/java/org/safenex/app/HeadlessTrackService.java
           fi
+          # cap sync 템플릿에는 위치 권한이 없음 — 앱 AndroidManifest 에 주입
+          node scripts/prepare-native.mjs
+          # Belt-and-suspenders: inject even if prepare-native is dropped again
+          python3 - <<'PY'
+from pathlib import Path
+p = Path("android/app/src/main/AndroidManifest.xml")
+t = p.read_text()
+need = [
+    "android.permission.ACCESS_FINE_LOCATION",
+    "android.permission.ACCESS_COARSE_LOCATION",
+    "android.permission.ACCESS_BACKGROUND_LOCATION",
+    "android.permission.FOREGROUND_SERVICE",
+    "android.permission.FOREGROUND_SERVICE_LOCATION",
+    "android.permission.POST_NOTIFICATIONS",
+    "android.permission.CAMERA",
+    "android.permission.INTERNET",
+]
+for perm in need:
+    if perm not in t:
+        if "<application" not in t:
+            raise SystemExit(f"Cannot inject {perm}: no <application> in {p}")
+        t = t.replace("<application", f'    <uses-permission android:name="{perm}" />\n    <application', 1)
+        print(f"injected {perm}")
+p.write_text(t)
+print("Manifest permission inject OK")
+PY
           # Hard fail if critical permissions / plugins missing
           MANIFEST=android/app/src/main/AndroidManifest.xml
           for p in ACCESS_FINE_LOCATION ACCESS_BACKGROUND_LOCATION FOREGROUND_SERVICE_LOCATION POST_NOTIFICATIONS CAMERA; do
             if ! grep -q "$p" "$MANIFEST"; then
               echo "::error::AndroidManifest missing $p after prepare-native"
+              echo "----- AndroidManifest.xml -----"
+              cat "$MANIFEST"
               exit 1
             fi
           done

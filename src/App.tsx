@@ -16,6 +16,7 @@ import WorkerAppRoutes from "@/routes/WorkerAppRoutes";
 import { postLoginPath } from "@/components/AuthGuard";
 import { prefersMobileAppShell } from "@/hooks/use-mobile";
 import { isAccountLoginBlocked, isAccountPending } from "@/lib/accountStatus";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 
 const Auth = lazy(() => import("@/pages/Auth"));
 const Index = lazy(() => import("@/pages/Index"));
@@ -131,6 +132,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <SystemRealtimeProvider>
+            <AppErrorBoundary>
             <Suspense fallback={<PageFallback />}>
               <Routes>
                 <Route path="/landing" element={<Index />} />
@@ -163,6 +165,7 @@ const App = () => (
                 <Route path="/*" element={<LegacyPathRedirect />} />
               </Routes>
             </Suspense>
+            </AppErrorBoundary>
             <MobileRedirectGuard />
             <NativeAndroidBack />
             <NativeStoreUpdateGate />

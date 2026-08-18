@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 interface State { error: Error | null; }
 
 export class AppErrorBoundary extends React.Component<
-  { children: React.ReactNode },
+  { children: React.ReactNode; fallback?: React.ReactNode },
   State
 > {
   state: State = { error: null };
@@ -28,8 +28,9 @@ export class AppErrorBoundary extends React.Component<
 
   render() {
     if (this.state.error) {
+      if (this.props.fallback !== undefined) return this.props.fallback;
       return (
-        <div className="min-h-[60vh] flex items-center justify-center p-6">
+        <div className="min-h-screen bg-background flex items-center justify-center p-6 native-safe-pad">
           <div className="max-w-md w-full bg-card border-2 border-destructive/30 rounded-xl p-6 shadow-lg space-y-4">
             <div className="flex items-center gap-2 text-destructive">
               <AlertTriangle className="h-5 w-5" />

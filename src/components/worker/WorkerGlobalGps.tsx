@@ -27,9 +27,11 @@ import {
   MASTER_OFFSITE_ALARM_TEST_EVENT,
   readMasterOffsiteAlarmTest,
 } from "@/lib/tracking/masterOffsiteAlarmTest";
+import { isManagerMobileRole } from "@/lib/mobileShell";
 import type { MobileRole } from "@/hooks/useMobileAccess";
 import { seoulDayRange, todaySeoulDate } from "@/lib/dailyWorkAck";
 import { isTrackLocationIdentityDenied } from "@/lib/tracking/trackLocationClient";
+import { useSetGpsUi, type GpsBlockReason } from "@/lib/tracking/gpsStatusUi";
 import {
   gpsStatusReportPayload,
   useReportWorkerGpsStatus,

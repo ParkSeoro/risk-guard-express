@@ -9,6 +9,7 @@ import { GpsUiProvider } from "@/lib/tracking/gpsStatusUi";
 import { MobilePreviewGate } from "@/contexts/PreviewContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { isPureWorkerUser } from "@/components/AuthGuard";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 
 function Fallback() {
   return (
@@ -34,10 +35,14 @@ function WorkerGpsGate() {
 export default function WorkerAppRoutes() {
   return (
     <AuthGuard shell="worker">
+      <AppErrorBoundary>
       <MobilePreviewGate>
         <GpsUiProvider>
-          <WorkerGpsGate />
-          <ShellGeofenceAlerts />
+          {/* GPS/siren must never blank Today — isolate render crashes. */}
+          <AppErrorBoundary fallback={null}>
+            <WorkerGpsGate />
+            <ShellGeofenceAlerts />
+          </AppErrorBoundary>
           <MobileShell>
             <Suspense fallback={<Fallback />}>
             <Routes>
@@ -79,6 +84,7 @@ export default function WorkerAppRoutes() {
           </MobileShell>
         </GpsUiProvider>
       </MobilePreviewGate>
+      </AppErrorBoundary>
     </AuthGuard>
   );
 }

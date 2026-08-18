@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { nextOutsideStreak } from "@/lib/tracking/siteTrackPhase";
-import { SITE_EXIT_STREAK, SITE_RESUME_POLL_MS } from "@/lib/tracking/siteTrackBounds";
+import { SITE_EXIT_STREAK, SITE_EXIT_MAX_ACCURACY_M, SITE_RESUME_POLL_MS } from "@/lib/tracking/siteTrackBounds";
 import { isInsideResumeFence } from "@/lib/tracking/siteTrackBounds";
 
 describe("site track phase (F-03)", () => {

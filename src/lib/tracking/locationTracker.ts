@@ -44,6 +44,8 @@ export type TrackingIdentity = {
   company_id?: string | null;
   worker_role?: string | null;
   project_id: string;
+  /** Master off-site alarm test: zone events yes, last-position map no. */
+  suppress_last_position?: boolean;
 };
 
 async function loadCalibration(projectId: string): Promise<GpsCalibration | null> {
@@ -535,7 +537,8 @@ async function startHeadlessCompanion(opts: TrackerOptions): Promise<void> {
       exitStreak: SITE_EXIT_STREAK,
       maxAccuracyM: SITE_EXIT_MAX_ACCURACY_M,
       resumePollMs: SITE_RESUME_POLL_MS,
-      skipFence: !site,
+      skipFence: !site || !!live.suppress_last_position,
+      suppressLastPosition: !!live.suppress_last_position,
     });
   } catch (e) {
     if (import.meta.env.DEV) console.warn("[HeadlessTrack] companion start skipped", e);

@@ -42,6 +42,8 @@ const BodySchema = z.object({
   restricted_zone_id: z.string().uuid().optional().nullable(),
   /** Names a unified zone; must not skip the accuracy discard gate. */
   force_restricted_check: z.boolean().optional().default(false),
+  /** Master off-site alarm test: evaluate zones, do not upsert worker_last_positions. */
+  suppress_last_position: z.boolean().optional().default(false),
 });
 
 function roleHonorific(role: string | null | undefined): string {
@@ -451,7 +453,8 @@ Deno.serve(async (req) => {
     // Always refresh last-known position when we can identify the worker.
     // Distribution map aggregates from this table (company/zone/count only).
     // Coalesce: skip upsert if same zone and moved <5m within 8s (cut write amplification).
-    if (subject.worker_id) {
+    // suppress_last_position: master off-site alarm test must not appear on the map.
+    if (subject.worker_id && !body.suppress_last_position) {
       const lastZone =
         eventType === "exit"
           ? null

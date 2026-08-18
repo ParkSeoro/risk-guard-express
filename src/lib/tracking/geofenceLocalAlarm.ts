@@ -11,7 +11,10 @@ export function shouldSuppressLocalSirenOffsite(opts: {
   rawLat: number;
   rawLng: number;
   accuracyM?: number;
+  /** Master off-site alarm test — siren vs dropped test zones must still fire. */
+  allowOffsite?: boolean;
 }): boolean {
+  if (opts.allowOffsite) return false;
   if (!opts.fence) return false;
   const acc = Number.isFinite(opts.accuracyM) ? Number(opts.accuracyM) : 999;
   return isDefinitelyOutsideSite(opts.fence, opts.rawLat, opts.rawLng, acc).outside;

@@ -1,11 +1,11 @@
 /**
  * Global GPS for /app/worker shell — one owner for start/stop.
  *
- * Policy (no offsite-pause flag):
+ * Policy:
  * - Worker: full tracking only while checked in today (open entry log).
- * - Manager/master: full tracking only when currently inside the site resume fence.
- * Leave-site suspends tracking inside the tracker (5 min resume probe).
- * Managers who open the app off-site still need a boot-time probe to start.
+ * - Manager: full tracking only when currently inside the site resume fence.
+ * - Platform master: same fence by default. Opt-in "현장 외 알람 테스트"
+ *   skips the probe/auto-stop and suppresses worker_last_positions.
  */
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -22,7 +22,11 @@ import {
   isInsideResumeFence,
 } from "@/lib/tracking/siteTrackBounds";
 import { clearStickyDangerAlert } from "@/lib/tracking/dangerAlertSticky";
-import { isManagerMobileRole } from "@/lib/mobileShell";
+import {
+  isPlatformMaster,
+  MASTER_OFFSITE_ALARM_TEST_EVENT,
+  readMasterOffsiteAlarmTest,
+} from "@/lib/tracking/masterOffsiteAlarmTest";
 import type { MobileRole } from "@/hooks/useMobileAccess";
 import { seoulDayRange, todaySeoulDate } from "@/lib/dailyWorkAck";
 import { isTrackLocationIdentityDenied } from "@/lib/tracking/trackLocationClient";
@@ -92,10 +96,10 @@ export default function WorkerGlobalGps() {
     const ensureProject = async () => {
       let projectId = readActiveProjectId();
       if (projectId) return projectId;
-      const isMaster = hasRole("master") || (roles || []).some((r) => r.toLowerCase() === "master");
+      const master = isPlatformMaster(hasRole, roles);
       try {
         let list: { id: string }[] = [];
-        if (isMaster) {
+        if (master) {
           const { data } = await supabase
             .from("projects")
             .select("id")
@@ -123,7 +127,7 @@ export default function WorkerGlobalGps() {
     };
 
     const resolveIsManager = async (projectId: string): Promise<boolean> => {
-      if (hasRole("master") || (roles || []).some((r) => String(r).toLowerCase() === "master")) {
+      if (isPlatformMaster(hasRole, roles)) {
         return true;
       }
       try {
@@ -195,11 +199,13 @@ export default function WorkerGlobalGps() {
         userId: user?.id,
       });
       if (cancelled) return;
-      const key = `${projectId}:${workerId || ban.worker_id || ""}:${ban.company_id || ""}`;
+      const offsiteAlarmTest =
+        isPlatformMaster(hasRole, roles) && readMasterOffsiteAlarmTest();
+      const key = `${projectId}:${workerId || ban.worker_id || ""}:${ban.company_id || ""}:${offsiteAlarmTest ? "test" : "fence"}`;
       if (lastKeyRef.current === key) return;
       lastKeyRef.current = key;
       const roleHint =
-        (hasRole("master") && "master") ||
+        (isPlatformMaster(hasRole, roles) && "master") ||
         (roles || []).find((r) => r && r !== "master") ||
         null;
       setGpsBlockReason(null);
@@ -210,6 +216,7 @@ export default function WorkerGlobalGps() {
         worker_phone: profile?.phone || null,
         company_id: ban.company_id || null,
         worker_role: roleHint,
+        suppress_last_position: offsiteAlarmTest,
       });
     };
 
@@ -242,9 +249,14 @@ export default function WorkerGlobalGps() {
       const isManager = await resolveIsManager(projectId);
       if (cancelled) return;
 
-      // Managers + platform master: only while inside the site resume fence.
-      // Home / off-site must not keep the OS GPS icon or last-position map alive.
+      // Managers: only while inside the site resume fence.
+      // Master may opt into off-site alarm testing (no last-position write).
       if (isManager) {
+        if (isPlatformMaster(hasRole, roles) && readMasterOffsiteAlarmTest()) {
+          clearStickyDangerAlert();
+          await startForProject(projectId);
+          return;
+        }
         const inside = await probeInsideSite(projectId);
         if (cancelled) return;
         if (inside) {
@@ -316,11 +328,17 @@ export default function WorkerGlobalGps() {
       void boot();
     };
 
+    const onOffsiteTest = () => {
+      lastKeyRef.current = null;
+      void boot();
+    };
+
     window.addEventListener("storage", onStorage);
     window.addEventListener(ACTIVE_PROJECT_CHANGED_EVENT, onProjectChanged);
     window.addEventListener("mobile:resume-gps-tracking", onResumeTracking);
     window.addEventListener("mobile:gps-auto-stopped", onAutoStopped);
     window.addEventListener("mobile:worker-checked-out", onCheckedOut);
+    window.addEventListener(MASTER_OFFSITE_ALARM_TEST_EVENT, onOffsiteTest);
     document.addEventListener("visibilitychange", onVisResume);
 
     return () => {
@@ -331,6 +349,7 @@ export default function WorkerGlobalGps() {
       window.removeEventListener("mobile:resume-gps-tracking", onResumeTracking);
       window.removeEventListener("mobile:gps-auto-stopped", onAutoStopped);
       window.removeEventListener("mobile:worker-checked-out", onCheckedOut);
+      window.removeEventListener(MASTER_OFFSITE_ALARM_TEST_EVENT, onOffsiteTest);
       document.removeEventListener("visibilitychange", onVisResume);
     };
   }, [

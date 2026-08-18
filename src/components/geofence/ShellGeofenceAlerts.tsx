@@ -17,6 +17,7 @@ import {
 import { resolveBanSubject } from "@/lib/tracking/resolveBanSubject";
 import { isZoneEventAboutMe } from "@/lib/tracking/zoneEventAboutMe";
 import { shouldSuppressLocalSirenOffsite, isGpsAccurateEnoughForSiren } from "@/lib/tracking/geofenceLocalAlarm";
+import { readMasterOffsiteAlarmTest } from "@/lib/tracking/masterOffsiteAlarmTest";
 import {
   nextSirenHysteresis,
   serverConfirmsRestricted,
@@ -220,6 +221,7 @@ export default function ShellGeofenceAlerts() {
             rawLat,
             rawLng,
             accuracyM: fix.accuracy,
+            allowOffsite: readMasterOffsiteAlarmTest(),
           })
         ) {
           clearAlert();
@@ -276,6 +278,7 @@ export default function ShellGeofenceAlerts() {
         rawLat,
         rawLng,
         accuracyM: lastGpsFix.accuracy,
+        allowOffsite: readMasterOffsiteAlarmTest(),
       })
     ) {
       clearAlert();
@@ -399,6 +402,7 @@ export default function ShellGeofenceAlerts() {
             rawLat,
             rawLng,
             accuracyM: fix.accuracy,
+            allowOffsite: readMasterOffsiteAlarmTest(),
           })
         ) {
           return;

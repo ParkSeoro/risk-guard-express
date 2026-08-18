@@ -89,7 +89,7 @@ import {
   validateApprovalLinesSSOT,
 } from '@/lib/approvalRules';
 import { buildAssessmentSignatureRows } from '@/lib/approvalSignatureRows';
-import * as XLSX from 'xlsx';
+import { parseRiskAssessmentExcelFile } from '@/lib/riskExcelImport';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
@@ -194,6 +194,8 @@ const AssessmentRunDetail = () => {
   const [excelHeaders, setExcelHeaders] = useState<string[]>([]);
   const [excelIssues, setExcelIssues] = useState<ValidationIssue[]>([]);
   const [excelStep, setExcelStep] = useState<'upload' | 'map' | 'result'>('upload');
+  const [excelParseError, setExcelParseError] = useState<string | null>(null);
+  const [excelFileName, setExcelFileName] = useState('');
 
   // Force edit (approved run)
   const [showForceEdit, setShowForceEdit] = useState(false);
@@ -1752,58 +1754,56 @@ const AssessmentRunDetail = () => {
   };
 
   // Excel upload
-  const handleExcelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Excel upload — parse after file pick (no extra 저장 button; next step is 컬럼 매핑)
+  const handleExcelFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const wb = XLSX.read(evt.target?.result, { type: 'binary' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: '' });
-        if (json.length === 0) { toast({ title: '데이터가 없습니다.', variant: 'destructive' }); return; }
-        const headers = Object.keys(json[0]);
-        setExcelHeaders(headers);
-        setExcelData(json);
-        const autoMap: Record<string, string> = {};
-        // 개선후/프라임(') 헤더는 기존 가능성·중대성·위험도와 분리
-        const isImprovedGradeHeader = (h: string) =>
-          h.includes('개선') || /['′'']\s*$/.test(h.trim()) || h.includes("'");
-        const findHeader = (aliases: string[], excludeImproved = false) => {
-          const candidates = excludeImproved
-            ? headers.filter(h => !isImprovedGradeHeader(h))
-            : headers;
-          const exact = candidates.find(h => aliases.some(a => h.trim() === a));
-          if (exact) return exact;
-          return candidates.find(h => aliases.some(a => h.includes(a)));
-        };
-        const knownMappings: Array<{ field: string; aliases: string[]; excludeImproved?: boolean }> = [
-          { field: 'process', aliases: ['공정', 'Process', '공종'] },
-          { field: 'sub_task', aliases: ['세부작업', 'Sub Task', '세부공종'] },
-          { field: 'hazard', aliases: ['위험요인', 'Hazard', '유해위험요인'] },
-          { field: 'hazard_situation', aliases: ['위험발생상황', 'Hazard Situation', '위험상황'] },
-          { field: 'existing_measure', aliases: ['기존대책', 'Existing Measure', '현재대책'] },
-          { field: 'improvement_measure', aliases: ['개선대책', 'Improvement', '추가대책'] },
-          // 개선후 필드를 먼저 매칭해 기존 칸과 헤더 충돌 방지
-          { field: 'improved_likelihood_grade', aliases: ['개선후 가능성', "가능성'", '개선가능성', 'Improved Likelihood'] },
-          { field: 'improved_severity_grade', aliases: ['개선후 중대성', "중대성'", '개선중대성', 'Improved Severity'] },
-          { field: 'improved_risk_grade', aliases: ['개선후 위험도', "위험도'", '개선위험도', 'Improved Risk'] },
-          { field: 'likelihood_grade', aliases: ['가능성', 'Likelihood', '빈도'], excludeImproved: true },
-          { field: 'severity_grade', aliases: ['중대성', 'Severity', '강도'], excludeImproved: true },
-          { field: 'risk_grade', aliases: ['위험도', 'Risk Level', 'Risk'], excludeImproved: true },
-          { field: 'legal_basis', aliases: ['법적근거', 'Legal', '관련법령'] },
-        ];
-        for (const { field, aliases, excludeImproved } of knownMappings) {
-          const found = findHeader(aliases, !!excludeImproved);
-          if (found) autoMap[field] = found;
-        }
-        setExcelColumnMap(autoMap);
-        setExcelStep('map');
-      } catch {
-        toast({ title: '파일 파싱 실패', variant: 'destructive' });
+    setExcelFileName(file.name);
+    setExcelParseError(null);
+    try {
+      const parsed = await parseRiskAssessmentExcelFile(file);
+      const headers = parsed.headers;
+      const json = parsed.rows;
+      setExcelHeaders(headers);
+      setExcelData(json);
+      const autoMap: Record<string, string> = {};
+      const isImprovedGradeHeader = (h: string) =>
+        h.includes('개선') || /['′'']\s*$/.test(h.trim()) || h.includes("'");
+      const findHeader = (aliases: string[], excludeImproved = false) => {
+        const candidates = excludeImproved
+          ? headers.filter(h => !isImprovedGradeHeader(h))
+          : headers;
+        const exact = candidates.find(h => aliases.some(a => h.trim() === a));
+        if (exact) return exact;
+        return candidates.find(h => aliases.some(a => h.includes(a)));
+      };
+      const knownMappings: Array<{ field: string; aliases: string[]; excludeImproved?: boolean }> = [
+        { field: 'process', aliases: ['공정', 'Process', '공종'] },
+        { field: 'sub_task', aliases: ['세부작업', 'Sub Task', '세부공종'] },
+        { field: 'hazard', aliases: ['위험요인', 'Hazard', '유해위험요인'] },
+        { field: 'hazard_situation', aliases: ['위험발생상황', 'Hazard Situation', '위험상황'] },
+        { field: 'existing_measure', aliases: ['기존대책', 'Existing Measure', '현재대책'] },
+        { field: 'improvement_measure', aliases: ['개선대책', 'Improvement', '추가대책'] },
+        { field: 'improved_likelihood_grade', aliases: ['개선후 가능성', "가능성'", '개선가능성', 'Improved Likelihood'] },
+        { field: 'improved_severity_grade', aliases: ['개선후 중대성', "중대성'", '개선중대성', 'Improved Severity'] },
+        { field: 'improved_risk_grade', aliases: ['개선후 위험도', "위험도'", '개선위험도', 'Improved Risk'] },
+        { field: 'likelihood_grade', aliases: ['가능성', 'Likelihood', '빈도'], excludeImproved: true },
+        { field: 'severity_grade', aliases: ['중대성', 'Severity', '강도'], excludeImproved: true },
+        { field: 'risk_grade', aliases: ['위험도', 'Risk Level', 'Risk'], excludeImproved: true },
+        { field: 'legal_basis', aliases: ['법적근거', 'Legal', '관련법령'] },
+      ];
+      for (const { field, aliases, excludeImproved } of knownMappings) {
+        const found = findHeader(aliases, !!excludeImproved);
+        if (found) autoMap[field] = found;
       }
-    };
-    reader.readAsBinaryString(file);
+      setExcelColumnMap(autoMap);
+      setExcelStep('map');
+    } catch (err: any) {
+      const msg = err?.message || '파일을 읽지 못했습니다.';
+      setExcelParseError(msg);
+      toast({ title: '데이터가 없습니다.', description: msg, variant: 'destructive' });
+    }
   };
 
   const handleExcelValidate = () => {
@@ -2403,7 +2403,7 @@ const AssessmentRunDetail = () => {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => { setShowExcelUpload(true); setExcelStep('upload'); }}>
+            <DropdownMenuItem onClick={() => { setShowExcelUpload(true); setExcelStep('upload'); setExcelParseError(null); setExcelFileName(''); }}>
               <Upload className="h-3.5 w-3.5 mr-2" /> 엑셀 가져오기
             </DropdownMenuItem>
             <DropdownMenuItem onClick={handlePrint}>
@@ -3349,8 +3349,17 @@ const AssessmentRunDetail = () => {
           <DialogHeader><DialogTitle>협력사 엑셀 업로드 검증</DialogTitle></DialogHeader>
           {excelStep === 'upload' && (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">협력사가 제공한 위험성평가 엑셀(XLSX/CSV) 파일을 업로드하세요.</p>
+              <p className="text-sm text-muted-foreground">
+                협력사가 제공한 위험성평가 엑셀(XLSX/CSV)을 선택하면 바로 읽습니다. 별도 저장 버튼은 없습니다.
+                표지/안내 시트나 제목 행이 있어도 공정·위험요인 표를 찾아 갑니다.
+              </p>
               <Input type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelFileChange} />
+              {excelFileName && (
+                <p className="text-xs text-muted-foreground">선택됨: {excelFileName}</p>
+              )}
+              {excelParseError && (
+                <p className="text-sm text-destructive whitespace-pre-wrap">{excelParseError}</p>
+              )}
             </div>
           )}
           {excelStep === 'map' && (

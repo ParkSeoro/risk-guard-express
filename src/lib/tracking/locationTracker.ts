@@ -13,6 +13,7 @@ import {
   fetchProjectGpsCalibration,
   type GpsCalibration,
 } from "@/lib/tracking/gpsCalibration";
+import { watchGpsCalibrationInvalidation } from "@/lib/tracking/gpsCalibrationRealtime";
 import {
   DANGER_PROXIMITY_M,
   isDefinitelyOutsideSite,
@@ -525,6 +526,7 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   const idleAfterMs = opts.idleAfterMs ?? 2 * 60_000;
   const movementThresholdM = opts.movementThresholdM ?? 12;
   const site = opts.siteCenter;
+  const unsubCal = watchGpsCalibrationInvalidation(identity.project_id);
 
   let lastSentAt = 0;
   let motion = createMotionIdleState(Date.now());
@@ -544,6 +546,7 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
     void startHeadlessCompanion(opts);
     const stop = () => {
       stopped = true;
+      unsubCal();
       bgStop();
       void stopHeadlessTrack();
     };
@@ -551,7 +554,13 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
     return stop;
   }
 
-  const geo = await getGeolocation();
+  let geo;
+  try {
+    geo = await getGeolocation();
+  } catch (e) {
+    unsubCal();
+    throw e;
+  }
   let watchHandle: { remove: () => void } | null = null;
 
   const clearResumeTimers = () => {
@@ -750,6 +759,7 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
 
   return () => {
     stopped = true;
+    unsubCal();
     clearResumeTimers();
     detachWatch();
     if (typeof document !== "undefined") {

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   applyGpsCalibration,
+  clearGpsCalibrationCache,
   computeGpsOffset,
+  fetchProjectGpsCalibration,
   GPS_CAL_MAX_ACCURACY_M,
   GPS_CAL_MAX_OFFSET_M,
   offsetMagnitudeM,
@@ -44,5 +46,32 @@ describe("gpsCalibration", () => {
     const m = offsetMagnitudeM(0.001, 0, 37.5); // ~111m
     expect(m).toBeGreaterThan(100);
     expect(m).toBeLessThan(120);
+  });
+
+  it("busts the 60s cache on clearGpsCalibrationCache (F-13)", async () => {
+    let n = 0;
+    const raw = {
+      d_lat: 0.0001,
+      d_lng: 0,
+      accuracy_m: 12,
+      site_map_id: "m1",
+      map_lat: 1,
+      map_lng: 2,
+      raw_lat: 0,
+      raw_lng: 0,
+      calibrated_at: "2026-08-18T00:00:00Z",
+    };
+    const fetcher = async () => {
+      n += 1;
+      return raw;
+    };
+    const a = await fetchProjectGpsCalibration("p-cache", fetcher);
+    const b = await fetchProjectGpsCalibration("p-cache", fetcher);
+    expect(a?.d_lat).toBe(0.0001);
+    expect(b?.d_lat).toBe(0.0001);
+    expect(n).toBe(1);
+    clearGpsCalibrationCache("p-cache");
+    await fetchProjectGpsCalibration("p-cache", fetcher);
+    expect(n).toBe(2);
   });
 });

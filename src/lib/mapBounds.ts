@@ -139,6 +139,13 @@ export function loadCornersFromMap(m: AnchorMap): GeoCorners | null {
   return box ? swNeToCorners(box) : null;
 }
 
+/** True when at least one site map has walk/PC georef (not the 1-point gps_calibration). */
+export function anyMapHasGeoref(
+  maps: Array<Pick<AnchorMap, "geo_transform" | "geo_anchor_nw_lat" | "geo_anchor_nw_lng" | "geo_anchor_se_lat" | "geo_anchor_se_lng">> | null | undefined,
+): boolean {
+  return (maps || []).some((m) => loadCornersFromMap(m) != null);
+}
+
 export function viewportCenterCorners(map: L.Map): GeoCorners {
   const b = map.getBounds();
   const c = b.getCenter();

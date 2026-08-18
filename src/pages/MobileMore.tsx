@@ -27,7 +27,7 @@ import { supabase } from "@/integrations/supabase/client";
 import MobileOtaUpdateCard from "@/components/mobile/MobileOtaUpdateCard";
 import MasterAlarmSimulator from "@/components/geofence/MasterAlarmSimulator";
 import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
-import { dedupeProjectsById, projectsFromMembershipRows } from "@/lib/mobileProjects";
+import { anyMapHasGeoref } from "@/lib/mapBounds";
 
 export default function MobileMore() {
   const { signOut, profile, hasRole, user } = useAuth();
@@ -42,6 +42,7 @@ export default function MobileMore() {
     preview.isPreview ? effectiveRole === "master" : isMaster,
   );
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [mapGeorefDone, setMapGeorefDone] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -71,6 +72,29 @@ export default function MobileMore() {
       setProjects(list);
     })();
   }, [hasRole, preview.isPreview, user?.id]);
+
+  const effectiveProjectId = projectId || preview.previewProjectId || "";
+  useEffect(() => {
+    if (!effectiveProjectId) {
+      setMapGeorefDone(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("site_maps")
+        .select(
+          "geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng,geo_transform",
+        )
+        .eq("project_id", effectiveProjectId)
+        .eq("is_deleted", false)
+        .limit(8);
+      if (!cancelled) setMapGeorefDone(anyMapHasGeoref((data as any) || []));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveProjectId]);
 
   return (
     <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="mobile-more">
@@ -117,7 +141,7 @@ export default function MobileMore() {
               disabled={!projectId && !preview.previewProjectId}
               onClick={() => navigate("/app/worker/map-calibration")}
             >
-              <Crosshair className="h-4 w-4 mr-2" /> 맵·GPS 맞추기
+              <Crosshair className="h-4 w-4 mr-2" /> {mapGeorefDone ? "맵·GPS 재보정" : "맵·GPS 맞추기"}
             </Button>
             <Button
               variant="secondary"
@@ -128,8 +152,9 @@ export default function MobileMore() {
               <MapPin className="h-4 w-4 mr-2" /> 내 위치를 위험 구역으로
             </Button>
             <p className="text-[11px] text-muted-foreground text-center leading-relaxed">
-              PC에서 도면만 올리면 됩니다. 위성 맵핑은 필수가 아닙니다. 워킹 보정으로 A·B·C
-              좌표를 잡으세요. (프로젝트를 먼저 선택)
+              {mapGeorefDone
+                ? "워킹 보정은 완료됐습니다. 도면이 바뀌었거나 알람이 어긋날 때만 다시 맞추세요."
+                : "PC에서 도면만 올리면 됩니다. 위성 맵핑은 필수가 아닙니다. 워킹 보정으로 A·B·C 좌표를 잡으세요. (프로젝트를 먼저 선택)"}
             </p>
             <MasterAlarmSimulator projectId={projectId || preview.previewProjectId || ""} />
           </CardContent>

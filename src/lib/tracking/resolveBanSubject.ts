@@ -34,18 +34,25 @@ export async function lookupWorkerBanFields(
   const digits = digitsOnly(phone);
   if (!digits) return { worker_id: null, company_id: null, job_type: null };
 
-  const { data } = await supabase
-    .from("workers")
-    .select("id, phone, company_id, job_type")
-    .eq("project_id", projectId)
-    .eq("is_active", true)
-    .limit(80);
-
-  const match = (data || []).find((w) => digitsOnly(w.phone) === digits);
+  const { data, error } = await supabase.rpc("lookup_project_worker_by_phone", {
+    _project_id: projectId,
+    _phone: phone,
+  });
+  if (error) {
+    if (import.meta.env.DEV) {
+      console.warn("[gps] lookup_project_worker_by_phone failed", error.message);
+    }
+    return { worker_id: null, company_id: null, job_type: null };
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as {
+    id?: string;
+    company_id?: string | null;
+    job_type?: string | null;
+  } | null;
   return {
-    worker_id: match?.id || null,
-    company_id: match?.company_id || null,
-    job_type: match?.job_type || null,
+    worker_id: row?.id || null,
+    company_id: row?.company_id || null,
+    job_type: row?.job_type || null,
   };
 }
 

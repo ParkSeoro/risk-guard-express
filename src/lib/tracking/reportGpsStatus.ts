@@ -25,6 +25,7 @@ export function gpsStatusReportPayload(state: {
   suspended: boolean;
   block: GpsBlockReason;
 }): GpsBlockReason | undefined {
+  if (state.block === "identity_mismatch") return "identity_mismatch";
   if (state.suspended) return "fence_probe_failed";
   if (state.tracking) return null;
   if (state.block) return state.block;

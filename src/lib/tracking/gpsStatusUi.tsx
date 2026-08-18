@@ -5,6 +5,7 @@ export type GpsBlockReason =
   | "no_permission"
   | "no_checkin"
   | "fence_probe_failed"
+  | "identity_mismatch"
   | null;
 
 export type GpsUiState = {
@@ -17,6 +18,7 @@ export const GPS_BLOCK_CHIP: Record<Exclude<GpsBlockReason, null>, string> = {
   no_permission: "GPS 권한",
   no_checkin: "GPS 출근 전",
   fence_probe_failed: "GPS 현장 밖",
+  identity_mismatch: "GPS 신원",
 };
 
 export const GPS_BLOCK_HINT: Record<Exclude<GpsBlockReason, null>, string> = {
@@ -24,6 +26,7 @@ export const GPS_BLOCK_HINT: Record<Exclude<GpsBlockReason, null>, string> = {
   no_permission: "앱 위치 권한을 완료하세요",
   no_checkin: "출근 후 추적이 시작됩니다",
   fence_probe_failed: "현장 밖 · 복귀하면 자동 재개",
+  identity_mismatch: "명부와 계정이 다릅니다. 관리자에게 문의하세요",
 };
 
 const DEFAULT: GpsUiState = { tracking: false, block: null };
@@ -57,6 +60,19 @@ export function GpsStatusChip({
   tracking: boolean;
   block: GpsBlockReason;
 }) {
+  if (block === "identity_mismatch") {
+    return (
+      <span
+        className="shrink-0 rounded-full bg-amber-300/90 text-amber-950 px-2 py-0.5 text-[10px] font-semibold leading-tight"
+        data-testid="gps-block-reason"
+        data-gps-block={block}
+        title={GPS_BLOCK_HINT[block]}
+        role="status"
+      >
+        {GPS_BLOCK_CHIP[block]}
+      </span>
+    );
+  }
   if (tracking) {
     return (
       <span

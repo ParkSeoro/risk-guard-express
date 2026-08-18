@@ -25,7 +25,7 @@ import { clearStickyDangerAlert } from "@/lib/tracking/dangerAlertSticky";
 import { isManagerMobileRole } from "@/lib/mobileShell";
 import type { MobileRole } from "@/hooks/useMobileAccess";
 import { seoulDayRange, todaySeoulDate } from "@/lib/dailyWorkAck";
-import { useSetGpsUi, type GpsBlockReason } from "@/lib/tracking/gpsStatusUi";
+import { isTrackLocationIdentityDenied } from "@/lib/tracking/trackLocationClient";
 import {
   gpsStatusReportPayload,
   useReportWorkerGpsStatus,
@@ -52,7 +52,7 @@ export function GpsBlockBadge({ reason }: { reason: GpsBlockReason }) {
 
 export default function WorkerGlobalGps() {
   const { user, profile, roles, hasRole } = useAuth();
-  const { startGpsTracking, stopGpsTracking, gpsTracking, gpsSuspended } = useSystemRealtime();
+  const { startGpsTracking, stopGpsTracking, gpsTracking, gpsSuspended, gpsError } = useSystemRealtime();
   const setGpsUi = useSetGpsUi();
   const workerIdRef = useRef<string | null>(null);
   const lastKeyRef = useRef<string | null>(null);
@@ -143,15 +143,9 @@ export default function WorkerGlobalGps() {
     const resolveWorkerId = async (projectId: string): Promise<string | null> => {
       if (workerIdRef.current) return workerIdRef.current;
       if (!profile?.phone) return null;
-      const digits = profile.phone.replace(/\D/g, "");
-      const { data } = await supabase
-        .from("workers")
-        .select("id, phone, company_id, job_type")
-        .eq("project_id", projectId)
-        .eq("is_active", true)
-        .limit(80);
-      const match = (data || []).find((w) => (w.phone || "").replace(/\D/g, "") === digits);
-      workerIdRef.current = match?.id || null;
+      const { lookupWorkerBanFields } = await import("@/lib/tracking/resolveBanSubject");
+      const match = await lookupWorkerBanFields(projectId, profile.phone);
+      workerIdRef.current = match.worker_id;
       return workerIdRef.current;
     };
 
@@ -354,8 +348,12 @@ export default function WorkerGlobalGps() {
 
   // Clear badge once tracking is actually on (covers race / resume)
   useEffect(() => {
+    if (isTrackLocationIdentityDenied(gpsError)) {
+      setGpsBlockReason("identity_mismatch");
+      return;
+    }
     if (gpsTracking && !gpsSuspended) setGpsBlockReason(null);
-  }, [gpsTracking, gpsSuspended]);
+  }, [gpsTracking, gpsSuspended, gpsError]);
 
   const reportPayload = gpsStatusReportPayload({
     tracking: gpsTracking,
@@ -366,8 +364,15 @@ export default function WorkerGlobalGps() {
 
   useEffect(() => {
     setGpsUi({
-      tracking: gpsTracking && !gpsSuspended,
-      block: gpsSuspended ? "fence_probe_failed" : gpsTracking ? null : gpsBlockReason,
+      tracking: gpsTracking && !gpsSuspended && gpsBlockReason !== "identity_mismatch",
+      block:
+        gpsBlockReason === "identity_mismatch"
+          ? "identity_mismatch"
+          : gpsSuspended
+            ? "fence_probe_failed"
+            : gpsTracking
+              ? null
+              : gpsBlockReason,
     });
     return () => setGpsUi({ tracking: false, block: null });
   }, [gpsTracking, gpsSuspended, gpsBlockReason, setGpsUi]);

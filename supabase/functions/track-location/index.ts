@@ -205,6 +205,10 @@ Deno.serve(async (req) => {
     }
 
     // Resolve subject from JWT profile + roster — never trust body worker/company for writes.
+    //
+    // 403 Identity mismatch: body worker_id/phone is proven to be someone else.
+    // Not 403: no roster row (manager/master) or empty claims — server fills,
+    // worker_id may be null. A failed page-scan lookup must not look like impersonation.
     const { data: profile } = await supabase
       .from("profiles")
       .select("phone, display_name")
@@ -227,17 +231,21 @@ Deno.serve(async (req) => {
       phone: string | null;
     } | null = null;
 
-    if (profilePhoneDigits) {
-      const { data: workers } = await supabase
-        .from("workers")
-        .select("id, company_id, job_type, name, phone")
-        .eq("project_id", body.project_id)
-        .eq("is_active", true)
-        .limit(300);
-      resolvedWorker =
-        (workers || []).find(
-          (row: { phone?: string | null }) => digitsOnlyPhone(row.phone) === profilePhoneDigits,
-        ) || null;
+    if (profile?.phone) {
+      const { data: found } = await supabase.rpc("lookup_project_worker_by_phone", {
+        _project_id: body.project_id,
+        _phone: profile.phone,
+      });
+      const row = Array.isArray(found) ? found[0] : found;
+      if (row?.id) {
+        resolvedWorker = {
+          id: row.id,
+          company_id: row.company_id ?? null,
+          job_type: row.job_type ?? null,
+          name: row.name ?? null,
+          phone: row.phone ?? null,
+        };
+      }
     }
 
     const claimedWorkerId = body.worker_id || body.worker_qr_id || null;

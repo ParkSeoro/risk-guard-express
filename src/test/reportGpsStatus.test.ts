@@ -48,11 +48,11 @@ describe("gpsStatusReportPayload", () => {
     ).toBe("no_consent");
     expect(
       gpsStatusReportPayload({
-        tracking: false,
+        tracking: true,
         suspended: false,
-        block: "no_permission",
+        block: "identity_mismatch",
       }),
-    ).toBe("no_permission");
+    ).toBe("identity_mismatch");
   });
 });
 

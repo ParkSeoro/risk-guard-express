@@ -25,7 +25,7 @@ import {
   SITE_RESUME_POLL_MS,
   type SiteTrackingFence,
 } from "@/lib/tracking/siteTrackBounds";
-import { nextOutsideStreak, type SiteTrackPhase } from "@/lib/tracking/siteTrackPhase";
+import { trackLocationInvokeUserMessage } from "@/lib/tracking/trackLocationClient";
 import {
   createMotionIdleState,
   nextMotionIdle,
@@ -364,7 +364,7 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
         lastSentAt = now;
 
         const liveId = opts.getIdentity?.() ?? opts.identity;
-        const { data } = await supabase.functions.invoke("track-location", {
+        const { data, error } = await supabase.functions.invoke("track-location", {
           body: {
             ...liveId,
             lat: rawLat,
@@ -374,6 +374,11 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
             device_ts: new Date(location.time || Date.now()).toISOString(),
           },
         });
+        const invokeMsg = trackLocationInvokeUserMessage(error);
+        if (invokeMsg) {
+          opts.onError?.(new Error(invokeMsg));
+          return;
+        }
         const zoneType = (data as any)?.zone_type as string | undefined;
         inDangerFromServer =
           zoneType === "danger" ||
@@ -779,7 +784,8 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
           device_ts: new Date(pos.timestamp || now).toISOString(),
         },
       });
-      if (error) throw error;
+      const invokeMsg = trackLocationInvokeUserMessage(error);
+      if (invokeMsg) throw new Error(invokeMsg);
 
       const zoneType = (data as any)?.zone_type as string | undefined;
       inDangerFromServer =

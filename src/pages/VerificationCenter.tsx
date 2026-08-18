@@ -19,7 +19,7 @@ import {
 import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue, type CoverageGap, type RecommendLevel } from '@/lib/validationEngine';
 import { exportToPDF } from '@/lib/exportUtils';
 import { calculateRiskGrade } from '@/lib/riskGrade';
-import * as XLSX from 'xlsx';
+import { parseRiskAssessmentExcelFile } from '@/lib/riskExcelImport';
 
 const VerificationCenter = () => {
   const { user, isAdmin } = useAuth();
@@ -225,41 +225,36 @@ const VerificationCenter = () => {
   };
 
   // Excel upload
-  const handleExcelFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleExcelFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const wb = XLSX.read(evt.target?.result, { type: 'binary' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: '' });
-        if (json.length === 0) { toast({ title: '데이터가 없습니다.', variant: 'destructive' }); return; }
-        setExcelHeaders(Object.keys(json[0]));
-        setExcelData(json);
-        const autoMap: Record<string, string> = {};
-        const knownMappings: Record<string, string[]> = {
-          process: ['공정', 'Process', '공종'],
-          sub_task: ['세부작업', 'Sub Task'],
-          hazard: ['위험요인', 'Hazard'],
-          hazard_situation: ['위험발생상황', 'Hazard Situation'],
-          existing_measure: ['기존대책', 'Existing Measure'],
-          improvement_measure: ['개선대책', 'Improvement'],
-          likelihood_grade: ['가능성', 'Likelihood', '빈도'],
-          severity_grade: ['중대성', 'Severity', '강도'],
-          legal_basis: ['법적근거', 'Legal'],
-        };
-        for (const [field, aliases] of Object.entries(knownMappings)) {
-          const found = Object.keys(json[0]).find(h => aliases.some(a => h.includes(a)));
-          if (found) autoMap[field] = found;
-        }
-        setExcelColumnMap(autoMap);
-        setExcelStep('map');
-      } catch {
-        toast({ title: '파일 파싱 실패', variant: 'destructive' });
+    try {
+      const parsed = await parseRiskAssessmentExcelFile(file);
+      const json = parsed.rows;
+      setExcelHeaders(Object.keys(json[0]));
+      setExcelData(json);
+      const autoMap: Record<string, string> = {};
+      const knownMappings: Record<string, string[]> = {
+        process: ['공정', 'Process', '공종'],
+        sub_task: ['세부작업', 'Sub Task'],
+        hazard: ['위험요인', 'Hazard'],
+        hazard_situation: ['위험발생상황', 'Hazard Situation'],
+        existing_measure: ['기존대책', 'Existing Measure'],
+        improvement_measure: ['개선대책', 'Improvement'],
+        likelihood_grade: ['가능성', 'Likelihood', '빈도'],
+        severity_grade: ['중대성', 'Severity', '강도'],
+        legal_basis: ['법적근거', 'Legal'],
+      };
+      for (const [field, aliases] of Object.entries(knownMappings)) {
+        const found = Object.keys(json[0]).find(h => aliases.some(a => h.includes(a)));
+        if (found) autoMap[field] = found;
       }
-    };
-    reader.readAsBinaryString(file);
+      setExcelColumnMap(autoMap);
+      setExcelStep('map');
+    } catch (err: any) {
+      toast({ title: '데이터가 없습니다.', description: err?.message || '파일을 읽지 못했습니다.', variant: 'destructive' });
+    }
   };
 
   const handleExcelValidate = () => {
@@ -600,7 +595,7 @@ const VerificationCenter = () => {
                 <h3 className="font-semibold text-sm">협력사 엑셀 업로드 검증</h3>
                 {excelStep === 'upload' && (
                   <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">협력사가 제공한 엑셀 파일을 업로드하여 형식을 검증합니다.</p>
+                    <p className="text-sm text-muted-foreground">파일을 선택하면 바로 읽습니다. 표지/안내 시트는 건너뜁니다.</p>
                     <Input type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelFile} />
                   </div>
                 )}

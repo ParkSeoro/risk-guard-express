@@ -2,6 +2,9 @@ name: Android AAB
 
 # Google Play Console 내부 테스트 트랙에 올릴 서명된 AAB(app-release.aab)를 자동 생성합니다.
 # 결과물은 Actions → 해당 run → Artifacts 에서 다운로드해 Play Console 에 업로드하세요.
+#   safenex-<ver>-<code>.aab          : Play에 올릴 번들 (매핑·네이티브 심볼 포함)
+#   safenex-play-symbols-<ver>-<code> : mapping.txt + native-debug-symbols.zip
+#     (이미 올린 버전은 App bundle explorer → 다운로드 → 가독화/기호 파일 업로드)
 #
 # 실행 방법 (Run workflow 버튼이 안 보일 때 포함)
 #   A) Actions → "Android AAB" → Run workflow (본인 GitHub 로그인 + write 권한 필요)
@@ -22,6 +25,9 @@ name: Android AAB
 # ─ 선택 ────────────────────────────────────────────────────────────────────────
 #   ANDROID_VERSION_CODE      : 정수. 비우면 GitHub run number 사용 (자동 증가)
 #   ANDROID_VERSION_NAME      : 예) 1.0.1. 비우면 package.json version 사용
+# Play Console 「가독화 파일/디버그 기호 없음」: 이 워크플로가 R8 mapping + NDK
+# SYMBOL_TABLE 을 AAB에 넣습니다. 이미 올린 467은 매핑이 그 DEX와 맞아야 해서
+# 새 versionCode 로 다시 올리는 것이 맞습니다.
 # ───────────────────────────────────────────────────────────────────────────────
 #
 # 키스토어 만드는 법 (1회):
@@ -258,8 +264,32 @@ jobs:
           sed -i "s/versionName \"[^\"]*\"/versionName \"${VN}\"/" "$GRADLE"
           # signingConfig 주입 (이미 있으면 skip)
           python3 scripts/patch-android-signing.py "$GRADLE"
+          python3 scripts/patch-android-play-symbols.py "$GRADLE"
+          # Capacitor + custom plugin keep rules (R8)
+          if [ -f scripts/android-proguard-play.pro ]; then
+            cat scripts/android-proguard-play.pro >> android/app/proguard-rules.pro
+          fi
           echo "----- patched build.gradle -----"
-          sed -n '1,80p' "$GRADLE"
+          sed -n '1,120p' "$GRADLE"
+
+      - name: Install NDK (Play native debug symbols)
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27c
+          add-to-path: false
+
+      - name: Point Gradle at NDK
+        run: |
+          NDK="${{ steps.ndk.outputs.ndk-path }}"
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK" >> "$GITHUB_ENV"
+          # Capacitor CI often has no local.properties — create/merge ndk.dir
+          PROP=android/local.properties
+          touch "$PROP"
+          grep -q '^ndk.dir=' "$PROP" && sed -i "s|^ndk.dir=.*|ndk.dir=$NDK|" "$PROP" || echo "ndk.dir=$NDK" >> "$PROP"
+          echo "NDK → $NDK"
+          cat "$PROP"
 
       - name: Build release AAB
         env:
@@ -285,9 +315,38 @@ jobs:
           path: ${{ steps.aab.outputs.path }}
           retention-days: 90
 
+      - name: Collect Play mapping + native symbols
+        run: |
+          mkdir -p play-symbols
+          MAP=$(find android/app/build/outputs/mapping -name mapping.txt 2>/dev/null | head -n1 || true)
+          SYM=$(find android/app/build/outputs -name 'native-debug-symbols.zip' 2>/dev/null | head -n1 || true)
+          if [ -n "$MAP" ]; then
+            cp "$MAP" play-symbols/mapping.txt
+            echo "mapping.txt → play-symbols ($(wc -c < play-symbols/mapping.txt) bytes)"
+          else
+            echo "::warning::mapping.txt not found — R8 may have been skipped"
+          fi
+          if [ -n "$SYM" ]; then
+            cp "$SYM" play-symbols/native-debug-symbols.zip
+            echo "native-debug-symbols.zip → play-symbols"
+          else
+            echo "::warning::native-debug-symbols.zip not beside AAB (AGP may have packed symbols into the bundle only)"
+          fi
+          ls -la play-symbols || true
+
+      - name: Upload Play deobfuscation artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: safenex-play-symbols-${{ steps.ver.outputs.version_name }}-${{ steps.ver.outputs.version_code }}
+          path: play-symbols/*
+          if-no-files-found: warn
+          retention-days: 90
+
       - name: Attach to GitHub Release (android-v* 태그)
         if: startsWith(github.ref, 'refs/tags/android-v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.aab.outputs.path }}
+          files: |
+            ${{ steps.aab.outputs.path }}
+            play-symbols/*
           generate_release_notes: true

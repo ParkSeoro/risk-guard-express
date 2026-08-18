@@ -4,7 +4,10 @@ import {
   digitsOnlyPhone,
   isJsonContentType,
   parseRiskAiBatchJsonResult,
+  resolveZoneEventWorkerKey,
+  shouldIgnoreLowAccuracyFix,
   trackIdentityClaimMismatch,
+  zoneEventLookbackSince,
 } from "@/lib/trackAiContracts";
 
 describe("track-location identity binding", () => {
@@ -86,5 +89,41 @@ describe("risk-ai batch JSON contract", () => {
     );
     expect(() => parseRiskAiBatchJsonResult({ source: "ai" })).toThrow(/missing items/);
     expect(() => parseRiskAiBatchJsonResult({ items: [], error: "boom" })).toThrow(/boom/);
+  });
+});
+
+describe("track-location accuracy + zone-event lookup (F-06, F-09, F-10)", () => {
+  it("does not let force_restricted_check bypass the 100m accuracy gate", () => {
+    expect(shouldIgnoreLowAccuracyFix(150, 0)).toBe(true);
+    expect(shouldIgnoreLowAccuracyFix(80, 0)).toBe(false);
+    expect(shouldIgnoreLowAccuracyFix(150, 2)).toBe(false);
+  });
+
+  it("uses worker_id as the event key instead of a dead ternary / name match", () => {
+    expect(
+      resolveZoneEventWorkerKey({
+        workerQrId: null,
+        workerPhone: null,
+        workerId: "w-roster",
+      }),
+    ).toEqual({ col: "worker_qr_id", val: "w-roster" });
+    expect(
+      resolveZoneEventWorkerKey({
+        workerQrId: "w-qr",
+        workerPhone: "010",
+        workerId: "w-roster",
+      }),
+    ).toEqual({ col: "worker_qr_id", val: "w-qr" });
+    expect(resolveZoneEventWorkerKey({ workerQrId: null, workerPhone: null, workerId: null })).toBe(
+      null,
+    );
+  });
+
+  it("looks back 12 hours instead of UTC midnight", () => {
+    const now = new Date("2026-08-18T01:00:00Z");
+    const since = zoneEventLookbackSince(now);
+    expect(since.toISOString()).toBe("2026-08-17T13:00:00.000Z");
+    // Old UTC-midnight window would have started at 2026-08-18T00:00:00Z
+    expect(since.getTime()).toBeLessThan(Date.parse("2026-08-18T00:00:00Z"));
   });
 });

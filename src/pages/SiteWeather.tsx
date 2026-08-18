@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useGlobalProjectAccess } from "@/components/AppLayout";
+import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
+import KmaRadarTab from "@/components/weather/KmaRadarTab";
+import ImpactCard from "@/components/weather/ImpactCard";
+import type { WeatherLayout } from "@/components/weather/radarLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -136,8 +139,16 @@ function saveFavorites(favs: { name: string; lat: number; lng: number }[]) {
   localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs));
 }
 
-const SiteWeather = () => {
-  const { projects, selectedProject } = useGlobalProjectAccess();
+type SiteWeatherProps = {
+  projectId?: string;
+  layout?: WeatherLayout;
+};
+
+const SiteWeather = ({ projectId: projectIdProp, layout = "desktop" }: SiteWeatherProps) => {
+  const access = useGlobalProjectAccessOptional();
+  const selectedProject = projectIdProp || access?.selectedProject || "";
+  const projects = access?.projects ?? [];
+  const isMobile = layout === "mobile";
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [loading, setLoading] = useState(true);
   const [manualAddress, setManualAddress] = useState("");
@@ -153,7 +164,10 @@ const SiteWeather = () => {
   const currentProject = projects.find((p) => p.id === selectedProject);
 
   const fetchWeather = useCallback(async (overrideLat?: number, overrideLng?: number, source?: string) => {
-    if (!selectedProject) return;
+    if (!selectedProject) {
+      setLoading(false);
+      return;
+    }
     if (!source) {
       setLoading(true);
     }
@@ -292,10 +306,10 @@ const SiteWeather = () => {
 
   if (loading) {
     return (
-      <div className="space-y-6 animate-fade-in">
+      <div className={`space-y-6 animate-fade-in ${isMobile ? "pb-4" : ""}`}>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">현장 일기예보</h1>
+            {!isMobile && <h1 className="text-2xl font-bold">현장 일기예보</h1>}
             <p className="text-sm text-muted-foreground mt-1">날씨 데이터 로딩 중...</p>
           </div>
         </div>
@@ -309,19 +323,19 @@ const SiteWeather = () => {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className={`space-y-6 animate-fade-in ${isMobile ? "pb-4 min-w-0" : ""}`}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className={`flex ${isMobile ? "flex-col gap-3" : "items-center justify-between"}`}>
         <div>
-          <h1 className="text-2xl font-bold">현장 일기예보</h1>
-          <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1">
-            <MapPin className="h-3.5 w-3.5" />
+          {!isMobile && <h1 className="text-2xl font-bold">현장 일기예보</h1>}
+          <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1 flex-wrap">
+            <MapPin className="h-3.5 w-3.5 shrink-0" />
             {weather?.resolved_location?.city
               ? `${weather.resolved_location.city} (프로젝트 기준)`
               : currentProject ? currentProject.site_name : "프로젝트 선택 필요"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Data Source Toggle */}
           <div className="flex items-center gap-1 border rounded-lg p-0.5">
             <Button
@@ -408,6 +422,7 @@ const SiteWeather = () => {
             </div>
           )}
 
+          {!isMobile && (
           <div className="flex flex-wrap items-center gap-2">
           {editingAddress ? (
               <div className="space-y-2 flex-1 min-w-[300px]">
@@ -457,6 +472,7 @@ const SiteWeather = () => {
               </div>
             )}
           </div>
+          )}
         </CardContent>
       </Card>
 
@@ -549,7 +565,7 @@ const SiteWeather = () => {
                 <CardTitle className="text-sm font-semibold">현재 날씨</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center gap-6">
+                <div className={`flex items-center ${isMobile ? "gap-4 flex-wrap" : "gap-6"}`}>
                   <div className="text-center">
                     {WEATHER_ICONS[displayWeather.current.main] || <Cloud className="h-8 w-8 text-slate-400" />}
                     <p className="text-xs text-muted-foreground mt-1">{displayWeather.current.description}</p>
@@ -639,14 +655,16 @@ const SiteWeather = () => {
           </div>
 
           {/* Tabs: Hourly / Weekly / Radar / Impact */}
-          <Tabs defaultValue="hourly" className="w-full">
-            <TabsList className="grid w-full grid-cols-4 max-w-md">
-              <TabsTrigger value="hourly">시간별</TabsTrigger>
-              <TabsTrigger value="weekly">주간</TabsTrigger>
-              <TabsTrigger value="radar" className="flex items-center gap-1">
+          <Tabs defaultValue="hourly" className="w-full min-w-0">
+            <TabsList className={isMobile
+              ? "flex w-full overflow-x-auto justify-start h-auto gap-1 p-1"
+              : "grid w-full grid-cols-4 max-w-md"}>
+              <TabsTrigger value="hourly" className={isMobile ? "shrink-0" : undefined}>시간별</TabsTrigger>
+              <TabsTrigger value="weekly" className={isMobile ? "shrink-0" : undefined}>주간</TabsTrigger>
+              <TabsTrigger value="radar" className={`flex items-center gap-1 ${isMobile ? "shrink-0" : ""}`}>
                 <Radio className="h-3 w-3" /> 레이더
               </TabsTrigger>
-              <TabsTrigger value="impact">영향분석</TabsTrigger>
+              <TabsTrigger value="impact" className={isMobile ? "shrink-0" : undefined}>영향분석</TabsTrigger>
             </TabsList>
 
             <TabsContent value="hourly">
@@ -684,10 +702,10 @@ const SiteWeather = () => {
                   {displayWeather.daily.length > 0 ? (
                     <div className="space-y-2">
                       {displayWeather.daily.map((d, i) => (
-                        <div key={i} className="flex items-center gap-4 py-2 border-b last:border-0">
+                        <div key={i} className={`flex items-center gap-3 py-2 border-b last:border-0 ${isMobile ? "flex-wrap" : "gap-4"}`}>
                           <span className="text-sm font-medium w-24">{formatDate(d.date)}</span>
                           {SMALL_ICONS[d.main] || <Cloud className="h-5 w-5 text-slate-400" />}
-                          <span className="text-xs text-muted-foreground w-20 truncate">{d.description}</span>
+                          <span className={`text-xs text-muted-foreground ${isMobile ? "whitespace-normal break-words flex-1 min-w-[8rem]" : "w-20 truncate"}`}>{d.description}</span>
                           <div className="flex items-center gap-2 flex-1">
                             <span className="text-xs text-blue-500 flex items-center gap-0.5">
                               <ArrowDown className="h-3 w-3" />{d.temp_min}°
@@ -728,8 +746,8 @@ const SiteWeather = () => {
               </Card>
             </TabsContent>
 
-            <TabsContent value="radar">
-              <KmaRadarTab lat={displayWeather.current.lat} lng={displayWeather.current.lng} />
+            <TabsContent value="radar" className="overflow-x-auto min-w-0">
+              <KmaRadarTab lat={displayWeather.current.lat} lng={displayWeather.current.lng} layout={layout} />
             </TabsContent>
 
             <TabsContent value="impact">
@@ -822,141 +840,5 @@ const SiteWeather = () => {
     </div>
   );
 };
-
-// Radar Tab - Windy.com interactive embed (zoom/pan/layers/time built-in)
-function KmaRadarTab({ lat, lng }: { lat: number; lng: number }) {
-  const [layer, setLayer] = useState<"radar" | "rain" | "wind" | "temp" | "clouds" | "pressure">("radar");
-
-  // Windy embed URL - fully interactive (zoom, pan, time slider, layer switch)
-  // Docs: https://api.windy.com/embed2.0
-  const windyUrl = useMemo(() => {
-    const overlay = layer === "radar" ? "radar" : layer;
-    const params = new URLSearchParams({
-      lat: lat.toFixed(4),
-      lon: lng.toFixed(4),
-      detailLat: lat.toFixed(4),
-      detailLon: lng.toFixed(4),
-      zoom: "9",
-      level: "surface",
-      overlay,
-      product: "ecmwf",
-      menu: "",
-      message: "",
-      marker: "true",
-      calendar: "now",
-      pressure: "",
-      type: "map",
-      location: "coordinates",
-      detail: "",
-      metricWind: "default",
-      metricTemp: "default",
-      radarRange: "-1",
-    });
-    return `https://embed.windy.com/embed2.html?${params.toString()}`;
-  }, [lat, lng, layer]);
-
-  const layers: { key: typeof layer; label: string; emoji: string }[] = [
-    { key: "radar", label: "레이더", emoji: "📡" },
-    { key: "rain", label: "강수", emoji: "🌧" },
-    { key: "wind", label: "바람", emoji: "💨" },
-    { key: "temp", label: "기온", emoji: "🌡" },
-    { key: "clouds", label: "구름", emoji: "☁️" },
-    { key: "pressure", label: "기압", emoji: "🧭" },
-  ];
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold flex items-center gap-2">
-          <Radio className="h-4 w-4 text-primary" /> 인터랙티브 기상 레이더
-          <Badge variant="outline" className="text-[9px]">Windy.com · ECMWF</Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {/* Layer switcher */}
-        <div className="flex flex-wrap gap-1.5">
-          {layers.map((l) => (
-            <Button
-              key={l.key}
-              variant={layer === l.key ? "default" : "outline"}
-              size="sm"
-              onClick={() => setLayer(l.key)}
-              className="text-xs h-7 gap-1"
-            >
-              <span>{l.emoji}</span> {l.label}
-            </Button>
-          ))}
-        </div>
-
-        {/* Full-width interactive radar */}
-        <div className="relative w-full rounded-lg overflow-hidden border bg-muted" style={{ height: 'calc(min(75vh, 680px))' }}>
-          <iframe
-            key={layer}
-            src={windyUrl}
-            title="Windy 인터랙티브 레이더"
-            className="w-full h-full border-0"
-            frameBorder={0}
-            allow="geolocation"
-          />
-
-          {/* Site location overlay */}
-          <div className="absolute top-3 left-3 bg-background/95 backdrop-blur rounded-lg px-3 py-2 border shadow-md pointer-events-none z-10">
-            <div className="flex items-center gap-2 text-xs">
-              <MapPin className="h-3 w-3 text-destructive" />
-              <span className="font-medium">현장 위치</span>
-            </div>
-            <p className="text-[10px] text-muted-foreground mt-0.5">
-              위도 {lat.toFixed(4)} · 경도 {lng.toFixed(4)}
-            </p>
-          </div>
-        </div>
-
-        <div className="p-3 rounded-lg bg-muted/50 border">
-          <p className="text-xs text-muted-foreground">
-            💡 <strong>사용법:</strong> 마우스 휠로 확대/축소, 드래그로 이동, 하단 시간 슬라이더로 예보 시점 변경, 좌측 메뉴에서 더 많은 레이어 선택. 
-            ECMWF(유럽중기예보센터) 모델 기반으로 예측 정확도가 높습니다.
-          </p>
-        </div>
-
-        {/* Quick links */}
-        <div className="grid grid-cols-2 gap-2">
-          <a href={`https://www.windy.com/${lat}/${lng}?radar,${lat},${lng},9`} target="_blank" rel="noopener noreferrer">
-            <Button variant="outline" size="sm" className="w-full text-xs gap-1">
-              <ExternalLink className="h-3 w-3" /> Windy 전체화면
-            </Button>
-          </a>
-          <a href="https://www.weather.go.kr/w/image/radar.do" target="_blank" rel="noopener noreferrer">
-            <Button variant="outline" size="sm" className="w-full text-xs gap-1">
-              <ExternalLink className="h-3 w-3" /> 기상청 공식 레이더
-            </Button>
-          </a>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ImpactCard({ title, status, detail }: { title: string; status: string; detail: string }) {
-  const colors = {
-    safe: "border-success/30 bg-success/5",
-    warning: "border-warning/30 bg-warning/5",
-    danger: "border-destructive/30 bg-destructive/5",
-  };
-  const dotColors = { safe: "bg-success", warning: "bg-warning", danger: "bg-destructive" };
-  const labels = { safe: "안전", warning: "주의", danger: "위험" };
-
-  return (
-    <div className={`p-3 rounded-lg border ${colors[status as keyof typeof colors] || colors.safe}`}>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-semibold">{title}</span>
-        <div className="flex items-center gap-1">
-          <div className={`h-2 w-2 rounded-full ${dotColors[status as keyof typeof dotColors]}`} />
-          <span className="text-[10px] font-medium">{labels[status as keyof typeof labels]}</span>
-        </div>
-      </div>
-      <p className="text-xs text-muted-foreground">{detail}</p>
-    </div>
-  );
-}
 
 export default SiteWeather;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { CloudSun, Loader2, AlertTriangle } from "lucide-react";
+import { Link } from "react-router-dom";
+import { CloudSun, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -67,7 +68,8 @@ export default function MobileWeatherCard({ projectId }: Props) {
   const stale = ageMin != null && ageMin > 30;
 
   return (
-    <Card className="border-sky-200/60 bg-gradient-to-br from-sky-50 to-white dark:from-sky-950/40 dark:to-background">
+    <Link to="/app/worker/site-weather" className="block" data-testid="mobile-weather-card">
+    <Card className="border-sky-200/60 bg-gradient-to-br from-sky-50 to-white dark:from-sky-950/40 dark:to-background active:scale-[0.99] transition">
       <CardContent className="p-3">
         <div className="flex items-start gap-3">
           <div className="h-10 w-10 rounded-xl bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center shrink-0">
@@ -83,14 +85,14 @@ export default function MobileWeatherCard({ projectId }: Props) {
               <div className="text-sm text-muted-foreground mt-1">{error}</div>
             ) : (
               <>
-                <div className="font-semibold text-sm mt-0.5 truncate">
+                <div className="font-semibold text-sm mt-0.5 whitespace-normal break-words">
                   {temp != null ? `${Math.round(Number(temp))}°` : "—"}
                   {desc ? ` · ${desc}` : ""}
                   {wind != null ? ` · 풍속 ${Number(wind).toFixed(1)}m/s` : ""}
                 </div>
                 {alert && (
-                  <div className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 mt-1">
-                    <AlertTriangle className="h-3 w-3" /> {alert}
+                  <div className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 mt-1 whitespace-normal">
+                    <AlertTriangle className="h-3 w-3 shrink-0" /> {alert}
                   </div>
                 )}
                 {stale && (
@@ -101,8 +103,10 @@ export default function MobileWeatherCard({ projectId }: Props) {
               </>
             )}
           </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
         </div>
       </CardContent>
     </Card>
+    </Link>
   );
 }

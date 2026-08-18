@@ -376,6 +376,9 @@ export default function WorkerGlobalGps() {
           role="status"
         >
           GPS 추적 중 · 현장
+          <span className="block text-[10px] font-normal opacity-80 mt-0.5 leading-snug">
+            홈으로 나가도 유지 · 최근 목록에서 지우면 알람이 멈춥니다
+          </span>
         </div>
       ) : null}
     </>

@@ -131,6 +131,12 @@ jobs:
               cp capacitor-plugins/alarm-volume/AlarmVolumePlugin.java \
                 android/app/src/main/java/org/safenex/app/AlarmVolumePlugin.java
             fi
+            if [ -f capacitor-plugins/headless-track/HeadlessTrackPlugin.java ]; then
+              cp capacitor-plugins/headless-track/HeadlessTrackPlugin.java \
+                android/app/src/main/java/org/safenex/app/HeadlessTrackPlugin.java
+              cp capacitor-plugins/headless-track/HeadlessTrackService.java \
+                android/app/src/main/java/org/safenex/app/HeadlessTrackService.java
+            fi
           fi
           bunx cap sync android
           # FCM google-services.json (required for push)
@@ -179,7 +185,14 @@ jobs:
             cp capacitor-plugins/alarm-volume/AlarmVolumePlugin.java \
               android/app/src/main/java/org/safenex/app/AlarmVolumePlugin.java
           fi
-          node scripts/prepare-native.mjs
+          bash capacitor-plugins/headless-track/install.sh || true
+          if [ -f capacitor-plugins/headless-track/HeadlessTrackPlugin.java ]; then
+            mkdir -p android/app/src/main/java/org/safenex/app
+            cp capacitor-plugins/headless-track/HeadlessTrackPlugin.java \
+              android/app/src/main/java/org/safenex/app/HeadlessTrackPlugin.java
+            cp capacitor-plugins/headless-track/HeadlessTrackService.java \
+              android/app/src/main/java/org/safenex/app/HeadlessTrackService.java
+          fi
           # Hard fail if critical permissions / plugins missing
           MANIFEST=android/app/src/main/AndroidManifest.xml
           for p in ACCESS_FINE_LOCATION ACCESS_BACKGROUND_LOCATION FOREGROUND_SERVICE_LOCATION POST_NOTIFICATIONS CAMERA; do

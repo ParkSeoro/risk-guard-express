@@ -3,7 +3,7 @@ import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { isManagerMobileRole } from "@/lib/mobileShell";
 import { usePreview } from "@/contexts/PreviewContext";
 import { Card, CardContent } from "@/components/ui/card";
-import { ChevronRight, ClipboardCheck, AlertOctagon, Users, Wrench, HeartPulse } from "lucide-react";
+import { ChevronRight, ClipboardCheck, AlertOctagon, Users, Wrench, HeartPulse, CloudSun } from "lucide-react";
 
 export default function MobileTasks() {
   const { role, isMaster } = useMobileAccess();
@@ -28,6 +28,7 @@ export default function MobileTasks() {
     { label: "TBM 진행", sub: "QR·참여 관리", to: "/app/worker/tbm", icon: Users },
     { label: "근로자·출입", sub: "명부·입퇴장", to: "/app/worker/workers", icon: Users },
     { label: "작업중지", sub: "접수·처리중 확인", to: "/app/worker/work-stop", icon: AlertOctagon },
+    { label: "현장 일기예보", sub: "레이더·시간별·영향분석", to: "/app/worker/site-weather", icon: CloudSun },
   ];
 
   const items = manager ? managerItems : workerItems;

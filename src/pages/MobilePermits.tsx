@@ -3,9 +3,12 @@
  * Approvals go through the unified inbox: /app/worker/approvals
  * Deep link: /app/worker/permits?id=<permitId>
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useNavigateMobileHome } from "@/lib/mobileNav";
+import PermitReadOnlyPreview from "@/components/permits/PermitReadOnlyPreview";
+import { resolvePermitViewerBackPath } from "@/lib/permitViewerNav";
+import { hydratePermitPreview } from "@/lib/permitPreviewHydrate";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
@@ -21,15 +24,7 @@ import {
   permitValidityKind,
   shouldShowPermitValidityBadge,
 } from "@/lib/permitWorkDate";
-import DigPermitForm, {
-  type PermitFormData,
-  type PermitSignatures,
-  type PermitType,
-} from "@/components/permits/DigPermitForm";
-import StandardPermitSheet from "@/components/permits/StandardPermitSheet";
-import PermitAiBriefingCard from "@/components/permits/PermitAiBriefingCard";
-import { contactPhonesFromApprovals, mergeApprovalSignatures } from "@/lib/permitApprovalSignatures";
-import { normalizePermitKinds, type PermitKindId } from "@/lib/permitKinds";
+import type { PermitFormData, PermitSignatures } from "@/components/permits/DigPermitForm";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
 import { isPureWorkerUser } from "@/components/AuthGuard";
 
@@ -66,25 +61,11 @@ const permitCompany = (p: any) =>
   p?.contractor_company || getForm(p).contractor_company || getForm(p).applicant_company || "-";
 const permitPersonnel = (p: any) => p?.personnel_count || getForm(p).personnel_count || 0;
 
-function toFormData(p: any): PermitFormData {
-  const fd = getForm(p);
-  return {
-    ...fd,
-    contractor_company: fd.contractor_company || p.contractor_company || "",
-    applicant_company: fd.applicant_company || p.contractor_company || "",
-    work_name: fd.work_name || p.work_name || "",
-    work_description: fd.work_description || p.work_description || "",
-    work_location: fd.work_location || p.location || p.work_location || "",
-    personnel_count: fd.personnel_count ?? p.personnel_count ?? 0,
-    work_start: fd.work_start || "",
-    work_end: fd.work_end || "",
-  };
-}
-
 export default function MobilePermits() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const deepId = searchParams.get("id");
+  const fromParam = searchParams.get("from");
   const goMobileHome = useNavigateMobileHome();
   const { profile, isAdmin, roles } = useAuth();
   const { projectId, applyCompanyFilter, isProjectAdmin } = useMobileAccess();
@@ -95,8 +76,6 @@ export default function MobilePermits() {
   const [formData, setFormData] = useState<PermitFormData>({});
   const [signatures, setSignatures] = useState<PermitSignatures>({});
   const [briefing, setBriefing] = useState<PermitAiBriefing | null>(null);
-  const [activeKind, setActiveKind] = useState<PermitKindId>("general");
-  const [kinds, setKinds] = useState<PermitKindId[]>(["general"]);
   const [detailLoading, setDetailLoading] = useState(false);
 
   const load = async () => {
@@ -148,68 +127,13 @@ export default function MobilePermits() {
   const openPermit = async (p: any) => {
     setDetailLoading(true);
     setActive(p);
-    setBriefing((p.ai_briefing as PermitAiBriefing) || null);
-    const nextKinds = normalizePermitKinds(
-      p.permit_kinds,
-      (p.permit_type || "general") as PermitKindId,
-    );
-    setKinds(nextKinds);
-    setActiveKind(
-      nextKinds.includes(p.permit_type as PermitKindId)
-        ? (p.permit_type as PermitKindId)
-        : nextKinds[0],
-    );
-    setFormData(toFormData(p));
-
-    // Refresh AI briefing if list row was stale/partial
     try {
-      const { data: fresh } = await supabase
-        .from("work_permits" as any)
-        .select("ai_briefing")
-        .eq("id", p.id)
-        .maybeSingle();
-      if ((fresh as any)?.ai_briefing) {
-        setBriefing((fresh as any).ai_briefing as PermitAiBriefing);
-      }
-    } catch {
-      /* keep list briefing */
-    }
-
-    const baseSig: PermitSignatures = p.signatures || {};
-    const { data: aps } = await supabase
-      .from("approvals")
-      .select("position, approver_name, approver_id, status, approved_at, step_order, approval_version")
-      .eq("entity_type", "work_permit")
-      .eq("entity_id", p.id)
-      .order("approval_version", { ascending: false })
-      .order("step_order", { ascending: true });
-    let versioned = aps || [];
-    if (versioned.length > 0) {
-      const latestVersion = versioned[0].approval_version;
-      versioned = versioned.filter((a: any) => a.approval_version === latestVersion);
-    }
-    setSignatures(mergeApprovalSignatures(baseSig, versioned as any[]));
-
-    try {
-      const ids = [...new Set(versioned.map((a: any) => a.approver_id).filter(Boolean))] as string[];
-      if (ids.length) {
-        const { data: profs } = await supabase
-          .from("profiles")
-          .select("user_id, phone")
-          .in("user_id", ids);
-        const byUser: Record<string, string | null> = {};
-        for (const row of profs || []) byUser[(row as any).user_id] = (row as any).phone;
-        const phones = contactPhonesFromApprovals(versioned as any[], byUser);
-        if (phones.safety_manager_phone || phones.supervisor_phone) {
-          setFormData((cur) => ({
-            ...cur,
-            safety_manager_phone: cur.safety_manager_phone || phones.safety_manager_phone || "",
-            supervisor_phone: cur.supervisor_phone || phones.supervisor_phone || "",
-          }));
-        }
-      }
-    } catch {
-      /* ignore phone autofill */
+      const hydrated = await hydratePermitPreview(p);
+      setFormData(hydrated.formData);
+      setSignatures(hydrated.signatures);
+      setBriefing(hydrated.briefing);
+    } catch (e: any) {
+      toast.error(e?.message || "허가서 상세를 불러오지 못했습니다.");
     }
     setDetailLoading(false);
   };
@@ -249,7 +173,22 @@ export default function MobilePermits() {
     }
   };
 
-  const kindTabs = useMemo(() => kinds, [kinds]);
+  const onBack = () => {
+    const backTo = resolvePermitViewerBackPath(fromParam);
+    if (backTo) {
+      navigate(backTo);
+      return;
+    }
+    if (active) {
+      closeDetail();
+      return;
+    }
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    goMobileHome();
+  };
 
   return (
     <div className="min-h-screen bg-muted/30 pb-24" data-testid="mobile-permits-viewer">
@@ -258,7 +197,7 @@ export default function MobilePermits() {
           size="icon"
           variant="ghost"
           className="text-primary-foreground"
-          onClick={() => (active ? closeDetail() : goMobileHome())}
+          onClick={onBack}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
@@ -373,20 +312,6 @@ export default function MobilePermits() {
                   <div>장소: {permitLocation(active)}</div>
                   <div>업체: {permitCompany(active)}</div>
                 </div>
-                {kindTabs.length > 1 && (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {kindTabs.map((k) => (
-                      <Button
-                        key={k}
-                        size="sm"
-                        variant={activeKind === k ? "default" : "outline"}
-                        onClick={() => setActiveKind(k)}
-                      >
-                        {k}
-                      </Button>
-                    ))}
-                  </div>
-                )}
                 {!pureWorker && (
                   <Button
                     className="w-full"
@@ -399,32 +324,14 @@ export default function MobilePermits() {
               </CardContent>
             </Card>
 
-            {detailLoading ? (
-              <div className="text-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin inline" />
-              </div>
-            ) : (
-              <>
-                <PermitAiBriefingCard briefing={briefing} />
-                {!briefing && (
-                  <Card>
-                    <CardContent className="pt-4 text-xs text-muted-foreground">
-                      AI 핵심 요약이 아직 생성되지 않았습니다. 아래 허가서 본문을 확인하세요.
-                    </CardContent>
-                  </Card>
-                )}
-                <div className="bg-white border rounded shadow-sm p-2 overflow-x-auto">
-                  <StandardPermitSheet>
-                    <DigPermitForm
-                      permitType={activeKind as PermitType}
-                      data={formData}
-                      signatures={signatures}
-                      readOnly
-                    />
-                  </StandardPermitSheet>
-                </div>
-              </>
-            )}
+            <PermitReadOnlyPreview
+              formData={formData}
+              signatures={signatures}
+              briefing={briefing}
+              permitType={active.permit_type}
+              permitKinds={active.permit_kinds}
+              loading={detailLoading}
+            />
           </div>
         )}
       </main>

@@ -42,6 +42,9 @@ export const SITE_EXIT_STREAK = 5;
 /** Ignore outside samples when GPS accuracy is worse than this. */
 export const SITE_EXIT_MAX_ACCURACY_M = 55;
 
+/** Local danger siren: ignore junk fixes on both open and close. */
+export const SIREN_MAX_ACCURACY_M = 40;
+
 /** High-precision tracking only within this distance of a restricted zone edge. */
 export const DANGER_PROXIMITY_M = 80;
 

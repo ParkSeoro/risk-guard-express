@@ -7,6 +7,7 @@
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { injectAndroidManifest } from "./android-manifest-inject.mjs";
 
 const root = process.cwd();
 
@@ -50,44 +51,20 @@ if (existsSync(plistPath)) {
 // ---------- Android Manifest ----------
 const manifestPath = resolve(root, "android/app/src/main/AndroidManifest.xml");
 if (existsSync(manifestPath)) {
-  let xml = readFileSync(manifestPath, "utf8");
-  const perms = [
-    "android.permission.ACCESS_FINE_LOCATION",
-    "android.permission.ACCESS_COARSE_LOCATION",
-    "android.permission.ACCESS_BACKGROUND_LOCATION",
-    "android.permission.FOREGROUND_SERVICE",
-    "android.permission.FOREGROUND_SERVICE_LOCATION",
-    "android.permission.POST_NOTIFICATIONS",
-    "android.permission.CAMERA",
-    "android.permission.INTERNET",
-  ];
-  for (const p of perms) {
-    if (!xml.includes(p)) {
-      xml = xml.replace(
-        "<application",
-        `<uses-permission android:name="${p}"/>\n    <application`,
-      );
+  const xml = readFileSync(manifestPath, "utf8");
+  const next = injectAndroidManifest(xml);
+  writeFileSync(manifestPath, next);
+  for (const must of [
+    "ACCESS_FINE_LOCATION",
+    "ACCESS_BACKGROUND_LOCATION",
+    "FOREGROUND_SERVICE_LOCATION",
+    "POST_NOTIFICATIONS",
+    "CAMERA",
+  ]) {
+    if (!next.includes(must)) {
+      throw new Error(`AndroidManifest missing ${must} after inject`);
     }
   }
-  // ML Kit barcode UI dependency meta
-  if (!xml.includes("com.google.mlkit.vision.DEPENDENCIES")) {
-    xml = xml.replace(
-      /(<application\b[^>]*>)/,
-      `$1\n        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui"/>`,
-    );
-  }
-  if (!xml.includes("HeadlessTrackService")) {
-    xml = xml.replace(
-      "</application>",
-      `        <service
-            android:name="org.safenex.app.HeadlessTrackService"
-            android:exported="false"
-            android:foregroundServiceType="location"
-            android:stopWithTask="false" />
-    </application>`,
-    );
-  }
-  writeFileSync(manifestPath, xml);
   console.log("✓ Android Manifest 권한 주입 완료");
 } else {
   console.log(

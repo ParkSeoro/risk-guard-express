@@ -24,7 +24,7 @@ import {
 import { clearStickyDangerAlert } from "@/lib/tracking/dangerAlertSticky";
 import { isManagerMobileRole } from "@/lib/mobileShell";
 import type { MobileRole } from "@/hooks/useMobileAccess";
-import { todaySeoulDate } from "@/lib/dailyWorkAck";
+import { seoulDayRange, todaySeoulDate } from "@/lib/dailyWorkAck";
 import { useSetGpsUi, type GpsBlockReason } from "@/lib/tracking/gpsStatusUi";
 
 const PROJECT_KEY = "selectedProjectId";
@@ -150,15 +150,15 @@ export default function WorkerGlobalGps() {
 
     const hasOpenCheckIn = async (projectId: string, workerId: string | null): Promise<boolean> => {
       if (!workerId) return false;
-      const day = todaySeoulDate();
+      const { start, end } = seoulDayRange(todaySeoulDate());
       const { data } = await supabase
         .from("worker_entry_logs")
         .select("id")
         .eq("project_id", projectId)
         .eq("worker_id", workerId)
         .is("exit_at", null)
-        .gte("entry_at", `${day}T00:00:00`)
-        .lte("entry_at", `${day}T23:59:59.999`)
+        .gte("entry_at", start)
+        .lte("entry_at", end)
         .limit(1);
       return ((data as any[]) || []).length > 0;
     };

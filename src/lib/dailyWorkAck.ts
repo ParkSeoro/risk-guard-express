@@ -30,6 +30,17 @@ export function todaySeoulDate(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
 }
 
+/** Seoul calendar-day bounds for timestamptz filters (never naive UTC midnight). */
+export function seoulDayRange(day = todaySeoulDate()): { start: string; end: string } {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(String(day || "").trim())
+    ? String(day).trim()
+    : todaySeoulDate();
+  return {
+    start: `${d}T00:00:00+09:00`,
+    end: `${d}T23:59:59.999+09:00`,
+  };
+}
+
 /** Permits for today where this worker is assigned (expected crew). */
 export async function fetchWorkerDayPermits(
   projectId: string,

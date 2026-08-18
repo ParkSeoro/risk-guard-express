@@ -9,7 +9,7 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 import { buildPersonnelCountPatch, filterPermitAssignableWorkers } from "@/lib/permitWorkers";
-import { todaySeoulDate } from "@/lib/dailyWorkAck";
+import { seoulDayRange, todaySeoulDate } from "@/lib/dailyWorkAck";
 import {
   EMPTY_ONSITE_CREW_GUARD,
   EMPTY_SCOPED_ONSITE_GUARD,
@@ -27,7 +27,7 @@ export async function syncPermitCrewFromOnSite(opts: {
   projectId: string;
   formData?: Record<string, unknown> | null;
 }): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
-  const day = todaySeoulDate();
+  const dayRange = seoulDayRange(todaySeoulDate());
 
   const { data: permit, error: perr } = await supabase
     .from("work_permits" as any)
@@ -58,8 +58,8 @@ export async function syncPermitCrewFromOnSite(opts: {
     .from("worker_entry_logs" as any)
     .select("worker_id, exit_at, entry_at")
     .eq("project_id", opts.projectId)
-    .gte("entry_at", `${day}T00:00:00`)
-    .lte("entry_at", `${day}T23:59:59.999`);
+    .gte("entry_at", dayRange.start)
+    .lte("entry_at", dayRange.end);
   if (lerr) return { ok: false, error: lerr.message };
 
   const onSiteSet = new Set<string>();

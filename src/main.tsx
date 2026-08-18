@@ -3,6 +3,7 @@ import "./index.css";
 import { registerSWSafely } from "./lib/registerServiceWorker";
 import { initOtaUpdater } from "./lib/native/otaUpdater";
 import { runBootOtaGate } from "./lib/native/bootOtaGate";
+import { runBootStoreGate } from "./lib/native/bootStoreGate";
 import { isNativeApp } from "./lib/native/platform";
 
 const rootEl = document.getElementById("root");
@@ -30,6 +31,7 @@ async function boot() {
         // Capgo set() should reload; if it didn't, fall through to app after splash wait.
         console.warn("[boot] OTA apply did not reload — continuing to app");
       }
+      await runBootStoreGate();
     }
 
     const { default: App } = await import("./App.tsx");

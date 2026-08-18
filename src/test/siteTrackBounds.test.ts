@@ -3,6 +3,7 @@ import {
   buildSiteFence,
   DANGER_PROXIMITY_M,
   isDefinitelyOutsideSite,
+  isInsideResumeFence,
   SITE_CHECKIN_MAP_PAD_M,
   SITE_CHECKIN_MAX_M,
   SITE_CHECKIN_MIN_M,
@@ -10,7 +11,6 @@ import {
   SITE_TRACK_EXIT_M,
   SITE_TRACK_MAP_PAD_M,
   SITE_TRACK_MAX_M,
-  SITE_TRACK_RESUME_M,
 } from "@/lib/tracking/siteTrackBounds";
 import { calculateDistance } from "@/lib/geo/calculateDistance";
 import { minDistanceToRestrictedZoneEdge } from "@/lib/tracking/restrictedZoneGeom";
@@ -18,7 +18,6 @@ import { minDistanceToRestrictedZoneEdge } from "@/lib/tracking/restrictedZoneGe
 describe("siteTrackBounds", () => {
   it("uses a wide default fence (not 100m office pin)", () => {
     expect(SITE_TRACK_EXIT_M).toBeGreaterThanOrEqual(400);
-    expect(SITE_TRACK_RESUME_M).toBeLessThan(SITE_TRACK_EXIT_M);
     expect(SITE_TRACK_MAX_M).toBeGreaterThan(SITE_TRACK_EXIT_M);
     expect(SITE_EXIT_STREAK).toBeGreaterThanOrEqual(3);
     expect(DANGER_PROXIMITY_M).toBeGreaterThan(30);
@@ -112,6 +111,14 @@ describe("siteTrackBounds", () => {
     const fence = { lat: 37.5, lng: 127.0, radiusM: 500 };
     const r = isDefinitelyOutsideSite(fence, 37.501, 127.0, 15); // ~111m
     expect(r.outside).toBe(false);
+  });
+
+  it("resumes anywhere inside the tracking radius (not a 350m cap)", () => {
+    const fence = { lat: 37.5, lng: 127.0, radiusM: 500 };
+    // ~400m north — previously failed SITE_TRACK_RESUME_M=350
+    expect(isInsideResumeFence(fence, 37.5036, 127.0, 15)).toBe(true);
+    expect(isInsideResumeFence(fence, 37.51, 127.0, 15)).toBe(false);
+    expect(isInsideResumeFence(fence, 37.5036, 127.0, 80)).toBe(false);
   });
 });
 

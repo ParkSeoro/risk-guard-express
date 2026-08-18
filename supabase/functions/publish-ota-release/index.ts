@@ -6,15 +6,15 @@
 //   - X-OTA-Publish-Token: <OTA_PUBLISH_TOKEN>
 // (Supabase 게이트웨이 JWT 검증은 config.toml 에서 verify_jwt=false)
 // 메타: 헤더 X-OTA-Version, X-OTA-Channel, X-OTA-Mandatory, X-OTA-Notes,
-//       X-OTA-Min-Native-Version
-// 바디: zip 파일 바이너리(Content-Type: application/zip)
+//       X-OTA-Min-Native-Version, X-OTA-Set-Min-Native-Only
+// 바디: zip 파일 바이너리. min-native-only 이면 빈 바디 허용.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, content-type, x-ota-version, x-ota-channel, x-ota-mandatory, x-ota-notes, x-ota-min-native-version, x-ota-publish-token, apikey",
+    "authorization, content-type, x-ota-version, x-ota-channel, x-ota-mandatory, x-ota-notes, x-ota-min-native-version, x-ota-publish-token, x-ota-set-min-native-only, apikey",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -49,6 +49,42 @@ Deno.serve(async (req) => {
   const mandatory = (req.headers.get("X-OTA-Mandatory") || "false") === "true";
   const minNative = (req.headers.get("X-OTA-Min-Native-Version") || "").trim();
   const notes = req.headers.get("X-OTA-Notes") || "";
+  const minOnly =
+    (req.headers.get("X-OTA-Set-Min-Native-Only") || "").trim() === "1" ||
+    (req.headers.get("X-OTA-Set-Min-Native-Only") || "").toLowerCase() === "true";
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+
+  // AAB CI: bump Play floor on the latest OTA row without publishing a new zip.
+  if (minOnly) {
+    if (!minNative) return json({ error: "missing_min_native" }, 400);
+    const { data: latest, error: latestErr } = await supabase
+      .from("app_releases")
+      .select("id, version, channel")
+      .eq("channel", channel)
+      .eq("is_deleted", false)
+      .order("released_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestErr) return json({ error: "lookup_failed", detail: latestErr.message }, 500);
+    if (!latest?.id) return json({ error: "no_release" }, 404);
+    const { error: upErr } = await supabase
+      .from("app_releases")
+      .update({ min_native_version: minNative })
+      .eq("id", latest.id);
+    if (upErr) return json({ error: "update_failed", detail: upErr.message }, 500);
+    return json({
+      ok: true,
+      min_native_only: true,
+      id: latest.id,
+      version: latest.version,
+      min_native_version: minNative,
+    });
+  }
+
   if (!version) return json({ error: "missing_version" }, 400);
 
   // 3) 바디
@@ -59,11 +95,6 @@ Deno.serve(async (req) => {
 
   const checksum = toHex(await crypto.subtle.digest("SHA-256", buf));
   const path = `${channel}/${version}-${Date.now()}.zip`;
-
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
 
   // 4) 업로드
   const up = await supabase.storage

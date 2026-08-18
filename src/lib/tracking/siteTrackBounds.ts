@@ -20,8 +20,11 @@ import {
 
 /** Minimum tracking fence when only site_lat/lng exists (not check-in radius). */
 export const SITE_TRACK_EXIT_M = 500;
-/** Resume when closer than this (hysteresis vs exit). */
-export const SITE_TRACK_RESUME_M = 350;
+/**
+ * Resume uses the tracking radius (not a 350m city cap).
+ * Exit still adds an accuracy pad, so start/stop keep a small hysteresis.
+ */
+export const SITE_TRACK_RESUME_M = SITE_TRACK_EXIT_M;
 /** Hard cap so a bad map corner cannot keep tracking city-wide. */
 export const SITE_TRACK_MAX_M = 2500;
 /** Margin added beyond map extent. */
@@ -195,9 +198,13 @@ export function isInsideResumeFence(
   fence: SiteTrackingFence,
   lat: number,
   lng: number,
+  accuracyM = 30,
 ): boolean {
+  const acc = Number.isFinite(accuracyM) ? accuracyM : 999;
+  // Junk / stale GPS must not start tracking at home.
+  if (acc > SITE_EXIT_MAX_ACCURACY_M) return false;
   const d = calculateDistance(fence.lat, fence.lng, lat, lng);
-  return d <= Math.min(fence.radiusM, SITE_TRACK_RESUME_M) || d <= fence.radiusM * 0.7;
+  return d <= fence.radiusM;
 }
 
 /** Build tracking fence from project pin + optional drone map corners. */

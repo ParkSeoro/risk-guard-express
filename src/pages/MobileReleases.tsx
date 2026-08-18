@@ -111,9 +111,9 @@ export default function MobileReleases() {
         <Smartphone className="h-6 w-6" /> 모바일 앱 릴리스 (OTA)
       </h1>
       <p className="text-sm text-muted-foreground">
-        화면(JS)은 OTA로 바뀝니다. GPS 플러그인처럼 네이티브가 바뀐 AAB를 Play에 올린 뒤에는
-        아래 <b>최소 네이티브 버전</b>을 새 versionName(예: 1.1.1) 또는 versionCode(예: 470)로 저장하세요.
-        그보다 낮은 앱은 실행 시 Play 스토어 업데이트 안내가 뜹니다.
+        화면(JS)은 OTA로 바뀝니다. 새 AAB를 Play에 올린 뒤에는 최신 릴리스의
+        <b>네이티브 최소</b>를 그 AAB의 <b>versionCode</b>(정수, 예: 470)로 저장하세요.
+        비워 두면 Play 스토어 링크만 업데이트를 보여주고, 앱 실행 화면은 안 뜹니다.
       </p>
 
       <Card>

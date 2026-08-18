@@ -171,11 +171,16 @@ export default function WorkerGlobalGps() {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             resolve(
-              isInsideResumeFence(fence, pos.coords.latitude, pos.coords.longitude),
+              isInsideResumeFence(
+                fence,
+                pos.coords.latitude,
+                pos.coords.longitude,
+                pos.coords.accuracy,
+              ),
             );
           },
           () => resolve(false),
-          { enableHighAccuracy: false, maximumAge: 30_000, timeout: 12_000 },
+          { enableHighAccuracy: true, maximumAge: 8_000, timeout: 15_000 },
         );
       });
     };

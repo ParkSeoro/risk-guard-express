@@ -29,7 +29,49 @@ function haversineM(a: GeoPoint, b: GeoPoint): number {
   const s =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(s));
+  return 2 * R * Math.asin(Math.sqrt(Math.min(1, s)));
+}
+
+/** Local meters relative to `origin` (equirectangular). Accurate at construction-site scale. */
+function toLocalM(origin: GeoPoint, p: GeoPoint): { x: number; y: number } {
+  const lat0 = (origin.lat * Math.PI) / 180;
+  const mPerDegLat = 111_195;
+  const mPerDegLng = 111_195 * Math.cos(lat0);
+  return {
+    x: (p.lng - origin.lng) * mPerDegLng,
+    y: (p.lat - origin.lat) * mPerDegLat,
+  };
+}
+
+/** Shortest ground distance from `p` to segment `a`–`b` (meters). */
+export function pointToSegmentM(p: GeoPoint, a: GeoPoint, b: GeoPoint): number {
+  const A = toLocalM(a, a);
+  const B = toLocalM(a, b);
+  const P = toLocalM(a, p);
+  const abx = B.x - A.x;
+  const aby = B.y - A.y;
+  const ab2 = abx * abx + aby * aby;
+  if (ab2 < 1e-12) return haversineM(p, a);
+  let t = ((P.x - A.x) * abx + (P.y - A.y) * aby) / ab2;
+  t = Math.max(0, Math.min(1, t));
+  const dx = P.x - (A.x + t * abx);
+  const dy = P.y - (A.y + t * aby);
+  return Math.hypot(dx, dy);
+}
+
+function distanceToPolygonEdgeM(here: GeoPoint, poly: GeoPoint[]): number {
+  const n = poly.length;
+  if (n < 2) return Number.POSITIVE_INFINITY;
+  const closed =
+    n > 2 && poly[0].lat === poly[n - 1].lat && poly[0].lng === poly[n - 1].lng;
+  const edgeCount = closed ? n - 1 : n;
+  let best = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < edgeCount; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % n];
+    best = Math.min(best, pointToSegmentM(here, a, b));
+  }
+  return best;
 }
 
 /** True when (lat,lng) intersects the zone geometry. */
@@ -96,9 +138,7 @@ export function minDistanceToRestrictedZoneEdge(
     }
     const poly = z.geo_polygon;
     if (!poly || poly.length < 3) continue;
-    for (const p of poly) {
-      best = Math.min(best, haversineM(here, p));
-    }
+    best = Math.min(best, distanceToPolygonEdgeM(here, poly));
   }
   return Number.isFinite(best) ? best : Number.POSITIVE_INFINITY;
 }

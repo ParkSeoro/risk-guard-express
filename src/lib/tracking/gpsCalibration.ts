@@ -90,6 +90,13 @@ export function offsetMagnitudeM(dLat: number, dLng: number, atLat: number): num
 const cache = new Map<string, { at: number; cal: GpsCalibration | null }>();
 const CACHE_TTL_MS = 60_000;
 
+export const GPS_CAL_CACHE_TTL_MS = CACHE_TTL_MS;
+export const GPS_CAL_CHANGED_EVENT = "gps_cal_changed";
+
+export function gpsCalChannelName(projectId: string): string {
+  return `gps-cal:${projectId}`;
+}
+
 export function clearGpsCalibrationCache(projectId?: string) {
   if (projectId) cache.delete(projectId);
   else cache.clear();

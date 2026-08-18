@@ -13,6 +13,7 @@ import {
   fetchProjectGpsCalibration,
   type GpsCalibration,
 } from "@/lib/tracking/gpsCalibration";
+import { watchGpsCalibrationInvalidation } from "@/lib/tracking/gpsCalibrationRealtime";
 import {
   DANGER_PROXIMITY_M,
   isDefinitelyOutsideSite,
@@ -22,6 +23,10 @@ import {
   type SiteTrackingFence,
 } from "@/lib/tracking/siteTrackBounds";
 import { nextOutsideStreak, type SiteTrackPhase } from "@/lib/tracking/siteTrackPhase";
+import {
+  createMotionIdleState,
+  nextMotionIdle,
+} from "@/lib/tracking/motionIdle";
 import {
   minDistanceToRestrictedZoneEdge,
   type RestrictedZoneGeom,
@@ -169,17 +174,6 @@ async function probeCurrentPosition(): Promise<{
 type Capacitor = { isNativePlatform?: () => boolean; getPlatform?: () => string };
 type PowerMode = "eco" | "near" | "danger" | "idle";
 
-function distanceM(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
-  const R = 6371000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(s));
-}
-
 function pickIntervalMs(
   mode: PowerMode,
   intervals: {
@@ -227,8 +221,7 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
       ecoIdle: opts.intervals?.ecoIdle ?? 180_000,
     };
     let lastSentAt = 0;
-    let lastPos: { lat: number; lng: number } | null = null;
-    let lastMovedAt = Date.now();
+    let motion = createMotionIdleState(Date.now());
     let currentMode: PowerMode = "eco";
     let outsideStreak = 0;
     let phase: SiteTrackPhase = "tracking";
@@ -337,16 +330,14 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
         }
 
         const distToZone = minDistanceToRestrictedZoneEdge(disp.lat, disp.lng, zones);
-        let idle = false;
-        if (lastPos) {
-          const moved = distanceM(lastPos, { lat: disp.lat, lng: disp.lng });
-          if (moved >= movementThresholdM) {
-            lastMovedAt = now;
-          } else if (now - lastMovedAt >= idleAfterMs) {
-            idle = true;
-          }
-        }
-        lastPos = { lat: disp.lat, lng: disp.lng };
+        const tick = nextMotionIdle(
+          motion,
+          { lat: disp.lat, lng: disp.lng },
+          now,
+          { thresholdM: movementThresholdM, idleAfterMs },
+        );
+        motion = tick.state;
+        const idle = tick.idle;
         currentMode = resolvePowerMode({
           distToZoneM: distToZone,
           inDangerFromServer,
@@ -535,26 +526,36 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   const idleAfterMs = opts.idleAfterMs ?? 2 * 60_000;
   const movementThresholdM = opts.movementThresholdM ?? 12;
   const site = opts.siteCenter;
+  const unsubCal = watchGpsCalibrationInvalidation(identity.project_id);
 
   let lastSentAt = 0;
-  let lastPos: { lat: number; lng: number; ts: number } | null = null;
-  let lastMovedAt = Date.now();
+  let motion = createMotionIdleState(Date.now());
   let currentMode: PowerMode = "eco";
   let stopped = false;
   let phase: SiteTrackPhase = "tracking";
   let outsideStreak = 0;
   let inDangerFromServer = false;
-  let cal = await loadCalibration(identity.project_id);
-  let zones = await loadRestrictedZones(identity.project_id);
-  let zonesAt = Date.now();
+  let cal: GpsCalibration | null;
+  let zones: RestrictedZoneGeom[];
+  let zonesAt: number;
   let resumeTimer: ReturnType<typeof setInterval> | null = null;
   let resumeFirstTimer: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    cal = await loadCalibration(identity.project_id);
+    zones = await loadRestrictedZones(identity.project_id);
+    zonesAt = Date.now();
+  } catch (e) {
+    unsubCal();
+    throw e;
+  }
 
   const bgStop = await tryNativeBackground(opts);
   if (bgStop) {
     void startHeadlessCompanion(opts);
     const stop = () => {
       stopped = true;
+      unsubCal();
       bgStop();
       void stopHeadlessTrack();
     };
@@ -562,7 +563,13 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
     return stop;
   }
 
-  const geo = await getGeolocation();
+  let geo;
+  try {
+    geo = await getGeolocation();
+  } catch (e) {
+    unsubCal();
+    throw e;
+  }
   let watchHandle: { remove: () => void } | null = null;
 
   const clearResumeTimers = () => {
@@ -664,17 +671,14 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
       }
     }
 
-    let idle = false;
-    if (lastPos) {
-      const d = distanceM(lastPos, here);
-      if (d >= movementThresholdM) {
-        lastMovedAt = now;
-      } else if (now - lastMovedAt >= idleAfterMs) {
-        idle = true;
-      }
-    } else {
-      lastPos = here;
-    }
+    const tick = nextMotionIdle(
+      motion,
+      { lat: here.lat, lng: here.lng },
+      now,
+      { thresholdM: movementThresholdM, idleAfterMs },
+    );
+    motion = tick.state;
+    const idle = tick.idle;
 
     const distToZone = minDistanceToRestrictedZoneEdge(here.lat, here.lng, zones);
     currentMode = resolvePowerMode({
@@ -698,7 +702,6 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
     const minInterval = pickIntervalMs(currentMode, intervals);
     if (now - lastSentAt < minInterval) return;
     lastSentAt = now;
-    lastPos = here;
 
     try {
       const liveId = opts.getIdentity?.() ?? identity;
@@ -765,6 +768,7 @@ export async function startTracking(opts: TrackerOptions): Promise<() => void> {
 
   return () => {
     stopped = true;
+    unsubCal();
     clearResumeTimers();
     detachWatch();
     if (typeof document !== "undefined") {

@@ -47,11 +47,11 @@ import OrthogonalZoneCanvas, {
 import { fetchProjectCompanies } from "@/lib/projectCompanies";
 import {
   applyGpsCalibration,
-  clearGpsCalibrationCache,
   fetchProjectGpsCalibration,
   offsetMagnitudeM,
   type GpsCalibration,
 } from "@/lib/tracking/gpsCalibration";
+import { notifyGpsCalibrationChanged } from "@/lib/tracking/gpsCalibrationRealtime";
 import {
   accessRulesSummary,
   parseAccessRules,
@@ -532,7 +532,7 @@ export default function SiteControlMap() {
         .from("projects")
         .update({ gps_calibration: null as any })
         .eq("id", projectId);
-      if (!clearErr) clearGpsCalibrationCache(projectId);
+      if (!clearErr) await notifyGpsCalibrationChanged(projectId);
     }
     setSavingBounds(false);
     toast.success("위성 정렬(고급)이 저장되었습니다", {

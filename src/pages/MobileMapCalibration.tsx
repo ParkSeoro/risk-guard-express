@@ -31,7 +31,6 @@ import ZoomableSiteMapImage, {
   type MapMarker,
 } from "@/components/geofence/ZoomableSiteMapImage";
 import {
-  clearGpsCalibrationCache,
   computeGpsOffset,
   GPS_CAL_MAX_ACCURACY_M,
   GPS_CAL_MAX_OFFSET_M,
@@ -39,6 +38,7 @@ import {
   parseGpsCalibration,
   type GpsCalibration,
 } from "@/lib/tracking/gpsCalibration";
+import { notifyGpsCalibrationChanged } from "@/lib/tracking/gpsCalibrationRealtime";
 import {
   recommendControlPoints,
   withSlotLabels,
@@ -473,7 +473,7 @@ export default function MobileMapCalibration() {
         .update({ gps_calibration: payload as any })
         .eq("id", projectId);
       if (error) throw error;
-      clearGpsCalibrationCache(projectId);
+      await notifyGpsCalibrationChanged(projectId);
       setExisting(payload);
       toast.success(`맵 정렬 보정 저장 · 약 ${Math.round(mag)}m`, {
         description: "이후 트래킹 GPS에 이 오프셋이 적용됩니다.",
@@ -498,7 +498,7 @@ export default function MobileMapCalibration() {
       toast.error(error.message);
       return;
     }
-    clearGpsCalibrationCache(projectId);
+    await notifyGpsCalibrationChanged(projectId);
     setExisting(null);
     setTapUv(null);
     toast.message("1점 보정을 초기화했습니다");
@@ -626,7 +626,7 @@ export default function MobileMapCalibration() {
       if (clearErr) {
         console.warn("[map-cal] failed to clear stale gps_calibration", clearErr);
       } else {
-        clearGpsCalibrationCache(projectId);
+        await notifyGpsCalibrationChanged(projectId);
         setExisting(null);
       }
 

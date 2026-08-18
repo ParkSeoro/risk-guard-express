@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   findViolatingRestrictedZone,
   isSubjectBanned,
+  minDistanceToRestrictedZoneEdge,
   pointInRestrictedZone,
+  pointToSegmentM,
 } from "@/lib/tracking/restrictedZoneGeom";
 
 describe("restrictedZoneGeom", () => {
@@ -57,4 +59,66 @@ describe("restrictedZoneGeom", () => {
     expect(pointInRestrictedZone(37.05, 127.05, poly)).toBe(true);
     expect(pointInRestrictedZone(36.0, 126.0, poly)).toBe(false);
   });
+
+  it("measures point-to-segment, not just vertices (F-05)", () => {
+    const a = { lat: 37.5, lng: 127.0 };
+    const b = { lat: 37.5, lng: 127.002 }; // ~176m east
+    const mid = { lat: 37.5, lng: 127.001 };
+    const vertexOnly = Math.min(
+      haversineApprox(mid, a),
+      haversineApprox(mid, b),
+    );
+    expect(pointToSegmentM(mid, a, b)).toBeLessThan(1);
+    expect(vertexOnly).toBeGreaterThan(80);
+
+    const southOfMid = offsetMeters(mid, -5, 0);
+    const d = pointToSegmentM(southOfMid, a, b);
+    expect(d).toBeGreaterThan(4);
+    expect(d).toBeLessThan(6.5);
+  });
+
+  it("uses edge distance so a long rectangle's long side is not 40m+ away (F-05)", () => {
+    const sw = { lat: 37.5, lng: 127.0 };
+    const se = offsetMeters(sw, 0, 200);
+    const ne = offsetMeters(sw, 20, 200);
+    const nw = offsetMeters(sw, 20, 0);
+    const zone = {
+      id: "rect",
+      name: "장방형",
+      geometry_type: "polygon" as const,
+      geo_polygon: [sw, se, ne, nw],
+      center_lat: null,
+      center_lng: null,
+      radius_m: null,
+      banned_worker_ids: [] as string[],
+      banned_company_ids: [] as string[],
+      banned_job_types: [] as string[],
+    };
+    const outsideMid = offsetMeters(offsetMeters(sw, 0, 100), -5, 0);
+    const d = minDistanceToRestrictedZoneEdge(outsideMid.lat, outsideMid.lng, [zone]);
+    expect(d).toBeGreaterThan(3);
+    expect(d).toBeLessThan(8);
+  });
 });
+
+function offsetMeters(origin: { lat: number; lng: number }, northM: number, eastM: number) {
+  const lat0 = (origin.lat * Math.PI) / 180;
+  return {
+    lat: origin.lat + northM / 111_195,
+    lng: origin.lng + eastM / (111_195 * Math.cos(lat0)),
+  };
+}
+
+function haversineApprox(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+) {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(Math.min(1, s)));
+}

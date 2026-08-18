@@ -75,7 +75,6 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
   const [gpsTracking, setGpsTracking] = useState(false);
   const [lastGpsFix, setLastGpsFix] = useState<GpsFix | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
-  const workerRef = useRef<Worker | null>(null);
   const stopTrackerRef = useRef<null | (() => void)>(null);
   const identityRef = useRef<TrackingIdentity | null>(null);
   const startGenRef = useRef(0);
@@ -144,52 +143,10 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
     };
   }, [user?.id]);
 
-  const postFix = useCallback(async (lat: number, lng: number, accuracy: number, source: string) => {
-    const identity = identityRef.current;
-    if (!identity) return;
-    let dispLat = lat;
-    let dispLng = lng;
-    try {
-      const { fetchProjectGpsCalibration, applyGpsCalibration } = await import(
-        "@/lib/tracking/gpsCalibration"
-      );
-      const cal = await fetchProjectGpsCalibration(identity.project_id, async (id) => {
-        const { data } = await supabase
-          .from("projects")
-          .select("gps_calibration")
-          .eq("id", id)
-          .maybeSingle();
-        return data?.gps_calibration ?? null;
-      });
-      const disp = applyGpsCalibration(lat, lng, cal);
-      dispLat = disp.lat;
-      dispLng = disp.lng;
-    } catch {
-      /* keep raw for UI if calibration fetch fails */
-    }
-    setLastGpsFix({
-      lat: dispLat,
-      lng: dispLng,
-      raw_lat: lat,
-      raw_lng: lng,
-      accuracy,
-      at: Date.now(),
-    });
-    try {
-      await supabase.functions.invoke("track-location", {
-        body: { ...identity, lat, lng, accuracy_m: accuracy, source },
-      });
-    } catch (e) {
-      console.warn("[SystemRealtime] track-location failed", e);
-    }
-  }, []);
-
   const stopGpsTracking = useCallback(() => {
     startGenRef.current += 1;
     stopTrackerRef.current?.();
     stopTrackerRef.current = null;
-    workerRef.current?.terminate();
-    workerRef.current = null;
     identityRef.current = null;
     setGpsTracking(false);
     setLastGpsFix(null);
@@ -276,42 +233,9 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
           return;
         }
         stopTrackerRef.current = stop;
-
-        // Avoid duplicate 15s web-worker ticks when native BG tracker already owns GPS.
-        const usedBackground = !!(stop as { __usedBackground?: boolean }).__usedBackground;
-        if (usedBackground) return;
-
-        try {
-          const worker = new Worker(new URL("../workers/gpsTracker.worker.ts", import.meta.url), {
-            type: "module",
-          });
-          workerRef.current = worker;
-          worker.postMessage({ type: "start", intervalMs: 15000 });
-          worker.onmessage = (ev) => {
-            if (ev.data?.type !== "tick") return;
-            if (!("geolocation" in navigator)) return;
-            navigator.geolocation.getCurrentPosition(
-              (pos) => {
-                void postFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy, "web-worker-tick");
-              },
-              (err) => {
-                const msg =
-                  err?.code === 1 ? "위치 권한이 거부되었습니다. 설정에서 위치를 허용해 주세요."
-                  : err?.code === 2 ? "위치를 사용할 수 없습니다. GPS를 켜 주세요."
-                  : err?.code === 3 ? "위치 수신 시간 초과. 야외에서 다시 시도해 주세요."
-                  : (err.message || "GPS 오류");
-                setGpsError(msg);
-                console.warn("[SystemRealtime] geo error", err.message);
-              },
-              { enableHighAccuracy: true, maximumAge: 5000, timeout: 12000 },
-            );
-          };
-        } catch (e) {
-          console.warn("[SystemRealtime] GPS worker unavailable", e);
-        }
       });
     },
-    [postFix, stopGpsTracking],
+    [stopGpsTracking],
   );
 
   useEffect(() => () => stopGpsTracking(), [stopGpsTracking]);

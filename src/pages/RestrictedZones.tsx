@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { ShieldAlert, Plus, Trash2, MapPin, Save, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { useActiveProject } from "@/hooks/useActiveProject";
 import { useSoftDelete } from "@/hooks/useSoftDelete";
 import {
   formatGpsPreview,
@@ -57,7 +58,7 @@ const emptyForm = {
 };
 
 export default function RestrictedZones() {
-  const [projectId, setProjectId] = useState(() => localStorage.getItem("currentProjectId") || "");
+  const { projectId, setProjectId } = useActiveProject();
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [workers, setWorkers] = useState<WorkerOpt[]>([]);
@@ -83,7 +84,6 @@ export default function RestrictedZones() {
 
   useEffect(() => {
     if (!projectId) return;
-    localStorage.setItem("currentProjectId", projectId);
     loadAll();
   }, [projectId]);
 

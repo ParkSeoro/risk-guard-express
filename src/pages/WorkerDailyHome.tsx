@@ -39,6 +39,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { HardHat, MapPin, LogIn, LogOut, FileSignature, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
+import { useActiveProject } from "@/hooks/useActiveProject";
+import { readActiveProjectId } from "@/lib/activeProject";
 
 const NO_ACCIDENT_PLEDGE =
   "금일 무재해로 작업을 완료하였으며, 작업 중 사고·부상·아차사고가 없었음을 확인합니다. 이상 발생 시 즉시 관리감독자·안전관리자에게 보고하겠습니다.";
@@ -46,8 +48,6 @@ const HEALTH_PLEDGE =
   "현재 건강상태에 이상이 없으며, 발열·어지러움·흉통 등 작업에 지장이 있는 증상이 없음을 확인합니다. 이상 시 작업을 중단하고 보고하겠습니다.";
 const WORK_ACK_PLEDGE =
   "오늘 배정된 작업내용과 위험요인·안전대책을 확인하였으며, 안전수칙·PPE를 준수하여 작업하겠습니다. 궁금한 사항은 작업 전 관리감독자에게 문의합니다.";
-
-const PROJECT_KEY = "selectedProjectId";
 
 type EntryLog = {
   id: string;
@@ -60,7 +60,7 @@ type EntryLog = {
 export default function WorkerDailyHome({ embedded = false }: { embedded?: boolean }) {
   const { user, profile } = useAuth();
   const { lastGpsFix, gpsTracking, gpsError, startGpsTracking, stopGpsTracking } = useSystemRealtime();
-  const [projectId, setProjectId] = useState(() => localStorage.getItem(PROJECT_KEY) || "");
+  const { projectId, setProjectId } = useActiveProject();
   /** One-shot / polled fix for check-in distance UI before full tracking starts. */
   const [probeFix, setProbeFix] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [checkInFence, setCheckInFence] = useState<SiteTrackingFence | null>(null);
@@ -109,7 +109,7 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
   const checkedOut = !!todayLog?.exit_at;
 
   const refresh = useCallback(async () => {
-    const pid = localStorage.getItem(PROJECT_KEY) || "";
+    const pid = readActiveProjectId();
     setProjectId(pid);
     if (!pid || !user) return;
 

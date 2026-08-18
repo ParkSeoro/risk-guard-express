@@ -23,14 +23,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Bell, Camera, CheckCircle2, MapPin, Shield } from "lucide-react";
 import { toast } from "sonner";
+import { readActiveProjectId, writeActiveProjectId } from "@/lib/activeProject";
 
 type Step = "location" | "notifications" | "camera" | "done";
 
-const PROJECT_KEY = "selectedProjectId";
-
 async function ensureSelectedProject(userId: string, isMaster: boolean) {
   try {
-    const cur = localStorage.getItem(PROJECT_KEY);
+    const cur = readActiveProjectId();
     if (cur) return cur;
     let list: { id: string; name?: string }[] = [];
     if (isMaster) {
@@ -51,8 +50,7 @@ async function ensureSelectedProject(userId: string, isMaster: boolean) {
         .filter((p: any) => p && !p.is_deleted);
     }
     if (list.length >= 1) {
-      localStorage.setItem(PROJECT_KEY, list[0].id);
-      window.dispatchEvent(new Event("mobile:project-changed"));
+      writeActiveProjectId(list[0].id);
       return list[0].id;
     }
   } catch (e) {

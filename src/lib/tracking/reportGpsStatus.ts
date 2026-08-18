@@ -1,9 +1,13 @@
 import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { GpsBlockReason } from "@/lib/tracking/gpsStatusUi";
+import {
+  ACTIVE_PROJECT_CHANGED_EVENT,
+  isActiveProjectStorageKey,
+  readActiveProjectId,
+} from "@/lib/activeProject";
 
 export const GPS_STATUS_REPORT_DEBOUNCE_MS = 2_000;
-const PROJECT_KEY = "selectedProjectId";
 
 type PendingReport = { projectId: string; reason: GpsBlockReason };
 
@@ -62,17 +66,17 @@ export function useReportWorkerGpsStatus(reason: GpsBlockReason | undefined): vo
   useEffect(() => {
     if (reason === undefined) return;
     const send = () => {
-      const projectId = localStorage.getItem(PROJECT_KEY);
+      const projectId = readActiveProjectId();
       if (projectId) reportWorkerGpsStatus(projectId, reason);
     };
     send();
     const onStorage = (e: StorageEvent) => {
-      if (e.key === PROJECT_KEY) send();
+      if (isActiveProjectStorageKey(e.key) || e.key == null) send();
     };
-    window.addEventListener("mobile:project-changed", send);
+    window.addEventListener(ACTIVE_PROJECT_CHANGED_EVENT, send);
     window.addEventListener("storage", onStorage);
     return () => {
-      window.removeEventListener("mobile:project-changed", send);
+      window.removeEventListener(ACTIVE_PROJECT_CHANGED_EVENT, send);
       window.removeEventListener("storage", onStorage);
     };
   }, [reason]);

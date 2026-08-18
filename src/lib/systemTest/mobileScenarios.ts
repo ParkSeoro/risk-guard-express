@@ -9,6 +9,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import { runStep, StepResult, TestContext } from "./runner";
+import { readActiveProjectId } from "@/lib/activeProject";
 
 // 모바일 라우트 인벤토리 — WorkerAppRoutes.tsx 와 동기화 필수
 export const MOBILE_ROUTES: Array<{
@@ -130,13 +131,13 @@ export async function runMobileScenario(ctx: TestContext): Promise<StepResult[]>
   );
   out.push(
     await runStep("mobile", "selected_project_id", async () => {
-      const id = typeof window !== "undefined" ? localStorage.getItem("selectedProjectId") : null;
+      const id = typeof window !== "undefined" ? readActiveProjectId() : null;
       const matches = !!id && id === ctx.projectId;
       return {
         pass: !!id,
         details: { localStorage_value: id, test_project: ctx.projectId, matches },
         error_location: !id
-          ? "localStorage.selectedProjectId 가 비어있음 → 모바일 페이지 대부분 빈 화면"
+          ? "활성 프로젝트가 비어있음 → 모바일 페이지 대부분 빈 화면"
           : !matches
             ? "선택된 프로젝트가 테스트 대상 프로젝트와 다름 (모바일은 localStorage 만 봄)"
             : undefined,

@@ -18,6 +18,7 @@ import PushNotificationBridge from "@/components/PushNotificationBridge";
 import type { TrackingIdentity } from "@/lib/tracking/locationTracker";
 import { resolveSiteTrackingFence } from "@/lib/tracking/siteTrackBounds";
 import { clearStickyDangerAlert } from "@/lib/tracking/dangerAlertSticky";
+import { readActiveProjectId } from "@/lib/activeProject";
 import { toast } from "sonner";
 
 export type GpsFix = {
@@ -142,7 +143,7 @@ export default function SystemRealtimeProvider({ children }: { children: ReactNo
           const row = payload.new as ZoneEventPayload;
           const pid =
             identityRef.current?.project_id ||
-            (typeof localStorage !== "undefined" ? localStorage.getItem("selectedProjectId") : null);
+            (typeof localStorage !== "undefined" ? readActiveProjectId() : null);
           // Require a project match — never fan-out every site's events when GPS is off.
           if (!pid || !row.project_id || row.project_id !== pid) return;
           setLastZoneEvent(row);

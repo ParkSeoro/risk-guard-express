@@ -30,8 +30,12 @@ import {
   gpsStatusReportPayload,
   useReportWorkerGpsStatus,
 } from "@/lib/tracking/reportGpsStatus";
-
-const PROJECT_KEY = "selectedProjectId";
+import {
+  ACTIVE_PROJECT_CHANGED_EVENT,
+  isActiveProjectStorageKey,
+  readActiveProjectId,
+  writeActiveProjectId,
+} from "@/lib/activeProject";
 
 export type { GpsBlockReason };
 
@@ -86,7 +90,7 @@ export default function WorkerGlobalGps() {
     };
 
     const ensureProject = async () => {
-      let projectId = localStorage.getItem(PROJECT_KEY);
+      let projectId = readActiveProjectId();
       if (projectId) return projectId;
       const isMaster = hasRole("master") || (roles || []).some((r) => r.toLowerCase() === "master");
       try {
@@ -109,8 +113,7 @@ export default function WorkerGlobalGps() {
             .filter((p: any) => p && !p.is_deleted);
         }
         if (list[0]?.id) {
-          localStorage.setItem(PROJECT_KEY, list[0].id);
-          window.dispatchEvent(new Event("mobile:project-changed"));
+          writeActiveProjectId(list[0].id);
           return list[0].id;
         }
       } catch {
@@ -285,7 +288,7 @@ export default function WorkerGlobalGps() {
     void boot();
 
     const onStorage = (e: StorageEvent) => {
-      if (e.key === PROJECT_KEY) {
+      if (isActiveProjectStorageKey(e.key)) {
         lastKeyRef.current = null;
         workerIdRef.current = null;
         void boot();
@@ -320,7 +323,7 @@ export default function WorkerGlobalGps() {
     };
 
     window.addEventListener("storage", onStorage);
-    window.addEventListener("mobile:project-changed", onProjectChanged);
+    window.addEventListener(ACTIVE_PROJECT_CHANGED_EVENT, onProjectChanged);
     window.addEventListener("mobile:resume-gps-tracking", onResumeTracking);
     window.addEventListener("mobile:gps-auto-stopped", onAutoStopped);
     window.addEventListener("mobile:worker-checked-out", onCheckedOut);
@@ -330,7 +333,7 @@ export default function WorkerGlobalGps() {
       cancelled = true;
       clearResumePoll();
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener("mobile:project-changed", onProjectChanged);
+      window.removeEventListener(ACTIVE_PROJECT_CHANGED_EVENT, onProjectChanged);
       window.removeEventListener("mobile:resume-gps-tracking", onResumeTracking);
       window.removeEventListener("mobile:gps-auto-stopped", onAutoStopped);
       window.removeEventListener("mobile:worker-checked-out", onCheckedOut);

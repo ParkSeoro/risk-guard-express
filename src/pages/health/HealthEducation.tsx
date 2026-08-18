@@ -13,18 +13,16 @@ import { toast } from "sonner";
 import { Plus, GraduationCap } from "lucide-react";
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 
-const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const TYPES = ["정기", "특별", "관리감독자", "MSDS", "신규채용", "작업변경"];
 
 export default function HealthEducation() {
   const handle = useToastError();
-  const { applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
+  const { selectedProject: projectId, applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
   const [list, setList] = useState<any[]>([]);
   const [workers, setWorkers] = useState<any[]>([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<any>({ type: "정기" });
   const [loading, setLoading] = useState(true);
-  const projectId = typeof window !== "undefined" ? localStorage.getItem(ACTIVE_PROJECT_KEY) : null;
 
   const load = async () => {
     if (!projectId) return;

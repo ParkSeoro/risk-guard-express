@@ -28,6 +28,7 @@ import { isClaimableOrphanWorker } from "@/lib/companyLabel";
 import { companyDocScopeMode } from "@/lib/companyDocScope";
 import { useAuditLog } from "@/hooks/useAuditLog";
 import { useGlobalProjectAccessOptional } from "@/components/AppLayout";
+import { useActiveProject } from "@/hooks/useActiveProject";
 
 const RESTRICTED_ROLES = new Set(["site_manager", "supervisor", "site_supervisor", "worker"]);
 const ADMIN_ROLE_SET = new Set<string>(ADMIN_PROJECT_ROLES);
@@ -58,7 +59,7 @@ export default function WorkerManagement() {
     setTab(resolveTab(tabParam));
   }, [tabParam, searchParams, setSearchParams]);
 
-  const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
+  const { projectId, setProjectId } = useActiveProject();
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
   const [companyId, setCompanyId] = useState<string>("");
@@ -131,7 +132,6 @@ export default function WorkerManagement() {
 
   useEffect(() => {
     if (!projectId) return;
-    localStorage.setItem("currentProjectId", projectId);
     setCompanyId("");
     setCompanyLocked(false);
     import("@/lib/projectCompanies").then(({ fetchProjectCompanies }) =>

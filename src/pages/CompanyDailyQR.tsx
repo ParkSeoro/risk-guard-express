@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QRCodeSVG } from "qrcode.react";
 import { Building2, Printer, RefreshCw, Search, CheckCircle2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+import { useActiveProject } from "@/hooks/useActiveProject";
 
 /**
  * 시공사(회사)별 일일 게시판 QR — 관리자가 매일 출력해 게시판에 부착.
@@ -17,7 +18,7 @@ import { toast } from "sonner";
 type StatusFilter = "all" | "issued" | "missing";
 
 export default function CompanyDailyQR() {
-  const [projectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
+  const { projectId } = useActiveProject();
   const [companies, setCompanies] = useState<any[]>([]);
   const [qrMap, setQrMap] = useState<Record<string, any>>({});
   const [loadingList, setLoadingList] = useState(true);

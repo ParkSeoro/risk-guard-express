@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Map, Upload, Save, Crosshair, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { useActiveProject } from "@/hooks/useActiveProject";
 import LeafletDrawControl from "@/components/geofence/LeafletDrawControl";
 import {
   formatGpsPreview,
@@ -76,7 +77,7 @@ function FitBounds({ bounds }: { bounds: L.LatLngBoundsExpression | null }) {
  * PC/tablet: satellite basemap + georeferenced drone image overlay + polygon draw → restricted_zones.
  */
 export default function GeorefMapControl() {
-  const [projectId, setProjectId] = useState(() => localStorage.getItem("currentProjectId") || "");
+  const { projectId, setProjectId } = useActiveProject();
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [maps, setMaps] = useState<SiteMap[]>([]);
   const [activeMap, setActiveMap] = useState<SiteMap | null>(null);
@@ -102,7 +103,6 @@ export default function GeorefMapControl() {
 
   useEffect(() => {
     if (!projectId) return;
-    localStorage.setItem("currentProjectId", projectId);
     loadMaps();
     loadZones();
   }, [projectId]);

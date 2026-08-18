@@ -16,7 +16,6 @@ import { Plus, ClipboardList, AlertTriangle, Search, Trash2 } from "lucide-react
 import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useSoftDelete } from "@/hooks/useSoftDelete";
 
-const ACTIVE_PROJECT_KEY = "selectedProjectId";
 const CATEGORIES = ["소음", "분진", "화학물질", "물리적", "생물학적", "진동", "조명", "고온"];
 const ROUNDS = ["1차(상반기)", "2차(하반기)", "수시"];
 
@@ -28,7 +27,7 @@ function daysUntil(d?: string | null) {
 
 export default function EnvMeasurements() {
   const handle = useToastError();
-  const { applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
+  const { selectedProject: projectId, applyCompanyFilter, userCompanyId } = useGlobalProjectAccess();
   const { softDelete } = useSoftDelete();
   const [list, setList] = useState<any[]>([]);
   const [factors, setFactors] = useState<any[]>([]);
@@ -39,7 +38,6 @@ export default function EnvMeasurements() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"all" | "exceeded" | "due">("all");
   const [search, setSearch] = useState("");
-  const projectId = typeof window !== "undefined" ? localStorage.getItem(ACTIVE_PROJECT_KEY) : null;
 
   const load = async () => {
     if (!projectId) return;

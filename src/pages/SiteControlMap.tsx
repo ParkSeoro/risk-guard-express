@@ -61,6 +61,8 @@ import {
 } from "@/lib/tracking/accessRules";
 import type { DrawnShape, DrawTool } from "@/components/geofence/LeafletDrawControl";
 import { looksLikeWgs84, looksLikeWgs84Ring, GPS_COORDS_INVALID_MSG } from "@/lib/tracking/imageSpaceGeo";
+import { retireLegacySiteDangerZones } from "@/lib/tracking/retireLegacySiteDangerZones";
+import { softDeletePayload } from "@/lib/dataAccess";
 import {
   bottomRight,
   cornersCenter,
@@ -452,6 +454,7 @@ export default function SiteControlMap() {
     const list = (data || []) as unknown as Zone[];
     setZones(list);
     if (list.length) setFitToken(`zones-${Date.now()}`);
+    void retireLegacySiteDangerZones(projectId);
   };
 
   const leafletBounds = useMemo(
@@ -803,15 +806,20 @@ export default function SiteControlMap() {
   };
 
   const deleteZone = async (id: string) => {
+    const uid = (await supabase.auth.getUser()).data.user?.id || "";
+    const payload = uid
+      ? softDeletePayload(uid, "통합 관제맵에서 삭제")
+      : { is_deleted: true, deleted_at: new Date().toISOString() };
     const { error } = await supabase
       .from("restricted_zones")
-      .update({ is_deleted: true } as any)
+      .update(payload as any)
       .eq("id", id);
     if (error) {
       toast.error("삭제 실패: " + error.message);
       return;
     }
     toast.success("구역이 삭제되었습니다");
+    void retireLegacySiteDangerZones(projectId);
     void loadZones();
   };
 

@@ -8,7 +8,11 @@ import { isAccessForbidden } from "../_shared/accessRules.ts";
 import { applyGpsCalibration, parseGpsCalibration } from "../_shared/gpsCalibration.ts";
 import {
   digitsOnlyPhone,
+  resolveZoneEventWorkerKey,
+  shouldIgnoreLowAccuracyFix,
+  SITE_ZONE_MATCH_MAX_ACCURACY_M,
   trackIdentityClaimMismatch,
+  zoneEventLookbackSince,
 } from "../_shared/trackLocationIdentity.ts";
 
 const corsHeaders = {
@@ -36,6 +40,7 @@ const BodySchema = z.object({
     .default([]),
   device_ts: z.string().optional(),
   restricted_zone_id: z.string().uuid().optional().nullable(),
+  /** Names a unified zone; must not skip the accuracy discard gate. */
   force_restricted_check: z.boolean().optional().default(false),
 });
 
@@ -166,7 +171,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (body.accuracy_m > 100 && (!body.wifi_scan || body.wifi_scan.length === 0) && !body.force_restricted_check) {
+    if (shouldIgnoreLowAccuracyFix(body.accuracy_m, body.wifi_scan?.length ?? 0)) {
       return new Response(
         JSON.stringify({ zone_id: null, source: null, event_type: null, ignored: "low_accuracy" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -324,7 +329,7 @@ Deno.serve(async (req) => {
     let matchedZoneId: string | null = null;
     let source: "gps" | "wifi" | "restricted" = "gps";
 
-    if (body.accuracy_m <= 50 || body.force_restricted_check) {
+    if (body.accuracy_m <= SITE_ZONE_MATCH_MAX_ACCURACY_M) {
       for (const z of zones || []) {
         // After the unified map is used, leftover Site Maps danger/restricted
         // polygons must not keep matching — they survived add/edit/delete there.
@@ -363,15 +368,12 @@ Deno.serve(async (req) => {
 
     if (matchedRestricted) source = "restricted";
 
-    const since = new Date();
-    since.setHours(0, 0, 0, 0);
-    const workerKey = body.worker_qr_id
-      ? { col: "worker_qr_id", val: body.worker_qr_id }
-      : body.worker_phone
-      ? { col: "worker_phone", val: body.worker_phone }
-      : subject.worker_id
-      ? null
-      : null;
+    const since = zoneEventLookbackSince();
+    const workerKey = resolveZoneEventWorkerKey({
+      workerQrId: body.worker_qr_id,
+      workerPhone: body.worker_phone,
+      workerId: subject.worker_id,
+    });
 
     let lastEvent: any = null;
     if (workerKey) {
@@ -380,16 +382,6 @@ Deno.serve(async (req) => {
         .select("zone_id, event_type, restricted_zone_id")
         .eq("project_id", body.project_id)
         .eq(workerKey.col, workerKey.val)
-        .gte("created_at", since.toISOString())
-        .order("created_at", { ascending: false })
-        .limit(1);
-      lastEvent = data?.[0] ?? null;
-    } else if (subject.worker_id) {
-      const { data } = await supabase
-        .from("worker_zone_events")
-        .select("zone_id, event_type, restricted_zone_id")
-        .eq("project_id", body.project_id)
-        .eq("worker_name", body.worker_name || "")
         .gte("created_at", since.toISOString())
         .order("created_at", { ascending: false })
         .limit(1);

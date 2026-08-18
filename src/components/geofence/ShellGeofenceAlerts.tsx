@@ -16,7 +16,7 @@ import {
 } from "@/lib/tracking/restrictedZoneGeom";
 import { resolveBanSubject } from "@/lib/tracking/resolveBanSubject";
 import { isZoneEventAboutMe } from "@/lib/tracking/zoneEventAboutMe";
-import { shouldSuppressLocalSirenOffsite } from "@/lib/tracking/geofenceLocalAlarm";
+import { shouldSuppressLocalSirenOffsite, isGpsAccurateEnoughForSiren } from "@/lib/tracking/geofenceLocalAlarm";
 import {
   resolveSiteTrackingFence,
   type SiteTrackingFence,
@@ -155,7 +155,7 @@ export default function ShellGeofenceAlerts() {
     if (zonesProjectRef.current !== projectId) return;
     const fix = lastGpsFixRef.current;
     const hit =
-      fix && zonesRef.current.length
+      fix && isGpsAccurateEnoughForSiren(fix.accuracy) && zonesRef.current.length
         ? findViolatingRestrictedZone(fix.lat, fix.lng, zonesRef.current, subjectRef.current)
         : null;
     if (
@@ -220,6 +220,7 @@ export default function ShellGeofenceAlerts() {
         }
       }
       if (fix && zonesRef.current.length) {
+        if (!isGpsAccurateEnoughForSiren(fix.accuracy)) return;
         const hit = findViolatingRestrictedZone(fix.lat, fix.lng, zonesRef.current, subjectRef.current);
         if (hit) {
           dismissedZoneId.current = null;
@@ -280,7 +281,7 @@ export default function ShellGeofenceAlerts() {
     );
     if (!hit) {
       // Ignore sparse "outside" blips while accuracy is poor (common on wake)
-      if ((lastGpsFix.accuracy || 0) > 40) return;
+      if (!isGpsAccurateEnoughForSiren(lastGpsFix.accuracy)) return;
       exitStreak.current += 1;
       if (exitStreak.current >= EXIT_STREAK_NEEDED) {
         dismissedZoneId.current = null;
@@ -288,6 +289,7 @@ export default function ShellGeofenceAlerts() {
       }
       return;
     }
+    if (!isGpsAccurateEnoughForSiren(lastGpsFix.accuracy)) return;
     exitStreak.current = 0;
     if (dismissedZoneId.current === hit.id) return;
     openAlert({ id: hit.id, name: hit.name });
@@ -358,6 +360,7 @@ export default function ShellGeofenceAlerts() {
         ) {
           return;
         }
+        if (!isGpsAccurateEnoughForSiren(fix.accuracy)) return;
         if (zonesRef.current.length) {
           const hit = findViolatingRestrictedZone(
             fix.lat,

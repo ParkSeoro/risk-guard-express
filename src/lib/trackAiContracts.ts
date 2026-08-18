@@ -3,7 +3,10 @@
  */
 export {
   digitsOnlyPhone,
+  resolveZoneEventWorkerKey,
+  shouldIgnoreLowAccuracyFix,
   trackIdentityClaimMismatch,
+  zoneEventLookbackSince,
 } from "../../supabase/functions/_shared/trackLocationIdentity";
 
 export {

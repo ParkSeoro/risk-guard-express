@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { isZoneEventAboutMe } from "@/lib/tracking/zoneEventAboutMe";
-import { shouldSuppressLocalSirenOffsite } from "@/lib/tracking/geofenceLocalAlarm";
-import { SITE_TRACK_EXIT_M } from "@/lib/tracking/siteTrackBounds";
+import {
+  isGpsAccurateEnoughForSiren,
+  shouldSuppressLocalSirenOffsite,
+} from "@/lib/tracking/geofenceLocalAlarm";
+import { SITE_TRACK_EXIT_M, SIREN_MAX_ACCURACY_M } from "@/lib/tracking/siteTrackBounds";
 
 describe("isZoneEventAboutMe", () => {
   it("matches by phone digits", () => {
@@ -72,5 +75,18 @@ describe("shouldSuppressLocalSirenOffsite", () => {
         accuracyM: 12,
       }),
     ).toBe(false);
+  });
+});
+
+describe("isGpsAccurateEnoughForSiren (F-02)", () => {
+  it("rejects a 300m wakeup blip that would otherwise open the siren", () => {
+    expect(isGpsAccurateEnoughForSiren(300)).toBe(false);
+    expect(isGpsAccurateEnoughForSiren(undefined)).toBe(false);
+  });
+
+  it("accepts a tight fix at the shared open/close threshold", () => {
+    expect(isGpsAccurateEnoughForSiren(12)).toBe(true);
+    expect(isGpsAccurateEnoughForSiren(SIREN_MAX_ACCURACY_M)).toBe(true);
+    expect(isGpsAccurateEnoughForSiren(SIREN_MAX_ACCURACY_M + 1)).toBe(false);
   });
 });

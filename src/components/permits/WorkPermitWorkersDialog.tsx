@@ -17,6 +17,7 @@ import {
   type PermitRosterCandidate,
 } from "@/lib/permitRosterManagers";
 import { syncPermitCrewToTbm } from "@/lib/syncPermitCrewToTbm";
+import { seoulDayRange, todaySeoulDate } from "@/lib/dailyWorkAck";
 
 type Props = {
   permit: any | null;
@@ -49,7 +50,7 @@ export default function WorkPermitWorkersDialog({
     (async () => {
       setLoading(true);
       setQ("");
-      const today = new Date().toISOString().slice(0, 10);
+      const todayRange = seoulDayRange(todaySeoulDate());
       const companyId = (permit as { company_id?: string | null }).company_id || null;
 
       let companyLabel: string | null = null;
@@ -85,8 +86,8 @@ export default function WorkPermitWorkersDialog({
           .from("worker_entry_logs" as any)
           .select("worker_id, entry_at, exit_at")
           .eq("project_id", projectId)
-          .gte("entry_at", `${today}T00:00:00`)
-          .lte("entry_at", `${today}T23:59:59`),
+          .gte("entry_at", todayRange.start)
+          .lte("entry_at", todayRange.end),
         companyId
           ? loadPermitCompanyManagerCandidates({
               projectId,

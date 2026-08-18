@@ -16,6 +16,7 @@ import {
   type AttentionItem,
   type SitePulse,
 } from "@/lib/dashboardOps";
+import { seoulDayRange } from "@/lib/dailyWorkAck";
 import {
   AlertTriangle, CheckCircle2, ShieldAlert, FileCheck,
   ClipboardList, ShieldCheck, ArrowRight, RefreshCw,
@@ -97,6 +98,7 @@ const Dashboard = () => {
     if (!selectedProject) return;
     setLoading(true);
     const today = todayKstDate();
+    const dayRange = seoulDayRange(today);
 
     try {
       let permitQ: any = supabase
@@ -138,8 +140,8 @@ const Dashboard = () => {
         .from("worker_entry_logs")
         .select("id, entry_at, exit_at")
         .eq("project_id", selectedProject)
-        .gte("entry_at", `${today}T00:00:00`)
-        .lte("entry_at", `${today}T23:59:59`);
+        .gte("entry_at", dayRange.start)
+        .lte("entry_at", dayRange.end);
 
       const zoneP = showOpsWide
         ? supabase

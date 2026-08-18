@@ -29,6 +29,7 @@ import {
 import { ClipboardList, Download, Search, AlertTriangle, CheckCircle2, LogIn, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { useGlobalProjectAccess } from "@/components/AppLayout";
+import { seoulDayRange, todaySeoulDate } from "@/lib/dailyWorkAck";
 
 type ConsentInfo = {
   agreed_to_terms: boolean;
@@ -80,7 +81,7 @@ function Mark({ ok }: { ok: boolean }) {
 export default function WorkerAttendance() {
   const [projectId, setProjectId] = useState<string>(() => localStorage.getItem("currentProjectId") || "");
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => todaySeoulDate());
   const [logs, setLogs] = useState<EntryLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -101,14 +102,15 @@ export default function WorkerAttendance() {
     if (!projectId || scopeStatus !== 'ready') return;
     setLoading(true);
     try {
+      const dayRange = seoulDayRange(date);
       const { data, error } = await supabase
         .from("worker_entry_logs")
         .select(
           "id, worker_id, entry_at, exit_at, risk_assessment_confirmed, education_confirmed, tbm_confirmed, no_accident_confirmed",
         )
         .eq("project_id", projectId)
-        .gte("entry_at", `${date}T00:00:00`)
-        .lte("entry_at", `${date}T23:59:59`)
+        .gte("entry_at", dayRange.start)
+        .lte("entry_at", dayRange.end)
         .order("entry_at", { ascending: false });
       if (error) {
         toast.error(error.message);

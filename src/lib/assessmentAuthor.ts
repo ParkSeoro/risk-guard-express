@@ -28,6 +28,71 @@ export function isAssessmentLegalAuthorRole(role?: string | null): boolean {
   return !!role && (ASSESSMENT_LEGAL_AUTHOR_ROLES as readonly string[]).includes(role);
 }
 
+export function isAssessmentLegalAuthorPosition(position?: string | null): boolean {
+  const p = (position || '').toUpperCase();
+  return p === 'SITE_MANAGER' || p === 'SITE_SUPERVISOR';
+}
+
+/** 역할 또는 직책이 작성 주체이면 true (role/position drift 허용). */
+export function isAssessmentLegalAuthorMember(row: {
+  role_new?: string | null;
+  role?: string | null;
+  position_new?: string | null;
+  position?: string | null;
+}): boolean {
+  return isAssessmentLegalAuthorRole(row.role_new || row.role)
+    || isAssessmentLegalAuthorPosition(row.position_new || row.position);
+}
+
+export function resolveAuthorRoleLabel(row: {
+  role?: string | null;
+  position?: string | null;
+}): string {
+  if (row.role === 'site_manager' || (row.position || '').toUpperCase() === 'SITE_MANAGER') {
+    return 'site_manager';
+  }
+  if (row.role === 'site_supervisor' || (row.position || '').toUpperCase() === 'SITE_SUPERVISOR') {
+    return 'site_supervisor';
+  }
+  return row.role || '';
+}
+
+export function buildAuthorCandidates(rows: Array<{
+  user_id?: string | null;
+  company_id?: string | null;
+  company_name?: string | null;
+  display_name?: string | null;
+  role_new?: string | null;
+  role?: string | null;
+  position_new?: string | null;
+  position?: string | null;
+}>): AssessmentAuthorCandidate[] {
+  const seen = new Set<string>();
+  const next: AssessmentAuthorCandidate[] = [];
+  for (const row of rows) {
+    if (!row.user_id || seen.has(row.user_id)) continue;
+    if (!isAssessmentLegalAuthorMember(row)) continue;
+    seen.add(row.user_id);
+    next.push({
+      user_id: row.user_id,
+      display_name: (row.display_name || '').trim() || row.user_id.slice(0, 8),
+      company_id: row.company_id || null,
+      company_name: row.company_name || '',
+      role: resolveAuthorRoleLabel({
+        role: row.role_new || row.role,
+        position: row.position_new || row.position,
+      }),
+    });
+  }
+  next.sort((a, b) => {
+    const rank = (r?: string | null) => (r === 'site_manager' ? 0 : 1);
+    const d = rank(a.role) - rank(b.role);
+    if (d !== 0) return d;
+    return a.display_name.localeCompare(b.display_name, 'ko');
+  });
+  return next;
+}
+
 export function isSiteSupervisorRole(role?: string | null): boolean {
   return role === 'site_supervisor';
 }

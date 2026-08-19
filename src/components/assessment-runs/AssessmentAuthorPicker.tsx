@@ -3,6 +3,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
+  ASSESSMENT_LEGAL_AUTHOR_LABEL,
+  ASSESSMENT_LEGAL_AUTHOR_ROLES,
   formatAssessmentAuthorLabel,
   type AssessmentAuthorCandidate,
 } from '@/lib/assessmentAuthor';
@@ -37,9 +39,9 @@ export default function AssessmentAuthorPicker({
       setLoading(true);
       const { data: members } = await supabase
         .from('project_members')
-        .select('user_id, company_id')
+        .select('user_id, company_id, role_new')
         .eq('project_id', projectId)
-        .eq('role_new', 'site_supervisor');
+        .in('role_new', [...ASSESSMENT_LEGAL_AUTHOR_ROLES]);
       const rows = members || [];
       const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
       const companyIds = [...new Set(rows.map((r) => r.company_id).filter(Boolean))] as string[];
@@ -64,6 +66,7 @@ export default function AssessmentAuthorPicker({
           display_name: nameByUser.get(row.user_id) || row.user_id.slice(0, 8),
           company_id: row.company_id,
           company_name: row.company_id ? (nameByCo.get(row.company_id) || '') : '',
+          role: row.role_new,
         });
       }
       next.sort((a, b) => a.display_name.localeCompare(b.display_name, 'ko'));
@@ -78,10 +81,10 @@ export default function AssessmentAuthorPicker({
 
   return (
     <div className="space-y-1">
-      <Label className="text-xs">작성 주체 (관리감독자){required ? ' *' : ''}</Label>
+      <Label className="text-xs">작성 주체 ({ASSESSMENT_LEGAL_AUTHOR_LABEL}){required ? ' *' : ''}</Label>
       <Select value={value || undefined} onValueChange={onChange} disabled={disabled || loading || !projectId}>
         <SelectTrigger className="h-9">
-          <SelectValue placeholder={loading ? '불러오는 중...' : candidates.length ? '관리감독자를 선택하세요' : '등록된 관리감독자가 없습니다'} />
+          <SelectValue placeholder={loading ? '불러오는 중...' : candidates.length ? `${ASSESSMENT_LEGAL_AUTHOR_LABEL}를 선택하세요` : `등록된 ${ASSESSMENT_LEGAL_AUTHOR_LABEL}가 없습니다`} />
         </SelectTrigger>
         <SelectContent>
           {candidates.map((c) => (
@@ -93,7 +96,7 @@ export default function AssessmentAuthorPicker({
       </Select>
       {error && <p className="text-xs text-destructive">{error}</p>}
       {!error && candidates.length === 0 && !loading && projectId && (
-        <p className="text-[10px] text-muted-foreground">프로젝트에 관리감독자를 먼저 등록하세요. 안전관리자는 작성 주체가 될 수 없습니다.</p>
+        <p className="text-[10px] text-muted-foreground">프로젝트에 {ASSESSMENT_LEGAL_AUTHOR_LABEL}를 먼저 등록하세요. 안전관리자는 작성 주체가 될 수 없습니다.</p>
       )}
     </div>
   );

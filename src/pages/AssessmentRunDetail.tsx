@@ -78,6 +78,7 @@ import {
   canAssistAssessmentWrite,
   canSubmitAssessmentRun,
   hasAssessmentLegalAuthor,
+  isAssessmentLegalAuthorRole,
 } from '@/lib/assessmentAuthor';
 import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
 import { submitApprovalFromDraft } from '@/lib/approvalPlatform';
@@ -1651,7 +1652,7 @@ const AssessmentRunDetail = () => {
   const handleExportPDF = async () => {
     if (!run) return;
     if (!hasAssessmentLegalAuthor(run.author_user_id)) {
-      toast({ title: '인쇄 불가', description: '작성 주체(관리감독자)를 지정한 뒤에만 인쇄할 수 있습니다.', variant: 'destructive' });
+      toast({ title: '인쇄 불가', description: '작성 주체(관리감독자·현장소장)를 지정한 뒤에만 인쇄할 수 있습니다.', variant: 'destructive' });
       return;
     }
     toast({ title: '인쇄용 HTML 생성 중...', description: '잠시 기다려주세요.' });
@@ -1679,7 +1680,7 @@ const AssessmentRunDetail = () => {
   const handlePrint = async () => {
     if (!run) return;
     if (!hasAssessmentLegalAuthor(run.author_user_id)) {
-      toast({ title: '인쇄 불가', description: '작성 주체(관리감독자)를 지정한 뒤에만 인쇄할 수 있습니다.', variant: 'destructive' });
+      toast({ title: '인쇄 불가', description: '작성 주체(관리감독자·현장소장)를 지정한 뒤에만 인쇄할 수 있습니다.', variant: 'destructive' });
       return;
     }
     const printWindow = window.open('', '_blank', 'width=1100,height=800');
@@ -1997,7 +1998,7 @@ const AssessmentRunDetail = () => {
   const canAssignAuthor = (canEdit || canForceEdit) && (
     !!isMaster
     || canAssistAssessmentWrite(userRole, !!isMaster)
-    || userRole === 'site_supervisor'
+    || isAssessmentLegalAuthorRole(userRole)
     || run.created_by === user?.id
   );
   const canCancelApproval =
@@ -2154,8 +2155,8 @@ const AssessmentRunDetail = () => {
         <div className="print:hidden rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs space-y-2">
           <p className="font-medium">
             {hasAssessmentLegalAuthor(run.author_user_id)
-              ? `보좌 입력 — 작성 주체: ${authorDisplayName || '관리감독자'}. 상신은 관리감독자만 가능합니다.`
-              : '작성 주체(관리감독자)가 없습니다. 지정하기 전에는 상신·인쇄할 수 없습니다.'}
+              ? `보좌 입력 — 작성 주체: ${authorDisplayName || '관리감독자·현장소장'}. 상신은 작성 주체만 가능합니다.`
+              : '작성 주체(관리감독자·현장소장)가 없습니다. 지정하기 전에는 상신·인쇄할 수 없습니다.'}
           </p>
           {canAssignAuthor && (
             <AssessmentAuthorPicker
@@ -2168,7 +2169,7 @@ const AssessmentRunDetail = () => {
                   return;
                 }
                 setRun((prev: any) => (prev ? { ...prev, author_user_id: id } : prev));
-                toast({ title: '작성 주체(관리감독자)를 지정했습니다.' });
+                toast({ title: '작성 주체(관리감독자·현장소장)를 지정했습니다.' });
               }}
               required
             />
@@ -2187,7 +2188,7 @@ const AssessmentRunDetail = () => {
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">현장명:</span><span>{project?.site_name || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">발주처:</span><span>{docCompanies.clientCompanyName}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">시공사:</span><span>{docCompanies.gcCompanyName}</span></div>
-            <div className="flex gap-1"><span className="font-medium text-muted-foreground">작성 관리감독자:</span><span>{authorDisplayName || '미지정'}</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">작성 주체:</span><span>{authorDisplayName || '미지정'}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">작성 회사:</span><span>{docCompanies.authorCompanyName}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">기간:</span><span>{run.start_date || project?.period_start || ''} ~ {run.end_date || project?.period_end || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">항목 수:</span><span>{stats.total}건</span></div>

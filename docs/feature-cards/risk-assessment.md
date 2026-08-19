@@ -17,8 +17,8 @@
 
 ## 2. Permission ✅
 - [x] `useProjectAccess.canEdit('risk_assessment')` / `canApprove('risk_assessment')` 사용
-- [x] **작성 주체 = 관리감독자(`site_supervisor`)** — 위험성평가 고시 §7 (유해·위험요인 파악·개선조치)
-- [x] 안전관리자(`safety_manager`) = 보좌 입력만. `author_user_id`가 법적 작성자, `created_by`는 입력자. 상신·인쇄는 관리감독자만
+- [x] **작성 주체 = 관리감독자(`site_supervisor`) 또는 현장소장(`site_manager`)**
+- [x] 안전관리자(`safety_manager`) = 보좌 입력만. `author_user_id`가 법적 작성자, `created_by`는 입력자. 상신·인쇄는 작성 주체만
 - [x] 감리(`supervisor`) = 위험성평가 RO (작성 주체 아님)
 - [x] 회차 생성 UI: `AssessmentRuns` `canCreateRun`에 `site_supervisor` 포함
 - [x] worker = CRU(승인 제외), viewer = RO 매트릭스 (`useProjectAccess.ts` `PERMISSION_MATRIX`)

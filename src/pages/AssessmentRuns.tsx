@@ -137,7 +137,7 @@ const AssessmentRuns = () => {
     setProjectRole((picked as any)?.role_new || null);
   };
 
-  // 고시 §7: 작성 주체 = 관리감독자. SM/관리자는 보좌 초안만(작성 주체 지정 필수).
+  // 작성 주체 = 관리감독자·현장소장. SM/관리자는 보좌 초안만(작성 주체 지정 필수).
   const canCreateRun = canCreateAssessmentRun(projectRole, isMaster);
 
   const fetchRuns = async () => {
@@ -213,7 +213,7 @@ const AssessmentRuns = () => {
 
     const errors: Record<string, string> = {};
     if (!form.type) errors.type = '종류를 선택해주세요.';
-    if (!form.author_user_id) errors.author_user_id = '작성 주체(관리감독자)를 선택해주세요.';
+    if (!form.author_user_id) errors.author_user_id = '작성 주체(관리감독자·현장소장)를 선택해주세요.';
     if (!form.period_label.trim()) errors.period_label = '회차명을 입력해주세요.';
     if (form.period_label.trim().length > 100) errors.period_label = '회차명은 100자 이내로 입력해주세요.';
     if (form.start_date && form.end_date && form.start_date > form.end_date) errors.end_date = '종료일이 시작일보다 이전입니다.';
@@ -287,6 +287,7 @@ const AssessmentRuns = () => {
     if (
       projectRole === 'project_admin' ||
       projectRole === 'site_supervisor' ||
+      projectRole === 'site_manager' ||
       projectRole === 'safety_manager'
     ) {
       return true;
@@ -536,7 +537,7 @@ const AssessmentRuns = () => {
             />
             {projectRole === 'safety_manager' && (
               <p className="text-[10px] text-muted-foreground">
-                안전관리자는 보좌 입력만 가능합니다. 작성 주체와 상신은 관리감독자입니다.
+                안전관리자는 보좌 입력만 가능합니다. 작성 주체와 상신은 관리감독자 또는 현장소장입니다.
               </p>
             )}
             <div className="space-y-1">

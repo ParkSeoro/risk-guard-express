@@ -40,19 +40,19 @@ export function buildAssessmentSubmitPreflight(opts: {
   const submitterOk = !!opts.authorUserId && !!opts.currentUserId && opts.authorUserId === opts.currentUserId;
   items.push({
     id: 'author',
-    label: '작성 주체(관리감독자) 지정',
+    label: '작성 주체(관리감독자·현장소장) 지정',
     ok: authorOk,
-    detail: authorOk ? (opts.authorName || '지정됨') : '관리감독자를 지정하세요',
+    detail: authorOk ? (opts.authorName || '지정됨') : '관리감독자 또는 현장소장을 지정하세요',
   });
   items.push({
     id: 'author_submitter',
-    label: '상신자는 작성 관리감독자',
+    label: '상신자는 작성 주체',
     ok: submitterOk,
     detail: submitterOk
       ? '본인'
       : authorOk
-        ? `작성 관리감독자(${opts.authorName || '지정됨'})만 상신 가능`
-        : '작성 주체 지정 후 해당 관리감독자가 상신',
+        ? `작성 주체(${opts.authorName || '지정됨'})만 상신 가능`
+        : '작성 주체 지정 후 해당 관리감독자·현장소장이 상신',
   });
 
   items.push({

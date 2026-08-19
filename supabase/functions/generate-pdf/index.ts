@@ -622,7 +622,7 @@ td, th { page-break-inside: auto; }
         <div class="report-info-value">${gcCompanyNames}</div>
       </div>
       <div class="report-info-row">
-        <div class="report-info-label">작성 관리감독자</div>
+        <div class="report-info-label">작성 주체</div>
         <div class="report-info-value">${legalAuthorName || "미지정"}</div>
         <div class="report-info-label">작성 회사</div>
         <div class="report-info-value">${authorCompanyName}</div>

@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCheckInFence,
   buildSiteFence,
+  CHECKIN_ACCURACY_PAD_CAP_M,
   DANGER_PROXIMITY_M,
   isDefinitelyOutsideSite,
+  isInsideCheckInFence,
   isInsideResumeFence,
-  SITE_CHECKIN_MAP_PAD_M,
   SITE_CHECKIN_MAX_M,
   SITE_CHECKIN_MIN_M,
+  SITE_CHECKIN_PIN_M,
   SITE_EXIT_STREAK,
   SITE_TRACK_EXIT_M,
   SITE_TRACK_MAP_PAD_M,
@@ -23,8 +26,7 @@ describe("siteTrackBounds", () => {
     expect(DANGER_PROXIMITY_M).toBeGreaterThan(30);
   });
 
-  it("check-in prefers site map footprint over distant address pin", () => {
-    // Address geocode ~1km away from actual pad (any firm / any project)
+  it("check-in covers both address pin and drone overlay (GSC-like 1km split)", () => {
     const pinLat = 34.84546;
     const pinLng = 127.70833;
     const maps = [
@@ -40,36 +42,37 @@ describe("siteTrackBounds", () => {
         geo_anchor_se_lng: 127.70180583000185,
       },
     ];
-    const fence = buildSiteFence({
-      siteLat: pinLat,
-      siteLng: pinLng,
-      maps,
-      minRadiusM: SITE_CHECKIN_MIN_M,
-      mapPadM: SITE_CHECKIN_MAP_PAD_M,
-      maxRadiusM: SITE_CHECKIN_MAX_M,
-    });
-    expect(fence.source).toBe("site_map");
-    // Worker standing on the pad (phone GPS) must be inside
-    const workerLat = 34.85125;
-    const workerLng = 127.70013;
-    const d = calculateDistance(fence.lat, fence.lng, workerLat, workerLng);
-    expect(d).toBeLessThan(fence.radiusM);
-    // And must not use the distant address pin as center
-    expect(calculateDistance(fence.lat, fence.lng, pinLat, pinLng)).toBeGreaterThan(500);
+    const fence = buildCheckInFence({ siteLat: pinLat, siteLng: pinLng, maps });
+    expect(fence.source).toBe("site_union");
+    expect(fence.radiusM).toBeLessThanOrEqual(SITE_CHECKIN_MAX_M);
+    const padLat = 34.85125;
+    const padLng = 127.70013;
+    expect(isInsideCheckInFence(fence, padLat, padLng, 15)).toBe(true);
+    expect(isInsideCheckInFence(fence, pinLat, pinLng, 15)).toBe(true);
+    // ~3km north of pin — still off-site
+    expect(isInsideCheckInFence(fence, 34.872, 127.70833, 15)).toBe(false);
   });
 
-  it("check-in falls back to 100m address pin when no maps", () => {
-    const fence = buildSiteFence({
+  it("check-in falls back to pin radius when no maps", () => {
+    const fence = buildCheckInFence({
       siteLat: 37.5,
       siteLng: 127.0,
       maps: [],
-      minRadiusM: SITE_CHECKIN_MIN_M,
-      mapPadM: SITE_CHECKIN_MAP_PAD_M,
-      maxRadiusM: SITE_CHECKIN_MAX_M,
     });
     expect(fence.source).toBe("site_pin");
     expect(fence.lat).toBe(37.5);
-    expect(fence.radiusM).toBe(SITE_CHECKIN_MIN_M);
+    expect(fence.radiusM).toBe(SITE_CHECKIN_PIN_M);
+    expect(SITE_CHECKIN_PIN_M).toBeGreaterThan(SITE_CHECKIN_MIN_M);
+  });
+
+  it("pads check-in by GPS accuracy up to the cap", () => {
+    const fence = { lat: 37.5, lng: 127.0, radiusM: 100, source: "site_pin" as const };
+    // ~111m north — outside 100m but inside 100+30
+    expect(isInsideCheckInFence(fence, 37.501, 127.0, 30)).toBe(true);
+    expect(isInsideCheckInFence(fence, 37.501, 127.0, 5)).toBe(false);
+    // 200m accuracy must not unlock a kilometre away
+    expect(isInsideCheckInFence(fence, 37.51, 127.0, 200)).toBe(false);
+    expect(CHECKIN_ACCURACY_PAD_CAP_M).toBeLessThanOrEqual(80);
   });
 
   it("tracking fence centers on map when maps exist", () => {

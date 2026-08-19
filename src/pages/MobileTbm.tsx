@@ -21,8 +21,8 @@ import {
   Copy,
   Users,
   Plus,
-  ExternalLink,
   CheckCircle2,
+  FileSignature,
 } from "lucide-react";
 import { toast } from "sonner";
 import QRCode from "qrcode";
@@ -37,11 +37,7 @@ const tbmSchema = z.object({
   summary: z.string().trim().max(2000).optional(),
 });
 
-const PUBLIC_TBM_BASE = "https://safenex.org";
-
-function buildTbmUrl(token: string) {
-  return `${PUBLIC_TBM_BASE}/tbm/${encodeURIComponent(token)}`;
-}
+import { tbmInAppPath, tbmPublicUrl } from "@/lib/tbmUrls";
 
 type TbmSession = {
   id: string;
@@ -81,7 +77,7 @@ export default function MobileTbm() {
   const [selectedDate, setSelectedDate] = useState(() => todayKst());
 
   const today = useMemo(() => todayKst(), []);
-  const portalUrl = session?.qr_token ? buildTbmUrl(session.qr_token) : "";
+  const portalUrl = session?.qr_token ? tbmPublicUrl(session.qr_token) : "";
   const viewingToday = selectedDate === today;
 
   const loadSessions = async () => {
@@ -475,10 +471,10 @@ export default function MobileTbm() {
                             toast.error("QR 토큰이 아직 없습니다. 관리자에게 문의하세요.");
                             return;
                           }
-                          window.location.href = buildTbmUrl(token);
+                          navigate(tbmInAppPath(token));
                         }}
                       >
-                        <ExternalLink className="h-4 w-4 mr-1" />
+                        <FileSignature className="h-4 w-4 mr-1" />
                         {done ? "이미 참여함" : "참여 · 서명하기"}
                       </Button>
                     )}

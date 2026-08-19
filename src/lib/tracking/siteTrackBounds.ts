@@ -30,12 +30,22 @@ export const SITE_TRACK_MAX_M = 2500;
 /** Margin added beyond map extent. */
 export const SITE_TRACK_MAP_PAD_M = 120;
 
-/** Clock-in: hard floor when only address pin exists. */
+/** Clock-in: hard floor when a georeferenced map exists (tiny overlay). */
 export const SITE_CHECKIN_MIN_M = 100;
 /** Clock-in: pad beyond farthest map corner when maps are georeferenced. */
 export const SITE_CHECKIN_MAP_PAD_M = 50;
-/** Clock-in hard cap (still much tighter than tracking). */
-export const SITE_CHECKIN_MAX_M = 800;
+/**
+ * Pin-only check-in radius. Address geocodes (lot / office) are often hundreds
+ * of metres from the pad — 100m blocked people standing on site.
+ */
+export const SITE_CHECKIN_PIN_M = 350;
+/**
+ * Clock-in hard cap. Must cover industrial complexes where the address pin and
+ * drone overlay sit ~1km apart (e.g. GSC 여수 적량동 vs H2/LCO2 pad).
+ */
+export const SITE_CHECKIN_MAX_M = 1200;
+/** GPS accuracy pad for check-in (capped so a 200m indoor fix cannot roam). */
+export const CHECKIN_ACCURACY_PAD_CAP_M = 80;
 
 /** Consecutive definite-outside fixes before auto-stop. */
 export const SITE_EXIT_STREAK = 5;
@@ -62,7 +72,7 @@ export type SiteTrackingFence = {
   lng: number;
   radiusM: number;
   /** How the center was chosen — for UI diagnostics. */
-  source?: "site_map" | "site_pin";
+  source?: "site_map" | "site_pin" | "site_union";
 };
 
 type MapRow = {
@@ -240,23 +250,84 @@ export async function resolveSiteTrackingFence(
 }
 
 /**
- * Clock-in fence: 100m around address pin, or map footprint (+pad) when
- * site_maps are georeferenced — so a wrong lot geocode cannot block check-in
- * on the actual work pad.
+ * Clock-in fence for industrial sites.
+ * Address pin and drone overlay are often far apart — cover BOTH so a worker
+ * standing on either the pad or the lot gate is not told they are "outside".
  */
+export function buildCheckInFence(opts: {
+  siteLat: number;
+  siteLng: number;
+  maps?: MapRow[] | null;
+}): SiteTrackingFence {
+  const cornerSets = collectMapCorners(opts.maps);
+  const pinOk = Number.isFinite(opts.siteLat) && Number.isFinite(opts.siteLng);
+  const points: { lat: number; lng: number }[] = [];
+  for (const c of cornerSets) {
+    const br = bottomRight(c);
+    points.push(c.tl, c.tr, c.bl, br);
+  }
+  if (pinOk) points.push({ lat: opts.siteLat, lng: opts.siteLng });
+
+  if (points.length === 0) {
+    return {
+      lat: opts.siteLat,
+      lng: opts.siteLng,
+      radiusM: SITE_CHECKIN_PIN_M,
+      source: "site_pin",
+    };
+  }
+
+  let lat = 0;
+  let lng = 0;
+  for (const p of points) {
+    lat += p.lat;
+    lng += p.lng;
+  }
+  lat /= points.length;
+  lng /= points.length;
+  let maxDist = 0;
+  for (const p of points) {
+    maxDist = Math.max(maxDist, calculateDistance(lat, lng, p.lat, p.lng));
+  }
+  const minR = cornerSets.length > 0 ? SITE_CHECKIN_MIN_M : SITE_CHECKIN_PIN_M;
+  const pad = cornerSets.length > 0 ? SITE_CHECKIN_MAP_PAD_M : 0;
+  const source: SiteTrackingFence["source"] =
+    cornerSets.length > 0 && pinOk
+      ? "site_union"
+      : cornerSets.length > 0
+        ? "site_map"
+        : "site_pin";
+  return {
+    lat,
+    lng,
+    radiusM: Math.min(SITE_CHECKIN_MAX_M, Math.max(minR, Math.ceil(maxDist + pad))),
+    source,
+  };
+}
+
+/** Check-in: allow a capped GPS-accuracy pad at the fence edge. */
+export function isInsideCheckInFence(
+  fence: SiteTrackingFence,
+  lat: number,
+  lng: number,
+  accuracyM?: number,
+): boolean {
+  const d = calculateDistance(fence.lat, fence.lng, lat, lng);
+  const acc = Number.isFinite(accuracyM) ? Number(accuracyM) : 0;
+  const pad = Math.min(Math.max(acc, 0), CHECKIN_ACCURACY_PAD_CAP_M);
+  return d <= fence.radiusM + pad;
+}
+
 export async function resolveSiteCheckInFence(
   projectId: string,
 ): Promise<SiteTrackingFence | null> {
   try {
     const base = await fetchProjectSiteAndMaps(projectId);
     if (!base) return null;
-    return buildSiteFence({
+    return buildCheckInFence({
       siteLat: base.siteLat,
       siteLng: base.siteLng,
       maps: base.maps,
-      minRadiusM: SITE_CHECKIN_MIN_M,
-      mapPadM: SITE_CHECKIN_MAP_PAD_M,
-      maxRadiusM: SITE_CHECKIN_MAX_M,
     });
   } catch {
     return null;

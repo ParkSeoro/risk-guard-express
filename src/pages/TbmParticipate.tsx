@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,8 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { CheckCircle2, AlertTriangle, HardHat, Loader2 } from 'lucide-react';
 import ResponsiveSignaturePad, { ResponsiveSignaturePadHandle } from '@/components/ResponsiveSignaturePad';
+import { useAuth } from '@/contexts/AuthContext';
+import { formatPhoneMask } from '@/lib/workerAuth';
 
 type Briefing = {
   id: string;
@@ -27,6 +29,10 @@ type Briefing = {
 export default function TbmParticipate() {
   const { token } = useParams<{ token: string }>();
   const { toast } = useToast();
+  const { profile } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const inApp = location.pathname.startsWith('/app/worker');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [briefing, setBriefing] = useState<Briefing | null>(null);
@@ -41,6 +47,13 @@ export default function TbmParticipate() {
   const [understoodChecked, setUnderstoodChecked] = useState(false);
 
   const sigRef = useRef<ResponsiveSignaturePadHandle | null>(null);
+
+  useEffect(() => {
+    if (!profile) return;
+    if (profile.display_name) setName(profile.display_name);
+    if (profile.phone) setPhone(formatPhoneMask(profile.phone));
+    if (profile.company) setCompany(profile.company);
+  }, [profile]);
 
   useEffect(() => {
     (async () => {
@@ -123,6 +136,10 @@ export default function TbmParticipate() {
               <Button
                 className="w-full"
                 onClick={() => {
+                  if (inApp) {
+                    navigate('/app/worker/tbm', { replace: true });
+                    return;
+                  }
                   try { window.close(); } catch {}
                   setTimeout(() => {
                     if (!window.closed) {
@@ -131,7 +148,7 @@ export default function TbmParticipate() {
                   }, 150);
                 }}
               >
-                창 닫기
+                {inApp ? 'TBM 목록으로' : '창 닫기'}
               </Button>
             </div>
           </CardContent>
@@ -143,7 +160,7 @@ export default function TbmParticipate() {
   const risks = Array.isArray(briefing.briefing_risks) ? briefing.briefing_risks : [];
 
   return (
-    <div className="min-h-screen bg-muted/30 p-4 pb-12">
+    <div className={`min-h-screen bg-muted/30 p-4 ${inApp ? "pb-24" : "pb-12"}`}>
       <div className="max-w-2xl mx-auto space-y-4">
         <div className="flex items-center gap-2 pt-4">
           <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
@@ -208,17 +225,39 @@ export default function TbmParticipate() {
         <Card>
           <CardHeader><CardTitle className="text-base">근로자 정보</CardTitle></CardHeader>
           <CardContent className="space-y-3">
+            {inApp && profile?.display_name ? (
+              <p className="text-xs text-muted-foreground">
+                로그인 계정 정보로 채워집니다. 이름·전화는 수정하지 마세요.
+              </p>
+            ) : null}
             <div>
               <Label>이름 *</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="홍길동" />
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="홍길동"
+                readOnly={inApp && !!profile?.display_name}
+              />
             </div>
             <div>
               <Label>전화번호 *</Label>
-              <Input type="tel" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="010-0000-0000" />
+              <Input
+                type="tel"
+                inputMode="numeric"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="010-0000-0000"
+                readOnly={inApp && !!profile?.phone}
+              />
             </div>
             <div>
               <Label>소속</Label>
-              <Input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="○○건설" />
+              <Input
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
+                placeholder="○○건설"
+                readOnly={inApp && !!profile?.company}
+              />
             </div>
           </CardContent>
         </Card>

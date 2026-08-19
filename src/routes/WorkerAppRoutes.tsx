@@ -69,6 +69,7 @@ export default function WorkerAppRoutes() {
               <Route path="work-plans" element={<P.LazyMobileWorkPlans />} />
               <Route path="work-plans/:planId" element={<P.LazyMobileWorkPlanViewer />} />
               <Route path="tbm" element={<P.LazyMobileTbm />} />
+              <Route path="tbm/:token" element={<P.LazyTbmParticipate />} />
               {/* permits remain as document viewer entry; approvals is the single inbox */}
               <Route path="permits" element={<P.LazyMobilePermits />} />
               <Route path="incident" element={<P.LazyMobileIncident />} />

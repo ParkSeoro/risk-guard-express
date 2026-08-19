@@ -37,8 +37,8 @@ BEGIN
       NULL;
     END;
     BEGIN
-      DELETE FROM auth.refresh_tokens WHERE user_id = _user_id;
-    EXCEPTION WHEN undefined_table THEN
+      DELETE FROM auth.refresh_tokens WHERE user_id = _user_id::text;
+    EXCEPTION WHEN undefined_table OR undefined_function THEN
       NULL;
     END;
     BEGIN

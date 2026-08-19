@@ -452,8 +452,8 @@ export default function MobileInspect() {
                   <div className="text-xs text-muted-foreground mt-1">{inspectorLine} · {projectName}</div>
                 )}
                 <div className="grid grid-cols-3 gap-2 mt-3 text-center text-xs">
-                  <div className="rounded bg-success/10 text-success p-2 font-bold">이상없음 {okCount}</div>
-                  <div className="rounded bg-destructive/10 text-destructive p-2 font-bold">조치필요 {failCount}</div>
+                  <div className="rounded bg-success/10 text-success p-2 font-bold">양호 {okCount}</div>
+                  <div className="rounded bg-destructive/10 text-destructive p-2 font-bold">불량 {failCount}</div>
                   <div className="rounded bg-muted p-2 font-bold">해당없음 {naCount}</div>
                 </div>
               </CardContent>
@@ -477,11 +477,11 @@ export default function MobileInspect() {
                     <Button size="sm" variant={it.result === "pass" ? "default" : "outline"}
                       className={`h-12 ${it.result === "pass" ? "bg-success hover:bg-success" : ""}`}
                       onClick={() => setResult(it, "pass")}>
-                      <CheckCircle2 className="h-4 w-4 mr-1" />{patrol ? "이상없음" : "합격"}
+                      <CheckCircle2 className="h-4 w-4 mr-1" />{patrol ? "양호" : "합격"}
                     </Button>
                     <Button size="sm" variant={it.result === "fail" ? "destructive" : "outline"}
                       className="h-12" onClick={() => setResult(it, "fail")}>
-                      <XCircle className="h-4 w-4 mr-1" />{patrol ? "조치필요" : "불합격"}
+                      <XCircle className="h-4 w-4 mr-1" />{patrol ? "불량" : "불합격"}
                     </Button>
                     <Button size="sm" variant={it.result === "na" ? "secondary" : "outline"}
                       className="h-12" onClick={() => setResult(it, "na")}>

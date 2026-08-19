@@ -19,7 +19,8 @@ import { useGlobalProjectAccess } from '@/components/AppLayout';
 import MultiCompanyFilter from '@/components/MultiCompanyFilter';
 import AssigneeSelect from '@/components/AssigneeSelect';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
-import { fetchTodayPermitRoute } from '@/lib/legalForms/fetchTodayPermitRoute';
+import { datePartFromDateTime } from '@/lib/permitWorkDate';
+import { fetchTodayPermitRoute, fetchPatrolPrintContext } from '@/lib/legalForms/fetchTodayPermitRoute';
 import {
   PATROL_INSPECTION_CATEGORY,
   PATROL_LOG_DISCLAIMER,
@@ -434,13 +435,20 @@ export default function SafetyInspections() {
           .maybeSingle();
         title = inspectorTitleFromMember({ position: (mem as any)?.position_new, role: (mem as any)?.role_new }) || title;
       }
+      const day = datePartFromDateTime(detail.inspected_at) || undefined;
+      const ctx = await fetchPatrolPrintContext(projectId, day);
       win.document.write(buildPatrolLogHtml({
         projectName: projectLabel || '현장',
         inspectedAt: detail.inspected_at,
         inspectorName: detail.inspector_name,
         inspectorTitle: title,
-        location: detail.location,
+        location: detail.location || ctx.route,
         summary: detail.summary,
+        weather: ctx.weather,
+        workItems: ctx.works,
+        manpower: ctx.manpower,
+        tbmAttendees: ctx.tbmAttendees || undefined,
+        tbmRate: ctx.tbmRate || undefined,
         items: detailItems,
         actions: detailActions,
       }));
@@ -720,8 +728,8 @@ export default function SafetyInspections() {
                           <div className="text-[10px] text-muted-foreground">{it.legal_basis}</div>
                         </div>
                         <div className="flex gap-1">
-                          <Button size="sm" variant={it.result === 'pass' ? 'default' : 'outline'} onClick={() => updateItemResult(it, 'pass')} className={it.result === 'pass' ? 'bg-success' : ''}>통과</Button>
-                          <Button size="sm" variant={it.result === 'fail' ? 'destructive' : 'outline'} onClick={() => updateItemResult(it, 'fail')}>불합격</Button>
+                          <Button size="sm" variant={it.result === 'pass' ? 'default' : 'outline'} onClick={() => updateItemResult(it, 'pass')} className={it.result === 'pass' ? 'bg-success' : ''}>{isPatrolInspection(detail.inspection_type) ? '양호' : '통과'}</Button>
+                          <Button size="sm" variant={it.result === 'fail' ? 'destructive' : 'outline'} onClick={() => updateItemResult(it, 'fail')}>{isPatrolInspection(detail.inspection_type) ? '불량' : '불합격'}</Button>
                           <Button size="sm" variant={it.result === 'na' ? 'secondary' : 'outline'} onClick={() => updateItemResult(it, 'na')}>해당없음</Button>
                         </div>
                       </div>

@@ -19,6 +19,7 @@
   "event_flush_interval_seconds": 10,
   "ffprobe_timeout_seconds": 8,
   "allow_local_key_generation": false,
+  "wan_profile": "hybrid",
   "nvrs": [],
   "cameras": []
 }

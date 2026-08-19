@@ -21,6 +21,15 @@ class RuntimeStatus(StrEnum):
     MAINTENANCE = "maintenance"
 
 
+class WanProfile(StrEnum):
+    """현장 WAN 비용·복원력 정책을 표시하는 비밀 없는 분류."""
+
+    WIRED = "wired"
+    WIRELESS_BRIDGE = "wireless_bridge"
+    CELLULAR_METERED = "cellular_metered"
+    HYBRID = "hybrid"
+
+
 class Severity(StrEnum):
     INFO = "info"
     LOW = "low"
@@ -97,6 +106,7 @@ class LocalConfig(BaseModel):
     event_flush_interval_seconds: int = Field(default=10, ge=2, le=3600)
     ffprobe_timeout_seconds: int = Field(default=8, ge=1, le=120)
     allow_local_key_generation: bool = False
+    wan_profile: WanProfile = WanProfile.HYBRID
     cameras: list[CameraConfig] = Field(default_factory=list)
     nvrs: list[NvrConfig] = Field(default_factory=list)
 

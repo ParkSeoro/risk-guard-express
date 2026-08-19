@@ -139,7 +139,9 @@ class EdgeRuntime:
             applied_state={
                 "policy_version": self.store.get_runtime_value("policy_version"),
                 "model_version": self.store.get_runtime_value("model_version"),
-                "gateway_release": "0.1.0",
+                "gateway_release": "0.3.0",
+                "wan_profile": str(self.config.wan_profile),
+                "remote_video_mode": "event_first_local_recording",
             },
         )
 

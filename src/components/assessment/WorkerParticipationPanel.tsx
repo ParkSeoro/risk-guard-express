@@ -12,7 +12,7 @@ import { Plus, Trash2, Sparkles, Loader2, Upload, MessageSquare, HeartPulse, Ale
 import { detectHighRiskCategories, type RiskItemLike } from '@/lib/highRiskDetection';
 import { autoGenerateAccidentCases } from '@/lib/autoAccidentGeneration';
 import { generateAccidentCasesStreaming } from '@/lib/riskAutoGenAI';
-import { uploadAttachmentFile } from '@/lib/compressUploadFile';
+import { uploadAttachmentFile, buildProjectAttachmentPath } from '@/lib/compressUploadFile';
 
 interface Props {
   runId: string;
@@ -72,6 +72,7 @@ export default function WorkerParticipationPanel({
     accident_summary: '',
     process: '',
   });
+  const [signatureUploading, setSignatureUploading] = useState(false);
   const [aiProcess, setAiProcess] = useState('');
   const [aiEquipment, setAiEquipment] = useState('');
   const [accidentAICount, setAccidentAICount] = useState(0);
@@ -134,13 +135,26 @@ export default function WorkerParticipationPanel({
   };
 
   const handleSignatureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]; if (!f) return;
-    const path = `${projectId}/worker-sign/${Date.now()}_${f.name}`;
+    const input = e.target;
+    const f = input.files?.[0];
+    if (!f) return;
+    if (!projectId) {
+      toast({ title: '업로드 실패', description: '프로젝트 정보가 없습니다.', variant: 'destructive' });
+      input.value = '';
+      return;
+    }
+    setSignatureUploading(true);
     try {
+      const path = buildProjectAttachmentPath(projectId, 'worker-sign', f.name);
       const uploaded = await uploadAttachmentFile(path, f);
       setNewOpinion(p => ({ ...p, signature_url: uploaded.publicUrl }));
-    } catch {
-      toast({ title: '업로드 실패', variant: 'destructive' });
+      toast({ title: '서명 이미지가 첨부되었습니다.' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast({ title: '업로드 실패', description: message, variant: 'destructive' });
+    } finally {
+      setSignatureUploading(false);
+      input.value = '';
     }
   };
 
@@ -306,16 +320,21 @@ export default function WorkerParticipationPanel({
   };
 
   const photoUpload = async (e: React.ChangeEvent<HTMLInputElement>, accidentId: string) => {
-    const f = e.target.files?.[0]; if (!f) return;
-    const path = `${projectId}/accidents/${Date.now()}_${f.name}`;
+    const input = e.target;
+    const f = input.files?.[0];
+    if (!f) return;
     try {
+      const path = buildProjectAttachmentPath(projectId, 'accidents', f.name);
       const uploaded = await uploadAttachmentFile(path, f);
       const target = accidents.find(a => a.id === accidentId);
       const urls = [...(target?.photo_urls || []), uploaded.publicUrl];
       await supabase.from('assessment_accidents' as any).update({ photo_urls: urls }).eq('id', accidentId);
       await reload();
-    } catch {
-      toast({ title: '업로드 실패', variant: 'destructive' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast({ title: '업로드 실패', description: message, variant: 'destructive' });
+    } finally {
+      input.value = '';
     }
   };
 
@@ -340,9 +359,14 @@ export default function WorkerParticipationPanel({
                 <Input placeholder="직책/공종" value={newOpinion.worker_position} onChange={e => setNewOpinion(p => ({ ...p, worker_position: e.target.value }))} />
               </div>
               <div className="flex items-center gap-2">
-                <label className="cursor-pointer">
-                  <input type="file" accept="image/*" className="hidden" onChange={handleSignatureUpload} />
-                  <Button size="sm" variant="outline" asChild><span><Upload className="h-3 w-3 mr-1" /> 서명 이미지</span></Button>
+                <label className={`cursor-pointer ${signatureUploading ? 'pointer-events-none opacity-60' : ''}`}>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleSignatureUpload} disabled={signatureUploading} />
+                  <Button size="sm" variant="outline" asChild>
+                    <span>
+                      {signatureUploading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+                      {signatureUploading ? '업로드 중' : '서명 이미지'}
+                    </span>
+                  </Button>
                 </label>
                 {newOpinion.signature_url && <img src={newOpinion.signature_url} className="h-8 border rounded" alt="서명" />}
                 <Button size="sm" onClick={addOpinion} className="ml-auto gap-1"><Plus className="h-3 w-3" /> 의견 등록</Button>

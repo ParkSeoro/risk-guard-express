@@ -9,6 +9,11 @@
  */
 import { describe, it, expect } from "vitest";
 import { canSubmitAssessmentRun, isSiteSupervisorRole } from "@/lib/assessmentAuthor";
+import {
+  classifyPermissionPersona,
+  personaMatchesFilter,
+  permissionPersonaLabel,
+} from "@/lib/permissions";
 
 // useProjectAccess 에서 PERMISSION_MATRIX 를 export 하지 않으므로
 // 동일한 정의를 여기 미러링합니다. (변경 시 둘 다 수정 — 테스트가 강제합니다.)
@@ -130,5 +135,31 @@ describe("위험성평가 법적 작성 주체", () => {
     expect(isSiteSupervisorRole("safety_manager")).toBe(false);
     expect(canSubmitAssessmentRun({ userId: "sm-1", authorUserId: "sup-1" })).toBe(false);
     expect(canSubmitAssessmentRun({ userId: "sup-1", authorUserId: "sup-1" })).toBe(true);
+  });
+});
+
+describe("권한 관리 관리자/근로자 구분", () => {
+  it("마스터와 현장 관리 역할은 관리자", () => {
+    expect(classifyPermissionPersona({ globalRoles: ["master"], projectRoles: [] })).toBe("manager");
+    expect(classifyPermissionPersona({ projectRoles: ["site_supervisor"] })).toBe("manager");
+    expect(classifyPermissionPersona({ projectRoles: ["viewer"] })).toBe("manager");
+  });
+
+  it("작업자 역할만 있으면 근로자", () => {
+    expect(classifyPermissionPersona({ projectRoles: ["worker"] })).toBe("worker");
+  });
+
+  it("한 계정에 관리감독자와 작업자가 있으면 겸임", () => {
+    expect(classifyPermissionPersona({
+      projectRoles: ["site_supervisor", "worker"],
+    })).toBe("both");
+    expect(personaMatchesFilter("both", "manager")).toBe(true);
+    expect(personaMatchesFilter("both", "worker")).toBe(true);
+    expect(permissionPersonaLabel("both")).toBe("관리자·근로 겸임");
+  });
+
+  it("소속이 없으면 미배정", () => {
+    expect(classifyPermissionPersona({ globalRoles: [], projectRoles: [] })).toBe("unassigned");
+    expect(personaMatchesFilter("unassigned", "manager")).toBe(false);
   });
 });

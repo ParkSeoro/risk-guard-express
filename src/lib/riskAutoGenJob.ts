@@ -14,6 +14,9 @@ import {
   fetchRiskFillTwoStage,
   fetchRiskRowDetailWithRetry,
   isFillableRiskItem,
+  isAiScopeDraftItem,
+  isAiFailedRiskItem,
+  shouldReplaceRiskField,
   resolveBatchEdgeCallBudget,
   RISK_FILL_CHUNK,
   type AIGenerateOptions,
@@ -247,7 +250,7 @@ export async function recoverRiskAutoGenReview(runId: string, projectId?: string
 
   const { data, error } = await supabase
     .from('risk_items')
-    .select('id, process, note, source_type, hazard_situation, existing_measure, improvement_measure, hazard')
+    .select('id, process, note, source_type, hazard_situation, existing_measure, improvement_measure, hazard, ppe, legal_basis')
     .eq('run_id', runId)
     .eq('is_deleted', false);
 
@@ -346,39 +349,76 @@ async function applyFilledDetail(
   subTask: string,
   rowHazard: string | null | undefined,
   detail: GeneratedRiskItem,
+  current?: {
+    note?: string | null;
+    hazard_situation?: string | null;
+    existing_measure?: string | null;
+    improvement_measure?: string | null;
+    ppe?: string[] | null;
+    legal_basis?: string[] | null;
+    likelihood_grade?: string | null;
+    severity_grade?: string | null;
+    risk_grade?: string | null;
+    frequency?: number | null;
+    severity?: number | null;
+    improved_likelihood_grade?: string | null;
+    improved_severity_grade?: string | null;
+    improved_risk_grade?: string | null;
+    improved_frequency?: number | null;
+    improved_severity?: number | null;
+  },
 ): Promise<boolean> {
+  const forceAll = isAiScopeDraftItem(current || {}) || isAiFailedRiskItem(current || {});
   const lg = detail.likelihood_grade || '중';
   const sg = detail.severity_grade || '중';
   const ilg = detail.improved_likelihood_grade || '하';
   const isg = detail.improved_severity_grade || '하';
+  const nextSituation = shouldReplaceRiskField(current?.hazard_situation, forceAll)
+    ? (detail.hazard_situation || '')
+    : (current?.hazard_situation || '');
+  const nextExisting = shouldReplaceRiskField(current?.existing_measure, forceAll)
+    ? (detail.existing_measure || '')
+    : (current?.existing_measure || '');
+  const nextImprove = shouldReplaceRiskField(current?.improvement_measure, forceAll)
+    ? (detail.improvement_measure || '')
+    : (current?.improvement_measure || '');
+  const nextPpe = shouldReplaceRiskField(current?.ppe, forceAll) ? (detail.ppe || []) : (current?.ppe || []);
+  const existingLegal = shouldReplaceRiskField(current?.legal_basis, forceAll)
+    ? (detail.legal_basis || [])
+    : (current?.legal_basis || []);
   const legal = await enrichLegalBasis({
     processName: proc,
     hazard: detail.hazard || rowHazard || '',
-    hazardSituation: detail.hazard_situation || '',
-    existingMeasure: detail.existing_measure || '',
-    improvementMeasure: detail.improvement_measure || '',
-    existing: detail.legal_basis || [],
+    hazardSituation: nextSituation,
+    existingMeasure: nextExisting,
+    improvementMeasure: nextImprove,
+    existing: existingLegal,
   });
+  const keepGrades = !forceAll && !shouldReplaceRiskField(current?.likelihood_grade, false);
   const { error: updErr } = await supabase
     .from('risk_items')
     .update({
       process: detail.process || proc,
       sub_task: detail.sub_task || subTask,
       hazard: detail.hazard || rowHazard || '',
-      hazard_situation: detail.hazard_situation || '',
-      existing_measure: detail.existing_measure,
-      improvement_measure: detail.improvement_measure,
-      frequency: detail.frequency,
-      severity: detail.severity,
-      improved_frequency: detail.improved_frequency,
-      improved_severity: detail.improved_severity,
-      likelihood_grade: lg,
-      severity_grade: sg,
-      risk_grade: detail.risk_grade || calculateRiskGrade(lg as any, sg as any),
-      improved_likelihood_grade: ilg,
-      improved_severity_grade: isg,
-      improved_risk_grade: detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any),
-      ppe: detail.ppe || [],
+      hazard_situation: nextSituation,
+      existing_measure: nextExisting,
+      improvement_measure: nextImprove,
+      frequency: keepGrades ? (current?.frequency ?? detail.frequency) : detail.frequency,
+      severity: keepGrades ? (current?.severity ?? detail.severity) : detail.severity,
+      improved_frequency: keepGrades ? (current?.improved_frequency ?? detail.improved_frequency) : detail.improved_frequency,
+      improved_severity: keepGrades ? (current?.improved_severity ?? detail.improved_severity) : detail.improved_severity,
+      likelihood_grade: keepGrades ? (current?.likelihood_grade || lg) : lg,
+      severity_grade: keepGrades ? (current?.severity_grade || sg) : sg,
+      risk_grade: keepGrades
+        ? (current?.risk_grade || detail.risk_grade || calculateRiskGrade(lg as any, sg as any))
+        : (detail.risk_grade || calculateRiskGrade(lg as any, sg as any)),
+      improved_likelihood_grade: keepGrades ? (current?.improved_likelihood_grade || ilg) : ilg,
+      improved_severity_grade: keepGrades ? (current?.improved_severity_grade || isg) : isg,
+      improved_risk_grade: keepGrades
+        ? (current?.improved_risk_grade || detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any))
+        : (detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any)),
+      ppe: nextPpe,
       legal_basis: legal,
       note: null,
     })
@@ -406,7 +446,28 @@ async function markRowFailed(
 }
 
 async function fillOneRow(
-  row: { id: string; sub_task: string | null; process: string | null; hazard?: string | null; hazard_situation?: string | null },
+  row: {
+    id: string;
+    sub_task: string | null;
+    process: string | null;
+    hazard?: string | null;
+    hazard_situation?: string | null;
+    existing_measure?: string | null;
+    improvement_measure?: string | null;
+    note?: string | null;
+    ppe?: string[] | null;
+    legal_basis?: string[] | null;
+    likelihood_grade?: string | null;
+    severity_grade?: string | null;
+    risk_grade?: string | null;
+    frequency?: number | null;
+    severity?: number | null;
+    improved_likelihood_grade?: string | null;
+    improved_severity_grade?: string | null;
+    improved_risk_grade?: string | null;
+    improved_frequency?: number | null;
+    improved_severity?: number | null;
+  },
   opts: AIGenerateOptions,
   budget?: LlmCallBudget,
 ): Promise<boolean> {
@@ -418,7 +479,7 @@ async function fillOneRow(
       undefined,
       budget,
     );
-    return await applyFilledDetail(row.id, proc, subTask, row.hazard, detail);
+    return await applyFilledDetail(row.id, proc, subTask, row.hazard, detail, row);
   } catch (err: any) {
     console.warn('[AutoGenJob] risk_row failed after retries:', subTask, err?.message || err);
     await markRowFailed(row, err);
@@ -883,7 +944,7 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
     const { data: drafts, error } = await supabase
       .from('risk_items')
       .select(
-        'id, process, sub_task, hazard, hazard_situation, existing_measure, improvement_measure, note, source_type, sort_order, project_id',
+        'id, process, sub_task, hazard, hazard_situation, existing_measure, improvement_measure, note, source_type, sort_order, project_id, ppe, legal_basis, likelihood_grade, severity_grade, risk_grade, frequency, severity, improved_likelihood_grade, improved_severity_grade, improved_risk_grade, improved_frequency, improved_severity',
       )
       .eq('run_id', targetRunId)
       .eq('is_deleted', false)
@@ -896,7 +957,7 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
       patch({
         status: 'error',
         error:
-          '채울 초안이 없습니다. 먼저 [공종 자동작성]으로 세부작업·위험요인 초안을 만든 뒤 다시 시도하세요. (이미 대책까지 채워진 행은 대상이 아닙니다)',
+          '채울 빈칸이 없습니다. 개선대책·보호구·법적근거가 이미 있는 행은 대상이 아닙니다. 비어 있으면 [나머지 채우기]가 다시 나타납니다.',
         message: '채울 초안 없음',
         phase: 'idle',
         pendingIds: [],
@@ -951,6 +1012,9 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
             draftItems: chunk.map((r) => ({
               sub_task: r.sub_task || '',
               hazard: r.hazard || '',
+              hazard_situation: r.hazard_situation || '',
+              existing_measure: r.existing_measure || '',
+              improvement_measure: r.improvement_measure || '',
             })),
           });
           const matched = matchFilledToDraft(filled, chunk);
@@ -969,6 +1033,7 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
                 row.sub_task || '',
                 row.hazard,
                 detail,
+                row,
               );
               if (ok) filledTotal += 1;
               else failed += 1;

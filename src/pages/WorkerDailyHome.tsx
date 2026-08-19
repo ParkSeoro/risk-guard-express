@@ -11,6 +11,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSystemRealtime } from "@/providers/SystemRealtimeProvider";
 import { calculateDistance } from "@/lib/geo/calculateDistance";
 import {
+  isInsideCheckInFence,
   resolveSiteCheckInFence,
   SITE_CHECKIN_MIN_M,
   type SiteTrackingFence,
@@ -42,12 +43,11 @@ import { toast } from "sonner";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { readActiveProjectId } from "@/lib/activeProject";
 
-const NO_ACCIDENT_PLEDGE =
-  "금일 무재해로 작업을 완료하였으며, 작업 중 사고·부상·아차사고가 없었음을 확인합니다. 이상 발생 시 즉시 관리감독자·안전관리자에게 보고하겠습니다.";
-const HEALTH_PLEDGE =
-  "현재 건강상태에 이상이 없으며, 발열·어지러움·흉통 등 작업에 지장이 있는 증상이 없음을 확인합니다. 이상 시 작업을 중단하고 보고하겠습니다.";
-const WORK_ACK_PLEDGE =
-  "오늘 배정된 작업내용과 위험요인·안전대책을 확인하였으며, 안전수칙·PPE를 준수하여 작업하겠습니다. 궁금한 사항은 작업 전 관리감독자에게 문의합니다.";
+import {
+  HEALTH_PLEDGE,
+  NO_ACCIDENT_PLEDGE,
+  WORK_ACK_PLEDGE,
+} from "@/lib/legal/dailyPledges";
 
 type EntryLog = {
   id: string;
@@ -63,6 +63,7 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
   const { projectId, setProjectId } = useActiveProject();
   /** One-shot / polled fix for check-in distance UI before full tracking starts. */
   const [probeFix, setProbeFix] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+  const [probeNonce, setProbeNonce] = useState(0);
   const [checkInFence, setCheckInFence] = useState<SiteTrackingFence | null>(null);
   const [projectName, setProjectName] = useState("");
   const [workerId, setWorkerId] = useState<string | null>(null);
@@ -101,9 +102,14 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
   }, [checkInFence, effectiveFix]);
 
   const withinCheckIn = useMemo(() => {
-    if (!checkInFence || !effectiveFix || distanceM == null) return false;
-    return distanceM <= checkInFence.radiusM;
-  }, [checkInFence, effectiveFix, distanceM]);
+    if (!checkInFence || !effectiveFix) return false;
+    return isInsideCheckInFence(
+      checkInFence,
+      effectiveFix.lat,
+      effectiveFix.lng,
+      effectiveFix.accuracy,
+    );
+  }, [checkInFence, effectiveFix]);
 
   const isCheckedIn = !!todayLog && !todayLog.exit_at;
   const checkedOut = !!todayLog?.exit_at;
@@ -194,29 +200,47 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
     }
   }, [isCheckedIn, ackDone]);
 
-  // One-shot check-in distance — do not poll (keeps the OS GPS icon on at home).
+  // Fresh high-accuracy probe for check-in. Stale coarse GPS (60s cache) was
+  // showing workers as outside while they stood on the pad. Watch briefly then stop.
   useEffect(() => {
     if (!projectId || isCheckedIn || gpsTracking) return;
     if (!("geolocation" in navigator)) return;
     let cancelled = false;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        if (cancelled) return;
-        setProbeFix({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-        });
-      },
-      () => {
-        /* ignore — UI stays on GPS 대기 */
-      },
-      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 12_000 },
-    );
+    let watchId: number | null = null;
+    const apply = (pos: GeolocationPosition) => {
+      if (cancelled) return;
+      const next = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy,
+      };
+      setProbeFix((prev) => {
+        if (!prev || next.accuracy <= prev.accuracy) return next;
+        return prev;
+      });
+    };
+    navigator.geolocation.getCurrentPosition(apply, () => undefined, {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 15_000,
+    });
+    watchId = navigator.geolocation.watchPosition(apply, () => undefined, {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 15_000,
+    });
+    const stop = window.setTimeout(() => {
+      if (watchId != null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+    }, 12_000);
     return () => {
       cancelled = true;
+      if (watchId != null) navigator.geolocation.clearWatch(watchId);
+      window.clearTimeout(stop);
     };
-  }, [projectId, isCheckedIn, gpsTracking]);
+  }, [projectId, isCheckedIn, gpsTracking, probeNonce]);
 
   const ensureConsentAndGps = async () => {
     const { setTrackingConsent } = await import("@/lib/tracking/locationTracker");
@@ -442,7 +466,13 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
             <MapPin className="h-4 w-4 text-emerald-600" />
             GPS · 출근{" "}
             {checkInFence
-              ? `${Math.round(checkInFence.radiusM)}m (${checkInFence.source === "site_map" ? "현장맵" : "주소핀"})`
+              ? `${Math.round(checkInFence.radiusM)}m (${
+                  checkInFence.source === "site_map"
+                    ? "현장맵"
+                    : checkInFence.source === "site_union"
+                      ? "현장맵+주소"
+                      : "주소핀"
+                })`
               : `${SITE_CHECKIN_MIN_M}m`}
           </div>
           <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
@@ -478,6 +508,19 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
                 ? `반경 ${Math.round(checkInFence.radiusM)}m 이내 — 출근 가능`
                 : "반경 밖 — 출근 비활성"}
           </Badge>
+          {!isCheckedIn && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setProbeFix(null);
+                setProbeNonce((n) => n + 1);
+              }}
+            >
+              내 위치 다시 잡기
+            </Button>
+          )}
           {!gpsTracking && (
             <Button
               size="sm"

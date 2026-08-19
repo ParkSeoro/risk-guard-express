@@ -28,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ShieldCheck, MapPin, FileText, ScrollText, Lock } from "lucide-react";
+import { ShieldCheck, MapPin, FileText, ScrollText, Lock, HeartPulse } from "lucide-react";
 import {
   hasCompletedNativePermissions,
   isNativeApp,
@@ -40,6 +40,7 @@ const ICONS: Record<ConsentDocId, typeof FileText> = {
   terms: ScrollText,
   location: MapPin,
   privacy: FileText,
+  health: HeartPulse,
   admin_security: Lock,
 };
 
@@ -102,6 +103,7 @@ export default function ConsentPage() {
             agreed_to_terms: true,
             agreed_to_privacy: true,
             agreed_to_location: true,
+            agreed_to_health: true,
             consent_agreed_at: now,
           };
 

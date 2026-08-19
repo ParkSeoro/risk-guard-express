@@ -387,7 +387,7 @@ const Auth = () => {
 
       toast({
         title: '근로자 가입 완료',
-        description: '등록대기 상태입니다. 관리자 승인 후 전화번호·PIN으로 로그인하세요.',
+        description: '바로 전화번호와 PIN으로 로그인하세요. 관리자 승인은 필요 없습니다.',
       });
       setMode('login');
       setLoginAudience('worker');
@@ -503,6 +503,13 @@ const Auth = () => {
             {mode === 'login' ? '로그인' : '회원가입'}
           </CardTitle>
           <p className="text-sm text-muted-foreground">안전관리시스템</p>
+          {(mode === 'signup' && signupAudience === 'worker') ||
+          (mode === 'login' && loginAudience === 'worker') ? (
+            <p className="text-xs text-muted-foreground leading-relaxed pt-1">
+              근로자 가입은 <span className="text-foreground font-medium">현장에서 받은 등록 QR</span>을
+              스캔해야 합니다. Play 스토어에서 설치만 해서는 가입할 수 없습니다.
+            </p>
+          ) : null}
         </CardHeader>
         <CardContent>
           {mode === 'signup' && (
@@ -602,7 +609,8 @@ const Auth = () => {
                   <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-2">
                     <p className="font-medium">현장 등록 QR이 필요합니다</p>
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      프로젝트와 소속사는 관리자가 만든 등록 QR로만 지정됩니다. QR을 스캔한 뒤 가입해 주세요.
+                      프로젝트와 소속사는 관리자가 만든 등록 QR로만 지정됩니다. 현장에서 받은 QR을 스캔한 뒤
+                      이름·전화·PIN을 입력해 주세요. 가입 후 바로 로그인됩니다.
                     </p>
                   </div>
                 )}

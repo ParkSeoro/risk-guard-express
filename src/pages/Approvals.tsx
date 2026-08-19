@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CheckCircle2, Clock, XCircle, FileCheck, MessageSquare, FileText, ExternalLink, Search, Inbox, Send, AlertTriangle } from "lucide-react";
-import { exportToPDF } from "@/lib/exportUtils";
+import { exportToPDFServer } from "@/lib/exportUtils";
 import { useMemo } from "react";
 import {
   APPROVAL_ENTITY_FILTER_OPTIONS,
@@ -449,24 +449,22 @@ const Approvals = () => {
   };
 
   const handleDownloadRunPDF = async (runId: string) => {
-    const run = runs.find(r => r.id === runId);
-    if (!run) return;
-    // Fetch full project info for PDF
-    const { data: proj } = await supabase.from('projects').select('*').eq('id', run.project_id).single();
-    if (!proj) return;
+    // Must open the window in the click gesture — then fill with generate-pdf HTML
+    // (jsPDF fallback has no Korean font and no approval signature table).
+    const printWindow = window.open('', '_blank', 'width=1100,height=800');
+    if (!printWindow) {
+      toast({
+        title: '팝업이 차단되었습니다',
+        description: '주소창의 팝업 아이콘에서 허용 후 다시 시도해 주세요.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    toast({ title: '인쇄용 문서 생성 중...' });
     try {
-      const { data: items } = await supabase.from('risk_items').select('*').eq('run_id', runId).order('sort_order');
-      const { data: parts } = await supabase.from('assessment_run_participants').select('*').eq('run_id', runId);
-      const rows = (items || []).filter((i: any) => !i.is_excluded).map(i => ({
-        ...i, sub_task: i.sub_task || '', hazard: i.hazard || '', hazard_situation: i.hazard_situation || '',
-        existing_measure: i.existing_measure || '', improvement_measure: i.improvement_measure || '',
-        likelihood_grade: i.likelihood_grade || '중', severity_grade: i.severity_grade || '중', risk_grade: i.risk_grade || '중',
-        improved_likelihood_grade: i.improved_likelihood_grade || '하', improved_severity_grade: i.improved_severity_grade || '하', improved_risk_grade: i.improved_risk_grade || '하',
-        ppe: i.ppe || [], legal_basis: i.legal_basis || [], department: i.department || '', assignee: i.assignee || '', note: i.note || '',
-      }));
-      exportToPDF(rows, { ...proj, period_start: proj.period_start || '', period_end: proj.period_end || '' } as any, null, parts || [], { type: run.type, period_label: run.period_label });
+      await exportToPDFServer(runId, 'assessment', 'print', printWindow);
     } catch (err) {
-      toast({ title: 'PDF 다운로드 실패', description: String(err), variant: 'destructive' });
+      toast({ title: 'PDF 생성 실패', description: String(err), variant: 'destructive' });
     }
   };
 

@@ -7,6 +7,7 @@ folder and opens the local operations UI once the health endpoint responds.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import socket
 import sys
@@ -83,9 +84,22 @@ def main() -> None:
         print(json.dumps({"config_path": str(config_path), "ui_url": f"http://127.0.0.1:{config.listen_port}"}))
         return
 
+    log_path = data_dir / "vision-edge.log"
+    logging.basicConfig(
+        filename=log_path,
+        encoding="utf-8",
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
     ui_url = f"http://127.0.0.1:{config.listen_port}"
     threading.Thread(target=wait_and_open, args=(ui_url,), daemon=True).start()
-    uvicorn.run(create_app(config, config_path), host=config.listen_host, port=config.listen_port, log_level="warning")
+    uvicorn.run(
+        create_app(config, config_path),
+        host=config.listen_host,
+        port=config.listen_port,
+        log_config=None,
+        access_log=False,
+    )
 
 
 if __name__ == "__main__":

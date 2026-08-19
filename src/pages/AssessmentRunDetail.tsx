@@ -100,6 +100,13 @@ import { buildAssessmentSignatureRows } from '@/lib/approvalSignatureRows';
 import { jobTitleLabel, localizePersonName } from '@/lib/jobTitleLabel';
 import { parseRiskAssessmentExcelFile } from '@/lib/riskExcelImport';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
+import { todayKst } from '@/lib/permitWorkDate';
+import {
+  isManagedResidualHigh,
+  pickPreviousApprovedRun,
+  resolveExecutionFeedbackTarget,
+  type WeeklyLinkRun,
+} from '@/lib/weeklyAssessmentLink';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
 
@@ -237,14 +244,23 @@ const AssessmentRunDetail = () => {
   const [showBatchApply, setShowBatchApply] = useState(false);
   
   // Feedback / Active tab
-  const [activeMainTab, setActiveMainTab] = useState<'assessment' | 'feedback'>(() =>
-    searchParams.get('tab') === 'feedback' ? 'feedback' : 'assessment',
+  const [activeMainTab, setActiveMainTab] = useState<'assessment' | 'execution' | 'forecast'>(() =>
+    searchParams.get('tab') === 'feedback' || searchParams.get('tab') === 'execution'
+      ? 'execution'
+      : searchParams.get('tab') === 'forecast'
+        ? 'forecast'
+        : 'assessment',
   );
 
   useEffect(() => {
-    if (searchParams.get('tab') === 'feedback') setActiveMainTab('feedback');
+    const tab = searchParams.get('tab');
+    if (tab === 'feedback' || tab === 'execution') setActiveMainTab('execution');
+    else if (tab === 'forecast') setActiveMainTab('forecast');
   }, [searchParams]);
   const [previousFeedback, setPreviousFeedback] = useState<any[]>([]);
+  const [previousRun, setPreviousRun] = useState<WeeklyLinkRun | null>(null);
+  const [previousItems, setPreviousItems] = useState<RiskItemRow[]>([]);
+  const [previousManagedCount, setPreviousManagedCount] = useState(0);
   const [batchDeptId, setBatchDeptId] = useState('');
   const [batchAssigneeUserId, setBatchAssigneeUserId] = useState('');
   const [batchScope, setBatchScope] = useState<'empty' | 'all' | 'selected'>('empty');
@@ -533,33 +549,49 @@ const AssessmentRunDetail = () => {
       }
     }
 
-    // Fetch previous run's unresolved feedback
-    if (runRes.data?.project_id) {
-      const { data: prevRuns } = await supabase
-        .from('assessment_runs')
-        .select('id')
-        .eq('project_id', runRes.data.project_id)
-        .eq('status', '승인완료')
-        .neq('id', runId!)
-        .order('created_at', { ascending: false })
-        .limit(1);
-      if (prevRuns && prevRuns.length > 0) {
-        const { data: prevFb } = await supabase
-          .from('risk_item_feedback' as any)
-          .select('*')
-          .eq('assessment_run_id', prevRuns[0].id)
-          .in('status', ['미조치', '진행중']);
-        setPreviousFeedback((prevFb || []) as any);
-      } else {
-        setPreviousFeedback([]);
-      }
-    }
-
     hasLoadedRef.current = true;
     setLoading(false);
   }, [runId, isMaster, userCompanyId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadWeeklyLink = async () => {
+      if (!runId || !run?.project_id) return;
+      const { data: candidates } = await supabase
+        .from('assessment_runs')
+        .select('id, project_id, type, status, start_date, end_date, created_at, target_company_ids, period_label, is_deleted, feedback_status')
+        .eq('project_id', run.project_id)
+        .eq('status', '승인완료')
+        .eq('is_deleted', false)
+        .neq('id', runId)
+        .order('created_at', { ascending: false })
+        .limit(80);
+      if (cancelled) return;
+      const previous = pickPreviousApprovedRun(run as WeeklyLinkRun, (candidates || []) as WeeklyLinkRun[]);
+      if (!previous) {
+        setPreviousRun(null);
+        setPreviousItems([]);
+        setPreviousFeedback([]);
+        setPreviousManagedCount(0);
+        return;
+      }
+      const [itemsRes, fbRes] = await Promise.all([
+        supabase.from('risk_items').select('*').eq('run_id', previous.id).eq('is_deleted', false).order('sort_order'),
+        supabase.from('risk_item_feedback' as any).select('*').eq('assessment_run_id', previous.id),
+      ]);
+      if (cancelled) return;
+      const prevItems = (itemsRes.data || []) as RiskItemRow[];
+      const prevFb = (fbRes.data || []) as any[];
+      setPreviousRun(previous);
+      setPreviousItems(prevItems);
+      setPreviousManagedCount(prevItems.filter((i) => isManagedResidualHigh(i)).length);
+      setPreviousFeedback(prevFb.filter((f) => f.status === '미조치' || f.status === '진행중'));
+    };
+    void loadWeeklyLink();
+    return () => { cancelled = true; };
+  }, [runId, run]);
 
   // 결재 반려/승인 시 작성자 화면이 즉시 작성·재상신 상태로 돌아오도록
   useEffect(() => {
@@ -726,9 +758,29 @@ const AssessmentRunDetail = () => {
   const canEdit = run && EDITABLE_STATUSES.includes(run.status);
   const canForceEdit = isApproved && isMasterOrCreator;
 
+  const todayKstValue = useMemo(() => todayKst(), []);
+  const executionRun = useMemo(() => {
+    if (!run) return null;
+    return resolveExecutionFeedbackTarget({
+      current: run as WeeklyLinkRun,
+      previous: previousRun,
+      today: todayKstValue,
+    });
+  }, [run, previousRun, todayKstValue]);
+  const executionIsPrevious = !!(executionRun && previousRun && executionRun.id === previousRun.id);
+  const executionApproved = executionRun?.status === '승인완료';
+  const executionFeedbackStatus = executionIsPrevious
+    ? (previousRun as any)?.feedback_status
+    : (run as any)?.feedback_status;
+
   // Only non-excluded items for display
   const activeItems = useMemo(() => (items || []).filter(i => !(i as any).is_excluded), [items]);
   const excludedItems = useMemo(() => (items || []).filter(i => (i as any).is_excluded), [items]);
+  const executionItems = executionIsPrevious ? previousItems : activeItems;
+  const forecastItems = useMemo(
+    () => activeItems.filter((i) => isManagedResidualHigh(i)),
+    [activeItems],
+  );
 
   const filteredItems = useMemo(() => {
     return (activeItems || []).filter(item => {
@@ -1683,7 +1735,9 @@ const AssessmentRunDetail = () => {
     }
     toast({ title: '인쇄용 HTML 생성 중...', description: '잠시 기다려주세요.' });
     try {
-      await exportToPDFServer(runId!, 'assessment', 'download');
+      await exportToPDFServer(runId!, 'assessment', 'download', undefined, {
+        previousRunId: previousRun?.id ?? null,
+      });
       log('PDF다운로드', 'assessment_run', runId!, run.project_id);
       toast({ title: '인쇄용 HTML이 다운로드되었습니다.', description: '파일을 열어 브라우저 인쇄 > PDF로 저장하세요.' });
     } catch (serverErr) {
@@ -1720,7 +1774,9 @@ const AssessmentRunDetail = () => {
     }
     toast({ title: '인쇄용 문서 생성 중...' });
     try {
-      await exportToPDFServer(runId!, 'assessment', 'print', printWindow);
+      await exportToPDFServer(runId!, 'assessment', 'print', printWindow, {
+        previousRunId: previousRun?.id ?? null,
+      });
     } catch (err) {
       toast({ title: '인쇄 실패', description: String(err), variant: 'destructive' });
     }
@@ -2559,13 +2615,57 @@ const AssessmentRunDetail = () => {
         </Card>
       )}
 
-      {/* Main Tabs: Assessment | Feedback */}
-      <Tabs value={activeMainTab} onValueChange={(v) => setActiveMainTab(v as 'assessment' | 'feedback')} className="print:hidden">
-        <TabsList>
+      {/* Main Tabs: 위평 | 금주 이행 | 차주 관리대상 */}
+      <Tabs value={activeMainTab} onValueChange={(v) => setActiveMainTab(v as 'assessment' | 'execution' | 'forecast')} className="print:hidden">
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="assessment">위험성평가</TabsTrigger>
-          {isApproved && <TabsTrigger value="feedback">피드백 관리</TabsTrigger>}
+          <TabsTrigger value="execution">
+            금주 이행 확인
+            {previousFeedback.length > 0 && (
+              <Badge variant="outline" className="ml-1 text-[9px]">{previousFeedback.length}</Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="forecast">
+            차주 관리대상
+            {forecastItems.length > 0 && (
+              <Badge variant="outline" className="ml-1 text-[9px]">{forecastItems.length}</Badge>
+            )}
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="assessment" className="space-y-4 mt-4">
+      {previousRun && (
+        <Card className="border-primary/30 print:hidden">
+          <CardContent className="py-3 space-y-1">
+            <div className="flex items-start justify-between gap-2 flex-wrap">
+              <div className="text-sm">
+                <span className="font-medium">전회차 = 금주 작업분</span>
+                <span className="text-muted-foreground">
+                  {' '}「{previousRun.period_label || '승인 회차'}」
+                  {previousRun.start_date && previousRun.end_date
+                    ? ` (${previousRun.start_date} ~ ${previousRun.end_date})`
+                    : ''}
+                </span>
+              </div>
+              <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setActiveMainTab('execution')}>
+                금주 이행 확인
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              관리대상 {previousManagedCount}건 · 미조치 {previousFeedback.length}건.
+              조치 전후 사진은 전회차에 저장되며 이 회차 위험 행과 섞이지 않습니다.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+      {!previousRun && !isApproved && (
+        <Card className="print:hidden">
+          <CardContent className="py-3">
+            <p className="text-[11px] text-muted-foreground">
+              같은 업체·같은 종류의 전회차(승인완료)가 없습니다. 이 회차가 첫 금주 작업분이 됩니다.
+            </p>
+          </CardContent>
+        </Card>
+      )}
       {/* Filters */}
       <Card className="print:hidden">
         <CardContent className="py-3">
@@ -2975,20 +3075,68 @@ const AssessmentRunDetail = () => {
       )}
 
         </TabsContent>
-        <TabsContent value="feedback" className="mt-4">
-          <FeedbackPanel
-            runId={runId!}
-            projectId={run.project_id}
-            isApproved={isApproved}
-            riskItems={activeItems.map(i => ({ id: i.id, process: i.process, sub_task: i.sub_task, hazard: i.hazard, risk_grade: i.risk_grade, improved_risk_grade: i.improved_risk_grade }))}
-            projectMembers={projectMembers}
-            previousFeedback={previousFeedback}
-            feedbackStatus={(run as any).feedback_status || 'none'}
-            submitterCompanyId={userCompanyId}
-            onFeedbackStatusChange={(status) => {
-              setRun((prev: any) => (prev ? { ...prev, feedback_status: status } : prev));
-            }}
-          />
+        <TabsContent value="execution" className="mt-4">
+          {executionRun ? (
+            <FeedbackPanel
+              runId={executionRun.id}
+              projectId={run.project_id}
+              isApproved={!!executionApproved}
+              riskItems={executionItems.map(i => ({ id: i.id, process: i.process, sub_task: i.sub_task, hazard: i.hazard, risk_grade: i.risk_grade, improved_risk_grade: i.improved_risk_grade }))}
+              projectMembers={projectMembers}
+              previousFeedback={executionIsPrevious ? [] : previousFeedback}
+              hidePreviousUnresolved={executionIsPrevious}
+              heading={executionIsPrevious
+                ? `금주 이행 확인 · 전회차 ${previousRun?.period_label || ''}`
+                : '금주 이행 확인'}
+              helperText={executionIsPrevious
+                ? '※ 이 화면의 차주 회차가 아니라, 전회차(금주 작업분)에 조치 전후 사진이 저장됩니다.'
+                : '※ 이 회차가 금주 작업분입니다. 다음 회차 작성 시 전회차로 연결됩니다.'}
+              feedbackStatus={executionFeedbackStatus || 'none'}
+              submitterCompanyId={userCompanyId}
+              onFeedbackStatusChange={(status) => {
+                if (executionIsPrevious) {
+                  setPreviousRun((prev) => (prev ? { ...prev, feedback_status: status } : prev));
+                } else {
+                  setRun((prev: any) => (prev ? { ...prev, feedback_status: status } : prev));
+                }
+              }}
+            />
+          ) : (
+            <Card>
+              <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                전회차가 없어 금주 이행 확인 대상이 없습니다. 이 회차가 승인되면 다음 회차에서 연결됩니다.
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+        <TabsContent value="forecast" className="mt-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">차주 고위험 관리대상 (조치 사진 없음)</CardTitle>
+              <p className="text-[11px] text-muted-foreground font-normal">
+                이 회차에서 개선 후에도 위험도 &apos;상&apos;인 항목입니다. 조치 전후 사진은 금주(전회차) 탭에만 있습니다.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {forecastItems.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-6">차주 관리대상(개선 후 상) 항목이 없습니다.</p>
+              ) : (
+                forecastItems.map((item, idx) => (
+                  <div key={item.id} className="rounded border p-2 text-xs space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">{idx + 1}.</span>
+                      <Badge variant="outline" className="text-[9px] text-destructive">상</Badge>
+                      <span className="font-medium">{item.process}</span>
+                    </div>
+                    <p className="text-muted-foreground">{item.sub_task || ''} {item.hazard ? `· ${item.hazard}` : ''}</p>
+                    {item.improvement_measure && (
+                      <p>개선대책: {item.improvement_measure}</p>
+                    )}
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
 

@@ -40,6 +40,7 @@ import {
 } from '@/lib/assessmentRunType';
 import { canCreateAssessmentRun, defaultAuthorUserId } from '@/lib/assessmentAuthor';
 import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
+import { pickPreviousApprovedRun, type WeeklyLinkRun } from '@/lib/weeklyAssessmentLink';
 
 const statusConfig: Record<string, { bg: string; text: string }> = {
   '작성중': { bg: 'bg-muted', text: 'text-muted-foreground' },
@@ -254,7 +255,13 @@ const AssessmentRuns = () => {
         return;
       }
 
-      toast({ title: '회차가 생성되었습니다.' });
+      const previous = pickPreviousApprovedRun(data as WeeklyLinkRun, (runs || []) as WeeklyLinkRun[]);
+      toast({
+        title: '회차가 생성되었습니다.',
+        description: previous
+          ? `전회차 「${previous.period_label || '승인 회차'}」의 금주 이행 확인이 연결됩니다.`
+          : '첫 회차입니다. 금주 이행은 이 회차 승인 후 다음 회차에서 연결됩니다.',
+      });
       setShowCreate(false);
       setForm(emptyAssessmentRunCreateForm(filterType, defaultAuthorUserId({ userId: user.id, role: projectRole })));
       setCreateError(null);

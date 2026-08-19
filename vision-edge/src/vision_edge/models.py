@@ -92,6 +92,7 @@ class LocalConfig(BaseModel):
     fleet_token_url: HttpUrl | None = None
     fleet_client_id: str | None = Field(default=None, min_length=3, max_length=255)
     master_public_key_path: str | None = None
+    enrollment_fleet_url: HttpUrl | None = None
     heartbeat_interval_seconds: int = Field(default=30, ge=5, le=3600)
     event_flush_interval_seconds: int = Field(default=10, ge=2, le=3600)
     ffprobe_timeout_seconds: int = Field(default=8, ge=1, le=120)

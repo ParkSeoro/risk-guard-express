@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import io
+import json
 import os
+import socket
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from uuid import uuid4
+from typing import Any
+from uuid import getnode, uuid4
 
 import httpx
+import qrcode  # type: ignore[import-untyped]
+import qrcode.image.svg  # type: ignore[import-untyped]
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -24,7 +32,7 @@ from .ai import Detection
 from .config import save_config
 from .fleet_client import FleetClient
 from .models import CameraConfig, LocalConfig, NvrConfig
-from .nvr import CameraMonitor, FfprobeStreamProbe, MjpegPreview
+from .nvr import CameraMonitor, FfprobeStreamProbe, MjpegPreview, OnvifDiscoverer
 from .runtime import EdgeRuntime
 from .secret_store import SecretStore
 from .security import MasterCommandVerifier
@@ -60,6 +68,20 @@ class CameraSetupRequest(BaseModel):
     stream_url: str = Field(min_length=8, max_length=2048)
     expected_fps: float = Field(default=10.0, ge=0.1, le=120.0)
     ai_profile: str = Field(default="ppe-standard-kr-v1", min_length=3, max_length=128)
+
+
+class QrOnboardingStartRequest(BaseModel):
+    fleet_base_url: str | None = Field(default=None, max_length=2048, pattern=r"^https://")
+    device_name: str | None = Field(default=None, min_length=2, max_length=120)
+
+
+class BootstrapKitClaimRequest(BaseModel):
+    kit: str = Field(min_length=20, max_length=16_384)
+    device_name: str | None = Field(default=None, min_length=2, max_length=120)
+
+
+class OnvifDiscoveryRequest(BaseModel):
+    timeout_seconds: int = Field(default=3, ge=1, le=8)
 
 
 def build_runtime(config: LocalConfig) -> EdgeRuntime:
@@ -113,7 +135,7 @@ def create_app(config: LocalConfig, config_path: Path | None = None) -> FastAPI:
 
     app = FastAPI(
         title="SafeNex Vision Edge",
-        version="0.2.0",
+        version="0.3.0",
         description="현장 NVR·AI CCTV의 보안 Edge Gateway",
         lifespan=lifespan,
         docs_url="/api/docs",
@@ -143,16 +165,18 @@ def create_app(config: LocalConfig, config_path: Path | None = None) -> FastAPI:
             )
         save_config(config_path, config)
 
-    @app.post("/api/v1/setup/fleet/pair", tags=["setup"], dependencies=[Depends(local_admin_guard)])
-    async def pair_with_fleet(payload: FleetPairRequest) -> dict[str, object]:
+    def ensure_unpaired() -> None:
         if config.fleet_token_url or config.identity.fleet_base_url:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="gateway is already paired; unpair through SafeNex administrator workflow",
             )
-        state_dir = Path(config.state_dir).expanduser().resolve()
-        credential_dir = state_dir / "credentials"
-        credential_dir.mkdir(parents=True, exist_ok=True)
+
+    def device_fingerprint() -> str:
+        source = f"{getnode()}:{socket.gethostname()}:{config.state_dir}".encode()
+        return hashlib.sha256(source).hexdigest()[:32]
+
+    def build_enrollment_csr() -> tuple[str, str]:
         private_key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
         private_pem = private_key.private_bytes(
             serialization.Encoding.PEM,
@@ -161,9 +185,69 @@ def create_app(config: LocalConfig, config_path: Path | None = None) -> FastAPI:
         ).decode("utf-8")
         csr = (
             x509.CertificateSigningRequestBuilder()
-            .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"vision-edge-{uuid4()}")]))
+            .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"vision-edge-{device_fingerprint()}-{uuid4()}")]))
             .sign(private_key, hashes.SHA256())
         )
+        return private_pem, csr.public_bytes(serialization.Encoding.PEM).decode("utf-8")
+
+    async def persist_enrollment(fleet_base_url: str, private_pem: str, enrollment: object) -> dict[str, str]:
+        required = {
+            "gateway_id",
+            "tenant_id",
+            "site_id",
+            "token_url",
+            "client_id",
+            "client_certificate_pem",
+            "ca_bundle_pem",
+            "master_public_key_pem",
+        }
+        if not isinstance(enrollment, dict) or not required.issubset(enrollment):
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="SafeNex enrollment response is incomplete")
+        values = {key: enrollment[key] for key in required}
+        if not all(isinstance(value, str) and value for value in values.values()):
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="SafeNex enrollment response is invalid")
+
+        state_dir = Path(config.state_dir).expanduser().resolve()
+        credential_dir = state_dir / "credentials"
+        credential_dir.mkdir(parents=True, exist_ok=True)
+        private_key_path = credential_dir / "gateway-client.key"
+        certificate_path = credential_dir / "gateway-client.crt"
+        ca_bundle_path = credential_dir / "fleet-ca.pem"
+        master_key_path = credential_dir / "master-ed25519-public.pem"
+        for path, content, mode in (
+            (private_key_path, private_pem, 0o600),
+            (certificate_path, values["client_certificate_pem"], 0o644),
+            (ca_bundle_path, values["ca_bundle_pem"], 0o644),
+            (master_key_path, values["master_public_key_pem"], 0o644),
+        ):
+            path.write_text(content, encoding="utf-8")
+            os.chmod(path, mode)
+
+        fleet_url = TypeAdapter(HttpUrl).validate_python(fleet_base_url)
+        config.identity.gateway_id = values["gateway_id"]
+        config.identity.tenant_id = values["tenant_id"]
+        config.identity.site_id = values["site_id"]
+        config.identity.fleet_base_url = fleet_url
+        config.enrollment_fleet_url = fleet_url
+        config.certificate_path = str(certificate_path)
+        config.private_key_path = str(private_key_path)
+        config.ca_bundle_path = str(ca_bundle_path)
+        config.fleet_token_url = values["token_url"]
+        config.fleet_client_id = values["client_id"]
+        config.master_public_key_path = str(master_key_path)
+        persist_local_config()
+        await runtime.reconfigure_fleet()
+        return {
+            "gateway_id": config.identity.gateway_id,
+            "site_id": config.identity.site_id,
+            "status": "paired",
+            "fleet_base_url": str(config.identity.fleet_base_url),
+        }
+
+    @app.post("/api/v1/setup/fleet/pair", tags=["setup"], dependencies=[Depends(local_admin_guard)])
+    async def pair_with_fleet(payload: FleetPairRequest) -> dict[str, str]:
+        ensure_unpaired()
+        private_pem, csr_pem = build_enrollment_csr()
         claim_url = f"{payload.fleet_base_url.rstrip('/')}/v1/gateway-pairings/claim"
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(connect=8.0, read=20.0, write=20.0, pool=8.0)) as client:
@@ -172,8 +256,9 @@ def create_app(config: LocalConfig, config_path: Path | None = None) -> FastAPI:
                     json={
                         "pairing_code": payload.pairing_code,
                         "device_name": payload.device_name,
-                        "csr_pem": csr.public_bytes(serialization.Encoding.PEM).decode("utf-8"),
+                        "csr_pem": csr_pem,
                         "requested_at": datetime.now(UTC).isoformat(),
+                        "device_fingerprint": device_fingerprint(),
                     },
                 )
         except httpx.HTTPError as exc:
@@ -183,58 +268,159 @@ def create_app(config: LocalConfig, config_path: Path | None = None) -> FastAPI:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"SafeNex pairing rejected: {response.status_code}",
             )
-        try:
-            enrollment = response.json()
-            required = {
-                "gateway_id",
-                "tenant_id",
-                "site_id",
-                "token_url",
-                "client_id",
-                "client_certificate_pem",
-                "ca_bundle_pem",
-                "master_public_key_pem",
-            }
-            response_is_valid = isinstance(enrollment, dict) and required.issubset(enrollment)
-            content_is_valid = response_is_valid and all(
-                isinstance(enrollment[key], str) and enrollment[key] for key in required
+        return await persist_enrollment(payload.fleet_base_url, private_pem, response.json())
+
+    onboarding_session: dict[str, Any] | None = None
+
+    def enrollment_url(requested_url: str | None) -> str:
+        configured = str(config.enrollment_fleet_url) if config.enrollment_fleet_url else None
+        fleet_url = requested_url or configured
+        if not fleet_url:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Fleet onboarding URL is not configured; install a SafeNex provisioning kit or enter the Fleet URL once",
             )
-            if not content_is_valid:
-                raise ValueError("pairing response is incomplete")
-        except (ValueError, TypeError) as exc:
-            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="SafeNex pairing response is invalid") from exc
+        TypeAdapter(HttpUrl).validate_python(fleet_url)
+        return fleet_url.rstrip("/")
 
-        private_key_path = credential_dir / "gateway-client.key"
-        certificate_path = credential_dir / "gateway-client.crt"
-        ca_bundle_path = credential_dir / "fleet-ca.pem"
-        master_key_path = credential_dir / "master-ed25519-public.pem"
-        for path, content, mode in (
-            (private_key_path, private_pem, 0o600),
-            (certificate_path, enrollment["client_certificate_pem"], 0o644),
-            (ca_bundle_path, enrollment["ca_bundle_pem"], 0o644),
-            (master_key_path, enrollment["master_public_key_pem"], 0o644),
-        ):
-            path.write_text(content, encoding="utf-8")
-            os.chmod(path, mode)
+    def qr_data_uri(verification_uri: str) -> str:
+        image = qrcode.make(verification_uri, image_factory=qrcode.image.svg.SvgPathImage)
+        buffer = io.BytesIO()
+        image.save(buffer)
+        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        return f"data:image/svg+xml;base64,{encoded}"
 
-        fleet_url = TypeAdapter(HttpUrl).validate_python(payload.fleet_base_url)
-        config.identity.gateway_id = enrollment["gateway_id"]
-        config.identity.tenant_id = enrollment["tenant_id"]
-        config.identity.site_id = enrollment["site_id"]
-        config.identity.fleet_base_url = fleet_url
-        config.certificate_path = str(certificate_path)
-        config.private_key_path = str(private_key_path)
-        config.ca_bundle_path = str(ca_bundle_path)
-        config.fleet_token_url = enrollment["token_url"]
-        config.fleet_client_id = enrollment["client_id"]
-        config.master_public_key_path = str(master_key_path)
-        persist_local_config()
-        await runtime.reconfigure_fleet()
+    @app.post("/api/v1/setup/onboarding/qr/start", tags=["onboarding"], dependencies=[Depends(local_admin_guard)])
+    async def start_qr_onboarding(payload: QrOnboardingStartRequest) -> dict[str, object]:
+        nonlocal onboarding_session
+        ensure_unpaired()
+        fleet_url = enrollment_url(payload.fleet_base_url)
+        device_name = payload.device_name or socket.gethostname()
+        private_pem, csr_pem = build_enrollment_csr()
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(connect=8.0, read=20.0, write=20.0, pool=8.0)) as client:
+                response = await client.post(
+                    f"{fleet_url}/v1/gateway-device-authorizations",
+                    json={
+                        "device_name": device_name,
+                        "device_fingerprint": device_fingerprint(),
+                        "csr_pem": csr_pem,
+                        "requested_at": datetime.now(UTC).isoformat(),
+                    },
+                )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"SafeNex QR onboarding request failed: {exc}",
+            ) from exc
+        if response.status_code >= 400:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="SafeNex QR onboarding was rejected")
+        authorization = response.json()
+        required = {"authorization_id", "user_code", "verification_uri", "expires_in", "interval"}
+        if not isinstance(authorization, dict) or not required.issubset(authorization):
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="SafeNex QR onboarding response is invalid")
+        if not all(isinstance(authorization[key], (str, int)) for key in required):
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="SafeNex QR onboarding response is invalid")
+        expires_in = authorization["expires_in"]
+        interval = authorization["interval"]
+        if not isinstance(expires_in, int) or not isinstance(interval, int) or expires_in < 30 or interval < 3:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="SafeNex QR onboarding timing is invalid")
+        verification_uri = authorization.get("verification_uri_complete", authorization["verification_uri"])
+        if not isinstance(verification_uri, str) or not verification_uri.startswith("https://"):
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="SafeNex verification URL is invalid")
+        expires_at = datetime.now(UTC) + timedelta(seconds=expires_in)
+        onboarding_session = {
+            "authorization_id": authorization["authorization_id"],
+            "fleet_url": fleet_url,
+            "private_pem": private_pem,
+            "device_name": device_name,
+            "expires_at": expires_at,
+            "interval_seconds": interval,
+            "status": "approval_pending",
+        }
         return {
-            "gateway_id": config.identity.gateway_id,
-            "site_id": config.identity.site_id,
-            "status": "paired",
-            "fleet_base_url": str(config.identity.fleet_base_url),
+            "status": "approval_pending",
+            "authorization_id": authorization["authorization_id"],
+            "user_code": authorization["user_code"],
+            "verification_uri": authorization["verification_uri"],
+            "qr_svg_data_uri": qr_data_uri(verification_uri),
+            "expires_at": expires_at.isoformat(),
+            "poll_after_seconds": interval,
+            "device_fingerprint": device_fingerprint(),
+        }
+
+    @app.get("/api/v1/setup/onboarding/status", tags=["onboarding"], dependencies=[Depends(local_admin_guard)])
+    async def qr_onboarding_status() -> dict[str, object]:
+        nonlocal onboarding_session
+        if onboarding_session is None:
+            return {"status": "not_started"}
+        expires_at = onboarding_session["expires_at"]
+        if not isinstance(expires_at, datetime) or datetime.now(UTC) >= expires_at:
+            onboarding_session = None
+            return {"status": "expired"}
+        if onboarding_session["status"] == "paired":
+            return {"status": "paired", "gateway_id": config.identity.gateway_id, "site_id": config.identity.site_id}
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(connect=8.0, read=20.0, write=20.0, pool=8.0)) as client:
+                response = await client.post(
+                    f"{onboarding_session['fleet_url']}/v1/gateway-device-authorizations/{onboarding_session['authorization_id']}/poll",
+                    json={"device_fingerprint": device_fingerprint()},
+                )
+        except httpx.HTTPError:
+            return {"status": "approval_pending", "retryable": True, "expires_at": expires_at.isoformat()}
+        if response.status_code == status.HTTP_202_ACCEPTED:
+            return {"status": "approval_pending", "expires_at": expires_at.isoformat()}
+        if response.status_code >= 400:
+            onboarding_session = None
+            return {"status": "rejected"}
+        result = await persist_enrollment(
+            str(onboarding_session["fleet_url"]),
+            str(onboarding_session["private_pem"]),
+            response.json(),
+        )
+        onboarding_session["status"] = "paired"
+        return {key: value for key, value in result.items()}
+
+    @app.post("/api/v1/setup/onboarding/kit/claim", tags=["onboarding"], dependencies=[Depends(local_admin_guard)])
+    async def claim_bootstrap_kit(payload: BootstrapKitClaimRequest) -> dict[str, str]:
+        ensure_unpaired()
+        try:
+            encoded_payload = payload.kit.split(".", 1)[0]
+            padded = encoded_payload + "=" * (-len(encoded_payload) % 4)
+            kit_body = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+            fleet_url = enrollment_url(kit_body["fleet_base_url"])
+            bootstrap_token = kit_body["bootstrap_token"]
+            if not isinstance(bootstrap_token, str) or len(bootstrap_token) < 16:
+                raise ValueError("invalid bootstrap token")
+        except (KeyError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="provisioning kit format is invalid") from exc
+        private_pem, csr_pem = build_enrollment_csr()
+        device_name = payload.device_name or socket.gethostname()
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(connect=8.0, read=20.0, write=20.0, pool=8.0)) as client:
+                response = await client.post(
+                    f"{fleet_url}/v1/gateway-bootstrap/claim",
+                    json={
+                        "kit": payload.kit,
+                        "device_name": device_name,
+                        "device_fingerprint": device_fingerprint(),
+                        "csr_pem": csr_pem,
+                        "requested_at": datetime.now(UTC).isoformat(),
+                    },
+                )
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"SafeNex kit claim failed: {exc}") from exc
+        if response.status_code >= 400:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="SafeNex provisioning kit was rejected")
+        return await persist_enrollment(fleet_url, private_pem, response.json())
+
+    @app.post("/api/v1/setup/discovery/onvif", tags=["onboarding"], dependencies=[Depends(local_admin_guard)])
+    async def discover_onvif(payload: OnvifDiscoveryRequest) -> dict[str, object]:
+        candidates = await asyncio.to_thread(OnvifDiscoverer().discover, payload.timeout_seconds)
+        return {
+            "scope": "local-lan-only",
+            "candidates": [candidate.as_dict() for candidate in candidates],
+            "next_step": "select a discovered NVR and enter its administrator credential once to enumerate camera profiles",
         }
 
     @app.post("/api/v1/setup/nvrs", tags=["setup"], dependencies=[Depends(local_admin_guard)])

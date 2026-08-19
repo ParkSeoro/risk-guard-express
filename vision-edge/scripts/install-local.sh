@@ -41,5 +41,7 @@ sudo install -m 0644 "$INSTALL_DIR/systemd/safenex-vision-edge.service" /etc/sys
 sudo systemctl daemon-reload
 sudo systemctl enable safenex-vision-edge.service
 
-echo "Installation complete. Before start, set certificate paths, Fleet endpoints and NVR camera secret references."
-echo "Then run: sudo systemctl start safenex-vision-edge && sudo systemctl status safenex-vision-edge"
+echo "Installation complete. The Gateway starts in unpaired local-safe mode."
+echo "Start it with: sudo systemctl start safenex-vision-edge && sudo systemctl status safenex-vision-edge"
+echo "Then use the local Console QR approval or a SafeNex Provisioning Kit to enroll this host."
+echo "Do not put RTSP URLs, NVR passwords, or Gateway private keys in vision-edge.json."

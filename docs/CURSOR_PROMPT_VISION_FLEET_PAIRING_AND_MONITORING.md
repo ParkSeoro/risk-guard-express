@@ -1,69 +1,103 @@
-# Cursor 실행 프롬프트 — SafeNex Vision Fleet 페어링·웹·모바일 관제
+# Cursor 실행 프롬프트 — SafeNex Vision Fleet 전국 확장
 
-> 이 문서를 Cursor에게 그대로 전달해 SafeNex 웹·모바일 영역만 구현한다. 현장 NVR Gateway의 `vision-edge` 모듈은 별도 프로그램이며, 웹 앱은 RTSP·NVR 비밀번호·원본 카메라 스트림에 직접 접속해서는 안 된다.
+> **작업 경계:** 이 문서를 Cursor에 그대로 전달하여 SafeNex의 웹·모바일·Supabase 영역만 구현한다. `vision-edge/` Gateway 코드, 현장 PC 파일, NVR, RTSP 연결 방식을 변경하지 않는다. 웹·모바일은 원본 영상, RTSP 주소, NVR 비밀번호, Gateway private key에 접속하거나 저장할 수 없다.
 
-## 목표
+## 1. 제품 목표
 
-SafeNex 관리자가 웹 또는 스마트폰에서 전국 현장의 Vision Edge Gateway를 등록하고, **일회용 페어링 코드**로 현장 프로그램을 회사·현장에 안전하게 연결할 수 있게 구현한다. 연결 후 웹은 Gateway 상태, 카메라 메타데이터, AI 안전 이벤트, 확인·조치 이력, 승인된 정책 배포 상태를 보여 준다. 일반 사용자는 복잡한 인증서 경로·토큰 URL·비밀값을 입력하지 않아야 한다.
+SafeNex Vision Fleet을 수십~수백 현장으로 확장한다. 현장 사용자가 Fleet URL·긴 pairing code·NVR IP를 반복 입력하지 않도록, 아래 **C형 혼합 온보딩**을 기본 제품 모델로 구현한다.
 
-## 절대 지켜야 할 경계
+| 흐름 | 대상 | 현장 경험 | 중앙 운영 목적 |
+|---|---|---|---|
+| **QR 현장 승인** | 신규·소규모·예외 설치 | Vision Edge Console의 QR을 스마트폰 SafeNex에서 스캔하고 현장만 확인·승인 | 설치자와 현장 귀속을 명확히 감사 |
+| **Provisioning Kit 자동 등록** | 본사 일괄 배포, Intune/GPO/USB 설치 | 현장 프로그램에서 1회용 키트 파일 선택 또는 silent install로 지정 현장에 즉시 등록 | 대량 배포·만료·폐기·재발급을 통제 |
+| **현장 LAN 자동 찾기** | QR/키트 등록 뒤 NVR 연결 | Gateway가 ONVIF NVR 후보를 찾고 사용자는 후보 확인 후 읽기 전용 등록 | 중앙이 LAN에 직접 접근하지 않음 |
 
-1. 브라우저·모바일 앱은 RTSP/RTSPS URL, NVR 비밀번호, Gateway 개인 키, mTLS PFX/PEM에 접근하지 않는다.
-2. NVR 녹화·삭제·카메라 설정 변경 API를 웹에서 호출하지 않는다.
-3. Gateway는 현장에서 outbound HTTPS만 만들며, Master가 현장 PC/NVR로 직접 접속하는 인바운드 경로를 만들지 않는다.
-4. 회사·현장 범위는 현재 SafeNex의 `company_id`/프로젝트 접근 SSOT와 RLS에 반드시 결합한다. 플랫폼 마스터만 전국 조회가 가능하며, 회사 관리자·현장 관리자는 자기 범위만 본다.
-5. 고소작업 안전고리·카라비너 관련 AI 이벤트는 자동 확정 위반이 아닌 **`requires_human_review=true` 확인 필요**로 표시한다.
+> 중앙 SafeNex는 현장 NVR이나 PC로 인바운드 접속하지 않는다. Gateway가 outbound HTTPS로 중앙에 연결하고, NVR 탐색·자격증명·RTSP 처리는 현장 PC 안에서만 수행한다.
 
-## 사용자 흐름: 3분 현장 연결
+## 2. 절대 보안·권한 경계
 
-### A. SafeNex 웹의 관리자
+1. 웹·모바일·Supabase 일반 테이블·로그에 RTSP/RTSPS URL, NVR 비밀번호, Gateway private key, mTLS 인증서 전문, bootstrap raw token을 보관하거나 표시하지 않는다.
+2. Gateway는 local encrypted store에만 원본 stream credential을 보관한다. 중앙에는 Gateway ID, 장비 메타데이터, 카메라 표시명·AI 프로필·health, AI 이벤트만 보낸다.
+3. NVR 녹화·삭제·사용자·네트워크·펌웨어·카메라 설정을 수정하는 API를 만들지 않는다. ONVIF는 discovery와 읽기 전용 metadata/profile 조회에만 쓴다.
+4. 모든 중앙 write API는 기존 `company_id`/프로젝트 접근 SSOT와 RLS를 사용한다. 플랫폼 마스터만 전국 조회가 가능하며, 회사·현장 관리자는 자기 범위 밖 Gateway·키트·이벤트를 볼 수 없다.
+5. QR 승인, 키트 발급·claim, 인증서 발급, 코드 취소, 정책 rollout, 이벤트 조치는 `actor_id`, `company_id`, `site_id`, `gateway_id`, `request_id`, 시각, 결과를 audit ledger에 기록한다.
+6. 안전고리·카라비너·고소작업 관련 AI 감지는 자동 확정 위반이 아니다. `requires_human_review=true` 배지와 확인·조치 흐름을 유지한다.
 
-1. `관리자 > Vision Fleet > Gateway 추가`를 연다.
-2. 회사를 선택하고, 권한 범위 안의 현장/프로젝트를 선택한다.
-3. 표시 이름(예: `A동 NVR-01`)을 입력한다.
-4. 시스템은 10분 뒤 만료되는 단 한 번 사용 가능한 pairing code를 생성한다. 웹은 다음을 크게 보여 준다.
-   - Fleet 주소: `https://<safenex-host>/vision-fleet`
-   - 페어링 코드
-   - 만료 시각·상태·재생성 버튼
-5. 현장 사용자에게 Fleet 주소와 코드를 전달한다. QR은 주소·코드만 담고 인증서·비밀값은 담지 않는다.
+## 3. Gateway가 이미 제공하는 로컬 UX
 
-### B. 현장 Vision Edge 프로그램
+현장 Windows 프로그램은 외부 Chrome/Edge를 열지 않고 독립 Console 창으로 실행된다. Agent는 별도 지속 실행 프로세스로 AI·NVR health·이벤트 spool·Fleet heartbeat를 수행한다. Console의 `설정 · SafeNex 연동` 첫 화면에는 다음 세 가지 동선이 있다.
 
-1. 앱의 `설정 · 연동` 화면에서 Fleet 주소, pairing code, 이 현장 PC 이름을 입력한다.
-2. Gateway는 로컬에서 RSA 3072 개인 키와 CSR을 생성한다. 개인 키는 현장 PC를 떠나지 않는다.
-3. Gateway는 아래 Claim API를 HTTPS로 호출한다.
-4. Master가 인증서를 반환하면 Gateway는 안전한 로컬 저장 경로에만 인증서·CA·Master Ed25519 공개키를 보관하고, 바로 heartbeat·이벤트·desired-state 동기화를 시작한다.
-5. 웹의 Gateway 상태는 `Pairing code issued → Paired → Online/Degraded/Offline`으로 갱신된다.
+| Console 동작 | Gateway 로컬 API | 중앙 SafeNex가 제공해야 할 API |
+|---|---|---|
+| QR로 현장 연결 시작 | `POST /api/v1/setup/onboarding/qr/start` | `POST /vision-fleet/v1/gateway-device-authorizations` |
+| QR 승인 상태 확인 | `GET /api/v1/setup/onboarding/status` | `POST /vision-fleet/v1/gateway-device-authorizations/{authorization_id}/poll` |
+| Provisioning Kit 자동 등록 | `POST /api/v1/setup/onboarding/kit/claim` | `POST /vision-fleet/v1/gateway-bootstrap/claim` |
+| NVR 자동 찾기 | `POST /api/v1/setup/discovery/onvif` | 없음 — 현장 LAN 내부만 사용 |
 
-## Gateway Claim API — 반드시 이 계약을 구현
+## 4. 중앙 API 계약 — 반드시 구현
 
-현장 프로그램은 이미 아래 endpoint를 호출하도록 구현되어 있다.
+### 4.1 QR Device Authorization 생성
 
-### `POST /vision-fleet/v1/gateway-pairings/claim`
+`POST /vision-fleet/v1/gateway-device-authorizations`
 
-**인증:** pairing code 자체가 단일 사용 비밀이며 HTTPS가 필수다. 이 endpoint는 사용자의 브라우저 세션을 요구하지 않는다.
-
-**Request**
+이 endpoint는 인증 전 Gateway가 outbound HTTPS로 호출한다. 일반 브라우저 세션은 요구하지 않으며, 강한 rate limit과 abuse telemetry를 적용한다.
 
 ```json
 {
-  "pairing_code": "J9dYQ7Kp-2uVf8mN",
   "device_name": "A동 NVR-01",
+  "device_fingerprint": "32-char-sha256-prefix",
   "csr_pem": "-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----\n",
-  "requested_at": "2026-08-19T09:00:00+00:00"
+  "requested_at": "2026-08-19T10:00:00+00:00"
 }
 ```
 
-**서버 검증:** pairing code는 해시로만 저장한다. 만료 여부, 1회 사용 여부, 회사·현장 귀속 상태, CSR PEM 형식과 공개키 길이를 검증한다. 성공 시 코드 소비와 Gateway 생성은 트랜잭션으로 원자 처리한다. raw code·CSR·인증서 전문을 애플리케이션 로그에 남기지 않는다.
+성공 시 `201`을 반환한다. `authorization_id`는 추측 불가능한 UUID/ULID이고, `user_code`는 사람이 화면에서 비교할 수 있는 짧은 코드다. `verification_uri_complete`는 QR에만 넣으며, Console은 `user_code`를 별도로 표시한다.
 
-**Success Response `201`**
+```json
+{
+  "authorization_id": "gda_01J...",
+  "user_code": "KOREA-42",
+  "verification_uri": "https://safenex.example.com/vision/approve-device",
+  "verification_uri_complete": "https://safenex.example.com/vision/approve-device?session=opaque",
+  "expires_in": 600,
+  "interval": 5
+}
+```
+
+### 4.2 QR 승인 화면과 모바일 흐름
+
+`/vision/approve-device`는 로그인한 SafeNex 사용자만 볼 수 있다. QR link의 opaque session을 서버에서 검증하고 다음 정보를 크게 표시한다.
+
+- Gateway 표시 이름과 device fingerprint 앞 6~8자리
+- 요청 시간, 만료 시각, 회사·현장 선택 UI
+- Console에 보인 user code와 일치 여부를 사용자가 확인하는 입력/확인 UI
+- `승인`, `거절` 버튼 및 이유 입력
+
+승인 권한은 플랫폼 마스터, 회사 관리자, 해당 현장/프로젝트의 Vision Fleet 관리 권한 보유자로 제한한다. 승인 전 사용자에게 **승인하면 이 현장 Gateway가 선택 현장의 상태·AI 이벤트·승인 정책을 동기화한다**는 설명을 표시한다. QR link만으로 자동 승인하면 안 된다.
+
+### 4.3 QR 상태 Poll과 mTLS Enrollment
+
+`POST /vision-fleet/v1/gateway-device-authorizations/{authorization_id}/poll`
+
+```json
+{ "device_fingerprint": "32-char-sha256-prefix" }
+```
+
+| 상태 | HTTP | 응답 규칙 |
+|---|---:|---|
+| 승인 대기 | `202` | 빈 body 또는 `{ "status": "authorization_pending" }` |
+| 승인 완료 | `201` | 아래 enrollment payload |
+| 거절·만료·소비 | `422` | 세부 사유는 Gateway에 과도하게 노출하지 않음 |
+| 과도한 poll | `429` | `Retry-After`와 audit event |
+
+성공 enrollment payload는 기존 수동 pairing claim과 **동일한 정확한 필드**를 포함해야 한다.
 
 ```json
 {
   "gateway_id": "gw_01J...",
   "tenant_id": "company_uuid",
   "site_id": "project_uuid",
-  "token_url": "https://<safenex-host>/vision-fleet/oauth/token",
+  "token_url": "https://safenex.example.com/vision-fleet/oauth/token",
   "client_id": "gw_01J...",
   "client_certificate_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
   "ca_bundle_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
@@ -71,71 +105,130 @@ SafeNex 관리자가 웹 또는 스마트폰에서 전국 현장의 Vision Edge 
 }
 ```
 
-**오류:** 잘못됨/만료/이미 사용됨은 세부 사유를 공개하지 않고 `422`로 처리한다. rate limit을 적용하며 동일 source에서 짧은 시간 반복 claim은 `429`로 차단한다. 인증서 서명용 CA 개인 키는 일반 프론트엔드 번들·DB 행·클라이언트 코드에 둘 수 없다. 서버 전용 비밀관리 경로에서만 사용한다.
+서버는 CSR 형식·RSA 공개키 강도·device fingerprint·승인 scope를 확인하고, 인증서 subject/client ID와 `gateway_id`를 1:1로 바인딩한다. 인증서 CA private key는 Supabase client, Edge Function browser bundle, 일반 DB 테이블에 두지 말고 서버 전용 secret management에서만 접근한다.
 
-## 페어링 이후 Gateway API
+### 4.4 Provisioning Kit 발급
 
-Gateway가 mTLS client-credentials token을 받도록 구현한다. access token은 짧게(예: 5분) 유지하고 다음 scope만 부여한다.
+`POST /vision-fleet/v1/provisioning-kits`
 
-| 기능 | Gateway → Master endpoint | 최소 scope |
+웹 관리자 Wizard에서 회사·현장·표시명 prefix·설치 수·정책 그룹·만료 시각을 설정한다. 중앙은 짧은 수명의 one-time bootstrap token을 포함한 **서명된 opaque kit**을 생성하여 `.safenex-kit` 다운로드로 제공한다. browser localStorage에는 raw token을 저장하지 않고, 발급 뒤 재다운로드가 필요하면 새 kit을 발급한다.
+
+Kit payload에는 최소한 `fleet_base_url`, `bootstrap_token`, `kit_id`, `company_id`, `site_id`, `expires_at`, `max_claims`, `policy_group`, `signature`가 필요하다. Gateway는 첫 base64url payload에서 `fleet_base_url`과 `bootstrap_token` 형식을 읽을 수 있지만, **신뢰 판단은 반드시 중앙 claim endpoint가 서명·만료·소비 상태를 검증한 뒤에만** 한다.
+
+```json
+{
+  "company_id": "company_uuid",
+  "site_id": "project_uuid",
+  "display_name_prefix": "A동-NVR",
+  "max_claims": 5,
+  "expires_at": "2026-08-26T00:00:00Z",
+  "policy_group": "construction-ppe-v1"
+}
+```
+
+### 4.5 Provisioning Kit Claim
+
+`POST /vision-fleet/v1/gateway-bootstrap/claim`
+
+```json
+{
+  "kit": "base64url(payload).base64url(signature)",
+  "device_name": "A동 NVR-01",
+  "device_fingerprint": "32-char-sha256-prefix",
+  "csr_pem": "-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----\n",
+  "requested_at": "2026-08-19T10:00:00+00:00"
+}
+```
+
+이 endpoint는 Kit의 서명, `kid`, 만료, 폐기 여부, one-time token hash, `max_claims`, 현장 귀속, CSR, device fingerprint policy를 모두 검사한다. 성공 시 token consume·Gateway 생성·인증서 발급·audit log를 하나의 transaction으로 처리하고, **4.3과 동일한 enrollment payload**를 `201`으로 반환한다. 실패는 raw token/서명 상태를 유추할 수 없게 `422`로 통일한다.
+
+관리자는 `POST /vision-fleet/v1/provisioning-kits/{id}/revoke`로 미사용 Kit을 즉시 폐기할 수 있어야 하며, 폐기 후 claim은 거부해야 한다. 발급·다운로드·claim·폐기는 감사 로그와 Gateway detail에 표시한다.
+
+### 4.6 기존 수동 pairing fallback
+
+기존 Gateway는 다음 endpoint도 계속 호출할 수 있다. QR/Kit을 우선 UX로 배치하되, 현장 네트워크/정책 문제 복구용으로 제거하지 않는다.
+
+`POST /vision-fleet/v1/gateway-pairings/claim`
+
+```json
+{
+  "pairing_code": "J9dYQ7Kp-2uVf8mN",
+  "device_name": "A동 NVR-01",
+  "device_fingerprint": "32-char-sha256-prefix",
+  "csr_pem": "-----BEGIN CERTIFICATE REQUEST-----\n...\n-----END CERTIFICATE REQUEST-----\n",
+  "requested_at": "2026-08-19T10:00:00+00:00"
+}
+```
+
+응답은 동일 enrollment payload다. pairing raw code는 salted hash로만 저장하고, 10분 내외 만료·단일 사용·rate limit·취소·감사 로그를 적용한다.
+
+## 5. Gateway 이후 Fleet API와 대규모 운영
+
+mTLS client credential과 인증서 subject/client ID가 URL의 `gateway_id`와 일치해야 한다. Gateway에는 `gateway.heartbeat`, `gateway.events`, `gateway.state:read`, `gateway.commands:ack` 최소 scope만 발급한다.
+
+| 목적 | Gateway → Master endpoint | 중앙 처리 원칙 |
 |---|---|---|
-| 상태 heartbeat | `POST /vision-fleet/v1/gateways/{gateway_id}/heartbeats` | `gateway.heartbeat` |
-| AI/장비 이벤트 | `POST /vision-fleet/v1/gateways/{gateway_id}/events:batch` | `gateway.events` |
-| 승인 정책 조회 | `GET /vision-fleet/v1/gateways/{gateway_id}/desired-state` | `gateway.state:read` |
-| 명령 확인 | `POST /vision-fleet/v1/gateways/{gateway_id}/commands/{command_id}/ack` | `gateway.commands:ack` |
+| heartbeat | `POST /vision-fleet/v1/gateways/{gateway_id}/heartbeats` | release·last seen·camera health·spool depth 저장 |
+| AI/장비 이벤트 | `POST /vision-fleet/v1/gateways/{gateway_id}/events:batch` | idempotency key·event batch·회사/현장 귀속 검증 |
+| desired state | `GET /vision-fleet/v1/gateways/{gateway_id}/desired-state` | signed policy version만 반환 |
+| command ack | `POST /vision-fleet/v1/gateways/{gateway_id}/commands/{command_id}/ack` | 사용자·승인·만료·결과 audit |
 
-Master는 `X-Gateway-Id`와 인증서 subject/client id를 비교하고, URL의 gateway가 해당 certificate의 gateway와 일치하지 않으면 거부한다. 모든 write API는 `request_id`, 호출 시각, 결과를 audit ledger에 남긴다.
+Central orchestration은 `unclaimed → approval_pending → enrolling → online/degraded/offline → revoked` 상태 모델을 사용한다. 전체 Fleet 동시 재시작을 피하기 위해 reconnect/heartbeat jitter와 exponential backoff를 설계하고, 정책 배포는 `dry-run → site canary → policy group → fleet` 순서로만 확장한다.
 
-## 데이터 모델 및 RLS
+## 6. 권장 데이터 모델과 RLS
 
-기존 회사·프로젝트 권한 모델을 사용해 다음 테이블 또는 동등 모델을 만든다.
+| 테이블 | 핵심 필드 | 보안 요구 |
+|---|---|---|
+| `vision_gateways` | `id`, `company_id`, `site_id`, `display_name`, `device_fingerprint`, `connection_state`, `last_seen_at`, `software_version` | 회사/현장 scope RLS |
+| `vision_device_authorizations` | `id`, `user_code_hash`, `session_hash`, `csr_fingerprint`, `expires_at`, `approved_by`, `approved_at`, `denied_at` | raw session/user code 미노출 |
+| `vision_provisioning_kits` | `id`, `company_id`, `site_id`, `token_hash`, `expires_at`, `max_claims`, `claimed_count`, `revoked_at`, `policy_group` | raw bootstrap token 미저장 |
+| `vision_nvr_metadata` | `gateway_id`, `display_name`, `vendor`, `host_label` | IP·credential·RTSP 저장 금지 |
+| `vision_camera_metadata` | `gateway_id`, `camera_external_id`, `display_name`, `ai_profile`, `enabled`, `last_health` | stream URL 저장 금지 |
+| `vision_safety_events` | `gateway_id`, `camera_id`, `severity`, `event_type`, `requires_human_review`, `status`, `assignee_id` | 회사/현장 RLS |
+| `vision_command_ledger` | `gateway_id`, `command_type`, `risk_level`, `state`, `requested_by`, `approved_by`, `expires_at` | signed command 원문 노출 최소화 |
+| `vision_audit_ledger` | `actor_id`, `action`, `entity_type`, `entity_id`, `request_id`, `occurred_at`, `outcome` | append-only 정책 |
 
-| 모델 | 핵심 필드 |
-|---|---|
-| `vision_gateway_pairings` | `id`, `company_id`, `site_id`, `display_name`, `code_hash`, `expires_at`, `consumed_at`, `created_by` |
-| `vision_gateways` | `id`, `company_id`, `site_id`, `display_name`, `certificate_subject`, `connection_state`, `last_seen_at`, `software_version`, `last_error` |
-| `vision_nvrs` | `id`, `gateway_id`, `display_name`, `vendor`, `host_label`; IP/credential는 웹에 저장하지 않음 |
-| `vision_cameras` | `id`, `gateway_id`, `camera_external_id`, `display_name`, `ai_profile`, `enabled`, `last_health` |
-| `vision_safety_events` | `id`, `gateway_id`, `camera_id`, `severity`, `event_type`, `occurred_at`, `requires_human_review`, `status`, `assignee_id`, `resolution_note` |
-| `vision_command_ledger` | `id`, `gateway_id`, `command_type`, `risk_level`, `state`, `requested_by`, `approved_by`, `expires_at`, `ack_payload` |
+## 7. 웹·모바일 화면 요구사항
 
-RLS는 `company_id`와 현재 사용자 회사 범위 SSOT를 기준으로 한다. 회사 관리자에게 다른 회사 gateway 목록·이벤트·카메라를 반환하면 안 된다. pairing code hash·certificate PEM·token response·NVR credential은 일반 select API에서 절대 노출하지 않는다.
+### 7.1 Vision Fleet Overview
 
-## 웹·모바일 화면 구현
+전국/회사/현장/정책 그룹/release/상태 필터를 제공한다. 플랫폼 마스터는 전국 요약을 볼 수 있지만, 회사 관리자는 자신에게 할당된 회사·현장만 본다. 화면은 online, degraded, offline, approval_pending, unclaimed 수와 P1/P2 이벤트·마지막 heartbeat·spool backlog를 보여 준다.
 
-### 1. Vision Fleet Overview
+### 7.2 `Gateway 추가` Wizard
 
-전국/회사/현장 필터, 온라인·저하·오프라인 Gateway 수, 최근 고위험 이벤트, Gateway 카드 목록을 제공한다. 카드는 연결 상태·마지막 heartbeat·카메라 수·미전송 이벤트·적용 정책 버전을 보여 준다.
+첫 화면은 **QR 현장 승인**과 **Provisioning Kit 일괄 배포** 두 카드다. QR 승인 흐름에서는 회사·현장·표시 이름을 선택하고 QR approval session을 만든다. 운영자는 현장 Console의 QR을 모바일로 스캔해 company/site를 마지막으로 확인·승인한다. Kit 흐름에서는 설치 수·만료·정책 그룹을 지정하고 `.safenex-kit` 다운로드, 복사 가능한 kit ID, 폐기 버튼을 제공한다. 기존 pairing code는 `고급/복구 수단`으로 접어 둔다.
 
-### 2. Gateway Detail
+### 7.3 Gateway Detail
 
-`개요`, `카메라`, `AI 이벤트`, `정책`, `감사 로그` 탭을 제공한다. 카메라 탭은 이름·AI 프로필·최근 health만 표시한다. 원본 RTSP URL은 표시하지 않는다. live video는 별도 후속 단계의 **권한화된 단기 HLS/WHEP 프록시**가 갖춰질 때만 표시하고, Gateway loopback MJPEG를 인터넷으로 노출하지 않는다.
+`개요`, `카메라`, `AI 이벤트`, `정책 rollout`, `감사` 탭을 제공한다. 카메라에는 이름·AI profile·enabled·최근 health만 표시한다. Gateway loopback MJPEG 또는 RTSP를 인터넷에 노출하지 않는다. 모바일 live video는 후속 단계에서 권한화된 short-lived HLS/WHEP relay가 설계·보안 검토된 뒤에만 제공한다.
 
-### 3. Gateway 등록 Wizard
+### 7.4 모바일 승인과 현장 대응
 
-현장 선택 → 표시 이름 → pairing code 생성 → QR/복사 → `Paired` 확인의 4단계다. 코드 재발급은 기존 미사용 코드를 즉시 무효화한다.
+스마트폰 390px 폭에서 QR scan/deep link, user code 대조, 현장 선택, 승인/거절, Gateway 상태, P1/P2 이벤트 확인·담당자 배정·조치 완료가 가능해야 한다. 모바일에는 NVR credential·RTSP 설정·인증서 관리 UI를 제공하지 않는다.
 
-### 4. AI 이벤트 운영
+## 8. 수용 기준
 
-고위험 PPE 이벤트는 알림·상세·담당자 지정·확인·조치 완료·증거/메모 흐름을 제공한다. `requires_human_review=true`인 이벤트에는 “AI 보조 경보 — 현장 확인 전 확정 금지” 배지를 명확히 표시한다.
+1. 신규 현장 사용자는 Vision Edge Console의 QR을 스캔해 Fleet 주소·긴 code 입력 없이 Gateway를 회사·현장에 승인할 수 있다.
+2. 본사는 1개 이상의 지정 현장·만료·설치 수가 포함된 Provisioning Kit을 발급·폐기·감사할 수 있고, 현장 Gateway는 성공 시 즉시 mTLS enrollment를 완료한다.
+3. QR/Kit/pairing fallback은 같은 `vision_gateways`와 인증서 모델로 합류하며 중복 Gateway·중복 claim이 생기지 않는다.
+4. 모든 claim은 CSR, 현장 귀속, one-time 사용, 만료, rate limit, audit ledger를 검증한다.
+5. QR status는 Gateway poll interval을 지키며, 대규모 Fleet에서 thundering herd를 만들지 않는다.
+6. Gateway 상태·camera metadata·AI event는 회사/현장 RLS를 통과한 사용자에게만 보인다.
+7. 웹·모바일·DB·로그에 RTSP, NVR password, Gateway private key, raw pairing/bootstrap token이 노출되지 않는다.
+8. 모바일에서 QR 승인 및 P1/P2 이벤트 조치가 가능하고, 웹에서 policy group canary rollout 상태·감사 내역을 확인할 수 있다.
 
-### 5. 모바일 반응형
+## 9. 구현 금지
 
-스마트폰은 카드형 Gateway 목록, P1/P2 이벤트, 확인·담당자 배정·상태 필터를 우선한다. 모바일에서 RTSP 설정이나 인증서 관리 기능을 제공하지 않는다.
+- 기존 AuthGuard, RoleGuard, RLS, company/project access SSOT를 우회하는 독립 권한 체계를 만들지 말 것.
+- 중앙 서버가 현장 LAN/NVR/PC로 인바운드 연결하거나 UDP discovery를 시도하지 말 것.
+- mTLS CA private key, Supabase service role key, pairing raw code, bootstrap raw token을 프론트엔드·localStorage·일반 select 테이블에 넣지 말 것.
+- 중앙 웹에서 Gateway의 `live.mjpeg` loopback 주소를 사용하거나 프록시하지 말 것.
+- AI 경보만으로 안전고리 미체결 등에 자동 처벌·차단·징계를 확정하지 말 것.
 
-## 수용 기준
+## References
 
-1. SafeNex 관리자는 자기 회사·현장 범위에서 일회용 pairing code를 만들고 취소·재발급할 수 있다.
-2. 현장 Gateway가 claim에 성공하면 웹에서 30초 이내 `Paired` 상태가 보인다.
-3. Gateway heartbeat와 AI event가 해당 회사·현장 범위에만 보인다.
-4. 웹 API/DB/UI 어디에도 RTSP URL, 카메라 비밀번호, Gateway 개인 키, pairing raw code가 노출·로그·저장되지 않는다.
-5. 다른 회사 관리자가 URL·ID를 추측해도 Gateway·이벤트·카메라를 읽거나 pairing을 만들 수 없다.
-6. 최신 Gateway 상태, 이벤트 처리, pairing code 감사 이력이 사용자와 시각을 포함해 남는다.
-7. 모바일 390px 폭에서 Gateway 상태 조회와 고위험 이벤트 확인·조치가 완료된다.
+[1] [IETF RFC 8628 — OAuth 2.0 Device Authorization Grant](https://datatracker.ietf.org/doc/html/rfc8628)
 
-## 구현 금지
+[2] [ONVIF Core Specification](https://www.onvif.org/specs/core/ONVIF-Core-Specification-v241.pdf)
 
-- 기존 `AuthGuard`, `RoleGuard`, 회사 범위/RLS를 우회하는 별도 권한 판단을 만들지 말 것.
-- 브라우저에서 NVR/카메라를 직접 호출하지 말 것.
-- pairing code·mTLS private key·service role key를 localStorage, 프론트엔드, 일반 테이블에 저장하지 말 것.
-- “안전고리 미체결” 이벤트를 AI만으로 자동 처벌·차단 판정하지 말 것.
+[3] [Microsoft — Distribute your app and the WebView2 Runtime](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)

@@ -33,7 +33,8 @@ python3 -m pip wheel --wheel-dir "$BUILD_ROOT/opt/safenex-vision-edge/wheelhouse
   'uvicorn[standard]>=0.27,<1.0' \
   'httpx>=0.27,<1.0' \
   'cryptography>=42,<51' \
-  'pydantic>=2.6,<3'
+  'pydantic>=2.6,<3' \
+  'qrcode>=8.0,<9'
 
 chmod 0755 "$BUILD_ROOT/DEBIAN/postinst" "$BUILD_ROOT/DEBIAN/prerm" "$BUILD_ROOT/DEBIAN/postrm"
 chmod 0755 "$BUILD_ROOT/usr/bin/safenex-vision-edge-ui"

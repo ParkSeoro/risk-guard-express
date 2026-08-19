@@ -1,5 +1,5 @@
 #define AppName "SafeNex Vision Edge"
-#define AppVersion "0.2.0"
+#define AppVersion "0.3.0"
 #define AppPublisher "SafeNex"
 #define AppExeName "SafeNexVisionEdge.exe"
 
@@ -27,6 +27,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 Source: "..\dist\SafeNexVisionEdge\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+Source: "..\dist\windows\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
 Name: "{autoprograms}\SafeNex Vision Edge"; Filename: "{app}\{#AppExeName}"
@@ -36,4 +37,22 @@ Name: "{autodesktop}\SafeNex Vision Edge 관제"; Filename: "{app}\{#AppExeName}
 Name: "desktopicon"; Description: "바탕화면에 관제 아이콘 만들기"; GroupDescription: "추가 아이콘:"; Flags: checkedonce
 
 [Run]
+Filename: "{tmp}\MicrosoftEdgeWebview2Setup.exe"; Parameters: "/silent /install"; StatusMsg: "SafeNex Vision Edge 화면 구성요소 설치"; Flags: runhidden waituntilterminated; Check: NeedsWebView2Runtime
+Filename: "{sys}\schtasks.exe"; Parameters: "/Create /TN ""SafeNex Vision Edge Agent"" /TR """"{app}\{#AppExeName}"" --agent"" /SC ONSTART /RU SYSTEM /RL HIGHEST /F"; StatusMsg: "SafeNex Vision Edge Agent 자동 시작 등록"; Flags: runhidden waituntilterminated
+Filename: "{sys}\schtasks.exe"; Parameters: "/Run /TN ""SafeNex Vision Edge Agent"""; StatusMsg: "SafeNex Vision Edge Agent 시작"; Flags: runhidden waituntilterminated
 Filename: "{app}\{#AppExeName}"; Description: "SafeNex Vision Edge 관제 시작"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""SafeNex Vision Edge Agent"" /F"; Flags: runhidden waituntilterminated
+
+[Code]
+function NeedsWebView2Runtime(): Boolean;
+var
+  Version: String;
+begin
+  Result := True;
+  if RegQueryStringValue(HKLM64, 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Version) then
+    Result := (Version = '') or (Version = '0.0.0.0')
+  else if RegQueryStringValue(HKCU, 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Version) then
+    Result := (Version = '') or (Version = '0.0.0.0');
+end;

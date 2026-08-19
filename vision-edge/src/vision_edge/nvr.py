@@ -9,10 +9,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import socket
+import time
+import xml.etree.ElementTree as element_tree
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
+from urllib.parse import urlparse
+from uuid import uuid4
 
 from .models import CameraConfig, CameraHealth
 from .secret_store import SecretStore, SecretStoreError
@@ -71,6 +76,82 @@ def _parse_rate(value: object) -> float | None:
     except ValueError:
         return None
     return round(top / bottom, 3) if bottom > 0 else None
+
+
+@dataclass(frozen=True)
+class OnvifDiscoveryCandidate:
+    endpoint: str
+    host: str
+    port: int
+    scopes: tuple[str, ...]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "endpoint": self.endpoint,
+            "host": self.host,
+            "port": self.port,
+            "scopes": list(self.scopes),
+        }
+
+
+class OnvifDiscoverer:
+    """현장 LAN에 한정해 ONVIF WS-Discovery 후보를 읽기 전용으로 수집한다."""
+
+    multicast_address = ("239.255.255.250", 3702)
+
+    @staticmethod
+    def _probe_message() -> bytes:
+        message_id = f"uuid:{uuid4()}"
+        return f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<e:Envelope xmlns:e=\"http://www.w3.org/2003/05/soap-envelope\"
+ xmlns:w=\"http://schemas.xmlsoap.org/ws/2004/08/addressing\"
+ xmlns:d=\"http://schemas.xmlsoap.org/ws/2005/04/discovery\"
+ xmlns:dn=\"http://www.onvif.org/ver10/network/wsdl\">
+  <e:Header><w:MessageID>{message_id}</w:MessageID><w:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</w:To><w:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</w:Action></e:Header>
+  <e:Body><d:Probe><d:Types>dn:NetworkVideoTransmitter</d:Types></d:Probe></e:Body>
+</e:Envelope>""".encode()
+
+    @staticmethod
+    def _parse_response(payload: bytes) -> list[OnvifDiscoveryCandidate]:
+        try:
+            root = element_tree.fromstring(payload)
+        except element_tree.ParseError:
+            return []
+        namespace = {"d": "http://schemas.xmlsoap.org/ws/2005/04/discovery"}
+        candidates: list[OnvifDiscoveryCandidate] = []
+        for match in root.findall(".//d:ProbeMatch", namespace):
+            xaddrs = match.findtext("d:XAddrs", default="", namespaces=namespace)
+            scopes = match.findtext("d:Scopes", default="", namespaces=namespace).split()
+            for endpoint in xaddrs.split():
+                parsed = urlparse(endpoint)
+                if not parsed.hostname:
+                    continue
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
+                candidates.append(
+                    OnvifDiscoveryCandidate(
+                        endpoint=endpoint,
+                        host=parsed.hostname,
+                        port=port,
+                        scopes=tuple(scopes),
+                    )
+                )
+        return candidates
+
+    def discover(self, timeout_seconds: int = 3) -> list[OnvifDiscoveryCandidate]:
+        deadline = time.monotonic() + timeout_seconds
+        discovered: dict[str, OnvifDiscoveryCandidate] = {}
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as probe:
+            probe.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+            probe.settimeout(0.25)
+            probe.sendto(self._probe_message(), self.multicast_address)
+            while time.monotonic() < deadline:
+                try:
+                    response, _source = probe.recvfrom(65_535)
+                except TimeoutError:
+                    continue
+                for candidate in self._parse_response(response):
+                    discovered[candidate.endpoint] = candidate
+        return sorted(discovered.values(), key=lambda item: (item.host, item.port, item.endpoint))
 
 
 class MjpegPreview:

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from vision_edge.app import create_app
 from vision_edge.config import load_config, write_example_config
 from vision_edge.models import GatewayIdentity, LocalConfig
+from vision_edge.nvr import OnvifDiscoverer, OnvifDiscoveryCandidate
 
 
 def test_dashboard_javascript_has_valid_syntax(tmp_path: Path) -> None:
@@ -29,6 +30,42 @@ def test_example_configuration_starts_unpaired(monkeypatch, tmp_path: Path) -> N
 
     with TestClient(create_app(config, config_path)) as client:
         assert client.get("/api/v1/status").json()["fleet_configured"] is False
+
+
+def test_onvif_discovery_response_parsing_and_local_api(monkeypatch, tmp_path: Path) -> None:
+    response = b"""<?xml version='1.0'?>
+    <e:Envelope xmlns:e='http://www.w3.org/2003/05/soap-envelope' xmlns:d='http://schemas.xmlsoap.org/ws/2005/04/discovery'>
+      <e:Body><d:ProbeMatches><d:ProbeMatch><d:XAddrs>http://192.168.10.10/onvif/device_service</d:XAddrs><d:Scopes>onvif://www.onvif.org/name/A-NVR</d:Scopes></d:ProbeMatch></d:ProbeMatches></e:Body>
+    </e:Envelope>"""
+    parsed = OnvifDiscoverer._parse_response(response)
+    assert parsed[0].host == "192.168.10.10"
+    assert parsed[0].port == 80
+
+    monkeypatch.setenv("VISION_EDGE_DEVELOPMENT", "1")
+    config = LocalConfig(
+        identity=GatewayIdentity(gateway_id="gw-1", tenant_id="tenant-1", site_id="site-1"),
+        state_dir=str(tmp_path / "state"),
+    )
+    monkeypatch.setattr(
+        OnvifDiscoverer,
+        "discover",
+        lambda _self, _timeout: [
+            OnvifDiscoveryCandidate(
+                endpoint="http://192.168.10.10/onvif/device_service",
+                host="192.168.10.10",
+                port=80,
+                scopes=("onvif://www.onvif.org/name/A-NVR",),
+            )
+        ],
+    )
+    with TestClient(create_app(config)) as client:
+        discovery = client.post("/api/v1/setup/discovery/onvif", json={"timeout_seconds": 1})
+        assert discovery.status_code == 200
+        assert discovery.json()["scope"] == "local-lan-only"
+        assert discovery.json()["candidates"][0]["host"] == "192.168.10.10"
+        qr = client.post("/api/v1/setup/onboarding/qr/start", json={})
+        assert qr.status_code == 422
+        assert client.get("/api/v1/setup/onboarding/status").json() == {"status": "not_started"}
 
 
 def test_local_health_and_status(monkeypatch, tmp_path: Path) -> None:

@@ -35,11 +35,17 @@ jobs:
       - name: Install packaging dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install . pyinstaller
+          python -m pip install ".[windows]" pyinstaller
 
       - name: Build Windows application
         run: |
           pyinstaller --noconfirm --clean --windowed --name SafeNexVisionEdge --collect-all vision_edge windows/desktop_entry.py
+
+      - name: Download official WebView2 bootstrapper
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\windows | Out-Null
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile dist\windows\MicrosoftEdgeWebview2Setup.exe
+          if ((Get-Item dist\windows\MicrosoftEdgeWebview2Setup.exe).Length -lt 1000000) { throw "WebView2 bootstrapper download is unexpectedly small" }
 
       - name: Materialize optional code-signing certificate
         if: ${{ env.WINDOWS_CODESIGN_PFX_BASE64 != '' }}

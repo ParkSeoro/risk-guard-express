@@ -52,7 +52,7 @@ Import-Certificate -FilePath $certificate -CertStoreLocation "Cert:\LocalMachine
 그 뒤 서명한 설치 파일을 다음 명령으로 확인합니다.
 
 ```powershell
-Get-AuthenticodeSignature "C:\SafeNex\SafeNex_Vision_Edge_Setup_0.2.0_Windows_x64.exe" | Format-List Status, StatusMessage, SignerCertificate
+Get-AuthenticodeSignature "C:\SafeNex\SafeNex_Vision_Edge_Setup_0.3.0_Windows_x64.exe" | Format-List Status, StatusMessage, SignerCertificate
 ```
 
 ### 전국 현장: AD GPO 또는 Intune으로 배포
@@ -77,9 +77,9 @@ $cert = Get-ChildItem "Cert:\CurrentUser\My" | Where-Object { $_.Subject -eq "CN
 $timestamp = "http://timestamp.digicert.com"
 
 & signtool sign /fd SHA256 /sha1 $cert.Thumbprint /tr $timestamp /td SHA256 ".\SafeNexVisionEdge.exe"
-& signtool sign /fd SHA256 /sha1 $cert.Thumbprint /tr $timestamp /td SHA256 ".\SafeNex_Vision_Edge_Setup_0.2.0_Windows_x64.exe"
+& signtool sign /fd SHA256 /sha1 $cert.Thumbprint /tr $timestamp /td SHA256 ".\SafeNex_Vision_Edge_Setup_0.3.0_Windows_x64.exe"
 
-& signtool verify /pa /v ".\SafeNex_Vision_Edge_Setup_0.2.0_Windows_x64.exe"
+& signtool verify /pa /v ".\SafeNex_Vision_Edge_Setup_0.3.0_Windows_x64.exe"
 ```
 
 ### 현재 GitHub Actions 파이프라인에 자동 서명 연결

@@ -1,4 +1,5 @@
-import { POSITION_LABELS, sortStepsByHierarchy } from '@/lib/approvalRules';
+import { sortStepsByHierarchy } from '@/lib/approvalRules';
+import { jobTitleLabel, localizePersonName } from '@/lib/jobTitleLabel';
 
 /** 위험성평가 인쇄·화면·XLSX 서명란 한 행 */
 export type AssessmentSignatureRow = {
@@ -34,10 +35,6 @@ export type SignatureDraftStepInput = {
   company_name?: string | null;
 };
 
-function positionLabel(position?: string | null): string {
-  const key = position || '';
-  return POSITION_LABELS[key] || POSITION_LABELS[key.toLowerCase()] || key || '';
-}
 
 /**
  * 서명란 SSOT: 상신 후면 해당 버전 approvals 전체, 상신 전이면 저장된 결재선 초안.
@@ -56,10 +53,10 @@ export function buildAssessmentSignatureRows(opts: {
     );
     return sorted.map((a) => ({
       step: a.step || a.step_label || '',
-      approver_name: a.approver_name || a.user_name || '',
+      approver_name: localizePersonName(a.approver_name || a.user_name || ''),
       company_name: a.company_name || '',
       position: a.position || '',
-      position_label: positionLabel(a.position),
+      position_label: jobTitleLabel(a.position),
       status: a.status || '',
       approved_at: a.approved_at || null,
     }));
@@ -70,10 +67,10 @@ export function buildAssessmentSignatureRows(opts: {
   );
   return steps.map((s) => ({
     step: s.label || s.step_label || '',
-    approver_name: s.user_name || '',
+    approver_name: localizePersonName(s.user_name || ''),
     company_name: s.company_name || '',
     position: s.position || '',
-    position_label: positionLabel(s.position),
+    position_label: jobTitleLabel(s.position),
     status: '',
     approved_at: null,
   }));

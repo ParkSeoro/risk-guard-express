@@ -27,7 +27,48 @@ export function formatBytes(n: number) {
 
 export function isCompressibleImage(file: File) {
   const t = (file.type || '').toLowerCase();
-  return t === 'image/jpeg' || t === 'image/jpg' || t === 'image/png' || t === 'image/webp';
+  const n = (file.name || '').toLowerCase();
+  // HEIC/HEIF cannot be decoded by canvas in most browsers — do not attempt compress.
+  if (t.includes('heic') || t.includes('heif') || /\.(heic|heif)$/.test(n)) return false;
+  if (t === 'image/jpeg' || t === 'image/jpg' || t === 'image/png' || t === 'image/webp') return true;
+  // Some mobile pickers leave MIME empty; fall back to extension.
+  if (!t && /\.(jpe?g|png|webp)$/.test(n)) return true;
+  return false;
+}
+
+/** ASCII-only object filename so Storage keys never include Hangul/spaces/#. */
+export function sanitizeStorageFileName(fileName: string): string {
+  const raw = (fileName || 'file').split(/[/\\]/).pop() || 'file';
+  const extMatch = raw.match(/\.([a-zA-Z0-9]{1,8})$/);
+  const extension = extMatch ? `.${extMatch[1].toLowerCase()}` : '';
+  const baseName = raw
+    .replace(/\.[^.]+$/, '')
+    .normalize('NFKD')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return `${baseName || 'file'}${extension}`.slice(0, 120);
+}
+
+/** Sanitize only the last path segment (filename); keep folder UUIDs intact. */
+export function sanitizeStorageObjectPath(path: string): string {
+  const parts = String(path || '')
+    .split('/')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) throw new Error('업로드 경로가 비어 있습니다.');
+  const fileName = parts.pop()!;
+  parts.push(sanitizeStorageFileName(fileName));
+  return parts.join('/');
+}
+
+export function buildProjectAttachmentPath(projectId: string, folder: string, fileName: string): string {
+  if (!projectId) throw new Error('프로젝트 정보가 없습니다.');
+  const safe = sanitizeStorageFileName(fileName);
+  const extMatch = safe.match(/\.([a-z0-9]{1,8})$/);
+  const ext = extMatch?.[1] || 'bin';
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `${projectId}/${folder}/${Date.now()}_${rand}.${ext}`;
 }
 
 function loadImageElement(file: File): Promise<HTMLImageElement> {
@@ -108,7 +149,23 @@ export async function compressUploadFile(
     };
   }
 
-  const img = await loadImageElement(input);
+  let img: HTMLImageElement;
+  try {
+    img = await loadImageElement(input);
+  } catch {
+    // iPhone HEIC mislabeled as JPEG, or a picker that can't be decoded in-browser.
+    if (originalBytes > maxBytes) {
+      throw new Error(`파일이 너무 큽니다. 최대 ${formatBytes(maxBytes)}까지 업로드할 수 있습니다.`);
+    }
+    return {
+      file: input,
+      compressed: false,
+      originalBytes,
+      finalBytes: originalBytes,
+      skippedReason: 'decode_failed',
+    };
+  }
+
   let blob = await renderToJpeg(img, maxEdge, quality);
   if (!blob) {
     return { file: input, compressed: false, originalBytes, finalBytes: originalBytes, skippedReason: 'encode_failed' };
@@ -135,7 +192,7 @@ export async function compressUploadFile(
     };
   }
 
-  const baseName = input.name.replace(/\.[^.]+$/, '') || 'image';
+  const baseName = sanitizeStorageFileName(input.name).replace(/\.[^.]+$/, '') || 'image';
   const outFile = new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
   return {
     file: outFile,
@@ -166,15 +223,23 @@ export async function uploadAttachmentFile(
     maxEdge: opts?.maxEdge,
     quality: opts?.quality,
   });
-  const { error } = await supabase.storage.from('attachments').upload(path, prepared.file, {
+  let objectPath = sanitizeStorageObjectPath(path);
+  if (
+    prepared.compressed &&
+    prepared.file.type === 'image/jpeg' &&
+    !/\.jpe?g$/i.test(objectPath)
+  ) {
+    objectPath = `${objectPath.replace(/\.[^.]+$/, '')}.jpg`;
+  }
+  const { error } = await supabase.storage.from('attachments').upload(objectPath, prepared.file, {
     upsert: opts?.upsert ?? true,
     contentType: prepared.file.type || undefined,
   });
   if (error) throw error;
-  const { data } = supabase.storage.from('attachments').getPublicUrl(path);
+  const { data } = supabase.storage.from('attachments').getPublicUrl(objectPath);
   return {
     ...prepared,
-    path,
+    path: objectPath,
     publicUrl: data.publicUrl,
   };
 }

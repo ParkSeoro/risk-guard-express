@@ -40,7 +40,9 @@ describe("buildAssessmentSignatureRows", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0].step).toBe("담당자(시공)");
     expect(rows[0].approver_name).toBe("김기안");
+    expect(rows[0].position_label).toBe("관리감독자");
     expect(rows[1].step).toBe("담당자(SM)");
+    expect(rows[1].position_label).toBe("발주처 SM");
   });
 
   it("before submit: uses saved draft steps, not 작성/검토/승인 3칸", () => {

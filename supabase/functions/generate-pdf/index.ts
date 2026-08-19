@@ -8,14 +8,20 @@ const corsHeaders = {
 
 async function imageUrlToBase64(url: string): Promise<string | null> {
   try {
-    const res = await fetch(url);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
     if (!res.ok) {
       console.error(`Image fetch failed: ${res.status} ${url}`);
       return null;
     }
     const buf = await res.arrayBuffer();
+    if (buf.byteLength > 2.5 * 1024 * 1024) {
+      console.warn(`Image too large for PDF embed (${buf.byteLength}): ${url}`);
+      return null;
+    }
     const ct = res.headers.get("content-type") || "image/jpeg";
-    // Use chunked encoding to avoid stack overflow on large images
     const bytes = new Uint8Array(buf);
     let binary = "";
     const chunkSize = 8192;
@@ -42,25 +48,34 @@ function formatKST(d: string | null | undefined): string {
   return `${y}-${m}-${day} ${h}:${min}`;
 }
 
-const POSITION_LABELS: Record<string, string> = {
-  contractor_supervisor: "담당자(시공)",
-  contractor_safety_manager: "담당자(안전)",
-  contractor_site_director: "책임자(소장)",
-  owner_cm: "담당자(CM)",
-  owner_sm: "담당자(SM)",
+const JOB_TITLE_LABELS: Record<string, string> = {
+  contractor_supervisor: "관리감독자",
+  contractor_pic: "관리감독자",
+  contractor_safety_manager: "안전관리자",
+  safety_pic: "안전관리자",
+  contractor_site_director: "현장소장",
+  site_director: "현장소장",
+  owner_cm: "발주처 CM",
+  owner_sm: "발주처 SM",
+  cm: "발주처 CM",
+  sm: "발주처 SM",
   gc: "시공사",
   gc_manager: "시공사 관리자",
   gc_pm: "시공사 PM",
   cooperator: "협조부서",
-  supervisor: "관리감독자",
+  SITE_SUPERVISOR: "관리감독자",
+  site_supervisor: "관리감독자",
+  SITE_MANAGER: "현장소장",
+  site_manager: "현장소장",
+  HSE_MANAGER: "안전관리자",
   safety_manager: "안전관리자",
-  site_manager: "현장대리인",
+  SUPERVISOR: "감리",
+  supervisor: "감리",
+  OWNER_SM: "발주처 SM",
+  OWNER_CM: "발주처 CM",
+  OWNER_PM: "발주처 PM",
+  OWNER_HSE: "발주처 SM",
   project_admin: "프로젝트 관리자",
-  contractor_pic: "담당자(시공)",
-  safety_pic: "담당자(안전)",
-  site_director: "책임자(소장)",
-  cm: "담당자(CM)",
-  sm: "담당자(SM)",
 };
 
 const POSITION_RANK: Record<string, number> = {
@@ -150,9 +165,18 @@ function mapProjectCompanies(links: any[]): Array<{ id: string; name: string; ty
     .filter(Boolean) as Array<{ id: string; name: string; type: string | null; parent_company_id: string | null }>;
 }
 
-function positionLabel(pos?: string | null): string {
-  const key = pos || "";
-  return POSITION_LABELS[key] || POSITION_LABELS[key.toLowerCase()] || key || "";
+function jobTitleLabel(pos?: string | null): string {
+  const key = String(pos || "").trim();
+  if (!key) return "";
+  return JOB_TITLE_LABELS[key] || JOB_TITLE_LABELS[key.toLowerCase()] || JOB_TITLE_LABELS[key.toUpperCase()] || key;
+}
+
+function localizePersonName(name?: string | null): string {
+  const raw = String(name || "").trim();
+  return raw.replace(/\s*\/\s*([A-Za-z0-9_]+)\s*$/, (_m, code: string) => {
+    const label = jobTitleLabel(code);
+    return label ? ` / ${label}` : ` / ${code}`;
+  });
 }
 
 Deno.serve(async (req) => {
@@ -223,14 +247,18 @@ Deno.serve(async (req) => {
     const approvals = approvalsRes.data || [];
     let projectCompanies = mapProjectCompanies(companyLinksRes.data || []);
     if (projectCompanies.length === 0) {
-      const { data: legacyCos } = await supabase
+      const { data: legacyCos, error: legacyErr } = await supabase
         .from("companies")
         .select("id, name, type, parent_company_id")
         .eq("project_id", run.project_id)
         .eq("is_deleted", false);
-      projectCompanies = (legacyCos || []).map((c: any) => ({
-        id: c.id, name: c.name, type: c.type, parent_company_id: c.parent_company_id || null,
-      }));
+      if (legacyErr) {
+        console.warn("legacy companies fallback failed", legacyErr.message);
+      } else {
+        projectCompanies = (legacyCos || []).map((c: any) => ({
+          id: c.id, name: c.name, type: c.type, parent_company_id: c.parent_company_id || null,
+        }));
+      }
     }
 
     const clientCompanyName = projectCompanies.find((c) => normalizeCoType(c.type) === "client")?.name || "(미지정)";
@@ -288,13 +316,18 @@ Deno.serve(async (req) => {
 
     // Resolve company names for each approval step
     async function resolveCompanyName(userId: string, projectId: string): Promise<string> {
-      const { data: member } = await supabase.from("project_members").select("company_id, company").eq("user_id", userId).eq("project_id", projectId).single();
+      const { data: members } = await supabase
+        .from("project_members")
+        .select("company_id, company, role_new, role")
+        .eq("user_id", userId)
+        .eq("project_id", projectId);
+      const member = pickMemberRow(members || []);
       if (member?.company_id) {
-        const { data: comp } = await supabase.from("companies").select("name").eq("id", member.company_id).single();
+        const { data: comp } = await supabase.from("companies").select("name").eq("id", member.company_id).maybeSingle();
         if (comp?.name) return comp.name;
       }
       if (member?.company) return member.company;
-      const { data: prof } = await supabase.from("profiles").select("company").eq("user_id", userId).single();
+      const { data: prof } = await supabase.from("profiles").select("company").eq("user_id", userId).maybeSingle();
       return prof?.company || "";
     }
 
@@ -303,14 +336,18 @@ Deno.serve(async (req) => {
       for (const ap of latestApprovals) {
         let companyName = ap.company_name || "";
         if (!companyName && ap.approver_id) {
-          companyName = await resolveCompanyName(ap.approver_id, run.project_id);
+          try {
+            companyName = await resolveCompanyName(ap.approver_id, run.project_id);
+          } catch (e) {
+            console.warn("resolveCompanyName failed", e);
+          }
         }
         const dateStr = ap.status === "승인" && ap.approved_at ? formatKST(ap.approved_at) : (ap.status === "반려" ? "반려" : "대기");
         sigRows.push(`<tr>
           <td class="sig-role">${ap.step || ""}</td>
-          <td>${ap.approver_name || ""}</td>
+          <td>${localizePersonName(ap.approver_name)}</td>
           <td>${companyName}</td>
-          <td>${positionLabel(ap.position)}</td>
+          <td>${jobTitleLabel(ap.position)}</td>
           <td class="sig-stamp">${dateStr}</td>
         </tr>`);
       }
@@ -318,9 +355,9 @@ Deno.serve(async (req) => {
       for (const s of draftSteps) {
         sigRows.push(`<tr>
           <td class="sig-role">${s.label || s.step_label || ""}</td>
-          <td>${s.user_name || ""}</td>
+          <td>${localizePersonName(s.user_name)}</td>
           <td>${s.company_name || ""}</td>
-          <td>${positionLabel(s.position)}</td>
+          <td>${jobTitleLabel(s.position)}</td>
           <td class="sig-stamp"></td>
         </tr>`);
       }
@@ -337,13 +374,20 @@ Deno.serve(async (req) => {
         const afterImages: string[] = [];
         // No .slice() — process ALL images
         for (const url of (fb.before_image_urls || [])) {
-          const b64 = await imageUrlToBase64(url);
-          if (b64) beforeImages.push(b64);
+          try {
+            const b64 = await imageUrlToBase64(url);
+            beforeImages.push(b64 || url);
+          } catch {
+            beforeImages.push(url);
+          }
         }
-        // Always process after images (not just when status=완료)
         for (const url of (fb.after_image_urls || [])) {
-          const b64 = await imageUrlToBase64(url);
-          if (b64) afterImages.push(b64);
+          try {
+            const b64 = await imageUrlToBase64(url);
+            afterImages.push(b64 || url);
+          } catch {
+            afterImages.push(url);
+          }
         }
         return { ...fb, beforeBase64: beforeImages, afterBase64: afterImages };
       })
@@ -352,8 +396,12 @@ Deno.serve(async (req) => {
     // ===== WORKER IMAGES: No slicing — process ALL =====
     const workerImages: string[] = [];
     for (const url of (run.worker_participation_images || [])) {
-      const b64 = await imageUrlToBase64(url);
-      if (b64) workerImages.push(b64);
+      try {
+        const b64 = await imageUrlToBase64(url);
+        workerImages.push(b64 || url);
+      } catch {
+        workerImages.push(url);
+      }
     }
 
     const gradeColor = (g: string) =>

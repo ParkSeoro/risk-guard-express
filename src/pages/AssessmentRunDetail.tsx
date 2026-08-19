@@ -88,7 +88,6 @@ import {
 } from '@/lib/assessmentAssigneePool';
 import { ADMIN_PROJECT_ROLES } from '@/lib/permissions';
 import {
-  POSITION_LABELS as SSOT_POSITION_LABELS,
   canManuallyActOnApprovalStep,
   isSubmitterApprovalStep,
   sequentialDisplayStatus,
@@ -96,6 +95,7 @@ import {
   validateApprovalLinesSSOT,
 } from '@/lib/approvalRules';
 import { buildAssessmentSignatureRows } from '@/lib/approvalSignatureRows';
+import { jobTitleLabel, localizePersonName } from '@/lib/jobTitleLabel';
 import { parseRiskAssessmentExcelFile } from '@/lib/riskExcelImport';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 
@@ -2291,18 +2291,14 @@ const AssessmentRunDetail = () => {
                 </thead>
                 <tbody>
                   {activeApprovals.map((a: any) => {
-                      const positionLabel = SSOT_POSITION_LABELS[a.position]
-                        || SSOT_POSITION_LABELS[(a.position || '').toLowerCase()]
-                        || a.position
-                        || '—';
                       const displayStatus = sequentialDisplayStatus(activeApprovals, a);
                       const submitter = isSubmitterApprovalStep(a);
                       return (
                         <tr key={a.id} className={displayStatus === '진행중' ? 'bg-primary/5' : undefined}>
                           <td className="border px-2 py-1 font-medium">{a.step}</td>
-                          <td className="border px-2 py-1">{a.approver_name || '—'}</td>
+                          <td className="border px-2 py-1">{localizePersonName(a.approver_name) || '—'}</td>
                           <td className="border px-2 py-1">{a.company_name || '—'}</td>
-                          <td className="border px-2 py-1">{positionLabel}</td>
+                          <td className="border px-2 py-1">{jobTitleLabel(a.position) || '—'}</td>
                           <td className="border px-2 py-1">
                             {displayStatus === '승인' && a.approved_at
                               ? (

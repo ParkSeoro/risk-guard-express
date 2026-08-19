@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Search, Loader2, Eye, FileText, Building2 } from "lucide-react";
 import { toast } from "sonner";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
-import { fetchCreatorCompanyLabelMap } from "@/lib/companyDocScope";
+import { fetchCreatorCompanyLabelMap, preferredCompanyIdsByRunAuthors, resolveAssessmentRunListCompanyLabel, buildProjectCompanyLabelMap } from "@/lib/companyDocScope";
+import { fetchProjectCompanies } from "@/lib/projectCompanies";
 
 /**
  * Mobile list: approved risk assessments only → Read-Only Viewer.
@@ -22,6 +23,7 @@ export default function MobileRiskAssessment() {
   const [rows, setRows] = useState<any[]>([]);
   const [counts, setCounts] = useState<Record<string, { high: number; medium: number; low: number; total: number }>>({});
   const [creatorCompanyMap, setCreatorCompanyMap] = useState<Record<string, string>>({});
+  const [companyLabelById, setCompanyLabelById] = useState<Record<string, string>>({});
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -48,13 +50,19 @@ export default function MobileRiskAssessment() {
 
     if (scoped.length) {
       const ids = scoped.map((r: any) => r.id);
-      const creatorIds = scoped.map((r: any) => r.created_by).filter(Boolean);
-      const [{ data: items, error: iErr }, creatorMap] = await Promise.all([
+      const creatorIds = scoped.flatMap((r: any) => [r.author_user_id, r.created_by]).filter(Boolean);
+      const [{ data: items, error: iErr }, creatorMap, companies] = await Promise.all([
         supabase.from("risk_items").select("run_id, risk_grade").in("run_id", ids),
-        fetchCreatorCompanyLabelMap(projectId, creatorIds).catch(() => ({})),
+        fetchCreatorCompanyLabelMap(
+          projectId,
+          creatorIds,
+          preferredCompanyIdsByRunAuthors(scoped),
+        ).catch(() => ({})),
+        fetchProjectCompanies(projectId).catch(() => []),
       ]);
       if (iErr) toast.error("위험항목 로드 실패: " + iErr.message);
       setCreatorCompanyMap(creatorMap);
+      setCompanyLabelById(buildProjectCompanyLabelMap(companies));
       const c: Record<string, any> = {};
       ids.forEach((id) => (c[id] = { high: 0, medium: 0, low: 0, total: 0 }));
       (items || []).forEach((it: any) => {
@@ -69,6 +77,7 @@ export default function MobileRiskAssessment() {
     } else {
       setCounts({});
       setCreatorCompanyMap({});
+      setCompanyLabelById({});
     }
     setLoading(false);
   };
@@ -77,10 +86,15 @@ export default function MobileRiskAssessment() {
     /* eslint-disable-next-line */
   }, [projectId, role, companyId]);
 
+  const runCompanyLabel = (r: any) => resolveAssessmentRunListCompanyLabel(r, {
+    companyLabelById,
+    userCompanyLabelById: creatorCompanyMap,
+  });
+
   const filtered = rows.filter((r) => {
     if (!q) return true;
-    const creatorCo = (r.created_by && creatorCompanyMap[r.created_by]) || "";
-    return r.period_label?.includes(q) || r.notes?.includes(q) || creatorCo.includes(q);
+    const company = runCompanyLabel(r);
+    return r.period_label?.includes(q) || r.notes?.includes(q) || company.includes(q);
   });
 
   return (
@@ -129,7 +143,7 @@ export default function MobileRiskAssessment() {
 
         {filtered.map((r) => {
           const c = counts[r.id] || { high: 0, medium: 0, low: 0, total: 0 };
-          const creatorCompany = r.created_by ? (creatorCompanyMap[r.created_by] || "") : "";
+          const creatorCompany = runCompanyLabel(r);
           return (
             <Card
               key={r.id}
@@ -146,7 +160,7 @@ export default function MobileRiskAssessment() {
                 <div className="font-medium text-sm">{r.period_label || "(기간 미지정)"}</div>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Building2 className="h-3 w-3 shrink-0" />
-                  <span className="truncate" title="작성자 소속 회사">
+                  <span className="truncate" title="작성 회사">
                     {creatorCompany || "작성사 미확인"}
                   </span>
                 </div>

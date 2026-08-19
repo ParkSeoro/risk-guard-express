@@ -25,7 +25,10 @@ import {
   fetchCreatorCompanyLabelMap,
   filterRunsByCompanyScope,
   pickProjectMemberRow,
+  preferredCompanyIdsByRunAuthors,
   readPreferredCompanyId,
+  resolveAssessmentRunListCompanyLabel,
+  buildProjectCompanyLabelMap,
 } from '@/lib/companyDocScope';
 import {
   ASSESSMENT_RUN_TYPES,
@@ -94,7 +97,7 @@ const AssessmentRuns = () => {
   // Companies for contractor selection
   const [contractors, setContractors] = useState<{ id: string; name: string; type: string }[]>([]);
   const [companyNameMap, setCompanyNameMap] = useState<Record<string, string>>({});
-  /** created_by → 작성자 소속 업체 라벨 */
+  /** created_by / author → 소속 업체 라벨 (대상 업체 없을 때 fallback) */
   const [creatorCompanyMap, setCreatorCompanyMap] = useState<Record<string, string>>({});
 
   const [form, setForm] = useState<AssessmentRunCreateForm>(() => emptyAssessmentRunCreateForm());
@@ -163,12 +166,16 @@ const AssessmentRuns = () => {
 
     if (list.length > 0) {
       const runIds = list.map((r: any) => r.id);
-      const creatorIds = list.map((r: any) => r.created_by).filter(Boolean);
+      const creatorIds = list.flatMap((r: any) => [r.author_user_id, r.created_by]).filter(Boolean);
       const [{ data: items }, creatorMap] = await Promise.all([
         supabase.from('risk_items')
           .select('run_id, risk_grade')
           .in('run_id', runIds),
-        fetchCreatorCompanyLabelMap(selectedProject, creatorIds).catch(() => ({})),
+        fetchCreatorCompanyLabelMap(
+          selectedProject,
+          creatorIds,
+          preferredCompanyIdsByRunAuthors(list),
+        ).catch(() => ({})),
       ]);
       if (seq !== fetchSeqRef.current) return;
       setCreatorCompanyMap(creatorMap);
@@ -300,6 +307,12 @@ const AssessmentRuns = () => {
     return false;
   };
 
+  const companyLabelById = buildProjectCompanyLabelMap(allProjectCompanies);
+  const runCompanyLabel = (run: any) => resolveAssessmentRunListCompanyLabel(run, {
+    companyLabelById,
+    userCompanyLabelById: creatorCompanyMap,
+  });
+
   const filtered = runs.filter(r => {
     if (showDeleted) { if (!r.is_deleted) return false; }
     else { if (r.is_deleted) return false; }
@@ -307,11 +320,11 @@ const AssessmentRuns = () => {
     if (filterStatus !== 'all' && r.status !== filterStatus) return false;
     if (search) {
       const term = search.toLowerCase();
-      const creatorCo = (r.created_by && creatorCompanyMap[r.created_by]) || '';
+      const company = runCompanyLabel(r).toLowerCase();
       return (
         r.period_label?.toLowerCase().includes(term)
         || r.notes?.toLowerCase().includes(term)
-        || creatorCo.toLowerCase().includes(term)
+        || company.includes(term)
       );
     }
     return true;
@@ -407,9 +420,7 @@ const AssessmentRuns = () => {
           {filtered.map(run => {
             const stats = runStats[run.id] || { total: 0, high: 0, med: 0, low: 0 };
             const approval = getApprovalLabel(run);
-            const creatorCompany = run.created_by
-              ? (creatorCompanyMap[run.created_by] || '')
-              : '';
+            const creatorCompany = runCompanyLabel(run);
             return (
               <Card
                 key={run.id}
@@ -435,7 +446,7 @@ const AssessmentRuns = () => {
                       <div className="flex items-center gap-1.5 text-xs flex-wrap">
                         <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
                         {creatorCompany ? (
-                          <span className="font-medium text-foreground" title="작성자 소속 회사">
+                          <span className="font-medium text-foreground" title="작성 회사">
                             {creatorCompany}
                           </span>
                         ) : (

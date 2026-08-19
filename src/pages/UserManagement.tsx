@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Users, Search, UserCheck, UserX, Shield, Plus, Building2, AlertCircle, Trash2, Crown, KeyRound, Mail } from 'lucide-react';
+import { Users, Search, UserCheck, UserX, Shield, Plus, Building2, AlertCircle, Trash2, Crown, KeyRound, Mail, HardHat } from 'lucide-react';
 
 import {
   POSITION_LABELS as SSOT_POSITION_LABELS,
@@ -22,6 +22,12 @@ import {
   syncMembershipRolePosition,
 } from '@/lib/projectPositions';
 import { companyTypeLabel, normalizeCompanyType } from '@/lib/companyTypes';
+import {
+  classifyPermissionPersona,
+  permissionPersonaLabel,
+  personaMatchesFilter,
+  type PermissionPersonaFilter,
+} from '@/lib/permissions';
 
 // === New permission model ===
 // Global role: only `master` is meaningful (system-wide admin).
@@ -78,6 +84,7 @@ const UserManagement = () => {
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterPersona, setFilterPersona] = useState<PermissionPersonaFilter>('manager');
   const [filterProject, setFilterProject] = useState('all');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -497,12 +504,23 @@ const UserManagement = () => {
     setAssignSaving(false);
   };
 
+  const personaOf = (userId: string, globalRoles: string[]) => {
+    const mems = (userMemberships[userId] || []).filter(
+      (m: any) => filterProject === 'all' || m.project_id === filterProject,
+    );
+    return classifyPermissionPersona({
+      globalRoles,
+      projectRoles: mems.map((m: any) => m.role_new),
+    });
+  };
+
   const filtered = users.filter(u => {
     if (filterStatus !== 'all' && u.account_status !== filterStatus) return false;
     if (filterProject !== 'all') {
       const mems = userMemberships[u.user_id] || [];
       if (!mems.some(m => m.project_id === filterProject)) return false;
     }
+    if (!personaMatchesFilter(personaOf(u.user_id, u.roles), filterPersona)) return false;
     if (search) {
       const term = search.toLowerCase();
       return (
@@ -520,6 +538,15 @@ const UserManagement = () => {
     pending: users.filter(u => u.account_status === 'pending').length,
     active: users.filter(u => u.account_status === 'active').length,
     master: users.filter(u => u.roles.includes('master')).length,
+    manager: users.filter(u => {
+      const p = personaOf(u.user_id, u.roles);
+      return p === 'manager' || p === 'both';
+    }).length,
+    worker: users.filter(u => {
+      const p = personaOf(u.user_id, u.roles);
+      return p === 'worker' || p === 'both';
+    }).length,
+    unassigned: users.filter(u => personaOf(u.user_id, u.roles) === 'unassigned').length,
   };
 
   if (!canManagePermissions) {
@@ -536,7 +563,7 @@ const UserManagement = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><Users className="h-6 w-6" /> 사용자 관리</h1>
-          <p className="text-sm text-muted-foreground mt-1">신규가입 승인, 역할 부여, 프로젝트 소속 지정</p>
+          <p className="text-sm text-muted-foreground mt-1">관리자(웹)와 근로자(현장 앱)를 나눠 승인·역할을 부여합니다.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => { resetAssignForm(); setShowAssignDialog(true); }}>
@@ -551,10 +578,10 @@ const UserManagement = () => {
       {/* KPI summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: '전체 사용자', value: kpis.total, icon: Users, color: 'text-foreground' },
-          { label: '승인대기', value: kpis.pending, icon: Shield, color: 'text-warning' },
-          { label: '활성', value: kpis.active, icon: UserCheck, color: 'text-success' },
-          { label: '마스터', value: kpis.master, icon: Crown, color: 'text-primary' },
+          { label: '관리자', value: kpis.manager, icon: Shield, color: 'text-primary' },
+          { label: '근로자', value: kpis.worker, icon: HardHat, color: 'text-foreground' },
+          { label: '미배정', value: kpis.unassigned, icon: Users, color: 'text-muted-foreground' },
+          { label: '승인대기', value: kpis.pending, icon: Crown, color: 'text-warning' },
         ].map(k => (
           <Card key={k.label}>
             <CardContent className="py-3 flex items-center justify-between">
@@ -567,6 +594,19 @@ const UserManagement = () => {
           </Card>
         ))}
       </div>
+
+      {/* 이용 구분: 관리자(웹) vs 근로자(현장 앱) */}
+      <Tabs value={filterPersona} onValueChange={(v) => setFilterPersona(v as PermissionPersonaFilter)}>
+        <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="manager" className="text-xs">관리자 ({kpis.manager})</TabsTrigger>
+          <TabsTrigger value="worker" className="text-xs">근로자 ({kpis.worker})</TabsTrigger>
+          <TabsTrigger value="unassigned" className="text-xs">미배정 ({kpis.unassigned})</TabsTrigger>
+          <TabsTrigger value="all" className="text-xs">전체 ({kpis.total})</TabsTrigger>
+        </TabsList>
+      </Tabs>
+      <p className="text-[11px] text-muted-foreground -mt-2">
+        관리자: 마스터·안전관리자·현장소장·관리감독자·감리·열람자. 근로자: 현장 작업자. 겸임 계정은 양쪽 탭에 보입니다.
+      </p>
 
       {/* Status tabs */}
       <Tabs value={filterStatus} onValueChange={setFilterStatus}>
@@ -629,10 +669,27 @@ const UserManagement = () => {
                 </td></tr>
               ) : filtered.map(u => {
                 const memberships = userMemberships[u.user_id] || [];
+                const persona = personaOf(u.user_id, u.roles);
                 return (
                 <tr key={u.id}>
                   <td>
-                    <div className="font-medium">{u.display_name}</div>
+                    <div className="font-medium flex items-center gap-1.5 flex-wrap">
+                      <span>{u.display_name}</span>
+                      <Badge
+                        variant="outline"
+                        className={`text-[9px] ${
+                          persona === 'worker'
+                            ? 'border-foreground/30'
+                            : persona === 'both'
+                              ? 'border-primary/40 text-primary'
+                              : persona === 'unassigned'
+                                ? 'text-muted-foreground'
+                                : 'border-primary/30 text-primary'
+                        }`}
+                      >
+                        {permissionPersonaLabel(persona)}
+                      </Badge>
+                    </div>
                     <div className="text-[11px] text-muted-foreground break-all">{u.email || '이메일 없음'}</div>
                     {u.last_sign_in_at && (
                       <div className="text-[10px] text-muted-foreground">

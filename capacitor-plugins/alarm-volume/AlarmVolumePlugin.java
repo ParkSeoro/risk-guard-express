@@ -113,7 +113,7 @@ public class AlarmVolumePlugin extends Plugin {
         playSirenTone(durationMs);
       }
       // Keep call open until duration roughly ends so JS can await
-      getBridge().getActivity().runOnUiThread(() -> {
+      runOnUi(() -> {
         // no-op; resolve immediately after start — JS waits SIREN_DURATION
       });
       JSObject ret = new JSObject();
@@ -142,7 +142,18 @@ public class AlarmVolumePlugin extends Plugin {
       call.reject("text required");
       return;
     }
-    getBridge().getActivity().runOnUiThread(() -> ensureTtsAndSpeak(call, text.trim(), lang));
+    runOnUi(() -> ensureTtsAndSpeak(call, text.trim(), lang));
+  }
+
+  private void runOnUi(Runnable r) {
+    try {
+      android.app.Activity act = getBridge() != null ? getBridge().getActivity() : null;
+      if (act != null) {
+        act.runOnUiThread(r);
+        return;
+      }
+    } catch (Exception ignored) {}
+    new android.os.Handler(getContext().getMainLooper()).post(r);
   }
 
   private void ensureTtsAndSpeak(PluginCall call, String text, String lang) {

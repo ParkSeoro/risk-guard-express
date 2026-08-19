@@ -6,6 +6,9 @@
  *
  * Owner while the activity is in the foreground: WebView / BG plugin.
  * Owner after appStateChange isActive=false (includes recents swipe): headless.
+ *
+ * HeadlessTrackService must never crash the process: START_STICKY + an uncaught
+ * GPS_PROVIDER / startForeground exception is the Android "keeps stopping" loop.
  */
 
 export type AndroidGpsPipelineOwner = "webview" | "headless";

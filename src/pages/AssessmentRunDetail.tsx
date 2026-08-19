@@ -40,9 +40,11 @@ import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 import {
   acknowledgeRiskAutoGenJob,
   cancelRiskAutoGenJob,
+  clearAutoGenReviewForLockedRun,
   continueRiskAutoGenFill,
   dismissRiskAutoGenReview,
   getRiskAutoGenJob,
+  isLockedAssessmentRunStatus,
   isRiskAutoGenRunning,
   recoverRiskAutoGenReview,
   startRiskAutoGenJob,
@@ -146,6 +148,8 @@ const AssessmentRunDetail = () => {
   const [autoGenStreamCount, setAutoGenStreamCount] = useState(0);
   const [autoGenPhaseLabel, setAutoGenPhaseLabel] = useState('');
   const autoGenAckRef = useRef<string | null>(null);
+  const runStatusRef = useRef<string | null>(null);
+  runStatusRef.current = run?.status ?? null;
   const [autoGenConditionText, setAutoGenConditionText] = useState('');
   const [autoGenWorkLocation, setAutoGenWorkLocation] = useState('');
   const [autoGenEquipmentTags, setAutoGenEquipmentTags] = useState<string[]>([]);
@@ -583,9 +587,15 @@ const AssessmentRunDetail = () => {
     };
   }, [runId, fetchAll]);
 
-  // After reload: restore [나머지 채우기] banner if fillable drafts already exist in DB
+  // After reload: restore [나머지 채우기] banner if fillable drafts already exist in DB.
+  // Locked runs must not resurrect a draft-review job (session leftover or blank-field heuristic).
   useEffect(() => {
     if (!runId || !run?.project_id) return;
+    if (isLockedAssessmentRunStatus(run.status)) {
+      clearAutoGenReviewForLockedRun(runId, run.status);
+      setAutoGenJob(getRiskAutoGenJob());
+      return;
+    }
     let cancelled = false;
     (async () => {
       const ok = await recoverRiskAutoGenReview(runId, run.project_id);
@@ -594,7 +604,20 @@ const AssessmentRunDetail = () => {
       }
     })();
     return () => { cancelled = true; };
-  }, [runId, run?.project_id]);
+  }, [runId, run?.project_id, run?.status]);
+
+  // Toast only after run status is known so an approved lock is not called "draft ready".
+  useEffect(() => {
+    if (!runId || !run) return;
+    if (isLockedAssessmentRunStatus(run.status)) return;
+    if (autoGenJob.status !== 'awaiting_review' || autoGenJob.runId !== runId) return;
+    if (autoGenAckRef.current === `review:${autoGenJob.startedAt}`) return;
+    autoGenAckRef.current = `review:${autoGenJob.startedAt}`;
+    toast({
+      title: '초안이 준비되었습니다. 공종·세부작업·위험요인을 확인·삭제한 뒤 [나머지 채우기]를 누르세요.',
+      description: `${autoGenJob.insertedTotal}행 · 세부작업·위험요인만 생성됨 · 사고사례는 [사고사례 AI 작성]에서 별도`,
+    });
+  }, [runId, run, autoGenJob.status, autoGenJob.runId, autoGenJob.startedAt, autoGenJob.insertedTotal, toast]);
 
   // Prevent accidental leave while AI generation is in progress
   useEffect(() => {
@@ -632,12 +655,11 @@ const AssessmentRunDetail = () => {
       }
 
       if (job.status === 'awaiting_review' && autoGenAckRef.current !== `review:${job.startedAt}`) {
-        autoGenAckRef.current = `review:${job.startedAt}`;
-        toast({
-          title: '초안이 준비되었습니다. 공종·세부작업·위험요인을 확인·삭제한 뒤 [나머지 채우기]를 누르세요.',
-          description: `${job.insertedTotal}행 · 세부작업·위험요인만 생성됨 · 사고사례는 [사고사례 AI 작성]에서 별도`,
-        });
-        fetchAll();
+        if (isLockedAssessmentRunStatus(runStatusRef.current)) {
+          if (job.runId) clearAutoGenReviewForLockedRun(job.runId, runStatusRef.current);
+          return;
+        }
+        if (job.runId === runId) fetchAll();
       }
       if (job.status === 'done' && autoGenAckRef.current !== `done:${job.startedAt}`) {
         autoGenAckRef.current = `done:${job.startedAt}`;
@@ -2086,7 +2108,7 @@ const AssessmentRunDetail = () => {
         </div>
       )}
 
-      {autoGenJob.status === 'awaiting_review' && autoGenJob.runId === runId && (
+      {run && !isApproved && !isArchived && autoGenJob.status === 'awaiting_review' && autoGenJob.runId === runId && (
         <div className="print:hidden sticky top-0 z-30 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0 space-y-0.5">
@@ -2121,7 +2143,7 @@ const AssessmentRunDetail = () => {
           </div>
         </div>
       )}
-      {autoGenJob.status !== 'awaiting_review' && autoGenJob.status !== 'running' && items.some((it) => isFillableRiskItem(it)) && (canEdit || canForceEdit) && (
+      {autoGenJob.status !== 'awaiting_review' && autoGenJob.status !== 'running' && !isApproved && !isArchived && items.some((it) => isFillableRiskItem(it)) && (canEdit || canForceEdit) && (
         <div className="print:hidden sticky top-0 z-30 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm">빈 개선대책·보호구·법적근거가 있습니다. [나머지 채우기]로 행별로 채우세요. (품질 점검 자동보완은 쓰지 마세요)</p>

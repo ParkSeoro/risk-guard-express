@@ -52,6 +52,7 @@ public class HeadlessTrackService extends Service implements LocationListener {
   private int outsideStreak = 0;
   /** True = no track-location posts; GPS interval is resumePollMs until back inside. */
   private volatile boolean watchMode = false;
+  private volatile boolean running = false;
 
   @Override
   public IBinder onBind(Intent intent) {
@@ -61,45 +62,61 @@ public class HeadlessTrackService extends Service implements LocationListener {
   @Override
   public int onStartCommand(Intent intent, int flags, int startId) {
     if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+      running = false;
       stopSelf();
       return START_NOT_STICKY;
     }
-    startAsForeground();
+    running = true;
+    // If FGS promotion fails (revoked location, OEM GPS off, etc.) do NOT
+    // START_STICKY — that is the "Safenex keeps stopping" crash loop.
+    if (!startAsForeground()) {
+      running = false;
+      stopSelf();
+      return START_NOT_STICKY;
+    }
     applyLocationUpdates();
     return START_STICKY;
   }
 
   @Override
   public void onDestroy() {
+    running = false;
     stopUpdates();
     io.shutdownNow();
     super.onDestroy();
   }
 
-  private void startAsForeground() {
-    ensureChannel();
-    Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
-    PendingIntent pi = launch == null
-        ? null
-        : PendingIntent.getActivity(
-            this,
-            0,
-            launch,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+  /** @return false if we must not keep the process alive */
+  private boolean startAsForeground() {
+    try {
+      ensureChannel();
+      Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
+      PendingIntent pi = launch == null
+          ? null
+          : PendingIntent.getActivity(
+              this,
+              0,
+              launch,
+              PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
-    Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
-        .setContentTitle("SafeNex 위치 추적")
-        .setContentText("앱을 닫아도 현장 위험구역 감지를 유지합니다")
-        .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-        .setOngoing(true)
-        .setContentIntent(pi)
-        .setPriority(NotificationCompat.PRIORITY_LOW)
-        .build();
+      Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
+          .setContentTitle("SafeNex 위치 추적")
+          .setContentText("앱을 닫아도 현장 위험구역 감지를 유지합니다")
+          .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+          .setOngoing(true)
+          .setContentIntent(pi)
+          .setPriority(NotificationCompat.PRIORITY_LOW)
+          .build();
 
-    if (Build.VERSION.SDK_INT >= 34) {
-      startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
-    } else {
-      startForeground(NOTIF_ID, n);
+      if (Build.VERSION.SDK_INT >= 34) {
+        startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+      } else {
+        startForeground(NOTIF_ID, n);
+      }
+      return true;
+    } catch (Exception e) {
+      Log.e(TAG, "startForeground failed — stopping to avoid crash loop", e);
+      return false;
     }
   }
 
@@ -118,28 +135,58 @@ public class HeadlessTrackService extends Service implements LocationListener {
   private void setWatchMode(boolean next) {
     if (watchMode == next) return;
     watchMode = next;
-    main.post(this::applyLocationUpdates);
+    if (running) main.post(this::applyLocationUpdates);
+  }
+
+  private boolean providerUsable(String name) {
+    try {
+      if (locationManager == null) return false;
+      if (!locationManager.getAllProviders().contains(name)) return false;
+      return locationManager.isProviderEnabled(name);
+    } catch (Exception e) {
+      return false;
+    }
+  }
+
+  private void requestSafe(String provider, long minTime, float minDist) {
+    if (!providerUsable(provider)) return;
+    try {
+      locationManager.requestLocationUpdates(provider, minTime, minDist, this, Looper.getMainLooper());
+    } catch (SecurityException e) {
+      Log.w(TAG, "no location permission for " + provider, e);
+    } catch (IllegalArgumentException e) {
+      Log.w(TAG, "provider unavailable: " + provider, e);
+    } catch (Exception e) {
+      Log.w(TAG, "requestLocationUpdates failed: " + provider, e);
+    }
   }
 
   private void applyLocationUpdates() {
+    if (!running) return;
     try {
       if (locationManager == null) {
         locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
       }
       if (locationManager == null) return;
-      locationManager.removeUpdates(this);
+      try {
+        locationManager.removeUpdates(this);
+      } catch (Exception ignored) {
+      }
       SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
       long minTime = watchMode
           ? Math.max(30_000, p.getInt("resume_poll_ms", 300_000))
           : Math.max(5_000, p.getInt("interval_ms", 45_000));
       float minDist = watchMode ? 40f : 8f;
-      locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, minTime, minDist, this);
-      if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-        locationManager.requestLocationUpdates(
-            LocationManager.NETWORK_PROVIDER, Math.max(minTime, 20_000), watchMode ? 50f : 15f, this);
+      // Never assume GPS exists — missing provider throws and START_STICKY loops
+      // the process ("Safenex keeps stopping") on many Korean OEM phones.
+      requestSafe(LocationManager.GPS_PROVIDER, minTime, minDist);
+      requestSafe(LocationManager.NETWORK_PROVIDER, Math.max(minTime, 20_000), watchMode ? 50f : 15f);
+      if (!providerUsable(LocationManager.GPS_PROVIDER)
+          && !providerUsable(LocationManager.NETWORK_PROVIDER)) {
+        requestSafe(LocationManager.PASSIVE_PROVIDER, minTime, minDist);
       }
-    } catch (SecurityException e) {
-      Log.w(TAG, "location permission missing", e);
+    } catch (Exception e) {
+      Log.w(TAG, "applyLocationUpdates failed", e);
     }
   }
 
@@ -152,7 +199,15 @@ public class HeadlessTrackService extends Service implements LocationListener {
 
   @Override
   public void onLocationChanged(@NonNull Location location) {
-    io.execute(() -> postFix(location));
+    if (!running) return;
+    try {
+      io.execute(() -> {
+        if (!running) return;
+        postFix(location);
+      });
+    } catch (Exception e) {
+      Log.w(TAG, "drop location after shutdown", e);
+    }
   }
 
   @Override

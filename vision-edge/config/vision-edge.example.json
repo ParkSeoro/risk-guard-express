@@ -1,0 +1,41 @@
+{
+  "identity": {
+    "gateway_id": "gateway-site-001",
+    "tenant_id": "tenant-uuid",
+    "site_id": "site-uuid",
+    "fleet_base_url": "https://vision-api.example.com"
+  },
+  "listen_host": "127.0.0.1",
+  "listen_port": 8787,
+  "state_dir": "/var/lib/safenex-vision-edge",
+  "certificate_path": "/etc/safenex-vision-edge/device.crt",
+  "private_key_path": "/etc/safenex-vision-edge/device.key",
+  "ca_bundle_path": "/etc/safenex-vision-edge/fleet-ca.pem",
+  "fleet_token_url": "https://identity.example.com/oauth/token",
+  "fleet_client_id": "gateway-site-001",
+  "master_public_key_path": "/etc/safenex-vision-edge/master-ed25519-public.pem",
+  "heartbeat_interval_seconds": 30,
+  "event_flush_interval_seconds": 10,
+  "ffprobe_timeout_seconds": 8,
+  "nvrs": [
+    {
+      "nvr_id": "nvr-001",
+      "name": "A동 NVR",
+      "vendor": "generic-onvif",
+      "host": "192.168.10.10",
+      "port": 554,
+      "read_only": true
+    }
+  ],
+  "cameras": [
+    {
+      "camera_id": "camera-a-001",
+      "name": "A동 고소작업 구역",
+      "nvr_id": "nvr-001",
+      "stream_url_secret_ref": "camera-a-001-rtsp",
+      "enabled": true,
+      "expected_fps": 10,
+      "ai_profile": "ppe-standard-kr-v1"
+    }
+  ]
+}

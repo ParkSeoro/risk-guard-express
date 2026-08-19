@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SafeNex Vision Edge</title>
+  <style>
+    :root { --bg:#081118; --panel:#101D26; --panel2:#152633; --line:#29404F; --text:#E7EFF3; --muted:#89A0AE; --accent:#1BB6A8; --alert:#EB615B; --warn:#E6B34A; }
+    * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text); font-family:Inter, "Noto Sans KR", Arial, sans-serif; min-width:320px; }
+    .shell { max-width:1440px; margin:0 auto; min-height:100vh; padding:32px 40px 46px; }
+    .topbar { border-top:5px solid var(--accent); border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:flex-end; padding:20px 0 18px; }
+    .brand small,.eyebrow { color:var(--accent); letter-spacing:2px; font-weight:700; font-size:11px; } h1 { margin:7px 0 0; font-family:Georgia, "Noto Serif KR", serif; font-size:34px; letter-spacing:-1px; } .clock { text-align:right; color:var(--muted); font-size:13px; line-height:1.6; }
+    .hero { display:grid; grid-template-columns:1.55fr .8fr; gap:22px; margin-top:26px; } .hero-main { background:linear-gradient(135deg,#0F222D,#101D26); border-top:6px solid var(--accent); padding:25px; min-height:196px; } .hero-main h2 { font-size:28px; margin:7px 0 14px; font-family:Georgia, "Noto Serif KR", serif; } .hero-main p { color:var(--muted); line-height:1.6; margin:0; max-width:720px; }
+    .status-block { border-top:6px solid var(--accent); background:var(--panel); padding:22px; min-height:196px; display:flex; flex-direction:column; justify-content:space-between; } .status { font-size:27px; font-weight:800; color:var(--accent); } .status.degraded,.status.offline_dependency { color:var(--warn); } .status.error { color:var(--alert); } .status-note { color:var(--muted); font-size:13px; line-height:1.5; }
+    .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-top:18px; } .metric { border-top:2px solid var(--line); padding-top:11px; min-height:90px; } .metric .value { font-size:25px; font-family:Georgia,serif; color:var(--text); margin-top:8px; } .metric .label { color:var(--muted); font-size:11px; letter-spacing:1.2px; }
+    .grid { display:grid; grid-template-columns:1.2fr .8fr; gap:24px; margin-top:32px; } .section { border-top:6px solid var(--line); padding-top:16px; } .section h3 { margin:6px 0 17px; font-size:19px; font-family:Georgia, "Noto Serif KR", serif; } .table { width:100%; border-collapse:collapse; font-size:14px; } .table th { color:var(--muted); font-weight:600; font-size:11px; letter-spacing:1px; text-align:left; border-bottom:1px solid var(--line); padding:0 8px 10px 0; } .table td { border-bottom:1px solid #1D3340; padding:13px 8px 13px 0; color:#D5E0E5; } .badge { display:inline-block; padding:3px 7px; font-size:11px; font-weight:700; letter-spacing:.5px; border:1px solid var(--accent); color:var(--accent); } .badge.offline { border-color:var(--alert); color:var(--alert); } .badge.degraded { border-color:var(--warn); color:var(--warn); }
+    .event { border-bottom:1px solid #1D3340; padding:12px 0; } .event:first-of-type { border-top:1px solid #1D3340; } .event-top { display:flex; justify-content:space-between; gap:10px; font-size:13px; font-weight:700; } .event-detail { color:var(--muted); font-size:13px; margin-top:6px; line-height:1.4; } .event-time { color:var(--muted); font-size:11px; white-space:nowrap; }
+    .message { color:var(--muted); font-size:14px; line-height:1.6; padding:15px 0; } .error { color:var(--alert); } .footer { border-top:1px solid var(--line); margin-top:32px; padding-top:15px; color:var(--muted); font-size:12px; line-height:1.6; }
+    @media (max-width:800px) { .shell { padding:22px 18px; } .topbar,.hero,.grid { display:block; } .clock { text-align:left; margin-top:16px; } .status-block,.section { margin-top:20px; } .metrics { grid-template-columns:repeat(2,1fr); } h1 { font-size:28px; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar"><div class="brand"><small>SAFENEX / VISION EDGE</small><h1>현장 NVR · AI CCTV 운영 상태</h1></div><div class="clock" id="updated">상태를 불러오는 중</div></header>
+    <section class="hero"><div class="hero-main"><div class="eyebrow">LOCAL SAFETY EXECUTION</div><h2 id="gateway-name">Gateway 연결 중</h2><p>이 화면은 현장 Gateway의 상태와 AI 안전 이벤트를 확인하기 위한 로컬 운영 화면입니다. NVR 관리자 비밀과 원본 영상은 노출하지 않으며, SafeNex Vision Fleet에는 권한화된 상태·이벤트만 전송합니다.</p><div class="metrics"><div class="metric"><div class="label">EVENT SPOOL</div><div class="value" id="spool">—</div></div><div class="metric"><div class="label">DISK FREE</div><div class="value" id="disk">—</div></div><div class="metric"><div class="label">UPTIME</div><div class="value" id="uptime">—</div></div><div class="metric"><div class="label">FLEET LINK</div><div class="value" id="fleet">—</div></div></div></div><aside class="status-block"><div><div class="eyebrow">RUNTIME STATE</div><div class="status" id="connection">—</div></div><div class="status-note" id="fleet-detail">Master 연동 상태를 확인하는 중입니다.</div></aside></section>
+    <section class="grid"><div class="section"><div class="eyebrow">CAMERA HEALTH</div><h3>카메라 · 스트림 상태</h3><table class="table"><thead><tr><th>CAMERA</th><th>STATE</th><th>FPS</th><th>LAST FRAME</th><th>DETAIL</th></tr></thead><tbody id="camera-body"><tr><td colspan="5" class="message">카메라 상태를 불러오는 중입니다.</td></tr></tbody></table></div><div class="section"><div class="eyebrow">RECENT SAFETY EVENTS</div><h3>최근 AI·장비 이벤트</h3><div id="events"><div class="message">아직 로컬 이벤트가 없습니다.</div></div></div></section>
+    <footer class="footer">SAFE LOCAL DEFAULT · 중앙 장애 또는 인터넷 단절 상태에서도 현장 NVR 녹화와 마지막 검증 AI 정책은 유지되어야 합니다.</footer>
+  </main>
+  <script>
+    const formatBytes = b => b == null ? '—' : b > 1024**3 ? `${(b/1024**3).toFixed(1)} GB` : `${(b/1024**2).toFixed(0)} MB`;
+    const formatUptime = s => s == null ? '—' : s < 3600 ? `${Math.floor(s/60)}m` : `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`;
+    const esc = value => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+    function renderStatus(data) {
+      document.getElementById('gateway-name').textContent = `${data.gateway_id} · ${data.site_id}`;
+      const state = data.connection_state || 'unknown'; const status = document.getElementById('connection'); status.textContent = state.toUpperCase(); status.className = `status ${state}`;
+      document.getElementById('spool').textContent = data.runtime?.event_spool_depth ?? '—'; document.getElementById('disk').textContent = formatBytes(data.runtime?.disk_free_bytes); document.getElementById('uptime').textContent = formatUptime(data.runtime?.uptime_seconds); document.getElementById('fleet').textContent = data.fleet_configured ? 'READY' : 'LOCAL';
+      document.getElementById('fleet-detail').textContent = data.last_fleet_error ? `Fleet 응답 대기: ${data.last_fleet_error}` : (data.fleet_configured ? 'mTLS 기반 Vision Fleet 연동이 구성되었습니다.' : 'Fleet endpoint가 아직 구성되지 않았습니다. 로컬 안전 모드로 동작합니다.');
+      const cameras = data.camera_health || []; document.getElementById('camera-body').innerHTML = cameras.length ? cameras.map(c => `<tr><td>${esc(c.camera_id)}</td><td><span class="badge ${esc(c.state)}">${esc(c.state)}</span></td><td>${c.observed_fps ?? '—'}</td><td>${c.last_frame_at ? new Date(c.last_frame_at).toLocaleTimeString('ko-KR') : '—'}</td><td>${esc(c.detail || '정상')}</td></tr>`).join('') : '<tr><td colspan="5" class="message">등록된 카메라가 없습니다. 설치 마법사 또는 구성 파일에서 읽기 전용 카메라를 추가하세요.</td></tr>';
+      document.getElementById('updated').textContent = `LOCAL STATUS · ${new Date().toLocaleString('ko-KR')}`;
+    }
+    function renderEvents(events) { document.getElementById('events').innerHTML = events.length ? events.map(e => `<div class="event"><div class="event-top"><span>${esc(e.rule_outcome || e.event_type)} · ${esc(e.severity)}</span><span class="event-time">${new Date(e.occurred_at).toLocaleTimeString('ko-KR')}</span></div><div class="event-detail">${esc(e.camera_id || 'gateway')} · ${esc(e.event_type)} · ${esc(e.requires_human_review ? '현장 확인 필요' : '자동 운영 이벤트')}</div></div>`).join('') : '<div class="message">최근 로컬 이벤트가 없습니다.</div>'; }
+    async function refresh() { try { const [s,e] = await Promise.all([fetch('/api/v1/status'), fetch('/api/v1/events/recent')]); if (!s.ok) throw new Error('status request failed'); renderStatus(await s.json()); renderEvents((await e.json()).events || []); } catch (err) { document.getElementById('connection').textContent = 'UNAVAILABLE'; document.getElementById('connection').className = 'status error'; document.getElementById('fleet-detail').textContent = `로컬 Gateway API 오류: ${err.message}`; } }
+    refresh(); setInterval(refresh, 10000);
+  </script>
+</body>
+</html>

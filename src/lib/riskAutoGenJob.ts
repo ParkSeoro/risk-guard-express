@@ -203,6 +203,24 @@ export function getRiskAutoGenJob(): RiskAutoGenJobState {
   return { ...state, pendingIds: [...state.pendingIds] };
 }
 
+/** Approved / discarded runs must not resurrect the draft-review CTA. */
+export function isLockedAssessmentRunStatus(status?: string | null): boolean {
+  const s = String(status || '').trim();
+  return s === '승인완료' || s === '폐기';
+}
+
+/** Drop leftover awaiting_review for this run when it is locked. */
+export function clearAutoGenReviewForLockedRun(runId: string, runStatus?: string | null): boolean {
+  if (!runId || !isLockedAssessmentRunStatus(runStatus)) return false;
+  if (state.runId !== runId) return false;
+  if (state.status === 'running') return false;
+  stopElapsedClock();
+  state = { ...IDLE };
+  if (lastJobInput?.runId === runId) lastJobInput = null;
+  emit();
+  return true;
+}
+
 export function subscribeRiskAutoGenJob(fn: Listener): () => void {
   listeners.add(fn);
   fn(getRiskAutoGenJob());
@@ -242,10 +260,23 @@ export function cancelRiskAutoGenJob(reason?: string) {
 /**
  * If this run already has fillable draft rows in DB, show the review banner
  * even after a full page reload (session/memory lost).
+ * Locked (승인완료/폐기) runs never recover — leftover session jobs are cleared.
  */
 export async function recoverRiskAutoGenReview(runId: string, projectId?: string): Promise<boolean> {
   if (!runId) return false;
   if (state.status === 'running') return false;
+
+  const { data: runRow } = await supabase
+    .from('assessment_runs')
+    .select('status')
+    .eq('id', runId)
+    .maybeSingle();
+  const runStatus = (runRow as { status?: string } | null)?.status;
+  if (isLockedAssessmentRunStatus(runStatus)) {
+    clearAutoGenReviewForLockedRun(runId, runStatus);
+    return false;
+  }
+
   if (state.status === 'awaiting_review' && state.runId === runId) return true;
 
   const { data, error } = await supabase

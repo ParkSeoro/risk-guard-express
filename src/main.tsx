@@ -5,6 +5,9 @@ import { initOtaUpdater } from "./lib/native/otaUpdater";
 import { runBootOtaGate } from "./lib/native/bootOtaGate";
 import { runBootStoreGate } from "./lib/native/bootStoreGate";
 import { isNativeApp } from "./lib/native/platform";
+import { installStaleChunkAutoReload } from "./lib/staleChunkError";
+
+installStaleChunkAutoReload();
 
 const rootEl = document.getElementById("root");
 

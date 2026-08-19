@@ -12,11 +12,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import {
   createLibraryImportDraft,
-  downloadGlobalRiskLibraryExcelTemplate,
   ingestApprovedRunsToLibrary,
-  mapGlobalRiskLibraryExcelRows,
   publishLibraryImport,
 } from '@/lib/globalRiskLibrary';
+import {
+  downloadGlobalRiskLibraryExcelTemplate,
+  mapGlobalRiskLibraryExcelRows,
+} from '@/lib/globalRiskLibraryExcel';
 import * as XLSX from 'xlsx';
 import { Loader2, Database, FileSpreadsheet, FileText, Download } from 'lucide-react';
 

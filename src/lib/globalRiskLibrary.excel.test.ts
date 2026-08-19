@@ -5,7 +5,7 @@ import {
   GLOBAL_RISK_LIBRARY_EXCEL_REQUIRED,
   buildGlobalRiskLibraryExcelTemplate,
   mapGlobalRiskLibraryExcelRows,
-} from '@/lib/globalRiskLibrary';
+} from '@/lib/globalRiskLibraryExcel';
 
 describe('global risk library excel template', () => {
   it('lists 공종·세부작업·위험요인 as required', () => {

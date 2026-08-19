@@ -979,6 +979,7 @@ export type Database = {
       }
       assessment_runs: {
         Row: {
+          author_user_id: string | null
           created_at: string
           created_by: string | null
           deleted_at: string | null
@@ -1006,6 +1007,7 @@ export type Database = {
           worker_participation_images: string[] | null
         }
         Insert: {
+          author_user_id?: string | null
           created_at?: string
           created_by?: string | null
           deleted_at?: string | null
@@ -1033,6 +1035,7 @@ export type Database = {
           worker_participation_images?: string[] | null
         }
         Update: {
+          author_user_id?: string | null
           created_at?: string
           created_by?: string | null
           deleted_at?: string | null

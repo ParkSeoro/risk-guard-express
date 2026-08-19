@@ -237,11 +237,13 @@ Deno.serve(async (req) => {
 
     let authorCompanyName = "(미지정)";
     let gcCompanyNames = "(미지정)";
-    if (run.created_by) {
+    let legalAuthorName = "";
+    const legalAuthorId = run.author_user_id || run.created_by;
+    if (legalAuthorId) {
       const { data: pmRows } = await supabase
         .from("project_members")
         .select("company_id, role_new, companies:company_id(name, type)")
-        .eq("user_id", run.created_by)
+        .eq("user_id", legalAuthorId)
         .eq("project_id", run.project_id);
       const pm = pickMemberRow(pmRows || []);
       const co = (pm as any)?.companies;
@@ -249,6 +251,14 @@ Deno.serve(async (req) => {
       authorCompanyName = String(co?.name || "").trim() || "(미지정)";
       const gcId = resolveParentGcId(authorCompanyId, projectCompanies);
       gcCompanyNames = String(projectCompanies.find((c) => c.id === gcId)?.name || "").trim() || "(미지정)";
+    }
+    if (run.author_user_id) {
+      const { data: authorProf } = await supabase
+        .from("profiles")
+        .select("display_name")
+        .eq("user_id", run.author_user_id)
+        .maybeSingle();
+      legalAuthorName = String(authorProf?.display_name || "").trim();
     }
 
 
@@ -612,20 +622,22 @@ td, th { page-break-inside: auto; }
         <div class="report-info-value">${gcCompanyNames}</div>
       </div>
       <div class="report-info-row">
+        <div class="report-info-label">작성 관리감독자</div>
+        <div class="report-info-value">${legalAuthorName || "미지정"}</div>
         <div class="report-info-label">작성 회사</div>
         <div class="report-info-value">${authorCompanyName}</div>
+      </div>
+      <div class="report-info-row">
         <div class="report-info-label">적용기간</div>
         <div class="report-info-value">${runPeriod}</div>
+        <div class="report-info-label">출력일</div>
+        <div class="report-info-value">${today}</div>
       </div>
       <div class="report-info-row">
         <div class="report-info-label">항목수</div>
         <div class="report-info-value">${items.length}건 (상 ${highCount} / 중 ${medCount} / 하 ${lowCount})</div>
         <div class="report-info-label">검증결과</div>
         <div class="report-info-value">${run.validation_verdict || "-"} ${run.validation_score != null ? `(${run.validation_score}점)` : ""}</div>
-      </div>
-      <div class="report-info-row">
-        <div class="report-info-label">출력일</div>
-        <div class="report-info-value">${today}</div>
       </div>
     </div>
   </div>

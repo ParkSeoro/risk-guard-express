@@ -73,6 +73,13 @@ import CloneRunDialog from '@/components/assessment-runs/CloneRunDialog';
 import EditRunDialog from '@/components/assessment-runs/EditRunDialog';
 import { evaluateResidualHigh } from '@/lib/residualRiskGuardrails';
 import { buildAssessmentSubmitPreflight } from '@/lib/assessmentSubmitPreflight';
+import {
+  assessmentAuthorSubmitMessage,
+  canAssistAssessmentWrite,
+  canSubmitAssessmentRun,
+  hasAssessmentLegalAuthor,
+} from '@/lib/assessmentAuthor';
+import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
 import { submitApprovalFromDraft } from '@/lib/approvalPlatform';
 import {
   buildAssessmentAssigneeOptions,
@@ -332,12 +339,13 @@ const AssessmentRunDetail = () => {
       setProjectCompanies(companies as any[]);
       setEnvironmentTags((envTagsRes.data || []) as any);
 
-      const { data: creatorRows } = runRes.data.created_by
+      const legalAuthorId = runRes.data.author_user_id || runRes.data.created_by;
+      const { data: creatorRows } = legalAuthorId
         ? await supabase
             .from('project_members')
             .select('user_id, company_id, role_new, companies:company_id(name, type)')
             .eq('project_id', projectId)
-            .eq('user_id', runRes.data.created_by)
+            .eq('user_id', legalAuthorId)
         : { data: [] as any[] };
       const creatorPicked = pickProjectMemberRow((creatorRows || []) as any[]);
       const creatorCo = (creatorPicked as any)?.companies;
@@ -349,7 +357,7 @@ const AssessmentRunDetail = () => {
           }
         : null);
       const assigneeCompanyIds = resolveAuthorCompanyIds({
-        createdBy: runRes.data.created_by,
+        createdBy: legalAuthorId,
         creatorMembers: (creatorRows || []) as any[],
         targetCompanyIds: runRes.data.target_company_ids,
         fallbackCompanyId: userCompanyId,
@@ -1234,14 +1242,20 @@ const AssessmentRunDetail = () => {
       ? '결재선이 수정됨 — [결재선 저장] 필요'
       : approvalDraftInfo.errors[0]
         || (approvalDraftInfo.ready ? `임시 저장 완료 · ${approvalDraftInfo.stepCount}단계` : '결재선 [저장] 후 상신 가능'),
+    authorUserId: run?.author_user_id,
+    authorName: userDirectory.find((u) => u.user_id === run?.author_user_id)?.display_name || null,
+    currentUserId: user?.id,
   }), [
     activeItems.length,
     run?.opinion_required,
     run?.health_required,
+    run?.author_user_id,
     participationCounts,
     approvalPreflightMeta,
     approvalLines.length,
     approvalDraftInfo,
+    userDirectory,
+    user?.id,
   ]);
 
   const submitBlockedReason = useMemo(() => {
@@ -1267,6 +1281,15 @@ const AssessmentRunDetail = () => {
   // Submit for approval — 전자결재 플랫폼 draft 만 사용 (설정과 상신 분리)
   const handleSubmitForApproval = async () => {
     if (!run || !user || !profile || !runId) return;
+    const authorBlock = assessmentAuthorSubmitMessage({
+      authorUserId: run.author_user_id,
+      authorName: userDirectory.find((u) => u.user_id === run.author_user_id)?.display_name || null,
+      userId: user.id,
+    });
+    if (authorBlock) {
+      toast({ title: '상신 불가', description: authorBlock, variant: 'destructive' });
+      return;
+    }
     if (approvalDraftInfo.dirty) {
       const saved = await approvalLineRef.current?.saveIfDirty();
       if (!saved) {
@@ -1627,6 +1650,10 @@ const AssessmentRunDetail = () => {
 
   const handleExportPDF = async () => {
     if (!run) return;
+    if (!hasAssessmentLegalAuthor(run.author_user_id)) {
+      toast({ title: '인쇄 불가', description: '작성 주체(관리감독자)를 지정한 뒤에만 인쇄할 수 있습니다.', variant: 'destructive' });
+      return;
+    }
     toast({ title: '인쇄용 HTML 생성 중...', description: '잠시 기다려주세요.' });
     try {
       await exportToPDFServer(runId!, 'assessment', 'download');
@@ -1651,6 +1678,10 @@ const AssessmentRunDetail = () => {
   // We open the window SYNCHRONOUSLY here so popup blockers don't block it.
   const handlePrint = async () => {
     if (!run) return;
+    if (!hasAssessmentLegalAuthor(run.author_user_id)) {
+      toast({ title: '인쇄 불가', description: '작성 주체(관리감독자)를 지정한 뒤에만 인쇄할 수 있습니다.', variant: 'destructive' });
+      return;
+    }
     const printWindow = window.open('', '_blank', 'width=1100,height=800');
     if (!printWindow) {
       toast({
@@ -1956,10 +1987,23 @@ const AssessmentRunDetail = () => {
 
   const canValidate = isClientSm && !isApproved && uiStatus !== '폐기' && activeItems.length > 0;
   const canSubmitApproval = !isInApproval && !isApproved && uiStatus !== '폐기' && activeItems.length > 0;
+  const authorDisplayName = userDirectory.find((u) => u.user_id === run.author_user_id)?.display_name || '';
+  const userCanSubmit = canSubmitAssessmentRun({ userId: user?.id, authorUserId: run.author_user_id });
+  const authorGateMessage = assessmentAuthorSubmitMessage({
+    authorUserId: run.author_user_id,
+    authorName: authorDisplayName,
+    userId: user?.id,
+  });
+  const canAssignAuthor = (canEdit || canForceEdit) && (
+    !!isMaster
+    || canAssistAssessmentWrite(userRole, !!isMaster)
+    || userRole === 'site_supervisor'
+    || run.created_by === user?.id
+  );
   const canCancelApproval =
     isInApproval
     && !hasRejectedApproval
-    && (!!isAdmin || (user && run.created_by === user.id));
+    && (!!isAdmin || (user && (run.created_by === user.id || run.author_user_id === user.id)));
   const canAutoRemediate = isClientSm && validationReport && validationReport.verdict !== '적정' && (canEdit || canForceEdit) && !isInApproval && !isApproved;
   const isMyApprovalPending = user && latestApprovals.some(a => a.status === '진행중' && a.approver_id === user.id);
   const statusInfo = STATUS_FLOW[uiStatus as keyof typeof STATUS_FLOW] || { label: uiStatus, color: '' };
@@ -2106,6 +2150,31 @@ const AssessmentRunDetail = () => {
           <span className="ml-auto text-muted-foreground shrink-0">의견 {participationCounts.opinions} · 보건 {participationCounts.healths}</span>
         </div>
       )}
+      {(!hasAssessmentLegalAuthor(run.author_user_id) || (canAssistAssessmentWrite(userRole, false) && !userCanSubmit)) && (
+        <div className="print:hidden rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs space-y-2">
+          <p className="font-medium">
+            {hasAssessmentLegalAuthor(run.author_user_id)
+              ? `보좌 입력 — 작성 주체: ${authorDisplayName || '관리감독자'}. 상신은 관리감독자만 가능합니다.`
+              : '작성 주체(관리감독자)가 없습니다. 지정하기 전에는 상신·인쇄할 수 없습니다.'}
+          </p>
+          {canAssignAuthor && (
+            <AssessmentAuthorPicker
+              projectId={run.project_id}
+              value={run.author_user_id || ''}
+              onChange={async (id) => {
+                const { error } = await supabase.from('assessment_runs').update({ author_user_id: id } as any).eq('id', runId);
+                if (error) {
+                  toast({ title: '작성 주체 저장 실패', description: error.message, variant: 'destructive' });
+                  return;
+                }
+                setRun((prev: any) => (prev ? { ...prev, author_user_id: id } : prev));
+                toast({ title: '작성 주체(관리감독자)를 지정했습니다.' });
+              }}
+              required
+            />
+          )}
+        </div>
+      )}
       {/* Company Form Header - 회사 양식 */}
       <Card className="print:border-2 print:border-foreground">
         <CardContent className="py-4 space-y-3">
@@ -2118,6 +2187,7 @@ const AssessmentRunDetail = () => {
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">현장명:</span><span>{project?.site_name || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">발주처:</span><span>{docCompanies.clientCompanyName}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">시공사:</span><span>{docCompanies.gcCompanyName}</span></div>
+            <div className="flex gap-1"><span className="font-medium text-muted-foreground">작성 관리감독자:</span><span>{authorDisplayName || '미지정'}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">작성 회사:</span><span>{docCompanies.authorCompanyName}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">기간:</span><span>{run.start_date || project?.period_start || ''} ~ {run.end_date || project?.period_end || ''}</span></div>
             <div className="flex gap-1"><span className="font-medium text-muted-foreground">항목 수:</span><span>{stats.total}건</span></div>
@@ -2338,10 +2408,13 @@ const AssessmentRunDetail = () => {
             </Button>
           </>
         )}
-        {canSubmitApproval && (
+        {canSubmitApproval && userCanSubmit && (
           <Button size="sm" className="gap-1.5" onClick={() => setShowApproval(true)}>
             <Send className="h-3.5 w-3.5" /> {isReturned ? '재상신' : '결재 상신'}
           </Button>
+        )}
+        {canSubmitApproval && !userCanSubmit && authorGateMessage && (
+          <span className="text-[11px] text-muted-foreground max-w-[220px] leading-snug">{authorGateMessage}</span>
         )}
         {canCancelApproval && (
           <Button size="sm" variant="outline" className="gap-1.5 text-destructive" onClick={handleCancelApproval}>

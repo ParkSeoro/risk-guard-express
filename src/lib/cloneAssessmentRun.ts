@@ -13,6 +13,7 @@ export type CloneAssessmentRunSource = {
   notes?: string | null;
   opinion_required?: boolean | null;
   health_required?: boolean | null;
+  author_user_id?: string | null;
 };
 
 export type CloneAssessmentRunResult =
@@ -75,6 +76,7 @@ export async function cloneAssessmentRun(opts: {
     health_required: source.health_required ?? true,
     status: '작성중',
     created_by: userId,
+    author_user_id: source.author_user_id || null,
   }]).select('id').single();
 
   if (error || !newRun) {

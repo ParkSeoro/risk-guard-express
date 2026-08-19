@@ -11,3 +11,6 @@ data/
 *.key
 *.crt
 *.env
+dist/
+build/
+src/*.egg-info/

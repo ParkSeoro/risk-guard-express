@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+case "${1:-remove}" in
+  remove|deconfigure|upgrade|failed-upgrade)
+    systemctl stop safenex-vision-edge.service >/dev/null 2>&1 || true
+    ;;
+esac
+
+exit 0

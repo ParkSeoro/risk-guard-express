@@ -1,0 +1,10 @@
+Package: safenex-vision-edge
+Version: 0.1.0
+Section: admin
+Priority: optional
+Architecture: amd64
+Maintainer: SafeNex <vision@safenex.local>
+Depends: python3 (>= 3.12), python3-venv, ffmpeg, systemd
+Description: SafeNex 현장 NVR · 지능형 AI CCTV Edge Gateway
+ SafeNex Vision Edge는 현장 NVR과 같은 LAN에서 동작하며,
+ 읽기 전용 영상 상태 점검, AI 안전 이벤트, Fleet 연동 및 로컬 운영 UI를 제공한다.

@@ -69,3 +69,23 @@ python3 -m compileall -q src tests
 ## 다음 Pilot 조건
 
 실제 현장 배포 전에 다음을 충족해야 한다. 첫째, 대상 NVR·카메라 조합을 호환성 랩에서 읽기 전용으로 검증한다. 둘째, AI 모델 artifact와 탐지 클래스의 출처·해시·성능 기준을 등록하고 낮·야간·역광·PPE 종류별 오탐·누락을 측정한다. 셋째, Master의 mTLS token endpoint, device certificate CA, Ed25519 정책·명령 서명 키, audit storage를 배포한다. 넷째, 높은 위험의 AI 경보와 PA·경광등 연동은 현장 safety manager의 승인과 별도 interlock 시험을 통과한 뒤에만 활성화한다.
+
+## 현장용 설치 파일: Ubuntu 24.04 amd64
+
+배포 파일 `safenex-vision-edge_0.1.0_amd64.deb`는 **Ubuntu 24.04 amd64** NVR 인접 Gateway 장비용이다. 인터넷이 없는 현장에서도 Python 라이브러리는 패키지 안의 wheelhouse에서 설치되지만, 운영체제 차원의 `python3-venv`, `ffmpeg`, `systemd` 패키지는 사전에 준비되어 있어야 한다.
+
+현장 사용자는 파일을 다운로드한 뒤 파일 관리자의 소프트웨어 설치 화면에서 열거나, 터미널에서 다음 한 줄을 실행하면 된다.
+
+```bash
+sudo apt install ./safenex-vision-edge_0.1.0_amd64.deb
+```
+
+설치 과정은 `safenex-vision-edge` 서비스를 자동 등록·기동하고, 암호화 비밀 저장소의 로컬 마스터 키와 기본 구성을 생성한다. Ubuntu 데스크톱 화면이 있는 장비에서는 애플리케이션 메뉴의 **SafeNex Vision Edge 관제**를 클릭하면 브라우저 운영 UI가 열리며, 터미널에서는 다음 명령을 실행한다.
+
+```bash
+safenex-vision-edge-ui
+```
+
+처음 표시되는 UI는 **로컬 안전 모드**로 시작한다. 여기에서 읽기 전용 NVR·카메라를 등록하고, 이후 SafeNex 관리자가 Fleet 장치 등록·mTLS 인증서·서명 키·AI 정책을 승인해야 중앙 연동이 활성화된다.
+
+제거하더라도 기본적으로 현장 설정과 이벤트 스풀은 보존된다. 완전 제거가 필요한 경우에만 `sudo apt purge safenex-vision-edge`를 사용한다.

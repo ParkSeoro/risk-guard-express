@@ -1,0 +1,54 @@
+name: Build SafeNex Vision Edge for Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/vision-edge-gateway]
+    paths:
+      - "vision-edge/**"
+      - ".github/workflows/build-vision-edge-windows.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: vision-edge
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: vision-edge/pyproject.toml
+
+      - name: Install packaging dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . pyinstaller
+
+      - name: Build Windows application
+        run: |
+          pyinstaller --noconfirm --clean --windowed --name SafeNexVisionEdge --collect-all vision_edge windows/desktop_entry.py
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build Windows installer
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" windows\SafeNexVisionEdge.iss
+
+      - name: Publish installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SafeNex-Vision-Edge-Setup-Windows-x64
+          path: vision-edge/dist/windows/SafeNex_Vision_Edge_Setup_0.1.0_Windows_x64.exe
+          if-no-files-found: error
+          retention-days: 30

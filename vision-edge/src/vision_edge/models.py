@@ -95,6 +95,7 @@ class LocalConfig(BaseModel):
     heartbeat_interval_seconds: int = Field(default=30, ge=5, le=3600)
     event_flush_interval_seconds: int = Field(default=10, ge=2, le=3600)
     ffprobe_timeout_seconds: int = Field(default=8, ge=1, le=120)
+    allow_local_key_generation: bool = False
     cameras: list[CameraConfig] = Field(default_factory=list)
     nvrs: list[NvrConfig] = Field(default_factory=list)
 

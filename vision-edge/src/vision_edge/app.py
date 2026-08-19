@@ -53,7 +53,8 @@ def build_runtime(config: LocalConfig) -> EdgeRuntime:
     state_dir = Path(config.state_dir).expanduser().resolve()
     state_dir.mkdir(parents=True, exist_ok=True)
     allow_dev_key = os.getenv("VISION_EDGE_DEVELOPMENT") == "1"
-    secret_store = SecretStore(state_dir, allow_local_key_generation=allow_dev_key)
+    allow_local_key = allow_dev_key or config.allow_local_key_generation
+    secret_store = SecretStore(state_dir, allow_local_key_generation=allow_local_key)
     store = EdgeStore(state_dir / "edge.db")
     camera_monitor = CameraMonitor(secret_store, FfprobeStreamProbe(), config.ffprobe_timeout_seconds)
     fleet_client = FleetClient(

@@ -72,7 +72,7 @@ import WorkerParticipationPanel from '@/components/assessment/WorkerParticipatio
 import CloneRunDialog from '@/components/assessment-runs/CloneRunDialog';
 import EditRunDialog from '@/components/assessment-runs/EditRunDialog';
 import { evaluateResidualHigh } from '@/lib/residualRiskGuardrails';
-import { buildAssessmentSubmitPreflight } from '@/lib/assessmentSubmitPreflight';
+import { buildAssessmentSubmitPreflight, countIncompleteAssessmentItems } from '@/lib/assessmentSubmitPreflight';
 import {
   assessmentAuthorSubmitMessage,
   canAssistAssessmentWrite,
@@ -1226,6 +1226,8 @@ const AssessmentRunDetail = () => {
     if (showApproval) void refreshApprovalPreflightMeta();
   }, [showApproval, refreshApprovalPreflightMeta]);
 
+  const itemGaps = useMemo(() => countIncompleteAssessmentItems(activeItems as any), [activeItems]);
+
   const submitPreflight = useMemo(() => buildAssessmentSubmitPreflight({
     itemCount: activeItems.length,
     opinionRequired: run?.opinion_required ?? true,
@@ -1245,8 +1247,11 @@ const AssessmentRunDetail = () => {
     authorUserId: run?.author_user_id,
     authorName: userDirectory.find((u) => u.user_id === run?.author_user_id)?.display_name || null,
     currentUserId: user?.id,
+    incompleteItemCount: itemGaps.count,
+    incompleteItemDetail: itemGaps.detail,
   }), [
     activeItems.length,
+    itemGaps,
     run?.opinion_required,
     run?.health_required,
     run?.author_user_id,
@@ -2087,7 +2092,7 @@ const AssessmentRunDetail = () => {
             <div className="min-w-0 space-y-0.5">
               <p className="text-sm font-semibold">초안 검수 중 · {autoGenJob.insertedTotal}행</p>
               <p className="text-xs text-muted-foreground">
-                필요 없는 행을 지운 뒤 대책·등급·법적근거를 채우세요.
+                필요 없는 행을 지운 뒤 대책·등급·보호구·법적근거를 채우세요. 라이브러리·재사용 행의 빈칸도 대상입니다.
               </p>
             </div>
             <div className="flex gap-2 flex-wrap">
@@ -2119,7 +2124,7 @@ const AssessmentRunDetail = () => {
       {autoGenJob.status !== 'awaiting_review' && autoGenJob.status !== 'running' && items.some((it) => isFillableRiskItem(it)) && (canEdit || canForceEdit) && (
         <div className="print:hidden sticky top-0 z-30 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm">채울 행이 있습니다. 표를 다듬은 뒤 대책·등급·법적근거를 채우세요.</p>
+            <p className="text-sm">빈 개선대책·보호구·법적근거가 있습니다. [나머지 채우기]로 행별로 채우세요. (품질 점검 자동보완은 쓰지 마세요)</p>
             <Button
               size="sm"
               onClick={() => {
@@ -2452,7 +2457,7 @@ const AssessmentRunDetail = () => {
                 <ShieldCheck className="h-3.5 w-3.5" /> {validationReport ? '재점검' : '품질 점검'}
               </Button>
             )}
-            {canAutoRemediate && (
+            {canAutoRemediate && !items.some((it) => isFillableRiskItem(it)) && (
               <Button size="sm" variant="outline" className="gap-1.5" onClick={handleOpenRemediationWizard} disabled={remediationLoading}>
                 <Wand2 className="h-3.5 w-3.5" /> {remediationLoading ? '분석 중...' : '자동 보완'}
               </Button>
@@ -2492,9 +2497,9 @@ const AssessmentRunDetail = () => {
         </p>
       )}
       {/* Remediation guide for first-time users */}
-      {canAutoRemediate && (
+      {canAutoRemediate && !items.some((it) => isFillableRiskItem(it)) && (
         <p className="text-xs text-muted-foreground print:hidden pl-1">
-          💡 부적정이면 <strong>[자동 보완]</strong>을 누르면 보완→재검증까지 자동으로 진행됩니다.
+          💡 형식 점검 결과 부적정이면 <strong>[자동 보완]</strong>으로 라이브러리 매칭만 검토하세요. 빈 개선대책은 <strong>[나머지 채우기]</strong>를 씁니다.
         </p>
       )}
 
@@ -3231,7 +3236,19 @@ const AssessmentRunDetail = () => {
                 <Button variant="outline" className="flex-1 gap-1.5" onClick={handleExportValidationPDF}>
                   <FileText className="h-3.5 w-3.5" /> 검증 리포트 PDF
                 </Button>
-                {canAutoRemediate && (
+                {items.some((it) => isFillableRiskItem(it)) && (canEdit || canForceEdit) ? (
+                  <Button className="flex-1 gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => {
+                    setShowValidation(false);
+                    const ok = continueRiskAutoGenFill(runId);
+                    toast({
+                      title: ok ? '나머지 채우기를 시작했습니다.' : '채움을 시작할 수 없습니다.',
+                      description: ok ? '행별 위험요인에 맞춰 개선대책·PPE·법규를 채웁니다.' : undefined,
+                      variant: ok ? 'default' : 'destructive',
+                    });
+                  }} disabled={isRiskAutoGenRunning()}>
+                    <Wand2 className="h-3.5 w-3.5" /> 나머지 채우기 (AI)
+                  </Button>
+                ) : canAutoRemediate && (
                   <Button className="flex-1 gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => { setShowValidation(false); handleOpenRemediationWizard(); }} disabled={remediationLoading}>
                     <Wand2 className="h-3.5 w-3.5" /> 자동 보완
                   </Button>

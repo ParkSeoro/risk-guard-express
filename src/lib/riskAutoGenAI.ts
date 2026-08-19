@@ -148,8 +148,18 @@ export function isAiScopeDraftItem(item: { note?: string | null }): boolean {
 /**
  * Rows that [나머지 채우기] should process:
  * - Phase A drafts tagged [AI_SCOPE_DRAFT]
- * - Incomplete AI rows (empty situation/measures) from older flows
+ * - Failed AI rows
+ * - Any incomplete row (library/reuse/ai) missing situation, measures, PPE, or legal
  */
+export function isBlankRiskText(v?: string | null): boolean {
+  return !String(v || '').trim();
+}
+
+export function isBlankRiskList(v?: unknown): boolean {
+  if (!Array.isArray(v)) return true;
+  return v.map((x) => String(x ?? '').trim()).filter(Boolean).length === 0;
+}
+
 export function isFillableRiskItem(item: {
   note?: string | null;
   source_type?: string | null;
@@ -157,16 +167,25 @@ export function isFillableRiskItem(item: {
   existing_measure?: string | null;
   improvement_measure?: string | null;
   hazard?: string | null;
+  ppe?: string[] | null;
+  legal_basis?: string[] | null;
 }): boolean {
-  if (isAiScopeDraftItem(item)) return true;
   if (isAiPendingRiskItem(item)) return false;
+  if (isAiScopeDraftItem(item)) return true;
   if ((item.note || '').includes('[AI_ROW_FAILED]')) return true;
-  const src = (item.source_type || '').toLowerCase();
-  if (src !== 'ai' && src !== 'ai_opinion') return false;
-  const situation = (item.hazard_situation || '').trim();
-  const existing = (item.existing_measure || '').trim();
-  const improve = (item.improvement_measure || '').trim();
-  return !situation || !existing || !improve;
+  if (isBlankRiskText(item.hazard_situation)) return true;
+  if (isBlankRiskText(item.existing_measure)) return true;
+  if (isBlankRiskText(item.improvement_measure)) return true;
+  if (isBlankRiskList(item.ppe)) return true;
+  if (isBlankRiskList(item.legal_basis)) return true;
+  return false;
+}
+
+/** Scope-draft / failed rows: overwrite. Incomplete library rows: fill blanks only. */
+export function shouldReplaceRiskField(current: unknown, forceAll: boolean): boolean {
+  if (forceAll) return true;
+  if (Array.isArray(current)) return isBlankRiskList(current);
+  return isBlankRiskText(current as string | null);
 }
 
 async function invokeRiskJson<T = any>(
@@ -384,7 +403,7 @@ export async function fetchRiskFillBatch(
  * Name kept for callers; falls back to two-stage only if the one-shot returns empty.
  */
 export async function fetchRiskFillTwoStage(
-  opts: AIGenerateOptions & { draftItems: ScopeDraftItem[] },
+  opts: AIGenerateOptions & { draftItems: Array<ScopeDraftItem | ScopeDraftItemRich> },
   signal?: AbortSignal,
 ): Promise<GeneratedRiskItem[]> {
   try {

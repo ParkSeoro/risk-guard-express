@@ -33,6 +33,9 @@ export function buildAssessmentSubmitPreflight(opts: {
   authorUserId?: string | null;
   authorName?: string | null;
   currentUserId?: string | null;
+  /** Rows missing 개선대책 / PPE / (중·상) 법적근거 / 상황·기존대책 */
+  incompleteItemCount?: number;
+  incompleteItemDetail?: string;
 }): { items: AssessmentPreflightItem[]; ready: boolean } {
   const items: AssessmentPreflightItem[] = [];
 
@@ -60,6 +63,17 @@ export function buildAssessmentSubmitPreflight(opts: {
     label: '위험성평가 항목 1건 이상',
     ok: opts.itemCount > 0,
     detail: opts.itemCount > 0 ? `${opts.itemCount}건` : '항목을 추가하세요',
+    jump: 'items',
+  });
+
+  const incomplete = opts.incompleteItemCount || 0;
+  items.push({
+    id: 'item_fields',
+    label: '개선대책·PPE·법적근거 기재',
+    ok: incomplete === 0,
+    detail: incomplete === 0
+      ? '완료'
+      : (opts.incompleteItemDetail || `${incomplete}행 미기재 · [나머지 채우기] 또는 직접 입력`),
     jump: 'items',
   });
 
@@ -128,4 +142,64 @@ export function buildAssessmentSubmitPreflight(opts: {
   });
 
   return { items, ready: items.every((i) => i.ok) };
+}
+
+function blankText(v?: string | null) {
+  return !String(v || '').trim();
+}
+
+function blankList(v?: unknown) {
+  if (!Array.isArray(v)) return true;
+  return v.map((x) => String(x ?? '').trim()).filter(Boolean).length === 0;
+}
+
+export type AssessmentItemGapRow = {
+  is_excluded?: boolean | null;
+  is_deleted?: boolean | null;
+  hazard_situation?: string | null;
+  existing_measure?: string | null;
+  improvement_measure?: string | null;
+  ppe?: string[] | null;
+  legal_basis?: string[] | null;
+  risk_grade?: string | null;
+};
+
+/** 상신 차단용 — 하 등급은 법적근거 없어도 통과. */
+export function countIncompleteAssessmentItems(items: AssessmentItemGapRow[]): {
+  count: number;
+  detail: string;
+} {
+  const active = (items || []).filter((i) => !i.is_excluded && !i.is_deleted);
+  let improvement = 0;
+  let ppe = 0;
+  let legal = 0;
+  let situation = 0;
+  let existing = 0;
+  let count = 0;
+  for (const it of active) {
+    const missSit = blankText(it.hazard_situation);
+    const missEx = blankText(it.existing_measure);
+    const missIm = blankText(it.improvement_measure);
+    const missPpe = blankList(it.ppe);
+    const grade = String(it.risk_grade || '');
+    const missLegal = (grade === '상' || grade === '중') && blankList(it.legal_basis);
+    if (missSit) situation += 1;
+    if (missEx) existing += 1;
+    if (missIm) improvement += 1;
+    if (missPpe) ppe += 1;
+    if (missLegal) legal += 1;
+    if (missSit || missEx || missIm || missPpe || missLegal) count += 1;
+  }
+  if (count === 0) return { count: 0, detail: '완료' };
+  const parts = [
+    improvement ? `개선대책 ${improvement}` : '',
+    ppe ? `PPE ${ppe}` : '',
+    legal ? `법적근거 ${legal}` : '',
+    situation ? `발생상황 ${situation}` : '',
+    existing ? `기존대책 ${existing}` : '',
+  ].filter(Boolean);
+  return {
+    count,
+    detail: `${count}행 미기재 (${parts.join(', ')}) · [나머지 채우기] 또는 직접 입력`,
+  };
 }

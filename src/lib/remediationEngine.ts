@@ -86,12 +86,6 @@ const CONTROL_TEMPLATES: Record<string, { engineering: string; management: strin
   },
 };
 
-const DEFAULT_CONTROL = {
-  engineering: '방호장치 설치, 안전표지판 부착, 작업발판 정리',
-  management: '작업절차서 수립, 안전교육 실시, 작업 전 점검',
-  ppe: '안전모·안전화·안전장갑 착용',
-};
-
 const VERIFICATION_STEP = '작업 전 안전점검 체크리스트 작성 / 작업 중 순회점검(2시간 간격) / 작업 후 이상유무 확인';
 
 // ========== Helper ==========
@@ -156,18 +150,28 @@ export async function generateRemediationActions(
 
     for (const miss of missingFields) {
       if (miss.field === 'hazard_situation' && (!item.hazard_situation || !item.hazard_situation.trim())) {
-        patch.hazard_situation = libMatch?.hazard_situation || `${item.process} 작업 중 ${item.hazard || '위험요인'}에 의한 재해 발생 가능`;
-        effects.push('위험발생상황 자동채움');
+        if (libMatch?.hazard_situation) {
+          patch.hazard_situation = libMatch.hazard_situation;
+          effects.push('위험발생상황 자동채움');
+        }
       }
+      const ctrl = tags[0] && CONTROL_TEMPLATES[tags[0]] ? CONTROL_TEMPLATES[tags[0]] : null;
       if (miss.field === 'existing_measure' && (!item.existing_measure || !item.existing_measure.trim())) {
-        const ctrl = CONTROL_TEMPLATES[tags[0]] || DEFAULT_CONTROL;
-        patch.existing_measure = libMatch?.existing_measure || `${ctrl.management}, ${ctrl.ppe}`;
-        effects.push('기존대책 자동채움');
+        const fromLib = libMatch?.existing_measure;
+        if (fromLib) {
+          patch.existing_measure = fromLib;
+          effects.push('기존대책 자동채움');
+        } else if (ctrl) {
+          patch.existing_measure = `${ctrl.management}, ${ctrl.ppe}`;
+          effects.push('기존대책 자동채움');
+        }
       }
       if (miss.field === 'improvement_measure' && (!item.improvement_measure || !item.improvement_measure.trim())) {
-        const ctrl = CONTROL_TEMPLATES[tags[0]] || DEFAULT_CONTROL;
-        patch.improvement_measure = libMatch?.improvement_measure || `${ctrl.engineering}, ${ctrl.management}`;
-        effects.push('개선대책 자동채움');
+        const fromLib = libMatch?.improvement_measure;
+        if (fromLib) {
+          patch.improvement_measure = fromLib;
+          effects.push('개선대책 자동채움');
+        }
       }
     }
 
@@ -188,9 +192,14 @@ export async function generateRemediationActions(
     if (item.ppe && item.ppe.length >= 2) continue;
     const tags = detectProcessTags(item.process, item.sub_task);
     const recommendedPPE = new Set<string>(item.ppe || []);
+    let mapped = false;
     for (const tag of tags) {
-      (PROCESS_PPE_MAP[tag] || ['안전모', '안전화', '안전장갑']).forEach(p => recommendedPPE.add(p));
+      const extra = PROCESS_PPE_MAP[tag];
+      if (!extra) continue;
+      mapped = true;
+      extra.forEach((p) => recommendedPPE.add(p));
     }
+    if (!mapped) continue;
     const newPPE = [...recommendedPPE];
     if (newPPE.length <= (item.ppe?.length || 0)) continue;
 
@@ -214,7 +223,8 @@ export async function generateRemediationActions(
     if (!isVague) continue;
 
     const tags = detectProcessTags(item.process, item.sub_task);
-    const ctrl = CONTROL_TEMPLATES[tags[0]] || DEFAULT_CONTROL;
+    const ctrl = tags[0] ? CONTROL_TEMPLATES[tags[0]] : undefined;
+    if (!ctrl) continue;
     const concrete = `[공학적] ${ctrl.engineering} / [관리적] ${ctrl.management} / [보호구] ${ctrl.ppe}`;
 
     actions.push({
@@ -223,7 +233,7 @@ export async function generateRemediationActions(
       description: `${item.process}: 추상적 대책 → 공학적/관리적/PPE 대책으로 구체화`,
       targetRiskItemIds: [item.id], patch: { improvement_measure: concrete },
       rationale: `현재 대책 "${measure}"이 추상적이므로 공정 맞춤형 구체 대책으로 교체`,
-      confidence: 'medium', requiresUserConfirm: false,
+      confidence: 'medium', requiresUserConfirm: true,
       expectedEffect: '대책 구체화 → 검증 경고 해소',
     });
   }
@@ -241,7 +251,7 @@ export async function generateRemediationActions(
       targetRiskItemIds: [item.id],
       patch: { improvement_measure: `${measure} / ${VERIFICATION_STEP}` },
       rationale: '개선대책에 확인/점검 절차가 없어 자동 삽입',
-      confidence: 'medium', requiresUserConfirm: false,
+      confidence: 'medium', requiresUserConfirm: true,
       expectedEffect: '점검 절차 추가',
     });
   }
@@ -260,9 +270,9 @@ export async function generateRemediationActions(
       (l.process_mappings || []).some((pm: string) => tags.some(t => pm.includes(t)))
     ).slice(0, 5);
 
-    const refs = matched.length > 0
-      ? matched.map(m => `${m.law_name} ${m.article}`)
-      : ['산업안전보건법 제36조(위험성평가)', '산업안전보건기준에 관한 규칙'];
+    if (matched.length === 0) continue;
+
+    const refs = matched.map(m => `${m.law_name} ${m.article}`);
 
     actions.push({
       id: uid(), actionType: 'ACTION_ATTACH_LEGAL_REFERENCES',
@@ -324,7 +334,8 @@ export async function generateRemediationActions(
   for (const item of activeItems) {
     if (item.improved_risk_grade !== '상') continue;
     const tags = detectProcessTags(item.process, item.sub_task);
-    const ctrl = CONTROL_TEMPLATES[tags[0]] || DEFAULT_CONTROL;
+    const ctrl = tags[0] ? CONTROL_TEMPLATES[tags[0]] : undefined;
+    if (!ctrl) continue;
     const enhanced = `${item.improvement_measure || ''} / [추가] ${ctrl.engineering}`;
 
     actions.push({

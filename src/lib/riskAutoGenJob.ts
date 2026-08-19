@@ -20,10 +20,17 @@ import {
   type DetailLevel,
   type LlmCallBudget,
 } from '@/lib/riskAutoGenAI';
-import type { GeneratedRiskItem } from '@/lib/riskAutoGen';
+import { generateRiskItems, type GeneratedRiskItem } from '@/lib/riskAutoGen';
+import {
+  fetchGlobalRiskLibraryItems,
+  inferHazardType,
+  inferWorkPhase,
+} from '@/lib/globalRiskLibrary';
+import { fetchPastApprovedRiskItems, filterDraftGaps } from '@/lib/riskReuseFromPast';
 import { enrichLegalBasis } from '@/lib/enrichLegalBasis';
 import { calculateRiskGrade } from '@/lib/riskGrade';
 import { canWriteRiskItems, riskItemsWriteDeniedMessage } from '@/lib/riskWriteAccess';
+import { formatAutoGenError } from '@/lib/staleChunkError';
 
 const JOB_STORAGE_KEY = 'safenex.riskAutoGenJob.v1';
 
@@ -484,7 +491,6 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
 
     if (!input.useAI) {
       console.log('[AutoGenJob] library-only path (full rows, no review pause)', proc);
-      const { generateRiskItems } = await import('@/lib/riskAutoGen');
       const libraryItems = await generateRiskItems({
         processName: proc,
         tags: input.conditionTags,
@@ -542,9 +548,6 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
     let reusedCount = 0;
     const seenKeys = new Set<string>();
     try {
-      const { fetchGlobalRiskLibraryItems, inferHazardType, inferWorkPhase } = await import(
-        '@/lib/globalRiskLibrary'
-      );
       const globalItems = await fetchGlobalRiskLibraryItems({
         processName: proc,
         equipmentTags: input.equipmentTags,
@@ -601,7 +604,6 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
 
     // 2) Past approved reuse (same project) — fill gaps only
     try {
-      const { fetchPastApprovedRiskItems } = await import('@/lib/riskReuseFromPast');
       const past = await fetchPastApprovedRiskItems({
         projectId: input.projectId,
         processName: proc,
@@ -618,7 +620,6 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
         return true;
       });
       if (pastGap.length) {
-        const { inferHazardType, inferWorkPhase } = await import('@/lib/globalRiskLibrary');
         const rows = pastGap.map((g) => ({
           project_id: input.projectId,
           run_id: input.runId,
@@ -685,7 +686,6 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       try {
         console.log('[AutoGenJob] fetchScopeDraft → generate-risk-ai (scope_draft)', proc);
         const draft = await fetchScopeDraft(opts);
-        const { filterDraftGaps } = await import('@/lib/riskReuseFromPast');
         const { data: existing } = await supabase
           .from('risk_items')
           .select('sub_task, hazard')
@@ -708,7 +708,6 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
       continue;
     }
 
-    const { inferHazardType, inferWorkPhase } = await import('@/lib/globalRiskLibrary');
     const placeholders = draftItems.map((it) => ({
       project_id: input.projectId,
       run_id: input.runId,
@@ -1114,10 +1113,11 @@ export function startRiskAutoGenJob(input: RiskAutoGenJobInput): boolean {
         });
         return;
       }
+      const autoGenError = formatAutoGenError(err);
       patch({
         status: 'error',
-        error: err?.message || '자동 생성 실패',
-        message: err?.message || '자동 생성 실패',
+        error: autoGenError,
+        message: autoGenError,
         pendingIds: [],
         phase: 'idle',
       });

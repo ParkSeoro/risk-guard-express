@@ -1,6 +1,7 @@
 import React from "react";
 import { AlertTriangle, RefreshCw, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isStaleChunkError, STALE_CHUNK_PAGE_MESSAGE } from "@/lib/staleChunkError";
 
 interface State { error: Error | null; }
 
@@ -37,11 +38,15 @@ export class AppErrorBoundary extends React.Component<
               <h2 className="font-bold text-lg">화면을 불러오지 못했습니다</h2>
             </div>
             <p className="text-sm text-muted-foreground">
-              화면을 그리는 중 오류가 발생했습니다.
+              {isStaleChunkError(this.state.error)
+                ? STALE_CHUNK_PAGE_MESSAGE
+                : "화면을 그리는 중 오류가 발생했습니다."}
             </p>
-            <pre className="text-xs bg-muted/50 rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap">
-              {this.state.error.message || String(this.state.error)}
-            </pre>
+            {!isStaleChunkError(this.state.error) && (
+              <pre className="text-xs bg-muted/50 rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap">
+                {this.state.error.message || String(this.state.error)}
+              </pre>
+            )}
             <div className="flex gap-2">
               <Button onClick={() => { this.reset(); window.location.reload(); }} size="sm">
                 <RefreshCw className="h-3.5 w-3.5 mr-1" /> 재시도

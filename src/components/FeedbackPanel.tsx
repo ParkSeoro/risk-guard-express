@@ -386,7 +386,7 @@ export default function FeedbackPanel({
       <p className="text-[10px] text-muted-foreground">
         {helperText || '※ 금주 이행 확인은 전회차 승인 회차에 저장됩니다. 차주 관리대상과 섞지 않습니다.'}
         {highRemainItems.length > 0 && ` 관리대상 상 ${highRemainItems.length}건 · 미등록 ${missingHighCount}건.`}
-      </p
+      </p>
 
       <SubmitApprovalDialog
         open={showFeedbackApproval}

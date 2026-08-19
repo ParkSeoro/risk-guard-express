@@ -7,10 +7,19 @@ describe("isLockedAssessmentRunStatus", () => {
     expect(isLockedAssessmentRunStatus("폐기")).toBe(true);
   });
 
-  it("does not lock writable statuses", () => {
-    expect(isLockedAssessmentRunStatus("작성중")).toBe(false);
-    expect(isLockedAssessmentRunStatus("결재진행")).toBe(false);
-    expect(isLockedAssessmentRunStatus("반려")).toBe(false);
+  it("does not lock writable statuses including 반려", () => {
+    for (const status of [
+      "작성중",
+      "제출됨",
+      "검증중",
+      "보완요청",
+      "보완중",
+      "반려",
+      "검증완료",
+      "결재진행",
+    ]) {
+      expect(isLockedAssessmentRunStatus(status)).toBe(false);
+    }
     expect(isLockedAssessmentRunStatus(null)).toBe(false);
     expect(isLockedAssessmentRunStatus("")).toBe(false);
   });

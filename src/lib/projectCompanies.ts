@@ -51,7 +51,7 @@ export async function fetchProjectCompanies(
       if (!c) return null;
       return {
         ...c,
-        type: c.type || l.role_in_project || null,
+        type: l.role_in_project || c.type || null,
         parent_company_id: l.parent_company_id ?? c.parent_company_id ?? null,
       } as ProjectCompany;
     })

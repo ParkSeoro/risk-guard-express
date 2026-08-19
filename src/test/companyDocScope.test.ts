@@ -9,8 +9,11 @@ import {
   formatCompanyLabelsShort,
   formatCreatorCompanyLabel,
   pickProjectMemberRow,
+  preferredCompanyIdsByRunAuthors,
   resolveAssessmentDocumentCompanies,
+  resolveAssessmentRunListCompanyLabel,
   seesProjectWideCompanies,
+  buildProjectCompanyLabelMap,
 } from '@/lib/companyDocScope';
 
 describe('companyDocScopeMode', () => {
@@ -224,7 +227,64 @@ describe('formatCreatorCompanyLabel', () => {
     expect(formatCreatorCompanyLabel('대한건설', 'gc')).toBe('대한건설(시공사)');
   });
 
+  it('does not double-append a type already in the company name', () => {
+    expect(formatCreatorCompanyLabel('진남토건(주)(협력사)', 'contractor')).toBe('진남토건(주)(협력사)');
+  });
+
   it('returns empty when name missing', () => {
     expect(formatCreatorCompanyLabel('', 'contractor')).toBe('');
+  });
+});
+
+describe('resolveAssessmentRunListCompanyLabel', () => {
+  const companies = buildProjectCompanyLabelMap([
+    { id: 'gc-jinnam', name: '진남토건(주)', type: 'gc' },
+    { id: 'partner-jinnam', name: '진남토건(주)(협력사)', type: 'contractor' },
+    { id: '우리', name: '우리플랜트', type: 'contractor' },
+  ]);
+
+  it('prefers target partner company over creator GC membership', () => {
+    expect(
+      resolveAssessmentRunListCompanyLabel(
+        {
+          created_by: 'u-gc',
+          author_user_id: 'u-gc',
+          target_company_ids: ['partner-jinnam'],
+        },
+        {
+          companyLabelById: companies,
+          userCompanyLabelById: { 'u-gc': '진남토건(주)(시공사)' },
+        },
+      ),
+    ).toBe('진남토건(주)(협력사)');
+  });
+
+  it('falls back to author then creator when no targets', () => {
+    expect(
+      resolveAssessmentRunListCompanyLabel(
+        { created_by: 'u-in', author_user_id: 'u-author', target_company_ids: [] },
+        {
+          companyLabelById: companies,
+          userCompanyLabelById: {
+            'u-in': '하이테크엔지니어링(시공사)',
+            'u-author': '우리플랜트(협력사)',
+          },
+        },
+      ),
+    ).toBe('우리플랜트(협력사)');
+  });
+});
+
+describe('preferredCompanyIdsByRunAuthors', () => {
+  it('indexes target companies by author and creator', () => {
+    expect(
+      preferredCompanyIdsByRunAuthors([
+        { created_by: 'a', author_user_id: 'b', target_company_ids: ['p1'] },
+        { created_by: 'a', author_user_id: null, target_company_ids: ['p1', 'p2'] },
+      ]),
+    ).toEqual({
+      a: ['p1', 'p2'],
+      b: ['p1'],
+    });
   });
 });

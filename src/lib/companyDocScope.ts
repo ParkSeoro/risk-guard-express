@@ -365,7 +365,7 @@ export function formatCompanyLabelsShort(names: string[], maxVisible = 2): strin
   return `${head} 외 ${names.length - maxVisible}`;
 }
 
-/** 작성자 소속 표시: "진남토건(주)(협력사)" */
+/** 작성자 소속 표시: "진남토건(주)(협력사)" — 이름에 이미 구분이 있으면 중복 붙이지 않음. */
 export function formatCreatorCompanyLabel(
   name?: string | null,
   type?: string | null,
@@ -373,27 +373,104 @@ export function formatCreatorCompanyLabel(
   const n = String(name || '').trim();
   if (!n) return '';
   const t = companyTypeLabel(type);
-  if (t && t !== '-') return `${n}(${t})`;
-  return n;
+  if (!t || t === '-') return n;
+  const suffix = `(${t})`;
+  if (n.endsWith(suffix)) return n;
+  return `${n}${suffix}`;
+}
+
+export function buildProjectCompanyLabelMap(
+  companies: Array<{ id?: string | null; name?: string | null; type?: string | null }>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const c of companies || []) {
+    const id = String(c.id || '').trim();
+    const label = formatCreatorCompanyLabel(c.name, c.type);
+    if (id && label) out[id] = label;
+  }
+  return out;
+}
+
+export function preferredCompanyIdsByRunAuthors<T extends {
+  created_by?: string | null;
+  author_user_id?: string | null;
+  target_company_ids?: string[] | null;
+}>(runs: T[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const run of runs || []) {
+    const targets = (run.target_company_ids || []).map(String).map((s) => s.trim()).filter(Boolean);
+    if (!targets.length) continue;
+    for (const uid of [run.author_user_id, run.created_by]) {
+      if (!uid) continue;
+      const cur = out[uid] || [];
+      for (const id of targets) {
+        if (!cur.includes(id)) cur.push(id);
+      }
+      out[uid] = cur;
+    }
+  }
+  return out;
 }
 
 /**
- * assessment_runs.created_by → 프로젝트 멤버십 소속 업체 라벨.
- * userId → "업체명(구분)"
+ * 위평 리스트 카드 회사명.
+ * 1) 회차 대상 업체(target_company_ids) — 하이테크 협력사 페르소나
+ * 2) 작성 주체(author_user_id) 소속
+ * 3) 입력자(created_by) 소속
+ */
+export function resolveAssessmentRunListCompanyLabel(
+  run: {
+    created_by?: string | null;
+    author_user_id?: string | null;
+    target_company_ids?: string[] | null;
+    target_contractors?: string[] | null;
+  },
+  opts?: {
+    companyLabelById?: Record<string, string> | null;
+    userCompanyLabelById?: Record<string, string> | null;
+  },
+): string {
+  const fromTargets = resolveAssessmentRunCompanyLabels(run, opts?.companyLabelById);
+  if (fromTargets.length > 0) return formatCompanyLabelsShort(fromTargets, 2);
+  const users = opts?.userCompanyLabelById;
+  const author = run.author_user_id ? users?.[run.author_user_id] : '';
+  if (author) return author;
+  const creator = run.created_by ? users?.[run.created_by] : '';
+  return creator || '';
+}
+
+/**
+ * assessment_runs.created_by / author_user_id → 프로젝트 멤버십 소속 업체 라벨.
+ * 듀얼 페르소나면 회차 target_company_ids 와 맞는 멤버십을 우선.
+ * 구분은 companies.type 이 아니라 이 프로젝트 role_in_project.
  */
 export async function fetchCreatorCompanyLabelMap(
   projectId: string,
   userIds: string[],
+  preferredCompanyIdsByUser?: Record<string, string[] | undefined>,
 ): Promise<Record<string, string>> {
   const ids = [...new Set(userIds.map(String).filter(Boolean))];
   if (!projectId || ids.length === 0) return {};
 
-  const { data, error } = await supabase
-    .from('project_members')
-    .select('user_id, company_id, role_new, companies:company_id(name, type)')
-    .eq('project_id', projectId)
-    .in('user_id', ids);
+  const [{ data, error }, { data: links }] = await Promise.all([
+    supabase
+      .from('project_members')
+      .select('user_id, company_id, role_new, companies:company_id(name, type)')
+      .eq('project_id', projectId)
+      .in('user_id', ids),
+    (supabase as any)
+      .from('project_companies')
+      .select('company_id, role_in_project')
+      .eq('project_id', projectId)
+      .eq('is_deleted', false),
+  ]);
   if (error) throw error;
+
+  const roleByCo = new Map<string, string>();
+  for (const row of (links || []) as { company_id?: string; role_in_project?: string }[]) {
+    const cid = String(row.company_id || '').trim();
+    if (cid) roleByCo.set(cid, row.role_in_project || '');
+  }
 
   const byUser = new Map<string, any[]>();
   for (const row of (data || []) as any[]) {
@@ -406,9 +483,15 @@ export async function fetchCreatorCompanyLabelMap(
 
   const out: Record<string, string> = {};
   for (const [uid, rows] of byUser) {
-    const picked = pickProjectMemberRow(rows);
+    const preferredList = (preferredCompanyIdsByUser?.[uid] || []).map(String).filter(Boolean);
+    const preferredHit = preferredList.find((id) =>
+      rows.some((r) => String(r.company_id || '') === id),
+    );
+    const picked = pickProjectMemberRow(rows, preferredHit);
     const co = picked?.companies;
-    const label = formatCreatorCompanyLabel(co?.name || null, co?.type || null);
+    const companyId = String(picked?.company_id || '');
+    const type = roleByCo.get(companyId) || co?.type || null;
+    const label = formatCreatorCompanyLabel(co?.name || null, type);
     if (label) out[uid] = label;
   }
   return out;

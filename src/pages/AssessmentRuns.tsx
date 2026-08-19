@@ -27,8 +27,14 @@ import {
   pickProjectMemberRow,
   readPreferredCompanyId,
 } from '@/lib/companyDocScope';
-
-const typeLabels: Record<string, string> = { '최초': '최초', '정기': '정기', '수시': '수시', '상시': '상시' };
+import {
+  ASSESSMENT_RUN_TYPES,
+  ASSESSMENT_RUN_TYPE_LABELS,
+  buildAssessmentRunCreatePayload,
+  emptyAssessmentRunCreateForm,
+  periodLabelPlaceholder,
+  type AssessmentRunCreateForm,
+} from '@/lib/assessmentRunType';
 
 const statusConfig: Record<string, { bg: string; text: string }> = {
   '작성중': { bg: 'bg-muted', text: 'text-muted-foreground' },
@@ -89,9 +95,7 @@ const AssessmentRuns = () => {
   /** created_by → 작성자 소속 업체 라벨 */
   const [creatorCompanyMap, setCreatorCompanyMap] = useState<Record<string, string>>({});
 
-  const [form, setForm] = useState({
-    type: '정기', period_label: '', start_date: '', end_date: '', target_processes: '', target_company_ids: [] as string[], notes: '',
-  });
+  const [form, setForm] = useState<AssessmentRunCreateForm>(() => emptyAssessmentRunCreateForm());
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -210,6 +214,7 @@ const AssessmentRuns = () => {
     if (!user || !selectedProject) return;
 
     const errors: Record<string, string> = {};
+    if (!form.type) errors.type = '종류를 선택해주세요.';
     if (!form.period_label.trim()) errors.period_label = '회차명을 입력해주세요.';
     if (form.period_label.trim().length > 100) errors.period_label = '회차명은 100자 이내로 입력해주세요.';
     if (form.start_date && form.end_date && form.start_date > form.end_date) errors.end_date = '종료일이 시작일보다 이전입니다.';
@@ -226,19 +231,12 @@ const AssessmentRuns = () => {
       // Build contractor names for legacy field from selected company ids
       const contractorNames = form.target_company_ids.map(id => companyNameMap[id] || id);
 
-      const payload = {
-        project_id: selectedProject,
-        type: form.type,
-        period_label: form.period_label.trim(),
-        start_date: form.start_date || null,
-        end_date: form.end_date || null,
-        target_processes: form.target_processes.split(',').map(s => s.trim()).filter(Boolean),
-        target_contractors: contractorNames, // legacy compat
-        target_company_ids: form.target_company_ids, // new SSOT
-        notes: form.notes.trim(),
-        status: '작성중',
-        created_by: user.id,
-      };
+      const payload = buildAssessmentRunCreatePayload({
+        projectId: selectedProject,
+        userId: user.id,
+        form,
+        contractorNames,
+      });
 
       const { data, error } = await supabase.from('assessment_runs').insert([payload]).select().single();
 
@@ -252,7 +250,7 @@ const AssessmentRuns = () => {
 
       toast({ title: '회차가 생성되었습니다.' });
       setShowCreate(false);
-      setForm({ type: '정기', period_label: '', start_date: '', end_date: '', target_processes: '', target_company_ids: [], notes: '' });
+      setForm(emptyAssessmentRunCreateForm(filterType));
       setCreateError(null);
       fetchRuns();
       if (data) navigate(`/assessment-run/${data.id}`);
@@ -275,6 +273,13 @@ const AssessmentRuns = () => {
     await log('restore_run', 'assessment_run', run.id, run.project_id, { period_label: run.period_label });
     toast({ title: '회차가 복구되었습니다.' });
     fetchRuns();
+  };
+
+  const openCreate = () => {
+    setForm(emptyAssessmentRunCreateForm(filterType));
+    setCreateError(null);
+    setFieldErrors({});
+    setShowCreate(true);
   };
 
   const canEditRun = (run: any) => {
@@ -333,7 +338,7 @@ const AssessmentRuns = () => {
             <Upload className="h-3.5 w-3.5" /> 예정공종표 업로드
           </Button>
           {canCreateRun && (
-            <Button size="sm" className="gap-1.5" onClick={() => setShowCreate(true)}>
+            <Button size="sm" className="gap-1.5" onClick={openCreate}>
               <Plus className="h-3.5 w-3.5" /> 회차 생성
             </Button>
           )}
@@ -349,7 +354,7 @@ const AssessmentRuns = () => {
               <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">종류 전체</SelectItem>
-                {Object.keys(typeLabels).map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                {ASSESSMENT_RUN_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
@@ -392,7 +397,7 @@ const AssessmentRuns = () => {
               </p>
             </div>
             {!showDeleted && canCreateRun && (
-              <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1.5">
+              <Button size="sm" onClick={openCreate} className="gap-1.5">
                 <Plus className="h-3.5 w-3.5" /> 회차 생성
               </Button>
             )}
@@ -417,7 +422,7 @@ const AssessmentRuns = () => {
                     <div className="space-y-2 flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" className="text-[10px] font-medium">
-                          {typeLabels[run.type] || run.type}
+                          {run.type}
                         </Badge>
                         <h3 className="font-semibold text-sm">
                           {run.period_label || '(기간 미지정)'}
@@ -501,8 +506,31 @@ const AssessmentRuns = () => {
           )}
           <div className="space-y-3">
             <div className="space-y-1">
+              <Label className="text-xs">종류 *</Label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {ASSESSMENT_RUN_TYPES.map((t) => {
+                  const selected = form.type === t;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setForm((p) => ({ ...p, type: t }))}
+                      className={`rounded-md border px-1.5 py-2 text-xs font-medium transition-colors ${
+                        selected
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border bg-background text-muted-foreground hover:bg-muted/50'
+                      }`}
+                    >
+                      {ASSESSMENT_RUN_TYPE_LABELS[t]}
+                    </button>
+                  );
+                })}
+              </div>
+              {fieldErrors.type && <p className="text-xs text-destructive">{fieldErrors.type}</p>}
+            </div>
+            <div className="space-y-1">
               <Label className="text-xs">회차명 *</Label>
-              <Input className="h-9" value={form.period_label} onChange={e => setForm(p => ({ ...p, period_label: e.target.value }))} placeholder="예: 2026년 3월 1주차" />
+              <Input className="h-9" value={form.period_label} onChange={e => setForm(p => ({ ...p, period_label: e.target.value }))} placeholder={periodLabelPlaceholder(form.type)} />
               {fieldErrors.period_label && <p className="text-xs text-destructive">{fieldErrors.period_label}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -519,24 +547,9 @@ const AssessmentRuns = () => {
             </div>
             <p className="text-[10px] text-muted-foreground -mt-1">날짜는 비워 두어도 생성됩니다.</p>
             <details className="text-xs space-y-2">
-              <summary className="cursor-pointer text-muted-foreground">종류 · 대상 공정 (기본: 정기)</summary>
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <div className="space-y-1">
-                  <Label className="text-xs">종류</Label>
-                  <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
-                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="최초">최초평가</SelectItem>
-                      <SelectItem value="정기">정기평가</SelectItem>
-                      <SelectItem value="수시">수시평가</SelectItem>
-                      <SelectItem value="상시">상시평가</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">대상 공정 (쉼표 구분)</Label>
-                  <Input className="h-9" value={form.target_processes} onChange={e => setForm(p => ({ ...p, target_processes: e.target.value }))} placeholder="배관, 철골, 용접" />
-                </div>
+              <summary className="cursor-pointer text-muted-foreground">대상 공정 (선택)</summary>
+              <div className="pt-2">
+                <Input className="h-9" value={form.target_processes} onChange={e => setForm(p => ({ ...p, target_processes: e.target.value }))} placeholder="배관, 철골, 용접" />
               </div>
             </details>
             <div className="space-y-1">

@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useAuth } from '@/contexts/AuthContext';
+import { ASSESSMENT_RUN_TYPES, ASSESSMENT_RUN_TYPE_LABELS, resolveAssessmentRunType } from '@/lib/assessmentRunType';
 
 interface EditRunDialogProps {
   open: boolean;
@@ -35,7 +36,7 @@ const EditRunDialog = ({ open, onOpenChange, run, onSaved }: EditRunDialogProps)
   useEffect(() => {
     if (run) {
       setForm({
-        type: run.type || '정기',
+        type: resolveAssessmentRunType(run.type),
         period_label: run.period_label || '',
         target_processes: (run.target_processes || []).join(', '),
         target_contractors: (run.target_contractors || []).join(', '),
@@ -54,7 +55,7 @@ const EditRunDialog = ({ open, onOpenChange, run, onSaved }: EditRunDialogProps)
     setSaving(true);
 
     const updates: any = {
-      type: form.type,
+      type: resolveAssessmentRunType(form.type),
       period_label: form.period_label,
       target_processes: form.target_processes.split(',').map(s => s.trim()).filter(Boolean),
       target_contractors: form.target_contractors.split(',').map(s => s.trim()).filter(Boolean),
@@ -132,10 +133,9 @@ const EditRunDialog = ({ open, onOpenChange, run, onSaved }: EditRunDialogProps)
               <Select value={form.type} onValueChange={v => setForm(p => ({ ...p, type: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="최초">최초평가</SelectItem>
-                  <SelectItem value="정기">정기평가</SelectItem>
-                  <SelectItem value="수시">수시평가</SelectItem>
-                  <SelectItem value="상시">상시평가</SelectItem>
+                  {ASSESSMENT_RUN_TYPES.map((t) => (
+                    <SelectItem key={t} value={t}>{ASSESSMENT_RUN_TYPE_LABELS[t]}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

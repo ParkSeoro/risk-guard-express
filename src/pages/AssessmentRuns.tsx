@@ -35,6 +35,8 @@ import {
   periodLabelPlaceholder,
   type AssessmentRunCreateForm,
 } from '@/lib/assessmentRunType';
+import { canCreateAssessmentRun, defaultAuthorUserId } from '@/lib/assessmentAuthor';
+import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
 
 const statusConfig: Record<string, { bg: string; text: string }> = {
   '작성중': { bg: 'bg-muted', text: 'text-muted-foreground' },
@@ -135,12 +137,8 @@ const AssessmentRuns = () => {
     setProjectRole((picked as any)?.role_new || null);
   };
 
-  // 고시 §7: 작성 주체 = 관리감독자(site_supervisor). SM은 보좌·검토로 생성도 가능.
-  const canCreateRun =
-    isMaster ||
-    projectRole === 'project_admin' ||
-    projectRole === 'site_supervisor' ||
-    projectRole === 'safety_manager';
+  // 고시 §7: 작성 주체 = 관리감독자. SM/관리자는 보좌 초안만(작성 주체 지정 필수).
+  const canCreateRun = canCreateAssessmentRun(projectRole, isMaster);
 
   const fetchRuns = async () => {
     if (!selectedProject || scopeStatus !== 'ready') return;
@@ -215,6 +213,7 @@ const AssessmentRuns = () => {
 
     const errors: Record<string, string> = {};
     if (!form.type) errors.type = '종류를 선택해주세요.';
+    if (!form.author_user_id) errors.author_user_id = '작성 주체(관리감독자)를 선택해주세요.';
     if (!form.period_label.trim()) errors.period_label = '회차명을 입력해주세요.';
     if (form.period_label.trim().length > 100) errors.period_label = '회차명은 100자 이내로 입력해주세요.';
     if (form.start_date && form.end_date && form.start_date > form.end_date) errors.end_date = '종료일이 시작일보다 이전입니다.';
@@ -250,7 +249,7 @@ const AssessmentRuns = () => {
 
       toast({ title: '회차가 생성되었습니다.' });
       setShowCreate(false);
-      setForm(emptyAssessmentRunCreateForm(filterType));
+      setForm(emptyAssessmentRunCreateForm(filterType, defaultAuthorUserId({ userId: user.id, role: projectRole })));
       setCreateError(null);
       fetchRuns();
       if (data) navigate(`/assessment-run/${data.id}`);
@@ -276,7 +275,7 @@ const AssessmentRuns = () => {
   };
 
   const openCreate = () => {
-    setForm(emptyAssessmentRunCreateForm(filterType));
+    setForm(emptyAssessmentRunCreateForm(filterType, defaultAuthorUserId({ userId: user?.id, role: projectRole })));
     setCreateError(null);
     setFieldErrors({});
     setShowCreate(true);
@@ -528,6 +527,18 @@ const AssessmentRuns = () => {
               </div>
               {fieldErrors.type && <p className="text-xs text-destructive">{fieldErrors.type}</p>}
             </div>
+            <AssessmentAuthorPicker
+              projectId={selectedProject}
+              value={form.author_user_id}
+              onChange={(id) => setForm((p) => ({ ...p, author_user_id: id }))}
+              required
+              error={fieldErrors.author_user_id}
+            />
+            {projectRole === 'safety_manager' && (
+              <p className="text-[10px] text-muted-foreground">
+                안전관리자는 보좌 입력만 가능합니다. 작성 주체와 상신은 관리감독자입니다.
+              </p>
+            )}
             <div className="space-y-1">
               <Label className="text-xs">회차명 *</Label>
               <Input className="h-9" value={form.period_label} onChange={e => setForm(p => ({ ...p, period_label: e.target.value }))} placeholder={periodLabelPlaceholder(form.type)} />
@@ -587,7 +598,7 @@ const AssessmentRuns = () => {
               <Textarea value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="특이사항, 메모..." rows={2} />
               {fieldErrors.notes && <p className="text-xs text-destructive">{fieldErrors.notes}</p>}
             </div>
-            <Button onClick={handleCreate} disabled={creating || !form.period_label.trim()} className="w-full">
+            <Button onClick={handleCreate} disabled={creating || !form.period_label.trim() || !form.author_user_id} className="w-full">
               {creating ? '생성 중...' : '회차 생성'}
             </Button>
           </div>

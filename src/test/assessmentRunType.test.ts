@@ -30,20 +30,22 @@ describe('assessmentRunType', () => {
   });
 
   it('writes the selected type onto the insert payload', () => {
-    const form = emptyAssessmentRunCreateForm('수시');
+    const form = emptyAssessmentRunCreateForm('수시', 'sup-1');
     form.period_label = '  수시 · 공정변경  ';
     form.start_date = '2026-08-24';
     form.end_date = '2026-08-30';
     form.target_company_ids = ['co-1'];
     const payload = buildAssessmentRunCreatePayload({
       projectId: 'proj-1',
-      userId: 'user-1',
+      userId: 'sm-1',
       form,
       contractorNames: ['정원'],
     });
     expect(payload.type).toBe('수시');
     expect(payload.period_label).toBe('수시 · 공정변경');
     expect(payload.status).toBe('작성중');
+    expect(payload.created_by).toBe('sm-1');
+    expect(payload.author_user_id).toBe('sup-1');
     expect(payload.target_company_ids).toEqual(['co-1']);
     expect(payload.target_contractors).toEqual(['정원']);
   });

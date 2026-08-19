@@ -17,6 +17,7 @@ export type AssessmentRunCreateForm = {
   target_processes: string;
   target_company_ids: string[];
   notes: string;
+  author_user_id: string;
 };
 
 export function isAssessmentRunType(value: string | null | undefined): value is AssessmentRunType {
@@ -44,7 +45,10 @@ export function periodLabelPlaceholder(type: AssessmentRunType): string {
   return '예: 2026년 8월 4주차';
 }
 
-export function emptyAssessmentRunCreateForm(type?: string | null): AssessmentRunCreateForm {
+export function emptyAssessmentRunCreateForm(
+  type?: string | null,
+  authorUserId?: string | null,
+): AssessmentRunCreateForm {
   return {
     type: resolveAssessmentRunType(type),
     period_label: '',
@@ -53,6 +57,7 @@ export function emptyAssessmentRunCreateForm(type?: string | null): AssessmentRu
     target_processes: '',
     target_company_ids: [],
     notes: '',
+    author_user_id: authorUserId || '',
   };
 }
 
@@ -74,5 +79,6 @@ export function buildAssessmentRunCreatePayload(args: {
     notes: args.form.notes.trim(),
     status: '작성중',
     created_by: args.userId,
+    author_user_id: args.form.author_user_id || null,
   };
 }

@@ -102,7 +102,7 @@ export const REQUIRED_COLUMNS: Record<string, string[]> = {
   user_roles: ["user_id", "role"],
   profiles: ["user_id", "account_status", "display_name"],
   companies: ["id", "project_id", "name"],
-  assessment_runs: ["id", "project_id", "type", "period_label", "status", "is_deleted"],
+  assessment_runs: ["id", "project_id", "type", "period_label", "status", "is_deleted", "author_user_id"],
   risk_items: [
     "id",
     "project_id",

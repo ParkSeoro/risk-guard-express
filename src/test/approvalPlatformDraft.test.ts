@@ -90,6 +90,8 @@ describe('assessment submit preflight — draft gate', () => {
       approvalLineCount: 4,
       approvalDraftReady: false,
       approvalDraftDetail: '미저장',
+      authorUserId: 'sup-1',
+      currentUserId: 'sup-1',
     });
     expect(r.ready).toBe(false);
     expect(r.items.find((i) => i.id === 'approval')?.ok).toBe(false);
@@ -106,6 +108,8 @@ describe('assessment submit preflight — draft gate', () => {
       unreviewedHealth: 0,
       approvalLineCount: 4,
       approvalDraftReady: true,
+      authorUserId: 'sup-1',
+      currentUserId: 'sup-1',
     });
     expect(r.ready).toBe(true);
   });

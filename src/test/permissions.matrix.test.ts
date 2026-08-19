@@ -8,6 +8,7 @@
  * 의도치 않은 변경은 이 테스트가 가장 먼저 잡아냅니다.
  */
 import { describe, it, expect } from "vitest";
+import { canSubmitAssessmentRun, isSiteSupervisorRole } from "@/lib/assessmentAuthor";
 
 // useProjectAccess 에서 PERMISSION_MATRIX 를 export 하지 않으므로
 // 동일한 정의를 여기 미러링합니다. (변경 시 둘 다 수정 — 테스트가 강제합니다.)
@@ -121,5 +122,13 @@ describe("권한 매트릭스 회귀 (Role × Feature × Action)", () => {
     expect(EXPECTED.site_supervisor.risk_assessment.edit).toBe(true);
     expect(EXPECTED.supervisor.risk_assessment.create).toBe(false);
     expect(EXPECTED.supervisor.risk_assessment.edit).toBe(false);
+  });
+});
+
+describe("위험성평가 법적 작성 주체", () => {
+  it("안전관리자는 법적 작성 주체가 아니고 상신도 못한다", () => {
+    expect(isSiteSupervisorRole("safety_manager")).toBe(false);
+    expect(canSubmitAssessmentRun({ userId: "sm-1", authorUserId: "sup-1" })).toBe(false);
+    expect(canSubmitAssessmentRun({ userId: "sup-1", authorUserId: "sup-1" })).toBe(true);
   });
 });

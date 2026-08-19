@@ -30,8 +30,30 @@ export function buildAssessmentSubmitPreflight(opts: {
    */
   approvalDraftReady?: boolean;
   approvalDraftDetail?: string;
+  authorUserId?: string | null;
+  authorName?: string | null;
+  currentUserId?: string | null;
 }): { items: AssessmentPreflightItem[]; ready: boolean } {
   const items: AssessmentPreflightItem[] = [];
+
+  const authorOk = !!opts.authorUserId;
+  const submitterOk = !!opts.authorUserId && !!opts.currentUserId && opts.authorUserId === opts.currentUserId;
+  items.push({
+    id: 'author',
+    label: '작성 주체(관리감독자) 지정',
+    ok: authorOk,
+    detail: authorOk ? (opts.authorName || '지정됨') : '관리감독자를 지정하세요',
+  });
+  items.push({
+    id: 'author_submitter',
+    label: '상신자는 작성 관리감독자',
+    ok: submitterOk,
+    detail: submitterOk
+      ? '본인'
+      : authorOk
+        ? `작성 관리감독자(${opts.authorName || '지정됨'})만 상신 가능`
+        : '작성 주체 지정 후 해당 관리감독자가 상신',
+  });
 
   items.push({
     id: 'items',

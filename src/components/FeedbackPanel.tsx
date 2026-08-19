@@ -53,6 +53,10 @@ interface FeedbackPanelProps {
   projectMembers: ProjectMember[];
   /** Previous run's unresolved feedback to display */
   previousFeedback?: FeedbackItem[];
+  /** Hide nested 전회차 card when this panel already is the 전회차(금주) target. */
+  hidePreviousUnresolved?: boolean;
+  heading?: string;
+  helperText?: string;
   /** assessment_runs.feedback_status */
   feedbackStatus?: string | null;
   submitterCompanyId?: string | null;
@@ -76,6 +80,9 @@ export default function FeedbackPanel({
   riskItems,
   projectMembers,
   previousFeedback,
+  hidePreviousUnresolved = false,
+  heading,
+  helperText,
   feedbackStatus = 'none',
   submitterCompanyId,
   onFeedbackStatusChange,
@@ -292,12 +299,12 @@ export default function FeedbackPanel({
   return (
     <div className="space-y-4">
       {/* Previous unresolved feedback */}
-      {unresolvedPrevious.length > 0 && (
+      {!hidePreviousUnresolved && unresolvedPrevious.length > 0 && (
         <Card className="border-warning">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2 text-warning">
               <AlertTriangle className="h-4 w-4" />
-              이전 회차 미조치 항목 ({unresolvedPrevious.length}건)
+              전회차 미조치 항목 ({unresolvedPrevious.length}건)
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 max-h-60 overflow-y-auto">
@@ -329,7 +336,7 @@ export default function FeedbackPanel({
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-sm font-semibold flex items-center gap-2">
-          피드백(조치관리) · {feedbackList.length}건
+          {heading || '금주 이행 확인'} · {feedbackList.length}건
           {feedbackPending && <Badge variant="outline" className="text-[10px]">결재진행</Badge>}
           {feedbackClosed && <Badge className="text-[10px] bg-success/10 text-success border-success/30" variant="outline">조치 결재완료</Badge>}
         </h3>
@@ -366,20 +373,19 @@ export default function FeedbackPanel({
             </>
           )}
           {isApproved && feedbackPending && (
-            <p className="text-xs text-muted-foreground">피드백 조치 결재가 진행 중입니다.</p>
+            <p className="text-xs text-muted-foreground">이행 확인 결재가 진행 중입니다.</p>
           )}
           {isApproved && feedbackClosed && (
-            <p className="text-xs text-muted-foreground">피드백 조치 결재가 완료되어 수정할 수 없습니다.</p>
+            <p className="text-xs text-muted-foreground">이행 확인 결재가 완료되어 수정할 수 없습니다.</p>
           )}
           {!isApproved && (
-            <p className="text-xs text-muted-foreground">승인 완료된 회차만 피드백(조치관리)이 가능합니다.</p>
+            <p className="text-xs text-muted-foreground">전회차(금주 작업분)가 승인된 뒤 조치 전후 사진을 작성할 수 있습니다.</p>
           )}
         </div>
       </div>
       <p className="text-[10px] text-muted-foreground">
-        ※ 개선 후 위험도 &apos;상&apos;(관리대상) 항목은 자동 대상입니다.
-        {highRemainItems.length > 0 && ` 현재 상 ${highRemainItems.length}건 · 미등록 ${missingHighCount}건.`}
-        {' '}평가 승인 후 피드백을 작성하고 별도 결재로 마무리합니다.
+        {helperText || '※ 금주 이행 확인은 전회차 승인 회차에 저장됩니다. 차주 관리대상과 섞지 않습니다.'}
+        {highRemainItems.length > 0 && ` 관리대상 상 ${highRemainItems.length}건 · 미등록 ${missingHighCount}건.`}
       </p>
 
       <SubmitApprovalDialog
@@ -487,7 +493,7 @@ export default function FeedbackPanel({
                   </div>
                 )}
                 {/* Quick status change */}
-                {isApproved && fb.status !== '완료' && (
+                {canEditFeedback && fb.status !== '완료' && (
                   <div className="flex gap-1 mt-1" onClick={e => e.stopPropagation()}>
                     {fb.status === '미조치' && (
                       <Button size="sm" variant="outline" className="h-6 text-[10px]" onClick={() => handleStatusChange(fb.id, '진행중')}>진행중으로</Button>

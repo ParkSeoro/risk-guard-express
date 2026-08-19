@@ -48,6 +48,76 @@ function formatKST(d: string | null | undefined): string {
   return `${y}-${m}-${day} ${h}:${min}`;
 }
 
+/** Keep in sync with src/lib/weeklyAssessmentLink.ts */
+function normalizeCompanyIds(ids: unknown): string[] {
+  if (!Array.isArray(ids)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of ids) {
+    const id = String(raw || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+function companyTargetsOverlap(a: unknown, b: unknown): boolean {
+  const na = normalizeCompanyIds(a);
+  const nb = normalizeCompanyIds(b);
+  if (na.length === 0 && nb.length === 0) return true;
+  if (na.length === 0 || nb.length === 0) return false;
+  const other = new Set(nb);
+  return na.some((id) => other.has(id));
+}
+
+function periodKey(run: any): string | null {
+  const start = String(run?.start_date || "").trim();
+  if (start) return start.slice(0, 10);
+  const created = String(run?.created_at || "").trim();
+  return created ? created.slice(0, 10) : null;
+}
+
+function pickPreviousApprovedRun(current: any, candidates: any[]): any | null {
+  const eligible = (candidates || []).filter((c) => {
+    if (!c?.id || c.id === current.id) return false;
+    if (c.project_id !== current.project_id) return false;
+    if (c.status !== "승인완료") return false;
+    if (c.is_deleted) return false;
+    return companyTargetsOverlap(current.target_company_ids, c.target_company_ids);
+  });
+  if (eligible.length === 0) return null;
+  const sameType = current.type ? eligible.filter((c) => c.type === current.type) : [];
+  const pool = sameType.length > 0 ? sameType : eligible;
+  const currentStart = String(current.start_date || "").trim().slice(0, 10);
+  const beforeByStart = currentStart
+    ? pool.filter((c) => {
+        const key = periodKey(c);
+        return !!key && key < currentStart;
+      })
+    : [];
+  const beforeByCreated = pool.filter((c) => c.created_at < current.created_at);
+  const ranked = (beforeByStart.length > 0
+    ? beforeByStart
+    : beforeByCreated.length > 0
+      ? beforeByCreated
+      : []).slice();
+  if (ranked.length === 0) return null;
+  ranked.sort((a: any, b: any) => {
+    const ak = periodKey(a) || a.created_at;
+    const bk = periodKey(b) || b.created_at;
+    if (ak !== bk) return ak < bk ? 1 : -1;
+    return a.created_at < b.created_at ? 1 : -1;
+  });
+  return ranked[0] || null;
+}
+
+function resolvePrintFeedbackRun(current: any, previous: any | null): any | null {
+  if (previous) return previous;
+  if (current?.status === "승인완료") return current;
+  return null;
+}
+
 const JOB_TITLE_LABELS: Record<string, string> = {
   contractor_supervisor: "관리감독자",
   contractor_pic: "관리감독자",
@@ -207,7 +277,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { runId, type } = await req.json();
+    const { runId, type, previousRunId } = await req.json();
     if (!runId) {
       return new Response(JSON.stringify({ error: "runId required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -224,11 +294,41 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const [projectRes, itemsRes, participantsRes, feedbackRes, validationRes, approvalsRes, companyLinksRes] = await Promise.all([
+    const { data: prevCandidates } = await supabase
+      .from("assessment_runs")
+      .select("id, project_id, type, status, start_date, end_date, created_at, target_company_ids, period_label, is_deleted")
+      .eq("project_id", run.project_id)
+      .eq("status", "승인완료")
+      .eq("is_deleted", false)
+      .neq("id", runId)
+      .order("created_at", { ascending: false })
+      .limit(80);
+
+    let previousRun = pickPreviousApprovedRun(run, prevCandidates || []);
+    if (previousRunId && previousRunId !== runId) {
+      const hinted = (prevCandidates || []).find((c: any) => c.id === previousRunId)
+        || (previousRun?.id === previousRunId ? previousRun : null);
+      if (hinted && hinted.project_id === run.project_id) {
+        previousRun = hinted;
+      } else {
+        const { data: hintedRow } = await supabase
+          .from("assessment_runs")
+          .select("id, project_id, type, status, start_date, end_date, created_at, target_company_ids, period_label, is_deleted")
+          .eq("id", previousRunId)
+          .maybeSingle();
+        if (hintedRow && hintedRow.project_id === run.project_id && hintedRow.status === "승인완료" && !hintedRow.is_deleted) {
+          previousRun = hintedRow;
+        }
+      }
+    }
+    const printFeedbackRun = resolvePrintFeedbackRun(run, previousRun);
+    const printFeedbackRunId = printFeedbackRun?.id || runId;
+
+    const [projectRes, itemsRes, participantsRes, feedbackRes, validationRes, approvalsRes, companyLinksRes, printFbItemsRes] = await Promise.all([
       supabase.from("projects").select("*").eq("id", run.project_id).single(),
       supabase.from("risk_items").select("*").eq("run_id", runId).order("sort_order"),
       supabase.from("assessment_run_participants").select("*").eq("run_id", runId),
-      supabase.from("risk_item_feedback").select("*").eq("assessment_run_id", runId),
+      supabase.from("risk_item_feedback").select("*").eq("assessment_run_id", printFeedbackRunId),
       type === "validation"
         ? supabase.from("validation_results").select("*").eq("run_id", runId)
         : Promise.resolve({ data: [] }),
@@ -237,12 +337,18 @@ Deno.serve(async (req) => {
         .select("company_id, parent_company_id, role_in_project, companies:company_id(id, name, type, parent_company_id, is_deleted)")
         .eq("project_id", run.project_id)
         .eq("is_deleted", false),
+      printFeedbackRunId !== runId
+        ? supabase.from("risk_items").select("*").eq("run_id", printFeedbackRunId)
+        : Promise.resolve({ data: null }),
     ]);
 
     const project = projectRes.data;
     const items = itemsRes.data || [];
     const participants = participantsRes.data || [];
     const feedbackItems = feedbackRes.data || [];
+    const feedbackLabelItems = printFeedbackRunId !== runId
+      ? (printFbItemsRes.data || [])
+      : items;
     const validationResults = (validationRes as any).data || [];
     const approvals = approvalsRes.data || [];
     let projectCompanies = mapProjectCompanies(companyLinksRes.data || []);
@@ -445,7 +551,7 @@ Deno.serve(async (req) => {
     let feedbackSection = "";
     if (feedbackWithImages.length > 0) {
       const fbRows = feedbackWithImages.map((fb: any, idx: number) => {
-        const item = items.find((i: any) => i.id === fb.risk_item_id);
+        const item = feedbackLabelItems.find((i: any) => i.id === fb.risk_item_id);
         const itemLabel = item ? `${item.process} – ${item.sub_task || ""}` : "(전체)";
         const statusColor = fb.status === "완료" ? "#16a34a" : fb.status === "진행중" ? "#d97706" : "#dc2626";
 
@@ -478,10 +584,13 @@ Deno.serve(async (req) => {
           </tr>${imagesHtml}`;
       }).join("");
 
+      const prevLabel = printFeedbackRun && printFeedbackRun.id !== runId
+        ? ` (전회차 ${printFeedbackRun.period_label || ""})`
+        : "";
       feedbackSection = `
         <div class="page-break"></div>
-        <div class="section-header">피드백(조치관리) 결과</div>
-        <div class="summary-text">총 ${feedbackWithImages.length}건 · 완료 ${feedbackWithImages.filter((f: any) => f.status === "완료").length}건 · 미조치 ${feedbackWithImages.filter((f: any) => f.status === "미조치").length}건</div>
+        <div class="section-header">금주 이행 확인${prevLabel}</div>
+        <div class="summary-text">전회차 실행 작업의 조치 전후 사진 · 총 ${feedbackWithImages.length}건 · 완료 ${feedbackWithImages.filter((f: any) => f.status === "완료").length}건 · 미조치 ${feedbackWithImages.filter((f: any) => f.status === "미조치").length}건</div>
         <table>
           <thead><tr><th>No</th><th>관련 항목</th><th>조치 내용</th><th>상태</th><th>완료일</th></tr></thead>
           <tbody>${fbRows}</tbody>
@@ -517,8 +626,9 @@ Deno.serve(async (req) => {
           <td>${item.assignee || ""}</td>
         </tr>`).join("");
       managedSection = `
-        <div class="section-header" style="margin-top:14pt;">관리대상 항목 (개선 후 위험도 '상')</div>
-        <div class="summary-text">개선 대책이 수행되었으나 위험도가 '상'으로 유지되어 지속적 관리가 필요한 항목 (${managedItems.length}건)</div>
+        <div class="page-break"></div>
+        <div class="section-header">차주 고위험 관리대상 (조치 사진 없음)</div>
+        <div class="summary-text">이번 회차에서 개선 후에도 위험도 '상'인 항목 (${managedItems.length}건). 조치 전후 사진은 금주 이행 확인(전회차) 섹션에만 있습니다.</div>
         <table>
           <thead><tr><th>No</th><th>공정</th><th>세부작업</th><th>위험요인</th><th>개선대책</th><th>위험도</th><th>부서</th><th>담당</th></tr></thead>
           <tbody>${managedRows}</tbody>

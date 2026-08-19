@@ -54,6 +54,7 @@ export async function exportToPDFServer(
   type: 'assessment' | 'validation' = 'assessment',
   mode: 'print' | 'download' = 'print',
   preOpenedWindow?: Window | null,
+  options?: { previousRunId?: string | null },
 ) {
   const loadingHtml = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>인쇄 준비 중…</title>
     <style>body{font-family:system-ui,-apple-system,'Malgun Gothic',sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;color:#334155;background:#f8fafc}
@@ -77,7 +78,13 @@ export async function exportToPDFServer(
 
   let data: any;
   try {
-    const resp = await supabase.functions.invoke('generate-pdf', { body: { runId, type } });
+    const resp = await supabase.functions.invoke('generate-pdf', {
+      body: {
+        runId,
+        type,
+        ...(options?.previousRunId ? { previousRunId: options.previousRunId } : {}),
+      },
+    });
     if (resp.error) {
       const errMsg = typeof resp.error === 'object' && resp.error.message ? resp.error.message : String(resp.error);
       throw new Error(`PDF 생성 서버 오류: ${errMsg}`);

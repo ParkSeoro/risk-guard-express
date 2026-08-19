@@ -6,18 +6,25 @@ import asyncio
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
+import httpx
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from fastapi import Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl, TypeAdapter
 
 from .ai import Detection
 from .config import save_config
 from .fleet_client import FleetClient
 from .models import CameraConfig, LocalConfig, NvrConfig
-from .nvr import CameraMonitor, FfprobeStreamProbe
+from .nvr import CameraMonitor, FfprobeStreamProbe, MjpegPreview
 from .runtime import EdgeRuntime
 from .secret_store import SecretStore
 from .security import MasterCommandVerifier
@@ -38,6 +45,12 @@ class NvrSetupRequest(BaseModel):
     vendor: str = Field(default="generic-onvif", min_length=1, max_length=128)
     host: str = Field(min_length=1, max_length=255)
     port: int = Field(default=554, ge=1, le=65535)
+
+
+class FleetPairRequest(BaseModel):
+    fleet_base_url: str = Field(min_length=10, max_length=2048, pattern=r"^https://")
+    pairing_code: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+    device_name: str = Field(min_length=2, max_length=120)
 
 
 class CameraSetupRequest(BaseModel):
@@ -100,7 +113,7 @@ def create_app(config: LocalConfig, config_path: Path | None = None) -> FastAPI:
 
     app = FastAPI(
         title="SafeNex Vision Edge",
-        version="0.1.0",
+        version="0.2.0",
         description="현장 NVR·AI CCTV의 보안 Edge Gateway",
         lifespan=lifespan,
         docs_url="/api/docs",
@@ -129,6 +142,100 @@ def create_app(config: LocalConfig, config_path: Path | None = None) -> FastAPI:
                 detail="configuration path is unavailable in this runtime",
             )
         save_config(config_path, config)
+
+    @app.post("/api/v1/setup/fleet/pair", tags=["setup"], dependencies=[Depends(local_admin_guard)])
+    async def pair_with_fleet(payload: FleetPairRequest) -> dict[str, object]:
+        if config.fleet_token_url or config.identity.fleet_base_url:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="gateway is already paired; unpair through SafeNex administrator workflow",
+            )
+        state_dir = Path(config.state_dir).expanduser().resolve()
+        credential_dir = state_dir / "credentials"
+        credential_dir.mkdir(parents=True, exist_ok=True)
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
+        private_pem = private_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ).decode("utf-8")
+        csr = (
+            x509.CertificateSigningRequestBuilder()
+            .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"vision-edge-{uuid4()}")]))
+            .sign(private_key, hashes.SHA256())
+        )
+        claim_url = f"{payload.fleet_base_url.rstrip('/')}/v1/gateway-pairings/claim"
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(connect=8.0, read=20.0, write=20.0, pool=8.0)) as client:
+                response = await client.post(
+                    claim_url,
+                    json={
+                        "pairing_code": payload.pairing_code,
+                        "device_name": payload.device_name,
+                        "csr_pem": csr.public_bytes(serialization.Encoding.PEM).decode("utf-8"),
+                        "requested_at": datetime.now(UTC).isoformat(),
+                    },
+                )
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"SafeNex pairing request failed: {exc}") from exc
+        if response.status_code >= 400:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"SafeNex pairing rejected: {response.status_code}",
+            )
+        try:
+            enrollment = response.json()
+            required = {
+                "gateway_id",
+                "tenant_id",
+                "site_id",
+                "token_url",
+                "client_id",
+                "client_certificate_pem",
+                "ca_bundle_pem",
+                "master_public_key_pem",
+            }
+            response_is_valid = isinstance(enrollment, dict) and required.issubset(enrollment)
+            content_is_valid = response_is_valid and all(
+                isinstance(enrollment[key], str) and enrollment[key] for key in required
+            )
+            if not content_is_valid:
+                raise ValueError("pairing response is incomplete")
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="SafeNex pairing response is invalid") from exc
+
+        private_key_path = credential_dir / "gateway-client.key"
+        certificate_path = credential_dir / "gateway-client.crt"
+        ca_bundle_path = credential_dir / "fleet-ca.pem"
+        master_key_path = credential_dir / "master-ed25519-public.pem"
+        for path, content, mode in (
+            (private_key_path, private_pem, 0o600),
+            (certificate_path, enrollment["client_certificate_pem"], 0o644),
+            (ca_bundle_path, enrollment["ca_bundle_pem"], 0o644),
+            (master_key_path, enrollment["master_public_key_pem"], 0o644),
+        ):
+            path.write_text(content, encoding="utf-8")
+            os.chmod(path, mode)
+
+        fleet_url = TypeAdapter(HttpUrl).validate_python(payload.fleet_base_url)
+        config.identity.gateway_id = enrollment["gateway_id"]
+        config.identity.tenant_id = enrollment["tenant_id"]
+        config.identity.site_id = enrollment["site_id"]
+        config.identity.fleet_base_url = fleet_url
+        config.certificate_path = str(certificate_path)
+        config.private_key_path = str(private_key_path)
+        config.ca_bundle_path = str(ca_bundle_path)
+        config.fleet_token_url = enrollment["token_url"]
+        config.fleet_client_id = enrollment["client_id"]
+        config.master_public_key_path = str(master_key_path)
+        persist_local_config()
+        await runtime.reconfigure_fleet()
+        return {
+            "gateway_id": config.identity.gateway_id,
+            "site_id": config.identity.site_id,
+            "status": "paired",
+            "fleet_base_url": str(config.identity.fleet_base_url),
+        }
 
     @app.post("/api/v1/setup/nvrs", tags=["setup"], dependencies=[Depends(local_admin_guard)])
     async def register_nvr(payload: NvrSetupRequest) -> dict[str, object]:
@@ -176,9 +283,64 @@ def create_app(config: LocalConfig, config_path: Path | None = None) -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/api/v1/nvrs", tags=["operations"])
+    async def nvrs() -> dict[str, object]:
+        return {"nvrs": [item.model_dump() for item in config.nvrs]}
+
+    @app.get("/api/v1/cameras", tags=["operations"])
+    async def cameras() -> dict[str, object]:
+        raw_health = runtime.status().get("camera_health", [])
+        health_by_id = {
+            str(item.get("camera_id")): item
+            for item in raw_health
+            if isinstance(item, dict) and isinstance(item.get("camera_id"), str)
+        }
+        items: list[dict[str, object]] = []
+        for camera in config.cameras:
+            health = health_by_id.get(camera.camera_id)
+            items.append(
+                {
+                    "camera_id": camera.camera_id,
+                    "name": camera.name,
+                    "nvr_id": camera.nvr_id,
+                    "enabled": camera.enabled,
+                    "ai_profile": camera.ai_profile,
+                    "state": health.get("state", "unknown") if isinstance(health, dict) else "unknown",
+                    "observed_fps": health.get("observed_fps") if isinstance(health, dict) else None,
+                    "detail": health.get("detail") if isinstance(health, dict) else None,
+                    "live_preview_url": f"/api/v1/cameras/{camera.camera_id}/live.mjpeg",
+                }
+            )
+        return {"cameras": items, "max_local_previews": 4}
+
+    @app.get("/api/v1/cameras/{camera_id}/live.mjpeg", tags=["operations"])
+    async def live_preview(camera_id: str) -> StreamingResponse:
+        if config.listen_host not in {"127.0.0.1", "::1", "localhost"}:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="live preview requires loopback binding")
+        camera = next((item for item in config.cameras if item.camera_id == camera_id and item.enabled), None)
+        if not camera:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="enabled camera not found")
+        preview = MjpegPreview(runtime.secret_store, config.ffprobe_timeout_seconds)
+        return StreamingResponse(
+            preview.stream(camera),
+            media_type="multipart/x-mixed-replace; boundary=safenex",
+            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+        )
+
     @app.get("/api/v1/status", tags=["operations"])
     async def gateway_status() -> dict[str, object]:
         return runtime.status()
+
+    @app.delete("/api/v1/setup/cameras/{camera_id}", tags=["setup"], dependencies=[Depends(local_admin_guard)])
+    async def remove_camera(camera_id: str) -> dict[str, str]:
+        index = next((i for i, item in enumerate(config.cameras) if item.camera_id == camera_id), None)
+        if index is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="camera not found")
+        camera = config.cameras.pop(index)
+        runtime.secret_store.delete(camera.stream_url_secret_ref)
+        persist_local_config()
+        await runtime.refresh_camera_health()
+        return {"camera_id": camera_id, "status": "deleted"}
 
     @app.post("/api/v1/cameras/{camera_id}/test", tags=["operations"], dependencies=[Depends(local_admin_guard)])
     async def test_camera(camera_id: str) -> dict[str, object]:

@@ -1,11 +1,34 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from vision_edge.app import create_app
+from vision_edge.config import load_config, write_example_config
 from vision_edge.models import GatewayIdentity, LocalConfig
+
+
+def test_dashboard_javascript_has_valid_syntax(tmp_path: Path) -> None:
+    dashboard = Path(__file__).parents[1] / "src" / "vision_edge" / "static" / "index.html"
+    script = dashboard.read_text(encoding="utf-8").split("<script>", 1)[1].split("</script>", 1)[0]
+    script_path = tmp_path / "dashboard.js"
+    script_path.write_text(script, encoding="utf-8")
+    result = subprocess.run(["node", "--check", str(script_path)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+
+
+def test_example_configuration_starts_unpaired(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("VISION_EDGE_DEVELOPMENT", "1")
+    config_path = tmp_path / "vision-edge.json"
+    write_example_config(config_path, tmp_path / "state")
+    config = load_config(config_path)
+    assert config.identity.fleet_base_url is None
+    assert config.fleet_token_url is None
+
+    with TestClient(create_app(config, config_path)) as client:
+        assert client.get("/api/v1/status").json()["fleet_configured"] is False
 
 
 def test_local_health_and_status(monkeypatch, tmp_path: Path) -> None:
@@ -56,3 +79,43 @@ def test_local_setup_encrypts_stream_url_and_updates_config(monkeypatch, tmp_pat
     assert "password" not in persisted
     assert "rtsp://" not in persisted
     assert "camera:camera-1:stream" in persisted
+
+
+def test_camera_monitoring_api_never_exposes_rtsp_secret(monkeypatch, tmp_path: Path) -> None:
+    from vision_edge.config import save_config
+
+    monkeypatch.setenv("VISION_EDGE_DEVELOPMENT", "1")
+    config_path = tmp_path / "vision-edge.json"
+    config = LocalConfig(
+        identity=GatewayIdentity(gateway_id="gw-1", tenant_id="tenant-1", site_id="site-1"),
+        state_dir=str(tmp_path / "state"),
+    )
+    save_config(config_path, config)
+    with TestClient(create_app(config, config_path)) as client:
+        assert client.post(
+            "/api/v1/setup/nvrs",
+            json={"nvr_id": "nvr-1", "name": "A동 NVR", "host": "192.168.10.10", "port": 554},
+        ).status_code == 200
+        assert client.post(
+            "/api/v1/setup/cameras",
+            json={
+                "camera_id": "camera-1",
+                "name": "A동 출입구",
+                "nvr_id": "nvr-1",
+                "stream_url": "rtsp://operator:password@192.168.10.10/stream",
+            },
+        ).status_code == 200
+
+        nvrs = client.get("/api/v1/nvrs")
+        cameras = client.get("/api/v1/cameras")
+        assert nvrs.status_code == 200
+        assert cameras.status_code == 200
+        assert cameras.json()["max_local_previews"] == 4
+        camera = cameras.json()["cameras"][0]
+        assert camera["live_preview_url"] == "/api/v1/cameras/camera-1/live.mjpeg"
+        assert "rtsp" not in str(camera).lower()
+        assert "password" not in str(camera).lower()
+
+        assert client.get("/api/v1/cameras/missing/live.mjpeg").status_code == 404
+        assert client.delete("/api/v1/setup/cameras/camera-1").status_code == 200
+        assert client.get("/api/v1/cameras").json()["cameras"] == []

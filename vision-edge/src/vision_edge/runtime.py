@@ -58,6 +58,31 @@ class EdgeRuntime:
         )
         self._stop_event = asyncio.Event()
 
+    async def reconfigure_fleet(self) -> None:
+        """페어링 완료 후 mTLS Fleet client와 서명 검증기를 원자적으로 교체한다."""
+        previous_client = self.fleet_client
+        self.fleet_client = FleetClient(
+            base_url=str(self.config.identity.fleet_base_url) if self.config.identity.fleet_base_url else None,
+            gateway_id=self.config.identity.gateway_id,
+            certificate_path=self.config.certificate_path,
+            private_key_path=self.config.private_key_path,
+            ca_bundle_path=self.config.ca_bundle_path,
+            token_url=str(self.config.fleet_token_url) if self.config.fleet_token_url else None,
+            client_id=self.config.fleet_client_id,
+        )
+        self.verifier = MasterCommandVerifier(
+            self.config.identity,
+            Path(self.config.master_public_key_path).expanduser() if self.config.master_public_key_path else None,
+        )
+        self._ai = SafetyRuleEngine(
+            self.config.identity.gateway_id,
+            self.config.identity.tenant_id,
+            self.config.identity.site_id,
+            SafetyPolicy(),
+        )
+        self._last_fleet_error = None
+        await previous_client.close()
+
     @property
     def last_fleet_error(self) -> str | None:
         return self._last_fleet_error

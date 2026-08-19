@@ -46,13 +46,10 @@ def write_example_config(path: Path, state_dir: Path) -> None:
     """비밀과 실제 RTSP URL을 포함하지 않는 안전한 샘플 구성을 작성한다."""
 
     example = LocalConfig(
-        identity=GatewayIdentity.model_validate(
-            {
-                "gateway_id": "gateway-demo-001",
-                "tenant_id": "tenant-demo",
-                "site_id": "site-demo",
-                "fleet_base_url": "https://vision-api.example.invalid",
-            }
+        identity=GatewayIdentity(
+            gateway_id="gateway-demo-001",
+            tenant_id="tenant-demo",
+            site_id="site-demo",
         ),
         state_dir=str(state_dir),
     )

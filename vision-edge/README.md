@@ -72,12 +72,12 @@ python3 -m compileall -q src tests
 
 ## 현장용 설치 파일: Ubuntu 24.04 amd64
 
-배포 파일 `safenex-vision-edge_0.1.0_amd64.deb`는 **Ubuntu 24.04 amd64** NVR 인접 Gateway 장비용이다. 인터넷이 없는 현장에서도 Python 라이브러리는 패키지 안의 wheelhouse에서 설치되지만, 운영체제 차원의 `python3-venv`, `ffmpeg`, `systemd` 패키지는 사전에 준비되어 있어야 한다.
+배포 파일 `safenex-vision-edge_0.2.0_amd64.deb`는 **Ubuntu 24.04 amd64** NVR 인접 Gateway 장비용이다. 인터넷이 없는 현장에서도 Python 라이브러리는 패키지 안의 wheelhouse에서 설치되지만, 운영체제 차원의 `python3-venv`, `ffmpeg`, `systemd` 패키지는 사전에 준비되어 있어야 한다.
 
 현장 사용자는 파일을 다운로드한 뒤 파일 관리자의 소프트웨어 설치 화면에서 열거나, 터미널에서 다음 한 줄을 실행하면 된다.
 
 ```bash
-sudo apt install ./safenex-vision-edge_0.1.0_amd64.deb
+sudo apt install ./safenex-vision-edge_0.2.0_amd64.deb
 ```
 
 설치 과정은 `safenex-vision-edge` 서비스를 자동 등록·기동하고, 암호화 비밀 저장소의 로컬 마스터 키와 기본 구성을 생성한다. Ubuntu 데스크톱 화면이 있는 장비에서는 애플리케이션 메뉴의 **SafeNex Vision Edge 관제**를 클릭하면 브라우저 운영 UI가 열리며, 터미널에서는 다음 명령을 실행한다.

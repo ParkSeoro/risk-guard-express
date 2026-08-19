@@ -56,6 +56,7 @@ class FleetClient:
         self._gateway_id = gateway_id
         self._token_url = token_url
         self._client_id = client_id
+        self._has_mtls_credentials = bool(certificate_path and private_key_path and ca_bundle_path)
         self._cached_token: CachedToken | None = None
         self._lock = asyncio.Lock()
         cert: tuple[str, str] | None = None
@@ -71,7 +72,7 @@ class FleetClient:
 
     @property
     def configured(self) -> bool:
-        return self._base_url is not None
+        return bool(self._base_url and self._gateway_id and self._token_url and self._client_id and self._has_mtls_credentials)
 
     async def close(self) -> None:
         await self._client.aclose()

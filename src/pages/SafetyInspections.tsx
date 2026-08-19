@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ClipboardCheck, Plus, Camera, Printer, AlertTriangle, CheckCircle2, XCircle, Loader2, Trash2, Search } from 'lucide-react';
+import { ClipboardCheck, Plus, Camera, Printer, AlertTriangle, CheckCircle2, XCircle, Loader2, Trash2, Search, Copy, Pencil } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { buildChecklist, INSPECTION_TYPE_LABELS, PROCESS_CATEGORIES, type InspectionType } from '@/lib/inspectionTemplates';
 import IMESafeInput from '@/components/IMESafeInput';
@@ -19,17 +19,31 @@ import { useGlobalProjectAccess } from '@/components/AppLayout';
 import MultiCompanyFilter from '@/components/MultiCompanyFilter';
 import AssigneeSelect from '@/components/AssigneeSelect';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
+import { fetchTodayPermitRoute } from '@/lib/legalForms/fetchTodayPermitRoute';
+import {
+  PATROL_INSPECTION_CATEGORY,
+  PATROL_LOG_DISCLAIMER,
+  PATROL_LOG_TITLE,
+  PATROL_PROCESS_CATEGORY,
+  buildPatrolLogHtml,
+  formatInspectorLine,
+  inspectorTitleFromMember,
+  isPatrolInspection,
+} from '@/lib/legalForms/patrolLog';
 
 type Inspection = {
   id: string;
   inspection_type: InspectionType;
   process_category: string;
   inspector_name: string;
+  inspector_id?: string | null;
   inspected_at: string;
   location: string;
   summary: string;
   status: string;
   created_at: string;
+  company_id?: string | null;
+  project_id?: string;
 };
 
 type InspItem = {
@@ -61,8 +75,13 @@ type InspAction = {
 export default function SafetyInspections() {
   const { profile } = useAuth();
   const { toast } = useToast();
-  const { selectedProject, userCompanyId } = useGlobalProjectAccess();
+  const { selectedProject, userCompanyId, userRole, userPosition, projects } = useGlobalProjectAccess();
   const projectId = selectedProject;
+  const projectLabel = (() => {
+    const p = projects.find((x) => x.id === projectId);
+    return p ? [p.name, p.site_name].filter(Boolean).join(' / ') : '';
+  })();
+  const selfTitle = inspectorTitleFromMember({ position: userPosition, role: userRole });
   const [tab, setTab] = useState('list');
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [actions, setActions] = useState<(InspAction & { inspection?: Inspection })[]>([]);
@@ -78,12 +97,17 @@ export default function SafetyInspections() {
 
   // create form
   const [form, setForm] = useState({
-    inspection_type: 'pre_work' as InspectionType,
-    process_category: '굴착',
+    inspection_type: 'patrol' as InspectionType,
+    process_category: PATROL_PROCESS_CATEGORY,
     location: '',
     summary: '',
     inspector_name: profile?.display_name || '',
   });
+  const [todayRoute, setTodayRoute] = useState('');
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTargetId, setEditTargetId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ location: '', summary: '', inspector_name: '', inspected_at: '' });
+  const [findingText, setFindingText] = useState('');
 
   const load = async () => {
     if (!projectId) return;
@@ -109,9 +133,22 @@ export default function SafetyInspections() {
   };
   useEffect(() => { load(); }, [projectId]);
 
+  useEffect(() => {
+    if (!projectId) return;
+    fetchTodayPermitRoute(projectId).then((route) => {
+      setTodayRoute(route);
+      setForm((f) => {
+        if (!isPatrolInspection(f.inspection_type) || f.location.trim()) return f;
+        return { ...f, location: route };
+      });
+    });
+  }, [projectId]);
+
   const handleCreate = async () => {
     if (!projectId) return toast({ title: '프로젝트를 선택하세요.', variant: 'destructive' });
-    if (!form.location.trim()) return toast({ title: '점검 위치를 입력하세요.', variant: 'destructive' });
+    const patrol = isPatrolInspection(form.inspection_type);
+    const location = form.location.trim() || (patrol ? todayRoute : '');
+    if (!location) return toast({ title: patrol ? '순회 구간을 입력하세요.' : '점검 위치를 입력하세요.', variant: 'destructive' });
     setLoading(true);
     try {
       const { data: ins, error } = await supabase
@@ -121,8 +158,9 @@ export default function SafetyInspections() {
           // Prefer own company for GC peer isolation; NULL still allowed by RLS for managers
           company_id: userCompanyId || null,
           inspection_type: form.inspection_type,
-          process_category: form.process_category,
-          location: form.location,
+          process_category: patrol ? PATROL_PROCESS_CATEGORY : form.process_category,
+          inspection_category: patrol ? PATROL_INSPECTION_CATEGORY : null,
+          location,
           summary: form.summary,
           inspector_name: form.inspector_name || profile?.display_name || '',
           inspector_id: profile?.user_id,
@@ -133,7 +171,7 @@ export default function SafetyInspections() {
         .single();
       if (error) throw error;
 
-      const checklist = buildChecklist(form.inspection_type, form.process_category);
+      const checklist = buildChecklist(form.inspection_type, patrol ? PATROL_PROCESS_CATEGORY : form.process_category);
       const items = checklist.map((c, i) => ({
         inspection_id: (ins as any).id,
         checklist_code: c.code,
@@ -145,7 +183,7 @@ export default function SafetyInspections() {
         const { error: e2 } = await supabase.from('safety_inspection_items' as any).insert(items);
         if (e2) throw e2;
       }
-      toast({ title: '점검이 생성되었습니다.', description: `체크리스트 ${items.length}개 항목 자동 생성` });
+      toast({ title: patrol ? '순회점검일지가 생성되었습니다.' : '점검이 생성되었습니다.', description: `체크리스트 ${items.length}개 항목 자동 생성` });
       setOpenCreate(false);
       await load();
       await openDetail((ins as any));
@@ -165,6 +203,99 @@ export default function SafetyInspections() {
     const { data: acts } = await supabase.from('safety_inspection_actions' as any)
       .select('*').eq('inspection_id', insp.id).order('created_at');
     setDetailActions(((acts as any) || []).map((x: any) => ({ ...x, evidence_photos: x.evidence_photos || [] })));
+  };
+
+  const cloneInspection = async (src: Inspection, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!projectId) return;
+    setLoading(true);
+    try {
+      const { data: ins, error } = await supabase.from('safety_inspections' as any).insert({
+        project_id: projectId,
+        company_id: (src as any).company_id || userCompanyId || null,
+        inspection_type: src.inspection_type,
+        process_category: isPatrolInspection(src.inspection_type) ? PATROL_PROCESS_CATEGORY : src.process_category,
+        inspection_category: isPatrolInspection(src.inspection_type) ? PATROL_INSPECTION_CATEGORY : null,
+        location: src.location,
+        summary: src.summary ? `(복제) ${src.summary}` : '',
+        inspector_name: profile?.display_name || src.inspector_name,
+        inspector_id: profile?.user_id || src.inspector_id,
+        created_by: profile?.user_id,
+        status: 'in_progress',
+      }).select().single();
+      if (error) throw error;
+      const { data: srcItems } = await supabase.from('safety_inspection_items' as any)
+        .select('checklist_code, label, legal_basis, sort_order').eq('inspection_id', src.id).order('sort_order');
+      const rows = ((srcItems as any[]) || []).map((c) => ({
+        inspection_id: (ins as any).id,
+        checklist_code: c.checklist_code,
+        label: c.label,
+        legal_basis: c.legal_basis,
+        sort_order: c.sort_order,
+      }));
+      if (rows.length) {
+        const { error: e2 } = await supabase.from('safety_inspection_items' as any).insert(rows);
+        if (e2) throw e2;
+      }
+      toast({ title: '복제되었습니다.', description: '결과·사진은 비우고 새 일지로 열었습니다.' });
+      await load();
+      await openDetail(ins as any);
+    } catch (err: any) {
+      toast({ title: '복제 실패', description: err.message, variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startEdit = (insp: Inspection, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const d = new Date(insp.inspected_at);
+    const local = Number.isNaN(d.getTime())
+      ? ''
+      : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setEditTargetId(insp.id);
+    setEditForm({
+      location: insp.location || '',
+      summary: insp.summary || '',
+      inspector_name: insp.inspector_name || '',
+      inspected_at: local,
+    });
+    setEditOpen(true);
+  };
+
+  const saveEdit = async () => {
+    if (!editTargetId) return;
+    if (!editForm.location.trim()) return toast({ title: '순회 구간(위치)을 입력하세요.', variant: 'destructive' });
+    const patch: Record<string, string> = {
+      location: editForm.location.trim(),
+      summary: editForm.summary,
+      inspector_name: editForm.inspector_name,
+    };
+    if (editForm.inspected_at) patch.inspected_at = new Date(editForm.inspected_at).toISOString();
+    const { error } = await supabase.from('safety_inspections' as any).update(patch).eq('id', editTargetId);
+    if (error) return toast({ title: '수정 실패', description: error.message, variant: 'destructive' });
+    setInspections((prev) => prev.map((x) => x.id === editTargetId ? { ...x, ...patch } : x));
+    if (detail?.id === editTargetId) setDetail({ ...detail, ...patch });
+    setEditOpen(false);
+    toast({ title: '수정되었습니다.' });
+  };
+
+  const addDetailFinding = async () => {
+    if (!detail || !findingText.trim()) return toast({ title: '발견사항을 입력하세요.', variant: 'destructive' });
+    const sort = detailItems.length;
+    const { data, error } = await supabase.from('safety_inspection_items' as any).insert({
+      inspection_id: detail.id,
+      checklist_code: `PT-FIND-${sort + 1}`,
+      label: findingText.trim(),
+      legal_basis: '산업안전보건법 시행령 제18조제1항제5호',
+      sort_order: sort,
+      result: 'fail',
+    }).select().single();
+    if (error) return toast({ title: '추가 실패', description: error.message, variant: 'destructive' });
+    setFindingText('');
+    const row = { ...(data as any), photos: [] } as InspItem;
+    setDetailItems((prev) => [...prev, row]);
+    await updateItemResult(row, 'fail');
   };
 
   const updateItemResult = async (item: InspItem, result: 'pass' | 'fail' | 'na') => {
@@ -288,10 +419,35 @@ export default function SafetyInspections() {
     load();
   };
 
-  const printDetail = () => {
+  const printDetail = async () => {
     if (!detail) return;
     const win = window.open('', '_blank', 'width=900,height=1200');
     if (!win) return;
+    if (isPatrolInspection(detail.inspection_type)) {
+      let title = selfTitle;
+      if (detail.inspector_id) {
+        const { data: mem } = await supabase
+          .from('project_members')
+          .select('role_new, position_new')
+          .eq('project_id', projectId)
+          .eq('user_id', detail.inspector_id)
+          .maybeSingle();
+        title = inspectorTitleFromMember({ position: (mem as any)?.position_new, role: (mem as any)?.role_new }) || title;
+      }
+      win.document.write(buildPatrolLogHtml({
+        projectName: projectLabel || '현장',
+        inspectedAt: detail.inspected_at,
+        inspectorName: detail.inspector_name,
+        inspectorTitle: title,
+        location: detail.location,
+        summary: detail.summary,
+        items: detailItems,
+        actions: detailActions,
+      }));
+      win.document.close();
+      setTimeout(() => win.print(), 400);
+      return;
+    }
     const photoTag = (urls: string[]) => urls.map(u => `<img src="${u}" style="width:120px;height:90px;object-fit:cover;border:1px solid #ccc;margin:2px;"/>`).join('');
     const itemRows = detailItems.map((it, i) => `
       <tr>
@@ -364,7 +520,7 @@ export default function SafetyInspections() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><ClipboardCheck className="h-6 w-6" />안전점검</h1>
-          <p className="text-sm text-muted-foreground">산업안전보건법 기준 법적 안전점검 · 조치관리</p>
+          <p className="text-sm text-muted-foreground">순회점검일지 · 산업안전보건법 기준 점검 · 조치관리</p>
         </div>
         <Button onClick={() => setOpenCreate(true)}><Plus className="h-4 w-4 mr-1" />새 점검</Button>
       </div>
@@ -405,12 +561,19 @@ export default function SafetyInspections() {
               }
               return filtered.map(i => (
                 <Card key={i.id} className="cursor-pointer hover:bg-accent/30" onClick={() => openDetail(i)}>
-                  <CardContent className="p-3 flex items-center justify-between text-sm">
-                    <div className="flex-1">
-                      <div className="font-semibold">{INSPECTION_TYPE_LABELS[i.inspection_type]} · {i.process_category}</div>
-                      <div className="text-xs text-muted-foreground">{i.location} · {i.inspector_name} · {new Date(i.inspected_at).toLocaleString('ko-KR')}</div>
+                  <CardContent className="p-3 flex items-center justify-between text-sm gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold">
+                        {isPatrolInspection(i.inspection_type) ? PATROL_LOG_TITLE : `${INSPECTION_TYPE_LABELS[i.inspection_type]} · ${i.process_category}`}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">{i.location} · {i.inspector_name} · {new Date(i.inspected_at).toLocaleString('ko-KR')}</div>
                     </div>
-                    <Badge variant={i.status === 'completed' ? 'default' : 'secondary'}>{i.status === 'completed' ? '완료' : '진행중'}</Badge>
+                    <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <Badge variant={i.status === 'completed' ? 'default' : 'secondary'}>{i.status === 'completed' ? '완료' : '진행중'}</Badge>
+                      <Button size="icon" variant="ghost" className="h-8 w-8" title="수정" onClick={(e) => startEdit(i, e)}><Pencil className="h-3.5 w-3.5" /></Button>
+                      <Button size="icon" variant="ghost" className="h-8 w-8" title="복제" onClick={(e) => cloneInspection(i, e)}><Copy className="h-3.5 w-3.5" /></Button>
+                      <Button size="icon" variant="ghost" className="h-8 w-8" title="삭제" onClick={(e) => { e.stopPropagation(); removeInspection(i.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    </div>
                   </CardContent>
                 </Card>
               ));
@@ -453,11 +616,19 @@ export default function SafetyInspections() {
       {/* Create dialog */}
       <Dialog open={openCreate} onOpenChange={setOpenCreate}>
         <DialogContent>
-          <DialogHeader><DialogTitle>새 안전점검</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{isPatrolInspection(form.inspection_type) ? '새 순회점검일지' : '새 안전점검'}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
               <Label>점검 유형</Label>
-              <Select value={form.inspection_type} onValueChange={(v) => setForm({ ...form, inspection_type: v as InspectionType })}>
+              <Select value={form.inspection_type} onValueChange={(v) => {
+                const next = v as InspectionType;
+                setForm({
+                  ...form,
+                  inspection_type: next,
+                  process_category: isPatrolInspection(next) ? PATROL_PROCESS_CATEGORY : (form.process_category === PATROL_PROCESS_CATEGORY ? '굴착' : form.process_category),
+                  location: isPatrolInspection(next) && !form.location.trim() ? todayRoute : form.location,
+                });
+              }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(INSPECTION_TYPE_LABELS).map(([k, v]) => (
@@ -466,6 +637,14 @@ export default function SafetyInspections() {
                 </SelectContent>
               </Select>
             </div>
+            {isPatrolInspection(form.inspection_type) && (
+              <div className="rounded-md bg-muted/50 p-3 text-xs space-y-1">
+                <div>현장명 · <strong>{projectLabel || '-'}</strong></div>
+                <div>점검자·직책 · {formatInspectorLine(form.inspector_name || profile?.display_name || '', selfTitle)}</div>
+                <p className="text-muted-foreground">{PATROL_LOG_DISCLAIMER}</p>
+              </div>
+            )}
+            {!isPatrolInspection(form.inspection_type) && (
             <div>
               <Label>공종</Label>
               <Select value={form.process_category} onValueChange={(v) => setForm({ ...form, process_category: v })}>
@@ -476,9 +655,15 @@ export default function SafetyInspections() {
                 </SelectContent>
               </Select>
             </div>
+            )}
             <div>
-              <Label>점검 위치</Label>
-              <IMESafeInput defaultValue={form.location} onCommit={(v) => setForm({ ...form, location: v })} placeholder="예: 1동 3층 A구역" />
+              <Label>{isPatrolInspection(form.inspection_type) ? '순회 구간' : '점검 위치'}</Label>
+              <Input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })}
+                placeholder={isPatrolInspection(form.inspection_type) ? '당일 허가서 위치 자동' : '예: 1동 3층 A구역'} />
+              {isPatrolInspection(form.inspection_type) && todayRoute && (
+                <Button type="button" variant="ghost" size="sm" className="mt-1 h-7 text-[11px]"
+                  onClick={() => setForm({ ...form, location: todayRoute })}>당일 허가서 구간으로 채우기</Button>
+              )}
             </div>
             <div>
               <Label>점검자</Label>
@@ -505,8 +690,10 @@ export default function SafetyInspections() {
             <>
               <DialogHeader>
                 <DialogTitle className="flex items-center justify-between">
-                  <span>{INSPECTION_TYPE_LABELS[detail.inspection_type]} · {detail.process_category}</span>
+                  <span>{isPatrolInspection(detail.inspection_type) ? PATROL_LOG_TITLE : `${INSPECTION_TYPE_LABELS[detail.inspection_type]} · ${detail.process_category}`}</span>
                   <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => startEdit(detail)}><Pencil className="h-4 w-4 mr-1" />수정</Button>
+                    <Button size="sm" variant="outline" onClick={() => cloneInspection(detail)}><Copy className="h-4 w-4 mr-1" />복제</Button>
                     <Button size="sm" variant="outline" onClick={printDetail}><Printer className="h-4 w-4 mr-1" />인쇄/PDF</Button>
                     {detail.status !== 'completed' && (
                       <Button size="sm" onClick={finishInspection}><CheckCircle2 className="h-4 w-4 mr-1" />점검 완료</Button>
@@ -517,7 +704,8 @@ export default function SafetyInspections() {
               </DialogHeader>
 
               <div className="text-xs text-muted-foreground mb-2">
-                {detail.location} · {detail.inspector_name} · {new Date(detail.inspected_at).toLocaleString('ko-KR')}
+                {detail.location} · {detail.inspector_name}{selfTitle ? ` / ${selfTitle}` : ''} · {new Date(detail.inspected_at).toLocaleString('ko-KR')}
+                {projectLabel ? ` · ${projectLabel}` : ''}
                 <span className="ml-3"><Badge variant="default" className="bg-success">통과 {passCount}</Badge> <Badge variant="destructive">불합격 {failCount}</Badge></span>
               </div>
 
@@ -538,7 +726,7 @@ export default function SafetyInspections() {
                         </div>
                       </div>
                       <div className="flex gap-2 items-start">
-                        <IMESafeInput defaultValue={it.note} onCommit={(v) => updateItemNote(it, v)} placeholder="비고" className="flex-1 text-sm" />
+                        <IMESafeInput defaultValue={it.note} onCommit={(v) => updateItemNote(it, v)} placeholder={isPatrolInspection(detail.inspection_type) ? '발견사항·즉시조치' : '비고'} className="flex-1 text-sm" />
                         <label className="cursor-pointer inline-flex items-center gap-1 text-xs px-2 py-1 border rounded hover:bg-accent">
                           <Camera className="h-3 w-3" />사진
                           <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={(e) => onItemPhoto(it, e.target.files)} />
@@ -553,6 +741,13 @@ export default function SafetyInspections() {
                   </Card>
                 ))}
               </div>
+
+              {isPatrolInspection(detail.inspection_type) && (
+                <div className="flex gap-2 mt-3">
+                  <Input value={findingText} onChange={(e) => setFindingText(e.target.value)} placeholder="추가 발견사항" />
+                  <Button variant="outline" onClick={addDetailFinding}><Plus className="h-4 w-4 mr-1" />추가</Button>
+                </div>
+              )}
 
               {detailActions.length > 0 && (
                 <>
@@ -611,6 +806,34 @@ export default function SafetyInspections() {
               )}
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>점검 수정</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>순회 구간 / 위치</Label>
+              <Input value={editForm.location} onChange={(e) => setEditForm({ ...editForm, location: e.target.value })} />
+            </div>
+            <div>
+              <Label>점검자</Label>
+              <Input value={editForm.inspector_name} onChange={(e) => setEditForm({ ...editForm, inspector_name: e.target.value })} />
+            </div>
+            <div>
+              <Label>점검일시</Label>
+              <Input type="datetime-local" value={editForm.inspected_at} onChange={(e) => setEditForm({ ...editForm, inspected_at: e.target.value })} />
+            </div>
+            <div>
+              <Label>요약</Label>
+              <Textarea value={editForm.summary} onChange={(e) => setEditForm({ ...editForm, summary: e.target.value })} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>취소</Button>
+            <Button onClick={saveEdit}>저장</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -1,5 +1,8 @@
 // 산업안전보건법 기반 안전점검 체크리스트 템플릿
 // 점검 유형 × 공종별 법적 필수 점검 항목 매핑
+// 순회점검은 공종 체크리스트를 붙이지 않고 서식 팩 항목만 쓴다.
+
+import { PATROL_CHECKLIST_ITEMS } from '@/lib/legalForms/patrolLog';
 
 export type InspectionType =
   | 'pre_work'      // 작업 전 점검 (일일)
@@ -60,12 +63,7 @@ const COMMON_ITEMS: Record<InspectionType, ChecklistItem[]> = {
     { code: 'SP-003', label: '관리감독자 직접 입회 확인', legal_basis: '산업안전보건법 제16조' },
     { code: 'SP-004', label: '비상대응 시나리오 점검', legal_basis: '산업안전보건법 제24조' },
   ],
-  patrol: [
-    { code: 'PT-001', label: '현장 전반 위험요인 발견', legal_basis: '산업안전보건법 제15조' },
-    { code: 'PT-002', label: '근로자 안전수칙 준수 상태', legal_basis: '산업안전보건법 제6조' },
-    { code: 'PT-003', label: '안전표지·경고표지 부착 상태', legal_basis: '산업안전보건법 제37조' },
-    { code: 'PT-004', label: '협력업체 안전관리 이행 상태', legal_basis: '산업안전보건법 제63조' },
-  ],
+  patrol: PATROL_CHECKLIST_ITEMS,
 };
 
 // 공종별 추가 항목
@@ -103,6 +101,7 @@ const PROCESS_SPECIFIC: Record<string, ChecklistItem[]> = {
 };
 
 export function buildChecklist(type: InspectionType, processCategory: string): ChecklistItem[] {
+  if (type === 'patrol') return [...PATROL_CHECKLIST_ITEMS];
   const base = COMMON_ITEMS[type] || [];
   // process category may be free text; match by includes
   const extras: ChecklistItem[] = [];

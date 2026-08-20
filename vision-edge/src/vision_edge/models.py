@@ -30,6 +30,21 @@ class WanProfile(StrEnum):
     HYBRID = "hybrid"
 
 
+class UpdateChannel(StrEnum):
+    PILOT = "pilot"
+    CANARY = "canary"
+    PRODUCTION = "production"
+
+
+class UpdateState(StrEnum):
+    UP_TO_DATE = "up_to_date"
+    AVAILABLE = "available"
+    BLOCKED_METERED = "blocked_metered"
+    REJECTED_SIGNATURE = "rejected_signature"
+    REJECTED_ROLLBACK = "rejected_rollback"
+    REJECTED_STALE = "rejected_stale"
+
+
 class Severity(StrEnum):
     INFO = "info"
     LOW = "low"
@@ -107,6 +122,10 @@ class LocalConfig(BaseModel):
     ffprobe_timeout_seconds: int = Field(default=8, ge=1, le=120)
     allow_local_key_generation: bool = False
     wan_profile: WanProfile = WanProfile.HYBRID
+    update_manifest_url: HttpUrl | None = None
+    update_public_key_path: str | None = None
+    update_channel: UpdateChannel = UpdateChannel.PRODUCTION
+    update_check_interval_seconds: int = Field(default=21600, ge=300, le=604800)
     cameras: list[CameraConfig] = Field(default_factory=list)
     nvrs: list[NvrConfig] = Field(default_factory=list)
 
@@ -129,6 +148,26 @@ class CameraHealth(BaseModel):
     last_frame_at: datetime | None = None
     observed_fps: float | None = Field(default=None, ge=0.0)
     detail: str | None = Field(default=None, max_length=500)
+
+
+class UpdateManifest(BaseModel):
+    """Gateway가 다운로드 전에 서명 검증하는, 비밀 없는 release target 설명."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["safenex-vision-edge-update/v1"] = "safenex-vision-edge-update/v1"
+    release_id: str = Field(min_length=3, max_length=160)
+    version: str = Field(pattern=r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
+    channel: UpdateChannel
+    platform: Literal["windows-x64", "linux-amd64"]
+    installer_url: HttpUrl
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    size_bytes: int = Field(gt=0, le=4_294_967_296)
+    published_at: datetime
+    expires_at: datetime
+    security_critical: bool = False
+    release_notes_url: HttpUrl | None = None
+    signature: str = Field(min_length=32, max_length=1024)
 
 
 class HeartbeatPayload(BaseModel):

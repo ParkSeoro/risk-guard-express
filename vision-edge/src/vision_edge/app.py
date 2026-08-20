@@ -31,12 +31,13 @@ from pydantic import BaseModel, Field, HttpUrl, TypeAdapter
 from .ai import Detection
 from .config import save_config
 from .fleet_client import FleetClient
-from .models import CameraConfig, LocalConfig, NvrConfig
+from .models import CameraConfig, LocalConfig, NvrConfig, UpdateManifest
 from .nvr import CameraMonitor, FfprobeStreamProbe, MjpegPreview, OnvifDiscoverer
 from .runtime import EdgeRuntime
 from .secret_store import SecretStore
 from .security import MasterCommandVerifier
 from .storage import EdgeStore
+from .updates import UpdateManifestVerifier
 
 
 class DetectionTestRequest(BaseModel):
@@ -516,6 +517,40 @@ def create_app(config: LocalConfig, config_path: Path | None = None) -> FastAPI:
     @app.get("/api/v1/status", tags=["operations"])
     async def gateway_status() -> dict[str, object]:
         return runtime.status()
+
+    @app.get("/api/v1/updates/status", tags=["operations"])
+    async def update_status() -> dict[str, object]:
+        return {
+            "current_version": "0.3.0",
+            "channel": config.update_channel.value,
+            "check_interval_seconds": config.update_check_interval_seconds,
+            "wan_profile": config.wan_profile.value,
+            "state": runtime.store.get_runtime_value("update_state") or "up_to_date",
+            "detail": runtime.store.get_runtime_value("update_detail") or "no verified update manifest has been received",
+            "release_id": runtime.store.get_runtime_value("update_release_id"),
+            "available_version": runtime.store.get_runtime_value("update_available_version"),
+        }
+
+    @app.post("/api/v1/updates/verify", tags=["operations"], dependencies=[Depends(local_admin_guard)])
+    async def verify_update_manifest(payload: UpdateManifest) -> dict[str, object]:
+        verifier = UpdateManifestVerifier(
+            public_key_path=Path(config.update_public_key_path).expanduser() if config.update_public_key_path else None,
+            current_version="0.3.0",
+            platform="windows-x64" if os.name == "nt" else "linux-amd64",
+            channel=config.update_channel.value,
+            wan_profile=config.wan_profile,
+        )
+        decision = verifier.verify(payload)
+        runtime.store.set_runtime_value("update_state", decision.state.value)
+        runtime.store.set_runtime_value("update_detail", decision.detail)
+        runtime.store.set_runtime_value("update_release_id", decision.release_id)
+        runtime.store.set_runtime_value("update_available_version", decision.version)
+        return {
+            "state": decision.state.value,
+            "detail": decision.detail,
+            "release_id": decision.release_id,
+            "available_version": decision.version,
+        }
 
     @app.delete("/api/v1/setup/cameras/{camera_id}", tags=["setup"], dependencies=[Depends(local_admin_guard)])
     async def remove_camera(camera_id: str) -> dict[str, str]:

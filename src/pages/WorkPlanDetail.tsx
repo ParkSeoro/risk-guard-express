@@ -759,7 +759,12 @@ const WorkPlanDetail = () => {
               <Badge variant="destructive" className="text-[9px] h-4 px-1">{attProgress!.mandatoryMissing}</Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="preview" className="text-xs gap-1"><Eye className="h-3 w-3" />미리보기</TabsTrigger>
+          <TabsTrigger value="preview" className="text-xs gap-1">
+            <Eye className="h-3 w-3" />미리보기
+            {(attProgress?.uploaded ?? 0) > 0 && (
+              <Badge variant="secondary" className="text-[9px] h-4 px-1">{attProgress!.uploaded}</Badge>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         {/* Basic Info Tab */}
@@ -910,6 +915,7 @@ const WorkPlanDetail = () => {
 
         {/* Attachments Tab */}
         <TabsContent value="attachments" className="space-y-3 mt-4">
+          {planId && <AttachmentReviewPanel workPlanId={planId} />}
           {plan?.project_id && (
             <AttachmentChecklist
               workPlanId={plan.id}
@@ -921,15 +927,13 @@ const WorkPlanDetail = () => {
               onProgress={setAttProgress}
             />
           )}
-          {plan.status !== '작성중' && planId && (
-            <AttachmentReviewPanel workPlanId={planId} />
-          )}
         </TabsContent>
 
-        {/* Preview Tab */}
+        {/* Preview Tab — attachments first (SSOT work_plan_attachments; legacy JSON is empty) */}
         <TabsContent value="preview" className="space-y-4 mt-4">
+          {planId && <AttachmentReviewPanel workPlanId={planId} />}
           <Card>
-            <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Eye className="h-4 w-4" />미리보기</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Eye className="h-4 w-4" />본문 미리보기</CardTitle></CardHeader>
             <CardContent className="space-y-6">
               {/* Header */}
               <div className="text-center border-b pb-4">
@@ -971,9 +975,6 @@ const WorkPlanDetail = () => {
                   ))}
                 </div>
               )}
-
-              {/* Attachments — SSOT work_plan_attachments (legacy JSON is empty) */}
-              {planId && <AttachmentReviewPanel workPlanId={planId} />}
             </CardContent>
           </Card>
         </TabsContent>

@@ -153,6 +153,12 @@ describe("notification + entity mobile routes", () => {
       "/app/worker/permits?id=p1&from=approvals",
     );
     expect(mobileDocumentPath("assessment_run", "r1")).toBe("/app/worker/risk-assessment/r1");
+    expect(mobileDocumentPath("assessment_run", "r1", "approvals")).toBe(
+      "/app/worker/risk-assessment/r1?from=approvals",
+    );
+    expect(mobileDocumentPath("work_plan", "w1", "approvals")).toBe(
+      "/app/worker/work-plans/w1?from=approvals",
+    );
   });
 
   it("toMobileShellPath keeps work-permit document ids", () => {

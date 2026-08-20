@@ -499,7 +499,7 @@ const WorkPlanDetail = () => {
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
   if (!plan) return null;
 
-  // Mobile: never render authoring UI — approved viewer only
+  // Mobile: never render authoring UI — read-only print preview + summary
   if (isMobile && !isForceDesktop()) {
     return <MobileWorkPlanViewer planId={planId} />;
   }

@@ -23,7 +23,7 @@ export const PATROL_LOG_FORM_ID = 'osh-patrol-log';
 export const PATROL_LOG_TITLE = '순회 안전점검일지';
 /** 엑셀 기본 양식(LGC 배관망 증설 일지) 타이틀 띄어쓰기 */
 export const PATROL_LOG_PRINT_TITLE = '순 회 안 전 점 검 일 지';
-export const SITE_DIRECTOR_PATROL_TITLE = '총괄책임자(현장소장) 작업장 순회점검 일지';
+export const SITE_DIRECTOR_PATROL_TITLE = '관리책임자(현장소장) 작업장 순회점검 일지';
 export const PATROL_PROCESS_CATEGORY = '현장순회';
 export const PATROL_INSPECTION_CATEGORY = '순회점검';
 
@@ -104,7 +104,7 @@ export const PATROL_CHECKLIST_ITEMS: PatrolChecklistItem[] = [
   { code: 'PT-13', label: '가설도로 교통안전시설물 관리상태', legal_basis: '산업안전보건기준에 관한 규칙 제13조' },
 ];
 
-/** 같은 엑셀 하단 — 총괄책임자(현장소장) 순회 3항목. */
+/** 같은 엑셀 하단 — 관리책임자(현장소장) 순회 3항목. */
 export const SITE_DIRECTOR_PATROL_ITEMS: Array<{
   code: string;
   sourceCode: string;
@@ -318,7 +318,7 @@ export function formatPatrolDateDot(iso: string): string {
   return `${parts[0]}. ${parts[1]}. ${parts[2]}.`;
 }
 
-/** 엑셀「순회 안전점검일지」틀: 머리글·출력현황·13항목·사진대지·총괄책임자. */
+/** 엑셀「순회 안전점검일지」틀: 머리글·출력현황·13항목·사진대지·관리책임자. */
 export function buildPatrolLogHtml(facts: PatrolLogFacts): string {
   const inspector = formatInspectorLine(facts.inspectorName, facts.inspectorTitle);
   const site = [facts.projectName, facts.siteName].filter(Boolean).join(' ') || facts.projectName;

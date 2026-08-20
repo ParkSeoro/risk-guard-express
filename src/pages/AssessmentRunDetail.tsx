@@ -2047,7 +2047,7 @@ const AssessmentRunDetail = () => {
   if (loading && !run) return <div className="py-12 text-center text-muted-foreground">로딩 중...</div>;
   if (!run) return <div className="py-12 text-center text-muted-foreground">회차를 찾을 수 없습니다.</div>;
 
-  // Mobile: never render authoring UI — approved viewer only
+  // Mobile: never render authoring UI — read-only print preview + summary
   if (isMobile && !isForceDesktop()) {
     return <MobileAssessmentViewer runId={runId} />;
   }

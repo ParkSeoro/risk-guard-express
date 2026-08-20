@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { MOBILE_ADMIN_HOME, WORKER_HOME } from "@/components/AuthGuard";
 import { permitViewerPath } from "@/lib/permitViewerNav";
+import { appendFromQuery } from "@/lib/approvalDocPreview";
 
 const WORKER = "/app/worker";
 
@@ -82,5 +83,5 @@ export function mobileDocumentPath(
   if (entityType === "work_permit" && entityId) {
     return permitViewerPath(entityId, from);
   }
-  return mobileEntityPath(entityType, entityId).path;
+  return appendFromQuery(mobileEntityPath(entityType, entityId).path, from);
 }

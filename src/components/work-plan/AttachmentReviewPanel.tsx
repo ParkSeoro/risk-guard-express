@@ -4,7 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileText, Image as ImageIcon, Paperclip, ExternalLink, Loader2 } from "lucide-react";
-import { classifyAttachmentFile } from "@/lib/attachmentPreview";
+import {
+  attachmentReviewEmptyState,
+  classifyAttachmentFile,
+  hasUploadedFile,
+  pdfEmbedSrc,
+} from "@/lib/attachmentPreview";
 
 type AttachmentRow = {
   id: string;
@@ -33,12 +38,11 @@ function FileViewer({ row }: { row: AttachmentRow }) {
     );
   }
   if (kind === "pdf") {
+    const src = pdfEmbedSrc(url);
     return (
-      <iframe
-        title={row.name}
-        src={url}
-        className="w-full h-[70vh] rounded border bg-white"
-      />
+      <object data={src} type="application/pdf" className="w-full h-[70vh] rounded border bg-white">
+        <iframe title={row.name} src={src} className="w-full h-[70vh] rounded border bg-white" />
+      </object>
     );
   }
   return (
@@ -54,27 +58,38 @@ function FileViewer({ row }: { row: AttachmentRow }) {
 }
 
 /**
- * Reviewer surface: actual work_plan_attachments files inline (not legacy JSON).
+ * Reviewer / author surface: actual work_plan_attachments files inline
+ * (legacy work_plans.attachments JSON is empty and must not be used).
  */
 export default function AttachmentReviewPanel({ workPlanId }: { workPlanId: string }) {
   const [rows, setRows] = useState<AttachmentRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const { data } = await supabase
+      setError(null);
+      const { data, error: queryError } = await supabase
         .from("work_plan_attachments")
         .select("id, name, description, category, is_mandatory, file_url, mime_type")
         .eq("work_plan_id", workPlanId)
         .eq("is_deleted", false)
-        .order("is_mandatory", { ascending: false });
+        .order("is_mandatory", { ascending: false })
+        .order("name", { ascending: true });
       if (cancelled) return;
+      if (queryError) {
+        setRows([]);
+        setSelectedId(null);
+        setError(queryError.message || "첨부를 불러오지 못했습니다.");
+        setLoading(false);
+        return;
+      }
       const next = (data || []) as AttachmentRow[];
       setRows(next);
-      const first = next.find((r) => r.file_url) || null;
+      const first = next.find((r) => hasUploadedFile(r.file_url)) || null;
       setSelectedId(first?.id || null);
       setLoading(false);
     })();
@@ -83,20 +98,25 @@ export default function AttachmentReviewPanel({ workPlanId }: { workPlanId: stri
     };
   }, [workPlanId]);
 
-  const uploaded = useMemo(() => rows.filter((r) => !!r.file_url), [rows]);
+  const uploaded = useMemo(() => rows.filter((r) => hasUploadedFile(r.file_url)), [rows]);
   const selected = uploaded.find((r) => r.id === selectedId) || uploaded[0] || null;
+  const empty = attachmentReviewEmptyState({
+    error,
+    uploadedCount: uploaded.length,
+    slotCount: rows.length,
+  });
 
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
-          <Paperclip className="h-4 w-4" /> 첨부파일 검토
+          <Paperclip className="h-4 w-4" /> 첨부파일
           <Badge variant="outline" className="text-[10px] font-normal">
             {uploaded.length}/{rows.length} 첨부
           </Badge>
         </CardTitle>
         <p className="text-[11px] text-muted-foreground">
-          결재 검토용입니다. 왼쪽에서 고르면 PDF·이미지를 이 화면에서 바로 봅니다.
+          작성 중에도 올린 PDF·이미지를 이 화면에서 바로 봅니다. 왼쪽에서 서류를 고르세요.
         </p>
       </CardHeader>
       <CardContent>
@@ -105,34 +125,45 @@ export default function AttachmentReviewPanel({ workPlanId }: { workPlanId: stri
             <Loader2 className="h-4 w-4 animate-spin inline mr-1" /> 첨부 불러오는 중…
           </div>
         )}
-        {!loading && uploaded.length === 0 && (
-          <p className="text-sm text-muted-foreground py-6 text-center">첨부된 파일이 없습니다.</p>
+        {!loading && empty && (
+          <p className={`text-sm py-6 text-center ${empty.kind === "error" ? "text-destructive" : "text-muted-foreground"}`}>
+            {empty.message}
+          </p>
         )}
-        {!loading && uploaded.length > 0 && (
-          <div className="grid gap-3 md:grid-cols-[220px_1fr]">
+        {!loading && !empty && (
+          <div className="grid gap-3 md:grid-cols-[240px_1fr]">
             <ul className="space-y-1 max-h-[70vh] overflow-y-auto pr-1">
-              {uploaded.map((row) => {
+              {rows.map((row) => {
+                const hasFile = hasUploadedFile(row.file_url);
                 const kind = classifyAttachmentFile({ url: row.file_url, mime: row.mime_type, name: row.name });
                 const active = selected?.id === row.id;
                 return (
                   <li key={row.id}>
                     <button
                       type="button"
-                      onClick={() => setSelectedId(row.id)}
-                      className={`w-full text-left rounded border px-2 py-1.5 text-xs hover:bg-muted/50 ${
-                        active ? "border-primary bg-primary/5" : "bg-card"
+                      disabled={!hasFile}
+                      onClick={() => hasFile && setSelectedId(row.id)}
+                      className={`w-full text-left rounded border px-2 py-1.5 text-xs ${
+                        !hasFile
+                          ? "opacity-60 cursor-not-allowed bg-muted/20"
+                          : active
+                            ? "border-primary bg-primary/5"
+                            : "bg-card hover:bg-muted/50"
                       }`}
                     >
                       <div className="flex items-center gap-1.5">
                         {kind === "image" ? <ImageIcon className="h-3.5 w-3.5 shrink-0" /> : <FileText className="h-3.5 w-3.5 shrink-0" />}
                         <span className="font-medium truncate">{row.name}</span>
                       </div>
-                      <div className="flex gap-1 mt-0.5">
+                      <div className="flex gap-1 mt-0.5 flex-wrap">
                         {CAT[row.category] && (
                           <Badge variant="outline" className="text-[9px] h-4">{CAT[row.category]}</Badge>
                         )}
                         {row.is_mandatory && (
                           <Badge variant="destructive" className="text-[9px] h-4">필수</Badge>
+                        )}
+                        {!hasFile && (
+                          <Badge variant="secondary" className="text-[9px] h-4">미첨부</Badge>
                         )}
                       </div>
                     </button>

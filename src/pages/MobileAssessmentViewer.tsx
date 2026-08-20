@@ -52,6 +52,7 @@ export default function MobileAssessmentViewer({ runId: propRunId }: { runId?: s
   const [printHtml, setPrintHtml] = useState<string | null>(null);
   const [printLoading, setPrintLoading] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"doc" | "summary">("doc");
 
   const goBack = () => {
     const back = resolvePermitViewerBackPath(searchParams.get("from"));
@@ -134,7 +135,7 @@ export default function MobileAssessmentViewer({ runId: propRunId }: { runId?: s
         )}
       </header>
 
-      <Tabs defaultValue="doc" className="flex-1 min-h-0 flex flex-col">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "doc" | "summary")} className="flex-1 min-h-0 flex flex-col">
         <TabsList className="shrink-0 mx-3 mt-2 grid grid-cols-2 bg-slate-800 text-slate-300">
           <TabsTrigger value="doc" className="data-[state=active]:bg-white data-[state=active]:text-slate-900">
             문서
@@ -151,6 +152,7 @@ export default function MobileAssessmentViewer({ runId: propRunId }: { runId?: s
             error={printError}
             pageWidth={A4_LANDSCAPE_PX}
             emptyHint="인쇄 문서를 표시할 수 없습니다"
+            active={tab === "doc"}
           />
         </TabsContent>
 

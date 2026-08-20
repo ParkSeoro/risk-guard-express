@@ -29,6 +29,7 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
   const [printHtml, setPrintHtml] = useState<string | null>(null);
   const [printLoading, setPrintLoading] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"doc" | "summary">("doc");
 
   const goBack = () => {
     const back = resolvePermitViewerBackPath(searchParams.get("from"));
@@ -121,7 +122,7 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
         {plan && <Badge className="bg-white/20 text-white border-0 shrink-0">{plan.status}</Badge>}
       </header>
 
-      <Tabs defaultValue="doc" className="flex-1 min-h-0 flex flex-col">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "doc" | "summary")} className="flex-1 min-h-0 flex flex-col">
         <TabsList className="shrink-0 mx-3 mt-2 grid grid-cols-2 bg-slate-800 text-slate-300">
           <TabsTrigger value="doc" className="data-[state=active]:bg-white data-[state=active]:text-slate-900">
             문서
@@ -138,6 +139,7 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
             error={printError}
             pageWidth={A4_PORTRAIT_PX}
             emptyHint="인쇄 문서를 표시할 수 없습니다"
+            active={tab === "doc"}
           />
         </TabsContent>
 

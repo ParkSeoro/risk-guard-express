@@ -21,6 +21,8 @@ type Props = {
   pageWidth?: number;
   className?: string;
   emptyHint?: string;
+  /** Remeasure when the hosting tab becomes visible again. */
+  active?: boolean;
 };
 
 function dist(a: { x: number; y: number }, b: { x: number; y: number }) {
@@ -34,6 +36,7 @@ export default function ZoomableDocumentPreview({
   pageWidth = A4_PORTRAIT_PX,
   className,
   emptyHint = "표시할 문서가 없습니다",
+  active = true,
 }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -137,15 +140,6 @@ export default function ZoomableDocumentPreview({
     return () => ro.disconnect();
   }, []);
 
-  useEffect(() => {
-    setUserScale(1);
-    setTx(0);
-    setTy(0);
-    live.current.userScale = 1;
-    live.current.tx = 0;
-    live.current.ty = 0;
-  }, [html, pageWidth]);
-
   const measureIframe = useCallback(() => {
     const iframe = iframeRef.current;
     const doc = iframe?.contentDocument;
@@ -161,6 +155,28 @@ export default function ZoomableDocumentPreview({
       live.current.contentH = h;
     }
   }, [pageWidth]);
+
+  useEffect(() => {
+    if (!active) return;
+    const el = viewportRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      setVp({ w: rect.width, h: rect.height });
+      live.current.vpW = rect.width;
+      live.current.vpH = rect.height;
+    }
+    requestAnimationFrame(measureIframe);
+  }, [active, measureIframe]);
+
+  useEffect(() => {
+    setUserScale(1);
+    setTx(0);
+    setTy(0);
+    live.current.userScale = 1;
+    live.current.tx = 0;
+    live.current.ty = 0;
+  }, [html, pageWidth]);
 
   const onIframeLoad = () => {
     measureIframe();

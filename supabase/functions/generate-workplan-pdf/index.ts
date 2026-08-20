@@ -36,12 +36,37 @@ async function imageUrlToBase64(url: string): Promise<string | null> {
   }
 }
 
-const POSITION_LABELS: Record<string, string> = {
+const JOB_TITLE_LABELS: Record<string, string> = {
+  contractor_supervisor: "관리감독자",
+  contractor_pic: "관리감독자",
+  contractor_safety_manager: "안전관리자",
+  safety_pic: "안전관리자",
+  contractor_site_director: "현장소장",
+  site_director: "현장소장",
+  owner_cm: "발주처 CM",
+  owner_sm: "발주처 SM",
+  cm: "발주처 CM",
+  sm: "발주처 SM",
   supervisor: "관리감독자",
   safety_manager: "안전관리자",
-  site_manager: "현장대리인",
+  site_manager: "현장소장",
+  site_supervisor: "관리감독자",
   project_admin: "프로젝트 관리자",
 };
+
+function jobTitleLabel(pos?: string | null): string {
+  const key = String(pos || "").trim();
+  if (!key) return "";
+  return JOB_TITLE_LABELS[key] || JOB_TITLE_LABELS[key.toLowerCase()] || JOB_TITLE_LABELS[key.toUpperCase()] || key;
+}
+
+function localizePersonName(name?: string | null): string {
+  const raw = String(name || "").trim();
+  return raw.replace(/\s*\/\s*([A-Za-z0-9_]+)\s*$/, (_m, code: string) => {
+    const label = jobTitleLabel(code);
+    return label ? ` / ${label}` : ` / ${code}`;
+  });
+}
 
 function escapeHtml(s: string): string {
   return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -97,10 +122,14 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const [projectRes, riggingRes, approvalsRes, companyRes, attachmentsRes] = await Promise.all([
+    const [projectRes, riggingRes, approvalsRes, companyRes, attachmentsRes, draftRes] = await Promise.all([
       supabase.from("projects").select("name, site_name, client, contractor").eq("id", plan.project_id).single(),
       supabase.from("rigging_plans").select("*").eq("work_plan_id", planId).maybeSingle(),
-      supabase.from("approvals").select("*").eq("run_id", planId).order("approval_version", { ascending: false }),
+      // SSOT: work_plan approvals live on entity_id. run_id is assessment-only (null here).
+      supabase.from("approvals").select("*")
+        .eq("entity_type", "work_plan")
+        .eq("entity_id", planId)
+        .order("approval_version", { ascending: false }),
       plan.company_id ? supabase.from("companies").select("name").eq("id", plan.company_id).single() : Promise.resolve({ data: null }),
       supabase.from("work_plan_attachments")
         .select("id, name, category, attachment_key, file_url, mime_type, description, is_mandatory")
@@ -108,13 +137,24 @@ Deno.serve(async (req) => {
         .eq("is_deleted", false)
         .order("is_mandatory", { ascending: false })
         .order("created_at", { ascending: true }),
+      supabase.from("document_approval_drafts").select("steps, status")
+        .eq("entity_type", "work_plan")
+        .eq("entity_id", planId)
+        .maybeSingle(),
     ]);
 
     const project = projectRes.data;
     const rigging = riggingRes.data;
-    const approvals = approvalsRes.data || [];
+    let approvals = approvalsRes.data || [];
+    if (approvals.length === 0) {
+      const { data: legacy } = await supabase.from("approvals").select("*")
+        .eq("run_id", planId)
+        .order("approval_version", { ascending: false });
+      approvals = legacy || [];
+    }
     const companyName = companyRes.data?.name || "";
     const dbAttachments = (attachmentsRes as any).data || [];
+    const draftSteps = Array.isArray((draftRes as any)?.data?.steps) ? (draftRes as any).data.steps : [];
 
     let creatorName = "";
     if (plan.created_by) {
@@ -136,30 +176,36 @@ Deno.serve(async (req) => {
     }));
 
 
-    const STEP_ORDER: Record<string, number> = { '작성': 0, '안전관리자 검토': 1, '현장대리인 확인': 2, '최종승인': 3 };
-    const latestVersion = approvals.length > 0 ? (approvals[0] as any).approval_version || 1 : 0;
-    const latestApprovals = approvals.filter((a: any) => ((a as any).approval_version || 1) === latestVersion && a.status !== '취소');
-    latestApprovals.sort((a: any, b: any) => (STEP_ORDER[a.step] ?? 99) - (STEP_ORDER[b.step] ?? 99));
+    const latestVersion = approvals.length > 0 ? Math.max(...approvals.map((a: any) => Number(a.approval_version) || 1)) : 0;
+    const latestApprovals = approvals
+      .filter((a: any) => (Number((a as any).approval_version) || 1) === latestVersion && a.status !== "취소")
+      .sort((a: any, b: any) => (a.step_order ?? 99) - (b.step_order ?? 99));
 
     let sigRowsHtml = "";
     if (latestApprovals.length > 0) {
       for (const ap of latestApprovals) {
-        const posLabel = POSITION_LABELS[(ap as any).position] || (ap as any).position || "";
-        const dateStr = ap.status === "승인" && ap.approved_at ? formatKST(ap.approved_at) : (ap.status === "반려" ? "반려" : "대기");
+        const posLabel = jobTitleLabel((ap as any).position);
+        const dateStr = ap.status === "승인" && ap.approved_at ? formatKST(ap.approved_at) : (ap.status === "반려" ? "반려" : (ap.status === "진행중" ? "진행중" : "대기"));
         sigRowsHtml += `<tr>
-          <td class="sig-role">${escapeHtml(ap.step)}</td>
-          <td>${escapeHtml(ap.approver_name || "")}</td>
+          <td class="sig-role">${escapeHtml(ap.step || "")}</td>
+          <td>${escapeHtml(localizePersonName(ap.approver_name || ""))}</td>
           <td>${escapeHtml((ap as any).company_name || "")}</td>
           <td>${escapeHtml(posLabel)}</td>
           <td class="sig-stamp">${dateStr}</td>
         </tr>`;
       }
+    } else if (draftSteps.length > 0) {
+      for (const s of draftSteps) {
+        sigRowsHtml += `<tr>
+          <td class="sig-role">${escapeHtml(s.label || s.step_label || "")}</td>
+          <td>${escapeHtml(localizePersonName(s.user_name || ""))}</td>
+          <td>${escapeHtml(s.company_name || "")}</td>
+          <td>${escapeHtml(jobTitleLabel(s.position))}</td>
+          <td class="sig-stamp"></td>
+        </tr>`;
+      }
     } else {
-      sigRowsHtml = `
-        <tr><td class="sig-role">작성</td><td>${escapeHtml(creatorName)}</td><td>${escapeHtml(companyName)}</td><td></td><td class="sig-stamp">${formatKST(plan.created_at)}</td></tr>
-        <tr><td class="sig-role">안전관리자</td><td></td><td></td><td></td><td class="sig-stamp"></td></tr>
-        <tr><td class="sig-role">현장대리인</td><td></td><td></td><td></td><td class="sig-stamp"></td></tr>
-        <tr><td class="sig-role">최종승인</td><td></td><td></td><td></td><td class="sig-stamp"></td></tr>`;
+      sigRowsHtml = `<tr><td colspan="5" class="center" style="color:#64748b">결재 기록이 없습니다</td></tr>`;
     }
 
     function renderSection(section: any): string {

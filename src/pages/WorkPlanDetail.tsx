@@ -16,6 +16,7 @@ import {
   syncRaToWp,
   cloneAttachmentFiles,
   getApprovalBlockers,
+  getAttachmentProgress,
   type LatestApprovedRun,
   type AttachmentProgress,
 } from '@/lib/workPlanAttachments';
@@ -24,6 +25,7 @@ import {
   type WorkPlanNoticeStatus,
 } from '@/lib/workPlanTbmNotice';
 import AttachmentChecklist from '@/components/work-plan/AttachmentChecklist';
+import AttachmentReviewPanel from '@/components/work-plan/AttachmentReviewPanel';
 import LegalCalculatorPanel from '@/components/work-plan/LegalCalculatorPanel';
 import { uploadAttachmentFile, formatBytes } from '@/lib/compressUploadFile';
 import { formatSectionContent } from '@/lib/formatSectionContent';
@@ -108,6 +110,9 @@ const WorkPlanDetail = () => {
     setAttachments(Array.isArray(data.attachments) ? data.attachments : []);
     setStartDate(data.start_date || '');
     setEndDate(data.end_date || '');
+    if (['결재중', '승인', '승인완료', '완료', '반려'].includes(data.status)) {
+      setActiveTab('preview');
+    }
 
     // Load checklist from sections or default
     const wpType = WORK_PLAN_TYPES.find(t => t.id === data.work_type);
@@ -126,6 +131,10 @@ const WorkPlanDetail = () => {
       }
     }
     setLoading(false);
+
+    if (planId) {
+      getAttachmentProgress(planId).then(setAttProgress).catch(() => {});
+    }
 
     // 최신 승인완료 위험성평가 자동 조회 (연계 권장 · 결재 절대조건 아님)
     if (data.project_id) {
@@ -750,7 +759,12 @@ const WorkPlanDetail = () => {
               <Badge variant="destructive" className="text-[9px] h-4 px-1">{attProgress!.mandatoryMissing}</Badge>
             )}
           </TabsTrigger>
-          <TabsTrigger value="preview" className="text-xs gap-1"><Eye className="h-3 w-3" />미리보기</TabsTrigger>
+          <TabsTrigger value="preview" className="text-xs gap-1">
+            <Eye className="h-3 w-3" />미리보기
+            {(attProgress?.uploaded ?? 0) > 0 && (
+              <Badge variant="secondary" className="text-[9px] h-4 px-1">{attProgress!.uploaded}</Badge>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         {/* Basic Info Tab */}
@@ -901,6 +915,7 @@ const WorkPlanDetail = () => {
 
         {/* Attachments Tab */}
         <TabsContent value="attachments" className="space-y-3 mt-4">
+          {planId && <AttachmentReviewPanel workPlanId={planId} />}
           {plan?.project_id && (
             <AttachmentChecklist
               workPlanId={plan.id}
@@ -914,10 +929,11 @@ const WorkPlanDetail = () => {
           )}
         </TabsContent>
 
-        {/* Preview Tab */}
+        {/* Preview Tab — attachments first (SSOT work_plan_attachments; legacy JSON is empty) */}
         <TabsContent value="preview" className="space-y-4 mt-4">
+          {planId && <AttachmentReviewPanel workPlanId={planId} />}
           <Card>
-            <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Eye className="h-4 w-4" />미리보기</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Eye className="h-4 w-4" />본문 미리보기</CardTitle></CardHeader>
             <CardContent className="space-y-6">
               {/* Header */}
               <div className="text-center border-b pb-4">
@@ -955,20 +971,6 @@ const WorkPlanDetail = () => {
                     <div key={idx} className="flex items-center gap-2 text-xs">
                       <span>{item.checked ? '☑' : '☐'}</span>
                       <span>{item.label}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Attachments Preview */}
-              {attachments.filter((a: any) => a.uploaded).length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold">첨부파일</h3>
-                  {attachments.filter((a: any) => a.uploaded).map((a: any, i: number) => (
-                    <div key={i} className="text-xs">
-                      <a href={a.fileUrl} target="_blank" rel="noopener" className="text-primary hover:underline">
-                        {a.name || a.key}
-                      </a>
                     </div>
                   ))}
                 </div>

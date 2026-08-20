@@ -105,6 +105,8 @@ describe('patrol log form pack', () => {
     expect(html).toContain('지 적 사 항');
     expect(html).toContain('사진대지');
     expect(html).toContain(SITE_DIRECTOR_PATROL_TITLE);
+    expect(html).toContain('관리책임자');
+    expect(html).not.toContain('안전보건총괄');
     expect(html).toContain('양호');
     expect(html).toContain('불량');
     expect(html).toContain('난간 미설치');

@@ -410,7 +410,7 @@ export function buildPatrolLogHtml(facts: PatrolLogFacts): string {
     <td class="site" colspan="4">현장명 : ${escapeHtml(site || '-')}</td>
     <td class="c" rowspan="2">결 재</td>
     <td class="stamp" rowspan="2">안전관리자<br/><span style="font-size:10px">${escapeHtml(inspector || '')}</span></td>
-    <td class="stamp" rowspan="2">안전보건총괄</td>
+    <td class="stamp" rowspan="2">관리책임자</td>
   </tr>
   <tr>
     <td colspan="2">${escapeHtml(dateDot)}</td>

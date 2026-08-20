@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildAssessmentSignatureRows } from "@/lib/approvalSignatureRows";
+import { buildAssessmentSignatureRows, LEGACY_WORK_PLAN_SIG_SLOTS, matchesWorkPlanApproval } from "@/lib/approvalSignatureRows";
 
 describe("buildAssessmentSignatureRows", () => {
   it("uses submitted approvals (all steps) and ignores 취소", () => {
@@ -69,5 +69,29 @@ describe("buildAssessmentSignatureRows", () => {
 
   it("no approvals and no draft → empty (no participant 5-role fallback)", () => {
     expect(buildAssessmentSignatureRows({ approvals: [], draftSteps: [] })).toEqual([]);
+  });
+
+  it("work-plan 승인완료 uses entity_id rows, not run_id or 작성/안전관리자/현장대리인/최종승인 slots", () => {
+    const planId = "239a575f-3294-4c85-a43f-9577d948cb35";
+    const stored = [
+      { entity_type: "work_plan", entity_id: planId, run_id: null, step: "담당자(시공)", position: "contractor_supervisor", approver_name: "이진남", company_name: "정원이엔씨", status: "승인", approval_version: 1, step_order: 1 },
+      { entity_type: "work_plan", entity_id: planId, run_id: null, step: "담당자(안전)", position: "contractor_safety_manager", approver_name: "김재현", company_name: "정원이엔씨", status: "승인", approval_version: 1, step_order: 2 },
+      { entity_type: "work_plan", entity_id: planId, run_id: null, step: "책임자(소장)", position: "contractor_site_director", approver_name: "최경호", company_name: "정원이엔씨", status: "승인", approval_version: 1, step_order: 3 },
+      { entity_type: "work_plan", entity_id: planId, run_id: null, step: "담당자(CM)", position: "owner_cm", approver_name: "이철훈", company_name: "에어리퀴드코리아", status: "승인", approval_version: 1, step_order: 4 },
+      { entity_type: "work_plan", entity_id: planId, run_id: null, step: "담당자(SM)", position: "owner_sm", approver_name: "박서로", company_name: "에어리퀴드코리아", status: "승인", approval_version: 1, step_order: 5 },
+    ];
+    expect(stored.every((r) => matchesWorkPlanApproval(planId, r))).toBe(true);
+    expect(stored.some((r) => r.run_id === planId)).toBe(false);
+
+    const rows = buildAssessmentSignatureRows({ approvals: stored });
+    expect(rows.map((r) => r.step)).toEqual([
+      "담당자(시공)",
+      "담당자(안전)",
+      "책임자(소장)",
+      "담당자(CM)",
+      "담당자(SM)",
+    ]);
+    expect(rows.map((r) => r.approver_name)).toEqual(["이진남", "김재현", "최경호", "이철훈", "박서로"]);
+    expect(rows.some((r) => LEGACY_WORK_PLAN_SIG_SLOTS.includes(r.step))).toBe(false);
   });
 });

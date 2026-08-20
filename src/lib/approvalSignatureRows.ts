@@ -35,6 +35,23 @@ export type SignatureDraftStepInput = {
   company_name?: string | null;
 };
 
+/**
+ * Work-plan print/PDF must load approvals by entity_id.
+ * `run_id` is filled only for assessment_run; work_plan rows keep it null.
+ */
+export function matchesWorkPlanApproval(
+  planId: string,
+  row: { entity_type?: string | null; entity_id?: string | null; run_id?: string | null },
+): boolean {
+  if (!planId) return false;
+  if (row.entity_type === "work_plan" && row.entity_id === planId) return true;
+  if (!row.entity_type && row.run_id === planId) return true;
+  return false;
+}
+
+export const LEGACY_WORK_PLAN_SIG_SLOTS = ["작성", "안전관리자", "현장대리인", "최종승인"];
+
+
 
 /**
  * 서명란 SSOT: 상신 후면 해당 버전 approvals 전체, 상신 전이면 저장된 결재선 초안.

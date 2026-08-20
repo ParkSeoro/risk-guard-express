@@ -16,6 +16,7 @@ import {
   syncRaToWp,
   cloneAttachmentFiles,
   getApprovalBlockers,
+  getAttachmentProgress,
   type LatestApprovedRun,
   type AttachmentProgress,
 } from '@/lib/workPlanAttachments';
@@ -24,6 +25,7 @@ import {
   type WorkPlanNoticeStatus,
 } from '@/lib/workPlanTbmNotice';
 import AttachmentChecklist from '@/components/work-plan/AttachmentChecklist';
+import AttachmentReviewPanel from '@/components/work-plan/AttachmentReviewPanel';
 import LegalCalculatorPanel from '@/components/work-plan/LegalCalculatorPanel';
 import { uploadAttachmentFile, formatBytes } from '@/lib/compressUploadFile';
 import { formatSectionContent } from '@/lib/formatSectionContent';
@@ -108,6 +110,9 @@ const WorkPlanDetail = () => {
     setAttachments(Array.isArray(data.attachments) ? data.attachments : []);
     setStartDate(data.start_date || '');
     setEndDate(data.end_date || '');
+    if (['결재중', '승인', '승인완료', '완료', '반려'].includes(data.status)) {
+      setActiveTab('preview');
+    }
 
     // Load checklist from sections or default
     const wpType = WORK_PLAN_TYPES.find(t => t.id === data.work_type);
@@ -126,6 +131,10 @@ const WorkPlanDetail = () => {
       }
     }
     setLoading(false);
+
+    if (planId) {
+      getAttachmentProgress(planId).then(setAttProgress).catch(() => {});
+    }
 
     // 최신 승인완료 위험성평가 자동 조회 (연계 권장 · 결재 절대조건 아님)
     if (data.project_id) {
@@ -912,6 +921,9 @@ const WorkPlanDetail = () => {
               onProgress={setAttProgress}
             />
           )}
+          {plan.status !== '작성중' && planId && (
+            <AttachmentReviewPanel workPlanId={planId} />
+          )}
         </TabsContent>
 
         {/* Preview Tab */}
@@ -960,19 +972,8 @@ const WorkPlanDetail = () => {
                 </div>
               )}
 
-              {/* Attachments Preview */}
-              {attachments.filter((a: any) => a.uploaded).length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold">첨부파일</h3>
-                  {attachments.filter((a: any) => a.uploaded).map((a: any, i: number) => (
-                    <div key={i} className="text-xs">
-                      <a href={a.fileUrl} target="_blank" rel="noopener" className="text-primary hover:underline">
-                        {a.name || a.key}
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {/* Attachments — SSOT work_plan_attachments (legacy JSON is empty) */}
+              {planId && <AttachmentReviewPanel workPlanId={planId} />}
             </CardContent>
           </Card>
         </TabsContent>

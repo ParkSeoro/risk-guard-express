@@ -1,0 +1,30 @@
+flowchart TB
+  classDef field fill:#123047,stroke:#50E3C2,color:#F7FAFC,stroke-width:2px
+  classDef security fill:#18233A,stroke:#77A8FF,color:#F7FAFC,stroke-width:2px
+  classDef central fill:#231B43,stroke:#B58CFF,color:#F7FAFC,stroke-width:2px
+  classDef media fill:#3A2A16,stroke:#F0B54D,color:#F7FAFC,stroke-width:2px
+  classDef denied fill:#402127,stroke:#EF767A,color:#F7FAFC,stroke-width:2px
+
+  USERS[⑤ 사용자<br/>SafeNex 웹 · 모바일 · 본사 관제실]:::central
+  FLEET[④ SafeNex Vision Fleet<br/>전국 카메라 목록 · RBAC · AI 이벤트 · 감사]:::central
+  RELAY[③ Central Media Relay / 중앙 NVR<br/>권한 승인된 live · playback · 고위험 evidence만]:::media
+  WAN[② 하이브리드 WAN<br/>유선·광 / 전용 무선 / LTE·5G]:::media
+
+  subgraph FIELD[① 전국 현장 × N — 원본 녹화·AI는 현장에 계속 유지]
+    direction TB
+    EDGE[SafeNex Vision Edge<br/>AI 안전분석 · health · event spool · grant 검증]:::security
+    NVR[현장 NVR<br/>원본 Primary 녹화 · 증거 보존]:::security
+    CAM[카메라<br/>고정 PoE · 무선 브리지 · 유심]:::field
+    EDGE -->|로컬 읽기 전용 stream·상태| NVR
+    NVR -->|RTSP·ONVIF 읽기 전용| CAM
+  end
+
+  USERS -->|권한 범위 내 live · playback · evidence 요청| FLEET
+  FLEET -->|5분 TTL signed stream grant<br/>camera · action · bitrate 제한| RELAY
+  RELAY -->|watermark가 있는 승인된 관제 세션| USERS
+  FLEET <-->|outbound mTLS<br/>health · AI event · policy| WAN
+  WAN <-->|현장 연결은 outbound만| EDGE
+  EDGE -. 필요한 순간에만 substream · event clip .-> RELAY
+
+  SECRET[중앙으로 보내지 않음<br/>raw RTSP · NVR 비밀번호 · Gateway private key<br/>모든 main stream의 상시 복제]:::denied
+  SECRET --- EDGE

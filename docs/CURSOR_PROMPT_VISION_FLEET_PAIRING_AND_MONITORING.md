@@ -232,3 +232,74 @@ Central orchestration은 `unclaimed → approval_pending → enrolling → onlin
 [2] [ONVIF Core Specification](https://www.onvif.org/specs/core/ONVIF-Core-Specification-v241.pdf)
 
 [3] [Microsoft — Distribute your app and the WebView2 Runtime](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)
+
+
+## 10. 중앙집중 Vision Federation 확장 — 반드시 이 모델로 구현
+
+### 10.1 제품 해석
+
+SafeNex는 전국 카메라의 **중앙 관제 경험·권한·감사**를 집중한다. 그러나 browser/mobile/Supabase가 raw RTSP URL, NVR password, 현장 VPN 주소를 직접 받거나 모든 main stream을 상시 중앙 복제하면 안 된다. 현장 NVR는 원본 primary recorder, Vision Edge는 AI와 현장 연결 agent, SafeNex는 access-control/control plane, 중앙 media relay/VMS는 승인된 live·playback·evidence 경로라는 역할을 유지한다.
+
+### 10.2 중앙 데이터 모델 추가
+
+기존 company/project access SSOT와 RLS를 재사용해 아래 모델을 추가한다. 모든 table은 `company_id`, `site_id`와 append-only `vision_audit_ledger` 연결을 갖고, camera의 raw stream URL이나 NVR secret는 넣지 않는다.
+
+| 테이블 | 핵심 필드 | 금지 필드 |
+|---|---|---|
+| `vision_camera_scopes` | `camera_id`, `gateway_id`, `company_id`, `site_id`, `zone_id`, `display_name`, `health`, `media_policy` | RTSP URL, NVR password |
+| `vision_role_bindings` | `subject_id`, `role`, `company_id`, `site_id`, `zone_id`, `valid_from`, `valid_to` | role을 browser only flag로 처리 |
+| `vision_stream_grants` | `id`, `subject_id`, `camera_id`, `action`, `expires_at`, `max_bitrate_kbps`, `watermark`, `status` | raw RTSP, reusable bearer token |
+| `vision_evidence_requests` | `event_id`, `camera_id`, `requester_id`, `reason`, `retention_class`, `state` | public permanent media URL |
+| `vision_audit_ledger` | `actor_id`, `action`, `scope`, `grant_id`, `request_id`, `outcome`, `occurred_at` | update/delete UI |
+
+### 10.3 권한 판정과 stream grant
+
+권한은 `tenant/company → site → zone → camera → action → time window`의 교집합이다. 모든 live/playback/evidence 요청은 서버에서 RLS와 explicit action 권한을 먼저 검증한다. 허가 시에만 5분 기본 TTL의 one-camera/one-user/one-action stream grant를 생성한다. grant는 `live_substream`, `live_mainstream`, `playback`, `evidence_request`, `ptz` action을 엄격히 구분하고, 만료·role revoke·browser foreground loss 때 종료해야 한다.
+
+Gateway 또는 Central media relay는 signed grant의 tenant/site/camera/audience/expiry/max bitrate를 검증하고, 유효한 grant에 대해서만 outbound relay를 시작한다. 중앙 웹은 `live.mjpeg` loopback URL을 호출하거나 RTSP를 노출하지 않는다. 모든 session 화면에는 company·user·time watermark를 표시한다.
+
+### 10.4 SafeNex API 계약
+
+| 목적 | endpoint | 보안 요구 |
+|---|---|---|
+| Camera 목록 | `GET /vision-fleet/v1/cameras?site_id=&zone_id=` | RLS 후 permitted metadata만 반환 |
+| Live grant | `POST /vision-fleet/v1/cameras/{camera_id}/stream-grants` | action/time/RBAC 확인, short TTL, audit |
+| Session 종료 | `POST /vision-fleet/v1/stream-grants/{grant_id}/close` | subject 또는 operator authorization, audit |
+| Playback 요청 | `POST /vision-fleet/v1/cameras/{camera_id}/playback-grants` | retention + reason + RLS |
+| Evidence 추출 | `POST /vision-fleet/v1/events/{event_id}/evidence-requests` | reason required, async job/audit |
+| Break-glass | `POST /vision-fleet/v1/break-glass-grants` | reason + incident ref + dual/auth policy + 15min TTL |
+
+`stream-grant`은 Gateway에 전달되는 signed command이며, 아래처럼 signed payload를 가진다. signature verification은 Gateway에서 fail-closed로 수행한다.
+
+```json
+{
+  "grant_id": "uuid",
+  "tenant_id": "company_uuid",
+  "site_id": "project_uuid",
+  "camera_id": "gate-north-01",
+  "action": "live_substream",
+  "subject_id": "user_uuid",
+  "expires_at": "2026-08-20T03:15:00Z",
+  "max_bitrate_kbps": 700,
+  "relay_url": "https://relay.safenex.example/sessions/opaque",
+  "watermark": "company · user · timestamp",
+  "signature": "ed25519"
+}
+```
+
+### 10.5 화면 요구사항
+
+`Vision Fleet Overview`에는 회사/현장/구역/online/degraded/offline/AI severity를 필터로 제공한다. `Central Live Wall`은 RBAC이 허가한 카메라만 카드로 만들고, 사용자가 누른 카드만 stream grant를 생성한다. `Event Center`는 event first timeline과 clip request 상태를 보여 주며, 모든 main-video 요청·export·PTZ·break-glass는 사유와 audit trail을 표시한다. 모바일은 권한 범위의 event·live substream·acknowledge를 지원하되, credential·NVR 설정·raw URL은 노출하지 않는다.
+
+### 10.6 중앙 장기보존 정책
+
+기본은 현장 NVR 원본 보존이다. central storage에는 high-risk evidence, 법정 보존 지정 camera, 운영자 승인 clip, low bitrate proxy만 넣는다. 셀룰러/저대역폭 site의 평시 정책은 `metadata + event thumbnail`이고, stream grant·evidence request가 있을 때만 substream/clip을 relay한다. 중앙 media/VMS 장애가 있어도 현장 NVR recording·Vision Edge AI·event spool은 계속 동작해야 한다.
+
+### 10.7 추가 수용 기준
+
+1. 사용자는 권한 없는 site/zone/camera를 list API에서 식별할 수 없고, ID를 추측해도 grant를 받을 수 없다.
+2. SafeNex 화면은 raw RTSP, NVR password, local gateway URL을 한 번도 표시·저장·로그하지 않는다.
+3. live session은 5분 기본 TTL이며, renew/revoke/close가 audit ledger에 남는다.
+4. camera main stream의 상시 중앙 복제는 정책상 허용된 camera만 가능하고, metered site는 기본 거부한다.
+5. 현장 WAN/중앙 relay가 끊겨도 local NVR recording과 Vision Edge AI 이벤트 spool은 유지된다.
+6. evidence export와 break-glass는 강화된 승인·사유·immutable audit 규칙을 통과해야 한다.

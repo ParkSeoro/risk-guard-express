@@ -197,9 +197,48 @@ export default function ZoomableDocumentPreview({
     if (!el) return;
 
     const onWheel = (e: WheelEvent) => {
+      // Ctrl/Cmd+wheel = zoom (PDF-viewer convention). Plain wheel = pan/scroll.
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+        zoomAt(e.clientX, e.clientY, live.current.userScale * factor);
+        return;
+      }
       e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-      zoomAt(e.clientX, e.clientY, live.current.userScale * factor);
+      applyClamped(live.current.userScale, live.current.tx - e.deltaX, live.current.ty - e.deltaY);
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return;
+      if (e.button !== 0) return;
+      const g = gesture.current;
+      g.mode = "pan";
+      g.startX = e.clientX;
+      g.startY = e.clientY;
+      g.originTx = live.current.tx;
+      g.originTy = live.current.ty;
+      g.moved = false;
+      el.setPointerCapture(e.pointerId);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return;
+      const g = gesture.current;
+      if (g.mode !== "pan") return;
+      const dx = e.clientX - g.startX;
+      const dy = e.clientY - g.startY;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) g.moved = true;
+      applyClamped(live.current.userScale, g.originTx + dx, g.originTy + dy);
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return;
+      gesture.current.mode = "none";
+      try {
+        el.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
     };
 
     const onTouchStart = (e: TouchEvent) => {
@@ -274,12 +313,20 @@ export default function ZoomableDocumentPreview({
     };
 
     el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("pointerdown", onPointerDown);
+    el.addEventListener("pointermove", onPointerMove);
+    el.addEventListener("pointerup", onPointerUp);
+    el.addEventListener("pointercancel", onPointerUp);
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: false });
     el.addEventListener("touchend", onTouchEnd);
     el.addEventListener("touchcancel", onTouchEnd);
     return () => {
       el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("pointermove", onPointerMove);
+      el.removeEventListener("pointerup", onPointerUp);
+      el.removeEventListener("pointercancel", onPointerUp);
       el.removeEventListener("touchstart", onTouchStart);
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
@@ -341,7 +388,7 @@ export default function ZoomableDocumentPreview({
       )}
 
       <div className="pointer-events-none absolute bottom-2 left-2 z-10 rounded bg-black/65 px-2 py-1 text-[10px] text-white">
-        핀치·더블탭·+/− · {userScale.toFixed(1)}×
+        스크롤·드래그 · Ctrl+휠 줌 · {userScale.toFixed(1)}×
       </div>
       <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
         <Button

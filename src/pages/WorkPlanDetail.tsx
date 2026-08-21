@@ -53,18 +53,12 @@ import {
   isRiggingPlanReady,
   summarizeRiggingPlan,
 } from '@/lib/riggingPlanPersist';
+import { refreshRiggingDerivedFields } from '@/lib/riggingDerived';
+import { appendTextToMethodSection } from '@/lib/workPlanMethodSection';
 import { approvalsBackOr } from '@/lib/approvalInboxPreview';
 
 const EDITABLE_PLAN_STATUSES = new Set(['작성중', '반려']);
 const LOCKED_PREVIEW_STATUSES = new Set(['결재중', '승인', '승인완료', '완료']);
-
-const SLING_ANGLE_FACTORS: Record<string, number> = {
-  '0': 1.0, '30': 1.16, '45': 1.41, '60': 2.0,
-};
-// Legacy calculateRigging stub for recalcRigging compat
-const calculateRigging = (params: { loadWeight: number; workingRadius: number; craneModel: string }) => {
-  return { isValid: true, safetyFactor: 1, utilization: 0, requiredCapacity: params.loadWeight, availableCapacity: params.loadWeight * 2, message: '' };
-};
 
 const WorkPlanDetail = () => {
   const { planId } = useParams<{ planId: string }>();
@@ -79,8 +73,6 @@ const WorkPlanDetail = () => {
   const [sections, setSections] = useState<any[]>([]);
   const [attachments, setAttachments] = useState<any[]>([]);
   const [rigging, setRigging] = useState<any>(null);
-  const [riggingCalc, setRiggingCalc] = useState<any>(null);
-  const [slingAngle, setSlingAngle] = useState('0');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState<string | null>(null);
@@ -137,8 +129,7 @@ const WorkPlanDetail = () => {
     if (wpType?.hasRiggingPlan) {
       const { data: rp } = await supabase.from('rigging_plans').select('*').eq('work_plan_id', planId).maybeSingle();
       if (rp) {
-        setRigging(rp);
-        recalcRigging(rp, '0');
+        setRigging(refreshRiggingDerivedFields(rp));
       } else {
         setRigging({ work_plan_id: planId });
       }
@@ -179,31 +170,6 @@ const WorkPlanDetail = () => {
     { label: '신호수 배치', checked: false },
   ];
 
-  const recalcRigging = (rp: any, angle: string) => {
-    if (rp?.load_weight && rp?.working_radius && rp?.crane_model) {
-      const angleFactor = SLING_ANGLE_FACTORS[angle] || 1.0;
-      const effectiveLoad = Number(rp.load_weight) * angleFactor;
-      const result = calculateRigging({
-        loadWeight: effectiveLoad,
-        workingRadius: Number(rp.working_radius),
-        craneModel: rp.crane_model,
-      });
-      const safetyFactor = result.availableCapacity / effectiveLoad;
-      let message = '';
-      let warningLevel = 'safe';
-      if (safetyFactor < 1.0) {
-        message = `🚫 작업금지! 안전율 ${safetyFactor.toFixed(2)} < 1.0`;
-        warningLevel = 'danger';
-      } else if (safetyFactor < 1.25) {
-        message = `⚠️ 경고! 안전율 ${safetyFactor.toFixed(2)} < 1.25`;
-        warningLevel = 'warning';
-      } else {
-        message = `✅ 안전 (안전율 ${safetyFactor.toFixed(2)}, 가동률 ${result.utilization.toFixed(0)}%)`;
-      }
-      setRiggingCalc({ ...result, safetyFactor, effectiveLoad, angleFactor, message, warningLevel });
-    }
-  };
-
   const handleSectionChange = (idx: number, content: string) => {
     setSections(prev => prev.map((s, i) => i === idx ? { ...s, content } : s));
     setIsDirty(true);
@@ -211,19 +177,20 @@ const WorkPlanDetail = () => {
 
   const persistRigging = async (current: any = rigging): Promise<{ ok: boolean; error?: string }> => {
     if (!planId || !current) return { ok: true };
-    const payload = buildRiggingPlanPayload(planId, current);
-    if (current.id) {
-      const { error } = await supabase.from('rigging_plans').update(payload).eq('id', current.id);
-      if (error) return { ok: false, error: error.message };
-      return { ok: true };
-    }
-    const { data, error } = await supabase.from('rigging_plans').insert(payload).select().single();
+    const refreshed = refreshRiggingDerivedFields(current);
+    const payload = buildRiggingPlanPayload(planId, refreshed);
+    const { data, error } = await supabase
+      .from('rigging_plans')
+      .upsert(payload, { onConflict: 'work_plan_id' })
+      .select()
+      .single();
     if (error) return { ok: false, error: error.message };
     if (data) setRigging(data);
+    else setRigging(refreshed);
     return { ok: true };
   };
 
-  const handleSave = async (isAutoSave = false) => {
+  const handleSave = async (isAutoSave = false, riggingOverride?: any) => {
     if (!planId) return;
     if (plan && !EDITABLE_PLAN_STATUSES.has(plan.status)) {
       if (!isAutoSave) {
@@ -254,8 +221,9 @@ const WorkPlanDetail = () => {
     }
 
     const wpType = WORK_PLAN_TYPES.find(t => t.id === plan?.work_type);
-    if (wpType?.hasRiggingPlan && rigging) {
-      const r = await persistRigging(rigging);
+    const currentRigging = riggingOverride ?? rigging;
+    if (wpType?.hasRiggingPlan && currentRigging) {
+      const r = await persistRigging(currentRigging);
       if (!r.ok) {
         if (!isAutoSave) {
           toast({
@@ -293,11 +261,6 @@ const WorkPlanDetail = () => {
   const handleRiggingChange = (field: string, value: any) => {
     setRigging((prev: any) => ({ ...(prev || { work_plan_id: planId }), [field]: value }));
     setIsDirty(true);
-  };
-
-  const handleSlingAngleChange = (angle: string) => {
-    setSlingAngle(angle);
-    if (rigging) recalcRigging(rigging, angle);
   };
 
   const handleAiGenerate = async (sectionIdx: number) => {
@@ -352,14 +315,19 @@ const WorkPlanDetail = () => {
       return;
     }
     const wpTypeNow = WORK_PLAN_TYPES.find(t => t.id === plan?.work_type);
-    if (wpTypeNow?.hasRiggingPlan && !isRiggingPlanReady(rigging)) {
-      setActiveTab('rigging');
-      toast({
-        title: '리깅플랜이 필요합니다',
-        description: '인양 중량·작업 반경·크레인(장비)을 입력하고 저장한 뒤 상신하세요.',
-        variant: 'destructive',
-      });
-      return;
+    let readyRigging = rigging;
+    if (wpTypeNow?.hasRiggingPlan) {
+      readyRigging = refreshRiggingDerivedFields(rigging || { work_plan_id: planId });
+      setRigging(readyRigging);
+      if (!isRiggingPlanReady(readyRigging)) {
+        setActiveTab('rigging');
+        toast({
+          title: '리깅플랜이 필요합니다',
+          description: '인양 중량·작업 반경·크레인·정격하중을 입력하고 안전율이 계산된 뒤 상신하세요.',
+          variant: 'destructive',
+        });
+        return;
+      }
     }
     // 필수 첨부(SSOT: work_plan_attachments.is_mandatory) — 누락 시 결재 차단
     const blockers = await getApprovalBlockers(planId!, plan.work_type);
@@ -374,7 +342,7 @@ const WorkPlanDetail = () => {
       });
       return;
     }
-    await handleSave();
+    await handleSave(false, readyRigging);
     setApprovalDialogOpen(true);
   };
 
@@ -389,21 +357,10 @@ const WorkPlanDetail = () => {
     if (!planId) return;
     setSaving(true);
     try {
-      // Pre-render PDF attachments to images so they appear inline in the printed output
-      const { renderAttachmentsToImages } = await import('@/lib/pdfRender');
-      const { data: atts } = await supabase
-        .from('work_plan_attachments')
-        .select('file_url, mime_type, name, attachment_key, is_mandatory')
-        .eq('work_plan_id', planId)
-        .eq('is_deleted', false);
-      const renderedAttachments = await renderAttachmentsToImages(atts || []);
-
-      const { data, error } = await supabase.functions.invoke('generate-workplan-pdf', {
-        body: { planId, renderedAttachments },
-      });
-      if (error) throw error;
-      if (data?.html) {
-        const desiredTitle = (data.fileName as string)?.replace(/\.pdf$/i, '') || plan.title || '작업계획서';
+      const { fetchWorkPlanPrintHtml } = await import('@/lib/approvalDocPreview');
+      const html = await fetchWorkPlanPrintHtml(planId);
+      if (html) {
+        const desiredTitle = plan.title || '작업계획서';
         const prevTitle = document.title;
         document.title = desiredTitle;
         const iframe = document.createElement('iframe');
@@ -417,7 +374,7 @@ const WorkPlanDetail = () => {
         const doc = iframe.contentDocument || iframe.contentWindow?.document;
         if (doc) {
           doc.open();
-          doc.write(data.html);
+          doc.write(html);
           doc.close();
           const triggerPrint = () => {
             try { (iframe.contentDocument || iframe.contentWindow?.document)!.title = desiredTitle; } catch {}
@@ -920,21 +877,7 @@ const WorkPlanDetail = () => {
                 toast({ title: '작업방법 섹션을 찾을 수 없습니다', variant: 'destructive' });
                 return;
               }
-              const current = sections[idx].content || '';
-              // Method section may be JSON (structured) or plain text — append as plain block at end
-              let nextContent = current;
-              try {
-                const parsed = JSON.parse(current);
-                if (parsed && typeof parsed === 'object') {
-                  const note = (parsed.notes || '') + (parsed.notes ? '\n\n' : '') + text;
-                  nextContent = JSON.stringify({ ...parsed, notes: note });
-                } else {
-                  nextContent = (current ? current + '\n\n' : '') + text;
-                }
-              } catch {
-                nextContent = (current ? current + '\n\n' : '') + text;
-              }
-              handleSectionChange(idx, nextContent);
+              handleSectionChange(idx, appendTextToMethodSection(sections[idx].content || '', text));
               setIsDirty(true);
             }}
           />

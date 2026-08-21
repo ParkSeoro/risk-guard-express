@@ -221,11 +221,34 @@ Deno.serve(async (req) => {
         </tbody></table>`;
       }
 
-      if (section.key === "method" && Array.isArray(data)) {
-        const rows = data.map((s: any) =>
-          `<tr><td class="center" style="width:40px">${s.order || ""}</td><td>${escapeHtml(s.description || "")}</td><td>${escapeHtml(s.safety_measure || "")}</td></tr>`
-        ).join("");
-        return `<table><thead><tr><th>순서</th><th>작업 단계</th><th>안전조치</th></tr></thead><tbody>${rows}</tbody></table>`;
+      if (section.key === "method") {
+        let steps: any[] = [];
+        let notes = "";
+        if (Array.isArray(data)) {
+          steps = data;
+        } else if (data && typeof data === "object") {
+          notes = typeof data.notes === "string" ? data.notes : "";
+          const keys = Object.keys(data)
+            .filter((k) => k !== "notes" && /^\d+$/.test(k))
+            .sort((a, b) => Number(a) - Number(b));
+          if (keys.length) {
+            steps = keys.map((k) => data[k]);
+          } else if (Array.isArray(data.steps)) {
+            steps = data.steps;
+          }
+        }
+        if (notes.trim()) {
+          steps = [
+            ...steps,
+            { order: steps.length + 1, description: "법규·계산 참고", safety_measure: notes.trim() },
+          ];
+        }
+        if (steps.length) {
+          const rows = steps.map((s: any) =>
+            `<tr><td class="center" style="width:40px">${s.order || ""}</td><td>${escapeHtml(s.description || "")}</td><td>${escapeHtml(s.safety_measure || "")}</td></tr>`
+          ).join("");
+          return `<table><thead><tr><th>순서</th><th>작업 단계</th><th>안전조치</th></tr></thead><tbody>${rows}</tbody></table>`;
+        }
       }
 
       if (section.key === "equipment" && Array.isArray(data)) {

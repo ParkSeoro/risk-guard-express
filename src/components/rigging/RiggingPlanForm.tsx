@@ -26,10 +26,10 @@ import {
   CHAIN_SLING_LOAD,
   SHACKLE_INCH_LOAD,
   CRANE_PRESETS,
-  type RiggingInput,
   type RiggingResult,
   type SlingMaterialType,
 } from '@/lib/riggingCalculator';
+import { buildRiggingInputFromRow, riggingResultToPatch } from '@/lib/riggingDerived';
 
 interface RiggingPlanFormProps {
   rigging: any;
@@ -47,58 +47,11 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
 
   const recalc = useCallback(() => {
     if (!rigging) return;
-    const materialType = (rigging.sling_material_type || 'wire_rope') as SlingMaterialType;
-    const input: RiggingInput = {
-      equipmentName: rigging.equipment_name || rigging.crane_model || '',
-      ratedCapacity: numVal(rigging.rated_capacity) || numVal(rigging.crane_capacity),
-      boomLength: numVal(rigging.boom_length),
-      workingRadius: numVal(rigging.working_radius),
-      liftingCapacity: numVal(rigging.crane_capacity) || numVal(rigging.rated_capacity),
-      outriggerDistance: numVal(rigging.outrigger_distance),
-      slingMaterialType: materialType,
-      wireDiameterMm: numVal(rigging.wire_diameter_mm),
-      slingCount: numVal(rigging.sling_count) || 2,
-      slingAngleDeg: numVal(rigging.sling_angle_deg) || 60,
-      wireTerminalMethod: rigging.wire_terminal_method || '탐블(24mm 이하)',
-      wireSafetyCoefficient: numVal(rigging.wire_safety_coefficient) || 5,
-      slingBeltWidthMm: numVal(rigging.sling_belt_width_mm),
-      slingBeltRatedLoad: numVal(rigging.sling_belt_rated_load),
-      roundSlingColor: rigging.sling_belt_color || '',
-      roundSlingRatedLoad: numVal(rigging.round_sling_rated_load),
-      chainDiameterMm: numVal(rigging.chain_diameter_mm),
-      chainLegCount: numVal(rigging.chain_leg_count) || 4,
-      shackleInch: rigging.shackle_inch || '',
-      shackleQty: numVal(rigging.shackle_qty) || 2,
-      loadWeight: numVal(rigging.load_weight),
-      hookWeight: numVal(rigging.hook_weight),
-      shackleWeightVal: numVal(rigging.shackle_weight_val),
-      slingRiggingWeight: numVal(rigging.sling_rigging_weight),
-      loadWeightMin: numVal(rigging.load_weight_min),
-      hookWeightMin: numVal(rigging.hook_weight_min),
-      shackleWeightMin: numVal(rigging.shackle_weight_min),
-      slingRiggingWeightMin: numVal(rigging.sling_rigging_weight_min),
-      windSpeedFactor: numVal(rigging.wind_speed_factor) || 1,
-      boomRotationFactor: numVal(rigging.boom_rotation_factor) || 0.8,
-      groundInspectionFactor: numVal(rigging.ground_inspection_factor) || 0.8,
-      loadProtrusionFactor: numVal(rigging.load_protrusion_factor) || 0.8,
-    };
-    const r = calculateFullRigging(input);
+    const r = calculateFullRigging(buildRiggingInputFromRow(rigging));
     setResult(r);
-
-    onChange('total_weight_max', r.totalWeightMax);
-    onChange('total_weight_min', r.totalWeightMin);
-    onChange('equipment_working_load', r.equipmentWorkingLoad);
-    onChange('equipment_ok', r.equipmentOk ? 'O.K' : 'N.G');
-    onChange('sling_working_load', r.slingSafeLoad);
-    onChange('sling_ok', r.slingOk ? 'O.K' : 'N.G');
-    onChange('shackle_working_load', r.shackleSafeLoad);
-    onChange('shackle_ok', r.shackleOk ? 'O.K' : 'N.G');
-    onChange('wire_breaking_load', r.wireBreakingLoad);
-    onChange('wire_safe_load', r.wireSafeLoad);
-    onChange('safety_factor', r.equipmentSafetyFactor);
-    onChange('sling_safe_load', r.slingSafeLoad);
-    onChange('tension_per_leg', r.tensionPerLeg);
-    onChange('calculated_utilization', r.totalWeightMax > 0 && r.equipmentWorkingLoad > 0 ? (r.totalWeightMax / r.equipmentWorkingLoad) * 100 : 0);
+    const patch = riggingResultToPatch(r);
+    for (const [k, v] of Object.entries(patch)) onChange(k, v);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onChange is unstable; field deps drive refresh
   }, [rigging]);
 
   useEffect(() => { recalc(); }, [

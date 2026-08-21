@@ -58,7 +58,7 @@ describe("filterApprovalsKeepingFullDocumentTimeline", () => {
 });
 
 describe("rigging plan readiness", () => {
-  it("requires load, radius, and crane", () => {
+  it("requires load, radius, crane, capacity, and safety factor", () => {
     expect(isRiggingPlanReady(null)).toBe(false);
     expect(isRiggingPlanReady({ load_weight: 3 })).toBe(false);
     expect(
@@ -67,12 +67,14 @@ describe("rigging plan readiness", () => {
         working_radius: 10,
         crane_model: "ATF",
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       isRiggingPlanReady({
         load_weight: 3,
         working_radius: 10,
         equipment_name: "크레인A",
+        crane_capacity: 20,
+        safety_factor: 1.5,
       }),
     ).toBe(true);
   });
@@ -83,6 +85,7 @@ describe("rigging plan readiness", () => {
       load_description: "탱크",
       working_radius: 12,
       crane_model: "LTM",
+      crane_capacity: 20,
       safety_factor: 1.4,
       calculated_utilization: 70,
     });

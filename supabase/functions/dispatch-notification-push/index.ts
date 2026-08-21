@@ -42,6 +42,7 @@ interface ServiceAccount {
 
 const ENTITY_ROUTES: Record<string, (id?: string | null, project?: string | null) => string> = {
   work_plan: (id) => (id ? `/work-plan/${id}` : "/work-plans"),
+  announcement: (id) => (id ? `/app/worker/today?announcement=${id}` : "/app/worker/today"),
   work_permit: (id) => (id ? `/work-permits/${id}` : "/work-permits"),
   assessment_run: (id) => (id ? `/assessment-run/${id}` : "/risk-assessment"),
   safety_inspection: () => "/safety-inspections",

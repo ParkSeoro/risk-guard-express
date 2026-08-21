@@ -4277,6 +4277,96 @@ export type Database = {
         }
         Relationships: []
       }
+      project_announcement_acks: {
+        Row: {
+          acked_at: string
+          announcement_id: string
+          user_id: string
+        }
+        Insert: {
+          acked_at?: string
+          announcement_id: string
+          user_id: string
+        }
+        Update: {
+          acked_at?: string
+          announcement_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      project_announcement_recipients: {
+        Row: {
+          announcement_id: string
+          created_at: string
+          user_id: string
+        }
+        Insert: {
+          announcement_id: string
+          created_at?: string
+          user_id: string
+        }
+        Update: {
+          announcement_id?: string
+          created_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      project_announcements: {
+        Row: {
+          audience: Json
+          author_company_id: string | null
+          body: string
+          created_at: string
+          created_by: string | null
+          expires_at: string | null
+          id: string
+          is_withdrawn: boolean
+          project_id: string
+          published_at: string
+          recipient_count: number
+          require_ack: boolean
+          title: string
+          updated_at: string
+          withdrawn_at: string | null
+        }
+        Insert: {
+          audience?: Json
+          author_company_id?: string | null
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          is_withdrawn?: boolean
+          project_id: string
+          published_at?: string
+          recipient_count?: number
+          require_ack?: boolean
+          title: string
+          updated_at?: string
+          withdrawn_at?: string | null
+        }
+        Update: {
+          audience?: Json
+          author_company_id?: string | null
+          body?: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          is_withdrawn?: boolean
+          project_id?: string
+          published_at?: string
+          recipient_count?: number
+          require_ack?: boolean
+          title?: string
+          updated_at?: string
+          withdrawn_at?: string | null
+        }
+        Relationships: []
+      }
       project_companies: {
         Row: {
           company_id: string
@@ -9624,6 +9714,10 @@ export type Database = {
         Args: { _notice_id: string }
         Returns: Json
       }
+      ack_project_announcement: {
+        Args: { _announcement_id: string }
+        Returns: Json
+      }
       act_on_approval: {
         Args: { _action: string; _approval_id: string; _comment?: string }
         Returns: Json
@@ -9898,6 +9992,18 @@ export type Database = {
           status: string
         }[]
       }
+      list_my_pending_announcements: {
+        Args: { _project_id?: string | null }
+        Returns: {
+          id: string
+          project_id: string
+          title: string
+          body: string
+          require_ack: boolean
+          published_at: string
+          expires_at: string | null
+        }[]
+      }
       lookup_auth_user_id_by_email: {
         Args: { _email: string }
         Returns: string
@@ -9960,6 +10066,18 @@ export type Database = {
           _positions?: string[]
         }
         Returns: number
+      }
+      publish_project_announcement: {
+        Args: {
+          _project_id: string
+          _title: string
+          _body: string
+          _audience: Json
+          _require_ack?: boolean
+          _expires_at?: string | null
+          _author_company_id?: string | null
+        }
+        Returns: Json
       }
       worker_gps_daily_lifecycle: {
         Args: {
@@ -10088,6 +10206,10 @@ export type Database = {
       }
       withdraw_approval: {
         Args: { _entity_id: string; _entity_type: string; _reason?: string }
+        Returns: Json
+      }
+      withdraw_project_announcement: {
+        Args: { _announcement_id: string }
         Returns: Json
       }
       worker_daily_scan:

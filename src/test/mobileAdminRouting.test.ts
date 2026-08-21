@@ -124,6 +124,21 @@ describe("notification + entity mobile routes", () => {
     expect(toMobileShellPath("/app/admin/settings/account")).toBe("/app/worker/account");
   });
 
+  it("announcement notifications open today on phone and admin list on desktop", () => {
+    expect(
+      resolveNotificationRoute(
+        { type: "announcement", related_type: "announcement", related_id: "n1" },
+        { mobileShell: true },
+      ),
+    ).toBe("/app/worker/today?announcement=n1");
+    expect(
+      resolveNotificationRoute(
+        { type: "announcement", related_id: "n1" },
+        { mobileShell: false },
+      ),
+    ).toBe("/app/admin/announcements?id=n1");
+  });
+
   it("danger_zone_entry notifications open worker alerts", () => {
     expect(
       resolveNotificationRoute({ type: "danger_zone_entry" }, { mobileShell: true }),

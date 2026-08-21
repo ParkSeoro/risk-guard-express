@@ -142,6 +142,7 @@ function AdminAppRoutesInner() {
             <Route path="work-stop" element={<P.LazyWorkStopRequests />} />
             <Route path="contractor-scorecard" element={<RoleGuard><P.LazyContractorScorecard /></RoleGuard>} />
             <Route path="assessment-notices" element={<RoleGuard><P.LazyAssessmentNotices /></RoleGuard>} />
+            <Route path="announcements" element={<P.LazyProjectAnnouncements />} />
             <Route path="safety-cost-validation" element={<Navigate to="/app/admin/safety-cost?tab=validation" replace />} />
             <Route path="site-readiness" element={<P.LazySiteReadinessChecklist />} />
             <Route path="education-materials" element={<P.LazyEducationMaterials />} />

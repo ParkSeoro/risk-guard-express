@@ -4,6 +4,7 @@ import * as P from "@/routes/lazyPages";
 import AuthGuard from "@/components/AuthGuard";
 import WorkerGlobalGps, { GpsBlockBadge } from "@/components/worker/WorkerGlobalGps";
 import ShellGeofenceAlerts from "@/components/geofence/ShellGeofenceAlerts";
+import ShellAnnouncementAlerts from "@/components/announcements/ShellAnnouncementAlerts";
 import MobileShell from "@/components/mobile/MobileShell";
 import { GpsUiProvider } from "@/lib/tracking/gpsStatusUi";
 import { MobilePreviewGate } from "@/contexts/PreviewContext";
@@ -42,6 +43,9 @@ export default function WorkerAppRoutes() {
           <AppErrorBoundary fallback={null}>
             <WorkerGpsGate />
             <ShellGeofenceAlerts />
+          </AppErrorBoundary>
+          <AppErrorBoundary fallback={null}>
+            <ShellAnnouncementAlerts />
           </AppErrorBoundary>
           <MobileShell>
             <Suspense fallback={<Fallback />}>

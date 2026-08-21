@@ -61,6 +61,7 @@ const MANDATORY_EVENTS_ALL = [
   { key: 'approval_result',    label: '결재 승인 / 반려',       desc: '기안자에게 결과 전달', worker: false },
   { key: 'danger_zone_entry',  label: '위험구역 진입',         desc: '지오펜스 경보 (사이렌 채널)', worker: true },
   { key: 'work_stop',          label: '작업중지 요청',         desc: '긴급 작업중지 알림', worker: true },
+  { key: 'announcement',       label: '현장 공지',             desc: '관리자가 게시한 현장 공지 (끌 수 없음)', worker: true },
 ] as const;
 
 interface EmailLogEntry {

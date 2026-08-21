@@ -40,6 +40,7 @@ const groups: Group[] = [
   {
     label: "핵심", key: "priority",
     items: [
+      { title: "현장 공지", url: "/announcements", icon: Megaphone },
       { title: "전자결재", url: "/approvals", icon: FileCheck, badgeKey: 'approvals' },
       { title: "위험성평가", url: "/risk-assessment", icon: ShieldAlert },
       { title: "작업허가서", url: "/work-permits", icon: FileSignature },

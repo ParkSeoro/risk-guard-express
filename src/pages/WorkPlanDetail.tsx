@@ -48,6 +48,14 @@ import {
 } from 'lucide-react';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import { format, parseISO } from 'date-fns';
+import {
+  buildRiggingPlanPayload,
+  isRiggingPlanReady,
+  summarizeRiggingPlan,
+} from '@/lib/riggingPlanPersist';
+
+const EDITABLE_PLAN_STATUSES = new Set(['작성중', '반려']);
+const LOCKED_PREVIEW_STATUSES = new Set(['결재중', '승인', '승인완료', '완료']);
 
 const SLING_ANGLE_FACTORS: Record<string, number> = {
   '0': 1.0, '30': 1.16, '45': 1.41, '60': 2.0,
@@ -110,7 +118,7 @@ const WorkPlanDetail = () => {
     setAttachments(Array.isArray(data.attachments) ? data.attachments : []);
     setStartDate(data.start_date || '');
     setEndDate(data.end_date || '');
-    if (['결재중', '승인', '승인완료', '완료', '반려'].includes(data.status)) {
+    if (LOCKED_PREVIEW_STATUSES.has(data.status)) {
       setActiveTab('preview');
     }
 
@@ -128,7 +136,11 @@ const WorkPlanDetail = () => {
       if (rp) {
         setRigging(rp);
         recalcRigging(rp, '0');
+      } else {
+        setRigging({ work_plan_id: planId });
       }
+    } else {
+      setRigging(null);
     }
     setLoading(false);
 
@@ -194,8 +206,28 @@ const WorkPlanDetail = () => {
     setIsDirty(true);
   };
 
+  const persistRigging = async (current: any = rigging): Promise<{ ok: boolean; error?: string }> => {
+    if (!planId || !current) return { ok: true };
+    const payload = buildRiggingPlanPayload(planId, current);
+    if (current.id) {
+      const { error } = await supabase.from('rigging_plans').update(payload).eq('id', current.id);
+      if (error) return { ok: false, error: error.message };
+      return { ok: true };
+    }
+    const { data, error } = await supabase.from('rigging_plans').insert(payload).select().single();
+    if (error) return { ok: false, error: error.message };
+    if (data) setRigging(data);
+    return { ok: true };
+  };
+
   const handleSave = async (isAutoSave = false) => {
     if (!planId) return;
+    if (plan && !EDITABLE_PLAN_STATUSES.has(plan.status)) {
+      if (!isAutoSave) {
+        toast({ title: '수정 불가', description: '결재 진행중/완료 문서는 수정할 수 없습니다.', variant: 'destructive' });
+      }
+      return;
+    }
     setSaving(true);
 
     // Merge checklist into sections
@@ -214,103 +246,50 @@ const WorkPlanDetail = () => {
 
     if (error) {
       if (!isAutoSave) toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
-    } else {
-      setIsDirty(false);
-      if (!isAutoSave) toast({ title: '저장되었습니다.' });
+      setSaving(false);
+      return;
     }
+
+    const wpType = WORK_PLAN_TYPES.find(t => t.id === plan?.work_type);
+    if (wpType?.hasRiggingPlan && rigging) {
+      const r = await persistRigging(rigging);
+      if (!r.ok) {
+        if (!isAutoSave) {
+          toast({
+            title: '리깅플랜 저장 실패',
+            description: r.error || '작업계획서는 저장됐지만 리깅플랜은 반영되지 않았습니다.',
+            variant: 'destructive',
+          });
+        }
+        setSaving(false);
+        return;
+      }
+    }
+
+    setIsDirty(false);
+    if (!isAutoSave) toast({ title: '저장되었습니다.' });
     setSaving(false);
   };
 
   const handleSaveRigging = async () => {
-    if (!planId || !rigging) return;
-    setSaving(true);
-    const payload: any = {
-      work_plan_id: planId,
-      load_weight: Number(rigging.load_weight) || 0,
-      load_description: rigging.load_description || '',
-      crane_model: rigging.crane_model || '',
-      crane_capacity: Number(rigging.crane_capacity) || 0,
-      working_radius: Number(rigging.working_radius) || 0,
-      boom_length: Number(rigging.boom_length) || 0,
-      lifting_method: rigging.lifting_method || '',
-      sling_type: rigging.sling_type || '',
-      sling_capacity: Number(rigging.sling_capacity) || 0,
-      ground_bearing_capacity: Number(rigging.ground_bearing_capacity) || 0,
-      outrigger_setup: rigging.outrigger_setup || '',
-      safety_factor: Number(rigging.safety_factor) || 0,
-      calculated_utilization: Number(rigging.calculated_utilization) || 0,
-      notes: rigging.notes || '',
-      equipment_name: rigging.equipment_name || '',
-      rated_capacity: Number(rigging.rated_capacity) || 0,
-      outrigger_distance: Number(rigging.outrigger_distance) || 0,
-      wire_diameter_mm: Number(rigging.wire_diameter_mm) || 0,
-      sling_count: Number(rigging.sling_count) || 2,
-      sling_method: rigging.sling_method || '',
-      sling_strand_count: Number(rigging.sling_strand_count) || 1,
-      sling_angle_deg: Number(rigging.sling_angle_deg) || 60,
-      wire_terminal_method: rigging.wire_terminal_method || '탐블(24mm 이하)',
-      wire_safety_coefficient: Number(rigging.wire_safety_coefficient) || 5,
-      wire_lift_count: Number(rigging.wire_lift_count) || 5,
-      wire_breaking_load: Number(rigging.wire_breaking_load) || 0,
-      wire_diameter_inch: Number(rigging.wire_diameter_inch) || 0,
-      wire_safe_load: Number(rigging.wire_safe_load) || 0,
-      shackle_diameter_mm: Number(rigging.shackle_diameter_mm) || 0,
-      shackle_safe_load: Number(rigging.shackle_safe_load) || 0,
-      shackle_angle_deg: Number(rigging.shackle_angle_deg) || 45,
-      shackle_count: Number(rigging.shackle_count) || 0.7,
-      shackle_qty: Number(rigging.shackle_qty) || 2,
-      load_name_max: rigging.load_name_max || '',
-      hook_weight: Number(rigging.hook_weight) || 0,
-      shackle_weight_val: Number(rigging.shackle_weight_val) || 0,
-      sling_rigging_weight: Number(rigging.sling_rigging_weight) || 0,
-      total_weight_max: Number(rigging.total_weight_max) || 0,
-      load_name_min: rigging.load_name_min || '',
-      load_weight_min: Number(rigging.load_weight_min) || 0,
-      hook_weight_min: Number(rigging.hook_weight_min) || 0,
-      shackle_weight_min: Number(rigging.shackle_weight_min) || 0,
-      sling_rigging_weight_min: Number(rigging.sling_rigging_weight_min) || 0,
-      total_weight_min: Number(rigging.total_weight_min) || 0,
-      wind_speed_grade: rigging.wind_speed_grade || '0~5',
-      wind_speed_factor: Number(rigging.wind_speed_factor) || 1,
-      boom_rotation_factor: Number(rigging.boom_rotation_factor) || 0.8,
-      ground_inspection_factor: Number(rigging.ground_inspection_factor) || 0.8,
-      load_protrusion_factor: Number(rigging.load_protrusion_factor) || 0.8,
-      travel_load_factor: Number(rigging.travel_load_factor) || 1,
-      equipment_working_load: Number(rigging.equipment_working_load) || 0,
-      equipment_ok: rigging.equipment_ok || '',
-      sling_working_load: Number(rigging.sling_working_load) || 0,
-      sling_ok: rigging.sling_ok || '',
-      shackle_working_load: Number(rigging.shackle_working_load) || 0,
-      shackle_ok: rigging.shackle_ok || '',
-      safety_factor_passenger: Number(rigging.safety_factor_passenger) || 10,
-      safety_factor_cargo: Number(rigging.safety_factor_cargo) || 5,
-      input_method: rigging.input_method || '자동계산',
-      // New material fields
-      sling_material_type: rigging.sling_material_type || 'wire_rope',
-      sling_belt_color: rigging.sling_belt_color || '',
-      sling_belt_width_mm: Number(rigging.sling_belt_width_mm) || 0,
-      sling_belt_rated_load: Number(rigging.sling_belt_rated_load) || 0,
-      round_sling_rated_load: Number(rigging.round_sling_rated_load) || 0,
-      chain_diameter_mm: Number(rigging.chain_diameter_mm) || 0,
-      chain_rated_load: Number(rigging.chain_rated_load) || 0,
-      chain_leg_count: Number(rigging.chain_leg_count) || 4,
-      shackle_inch: rigging.shackle_inch || '',
-      sling_safe_load: Number(rigging.sling_safe_load) || 0,
-      tension_per_leg: Number(rigging.tension_per_leg) || 0,
-    };
-    if (rigging.id) {
-      await supabase.from('rigging_plans').update(payload).eq('id', rigging.id);
-    } else {
-      const { data } = await supabase.from('rigging_plans').insert(payload).select().single();
-      if (data) setRigging(data);
+    if (!planId) return;
+    if (!rigging) {
+      setRigging({ work_plan_id: planId });
     }
-    toast({ title: '리깅플랜이 저장되었습니다.' });
+    setSaving(true);
+    const r = await persistRigging(rigging || { work_plan_id: planId });
+    if (!r.ok) {
+      toast({ title: '리깅플랜 저장 실패', description: r.error, variant: 'destructive' });
+    } else {
+      toast({ title: '리깅플랜이 저장되었습니다.' });
+      setIsDirty(false);
+    }
     setSaving(false);
   };
 
   const handleRiggingChange = (field: string, value: any) => {
-    const updated = { ...rigging, [field]: value };
-    setRigging(updated);
+    setRigging((prev: any) => ({ ...(prev || { work_plan_id: planId }), [field]: value }));
+    setIsDirty(true);
   };
 
   const handleSlingAngleChange = (angle: string) => {
@@ -367,6 +346,16 @@ const WorkPlanDetail = () => {
   const handleSubmitApproval = async () => {
     if (!handleValidate()) {
       toast({ title: '필수 입력 항목을 확인해주세요.', variant: 'destructive' });
+      return;
+    }
+    const wpTypeNow = WORK_PLAN_TYPES.find(t => t.id === plan?.work_type);
+    if (wpTypeNow?.hasRiggingPlan && !isRiggingPlanReady(rigging)) {
+      setActiveTab('rigging');
+      toast({
+        title: '리깅플랜이 필요합니다',
+        description: '인양 중량·작업 반경·크레인(장비)을 입력하고 저장한 뒤 상신하세요.',
+        variant: 'destructive',
+      });
       return;
     }
     // 필수 첨부(SSOT: work_plan_attachments.is_mandatory) — 누락 시 결재 차단
@@ -479,6 +468,22 @@ const WorkPlanDetail = () => {
       } catch (e: any) {
         console.warn('clone attachments failed', e);
       }
+      try {
+        const { data: srcRig } = await supabase
+          .from('rigging_plans')
+          .select('*')
+          .eq('work_plan_id', plan.id)
+          .maybeSingle();
+        if (srcRig) {
+          const { id: _id, created_at: _c, updated_at: _u, ...rest } = srcRig as any;
+          await supabase.from('rigging_plans').insert({
+            ...rest,
+            work_plan_id: data.id,
+          });
+        }
+      } catch (e: any) {
+        console.warn('clone rigging failed', e);
+      }
       toast({ title: '새 회차가 생성되었습니다.' });
       navigate(`/work-plan/${data.id}`);
     }
@@ -544,9 +549,28 @@ const WorkPlanDetail = () => {
         </div>
       </div>
 
+      {plan.status === '반려' && (
+        <Card className="border-red-500/40 bg-red-50/50 dark:bg-red-950/20">
+          <CardContent className="p-3 text-sm flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
+            <div>
+              <div className="font-semibold text-red-800 dark:text-red-300">결재 반려됨</div>
+              <div className="text-xs text-muted-foreground">
+                내용을 수정한 뒤 <b>재상신</b>하세요. 전자결재에서 반려 사유(코멘트)를 확인할 수 있습니다.
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Action Bar */}
       <div className="flex items-center gap-2 flex-wrap">
-        <Button size="sm" onClick={() => handleSave()} disabled={saving} className="gap-1">
+        <Button
+          size="sm"
+          onClick={() => handleSave()}
+          disabled={saving || !EDITABLE_PLAN_STATUSES.has(plan.status)}
+          className="gap-1"
+        >
           <Save className="h-3.5 w-3.5" /> {saving ? '저장 중...' : '저장'}
         </Button>
         <Button size="sm" variant="outline" onClick={handlePdfDownload} disabled={saving} className="gap-1">
@@ -596,7 +620,7 @@ const WorkPlanDetail = () => {
             </Button>
           </>
         )}
-        {plan.status === '작성중' && (
+        {EDITABLE_PLAN_STATUSES.has(plan.status) && (
           <Button
             size="sm"
             variant="default"
@@ -609,7 +633,8 @@ const WorkPlanDetail = () => {
                 : undefined
             }
           >
-            <SendHorizontal className="h-3.5 w-3.5" /> 결재 상신
+            <SendHorizontal className="h-3.5 w-3.5" />
+            {plan.status === '반려' ? '재상신' : '결재 상신'}
           </Button>
         )}
       </div>
@@ -922,7 +947,7 @@ const WorkPlanDetail = () => {
               projectId={plan.project_id}
               companyId={plan.company_id}
               workType={plan.work_type}
-              readOnly={plan.status !== '작성중'}
+              readOnly={!EDITABLE_PLAN_STATUSES.has(plan.status)}
               onChange={() => setIsDirty(true)}
               onProgress={setAttProgress}
             />
@@ -973,6 +998,24 @@ const WorkPlanDetail = () => {
                       <span>{item.label}</span>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Rigging preview — same SSOT as PDF */}
+              {wpType?.hasRiggingPlan && (
+                <div className="space-y-2">
+                  <h3 className="text-sm font-semibold">리깅플랜 (양중계획)</h3>
+                  {summarizeRiggingPlan(rigging).length > 0 ? (
+                    <ul className="text-xs text-muted-foreground space-y-1 bg-muted/30 p-3 rounded list-disc pl-5">
+                      {summarizeRiggingPlan(rigging).map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3 rounded">
+                      리깅플랜이 아직 저장되지 않았습니다. 리깅플랜 탭에서 입력·저장하세요.
+                    </p>
+                  )}
                 </div>
               )}
             </CardContent>

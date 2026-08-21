@@ -76,7 +76,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
           const { data: p, error: pe } = await supabase
             .from("work_permits" as any)
             .select(
-              "id, ai_briefing, work_name, work_description, location, work_location, permit_date, status, form_data, permit_kinds, permit_type, contractor_company, personnel_count, signatures",
+              "id, ai_briefing, work_name, work_description, location, permit_date, status, form_data, permit_kinds, permit_type, contractor_company, personnel_count, signatures",
             )
             .eq("id", entityId)
             .maybeSingle();

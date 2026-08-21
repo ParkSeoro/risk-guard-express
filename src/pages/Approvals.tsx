@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle2, Clock, XCircle, FileCheck, MessageSquare, FileText, ExternalLink, Search, Inbox, Send, AlertTriangle } from "lucide-react";
+import { CheckCircle2, Clock, XCircle, FileCheck, MessageSquare, FileText, ExternalLink, Search, Inbox, Send, AlertTriangle, Eye } from "lucide-react";
 import { exportToPDFServer } from "@/lib/exportUtils";
 import { useMemo } from "react";
 import {
@@ -574,7 +574,7 @@ const Approvals = () => {
                       variant="outline"
                       onClick={() => openDocPreview(e.entity_type, e.entity_id, e.entity_title)}
                     >
-                      <ExternalLink className="h-3 w-3 mr-1" />문서 보기
+                      <Eye className="h-3 w-3 mr-1" />문서 보기
                     </Button>
                   ) : null}
                 <Button size="sm" onClick={() => actOnEntity(e.approval_id, 'approve', stepKind, e)}>
@@ -755,7 +755,7 @@ const Approvals = () => {
                               )
                             }
                           >
-                            <ExternalLink className="h-3 w-3" /> {run ? '상세' : '문서 보기'}
+                            <Eye className="h-3 w-3" /> {run ? '상세' : '문서 보기'}
                           </Button>
                         )}
                       </div>

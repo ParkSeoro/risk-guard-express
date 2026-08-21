@@ -45,7 +45,7 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
 /** Mobile shell equivalents — prefer list/viewer pages that exist under /app/worker. */
 const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
   work_plan: (id) => (id ? `${WORKER}/work-plans/${id}` : `${WORKER}/work-plans`),
-  announcement: (id) => (id ? `${WORKER}/today?announcement=${id}` : `${WORKER}/today`),
+  announcement: (id) => (id ? `${WORKER}/announcements?id=${id}` : `${WORKER}/announcements`),
   work_permit: (id) =>
     id ? `${WORKER}/approvals` : `${WORKER}/permits`,
   assessment_run: (id) => (id ? `${WORKER}/risk-assessment/${id}` : `${WORKER}/risk-assessment`),
@@ -96,7 +96,7 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   health_warning: () => `${WORKER}/daily-health-log`,
   health_checkup_due: () => `${WORKER}/daily-health-log`,
   announcement: (n) =>
-    n.related_id ? `${WORKER}/today?announcement=${n.related_id}` : `${WORKER}/today`,
+    n.related_id ? `${WORKER}/announcements?id=${n.related_id}` : `${WORKER}/announcements`,
 };
 
 /** Map known admin paths into mobile equivalents when on phone shell. */
@@ -125,7 +125,7 @@ export function toMobileShellPath(path: string): string {
   if (p.startsWith("/tbm")) return `${WORKER}/tbm`;
   if (p.startsWith("/work-stop")) return `${WORKER}/work-stop`;
   if (p.startsWith("/workers")) return `${WORKER}/workers`;
-  if (p.startsWith("/announcements")) return `${WORKER}/today`;
+  if (p.startsWith("/announcements")) return `${WORKER}/announcements`;
   if (p.startsWith("/zone-events")) return `${WORKER}/alerts`;
   if (p.startsWith("/settings")) return `${WORKER}/account`;
   if (p === "/" || p === "") return `${WORKER}/menu`;

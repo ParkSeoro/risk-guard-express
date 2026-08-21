@@ -1,0 +1,25 @@
+{
+  "identity": {
+    "gateway_id": "gateway-unpaired",
+    "tenant_id": "tenant-unpaired",
+    "site_id": "site-unpaired",
+    "fleet_base_url": null
+  },
+  "listen_host": "127.0.0.1",
+  "listen_port": 8787,
+  "state_dir": "/var/lib/safenex-vision-edge",
+  "certificate_path": null,
+  "private_key_path": null,
+  "ca_bundle_path": null,
+  "fleet_token_url": null,
+  "fleet_client_id": null,
+  "master_public_key_path": null,
+  "enrollment_fleet_url": null,
+  "heartbeat_interval_seconds": 30,
+  "event_flush_interval_seconds": 10,
+  "ffprobe_timeout_seconds": 8,
+  "allow_local_key_generation": false,
+  "wan_profile": "hybrid",
+  "nvrs": [],
+  "cameras": []
+}

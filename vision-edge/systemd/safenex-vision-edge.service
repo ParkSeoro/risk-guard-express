@@ -1,0 +1,32 @@
+[Unit]
+Description=SafeNex Vision Edge Gateway
+Documentation=https://github.com/ParkSeoro/risk-guard-express/tree/main/vision-edge
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
+
+[Service]
+Type=simple
+User=safenex-vision
+Group=safenex-vision
+WorkingDirectory=/opt/safenex-vision-edge
+EnvironmentFile=/etc/safenex-vision-edge/edge.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/safenex-vision-edge/.venv/bin/vision-edge --config /etc/safenex-vision-edge/vision-edge.json run
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/safenex-vision-edge /etc/safenex-vision-edge
+LockPersonality=true
+MemoryDenyWriteExecute=false
+RestrictSUIDSGID=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

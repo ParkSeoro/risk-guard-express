@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+
+case "${1:-remove}" in
+  remove)
+    systemctl disable safenex-vision-edge.service >/dev/null 2>&1 || true
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    ;;
+  purge)
+    rm -rf /etc/safenex-vision-edge /var/lib/safenex-vision-edge
+    userdel safenex-vision >/dev/null 2>&1 || true
+    groupdel safenex-vision >/dev/null 2>&1 || true
+    ;;
+esac
+
+exit 0

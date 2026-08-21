@@ -1,0 +1,42 @@
+flowchart TB
+  classDef field fill:#123047,stroke:#50E3C2,color:#F7FAFC,stroke-width:2px
+  classDef security fill:#18233A,stroke:#77A8FF,color:#F7FAFC,stroke-width:2px
+  classDef cloud fill:#1E2442,stroke:#B58CFF,color:#F7FAFC,stroke-width:2px
+  classDef warn fill:#3A2A16,stroke:#F0B54D,color:#F7FAFC,stroke-width:2px
+
+  subgraph SITE[① 건설현장 — 원본 영상·AI 판단·비밀값은 현장에 유지]
+    direction TB
+    subgraph CAMERAS[카메라 연결 방식]
+      direction LR
+      CAM1[고정 카메라<br/>PoE / 유선]:::field
+      CAM2[원격·동별 카메라<br/>전용 무선 브리지]:::field
+      CAM3[이동형·외곽 카메라<br/>LTE·5G 유심]:::field
+    end
+    NVR[현장 NVR<br/>원본 녹화·증거 보존]:::security
+    EDGE[SafeNex Vision Edge Agent<br/>AI 안전분석 · 이벤트 spool · health]:::security
+    CONSOLE[Vision Edge Console<br/>독립 프로그램 관제·설정]:::security
+    NET[현장 네트워크<br/>CCTV VLAN + 방화벽]:::warn
+
+    CAM1 -->|RTSP·ONVIF 읽기 전용| NVR
+    CAM2 -->|RTSP·ONVIF 읽기 전용| NVR
+    CAM3 -->|VPN·사설 APN 또는 현장 LAN 합류| NVR
+    NVR -->|로컬 스트림·상태| EDGE
+    EDGE ---|127.0.0.1만 사용| CONSOLE
+    EDGE --> NET
+  end
+
+  WAN[② 하이브리드 WAN<br/>유선·광 / 무선 브리지 / Dual-SIM 5G·LTE]:::warn
+  FLEET[③ SafeNex Vision Fleet<br/>전국 Gateway·정책·이벤트·감사]:::cloud
+  MOBILE[④ SafeNex 웹·모바일<br/>관리자 관제·승인·조치]:::cloud
+
+  NET -->|Outbound HTTPS + mTLS<br/>heartbeat · AI 이벤트 · desired state| WAN
+  WAN <--> |서명된 정책·rollout| FLEET
+  FLEET --> MOBILE
+
+  RELEASE[서명된 Release Repository<br/>EXE·DEB + SHA-256]:::cloud
+  RELEASE -. 서명된 update manifest .-> FLEET
+  FLEET -. 승인된 업데이트 정보 .-> WAN
+  WAN -. manifest·hash 검증 후만 다운로드 .-> EDGE
+
+  SECRET[중앙으로 보내지 않음<br/>RTSP 주소 · NVR 비밀번호 · Gateway private key]:::warn
+  SECRET --- EDGE

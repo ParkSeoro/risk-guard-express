@@ -1,0 +1,45 @@
+#!/bin/sh
+set -eu
+
+APP_USER="safenex-vision"
+APP_GROUP="safenex-vision"
+APP_DIR="/opt/safenex-vision-edge"
+CONFIG_DIR="/etc/safenex-vision-edge"
+STATE_DIR="/var/lib/safenex-vision-edge"
+CONFIG_FILE="$CONFIG_DIR/vision-edge.json"
+ENV_FILE="$CONFIG_DIR/edge.env"
+
+case "${1:-configure}" in
+  configure)
+    if ! getent group "$APP_GROUP" >/dev/null 2>&1; then
+      groupadd --system "$APP_GROUP"
+    fi
+    if ! getent passwd "$APP_USER" >/dev/null 2>&1; then
+      useradd --system --gid "$APP_GROUP" --home-dir "$STATE_DIR" --shell /usr/sbin/nologin "$APP_USER"
+    fi
+
+    install -d -o "$APP_USER" -g "$APP_GROUP" -m 0750 "$CONFIG_DIR" "$STATE_DIR"
+    python3 -m venv "$APP_DIR/.venv"
+    "$APP_DIR/.venv/bin/pip" install --no-index --find-links "$APP_DIR/wheelhouse" --upgrade safenex-vision-edge
+
+    if [ ! -f "$CONFIG_FILE" ]; then
+      install -o "$APP_USER" -g "$APP_GROUP" -m 0600 \
+        "$APP_DIR/defaults/vision-edge.json" "$CONFIG_FILE"
+    fi
+
+    if [ ! -f "$ENV_FILE" ]; then
+      MASTER_KEY="$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
+      umask 077
+      printf 'VISION_EDGE_MASTER_KEY=%s\n' "$MASTER_KEY" > "$ENV_FILE"
+      chown "$APP_USER:$APP_GROUP" "$ENV_FILE"
+      chmod 0600 "$ENV_FILE"
+    fi
+
+    chown -R "$APP_USER:$APP_GROUP" "$STATE_DIR" "$CONFIG_DIR"
+    systemctl daemon-reload
+    systemctl enable safenex-vision-edge.service >/dev/null 2>&1 || true
+    systemctl restart safenex-vision-edge.service || true
+    ;;
+esac
+
+exit 0

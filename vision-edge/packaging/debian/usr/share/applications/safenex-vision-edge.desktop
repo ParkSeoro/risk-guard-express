@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=SafeNex Vision Edge
+Name[ko]=SafeNex Vision Edge 관제
+Comment=현장 NVR · AI CCTV 운영 화면 열기
+Exec=/usr/bin/safenex-vision-edge-ui
+Icon=video-display
+Terminal=false
+Categories=Utility;Network;Security;
+StartupNotify=true

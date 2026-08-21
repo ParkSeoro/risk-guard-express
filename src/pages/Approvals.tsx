@@ -27,6 +27,11 @@ import {
 import { filterRunsByCompanyScope } from "@/lib/companyDocScope";
 import { filterApprovalsKeepingFullDocumentTimeline } from "@/lib/approvalDocumentVisibility";
 import {
+  desktopApprovalEntityPath,
+  type ApprovalPreviewTarget,
+} from "@/lib/approvalInboxPreview";
+import ApprovalDocPreviewDialog from "@/components/approval/ApprovalDocPreviewDialog";
+import {
   permitPostStepKind,
   permitPostStepBadge,
   permitPostStepApproveLabel,
@@ -36,20 +41,7 @@ import {
 } from "@/lib/permitPostApproval";
 
 
-const ENTITY_LINK = (t?: string | null, id?: string | null): string | null => {
-  if (!t || !id) return null;
-  switch (t) {
-    case 'assessment_run': return `/assessment-run/${id}`;
-    case 'assessment_run_feedback': return `/assessment-run/${id}?tab=feedback`;
-    case 'work_plan': return `/work-plan/${id}`;
-    case 'work_permit': return `/work-permits/${id}`;
-    case 'safety_cost': return `/safety-cost`;
-    case 'incident': return `/incidents`;
-    case 'emergency_drill': return `/emergency-drills`;
-    case 'tbm': return `/app/admin/tbm-logs`;
-    default: return null;
-  }
-};
+const ENTITY_LINK = desktopApprovalEntityPath;
 
 function resolveLinkedRun(
   runs: any[],
@@ -108,6 +100,18 @@ const Approvals = () => {
   const fetchSeqRef = useRef(0);
   const [search, setSearch] = useState('');
   const [entityTypeFilter, setEntityTypeFilter] = useState<'all' | ApprovalEntityType>('all');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState<ApprovalPreviewTarget | null>(null);
+
+  const openDocPreview = (entityType?: string | null, entityId?: string | null, title?: string | null) => {
+    if (!entityType || !entityId) return;
+    if (!ENTITY_LINK(entityType, entityId)) {
+      toast({ title: '문서를 열 수 없습니다', description: '지원하지 않는 문서 유형입니다.', variant: 'destructive' });
+      return;
+    }
+    setPreviewTarget({ entityType, entityId, title });
+    setPreviewOpen(true);
+  };
 
   const fetchEntityPending = async () => {
     try { await (supabase as any).rpc('repair_stuck_permit_closure_sm'); } catch { /* ignore */ }
@@ -564,14 +568,15 @@ const Approvals = () => {
                   <div className="text-sm font-medium truncate">{e.entity_title || '-'}</div>
                   <div className="text-xs text-muted-foreground">{e.entity_date || ''} · {e.step}</div>
                 </div>
-                {(() => {
-                  const href = ENTITY_LINK(e.entity_type, e.entity_id);
-                  return href ? (
-                    <Button size="sm" variant="outline" onClick={() => navigate(href)}>
+                {e.entity_type && e.entity_id ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openDocPreview(e.entity_type, e.entity_id, e.entity_title)}
+                    >
                       <ExternalLink className="h-3 w-3 mr-1" />문서 보기
                     </Button>
-                  ) : null;
-                })()}
+                  ) : null}
                 <Button size="sm" onClick={() => actOnEntity(e.approval_id, 'approve', stepKind, e)}>
                   <CheckCircle2 className="h-3 w-3 mr-1" />{permitPostStepApproveLabel(stepKind)}
                 </Button>
@@ -644,6 +649,10 @@ const Approvals = () => {
               const docHref = run
                 ? `/assessment-run/${run.id}`
                 : ENTITY_LINK(firstStep?.entity_type, firstStep?.entity_id);
+              const previewType = run
+                ? "assessment_run"
+                : firstStep?.entity_type;
+              const previewId = run ? run.id : firstStep?.entity_id;
 
               const renderStepChip = (step: any, sectionSteps: any[], i: number, sectionLen: number) => {
                 const displayStatus = sequentialDisplayStatus(sectionSteps, step);
@@ -733,8 +742,19 @@ const Approvals = () => {
                             <FileText className="h-3 w-3" /> PDF
                           </Button>
                         )}
-                        {docHref && (
-                          <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => navigate(docHref)}>
+                        {docHref && previewType && previewId && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() =>
+                              openDocPreview(
+                                previewType,
+                                previewId,
+                                run ? run.period_label : firstStep?.entity_title,
+                              )
+                            }
+                          >
                             <ExternalLink className="h-3 w-3" /> {run ? '상세' : '문서 보기'}
                           </Button>
                         )}
@@ -803,6 +823,12 @@ const Approvals = () => {
           )}
         </TabsContent>
       </Tabs>
+
+      <ApprovalDocPreviewDialog
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        target={previewTarget}
+      />
     </div>
   );
 };

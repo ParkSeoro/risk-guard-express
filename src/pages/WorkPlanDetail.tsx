@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useGlobalProjectAccess } from '@/components/AppLayout';
@@ -53,6 +53,7 @@ import {
   isRiggingPlanReady,
   summarizeRiggingPlan,
 } from '@/lib/riggingPlanPersist';
+import { approvalsBackOr } from '@/lib/approvalInboxPreview';
 
 const EDITABLE_PLAN_STATUSES = new Set(['작성중', '반려']);
 const LOCKED_PREVIEW_STATUSES = new Set(['결재중', '승인', '승인완료', '완료']);
@@ -67,7 +68,9 @@ const calculateRigging = (params: { loadWeight: number; workingRadius: number; c
 
 const WorkPlanDetail = () => {
   const { planId } = useParams<{ planId: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const listBackPath = approvalsBackOr('/work-plans', searchParams.get('from'));
   const { user } = useAuth();
   const access = useGlobalProjectAccess();
   const { toast } = useToast();
@@ -533,7 +536,7 @@ const WorkPlanDetail = () => {
     <div className="space-y-4 animate-fade-in">
       {/* Header */}
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/work-plans')}>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(listBackPath)}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">

@@ -2,9 +2,22 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 import uvicorn
+
+# Packaging helpers live next to src/ and are not installed as a setuptools package.
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+# pywebview is a Windows extra; Linux CI only installs [test]. Stub before import.
+if "webview" not in sys.modules:
+    _webview = ModuleType("webview")
+    _webview.create_window = lambda *_args, **_kwargs: object()
+    _webview.start = lambda *_args, **_kwargs: None
+    sys.modules["webview"] = _webview
 
 from windows import desktop_entry
 

@@ -124,13 +124,13 @@ describe("notification + entity mobile routes", () => {
     expect(toMobileShellPath("/app/admin/settings/account")).toBe("/app/worker/account");
   });
 
-  it("announcement notifications open today on phone and admin list on desktop", () => {
+  it("announcement notifications open announcements list on phone and admin list on desktop", () => {
     expect(
       resolveNotificationRoute(
         { type: "announcement", related_type: "announcement", related_id: "n1" },
         { mobileShell: true },
       ),
-    ).toBe("/app/worker/today?announcement=n1");
+    ).toBe("/app/worker/announcements?id=n1");
     expect(
       resolveNotificationRoute(
         { type: "announcement", related_id: "n1" },

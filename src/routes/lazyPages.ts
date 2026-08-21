@@ -12,6 +12,7 @@ function L(factory: () => Promise<{ default: ComponentType<any> }>): LazyPage {
 // ── Worker / mobile (light) ──────────────────────────────────
 export const LazyMobileHome = L(() => import("@/pages/MobileHome"));
 export const LazyMobileToday = L(() => import("@/pages/MobileToday"));
+export const LazyMobileAnnouncements = L(() => import("@/pages/MobileAnnouncements"));
 export const LazyMobileTasks = L(() => import("@/pages/MobileTasks"));
 export const LazyMobileDocs = L(() => import("@/pages/MobileDocs"));
 export const LazyMobileMore = L(() => import("@/pages/MobileMore"));

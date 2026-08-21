@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { isManagerMobileRole, roleLabelKo } from "@/lib/mobileShell";
@@ -20,8 +20,7 @@ import {
 } from "lucide-react";
 import WorkerDailyHome from "@/pages/WorkerDailyHome";
 import MobileProjectPicker from "@/components/mobile/MobileProjectPicker";
-import AnnouncementNoticeBanner from "@/components/announcements/AnnouncementNoticeBanner";
-import { usePendingAnnouncements } from "@/hooks/usePendingAnnouncements";
+import TodayFieldAnnouncements from "@/components/announcements/TodayFieldAnnouncements";
 import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
 import { isIosSafariTab } from "@/lib/pushSubscription";
 import { isIosWebClient, isWebStandalone } from "@/lib/iosWebPath";
@@ -29,6 +28,8 @@ import { isNativeApp } from "@/lib/native/isNativeApp";
 import { anyMapHasGeoref } from "@/lib/mapBounds";
 
 export default function MobileToday() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
   const { role, isMaster, projectId, loading } = useMobileAccess();
   const preview = usePreview();
   const effectiveRole = preview.isPreview ? preview.syntheticRole : role;
@@ -36,6 +37,13 @@ export default function MobileToday() {
     effectiveRole,
     preview.isPreview ? effectiveRole === "master" : isMaster,
   );
+
+  // Legacy push deep link → announcements list
+  useEffect(() => {
+    const id = params.get("announcement");
+    if (!id) return;
+    navigate(`/app/worker/announcements?id=${encodeURIComponent(id)}`, { replace: true });
+  }, [params, navigate]);
 
   if (loading && !preview.isPreview) {
     return <div className="p-6 text-sm text-muted-foreground">로딩 중…</div>;
@@ -45,7 +53,7 @@ export default function MobileToday() {
     return (
       <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="worker-today">
         <IosWebPathBanner />
-        <TodayAnnouncementBanners projectId={projectId || preview.previewProjectId} />
+        <TodayFieldAnnouncements projectId={projectId || preview.previewProjectId} />
         <MobileWeatherCard projectId={projectId || preview.previewProjectId} />
         <HealthDueCard projectId={projectId || preview.previewProjectId} />
         <div className="rounded-xl border bg-background overflow-hidden">
@@ -220,7 +228,7 @@ function ManagerToday({
   return (
     <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="manager-today">
       <IosWebPathBanner />
-      <TodayAnnouncementBanners projectId={projectId} />
+      <TodayFieldAnnouncements projectId={projectId} />
       <div className="flex items-center justify-between">
         <div>
           <div className="text-base font-bold">오늘</div>
@@ -288,9 +296,3 @@ function ManagerToday({
   );
 }
 
-function TodayAnnouncementBanners({ projectId }: { projectId?: string | null }) {
-  const { notices, reload } = usePendingAnnouncements(projectId);
-  const first = notices[0];
-  if (!first) return null;
-  return <AnnouncementNoticeBanner item={first} onAcked={() => void reload()} />;
-}

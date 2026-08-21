@@ -172,6 +172,12 @@ export default function PushNotificationBridge() {
             if (data.type === 'danger_zone_entry') {
               void playDangerAlarm();
             }
+            // 현장 공지: system tray already shows; foreground just surface a toast.
+            if (data.type === 'announcement') {
+              const title = notification?.title || data.title || '현장 공지';
+              const body = notification?.body || data.body || '';
+              void import('sonner').then(({ toast }) => toast(title, { description: body }));
+            }
           },
         );
 

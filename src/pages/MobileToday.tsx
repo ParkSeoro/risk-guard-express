@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import WorkerDailyHome from "@/pages/WorkerDailyHome";
 import MobileProjectPicker from "@/components/mobile/MobileProjectPicker";
+import AnnouncementNoticeBanner from "@/components/announcements/AnnouncementNoticeBanner";
+import { usePendingAnnouncements } from "@/hooks/usePendingAnnouncements";
 import { useSystemRealtimeOptional } from "@/providers/SystemRealtimeProvider";
 import { isIosSafariTab } from "@/lib/pushSubscription";
 import { isIosWebClient, isWebStandalone } from "@/lib/iosWebPath";
@@ -43,6 +45,7 @@ export default function MobileToday() {
     return (
       <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="worker-today">
         <IosWebPathBanner />
+        <TodayAnnouncementBanners projectId={projectId || preview.previewProjectId} />
         <MobileWeatherCard projectId={projectId || preview.previewProjectId} />
         <HealthDueCard projectId={projectId || preview.previewProjectId} />
         <div className="rounded-xl border bg-background overflow-hidden">
@@ -217,6 +220,7 @@ function ManagerToday({
   return (
     <div className="p-4 space-y-3 max-w-md mx-auto" data-testid="manager-today">
       <IosWebPathBanner />
+      <TodayAnnouncementBanners projectId={projectId} />
       <div className="flex items-center justify-between">
         <div>
           <div className="text-base font-bold">오늘</div>
@@ -282,4 +286,11 @@ function ManagerToday({
       )}
     </div>
   );
+}
+
+function TodayAnnouncementBanners({ projectId }: { projectId?: string | null }) {
+  const { notices, reload } = usePendingAnnouncements(projectId);
+  const first = notices[0];
+  if (!first) return null;
+  return <AnnouncementNoticeBanner item={first} onAcked={() => void reload()} />;
 }

@@ -23,6 +23,7 @@ type RouteFn = (id?: string | null, projectId?: string | null) => string;
 
 const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
   work_plan: (id) => (id ? `${ADMIN}/work-plan/${id}` : `${ADMIN}/work-plans`),
+  announcement: (id) => (id ? `${ADMIN}/announcements?id=${id}` : `${ADMIN}/announcements`),
   work_permit: (id) => (id ? `${ADMIN}/work-permits/${id}` : `${ADMIN}/work-permits`),
   assessment_run: (id) => (id ? `${ADMIN}/assessment-run/${id}` : `${ADMIN}/risk-assessment`),
   approval: () => `${ADMIN}/approvals`,
@@ -44,6 +45,7 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
 /** Mobile shell equivalents — prefer list/viewer pages that exist under /app/worker. */
 const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
   work_plan: (id) => (id ? `${WORKER}/work-plans/${id}` : `${WORKER}/work-plans`),
+  announcement: (id) => (id ? `${WORKER}/today?announcement=${id}` : `${WORKER}/today`),
   work_permit: (id) =>
     id ? `${WORKER}/approvals` : `${WORKER}/permits`,
   assessment_run: (id) => (id ? `${WORKER}/risk-assessment/${id}` : `${WORKER}/risk-assessment`),
@@ -77,6 +79,8 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   todo_due: () => `${ADMIN}/todo`,
   health_warning: () => `${ADMIN}/health`,
   health_checkup_due: () => `${ADMIN}/health/checkups`,
+  announcement: (n) =>
+    n.related_id ? `${ADMIN}/announcements?id=${n.related_id}` : `${ADMIN}/announcements`,
 };
 
 const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
@@ -91,6 +95,8 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   todo_due: () => `${WORKER}/tasks`,
   health_warning: () => `${WORKER}/daily-health-log`,
   health_checkup_due: () => `${WORKER}/daily-health-log`,
+  announcement: (n) =>
+    n.related_id ? `${WORKER}/today?announcement=${n.related_id}` : `${WORKER}/today`,
 };
 
 /** Map known admin paths into mobile equivalents when on phone shell. */
@@ -119,6 +125,7 @@ export function toMobileShellPath(path: string): string {
   if (p.startsWith("/tbm")) return `${WORKER}/tbm`;
   if (p.startsWith("/work-stop")) return `${WORKER}/work-stop`;
   if (p.startsWith("/workers")) return `${WORKER}/workers`;
+  if (p.startsWith("/announcements")) return `${WORKER}/today`;
   if (p.startsWith("/zone-events")) return `${WORKER}/alerts`;
   if (p.startsWith("/settings")) return `${WORKER}/account`;
   if (p === "/" || p === "") return `${WORKER}/menu`;

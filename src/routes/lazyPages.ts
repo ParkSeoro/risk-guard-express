@@ -94,6 +94,7 @@ export const LazySafetyAppointments = L(() => import("@/pages/SafetyAppointments
 export const LazyWorkStopRequests = L(() => import("@/pages/WorkStopRequests"));
 export const LazyContractorScorecard = L(() => import("@/pages/ContractorScorecard"));
 export const LazyAssessmentNotices = L(() => import("@/pages/AssessmentNotices"));
+export const LazyProjectAnnouncements = L(() => import("@/pages/ProjectAnnouncements"));
 export const LazySafetyCostValidation = L(() => import("@/pages/SafetyCostValidation"));
 export const LazyAITestEngine = L(() => import("@/pages/AITestEngine"));
 export const LazyAILogs = L(() => import("@/pages/AILogs"));

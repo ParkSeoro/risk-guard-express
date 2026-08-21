@@ -10204,6 +10204,21 @@ export type Database = {
         Args: { _code: string; _phone: string }
         Returns: Json
       }
+      update_project_announcement: {
+        Args: {
+          _announcement_id: string
+          _title: string
+          _body: string
+          _require_ack?: boolean | null
+          _expires_at?: string | null
+          _clear_expires?: boolean
+        }
+        Returns: Json
+      }
+      delete_project_announcement: {
+        Args: { _announcement_id: string }
+        Returns: Json
+      }
       withdraw_approval: {
         Args: { _entity_id: string; _entity_type: string; _reason?: string }
         Returns: Json

@@ -26,7 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Megaphone, Plus, Users, Ban } from "lucide-react";
+import { Megaphone, Plus, Users, Ban, Pencil, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 
 type Row = {
@@ -49,6 +49,14 @@ const MODE_LABEL: Record<AnnouncementCompanyMode, string> = {
   one_company: "특정 회사만",
 };
 
+function toLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function ProjectAnnouncements() {
   const { user } = useAuth();
   const access = useGlobalProjectAccess();
@@ -68,6 +76,7 @@ export default function ProjectAnnouncements() {
   const [ackCounts, setAckCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -78,6 +87,17 @@ export default function ProjectAnnouncements() {
   const [pickedCompany, setPickedCompany] = useState("");
   const [companies, setCompanies] = useState<{ id: string; name: string; type: string | null; parent_company_id?: string | null }[]>([]);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
+
+  const resetForm = () => {
+    setEditingId(null);
+    setTitle("");
+    setBody("");
+    setExpiresAt("");
+    setRequireAck(false);
+    setCompanyMode(modes[0] || "own_tree");
+    setPeople("all");
+    setPickedCompany("");
+  };
 
   const load = async () => {
     if (!projectId) {
@@ -121,7 +141,7 @@ export default function ProjectAnnouncements() {
   }, [projectId]);
 
   useEffect(() => {
-    if (!open || !projectId) return;
+    if (!open || !projectId || editingId) return;
     const audience: AnnouncementAudience = {
       companyMode,
       companyIds: pickedCompany ? [pickedCompany] : [],
@@ -134,10 +154,12 @@ export default function ProjectAnnouncements() {
         .select("user_id, role_new, company_id")
         .eq("project_id", projectId);
       const companyIds = resolveAudienceCompanyIds(audience, author, companies);
-      const ids = filterAnnouncementRecipients((data || []) as any[], companyIds, people).filter((id) => id !== user?.id);
+      const ids = filterAnnouncementRecipients((data || []) as any[], companyIds, people);
+      // Author is always included on publish
+      if (user?.id && !ids.includes(user.id)) ids.push(user.id);
       setPreviewCount(ids.length);
     })();
-  }, [open, projectId, companyMode, people, pickedCompany, companies, user?.id]);
+  }, [open, editingId, projectId, companyMode, people, pickedCompany, companies, user?.id]);
 
   const audienceDraft = (): AnnouncementAudience => ({
     companyMode,
@@ -146,37 +168,76 @@ export default function ProjectAnnouncements() {
     people,
   });
 
-  const handlePublish = async () => {
-    if (!projectId || !title.trim()) return;
-    const audience = audienceDraft();
-    const check = validateAnnouncementAudience(author, audience, companies);
-    if (!check.ok) {
-      toast({ title: check.error, variant: "destructive" });
-      return;
-    }
+  const openCreate = () => {
+    resetForm();
+    setOpen(true);
+  };
+
+  const openEdit = (row: Row) => {
+    setEditingId(row.id);
+    setTitle(row.title);
+    setBody(row.body || "");
+    setRequireAck(!!row.require_ack);
+    setExpiresAt(toLocalInput(row.expires_at));
+    setOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!title.trim()) return;
     setSaving(true);
-    const { data, error } = await supabase.rpc("publish_project_announcement", {
-      _project_id: projectId,
-      _title: title.trim(),
-      _body: body.trim(),
-      _audience: audience as any,
-      _require_ack: requireAck,
-      _expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
-      _author_company_id: access.userCompanyId,
-    });
-    setSaving(false);
-    if (error) {
-      toast({ title: "게시 실패", description: error.message, variant: "destructive" });
-      return;
+    try {
+      if (editingId) {
+        const { error } = await supabase.rpc("update_project_announcement", {
+          _announcement_id: editingId,
+          _title: title.trim(),
+          _body: body.trim(),
+          _require_ack: requireAck,
+          _expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+          _clear_expires: !expiresAt,
+        });
+        if (error) throw error;
+        toast({ title: "공지를 수정했습니다", description: "내용은 바뀌고, 푸시는 다시 나가지 않습니다." });
+      } else {
+        if (!projectId) return;
+        const audience = audienceDraft();
+        const check = validateAnnouncementAudience(author, audience, companies);
+        if (!check.ok) {
+          toast({ title: check.error, variant: "destructive" });
+          setSaving(false);
+          return;
+        }
+        const { data, error } = await supabase.rpc("publish_project_announcement", {
+          _project_id: projectId,
+          _title: title.trim(),
+          _body: body.trim(),
+          _audience: audience as any,
+          _require_ack: requireAck,
+          _expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+          _author_company_id: access.userCompanyId,
+        });
+        if (error) throw error;
+        const n = Number((data as any)?.recipient_count ?? previewCount ?? 0);
+        const pushable = Number((data as any)?.pushable_count ?? 0);
+        toast({
+          title: "공지를 게시했습니다",
+          description:
+            pushable > 0
+              ? `앱 푸시 가능 ${pushable}명 / 대상 계정 ${n}명 (작성자 포함). 앱 미설치는 알림함만.`
+              : `대상 계정 ${n}명. 앱 푸시 토큰이 없어 폰 알람은 안 갈 수 있습니다. 알림함에는 남습니다.`,
+        });
+      }
+      setOpen(false);
+      resetForm();
+      void load();
+    } catch (e: any) {
+      toast({
+        title: editingId ? "수정 실패" : "게시 실패",
+        description: e?.message || String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
     }
-    const n = (data as any)?.recipient_count ?? previewCount ?? 0;
-    toast({ title: "공지를 게시했습니다", description: `앱 계정 ${n}명에게 푸시가 나갑니다.` });
-    setOpen(false);
-    setTitle("");
-    setBody("");
-    setExpiresAt("");
-    setRequireAck(false);
-    void load();
   };
 
   const handleWithdraw = async (id: string) => {
@@ -186,6 +247,17 @@ export default function ProjectAnnouncements() {
       return;
     }
     toast({ title: "공지를 회수했습니다" });
+    void load();
+  };
+
+  const handleDelete = async (row: Row) => {
+    if (!window.confirm(`「${row.title}」 공지를 삭제할까요? 알림함 기록도 함께 지워집니다.`)) return;
+    const { error } = await supabase.rpc("delete_project_announcement", { _announcement_id: row.id });
+    if (error) {
+      toast({ title: "삭제 실패", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "공지를 삭제했습니다" });
     void load();
   };
 
@@ -204,7 +276,7 @@ export default function ProjectAnnouncements() {
           </p>
         </div>
         {canWrite && (
-          <Button size="sm" onClick={() => setOpen(true)}>
+          <Button size="sm" onClick={openCreate}>
             <Plus className="h-4 w-4 mr-1" /> 공지 작성
           </Button>
         )}
@@ -247,14 +319,33 @@ export default function ProjectAnnouncements() {
                 <CardContent className="space-y-2">
                   {n.body && <p className="text-sm whitespace-pre-wrap">{n.body}</p>}
                   <p className="text-xs text-muted-foreground">
-                    {summarizeAudience(n.audience || { companyMode: "project_all", companyIds: [], includeDescendants: true, people: "all" })}
+                    {summarizeAudience(
+                      n.audience || {
+                        companyMode: "project_all",
+                        companyIds: [],
+                        includeDescendants: true,
+                        people: "all",
+                      },
+                    )}
                     {" · "}게시 {format(new Date(n.published_at), "yyyy-MM-dd HH:mm")}
                     {n.expires_at && <> · 만료 {format(new Date(n.expires_at), "yyyy-MM-dd HH:mm")}</>}
                   </p>
-                  {!n.is_withdrawn && canWrite && (
-                    <Button size="sm" variant="outline" onClick={() => handleWithdraw(n.id)}>
-                      <Ban className="h-3.5 w-3.5 mr-1" /> 회수
-                    </Button>
+                  {canWrite && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {!n.is_withdrawn && (
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => openEdit(n)}>
+                            <Pencil className="h-3.5 w-3.5 mr-1" /> 수정
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleWithdraw(n.id)}>
+                            <Ban className="h-3.5 w-3.5 mr-1" /> 회수
+                          </Button>
+                        </>
+                      )}
+                      <Button size="sm" variant="destructive" onClick={() => void handleDelete(n)}>
+                        <Trash2 className="h-3.5 w-3.5 mr-1" /> 삭제
+                      </Button>
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -263,10 +354,16 @@ export default function ProjectAnnouncements() {
         </div>
       )}
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog
+        open={open}
+        onOpenChange={(v) => {
+          setOpen(v);
+          if (!v) resetForm();
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>현장 공지 작성</DialogTitle>
+            <DialogTitle>{editingId ? "현장 공지 수정" : "현장 공지 작성"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -277,41 +374,45 @@ export default function ProjectAnnouncements() {
               <Label>내용</Label>
               <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6} />
             </div>
-            <div>
-              <Label>회사 범위</Label>
-              <Select value={companyMode} onValueChange={(v) => setCompanyMode(v as AnnouncementCompanyMode)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {modes.map((m) => (
-                    <SelectItem key={m} value={m}>{MODE_LABEL[m]}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {(companyMode === "one_gc" || companyMode === "one_company") && (
-              <div>
-                <Label>대상 회사</Label>
-                <Select value={pickedCompany} onValueChange={setPickedCompany}>
-                  <SelectTrigger><SelectValue placeholder="선택" /></SelectTrigger>
-                  <SelectContent>
-                    {pickList.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            {!editingId && (
+              <>
+                <div>
+                  <Label>회사 범위</Label>
+                  <Select value={companyMode} onValueChange={(v) => setCompanyMode(v as AnnouncementCompanyMode)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {modes.map((m) => (
+                        <SelectItem key={m} value={m}>{MODE_LABEL[m]}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {(companyMode === "one_gc" || companyMode === "one_company") && (
+                  <div>
+                    <Label>대상 회사</Label>
+                    <Select value={pickedCompany} onValueChange={setPickedCompany}>
+                      <SelectTrigger><SelectValue placeholder="선택" /></SelectTrigger>
+                      <SelectContent>
+                        {pickList.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div>
+                  <Label>사람</Label>
+                  <Select value={people} onValueChange={(v) => setPeople(v as AnnouncementPeople)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">전원</SelectItem>
+                      <SelectItem value="managers">관리자</SelectItem>
+                      <SelectItem value="workers">근로자</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
             )}
-            <div>
-              <Label>사람</Label>
-              <Select value={people} onValueChange={(v) => setPeople(v as AnnouncementPeople)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전원</SelectItem>
-                  <SelectItem value="managers">관리자</SelectItem>
-                  <SelectItem value="workers">근로자</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <div className="flex items-center justify-between rounded-lg border px-3 py-2">
               <div>
                 <p className="text-sm font-medium">필독 (확인 전까지 앱에서 모달)</p>
@@ -323,15 +424,21 @@ export default function ProjectAnnouncements() {
               <Label>만료일시 (선택)</Label>
               <Input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
             </div>
-            {previewCount != null && (
+            {!editingId && previewCount != null && (
               <p className="text-xs text-muted-foreground">
-                앱에 로그인한 계정 <strong>{previewCount}명</strong>에게 푸시가 1회 나갑니다. 명부에만 있고 미가입인 인원은 제외됩니다.
+                앱 계정 약 <strong>{previewCount}명</strong>(작성자 포함)에게 푸시 1회.
+                앱을 설치·로그인한 폰만 알람이 울립니다.
               </p>
+            )}
+            {editingId && (
+              <p className="text-xs text-muted-foreground">수정은 내용만 바꿉니다. 푸시는 다시 나가지 않습니다.</p>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>취소</Button>
-            <Button onClick={handlePublish} disabled={saving || !title.trim()}>게시</Button>
+            <Button variant="outline" onClick={() => { setOpen(false); resetForm(); }}>취소</Button>
+            <Button onClick={() => void handleSave()} disabled={saving || !title.trim()}>
+              {editingId ? "저장" : "게시"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

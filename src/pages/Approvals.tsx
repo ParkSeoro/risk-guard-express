@@ -25,6 +25,7 @@ import {
   type ApprovalEntityType,
 } from "@/lib/approvalRules";
 import { filterRunsByCompanyScope } from "@/lib/companyDocScope";
+import { filterApprovalsKeepingFullDocumentTimeline } from "@/lib/approvalDocumentVisibility";
 import {
   permitPostStepKind,
   permitPostStepBadge,
@@ -230,13 +231,12 @@ const Approvals = () => {
       let approvalsData = a.data || [];
       let runsData = r.data || [];
 
-      // 시공사/협력사: 접근 가능 회사만. 발주처·마스터: 전체
+      // 시공사/협력사: 문서 단위로 스코프 — 보이는 문서의 결재 단계는 전부 유지(반려 사유 포함)
       if (accessibleCompanyIds !== null) {
-        const allow = new Set(accessibleCompanyIds);
-        approvalsData = approvalsData.filter((ap: any) =>
-          ap.approver_id === user?.id ||
-          (ap.company_id && allow.has(ap.company_id))
-        );
+        approvalsData = filterApprovalsKeepingFullDocumentTimeline(approvalsData, {
+          userId: user?.id,
+          accessibleCompanyIds,
+        });
         runsData = filterRunsByCompanyScope(runsData, {
           userId: user?.id,
           accessibleCompanyIds,

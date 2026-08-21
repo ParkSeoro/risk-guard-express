@@ -38,7 +38,7 @@ import {
   type PermitKindId,
 } from '@/lib/permitKinds';
 import type { PermitAiBriefing } from '@/lib/permitBriefing';
-import { syncPermitAssessmentLinks } from '@/lib/safetyWorkBundle';
+import { syncPermitAssessmentLinks, fetchPermitLinkedAssessments, discoverPermitDateValidRuns } from '@/lib/safetyWorkBundle';
 import { contactPhonesFromApprovals, mergeApprovalSignatures } from '@/lib/permitApprovalSignatures';
 import { syncPermitDateFromWorkStart, resolvePermitWorkDate } from '@/lib/permitWorkDate';
 import {
@@ -243,16 +243,23 @@ export default function WorkPermitDetail() {
       setProjectName((proj as any)?.name || '');
     }
 
-    if ((p as any).project_id && (p as any).permit_date) {
-      const { data: runs } = await supabase
-        .from('assessment_runs')
-        .select('id, period_label, status, start_date, end_date')
-        .eq('project_id', (p as any).project_id)
-        .eq('is_deleted', false)
-        .eq('status', '승인완료')
-        .lte('start_date', (p as any).permit_date)
-        .gte('end_date', (p as any).permit_date);
-      setLinkedRuns(runs || []);
+    // Linked RAs = document snapshot (not viewer-permission rediscovery).
+    // Draft with empty links: company-scoped date candidates only (for first attach).
+    try {
+      let runs = await fetchPermitLinkedAssessments(p as any);
+      const editable = isPermitEditable((p as any).status);
+      if (editable && runs.length === 0 && (p as any).project_id && (p as any).permit_date) {
+        runs = await discoverPermitDateValidRuns({
+          projectId: (p as any).project_id,
+          permitDate: (p as any).permit_date,
+          companyId: (p as any).company_id || userCompanyId,
+          userId: user?.id,
+        });
+      }
+      setLinkedRuns(runs);
+    } catch (e) {
+      console.warn('linked assessments load failed', e);
+      setLinkedRuns([]);
     }
 
     // Latest approval version rows for this permit
@@ -723,10 +730,15 @@ export default function WorkPermitDetail() {
 
       <Card className="print:hidden">
         <CardContent className="p-3 text-sm">
-          <span className="font-semibold mr-2">발행일 유효 위험성평가:</span>
+          <span className="font-semibold mr-2">연계 위험성평가:</span>
           {linkedRuns.length === 0
-            ? <span className="text-muted-foreground">해당 일자({permit.permit_date})에 유효한 승인완료 위험성평가가 없습니다.</span>
+            ? <span className="text-muted-foreground">이 허가서에 연계된 위험성평가가 없습니다.</span>
             : linkedRuns.map((r) => <Badge key={r.id} className="mr-1">{r.period_label}</Badge>)}
+          {canSave && (
+            <span className="text-[10px] text-muted-foreground ml-2">
+              (저장·상신 시점 스냅샷 · 열람자 권한으로 바뀌지 않음)
+            </span>
+          )}
         </CardContent>
       </Card>
 

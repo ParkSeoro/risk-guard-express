@@ -43,17 +43,28 @@ ALTER TABLE public.project_announcements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.project_announcement_recipients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.project_announcement_acks ENABLE ROW LEVEL SECURITY;
 
+-- Do NOT join recipients/acks from announcements (and vice versa) in RLS —
+-- that causes "infinite recursion detected in policy".
 DROP POLICY IF EXISTS "announcements_select" ON public.project_announcements;
 CREATE POLICY "announcements_select"
   ON public.project_announcements FOR SELECT TO authenticated
   USING (
     public.is_master(auth.uid())
     OR public.is_project_member(auth.uid(), project_id)
-    OR EXISTS (
-      SELECT 1 FROM public.project_announcement_recipients r
-      WHERE r.announcement_id = project_announcements.id AND r.user_id = auth.uid()
-    )
   );
+
+CREATE OR REPLACE FUNCTION public.announcement_project_id(_announcement_id uuid)
+RETURNS uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+  SELECT project_id FROM public.project_announcements WHERE id = _announcement_id;
+$$;
+
+REVOKE ALL ON FUNCTION public.announcement_project_id(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.announcement_project_id(uuid) TO authenticated, service_role;
 
 DROP POLICY IF EXISTS "announcement_recipients_select" ON public.project_announcement_recipients;
 CREATE POLICY "announcement_recipients_select"
@@ -61,11 +72,7 @@ CREATE POLICY "announcement_recipients_select"
   USING (
     user_id = auth.uid()
     OR public.is_master(auth.uid())
-    OR EXISTS (
-      SELECT 1 FROM public.project_announcements a
-      WHERE a.id = announcement_id
-        AND (a.created_by = auth.uid() OR public.is_project_member(auth.uid(), a.project_id))
-    )
+    OR public.is_project_member(auth.uid(), public.announcement_project_id(announcement_id))
   );
 
 DROP POLICY IF EXISTS "announcement_acks_select" ON public.project_announcement_acks;
@@ -74,11 +81,7 @@ CREATE POLICY "announcement_acks_select"
   USING (
     user_id = auth.uid()
     OR public.is_master(auth.uid())
-    OR EXISTS (
-      SELECT 1 FROM public.project_announcements a
-      WHERE a.id = announcement_id
-        AND (a.created_by = auth.uid() OR public.is_project_member(auth.uid(), a.project_id))
-    )
+    OR public.is_project_member(auth.uid(), public.announcement_project_id(announcement_id))
   );
 
 GRANT SELECT ON public.project_announcements TO authenticated;

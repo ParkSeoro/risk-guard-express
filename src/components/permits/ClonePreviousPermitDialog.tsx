@@ -35,7 +35,7 @@ export default function ClonePreviousPermitDialog({
       setLoading(true);
       let q: any = supabase
         .from('work_permits' as any)
-        .select('id, permit_date, work_description, work_location, permit_type, status, form_data')
+        .select('id, permit_date, work_description, location, permit_type, status, form_data')
         .eq('project_id', projectId)
         .eq('is_deleted', false)
         .eq('permit_type', permitType)
@@ -59,7 +59,7 @@ export default function ClonePreviousPermitDialog({
     const { error } = await supabase.from('work_permits' as any).update({
       form_data: cleanForm,
       work_description: src.work_description || null,
-      work_location: src.work_location || null,
+      location: src.location || src.form_data?.work_location || null,
     }).eq('id', currentPermitId);
     if (error) return toast({ title: '복제 실패', description: error.message, variant: 'destructive' });
     toast({ title: '전회차 내용을 복제했습니다.', description: '서명·결재·문서번호는 초기화 상태로 유지됩니다.' });
@@ -93,7 +93,7 @@ export default function ClonePreviousPermitDialog({
                     <Badge variant="outline">{p.status}</Badge>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {p.permit_date} · {p.work_location || '-'}
+                    {p.permit_date} · {p.location || p.form_data?.work_location || '-'}
                   </p>
                 </div>
                 <Button size="sm" onClick={() => apply(p)}>

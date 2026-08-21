@@ -70,7 +70,7 @@ export default function MobileApprovalDetail() {
         setPreviewLoading(true);
         const { data: p } = await supabase
           .from("work_permits" as any)
-          .select("id, ai_briefing, work_name, work_description, location, work_location, permit_date, status, form_data, extension_until, permit_kinds, permit_type, contractor_company, personnel_count, signatures")
+          .select("id, ai_briefing, work_name, work_description, location, permit_date, status, form_data, extension_until, permit_kinds, permit_type, contractor_company, personnel_count, signatures")
           .eq("id", found.entity_id)
           .maybeSingle();
         setPermitRow(p || null);

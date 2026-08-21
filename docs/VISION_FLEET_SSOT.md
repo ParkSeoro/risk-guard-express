@@ -35,10 +35,12 @@ Gateway가 호출하는 제어 API:
 페어링:
 
 - `POST /v1/gateway-device-authorizations`
+- `POST /v1/gateway-device-authorizations/lookup` (사람 JWT, 코드 → id만)
 - `POST /v1/gateway-device-authorizations/{id}/poll`
-- `POST /v1/gateway-device-authorizations/{id}/approve` (사람 JWT)
+- `POST /v1/gateway-device-authorizations/{id}/approve` (사람 JWT, 관제 롤만)
 - `POST /v1/gateway-bootstrap/claim`
-- `POST /v1/provisioning-kits` (사람 JWT)
+- `POST /v1/provisioning-kits` (사람 JWT, 관제 롤만)
+- `POST /v1/gateway-pairings/claim` → **410** (레거시 폐기)
 
 사람 UI(Supabase RLS SELECT + 일부 UPDATE):
 

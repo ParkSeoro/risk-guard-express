@@ -101,16 +101,23 @@ async function audit(
   });
 }
 
-async function assertProjectMember(userSb: SupabaseClient, userId: string, projectId: string) {
-  const { data: roles } = await userSb.from("user_roles").select("role").eq("user_id", userId).eq("role", "master");
-  if (roles?.length) return true;
-  const { data: mem } = await userSb
+const VISION_OPERATOR_ROLES = ["project_admin", "safety_manager", "site_manager"];
+
+async function assertVisionOperator(sb: SupabaseClient, userId: string, projectId: string) {
+  const { data: master } = await sb
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("role", "master")
+    .maybeSingle();
+  if (master) return true;
+  const { data: mem } = await sb
     .from("project_members")
-    .select("id")
+    .select("role_new")
     .eq("user_id", userId)
     .eq("project_id", projectId)
     .maybeSingle();
-  return !!mem;
+  return VISION_OPERATOR_ROLES.includes(String(mem?.role_new || ""));
 }
 
 function enrollmentBundle(opts: {
@@ -211,6 +218,34 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (req.method === "POST" && path === "/v1/gateway-device-authorizations/lookup") {
+      const jwt = bearer(req);
+      if (!jwt) return json({ error: "auth required" }, 401);
+      const userSb = userClient(jwt);
+      const { data: userData } = await userSb.auth.getUser(jwt);
+      if (!userData?.user) return json({ error: "invalid session" }, 401);
+      const body = await req.json().catch(() => ({}));
+      const code = String((body as { user_code?: string }).user_code || "").trim();
+      if (!code) return json({ error: "user_code required" }, 400);
+      const { data } = await sb
+        .from("vision_device_authorizations")
+        .select("id, status, expires_at")
+        .eq("user_code", code)
+        .maybeSingle();
+      if (!data) return json({ error: "not found" }, 404);
+      return json({ id: data.id, status: data.status, expires_at: data.expires_at });
+    }
+
+    if (req.method === "POST" && path === "/v1/gateway-pairings/claim") {
+      return json(
+        {
+          error: "retired",
+          message: "Use QR POST /v1/gateway-device-authorizations or kit POST /v1/gateway-bootstrap/claim",
+        },
+        410,
+      );
+    }
+
     const poll = path.match(/^\/v1\/gateway-device-authorizations\/([^/]+)\/poll$/);
     if (req.method === "POST" && poll) {
       const id = poll[1];
@@ -222,7 +257,12 @@ Deno.serve(async (req) => {
       }
       if (data.status === "pending") return json({ status: "approval_pending" }, 202);
       if (data.status !== "approved" || !data.enrollment) return json({ error: "rejected" }, 400);
-      return json(data.enrollment);
+      const enrollment = { ...(data.enrollment as Record<string, unknown>) };
+      if (data.one_time_access_token) {
+        enrollment.access_token = data.one_time_access_token;
+        await sb.from("vision_device_authorizations").update({ one_time_access_token: null }).eq("id", id);
+      }
+      return json(enrollment);
     }
 
     const approve = path.match(/^\/v1\/gateway-device-authorizations\/([^/]+)\/approve$/);
@@ -235,7 +275,7 @@ Deno.serve(async (req) => {
       const body = await req.json();
       const projectId = String(body.project_id || "");
       if (!projectId) return json({ error: "project_id required" }, 400);
-      const ok = await assertProjectMember(userSb, userData.user.id, projectId);
+      const ok = await assertVisionOperator(sb, userData.user.id, projectId);
       if (!ok) return json({ error: "forbidden" }, 403);
       const id = approve[1];
       const { data: authz } = await sb.from("vision_device_authorizations").select("*").eq("id", id).maybeSingle();
@@ -264,7 +304,6 @@ Deno.serve(async (req) => {
         tokenUrl: `${fleetBase(req)}/v1/oauth/token`,
         clientId: gatewayExternal,
       });
-      bundle.access_token = accessToken;
       await sb
         .from("vision_device_authorizations")
         .update({
@@ -273,6 +312,7 @@ Deno.serve(async (req) => {
           approved_by: userData.user.id,
           gateway_id: gw.id,
           enrollment: bundle,
+          one_time_access_token: accessToken,
         })
         .eq("id", id);
       await audit(sb, {
@@ -294,7 +334,7 @@ Deno.serve(async (req) => {
       const body = await req.json();
       const projectId = String(body.project_id || "");
       if (!projectId) return json({ error: "project_id required" }, 400);
-      const ok = await assertProjectMember(userSb, userData.user.id, projectId);
+      const ok = await assertVisionOperator(sb, userData.user.id, projectId);
       if (!ok) return json({ error: "forbidden" }, 403);
       const bootstrap = randomToken();
       const payload = {
@@ -339,13 +379,16 @@ Deno.serve(async (req) => {
       const hash = await sha256Hex(token);
       const { data: kitRow } = await sb
         .from("vision_provisioning_kits")
-        .select("*")
+        .update({
+          claimed_at: new Date().toISOString(),
+          claimed_by_fingerprint: body.device_fingerprint || null,
+        })
         .eq("bootstrap_token_hash", hash)
         .is("claimed_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .select("*")
         .maybeSingle();
-      if (!kitRow || new Date(kitRow.expires_at).getTime() < Date.now()) {
-        return json({ error: "kit rejected" }, 422);
-      }
+      if (!kitRow) return json({ error: "kit rejected" }, 422);
       const gatewayExternal = crypto.randomUUID();
       const accessToken = randomToken();
       const { data: gw, error: ge } = await sb
@@ -362,10 +405,6 @@ Deno.serve(async (req) => {
         .select("*")
         .single();
       if (ge) return json({ error: ge.message }, 400);
-      await sb
-        .from("vision_provisioning_kits")
-        .update({ claimed_at: new Date().toISOString(), claimed_by_fingerprint: body.device_fingerprint || null })
-        .eq("id", kitRow.id);
       const bundle = enrollmentBundle({
         gatewayId: gatewayExternal,
         projectId: kitRow.project_id,
@@ -405,17 +444,31 @@ Deno.serve(async (req) => {
         .eq("id", auth.gateway.id);
       for (const cam of cameras) {
         if (!cam?.camera_id) continue;
-        await sb.from("vision_cameras").upsert(
-          {
+        const cameraId = String(cam.camera_id);
+        const { data: existing } = await sb
+          .from("vision_cameras")
+          .select("id")
+          .eq("gateway_id", auth.gateway.id)
+          .eq("camera_id", cameraId)
+          .maybeSingle();
+        if (existing) {
+          await sb
+            .from("vision_cameras")
+            .update({
+              health_state: cam.state || "unknown",
+              last_frame_at: cam.last_frame_at || null,
+            })
+            .eq("id", existing.id);
+        } else {
+          await sb.from("vision_cameras").insert({
             gateway_id: auth.gateway.id,
             project_id: auth.gateway.project_id,
-            camera_id: String(cam.camera_id),
-            name: String(cam.camera_id),
+            camera_id: cameraId,
+            name: String(cam.name || cameraId),
             health_state: cam.state || "unknown",
             last_frame_at: cam.last_frame_at || null,
-          },
-          { onConflict: "gateway_id,camera_id" },
-        );
+          });
+        }
       }
       return json({ ok: true });
     }
@@ -568,7 +621,7 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (!cam) return json({ error: "camera not found" }, 404);
       const projectId = cam.project_id;
-      const member = await assertProjectMember(userSb, userData.user.id, projectId);
+      const member = await assertVisionOperator(sb, userData.user.id, projectId);
       if (!member) return json({ error: "forbidden" }, 403);
       const expires = new Date(Date.now() + 5 * 60_000).toISOString();
       const { data: grant, error } = await sb

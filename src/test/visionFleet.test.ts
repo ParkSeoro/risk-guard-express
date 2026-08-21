@@ -10,6 +10,9 @@ describe("vision fleet client helpers", () => {
   it("keeps /v1 prefix under the vision-fleet function", () => {
     expect(visionFleetFnPath("/v1/stream-grants")).toBe("vision-fleet/v1/stream-grants");
     expect(visionFleetFnPath("stream-grants")).toBe("vision-fleet/v1/stream-grants");
+    expect(visionFleetFnPath("/v1/gateway-device-authorizations/lookup")).toBe(
+      "vision-fleet/v1/gateway-device-authorizations/lookup",
+    );
   });
 
   it("issues a 5 minute live_substream grant", () => {

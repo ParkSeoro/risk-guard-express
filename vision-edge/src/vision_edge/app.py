@@ -287,6 +287,11 @@ def create_app(config: LocalConfig, config_path: Path | None = None) -> FastAPI:
                 )
         except httpx.HTTPError as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"SafeNex pairing request failed: {exc}") from exc
+        if response.status_code == 410:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="레거시 페어링 코드는 폐기되었습니다. QR 온보딩 또는 설치 키트를 사용하세요.",
+            )
         if response.status_code >= 400:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

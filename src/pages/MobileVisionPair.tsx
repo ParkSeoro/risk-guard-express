@@ -20,18 +20,30 @@ export default function MobileVisionPair() {
 
   useEffect(() => {
     if (!code) return;
-    supabase
-      .from("vision_device_authorizations" as any)
-      .select("id, status, expires_at")
-      .eq("user_code", code)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (error || !data) {
-          toast.error("승인 코드를 찾을 수 없습니다");
-          return;
-        }
-        setAuthzId((data as any).id);
+    void (async () => {
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
+      if (!token) {
+        toast.error("로그인이 필요합니다");
+        return;
+      }
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vision-fleet/v1/gateway-device-authorizations/lookup`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ user_code: code }),
       });
+      const j = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
+      if (!res.ok || !j.id) {
+        toast.error(j.error || "승인 코드를 찾을 수 없습니다");
+        return;
+      }
+      setAuthzId(j.id);
+    })();
   }, [code]);
 
   const approve = async () => {
@@ -74,6 +86,7 @@ export default function MobileVisionPair() {
             </p>
             <p className="text-xs text-muted-foreground">
               현장 PC의 QR을 스캔한 화면입니다. 이 프로젝트에 Gateway를 연결합니다. NVR 암호는 전송되지 않습니다.
+              승인은 본사·현장소장·안전관리자·프로젝트 관리자만 할 수 있습니다.
             </p>
             {!user && <p className="text-xs text-destructive">로그인이 필요합니다.</p>}
             {!projectId && <p className="text-xs text-destructive">모바일에서 현장을 선택하세요.</p>}

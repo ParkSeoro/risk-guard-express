@@ -83,9 +83,23 @@ export async function fetchAssessmentPrintHtml(runId: string): Promise<string> {
   return preparePrintHtmlForPreview(String(html), A4_LANDSCAPE_PX);
 }
 
-export async function fetchWorkPlanPrintHtml(planId: string): Promise<string> {
+export async function fetchWorkPlanPrintHtml(
+  planId: string,
+  opts?: { includeAttachmentImages?: boolean },
+): Promise<string> {
+  const includeAttachmentImages = opts?.includeAttachmentImages !== false;
+  let renderedAttachments: Record<string, string[]> = {};
+  if (includeAttachmentImages) {
+    const { data: atts } = await supabase
+      .from("work_plan_attachments")
+      .select("file_url, mime_type")
+      .eq("work_plan_id", planId)
+      .eq("is_deleted", false);
+    const { renderAttachmentsToImages } = await import("@/lib/pdfRender");
+    renderedAttachments = await renderAttachmentsToImages(atts || []);
+  }
   const resp = await supabase.functions.invoke("generate-workplan-pdf", {
-    body: { planId, renderedAttachments: {} },
+    body: { planId, renderedAttachments },
   });
   const html = resp.data?.html;
   if (resp.error || !html || String(html).length < 100) {

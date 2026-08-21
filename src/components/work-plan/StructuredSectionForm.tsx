@@ -5,6 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2 } from 'lucide-react';
+import { methodStepsForPrint } from '@/lib/workPlanMethodSection';
 
 interface StructuredSectionFormProps {
   sectionKey: string;
@@ -105,7 +106,15 @@ function EquipmentForm({ data, onChange }: { data: any; onChange: (d: any) => vo
 }
 
 function MethodForm({ data, onChange }: { data: any; onChange: (d: any) => void }) {
-  const steps = Array.isArray(data) ? data : [{ order: 1, description: '', safety_measure: '' }];
+  // Recover corrupted `{ "0": step, notes }` objects from legal-calculator append bug.
+  const steps = (() => {
+    if (Array.isArray(data) && data.length) return data;
+    const recovered = methodStepsForPrint(
+      data && typeof data === "object" ? JSON.stringify(data) : "[]",
+    );
+    if (recovered.length) return recovered;
+    return [{ order: 1, description: "", safety_measure: "" }];
+  })();
   const update = (idx: number, k: string, val: string) => {
     const next = steps.map((s: any, i: number) => i === idx ? { ...s, [k]: val } : s);
     onChange(next);
@@ -405,7 +414,12 @@ export default function StructuredSectionForm({ sectionKey, workType, value, onC
     case 'equipment':
       return <EquipmentForm data={parsed} onChange={handleChange} />;
     case 'method':
-      return <MethodForm data={parsed} onChange={handleChange} />;
+      return (
+        <MethodForm
+          data={methodStepsForPrint(value)}
+          onChange={handleChange}
+        />
+      );
     case 'risk':
       return <RiskForm data={parsed} onChange={handleChange} />;
     case 'signal':

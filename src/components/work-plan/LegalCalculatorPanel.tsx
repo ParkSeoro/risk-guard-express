@@ -153,7 +153,7 @@ function CraneCalc({ onAppend }: { onAppend: (t: string) => void }) {
       </div>
       <MissingGuide items={missing} />
       {missing.length === 0 && <ResultBlock result={r} />}
-      <SaveButton missing={missing} onSave={() => { onAppend(resultToText('크레인 양중 안전율', r)); toast({ title: '작업방법 섹션에 추가됨' }); }} />
+      <SaveButton missing={missing} onSave={() => { onAppend(resultToText('크레인 양중 안전율', r)); toast({ title: '작업방법에 참고로 추가됨', description: '리깅플랜 안전율과는 별도입니다. 결재 배너는 리깅플랜 값을 씁니다.' }); }} />
     </div>
   );
 }

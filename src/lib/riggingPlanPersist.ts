@@ -12,7 +12,9 @@ export function isRiggingPlanReady(rigging: RiggingPlanRow | null | undefined): 
   const load = Number(rigging.load_weight) || 0;
   const radius = Number(rigging.working_radius) || 0;
   const crane = String(rigging.crane_model || rigging.equipment_name || "").trim();
-  return load > 0 && radius > 0 && crane.length > 0;
+  const capacity = Number(rigging.crane_capacity) || Number(rigging.rated_capacity) || 0;
+  const safety = Number(rigging.safety_factor) || 0;
+  return load > 0 && radius > 0 && crane.length > 0 && capacity > 0 && safety > 0;
 }
 
 export function buildRiggingPlanPayload(

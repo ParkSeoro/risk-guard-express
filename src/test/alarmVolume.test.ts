@@ -21,15 +21,22 @@ describe("alarm haptics + volume helpers", () => {
   });
 });
 
-describe("critical alerts payload shape (dispatch contract)", () => {
-  it("marks danger_zone_entry as critical candidate", () => {
-    const n = { type: "danger_zone_entry", severity: "high" };
-    const isCriticalAlarm =
-      n.type === "danger_zone_entry" ||
+/** Mirrors dispatch-notification-push isCriticalAlarm (keep in sync). */
+function isCriticalAlarm(n: { type?: string | null; severity?: string | null }) {
+  return (
+    n.type !== "announcement" &&
+    n.type !== "approval_request" &&
+    n.type !== "approval_result" &&
+    (n.type === "danger_zone_entry" ||
       n.severity === "high" ||
       n.severity === "critical" ||
-      n.severity === "danger";
-    expect(isCriticalAlarm).toBe(true);
+      n.severity === "danger")
+  );
+}
+
+describe("critical alerts payload shape (dispatch contract)", () => {
+  it("marks danger_zone_entry as critical candidate", () => {
+    expect(isCriticalAlarm({ type: "danger_zone_entry", severity: "high" })).toBe(true);
     const apnsSound = {
       critical: 1,
       name: "siren.wav",
@@ -37,5 +44,11 @@ describe("critical alerts payload shape (dispatch contract)", () => {
     };
     expect(apnsSound.critical).toBe(1);
     expect(apnsSound.volume).toBe(1.0);
+  });
+
+  it("never sirens field announcements (even if severity was high)", () => {
+    expect(isCriticalAlarm({ type: "announcement", severity: "high" })).toBe(false);
+    expect(isCriticalAlarm({ type: "announcement", severity: null })).toBe(false);
+    expect(isCriticalAlarm({ type: "approval_request", severity: "high" })).toBe(false);
   });
 });

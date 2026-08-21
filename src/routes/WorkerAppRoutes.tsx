@@ -55,6 +55,8 @@ export default function WorkerAppRoutes() {
               <Route path="consent" element={<Navigate to="/consent" replace />} />
               <Route path="today" element={<P.LazyMobileToday />} />
               <Route path="announcements" element={<P.LazyMobileAnnouncements />} />
+              <Route path="vision-pair" element={<P.LazyMobileVisionPair />} />
+              <Route path="vision-events" element={<P.LazyMobileVisionEvents />} />
               <Route path="tasks" element={<P.LazyMobileTasks />} />
               <Route path="docs" element={<P.LazyMobileDocs />} />
               <Route path="more" element={<P.LazyMobileMore />} />

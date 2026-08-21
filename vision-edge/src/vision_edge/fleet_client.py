@@ -10,6 +10,7 @@ import asyncio
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -51,18 +52,24 @@ class FleetClient:
         ca_bundle_path: str | None,
         token_url: str | None,
         client_id: str | None,
+        access_token_path: str | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/") if base_url else None
         self._gateway_id = gateway_id
         self._token_url = token_url
         self._client_id = client_id
-        self._has_mtls_credentials = bool(certificate_path and private_key_path and ca_bundle_path)
+        self._access_token_path = Path(access_token_path).expanduser() if access_token_path else None
+        self._has_mtls_credentials = bool(certificate_path and private_key_path) and not _is_placeholder_pem(
+            certificate_path
+        )
         self._cached_token: CachedToken | None = None
         self._lock = asyncio.Lock()
         cert: tuple[str, str] | None = None
-        if certificate_path and private_key_path:
+        if certificate_path and private_key_path and self._has_mtls_credentials:
             cert = (certificate_path, private_key_path)
-        verify: bool | str = ca_bundle_path if ca_bundle_path else True
+        verify: bool | str = True
+        if ca_bundle_path and not _is_placeholder_pem(ca_bundle_path):
+            verify = ca_bundle_path
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=8.0, read=20.0, write=20.0, pool=8.0),
             cert=cert,
@@ -72,13 +79,22 @@ class FleetClient:
 
     @property
     def configured(self) -> bool:
-        return bool(self._base_url and self._gateway_id and self._token_url and self._client_id and self._has_mtls_credentials)
+        return bool(self._base_url and self._gateway_id and (self._static_token() or (self._token_url and self._client_id)))
+
+    def _static_token(self) -> str | None:
+        env = os.getenv("VISION_EDGE_ACCESS_TOKEN")
+        if env:
+            return env
+        if self._access_token_path and self._access_token_path.is_file():
+            value = self._access_token_path.read_text(encoding="utf-8").strip()
+            return value or None
+        return None
 
     async def close(self) -> None:
         await self._client.aclose()
 
     async def _access_token(self) -> str:
-        static_token = os.getenv("VISION_EDGE_ACCESS_TOKEN")
+        static_token = self._static_token()
         if static_token:
             return static_token
         if self._cached_token and self._cached_token.valid:
@@ -195,6 +211,38 @@ class FleetClient:
             f"/v1/gateways/{self._gateway_id}/command-acks",
             json=acknowledgement.model_dump(mode="json"),
         )
+
+    async def fetch_stream_grants(self) -> list[dict[str, Any]]:
+        response = await self._request("GET", f"/v1/gateways/{self._gateway_id}/stream-grants")
+        try:
+            payload = response.json()
+        except ValueError:
+            return []
+        data = payload.get("data", payload)
+        return data if isinstance(data, list) else []
+
+    async def announce_relay_session(self, grant_id: str, publish_url: str) -> dict[str, Any] | None:
+        response = await self._request(
+            "POST",
+            f"/v1/gateways/{self._gateway_id}/relay-sessions",
+            json={"grant_id": grant_id, "publish_url": publish_url, "status": "announced"},
+        )
+        try:
+            payload = response.json()
+        except ValueError:
+            return None
+        data = payload.get("data", payload)
+        return data if isinstance(data, dict) else None
+
+
+def _is_placeholder_pem(path: str | None) -> bool:
+    if not path:
+        return True
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return True
+    return "DEVONLY" in text or "VisionFleetDevOnly" in text
 
 
 def _request_id() -> str:

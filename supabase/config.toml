@@ -18,3 +18,7 @@ verify_jwt = false
 # DB pg_net trigger sends only X-Push-Trigger-Secret (no Authorization JWT).
 [functions.dispatch-notification-push]
 verify_jwt = false
+
+# Gateway QR start / kit claim are device calls without a user JWT. Auth is inside the function.
+[functions.vision-fleet]
+verify_jwt = false

@@ -233,6 +233,7 @@ class DesiredState(BaseModel):
     model_digest: str | None = None
     rollout_stage: Literal["canary", "pilot", "regional", "nationwide"]
     allow_activation: bool = False
+    alarm_interlock_enabled: bool = False
     signature: str = Field(min_length=1)
     key_id: str = Field(min_length=1)
 
@@ -249,6 +250,9 @@ class GatewayCommand(BaseModel):
         "model.stage",
         "model.activate",
         "alarm.test",
+        "siren.play",
+        "pa.play",
+        "alarm.activate",
     ]
     target_tenant_id: str
     target_site_id: str

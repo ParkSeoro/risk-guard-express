@@ -63,6 +63,8 @@ function PreviewInnerRoutes() {
           <Route path="permits" element={<P.LazyMobilePermits />} />
           <Route path="incident" element={<P.LazyMobileIncident />} />
           <Route path="scan" element={<P.LazyMobileScan />} />
+          <Route path="vision-pair" element={<P.LazyMobileVisionPair />} />
+          <Route path="vision-events" element={<P.LazyMobileVisionEvents />} />
           <Route path="daily-health-log" element={<P.LazyMobileDailyHealthLog />} />
           <Route path="work-stop" element={<P.LazyMobileWorkStop />} />
           <Route path="geofence-drop" element={<P.LazyMobileGeofenceDrop />} />

@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 from uuid import getnode, uuid4
 
 import httpx
@@ -32,7 +33,7 @@ from .ai import Detection
 from .config import save_config
 from .fleet_client import FleetClient
 from .models import CameraConfig, LocalConfig, NvrConfig, UpdateManifest
-from .nvr import CameraMonitor, FfprobeStreamProbe, MjpegPreview, OnvifDiscoverer
+from .nvr import CameraMonitor, FfprobeStreamProbe, MjpegPreview, OnvifDiscoverer, OnvifMediaClient
 from .runtime import EdgeRuntime
 from .secret_store import SecretStore
 from .security import MasterCommandVerifier
@@ -81,8 +82,24 @@ class BootstrapKitClaimRequest(BaseModel):
     device_name: str | None = Field(default=None, min_length=2, max_length=120)
 
 
+class OnvifMediaRequest(BaseModel):
+    endpoint: str = Field(min_length=8, max_length=2048)
+    username: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=1, max_length=256)
+    profile_token: str | None = Field(default=None, max_length=128)
+    camera_id: str | None = Field(default=None, min_length=3, max_length=128)
+    nvr_id: str | None = Field(default=None, min_length=3, max_length=128)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+
+
 class OnvifDiscoveryRequest(BaseModel):
     timeout_seconds: int = Field(default=3, ge=1, le=8)
+
+
+def _redact_stream_host(uri: str) -> str:
+    parsed = urlparse(uri)
+    host = parsed.hostname or "unknown"
+    return f"{parsed.scheme or 'rtsp'}://[redacted]@{host}{parsed.path or ''}"
 
 
 def build_runtime(config: LocalConfig) -> EdgeRuntime:
@@ -101,6 +118,7 @@ def build_runtime(config: LocalConfig) -> EdgeRuntime:
         ca_bundle_path=config.ca_bundle_path,
         token_url=str(config.fleet_token_url) if config.fleet_token_url else None,
         client_id=config.fleet_client_id,
+        access_token_path=str(state_dir / "credentials" / "access.token"),
     )
     verifier = MasterCommandVerifier(
         config.identity,
@@ -223,6 +241,11 @@ def create_app(config: LocalConfig, config_path: Path | None = None) -> FastAPI:
         ):
             path.write_text(content, encoding="utf-8")
             os.chmod(path, mode)
+        access_token = enrollment.get("access_token")
+        if isinstance(access_token, str) and access_token:
+            token_path = credential_dir / "access.token"
+            token_path.write_text(access_token, encoding="utf-8")
+            os.chmod(token_path, 0o600)
 
         fleet_url = TypeAdapter(HttpUrl).validate_python(fleet_base_url)
         config.identity.gateway_id = values["gateway_id"]
@@ -422,6 +445,54 @@ def create_app(config: LocalConfig, config_path: Path | None = None) -> FastAPI:
             "scope": "local-lan-only",
             "candidates": [candidate.as_dict() for candidate in candidates],
             "next_step": "select a discovered NVR and enter its administrator credential once to enumerate camera profiles",
+        }
+
+    @app.post("/api/v1/setup/onvif/profiles", tags=["onboarding"], dependencies=[Depends(local_admin_guard)])
+    async def onvif_profiles(payload: OnvifMediaRequest) -> dict[str, object]:
+        try:
+            profiles = await asyncio.to_thread(
+                OnvifMediaClient().get_profiles,
+                payload.endpoint,
+                payload.username,
+                payload.password,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        return {"scope": "local-lan-only", "profiles": profiles}
+
+    @app.post("/api/v1/setup/onvif/stream-uri", tags=["onboarding"], dependencies=[Depends(local_admin_guard)])
+    async def onvif_stream_uri(payload: OnvifMediaRequest) -> dict[str, object]:
+        if not payload.profile_token:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="profile_token is required")
+        try:
+            uri = await asyncio.to_thread(
+                OnvifMediaClient().get_stream_uri,
+                payload.endpoint,
+                payload.username,
+                payload.password,
+                payload.profile_token,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        stored = False
+        if payload.camera_id and payload.nvr_id and payload.name:
+            secret_ref = f"camera:{payload.camera_id}:stream"
+            runtime.secret_store.put(secret_ref, uri)
+            if not any(item.camera_id == payload.camera_id for item in config.cameras):
+                config.cameras.append(
+                    CameraConfig(
+                        camera_id=payload.camera_id,
+                        name=payload.name,
+                        nvr_id=payload.nvr_id,
+                        stream_url_secret_ref=secret_ref,
+                    )
+                )
+                persist_local_config()
+            stored = True
+        return {
+            "scope": "local-lan-only",
+            "stream_url_stored": "encrypted-local-store" if stored else None,
+            "stream_host": _redact_stream_host(uri),
         }
 
     @app.post("/api/v1/setup/nvrs", tags=["setup"], dependencies=[Depends(local_admin_guard)])

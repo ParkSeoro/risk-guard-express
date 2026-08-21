@@ -8,6 +8,7 @@ Gateway는 NVR 설정을 쓰지 않으며, ffprobe를 통해 현장 스트림의
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import socket
 import time
@@ -18,6 +19,8 @@ from datetime import UTC, datetime
 from typing import Protocol
 from urllib.parse import urlparse
 from uuid import uuid4
+
+import httpx
 
 from .models import CameraConfig, CameraHealth
 from .secret_store import SecretStore, SecretStoreError
@@ -65,6 +68,32 @@ class FfprobeStreamProbe:
         except (IndexError, ValueError, TypeError, json.JSONDecodeError):
             return StreamProbeResult("degraded", None, "video stream metadata is incomplete")
         return StreamProbeResult("online", fps, None)
+
+
+def is_lan_host(host: str) -> bool:
+    """True only for loopback, RFC1918, or link-local addresses."""
+    candidate = host.strip().strip("[]")
+    if candidate in {"localhost", "localhost.localdomain"}:
+        return True
+    try:
+        ip = ipaddress.ip_address(candidate)
+    except ValueError:
+        try:
+            infos = socket.getaddrinfo(candidate, None, socket.AF_INET)
+            ip = ipaddress.ip_address(infos[0][4][0])
+        except (OSError, IndexError, TypeError):
+            return False
+    return bool(ip.is_private or ip.is_loopback or ip.is_link_local)
+
+
+def assert_lan_url(url: str) -> str:
+    parsed = urlparse(url)
+    host = parsed.hostname
+    if not host or not is_lan_host(host):
+        raise ValueError("ONVIF media requests are limited to private LAN addresses")
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("ONVIF endpoint must be http or https")
+    return url
 
 
 def _parse_rate(value: object) -> float | None:
@@ -127,6 +156,8 @@ class OnvifDiscoverer:
                 if not parsed.hostname:
                     continue
                 port = parsed.port or (443 if parsed.scheme == "https" else 80)
+                if not is_lan_host(parsed.hostname):
+                    continue
                 candidates.append(
                     OnvifDiscoveryCandidate(
                         endpoint=endpoint,
@@ -152,6 +183,76 @@ class OnvifDiscoverer:
                 for candidate in self._parse_response(response):
                     discovered[candidate.endpoint] = candidate
         return sorted(discovered.values(), key=lambda item: (item.host, item.port, item.endpoint))
+
+
+class OnvifMediaClient:
+    """GetProfiles / GetStreamUri. Credentials never leave this process."""
+
+    def get_profiles(self, endpoint: str, username: str, password: str) -> list[dict[str, str]]:
+        assert_lan_url(endpoint)
+        body = """<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
+  <s:Body><trt:GetProfiles/></s:Body>
+</s:Envelope>"""
+        xml = self._post(endpoint, username, password, body)
+        root = element_tree.fromstring(xml)
+        profiles: list[dict[str, str]] = []
+        for node in root.iter():
+            if not node.tag.endswith("Profiles"):
+                continue
+            token = node.attrib.get("token") or ""
+            name_el = next((child for child in list(node) if child.tag.endswith("Name")), None)
+            name = (name_el.text or token) if name_el is not None else token
+            if token:
+                profiles.append({"token": token, "name": name})
+        return profiles
+
+    def get_stream_uri(self, endpoint: str, username: str, password: str, profile_token: str) -> str:
+        assert_lan_url(endpoint)
+        body = f"""<?xml version="1.0" encoding="UTF-8"?>
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
+ xmlns:trt="http://www.onvif.org/ver10/media/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema">
+  <s:Body>
+    <trt:GetStreamUri>
+      <trt:StreamSetup><tt:Stream>RTP-Unicast</tt:Stream><tt:Transport><tt:Protocol>RTSP</tt:Protocol></tt:Transport></trt:StreamSetup>
+      <trt:ProfileToken>{profile_token}</trt:ProfileToken>
+    </trt:GetStreamUri>
+  </s:Body>
+</s:Envelope>"""
+        xml = self._post(endpoint, username, password, body)
+        root = element_tree.fromstring(xml)
+        uri = ""
+        for node in root.iter():
+            if node.tag.endswith("Uri") and node.text:
+                uri = node.text.strip()
+                break
+        if not uri:
+            raise ValueError("ONVIF GetStreamUri did not return a URI")
+        parsed = urlparse(uri)
+        if parsed.hostname and not is_lan_host(parsed.hostname):
+            raise ValueError("stream URI host is not on the local LAN")
+        return uri
+
+    def _post(self, endpoint: str, username: str, password: str, body: str) -> bytes:
+        targets = [endpoint]
+        if "device_service" in endpoint:
+            targets.append(endpoint.replace("device_service", "media_service"))
+        last_error = "ONVIF request failed"
+        for url in targets:
+            try:
+                with httpx.Client(timeout=8.0, auth=(username, password)) as client:
+                    response = client.post(
+                        url,
+                        content=body.encode("utf-8"),
+                        headers={"Content-Type": "application/soap+xml; charset=utf-8"},
+                    )
+                if response.status_code >= 400:
+                    last_error = f"ONVIF HTTP {response.status_code}"
+                    continue
+                return response.content
+            except httpx.HTTPError as exc:
+                last_error = str(exc)
+        raise ValueError(last_error)
 
 
 class MjpegPreview:

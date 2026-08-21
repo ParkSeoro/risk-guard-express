@@ -10,8 +10,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .ai import SafetyPolicy, SafetyRuleEngine
+from .ai import SafetyPolicy, SafetyRuleEngine, build_inference_adapter, high_severity_push_allowed
 from .fleet_client import FleetApiError, FleetClient
+from .relay import stub_publish_url
 from .models import (
     CameraHealth,
     CommandAck,
@@ -56,6 +57,9 @@ class EdgeRuntime:
             config.identity.site_id,
             SafetyPolicy(),
         )
+        self._inference = build_inference_adapter()
+        self._announced_grants: set[str] = set()
+        self._alarm_interlock_enabled = False
         self._stop_event = asyncio.Event()
 
     async def reconfigure_fleet(self) -> None:
@@ -69,6 +73,7 @@ class EdgeRuntime:
             ca_bundle_path=self.config.ca_bundle_path,
             token_url=str(self.config.fleet_token_url) if self.config.fleet_token_url else None,
             client_id=self.config.fleet_client_id,
+            access_token_path=str(Path(self.config.state_dir).expanduser() / "credentials" / "access.token"),
         )
         self.verifier = MasterCommandVerifier(
             self.config.identity,
@@ -190,6 +195,10 @@ class EdgeRuntime:
                 raise VerificationError("desired state is expired")
             if not desired.allow_activation:
                 raise VerificationError("desired state activation is not permitted by rollout stage")
+            self._alarm_interlock_enabled = high_severity_push_allowed(
+                measured_fp_fn=False,
+                alarm_interlock_enabled=desired.alarm_interlock_enabled,
+            )
             previous_version = self.store.get_runtime_value("desired_state_version")
             self.store.set_runtime_value("desired_state_version", desired.version)
             self.store.set_runtime_value("policy_version", desired.policy_bundle_id)
@@ -226,6 +235,28 @@ class EdgeRuntime:
                 )
             )
             return False
+
+    async def sync_stream_grants(self) -> int:
+        if not self.fleet_client.configured:
+            return 0
+        try:
+            grants = await self.fleet_client.fetch_stream_grants()
+        except FleetApiError as exc:
+            self._last_fleet_error = str(exc)
+            return 0
+        announced = 0
+        for grant in grants:
+            grant_id = str(grant.get("id") or "")
+            if not grant_id or grant_id in self._announced_grants:
+                continue
+            try:
+                await self.fleet_client.announce_relay_session(grant_id, stub_publish_url(grant_id))
+            except FleetApiError as exc:
+                self._last_fleet_error = str(exc)
+                continue
+            self._announced_grants.add(grant_id)
+            announced += 1
+        return announced
 
     async def process_command(self, command: GatewayCommand) -> CommandAck:
         command_id = str(command.command_id)
@@ -286,6 +317,15 @@ class EdgeRuntime:
                 detail=f"camera state: {health.state}",
                 error_code=None if health.state == "online" else "CAMERA_UNAVAILABLE",
             )
+        if command.command_type in {"siren.play", "pa.play", "alarm.activate"}:
+            return CommandAck(
+                command_id=command.command_id,
+                status=CommandStatus.REJECTED,
+                detail="PA/siren requires site SM approval and alarm_interlock_enabled after measured FP/FN",
+                error_code="ALARM_INTERLOCK_REQUIRED",
+                before_state_version=before_version,
+                after_state_version=before_version,
+            )
 
         # Actual process restart, model artifact activation and PA/siren integration are intentionally
         # fail-closed until their local adapter, health gate and site interlock are configured.
@@ -313,6 +353,7 @@ class EdgeRuntime:
             if now >= flush_due:
                 await self.flush_events()
                 await self.sync_desired_state()
+                await self.sync_stream_grants()
                 flush_due = now + self.config.event_flush_interval_seconds
             try:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=1.0)
@@ -335,4 +376,6 @@ class EdgeRuntime:
             "fleet_configured": self.fleet_client.configured,
             "last_fleet_error": self._last_fleet_error,
             "secret_store": self.secret_store.health(),
+            "alarm_interlock_enabled": self._alarm_interlock_enabled,
+            "inference_adapter": type(self._inference).__name__,
         }

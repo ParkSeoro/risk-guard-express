@@ -7,10 +7,12 @@
 
 from __future__ import annotations
 
+import os
 from collections import defaultdict, deque
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Protocol
 
 from .models import SafetyEvent, Severity
@@ -47,6 +49,42 @@ class DisabledInferenceAdapter:
     async def detect(self, frame: bytes) -> list[Detection]:
         del frame
         return []
+
+
+class OnnxInferenceAdapter:
+    """Optional ONNX Runtime adapter. Missing/invalid artifacts yield no detections."""
+
+    def __init__(self, model_path: str) -> None:
+        self.model_path = model_path
+        self._session: object | None = None
+        try:
+            import onnxruntime as ort  # type: ignore[import-not-found]
+
+            self._session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+        except Exception:
+            self._session = None
+
+    @property
+    def ready(self) -> bool:
+        return self._session is not None
+
+    async def detect(self, frame: bytes) -> list[Detection]:
+        # A measured FP/FN lab must map tensors to Detection labels before this emits.
+        # Until then the adapter is a no-op even if a session loaded.
+        del frame
+        return []
+
+
+def build_inference_adapter(model_path: str | None = None) -> InferenceAdapter:
+    path = model_path or os.getenv("VISION_EDGE_ONNX_MODEL")
+    if path and Path(path).is_file():
+        return OnnxInferenceAdapter(path)
+    return DisabledInferenceAdapter()
+
+
+def high_severity_push_allowed(*, measured_fp_fn: bool, alarm_interlock_enabled: bool) -> bool:
+    """High/critical vision push is allowed only after lab FP/FN and site interlock."""
+    return bool(measured_fp_fn and alarm_interlock_enabled)
 
 
 @dataclass

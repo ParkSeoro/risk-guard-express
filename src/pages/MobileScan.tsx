@@ -130,6 +130,17 @@ export default function MobileScan() {
 
   const onDetect = async (text: string) => {
     const raw = text.trim();
+    // Vision Gateway pairing QR (SafeNex Fleet)
+    if (/\/vision-pair/i.test(raw)) {
+      const url = raw.startsWith("http") ? raw : `${window.location.origin}${raw.startsWith("/") ? raw : `/${raw}`}`;
+      const parsed = new URL(url, window.location.origin);
+      const dest = `/app/worker/vision-pair${parsed.search}`;
+      setLast({ token: parsed.searchParams.get("code") || "vision", url: dest });
+      await stop();
+      toast.success("비전 Gateway 승인 QR 인식");
+      navigate(dest);
+      return;
+    }
     // Signup / register QR (Auth path)
     if (/\/worker\/register/i.test(raw) || /\/register\?.*audience=worker/i.test(raw)) {
       setLast({ token: "register", url: raw.startsWith("http") ? raw : `${window.location.origin}${raw.startsWith("/") ? raw : `/${raw}`}` });

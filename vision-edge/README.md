@@ -1,5 +1,7 @@
 # SafeNex Vision Edge
 
+> **파일럿 / 비프로덕션.** 계약 SSOT는 [`docs/VISION_FLEET_SSOT.md`](../docs/VISION_FLEET_SSOT.md). 이 패키지는 기존 SafeNex 웹 모듈을 import하지 않는다. NVR을 대체하지 않는다.
+
 SafeNex Vision Edge는 현장 NVR과 같은 LAN에서 실행되는 **지능형 AI CCTV Gateway**다. NVR의 연속 녹화와 증거 보존은 현장에 남기고, Gateway는 읽기 전용 영상 점검·AI 안전 이벤트·로컬 운영 상태를 처리한 뒤 SafeNex Vision Fleet에 안전하게 연결한다.
 
 > 중앙은 가시성·정책·승인·감사를 맡고, 현장은 NVR 녹화·AI·경보의 안전 실행권을 유지한다.

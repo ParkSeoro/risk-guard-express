@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eu
+
+URL="http://127.0.0.1:8787"
+SERVICE="safenex-vision-edge.service"
+
+if ! systemctl is-active --quiet "$SERVICE"; then
+  echo "SafeNex Vision Edge 서비스가 아직 실행 중이 아닙니다." >&2
+  echo "관리자 권한으로 다음 명령을 한 번 실행하세요: sudo systemctl start $SERVICE" >&2
+  exit 1
+fi
+
+attempt=0
+while [ "$attempt" -lt 12 ]; do
+  if curl --silent --fail --max-time 1 "$URL/healthz" >/dev/null 2>&1; then
+    break
+  fi
+  attempt=$((attempt + 1))
+  sleep 1
+done
+
+if ! curl --silent --fail --max-time 1 "$URL/healthz" >/dev/null 2>&1; then
+  echo "Gateway UI가 준비되지 않았습니다. 상태를 확인하세요: sudo systemctl status $SERVICE" >&2
+  exit 1
+fi
+
+if command -v xdg-open >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+  xdg-open "$URL" >/dev/null 2>&1 &
+  exit 0
+fi
+
+printf '\nSafeNex Vision Edge 운영 UI: %s\n' "$URL"
+printf '이 장비의 브라우저 또는 같은 장비에서 위 주소를 여세요.\n'

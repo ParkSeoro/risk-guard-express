@@ -27,6 +27,7 @@ function isCriticalAlarm(n: { type?: string | null; severity?: string | null }) 
     n.type !== "announcement" &&
     n.type !== "approval_request" &&
     n.type !== "approval_result" &&
+    n.type !== "vision_safety_event" &&
     (n.type === "danger_zone_entry" ||
       n.severity === "high" ||
       n.severity === "critical" ||
@@ -50,5 +51,10 @@ describe("critical alerts payload shape (dispatch contract)", () => {
     expect(isCriticalAlarm({ type: "announcement", severity: "high" })).toBe(false);
     expect(isCriticalAlarm({ type: "announcement", severity: null })).toBe(false);
     expect(isCriticalAlarm({ type: "approval_request", severity: "high" })).toBe(false);
+  });
+
+  it("never sirens vision safety events even if severity is high", () => {
+    expect(isCriticalAlarm({ type: "vision_safety_event", severity: "high" })).toBe(false);
+    expect(isCriticalAlarm({ type: "vision_safety_event", severity: "critical" })).toBe(false);
   });
 });

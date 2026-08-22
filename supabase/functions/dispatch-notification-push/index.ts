@@ -260,13 +260,14 @@ Deno.serve(async (req) => {
   }
 
   // ---------- Native FCM ----------
-  // Announcements / approvals use normal default sound — never the danger siren.
+  // Announcements / approvals / vision events use normal default sound — never the danger siren.
   // Only geofence danger (and explicitly critical/danger severities for other types)
   // may use the safenex_alarms / siren channel.
   const isCriticalAlarm =
     n.type !== "announcement" &&
     n.type !== "approval_request" &&
     n.type !== "approval_result" &&
+    n.type !== "vision_safety_event" &&
     (n.type === "danger_zone_entry" ||
       n.severity === "high" ||
       n.severity === "critical" ||

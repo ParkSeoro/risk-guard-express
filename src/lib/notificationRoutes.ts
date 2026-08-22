@@ -40,6 +40,8 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
   worker: () => `${ADMIN}/workers`,
   chemical: () => `${ADMIN}/health/chemicals`,
   zone_event: (_, pid) => withProject(`${ADMIN}/zone-events`, pid),
+  vision_safety_event: (id) =>
+    id ? `${ADMIN}/vision-fleet?event=${id}` : `${ADMIN}/vision-fleet`,
 };
 
 /** Mobile shell equivalents — prefer list/viewer pages that exist under /app/worker. */
@@ -64,6 +66,8 @@ const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
   worker: () => `${WORKER}/workers`,
   chemical: () => `${WORKER}/today`,
   zone_event: () => `${WORKER}/alerts`,
+  vision_safety_event: (id) =>
+    id ? `${WORKER}/vision-events?event=${id}` : `${WORKER}/vision-events`,
 };
 
 const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
@@ -81,6 +85,8 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   health_checkup_due: () => `${ADMIN}/health/checkups`,
   announcement: (n) =>
     n.related_id ? `${ADMIN}/announcements?id=${n.related_id}` : `${ADMIN}/announcements`,
+  vision_safety_event: (n) =>
+    n.related_id ? `${ADMIN}/vision-fleet?event=${n.related_id}` : `${ADMIN}/vision-fleet`,
 };
 
 const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
@@ -97,6 +103,8 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   health_checkup_due: () => `${WORKER}/daily-health-log`,
   announcement: (n) =>
     n.related_id ? `${WORKER}/announcements?id=${n.related_id}` : `${WORKER}/announcements`,
+  vision_safety_event: (n) =>
+    n.related_id ? `${WORKER}/vision-events?event=${n.related_id}` : `${WORKER}/vision-events`,
 };
 
 /** Map known admin paths into mobile equivalents when on phone shell. */
@@ -126,6 +134,11 @@ export function toMobileShellPath(path: string): string {
   if (p.startsWith("/work-stop")) return `${WORKER}/work-stop`;
   if (p.startsWith("/workers")) return `${WORKER}/workers`;
   if (p.startsWith("/announcements")) return `${WORKER}/announcements`;
+  if (p.startsWith("/vision-fleet") || p.startsWith("/vision-events")) {
+    const q = p.includes("?") ? p.slice(p.indexOf("?")) : "";
+    return `${WORKER}/vision-events${q}`;
+  }
+  if (p.startsWith("/vision-pair")) return `${WORKER}${p}`;
   if (p.startsWith("/zone-events")) return `${WORKER}/alerts`;
   if (p.startsWith("/settings")) return `${WORKER}/account`;
   if (p === "/" || p === "") return `${WORKER}/menu`;

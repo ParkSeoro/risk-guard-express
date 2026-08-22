@@ -1,0 +1,15 @@
+{
+  "identity": {
+    "gateway_id": "gateway-unpaired",
+    "tenant_id": "tenant-unpaired",
+    "site_id": "site-unpaired"
+  },
+  "listen_host": "127.0.0.1",
+  "listen_port": 8787,
+  "state_dir": "/var/lib/safenex-vision-edge",
+  "heartbeat_interval_seconds": 30,
+  "event_flush_interval_seconds": 10,
+  "ffprobe_timeout_seconds": 8,
+  "cameras": [],
+  "nvrs": []
+}

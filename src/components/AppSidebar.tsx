@@ -5,7 +5,7 @@ import {
   FileText, Scale, ListTodo, Bot, CloudSun, ReceiptText, FileSignature, ClipboardList, SearchX, QrCode,
   ClipboardCheck, History, ChevronDown, Beaker, Activity, FlaskConical, Trash2,
   Stethoscope, GraduationCap, HeartPulse, Map, Users, AlertOctagon, Siren, OctagonAlert, UserCheck, BarChart3, Megaphone,
-  Building2, FolderOpen,
+  Building2, FolderOpen, Video,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
@@ -82,6 +82,12 @@ const groups: Group[] = [
       { title: "교육자료", url: "/education-materials", icon: FileText },
       { title: "공개 자료실", url: "/project-library", icon: FolderOpen },
       { title: "안전관리자 선임", url: "/safety-appointments", icon: UserCheck },
+    ],
+  },
+  {
+    label: "비전 관제", key: "vision",
+    items: [
+      { title: "비전 관제", url: "/vision-fleet", icon: Video },
     ],
   },
   {
@@ -183,6 +189,7 @@ export function AppSidebar() {
     location: true,
     ops: true,
     health: true,
+    vision: true,
     admin: false,
   };
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {

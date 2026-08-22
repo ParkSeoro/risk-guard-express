@@ -146,7 +146,7 @@ function AdminAppRoutesInner() {
             <Route
               path="vision-fleet"
               element={
-                <RoleGuard allowed={["master", "project_admin", "safety_manager", "site_manager"]}>
+                <RoleGuard allowed={["master", "project_admin", "safety_manager", "site_manager", "supervisor", "site_supervisor"]}>
                   <P.LazyVisionFleet />
                 </RoleGuard>
               }

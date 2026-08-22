@@ -25,6 +25,12 @@ ffprobe -v error -rtsp_transport tcp -show_streams -select_streams v:0 '<READ_ON
 curl -sS http://127.0.0.1:8787/api/v1/setup/discovery/onvif -d '{"timeout_seconds":3}'
 ```
 
+QR 온보딩 때 넣는 Fleet 주소(키트에는 이미 들어 있음):
+
+```text
+https://<SUPABASE_PROJECT>.supabase.co/functions/v1/vision-fleet
+```
+
 ## 지원 장비 표 (랩에서 채움)
 
 | 벤더 | 모델 | 펌웨어 | 서브스트림 | 코덱 | ffprobe | ONVIF 검색 | 비고 |

@@ -101,23 +101,12 @@ async function audit(
   });
 }
 
-const VISION_OPERATOR_ROLES = ["project_admin", "safety_manager", "site_manager"];
-
 async function assertVisionOperator(sb: SupabaseClient, userId: string, projectId: string) {
-  const { data: master } = await sb
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId)
-    .eq("role", "master")
-    .maybeSingle();
-  if (master) return true;
-  const { data: mem } = await sb
-    .from("project_members")
-    .select("role_new")
-    .eq("user_id", userId)
-    .eq("project_id", projectId)
-    .maybeSingle();
-  return VISION_OPERATOR_ROLES.includes(String(mem?.role_new || ""));
+  const { data, error } = await sb.rpc("is_vision_operator", {
+    _user_id: userId,
+    _project_id: projectId,
+  });
+  return !error && data === true;
 }
 
 function enrollmentBundle(opts: {

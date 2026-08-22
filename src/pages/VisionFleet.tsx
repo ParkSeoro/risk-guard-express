@@ -123,6 +123,7 @@ export default function VisionFleet() {
     }
   };
 
+  const fleetUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vision-fleet`;
   const focusEvent = params.get("event");
 
   return (
@@ -141,6 +142,12 @@ export default function VisionFleet() {
         )}
         {kitBlob && (
           <p className="mt-2 text-[11px] break-all font-mono bg-muted p-2 rounded">{kitBlob}</p>
+        )}
+        {projectId && (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            현장 QR용 Fleet 주소
+            <span className="ml-1 font-mono break-all">{fleetUrl}</span>
+          </p>
         )}
       </div>
 

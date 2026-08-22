@@ -58,7 +58,8 @@ Gateway가 호출하는 제어 API:
 
 ## 역할 매핑
 
-기존 `master` / `safety_manager` / `site_manager` / `project_admin`. 새 슈퍼롤 없음. 협력사 계정은 비전 관제 메뉴 비표시(RoleGuard).
+기존 `master` / `safety_manager` / `site_manager` / `project_admin`. 새 슈퍼롤 없음.
+협력사·공급사 계정은 메뉴 비표시(RoleGuard)이고, `vision_*` RLS/`is_vision_operator`로 읽기·승인·키트·grant도 차단한다.
 
 ## 알림
 

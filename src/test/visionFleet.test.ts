@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  visionCameraSlots,
+  visionCanOperate,
+  visionCanViewConsole,
   visionEventSirenAllowed,
   visionFleetFnPath,
   visionGrantTtlMs,
+  visionRoleLabel,
 } from "@/lib/visionFleetApi";
 import { resolveNotificationRoute, toMobileShellPath } from "@/lib/notificationRoutes";
 
@@ -17,6 +21,20 @@ describe("vision fleet client helpers", () => {
 
   it("issues a 5 minute live_substream grant", () => {
     expect(visionGrantTtlMs("live_substream")).toBe(5 * 60_000);
+  });
+
+  it("shows a 4-slot camera board even when nothing is connected", () => {
+    expect(visionCameraSlots([]).every((s) => s === null)).toBe(true);
+    expect(visionCameraSlots([]).length).toBe(4);
+    expect(visionCameraSlots([{ id: "c1" }])[0]).toEqual({ id: "c1" });
+    expect(visionCameraSlots([{ id: "c1" }]).filter((s) => s === null)).toHaveLength(3);
+  });
+
+  it("lets supervisors open the console but not provision", () => {
+    expect(visionCanViewConsole(["supervisor"])).toBe(true);
+    expect(visionCanOperate(["supervisor"])).toBe(false);
+    expect(visionCanOperate(["safety_manager"])).toBe(true);
+    expect(visionRoleLabel(["site_manager"])).toBe("현장소장");
   });
 
   it("never allows a siren for vision_safety_event", () => {

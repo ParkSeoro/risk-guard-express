@@ -51,10 +51,12 @@ Gateway가 호출하는 제어 API:
 
 ## 화면 우선순위
 
-1. 운영 상태 + 이벤트 큐 (Live 모자이크 아님)
-2. QR/Kit 페어링
+1. 운영 상태 + 4슬롯 카메라 보드 + 이벤트 큐. **CCTV 미연결이어도 이 뼈대는 항상 표시.**
+2. QR/Kit 페어링 (운영 롤만)
 3. Stream grant (5분, `live_substream`)
 4. AI 실모델은 interlock 전에는 사이렌 금지
+
+조회: `supervisor` / `site_supervisor`는 보드만. 키트·grant·ack는 `master` / `project_admin` / `safety_manager` / `site_manager`.
 
 ## 역할 매핑
 

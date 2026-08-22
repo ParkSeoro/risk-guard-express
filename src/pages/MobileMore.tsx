@@ -15,6 +15,7 @@ import {
   Monitor,
   QrCode,
   ScanLine,
+  Video,
   User,
   BookOpen,
   Bell,
@@ -199,6 +200,7 @@ export default function MobileMore() {
                 { label: "알림 · 알람 설정", to: "/app/worker/notifications", icon: Bell },
                 { label: "승인 자료", to: "/app/worker/docs", icon: FolderOpen },
                 { label: "QR 스캔", to: "/app/worker/scan", icon: ScanLine },
+                { label: "비전 관제", to: "/app/worker/vision-events", icon: Video },
                 { label: "근로자·출입", to: "/app/worker/workers", icon: QrCode },
                 { label: "계정 정보", to: "/app/worker/account", icon: User },
                 ...(!isNativeApp()

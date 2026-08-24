@@ -74,7 +74,18 @@ const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
 const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   danger_zone_entry: (n) => withProject(`${ADMIN}/zone-events`, n.project_id),
   approval_request: () => `${WORKER}/approvals`,
-  approval_result: () => `${ADMIN}/approvals`,
+  approval_result: (n) =>
+    n.related_type === "assessment_run" && n.related_id
+      ? `${ADMIN}/assessment-run/${n.related_id}`
+      : `${ADMIN}/approvals`,
+  approval_rejected: (n) =>
+    n.related_type === "assessment_run" && n.related_id
+      ? `${ADMIN}/assessment-run/${n.related_id}`
+      : `${ADMIN}/approvals`,
+  approval_approved: (n) =>
+    n.related_type === "assessment_run" && n.related_id
+      ? `${ADMIN}/assessment-run/${n.related_id}`
+      : `${ADMIN}/approvals`,
   return_request: () => `${ADMIN}/approvals`,
   incident: () => `${ADMIN}/incidents`,
   safety_inspection: (n) =>
@@ -96,7 +107,18 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
 const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   danger_zone_entry: () => `${WORKER}/alerts`,
   approval_request: () => `${WORKER}/approvals`,
-  approval_result: () => `${WORKER}/approvals`,
+  approval_result: (n) =>
+    n.related_type === "assessment_run" && n.related_id
+      ? `${WORKER}/risk-assessment/${n.related_id}`
+      : `${WORKER}/approvals`,
+  approval_rejected: (n) =>
+    n.related_type === "assessment_run" && n.related_id
+      ? `${WORKER}/risk-assessment/${n.related_id}`
+      : `${WORKER}/approvals`,
+  approval_approved: (n) =>
+    n.related_type === "assessment_run" && n.related_id
+      ? `${WORKER}/risk-assessment/${n.related_id}`
+      : `${WORKER}/approvals`,
   return_request: () => `${WORKER}/approvals`,
   incident: () => `${WORKER}/incident`,
   safety_inspection: (n) =>

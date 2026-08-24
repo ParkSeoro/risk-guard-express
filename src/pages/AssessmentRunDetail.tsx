@@ -1492,10 +1492,17 @@ const AssessmentRunDetail = () => {
       return;
     }
 
+    const reason = (comment || '').trim();
+    if (action === '반려' && !reason) {
+      toast({ title: '반려 사유를 입력하세요.', variant: 'destructive' });
+      setRejectCommentDialog(true);
+      return;
+    }
+
     const { data: res, error } = await supabase.rpc('act_on_approval', {
       _approval_id: myStep.id,
       _action: action === '승인' ? 'approve' : 'reject',
-      _comment: comment || '',
+      _comment: reason,
     });
     if (error) {
       toast({ title: '처리 실패', description: error.message, variant: 'destructive' });
@@ -2392,8 +2399,15 @@ const AssessmentRunDetail = () => {
                                   {submitter ? <span className="text-muted-foreground"> · 상신</span> : null}
                                 </span>
                               )
-                              : displayStatus === '반려' ? <span className="text-destructive">반려</span>
-                              : displayStatus === '진행중' ? <span className="text-primary font-medium">결재중</span>
+              : displayStatus === '반려' ? (
+                <span className="text-destructive">
+                  반려
+                  {String(a.comment || '').trim() ? (
+                    <span className="block text-[10px] font-normal mt-0.5 whitespace-pre-wrap">{a.comment}</span>
+                  ) : null}
+                </span>
+              )
+              : displayStatus === '진행중' ? <span className="text-primary font-medium">결재중</span>
                               : <span className="text-muted-foreground">순번대기</span>}
                           </td>
                         </tr>
@@ -2403,6 +2417,21 @@ const AssessmentRunDetail = () => {
               </table>
             </div>
           )}
+          {(() => {
+            const rejectRow = activeApprovals.find(
+              (a) => a.status === '반려' && String(a.comment || '').trim(),
+            );
+            if (!rejectRow) return null;
+            return (
+              <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+                <div className="font-semibold text-destructive">반려 사유</div>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {rejectRow.approver_name || '결재자'} · {rejectRow.step}
+                </div>
+                <div className="mt-1 whitespace-pre-wrap">{rejectRow.comment}</div>
+              </div>
+            );
+          })()}
           {activeApprovals.length > 0
             && !activeApprovals.some((a) => {
               const p = (a.position || '').toLowerCase();
@@ -3943,6 +3972,44 @@ const AssessmentRunDetail = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={rejectCommentDialog} onOpenChange={(open) => {
+        setRejectCommentDialog(open);
+        if (!open) setRejectComment('');
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>반려 사유</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            작성자가 보완할 수 있도록 사유를 입력하세요. 알림과 문서에 그대로 보입니다.
+          </p>
+          <Textarea
+            value={rejectComment}
+            onChange={(e) => setRejectComment(e.target.value)}
+            placeholder="예: 위험상황, 개선대책 누락"
+            rows={4}
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setRejectCommentDialog(false)}>취소</Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                const reason = rejectComment.trim();
+                if (!reason) {
+                  toast({ title: '반려 사유를 입력하세요.', variant: 'destructive' });
+                  return;
+                }
+                setRejectCommentDialog(false);
+                setRejectComment('');
+                void handleFinalApproval('반려', reason);
+              }}
+            >
+              반려
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {run && (
         <CloneRunDialog

@@ -563,7 +563,10 @@ const UserManagement = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><Users className="h-6 w-6" /> 사용자 관리</h1>
-          <p className="text-sm text-muted-foreground mt-1">관리자(웹)와 근로자(현장 앱)를 나눠 승인·역할을 부여합니다.</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            계정 승인 후, 프로젝트마다 역할·직책·업체를 부여하세요.
+            기능(위험성평가·작업계획서 등)은 역할에 따라 열리며 개인별로 켜고 끄지 않습니다.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => { resetAssignForm(); setShowAssignDialog(true); }}>

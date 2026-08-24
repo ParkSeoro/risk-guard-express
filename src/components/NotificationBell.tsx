@@ -11,6 +11,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { ko } from 'date-fns/locale';
 
 import { resolveNotificationRoute } from '@/lib/notificationRoutes';
+import { notificationPreview } from '@/lib/notificationText';
 
 const resolveRoute = (n: any): string | null => resolveNotificationRoute(n);
 
@@ -145,7 +146,9 @@ export function NotificationBell() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <p className={`text-xs ${!n.is_read ? 'font-semibold' : ''}`}>{n.title}</p>
-                      {n.message && <p className="text-[11px] text-muted-foreground line-clamp-2">{n.message}</p>}
+                      {notificationPreview(n) && (
+                        <p className="text-[11px] text-muted-foreground line-clamp-2">{notificationPreview(n)}</p>
+                      )}
                     </div>
                     {!n.is_read && <div className="h-2 w-2 rounded-full bg-primary shrink-0 mt-1" />}
                   </div>

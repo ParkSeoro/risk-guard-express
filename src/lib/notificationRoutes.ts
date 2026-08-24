@@ -28,7 +28,8 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
   assessment_run: (id) => (id ? `${ADMIN}/assessment-run/${id}` : `${ADMIN}/risk-assessment`),
   approval: () => `${ADMIN}/approvals`,
   safety_cost: () => `${ADMIN}/safety-cost`,
-  safety_inspection: () => `${ADMIN}/safety-inspections`,
+  safety_inspection: (id) =>
+    id ? `${ADMIN}/safety-inspections?id=${id}` : `${ADMIN}/safety-inspections`,
   incident: () => `${ADMIN}/incidents`,
   incident_report: () => `${ADMIN}/incidents`,
   emergency_drill: () => `${ADMIN}/emergency-drills`,
@@ -52,7 +53,7 @@ const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
     id ? `${WORKER}/approvals` : `${WORKER}/permits`,
   assessment_run: (id) => (id ? `${WORKER}/risk-assessment/${id}` : `${WORKER}/risk-assessment`),
   approval: (id) => (id ? `${WORKER}/approvals/${id}` : `${WORKER}/approvals`),
-  safety_inspection: () => `${WORKER}/inspect`,
+  safety_inspection: (id) => (id ? `${WORKER}/inspect?id=${id}` : `${WORKER}/inspect`),
   incident: () => `${WORKER}/incident`,
   incident_report: () => `${WORKER}/incident`,
   tbm: () => `${WORKER}/tbm`,
@@ -76,7 +77,10 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   approval_result: () => `${ADMIN}/approvals`,
   return_request: () => `${ADMIN}/approvals`,
   incident: () => `${ADMIN}/incidents`,
-  safety_inspection: () => `${ADMIN}/safety-inspections`,
+  safety_inspection: (n) =>
+    n.related_id ? `${ADMIN}/safety-inspections?id=${n.related_id}` : `${ADMIN}/safety-inspections`,
+  inspection_fail: (n) =>
+    n.related_id ? `${ADMIN}/safety-inspections?id=${n.related_id}` : `${ADMIN}/safety-inspections`,
   work_permit: (n) =>
     n.related_id ? `${ADMIN}/work-permits/${n.related_id}` : `${ADMIN}/work-permits`,
   tbm: () => `${ADMIN}/tbm-logs`,
@@ -95,7 +99,10 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   approval_result: () => `${WORKER}/approvals`,
   return_request: () => `${WORKER}/approvals`,
   incident: () => `${WORKER}/incident`,
-  safety_inspection: () => `${WORKER}/inspect`,
+  safety_inspection: (n) =>
+    n.related_id ? `${WORKER}/inspect?id=${n.related_id}` : `${WORKER}/inspect`,
+  inspection_fail: (n) =>
+    n.related_id ? `${WORKER}/inspect?id=${n.related_id}` : `${WORKER}/inspect`,
   work_permit: () => `${WORKER}/approvals`,
   tbm: () => `${WORKER}/tbm`,
   todo_due: () => `${WORKER}/tasks`,
@@ -128,7 +135,10 @@ export function toMobileShellPath(path: string): string {
   if (p.startsWith("/work-permits")) return `${WORKER}/permits`;
   if (p.startsWith("/work-plans")) return `${WORKER}/work-plans`;
   if (p.startsWith("/risk-assessment")) return `${WORKER}/risk-assessment`;
-  if (p.startsWith("/safety-inspections")) return `${WORKER}/inspect`;
+  if (p.startsWith("/safety-inspections")) {
+    const q = p.includes("?") ? p.slice(p.indexOf("?")) : "";
+    return `${WORKER}/inspect${q}`;
+  }
   if (p.startsWith("/incidents")) return `${WORKER}/incident`;
   if (p.startsWith("/tbm")) return `${WORKER}/tbm`;
   if (p.startsWith("/work-stop")) return `${WORKER}/work-stop`;

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Input } from '@/components/ui/input';
+import { ImeControlledInput as Input, ImeControlledTextarea as Textarea } from '@/components/ImeControlled';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2 } from 'lucide-react';

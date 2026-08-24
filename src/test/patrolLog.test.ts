@@ -12,6 +12,7 @@ import {
   collectTodayPermitWorks,
   formatInspectorLine,
   formatPatrolDateDot,
+  formatSiteLabel,
   inspectorTitleFromMember,
   isPatrolInspection,
   joinPatrolRoute,
@@ -37,6 +38,8 @@ describe('patrol log form pack', () => {
   it('builds inspector line from position then role', () => {
     expect(inspectorTitleFromMember({ position: 'HSE_MANAGER', role: 'worker' })).toBe('안전관리자');
     expect(inspectorTitleFromMember({ position: null, role: 'site_supervisor' })).toBe('관리감독자');
+    expect(inspectorTitleFromMember({ position: null, role: 'master' })).toBe('');
+    expect(inspectorTitleFromMember({ position: null, role: 'project_admin' })).toBe('');
     expect(formatInspectorLine('홍길동', '안전관리자')).toBe('홍길동 / 안전관리자');
   });
 
@@ -103,7 +106,11 @@ describe('patrol log form pack', () => {
     expect(html).toContain('폼그라스 하차및 인양작업');
     expect(html).toContain('점 검 사 항');
     expect(html).toContain('지 적 사 항');
-    expect(html).toContain('사진대지');
+    expect(html).toContain('순회 모습');
+    expect(html).not.toContain('사진대지');
+    expect(html).not.toContain('안전보건총괄');
+    expect(html).not.toContain('총괄책임자');
+    expect(html).toContain('안전보건관리책임자');
     expect(html).toContain(SITE_DIRECTOR_PATROL_TITLE);
     expect(html).toContain('양호');
     expect(html).toContain('불량');
@@ -125,5 +132,53 @@ describe('patrol log form pack', () => {
   it('detects patrol type only', () => {
     expect(isPatrolInspection('patrol')).toBe(true);
     expect(isPatrolInspection('pre_work')).toBe(false);
+  });
+
+  it('dedupes identical project and site names', () => {
+    expect(formatSiteLabel('GSC 여수 H2/LCO2 PJT', 'GSC 여수 H2/LCO2 PJT')).toBe('GSC 여수 H2/LCO2 PJT');
+    expect(formatSiteLabel('현장A', '여수')).toBe('현장A / 여수');
+  });
+
+  it('puts fail reason and photos in the finding cell, director improve when mid/fail', () => {
+    const html = buildPatrolLogHtml({
+      projectName: 'GSC 여수 H2/LCO2 PJT',
+      siteName: 'GSC 여수 H2/LCO2 PJT',
+      inspectedAt: '2026-08-24T00:00:00.000Z',
+      inspectorName: '김재현',
+      inspectorTitle: '안전관리자',
+      location: 'GSC현장',
+      weather: '맑음',
+      items: [{
+        checklist_code: 'PT-01',
+        label: '근로자 개인보호구 착용상태',
+        result: 'fail',
+        note: '안전모 미착용',
+        photos: ['https://example.test/before.jpg'],
+      }],
+      actions: [{
+        issue: '근로자 개인보호구 착용상태',
+        status: 'done',
+        completion_note: '재교육 완료',
+        evidence_photos: ['https://example.test/after.jpg'],
+      }],
+      patrolPhotos: ['https://example.test/walk1.jpg', 'https://example.test/walk2.jpg'],
+      directorItems: [
+        { code: 'SD-01', category: '이동통행로', label: '가설이동통로 설치상태', result: 'mid', improve: '통로 정리 필요' },
+        { code: 'SD-02', category: '개인보호구', label: '근로자 개인보호구 착용 상태', result: 'pass', improve: '' },
+        { code: 'SD-03', category: '현장정리정돈', label: '작업구간 정리정돈상태', result: 'fail', improve: '잔재 반출' },
+      ],
+    });
+    expect(html).toContain('현장명 : GSC 여수 H2/LCO2 PJT');
+    expect(html).not.toContain('GSC 여수 H2/LCO2 PJT / GSC 여수 H2/LCO2 PJT');
+    expect(html).toContain('순회 구간 : GSC현장');
+    expect(html).toContain('날씨 : 맑음');
+    expect(html).toContain('안전모 미착용');
+    expect(html).toContain('before.jpg');
+    expect(html).toContain('재교육 완료');
+    expect(html).toContain('after.jpg');
+    expect(html).toContain('walk1.jpg');
+    expect(html).toContain('통로 정리 필요');
+    expect(html).toContain('잔재 반출');
+    expect(html).not.toContain('height:150px');
   });
 });

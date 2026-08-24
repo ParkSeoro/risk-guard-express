@@ -23,7 +23,7 @@ export const PATROL_LOG_FORM_ID = 'osh-patrol-log';
 export const PATROL_LOG_TITLE = '순회 안전점검일지';
 /** 엑셀 기본 양식(LGC 배관망 증설 일지) 타이틀 띄어쓰기 */
 export const PATROL_LOG_PRINT_TITLE = '순 회 안 전 점 검 일 지';
-export const SITE_DIRECTOR_PATROL_TITLE = '총괄책임자(현장소장) 작업장 순회점검 일지';
+export const SITE_DIRECTOR_PATROL_TITLE = '관리책임자(현장소장) 작업장 순회점검 일지';
 export const PATROL_PROCESS_CATEGORY = '현장순회';
 export const PATROL_INSPECTION_CATEGORY = '순회점검';
 
@@ -131,15 +131,25 @@ export function formatInspectorLine(name: string, title?: string | null): string
   return n || t;
 }
 
+const SYSTEM_ROLES = new Set(['master', 'project_admin', 'viewer']);
+
 export function inspectorTitleFromMember(opts: {
   position?: string | null;
   role?: string | null;
 }): string {
   const fromPos = jobTitleLabel(opts.position);
   if (fromPos) return fromPos;
-  const role = String(opts.role || '').trim();
-  if (!role) return '';
+  const role = String(opts.role || '').trim().toLowerCase();
+  if (!role || SYSTEM_ROLES.has(role)) return '';
   return roleLabelKo(role);
+}
+
+/** 프로젝트명과 현장명이 같으면 한 번만. */
+export function formatSiteLabel(projectName?: string | null, siteName?: string | null): string {
+  const a = String(projectName || '').trim();
+  const b = String(siteName || '').trim();
+  if (a && b && a !== b) return `${a} / ${b}`;
+  return a || b || '';
 }
 
 export function joinPatrolRoute(locations: Array<string | null | undefined>): string {
@@ -247,6 +257,7 @@ export type PatrolLogAction = {
   assignee_name?: string | null;
   due_date?: string | null;
   status?: string | null;
+  completion_note?: string | null;
   evidence_photos?: string[] | null;
 };
 
@@ -272,12 +283,66 @@ export type PatrolLogFacts = {
   tbmRate?: string | null;
   items: PatrolLogItem[];
   actions: PatrolLogAction[];
+  patrolPhotos?: string[] | null;
+  directorItems?: DirectorPatrolItem[] | null;
+  smApproverName?: string | null;
+  directorApproverName?: string | null;
 };
+
+export type DirectorPatrolResult = 'pass' | 'mid' | 'fail' | '';
+
+export type DirectorPatrolItem = {
+  code: string;
+  category: string;
+  label: string;
+  result: DirectorPatrolResult;
+  improve: string;
+};
+
+export function emptyDirectorPatrolItems(): DirectorPatrolItem[] {
+  return SITE_DIRECTOR_PATROL_ITEMS.map((sd) => ({
+    code: sd.code,
+    category: sd.category,
+    label: sd.label,
+    result: '',
+    improve: '',
+  }));
+}
+
+export function normalizeDirectorPatrolItems(raw?: unknown): DirectorPatrolItem[] {
+  const seed = emptyDirectorPatrolItems();
+  if (!Array.isArray(raw)) return seed;
+  return seed.map((row) => {
+    const found = raw.find((x: any) => String(x?.code || '') === row.code) as Partial<DirectorPatrolItem> | undefined;
+    const result = String(found?.result || '') as DirectorPatrolResult;
+    const ok = result === 'pass' || result === 'mid' || result === 'fail';
+    return {
+      ...row,
+      result: ok ? result : '',
+      improve: String(found?.improve || ''),
+    };
+  });
+}
+
+export function directorResultLabelKo(result?: string | null): string {
+  if (result === 'pass') return '양호';
+  if (result === 'mid') return '보통';
+  if (result === 'fail') return '불량';
+  return '';
+}
 
 export function resultLabelKo(result?: string | null): string {
   if (result === 'pass') return '양호';
   if (result === 'fail') return '불량';
+  if (result === 'na') return '해당없음';
+  if (result === 'mid') return '보통';
   return '';
+}
+
+export const PATROL_LOCKED_STATUSES = new Set(['결재진행', 'completed']);
+
+export function isPatrolLogLocked(status?: string | null): boolean {
+  return PATROL_LOCKED_STATUSES.has(String(status || ''));
 }
 
 function escapeHtml(value: string): string {
@@ -288,15 +353,19 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function photoTags(urls?: string[] | null, size = 150): string {
-  const h = Math.round(size * 0.75);
+function photoTags(urls?: string[] | null): string {
   return (urls || [])
     .filter(Boolean)
     .map(
       (u) =>
-        `<img src="${escapeHtml(u)}" alt="" style="width:${size}px;height:${h}px;object-fit:cover;border:1px solid #999;margin:3px;" />`,
+        `<img src="${escapeHtml(u)}" alt="" style="max-width:100%;max-height:220px;height:auto;width:auto;object-fit:contain;border:1px solid #999;margin:4px 0;display:block;page-break-inside:avoid;" />`,
     )
     .join('');
+}
+
+function photoSlot(label: string, url?: string | null): string {
+  const img = url ? photoTags([url]) : '';
+  return `<div class="slot">${escapeHtml(label)}${img || '<div class="empty"> </div>'}</div>`;
 }
 
 export function formatInspectedAtKo(iso: string): string {
@@ -318,12 +387,14 @@ export function formatPatrolDateDot(iso: string): string {
   return `${parts[0]}. ${parts[1]}. ${parts[2]}.`;
 }
 
-/** 엑셀「순회 안전점검일지」틀: 머리글·출력현황·13항목·사진대지·총괄책임자. */
+/** 엑셀「순회 안전점검일지」틀: 머리글·출력현황·13항목·순회 모습·관리책임자 3항목. */
 export function buildPatrolLogHtml(facts: PatrolLogFacts): string {
   const inspector = formatInspectorLine(facts.inspectorName, facts.inspectorTitle);
-  const site = [facts.projectName, facts.siteName].filter(Boolean).join(' ') || facts.projectName;
+  const smStamp = facts.smApproverName || inspector;
+  const dirStamp = facts.directorApproverName || '';
+  const site = formatSiteLabel(facts.projectName, facts.siteName) || facts.projectName;
   const dateDot = formatPatrolDateDot(facts.inspectedAt);
-  const weather = String(facts.weather || '').trim() || '-';
+  const weather = String(facts.weather || '').trim();
   const works = (facts.workItems || []).filter(Boolean);
   const workHtml = works.length
     ? works.map((w) => `- ${escapeHtml(w)}`).join('<br/>')
@@ -347,42 +418,44 @@ export function buildPatrolLogHtml(facts: PatrolLogFacts): string {
     </tr>`;
   }).join('');
 
-  const findingPhotos: string[] = [];
-  const actionPhotos: string[] = [];
   const itemRows = facts.items.map((it, i) => {
     const fail = it.result === 'fail';
     const act = facts.actions.find((a) => String(a.issue || '') === String(it.label || ''))
       || (fail ? facts.actions.find((a) => !a.issue) : undefined);
-    for (const p of it.photos || []) findingPhotos.push(p);
-    if (act) for (const p of act.evidence_photos || []) actionPhotos.push(p);
-    const actionCell = act
-      ? [act.status === 'done' ? '조치완료' : '조치중', act.assignee_name].filter(Boolean).join(' · ')
+    const actionText = act
+      ? [act.completion_note || (act.status === 'done' ? '조치완료' : '조치중'), act.assignee_name].filter(Boolean).join(' · ')
+      : '';
+    const finding = fail
+      ? `${escapeHtml(it.note || '')}${photoTags(it.photos)}`
+      : '';
+    const actionHtml = fail
+      ? `${escapeHtml(actionText)}${photoTags(act?.evidence_photos)}`
       : '';
     return `<tr>
       <td class="c">${i + 1}</td>
       <td class="left">${escapeHtml(it.label)}</td>
       <td class="c ${fail ? 'bad' : it.result === 'pass' ? 'ok' : ''}">${escapeHtml(resultLabelKo(it.result))}</td>
-      <td class="left">${escapeHtml(fail ? (it.note || '') : '')}</td>
-      <td class="left">${escapeHtml(actionCell)}</td>
+      <td class="left grow">${finding}</td>
+      <td class="left grow">${actionHtml}</td>
     </tr>`;
   }).join('');
 
-  const sdRows = SITE_DIRECTOR_PATROL_ITEMS.map((sd) => {
-    const src = facts.items.find((it) => it.checklist_code === sd.sourceCode);
-    const r = src?.result;
-    const mark = (want: 'pass' | 'na' | 'fail') => (r === want ? '○' : '');
-    const improve = r === 'fail' ? (src?.note || '') : '';
+  const directorItems = normalizeDirectorPatrolItems(facts.directorItems);
+  const sdRows = directorItems.map((sd) => {
+    const mark = (want: DirectorPatrolResult) => (sd.result === want ? '○' : '');
+    const showImprove = sd.result === 'mid' || sd.result === 'fail';
     return `<tr>
       <td>${escapeHtml(sd.category)}</td>
       <td class="left">${escapeHtml(sd.label)}</td>
       <td class="c">${mark('pass')}</td>
-      <td class="c">${mark('na')}</td>
+      <td class="c">${mark('mid')}</td>
       <td class="c">${mark('fail')}</td>
-      <td class="left">${escapeHtml(improve)}</td>
+      <td class="left">${escapeHtml(showImprove ? (sd.improve || '') : '')}</td>
       <td></td>
     </tr>`;
   }).join('');
 
+  const photos = (facts.patrolPhotos || []).filter(Boolean).slice(0, 2);
   const citeShort = PATROL_LOG_CITATIONS.slice(0, 3).map((c) => citationLine(c)).join(' · ');
 
   return `<!DOCTYPE html>
@@ -391,26 +464,31 @@ export function buildPatrolLogHtml(facts: PatrolLogFacts): string {
   @page { size: A4 portrait; margin: 10mm 8mm; }
   body{font-family:'Malgun Gothic','맑은 고딕',sans-serif;padding:0;margin:0;font-size:11px;color:#111}
   table.sheet{width:100%;border-collapse:collapse;table-layout:fixed}
-  table.sheet th, table.sheet td{border:1px solid #111;padding:4px 5px;vertical-align:middle}
-  .title{font-size:20px;letter-spacing:6px;text-align:center;font-weight:bold;height:36px}
+  table.sheet th, table.sheet td{border:1px solid #111;padding:4px 5px;vertical-align:top}
+  .title{font-size:20px;letter-spacing:6px;text-align:center;font-weight:bold;height:36px;vertical-align:middle}
   .site{text-align:left;font-weight:bold}
   .stamp{text-align:center;height:46px;vertical-align:top}
   .c{text-align:center}
   .left{text-align:left}
+  .grow{word-break:break-word}
   .ok{color:#166534;font-weight:bold}
   .bad{color:#b91c1c;font-weight:bold}
   .work{text-align:left;vertical-align:top;line-height:1.45;font-size:10.5px}
   .sec{font-size:13px;font-weight:bold;text-align:center;background:#f3f4f6}
-  .photos td{height:150px;vertical-align:top}
+  .photos td{height:auto;min-height:72px;vertical-align:top}
+  .slot{font-weight:bold}
+  .empty{min-height:48px}
+  img{max-width:100%;page-break-inside:avoid}
+  tr{page-break-inside:avoid}
   .fine{font-size:9px;color:#333;margin-top:8px;line-height:1.4}
 </style></head><body>
 <table class="sheet">
   <tr><td class="title" colspan="7">${escapeHtml(PATROL_LOG_PRINT_TITLE)}</td></tr>
   <tr>
-    <td class="site" colspan="4">현장명 : ${escapeHtml(site || '-')}</td>
+    <td class="site" colspan="4">현장명 : ${escapeHtml(site || '-')}${facts.location ? `<div style="font-weight:normal;font-size:10px">순회 구간 : ${escapeHtml(facts.location)}</div>` : ''}</td>
     <td class="c" rowspan="2">결 재</td>
-    <td class="stamp" rowspan="2">안전관리자<br/><span style="font-size:10px">${escapeHtml(inspector || '')}</span></td>
-    <td class="stamp" rowspan="2">안전보건총괄</td>
+    <td class="stamp" rowspan="2">안전관리자<br/><span style="font-size:10px">${escapeHtml(smStamp || '')}</span></td>
+    <td class="stamp" rowspan="2">안전보건관리책임자<br/>(현장소장)<br/><span style="font-size:10px">${escapeHtml(dirStamp)}</span></td>
   </tr>
   <tr>
     <td colspan="2">${escapeHtml(dateDot)}</td>
@@ -424,16 +502,15 @@ export function buildPatrolLogHtml(facts: PatrolLogFacts): string {
 </table>
 <table class="sheet" style="margin-top:6px">
   <colgroup>
-    <col style="width:6%"/><col style="width:32%"/><col style="width:8%"/><col style="width:27%"/><col style="width:27%"/>
+    <col style="width:6%"/><col style="width:28%"/><col style="width:8%"/><col style="width:29%"/><col style="width:29%"/>
   </colgroup>
   <tr>
     <th>구분</th><th>점 검 사 항</th><th>결과</th><th>지 적 사 항</th><th>지적사항 조치결과</th>
   </tr>
   ${itemRows || '<tr><td colspan="5">기록된 점검 항목이 없습니다.</td></tr>'}
   <tr class="photos">
-    <td colspan="3"></td>
-    <td>사진대지<br/>${photoTags(findingPhotos)}</td>
-    <td>사진대지<br/>${photoTags(actionPhotos)}</td>
+    <td colspan="2">${photoSlot('순회 모습 1', photos[0])}</td>
+    <td colspan="3">${photoSlot('순회 모습 2', photos[1])}</td>
   </tr>
 </table>
 <table class="sheet" style="margin-top:8px">

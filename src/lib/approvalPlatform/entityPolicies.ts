@@ -72,6 +72,13 @@ export const ENTITY_APPROVAL_POLICIES: Record<ApprovalEntityType, EntityApproval
     requireOwnerClientStep: false,
     allowOwnerSmOnly: true,
   },
+  safety_inspection: {
+    usesPlatformDraft: true,
+    minSteps: 2,
+    requireOwnerClientStep: false,
+    allowOwnerSmOnly: true,
+    note: '순회일지 — 안전관리자 → 안전보건관리책임자(현장소장)',
+  },
 };
 
 export function getEntityApprovalPolicy(entityType: string): EntityApprovalPolicy {

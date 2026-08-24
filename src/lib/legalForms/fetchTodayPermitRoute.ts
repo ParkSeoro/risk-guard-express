@@ -38,6 +38,7 @@ export type PatrolPrintContext = {
 export async function fetchPatrolPrintContext(
   projectId: string,
   day?: string,
+  companyId?: string | null,
 ): Promise<PatrolPrintContext> {
   const empty: PatrolPrintContext = {
     route: '',
@@ -49,12 +50,14 @@ export async function fetchPatrolPrintContext(
   };
   if (!projectId) return empty;
 
-  const { data: permits, error } = await supabase
+  let permitQ = supabase
     .from('work_permits' as any)
-    .select('location, work_name, work_description, status, is_deleted, permit_date, work_start_at, form_data, weather_snapshot, contractor_company, personnel_count')
+    .select('location, work_name, work_description, status, is_deleted, permit_date, work_start_at, form_data, weather_snapshot, contractor_company, personnel_count, company_id')
     .eq('project_id', projectId)
     .eq('is_deleted', false)
     .limit(200);
+  if (companyId) permitQ = permitQ.eq('company_id', companyId);
+  const { data: permits, error } = await permitQ;
   if (error) return empty;
   const rows = (permits as PermitRouteRow[]) || [];
   const route = collectTodayPermitRoute(rows, day);
@@ -77,10 +80,9 @@ export async function fetchPatrolPrintContext(
         .limit(2000);
       const ids = Array.from(new Set(((logs as { worker_id?: string }[]) || []).map((l) => l.worker_id).filter(Boolean))) as string[];
       if (ids.length) {
-        const { data: workers } = await supabase
-          .from('workers')
-          .select('id, company_name')
-          .in('id', ids);
+        let wq = supabase.from('workers').select('id, company_name, company_id').in('id', ids);
+        if (companyId) wq = wq.eq('company_id', companyId);
+        const { data: workers } = await wq;
         const counts = new Map<string, number>();
         for (const w of (workers as { company_name?: string }[]) || []) {
           const name = String(w.company_name || '미지정').trim() || '미지정';
@@ -92,12 +94,14 @@ export async function fetchPatrolPrintContext(
           today,
         }));
       }
-      const { data: sessions } = await supabase
+      let tbmQ = supabase
         .from('tbm_sessions')
         .select('id')
         .eq('project_id', projectId)
         .eq('tbm_date', day)
         .eq('is_deleted', false);
+      if (companyId) tbmQ = tbmQ.eq('company_id', companyId);
+      const { data: sessions } = await tbmQ;
       const sessionIds = ((sessions as { id: string }[]) || []).map((s) => s.id);
       if (sessionIds.length) {
         const { count } = await supabase

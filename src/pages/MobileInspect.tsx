@@ -30,6 +30,11 @@ import {
   inspectorTitleFromMember,
   isPatrolInspection,
   formatInspectedAtKo,
+  formatSiteLabel,
+  emptyDirectorPatrolItems,
+  normalizeDirectorPatrolItems,
+  isPatrolLogLocked,
+  type DirectorPatrolItem,
 } from "@/lib/legalForms/patrolLog";
 
 const inspectionSetupSchema = z.object({
@@ -78,6 +83,9 @@ export default function MobileInspect() {
   const [inspectionId, setInspectionId] = useState<string | null>(null);
   const [items, setItems] = useState<any[]>([]);
   const [projectName, setProjectName] = useState("");
+  const [weather, setWeather] = useState("");
+  const [patrolPhotos, setPatrolPhotos] = useState<string[]>([]);
+  const [directorItems, setDirectorItems] = useState<DirectorPatrolItem[]>(emptyDirectorPatrolItems());
   const [inspectorTitle, setInspectorTitle] = useState("");
   const [todayRoute, setTodayRoute] = useState("");
   const [findingText, setFindingText] = useState("");
@@ -131,7 +139,7 @@ export default function MobileInspect() {
         position: m.position_new || null,
       }));
       setMembers(list);
-      const site = [proj?.name, proj?.site_name].filter(Boolean).join(" / ");
+      const site = formatSiteLabel(proj?.name, proj?.site_name);
       setProjectName(site || "");
       setTodayRoute(route);
       setTodayLogs((logs as TodayLog[]) || []);
@@ -194,13 +202,16 @@ export default function MobileInspect() {
         inspector_name: ins.inspector_name || "",
         inspector_id: ins.inspector_id || "",
       });
+      setWeather(String(ins.weather || ""));
+      setPatrolPhotos(Array.isArray(ins.patrol_photos) ? ins.patrol_photos : []);
+      setDirectorItems(normalizeDirectorPatrolItems(ins.director_items));
       const { data: its } = await supabase.from("safety_inspection_items" as any)
         .select("*").eq("inspection_id", ins.id).order("sort_order");
       if (cancelled) return;
       setItems(((its as any) || []).map((x: any) => ({ ...x, photos: x.photos || [] })));
       setInspectionId(ins.id);
       const own = ins.created_by === profile?.user_id || ins.inspector_id === profile?.user_id;
-      setReadOnly(ins.status === "completed" || !own);
+      setReadOnly(ins.status === "completed" || ins.status === "결재진행" || isPatrolLogLocked(ins.status) || !own);
       setStep("checklist");
     })();
     return () => { cancelled = true; };
@@ -240,6 +251,9 @@ export default function MobileInspect() {
         inspector_id: payload.inspector_id || profile?.user_id,
         created_by: profile?.user_id,
         status: "in_progress",
+        weather: weather || "",
+        patrol_photos: [],
+        director_items: emptyDirectorPatrolItems(),
       }).select().single();
       if (error) throw error;
       await auditLog("create", "safety_inspection", (ins as any).id, projectId, {
@@ -350,6 +364,16 @@ export default function MobileInspect() {
     if (patrol) {
       const hasFact = items.some(i => i.result || (i.note && i.note.trim()) || (i.photos || []).length);
       if (!hasFact && !confirm("관찰 결과·사진이 없습니다. 그래도 저장할까요?")) return;
+      if (inspectionId) {
+        await supabase.from("safety_inspections" as any).update({
+          weather,
+          patrol_photos: patrolPhotos,
+          director_items: directorItems,
+        }).eq("id", inspectionId);
+      }
+      toast.success("저장했습니다. 결재 상신은 PC 안전점검에서 하세요.");
+      goMobileHome();
+      return;
     } else {
       const unset = items.filter(i => !i.result).length;
       if (unset > 0 && !confirm(`미체크 항목이 ${unset}건 있습니다. 그래도 완료할까요?`)) return;
@@ -535,6 +559,13 @@ export default function MobileInspect() {
                 )}
               </div>
 
+              {patrol && (
+                <div>
+                  <Label className="text-base">날씨</Label>
+                  <Input className="h-12 text-base" value={weather} onChange={e => setWeather(e.target.value)} placeholder="맑음 / 흐림 / 비 등 직접 입력" />
+                </div>
+              )}
+
               <div>
                 <Label className="text-base">{patrol ? "특이사항(선택)" : "개요/메모"}</Label>
                 <IMESafeTextarea defaultValue={form.summary}
@@ -656,6 +687,74 @@ export default function MobileInspect() {
                 </CardContent>
               </Card>
             ))}
+
+            {patrol && (
+              <Card>
+                <CardContent className="pt-4 space-y-3">
+                  <Label>순회 모습 (2장)</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[0, 1].map((slot) => (
+                      <label key={slot} className="border rounded p-2 text-center text-xs">
+                        {patrolPhotos[slot] ? (
+                          <img src={patrolPhotos[slot]} className="h-24 w-full object-cover rounded mb-1" />
+                        ) : (
+                          <div className="h-24 flex items-center justify-center text-muted-foreground">순회 {slot + 1}</div>
+                        )}
+                        {!readOnly && (
+                          <>
+                            <Camera className="h-3 w-3 inline mr-1" />첨부
+                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={async (e) => {
+                              const f = e.target.files?.[0];
+                              if (!f || !inspectionId) return;
+                              try {
+                                const url = await uploadPhoto(f);
+                                const next = [...patrolPhotos];
+                                next[slot] = url;
+                                const clipped = [next[0] || "", next[1] || ""];
+                                setPatrolPhotos(clipped);
+                                await supabase.from("safety_inspections" as any).update({ patrol_photos: clipped }).eq("id", inspectionId);
+                              } catch (err: any) {
+                                toast.error(err.message);
+                              }
+                            }} />
+                          </>
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                  <Label>날씨</Label>
+                  <Input value={weather} disabled={readOnly} onChange={e => setWeather(e.target.value)}
+                    onBlur={async () => { if (inspectionId && !readOnly) await supabase.from("safety_inspections" as any).update({ weather }).eq("id", inspectionId); }}
+                    placeholder="맑음 / 흐림 / 비" />
+                  <Label>관리책임자(현장소장) 순회 3항목</Label>
+                  {directorItems.map((row, idx) => (
+                    <div key={row.code} className="border rounded p-2 space-y-2">
+                      <div className="text-sm font-medium">{row.category} · {row.label}</div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {(["pass", "mid", "fail"] as const).map((r) => (
+                          <Button key={r} size="sm" variant={row.result === r ? (r === "fail" ? "destructive" : "default") : "outline"} disabled={readOnly}
+                            onClick={async () => {
+                              const next = directorItems.map((x, i) => i === idx ? { ...x, result: r, improve: r === "pass" ? "" : x.improve } : x);
+                              setDirectorItems(next);
+                              if (inspectionId) await supabase.from("safety_inspections" as any).update({ director_items: next }).eq("id", inspectionId);
+                            }}>
+                            {r === "pass" ? "양호" : r === "mid" ? "보통" : "불량"}
+                          </Button>
+                        ))}
+                      </div>
+                      {(row.result === "mid" || row.result === "fail") && (
+                        <IMESafeTextarea rows={2} defaultValue={row.improve} placeholder="개선요망 사항" 
+                          onCommit={async (val) => {
+                            const next = directorItems.map((x, i) => i === idx ? { ...x, improve: val } : x);
+                            setDirectorItems(next);
+                            if (inspectionId) await supabase.from("safety_inspections" as any).update({ director_items: next }).eq("id", inspectionId);
+                          }} />
+                      )}
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
 
             {patrol && !readOnly && (
               <Card>

@@ -87,6 +87,8 @@ interface Props {
    */
   documentDraft?: DocumentDraftTarget;
   onDraftStatusChange?: (info: DraftStatusInfo) => void;
+  /** 저장된 draft가 없을 때 쓰는 기본 단계 (순회 2단 등). */
+  seedSteps?: Array<{ label: string; position: string }>;
 }
 
 export type ApprovalLineManagerHandle = {
@@ -162,6 +164,7 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
   onLinesChanged,
   documentDraft,
   onDraftStatusChange,
+  seedSteps,
 }: Props, ref) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -271,7 +274,22 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
           .select('*')
           .eq('project_id', projectId)
           .order('step_order');
-        setLines((data && data.length > 0) ? (data as ApprovalLine[]) : []);
+        if (seedSteps && seedSteps.length > 0) {
+          setLines(seedSteps.map((s, i) => ({
+            project_id: projectId,
+            step_order: i,
+            step_label: s.label,
+            position: s.position,
+            company_id: documentDraft.companyId || null,
+            user_id: null,
+            user_name: '',
+            company_name: '',
+          })));
+        } else if (data && data.length > 0) {
+          setLines(data as ApprovalLine[]);
+        } else {
+          setLines([]);
+        }
         setDraftStatus('none');
         setDraftReady(false);
         setDraftErrors([]);
@@ -292,7 +310,7 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
       setLines([]);
     }
     setLoading(false);
-  }, [projectId, documentDraft?.entityType, documentDraft?.entityId]);
+  }, [projectId, documentDraft?.entityType, documentDraft?.entityId, documentDraft?.companyId, seedSteps]);
 
   useEffect(() => {
     void fetchLines();
@@ -637,9 +655,11 @@ const ApprovalLineManager = forwardRef<ApprovalLineManagerHandle, Props>(functio
                 />
                 타 협력사(동급) 포함
               </label>
-              <Button size="sm" variant="outline" className="gap-1 text-xs h-7" onClick={autoGenerate}>
-                <RefreshCw className="h-3 w-3" /> 자동 생성
-              </Button>
+              {!seedSteps?.length && (
+                <Button size="sm" variant="outline" className="gap-1 text-xs h-7" onClick={autoGenerate}>
+                  <RefreshCw className="h-3 w-3" /> 자동 생성
+                </Button>
+              )}
               <Button size="sm" variant="outline" className="gap-1 text-xs h-7" onClick={addStep}>
                 <Plus className="h-3 w-3" /> 단계 추가
               </Button>

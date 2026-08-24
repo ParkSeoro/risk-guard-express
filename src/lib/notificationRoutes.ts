@@ -77,15 +77,21 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   approval_result: (n) =>
     n.related_type === "assessment_run" && n.related_id
       ? `${ADMIN}/assessment-run/${n.related_id}`
-      : `${ADMIN}/approvals`,
+      : n.related_type === "safety_inspection" && n.related_id
+        ? `${ADMIN}/safety-inspections?id=${n.related_id}`
+        : `${ADMIN}/approvals`,
   approval_rejected: (n) =>
     n.related_type === "assessment_run" && n.related_id
       ? `${ADMIN}/assessment-run/${n.related_id}`
-      : `${ADMIN}/approvals`,
+      : n.related_type === "safety_inspection" && n.related_id
+        ? `${ADMIN}/safety-inspections?id=${n.related_id}`
+        : `${ADMIN}/approvals`,
   approval_approved: (n) =>
     n.related_type === "assessment_run" && n.related_id
       ? `${ADMIN}/assessment-run/${n.related_id}`
-      : `${ADMIN}/approvals`,
+      : n.related_type === "safety_inspection" && n.related_id
+        ? `${ADMIN}/safety-inspections?id=${n.related_id}`
+        : `${ADMIN}/approvals`,
   return_request: () => `${ADMIN}/approvals`,
   incident: () => `${ADMIN}/incidents`,
   safety_inspection: (n) =>
@@ -110,15 +116,21 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
   approval_result: (n) =>
     n.related_type === "assessment_run" && n.related_id
       ? `${WORKER}/risk-assessment/${n.related_id}`
-      : `${WORKER}/approvals`,
+      : n.related_type === "safety_inspection" && n.related_id
+        ? `${WORKER}/inspect?id=${n.related_id}`
+        : `${WORKER}/approvals`,
   approval_rejected: (n) =>
     n.related_type === "assessment_run" && n.related_id
       ? `${WORKER}/risk-assessment/${n.related_id}`
-      : `${WORKER}/approvals`,
+      : n.related_type === "safety_inspection" && n.related_id
+        ? `${WORKER}/inspect?id=${n.related_id}`
+        : `${WORKER}/approvals`,
   approval_approved: (n) =>
     n.related_type === "assessment_run" && n.related_id
       ? `${WORKER}/risk-assessment/${n.related_id}`
-      : `${WORKER}/approvals`,
+      : n.related_type === "safety_inspection" && n.related_id
+        ? `${WORKER}/inspect?id=${n.related_id}`
+        : `${WORKER}/approvals`,
   return_request: () => `${WORKER}/approvals`,
   incident: () => `${WORKER}/incident`,
   safety_inspection: (n) =>

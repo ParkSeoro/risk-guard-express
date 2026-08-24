@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   formatPermitStamp,
+  formatPermitStampParts,
   formatPermitReviewDate,
   formatPermitDateTime,
   formatPermitDateTimeRange,
@@ -22,6 +23,27 @@ describe('formatPermitStamp', () => {
     expect(formatPermitStamp(null)).toBe('');
     expect(formatPermitStamp('')).toBe('');
     expect(formatPermitStamp('not-a-date')).toBe('');
+  });
+});
+
+describe('formatPermitStampParts', () => {
+  it('splits date and time with seconds for the 승인일 cell', () => {
+    const parts = formatPermitStampParts('2026-08-24T14:27:56');
+    expect(parts).not.toBeNull();
+    expect(parts!.date).toMatch(/^2026\. \d{1,2}\. \d{1,2}\.$/);
+    expect(parts!.time).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+    expect(formatPermitStamp('2026-08-24T14:27:56')).toBe(`${parts!.date} ${parts!.time}`);
+  });
+
+  it('keeps distinct seconds on the time line', () => {
+    const a = formatPermitStampParts('2026-08-05T04:28:01.000Z');
+    const b = formatPermitStampParts('2026-08-05T04:28:45.000Z');
+    expect(a?.time).not.toBe(b?.time);
+  });
+
+  it('returns null for invalid', () => {
+    expect(formatPermitStampParts(null)).toBeNull();
+    expect(formatPermitStampParts('bad')).toBeNull();
   });
 });
 

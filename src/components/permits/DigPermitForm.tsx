@@ -20,6 +20,7 @@ import {
 } from '@/lib/permitDisplayTemplate';
 import {
   formatPermitStamp,
+  formatPermitStampParts,
   formatPermitReviewDate,
   formatPermitDateTimeRange,
 } from '@/lib/permitDateFormat';
@@ -383,16 +384,22 @@ export default function DigPermitForm({
     </td>
   );
 
-  /** 발주처 승인일 = 실제 전자결재 완료일시 (시·분 포함) */
-  const ApprovalDateCell = ({ approvedAt }: { approvedAt?: string }) => (
-    <td className="text-center text-[10px] align-middle px-1 whitespace-nowrap">
-      {approvedAt ? (
-        <div className="font-semibold">{formatPermitStamp(approvedAt)}</div>
-      ) : (
-        <span className="text-muted-foreground">—</span>
-      )}
-    </td>
-  );
+  /** 발주처 승인일 = 실제 전자결재 완료일시 (시·분·초). 칸 안에서만 2줄, 열/행 토큰 불변. */
+  const ApprovalDateCell = ({ approvedAt }: { approvedAt?: string }) => {
+    const parts = formatPermitStampParts(approvedAt);
+    return (
+      <td className="permit-approval-date-cell text-center align-middle px-1">
+        {parts ? (
+          <div className="font-semibold">
+            <div className="permit-stamp-line">{parts.date}</div>
+            <div className="permit-stamp-line tabular-nums">{parts.time}</div>
+          </div>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </td>
+    );
+  };
 
 
   // 내부 Inp 는 삭제됨 — 모듈-스코프 <Inp/>(PermitInput 래퍼) 를 그대로 사용 (IME 안전)
@@ -460,6 +467,22 @@ export default function DigPermitForm({
         .dig-permit-form td, .dig-permit-form th { border: 1px solid var(--dpf-border, #000); padding: 3px 4px; vertical-align: middle; word-break: break-word; background: var(--dpf-value-bg, #fff); }
         .dig-permit-form tr { min-height: var(--dpf-row-h, 24px); }
         .dig-permit-form td { height: var(--dpf-row-h, 24px); }
+        /* 승인일: 칸 안에서 날짜/시각 2줄. 열폭·행높이 토큰은 그대로. */
+        .dig-permit-form td.permit-approval-date-cell {
+          white-space: normal;
+          overflow: visible;
+        }
+        .dig-permit-form td.permit-approval-date-cell .permit-stamp-line {
+          white-space: nowrap;
+          font-size: 9px;
+          line-height: 1.05;
+        }
+        @media print {
+          .dig-permit-form td.permit-approval-date-cell .permit-stamp-line {
+            font-size: 9px !important;
+            line-height: 1.05 !important;
+          }
+        }
         .dig-permit-form .hd { background: var(--dpf-label-bg, #DCE6F1) !important; font-weight: 600; text-align: center; }
         .dig-permit-form .emph { color: var(--dpf-emphasis, #C00000); font-weight: 600; }
         .dig-permit-form h2.title { text-align: ${titleAlign}; font-size: var(--dpf-title, 18pt); font-weight: 800; margin: 8px 0; letter-spacing: 4px; color: var(--dpf-title-color, #000); }

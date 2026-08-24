@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
-  CREW_PRINT_ROWS_PER_PAGE,
   buildPersonnelCountPatch,
   chunkForPrintPages,
   filterPermitAssignableWorkers,
   formatWorkerPhone,
 } from "@/lib/permitWorkers";
+import { DEFAULT_STANDARD_STYLE, DEFAULT_TYPE_STYLE } from "@/lib/permitStandardStyle";
 
 describe("permitWorkers helpers", () => {
   it("syncs personnel_count into form_data without dropping other fields", () => {
@@ -50,20 +50,15 @@ describe("permitWorkers helpers", () => {
     ).toEqual([]);
   });
 
-  it("keeps 20 crew on one print page at signature-safe density (22/page)", () => {
-    const rows = Array.from({ length: 20 }, (_, i) => ({ id: String(i + 1) }));
-    const pages = chunkForPrintPages(rows, CREW_PRINT_ROWS_PER_PAGE);
-    expect(CREW_PRINT_ROWS_PER_PAGE).toBe(22);
-    expect(pages).toHaveLength(1);
-    expect(pages[0]).toHaveLength(20);
+  it("chunks a generic list without dropping rows", () => {
+    const rows = Array.from({ length: 25 }, (_, i) => ({ id: String(i + 1) }));
+    const pages = chunkForPrintPages(rows, 10);
+    expect(pages).toHaveLength(3);
+    expect(pages.flat()).toHaveLength(25);
   });
 
-  it("paginates when crew exceeds one page without dropping rows", () => {
-    const rows = Array.from({ length: CREW_PRINT_ROWS_PER_PAGE + 3 }, (_, i) => ({
-      id: String(i + 1),
-    }));
-    const pages = chunkForPrintPages(rows, CREW_PRINT_ROWS_PER_PAGE);
-    expect(pages).toHaveLength(2);
-    expect(pages.flat()).toHaveLength(CREW_PRINT_ROWS_PER_PAGE + 3);
+  it("does not change 허가서 colgroup or row-height tokens when fitting 승인일", () => {
+    expect(DEFAULT_STANDARD_STYLE.columns.general).toEqual([110, 160, 110, "auto", 100, 100]);
+    expect(DEFAULT_TYPE_STYLE.rowHeightPx).toBe(24);
   });
 });

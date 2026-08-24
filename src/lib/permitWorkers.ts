@@ -55,14 +55,10 @@ export function formatWorkerPhone(phone?: string | null): string {
 }
 
 /**
- * A4 portrait crew sheet (을지).
- * Sized for ~10mm signature rows (h-10) — do not raise without keeping row height.
- * ~22 fits remaining printable height after title/meta; 30 would force shrinking signatures.
+ * Print-only 을지/TBM appendix: do not JS-chunk to a fixed N-per-page.
+ * The browser fills A4; leftover rows continue on the next sheet.
+ * `chunkForPrintPages` remains for callers that still need a fixed split.
  */
-export const CREW_PRINT_ROWS_PER_PAGE = 22;
-export const TBM_PRINT_ROWS_PER_PAGE = 14;
-
-/** Split rows into print pages (empty → one empty page). */
 export function chunkForPrintPages<T>(rows: T[], size: number): T[][] {
   if (size <= 0) return [rows];
   if (rows.length === 0) return [[]];

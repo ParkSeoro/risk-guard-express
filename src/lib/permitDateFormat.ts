@@ -1,14 +1,33 @@
+export type PermitStampParts = {
+  date: string;
+  time: string;
+};
+
+/**
+ * Split approval datetime for the 승인일 cell (date + time stacked).
+ * Seconds stay on the time line so two stamps in the same minute do not collapse.
+ * Does not change table column widths or row-height tokens.
+ */
+export function formatPermitStampParts(iso?: string | null): PermitStampParts | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return {
+    date: `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}.`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`,
+  };
+}
+
 /**
  * Approval stamp with time including seconds —
  * e.g. `2026. 7. 28. 15:30:07` (month/day unpadded).
  * Seconds are required so distinct approver clocks do not collapse to the same minute.
  */
 export function formatPermitStamp(iso?: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}. ${d.getMonth() + 1}. ${d.getDate()}. ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const parts = formatPermitStampParts(iso);
+  if (!parts) return '';
+  return `${parts.date} ${parts.time}`;
 }
 
 /**

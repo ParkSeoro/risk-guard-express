@@ -86,12 +86,17 @@ ${collectHeadHtml()}
   }
   .permit-crew-sheet {
     display: block !important;
-    break-after: page !important;
-    page-break-after: always !important;
-  }
-  .permit-crew-sheet:last-child {
     break-after: auto !important;
     page-break-after: auto !important;
+  }
+  .permit-crew-sheet + .permit-crew-sheet {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+  .permit-crew-sheet thead { display: table-header-group !important; }
+  .permit-crew-sheet tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
   .print\\:hidden, .no-print { display: none !important; }
 </style>

@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -21,6 +22,7 @@ import AssigneeSelect from '@/components/AssigneeSelect';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 import { datePartFromDateTime } from '@/lib/permitWorkDate';
 import { fetchTodayPermitRoute, fetchPatrolPrintContext } from '@/lib/legalForms/fetchTodayPermitRoute';
+import { closePendingInspectionAction, notifyInspectionFailSummary } from '@/lib/inspectionFailNotify';
 import {
   PATROL_INSPECTION_CATEGORY,
   PATROL_LOG_DISCLAIMER,
@@ -45,6 +47,7 @@ type Inspection = {
   created_at: string;
   company_id?: string | null;
   project_id?: string;
+  is_deleted?: boolean;
 };
 
 type InspItem = {
@@ -77,6 +80,8 @@ export default function SafetyInspections() {
   const { profile } = useAuth();
   const { toast } = useToast();
   const { selectedProject, userCompanyId, userRole, userPosition, projects } = useGlobalProjectAccess();
+  const [searchParams] = useSearchParams();
+  const deepId = searchParams.get('id');
   const projectId = selectedProject;
   const projectLabel = (() => {
     const p = projects.find((x) => x.id === projectId);
@@ -206,6 +211,29 @@ export default function SafetyInspections() {
     setDetailActions(((acts as any) || []).map((x: any) => ({ ...x, evidence_photos: x.evidence_photos || [] })));
   };
 
+  useEffect(() => {
+    if (!deepId || !projectId) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from('safety_inspections' as any).select('*').eq('id', deepId).maybeSingle();
+      if (cancelled) return;
+      if (!data) {
+        toast({ title: '점검을 찾을 수 없습니다.', variant: 'destructive' });
+        return;
+      }
+      if ((data as Inspection).is_deleted) {
+        toast({
+          title: '삭제된 점검입니다.',
+          description: '불합격 알람 후 결과가 정정·삭제된 경우가 있습니다.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      await openDetail(data as Inspection);
+    })();
+    return () => { cancelled = true; };
+  }, [deepId, projectId]);
+
   const cloneInspection = async (src: Inspection, e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (!projectId) return;
@@ -305,7 +333,7 @@ export default function SafetyInspections() {
     if (error) return toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
     setDetailItems(prev => prev.map(x => x.id === item.id ? { ...x, result } : x));
 
-    // Auto-create action when fail + notify project safety managers
+    // 조치 요청만 생성. 불합격 알람은 점검 완료 시점에 남은 fail 만 보낸다.
     if (result === 'fail' && detail) {
       const exists = detailActions.find(a => a.item_id === item.id);
       if (!exists) {
@@ -319,30 +347,15 @@ export default function SafetyInspections() {
         }).select().single();
         if (!e2 && a) {
           setDetailActions(prev => [...prev, { ...(a as any), evidence_photos: [] }]);
-          // Notify project members with admin/safety_manager role
-          try {
-            const { data: members } = await supabase
-              .from('project_members')
-              .select('user_id, role_new')
-              .eq('project_id', projectId)
-              .in('role_new', ['project_admin', 'safety_manager']);
-            const { sendNotification } = await import('@/lib/notificationService');
-            await Promise.all(((members as any) || []).map((m: any) =>
-              sendNotification({
-                user_id: m.user_id,
-                title: '안전점검 불합격 발생',
-                message: `${detail.location} · ${item.label}`,
-                type: 'inspection_fail',
-                related_id: detail.id,
-                related_type: 'safety_inspection',
-                project_id: projectId,
-              })
-            ));
-          } catch (e) {
-            if (import.meta.env.DEV) console.warn('notify failed', e);
-          }
         }
       }
+    } else {
+      await closePendingInspectionAction(item.id);
+      setDetailActions(prev => prev.map((a) =>
+        a.item_id === item.id && a.status === 'pending'
+          ? { ...a, status: 'done', completion_note: '점검 결과 합격/해당없음으로 정정', completed_at: new Date().toISOString() }
+          : a
+      ));
     }
   };
 
@@ -406,7 +419,20 @@ export default function SafetyInspections() {
 
   const finishInspection = async () => {
     if (!detail) return;
+    const failLabels = detailItems.filter((i) => i.result === 'fail').map((i) => i.label);
     await supabase.from('safety_inspections' as any).update({ status: 'completed' }).eq('id', detail.id);
+    if (failLabels.length && projectId) {
+      try {
+        await notifyInspectionFailSummary({
+          projectId,
+          inspectionId: detail.id,
+          location: detail.location,
+          failLabels,
+        });
+      } catch (e) {
+        if (import.meta.env.DEV) console.warn('notify failed', e);
+      }
+    }
     toast({ title: '점검이 완료되었습니다.' });
     setDetail({ ...detail, status: 'completed' });
     load();

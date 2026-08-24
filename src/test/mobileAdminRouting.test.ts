@@ -193,6 +193,25 @@ describe("notification + entity mobile routes", () => {
     ).toBe("/app/worker/approvals");
   });
 
+  it("safety inspection notifications open the source document, not a blank create form", () => {
+    expect(
+      resolveNotificationRoute(
+        { type: "inspection_fail", related_type: "safety_inspection", related_id: "ins-1" },
+        { mobileShell: true },
+      ),
+    ).toBe("/app/worker/inspect?id=ins-1");
+    expect(
+      resolveNotificationRoute(
+        { type: "inspection_fail", related_type: "safety_inspection", related_id: "ins-1" },
+        { mobileShell: false },
+      ),
+    ).toBe("/app/admin/safety-inspections?id=ins-1");
+    expect(toMobileShellPath("/app/admin/safety-inspections?id=ins-1")).toBe(
+      "/app/worker/inspect?id=ins-1",
+    );
+    expect(mobileEntityPath("safety_inspection", "ins-1").path).toBe("/app/worker/inspect?id=ins-1");
+  });
+
   it("setForceDesktop(false) clears sticky desktop", () => {
     setForceDesktop(true);
     expect(prefersMobileAppShell()).toBe(false);

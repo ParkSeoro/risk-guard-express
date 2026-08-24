@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useNavigateMobileHome } from "@/lib/mobileNav";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,6 +19,8 @@ import { useAuditLog } from "@/hooks/useAuditLog";
 import { correctTerms } from "@/lib/termCorrection";
 import { uploadAttachmentFile } from "@/lib/compressUploadFile";
 import { fetchTodayPermitRoute } from "@/lib/legalForms/fetchTodayPermitRoute";
+import { seoulDayRange } from "@/lib/dailyWorkAck";
+import { closePendingInspectionAction, notifyInspectionFailSummary } from "@/lib/inspectionFailNotify";
 import {
   PATROL_INSPECTION_CATEGORY,
   PATROL_LOG_DISCLAIMER,
@@ -39,15 +42,30 @@ const inspectionSetupSchema = z.object({
 
 type Step = "setup" | "checklist";
 type Member = { user_id: string; display_name: string; role: string; position: string | null };
+type TodayLog = {
+  id: string;
+  inspector_name: string;
+  location: string;
+  status: string;
+  inspected_at: string;
+  created_by: string | null;
+  company_id: string | null;
+  is_deleted?: boolean;
+};
 
 export default function MobileInspect() {
   const goMobileHome = useNavigateMobileHome();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepId = searchParams.get("id");
   const { profile } = useAuth();
   const { projectId, companyId, role } = useMobileAccess();
   const { log: auditLog } = useAuditLog();
 
   const [step, setStep] = useState<Step>("setup");
   const [members, setMembers] = useState<Member[]>([]);
+  const [todayLogs, setTodayLogs] = useState<TodayLog[]>([]);
+  const [readOnly, setReadOnly] = useState(false);
+  const [missingLog, setMissingLog] = useState<string | null>(null);
   const [form, setForm] = useState({
     inspection_type: "patrol" as InspectionType,
     process_category: PATROL_PROCESS_CATEGORY,
@@ -79,13 +97,23 @@ export default function MobileInspect() {
   useEffect(() => {
     if (!projectId) return;
     (async () => {
-      const [{ data: pm }, { data: proj }, route] = await Promise.all([
+      const range = seoulDayRange();
+      const [{ data: pm }, { data: proj }, route, { data: logs }] = await Promise.all([
         supabase
           .from("project_members")
           .select("user_id, role_new, position_new")
           .eq("project_id", projectId),
         supabase.from("projects").select("name, site_name").eq("id", projectId).maybeSingle(),
         fetchTodayPermitRoute(projectId),
+        supabase
+          .from("safety_inspections" as any)
+          .select("id, inspector_name, location, status, inspected_at, created_by, company_id")
+          .eq("project_id", projectId)
+          .eq("is_deleted", false)
+          .gte("inspected_at", range.start)
+          .lte("inspected_at", range.end)
+          .order("inspected_at", { ascending: false })
+          .limit(40),
       ]);
       const ids = ((pm as any) || []).map((m: any) => m.user_id);
       let nameMap = new Map<string, string>();
@@ -106,13 +134,15 @@ export default function MobileInspect() {
       const site = [proj?.name, proj?.site_name].filter(Boolean).join(" / ");
       setProjectName(site || "");
       setTodayRoute(route);
+      setTodayLogs((logs as TodayLog[]) || []);
       const self = list.find(m => m.user_id === profile?.user_id);
       const title = inspectorTitleFromMember({
         position: self?.position,
         role: self?.role || role,
       });
-      setInspectorTitle(title);
+      if (!deepId) setInspectorTitle(title);
       setForm(f => {
+        if (deepId) return f;
         if (!isPatrolInspection(f.inspection_type)) return f;
         const next = { ...f };
         if (!next.location.trim() && route) next.location = route;
@@ -125,13 +155,63 @@ export default function MobileInspect() {
   }, [projectId, profile?.user_id, role]);
 
   useEffect(() => {
-    if (!patrol) return;
+    if (!patrol || deepId) return;
     setForm(f => ({
       ...f,
       process_category: PATROL_PROCESS_CATEGORY,
       location: f.location.trim() ? f.location : todayRoute,
     }));
-  }, [patrol, todayRoute]);
+  }, [patrol, todayRoute, deepId]);
+
+  useEffect(() => {
+    if (!deepId) {
+      setMissingLog(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("safety_inspections" as any)
+        .select("*")
+        .eq("id", deepId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (!data) {
+        setMissingLog("점검을 찾을 수 없습니다.");
+        return;
+      }
+      const ins = data as any;
+      if (ins.is_deleted) {
+        setMissingLog("이 점검은 삭제되었습니다. 알람은 남았지만 내용이 정정·삭제된 경우가 있습니다.");
+        return;
+      }
+      setMissingLog(null);
+      setForm({
+        inspection_type: ins.inspection_type || "patrol",
+        process_category: ins.process_category || PATROL_PROCESS_CATEGORY,
+        location: ins.location || "",
+        summary: ins.summary || "",
+        inspector_name: ins.inspector_name || "",
+        inspector_id: ins.inspector_id || "",
+      });
+      const { data: its } = await supabase.from("safety_inspection_items" as any)
+        .select("*").eq("inspection_id", ins.id).order("sort_order");
+      if (cancelled) return;
+      setItems(((its as any) || []).map((x: any) => ({ ...x, photos: x.photos || [] })));
+      setInspectionId(ins.id);
+      const own = ins.created_by === profile?.user_id || ins.inspector_id === profile?.user_id;
+      setReadOnly(ins.status === "completed" || !own);
+      setStep("checklist");
+    })();
+    return () => { cancelled = true; };
+  }, [deepId, profile?.user_id]);
+
+  useEffect(() => {
+    if (!form.inspector_id || !members.length) return;
+    const m = members.find(x => x.user_id === form.inspector_id);
+    if (!m) return;
+    setInspectorTitle(inspectorTitleFromMember({ position: m.position, role: m.role }));
+  }, [members, form.inspector_id]);
 
   const checklistPreview = useMemo(
     () => buildChecklist(form.inspection_type, form.process_category),
@@ -199,6 +279,7 @@ export default function MobileInspect() {
   };
 
   const setResult = async (item: any, result: "pass" | "fail" | "na") => {
+    if (readOnly) return;
     setItems(prev => prev.map(x => x.id === item.id ? { ...x, result } : x));
     await supabase.from("safety_inspection_items" as any).update({ result }).eq("id", item.id);
     if (result === "fail") {
@@ -213,28 +294,14 @@ export default function MobileInspect() {
           severity: "medium",
           status: "pending",
         });
-        try {
-          const { data: m } = await supabase.from("project_members")
-            .select("user_id, role_new").eq("project_id", projectId)
-            .in("role_new", ["project_admin", "safety_manager"]);
-          const { sendNotification } = await import("@/lib/notificationService");
-          await Promise.all(((m as any) || []).map((x: any) =>
-            sendNotification({
-              user_id: x.user_id,
-              title: "안전점검 불합격",
-              message: `${form.location} · ${item.label}`,
-              type: "inspection_fail",
-              related_id: inspectionId!,
-              related_type: "safety_inspection",
-              project_id: projectId,
-            })
-          ));
-        } catch {}
       }
+    } else {
+      await closePendingInspectionAction(item.id);
     }
   };
 
   const onPickPhoto = async (item: any, files: FileList | null) => {
+    if (readOnly) return;
     if (!files || !files.length) return;
     try {
       const urls: string[] = [];
@@ -292,6 +359,16 @@ export default function MobileInspect() {
     const { error } = await supabase.from("safety_inspections" as any)
       .update({ status: nextStatus }).eq("id", inspectionId);
     if (error) { toast.error("저장 실패: " + error.message); return; }
+    if (hasFail) {
+      try {
+        await notifyInspectionFailSummary({
+          projectId: projectId!,
+          inspectionId,
+          location: form.location,
+          failLabels: items.filter(i => i.result === "fail").map(i => i.label),
+        });
+      } catch {}
+    }
     await auditLog("update", "safety_inspection", inspectionId, projectId, {
       status: nextStatus, pass: items.filter(i=>i.result==='pass').length,
       fail: items.filter(i=>i.result==='fail').length,
@@ -325,7 +402,19 @@ export default function MobileInspect() {
     <div className="min-h-screen bg-muted/30 pb-24">
       <header className="bg-primary text-primary-foreground p-4 flex items-center gap-3 sticky top-0 z-10">
         <Button size="icon" variant="ghost" className="text-primary-foreground"
-          onClick={() => step === "checklist" ? setStep("setup") : goMobileHome()}>
+          onClick={() => {
+            if (deepId) {
+              setSearchParams({});
+              setStep("setup");
+              setInspectionId(null);
+              setReadOnly(false);
+              setItems([]);
+              setMissingLog(null);
+              return;
+            }
+            if (step === "checklist") setStep("setup");
+            else goMobileHome();
+          }}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="font-bold text-lg flex-1">{patrol ? PATROL_LOG_TITLE : "현장 안전점검"}</div>
@@ -338,6 +427,34 @@ export default function MobileInspect() {
         {step === "setup" && (
           <Card>
             <CardContent className="pt-4 space-y-3">
+              {missingLog && (
+                <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+                  {missingLog}
+                </div>
+              )}
+              {todayLogs.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-base">오늘 제출된 점검</Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    다른 업체가 올린 일지는 작성자(점검자) 그대로 열립니다. 아래는 새 일지 작성 화면입니다.
+                  </p>
+                  <div className="space-y-1.5">
+                    {todayLogs.map((log) => (
+                      <button
+                        key={log.id}
+                        type="button"
+                        className="w-full text-left rounded-lg border bg-background p-3 active:bg-muted"
+                        onClick={() => setSearchParams({ id: log.id })}
+                      >
+                        <div className="text-sm font-semibold">{log.inspector_name || "점검자 미기재"}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {log.location || "위치 미기재"} · {log.status === "completed" ? "완료" : "진행중"}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <Label className="text-base">점검 유형 *</Label>
                 <Select value={form.inspection_type}
@@ -386,7 +503,7 @@ export default function MobileInspect() {
 
               <div>
                 <Label className="text-base">점검자 *</Label>
-                <Select value={form.inspector_id || undefined} onValueChange={applyInspector}>
+                <Select value={form.inspector_id || undefined} onValueChange={applyInspector} disabled={readOnly}>
                   <SelectTrigger className="h-12 text-base">
                     <SelectValue placeholder="점검자 선택">
                       {inspectorLine || (profile?.user_id === form.inspector_id ? `본인 (${profile?.display_name || "나"})` : "")}
@@ -409,7 +526,7 @@ export default function MobileInspect() {
                 <Label className="text-base">{patrol ? "순회 구간 *" : "점검 위치 *"}</Label>
                 <Input className="h-12 text-base" value={form.location}
                   onChange={e => setForm({ ...form, location: e.target.value })}
-                  placeholder={patrol ? "당일 허가서 위치가 자동으로 채워집니다" : "예: 3층 동측 굴착부"} />
+                  placeholder={patrol ? "당일 허가서 구간(현장 전체). 제출된 일지 내용이 아닙니다" : "예: 3층 동측 굴착부"} />
                 {patrol && todayRoute && form.location !== todayRoute && (
                   <Button type="button" variant="ghost" size="sm" className="mt-1 h-8 text-xs"
                     onClick={() => setForm({ ...form, location: todayRoute })}>
@@ -451,6 +568,9 @@ export default function MobileInspect() {
                 {patrol && (
                   <div className="text-xs text-muted-foreground mt-1">{inspectorLine} · {projectName}</div>
                 )}
+                {readOnly && (
+                  <Badge variant="secondary" className="mt-2">열람 · 작성자 원문</Badge>
+                )}
                 <div className="grid grid-cols-3 gap-2 mt-3 text-center text-xs">
                   <div className="rounded bg-success/10 text-success p-2 font-bold">양호 {okCount}</div>
                   <div className="rounded bg-destructive/10 text-destructive p-2 font-bold">불량 {failCount}</div>
@@ -476,15 +596,16 @@ export default function MobileInspect() {
                   <div className="grid grid-cols-3 gap-2">
                     <Button size="sm" variant={it.result === "pass" ? "default" : "outline"}
                       className={`h-12 ${it.result === "pass" ? "bg-success hover:bg-success" : ""}`}
+                      disabled={readOnly}
                       onClick={() => setResult(it, "pass")}>
                       <CheckCircle2 className="h-4 w-4 mr-1" />{patrol ? "양호" : "합격"}
                     </Button>
                     <Button size="sm" variant={it.result === "fail" ? "destructive" : "outline"}
-                      className="h-12" onClick={() => setResult(it, "fail")}>
+                      className="h-12" disabled={readOnly} onClick={() => setResult(it, "fail")}>
                       <XCircle className="h-4 w-4 mr-1" />{patrol ? "불량" : "불합격"}
                     </Button>
                     <Button size="sm" variant={it.result === "na" ? "secondary" : "outline"}
-                      className="h-12" onClick={() => setResult(it, "na")}>
+                      className="h-12" disabled={readOnly} onClick={() => setResult(it, "na")}>
                       <MinusCircle className="h-4 w-4 mr-1" />해당없음
                     </Button>
                   </div>
@@ -498,6 +619,7 @@ export default function MobileInspect() {
                       )}
                       <IMESafeTextarea placeholder={patrol ? "발견 사항 / 즉시조치" : "발견 사항/조치 의견"} rows={2} defaultValue={it.note || ""}
                         onCommit={async (val) => {
+                          if (readOnly) return;
                           setNote(it, val);
                           await supabase.from("safety_inspection_items" as any).update({ note: val || "" }).eq("id", it.id);
                         }} />
@@ -535,7 +657,7 @@ export default function MobileInspect() {
               </Card>
             ))}
 
-            {patrol && (
+            {patrol && !readOnly && (
               <Card>
                 <CardContent className="pt-4 space-y-2">
                   <Label>추가 발견사항</Label>
@@ -549,9 +671,11 @@ export default function MobileInspect() {
               </Card>
             )}
 
+            {!readOnly && (
             <Button className="w-full h-14 text-base" onClick={completeInspection}>
               {patrol ? "일지 저장" : "점검 완료 저장"}
             </Button>
+            )}
           </>
         )}
       </main>

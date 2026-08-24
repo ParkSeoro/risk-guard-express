@@ -109,9 +109,11 @@ const PERMISSION_MATRIX: Record<ProjectRole, Record<FeatureKey, Perm>> = {
     approval: APPROVE_ONLY, company: RO, member: RO, master_data: RO, audit_log: RO,
   },
   // 관리감독자 — 위험성평가 고시 §7: 유해·위험요인 파악·개선조치 시행(실질 작성)
+  // 작업계획서: 산업안전보건기준에 관한 규칙 제38조 — 사업주 의무를 현장에서
+  // 작성·지휘하는 주체는 해당 작업의 관리감독자(작업지휘자). SM은 보좌, 감리는 열람.
   // 안전관리자(SM)는 보좌·지도·조언·검토 (ALL 유지). 감리(supervisor)와 권한 분리.
   site_supervisor: {
-    risk_assessment: CRUD_NO_APPROVE, work_plan: RO, work_permit: APPROVE_ONLY,
+    risk_assessment: CRUD_NO_APPROVE, work_plan: CRU_NO_APPROVE, work_permit: APPROVE_ONLY,
     safety_inspection: CRU_NO_APPROVE, tbm: RO, incident: CRU_NO_APPROVE,
     safety_cost: RO, legal_duty: RO, todo: CRU_NO_APPROVE,
     approval: APPROVE_ONLY, company: RO, member: RO, master_data: RO, audit_log: RO,

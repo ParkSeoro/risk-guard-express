@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -60,6 +60,17 @@ import { approvalsBackOr } from '@/lib/approvalInboxPreview';
 const EDITABLE_PLAN_STATUSES = new Set(['작성중', '반려']);
 const LOCKED_PREVIEW_STATUSES = new Set(['결재중', '승인', '승인완료', '완료']);
 
+const getDefaultChecklist = () => [
+  { label: '작업허가서 발급', checked: false },
+  { label: '안전교육 실시', checked: false },
+  { label: '위험성평가 검토', checked: false },
+  { label: '안전장구 착용 확인', checked: false },
+  { label: '비상연락체계 확인', checked: false },
+  { label: '작업전 안전점검', checked: false },
+  { label: '작업구역 통제', checked: false },
+  { label: '신호수 배치', checked: false },
+];
+
 const WorkPlanDetail = () => {
   const { planId } = useParams<{ planId: string }>();
   const [searchParams] = useSearchParams();
@@ -89,9 +100,69 @@ const WorkPlanDetail = () => {
   const [tbmNoticeLoading, setTbmNoticeLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('basic');
   const [attProgress, setAttProgress] = useState<AttachmentProgress | null>(null);
+  const authoringLockRef = useRef(false);
+  if (!isMobile || isForceDesktop()) authoringLockRef.current = true;
 
   useEffect(() => {
-    if (planId) loadPlan();
+    if (!planId) return;
+    let cancelled = false;
+    setLoading(true);
+    setIsDirty(false);
+    (async () => {
+      const { data, error } = await supabase.from('work_plans').select('*').eq('id', planId).single();
+      if (cancelled) return;
+      if (error || !data) {
+        toast({ title: '작업계획서를 찾을 수 없습니다.', variant: 'destructive' });
+        navigate('/work-plans');
+        return;
+      }
+      setPlan(data);
+      setSections(Array.isArray(data.sections) ? data.sections : []);
+      setAttachments(Array.isArray(data.attachments) ? data.attachments : []);
+      setStartDate(data.start_date || '');
+      setEndDate(data.end_date || '');
+      if (LOCKED_PREVIEW_STATUSES.has(data.status)) {
+        setActiveTab('preview');
+      }
+
+      const existingChecklist = (data.sections as any[])?.find(s => s.key === '_checklist');
+      if (existingChecklist?.content) {
+        try { setChecklist(JSON.parse(existingChecklist.content)); } catch { setChecklist(getDefaultChecklist()); }
+      } else {
+        setChecklist(getDefaultChecklist());
+      }
+
+      const wpType = WORK_PLAN_TYPES.find(t => t.id === data.work_type);
+      if (wpType?.hasRiggingPlan) {
+        const { data: rp } = await supabase.from('rigging_plans').select('*').eq('work_plan_id', planId).maybeSingle();
+        if (cancelled) return;
+        if (rp) {
+          setRigging(refreshRiggingDerivedFields(rp));
+        } else {
+          setRigging({ work_plan_id: planId });
+        }
+      } else {
+        setRigging(null);
+      }
+      setLoading(false);
+
+      if (planId) {
+        getAttachmentProgress(planId).then((p) => { if (!cancelled) setAttProgress(p); }).catch(() => {});
+      }
+      if (data.project_id) {
+        fetchLatestApprovedRun(data.project_id).then((r) => { if (!cancelled) setLatestApprovedRun(r); }).catch(() => {});
+      }
+      if (['승인완료', '승인', '완료'].includes(data.status) && planId) {
+        setTbmNoticeLoading(true);
+        fetchWorkPlanTbmNoticeStatus(planId)
+          .then((st) => { if (!cancelled) setTbmNotice(st); })
+          .catch(() => { if (!cancelled) setTbmNotice(null); })
+          .finally(() => { if (!cancelled) setTbmNoticeLoading(false); });
+      } else if (!cancelled) {
+        setTbmNotice(null);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [planId]);
 
   useEffect(() => {
@@ -101,77 +172,13 @@ const WorkPlanDetail = () => {
     }
   }, [isDirty, sections, attachments]);
 
-  const loadPlan = async () => {
-    const { data, error } = await supabase.from('work_plans').select('*').eq('id', planId).single();
-    if (error || !data) {
-      toast({ title: '작업계획서를 찾을 수 없습니다.', variant: 'destructive' });
-      navigate('/work-plans');
-      return;
-    }
-    setPlan(data);
-    setSections(Array.isArray(data.sections) ? data.sections : []);
-    setAttachments(Array.isArray(data.attachments) ? data.attachments : []);
-    setStartDate(data.start_date || '');
-    setEndDate(data.end_date || '');
-    if (LOCKED_PREVIEW_STATUSES.has(data.status)) {
-      setActiveTab('preview');
-    }
-
-    // Load checklist from sections or default
-    const wpType = WORK_PLAN_TYPES.find(t => t.id === data.work_type);
-    const existingChecklist = (data.sections as any[])?.find(s => s.key === '_checklist');
-    if (existingChecklist?.content) {
-      try { setChecklist(JSON.parse(existingChecklist.content)); } catch { setChecklist(getDefaultChecklist()); }
-    } else {
-      setChecklist(getDefaultChecklist());
-    }
-
-    if (wpType?.hasRiggingPlan) {
-      const { data: rp } = await supabase.from('rigging_plans').select('*').eq('work_plan_id', planId).maybeSingle();
-      if (rp) {
-        setRigging(refreshRiggingDerivedFields(rp));
-      } else {
-        setRigging({ work_plan_id: planId });
-      }
-    } else {
-      setRigging(null);
-    }
-    setLoading(false);
-
-    if (planId) {
-      getAttachmentProgress(planId).then(setAttProgress).catch(() => {});
-    }
-
-    // 최신 승인완료 위험성평가 자동 조회 (연계 권장 · 결재 절대조건 아님)
-    if (data.project_id) {
-      fetchLatestApprovedRun(data.project_id).then(setLatestApprovedRun).catch(() => {});
-    }
-
-    // 승인 후 근로자 주지 = 연결 TBM 참석
-    if (['승인완료', '승인', '완료'].includes(data.status) && planId) {
-      setTbmNoticeLoading(true);
-      fetchWorkPlanTbmNoticeStatus(planId)
-        .then(setTbmNotice)
-        .catch(() => setTbmNotice(null))
-        .finally(() => setTbmNoticeLoading(false));
-    } else {
-      setTbmNotice(null);
-    }
-  };
-
-  const getDefaultChecklist = () => [
-    { label: '작업허가서 발급', checked: false },
-    { label: '안전교육 실시', checked: false },
-    { label: '위험성평가 검토', checked: false },
-    { label: '안전장구 착용 확인', checked: false },
-    { label: '비상연락체계 확인', checked: false },
-    { label: '작업전 안전점검', checked: false },
-    { label: '작업구역 통제', checked: false },
-    { label: '신호수 배치', checked: false },
+  const mergeSectionsForSave = () => [
+    ...sections.filter(s => s.key !== '_checklist'),
+    { key: '_checklist', title: '체크리스트', type: 'checklist', content: JSON.stringify(checklist) },
   ];
 
-  const handleSectionChange = (idx: number, content: string) => {
-    setSections(prev => prev.map((s, i) => i === idx ? { ...s, content } : s));
+  const handleSectionChange = (key: string, content: string) => {
+    setSections(prev => prev.map((s) => (s.key === key ? { ...s, content } : s)));
     setIsDirty(true);
   };
 
@@ -190,20 +197,17 @@ const WorkPlanDetail = () => {
     return { ok: true };
   };
 
-  const handleSave = async (isAutoSave = false, riggingOverride?: any) => {
-    if (!planId) return;
+  const handleSave = async (isAutoSave = false, riggingOverride?: any): Promise<boolean> => {
+    if (!planId) return false;
     if (plan && !EDITABLE_PLAN_STATUSES.has(plan.status)) {
       if (!isAutoSave) {
         toast({ title: '수정 불가', description: '결재 진행중/완료 문서는 수정할 수 없습니다.', variant: 'destructive' });
       }
-      return;
+      return false;
     }
     setSaving(true);
 
-    // Merge checklist into sections
-    const mergedSections = [...sections.filter(s => s.key !== '_checklist'), {
-      key: '_checklist', title: '체크리스트', type: 'checklist', content: JSON.stringify(checklist),
-    }];
+    const mergedSections = mergeSectionsForSave();
 
     const { error } = await supabase.from('work_plans').update({
       sections: mergedSections,
@@ -217,7 +221,7 @@ const WorkPlanDetail = () => {
     if (error) {
       if (!isAutoSave) toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
       setSaving(false);
-      return;
+      return false;
     }
 
     const wpType = WORK_PLAN_TYPES.find(t => t.id === plan?.work_type);
@@ -233,13 +237,14 @@ const WorkPlanDetail = () => {
           });
         }
         setSaving(false);
-        return;
+        return false;
       }
     }
 
     setIsDirty(false);
     if (!isAutoSave) toast({ title: '저장되었습니다.' });
     setSaving(false);
+    return true;
   };
 
   const handleSaveRigging = async () => {
@@ -263,10 +268,10 @@ const WorkPlanDetail = () => {
     setIsDirty(true);
   };
 
-  const handleAiGenerate = async (sectionIdx: number) => {
-    const section = sections[sectionIdx];
+  const handleAiGenerate = async (sectionKey: string) => {
+    const section = sections.find(s => s.key === sectionKey);
     const wpType = WORK_PLAN_TYPES.find(t => t.id === plan?.work_type);
-    if (!wpType) return;
+    if (!section || !wpType) return;
     setAiLoading(section.key);
     try {
       const { data, error } = await supabase.functions.invoke('generate-risk-ai', {
@@ -278,17 +283,17 @@ const WorkPlanDetail = () => {
       });
       if (error) throw error;
       if (data?.structured) {
-        handleSectionChange(sectionIdx, JSON.stringify(data.structured));
+        handleSectionChange(section.key, JSON.stringify(data.structured));
         toast({ title: 'AI 작성 완료' });
       } else if (data?.content) {
-        handleSectionChange(sectionIdx, data.content);
+        handleSectionChange(section.key, data.content);
         toast({ title: 'AI 작성 완료' });
       } else if (data?.items) {
         const risks = (data.items as any[]).map((item: any) => ({
           hazard: item.hazard || '', situation: item.hazard_situation || '',
           measure: item.improvement_measure || '', severity: item.likelihood_grade || '중',
         }));
-        handleSectionChange(sectionIdx, JSON.stringify(risks));
+        handleSectionChange(section.key, JSON.stringify(risks));
         toast({ title: 'AI 작성 완료' });
       }
     } catch (err: any) {
@@ -400,17 +405,27 @@ const WorkPlanDetail = () => {
 
   const handleClone = async () => {
     if (!plan || !user) return;
+    if (EDITABLE_PLAN_STATUSES.has(plan.status) && isDirty) {
+      const saved = await handleSave(true);
+      if (saved === false) {
+        toast({ title: '복사 전 저장에 실패했습니다.', variant: 'destructive' });
+        return;
+      }
+    }
+    const merged = mergeSectionsForSave();
     const { data, error } = await supabase.from('work_plans').insert({
       project_id: plan.project_id,
       company_id: plan.company_id,
       work_type: plan.work_type,
       title: `${plan.title} (v${(plan.version || 1) + 1})`,
-      sections: plan.sections,
+      sections: merged,
       attachments: [],
       created_by: user.id,
       parent_id: plan.id,
       version: (plan.version || 1) + 1,
       status: '작성중',
+      start_date: startDate || null,
+      end_date: endDate || null,
     }).select().single();
     if (error) {
       toast({ title: '복사 실패', description: error.message, variant: 'destructive' });
@@ -473,8 +488,10 @@ const WorkPlanDetail = () => {
   if (loading) return <div className="flex items-center justify-center h-64 text-muted-foreground">로딩 중...</div>;
   if (!plan) return null;
 
-  // Mobile: never render authoring UI — read-only print preview + summary
-  if (isMobile && !isForceDesktop()) {
+  // Mobile: never render authoring UI — read-only print preview + summary.
+  // Once authoring started (desktop / force-desktop), keep the editor even if
+  // the viewport dips below 768px (keyboard / rotate) so drafts are not wiped.
+  if (isMobile && !isForceDesktop() && !authoringLockRef.current) {
     return <MobileWorkPlanViewer planId={planId} />;
   }
 
@@ -797,7 +814,7 @@ const WorkPlanDetail = () => {
 
         {/* Sections Tab */}
         <TabsContent value="sections" className="space-y-4 mt-4">
-          {sections.filter(s => s.key !== '_checklist').map((section, idx) => {
+          {sections.filter(s => s.key !== '_checklist').map((section) => {
             if (section.type === 'rigging') return null;
             const templateSection = wpType?.templateSections.find(ts => ts.key === section.key);
             const sectionErrors = validationErrors[section.key];
@@ -808,7 +825,7 @@ const WorkPlanDetail = () => {
                     <CardTitle className="text-sm">{section.title}</CardTitle>
                     {templateSection?.aiPrompt && (
                       <Button variant="outline" size="sm" className="h-7 text-xs gap-1"
-                        onClick={() => handleAiGenerate(idx)} disabled={aiLoading === section.key}>
+                        onClick={() => handleAiGenerate(section.key)} disabled={aiLoading === section.key}>
                         {aiLoading === section.key ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
                         AI 작성
                       </Button>
@@ -817,8 +834,8 @@ const WorkPlanDetail = () => {
                   {sectionErrors?.map((e, i) => <p key={i} className="text-[10px] text-destructive">{e}</p>)}
                 </CardHeader>
                 <CardContent>
-                  <StructuredSectionForm sectionKey={section.key} workType={plan.work_type}
-                    value={section.content || ''} onChange={content => handleSectionChange(idx, content)} />
+                  <StructuredSectionForm key={`${planId}-${section.key}`} sectionKey={section.key} workType={plan.work_type}
+                    value={section.content || ''} onChange={content => handleSectionChange(section.key, content)} />
                 </CardContent>
               </Card>
             );
@@ -877,7 +894,7 @@ const WorkPlanDetail = () => {
                 toast({ title: '작업방법 섹션을 찾을 수 없습니다', variant: 'destructive' });
                 return;
               }
-              handleSectionChange(idx, appendTextToMethodSection(sections[idx].content || '', text));
+              handleSectionChange('method', appendTextToMethodSection(sections[idx].content || '', text));
               setIsDirty(true);
             }}
           />

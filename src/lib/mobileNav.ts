@@ -48,7 +48,7 @@ export function mobileEntityPath(
     case "approval":
       return { path: id ? `${WORKER}/approvals/${id}` : `${WORKER}/approvals` };
     case "safety_inspection":
-      return { path: `${WORKER}/inspect` };
+      return { path: id ? `${WORKER}/inspect?id=${id}` : `${WORKER}/inspect` };
     case "incident":
     case "incident_report":
       return { path: `${WORKER}/incident` };

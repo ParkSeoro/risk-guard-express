@@ -54,7 +54,7 @@ const EXPECTED: Record<Role, Record<Feature, Perm>> = {
   },
   site_manager: {
     risk_assessment: CRU_APPROVE, work_plan: CRU_APPROVE, work_permit: CRU_APPROVE,
-    safety_inspection: CRUD_NO_APPROVE, tbm: CRUD_NO_APPROVE, incident: CRUD_NO_APPROVE,
+    safety_inspection: CRU_APPROVE, tbm: CRUD_NO_APPROVE, incident: CRUD_NO_APPROVE,
     safety_cost: RO, legal_duty: RO, todo: CRUD_NO_APPROVE,
     approval: APPROVE_ONLY, company: RO, member: RO, master_data: RO, audit_log: RO,
   },

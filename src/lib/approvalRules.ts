@@ -18,7 +18,8 @@ export type ApprovalEntityType =
   | 'safety_cost'
   | 'incident'
   | 'emergency_drill'
-  | 'tbm';
+  | 'tbm'
+  | 'safety_inspection';
 
 export const ENTITY_LABELS: Record<ApprovalEntityType, string> = {
   assessment_run: '위험성평가',
@@ -29,6 +30,7 @@ export const ENTITY_LABELS: Record<ApprovalEntityType, string> = {
   incident: '사고보고',
   emergency_drill: '비상대피훈련',
   tbm: 'TBM 일지',
+  safety_inspection: '순회 안전점검일지',
 };
 
 /** 전자결재 UI 공통 — 알 수 없는 키는 원문, 빈 값은 '문서' */
@@ -155,6 +157,10 @@ export const DEFAULT_STEPS_BY_ENTITY: Record<ApprovalEntityType, DefaultStep[]> 
   incident: FIXED_APPROVAL_STEPS,
   emergency_drill: FIXED_APPROVAL_STEPS,
   tbm: FIXED_APPROVAL_STEPS,
+  safety_inspection: [
+    { label: '안전관리자', position: 'contractor_safety_manager' },
+    { label: '안전보건관리책임자(현장소장)', position: 'contractor_site_director' },
+  ],
 };
 
 export const APPROVAL_POLICY = {

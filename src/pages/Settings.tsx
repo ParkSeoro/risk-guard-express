@@ -18,7 +18,7 @@ const settingsCards = [
   {
     id: 'permissions',
     title: '권한 관리',
-    description: '관리자(웹)와 근로자(현장 앱)를 나눠 승인·역할을 부여합니다.',
+    description: '사용자마다 프로젝트 역할·직책·업체를 부여합니다. 기능 권한은 역할에 따라 정해집니다.',
     icon: Shield,
     path: '/settings/permissions',
     requires: 'admin' as const,

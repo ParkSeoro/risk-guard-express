@@ -8,6 +8,7 @@ import { Bell, CheckCheck, Settings } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { resolveNotificationRoute } from "@/lib/notificationRoutes";
+import { notificationPreview } from "@/lib/notificationText";
 import MobilePageHeader from "@/components/mobile/MobilePageHeader";
 
 export default function MobileAlerts() {
@@ -84,7 +85,9 @@ export default function MobileAlerts() {
                 <div className="font-semibold text-sm">{n.title}</div>
                 {!n.is_read && <span className="h-2 w-2 rounded-full bg-primary mt-1.5 shrink-0" />}
               </div>
-              <div className="text-xs text-muted-foreground mt-0.5">{n.message}</div>
+              {notificationPreview(n) && (
+                <div className="text-xs text-muted-foreground mt-0.5 whitespace-pre-line">{notificationPreview(n)}</div>
+              )}
               <div className="text-[10px] text-muted-foreground mt-1">
                 {formatDistanceToNow(new Date(n.created_at), { addSuffix: true, locale: ko })}
               </div>

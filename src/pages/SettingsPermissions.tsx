@@ -43,6 +43,10 @@ const SettingsPermissions = () => {
           <h1 className="text-xl font-bold flex items-center gap-2">
             <Shield className="h-5 w-5" /> 권한 관리
           </h1>
+          <p className="text-xs text-muted-foreground mt-1">
+            마스터는 사람마다 역할·직책·업체를 지정합니다. 작업계획서·위험성평가 등 기능 권한은
+            역할표로 정해지며, 개인별 기능 스위치는 없습니다.
+          </p>
         </div>
       </div>
       <UserManagement />

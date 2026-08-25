@@ -345,6 +345,21 @@ export function isPatrolLogLocked(status?: string | null): boolean {
   return PATROL_LOCKED_STATUSES.has(String(status || ''));
 }
 
+/** 결재진행 중이면 회수 후 수정 가능. 승인완료는 회수 불가(복제). */
+export function canWithdrawPatrolLog(status?: string | null): boolean {
+  return String(status || '') === '결재진행';
+}
+
+export function patrolLockEditHint(status?: string | null): string {
+  if (String(status || '') === 'completed') {
+    return '승인 완료된 일지는 수정·삭제할 수 없습니다. 필요하면 복제하세요.';
+  }
+  if (canWithdrawPatrolLog(status)) {
+    return '상신된 일지는 잠겨 있습니다. [회수] 후 수정할 수 있습니다.';
+  }
+  return '이 일지는 현재 수정할 수 없습니다.';
+}
+
 function escapeHtml(value: string): string {
   return String(value || '')
     .replace(/&/g, '&amp;')

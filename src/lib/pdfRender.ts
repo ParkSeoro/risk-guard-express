@@ -10,7 +10,10 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   `https://cdn.jsdelivr.net/npm/pdfjs-dist@${(pdfjsLib as any).version}/build/pdf.worker.min.mjs`;
 
 const MAX_PAGES = 20;
-const SCALE = 1.4;
+/** ~180 DPI for A4 — thin form lines stay readable when printed. */
+export const PDF_RENDER_SCALE = 2.5;
+/** Prefer near-lossless JPEG so black text/rules do not wash out. */
+export const PDF_RENDER_JPEG_QUALITY = 0.95;
 
 export async function renderPdfUrlToImages(url: string): Promise<string[]> {
   try {
@@ -23,14 +26,17 @@ export async function renderPdfUrlToImages(url: string): Promise<string[]> {
     const images: string[] = [];
     for (let p = 1; p <= total; p++) {
       const page = await pdf.getPage(p);
-      const viewport = page.getViewport({ scale: SCALE });
+      const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
       const canvas = document.createElement('canvas');
       canvas.width = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
       const ctx = canvas.getContext('2d');
       if (!ctx) continue;
+      // Opaque white base — transparent PDF pages otherwise print as washed grey.
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
-      images.push(canvas.toDataURL('image/jpeg', 0.85));
+      images.push(canvas.toDataURL('image/jpeg', PDF_RENDER_JPEG_QUALITY));
     }
     return images;
   } catch (e) {

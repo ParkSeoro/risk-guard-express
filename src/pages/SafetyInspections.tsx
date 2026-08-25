@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ClipboardCheck, Plus, Camera, Printer, AlertTriangle, CheckCircle2, XCircle, Loader2, Trash2, Search, Copy, Pencil } from 'lucide-react';
+import { ClipboardCheck, Plus, Camera, Printer, AlertTriangle, CheckCircle2, XCircle, Loader2, Trash2, Search, Copy, Pencil, RotateCcw } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { buildChecklist, INSPECTION_TYPE_LABELS, PROCESS_CATEGORIES, type InspectionType } from '@/lib/inspectionTemplates';
 import IMESafeInput from '@/components/IMESafeInput';
@@ -35,13 +35,19 @@ import {
   inspectorTitleFromMember,
   isPatrolInspection,
   isPatrolLogLocked,
+  canWithdrawPatrolLog,
+  patrolLockEditHint,
   normalizeDirectorPatrolItems,
   type DirectorPatrolItem,
 } from '@/lib/legalForms/patrolLog';
 import ApprovalLineManager, { type DraftStatusInfo } from '@/components/ApprovalLineManager';
 import { submitApprovalFromDraft } from '@/lib/approvalPlatform';
 import { DEFAULT_STEPS_BY_ENTITY } from '@/lib/approvalRules';
-
+import {
+  filterVisibleInspectionActions,
+  isOpenInspectionAction,
+  INSPECTION_ACTION_DONE_STATUS,
+} from '@/lib/inspectionActions';
 type Inspection = {
   id: string;
   inspection_type: InspectionType;
@@ -157,8 +163,8 @@ export default function SafetyInspections() {
       .eq('project_id', projectId)
       .order('created_at', { ascending: false })
       .limit(200);
-    // 삭제된 점검에 속한 조치는 제외
-    setActions(((acts as any) || []).filter((a: any) => !a.inspection?.is_deleted));
+    // 삭제된·권한상 안 보이는 점검에 속한 조치(유령) 제외
+    setActions(filterVisibleInspectionActions(((acts as any) || []) as any));
     setListLoading(false);
   };
   useEffect(() => { load(); }, [projectId]);
@@ -355,7 +361,7 @@ export default function SafetyInspections() {
   const startEdit = (insp: Inspection, e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (isPatrolInspection(insp.inspection_type) && isPatrolLogLocked(insp.status)) {
-      return toast({ title: '상신된 일지는 수정할 수 없습니다.', variant: 'destructive' });
+      return toast({ title: patrolLockEditHint(insp.status), variant: 'destructive' });
     }
     const d = new Date(insp.inspected_at);
     const local = Number.isNaN(d.getTime())
@@ -408,7 +414,7 @@ export default function SafetyInspections() {
 
   const updateItemResult = async (item: InspItem, result: 'pass' | 'fail' | 'na') => {
     if (detail && isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) {
-      return toast({ title: '상신된 일지는 수정할 수 없습니다.', variant: 'destructive' });
+      return toast({ title: patrolLockEditHint(detail.status), variant: 'destructive' });
     }
     const { error } = await supabase.from('safety_inspection_items' as any)
       .update({ result }).eq('id', item.id);
@@ -443,7 +449,7 @@ export default function SafetyInspections() {
 
   const assertEditable = () => {
     if (detail && isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status)) {
-      toast({ title: '상신된 일지는 수정할 수 없습니다.', variant: 'destructive' });
+      toast({ title: patrolLockEditHint(detail.status), variant: 'destructive' });
       return false;
     }
     return true;
@@ -581,6 +587,42 @@ export default function SafetyInspections() {
     }
   };
 
+  const withdrawPatrolApproval = async () => {
+    if (!detail) return;
+    if (!canWithdrawPatrolLog(detail.status)) {
+      return toast({
+        title: '회수할 수 없습니다.',
+        description: detail.status === 'completed'
+          ? '승인 완료된 일지는 회수할 수 없습니다. 필요하면 복제하세요.'
+          : '상신(결재진행) 상태에서만 회수할 수 있습니다.',
+        variant: 'destructive',
+      });
+    }
+    if (!confirm('결재를 회수하고 일지를 다시 수정할 수 있게 할까요?')) return;
+    const reason = window.prompt('회수 사유 (선택)') ?? '';
+    const { data, error } = await supabase.rpc('withdraw_approval', {
+      _entity_type: 'safety_inspection',
+      _entity_id: detail.id,
+      _reason: reason || null,
+    });
+    const r: any = data;
+    if (error || r?.error) {
+      const code = r?.error || error?.message || '';
+      const msg = code === 'ALREADY_DECIDED'
+        ? '이미 다음 결재자가 처리한 단계가 있어 회수할 수 없습니다.'
+        : code === 'NOT_SUBMITTER'
+          ? '상신자 또는 관리자만 회수할 수 있습니다.'
+          : code === 'ALREADY_REJECTED'
+            ? '이미 반려된 결재입니다. 수정 후 재상신하세요.'
+            : code;
+      return toast({ title: '회수 실패', description: msg, variant: 'destructive' });
+    }
+    toast({ title: '결재를 회수했습니다.', description: '이제 일지를 수정한 뒤 다시 상신할 수 있습니다.' });
+    setDetail({ ...detail, status: 'in_progress' });
+    setApprovalDraftInfo(null);
+    load();
+  };
+
   const actOnPatrol = async (action: 'approve' | 'reject') => {
     if (!myPendingApprovalId) return;
     if (action === 'reject') {
@@ -633,8 +675,13 @@ export default function SafetyInspections() {
   };
 
   const removeInspection = async (id: string) => {
+    const target = inspections.find((x) => x.id === id) || (detail?.id === id ? detail : null);
+    if (target && isPatrolInspection(target.inspection_type) && isPatrolLogLocked(target.status)) {
+      return toast({ title: patrolLockEditHint(target.status), variant: 'destructive' });
+    }
     if (!confirm('점검을 삭제하시겠습니까?')) return;
-    await supabase.from('safety_inspections' as any).update({ is_deleted: true }).eq('id', id);
+    const { error } = await supabase.from('safety_inspections' as any).update({ is_deleted: true }).eq('id', id);
+    if (error) return toast({ title: '삭제 실패', description: error.message, variant: 'destructive' });
     toast({ title: '삭제되었습니다.' });
     setDetail(null);
     load();
@@ -749,7 +796,32 @@ export default function SafetyInspections() {
 
   const failCount = detailItems.filter(x => x.result === 'fail').length;
   const passCount = detailItems.filter(x => x.result === 'pass').length;
-  const pendingActions = actions.filter(a => a.status !== 'done').length;
+  const openActions = actions.filter((a) => isOpenInspectionAction(a.status));
+  const pendingActions = openActions.length;
+
+  const openActionParent = async (action: InspAction) => {
+    const parent = inspections.find((i) => i.id === action.inspection_id);
+    if (parent) {
+      setTab('list');
+      await openDetail(parent);
+      return;
+    }
+    const { data, error } = await supabase
+      .from('safety_inspections' as any)
+      .select('*')
+      .eq('id', action.inspection_id)
+      .maybeSingle();
+    if (error || !data || (data as any).is_deleted) {
+      toast({
+        title: '점검을 열 수 없습니다.',
+        description: '삭제되었거나 권한이 없는 점검입니다.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setTab('list');
+    await openDetail(data as Inspection);
+  };
 
   if (!projectId) {
     return <div className="p-6 text-sm text-muted-foreground">프로젝트를 먼저 선택하세요.</div>;
@@ -809,10 +881,30 @@ export default function SafetyInspections() {
                       <div className="text-xs text-muted-foreground truncate">{i.location} · {i.inspector_name} · {new Date(i.inspected_at).toLocaleString('ko-KR')}</div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <Badge variant={i.status === 'completed' ? 'default' : 'secondary'}>{i.status === 'completed' ? '완료' : '진행중'}</Badge>
-                      <Button size="icon" variant="ghost" className="h-8 w-8" title="수정" onClick={(e) => startEdit(i, e)}><Pencil className="h-3.5 w-3.5" /></Button>
+                      <Badge variant={i.status === 'completed' ? 'default' : i.status === '결재진행' ? 'outline' : i.status === '반려' ? 'destructive' : 'secondary'}>
+                        {i.status === 'completed' ? '완료' : i.status === '결재진행' ? '결재중' : i.status === '반려' ? '반려' : '진행중'}
+                      </Badge>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        title="수정"
+                        disabled={isPatrolInspection(i.inspection_type) && isPatrolLogLocked(i.status)}
+                        onClick={(e) => startEdit(i, e)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
                       <Button size="icon" variant="ghost" className="h-8 w-8" title="복제" onClick={(e) => cloneInspection(i, e)}><Copy className="h-3.5 w-3.5" /></Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8" title="삭제" onClick={(e) => { e.stopPropagation(); removeInspection(i.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        title="삭제"
+                        disabled={isPatrolInspection(i.inspection_type) && isPatrolLogLocked(i.status)}
+                        onClick={(e) => { e.stopPropagation(); removeInspection(i.id); }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -825,13 +917,17 @@ export default function SafetyInspections() {
           <div className="grid gap-2">
             {listLoading ? (
               [...Array(3)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)
-            ) : actions.filter(a => a.status !== 'done').length === 0 ? (
+            ) : openActions.length === 0 ? (
               <Card><CardContent className="p-6 text-center text-sm text-muted-foreground"><CheckCircle2 className="h-8 w-8 mx-auto text-success mb-2" />미조치 항목이 없습니다.</CardContent></Card>
-            ) : actions.filter(a => a.status !== 'done').map(a => {
+            ) : openActions.map(a => {
               const dday = a.due_date ? Math.ceil((new Date(a.due_date).getTime() - Date.now()) / 86400000) : null;
               const overdue = dday !== null && dday < 0;
               return (
-                <Card key={a.id} className={overdue ? 'border-destructive' : ''}>
+                <Card
+                  key={a.id}
+                  className={`cursor-pointer hover:bg-accent/30 ${overdue ? 'border-destructive' : ''}`}
+                  onClick={() => void openActionParent(a)}
+                >
                   <CardContent className="p-3 text-sm">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <AlertTriangle className="h-4 w-4 text-destructive" />
@@ -956,6 +1052,16 @@ export default function SafetyInspections() {
                           </Button>
                         )}
                         {detail.status === '결재진행' && <Badge variant="outline">결재중</Badge>}
+                        {isPatrolInspection(detail.inspection_type) && canWithdrawPatrolLog(detail.status) && (
+                          <Button size="sm" variant="outline" className="text-destructive" onClick={() => void withdrawPatrolApproval()}>
+                            <RotateCcw className="h-4 w-4 mr-1" />회수
+                          </Button>
+                        )}
+                        {isPatrolInspection(detail.inspection_type) && isPatrolLogLocked(detail.status) && (
+                          <span className="text-[11px] text-muted-foreground max-w-[220px] leading-snug">
+                            {patrolLockEditHint(detail.status)}
+                          </span>
+                        )}
                         {detail.status === 'completed' && <Badge className="bg-success">종료</Badge>}
                       </>
                     ) : (
@@ -1146,7 +1252,7 @@ export default function SafetyInspections() {
                               <Camera className="h-3 w-3" />증빙 사진
                               <input type="file" accept="image/*" multiple capture="environment" className="hidden" onChange={(e) => onActionEvidence(a, e.target.files)} />
                             </label>
-                            {a.status !== 'done' ? (
+                            {isOpenInspectionAction(a.status) ? (
                               <Button size="sm" onClick={() => completeAction(a)}><CheckCircle2 className="h-4 w-4 mr-1" />조치 완료</Button>
                             ) : (
                               <Badge className="bg-success">완료 · {a.completed_at ? new Date(a.completed_at).toLocaleString('ko-KR') : ''}</Badge>

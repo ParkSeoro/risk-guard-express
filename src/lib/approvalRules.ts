@@ -755,6 +755,59 @@ export function isSubmitterApprovalStep(step: {
 }
 
 /**
+ * Force 담당자(시공)/contractor_pic step onto the legal author (submitter).
+ * Returns a new array; does not mutate input.
+ */
+export function forceSubmitterStepToAuthor<
+  T extends {
+    position?: string | null;
+    user_id?: string | null;
+    user_name?: string | null;
+    company_id?: string | null;
+    company_name?: string | null;
+    step_label?: string | null;
+    label?: string | null;
+  },
+>(
+  steps: T[],
+  author: {
+    userId: string;
+    userName?: string | null;
+    companyId?: string | null;
+    companyName?: string | null;
+  },
+): T[] {
+  if (!author.userId) return steps;
+  return steps.map((s) => {
+    const pos = String(s.position || '').toLowerCase();
+    if (pos !== 'contractor_supervisor' && pos !== 'contractor_pic') return s;
+    return {
+      ...s,
+      user_id: author.userId,
+      user_name: author.userName || s.user_name || '',
+      company_id: author.companyId ?? s.company_id ?? null,
+      company_name: author.companyName || s.company_name || '',
+    };
+  });
+}
+
+/**
+ * True when a 담당자(시공) step is assigned to someone other than the author.
+ */
+export function submitterStepMismatchAuthor(
+  steps: Array<{ position?: string | null; user_id?: string | null }>,
+  authorUserId?: string | null,
+): boolean {
+  if (!authorUserId) return false;
+  const step = steps.find((s) => {
+    const pos = String(s.position || '').toLowerCase();
+    return pos === 'contractor_supervisor' || pos === 'contractor_pic';
+  });
+  if (!step?.user_id) return false;
+  return step.user_id !== authorUserId;
+}
+
+/**
  * Remove duplicate nodes on one approval line (same position+user, or twin org-labeled copies).
  * Keeps first occurrence in hierarchy order.
  */

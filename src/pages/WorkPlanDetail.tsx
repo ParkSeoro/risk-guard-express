@@ -132,6 +132,7 @@ const WorkPlanDetail = () => {
   useEffect(() => {
     if (!planId) return;
     let cancelled = false;
+    let warmTimer: number | undefined;
     setLoading(true);
     setIsDirty(false);
     (async () => {
@@ -187,8 +188,22 @@ const WorkPlanDetail = () => {
       } else if (!cancelled) {
         setTbmNotice(null);
       }
+
+      if (cancelled) return;
+      // 인쇄/결재 미리보기와 같은 캐시를 미리 채워 첫 클릭 대기를 줄입니다.
+      if (!isMobile || isForceDesktop()) {
+        warmTimer = window.setTimeout(() => {
+          if (cancelled) return;
+          void import('@/lib/workPlanPrintPrep')
+            .then((m) => m.prepareWorkPlanPrintPayload(planId!))
+            .catch(() => {});
+        }, 1600);
+      }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (warmTimer) window.clearTimeout(warmTimer);
+    };
   }, [planId]);
 
   useEffect(() => {
@@ -424,16 +439,38 @@ const WorkPlanDetail = () => {
   const handlePdfDownload = async () => {
     if (!planId || pdfBusy) return;
     setPdfBusy(true);
+    const progressToast = toast({
+      title: '인쇄 문서 준비 중…',
+      description: '첨부 PDF를 변환합니다. 두 번째부터는 캐시를 사용합니다.',
+      duration: 120000,
+    });
     try {
-      toast({ title: '인쇄 문서 준비 중…', description: '첨부 PDF를 이미지로 변환합니다. 잠시만 기다려 주세요.' });
       const { fetchWorkPlanPrintHtml } = await import('@/lib/approvalDocPreview');
       const { printHtmlDocument } = await import('@/lib/printHtmlDocument');
-      const html = await fetchWorkPlanPrintHtml(planId);
+      const html = await fetchWorkPlanPrintHtml(planId, {
+        onProgress: (p) => {
+          if (p.total <= 0) return;
+          progressToast.update({
+            id: progressToast.id,
+            title: `첨부 변환 ${p.done}/${p.total}`,
+            description: p.cached > 0 ? `캐시 재사용 ${p.cached}건` : '한글 양식이 선명하게 나오도록 처리 중입니다.',
+          });
+        },
+      });
       if (html) {
+        progressToast.update({
+          id: progressToast.id,
+          title: '이미지 로드 중…',
+          description: '인쇄 대화상자를 엽니다.',
+        });
         await printHtmlDocument(html, { title: plan?.title || '작업계획서' });
+        progressToast.dismiss();
         toast({ title: 'PDF 인쇄 대화상자가 열립니다. "PDF로 저장"을 선택하세요.' });
+      } else {
+        progressToast.dismiss();
       }
     } catch (err: any) {
+      progressToast.dismiss();
       toast({ title: 'PDF 생성 실패', description: err?.message, variant: 'destructive' });
     } finally {
       setPdfBusy(false);

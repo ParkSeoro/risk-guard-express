@@ -13,6 +13,7 @@ import {
   clampDocumentPan,
   fitWidthScale,
 } from "@/lib/approvalDocPreview";
+import { waitForDocumentImages } from "@/lib/printHtmlDocument";
 
 type Props = {
   html: string | null;
@@ -21,6 +22,7 @@ type Props = {
   pageWidth?: number;
   className?: string;
   emptyHint?: string;
+  loadingHint?: string;
   /** Remeasure when the hosting tab becomes visible again. */
   active?: boolean;
 };
@@ -36,6 +38,7 @@ export default function ZoomableDocumentPreview({
   pageWidth = A4_PORTRAIT_PX,
   className,
   emptyHint = "표시할 문서가 없습니다",
+  loadingHint,
   active = true,
 }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -45,6 +48,14 @@ export default function ZoomableDocumentPreview({
   const [userScale, setUserScale] = useState(1);
   const [tx, setTx] = useState(0);
   const [ty, setTy] = useState(0);
+  const [imagesReady, setImagesReady] = useState(!html);
+  const htmlKeyRef = useRef(html);
+  const imageWaitGen = useRef(0);
+  if (htmlKeyRef.current !== html) {
+    htmlKeyRef.current = html;
+    imageWaitGen.current += 1;
+    setImagesReady(!html);
+  }
 
   const live = useRef({ userScale: 1, tx: 0, ty: 0, vpW: 0, vpH: 0, contentH: pageWidth * 1.414, pageWidth });
   live.current.userScale = userScale;
@@ -179,17 +190,18 @@ export default function ZoomableDocumentPreview({
   }, [html, pageWidth]);
 
   const onIframeLoad = () => {
-    measureIframe();
+    const gen = imageWaitGen.current;
     const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
-    const imgs = Array.from(doc.images || []);
-    imgs.forEach((img) => {
-      if (img.complete) return;
-      img.addEventListener("load", measureIframe);
-      img.addEventListener("error", measureIframe);
+    if (!doc) {
+      if (imageWaitGen.current === gen) setImagesReady(true);
+      return;
+    }
+    void waitForDocumentImages(doc, { timeoutMs: 25_000 }).then(() => {
+      if (imageWaitGen.current !== gen) return;
+      measureIframe();
+      setImagesReady(true);
+      requestAnimationFrame(measureIframe);
     });
-    requestAnimationFrame(measureIframe);
-    setTimeout(measureIframe, 400);
   };
 
   useEffect(() => {
@@ -368,12 +380,12 @@ export default function ZoomableDocumentPreview({
         )}
       </div>
 
-      {(loading || (!html && !error)) && (
+      {(loading || (html && !imagesReady) || (!html && !error)) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-300 bg-slate-900/70 z-10">
-          {loading ? (
+          {loading || (html && !imagesReady) ? (
             <>
               <Loader2 className="h-7 w-7 animate-spin" />
-              <p className="text-sm">문서를 준비하는 중…</p>
+              <p className="text-sm">{loadingHint || (html && !imagesReady ? "첨부 이미지 불러오는 중…" : "문서를 준비하는 중…")}</p>
             </>
           ) : (
             <p className="text-sm text-slate-400">{emptyHint}</p>

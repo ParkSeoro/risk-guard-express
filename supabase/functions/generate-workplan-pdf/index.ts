@@ -434,17 +434,17 @@ Deno.serve(async (req) => {
       const renderedImages = preRendered[url];
       if (isImage) {
         // Public Storage URLs — embed directly (no base64 bloat / no re-encode).
-        attachmentsHtml += `<div class="page-break"></div>${titleHtml}
-          <div class="attachment-print-wrap">
-            <img class="attachment-print-img" src="${escapeHtml(url)}" alt="" />
-          </div>`;
+        attachmentsHtml += `<div class="attachment-print-page">
+          <div class="attachment-print-banner">${escapeHtml(att.name || att.key || "첨부파일")}</div>
+          <img class="attachment-print-img" src="${escapeHtml(url)}" alt="" />
+        </div>`;
       } else if (renderedImages && renderedImages.length > 0) {
+        const label = escapeHtml(att.name || att.key || "첨부파일");
         renderedImages.forEach((img: string, idx: number) => {
-          attachmentsHtml += `<div class="page-break"></div>${idx === 0 ? titleHtml : ""}
-            <div class="attachment-print-wrap">
-              <div class="attachment-print-page-label">페이지 ${idx + 1} / ${renderedImages.length}</div>
-              <img class="attachment-print-img" src="${escapeHtml(img)}" alt="" />
-            </div>`;
+          attachmentsHtml += `<div class="attachment-print-page">
+            <div class="attachment-print-banner">${label} · ${idx + 1}/${renderedImages.length}</div>
+            <img class="attachment-print-img" src="${escapeHtml(img)}" alt="" />
+          </div>`;
         });
       } else if (isText) {
         let textBody = "";
@@ -498,7 +498,7 @@ Deno.serve(async (req) => {
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; font-size: 9pt; color: #1e293b; line-height: 1.5; }
-@page { size: A4 portrait; margin: 15mm; }
+@page { size: A4 portrait; margin: 10mm; }
 .page-break { page-break-before: always; }
 
 .report-header {
@@ -560,47 +560,58 @@ th { background: #f1f5f9; font-weight: 600; font-size: 7pt; text-align: center; 
 }
 
 .footer {
-  position: fixed;
-  bottom: 0;
   width: 100%;
   text-align: center;
   font-size: 7pt;
   color: #94a3b8;
-  padding: 4pt 0;
+  padding: 8pt 0 0;
+  margin-top: 12pt;
 }
 
-/* Attachment page images: never crush with max-height (was 720pt). */
-.attachment-print-wrap {
-  text-align: center;
-  padding: 6pt 0 10pt;
+/* One scanned/PDF page = one printed A4. Banner is tiny so the raster fits. */
+.attachment-print-page {
+  page-break-before: always;
+  page-break-inside: avoid;
+  break-before: page;
+  break-inside: avoid;
   box-sizing: border-box;
+  width: 100%;
+  max-height: 277mm;
+  overflow: hidden;
 }
-.attachment-print-page-label {
+.attachment-print-banner {
   font-size: 8pt;
-  color: #64748b;
-  margin-bottom: 4pt;
+  font-weight: 600;
+  color: #334155;
+  padding: 0 0 3pt;
+  line-height: 1.2;
 }
 .attachment-print-img {
   display: block;
-  width: 100%;
+  width: auto;
   max-width: 100%;
   height: auto;
-  max-height: none;
+  max-height: 268mm;
   object-fit: contain;
+  object-position: top center;
   margin: 0 auto;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
-  image-rendering: -webkit-optimize-contrast;
 }
 @media print {
   html, body {
     width: auto !important;
     min-width: 0 !important;
   }
+  .footer { display: none; }
+  .attachment-print-page {
+    height: 277mm;
+    max-height: 277mm;
+  }
   .attachment-print-img {
-    width: 100% !important;
+    width: auto !important;
     max-width: 100% !important;
-    max-height: none !important;
+    max-height: 268mm !important;
     height: auto !important;
   }
 }

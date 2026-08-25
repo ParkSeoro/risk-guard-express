@@ -2,7 +2,7 @@
 
 /**
  * Form PDFs often rasterize Hangul as light-grey anti-aliased ink.
- * Only safe on mostly-grayscale pages — never run on color certificates.
+ * Used to pick JPEG quality; ink boost itself skips chromatic pixels.
  */
 export function isMostlyGrayscale(
   canvas: HTMLCanvasElement,
@@ -46,6 +46,10 @@ export function darkenLightInk(canvas: HTMLCanvasElement): void {
     const g = d[i + 1];
     const b = d[i + 2];
     if (r >= 248 && g >= 248 && b >= 248) continue;
+    // Red seals / color photos stay as-is; only gray form ink is boosted.
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    if (max - min > 28) continue;
     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
     if (lum >= 210) {
       const t = Math.min(1, (lum - 210) / 45);
@@ -99,3 +103,28 @@ export type WorkPlanRiskPrintTable = {
   headers: string[];
   rows: string[][];
 };
+
+/** Bump to invalidate caches after ink / layout pipeline changes. */
+export const PRINT_CACHE_VERSION = "v5";
+export const PRINT_CACHE_META_NAME = "meta.json";
+
+export type PrintRasterProgress = {
+  total: number;
+  done: number;
+  cached: number;
+};
+
+export type PrintRasterProgressFn = (p: PrintRasterProgress) => void;
+
+/** Stable cache folder name from a public Storage file URL. */
+export function printCacheFileKey(fileUrl: string): string {
+  const raw = String(fileUrl || "").split("?")[0];
+  const base = raw.split("/").pop() || "file";
+  const stem = base.replace(/\.[a-zA-Z0-9]{1,8}$/, "");
+  const safe = stem.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80);
+  return safe || "file";
+}
+
+export function printCachePageName(pageIndex1: number): string {
+  return `p${String(pageIndex1).padStart(2, "0")}.jpg`;
+}

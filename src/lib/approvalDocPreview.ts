@@ -70,11 +70,19 @@ img.attachment-print-img,
     min-width: 0 !important;
     max-width: none !important;
   }
+  .attachment-print-page {
+    page-break-before: always !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    height: 277mm !important;
+    max-height: 277mm !important;
+    overflow: hidden !important;
+  }
   img.attachment-print-img,
   .attachment-print-img {
-    width: 100% !important;
+    width: auto !important;
     max-width: 100% !important;
-    max-height: none !important;
+    max-height: 268mm !important;
     height: auto !important;
     object-fit: contain !important;
     -webkit-print-color-adjust: exact !important;
@@ -124,7 +132,10 @@ export async function fetchAssessmentPrintHtml(runId: string): Promise<string> {
 
 export async function fetchWorkPlanPrintHtml(
   planId: string,
-  opts?: { includeAttachmentImages?: boolean },
+  opts?: {
+    includeAttachmentImages?: boolean;
+    onProgress?: (p: { total: number; done: number; cached: number }) => void;
+  },
 ): Promise<string> {
   const includeAttachmentImages = opts?.includeAttachmentImages !== false;
   let renderedAttachments: Record<string, string[]> = {};
@@ -133,7 +144,7 @@ export async function fetchWorkPlanPrintHtml(
 
   if (includeAttachmentImages) {
     const { prepareWorkPlanPrintPayload } = await import("@/lib/workPlanPrintPrep");
-    const payload = await prepareWorkPlanPrintPayload(planId);
+    const payload = await prepareWorkPlanPrintPayload(planId, { onProgress: opts?.onProgress });
     renderedAttachments = payload.renderedAttachments;
     riskTable = payload.riskTable;
     skipAttachmentKeys = payload.skipAttachmentKeys;

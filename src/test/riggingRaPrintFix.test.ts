@@ -62,6 +62,7 @@ describe("workplan save/print source guards", () => {
     const { readFileSync } = await import("node:fs");
     const src = readFileSync("supabase/functions/generate-workplan-pdf/index.ts", "utf8");
     expect(src).toContain("attachment-print-img");
-    expect(src).toContain("max-height: none");
+    expect(src).toContain("attachment-print-page");
+    expect(src).toContain("max-height: 268mm");
   });
 });

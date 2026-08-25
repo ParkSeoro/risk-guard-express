@@ -68,15 +68,17 @@ describe('RA submitter step author lock', () => {
 });
 
 describe('pdf attachment render quality', () => {
-  it('renders high-DPI PNG and uploads to storage (no lossy body payload)', () => {
+  it('renders cached JPEGs at print DPI (no giant PNG body payload)', () => {
     const src = readFileSync('src/lib/pdfRender.ts', 'utf8');
     const helpers = readFileSync('src/lib/pdfRenderHelpers.ts', 'utf8');
-    expect(src).toMatch(/PDF_RENDER_SCALE\s*=\s*3/);
-    expect(src).toContain('uploadPrintRasters');
+    expect(src).toMatch(/PDF_RENDER_SCALE\s*=\s*2/);
+    expect(src).toContain('listCachedUrls');
     expect(helpers).toContain('darkenLightInk');
     expect(helpers).toContain('isMostlyGrayscale');
     expect(src).toContain("intent: 'print'");
     expect(src).toContain("alpha: false");
+    expect(src).toContain("urlsFromMeta");
+    expect(helpers).toContain("PRINT_CACHE_META_NAME");
   });
 
   it('prepares print via storage URLs + riskTable (no body-only fallback)', () => {
@@ -90,9 +92,10 @@ describe('pdf attachment render quality', () => {
     const preview = readFileSync('src/lib/approvalDocPreview.ts', 'utf8');
     expect(preview).toContain('@media print');
     expect(preview).toContain('width: auto !important');
-    expect(preview).toContain('max-height: none !important');
+    expect(preview).toContain('max-height: 268mm !important');
     const edge = readFileSync('supabase/functions/generate-workplan-pdf/index.ts', 'utf8');
     expect(edge).toContain('attachment-print-img');
+    expect(edge).toContain('attachment-print-page');
     expect(edge).not.toMatch(/max-height:720pt/);
   });
 });

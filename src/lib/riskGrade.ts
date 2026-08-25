@@ -76,3 +76,14 @@ export function riskNumberToGrade(risk: number): RiskGrade {
 }
 
 export const GRADES: RiskGrade[] = ['상', '중', '하'];
+
+/** Residual (개선후) likelihood: drop one level from initial when AI omits it. */
+export function deriveResidualLikelihood(initial: RiskGrade | string | null | undefined): RiskGrade {
+  if (initial === '상') return '중';
+  if (initial === '중') return '하';
+  return '하';
+}
+
+export function isValidRiskGrade(v: unknown): v is RiskGrade {
+  return v === '상' || v === '중' || v === '하';
+}

@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { calculateRiskGrade, type RiskGrade } from './riskGrade';
+import { calculateRiskGrade, deriveResidualLikelihood, isValidRiskGrade, type RiskGrade } from './riskGrade';
 import { correctTerms } from './termCorrection';
 import { generateRiskItems, type GeneratedRiskItem } from './riskAutoGen';
 import { normalizeLegalBasisList } from './enrichLegalBasis';
@@ -43,7 +43,7 @@ export interface AIGenerateProgress {
 function mapAIItemToGenerated(item: any, processName: string): GeneratedRiskItem {
   const pickGrade = (...vals: unknown[]): RiskGrade | null => {
     for (const v of vals) {
-      if (typeof v === 'string' && ['상', '중', '하'].includes(v)) return v as RiskGrade;
+      if (isValidRiskGrade(v)) return v;
     }
     return null;
   };
@@ -51,8 +51,13 @@ function mapAIItemToGenerated(item: any, processName: string): GeneratedRiskItem
   const lg = pickGrade(item.likelihood_grade, item.initial_likelihood) ?? '중';
   const sg = pickGrade(item.severity_grade, item.initial_severity) ?? '중';
   const rg = calculateRiskGrade(lg, sg);
-  const ilg = pickGrade(item.improved_likelihood_grade, item.residual_likelihood) ?? '하';
-  const isg = pickGrade(item.improved_severity_grade, item.residual_severity) ?? '하';
+  // Never hard-default residual to 하 — derive from initial when AI omits it.
+  // Narrative-only soft-fail often returns placeholder 하; callers that pass
+  // fill_stage=narrative should keep existing grades in applyFilledDetail.
+  const ilg =
+    pickGrade(item.improved_likelihood_grade, item.residual_likelihood) ??
+    deriveResidualLikelihood(lg);
+  const isg = pickGrade(item.improved_severity_grade, item.residual_severity) ?? sg;
   const irg = calculateRiskGrade(ilg, isg);
 
   const ppeRaw = item.ppe;
@@ -388,7 +393,14 @@ export async function fetchRiskFillBatch(
   );
 
   const items = (data?.items || [])
-    .map((it) => mapAIItemToGenerated(it, opts.processName))
+    .map((it) => {
+      const mapped = mapAIItemToGenerated(it, opts.processName);
+      // Preserve stage so applyFilledDetail can skip grade clobber on narrative soft-fill.
+      if (fillStage === 'narrative' || it?.fill_stage === 'narrative') {
+        return { ...mapped, fill_stage: 'narrative' as const };
+      }
+      return mapped;
+    })
     .filter((it) => it.sub_task);
 
   if (items.length === 0) {

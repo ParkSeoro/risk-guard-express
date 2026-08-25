@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,25 +34,39 @@ import { buildRiggingInputFromRow, riggingResultToPatch } from '@/lib/riggingDer
 interface RiggingPlanFormProps {
   rigging: any;
   onChange: (field: string, value: any) => void;
+  /** Batch derived calc fields without marking the parent form dirty. */
+  onDerivedPatch?: (patch: Record<string, any>) => void;
   onSave: () => void;
   saving: boolean;
 }
 
 const numVal = (v: any) => Number(v) || 0;
 
-export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: RiggingPlanFormProps) {
+export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onSave, saving }: RiggingPlanFormProps) {
   const [result, setResult] = useState<RiggingResult | null>(null);
   const [windInputMode, setWindInputMode] = useState<'select' | 'custom'>('select');
   const [customWindSpeed, setCustomWindSpeed] = useState('');
+  const onChangeRef = useRef(onChange);
+  const onDerivedPatchRef = useRef(onDerivedPatch);
+  onChangeRef.current = onChange;
+  onDerivedPatchRef.current = onDerivedPatch;
+
+  const applyDerived = useCallback((patch: Record<string, any>) => {
+    if (!patch || Object.keys(patch).length === 0) return;
+    if (onDerivedPatchRef.current) {
+      onDerivedPatchRef.current(patch);
+      return;
+    }
+    for (const [k, v] of Object.entries(patch)) onChangeRef.current(k, v);
+  }, []);
 
   const recalc = useCallback(() => {
     if (!rigging) return;
     const r = calculateFullRigging(buildRiggingInputFromRow(rigging));
     setResult(r);
-    const patch = riggingResultToPatch(r);
-    for (const [k, v] of Object.entries(patch)) onChange(k, v);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- onChange is unstable; field deps drive refresh
-  }, [rigging]);
+    applyDerived(riggingResultToPatch(r));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- field deps below drive refresh
+  }, [rigging, applyDerived]);
 
   useEffect(() => { recalc(); }, [
     rigging?.load_weight, rigging?.hook_weight, rigging?.shackle_weight_val, rigging?.sling_rigging_weight,
@@ -71,42 +85,44 @@ export default function RiggingPlanForm({ rigging, onChange, onSave, saving }: R
   useEffect(() => {
     if (rigging?.wire_diameter_mm > 0 && rigging?.sling_material_type === 'wire_rope') {
       const bl = getWireBreakingLoad(numVal(rigging.wire_diameter_mm));
-      if (bl > 0) onChange('wire_breaking_load', bl);
-      onChange('wire_diameter_inch', parseFloat(mmToInch(numVal(rigging.wire_diameter_mm)).toFixed(2)));
+      const inch = parseFloat(mmToInch(numVal(rigging.wire_diameter_mm)).toFixed(2));
+      const patch: Record<string, any> = { wire_diameter_inch: inch };
+      if (bl > 0) patch.wire_breaking_load = bl;
+      applyDerived(patch);
     }
-  }, [rigging?.wire_diameter_mm]);
+  }, [rigging?.wire_diameter_mm, rigging?.sling_material_type, applyDerived]);
 
   // Auto-set sling belt rated load by width
   useEffect(() => {
     if (rigging?.sling_belt_width_mm > 0 && rigging?.sling_material_type === 'sling_belt') {
       const rl = getSlingBeltRatedLoadByWidth(numVal(rigging.sling_belt_width_mm));
-      if (rl > 0) onChange('sling_belt_rated_load', rl);
+      if (rl > 0) applyDerived({ sling_belt_rated_load: rl });
     }
-  }, [rigging?.sling_belt_width_mm]);
+  }, [rigging?.sling_belt_width_mm, rigging?.sling_material_type, applyDerived]);
 
   // Auto-set round sling rated load by color
   useEffect(() => {
     if (rigging?.sling_belt_color && rigging?.sling_material_type === 'round_sling') {
       const rl = getRoundSlingRatedLoadByColor(rigging.sling_belt_color);
-      if (rl > 0) onChange('round_sling_rated_load', rl);
+      if (rl > 0) applyDerived({ round_sling_rated_load: rl });
     }
-  }, [rigging?.sling_belt_color]);
+  }, [rigging?.sling_belt_color, rigging?.sling_material_type, applyDerived]);
 
   // Auto-set chain load
   useEffect(() => {
     if (rigging?.chain_diameter_mm > 0 && rigging?.sling_material_type === 'chain_sling') {
       const cl = getChainSlingLoad(numVal(rigging.chain_diameter_mm));
-      if (cl > 0) onChange('sling_capacity', cl);
+      if (cl > 0) applyDerived({ sling_capacity: cl });
     }
-  }, [rigging?.chain_diameter_mm]);
+  }, [rigging?.chain_diameter_mm, rigging?.sling_material_type, applyDerived]);
 
   // Auto-set shackle safe load
   useEffect(() => {
     if (rigging?.shackle_inch) {
       const sl = getShackleSafeLoadByInch(rigging.shackle_inch);
-      if (sl > 0) onChange('shackle_safe_load', sl);
+      if (sl > 0) applyDerived({ shackle_safe_load: sl });
     }
-  }, [rigging?.shackle_inch]);
+  }, [rigging?.shackle_inch, applyDerived]);
 
   const materialType = (rigging?.sling_material_type || 'wire_rope') as SlingMaterialType;
 

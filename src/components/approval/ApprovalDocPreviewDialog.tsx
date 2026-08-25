@@ -37,6 +37,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
   const [error, setError] = useState<string | null>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [pageWidth, setPageWidth] = useState(A4_PORTRAIT_PX);
+  const [loadHint, setLoadHint] = useState("문서 불러오는 중…");
   const [permitForm, setPermitForm] = useState<PermitFormData>({});
   const [permitSigs, setPermitSigs] = useState<PermitSignatures>({});
   const [permitBriefing, setPermitBriefing] = useState<PermitAiBriefing | null>(null);
@@ -93,7 +94,17 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
           });
         } else if (entityType === "work_plan") {
           setPageWidth(A4_PORTRAIT_PX);
-          const doc = await fetchWorkPlanPrintHtml(entityId);
+          setLoadHint("첨부 PDF를 인쇄용으로 준비하는 중…");
+          const doc = await fetchWorkPlanPrintHtml(entityId, {
+            onProgress: (p) => {
+              if (cancelled || p.total <= 0) return;
+              setLoadHint(
+                p.cached === p.done && p.done > 0
+                  ? `캐시에서 불러오는 중 ${p.done}/${p.total}`
+                  : `첨부 변환 ${p.done}/${p.total}`,
+              );
+            },
+          });
           if (cancelled) return;
           setHtml(doc);
         } else if (
@@ -151,7 +162,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
           {inlineOk && loading && (
             <div className="flex items-center justify-center gap-2 h-48 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              문서 불러오는 중…
+              {loadHint}
             </div>
           )}
 
@@ -187,6 +198,7 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
               active={open}
               className="h-full min-h-[60vh]"
               emptyHint="표시할 문서가 없습니다"
+              loadingHint="첨부 이미지 불러오는 중…"
             />
           )}
         </div>

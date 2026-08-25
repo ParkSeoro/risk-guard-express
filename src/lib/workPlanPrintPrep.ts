@@ -1,12 +1,14 @@
 /**
  * Prepare work-plan print payload on the client:
- * - PDF attachments → Storage PNG URLs (sharp, small Edge body)
+ * - PDF attachments → Storage JPEG URLs (sharp, small Edge body)
  * - risk_assessment xlsx → printable table rows
+ * Concurrent callers for the same plan share one raster job.
  */
 import { supabase } from "@/integrations/supabase/client";
 import { parseRiskAssessmentExcel } from "@/lib/riskExcelImport";
 import {
   pickRiskPrintHeaders,
+  type PrintRasterProgressFn,
   type WorkPlanRiskPrintTable,
 } from "@/lib/pdfRenderHelpers";
 
@@ -50,7 +52,17 @@ export async function fetchRiskTableFromExcelUrl(url: string): Promise<WorkPlanR
   }
 }
 
-export async function prepareWorkPlanPrintPayload(planId: string): Promise<WorkPlanPrintPayload> {
+type Inflight = {
+  promise: Promise<WorkPlanPrintPayload>;
+  listeners: Set<PrintRasterProgressFn>;
+};
+
+const inflightByPlan = new Map<string, Inflight>();
+
+async function prepareWorkPlanPrintPayloadInner(
+  planId: string,
+  onProgress?: PrintRasterProgressFn,
+): Promise<WorkPlanPrintPayload> {
   const { data: plan, error: planErr } = await supabase
     .from("work_plans")
     .select("id, project_id")
@@ -95,6 +107,7 @@ export async function prepareWorkPlanPrintPayload(planId: string): Promise<WorkP
     pdfAtts,
     plan.project_id,
     planId,
+    { onProgress },
   );
 
   return {
@@ -103,4 +116,27 @@ export async function prepareWorkPlanPrintPayload(planId: string): Promise<WorkP
     riskTable,
     skipAttachmentKeys,
   };
+}
+
+export async function prepareWorkPlanPrintPayload(
+  planId: string,
+  opts?: { onProgress?: PrintRasterProgressFn },
+): Promise<WorkPlanPrintPayload> {
+  const existing = inflightByPlan.get(planId);
+  if (existing) {
+    if (opts?.onProgress) existing.listeners.add(opts.onProgress);
+    return existing.promise;
+  }
+
+  const listeners = new Set<PrintRasterProgressFn>();
+  if (opts?.onProgress) listeners.add(opts.onProgress);
+  const emit: PrintRasterProgressFn = (p) => {
+    listeners.forEach((fn) => fn(p));
+  };
+  const promise = prepareWorkPlanPrintPayloadInner(planId, emit).finally(() => {
+    const cur = inflightByPlan.get(planId);
+    if (cur?.promise === promise) inflightByPlan.delete(planId);
+  });
+  inflightByPlan.set(planId, { promise, listeners });
+  return promise;
 }

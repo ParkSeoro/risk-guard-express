@@ -85,6 +85,7 @@ const WorkPlanDetail = () => {
   const [attachments, setAttachments] = useState<any[]>([]);
   const [rigging, setRigging] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
@@ -102,6 +103,31 @@ const WorkPlanDetail = () => {
   const [attProgress, setAttProgress] = useState<AttachmentProgress | null>(null);
   const authoringLockRef = useRef(false);
   if (!isMobile || isForceDesktop()) authoringLockRef.current = true;
+
+  // Latest-state refs so autosave never persists a stale rigging snapshot.
+  const riggingRef = useRef<any>(null);
+  const sectionsRef = useRef<any[]>([]);
+  const attachmentsRef = useRef<any[]>([]);
+  const checklistRef = useRef<{ label: string; checked: boolean }[]>([]);
+  const startDateRef = useRef('');
+  const endDateRef = useRef('');
+  const planRef = useRef<any>(null);
+  const editEpochRef = useRef(0);
+  const isDirtyRef = useRef(false);
+
+  useEffect(() => { riggingRef.current = rigging; }, [rigging]);
+  useEffect(() => { sectionsRef.current = sections; }, [sections]);
+  useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
+  useEffect(() => { checklistRef.current = checklist; }, [checklist]);
+  useEffect(() => { startDateRef.current = startDate; }, [startDate]);
+  useEffect(() => { endDateRef.current = endDate; }, [endDate]);
+  useEffect(() => { planRef.current = plan; }, [plan]);
+  useEffect(() => { isDirtyRef.current = isDirty; }, [isDirty]);
+
+  const markDirty = () => {
+    editEpochRef.current += 1;
+    setIsDirty(true);
+  };
 
   useEffect(() => {
     if (!planId) return;
@@ -167,22 +193,23 @@ const WorkPlanDetail = () => {
 
   useEffect(() => {
     if (isDirty && !saving) {
-      const timer = setTimeout(() => { handleSave(true); }, 30000);
+      const timer = setTimeout(() => { void handleSave(true); }, 30000);
       return () => clearTimeout(timer);
     }
-  }, [isDirty, sections, attachments]);
+    // rigging/checklist/dates included so the timer resets while editing (refs still hold latest on fire)
+  }, [isDirty, sections, attachments, rigging, checklist, startDate, endDate, saving]);
 
-  const mergeSectionsForSave = () => [
-    ...sections.filter(s => s.key !== '_checklist'),
-    { key: '_checklist', title: '체크리스트', type: 'checklist', content: JSON.stringify(checklist) },
+  const mergeSectionsForSave = (secs = sectionsRef.current, checks = checklistRef.current) => [
+    ...secs.filter(s => s.key !== '_checklist'),
+    { key: '_checklist', title: '체크리스트', type: 'checklist', content: JSON.stringify(checks) },
   ];
 
   const handleSectionChange = (key: string, content: string) => {
     setSections(prev => prev.map((s) => (s.key === key ? { ...s, content } : s)));
-    setIsDirty(true);
+    markDirty();
   };
 
-  const persistRigging = async (current: any = rigging): Promise<{ ok: boolean; error?: string }> => {
+  const persistRigging = async (current: any = riggingRef.current): Promise<{ ok: boolean; error?: string }> => {
     if (!planId || !current) return { ok: true };
     const refreshed = refreshRiggingDerivedFields(current);
     const payload = buildRiggingPlanPayload(planId, refreshed);
@@ -192,80 +219,116 @@ const WorkPlanDetail = () => {
       .select()
       .single();
     if (error) return { ok: false, error: error.message };
-    if (data) setRigging(data);
-    else setRigging(refreshed);
+    if (data) {
+      // Never wipe in-progress edits with a stale server row mid-autosave.
+      setRigging((prev: any) => {
+        if (isDirtyRef.current && prev) {
+          return {
+            ...prev,
+            id: data.id,
+            work_plan_id: data.work_plan_id,
+            updated_at: data.updated_at,
+            created_at: data.created_at,
+          };
+        }
+        return data;
+      });
+    } else {
+      setRigging(refreshed);
+    }
     return { ok: true };
   };
 
   const handleSave = async (isAutoSave = false, riggingOverride?: any): Promise<boolean> => {
     if (!planId) return false;
-    if (plan && !EDITABLE_PLAN_STATUSES.has(plan.status)) {
+    const currentPlan = planRef.current;
+    if (currentPlan && !EDITABLE_PLAN_STATUSES.has(currentPlan.status)) {
       if (!isAutoSave) {
         toast({ title: '수정 불가', description: '결재 진행중/완료 문서는 수정할 수 없습니다.', variant: 'destructive' });
       }
       return false;
     }
+    const epochAtStart = editEpochRef.current;
     setSaving(true);
 
-    const mergedSections = mergeSectionsForSave();
+    try {
+      const mergedSections = mergeSectionsForSave();
 
-    const { error } = await supabase.from('work_plans').update({
-      sections: mergedSections,
-      attachments,
-      start_date: startDate || null,
-      end_date: endDate || null,
-      auto_education_enabled: plan?.auto_education_enabled ?? true,
-      updated_at: new Date().toISOString(),
-    }).eq('id', planId);
+      const { error } = await supabase.from('work_plans').update({
+        sections: mergedSections,
+        attachments: attachmentsRef.current,
+        start_date: startDateRef.current || null,
+        end_date: endDateRef.current || null,
+        auto_education_enabled: currentPlan?.auto_education_enabled ?? true,
+        updated_at: new Date().toISOString(),
+      }).eq('id', planId);
 
-    if (error) {
-      if (!isAutoSave) toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
-      setSaving(false);
-      return false;
-    }
-
-    const wpType = WORK_PLAN_TYPES.find(t => t.id === plan?.work_type);
-    const currentRigging = riggingOverride ?? rigging;
-    if (wpType?.hasRiggingPlan && currentRigging) {
-      const r = await persistRigging(currentRigging);
-      if (!r.ok) {
-        if (!isAutoSave) {
-          toast({
-            title: '리깅플랜 저장 실패',
-            description: r.error || '작업계획서는 저장됐지만 리깅플랜은 반영되지 않았습니다.',
-            variant: 'destructive',
-          });
-        }
-        setSaving(false);
+      if (error) {
+        if (!isAutoSave) toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
         return false;
       }
-    }
 
-    setIsDirty(false);
-    if (!isAutoSave) toast({ title: '저장되었습니다.' });
-    setSaving(false);
-    return true;
+      const wpType = WORK_PLAN_TYPES.find(t => t.id === currentPlan?.work_type);
+      const currentRigging = riggingOverride ?? riggingRef.current;
+      if (wpType?.hasRiggingPlan && currentRigging) {
+        const r = await persistRigging(currentRigging);
+        if (!r.ok) {
+          if (!isAutoSave) {
+            toast({
+              title: '리깅플랜 저장 실패',
+              description: r.error || '작업계획서는 저장됐지만 리깅플랜은 반영되지 않았습니다.',
+              variant: 'destructive',
+            });
+          }
+          return false;
+        }
+      }
+
+      // Only clear dirty if nothing was edited during the save round-trip.
+      if (editEpochRef.current === epochAtStart) {
+        setIsDirty(false);
+        isDirtyRef.current = false;
+      }
+      if (!isAutoSave) toast({ title: '저장되었습니다.' });
+      return true;
+    } catch (err: any) {
+      if (!isAutoSave) {
+        toast({ title: '저장 실패', description: err?.message || '알 수 없는 오류', variant: 'destructive' });
+      }
+      return false;
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSaveRigging = async () => {
     if (!planId) return;
-    if (!rigging) {
+    if (!riggingRef.current) {
       setRigging({ work_plan_id: planId });
     }
     setSaving(true);
-    const r = await persistRigging(rigging || { work_plan_id: planId });
-    if (!r.ok) {
-      toast({ title: '리깅플랜 저장 실패', description: r.error, variant: 'destructive' });
-    } else {
-      toast({ title: '리깅플랜이 저장되었습니다.' });
-      setIsDirty(false);
+    try {
+      const r = await persistRigging(riggingRef.current || { work_plan_id: planId });
+      if (!r.ok) {
+        toast({ title: '리깅플랜 저장 실패', description: r.error, variant: 'destructive' });
+      } else {
+        toast({ title: '리깅플랜이 저장되었습니다.' });
+        setIsDirty(false);
+        isDirtyRef.current = false;
+      }
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const handleRiggingChange = (field: string, value: any) => {
     setRigging((prev: any) => ({ ...(prev || { work_plan_id: planId }), [field]: value }));
-    setIsDirty(true);
+    markDirty();
+  };
+
+  /** Derived calc fields (safety_factor etc.) — update state without marking dirty. */
+  const handleRiggingDerivedPatch = (patch: Record<string, any>) => {
+    setRigging((prev: any) => ({ ...(prev || { work_plan_id: planId }), ...patch }));
   };
 
   const handleAiGenerate = async (sectionKey: string) => {
@@ -359,13 +422,13 @@ const WorkPlanDetail = () => {
 
 
   const handlePdfDownload = async () => {
-    if (!planId) return;
-    setSaving(true);
+    if (!planId || pdfBusy) return;
+    setPdfBusy(true);
     try {
       const { fetchWorkPlanPrintHtml } = await import('@/lib/approvalDocPreview');
       const html = await fetchWorkPlanPrintHtml(planId);
       if (html) {
-        const desiredTitle = plan.title || '작업계획서';
+        const desiredTitle = plan?.title || '작업계획서';
         const prevTitle = document.title;
         document.title = desiredTitle;
         const iframe = document.createElement('iframe');
@@ -399,7 +462,9 @@ const WorkPlanDetail = () => {
       }
     } catch (err: any) {
       toast({ title: 'PDF 생성 실패', description: err?.message, variant: 'destructive' });
-    } finally { setSaving(false); }
+    } finally {
+      setPdfBusy(false);
+    }
   };
 
 
@@ -472,7 +537,7 @@ const WorkPlanDetail = () => {
       const uploaded = await uploadAttachmentFile(path, file);
       const updated = attachments.map((a, i) => i === attIdx ? { ...a, uploaded: true, fileUrl: uploaded.publicUrl } : a);
       setAttachments(updated);
-      setIsDirty(true);
+      markDirty();
       toast({
         title: '업로드 완료',
         description: uploaded.compressed
@@ -550,11 +615,11 @@ const WorkPlanDetail = () => {
         >
           <Save className="h-3.5 w-3.5" /> {saving ? '저장 중...' : '저장'}
         </Button>
-        <Button size="sm" variant="outline" onClick={handlePdfDownload} disabled={saving} className="gap-1">
-          <Download className="h-3.5 w-3.5" /> PDF
+        <Button size="sm" variant="outline" onClick={handlePdfDownload} disabled={pdfBusy} className="gap-1">
+          <Download className="h-3.5 w-3.5" /> {pdfBusy ? '준비 중...' : 'PDF'}
         </Button>
-        <Button size="sm" variant="outline" onClick={handlePdfDownload} disabled={saving} className="gap-1">
-          <Printer className="h-3.5 w-3.5" /> 인쇄
+        <Button size="sm" variant="outline" onClick={handlePdfDownload} disabled={pdfBusy} className="gap-1">
+          <Printer className="h-3.5 w-3.5" /> {pdfBusy ? '준비 중...' : '인쇄'}
         </Button>
         {access.canCreate('work_plan') && (
           <Button size="sm" variant="outline" onClick={handleClone} className="gap-1">
@@ -725,7 +790,7 @@ const WorkPlanDetail = () => {
           checked={plan?.auto_education_enabled ?? true}
           onCheckedChange={(v) => {
             setPlan((prev: any) => ({ ...prev, auto_education_enabled: v }));
-            setIsDirty(true);
+            markDirty();
           }}
         />
       </div>
@@ -777,11 +842,11 @@ const WorkPlanDetail = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label className="text-xs">시작일 *</Label>
-                  <Input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setIsDirty(true); }} className="h-9" />
+                  <Input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); markDirty(); }} className="h-9" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">종료일 *</Label>
-                  <Input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setIsDirty(true); }} className="h-9" />
+                  <Input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); markDirty(); }} className="h-9" />
                 </div>
               </div>
             </CardContent>
@@ -848,6 +913,7 @@ const WorkPlanDetail = () => {
             <RiggingPlanForm
               rigging={rigging || {}}
               onChange={handleRiggingChange}
+              onDerivedPatch={handleRiggingDerivedPatch}
               onSave={handleSaveRigging}
               saving={saving}
             />
@@ -871,7 +937,7 @@ const WorkPlanDetail = () => {
                 <div key={idx} className="flex items-center gap-3">
                   <Checkbox checked={item.checked} onCheckedChange={(checked) => {
                     setChecklist(prev => prev.map((c, i) => i === idx ? { ...c, checked: !!checked } : c));
-                    setIsDirty(true);
+                    markDirty();
                   }} />
                   <span className="text-sm">{item.label}</span>
                 </div>
@@ -895,7 +961,6 @@ const WorkPlanDetail = () => {
                 return;
               }
               handleSectionChange('method', appendTextToMethodSection(sections[idx].content || '', text));
-              setIsDirty(true);
             }}
           />
         </TabsContent>
@@ -911,7 +976,7 @@ const WorkPlanDetail = () => {
               companyId={plan.company_id}
               workType={plan.work_type}
               readOnly={!EDITABLE_PLAN_STATUSES.has(plan.status)}
-              onChange={() => setIsDirty(true)}
+              onChange={() => markDirty()}
               onProgress={setAttProgress}
             />
           )}

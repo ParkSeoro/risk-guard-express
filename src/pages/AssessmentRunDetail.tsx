@@ -838,7 +838,11 @@ const AssessmentRunDetail = () => {
         updateData.improved_risk_grade = calculateRiskGrade(lg, sg);
       }
     }
-    await supabase.from('risk_items').update(updateData).eq('id', id);
+    const { error } = await supabase.from('risk_items').update(updateData).eq('id', id);
+    if (error) {
+      toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
     const { data: updated } = await supabase.from('risk_items').select('*').eq('id', id).single();
     if (updated) setItems(prev => prev.map(item => item.id === id ? updated : item));
     setEditingCell(null);
@@ -1025,8 +1029,8 @@ const AssessmentRunDetail = () => {
       });
       const lg = detail.likelihood_grade || '중';
       const sg = detail.severity_grade || '중';
-      const ilg = detail.improved_likelihood_grade || '하';
-      const isg = detail.improved_severity_grade || '하';
+      const ilg = detail.improved_likelihood_grade || (lg === '상' ? '중' : '하');
+      const isg = detail.improved_severity_grade || sg;
       const legal = await enrichLegalBasis({
         processName: detail.process || item.process || '',
         hazard: detail.hazard,

@@ -31,7 +31,7 @@ import {
 } from '@/lib/globalRiskLibrary';
 import { fetchPastApprovedRiskItems, filterDraftGaps } from '@/lib/riskReuseFromPast';
 import { enrichLegalBasis } from '@/lib/enrichLegalBasis';
-import { calculateRiskGrade } from '@/lib/riskGrade';
+import { calculateRiskGrade, deriveResidualLikelihood } from '@/lib/riskGrade';
 import { canWriteRiskItems, riskItemsWriteDeniedMessage } from '@/lib/riskWriteAccess';
 import { formatAutoGenError } from '@/lib/staleChunkError';
 
@@ -400,10 +400,12 @@ async function applyFilledDetail(
   },
 ): Promise<boolean> {
   const forceAll = isAiScopeDraftItem(current || {}) || isAiFailedRiskItem(current || {});
+  const narrativeOnly = (detail as { fill_stage?: string }).fill_stage === 'narrative';
   const lg = detail.likelihood_grade || '중';
   const sg = detail.severity_grade || '중';
-  const ilg = detail.improved_likelihood_grade || '하';
-  const isg = detail.improved_severity_grade || '하';
+  // Prefer AI residual; if missing, drop one level from initial (not hardcode 하).
+  const ilg = detail.improved_likelihood_grade || deriveResidualLikelihood(lg);
+  const isg = detail.improved_severity_grade || sg;
   const nextSituation = shouldReplaceRiskField(current?.hazard_situation, forceAll)
     ? (detail.hazard_situation || '')
     : (current?.hazard_situation || '');
@@ -425,7 +427,14 @@ async function applyFilledDetail(
     improvementMeasure: nextImprove,
     existing: existingLegal,
   });
-  const keepGrades = !forceAll && !shouldReplaceRiskField(current?.likelihood_grade, false);
+  // Narrative soft-fill must not clobber grades. On non-force fills, keep any
+  // grades the user already set (blank-only replace). Scope-draft forceAll still
+  // takes AI grades (with derive fallback above) so placeholders are not "kept".
+  const keepInitialGrades =
+    narrativeOnly || (!forceAll && !shouldReplaceRiskField(current?.likelihood_grade, false));
+  const keepImprovedGrades =
+    narrativeOnly ||
+    (!forceAll && !shouldReplaceRiskField(current?.improved_likelihood_grade, false));
   const { error: updErr } = await supabase
     .from('risk_items')
     .update({
@@ -435,18 +444,26 @@ async function applyFilledDetail(
       hazard_situation: nextSituation,
       existing_measure: nextExisting,
       improvement_measure: nextImprove,
-      frequency: keepGrades ? (current?.frequency ?? detail.frequency) : detail.frequency,
-      severity: keepGrades ? (current?.severity ?? detail.severity) : detail.severity,
-      improved_frequency: keepGrades ? (current?.improved_frequency ?? detail.improved_frequency) : detail.improved_frequency,
-      improved_severity: keepGrades ? (current?.improved_severity ?? detail.improved_severity) : detail.improved_severity,
-      likelihood_grade: keepGrades ? (current?.likelihood_grade || lg) : lg,
-      severity_grade: keepGrades ? (current?.severity_grade || sg) : sg,
-      risk_grade: keepGrades
+      frequency: keepInitialGrades ? (current?.frequency ?? detail.frequency) : detail.frequency,
+      severity: keepInitialGrades ? (current?.severity ?? detail.severity) : detail.severity,
+      improved_frequency: keepImprovedGrades
+        ? (current?.improved_frequency ?? detail.improved_frequency)
+        : detail.improved_frequency,
+      improved_severity: keepImprovedGrades
+        ? (current?.improved_severity ?? detail.improved_severity)
+        : detail.improved_severity,
+      likelihood_grade: keepInitialGrades ? (current?.likelihood_grade || lg) : lg,
+      severity_grade: keepInitialGrades ? (current?.severity_grade || sg) : sg,
+      risk_grade: keepInitialGrades
         ? (current?.risk_grade || detail.risk_grade || calculateRiskGrade(lg as any, sg as any))
         : (detail.risk_grade || calculateRiskGrade(lg as any, sg as any)),
-      improved_likelihood_grade: keepGrades ? (current?.improved_likelihood_grade || ilg) : ilg,
-      improved_severity_grade: keepGrades ? (current?.improved_severity_grade || isg) : isg,
-      improved_risk_grade: keepGrades
+      improved_likelihood_grade: keepImprovedGrades
+        ? (current?.improved_likelihood_grade || ilg)
+        : ilg,
+      improved_severity_grade: keepImprovedGrades
+        ? (current?.improved_severity_grade || isg)
+        : isg,
+      improved_risk_grade: keepImprovedGrades
         ? (current?.improved_risk_grade || detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any))
         : (detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any)),
       ppe: nextPpe,

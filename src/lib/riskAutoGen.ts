@@ -25,6 +25,8 @@ export interface GeneratedRiskItem {
   assignee: string;
   status: string;
   tags: string[];
+  /** Edge fill stage — narrative must not overwrite grades when applied. */
+  fill_stage?: 'narrative' | 'meta' | 'all';
 }
 
 interface GenerateOptions {

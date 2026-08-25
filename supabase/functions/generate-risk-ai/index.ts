@@ -277,6 +277,11 @@ function mapRawItem(item: any, processName: string): any | null {
     item.residual_severity || item["개선후심각도"] || item.improved_severity_grade || "",
   ).trim();
 
+  const residualL = ["상", "중", "하"].includes(improvedLikelihood)
+    ? improvedLikelihood
+    : (likelihood === "상" ? "중" : "하");
+  const residualS = ["상", "중", "하"].includes(improvedSeverity) ? improvedSeverity : severity;
+
   return {
     process: sanitizeFieldText(String(item.process || item["공정"] || processName), "other") || processName,
     sub_task,
@@ -286,8 +291,8 @@ function mapRawItem(item: any, processName: string): any | null {
     improvement_measure,
     likelihood_grade: likelihood,
     severity_grade: severity,
-    improved_likelihood_grade: ["상", "중", "하"].includes(improvedLikelihood) ? improvedLikelihood : "하",
-    improved_severity_grade: ["상", "중", "하"].includes(improvedSeverity) ? improvedSeverity : "하",
+    improved_likelihood_grade: residualL,
+    improved_severity_grade: residualS,
     ppe: ppe.length ? ppe : ["안전모", "안전화"],
     legal_basis,
   };
@@ -973,8 +978,12 @@ serve(async (req) => {
               let severity = String(raw.initial_severity || raw.severity_grade || "중").trim();
               if (!["상", "중", "하"].includes(likelihood)) likelihood = "중";
               if (!["상", "중", "하"].includes(severity)) severity = "중";
-              const improvedLikelihood = String(raw.residual_likelihood || raw.improved_likelihood_grade || "하").trim();
-              const improvedSeverity = String(raw.residual_severity || raw.improved_severity_grade || "하").trim();
+              const improvedLikelihood = String(raw.residual_likelihood || raw.improved_likelihood_grade || "").trim();
+              const improvedSeverity = String(raw.residual_severity || raw.improved_severity_grade || "").trim();
+              const residualL = ["상", "중", "하"].includes(improvedLikelihood)
+                ? improvedLikelihood
+                : (likelihood === "상" ? "중" : "하");
+              const residualS = ["상", "중", "하"].includes(improvedSeverity) ? improvedSeverity : severity;
               const ppeRaw = raw.ppe ?? [];
               const ppe = Array.isArray(ppeRaw) ? ppeRaw.map(String).filter(Boolean) : [];
               const legal_basis = normalizeLegalBasis(raw.legal_basis ?? raw["법적근거"], [
@@ -992,8 +1001,8 @@ serve(async (req) => {
                 improvement_measure: fallback?.improvement_measure || "",
                 likelihood_grade: likelihood,
                 severity_grade: severity,
-                improved_likelihood_grade: ["상", "중", "하"].includes(improvedLikelihood) ? improvedLikelihood : "하",
-                improved_severity_grade: ["상", "중", "하"].includes(improvedSeverity) ? improvedSeverity : "하",
+                improved_likelihood_grade: residualL,
+                improved_severity_grade: residualS,
                 ppe: ppe.length ? ppe : ["안전모", "안전화"],
                 legal_basis,
                 fill_stage: "meta",
@@ -1014,10 +1023,11 @@ serve(async (req) => {
                 hazard_situation: situation || `${sub} 중 위험 상황`,
                 existing_measure: existing || "현장 통상 안전조치",
                 improvement_measure: improvement || "구체적 개선조치 보완 필요",
+                // Grades are filled in meta stage — placeholders must not clobber later.
                 likelihood_grade: "중",
                 severity_grade: "중",
                 improved_likelihood_grade: "하",
-                improved_severity_grade: "하",
+                improved_severity_grade: "중",
                 ppe: [],
                 legal_basis: [],
                 fill_stage: "narrative",
@@ -1026,28 +1036,43 @@ serve(async (req) => {
 
             let mapped = mapRawItem(raw, process_name);
             if (!mapped && fallback) {
+              const sit = String(raw.hazard_situation || "").trim() || `${fallback.sub_task} 중 위험 상황`;
+              const exist = String(raw.existing_control || raw.existing_measure || "").trim() || "현장 통상 안전조치";
+              const improv = String(raw.improvement_control || raw.improvement_measure || "").trim() || "구체적 개선조치 보완 필요";
+              let likelihood = String(raw.initial_likelihood || raw.likelihood_grade || "중").trim();
+              let severity = String(raw.initial_severity || raw.severity_grade || "중").trim();
+              if (!["상", "중", "하"].includes(likelihood)) likelihood = "중";
+              if (!["상", "중", "하"].includes(severity)) severity = "중";
+              const improvedLikelihood = String(raw.residual_likelihood || raw.improved_likelihood_grade || "").trim();
+              const improvedSeverity = String(raw.residual_severity || raw.improved_severity_grade || "").trim();
+              const residualL = ["상", "중", "하"].includes(improvedLikelihood)
+                ? improvedLikelihood
+                : (likelihood === "상" ? "중" : "하");
+              const residualS = ["상", "중", "하"].includes(improvedSeverity) ? improvedSeverity : severity;
               mapped = {
                 process: process_name,
                 sub_task: fallback.sub_task,
                 hazard: fallback.hazard || String(raw.hazard_factor || raw.hazard || "").trim() || `${fallback.sub_task} 위험`,
-                hazard_situation: String(raw.hazard_situation || "").trim() || `${fallback.sub_task} 중 위험 상황`,
-                existing_measure: String(raw.existing_control || raw.existing_measure || "").trim() || "현장 통상 안전조치",
-                improvement_measure: String(raw.improvement_control || raw.improvement_measure || "").trim() || "구체적 개선조치 보완 필요",
-                likelihood_grade: "중",
-                severity_grade: "중",
-                risk_grade: "중",
-                improved_likelihood_grade: "하",
-                improved_severity_grade: "하",
-                improved_risk_grade: "하",
-                frequency: 3,
-                severity: 3,
-                improved_frequency: 1,
-                improved_severity: 1,
+                hazard_situation: sit,
+                existing_measure: exist,
+                improvement_measure: improv,
+                likelihood_grade: likelihood,
+                severity_grade: severity,
+                risk_grade: likelihood === "상" || severity === "상" ? (likelihood === "상" && severity === "상" ? "상" : "중") : (likelihood === "중" && severity === "중" ? "중" : "하"),
+                improved_likelihood_grade: residualL,
+                improved_severity_grade: residualS,
+                improved_risk_grade: residualL === "상" || residualS === "상"
+                  ? (residualL === "상" && residualS === "상" ? "상" : "중")
+                  : (residualL === "중" && residualS === "중" ? "중" : "하"),
+                frequency: likelihood === "상" ? 4 : likelihood === "중" ? 3 : 2,
+                severity: severity === "상" ? 4 : severity === "중" ? 3 : 2,
+                improved_frequency: residualL === "상" ? 3 : residualL === "중" ? 2 : 1,
+                improved_severity: residualS === "상" ? 4 : residualS === "중" ? 3 : 2,
                 ppe: Array.isArray(raw.ppe) ? raw.ppe.map(String) : ["안전모", "안전화"],
                 legal_basis: normalizeLegalBasis(raw.legal_basis ?? raw["법적근거"], [
-                  String(raw.hazard_situation || fallback.hazard_situation || ""),
-                  String(raw.existing_control || raw.existing_measure || fallback.existing_measure || ""),
-                  String(raw.improvement_control || raw.improvement_measure || fallback.improvement_measure || ""),
+                  sit,
+                  exist,
+                  improv,
                   fallback.hazard || "",
                 ]),
               };
@@ -1312,7 +1337,7 @@ serve(async (req) => {
             likelihood_grade: "중",
             severity_grade: "중",
             improved_likelihood_grade: "하",
-            improved_severity_grade: "하",
+            improved_severity_grade: "중",
             ppe: ["안전모", "안전화"],
             legal_basis: normalizeLegalBasis(raw.legal_basis ?? raw["법적근거"], [
               softSituation,

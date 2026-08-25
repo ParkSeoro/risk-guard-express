@@ -68,10 +68,23 @@ describe('RA submitter step author lock', () => {
 });
 
 describe('pdf attachment render quality', () => {
-  it('uses higher DPI and less lossy JPEG for printable form pages', () => {
+  it('uses print-intent PNG (not lossy JPEG) for printable form pages', () => {
     const src = readFileSync('src/lib/pdfRender.ts', 'utf8');
-    expect(src).toMatch(/PDF_RENDER_SCALE\s*=\s*2\.5/);
-    expect(src).toMatch(/PDF_RENDER_JPEG_QUALITY\s*=\s*0\.95/);
-    expect(src).toContain("fillStyle = '#ffffff'");
+    expect(src).toMatch(/PDF_RENDER_SCALE\s*=\s*3/);
+    expect(src).toContain("PDF_RENDER_MIME = 'image/png'");
+    expect(src).toContain("intent: 'print'");
+    expect(src).toContain("alpha: false");
+    expect(src).toContain('canvasToPrintDataUrl');
+    expect(src).toContain("toDataURL(PDF_RENDER_MIME)");
+  });
+
+  it('resets preview body width and attachment max-height for print', () => {
+    const preview = readFileSync('src/lib/approvalDocPreview.ts', 'utf8');
+    expect(preview).toContain('@media print');
+    expect(preview).toContain('width: auto !important');
+    expect(preview).toContain('max-height: none !important');
+    const edge = readFileSync('supabase/functions/generate-workplan-pdf/index.ts', 'utf8');
+    expect(edge).toContain('attachment-print-img');
+    expect(edge).not.toMatch(/max-height:720pt/);
   });
 });

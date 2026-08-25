@@ -400,8 +400,8 @@ Deno.serve(async (req) => {
         const b64 = await imageUrlToBase64(url);
         if (b64) {
           attachmentsHtml += `<div class="page-break"></div>${titleHtml}
-            <div style="text-align:center;padding:10pt;">
-              <img src="${b64}" style="max-width:95%;max-height:720pt;object-fit:contain;" />
+            <div class="attachment-print-wrap">
+              <img class="attachment-print-img" src="${b64}" alt="" />
             </div>`;
         } else {
           attachmentsHtml += `<div class="page-break"></div>${titleHtml}
@@ -411,9 +411,9 @@ Deno.serve(async (req) => {
         // PDF/문서를 클라이언트에서 페이지별 이미지로 렌더링한 결과 사용
         renderedImages.forEach((img: string, idx: number) => {
           attachmentsHtml += `<div class="page-break"></div>${idx === 0 ? titleHtml : ""}
-            <div style="text-align:center;padding:10pt;">
-              <div style="font-size:8pt;color:#64748b;margin-bottom:4pt;">페이지 ${idx + 1} / ${renderedImages.length}</div>
-              <img src="${img}" style="max-width:95%;max-height:720pt;object-fit:contain;" />
+            <div class="attachment-print-wrap">
+              <div class="attachment-print-page-label">페이지 ${idx + 1} / ${renderedImages.length}</div>
+              <img class="attachment-print-img" src="${img}" alt="" />
             </div>`;
         });
       } else if (isText) {
@@ -533,6 +533,41 @@ th { background: #f1f5f9; font-weight: 600; font-size: 7pt; text-align: center; 
   font-size: 7pt;
   color: #94a3b8;
   padding: 4pt 0;
+}
+
+/* Attachment page images: never crush with max-height (was 720pt). */
+.attachment-print-wrap {
+  text-align: center;
+  padding: 6pt 0 10pt;
+  box-sizing: border-box;
+}
+.attachment-print-page-label {
+  font-size: 8pt;
+  color: #64748b;
+  margin-bottom: 4pt;
+}
+.attachment-print-img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  max-height: none;
+  object-fit: contain;
+  margin: 0 auto;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+@media print {
+  html, body {
+    width: auto !important;
+    min-width: 0 !important;
+  }
+  .attachment-print-img {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+  }
 }
 </style>
 </head>

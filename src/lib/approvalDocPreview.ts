@@ -58,6 +58,24 @@ export function preparePrintHtmlForPreview(html: string, pageWidthPx: number): s
 <style id="safenex-preview-fit">
 html, body { width: ${pageWidthPx}px !important; min-width: ${pageWidthPx}px !important; background: #fff; overflow: visible !important; }
 .no-print { display: none !important; }
+/* Preview width must NOT constrain print — Chrome "PDF로 저장" would crush attachment rasters. */
+@media print {
+  html, body {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+  img.attachment-print-img,
+  .attachment-print-img {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    object-fit: contain !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
 </style>`;
   const raw = String(html || "");
   if (/<\/head>/i.test(raw)) return raw.replace(/<\/head>/i, `${inject}</head>`);

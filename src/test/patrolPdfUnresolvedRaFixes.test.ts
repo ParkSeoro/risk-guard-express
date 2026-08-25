@@ -77,6 +77,8 @@ describe('pdf attachment render quality', () => {
     expect(helpers).toContain('isMostlyGrayscale');
     expect(src).toContain("intent: 'print'");
     expect(src).toContain("alpha: false");
+    expect(src).toContain("urlsFromMeta");
+    expect(helpers).toContain("PRINT_CACHE_META_NAME");
   });
 
   it('prepares print via storage URLs + riskTable (no body-only fallback)', () => {

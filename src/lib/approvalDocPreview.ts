@@ -132,7 +132,10 @@ export async function fetchAssessmentPrintHtml(runId: string): Promise<string> {
 
 export async function fetchWorkPlanPrintHtml(
   planId: string,
-  opts?: { includeAttachmentImages?: boolean },
+  opts?: {
+    includeAttachmentImages?: boolean;
+    onProgress?: (p: { total: number; done: number; cached: number }) => void;
+  },
 ): Promise<string> {
   const includeAttachmentImages = opts?.includeAttachmentImages !== false;
   let renderedAttachments: Record<string, string[]> = {};
@@ -141,7 +144,7 @@ export async function fetchWorkPlanPrintHtml(
 
   if (includeAttachmentImages) {
     const { prepareWorkPlanPrintPayload } = await import("@/lib/workPlanPrintPrep");
-    const payload = await prepareWorkPlanPrintPayload(planId);
+    const payload = await prepareWorkPlanPrintPayload(planId, { onProgress: opts?.onProgress });
     renderedAttachments = payload.renderedAttachments;
     riskTable = payload.riskTable;
     skipAttachmentKeys = payload.skipAttachmentKeys;

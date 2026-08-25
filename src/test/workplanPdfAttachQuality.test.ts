@@ -29,6 +29,7 @@ describe("work-plan print storage + RA table contracts", () => {
     expect(prep).toContain("renderAttachmentsToStorageUrls");
     expect(prep).toContain("fetchRiskTableFromExcelUrl");
     expect(prep).toContain("parseRiskAssessmentExcel");
+    expect(prep).toContain("inflightByPlan");
 
     const render = readFileSync("src/lib/pdfRender.ts", "utf8");
     expect(render).toMatch(/PDF_RENDER_SCALE\s*=\s*2/);
@@ -36,13 +37,17 @@ describe("work-plan print storage + RA table contracts", () => {
     expect(render).toContain("listCachedUrls");
     expect(render).toContain("isMostlyGrayscale");
     expect(render).toContain("image/jpeg");
+    expect(render).toContain("pdf.worker.min.mjs?url");
+    expect(render).toContain("PRINT_CACHE_META_NAME");
+    expect(render).toContain("warmWorkPlanAttachmentPrintCache");
+    expect(render).toContain("darkenLightInk(canvas)");
   });
 
   it("print-cache key is stable per uploaded filename", async () => {
     const { printCacheFileKey, printCachePageName, PRINT_CACHE_VERSION } = await import(
       "@/lib/pdfRenderHelpers"
     );
-    expect(PRINT_CACHE_VERSION).toBe("v4");
+    expect(PRINT_CACHE_VERSION).toBe("v5");
     expect(
       printCacheFileKey(
         "https://x.supabase.co/storage/v1/object/public/attachments/p/signal_designate_1787630167750.pdf",
@@ -50,6 +55,9 @@ describe("work-plan print storage + RA table contracts", () => {
     ).toBe("signal_designate_1787630167750");
     expect(printCachePageName(1)).toBe("p01.jpg");
     expect(printCachePageName(12)).toBe("p12.jpg");
+    const helpers = readFileSync("src/lib/pdfRenderHelpers.ts", "utf8");
+    expect(helpers).toMatch(/max - min > 28/);
+    expect(helpers).toContain("PRINT_CACHE_META_NAME");
   });
 
   it("edge accepts riskTable and skips excel dump when table present", () => {

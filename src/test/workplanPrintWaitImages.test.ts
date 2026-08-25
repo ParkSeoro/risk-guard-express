@@ -15,7 +15,7 @@ describe("workplan print waits for images", () => {
     expect(src).not.toMatch(/setTimeout\(\(\)\s*=>\s*\{[\s\S]*print\(\)[\s\S]*\},\s*500\)/);
   });
 
-  it("uploadPrintRasters fails loudly when all uploads fail", () => {
+  it("print raster upload fails loudly when all uploads fail", () => {
     const src = readFileSync("src/lib/pdfRender.ts", "utf8");
     expect(src).toContain("첨부 PDF 인쇄 이미지 업로드에 실패");
   });

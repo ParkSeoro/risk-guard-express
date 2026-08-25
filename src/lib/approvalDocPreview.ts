@@ -70,11 +70,19 @@ img.attachment-print-img,
     min-width: 0 !important;
     max-width: none !important;
   }
+  .attachment-print-page {
+    page-break-before: always !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    height: 277mm !important;
+    max-height: 277mm !important;
+    overflow: hidden !important;
+  }
   img.attachment-print-img,
   .attachment-print-img {
-    width: 100% !important;
+    width: auto !important;
     max-width: 100% !important;
-    max-height: none !important;
+    max-height: 268mm !important;
     height: auto !important;
     object-fit: contain !important;
     -webkit-print-color-adjust: exact !important;

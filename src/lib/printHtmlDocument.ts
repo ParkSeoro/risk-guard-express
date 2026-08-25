@@ -30,13 +30,14 @@ export function waitForDocumentImages(
   ]);
 }
 
-/** Hidden iframe print — waits for attachment rasters before window.print(). */
+/** Hidden iframe print — waits for images, then window.print(). */
 export async function printHtmlDocument(
   html: string,
-  opts?: { title?: string; settleMs?: number },
+  opts?: { title?: string; settleMs?: number; waitForAfterPrint?: boolean },
 ): Promise<void> {
   const desiredTitle = opts?.title || "문서";
   const settleMs = opts?.settleMs ?? 300;
+  const waitForAfterPrint = opts?.waitForAfterPrint === true;
   const prevTitle = document.title;
   document.title = desiredTitle;
 
@@ -76,8 +77,19 @@ export async function printHtmlDocument(
 
     await waitForDocumentImages(doc);
     await new Promise((r) => setTimeout(r, settleMs));
-    iframe.contentWindow?.focus();
-    iframe.contentWindow?.print();
+    const win = iframe.contentWindow;
+    win?.focus();
+    if (waitForAfterPrint && win) {
+      await new Promise<void>((resolve) => {
+        const done = () => resolve();
+        win.addEventListener("afterprint", done, { once: true });
+        win.print();
+        setTimeout(done, 120_000);
+      });
+      cleanup();
+      return;
+    }
+    win?.print();
     // Keep iframe briefly so the print dialog can snapshot layout.
     setTimeout(cleanup, 1500);
   } catch (e) {

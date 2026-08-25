@@ -27,8 +27,9 @@ import {
 import AttachmentChecklist from '@/components/work-plan/AttachmentChecklist';
 import AttachmentReviewPanel from '@/components/work-plan/AttachmentReviewPanel';
 import LegalCalculatorPanel from '@/components/work-plan/LegalCalculatorPanel';
+import ZoomableDocumentPreview from '@/components/docs/ZoomableDocumentPreview';
+import { A4_PORTRAIT_PX } from '@/lib/approvalDocPreview';
 import { uploadAttachmentFile, formatBytes } from '@/lib/compressUploadFile';
-import { formatSectionContent } from '@/lib/formatSectionContent';
 import EquipmentManager from '@/components/equipment/EquipmentManager';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -51,7 +52,6 @@ import { format, parseISO } from 'date-fns';
 import {
   buildRiggingPlanPayload,
   isRiggingPlanReady,
-  summarizeRiggingPlan,
 } from '@/lib/riggingPlanPersist';
 import { refreshRiggingDerivedFields } from '@/lib/riggingDerived';
 import { appendTextToMethodSection } from '@/lib/workPlanMethodSection';
@@ -101,6 +101,9 @@ const WorkPlanDetail = () => {
   const [tbmNoticeLoading, setTbmNoticeLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('basic');
   const [attProgress, setAttProgress] = useState<AttachmentProgress | null>(null);
+  const [bodyPreviewHtml, setBodyPreviewHtml] = useState<string | null>(null);
+  const [bodyPreviewErr, setBodyPreviewErr] = useState<string | null>(null);
+  const [bodyPreviewLoading, setBodyPreviewLoading] = useState(false);
   const authoringLockRef = useRef(false);
   if (!isMobile || isForceDesktop()) authoringLockRef.current = true;
 
@@ -132,7 +135,6 @@ const WorkPlanDetail = () => {
   useEffect(() => {
     if (!planId) return;
     let cancelled = false;
-    let warmTimer: number | undefined;
     setLoading(true);
     setIsDirty(false);
     (async () => {
@@ -188,23 +190,28 @@ const WorkPlanDetail = () => {
       } else if (!cancelled) {
         setTbmNotice(null);
       }
+    })();
+    return () => { cancelled = true; };
+  }, [planId]);
 
-      if (cancelled) return;
-      // 인쇄/결재 미리보기와 같은 캐시를 미리 채워 첫 클릭 대기를 줄입니다.
-      if (!isMobile || isForceDesktop()) {
-        warmTimer = window.setTimeout(() => {
-          if (cancelled) return;
-          void import('@/lib/workPlanPrintPrep')
-            .then((m) => m.prepareWorkPlanPrintPayload(planId!))
-            .catch(() => {});
-        }, 1600);
+  useEffect(() => {
+    if (activeTab !== 'preview' || !planId) return;
+    let cancelled = false;
+    setBodyPreviewLoading(true);
+    setBodyPreviewErr(null);
+    (async () => {
+      try {
+        const { fetchWorkPlanPrintHtml } = await import('@/lib/approvalDocPreview');
+        const html = await fetchWorkPlanPrintHtml(planId);
+        if (!cancelled) setBodyPreviewHtml(html);
+      } catch (e: any) {
+        if (!cancelled) setBodyPreviewErr(e?.message || '본문을 불러오지 못했습니다.');
+      } finally {
+        if (!cancelled) setBodyPreviewLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-      if (warmTimer) window.clearTimeout(warmTimer);
-    };
-  }, [planId]);
+    return () => { cancelled = true; };
+  }, [activeTab, planId]);
 
   useEffect(() => {
     if (isDirty && !saving) {
@@ -436,42 +443,85 @@ const WorkPlanDetail = () => {
   };
 
 
-  const handlePdfDownload = async () => {
+  const handlePrint = async () => {
     if (!planId || pdfBusy) return;
     setPdfBusy(true);
     const progressToast = toast({
-      title: '인쇄 문서 준비 중…',
-      description: '첨부 PDF를 변환합니다. 두 번째부터는 캐시를 사용합니다.',
+      title: '인쇄 1/2 본문·결재',
+      description: '첨부 원본은 다음 대화상자에서 출력합니다.',
       duration: 120000,
     });
     try {
       const { fetchWorkPlanPrintHtml } = await import('@/lib/approvalDocPreview');
       const { printHtmlDocument } = await import('@/lib/printHtmlDocument');
-      const html = await fetchWorkPlanPrintHtml(planId, {
-        onProgress: (p) => {
-          if (p.total <= 0) return;
-          progressToast.update({
-            id: progressToast.id,
-            title: `첨부 변환 ${p.done}/${p.total}`,
-            description: p.cached > 0 ? `캐시 재사용 ${p.cached}건` : '한글 양식이 선명하게 나오도록 처리 중입니다.',
-          });
-        },
+      const html = await fetchWorkPlanPrintHtml(planId);
+      await printHtmlDocument(html, {
+        title: `${plan?.title || '작업계획서'} (1/2 본문·결재)`,
+        waitForAfterPrint: true,
       });
-      if (html) {
-        progressToast.update({
-          id: progressToast.id,
-          title: '이미지 로드 중…',
-          description: '인쇄 대화상자를 엽니다.',
-        });
-        await printHtmlDocument(html, { title: plan?.title || '작업계획서' });
+      const {
+        loadWorkPlanPacketFiles,
+        mergeOriginalAttachmentsPdf,
+        printPdfBytes,
+      } = await import('@/lib/workPlanPacketPdf');
+      const { files } = await loadWorkPlanPacketFiles(planId);
+      if (files.length === 0) {
         progressToast.dismiss();
-        toast({ title: 'PDF 인쇄 대화상자가 열립니다. "PDF로 저장"을 선택하세요.' });
-      } else {
-        progressToast.dismiss();
+        toast({ title: '본문·결재 인쇄 대화상자를 열었습니다.' });
+        return;
       }
+      progressToast.update({
+        id: progressToast.id,
+        title: '인쇄 2/2 첨부 원본',
+        description: `${files.length}건을 원본 페이지 그대로 출력합니다.`,
+      });
+      const attPdf = await mergeOriginalAttachmentsPdf(files);
+      if (attPdf) {
+        await printPdfBytes(attPdf, {
+          title: `${plan?.title || '작업계획서'} (2/2 첨부)`,
+          waitForAfterPrint: true,
+        });
+      }
+      progressToast.dismiss();
     } catch (err: any) {
       progressToast.dismiss();
-      toast({ title: 'PDF 생성 실패', description: err?.message, variant: 'destructive' });
+      toast({ title: '인쇄 실패', description: err?.message, variant: 'destructive' });
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const handleSavePdf = async () => {
+    if (!planId || pdfBusy) return;
+    setPdfBusy(true);
+    const progressToast = toast({
+      title: 'PDF 한 파일 만드는 중…',
+      description: '본문 뒤에 첨부 원본 페이지를 이어 붙입니다.',
+      duration: 180000,
+    });
+    try {
+      const { fetchWorkPlanPrintHtml } = await import('@/lib/approvalDocPreview');
+      const {
+        loadWorkPlanPacketFiles,
+        buildWorkPlanPacketPdf,
+        downloadPdfBytes,
+        workPlanPacketFileName,
+      } = await import('@/lib/workPlanPacketPdf');
+      const html = await fetchWorkPlanPrintHtml(planId);
+      const { files } = await loadWorkPlanPacketFiles(planId);
+      progressToast.update({
+        id: progressToast.id,
+        title: '첨부 원본 이어 붙이는 중…',
+        description: files.length ? `${files.length}건` : '첨부 없음',
+      });
+      const bytes = await buildWorkPlanPacketPdf({ bodyHtml: html, files });
+      const fileName = workPlanPacketFileName(plan?.title || '작업계획서');
+      downloadPdfBytes(bytes, fileName);
+      progressToast.dismiss();
+      toast({ title: 'PDF를 저장했습니다', description: fileName });
+    } catch (err: any) {
+      progressToast.dismiss();
+      toast({ title: 'PDF 저장 실패', description: err?.message, variant: 'destructive' });
     } finally {
       setPdfBusy(false);
     }
@@ -625,10 +675,24 @@ const WorkPlanDetail = () => {
         >
           <Save className="h-3.5 w-3.5" /> {saving ? '저장 중...' : '저장'}
         </Button>
-        <Button size="sm" variant="outline" onClick={handlePdfDownload} disabled={pdfBusy} className="gap-1">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleSavePdf}
+          disabled={pdfBusy}
+          className="gap-1"
+          title="본문·결재 뒤에 첨부 원본 페이지를 이어 한 파일로 저장합니다"
+        >
           <Download className="h-3.5 w-3.5" /> {pdfBusy ? '준비 중...' : 'PDF'}
         </Button>
-        <Button size="sm" variant="outline" onClick={handlePdfDownload} disabled={pdfBusy} className="gap-1">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handlePrint}
+          disabled={pdfBusy}
+          className="gap-1"
+          title="인쇄 1/2 본문·결재, 2/2 첨부 원본 (페이지 크기 유지)"
+        >
           <Printer className="h-3.5 w-3.5" /> {pdfBusy ? '준비 중...' : '인쇄'}
         </Button>
         {access.canCreate('work_plan') && (
@@ -992,72 +1056,30 @@ const WorkPlanDetail = () => {
           )}
         </TabsContent>
 
-        {/* Preview Tab — attachments first (SSOT work_plan_attachments; legacy JSON is empty) */}
+        {/* Preview Tab — body HTML + original attachments (no raster) */}
         <TabsContent value="preview" className="space-y-4 mt-4">
-          {planId && <AttachmentReviewPanel workPlanId={planId} />}
           <Card>
-            <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Eye className="h-4 w-4" />본문 미리보기</CardTitle></CardHeader>
-            <CardContent className="space-y-6">
-              {/* Header */}
-              <div className="text-center border-b pb-4">
-                <h2 className="text-lg font-bold">작업계획서</h2>
-                <p className="text-sm text-muted-foreground">{plan.title}</p>
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Eye className="h-4 w-4" />본문·결재 미리보기
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="h-[70vh] min-h-[420px]">
+                <ZoomableDocumentPreview
+                  html={bodyPreviewHtml}
+                  loading={bodyPreviewLoading}
+                  error={bodyPreviewErr}
+                  pageWidth={A4_PORTRAIT_PX}
+                  active={activeTab === 'preview'}
+                  emptyHint="본문을 표시할 수 없습니다"
+                  loadingHint="본문을 불러오는 중…"
+                  className="h-full"
+                />
               </div>
-
-              {/* Basic Info Grid */}
-              <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                <div className="flex gap-2"><span className="text-muted-foreground w-20 shrink-0">공종:</span><span className="font-medium">{wpType?.name}</span></div>
-                <div className="flex gap-2"><span className="text-muted-foreground w-20 shrink-0">상태:</span><span className="font-medium">{plan.status}</span></div>
-                <div className="flex gap-2"><span className="text-muted-foreground w-20 shrink-0">작업기간:</span>
-                  <span className="font-medium">{startDate && endDate ? `${startDate} ~ ${endDate}` : '미지정'}</span>
-                </div>
-                <div className="flex gap-2"><span className="text-muted-foreground w-20 shrink-0">회차:</span><span className="font-medium">v{plan.version || 1}</span></div>
-              </div>
-
-              <Separator />
-
-              {/* Sections Preview */}
-              {sections.filter(s => s.key !== '_checklist' && s.content).map(section => (
-                <div key={section.key} className="space-y-1">
-                  <h3 className="text-sm font-semibold">{section.title}</h3>
-                  <div className="text-xs text-muted-foreground whitespace-pre-wrap bg-muted/30 p-3 rounded">
-                    {formatSectionContent(section.content)}
-                  </div>
-                </div>
-              ))}
-
-              {/* Checklist Preview */}
-              {checklist.some(c => c.checked) && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold">체크리스트</h3>
-                  {checklist.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-xs">
-                      <span>{item.checked ? '☑' : '☐'}</span>
-                      <span>{item.label}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Rigging preview — same SSOT as PDF */}
-              {wpType?.hasRiggingPlan && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold">리깅플랜 (양중계획)</h3>
-                  {summarizeRiggingPlan(rigging).length > 0 ? (
-                    <ul className="text-xs text-muted-foreground space-y-1 bg-muted/30 p-3 rounded list-disc pl-5">
-                      {summarizeRiggingPlan(rigging).map((line) => (
-                        <li key={line}>{line}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3 rounded">
-                      리깅플랜이 아직 저장되지 않았습니다. 리깅플랜 탭에서 입력·저장하세요.
-                    </p>
-                  )}
-                </div>
-              )}
             </CardContent>
           </Card>
+          {planId && <AttachmentReviewPanel workPlanId={planId} />}
         </TabsContent>
       </Tabs>
       {plan && (

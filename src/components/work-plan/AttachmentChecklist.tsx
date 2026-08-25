@@ -177,18 +177,6 @@ export default function AttachmentChecklist({
       }
       onChange?.();
       await reload();
-      const mime = (uploaded.file.type || '').toLowerCase();
-      if (mime === 'application/pdf' || /\.pdf($|\?)/i.test(uploaded.publicUrl)) {
-        void import('@/lib/pdfRender')
-          .then(({ warmWorkPlanAttachmentPrintCache }) =>
-            warmWorkPlanAttachmentPrintCache(
-              { file_url: uploaded.publicUrl, mime_type: uploaded.file.type },
-              projectId,
-              workPlanId,
-            ),
-          )
-          .catch((e) => console.warn('print cache warm failed', e));
-      }
       return true;
     } finally {
       setUploadingId(null);

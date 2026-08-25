@@ -7,6 +7,7 @@ import { ExternalLink, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import ZoomableDocumentPreview from "@/components/docs/ZoomableDocumentPreview";
+import AttachmentReviewPanel from "@/components/work-plan/AttachmentReviewPanel";
 import PermitReadOnlyPreview from "@/components/permits/PermitReadOnlyPreview";
 import type { PermitFormData, PermitSignatures } from "@/components/permits/DigPermitForm";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
@@ -49,10 +50,9 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
   const entityType = target?.entityType || "";
   const entityId = target?.entityId || "";
   const isPermit = entityType === "work_permit";
-  const isHtmlDoc =
-    entityType === "assessment_run" ||
-    entityType === "assessment_run_feedback" ||
-    entityType === "work_plan";
+  const isWorkPlan = entityType === "work_plan";
+  const isAssessment =
+    entityType === "assessment_run" || entityType === "assessment_run_feedback";
   const inlineOk = canInlineApprovalPreview(entityType);
   const fullPath = desktopApprovalEntityPathFromInbox(entityType, entityId);
   const title =
@@ -94,17 +94,8 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
           });
         } else if (entityType === "work_plan") {
           setPageWidth(A4_PORTRAIT_PX);
-          setLoadHint("첨부 PDF를 인쇄용으로 준비하는 중…");
-          const doc = await fetchWorkPlanPrintHtml(entityId, {
-            onProgress: (p) => {
-              if (cancelled || p.total <= 0) return;
-              setLoadHint(
-                p.cached === p.done && p.done > 0
-                  ? `캐시에서 불러오는 중 ${p.done}/${p.total}`
-                  : `첨부 변환 ${p.done}/${p.total}`,
-              );
-            },
-          });
+          setLoadHint("본문을 불러오는 중…");
+          const doc = await fetchWorkPlanPrintHtml(entityId);
           if (cancelled) return;
           setHtml(doc);
         } else if (
@@ -189,7 +180,27 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
             </div>
           )}
 
-          {inlineOk && !loading && !error && isHtmlDoc && (
+          {inlineOk && !loading && !error && isWorkPlan && (
+            <div className="h-full min-h-[60vh] flex flex-col">
+              <div className="flex-1 min-h-[40vh]">
+                <ZoomableDocumentPreview
+                  html={html}
+                  loading={false}
+                  error={null}
+                  pageWidth={pageWidth}
+                  active={open}
+                  className="h-full min-h-[40vh]"
+                  emptyHint="표시할 문서가 없습니다"
+                  loadingHint="본문을 불러오는 중…"
+                />
+              </div>
+              <div className="p-3 border-t bg-background">
+                <AttachmentReviewPanel workPlanId={entityId} />
+              </div>
+            </div>
+          )}
+
+          {inlineOk && !loading && !error && isAssessment && (
             <ZoomableDocumentPreview
               html={html}
               loading={false}
@@ -198,7 +209,6 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
               active={open}
               className="h-full min-h-[60vh]"
               emptyHint="표시할 문서가 없습니다"
-              loadingHint="첨부 이미지 불러오는 중…"
             />
           )}
         </div>

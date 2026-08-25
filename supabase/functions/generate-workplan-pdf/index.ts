@@ -18,24 +18,6 @@ function formatKST(d: string | null | undefined): string {
   return `${y}-${m}-${day} ${h}:${min}`;
 }
 
-async function imageUrlToBase64(url: string): Promise<string | null> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const buf = await res.arrayBuffer();
-    const ct = res.headers.get("content-type") || "image/jpeg";
-    const bytes = new Uint8Array(buf);
-    let binary = "";
-    const chunkSize = 8192;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      binary += String.fromCharCode(...bytes.slice(i, i + chunkSize));
-    }
-    return `data:${ct};base64,${btoa(binary)}`;
-  } catch {
-    return null;
-  }
-}
-
 const JOB_TITLE_LABELS: Record<string, string> = {
   contractor_supervisor: "관리감독자",
   contractor_pic: "관리감독자",
@@ -103,13 +85,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { planId, renderedAttachments, riskTable, skipAttachmentKeys } = await req.json();
-    const preRendered: Record<string, string[]> = renderedAttachments || {};
-    const skipKeys = new Set<string>(
-      Array.isArray(skipAttachmentKeys)
-        ? skipAttachmentKeys.map((k: unknown) => String(k || "").trim()).filter(Boolean)
-        : [],
-    );
+    const { planId, riskTable } = await req.json();
     const riskTablePayload =
       riskTable && typeof riskTable === "object" && Array.isArray((riskTable as any).headers)
         ? (riskTable as { source?: string; headers: string[]; rows: string[][] })
@@ -413,61 +389,7 @@ Deno.serve(async (req) => {
             <td style="font-size:7pt;color:#64748b;">${escapeHtml(a.description || "")}</td>
           </tr>`).join("")}
         </tbody></table>
-        <p style="font-size:7.5pt;color:#64748b;margin-top:6pt;">★ = 필수 첨부. 아래 페이지에 첨부완료 파일만 본문으로 이어집니다.</p>`;
-    }
-    for (const att of uploadedAttachments) {
-      const url: string = att.fileUrl || "";
-      const mime: string = (att.mime || "").toLowerCase();
-      const attKey = String(att.key || "").trim();
-      if (attKey && skipKeys.has(attKey)) continue;
-      // Excel RA already printed as body table — never dump download-link page.
-      if (
-        (attKey === "risk_assessment" || String(att.name || "").includes("위험성평가")) &&
-        (mime.includes("spreadsheet") || mime.includes("excel") || /\.(xlsx|xls|csv)($|\?)/i.test(url))
-      ) {
-        if (riskTablePayload) continue;
-      }
-      const isImage = mime.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(url);
-      const isPdf = mime === "application/pdf" || /\.pdf$/i.test(url);
-      const isText = mime.startsWith("text/") || /\.(txt|csv|md|log)$/i.test(url);
-      const titleHtml = `<div class="section-header">${escapeHtml(att.name || att.key || "첨부파일")}</div>`;
-      const renderedImages = preRendered[url];
-      if (isImage) {
-        // Public Storage URLs — embed directly (no base64 bloat / no re-encode).
-        attachmentsHtml += `<div class="attachment-print-page">
-          <div class="attachment-print-banner">${escapeHtml(att.name || att.key || "첨부파일")}</div>
-          <img class="attachment-print-img" src="${escapeHtml(url)}" alt="" />
-        </div>`;
-      } else if (renderedImages && renderedImages.length > 0) {
-        const label = escapeHtml(att.name || att.key || "첨부파일");
-        renderedImages.forEach((img: string, idx: number) => {
-          attachmentsHtml += `<div class="attachment-print-page">
-            <div class="attachment-print-banner">${label} · ${idx + 1}/${renderedImages.length}</div>
-            <img class="attachment-print-img" src="${escapeHtml(img)}" alt="" />
-          </div>`;
-        });
-      } else if (isText) {
-        let textBody = "";
-        try {
-          const r = await fetch(url);
-          if (r.ok) textBody = await r.text();
-        } catch {}
-        attachmentsHtml += `<div class="page-break"></div>${titleHtml}
-          <pre style="white-space:pre-wrap;word-break:break-word;font-family:'Noto Sans KR','Malgun Gothic',monospace;font-size:9pt;padding:14pt;border:1px solid #e2e8f0;background:#f8fafc;line-height:1.55;">${escapeHtml(textBody || "(내용을 불러오지 못했습니다)")}</pre>`;
-      } else if (isPdf) {
-        attachmentsHtml += `<div class="page-break"></div>${titleHtml}
-          <div style="padding:20pt;color:#334155;line-height:1.7;">
-            <p>PDF 미리보기 이미지를 만들지 못했습니다.</p>
-            <p style="margin-top:8pt;word-break:break-all;"><a href="${escapeHtml(url)}" target="_blank" style="color:#1e40af;">원본 PDF 열기</a></p>
-          </div>`;
-      } else {
-        attachmentsHtml += `<div class="page-break"></div>${titleHtml}
-          <div style="padding:20pt;color:#334155;line-height:1.7;">
-            <p><b>파일명:</b> ${escapeHtml(url.split("/").pop() || "")}</p>
-            <p style="margin-top:6pt;"><b>형식:</b> ${escapeHtml(mime || "binary")}</p>
-            <p style="margin-top:6pt;word-break:break-all;"><a href="${escapeHtml(url)}" target="_blank" style="color:#1e40af;">원본 파일 열기</a></p>
-          </div>`;
-      }
+        <p style="font-size:7.5pt;color:#64748b;margin-top:6pt;">★ = 필수 첨부. 첨부는 미리보기·인쇄 2단계·PDF 저장에서 원본으로 이어집니다.</p>`;
     }
 
 
@@ -567,53 +489,12 @@ th { background: #f1f5f9; font-weight: 600; font-size: 7pt; text-align: center; 
   padding: 8pt 0 0;
   margin-top: 12pt;
 }
-
-/* One scanned/PDF page = one printed A4. Banner is tiny so the raster fits. */
-.attachment-print-page {
-  page-break-before: always;
-  page-break-inside: avoid;
-  break-before: page;
-  break-inside: avoid;
-  box-sizing: border-box;
-  width: 100%;
-  max-height: 277mm;
-  overflow: hidden;
-}
-.attachment-print-banner {
-  font-size: 8pt;
-  font-weight: 600;
-  color: #334155;
-  padding: 0 0 3pt;
-  line-height: 1.2;
-}
-.attachment-print-img {
-  display: block;
-  width: auto;
-  max-width: 100%;
-  height: auto;
-  max-height: 268mm;
-  object-fit: contain;
-  object-position: top center;
-  margin: 0 auto;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
 @media print {
   html, body {
     width: auto !important;
     min-width: 0 !important;
   }
   .footer { display: none; }
-  .attachment-print-page {
-    height: 277mm;
-    max-height: 277mm;
-  }
-  .attachment-print-img {
-    width: auto !important;
-    max-width: 100% !important;
-    max-height: 268mm !important;
-    height: auto !important;
-  }
 }
 </style>
 </head>

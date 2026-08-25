@@ -35,7 +35,8 @@ describe("workplan save/print source guards", () => {
     const src = readFileSync("src/pages/WorkPlanDetail.tsx", "utf8");
     expect(src).toContain("pdfBusy");
     expect(src).toMatch(/disabled=\{pdfBusy\}/);
-    expect(src).not.toMatch(/onClick=\{handlePdfDownload\} disabled=\{saving\}/);
+    expect(src).not.toMatch(/onClick=\{handleSavePdf\} disabled=\{saving\}/);
+    expect(src).not.toMatch(/onClick=\{handlePrint\} disabled=\{saving\}/);
     expect(src).toContain("riggingRef");
     expect(src).toContain("editEpochRef");
     expect(src).toContain("onDerivedPatch");
@@ -58,11 +59,11 @@ describe("workplan save/print source guards", () => {
     expect(src).toContain('fill_stage: "narrative"');
   });
 
-  it("workplan pdf edge keeps attachment print CSS", async () => {
+  it("workplan pdf edge is body HTML only", async () => {
     const { readFileSync } = await import("node:fs");
     const src = readFileSync("supabase/functions/generate-workplan-pdf/index.ts", "utf8");
-    expect(src).toContain("attachment-print-img");
-    expect(src).toContain("attachment-print-page");
-    expect(src).toContain("max-height: 268mm");
+    expect(src).toContain("첨부서류 일람");
+    expect(src).not.toContain("attachment-print-page");
+    expect(src).not.toContain("max-height: 268mm");
   });
 });

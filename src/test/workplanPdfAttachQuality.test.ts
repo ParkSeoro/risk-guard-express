@@ -1,40 +1,48 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import {
-  compactRenderedAttachments,
-  MAX_RENDERED_ATTACHMENTS_CHARS,
-  renderedAttachmentsCharSize,
-} from "@/lib/pdfRenderHelpers";
+import { pickRiskPrintHeaders } from "@/lib/pdfRenderHelpers";
 
-describe("compactRenderedAttachments", () => {
-  it("is a no-op under budget", () => {
-    const input = { a: ["data:image/png;base64,aaa"] };
-    expect(compactRenderedAttachments(input, 10_000)).toEqual(input);
+describe("pickRiskPrintHeaders", () => {
+  it("prefers process/hazard columns", () => {
+    const headers = ["비고", "공정", "세부작업", "위험요인", "개선대책", "기타1", "기타2"];
+    const picked = pickRiskPrintHeaders(headers, 8);
+    expect(picked).toContain("공정");
+    expect(picked).toContain("위험요인");
+    expect(picked[0]).not.toBe("비고");
   });
 
-  it("drops trailing pages then whole files to fit budget", () => {
-    const big = "x".repeat(5000);
-    const input = {
-      f1: [big, big, big],
-      f2: [big, big],
-    };
-    const out = compactRenderedAttachments(input, 12_000);
-    const size = renderedAttachmentsCharSize(out);
-    expect(size).toBeLessThanOrEqual(12_000);
-    if (out.f1) expect(out.f1.length).toBeGreaterThan(0);
-  });
-
-  it("exports a sane default Edge budget", () => {
-    expect(MAX_RENDERED_ATTACHMENTS_CHARS).toBeGreaterThan(500_000);
-    expect(MAX_RENDERED_ATTACHMENTS_CHARS).toBeLessThan(6_000_000);
+  it("falls back to leading columns when hints missing", () => {
+    expect(pickRiskPrintHeaders(["A", "B", "C"], 2)).toEqual(["A", "B"]);
   });
 });
 
-describe("darkenLightInk source", () => {
-  it("targets light grey ink bands used by form PDFs", () => {
-    const src = readFileSync("src/lib/pdfRenderHelpers.ts", "utf8");
-    expect(src).toContain("darkenLightInk");
-    expect(src).toContain("lum >= 210");
-    expect(src).toContain("lum >= 150");
+describe("work-plan print storage + RA table contracts", () => {
+  it("client prepares storage URLs and riskTable (no body-only retry)", () => {
+    const preview = readFileSync("src/lib/approvalDocPreview.ts", "utf8");
+    expect(preview).toContain("prepareWorkPlanPrintPayload");
+    expect(preview).toContain("riskTable");
+    expect(preview).toContain("skipAttachmentKeys");
+    expect(preview).not.toContain("retrying body-only");
+    expect(preview).not.toContain("compactRenderedAttachments");
+
+    const prep = readFileSync("src/lib/workPlanPrintPrep.ts", "utf8");
+    expect(prep).toContain("renderAttachmentsToStorageUrls");
+    expect(prep).toContain("fetchRiskTableFromExcelUrl");
+    expect(prep).toContain("parseRiskAssessmentExcel");
+
+    const render = readFileSync("src/lib/pdfRender.ts", "utf8");
+    expect(render).toMatch(/PDF_RENDER_SCALE\s*=\s*3/);
+    expect(render).toContain("uploadPrintRasters");
+    expect(render).toContain("isMostlyGrayscale");
+    expect(render).toContain("image/png");
+  });
+
+  it("edge accepts riskTable and skips excel dump when table present", () => {
+    const edge = readFileSync("supabase/functions/generate-workplan-pdf/index.ts", "utf8");
+    expect(edge).toContain("riskTable");
+    expect(edge).toContain("skipAttachmentKeys");
+    expect(edge).toContain("출처: 업로드된 위험성평가서");
+    expect(edge).toContain("PDF 미리보기 이미지를 만들지 못했습니다");
+    expect(edge).not.toMatch(/이 파일 형식은 인쇄본에 직접 포함할 수 없습니다/);
   });
 });

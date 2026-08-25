@@ -68,23 +68,22 @@ describe('RA submitter step author lock', () => {
 });
 
 describe('pdf attachment render quality', () => {
-  it('uses print-intent raster with ink boost and size budget (avoids 546)', () => {
+  it('renders high-DPI PNG and uploads to storage (no lossy body payload)', () => {
     const src = readFileSync('src/lib/pdfRender.ts', 'utf8');
     const helpers = readFileSync('src/lib/pdfRenderHelpers.ts', 'utf8');
-    expect(src).toMatch(/PDF_RENDER_SCALE\s*=\s*2\.5/);
+    expect(src).toMatch(/PDF_RENDER_SCALE\s*=\s*3/);
+    expect(src).toContain('uploadPrintRasters');
     expect(helpers).toContain('darkenLightInk');
-    expect(helpers).toContain('compactRenderedAttachments');
-    expect(helpers).toContain('MAX_RENDERED_ATTACHMENTS_CHARS');
+    expect(helpers).toContain('isMostlyGrayscale');
     expect(src).toContain("intent: 'print'");
     expect(src).toContain("alpha: false");
-    expect(src).toContain('image/webp');
   });
 
-  it('retries work-plan PDF without attachments on invoke failure', () => {
+  it('prepares print via storage URLs + riskTable (no body-only fallback)', () => {
     const preview = readFileSync('src/lib/approvalDocPreview.ts', 'utf8');
-    expect(preview).toContain('compactRenderedAttachments');
-    expect(preview).toContain('retrying body-only');
-    expect(preview).toContain('546');
+    expect(preview).toContain('prepareWorkPlanPrintPayload');
+    expect(preview).toContain('riskTable');
+    expect(preview).not.toContain('retrying body-only');
   });
 
   it('resets preview body width and attachment max-height for print', () => {

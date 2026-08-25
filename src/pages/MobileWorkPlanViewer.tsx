@@ -92,18 +92,9 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
       setLoading(false);
 
       setPrintLoading(true);
-      setPrintHint("첨부 PDF를 인쇄용으로 준비하는 중…");
+      setPrintHint("본문을 불러오는 중…");
       try {
-        const html = await fetchWorkPlanPrintHtml(planId, {
-          onProgress: (p) => {
-            if (cancelled || p.total <= 0) return;
-            setPrintHint(
-              p.cached === p.done && p.done > 0
-                ? `캐시에서 불러오는 중 ${p.done}/${p.total}`
-                : `첨부 변환 ${p.done}/${p.total}`,
-            );
-          },
-        });
+        const html = await fetchWorkPlanPrintHtml(planId);
         if (!cancelled) setPrintHtml(html);
       } catch (e: any) {
         if (!cancelled) setPrintError(e?.message || "인쇄 문서를 불러오지 못했습니다");
@@ -153,7 +144,7 @@ export default function MobileWorkPlanViewer({ planId: propPlanId }: { planId?: 
             loading={printLoading || loading}
             error={printError}
             pageWidth={A4_PORTRAIT_PX}
-            emptyHint="인쇄 문서를 표시할 수 없습니다"
+            emptyHint="본문을 표시할 수 없습니다"
             loadingHint={printHint}
             active={tab === "doc"}
           />

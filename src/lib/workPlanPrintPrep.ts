@@ -1,32 +1,29 @@
 /**
- * Prepare work-plan print payload on the client:
- * - PDF attachments → Storage JPEG URLs (sharp, small Edge body)
- * - risk_assessment xlsx → printable table rows
- * Concurrent callers for the same plan share one raster job.
+ * Body-only work-plan print payload:
+ * - risk_assessment xlsx → printable table rows (skip dumping the file)
+ * PDF/image attachments are NOT rasterized — preview/print/save use originals.
  */
 import { supabase } from "@/integrations/supabase/client";
 import { parseRiskAssessmentExcel } from "@/lib/riskExcelImport";
 import {
   pickRiskPrintHeaders,
-  type PrintRasterProgressFn,
   type WorkPlanRiskPrintTable,
 } from "@/lib/pdfRenderHelpers";
 
 export type WorkPlanPrintPayload = {
   planId: string;
-  renderedAttachments: Record<string, string[]>;
   riskTable: WorkPlanRiskPrintTable | null;
   /** Attachment keys already represented as body tables — skip file dump pages. */
   skipAttachmentKeys: string[];
 };
 
-function isExcelMime(mime: string, url: string): boolean {
+export function isExcelMime(mime: string, url: string): boolean {
   const m = (mime || "").toLowerCase();
   if (m.includes("spreadsheet") || m.includes("excel")) return true;
   return /\.(xlsx|xls|csv)($|\?)/i.test(url);
 }
 
-function isRiskAssessmentAttachment(a: {
+export function isRiskAssessmentAttachment(a: {
   attachment_key?: string | null;
   name?: string | null;
 }): boolean {
@@ -52,17 +49,7 @@ export async function fetchRiskTableFromExcelUrl(url: string): Promise<WorkPlanR
   }
 }
 
-type Inflight = {
-  promise: Promise<WorkPlanPrintPayload>;
-  listeners: Set<PrintRasterProgressFn>;
-};
-
-const inflightByPlan = new Map<string, Inflight>();
-
-async function prepareWorkPlanPrintPayloadInner(
-  planId: string,
-  onProgress?: PrintRasterProgressFn,
-): Promise<WorkPlanPrintPayload> {
+export async function prepareWorkPlanPrintPayload(planId: string): Promise<WorkPlanPrintPayload> {
   const { data: plan, error: planErr } = await supabase
     .from("work_plans")
     .select("id, project_id")
@@ -95,48 +82,9 @@ async function prepareWorkPlanPrintPayloadInner(
     }
   }
 
-  const pdfAtts = rows.filter((a) => {
-    if (!a.file_url) return false;
-    if (isRiskAssessmentAttachment(a) && isExcelMime(a.mime_type || "", a.file_url)) return false;
-    const mime = (a.mime_type || "").toLowerCase();
-    return mime === "application/pdf" || /\.pdf($|\?)/i.test(a.file_url);
-  });
-
-  const { renderAttachmentsToStorageUrls } = await import("@/lib/pdfRender");
-  const renderedAttachments = await renderAttachmentsToStorageUrls(
-    pdfAtts,
-    plan.project_id,
-    planId,
-    { onProgress },
-  );
-
   return {
     planId,
-    renderedAttachments,
     riskTable,
     skipAttachmentKeys,
   };
-}
-
-export async function prepareWorkPlanPrintPayload(
-  planId: string,
-  opts?: { onProgress?: PrintRasterProgressFn },
-): Promise<WorkPlanPrintPayload> {
-  const existing = inflightByPlan.get(planId);
-  if (existing) {
-    if (opts?.onProgress) existing.listeners.add(opts.onProgress);
-    return existing.promise;
-  }
-
-  const listeners = new Set<PrintRasterProgressFn>();
-  if (opts?.onProgress) listeners.add(opts.onProgress);
-  const emit: PrintRasterProgressFn = (p) => {
-    listeners.forEach((fn) => fn(p));
-  };
-  const promise = prepareWorkPlanPrintPayloadInner(planId, emit).finally(() => {
-    const cur = inflightByPlan.get(planId);
-    if (cur?.promise === promise) inflightByPlan.delete(planId);
-  });
-  inflightByPlan.set(planId, { promise, listeners });
-  return promise;
 }

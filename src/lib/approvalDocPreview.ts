@@ -58,35 +58,11 @@ export function preparePrintHtmlForPreview(html: string, pageWidthPx: number): s
 <style id="safenex-preview-fit">
 html, body { width: ${pageWidthPx}px !important; min-width: ${pageWidthPx}px !important; background: #fff; overflow: visible !important; color: #111 !important; }
 .no-print { display: none !important; }
-img.attachment-print-img,
-.attachment-print-img {
-  -webkit-print-color-adjust: exact !important;
-  print-color-adjust: exact !important;
-}
-/* Preview width must NOT constrain print — Chrome "PDF로 저장" would crush attachment rasters. */
 @media print {
   html, body {
     width: auto !important;
     min-width: 0 !important;
     max-width: none !important;
-  }
-  .attachment-print-page {
-    page-break-before: always !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-    height: 277mm !important;
-    max-height: 277mm !important;
-    overflow: hidden !important;
-  }
-  img.attachment-print-img,
-  .attachment-print-img {
-    width: auto !important;
-    max-width: 100% !important;
-    max-height: 268mm !important;
-    height: auto !important;
-    object-fit: contain !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
   }
 }
 </style>`;
@@ -130,32 +106,16 @@ export async function fetchAssessmentPrintHtml(runId: string): Promise<string> {
   return preparePrintHtmlForPreview(String(html), A4_LANDSCAPE_PX);
 }
 
-export async function fetchWorkPlanPrintHtml(
-  planId: string,
-  opts?: {
-    includeAttachmentImages?: boolean;
-    onProgress?: (p: { total: number; done: number; cached: number }) => void;
-  },
-): Promise<string> {
-  const includeAttachmentImages = opts?.includeAttachmentImages !== false;
-  let renderedAttachments: Record<string, string[]> = {};
-  let riskTable: unknown = null;
-  let skipAttachmentKeys: string[] = [];
-
-  if (includeAttachmentImages) {
-    const { prepareWorkPlanPrintPayload } = await import("@/lib/workPlanPrintPrep");
-    const payload = await prepareWorkPlanPrintPayload(planId, { onProgress: opts?.onProgress });
-    renderedAttachments = payload.renderedAttachments;
-    riskTable = payload.riskTable;
-    skipAttachmentKeys = payload.skipAttachmentKeys;
-  }
+/** Body + 결재 HTML only. Attachments stay as original files in the UI / packet PDF. */
+export async function fetchWorkPlanPrintHtml(planId: string): Promise<string> {
+  const { prepareWorkPlanPrintPayload } = await import("@/lib/workPlanPrintPrep");
+  const payload = await prepareWorkPlanPrintPayload(planId);
 
   const resp = await supabase.functions.invoke("generate-workplan-pdf", {
     body: {
       planId,
-      renderedAttachments,
-      riskTable,
-      skipAttachmentKeys,
+      riskTable: payload.riskTable,
+      skipAttachmentKeys: payload.skipAttachmentKeys,
     },
   });
   const html = resp.data?.html;

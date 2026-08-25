@@ -68,34 +68,21 @@ describe('RA submitter step author lock', () => {
 });
 
 describe('pdf attachment render quality', () => {
-  it('renders cached JPEGs at print DPI (no giant PNG body payload)', () => {
-    const src = readFileSync('src/lib/pdfRender.ts', 'utf8');
-    const helpers = readFileSync('src/lib/pdfRenderHelpers.ts', 'utf8');
-    expect(src).toMatch(/PDF_RENDER_SCALE\s*=\s*2/);
-    expect(src).toContain('listCachedUrls');
-    expect(helpers).toContain('darkenLightInk');
-    expect(helpers).toContain('isMostlyGrayscale');
-    expect(src).toContain("intent: 'print'");
-    expect(src).toContain("alpha: false");
-    expect(src).toContain("urlsFromMeta");
-    expect(helpers).toContain("PRINT_CACHE_META_NAME");
-  });
-
-  it('prepares print via storage URLs + riskTable (no body-only fallback)', () => {
+  it('work-plan body HTML no longer embeds attachment rasters', () => {
     const preview = readFileSync('src/lib/approvalDocPreview.ts', 'utf8');
     expect(preview).toContain('prepareWorkPlanPrintPayload');
     expect(preview).toContain('riskTable');
     expect(preview).not.toContain('retrying body-only');
+    expect(preview).not.toContain('renderedAttachments');
   });
 
-  it('resets preview body width and attachment max-height for print', () => {
+  it('edge lists attachments and skips raster dump pages', () => {
     const preview = readFileSync('src/lib/approvalDocPreview.ts', 'utf8');
     expect(preview).toContain('@media print');
-    expect(preview).toContain('width: auto !important');
-    expect(preview).toContain('max-height: 268mm !important');
     const edge = readFileSync('supabase/functions/generate-workplan-pdf/index.ts', 'utf8');
-    expect(edge).toContain('attachment-print-img');
-    expect(edge).toContain('attachment-print-page');
+    expect(edge).toContain('첨부서류 일람');
+    expect(edge).not.toContain('attachment-print-img');
+    expect(edge).not.toContain('attachment-print-page');
     expect(edge).not.toMatch(/max-height:720pt/);
   });
 });

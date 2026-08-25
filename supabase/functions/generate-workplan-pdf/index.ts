@@ -556,6 +556,7 @@ th { background: #f1f5f9; font-weight: 600; font-size: 7pt; text-align: center; 
   margin: 0 auto;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
+  image-rendering: -webkit-optimize-contrast;
 }
 @media print {
   html, body {

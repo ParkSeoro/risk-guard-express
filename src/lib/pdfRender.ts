@@ -1,16 +1,24 @@
 // Client-side PDF -> image renderer using pdfjs-dist.
-// Renders work-plan PDF attachments to PNG, uploads to Storage, returns public URLs
-// so Edge invoke body stays small (no base64) while print quality stays high.
+// Renders work-plan PDF attachments to JPEG, uploads to Storage, returns public URLs.
+// Cache key is the source filename (already unique per upload).
 
 import * as pdfjsLib from 'pdfjs-dist';
 import { supabase } from '@/integrations/supabase/client';
 import { sanitizeStorageObjectPath } from '@/lib/compressUploadFile';
-import { darkenLightInk, isMostlyGrayscale } from '@/lib/pdfRenderHelpers';
+import {
+  darkenLightInk,
+  isMostlyGrayscale,
+  PRINT_CACHE_VERSION,
+  printCacheFileKey,
+  printCachePageName,
+} from '@/lib/pdfRenderHelpers';
 
 export {
   darkenLightInk,
   isMostlyGrayscale,
   pickRiskPrintHeaders,
+  PRINT_CACHE_VERSION,
+  printCacheFileKey,
   type WorkPlanRiskPrintTable,
 } from '@/lib/pdfRenderHelpers';
 
@@ -19,21 +27,24 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
   `https://cdn.jsdelivr.net/npm/pdfjs-dist@${(pdfjsLib as any).version}/build/pdf.worker.min.mjs`;
 
 const MAX_PAGES = 20;
-/** ~216 DPI for A4 — keep Hangul forms and color certificates sharp. */
-export const PDF_RENDER_SCALE = 3;
+/** ~144 DPI for A4 — sharp enough for Hangul forms without 200MB caches. */
+export const PDF_RENDER_SCALE = 2;
+const JPEG_QUALITY_COLOR = 0.88;
+const JPEG_QUALITY_FORM = 0.92;
+const RENDER_CONCURRENCY = 3;
 
-function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob | null> {
+function canvasToJpegBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob | null> {
   return new Promise((resolve) => {
-    canvas.toBlob((b) => resolve(b), 'image/png');
+    canvas.toBlob((b) => resolve(b), 'image/jpeg', quality);
   });
 }
 
-async function renderPageToPngBlob(page: any, scale: number): Promise<Blob | null> {
+async function renderPageToJpegBlob(page: any, scale: number): Promise<Blob | null> {
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement('canvas');
   canvas.width = Math.floor(viewport.width);
   canvas.height = Math.floor(viewport.height);
-  const ctx = canvas.getContext('2d', { alpha: false });
+  const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
   if (!ctx) return null;
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -45,15 +56,12 @@ async function renderPageToPngBlob(page: any, scale: number): Promise<Blob | nul
     background: 'rgb(255,255,255)',
   } as any).promise;
 
-  // Color certificates (교육확인서 등): never ink-boost — causes muddy seals/noise.
-  // Grayscale forms (지정서 등): darken washed Hangul strokes only.
-  if (isMostlyGrayscale(canvas)) {
-    darkenLightInk(canvas);
-  }
-  return canvasToPngBlob(canvas);
+  const grayscale = isMostlyGrayscale(canvas);
+  if (grayscale) darkenLightInk(canvas);
+  return canvasToJpegBlob(canvas, grayscale ? JPEG_QUALITY_FORM : JPEG_QUALITY_COLOR);
 }
 
-export async function renderPdfUrlToPngBlobs(
+export async function renderPdfUrlToJpegBlobs(
   url: string,
   opts?: { scale?: number; maxPages?: number },
 ): Promise<Blob[]> {
@@ -69,52 +77,78 @@ export async function renderPdfUrlToPngBlobs(
     const out: Blob[] = [];
     for (let p = 1; p <= total; p++) {
       const page = await pdf.getPage(p);
-      const blob = await renderPageToPngBlob(page, scale);
+      const blob = await renderPageToJpegBlob(page, scale);
       if (blob) out.push(blob);
     }
     return out;
   } catch (e) {
-    console.error('renderPdfUrlToPngBlobs failed', url, e);
+    console.error('renderPdfUrlToJpegBlobs failed', url, e);
     return [];
   }
 }
 
-/** Upload print rasters; returns original file_url → public PNG URLs. */
-export async function uploadPrintRasters(
-  projectId: string,
-  planId: string,
-  blobsByUrl: Record<string, Blob[]>,
-): Promise<Record<string, string[]>> {
-  const out: Record<string, string[]> = {};
-  const stamp = Date.now();
-  let seq = 0;
+function cacheFolder(projectId: string, planId: string, fileUrl: string): string {
+  const key = printCacheFileKey(fileUrl);
+  return sanitizeStorageObjectPath(
+    `${projectId}/work-plans/${planId}/print-cache/${PRINT_CACHE_VERSION}/${key}`,
+  );
+}
+
+async function listCachedUrls(folder: string): Promise<string[]> {
+  const { data, error } = await supabase.storage.from('attachments').list(folder, {
+    limit: MAX_PAGES,
+    sortBy: { column: 'name', order: 'asc' },
+  });
+  if (error || !data?.length) return [];
+  const names = data
+    .map((f) => f.name)
+    .filter((n) => /^p\d{2}\.jpe?g$/i.test(n))
+    .sort();
+  if (names.length === 0) return [];
+  return names.map((name) => {
+    const { data: pub } = supabase.storage.from('attachments').getPublicUrl(`${folder}/${name}`);
+    return pub?.publicUrl || '';
+  }).filter(Boolean);
+}
+
+async function uploadPageBlobs(
+  folder: string,
+  blobs: Blob[],
+): Promise<string[]> {
+  const urls: string[] = [];
   let failCount = 0;
-  for (const [fileUrl, blobs] of Object.entries(blobsByUrl)) {
-    const urls: string[] = [];
-    for (let i = 0; i < blobs.length; i++) {
-      const blob = blobs[i];
-      const path = sanitizeStorageObjectPath(
-        `${projectId}/work-plans/${planId}/print-cache/${stamp}_${seq++}_p${i + 1}.png`,
-      );
-      const { error } = await supabase.storage.from('attachments').upload(path, blob, {
-        upsert: true,
-        contentType: 'image/png',
-      });
-      if (error) {
-        failCount += 1;
-        console.warn('print raster upload failed', path, error.message);
-        continue;
-      }
-      const { data } = supabase.storage.from('attachments').getPublicUrl(path);
-      if (data?.publicUrl) urls.push(data.publicUrl);
+  for (let i = 0; i < blobs.length; i++) {
+    const path = `${folder}/${printCachePageName(i + 1)}`;
+    const { error } = await supabase.storage.from('attachments').upload(path, blobs[i], {
+      upsert: true,
+      contentType: 'image/jpeg',
+    });
+    if (error) {
+      failCount += 1;
+      console.warn('print raster upload failed', path, error.message);
+      continue;
     }
-    if (urls.length) out[fileUrl] = urls;
+    const { data } = supabase.storage.from('attachments').getPublicUrl(path);
+    if (data?.publicUrl) urls.push(data.publicUrl);
   }
-  if (failCount > 0 && Object.keys(out).length === 0) {
+  if (failCount > 0 && urls.length === 0) {
     throw new Error(
       `첨부 PDF 인쇄 이미지 업로드에 실패했습니다 (${failCount}건). 권한/네트워크를 확인 후 다시 시도해 주세요.`,
     );
   }
+  return urls;
+}
+
+async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const idx = next++;
+      out[idx] = await fn(items[idx]);
+    }
+  });
+  await Promise.all(workers);
   return out;
 }
 
@@ -124,17 +158,28 @@ export async function renderAttachmentsToStorageUrls(
   planId: string,
   opts?: { scale?: number; maxPages?: number },
 ): Promise<Record<string, string[]>> {
-  const blobsByUrl: Record<string, Blob[]> = {};
-  for (const a of attachments) {
-    if (!a.file_url) continue;
+  const pdfs = attachments.filter((a) => {
+    if (!a.file_url) return false;
     const mime = (a.mime_type || '').toLowerCase();
-    const isPdf = mime === 'application/pdf' || /\.pdf($|\?)/i.test(a.file_url);
-    if (!isPdf) continue;
-    const blobs = await renderPdfUrlToPngBlobs(a.file_url, opts);
-    if (blobs.length) blobsByUrl[a.file_url] = blobs;
-  }
-  if (Object.keys(blobsByUrl).length === 0) return {};
-  return uploadPrintRasters(projectId, planId, blobsByUrl);
+    return mime === 'application/pdf' || /\.pdf($|\?)/i.test(a.file_url);
+  });
+  if (pdfs.length === 0) return {};
+
+  const out: Record<string, string[]> = {};
+  await mapPool(pdfs, RENDER_CONCURRENCY, async (a) => {
+    const fileUrl = a.file_url!;
+    const folder = cacheFolder(projectId, planId, fileUrl);
+    const cached = await listCachedUrls(folder);
+    if (cached.length > 0) {
+      out[fileUrl] = cached;
+      return;
+    }
+    const blobs = await renderPdfUrlToJpegBlobs(fileUrl, opts);
+    if (!blobs.length) return;
+    const urls = await uploadPageBlobs(folder, blobs);
+    if (urls.length) out[fileUrl] = urls;
+  });
+  return out;
 }
 
 /** @deprecated kept for older tests — prefer renderAttachmentsToStorageUrls */
@@ -142,14 +187,13 @@ export async function renderAttachmentsToImages(
   attachments: { file_url?: string | null; mime_type?: string | null }[],
   opts?: { scale?: number; maxPages?: number },
 ): Promise<Record<string, string[]>> {
-  // Legacy path returned data-URLs; callers should migrate to storage URLs.
   const out: Record<string, string[]> = {};
   for (const a of attachments) {
     if (!a.file_url) continue;
     const mime = (a.mime_type || '').toLowerCase();
     const isPdf = mime === 'application/pdf' || /\.pdf($|\?)/i.test(a.file_url);
     if (!isPdf) continue;
-    const blobs = await renderPdfUrlToPngBlobs(a.file_url, opts);
+    const blobs = await renderPdfUrlToJpegBlobs(a.file_url, opts);
     const urls: string[] = [];
     for (const blob of blobs) {
       urls.push(URL.createObjectURL(blob));

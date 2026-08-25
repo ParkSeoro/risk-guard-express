@@ -99,3 +99,19 @@ export type WorkPlanRiskPrintTable = {
   headers: string[];
   rows: string[][];
 };
+
+/** Bump to invalidate oversized PNG caches. */
+export const PRINT_CACHE_VERSION = "v4";
+
+/** Stable cache folder name from a public Storage file URL. */
+export function printCacheFileKey(fileUrl: string): string {
+  const raw = String(fileUrl || "").split("?")[0];
+  const base = raw.split("/").pop() || "file";
+  const stem = base.replace(/\.[a-zA-Z0-9]{1,8}$/, "");
+  const safe = stem.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80);
+  return safe || "file";
+}
+
+export function printCachePageName(pageIndex1: number): string {
+  return `p${String(pageIndex1).padStart(2, "0")}.jpg`;
+}

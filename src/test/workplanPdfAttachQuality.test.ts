@@ -31,10 +31,25 @@ describe("work-plan print storage + RA table contracts", () => {
     expect(prep).toContain("parseRiskAssessmentExcel");
 
     const render = readFileSync("src/lib/pdfRender.ts", "utf8");
-    expect(render).toMatch(/PDF_RENDER_SCALE\s*=\s*3/);
-    expect(render).toContain("uploadPrintRasters");
+    expect(render).toMatch(/PDF_RENDER_SCALE\s*=\s*2/);
+    expect(render).toContain("PRINT_CACHE_VERSION");
+    expect(render).toContain("listCachedUrls");
     expect(render).toContain("isMostlyGrayscale");
-    expect(render).toContain("image/png");
+    expect(render).toContain("image/jpeg");
+  });
+
+  it("print-cache key is stable per uploaded filename", async () => {
+    const { printCacheFileKey, printCachePageName, PRINT_CACHE_VERSION } = await import(
+      "@/lib/pdfRenderHelpers"
+    );
+    expect(PRINT_CACHE_VERSION).toBe("v4");
+    expect(
+      printCacheFileKey(
+        "https://x.supabase.co/storage/v1/object/public/attachments/p/signal_designate_1787630167750.pdf",
+      ),
+    ).toBe("signal_designate_1787630167750");
+    expect(printCachePageName(1)).toBe("p01.jpg");
+    expect(printCachePageName(12)).toBe("p12.jpg");
   });
 
   it("edge accepts riskTable and skips excel dump when table present", () => {
@@ -43,6 +58,9 @@ describe("work-plan print storage + RA table contracts", () => {
     expect(edge).toContain("skipAttachmentKeys");
     expect(edge).toContain("출처: 업로드된 위험성평가서");
     expect(edge).toContain("PDF 미리보기 이미지를 만들지 못했습니다");
+    expect(edge).toContain("attachment-print-page");
+    expect(edge).toContain("max-height: 268mm");
+    expect(edge).not.toMatch(/position:\s*fixed/);
     expect(edge).not.toMatch(/이 파일 형식은 인쇄본에 직접 포함할 수 없습니다/);
   });
 });

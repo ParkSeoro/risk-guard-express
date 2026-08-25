@@ -68,14 +68,23 @@ describe('RA submitter step author lock', () => {
 });
 
 describe('pdf attachment render quality', () => {
-  it('uses print-intent PNG (not lossy JPEG) for printable form pages', () => {
+  it('uses print-intent raster with ink boost and size budget (avoids 546)', () => {
     const src = readFileSync('src/lib/pdfRender.ts', 'utf8');
-    expect(src).toMatch(/PDF_RENDER_SCALE\s*=\s*3/);
-    expect(src).toContain("PDF_RENDER_MIME = 'image/png'");
+    const helpers = readFileSync('src/lib/pdfRenderHelpers.ts', 'utf8');
+    expect(src).toMatch(/PDF_RENDER_SCALE\s*=\s*2\.5/);
+    expect(helpers).toContain('darkenLightInk');
+    expect(helpers).toContain('compactRenderedAttachments');
+    expect(helpers).toContain('MAX_RENDERED_ATTACHMENTS_CHARS');
     expect(src).toContain("intent: 'print'");
     expect(src).toContain("alpha: false");
-    expect(src).toContain('canvasToPrintDataUrl');
-    expect(src).toContain("toDataURL(PDF_RENDER_MIME)");
+    expect(src).toContain('image/webp');
+  });
+
+  it('retries work-plan PDF without attachments on invoke failure', () => {
+    const preview = readFileSync('src/lib/approvalDocPreview.ts', 'utf8');
+    expect(preview).toContain('compactRenderedAttachments');
+    expect(preview).toContain('retrying body-only');
+    expect(preview).toContain('546');
   });
 
   it('resets preview body width and attachment max-height for print', () => {

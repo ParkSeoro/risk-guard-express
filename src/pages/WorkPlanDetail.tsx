@@ -425,39 +425,12 @@ const WorkPlanDetail = () => {
     if (!planId || pdfBusy) return;
     setPdfBusy(true);
     try {
+      toast({ title: '인쇄 문서 준비 중…', description: '첨부 PDF를 이미지로 변환합니다. 잠시만 기다려 주세요.' });
       const { fetchWorkPlanPrintHtml } = await import('@/lib/approvalDocPreview');
+      const { printHtmlDocument } = await import('@/lib/printHtmlDocument');
       const html = await fetchWorkPlanPrintHtml(planId);
       if (html) {
-        const desiredTitle = plan?.title || '작업계획서';
-        const prevTitle = document.title;
-        document.title = desiredTitle;
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.right = '0';
-        iframe.style.bottom = '0';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = 'none';
-        document.body.appendChild(iframe);
-        const doc = iframe.contentDocument || iframe.contentWindow?.document;
-        if (doc) {
-          doc.open();
-          doc.write(html);
-          doc.close();
-          const triggerPrint = () => {
-            try { (iframe.contentDocument || iframe.contentWindow?.document)!.title = desiredTitle; } catch {}
-            setTimeout(() => {
-              iframe.contentWindow?.focus();
-              iframe.contentWindow?.print();
-              setTimeout(() => {
-                document.body.removeChild(iframe);
-                document.title = prevTitle;
-              }, 1500);
-            }, 500);
-          };
-          iframe.onload = triggerPrint;
-          if (doc.readyState === 'complete') triggerPrint();
-        }
+        await printHtmlDocument(html, { title: plan?.title || '작업계획서' });
         toast({ title: 'PDF 인쇄 대화상자가 열립니다. "PDF로 저장"을 선택하세요.' });
       }
     } catch (err: any) {

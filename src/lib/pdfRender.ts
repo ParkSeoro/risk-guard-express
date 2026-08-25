@@ -88,6 +88,7 @@ export async function uploadPrintRasters(
   const out: Record<string, string[]> = {};
   const stamp = Date.now();
   let seq = 0;
+  let failCount = 0;
   for (const [fileUrl, blobs] of Object.entries(blobsByUrl)) {
     const urls: string[] = [];
     for (let i = 0; i < blobs.length; i++) {
@@ -100,6 +101,7 @@ export async function uploadPrintRasters(
         contentType: 'image/png',
       });
       if (error) {
+        failCount += 1;
         console.warn('print raster upload failed', path, error.message);
         continue;
       }
@@ -107,6 +109,11 @@ export async function uploadPrintRasters(
       if (data?.publicUrl) urls.push(data.publicUrl);
     }
     if (urls.length) out[fileUrl] = urls;
+  }
+  if (failCount > 0 && Object.keys(out).length === 0) {
+    throw new Error(
+      `첨부 PDF 인쇄 이미지 업로드에 실패했습니다 (${failCount}건). 권한/네트워크를 확인 후 다시 시도해 주세요.`,
+    );
   }
   return out;
 }

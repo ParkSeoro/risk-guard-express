@@ -1,12 +1,39 @@
 /** Pure helpers for work-plan attachment print rasters (no pdfjs — safe in Vitest). */
 
-/** Total renderedAttachments JSON budget before Edge/gateway returns HTTP 546. */
-export const MAX_RENDERED_ATTACHMENTS_CHARS = 2_200_000;
-
 /**
- * Form PDFs often rasterize Hangul as light-grey anti-aliased ink that looks
- * "white ghost" after downscale/print. Push non-background pixels darker.
+ * Form PDFs often rasterize Hangul as light-grey anti-aliased ink.
+ * Only safe on mostly-grayscale pages — never run on color certificates.
  */
+export function isMostlyGrayscale(
+  canvas: HTMLCanvasElement,
+  sampleStep = 8,
+): boolean {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return true;
+  const { width, height } = canvas;
+  if (width < 2 || height < 2) return true;
+  const img = ctx.getImageData(0, 0, width, height);
+  const d = img.data;
+  let colored = 0;
+  let sampled = 0;
+  for (let y = 0; y < height; y += sampleStep) {
+    for (let x = 0; x < width; x += sampleStep) {
+      const i = (y * width + x) * 4;
+      const r = d[i];
+      const g = d[i + 1];
+      const b = d[i + 2];
+      // Ignore near-white paper
+      if (r >= 248 && g >= 248 && b >= 248) continue;
+      sampled += 1;
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      if (max - min > 28) colored += 1;
+    }
+  }
+  if (sampled < 20) return true;
+  return colored / sampled < 0.08;
+}
+
 export function darkenLightInk(canvas: HTMLCanvasElement): void {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return;
@@ -37,44 +64,38 @@ export function darkenLightInk(canvas: HTMLCanvasElement): void {
   ctx.putImageData(img, 0, 0);
 }
 
-/** Shrink rendered map until JSON fits Edge invoke limits (avoids HTTP 546). */
-export function compactRenderedAttachments(
-  rendered: Record<string, string[]>,
-  budget = MAX_RENDERED_ATTACHMENTS_CHARS,
-): Record<string, string[]> {
-  const clone: Record<string, string[]> = {};
-  for (const [k, v] of Object.entries(rendered || {})) {
-    clone[k] = Array.isArray(v) ? [...v] : [];
-  }
+/** Prefer process/hazard columns when printing uploaded RA excel. */
+export const RISK_PRINT_COLUMN_HINTS = [
+  "공정",
+  "공종",
+  "세부작업",
+  "세부공종",
+  "위험요인",
+  "유해위험",
+  "발생상황",
+  "위험발생",
+  "기존대책",
+  "현재대책",
+  "개선대책",
+  "추가대책",
+  "가능성",
+  "중대성",
+  "위험도",
+  "법적근거",
+];
 
-  const sizeOf = () => JSON.stringify(clone).length;
-  if (sizeOf() <= budget) return clone;
-
-  let guard = 0;
-  while (sizeOf() > budget && guard++ < 200) {
-    let trimmed = false;
-    for (const k of Object.keys(clone)) {
-      if (clone[k].length > 1) {
-        clone[k].pop();
-        trimmed = true;
-        if (sizeOf() <= budget) return clone;
-      }
-    }
-    if (!trimmed) break;
-  }
-
-  const keys = Object.keys(clone);
-  while (sizeOf() > budget && keys.length > 0) {
-    const k = keys.pop()!;
-    delete clone[k];
-  }
-  return clone;
+export function pickRiskPrintHeaders(headers: string[], maxCols = 8): string[] {
+  const scored = headers.map((h, idx) => {
+    const hit = RISK_PRINT_COLUMN_HINTS.some((hint) => h.includes(hint));
+    return { h, idx, hit };
+  });
+  const preferred = scored.filter((s) => s.hit).map((s) => s.h);
+  if (preferred.length >= 3) return preferred.slice(0, maxCols);
+  return headers.slice(0, maxCols);
 }
 
-export function renderedAttachmentsCharSize(rendered: Record<string, string[]>): number {
-  try {
-    return JSON.stringify(rendered || {}).length;
-  } catch {
-    return Number.MAX_SAFE_INTEGER;
-  }
-}
+export type WorkPlanRiskPrintTable = {
+  source: "excel" | "section";
+  headers: string[];
+  rows: string[][];
+};

@@ -103,8 +103,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { planId, renderedAttachments } = await req.json();
+    const { planId, renderedAttachments, riskTable, skipAttachmentKeys } = await req.json();
     const preRendered: Record<string, string[]> = renderedAttachments || {};
+    const skipKeys = new Set<string>(
+      Array.isArray(skipAttachmentKeys)
+        ? skipAttachmentKeys.map((k: unknown) => String(k || "").trim()).filter(Boolean)
+        : [],
+    );
+    const riskTablePayload =
+      riskTable && typeof riskTable === "object" && Array.isArray((riskTable as any).headers)
+        ? (riskTable as { source?: string; headers: string[]; rows: string[][] })
+        : null;
 
     if (!planId) {
       return new Response(JSON.stringify({ error: "planId required" }), {
@@ -310,7 +319,25 @@ Deno.serve(async (req) => {
 
     const riskSection = filteredSections.find(s => s.key === "risk");
     let page3Html = "";
-    if (riskSection) {
+    if (riskTablePayload && Array.isArray(riskTablePayload.rows) && riskTablePayload.headers?.length) {
+      const head = riskTablePayload.headers
+        .map((h) => `<th>${escapeHtml(String(h || ""))}</th>`)
+        .join("");
+      const body = riskTablePayload.rows
+        .map((row) => {
+          const cells = (Array.isArray(row) ? row : []).map(
+            (c) => `<td>${escapeHtml(String(c ?? ""))}</td>`,
+          );
+          while (cells.length < riskTablePayload.headers.length) cells.push("<td></td>");
+          return `<tr>${cells.slice(0, riskTablePayload.headers.length).join("")}</tr>`;
+        })
+        .join("");
+      const srcNote =
+        riskTablePayload.source === "excel"
+          ? `<p style="font-size:7.5pt;color:#64748b;margin:0 0 6pt;">출처: 업로드된 위험성평가서(엑셀)</p>`
+          : "";
+      page3Html = `<div class="section-header">위험성평가</div>${srcNote}<table><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${riskTablePayload.headers.length}" class="center">데이터 없음</td></tr>`}</tbody></table>`;
+    } else if (riskSection) {
       page3Html = `<div class="section-header">위험요인 및 안전대책</div>${renderSection(riskSection)}`;
     }
 
@@ -391,33 +418,35 @@ Deno.serve(async (req) => {
     for (const att of uploadedAttachments) {
       const url: string = att.fileUrl || "";
       const mime: string = (att.mime || "").toLowerCase();
+      const attKey = String(att.key || "").trim();
+      if (attKey && skipKeys.has(attKey)) continue;
+      // Excel RA already printed as body table — never dump download-link page.
+      if (
+        (attKey === "risk_assessment" || String(att.name || "").includes("위험성평가")) &&
+        (mime.includes("spreadsheet") || mime.includes("excel") || /\.(xlsx|xls|csv)($|\?)/i.test(url))
+      ) {
+        if (riskTablePayload) continue;
+      }
       const isImage = mime.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(url);
       const isPdf = mime === "application/pdf" || /\.pdf$/i.test(url);
       const isText = mime.startsWith("text/") || /\.(txt|csv|md|log)$/i.test(url);
       const titleHtml = `<div class="section-header">${escapeHtml(att.name || att.key || "첨부파일")}</div>`;
       const renderedImages = preRendered[url];
       if (isImage) {
-        const b64 = await imageUrlToBase64(url);
-        if (b64) {
-          attachmentsHtml += `<div class="page-break"></div>${titleHtml}
-            <div class="attachment-print-wrap">
-              <img class="attachment-print-img" src="${b64}" alt="" />
-            </div>`;
-        } else {
-          attachmentsHtml += `<div class="page-break"></div>${titleHtml}
-            <div style="text-align:center;padding:40pt;color:#dc2626;">이미지 불러오기 실패: ${escapeHtml(url)}</div>`;
-        }
+        // Public Storage URLs — embed directly (no base64 bloat / no re-encode).
+        attachmentsHtml += `<div class="page-break"></div>${titleHtml}
+          <div class="attachment-print-wrap">
+            <img class="attachment-print-img" src="${escapeHtml(url)}" alt="" />
+          </div>`;
       } else if (renderedImages && renderedImages.length > 0) {
-        // PDF/문서를 클라이언트에서 페이지별 이미지로 렌더링한 결과 사용
         renderedImages.forEach((img: string, idx: number) => {
           attachmentsHtml += `<div class="page-break"></div>${idx === 0 ? titleHtml : ""}
             <div class="attachment-print-wrap">
               <div class="attachment-print-page-label">페이지 ${idx + 1} / ${renderedImages.length}</div>
-              <img class="attachment-print-img" src="${img}" alt="" />
+              <img class="attachment-print-img" src="${escapeHtml(img)}" alt="" />
             </div>`;
         });
       } else if (isText) {
-        // 텍스트 파일은 내용을 직접 본문에 포함하여 인쇄
         let textBody = "";
         try {
           const r = await fetch(url);
@@ -425,13 +454,18 @@ Deno.serve(async (req) => {
         } catch {}
         attachmentsHtml += `<div class="page-break"></div>${titleHtml}
           <pre style="white-space:pre-wrap;word-break:break-word;font-family:'Noto Sans KR','Malgun Gothic',monospace;font-size:9pt;padding:14pt;border:1px solid #e2e8f0;background:#f8fafc;line-height:1.55;">${escapeHtml(textBody || "(내용을 불러오지 못했습니다)")}</pre>`;
+      } else if (isPdf) {
+        attachmentsHtml += `<div class="page-break"></div>${titleHtml}
+          <div style="padding:20pt;color:#334155;line-height:1.7;">
+            <p>PDF 미리보기 이미지를 만들지 못했습니다.</p>
+            <p style="margin-top:8pt;word-break:break-all;"><a href="${escapeHtml(url)}" target="_blank" style="color:#1e40af;">원본 PDF 열기</a></p>
+          </div>`;
       } else {
         attachmentsHtml += `<div class="page-break"></div>${titleHtml}
           <div style="padding:20pt;color:#334155;line-height:1.7;">
             <p><b>파일명:</b> ${escapeHtml(url.split("/").pop() || "")}</p>
-            <p style="margin-top:6pt;"><b>형식:</b> ${escapeHtml(mime || (isPdf ? "application/pdf" : "binary"))}</p>
-            <p style="margin-top:6pt;word-break:break-all;"><b>다운로드 URL:</b><br/><a href="${url}" target="_blank" style="color:#1e40af;">${escapeHtml(url)}</a></p>
-            <p style="font-size:8pt;margin-top:12pt;color:#64748b;">※ 이 파일 형식은 인쇄본에 직접 포함할 수 없습니다. 위 링크로 별도 출력해 첨부해 주세요.</p>
+            <p style="margin-top:6pt;"><b>형식:</b> ${escapeHtml(mime || "binary")}</p>
+            <p style="margin-top:6pt;word-break:break-all;"><a href="${escapeHtml(url)}" target="_blank" style="color:#1e40af;">원본 파일 열기</a></p>
           </div>`;
       }
     }

@@ -13,6 +13,7 @@ import { ArrowLeft, Camera, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { correctTerms } from "@/lib/termCorrection";
 import { uploadAttachmentFile } from "@/lib/compressUploadFile";
+import { INSPECTION_ACTION_DONE_STATUS } from "@/lib/inspectionActions";
 
 type ActionRow = {
   id: string;
@@ -52,7 +53,7 @@ export default function MobileActions() {
     setLoading(true);
     let q: any = supabase.from("safety_inspection_actions" as any).select("*").eq("project_id", projectId);
     // safety_inspection_actions has no company_id — do not applyCompanyFilter
-    const { data, error } = await q.in("status", tab === "pending" ? ["pending", "in_progress"] : ["completed"])
+    const { data, error } = await q.in("status", tab === "pending" ? ["pending", "in_progress"] : ["done", "completed"])
       .order("created_at", { ascending: false }).limit(50);
     if (error) toast.error(error.message);
     setRows(((data as any) || []) as ActionRow[]);
@@ -75,7 +76,7 @@ export default function MobileActions() {
       const cleanNote = correctTerms(note);
       const { error } = await supabase.from("safety_inspection_actions" as any)
         .update({
-          status: "completed",
+          status: INSPECTION_ACTION_DONE_STATUS,
           completion_note: cleanNote,
           completed_at: new Date().toISOString(),
           completed_by: profile?.user_id,
@@ -127,7 +128,7 @@ export default function MobileActions() {
               <div className="flex items-center gap-2">
                 <Badge className={sevColor[r.severity] || ""}>{sevLabel[r.severity] || r.severity}</Badge>
                 {r.due_date && <Badge variant="outline" className="text-xs">기한 {r.due_date}</Badge>}
-                {r.status === "completed" && <Badge variant="secondary" className="text-xs"><CheckCircle2 className="h-3 w-3 mr-1" />완료</Badge>}
+                {r.status === "done" || r.status === "completed" ? <Badge variant="secondary" className="text-xs"><CheckCircle2 className="h-3 w-3 mr-1" />완료</Badge> : null}
               </div>
               <div className="text-sm font-medium leading-snug">{r.issue}</div>
               <div className="text-xs text-muted-foreground">

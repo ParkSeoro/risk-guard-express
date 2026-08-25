@@ -1411,7 +1411,9 @@ const AssessmentRunDetail = () => {
           ? '저장된 결재선이 없습니다. 결재선을 설정·저장한 뒤 상신하세요.'
           : submitErr.includes('submit_step_mismatch')
             ? '결재 단계 일부가 누락되어 상신이 취소되었습니다. 결재선을 다시 저장하세요.'
-            : submitErr;
+            : submitErr.includes('submitter_step_must_be_author')
+              ? '담당자(시공)는 작성자 본인이어야 합니다. 결재선을 작성자로 고친 뒤 저장·상신하세요.'
+              : submitErr;
       toast({ title: '상신 실패', description: msg, variant: 'destructive' });
       return;
     }
@@ -1486,7 +1488,7 @@ const AssessmentRunDetail = () => {
         : 'NOT_ACTIVE_STEP';
       const desc =
         why === 'SUBMITTER_STEP_NO_SELF_APPROVE'
-          ? '담당자(시공) 상신 단계는 상신 시 자동 완료됩니다. 다음 결재자의 순서를 기다리세요.'
+          ? '담당자(시공) 상신 단계는 상신 시 자동 완료되어야 합니다. 결재선에 작성자가 아닌 사람이 지정된 경우 [상신 취소] 후 결재선을 작성자 본인으로 고치고 재상신하세요.'
           : '현재 진행중 단계의 지정된 결재자만 승인/반려할 수 있습니다.';
       toast({ title: '결재 권한이 없습니다.', description: desc, variant: 'destructive' });
       return;
@@ -2097,7 +2099,17 @@ const AssessmentRunDetail = () => {
     && !hasRejectedApproval
     && (!!isAdmin || (user && (run.created_by === user.id || run.author_user_id === user.id)));
   const canAutoRemediate = isClientSm && validationReport && validationReport.verdict !== '적정' && (canEdit || canForceEdit) && !isInApproval && !isApproved;
-  const isMyApprovalPending = user && latestApprovals.some(a => a.status === '진행중' && a.approver_id === user.id);
+  const isMyApprovalPending = user && latestApprovals.some((a) =>
+    a.status === '진행중'
+    && a.approver_id === user.id
+    && canManuallyActOnApprovalStep({ actorUserId: user.id, step: a }).ok,
+  );
+  const stuckOnSubmitterStep = user && latestApprovals.some((a) =>
+    a.status === '진행중'
+    && a.approver_id === user.id
+    && !canManuallyActOnApprovalStep({ actorUserId: user.id, step: a }).ok
+    && canManuallyActOnApprovalStep({ actorUserId: user.id, step: a }).reason === 'SUBMITTER_STEP_NO_SELF_APPROVE',
+  );
   const statusInfo = STATUS_FLOW[uiStatus as keyof typeof STATUS_FLOW] || { label: uiStatus, color: '' };
 
   const statusGuide = isDraft ? '작성을 마치면 [결재 상신]하세요.'
@@ -2540,6 +2552,11 @@ const AssessmentRunDetail = () => {
               <XCircle className="h-3.5 w-3.5" /> 반려
             </Button>
           </div>
+        )}
+        {isInApproval && stuckOnSubmitterStep && (
+          <span className="text-[11px] text-amber-700 max-w-[260px] leading-snug">
+            담당자(시공) 상신 단계가 멈춰 있습니다. [상신 취소] 후 결재선의 담당자(시공)를 작성자 본인으로 저장하고 재상신하세요.
+          </span>
         )}
         {isApproved && isMaster && (
           <>
@@ -3094,6 +3111,8 @@ const AssessmentRunDetail = () => {
             submitterCompanyId={userCompanyId || null}
             projectGcCompanyId={(project as any)?.gc_company_id || null}
             readOnly={isInApproval && !hasRejectedApproval}
+            authorUserId={run.author_user_id || null}
+            authorName={authorDisplayName || null}
             documentDraft={{
               entityType: 'assessment_run',
               entityId: runId,

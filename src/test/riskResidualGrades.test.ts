@@ -58,7 +58,7 @@ describe('isFlattenedResidualPlaceholder', () => {
 });
 
 describe('seedFillDetailFromRow residual', () => {
-  it('rewrites flattened 하/하/하 on 중/상 to 하/상/중', () => {
+  it('keeps flattened 하/하/하 so AI meta can judge (does not auto-drop one step)', () => {
     const d = seedFillDetailFromRow({
       hazard: '사다리 추락',
       likelihood_grade: '중',
@@ -69,7 +69,7 @@ describe('seedFillDetailFromRow residual', () => {
       improved_risk_grade: '하',
     });
     expect(d.improved_likelihood_grade).toBe('하');
-    expect(d.improved_severity_grade).toBe('상');
-    expect(d.improved_risk_grade).toBe('중');
+    expect(d.improved_severity_grade).toBe('하');
+    expect(d.improved_risk_grade).toBe('하');
   });
 });

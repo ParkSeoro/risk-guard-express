@@ -882,6 +882,10 @@ serve(async (req) => {
             hazard_situation: String(it?.hazard_situation || "").trim(),
             existing_measure: String(it?.existing_measure || it?.existing_control || "").trim(),
             improvement_measure: String(it?.improvement_measure || it?.improvement_control || "").trim(),
+            likelihood_grade: String(it?.likelihood_grade || it?.initial_likelihood || "").trim(),
+            severity_grade: String(it?.severity_grade || it?.initial_severity || "").trim(),
+            initial_likelihood: String(it?.likelihood_grade || it?.initial_likelihood || "").trim(),
+            initial_severity: String(it?.severity_grade || it?.initial_severity || "").trim(),
           };
         })
         .filter((it: { sub_task: string }) => it.sub_task)
@@ -909,6 +913,7 @@ serve(async (req) => {
         const withNarrative = cleaned
           .map((it, i) =>
             `${i + 1}. 세부작업:${it.sub_task} / 위험:${it.hazard || "(미기재)"}\n` +
+            `   초기등급 가능성:${it.likelihood_grade || it.initial_likelihood || "(미기재)"} / 중대성:${it.severity_grade || it.initial_severity || "(미기재)"}\n` +
             `   상황:${it.hazard_situation || "(미기재)"} / 현재대책:${it.existing_measure || "(미기재)"} / 개선:${it.improvement_measure || "(미기재)"}`,
           )
           .join("\n");
@@ -918,12 +923,15 @@ serve(async (req) => {
           `"initial_likelihood":"상|중|하","initial_severity":"상|중|하",` +
           `"residual_likelihood":"상|중|하","residual_severity":"상|중|하",` +
           `"ppe":["보호구"],"legal_basis":["법적근거 조항"]}]}\n` +
-          `세부작업·위험·서술 필드는 바꾸지 말고, 등급·PPE·법적근거만 채운다.\n` +
+          `세부작업·위험·서술·초기등급은 바꾸지 말고, 개선후 등급·PPE·법적근거만 채운다.\n` +
+          `개선후는 대책의 실효를 보고 판단한다. 모든 행을 하로 맞추지 말 것. 기계적으로 한 단계만 내리지도 말 것.\n` +
+          `제거·공학 대책이면 가능성 하향 가능. 교육·PPE·구호만이면 가능성 유지 또는 소폭 하향.\n` +
+          `중대성은 원칙적으로 초기와 같게. 추락·감전·질식 등 중대재해는 개선후 위험도 하 금지(상 잔존=관리대상 가능).\n` +
           `legal_basis는 1개 이상 필수(빈 배열 금지). 산안기준규칙 제OOO조 또는 KOSHA GUIDE. 추상문구 금지.`;
         user =
           `[입력] 공종:${process_name} / 장비:${equipText} / 위치:${locationText}\n\n` +
           `[항목]\n${withNarrative}\n\n` +
-          `위 ${cleaned.length}건의 등급·PPE·법적근거만 JSON items로 반환하라. 항목 수·순서 동일. legal_basis 비우지 말 것.`;
+          `위 ${cleaned.length}건의 개선후 등급(대책 실효 판단)·PPE·법적근거만 JSON items로 반환하라. 항목 수·순서 동일. legal_basis 비우지 말 것.`;
         maxTokens = Math.min(2200, 500 * cleaned.length + 500);
       } else if (fillStage === "narrative") {
         sys =
@@ -952,6 +960,8 @@ serve(async (req) => {
           `"ppe":["보호구"],"legal_basis":["법적근거 조항"]}]}\n` +
           `입력된 세부작업·위험요인을 유지한다.\n` +
           `어투: 음슴체/개조식. 발생상황·대책은 각 1문장(짧게).\n` +
+          `개선후 등급은 대책 실효로 판단. 모든 행을 하로 맞추거나 기계적으로 한 단계만 내리지 말 것.\n` +
+          `중대재해(추락·감전·질식)는 개선후 위험도 하 금지. 중대성은 원칙적으로 초기와 같게.\n` +
           `등급·PPE·법적근거는 짧게. legal_basis는 1개 이상 필수(빈 배열 금지). 산안기준규칙 제OOO조 또는 KOSHA GUIDE.`;
         user =
           `[입력] 공종:${process_name} / 장비:${equipText} / 작업:${descText} / 위치:${locationText} / 환경:${envText}\n\n` +
@@ -978,8 +988,12 @@ serve(async (req) => {
               const sub = String(raw.sub_work || fallback?.sub_task || "").trim();
               const hazard = String(raw.hazard_factor || fallback?.hazard || "").trim();
               if (!sub) return null;
-              let likelihood = String(raw.initial_likelihood || raw.likelihood_grade || "중").trim();
-              let severity = String(raw.initial_severity || raw.severity_grade || "중").trim();
+              let likelihood = String(
+                fallback?.likelihood_grade || fallback?.initial_likelihood || raw.initial_likelihood || raw.likelihood_grade || "중",
+              ).trim();
+              let severity = String(
+                fallback?.severity_grade || fallback?.initial_severity || raw.initial_severity || raw.severity_grade || "중",
+              ).trim();
               if (!["상", "중", "하"].includes(likelihood)) likelihood = "중";
               if (!["상", "중", "하"].includes(severity)) severity = "중";
               const improvedLikelihood = String(raw.residual_likelihood || raw.improved_likelihood_grade || "").trim();

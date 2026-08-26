@@ -15,7 +15,8 @@ export { defaultLegalForHazard } from '@/lib/riskLegalDefaults';
  * [나머지 채우기] is a submit-gap completer, not “ask the LLM to rewrite the row”.
  *
  * - PPE / 법적근거: deterministic (hazard defaults + legal_references).
- * - 발생상황·대책 문장: only then library, then LLM.
+ * - 발생상황·대책 문장: 비어 있을 때만 LLM.
+ * - 개선후 등급: 대책 실효를 AI가 판단. 하/하/하 플레이스홀더는 유지했다가 meta에서 채움.
  */
 
 const BASE_PPE = ['안전모', '안전화'];
@@ -114,7 +115,6 @@ export function seedFillDetailFromRow(
   if (legal.length === 0) legal = defaultLegalForHazard(hazard, situation);
   const lg = asGrade(row.likelihood_grade || overlay?.likelihood_grade);
   const sg = asGrade(row.severity_grade || overlay?.severity_grade);
-  const derived = deriveResidualGrades(lg, sg);
   const residualSrc = {
     likelihood_grade: lg,
     severity_grade: sg,
@@ -123,9 +123,23 @@ export function seedFillDetailFromRow(
     improved_severity_grade: row.improved_severity_grade || overlay?.improved_severity_grade,
     improved_risk_grade: row.improved_risk_grade || overlay?.improved_risk_grade,
   };
-  const useDerivedResidual = isFlattenedResidualPlaceholder(residualSrc);
-  const ilg = useDerivedResidual ? derived.likelihood : asGrade(residualSrc.improved_likelihood_grade, derived.likelihood);
-  const isg = useDerivedResidual ? derived.severity : asGrade(residualSrc.improved_severity_grade, derived.severity);
+  const derived = deriveResidualGrades(lg, sg);
+  // Keep placeholder 하/하/하 so [나머지 채우기] meta AI can judge residual.
+  // Only copy overlay residual when it is not the flattened default.
+  const overlayJudged = overlay && !isFlattenedResidualPlaceholder({
+    likelihood_grade: lg,
+    severity_grade: sg,
+    risk_grade: residualSrc.risk_grade,
+    improved_likelihood_grade: overlay.improved_likelihood_grade,
+    improved_severity_grade: overlay.improved_severity_grade,
+    improved_risk_grade: overlay.improved_risk_grade,
+  });
+  const ilg = overlayJudged
+    ? asGrade(overlay.improved_likelihood_grade, derived.likelihood)
+    : asGrade(row.improved_likelihood_grade, '하');
+  const isg = overlayJudged
+    ? asGrade(overlay.improved_severity_grade, derived.severity)
+    : asGrade(row.improved_severity_grade, '하');
   return {
     process: String(row.process || overlay?.process || '').trim(),
     sub_task: String(row.sub_task || overlay?.sub_task || hazard).trim(),
@@ -138,9 +152,9 @@ export function seedFillDetailFromRow(
     risk_grade: asGrade(row.risk_grade || overlay?.risk_grade, calculateRiskGrade(lg, sg)),
     improved_likelihood_grade: ilg,
     improved_severity_grade: isg,
-    improved_risk_grade: useDerivedResidual
-      ? derived.risk
-      : asGrade(residualSrc.improved_risk_grade, calculateRiskGrade(ilg, isg)),
+    improved_risk_grade: overlayJudged
+      ? asGrade(overlay.improved_risk_grade, calculateRiskGrade(ilg, isg))
+      : asGrade(row.improved_risk_grade, '하'),
     frequency: Number(row.frequency ?? overlay?.frequency ?? (lg === '상' ? 4 : lg === '중' ? 3 : 2)),
     severity: Number(row.severity ?? overlay?.severity ?? (sg === '상' ? 4 : sg === '중' ? 3 : 2)),
     improved_frequency: Number(

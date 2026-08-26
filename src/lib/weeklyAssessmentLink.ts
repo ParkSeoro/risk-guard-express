@@ -133,3 +133,35 @@ export function resolvePrintFeedbackRun(opts: {
 export function isManagedResidualHigh(item: { improved_risk_grade?: string | null }): boolean {
   return item.improved_risk_grade === '상';
 }
+
+/**
+ * Candidate list for 전회차 lookup. Keep this off schema-optional columns
+ * (`feedback_status` etc.): PostgREST rejects the whole select if one name is
+ * missing, which blanks the 금주 이행 tab while print (service role, different
+ * column list) still shows photos.
+ */
+export const WEEKLY_LINK_CANDIDATE_SELECT =
+  'id, project_id, type, status, start_date, end_date, created_at, target_company_ids, period_label, is_deleted';
+
+export function unresolvedFeedback<T extends { status?: string | null }>(rows: T[]): T[] {
+  return (rows || []).filter((f) => f.status === '미조치' || f.status === '진행중');
+}
+
+export function unresolvedFeedbackCount(rows: Array<{ status?: string | null }>): number {
+  return unresolvedFeedback(rows).length;
+}
+
+/** Badge/heading count for the 금주 이행 tab (all statuses on the execution target). */
+export function executionFeedbackCount(opts: {
+  executionId: string | null | undefined;
+  previousId: string | null | undefined;
+  currentId: string | null | undefined;
+  previousFeedbackCount: number;
+  currentFeedbackCount: number;
+}): number {
+  const { executionId, previousId, currentId } = opts;
+  if (!executionId) return 0;
+  if (previousId && executionId === previousId) return opts.previousFeedbackCount;
+  if (currentId && executionId === currentId) return opts.currentFeedbackCount;
+  return 0;
+}

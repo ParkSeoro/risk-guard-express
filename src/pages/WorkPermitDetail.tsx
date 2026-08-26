@@ -41,7 +41,7 @@ import type { PermitAiBriefing } from '@/lib/permitBriefing';
 import { syncPermitAssessmentLinks, fetchPermitLinkedAssessments, discoverPermitDateValidRuns } from '@/lib/safetyWorkBundle';
 import { approvalsBackOr } from '@/lib/approvalInboxPreview';
 import { contactPhonesFromApprovals, mergeApprovalSignatures } from '@/lib/permitApprovalSignatures';
-import { syncPermitDateFromWorkStart, resolvePermitWorkDate } from '@/lib/permitWorkDate';
+import { syncPermitDateFromWorkStart, resolvePermitWorkDate, isPermitEditable } from '@/lib/permitWorkDate';
 import {
   normalizeDisplayTemplate,
   parseLayoutJson,
@@ -71,15 +71,11 @@ function toLocalInput(value?: string | null) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-const EDITABLE_PERMIT_STATUSES = new Set(['작성중', '반려', '임시저장']);
 const APPROVED_PERMIT_STATUSES = new Set(['승인', '승인완료', '발행완료', 'approved', 'ISSUED', 'APPROVED']);
 const CLOSURE_PENDING_STATUSES = new Set(['종료대기', 'CLOSURE_PENDING']);
 const CLOSED_PERMIT_STATUSES = new Set(['종료완료', 'CLOSED', '마감']);
 const IN_APPROVAL_PERMIT_STATUSES = new Set(['결재중', '결재진행', '검토대기', '검토완료']);
 
-function isPermitEditable(status?: string | null) {
-  return EDITABLE_PERMIT_STATUSES.has(status || '');
-}
 function isPermitApproved(status?: string | null) {
   return APPROVED_PERMIT_STATUSES.has(status || '') || CLOSURE_PENDING_STATUSES.has(status || '') || CLOSED_PERMIT_STATUSES.has(status || '');
 }

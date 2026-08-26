@@ -31,5 +31,6 @@ describe("mapApprovalActionError", () => {
   it("maps deleted-entity and direct-approve lock codes", () => {
     expect(mapApprovalActionError("ENTITY_DELETED")).toBe("삭제된 문서는 결재할 수 없습니다.");
     expect(mapApprovalActionError("WORK_PERMIT_APPROVAL_RPC_REQUIRED")).toContain("결재선");
+    expect(mapApprovalActionError("WORK_PERMIT_LINE_NOT_APPROVED")).toContain("반려");
   });
 });

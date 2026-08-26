@@ -10,6 +10,7 @@ import {
   resolvePermitCompanyName,
   canViewPermitInList,
   isUserInvolvedInPermit,
+  isPermitEditable,
 } from '@/lib/permitWorkDate';
 
 describe('datePartFromDateTime', () => {
@@ -175,5 +176,16 @@ describe('resolvePermitCompanyName', () => {
         new Map([['co-1', '정엔지니어링(주)']]),
       ),
     ).toBe('정엔지니어링(주)');
+  });
+});
+
+describe('isPermitEditable', () => {
+  it('lets leftover legacy 검토 상태도 결재상신으로 이관한다', () => {
+    expect(isPermitEditable('작성중')).toBe(true);
+    expect(isPermitEditable('반려')).toBe(true);
+    expect(isPermitEditable('검토대기')).toBe(true);
+    expect(isPermitEditable('검토완료')).toBe(true);
+    expect(isPermitEditable('결재중')).toBe(false);
+    expect(isPermitEditable('승인')).toBe(false);
   });
 });

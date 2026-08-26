@@ -30,6 +30,7 @@ import {
   resolvePermitCompanyName,
   canViewPermitInList,
   isUserInvolvedInPermit,
+  isPermitEditable,
 } from '@/lib/permitWorkDate';
 import { filterRunsByCompanyScope } from '@/lib/companyDocScope';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
@@ -62,7 +63,6 @@ const STATUS_COLOR: Record<string, string> = {
   '완료': 'bg-accent/10 text-accent',
 };
 
-const EDITABLE_PERMIT_STATUSES = new Set(['작성중', '반려', '임시저장']);
 const APPROVED_PERMIT_STATUSES = new Set(['승인', '승인완료', '발행완료', 'approved']);
 const CLOSED_PERMIT_STATUSES = new Set(['종료완료', 'CLOSED', '마감']);
 const CLOSURE_PENDING_STATUSES = new Set(['종료대기', 'CLOSURE_PENDING']);
@@ -83,10 +83,6 @@ function permitStatusLabel(status?: string | null) {
   if (status === '결재중' || status === '결재진행') return '결재 진행중';
   return status || '-';
 }
-function isPermitEditable(status?: string | null) {
-  return EDITABLE_PERMIT_STATUSES.has(status || '');
-}
-
 const PERMIT_TYPES: { id: PermitType; label: string }[] = [
   { id: 'general', label: '일반 안전작업허가서' },
   { id: 'confined_space', label: '밀폐공간 작업허가서' },

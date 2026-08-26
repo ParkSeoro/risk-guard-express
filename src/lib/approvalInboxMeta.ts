@@ -39,5 +39,8 @@ export function mapApprovalActionError(raw: unknown): string {
   if (code.includes("WORK_PERMIT_APPROVAL_RPC_REQUIRED")) {
     return "허가서 승인은 결재선으로만 처리할 수 있습니다. 결재상신을 이용하세요.";
   }
+  if (code.includes("WORK_PERMIT_LINE_NOT_APPROVED")) {
+    return "결재선이 끝나지 않았거나 반려된 허가서는 발행할 수 없습니다.";
+  }
   return code || "처리에 실패했습니다.";
 }

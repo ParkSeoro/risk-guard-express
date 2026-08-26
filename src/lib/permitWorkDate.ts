@@ -2,6 +2,17 @@
 
 export const DRAFT_PERMIT_STATUSES = new Set(['작성중', '임시저장']);
 export const REJECTED_PERMIT_STATUSES = new Set(['반려']);
+/** Draft + rejected + leftover legacy 상신/검토 상태. 결재상신으로 이관 가능. */
+export const EDITABLE_PERMIT_STATUSES = new Set([
+  '작성중',
+  '반려',
+  '임시저장',
+  '검토대기',
+  '검토완료',
+]);
+export function isPermitEditable(status?: string | null) {
+  return EDITABLE_PERMIT_STATUSES.has(status || '');
+}
 export const APPROVED_PERMIT_STATUSES_FOR_VALIDITY = new Set([
   '승인',
   '승인완료',

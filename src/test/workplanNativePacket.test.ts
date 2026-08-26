@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { collectPrintableAttachments, workPlanPacketFileName, concatPdfBytes, a4PortraitHeightPx, a4SliceCount } from "@/lib/workPlanPacketPdf";
+import { collectPrintableAttachments, workPlanPacketFileName, concatPdfBytes, a4PortraitHeightPx, a4SliceCount, findSliceBreakY, planA4SliceRanges } from "@/lib/workPlanPacketPdf";
 
 describe("collectPrintableAttachments", () => {
   it("keeps pdf and images, skips excel RA and empty slots", () => {
@@ -32,6 +32,18 @@ describe("A4 body slices", () => {
     expect(a4SliceCount(1123, 1123)).toBe(1);
     expect(a4SliceCount(1124, 1123)).toBe(2);
     expect(a4SliceCount(3369, 1123)).toBe(3);
+  });
+
+  it("moves the cut into a white gap instead of through a box", () => {
+    const blank = (y: number) => y >= 970 && y < 980;
+    expect(findSliceBreakY(0, 1000, 2000, blank)).toBe(980);
+    const ranges = planA4SliceRanges(2000, 1000, blank);
+    expect(ranges[0]).toEqual({ start: 0, height: 980 });
+    expect(ranges[1].start).toBe(980);
+  });
+
+  it("ignores a single white table-row and keeps the A4 cut", () => {
+    expect(findSliceBreakY(0, 1000, 2000, (y) => y === 990)).toBe(1000);
   });
 });
 
@@ -108,7 +120,8 @@ describe("preview / print / save split contracts", () => {
   it("PDF save slices the body into A4 pages instead of jspdf.html", () => {
     const src = readFileSync("src/lib/workPlanPacketPdf.ts", "utf8");
     expect(src).toContain("html2canvas");
-    expect(src).toContain("a4SliceCount");
+    expect(src).toContain("planA4SliceRanges");
+    expect(src).toContain("findSliceBreakY");
     expect(src).toContain("sliceCanvas");
     expect(src).not.toMatch(/from ["']jspdf["']/);
     expect(src).not.toContain("autoPaging");

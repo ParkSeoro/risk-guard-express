@@ -188,6 +188,75 @@ export function a4SliceCount(contentHeightPx: number, pageHeightPx: number): num
   return Math.max(1, Math.ceil(Math.max(1, contentHeightPx) / pageHeightPx));
 }
 
+/** Exclusive Y to end a page: prefer a blank gap over cutting through a table/box. */
+export function findSliceBreakY(
+  startY: number,
+  pageHeight: number,
+  contentHeight: number,
+  isBlankRow: (y: number) => boolean,
+  opts?: { searchRatio?: number; minFillRatio?: number; blankRun?: number },
+): number {
+  const idealEnd = Math.min(startY + pageHeight, contentHeight);
+  if (idealEnd >= contentHeight) return contentHeight;
+  const searchRatio = opts?.searchRatio ?? 0.32;
+  const minFillRatio = opts?.minFillRatio ?? 0.55;
+  const blankRun = Math.max(3, opts?.blankRun ?? 8);
+  const minEnd = startY + Math.round(pageHeight * minFillRatio);
+  const searchFrom = Math.max(minEnd + blankRun, idealEnd - Math.round(pageHeight * searchRatio));
+
+  for (let end = idealEnd; end >= searchFrom; end--) {
+    let blank = true;
+    for (let y = end - blankRun; y < end; y++) {
+      if (!isBlankRow(y)) {
+        blank = false;
+        break;
+      }
+    }
+    if (blank) return end;
+  }
+  return idealEnd;
+}
+
+export function planA4SliceRanges(
+  contentHeight: number,
+  pageHeight: number,
+  isBlankRow: (y: number) => boolean,
+): { start: number; height: number }[] {
+  const out: { start: number; height: number }[] = [];
+  let y = 0;
+  while (y < contentHeight) {
+    const end = findSliceBreakY(y, pageHeight, contentHeight, isBlankRow);
+    const height = Math.max(1, end - y);
+    out.push({ start: y, height });
+    y = end;
+    let skipped = 0;
+    while (y < contentHeight && skipped < 12 && isBlankRow(y)) {
+      y += 1;
+      skipped += 1;
+    }
+    if (out.length > 80) break;
+  }
+  return out;
+}
+
+function canvasRowIsMostlyWhite(
+  ctx: CanvasRenderingContext2D,
+  y: number,
+  width: number,
+): boolean {
+  if (y < 0) return false;
+  const step = 6;
+  const data = ctx.getImageData(0, y, width, 1).data;
+  let white = 0;
+  let n = 0;
+  for (let x = 0; x < width; x += step) {
+    const i = x * 4;
+    n += 1;
+    if (data[i] >= 246 && data[i + 1] >= 246 && data[i + 2] >= 246) white += 1;
+  }
+  return n > 0 && white / n >= 0.94;
+}
+
 function canvasToJpeg(canvas: HTMLCanvasElement, quality = 0.92): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(
@@ -260,12 +329,15 @@ export async function htmlToPdfBytes(html: string): Promise<Uint8Array> {
 
     const pageCssH = a4PortraitHeightPx(width);
     const slicePx = Math.max(1, Math.round(pageCssH * (canvas.width / width)));
-    const pages = a4SliceCount(canvas.height, slicePx);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("본문 캔버스를 읽을 수 없습니다.");
+    const isBlankRow = (y: number) =>
+      y >= 0 && y < canvas.height && canvasRowIsMostlyWhite(ctx, y, canvas.width);
+    const ranges = planA4SliceRanges(canvas.height, slicePx, isBlankRow);
     const packet = await PDFDocument.create();
 
-    for (let i = 0; i < pages; i++) {
-      const y = i * slicePx;
-      const slice = sliceCanvas(canvas, y, slicePx);
+    for (const range of ranges) {
+      const slice = sliceCanvas(canvas, range.start, range.height);
       const jpeg = await canvasToJpeg(slice);
       const image = await packet.embedJpg(jpeg);
       const page = packet.addPage(PageSizes.A4);

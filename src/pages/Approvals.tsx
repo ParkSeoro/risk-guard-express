@@ -24,6 +24,7 @@ import {
   sequentialDisplayStatus,
   type ApprovalEntityType,
 } from "@/lib/approvalRules";
+import { formatPendingApprovalMeta, mapApprovalActionError } from "@/lib/approvalInboxMeta";
 import { filterRunsByCompanyScope } from "@/lib/companyDocScope";
 import { filterApprovalsKeepingFullDocumentTimeline } from "@/lib/approvalDocumentVisibility";
 import {
@@ -135,13 +136,7 @@ const Approvals = () => {
     const r = data as any;
     if (error || r?.error) {
       const code = r?.error || error?.message || '';
-      const msg = code === 'SUBMITTER_STEP_NO_SELF_APPROVE'
-        ? '상신(기안) 단계는 승인/반려할 수 없습니다.'
-        : code === 'WORK_PERMIT_LOCKED' || String(code).includes('WORK_PERMIT_LOCKED')
-          ? '문서 잠금 충돌이 발생했습니다. 페이지를 새로고침 후 다시 시도하세요.'
-        : code === 'ACCOUNT_INACTIVE'
-          ? '로그인 차단된 계정은 결재할 수 없습니다.'
-          : (r?.error || error?.message);
+      const msg = mapApprovalActionError(code);
       toast({ title: '처리 실패', description: msg, variant: 'destructive' });
       return false;
     }
@@ -566,7 +561,7 @@ const Approvals = () => {
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{e.entity_title || '-'}</div>
-                  <div className="text-xs text-muted-foreground">{e.entity_date || ''} · {e.step}</div>
+                  <div className="text-xs text-muted-foreground">{formatPendingApprovalMeta(e)}</div>
                 </div>
                 {e.entity_type && e.entity_id ? (
                     <Button

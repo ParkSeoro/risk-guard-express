@@ -22,6 +22,7 @@ import {
 } from "@/lib/permitPostApproval";
 import { formatPermitStamp } from "@/lib/permitDateFormat";
 import { resolvePermitWorkDate } from "@/lib/permitWorkDate";
+import { formatPendingApprovalMeta, mapApprovalActionError } from "@/lib/approvalInboxMeta";
 
 /**
  * Mobile approval detail — decide on the same screen as the document.
@@ -145,7 +146,7 @@ export default function MobileApprovalDetail() {
       }
       navigate("/app/worker/approvals", { replace: true });
     } catch (e: any) {
-      toast.error(e.message || "처리 실패");
+      toast.error(mapApprovalActionError(e.message || e) || "처리 실패");
     } finally {
       setSubmitting(false);
     }
@@ -261,8 +262,7 @@ export default function MobileApprovalDetail() {
                 </div>
                 <div className="font-semibold text-base">{row.entity_title || summaryTitle}</div>
                 <div className="text-xs text-muted-foreground">
-                  {row.entity_date && <>작업일 {row.entity_date} · </>}
-                  요청 {new Date(row.created_at).toLocaleString("ko-KR")}
+                  {formatPendingApprovalMeta(row) || (row.created_at ? `요청 ${new Date(row.created_at).toLocaleString("ko-KR")}` : "")}
                 </div>
                 {stepKind === "extend_sm" && extendUntil && (
                   <div className="text-sm rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2">

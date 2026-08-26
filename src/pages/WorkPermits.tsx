@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, CheckCircle2, XCircle, FileSignature, Pencil, Trash2, Users, Copy, Clock, Search } from 'lucide-react';
+import { Plus, FileSignature, Pencil, Trash2, Users, Copy, Clock, Search } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import WorkPermitWorkersDialog from '@/components/permits/WorkPermitWorkersDialog';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
@@ -87,7 +87,6 @@ function isPermitEditable(status?: string | null) {
   return EDITABLE_PERMIT_STATUSES.has(status || '');
 }
 
-const userLabel = (u: any) => u?.user_metadata?.display_name || u?.email || '';
 const PERMIT_TYPES: { id: PermitType; label: string }[] = [
   { id: 'general', label: '일반 안전작업허가서' },
   { id: 'confined_space', label: '밀폐공간 작업허가서' },
@@ -478,67 +477,6 @@ export default function WorkPermits() {
     }
   };
 
-  const submit = async (permit: any) => {
-    await supabase.from('work_permits' as any).update({
-      status: '검토대기',
-      submitted_by: user?.id,
-      submitted_by_name: userLabel(user),
-      submitted_at: new Date().toISOString(),
-    }).eq('id', permit.id);
-    toast({ title: '검토 요청이 상신되었습니다.' });
-    load();
-  };
-
-  const review = async (permit: any) => {
-    const comment = prompt('검토 의견 (선택)') || '';
-    await supabase.from('work_permits' as any).update({
-      status: '검토완료',
-      reviewed_by: user?.id,
-      reviewed_by_name: userLabel(user),
-      reviewed_at: new Date().toISOString(),
-      review_comment: comment,
-    }).eq('id', permit.id);
-    toast({ title: '검토 완료되었습니다.' });
-    load();
-  };
-
-  const approve = async (permit: any) => {
-    if (permit.status !== '검토완료') {
-      return toast({ title: '검토 완료 후 승인할 수 있습니다.', variant: 'destructive' });
-    }
-    const comment = prompt('승인 의견 (선택)') || '';
-    await supabase.from('work_permits' as any).update({
-      status: '승인',
-      approved_by: user?.id,
-      approved_by_name: userLabel(user),
-      approved_at: new Date().toISOString(),
-      approval_comment: comment,
-      rejection_reason: '',
-    }).eq('id', permit.id);
-    try {
-      const { ensureTbmAfterPermitIssued } = await import('@/lib/tbmLifecycle');
-      await ensureTbmAfterPermitIssued({
-        force: true,
-        entityType: 'work_permit',
-        entityId: permit.id,
-        projectId: permit.project_id || projectId,
-        companyId: permit.company_id,
-      });
-    } catch (e) {
-      console.warn('ensureTbmAfterPermitIssued', e);
-    }
-    toast({ title: '승인되었습니다.' });
-    load();
-  };
-
-  const reject = async (permit: any) => {
-    const reason = prompt('반려 사유를 입력하세요');
-    if (!reason) return;
-    await supabase.from('work_permits' as any).update({ status: '반려', rejection_reason: reason }).eq('id', permit.id);
-    toast({ title: '반려되었습니다.' });
-    load();
-  };
-
   return (
     <div className="space-y-4 p-4 md:p-6">
       <div className="flex items-center justify-between">
@@ -674,22 +612,10 @@ export default function WorkPermits() {
                   </Button>
                 )}
                 {isPermitEditable(p.status) && (
-                  <>
-                    <Button size="sm" onClick={() => submit(p)}>상신</Button>
-                    <Button size="sm" variant="outline" onClick={() => setApprovalTarget(p)}>결재상신(결재선 지정)</Button>
-                  </>
+                  <Button size="sm" variant="outline" onClick={() => setApprovalTarget(p)}>결재상신</Button>
                 )}
-                {p.status === '검토대기' && isAdmin && (
-                  <>
-                    <Button size="sm" onClick={() => review(p)}>검토완료</Button>
-                    <Button size="sm" variant="destructive" onClick={() => reject(p)}><XCircle className="h-3 w-3 mr-1" />반려</Button>
-                  </>
-                )}
-                {p.status === '검토완료' && isAdmin && (
-                  <>
-                    <Button size="sm" onClick={() => approve(p)}><CheckCircle2 className="h-3 w-3 mr-1" />승인</Button>
-                    <Button size="sm" variant="destructive" onClick={() => reject(p)}><XCircle className="h-3 w-3 mr-1" />반려</Button>
-                  </>
+                {p.status === '반려' && (
+                  <span className="text-[11px] text-destructive self-center">반려 후 재발행은 결재상신만 가능합니다.</span>
                 )}
                 <Button size="sm" onClick={() => navigate(`/work-permits/${p.id}`)}><FileSignature className="h-3 w-3 mr-1" />{isPermitEditable(p.status) ? '양식 작성' : '양식 조회'}</Button>
                 <Button size="sm" variant="outline" onClick={() => setWorkersDialog(p)} title="근로자 배정"><Users className="h-3 w-3" /></Button>

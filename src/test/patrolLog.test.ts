@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { buildChecklist } from '@/lib/inspectionTemplates';
 import {
   PATROL_CHECKLIST_ITEMS,
+  PATROL_FINDING_PHOTO_SHEET_TITLE,
   PATROL_LOG_CITATIONS,
   PATROL_LOG_DISCLAIMER,
   PATROL_LOG_PRINT_TITLE,
   PATROL_LOG_TITLE,
+  PATROL_WALK_PHOTO_LABEL,
   SITE_DIRECTOR_PATROL_TITLE,
   buildPatrolLogHtml,
+  collectFindingPhotoSheets,
   collectTodayPermitRoute,
   collectTodayPermitWorks,
   formatInspectorLine,
@@ -106,7 +109,10 @@ describe('patrol log form pack', () => {
     expect(html).toContain('폼그라스 하차및 인양작업');
     expect(html).toContain('점 검 사 항');
     expect(html).toContain('지 적 사 항');
-    expect(html).toContain('순회 모습');
+    expect(html).toContain(PATROL_WALK_PHOTO_LABEL);
+    expect(html).toContain(`${PATROL_WALK_PHOTO_LABEL} 1`);
+    expect(html).toContain('class="patrol-photos"');
+    expect(html).not.toContain('순회 모습');
     expect(html).not.toContain('사진대지');
     expect(html).not.toContain('안전보건총괄');
     expect(html).not.toContain('총괄책임자');
@@ -180,5 +186,52 @@ describe('patrol log form pack', () => {
     expect(html).toContain('통로 정리 필요');
     expect(html).toContain('잔재 반출');
     expect(html).not.toContain('height:150px');
+    const page1 = html.split('class="page-2"')[0];
+    const page2 = html.split('class="page-2"')[1] || '';
+    expect(page1).toContain('안전모 미착용');
+    expect(page1).toContain('[사진 2쪽]');
+    expect(page1).toContain('class="patrol-shot"');
+    expect(page1).toContain('walk1.jpg');
+    expect(page1).not.toContain('before.jpg');
+    expect(page1).not.toContain('after.jpg');
+    expect(page1).not.toContain('class="photos"');
+    expect(page1).toContain('class="patrol-photos"');
+    expect(page2).toContain(PATROL_FINDING_PHOTO_SHEET_TITLE);
+    expect(page2).toContain('before.jpg');
+    expect(page2).toContain('after.jpg');
+    expect(page2).toContain('class="finding-shot"');
+    expect(page2).not.toContain('walk1.jpg');
+  });
+
+  it('omits the finding photo sheet when there are no 지적 photos', () => {
+    const html = buildPatrolLogHtml({
+      projectName: '현장',
+      inspectedAt: '2026-08-24T00:00:00.000Z',
+      inspectorName: '김안전',
+      location: '',
+      items: [{ label: '근로자 개인보호구 착용상태', result: 'pass' }],
+      actions: [],
+      patrolPhotos: ['https://example.test/walk1.jpg'],
+    });
+    expect(html).toContain(PATROL_WALK_PHOTO_LABEL);
+    expect(html).not.toContain(PATROL_FINDING_PHOTO_SHEET_TITLE);
+    expect(html).not.toContain('class="page-2"');
+    expect(html).not.toContain('[사진 2쪽]');
+  });
+
+  it('collects finding and action photos for the second sheet', () => {
+    const sheets = collectFindingPhotoSheets(
+      [{
+        label: '고소작업시 난간설치상태',
+        result: 'fail',
+        note: '난간 미설치',
+        photos: ['https://example.test/p.jpg'],
+      }],
+      [{ issue: '고소작업시 난간설치상태', evidence_photos: ['https://example.test/fix.jpg'] }],
+    );
+    expect(sheets).toHaveLength(1);
+    expect(sheets[0].index).toBe(1);
+    expect(sheets[0].findingUrls).toEqual(['https://example.test/p.jpg']);
+    expect(sheets[0].actionUrls).toEqual(['https://example.test/fix.jpg']);
   });
 });

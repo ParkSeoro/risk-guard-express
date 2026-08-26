@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { calculateRiskGrade } from './riskGrade';
+import { defaultLegalForHazard } from './riskLegalDefaults';
 import type { ValidationReport, ValidationIssue, CoverageGap } from './validationEngine';
 
 // ========== Data Models ==========
@@ -270,16 +271,17 @@ export async function generateRemediationActions(
       (l.process_mappings || []).some((pm: string) => tags.some(t => pm.includes(t)))
     ).slice(0, 5);
 
-    if (matched.length === 0) continue;
-
-    const refs = matched.map(m => `${m.law_name} ${m.article}`);
+    const refs = matched.length
+      ? matched.map(m => `${m.law_name} ${m.article}`)
+      : defaultLegalForHazard(item.hazard, `${item.hazard_situation || ''} ${item.sub_task || ''}`);
+    if (refs.length === 0) continue;
 
     actions.push({
       id: uid(), actionType: 'ACTION_ATTACH_LEGAL_REFERENCES',
       label: '법적근거 추가', category: 'C. 법적근거 보완',
       description: `${item.process}: ${refs.slice(0, 3).join(', ')}`,
       targetRiskItemIds: [item.id], patch: { legal_basis: refs },
-      rationale: matched.length > 0 ? '공정 키워드 기반 법적근거 매칭' : '기본 법적근거 자동 삽입 (검토 필요)',
+      rationale: matched.length > 0 ? '위험요인 키워드 기반 법적근거 매칭' : '위험요인 유형 기본 법적근거 (검토 필요)',
       confidence: matched.length > 0 ? 'high' : 'low', requiresUserConfirm: false,
       expectedEffect: '법적근거 누락 해소',
     });

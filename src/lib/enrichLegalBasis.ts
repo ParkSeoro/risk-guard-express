@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { defaultLegalForHazard } from '@/lib/riskLegalDefaults';
 
 /** Match common KR OSH citations embedded in narrative or legal_basis strings. */
 export const LEGAL_CITATION_RE =
@@ -98,7 +99,10 @@ export async function enrichLegalBasis(opts: {
 
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const s of [...existing, ...matched]) {
+  const fallback = existing.length || matched.length
+    ? []
+    : defaultLegalForHazard(opts.hazard, `${opts.hazardSituation || ''} ${opts.processName || ''}`);
+  for (const s of [...existing, ...matched, ...fallback]) {
     const key = s.replace(/\s+/g, ' ').trim();
     if (!key || seen.has(key)) continue;
     seen.add(key);

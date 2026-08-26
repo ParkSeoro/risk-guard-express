@@ -7,6 +7,9 @@ import {
   isBlankRiskText,
 } from '@/lib/riskAutoGenAI';
 import { calculateRiskGrade, type RiskGrade } from '@/lib/riskGrade';
+import { defaultLegalForHazard } from '@/lib/riskLegalDefaults';
+
+export { defaultLegalForHazard } from '@/lib/riskLegalDefaults';
 
 /**
  * [나머지 채우기] is a submit-gap completer, not “ask the LLM to rewrite the row”.
@@ -107,7 +110,8 @@ export function seedFillDetailFromRow(
   const improve = pickText(row.improvement_measure, overlay?.improvement_measure);
   let ppe = pickList(row.ppe, overlay?.ppe);
   if (ppe.length === 0) ppe = defaultPpeForHazard(hazard, situation);
-  const legal = pickList(row.legal_basis, overlay?.legal_basis);
+  let legal = pickList(row.legal_basis, overlay?.legal_basis);
+  if (legal.length === 0) legal = defaultLegalForHazard(hazard, situation);
   const lg = asGrade(row.likelihood_grade || overlay?.likelihood_grade);
   const sg = asGrade(row.severity_grade || overlay?.severity_grade);
   const ilg = asGrade(row.improved_likelihood_grade || overlay?.improved_likelihood_grade, lg === '상' ? '중' : '하');

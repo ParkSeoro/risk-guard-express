@@ -13,6 +13,7 @@ import { detectHighRiskCategories, type RiskItemLike } from '@/lib/highRiskDetec
 import { autoGenerateAccidentCases } from '@/lib/autoAccidentGeneration';
 import { generateAccidentCasesStreaming } from '@/lib/riskAutoGenAI';
 import { uploadAttachmentFile, buildProjectAttachmentPath } from '@/lib/compressUploadFile';
+import { calculateRiskGrade, derivedResidualFields } from '@/lib/riskGrade';
 
 interface Props {
   runId: string;
@@ -196,7 +197,8 @@ export default function WorkerParticipationPanel({
         existing_measure: s.existing_measure || '', improvement_measure: s.improvement_measure || '',
         ppe: s.ppe || [],
         likelihood_grade: s.likelihood_grade || '중', severity_grade: s.severity_grade || '중',
-        risk_grade: '중', improved_likelihood_grade: '하', improved_severity_grade: '하', improved_risk_grade: '하',
+        risk_grade: calculateRiskGrade((s.likelihood_grade || '중') as any, (s.severity_grade || '중') as any),
+        ...derivedResidualFields(s.likelihood_grade || '중', s.severity_grade || '중'),
         status: '미착수', item_category: 'safety', source_type: 'ai_opinion',
         source_opinion_id: opinionId, is_user_reviewed: true, created_by: userId,
       }));

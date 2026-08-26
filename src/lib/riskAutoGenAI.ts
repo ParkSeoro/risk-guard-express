@@ -355,6 +355,8 @@ export type ScopeDraftItemRich = ScopeDraftItem & {
   existing_measure?: string;
   improvement_measure?: string;
   process?: string | null;
+  likelihood_grade?: string | null;
+  severity_grade?: string | null;
 };
 
 /** Blank "행 추가" placeholders — not enough context to fill. */
@@ -394,6 +396,8 @@ export function toRiskFillDraft(
     hazard_situation: String(item.hazard_situation || '').trim(),
     existing_measure: String(item.existing_measure || '').trim(),
     improvement_measure: String(item.improvement_measure || '').trim(),
+    likelihood_grade: String(item.likelihood_grade || '').trim() || undefined,
+    severity_grade: String(item.severity_grade || '').trim() || undefined,
   };
 }
 
@@ -471,11 +475,13 @@ export async function fetchRiskFillBatch(
   const items = (data?.items || [])
     .map((it) => {
       const mapped = mapAIItemToGenerated(it, opts.processName);
-      // Preserve stage so applyFilledDetail can skip grade clobber on narrative soft-fill.
       if (fillStage === 'narrative' || it?.fill_stage === 'narrative') {
         return { ...mapped, fill_stage: 'narrative' as const };
       }
-      return mapped;
+      if (fillStage === 'meta' || it?.fill_stage === 'meta') {
+        return { ...mapped, fill_stage: 'meta' as const };
+      }
+      return { ...mapped, fill_stage: 'all' as const };
     })
     .filter((it) => it.sub_task);
 

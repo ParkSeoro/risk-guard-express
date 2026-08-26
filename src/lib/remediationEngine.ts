@@ -1,5 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { calculateRiskGrade } from './riskGrade';
+import { calculateRiskGrade, derivedResidualFields } from './riskGrade';
 import { defaultLegalForHazard } from './riskLegalDefaults';
 import type { ValidationReport, ValidationIssue, CoverageGap } from './validationEngine';
 
@@ -414,9 +414,7 @@ export async function generateRemediationActions(
           (libMatch.default_likelihood_grade || '중') as any,
           (libMatch.default_severity_grade || '중') as any
         ),
-        improved_likelihood_grade: '하',
-        improved_severity_grade: '하',
-        improved_risk_grade: '하',
+        ...derivedResidualFields(libMatch.default_likelihood_grade || '중', libMatch.default_severity_grade || '중'),
         legal_basis: libMatch.legal_refs || [],
         ppe: libMatch.recommended_ppe || [],
         status: '초안',
@@ -478,9 +476,12 @@ export async function applyRemediationActions(
         likelihood_grade: ni.likelihood_grade || '중',
         severity_grade: ni.severity_grade || '중',
         risk_grade: ni.risk_grade || '중',
-        improved_likelihood_grade: ni.improved_likelihood_grade || '하',
-        improved_severity_grade: ni.improved_severity_grade || '하',
-        improved_risk_grade: ni.improved_risk_grade || '하',
+        improved_likelihood_grade: ni.improved_likelihood_grade,
+        improved_severity_grade: ni.improved_severity_grade,
+        improved_risk_grade: ni.improved_risk_grade,
+        ...(!ni.improved_likelihood_grade
+          ? derivedResidualFields(ni.likelihood_grade || '중', ni.severity_grade || '중')
+          : {}),
         legal_basis: ni.legal_basis || [],
         ppe: ni.ppe || [],
         status: ni.status || '초안',

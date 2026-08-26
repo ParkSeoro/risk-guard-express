@@ -35,7 +35,7 @@ import {
   Lock, Users, XCircle, AlertTriangle, CheckCircle2, Upload, RotateCcw, FileWarning, RefreshCw,
   Edit3, Archive, Clock, Pencil, Ban, Camera, Loader2, MoreHorizontal, ChevronDown, ChevronRight,
 } from 'lucide-react';
-import { calculateRiskGrade, getGradeClassName, GRADES } from '@/lib/riskGrade';
+import { calculateRiskGrade, derivedResidualFields, getGradeClassName, GRADES, isFlattenedResidualPlaceholder, deriveResidualGrades } from '@/lib/riskGrade';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 import {
   acknowledgeRiskAutoGenJob,
@@ -828,6 +828,9 @@ const AssessmentRunDetail = () => {
         const lg = field === 'likelihood_grade' ? value : item.likelihood_grade || '중';
         const sg = field === 'severity_grade' ? value : item.severity_grade || '중';
         updateData.risk_grade = calculateRiskGrade(lg, sg);
+        if (isFlattenedResidualPlaceholder(item) || isFlattenedResidualPlaceholder({ ...item, likelihood_grade: lg, severity_grade: sg, risk_grade: updateData.risk_grade })) {
+          Object.assign(updateData, derivedResidualFields(lg, sg));
+        }
       }
     }
     if (field === 'improved_likelihood_grade' || field === 'improved_severity_grade') {
@@ -877,7 +880,7 @@ const AssessmentRunDetail = () => {
     const { data } = await supabase.from('risk_items').insert([{
       project_id: run.project_id, run_id: runId, process: '신규공정', created_by: user.id, sort_order: items.length,
       likelihood_grade: '중', severity_grade: '중', risk_grade: '중',
-      improved_likelihood_grade: '하', improved_severity_grade: '하', improved_risk_grade: '하',
+      ...derivedResidualFields('중', '중'),
     }]).select().single();
     if (data) { setItems(prev => [...prev, data]); toast({ title: '새 항목 추가됨' }); }
   };
@@ -1962,17 +1965,16 @@ const AssessmentRunDetail = () => {
       const rg = (['상', '중', '하'] as const).includes(rgRaw as '상' | '중' | '하')
         ? (rgRaw as '상' | '중' | '하')
         : calculateRiskGrade(lg, sg);
-      // 개선후 칸이 비면 기존처럼 하 — 값이 있으면 엑셀 반영
+      // 개선후 칸이 비면 초기등급에서 유도 (가능성 1단계↓, 중대성 유지). 하로 몰지 않음.
       const hasImprovedL = String(get('improved_likelihood_grade') || '').trim().length > 0;
       const hasImprovedS = String(get('improved_severity_grade') || '').trim().length > 0;
-      const ilg = parseGrade(get('improved_likelihood_grade'), '하');
-      const isg = parseGrade(get('improved_severity_grade'), '하');
+      const derived = deriveResidualGrades(lg, sg);
+      const ilg = hasImprovedL ? parseGrade(get('improved_likelihood_grade'), derived.likelihood) : derived.likelihood;
+      const isg = hasImprovedS ? parseGrade(get('improved_severity_grade'), derived.severity) : derived.severity;
       const irgRaw = String(get('improved_risk_grade') || '').trim();
       const irg = (['상', '중', '하'] as const).includes(irgRaw as '상' | '중' | '하')
         ? (irgRaw as '상' | '중' | '하')
-        : (hasImprovedL || hasImprovedS)
-          ? calculateRiskGrade(ilg, isg)
-          : '하';
+        : calculateRiskGrade(ilg, isg);
       return {
         project_id: run.project_id, run_id: runId,
         process: get('process') || '미분류', sub_task: get('sub_task'), hazard: get('hazard'),

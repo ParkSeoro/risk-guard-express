@@ -4,7 +4,7 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import type { GeneratedRiskItem } from '@/lib/riskAutoGen';
-import { calculateRiskGrade, type RiskGrade } from '@/lib/riskGrade';
+import { calculateRiskGrade, deriveResidualGrades, isFlattenedResidualPlaceholder, type RiskGrade } from '@/lib/riskGrade';
 
 export function normalizeProcessKey(raw: string): string {
   return (raw || '').trim().replace(/\s+/g, ' ').toLowerCase();
@@ -52,8 +52,17 @@ export function mapGlobalLibraryRow(row: any): GeneratedRiskItem & {
 } {
   const lg = (row.likelihood_grade || '중') as RiskGrade;
   const sg = (row.severity_grade || '중') as RiskGrade;
-  const ilg = (row.improved_likelihood_grade || '하') as RiskGrade;
-  const isg = (row.improved_severity_grade || '하') as RiskGrade;
+  const derived = deriveResidualGrades(lg, sg);
+  const flattened = isFlattenedResidualPlaceholder({
+    likelihood_grade: lg,
+    severity_grade: sg,
+    risk_grade: row.risk_grade,
+    improved_likelihood_grade: row.improved_likelihood_grade,
+    improved_severity_grade: row.improved_severity_grade,
+    improved_risk_grade: row.improved_risk_grade,
+  });
+  const ilg = flattened ? derived.likelihood : ((row.improved_likelihood_grade || derived.likelihood) as RiskGrade);
+  const isg = flattened ? derived.severity : ((row.improved_severity_grade || derived.severity) as RiskGrade);
   return {
     process: row.process_label || row.process_key || '',
     sub_task: row.sub_task || '',
@@ -70,7 +79,9 @@ export function mapGlobalLibraryRow(row: any): GeneratedRiskItem & {
     risk_grade: (row.risk_grade as RiskGrade) || calculateRiskGrade(lg, sg),
     improved_likelihood_grade: ilg,
     improved_severity_grade: isg,
-    improved_risk_grade: (row.improved_risk_grade as RiskGrade) || calculateRiskGrade(ilg, isg),
+    improved_risk_grade: flattened
+      ? derived.risk
+      : ((row.improved_risk_grade as RiskGrade) || calculateRiskGrade(ilg, isg)),
     ppe: Array.isArray(row.ppe) ? row.ppe : [],
     legal_basis: Array.isArray(row.legal_basis) ? row.legal_basis : [],
     department: '',

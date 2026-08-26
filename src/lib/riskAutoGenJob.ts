@@ -13,6 +13,7 @@ import {
   AI_ROW_FAILED_NOTE_PREFIX,
   fetchScopeDraft,
   fetchRiskFillTwoStage,
+  fetchRiskFillBatch,
   fetchRiskRowDetailWithRetry,
   isFillableRiskItem,
   isAiScopeDraftItem,
@@ -37,7 +38,7 @@ import {
 } from '@/lib/globalRiskLibrary';
 import { fetchPastApprovedRiskItems, filterDraftGaps } from '@/lib/riskReuseFromPast';
 import { enrichLegalBasis } from '@/lib/enrichLegalBasis';
-import { calculateRiskGrade, deriveResidualLikelihood } from '@/lib/riskGrade';
+import { calculateRiskGrade, deriveResidualGrades, isFlattenedResidualPlaceholder } from '@/lib/riskGrade';
 import { canWriteRiskItems, riskItemsWriteDeniedMessage } from '@/lib/riskWriteAccess';
 import { formatAutoGenError } from '@/lib/staleChunkError';
 import { defaultPpeForHazard, needsLlmNarrativeFill, seedFillDetailFromRow } from '@/lib/riskFillComplete';
@@ -410,9 +411,6 @@ async function applyFilledDetail(
   const narrativeOnly = (detail as { fill_stage?: string }).fill_stage === 'narrative';
   const lg = detail.likelihood_grade || '중';
   const sg = detail.severity_grade || '중';
-  // Prefer AI residual; if missing, drop one level from initial (not hardcode 하).
-  const ilg = detail.improved_likelihood_grade || deriveResidualLikelihood(lg);
-  const isg = detail.improved_severity_grade || sg;
   const nextSituation = shouldReplaceRiskField(current?.hazard_situation, forceAll)
     ? (detail.hazard_situation || '')
     : (current?.hazard_situation || '');
@@ -437,14 +435,38 @@ async function applyFilledDetail(
     improvementMeasure: nextImprove,
     existing: existingLegal,
   });
-  // Narrative soft-fill must not clobber grades. On non-force fills, keep any
-  // grades the user already set (blank-only replace). Scope-draft forceAll still
-  // takes AI grades (with derive fallback above) so placeholders are not "kept".
+  // Keep user 초기 등급. 개선후는 AI meta가 대책 실효로 판단하고,
+  // 로컬 채움은 하/하/하 플레이스홀더를 기계적으로 바꾸지 않는다.
   const keepInitialGrades =
     narrativeOnly || (!forceAll && !shouldReplaceRiskField(current?.likelihood_grade, false));
+  const persistLg = keepInitialGrades ? (current?.likelihood_grade || lg) : lg;
+  const persistSg = keepInitialGrades ? (current?.severity_grade || sg) : sg;
+  const derivedResidual = deriveResidualGrades(persistLg, persistSg);
+  const fillStage = (detail as { fill_stage?: string }).fill_stage;
+  const residualFromAi = fillStage === 'meta' || fillStage === 'all';
+  const residualFromDerive = fillStage === 'derive';
+  // Local PPE/legal complete must not stamp a mechanical 1-step residual.
+  // AI meta/all judges 개선후; derive is fallback only when AI did not answer.
   const keepImprovedGrades =
-    narrativeOnly ||
-    (!forceAll && !shouldReplaceRiskField(current?.improved_likelihood_grade, false));
+    !residualFromAi &&
+    !residualFromDerive &&
+    (narrativeOnly ||
+      (!forceAll && !shouldReplaceRiskField(current?.improved_likelihood_grade, false)));
+  const ilg = keepImprovedGrades
+    ? (current?.improved_likelihood_grade || derivedResidual.likelihood)
+    : residualFromDerive
+      ? derivedResidual.likelihood
+      : (detail.improved_likelihood_grade || derivedResidual.likelihood);
+  const isg = keepImprovedGrades
+    ? (current?.improved_severity_grade || derivedResidual.severity)
+    : residualFromDerive
+      ? derivedResidual.severity
+      : (detail.improved_severity_grade || derivedResidual.severity);
+  const irg = keepImprovedGrades
+    ? (current?.improved_risk_grade || derivedResidual.risk)
+    : residualFromDerive
+      ? derivedResidual.risk
+      : (detail.improved_risk_grade || derivedResidual.risk);
   const { error: updErr } = await supabase
     .from('risk_items')
     .update({
@@ -473,9 +495,7 @@ async function applyFilledDetail(
       improved_severity_grade: keepImprovedGrades
         ? (current?.improved_severity_grade || isg)
         : isg,
-      improved_risk_grade: keepImprovedGrades
-        ? (current?.improved_risk_grade || detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any))
-        : (detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any)),
+      improved_risk_grade: irg,
       ppe: nextPpe,
       legal_basis: legal,
       note: null,
@@ -1111,6 +1131,9 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
       row.improvement_measure = seeded.improvement_measure;
       row.ppe = seeded.ppe;
       row.legal_basis = seeded.legal_basis;
+      row.improved_likelihood_grade = seeded.improved_likelihood_grade;
+      row.improved_severity_grade = seeded.improved_severity_grade;
+      row.improved_risk_grade = seeded.improved_risk_grade;
       return true;
     };
 
@@ -1128,7 +1151,10 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
           undefined,
           rowFallbackBudget,
         );
-        return await applyFilledDetail(row.id, procName, row.sub_task || subTask, row.hazard, detail, row);
+        return await applyFilledDetail(row.id, procName, row.sub_task || subTask, row.hazard, {
+          ...detail,
+          fill_stage: detail.fill_stage || 'all',
+        }, row);
       } catch (err: any) {
         lastError = String(err?.message || err || '');
         console.warn('[AutoGenJob] narrative fill skipped (local PPE/legal kept):', lastError);
@@ -1136,12 +1162,36 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
       }
     };
 
+    const applyDeriveResidual = async (
+      row: (typeof rows)[number],
+      procName: string,
+    ): Promise<boolean> => {
+      const seeded = seedFillDetailFromRow(row);
+      const derived = deriveResidualGrades(row.likelihood_grade, row.severity_grade);
+      return applyFilledDetail(
+        row.id,
+        procName,
+        row.sub_task || riskFillWorkKey(row),
+        row.hazard,
+        {
+          ...seeded,
+          improved_likelihood_grade: derived.likelihood,
+          improved_severity_grade: derived.severity,
+          improved_risk_grade: derived.risk,
+          fill_stage: 'derive',
+        },
+        row,
+      );
+    };
+
     let narrativeFailed = 0;
+    let residualFailed = 0;
 
     for (const [proc, procRows] of byProcess) {
       if (state.status !== 'running') return;
       const opts = buildOpts(input, proc);
-      const needAi: typeof procRows = [];
+      const needNarrative: typeof procRows = [];
+      const needResidual: typeof procRows = [];
 
       for (const row of procRows) {
         if (cancelRequested || state.status !== 'running') return;
@@ -1152,7 +1202,8 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
         const ok = await completeLocal(row, proc);
         if (ok) {
           filledTotal += 1;
-          if (needsLlmNarrativeFill(row)) needAi.push(row);
+          if (needsLlmNarrativeFill(row)) needNarrative.push(row);
+          else if (isFlattenedResidualPlaceholder(row)) needResidual.push(row);
         } else {
           failed += 1;
         }
@@ -1165,25 +1216,29 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
         receivedTotal: filledTotal,
         pendingIds: [...pending],
         message:
-          needAi.length > 0
-            ? `「${proc}」 보호구·법규 반영 · 빈 대책 ${needAi.length}행 AI…`
-            : `${filledTotal}/${rows.length}행 채움${failed ? ` · 실패 ${failed}` : ''}`,
+          needNarrative.length > 0
+            ? `「${proc}」 보호구·법규 반영 · 빈 대책 ${needNarrative.length}행 AI…`
+            : needResidual.length > 0
+              ? `「${proc}」 보호구·법규 반영 · 개선후 등급 ${needResidual.length}행 AI 판단…`
+              : `${filledTotal}/${rows.length}행 채움${failed ? ` · 실패 ${failed}` : ''}`,
       });
 
-      if (needAi.length === 0) continue;
-
-      for (let offset = 0; offset < needAi.length; offset += RISK_FILL_CHUNK) {
-        if (cancelRequested || state.status !== 'running') return;
-        const chunk = needAi.slice(offset, offset + RISK_FILL_CHUNK);
-        patch({
-          currentProcess: proc,
-          message: `「${proc}」 빈 대책 ${offset + 1}–${Math.min(offset + chunk.length, needAi.length)}/${needAi.length}행 AI…`,
-        });
+      const runAiChunk = async (
+        chunk: typeof procRows,
+        kind: 'narrative' | 'residual',
+      ) => {
         try {
-          const filled = await fetchRiskFillTwoStage({
-            ...opts,
-            draftItems: chunk.map((r) => toRiskFillDraft(r)),
-          });
+          const filled =
+            kind === 'narrative'
+              ? await fetchRiskFillTwoStage({
+                  ...opts,
+                  draftItems: chunk.map((r) => toRiskFillDraft(r)),
+                })
+              : await fetchRiskFillBatch({
+                  ...opts,
+                  draftItems: chunk.map((r) => toRiskFillDraft(r)),
+                  fillStage: 'meta',
+                });
           const matched = matchFilledToDraft(filled, chunk);
           for (const row of chunk) {
             const detail = matched.get(row.id);
@@ -1198,19 +1253,51 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
                 row,
               );
             }
-            if (!ok) ok = await fillNarrative(row, opts);
-            if (!ok) narrativeFailed += 1;
+            if (!ok && kind === 'narrative') ok = await fillNarrative(row, opts);
+            if (!ok) {
+              if (kind === 'narrative') narrativeFailed += 1;
+              else residualFailed += 1;
+              if (isFlattenedResidualPlaceholder(row)) await applyDeriveResidual(row, proc);
+            } else if (kind === 'residual') {
+              row.improved_likelihood_grade = detail?.improved_likelihood_grade || row.improved_likelihood_grade;
+              row.improved_severity_grade = detail?.improved_severity_grade || row.improved_severity_grade;
+              row.improved_risk_grade = detail?.improved_risk_grade || row.improved_risk_grade;
+            }
           }
         } catch (err: any) {
           lastError = String(err?.message || err || '');
-          console.warn('[AutoGenJob] risk_fill two-stage failed after local complete:', lastError);
-          const allowPerRowAi = !isNonRetryableFillError(err);
+          console.warn('[AutoGenJob] risk_fill failed after local complete:', kind, lastError);
+          const allowPerRowAi = kind === 'narrative' && !isNonRetryableFillError(err);
           for (const row of chunk) {
             if (state.status !== 'running') return;
             const ok = allowPerRowAi ? await fillNarrative(row, opts) : false;
-            if (!ok) narrativeFailed += 1;
+            if (!ok) {
+              if (kind === 'narrative') narrativeFailed += 1;
+              else residualFailed += 1;
+              if (isFlattenedResidualPlaceholder(row)) await applyDeriveResidual(row, proc);
+            }
           }
         }
+      };
+
+      for (let offset = 0; offset < needNarrative.length; offset += RISK_FILL_CHUNK) {
+        if (cancelRequested || state.status !== 'running') return;
+        const chunk = needNarrative.slice(offset, offset + RISK_FILL_CHUNK);
+        patch({
+          currentProcess: proc,
+          message: `「${proc}」 빈 대책 ${offset + 1}–${Math.min(offset + chunk.length, needNarrative.length)}/${needNarrative.length}행 AI…`,
+        });
+        await runAiChunk(chunk, 'narrative');
+      }
+
+      for (let offset = 0; offset < needResidual.length; offset += RISK_FILL_CHUNK) {
+        if (cancelRequested || state.status !== 'running') return;
+        const chunk = needResidual.slice(offset, offset + RISK_FILL_CHUNK);
+        patch({
+          currentProcess: proc,
+          message: `「${proc}」 개선후 등급 ${offset + 1}–${Math.min(offset + chunk.length, needResidual.length)}/${needResidual.length}행 AI 판단…`,
+        });
+        await runAiChunk(chunk, 'residual');
       }
     }
 
@@ -1232,6 +1319,19 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
       patch({
         status: 'partial',
         message: `보호구·법적근거 ${filledTotal}행 반영. 대책 문장 ${narrativeFailed}행은 AI가 응답하지 않아 비었습니다.${skipNote}`,
+        filledTotal,
+        receivedTotal: filledTotal,
+        pendingIds: [],
+        phase: 'idle',
+        error: lastError || undefined,
+      });
+      return;
+    }
+
+    if (residualFailed > 0) {
+      patch({
+        status: 'partial',
+        message: `보호구·법적근거 ${filledTotal}행 반영. 개선후 ${residualFailed}행은 AI 미응답이라 가능성 1단계 하향으로 임시 반영했습니다.${skipNote}`,
         filledTotal,
         receivedTotal: filledTotal,
         pendingIds: [],

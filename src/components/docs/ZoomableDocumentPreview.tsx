@@ -1,6 +1,6 @@
 /**
- * Phone-width print-HTML preview with pinch / wheel / double-tap / +/- zoom.
- * iframe is pointer-events-none so gestures stay on the viewport (not swallowed).
+ * Print-HTML preview: native scroll + pinch / Ctrl+wheel / +/- zoom.
+ * PC never enlarges past A4 CSS width; phone shrinks to the viewport.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ZoomIn, ZoomOut, RotateCcw, Loader2 } from "lucide-react";
@@ -10,8 +10,7 @@ import {
   MAX_USER_SCALE,
   MIN_USER_SCALE,
   clamp,
-  clampDocumentPan,
-  fitWidthScale,
+  previewFitScale,
 } from "@/lib/approvalDocPreview";
 import { waitForDocumentImages } from "@/lib/printHtmlDocument";
 
@@ -46,8 +45,6 @@ export default function ZoomableDocumentPreview({
   const [vp, setVp] = useState({ w: 0, h: 0 });
   const [contentH, setContentH] = useState(pageWidth * 1.414);
   const [userScale, setUserScale] = useState(1);
-  const [tx, setTx] = useState(0);
-  const [ty, setTy] = useState(0);
   const [imagesReady, setImagesReady] = useState(!html);
   const htmlKeyRef = useRef(html);
   const imageWaitGen = useRef(0);
@@ -57,71 +54,47 @@ export default function ZoomableDocumentPreview({
     setImagesReady(!html);
   }
 
-  const live = useRef({ userScale: 1, tx: 0, ty: 0, vpW: 0, vpH: 0, contentH: pageWidth * 1.414, pageWidth });
+  const live = useRef({
+    userScale: 1,
+    vpW: 0,
+    contentH: pageWidth * 1.414,
+    pageWidth,
+  });
   live.current.userScale = userScale;
-  live.current.tx = tx;
-  live.current.ty = ty;
   live.current.vpW = vp.w;
-  live.current.vpH = vp.h;
   live.current.contentH = contentH;
   live.current.pageWidth = pageWidth;
 
   const gesture = useRef<{
-    mode: "none" | "pan" | "pinch";
-    startX: number;
-    startY: number;
-    originTx: number;
-    originTy: number;
+    mode: "none" | "pinch";
     originScale: number;
     pinchDist: number;
-    pinchLx: number;
-    pinchLy: number;
-    moved: boolean;
-    lastTapAt: number;
   }>({
     mode: "none",
-    startX: 0,
-    startY: 0,
-    originTx: 0,
-    originTy: 0,
     originScale: 1,
     pinchDist: 0,
-    pinchLx: 0,
-    pinchLy: 0,
-    moved: false,
-    lastTapAt: 0,
   });
 
-  const applyClamped = useCallback((nextScale: number, nextTx: number, nextTy: number) => {
-    const s = clamp(nextScale, MIN_USER_SCALE, MAX_USER_SCALE);
-    const { vpW, vpH, contentH: h, pageWidth: pw } = live.current;
-    const fit = fitWidthScale(vpW, pw);
-    const pan = clampDocumentPan(nextTx, nextTy, fit * s, pw, h, vpW, vpH);
+  const applyScaleAt = useCallback((nextUserScale: number, clientX: number, clientY: number) => {
+    const el = viewportRef.current;
+    const s = clamp(nextUserScale, MIN_USER_SCALE, MAX_USER_SCALE);
+    const prev = live.current.userScale;
+    if (!el || prev <= 0) {
+      live.current.userScale = s;
+      setUserScale(s);
+      return;
+    }
+    const box = el.getBoundingClientRect();
+    const sx = el.scrollLeft + (clientX - box.left);
+    const sy = el.scrollTop + (clientY - box.top);
+    const ratio = s / prev;
     live.current.userScale = s;
-    live.current.tx = pan.tx;
-    live.current.ty = pan.ty;
     setUserScale(s);
-    setTx(pan.tx);
-    setTy(pan.ty);
+    requestAnimationFrame(() => {
+      el.scrollLeft = sx * ratio - (clientX - box.left);
+      el.scrollTop = sy * ratio - (clientY - box.top);
+    });
   }, []);
-
-  const zoomAt = useCallback(
-    (clientX: number, clientY: number, nextUserScale: number) => {
-      const box = viewportRef.current?.getBoundingClientRect();
-      const { userScale: cur, tx: curTx, ty: curTy, vpW, pageWidth: pw } = live.current;
-      const fit = fitWidthScale(vpW, pw);
-      const s = clamp(nextUserScale, MIN_USER_SCALE, MAX_USER_SCALE);
-      if (!box || fit <= 0 || cur <= 0) {
-        applyClamped(s, curTx, curTy);
-        return;
-      }
-      const lx = clientX - box.left;
-      const ly = clientY - box.top;
-      const ratio = s / cur;
-      applyClamped(s, lx - (lx - curTx) * ratio, ly - (ly - curTy) * ratio);
-    },
-    [applyClamped],
-  );
 
   useEffect(() => {
     const el = viewportRef.current;
@@ -129,23 +102,8 @@ export default function ZoomableDocumentPreview({
     const ro = new ResizeObserver((entries) => {
       const cr = entries[0]?.contentRect;
       if (!cr) return;
-      const w = cr.width;
-      const h = cr.height;
-      setVp({ w, h });
-      live.current.vpW = w;
-      live.current.vpH = h;
-      const fit = fitWidthScale(w, live.current.pageWidth);
-      const pan = clampDocumentPan(
-        live.current.tx,
-        live.current.ty,
-        fit * live.current.userScale,
-        live.current.pageWidth,
-        live.current.contentH,
-        w,
-        h,
-      );
-      setTx(pan.tx);
-      setTy(pan.ty);
+      setVp({ w: cr.width, h: cr.height });
+      live.current.vpW = cr.width;
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -175,18 +133,18 @@ export default function ZoomableDocumentPreview({
     if (rect.width > 0 && rect.height > 0) {
       setVp({ w: rect.width, h: rect.height });
       live.current.vpW = rect.width;
-      live.current.vpH = rect.height;
     }
     requestAnimationFrame(measureIframe);
   }, [active, measureIframe]);
 
   useEffect(() => {
     setUserScale(1);
-    setTx(0);
-    setTy(0);
     live.current.userScale = 1;
-    live.current.tx = 0;
-    live.current.ty = 0;
+    const el = viewportRef.current;
+    if (el) {
+      el.scrollTop = 0;
+      el.scrollLeft = 0;
+    }
   }, [html, pageWidth]);
 
   const onIframeLoad = () => {
@@ -209,48 +167,10 @@ export default function ZoomableDocumentPreview({
     if (!el) return;
 
     const onWheel = (e: WheelEvent) => {
-      // Ctrl/Cmd+wheel = zoom (PDF-viewer convention). Plain wheel = pan/scroll.
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-        zoomAt(e.clientX, e.clientY, live.current.userScale * factor);
-        return;
-      }
+      if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
-      applyClamped(live.current.userScale, live.current.tx - e.deltaX, live.current.ty - e.deltaY);
-    };
-
-    const onPointerDown = (e: PointerEvent) => {
-      if (e.pointerType === "touch") return;
-      if (e.button !== 0) return;
-      const g = gesture.current;
-      g.mode = "pan";
-      g.startX = e.clientX;
-      g.startY = e.clientY;
-      g.originTx = live.current.tx;
-      g.originTy = live.current.ty;
-      g.moved = false;
-      el.setPointerCapture(e.pointerId);
-    };
-
-    const onPointerMove = (e: PointerEvent) => {
-      if (e.pointerType === "touch") return;
-      const g = gesture.current;
-      if (g.mode !== "pan") return;
-      const dx = e.clientX - g.startX;
-      const dy = e.clientY - g.startY;
-      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) g.moved = true;
-      applyClamped(live.current.userScale, g.originTx + dx, g.originTy + dy);
-    };
-
-    const onPointerUp = (e: PointerEvent) => {
-      if (e.pointerType === "touch") return;
-      gesture.current.mode = "none";
-      try {
-        el.releasePointerCapture(e.pointerId);
-      } catch {
-        /* ignore */
-      }
+      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      applyScaleAt(live.current.userScale * factor, e.clientX, e.clientY);
     };
 
     const onTouchStart = (e: TouchEvent) => {
@@ -262,22 +182,9 @@ export default function ZoomableDocumentPreview({
           { x: e.touches[1].clientX, y: e.touches[1].clientY },
         );
         g.originScale = live.current.userScale;
-        g.originTx = live.current.tx;
-        g.originTy = live.current.ty;
-        const box = el.getBoundingClientRect();
-        g.pinchLx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - box.left;
-        g.pinchLy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - box.top;
-        g.moved = true;
         return;
       }
-      if (e.touches.length === 1) {
-        g.mode = "pan";
-        g.startX = e.touches[0].clientX;
-        g.startY = e.touches[0].clientY;
-        g.originTx = live.current.tx;
-        g.originTy = live.current.ty;
-        g.moved = false;
-      }
+      g.mode = "none";
     };
 
     const onTouchMove = (e: TouchEvent) => {
@@ -288,94 +195,80 @@ export default function ZoomableDocumentPreview({
           { x: e.touches[0].clientX, y: e.touches[0].clientY },
           { x: e.touches[1].clientX, y: e.touches[1].clientY },
         );
-        const next = clamp(g.originScale * (d / Math.max(g.pinchDist, 1)), MIN_USER_SCALE, MAX_USER_SCALE);
-        const ratio = next / Math.max(g.originScale, 0.001);
-        applyClamped(
-          next,
-          g.pinchLx - (g.pinchLx - g.originTx) * ratio,
-          g.pinchLy - (g.pinchLy - g.originTy) * ratio,
-        );
-        g.moved = true;
-        return;
-      }
-      if (g.mode === "pan" && e.touches.length === 1) {
-        e.preventDefault();
-        const dx = e.touches[0].clientX - g.startX;
-        const dy = e.touches[0].clientY - g.startY;
-        if (Math.hypot(dx, dy) > 6) g.moved = true;
-        applyClamped(live.current.userScale, g.originTx + dx, g.originTy + dy);
+        const next = g.originScale * (d / Math.max(g.pinchDist, 1));
+        const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        applyScaleAt(next, cx, cy);
       }
     };
 
     const onTouchEnd = (e: TouchEvent) => {
       const g = gesture.current;
-      if (g.mode === "pan" && !g.moved && e.changedTouches[0]) {
-        const t = e.changedTouches[0];
-        const now = Date.now();
-        if (now - g.lastTapAt < 320) {
-          const next = live.current.userScale < 1.8 ? 2.4 : 1;
-          if (next === 1) applyClamped(1, 0, 0);
-          else zoomAt(t.clientX, t.clientY, next);
-          g.lastTapAt = 0;
-        } else {
-          g.lastTapAt = now;
-        }
+      if (g.mode === "pinch" && e.touches.length < 2) {
+        g.mode = "none";
       }
-      if (e.touches.length === 0) g.mode = "none";
     };
 
     el.addEventListener("wheel", onWheel, { passive: false });
-    el.addEventListener("pointerdown", onPointerDown);
-    el.addEventListener("pointermove", onPointerMove);
-    el.addEventListener("pointerup", onPointerUp);
-    el.addEventListener("pointercancel", onPointerUp);
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: false });
     el.addEventListener("touchend", onTouchEnd);
     el.addEventListener("touchcancel", onTouchEnd);
     return () => {
       el.removeEventListener("wheel", onWheel);
-      el.removeEventListener("pointerdown", onPointerDown);
-      el.removeEventListener("pointermove", onPointerMove);
-      el.removeEventListener("pointerup", onPointerUp);
-      el.removeEventListener("pointercancel", onPointerUp);
       el.removeEventListener("touchstart", onTouchStart);
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
       el.removeEventListener("touchcancel", onTouchEnd);
     };
-  }, [applyClamped, zoomAt]);
+  }, [applyScaleAt]);
 
-  const fit = fitWidthScale(vp.w, pageWidth);
+  const fit = previewFitScale(vp.w, pageWidth);
   const scale = fit * userScale;
+  const layoutW = pageWidth * scale;
+  const layoutH = contentH * scale;
 
-  const reset = () => applyClamped(1, 0, 0);
+  const reset = () => {
+    setUserScale(1);
+    live.current.userScale = 1;
+    const el = viewportRef.current;
+    if (el) {
+      el.scrollTop = 0;
+      el.scrollLeft = 0;
+    }
+  };
+
+  const zoomFromCenter = (next: number) => {
+    const box = viewportRef.current?.getBoundingClientRect();
+    if (!box) return;
+    applyScaleAt(next, box.left + box.width / 2, box.top + box.height / 2);
+  };
 
   return (
     <div className={`relative min-h-0 h-full ${className || ""}`} data-testid="zoomable-doc-preview">
       <div
         ref={viewportRef}
-        className="absolute inset-0 overflow-hidden bg-slate-800 touch-none select-none"
-        style={{ touchAction: "none" }}
+        className="absolute inset-0 overflow-x-auto overflow-y-scroll bg-slate-800 select-none overscroll-contain"
+        style={{ WebkitOverflowScrolling: "touch", scrollbarGutter: "stable" }}
       >
         {html && (
-          <div
-            style={{
-              transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
-              transformOrigin: "0 0",
-              willChange: "transform",
-              width: pageWidth,
-            }}
-          >
-            <iframe
-              ref={iframeRef}
-              title="문서 미리보기"
-              srcDoc={html}
-              sandbox="allow-same-origin"
-              onLoad={onIframeLoad}
-              className="block border-0 bg-white pointer-events-none"
-              style={{ width: pageWidth, height: contentH }}
-            />
+          <div className="flex justify-center min-w-full" style={{ minHeight: "100%" }}>
+            <div style={{ width: layoutW, height: layoutH, position: "relative", flex: "0 0 auto" }}>
+              <iframe
+                ref={iframeRef}
+                title="문서 미리보기"
+                srcDoc={html}
+                sandbox="allow-same-origin"
+                onLoad={onIframeLoad}
+                className="block border-0 bg-white pointer-events-none"
+                style={{
+                  width: pageWidth,
+                  height: contentH,
+                  transform: `scale(${scale})`,
+                  transformOrigin: "0 0",
+                }}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -385,7 +278,7 @@ export default function ZoomableDocumentPreview({
           {loading || (html && !imagesReady) ? (
             <>
               <Loader2 className="h-7 w-7 animate-spin" />
-              <p className="text-sm">{loadingHint || (html && !imagesReady ? "첨부 이미지 불러오는 중…" : "문서를 준비하는 중…")}</p>
+              <p className="text-sm">{loadingHint || (html && !imagesReady ? "문서를 불러오는 중…" : "문서를 준비하는 중…")}</p>
             </>
           ) : (
             <p className="text-sm text-slate-400">{emptyHint}</p>
@@ -400,7 +293,7 @@ export default function ZoomableDocumentPreview({
       )}
 
       <div className="pointer-events-none absolute bottom-2 left-2 z-10 rounded bg-black/65 px-2 py-1 text-[10px] text-white">
-        스크롤·드래그 · Ctrl+휠 줌 · {userScale.toFixed(1)}×
+        스크롤 · 핀치/Ctrl+휠 줌 · {userScale.toFixed(1)}×
       </div>
       <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
         <Button
@@ -409,11 +302,7 @@ export default function ZoomableDocumentPreview({
           variant="secondary"
           className="h-9 w-9"
           aria-label="확대"
-          onClick={() => {
-            const box = viewportRef.current?.getBoundingClientRect();
-            if (!box) return;
-            zoomAt(box.left + box.width / 2, box.top + box.height / 2, userScale * 1.35);
-          }}
+          onClick={() => zoomFromCenter(userScale * 1.35)}
         >
           <ZoomIn className="h-4 w-4" />
         </Button>
@@ -423,11 +312,7 @@ export default function ZoomableDocumentPreview({
           variant="secondary"
           className="h-9 w-9"
           aria-label="축소"
-          onClick={() => {
-            const box = viewportRef.current?.getBoundingClientRect();
-            if (!box) return;
-            zoomAt(box.left + box.width / 2, box.top + box.height / 2, userScale / 1.35);
-          }}
+          onClick={() => zoomFromCenter(userScale / 1.35)}
         >
           <ZoomOut className="h-4 w-4" />
         </Button>

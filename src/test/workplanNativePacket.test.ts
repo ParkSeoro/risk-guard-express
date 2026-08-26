@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { collectPrintableAttachments, workPlanPacketFileName, concatPdfBytes } from "@/lib/workPlanPacketPdf";
+import { collectPrintableAttachments, workPlanPacketFileName, concatPdfBytes, a4PortraitHeightPx, a4SliceCount } from "@/lib/workPlanPacketPdf";
 
 describe("collectPrintableAttachments", () => {
   it("keeps pdf and images, skips excel RA and empty slots", () => {
@@ -23,6 +23,15 @@ describe("collectPrintableAttachments", () => {
 describe("workPlanPacketFileName", () => {
   it("strips path characters", () => {
     expect(workPlanPacketFileName('100t크레인/작업계획서')).toMatch(/^100t크레인_작업계획서_\d{6}\.pdf$/);
+  });
+});
+
+describe("A4 body slices", () => {
+  it("counts full pages for a tall canvas", () => {
+    expect(a4PortraitHeightPx(794)).toBe(1123);
+    expect(a4SliceCount(1123, 1123)).toBe(1);
+    expect(a4SliceCount(1124, 1123)).toBe(2);
+    expect(a4SliceCount(3369, 1123)).toBe(3);
   });
 });
 
@@ -94,5 +103,25 @@ describe("preview / print / save split contracts", () => {
     const src = readFileSync("src/lib/printHtmlDocument.ts", "utf8");
     expect(src).toContain("waitForAfterPrint");
     expect(src).toContain("afterprint");
+  });
+
+  it("PDF save slices the body into A4 pages instead of jspdf.html", () => {
+    const src = readFileSync("src/lib/workPlanPacketPdf.ts", "utf8");
+    expect(src).toContain("html2canvas");
+    expect(src).toContain("a4SliceCount");
+    expect(src).toContain("sliceCanvas");
+    expect(src).not.toMatch(/from ["']jspdf["']/);
+    expect(src).not.toContain("autoPaging");
+  });
+
+  it("preview uses native scroll and never enlarges past A4 on PC", () => {
+    const preview = readFileSync("src/lib/approvalDocPreview.ts", "utf8");
+    expect(preview).toContain("previewFitScale");
+    expect(preview).toContain("Math.min(1, viewportWidth / pageWidth)");
+    const view = readFileSync("src/components/docs/ZoomableDocumentPreview.tsx", "utf8");
+    expect(view).toContain("previewFitScale");
+    expect(view).toContain("overflow-y-scroll");
+    expect(view).not.toContain("overflow-hidden");
+    expect(view).not.toContain("touch-none");
   });
 });

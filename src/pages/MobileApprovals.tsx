@@ -19,6 +19,7 @@ import {
   entityTypeLabel,
   isSubmitterApprovalStep,
 } from "@/lib/approvalRules";
+import { formatPendingApprovalMeta, mapApprovalActionError } from "@/lib/approvalInboxMeta";
 import {
   permitPostStepKind,
   permitPostStepBadge,
@@ -172,7 +173,7 @@ export default function MobileApprovals() {
       setOpenId(null); setComment("");
       load();
     } catch (e: any) {
-      toast.error(e.message || "처리 실패");
+      toast.error(mapApprovalActionError(e.message || e) || "처리 실패");
     } finally {
       setSubmitting(false);
     }
@@ -196,8 +197,7 @@ export default function MobileApprovals() {
           </div>
           <div className="font-medium text-sm">{r.entity_title || "(제목 없음)"}</div>
           <div className="text-xs text-muted-foreground">
-            {r.entity_date && <>일자 {r.entity_date} · </>}
-            요청 {new Date(r.created_at).toLocaleString("ko-KR")}
+            {formatPendingApprovalMeta(r) || (r.created_at ? `요청 ${new Date(r.created_at).toLocaleString("ko-KR")}` : "")}
           </div>
 
           {openId === r.approval_id ? (

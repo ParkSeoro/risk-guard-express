@@ -9873,15 +9873,20 @@ export type Database = {
         Args: never
         Returns: {
           approval_id: string
+          approval_version: number
+          company_name: string
           created_at: string
           entity_date: string
           entity_id: string
           entity_title: string
           entity_type: string
+          personnel_count: number
           project_id: string
+          resubmit_count: number
           step: string
           step_order: number
           step_position: string
+          submitted_at: string
         }[]
       }
       get_project_role: {

@@ -103,9 +103,12 @@ import { parseRiskAssessmentExcelFile } from '@/lib/riskExcelImport';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { todayKst } from '@/lib/permitWorkDate';
 import {
+  WEEKLY_LINK_CANDIDATE_SELECT,
+  executionFeedbackCount,
   isManagedResidualHigh,
   pickPreviousApprovedRun,
   resolveExecutionFeedbackTarget,
+  unresolvedFeedback,
   type WeeklyLinkRun,
 } from '@/lib/weeklyAssessmentLink';
 
@@ -260,6 +263,8 @@ const AssessmentRunDetail = () => {
     else if (tab === 'forecast') setActiveMainTab('forecast');
   }, [searchParams]);
   const [previousFeedback, setPreviousFeedback] = useState<any[]>([]);
+  const [previousFeedbackTotal, setPreviousFeedbackTotal] = useState(0);
+  const [currentFeedbackTotal, setCurrentFeedbackTotal] = useState(0);
   const [previousRun, setPreviousRun] = useState<WeeklyLinkRun | null>(null);
   const [previousItems, setPreviousItems] = useState<RiskItemRow[]>([]);
   const [previousManagedCount, setPreviousManagedCount] = useState(0);
@@ -561,9 +566,9 @@ const AssessmentRunDetail = () => {
     let cancelled = false;
     const loadWeeklyLink = async () => {
       if (!runId || !run?.project_id) return;
-      const { data: candidates } = await supabase
+      const { data: candidates, error: candErr } = await supabase
         .from('assessment_runs')
-        .select('id, project_id, type, status, start_date, end_date, created_at, target_company_ids, period_label, is_deleted, feedback_status')
+        .select(WEEKLY_LINK_CANDIDATE_SELECT)
         .eq('project_id', run.project_id)
         .eq('status', '승인완료')
         .eq('is_deleted', false)
@@ -571,25 +576,42 @@ const AssessmentRunDetail = () => {
         .order('created_at', { ascending: false })
         .limit(80);
       if (cancelled) return;
-      const previous = pickPreviousApprovedRun(run as WeeklyLinkRun, (candidates || []) as WeeklyLinkRun[]);
+      if (candErr) {
+        console.warn('[weekly-link] previous-run lookup failed:', candErr.message);
+      }
+      let previous = pickPreviousApprovedRun(run as WeeklyLinkRun, (candidates || []) as WeeklyLinkRun[]);
+      const currentFbReq = supabase
+        .from('risk_item_feedback' as any)
+        .select('id, status')
+        .eq('assessment_run_id', runId);
       if (!previous) {
+        const { data: currentFb } = await currentFbReq;
+        if (cancelled) return;
         setPreviousRun(null);
         setPreviousItems([]);
         setPreviousFeedback([]);
+        setPreviousFeedbackTotal(0);
         setPreviousManagedCount(0);
+        setCurrentFeedbackTotal((currentFb || []).length);
         return;
       }
-      const [itemsRes, fbRes] = await Promise.all([
+      const [itemsRes, fbRes, statusRes, currentFbRes] = await Promise.all([
         supabase.from('risk_items').select('*').eq('run_id', previous.id).eq('is_deleted', false).order('sort_order'),
         supabase.from('risk_item_feedback' as any).select('*').eq('assessment_run_id', previous.id),
+        supabase.from('assessment_runs').select('feedback_status').eq('id', previous.id).maybeSingle(),
+        currentFbReq,
       ]);
       if (cancelled) return;
       const prevItems = (itemsRes.data || []) as RiskItemRow[];
       const prevFb = (fbRes.data || []) as any[];
+      const prevStatus = (statusRes.data as { feedback_status?: string } | null)?.feedback_status;
+      if (prevStatus) previous = { ...previous, feedback_status: prevStatus };
       setPreviousRun(previous);
       setPreviousItems(prevItems);
       setPreviousManagedCount(prevItems.filter((i) => isManagedResidualHigh(i)).length);
-      setPreviousFeedback(prevFb.filter((f) => f.status === '미조치' || f.status === '진행중'));
+      setPreviousFeedbackTotal(prevFb.length);
+      setPreviousFeedback(unresolvedFeedback(prevFb));
+      setCurrentFeedbackTotal((currentFbRes.data || []).length);
     };
     void loadWeeklyLink();
     return () => { cancelled = true; };
@@ -779,6 +801,13 @@ const AssessmentRunDetail = () => {
   const activeItems = useMemo(() => (items || []).filter(i => !(i as any).is_excluded), [items]);
   const excludedItems = useMemo(() => (items || []).filter(i => (i as any).is_excluded), [items]);
   const executionItems = executionIsPrevious ? previousItems : activeItems;
+  const executionTabCount = executionFeedbackCount({
+    executionId: executionRun?.id,
+    previousId: previousRun?.id,
+    currentId: run?.id,
+    previousFeedbackCount: previousFeedbackTotal,
+    currentFeedbackCount: currentFeedbackTotal,
+  });
   const forecastItems = useMemo(
     () => activeItems.filter((i) => isManagedResidualHigh(i)),
     [activeItems],
@@ -2675,8 +2704,8 @@ const AssessmentRunDetail = () => {
           <TabsTrigger value="assessment">위험성평가</TabsTrigger>
           <TabsTrigger value="execution">
             금주 이행 확인
-            {previousFeedback.length > 0 && (
-              <Badge variant="outline" className="ml-1 text-[9px]">{previousFeedback.length}</Badge>
+            {executionTabCount > 0 && (
+              <Badge variant="outline" className="ml-1 text-[9px]">{executionTabCount}</Badge>
             )}
           </TabsTrigger>
           <TabsTrigger value="forecast">
@@ -2705,7 +2734,7 @@ const AssessmentRunDetail = () => {
               </Button>
             </div>
             <p className="text-[11px] text-muted-foreground">
-              관리대상 {previousManagedCount}건 · 미조치 {previousFeedback.length}건.
+              전회차 이행 {previousFeedbackTotal}건 · 미조치 {previousFeedback.length}건 · 당시 관리대상 {previousManagedCount}건.
               조치 전후 사진은 전회차에 저장되며 이 회차 위험 행과 섞이지 않습니다.
             </p>
           </CardContent>
@@ -3170,12 +3199,15 @@ const AssessmentRunDetail = () => {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">차주 고위험 관리대상 (조치 사진 없음)</CardTitle>
               <p className="text-[11px] text-muted-foreground font-normal">
-                이 회차에서 개선 후에도 위험도 &apos;상&apos;인 항목입니다. 조치 전후 사진은 금주(전회차) 탭에만 있습니다.
+                이번 회차 위험성평가에서 개선 후에도 위험도가 &apos;상&apos;인 항목입니다.
+                다음 회차의 금주 이행 확인 대상이 됩니다. 조치 전후 사진은 금주 이행 확인 탭에만 있습니다.
               </p>
             </CardHeader>
             <CardContent className="space-y-2">
               {forecastItems.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-6">차주 관리대상(개선 후 상) 항목이 없습니다.</p>
+                <p className="text-xs text-muted-foreground text-center py-6">
+                  이번 회차에 개선 후 위험도 &apos;상&apos; 항목이 없습니다. 초기 위험도가 상이어도 개선 후가 중·하면 차주 관리대상에 넣지 않습니다.
+                </p>
               ) : (
                 forecastItems.map((item, idx) => (
                   <div key={item.id} className="rounded border p-2 text-xs space-y-0.5">

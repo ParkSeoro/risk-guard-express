@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  WEEKLY_LINK_CANDIDATE_SELECT,
   companyTargetsOverlap,
+  executionFeedbackCount,
   isManagedResidualHigh,
   pickPreviousApprovedRun,
   resolveExecutionFeedbackTarget,
   resolvePrintFeedbackRun,
+  unresolvedFeedbackCount,
   type WeeklyLinkRun,
 } from '@/lib/weeklyAssessmentLink';
 
@@ -121,6 +124,32 @@ describe('pickPreviousApprovedRun', () => {
     const self = run({ id: 'next', status: '승인완료', start_date: '2026-08-18' });
     expect(pickPreviousApprovedRun(self, [self])).toBeNull();
   });
+
+  it('links empty-company 수시 to the previous 수시, not a newer 상시 peer', () => {
+    const week9 = run({
+      id: 'week9-susi',
+      type: '수시',
+      status: '승인완료',
+      start_date: '2026-08-31',
+      created_at: '2026-08-26T06:21:01Z',
+      target_company_ids: [],
+    });
+    const week8Susi = run({
+      id: 'week8-susi',
+      type: '수시',
+      start_date: '2026-08-24',
+      created_at: '2026-08-19T01:10:53Z',
+      target_company_ids: [],
+    });
+    const week8Always = run({
+      id: 'week8-always',
+      type: '상시',
+      start_date: '2026-08-24',
+      created_at: '2026-08-24T08:54:03Z',
+      target_company_ids: [],
+    });
+    expect(pickPreviousApprovedRun(week9, [week8Always, week8Susi])?.id).toBe('week8-susi');
+  });
 });
 
 describe('resolveExecutionFeedbackTarget', () => {
@@ -202,5 +231,46 @@ describe('isManagedResidualHigh', () => {
   it('is only 개선 후 상', () => {
     expect(isManagedResidualHigh({ improved_risk_grade: '상' })).toBe(true);
     expect(isManagedResidualHigh({ improved_risk_grade: '중' })).toBe(false);
+  });
+});
+
+describe('WEEKLY_LINK_CANDIDATE_SELECT', () => {
+  it('does not request schema-optional columns that would blank the 금주 tab', () => {
+    expect(WEEKLY_LINK_CANDIDATE_SELECT).not.toMatch(/feedback_status/);
+    expect(WEEKLY_LINK_CANDIDATE_SELECT).toMatch(/target_company_ids/);
+    expect(WEEKLY_LINK_CANDIDATE_SELECT).toMatch(/\btype\b/);
+  });
+});
+
+describe('executionFeedbackCount', () => {
+  it('counts all 전회차 photos while the 차주 week has not started', () => {
+    expect(executionFeedbackCount({
+      executionId: 'prev',
+      previousId: 'prev',
+      currentId: 'next',
+      previousFeedbackCount: 2,
+      currentFeedbackCount: 0,
+    })).toBe(2);
+  });
+
+  it('does not hide completed photos from the tab badge', () => {
+    expect(unresolvedFeedbackCount([{ status: '완료' }, { status: '완료' }])).toBe(0);
+    expect(executionFeedbackCount({
+      executionId: 'prev',
+      previousId: 'prev',
+      currentId: 'next',
+      previousFeedbackCount: 2,
+      currentFeedbackCount: 0,
+    })).toBe(2);
+  });
+
+  it('uses this run after it is the execution target', () => {
+    expect(executionFeedbackCount({
+      executionId: 'next',
+      previousId: 'prev',
+      currentId: 'next',
+      previousFeedbackCount: 2,
+      currentFeedbackCount: 0,
+    })).toBe(0);
   });
 });

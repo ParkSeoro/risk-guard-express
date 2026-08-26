@@ -2747,8 +2747,8 @@ const AssessmentRunDetail = () => {
       {/* Risk Table */}
       <Card id="ra-risk-items" className="scroll-mt-20">
         <CardContent className="p-0">
-          <div className="overflow-x-auto overflow-y-auto scrollbar-thin max-h-[70vh]" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <table className="data-table text-xs" style={{ minWidth: '1600px', tableLayout: 'auto' }}>
+          <div className="overflow-x-auto overflow-y-auto scrollbar-thin max-h-[70vh] print:overflow-visible print:max-h-none" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <table className="data-table text-xs print:min-w-0" style={{ minWidth: '1600px', tableLayout: 'auto' }}>
               <thead className="sticky top-0 z-10 bg-background shadow-sm">
                 <tr>
                   {(canEdit || canForceEdit) && (
@@ -2853,7 +2853,7 @@ const AssessmentRunDetail = () => {
                         </td>
                       )}
                       <td className="text-center text-muted-foreground">{idx + 1}</td>
-                      <td className="editable whitespace-nowrap">{(item.process || '').trim() ? <EditableCell item={item} field="process" /> : <span className="text-muted-foreground italic">(미분류)</span>}</td>
+                      <td className="editable whitespace-nowrap print:whitespace-normal">{(item.process || '').trim() ? <EditableCell item={item} field="process" /> : <span className="text-muted-foreground italic">(미분류)</span>}</td>
                       <td className="editable">
                         <div className="flex items-start gap-1">
                           {scopeDraft && !pending && (

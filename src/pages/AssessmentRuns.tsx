@@ -170,8 +170,9 @@ const AssessmentRuns = () => {
       const creatorIds = list.flatMap((r: any) => [r.author_user_id, r.created_by]).filter(Boolean);
       const [{ data: items }, creatorMap] = await Promise.all([
         supabase.from('risk_items')
-          .select('run_id, risk_grade')
-          .in('run_id', runIds),
+          .select('run_id, risk_grade, is_deleted, is_excluded')
+          .in('run_id', runIds)
+          .eq('is_deleted', false),
         fetchCreatorCompanyLabelMap(
           selectedProject,
           creatorIds,
@@ -182,7 +183,7 @@ const AssessmentRuns = () => {
       setCreatorCompanyMap(creatorMap);
       const stats: Record<string, { total: number; high: number; med: number; low: number }> = {};
       (items || []).forEach((item: any) => {
-        if (!item.run_id) return;
+        if (!item.run_id || item.is_excluded) return;
         if (!stats[item.run_id]) stats[item.run_id] = { total: 0, high: 0, med: 0, low: 0 };
         stats[item.run_id].total++;
         if (item.risk_grade === '상') stats[item.run_id].high++;

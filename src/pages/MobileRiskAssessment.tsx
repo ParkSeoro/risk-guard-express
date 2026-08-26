@@ -52,7 +52,7 @@ export default function MobileRiskAssessment() {
       const ids = scoped.map((r: any) => r.id);
       const creatorIds = scoped.flatMap((r: any) => [r.author_user_id, r.created_by]).filter(Boolean);
       const [{ data: items, error: iErr }, creatorMap, companies] = await Promise.all([
-        supabase.from("risk_items").select("run_id, risk_grade").in("run_id", ids),
+        supabase.from("risk_items").select("run_id, risk_grade, is_deleted, is_excluded").in("run_id", ids).eq("is_deleted", false),
         fetchCreatorCompanyLabelMap(
           projectId,
           creatorIds,
@@ -66,7 +66,7 @@ export default function MobileRiskAssessment() {
       const c: Record<string, any> = {};
       ids.forEach((id) => (c[id] = { high: 0, medium: 0, low: 0, total: 0 }));
       (items || []).forEach((it: any) => {
-        if (!c[it.run_id]) return;
+        if (!c[it.run_id] || it.is_excluded) return;
         c[it.run_id].total++;
         const g = (it.risk_grade || "").toLowerCase();
         if (g.includes("high") || g.includes("상")) c[it.run_id].high++;

@@ -8,6 +8,7 @@ import {
   clamp,
   clampDocumentPan,
   fitWidthScale,
+  previewFitScale,
   isApprovedPublishStatus,
   isMobileDocReadable,
   preparePrintHtmlForPreview,
@@ -30,6 +31,12 @@ describe("approval document mobile preview helpers", () => {
     expect(fitWidthScale(390, A4_PORTRAIT_PX)).toBeCloseTo(390 / 794, 5);
     expect(fitWidthScale(390, A4_LANDSCAPE_PX)).toBeCloseTo(390 / 1123, 5);
     expect(fitWidthScale(0, A4_PORTRAIT_PX)).toBe(1);
+  });
+
+  it("does not enlarge A4 past CSS pixels on a wide PC panel", () => {
+    expect(previewFitScale(1200, A4_PORTRAIT_PX)).toBe(1);
+    expect(previewFitScale(390, A4_PORTRAIT_PX)).toBeCloseTo(390 / 794, 5);
+    expect(previewFitScale(0, A4_PORTRAIT_PX)).toBe(1);
   });
 
   it("clamps pan so a tall document can scroll but not float off-screen", () => {

@@ -32,6 +32,12 @@ export function fitWidthScale(viewportWidth: number, pageWidth: number): number 
   return viewportWidth / pageWidth;
 }
 
+/** PC: never enlarge past A4 CSS px. Phone: shrink to the viewport width. */
+export function previewFitScale(viewportWidth: number, pageWidth: number): number {
+  if (viewportWidth <= 0 || pageWidth <= 0) return 1;
+  return Math.min(1, viewportWidth / pageWidth);
+}
+
 /** Document pan: pin to top-left when smaller; clamp to edges when larger. */
 export function clampDocumentPan(
   tx: number,

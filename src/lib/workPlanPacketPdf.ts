@@ -178,12 +178,54 @@ export async function mergeOriginalAttachmentsPdf(files: PacketFile[]): Promise<
   return packet.save();
 }
 
+/** A4 portrait height for a given CSS width (210×297 mm). */
+export function a4PortraitHeightPx(widthPx: number): number {
+  return Math.max(1, Math.round(widthPx * (297 / 210)));
+}
+
+export function a4SliceCount(contentHeightPx: number, pageHeightPx: number): number {
+  if (pageHeightPx <= 0) return 1;
+  return Math.max(1, Math.ceil(Math.max(1, contentHeightPx) / pageHeightPx));
+}
+
+function canvasToJpeg(canvas: HTMLCanvasElement, quality = 0.92): Promise<ArrayBuffer> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => {
+        if (!b) reject(new Error("JPEG 변환 실패"));
+        else void b.arrayBuffer().then(resolve, reject);
+      },
+      "image/jpeg",
+      quality,
+    );
+  });
+}
+
+function sliceCanvas(src: HTMLCanvasElement, y: number, height: number): HTMLCanvasElement {
+  const h = Math.max(1, Math.min(height, src.height - y));
+  const slice = document.createElement("canvas");
+  slice.width = src.width;
+  slice.height = h;
+  const ctx = slice.getContext("2d");
+  if (!ctx) throw new Error("본문 페이지를 자를 수 없습니다.");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, slice.width, slice.height);
+  ctx.drawImage(src, 0, y, src.width, h, 0, 0, src.width, h);
+  return slice;
+}
+
+/**
+ * Body HTML → A4 PDF pages.
+ * One html2canvas of the full body, then slice into A4-tall strips (top-aligned).
+ * Avoids packing the whole document onto one oversized page.
+ */
 export async function htmlToPdfBytes(html: string): Promise<Uint8Array> {
-  const { jsPDF } = await import("jspdf");
+  const html2canvas = (await import("html2canvas")).default;
+  const width = 794;
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
   iframe.style.cssText =
-    "position:fixed;left:-14000px;top:0;width:794px;height:1123px;border:0;opacity:0;pointer-events:none;";
+    `position:fixed;left:-14000px;top:0;width:${width}px;height:1123px;border:0;opacity:0;pointer-events:none;`;
   document.body.appendChild(iframe);
   try {
     const idoc = iframe.contentDocument;
@@ -192,16 +234,56 @@ export async function htmlToPdfBytes(html: string): Promise<Uint8Array> {
     idoc.write(html);
     idoc.close();
     await waitForDocumentImages(idoc);
-    await new Promise((r) => setTimeout(r, 250));
-    const pdf = new jsPDF({ unit: "pt", format: "a4", orientation: "portrait", compress: true });
-    await pdf.html(idoc.documentElement, {
-      autoPaging: "text",
-      html2canvas: { scale: 2, useCORS: true, logging: false, windowWidth: 794 },
-      width: 539,
-      windowWidth: 794,
-      margin: [28, 28, 28, 28],
+    await new Promise((r) => setTimeout(r, 400));
+    const contentH = Math.max(
+      idoc.documentElement?.scrollHeight || 0,
+      idoc.body?.scrollHeight || 0,
+      1123,
+    );
+    iframe.style.height = `${contentH}px`;
+    const canvas = await html2canvas(idoc.body, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      width,
+      windowWidth: width,
+      height: contentH,
+      windowHeight: contentH,
+      logging: false,
+      onclone: (cloned) => {
+        cloned.documentElement.style.background = "#ffffff";
+        cloned.body.style.background = "#ffffff";
+        cloned.body.style.margin = "0";
+        cloned.body.style.width = `${width}px`;
+      },
     });
-    return new Uint8Array(pdf.output("arraybuffer"));
+
+    const pageCssH = a4PortraitHeightPx(width);
+    const slicePx = Math.max(1, Math.round(pageCssH * (canvas.width / width)));
+    const pages = a4SliceCount(canvas.height, slicePx);
+    const packet = await PDFDocument.create();
+
+    for (let i = 0; i < pages; i++) {
+      const y = i * slicePx;
+      const slice = sliceCanvas(canvas, y, slicePx);
+      const jpeg = await canvasToJpeg(slice);
+      const image = await packet.embedJpg(jpeg);
+      const page = packet.addPage(PageSizes.A4);
+      const { width: pw, height: ph } = page.getSize();
+      const margin = 18;
+      const maxW = pw - margin * 2;
+      const maxH = ph - margin * 2;
+      const fit = Math.min(maxW / image.width, maxH / image.height);
+      const w = image.width * fit;
+      const h = image.height * fit;
+      page.drawImage(image, {
+        x: margin + (maxW - w) / 2,
+        y: ph - margin - h,
+        width: w,
+        height: h,
+      });
+    }
+    return packet.save();
   } finally {
     iframe.remove();
   }

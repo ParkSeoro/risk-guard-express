@@ -351,7 +351,86 @@ export type ScopeDraftItemRich = ScopeDraftItem & {
   hazard_situation?: string;
   existing_measure?: string;
   improvement_measure?: string;
+  process?: string | null;
 };
+
+/** Blank "행 추가" placeholders — not enough context to fill. */
+export const PLACEHOLDER_PROCESS_NAMES = new Set(['신규공정', '공종', '미분류']);
+
+export function isPlaceholderProcessName(name?: string | null): boolean {
+  const t = String(name || '').trim();
+  if (!t) return true;
+  return PLACEHOLDER_PROCESS_NAMES.has(t);
+}
+
+/**
+ * Identifier sent to risk_fill / risk_row.
+ * Edge drops drafts with empty sub_task, so blank 세부작업 rows must fall back
+ * to 위험요인 or a real 공종 name — otherwise [나머지 채우기] fails every row.
+ */
+export function riskFillWorkKey(item: {
+  sub_task?: string | null;
+  hazard?: string | null;
+  process?: string | null;
+}): string {
+  const st = String(item.sub_task || '').trim();
+  if (st) return st;
+  const hz = String(item.hazard || '').trim();
+  if (hz) return hz;
+  const proc = String(item.process || '').trim();
+  if (proc && !isPlaceholderProcessName(proc)) return proc;
+  return '';
+}
+
+export function toRiskFillDraft(
+  item: ScopeDraftItemRich & { process?: string | null },
+): ScopeDraftItemRich {
+  return {
+    sub_task: riskFillWorkKey(item),
+    hazard: String(item.hazard || '').trim(),
+    hazard_situation: String(item.hazard_situation || '').trim(),
+    existing_measure: String(item.existing_measure || '').trim(),
+    improvement_measure: String(item.improvement_measure || '').trim(),
+  };
+}
+
+/** After a failed batch, skip per-row Edge calls that will hit the same wall. */
+export function isNonRetryableFillError(err: unknown): boolean {
+  const msg = String((err as { message?: string })?.message || err || '');
+  return /호출 상한|CALL_CAP|크레딧|CREDITS|할당량|QUOTA|INVALID_KEY|키가 유효하지|채울 초안|세부작업\(sub_task\)이 필요/i.test(
+    msg,
+  );
+}
+
+/** Best library/reuse row for an incomplete draft. Requires sub_task or hazard overlap. */
+export function pickLibraryFillMatch<T extends { sub_task?: string | null; hazard?: string | null }>(
+  pool: T[],
+  row: { sub_task?: string | null; hazard?: string | null },
+): T | null {
+  const st = String(row.sub_task || '').trim().toLowerCase();
+  const hz = String(row.hazard || '').trim().toLowerCase();
+  if (!st && !hz) return null;
+  let best: T | null = null;
+  let bestScore = 0;
+  for (const it of pool) {
+    const ist = String(it.sub_task || '').trim().toLowerCase();
+    const ihz = String(it.hazard || '').trim().toLowerCase();
+    let score = 0;
+    if (st && ist) {
+      if (ist === st) score += 12;
+      else if (ist.includes(st) || st.includes(ist)) score += 7;
+    }
+    if (hz && ihz) {
+      if (ihz === hz) score += 12;
+      else if (ihz.includes(hz) || hz.includes(ihz)) score += 7;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = it;
+    }
+  }
+  return bestScore >= 7 ? best : null;
+}
 
 /** One fill stage — narrative (상황·대책) or meta (등급·PPE·법규). */
 export async function fetchRiskFillBatch(
@@ -364,13 +443,7 @@ export async function fetchRiskFillBatch(
   const detailLevel: DetailLevel = opts.detailLevel || 'core';
   const fillStage: RiskFillStage = opts.fillStage || 'all';
   const draft_items = (opts.draftItems || [])
-    .map((it) => ({
-      sub_task: String(it.sub_task || '').trim(),
-      hazard: String(it.hazard || '').trim(),
-      hazard_situation: String(it.hazard_situation || '').trim(),
-      existing_measure: String(it.existing_measure || '').trim(),
-      improvement_measure: String(it.improvement_measure || '').trim(),
-    }))
+    .map((it) => toRiskFillDraft(it))
     .filter((it) => it.sub_task)
     .slice(0, RISK_FILL_CHUNK);
 
@@ -418,9 +491,10 @@ export async function fetchRiskFillTwoStage(
   opts: AIGenerateOptions & { draftItems: Array<ScopeDraftItem | ScopeDraftItemRich> },
   signal?: AbortSignal,
 ): Promise<GeneratedRiskItem[]> {
+  const draftItems = (opts.draftItems || []).map((d) => toRiskFillDraft(d));
   try {
     const oneshot = await fetchRiskFillBatch(
-      { ...opts, draftItems: opts.draftItems, fillStage: 'all' },
+      { ...opts, draftItems, fillStage: 'all' },
       signal,
     );
     if (oneshot.length > 0) return oneshot;
@@ -429,10 +503,10 @@ export async function fetchRiskFillTwoStage(
   }
 
   const narratives = await fetchRiskFillBatch(
-    { ...opts, draftItems: opts.draftItems, fillStage: 'narrative' },
+    { ...opts, draftItems, fillStage: 'narrative' },
     signal,
   );
-  const forMeta: ScopeDraftItemRich[] = opts.draftItems.map((d, i) => {
+  const forMeta: ScopeDraftItemRich[] = draftItems.map((d, i) => {
     const n =
       narratives.find((x) => (x.sub_task || '').trim() === (d.sub_task || '').trim()) ||
       narratives[i];

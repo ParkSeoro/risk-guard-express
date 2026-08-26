@@ -18,6 +18,10 @@ import {
   isAiFailedRiskItem,
   shouldReplaceRiskField,
   resolveBatchEdgeCallBudget,
+  riskFillWorkKey,
+  toRiskFillDraft,
+  isNonRetryableFillError,
+  pickLibraryFillMatch,
   RISK_FILL_CHUNK,
   type AIGenerateOptions,
   type DetailLevel,
@@ -519,15 +523,19 @@ async function fillOneRow(
   opts: AIGenerateOptions,
   budget?: LlmCallBudget,
 ): Promise<boolean> {
-  const subTask = row.sub_task || '';
+  const subTask = riskFillWorkKey(row);
   const proc = row.process || opts.processName;
+  if (!subTask) {
+    await markRowFailed(row, new Error('세부작업 또는 위험요인이 비어 있습니다.'));
+    return false;
+  }
   try {
     const detail = await fetchRiskRowDetailWithRetry(
       { ...opts, processName: proc, subTask },
       undefined,
       budget,
     );
-    return await applyFilledDetail(row.id, proc, subTask, row.hazard, detail, row);
+    return await applyFilledDetail(row.id, proc, row.sub_task || subTask, row.hazard, detail, row);
   } catch (err: any) {
     console.warn('[AutoGenJob] risk_row failed after retries:', subTask, err?.message || err);
     await markRowFailed(row, err);
@@ -544,11 +552,19 @@ function matchFilledToDraft(
   for (const row of drafts) {
     const st = (row.sub_task || '').trim();
     const hz = (row.hazard || '').trim();
+    const workKey = riskFillWorkKey(row);
     let idx = filled.findIndex(
       (f, i) => !used.has(i) && (f.sub_task || '').trim() === st && (!hz || (f.hazard || '').trim() === hz),
     );
-    if (idx < 0) {
+    if (idx < 0 && st) {
       idx = filled.findIndex((f, i) => !used.has(i) && (f.sub_task || '').trim() === st);
+    }
+    // Synthesized sub_task (hazard/process) from blank 세부작업 rows
+    if (idx < 0 && workKey) {
+      idx = filled.findIndex((f, i) => !used.has(i) && (f.sub_task || '').trim() === workKey);
+    }
+    if (idx < 0 && hz) {
+      idx = filled.findIndex((f, i) => !used.has(i) && (f.hazard || '').trim() === hz);
     }
     if (idx < 0) continue;
     used.add(idx);
@@ -1000,13 +1016,27 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
 
     if (error) throw new Error(error.message);
 
-    const rows = ((drafts as any[]) || []).filter((r) => isFillableRiskItem(r));
-    if (rows.length === 0) {
+    const allFillable = ((drafts as any[]) || []).filter((r) => isFillableRiskItem(r));
+    if (allFillable.length === 0) {
       patch({
         status: 'error',
         error:
           '채울 빈칸이 없습니다. 개선대책·보호구·법적근거가 이미 있는 행은 대상이 아닙니다. 비어 있으면 [나머지 채우기]가 다시 나타납니다.',
         message: '채울 초안 없음',
+        phase: 'idle',
+        pendingIds: [],
+      });
+      return;
+    }
+
+    const skippedNoKey = allFillable.filter((r) => !riskFillWorkKey(r)).length;
+    const rows = allFillable.filter((r) => riskFillWorkKey(r));
+    if (rows.length === 0) {
+      patch({
+        status: 'error',
+        error:
+          '세부작업 또는 위험요인이 비어 있어 채울 수 없습니다. 행에 세부작업·위험요인을 입력하거나 [초안 생성]으로 행을 만든 뒤 다시 [나머지 채우기]를 눌러주세요.',
+        message: '채울 대상 없음',
         phase: 'idle',
         pendingIds: [],
       });
@@ -1035,8 +1065,45 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
 
     let filledTotal = 0;
     let failed = 0;
+    let lastError = '';
     // Per-row Edge fallback budget for this fill batch (chunk path is separate)
     const rowFallbackBudget = resolveBatchEdgeCallBudget(rows.length);
+    const libraryByProcess = new Map<string, GeneratedRiskItem[]>();
+
+    const libraryPoolFor = async (procName: string): Promise<GeneratedRiskItem[]> => {
+      const cached = libraryByProcess.get(procName);
+      if (cached) return cached;
+      const [globalItems, localItems] = await Promise.all([
+        fetchGlobalRiskLibraryItems({ processName: procName, limit: 32 }).catch(() => []),
+        generateRiskItems({ processName: procName, targetCount: 24, deduplicate: true }).catch(() => []),
+      ]);
+      const pool = [...globalItems, ...localItems];
+      libraryByProcess.set(procName, pool);
+      return pool;
+    };
+
+    const fillUnmatched = async (
+      row: (typeof rows)[number],
+      procName: string,
+      opts: AIGenerateOptions,
+      allowPerRowAi: boolean,
+    ): Promise<boolean> => {
+      const pool = await libraryPoolFor(procName);
+      const lib = pickLibraryFillMatch(pool, row);
+      if (lib) {
+        const ok = await applyFilledDetail(
+          row.id,
+          procName,
+          row.sub_task || riskFillWorkKey(row),
+          row.hazard,
+          lib,
+          row,
+        );
+        if (ok) return true;
+      }
+      if (!allowPerRowAi) return false;
+      return fillOneRow(row, opts, rowFallbackBudget);
+    };
 
     for (const [proc, procRows] of byProcess) {
       if (state.status !== 'running') return;
@@ -1057,43 +1124,38 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
           // One Edge call per chunk (fill_stage=all). Avoid narrative→meta double wait.
           const filled = await fetchRiskFillTwoStage({
             ...opts,
-            draftItems: chunk.map((r) => ({
-              sub_task: r.sub_task || '',
-              hazard: r.hazard || '',
-              hazard_situation: r.hazard_situation || '',
-              existing_measure: r.existing_measure || '',
-              improvement_measure: r.improvement_measure || '',
-            })),
+            draftItems: chunk.map((r) => toRiskFillDraft(r)),
           });
           const matched = matchFilledToDraft(filled, chunk);
 
           for (const row of chunk) {
             const detail = matched.get(row.id);
-            if (!detail) {
-              // Fallback single-row for unmatched
-              const ok = await fillOneRow(row, opts, rowFallbackBudget);
-              if (ok) filledTotal += 1;
-              else failed += 1;
-            } else {
-              const ok = await applyFilledDetail(
+            let ok = false;
+            if (detail) {
+              ok = await applyFilledDetail(
                 row.id,
                 proc,
-                row.sub_task || '',
+                row.sub_task || riskFillWorkKey(row),
                 row.hazard,
                 detail,
                 row,
               );
-              if (ok) filledTotal += 1;
-              else failed += 1;
             }
+            if (!ok) {
+              ok = await fillUnmatched(row, proc, opts, true);
+            }
+            if (ok) filledTotal += 1;
+            else failed += 1;
             const idx = pending.indexOf(row.id);
             if (idx >= 0) pending.splice(idx, 1);
           }
         } catch (err: any) {
-          console.warn('[AutoGenJob] risk_fill two-stage failed, falling back per-row:', err?.message || err);
+          lastError = String(err?.message || err || '');
+          console.warn('[AutoGenJob] risk_fill two-stage failed, library then per-row:', lastError);
+          const allowPerRowAi = !isNonRetryableFillError(err);
           for (const row of chunk) {
             if (state.status !== 'running') return;
-            const ok = await fillOneRow(row, opts, rowFallbackBudget);
+            const ok = await fillUnmatched(row, proc, opts, allowPerRowAi);
             if (ok) filledTotal += 1;
             else failed += 1;
             const idx = pending.indexOf(row.id);
@@ -1113,7 +1175,9 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
     if (failed > 0 && filledTotal === 0) {
       patch({
         status: 'error',
-        error: '행 채움에 실패했습니다. 잠시 후 다시 [나머지 채우기]를 눌러주세요.',
+        error: lastError
+          ? `행 채움에 실패했습니다. ${lastError}`
+          : '행 채움에 실패했습니다. 잠시 후 다시 [나머지 채우기]를 눌러주세요.',
         message: '채움 실패',
         phase: 'idle',
         pendingIds: [],
@@ -1121,12 +1185,13 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
       return;
     }
 
+    const skipNote = skippedNoKey > 0 ? ` · 세부작업 없는 행 ${skippedNoKey}건 건너뜀` : '';
     patch({
       status: failed > 0 ? 'partial' : 'done',
       message:
         failed > 0
-          ? `부분 완료 · ${filledTotal}/${rows.length}행 채움 (실패 행은 [재시도])`
-          : `${filledTotal}건 채움 완료 (대책·등급·법적근거)`,
+          ? `부분 완료 · ${filledTotal}/${rows.length}행 채움 (실패 행은 [재시도])${skipNote}`
+          : `${filledTotal}건 채움 완료 (대책·등급·법적근거)${skipNote}`,
       filledTotal,
       receivedTotal: filledTotal,
       pendingIds: [],

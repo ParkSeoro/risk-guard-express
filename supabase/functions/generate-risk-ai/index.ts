@@ -873,13 +873,17 @@ serve(async (req) => {
       const drafts = Array.isArray(draft_items) ? draft_items : [];
       // Cap at 3 — larger batches often exceed Supabase gateway (~60–150s) → browser 504
       const cleaned = drafts
-        .map((it: any) => ({
-          sub_task: String(it?.sub_task || "").replace(/^\d+[\.\)]\s*/, "").trim(),
-          hazard: String(it?.hazard || "").trim(),
-          hazard_situation: String(it?.hazard_situation || "").trim(),
-          existing_measure: String(it?.existing_measure || it?.existing_control || "").trim(),
-          improvement_measure: String(it?.improvement_measure || it?.improvement_control || "").trim(),
-        }))
+        .map((it: any) => {
+          const hazard = String(it?.hazard || "").trim();
+          const sub_task = String(it?.sub_task || "").replace(/^\d+[\.\)]\s*/, "").trim() || hazard;
+          return {
+            sub_task,
+            hazard,
+            hazard_situation: String(it?.hazard_situation || "").trim(),
+            existing_measure: String(it?.existing_measure || it?.existing_control || "").trim(),
+            improvement_measure: String(it?.improvement_measure || it?.improvement_control || "").trim(),
+          };
+        })
         .filter((it: { sub_task: string }) => it.sub_task)
         .slice(0, 3);
 

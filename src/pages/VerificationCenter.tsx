@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { validateRiskItems, saveValidationResults, validateImportedItems, type ValidationReport, type ValidationIssue, type CoverageGap, type RecommendLevel } from '@/lib/validationEngine';
 import { exportToPDF } from '@/lib/exportUtils';
-import { calculateRiskGrade } from '@/lib/riskGrade';
+import { calculateRiskGrade, derivedResidualFields } from '@/lib/riskGrade';
 import { parseRiskAssessmentExcelFile } from '@/lib/riskExcelImport';
 
 const VerificationCenter = () => {
@@ -176,9 +176,7 @@ const VerificationCenter = () => {
           likelihood_grade: lg,
           severity_grade: sg,
           risk_grade: calculateRiskGrade(lg as any, sg as any),
-          improved_likelihood_grade: '하',
-          improved_severity_grade: '하',
-          improved_risk_grade: '하',
+          ...derivedResidualFields(lg, sg),
           legal_basis: libMatch?.legal_refs || [],
           ppe: libMatch?.recommended_ppe || [],
           status: '초안',
@@ -287,7 +285,7 @@ const VerificationCenter = () => {
         likelihood_grade: ['상', '중', '하'].includes(lg) ? lg : '중',
         severity_grade: ['상', '중', '하'].includes(sg) ? sg : '중',
         risk_grade: calculateRiskGrade((['상', '중', '하'].includes(lg) ? lg : '중') as any, (['상', '중', '하'].includes(sg) ? sg : '중') as any),
-        improved_likelihood_grade: '하', improved_severity_grade: '하', improved_risk_grade: '하',
+        ...derivedResidualFields(['상', '중', '하'].includes(lg) ? lg : '중', ['상', '중', '하'].includes(sg) ? sg : '중'),
         legal_basis: get('legal_basis') ? get('legal_basis').split(',').map(s => s.trim()) : [],
         status: '초안', created_by: user.id, sort_order: items.length + i,
       };

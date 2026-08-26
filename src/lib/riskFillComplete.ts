@@ -6,7 +6,7 @@ import {
   isBlankRiskList,
   isBlankRiskText,
 } from '@/lib/riskAutoGenAI';
-import { calculateRiskGrade, type RiskGrade } from '@/lib/riskGrade';
+import { calculateRiskGrade, deriveResidualGrades, isFlattenedResidualPlaceholder, type RiskGrade } from '@/lib/riskGrade';
 import { defaultLegalForHazard } from '@/lib/riskLegalDefaults';
 
 export { defaultLegalForHazard } from '@/lib/riskLegalDefaults';
@@ -114,8 +114,18 @@ export function seedFillDetailFromRow(
   if (legal.length === 0) legal = defaultLegalForHazard(hazard, situation);
   const lg = asGrade(row.likelihood_grade || overlay?.likelihood_grade);
   const sg = asGrade(row.severity_grade || overlay?.severity_grade);
-  const ilg = asGrade(row.improved_likelihood_grade || overlay?.improved_likelihood_grade, lg === '상' ? '중' : '하');
-  const isg = asGrade(row.improved_severity_grade || overlay?.improved_severity_grade, sg);
+  const derived = deriveResidualGrades(lg, sg);
+  const residualSrc = {
+    likelihood_grade: lg,
+    severity_grade: sg,
+    risk_grade: asGrade(row.risk_grade || overlay?.risk_grade, calculateRiskGrade(lg, sg)),
+    improved_likelihood_grade: row.improved_likelihood_grade || overlay?.improved_likelihood_grade,
+    improved_severity_grade: row.improved_severity_grade || overlay?.improved_severity_grade,
+    improved_risk_grade: row.improved_risk_grade || overlay?.improved_risk_grade,
+  };
+  const useDerivedResidual = isFlattenedResidualPlaceholder(residualSrc);
+  const ilg = useDerivedResidual ? derived.likelihood : asGrade(residualSrc.improved_likelihood_grade, derived.likelihood);
+  const isg = useDerivedResidual ? derived.severity : asGrade(residualSrc.improved_severity_grade, derived.severity);
   return {
     process: String(row.process || overlay?.process || '').trim(),
     sub_task: String(row.sub_task || overlay?.sub_task || hazard).trim(),
@@ -128,10 +138,9 @@ export function seedFillDetailFromRow(
     risk_grade: asGrade(row.risk_grade || overlay?.risk_grade, calculateRiskGrade(lg, sg)),
     improved_likelihood_grade: ilg,
     improved_severity_grade: isg,
-    improved_risk_grade: asGrade(
-      row.improved_risk_grade || overlay?.improved_risk_grade,
-      calculateRiskGrade(ilg, isg),
-    ),
+    improved_risk_grade: useDerivedResidual
+      ? derived.risk
+      : asGrade(residualSrc.improved_risk_grade, calculateRiskGrade(ilg, isg)),
     frequency: Number(row.frequency ?? overlay?.frequency ?? (lg === '상' ? 4 : lg === '중' ? 3 : 2)),
     severity: Number(row.severity ?? overlay?.severity ?? (sg === '상' ? 4 : sg === '중' ? 3 : 2)),
     improved_frequency: Number(

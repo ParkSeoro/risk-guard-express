@@ -37,7 +37,7 @@ import {
 } from '@/lib/globalRiskLibrary';
 import { fetchPastApprovedRiskItems, filterDraftGaps } from '@/lib/riskReuseFromPast';
 import { enrichLegalBasis } from '@/lib/enrichLegalBasis';
-import { calculateRiskGrade, deriveResidualLikelihood } from '@/lib/riskGrade';
+import { calculateRiskGrade, deriveResidualGrades, isFlattenedResidualPlaceholder } from '@/lib/riskGrade';
 import { canWriteRiskItems, riskItemsWriteDeniedMessage } from '@/lib/riskWriteAccess';
 import { formatAutoGenError } from '@/lib/staleChunkError';
 import { defaultPpeForHazard, needsLlmNarrativeFill, seedFillDetailFromRow } from '@/lib/riskFillComplete';
@@ -410,9 +410,6 @@ async function applyFilledDetail(
   const narrativeOnly = (detail as { fill_stage?: string }).fill_stage === 'narrative';
   const lg = detail.likelihood_grade || '중';
   const sg = detail.severity_grade || '중';
-  // Prefer AI residual; if missing, drop one level from initial (not hardcode 하).
-  const ilg = detail.improved_likelihood_grade || deriveResidualLikelihood(lg);
-  const isg = detail.improved_severity_grade || sg;
   const nextSituation = shouldReplaceRiskField(current?.hazard_situation, forceAll)
     ? (detail.hazard_situation || '')
     : (current?.hazard_situation || '');
@@ -437,14 +434,27 @@ async function applyFilledDetail(
     improvementMeasure: nextImprove,
     existing: existingLegal,
   });
-  // Narrative soft-fill must not clobber grades. On non-force fills, keep any
-  // grades the user already set (blank-only replace). Scope-draft forceAll still
-  // takes AI grades (with derive fallback above) so placeholders are not "kept".
+  // Narrative soft-fill must not clobber grades. Insert-default 하/하/하 is a
+  // placeholder, not a judged residual — derive (가능성 1단계↓, 중대성 유지).
   const keepInitialGrades =
     narrativeOnly || (!forceAll && !shouldReplaceRiskField(current?.likelihood_grade, false));
+  const persistLg = keepInitialGrades ? (current?.likelihood_grade || lg) : lg;
+  const persistSg = keepInitialGrades ? (current?.severity_grade || sg) : sg;
+  const derivedResidual = deriveResidualGrades(persistLg, persistSg);
+  const residualPlaceholder = isFlattenedResidualPlaceholder(current || {});
   const keepImprovedGrades =
-    narrativeOnly ||
-    (!forceAll && !shouldReplaceRiskField(current?.improved_likelihood_grade, false));
+    !residualPlaceholder &&
+    (narrativeOnly ||
+      (!forceAll && !shouldReplaceRiskField(current?.improved_likelihood_grade, false)));
+  const ilg = keepImprovedGrades
+    ? (current?.improved_likelihood_grade || derivedResidual.likelihood)
+    : derivedResidual.likelihood;
+  const isg = keepImprovedGrades
+    ? (current?.improved_severity_grade || derivedResidual.severity)
+    : derivedResidual.severity;
+  const irg = keepImprovedGrades
+    ? (current?.improved_risk_grade || derivedResidual.risk)
+    : derivedResidual.risk;
   const { error: updErr } = await supabase
     .from('risk_items')
     .update({
@@ -473,9 +483,7 @@ async function applyFilledDetail(
       improved_severity_grade: keepImprovedGrades
         ? (current?.improved_severity_grade || isg)
         : isg,
-      improved_risk_grade: keepImprovedGrades
-        ? (current?.improved_risk_grade || detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any))
-        : (detail.improved_risk_grade || calculateRiskGrade(ilg as any, isg as any)),
+      improved_risk_grade: irg,
       ppe: nextPpe,
       legal_basis: legal,
       note: null,
@@ -1111,6 +1119,9 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
       row.improvement_measure = seeded.improvement_measure;
       row.ppe = seeded.ppe;
       row.legal_basis = seeded.legal_basis;
+      row.improved_likelihood_grade = seeded.improved_likelihood_grade;
+      row.improved_severity_grade = seeded.improved_severity_grade;
+      row.improved_risk_grade = seeded.improved_risk_grade;
       return true;
     };
 

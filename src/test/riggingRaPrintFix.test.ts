@@ -48,7 +48,8 @@ describe("workplan save/print source guards", () => {
     const { readFileSync } = await import("node:fs");
     const src = readFileSync("src/lib/riskAutoGenJob.ts", "utf8");
     expect(src).toContain("narrativeOnly");
-    expect(src).toContain("deriveResidualLikelihood");
+    expect(src).toContain("deriveResidualGrades");
+    expect(src).toContain("isFlattenedResidualPlaceholder");
     expect(src).toContain("keepImprovedGrades");
   });
 

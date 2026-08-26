@@ -84,6 +84,58 @@ export function deriveResidualLikelihood(initial: RiskGrade | string | null | un
   return '하';
 }
 
+export type ResidualGrades = {
+  likelihood: RiskGrade;
+  severity: RiskGrade;
+  risk: RiskGrade;
+};
+
+/**
+ * 개선후 기본 규칙: 대책은 가능성을 한 단계 낮추고, 중대성은 유지한다.
+ * Never flatten to 하/하/하 — that hides 관리대상(개선후 상) and 중 잔여.
+ */
+export function deriveResidualGrades(
+  likelihood?: string | null,
+  severity?: string | null,
+): ResidualGrades {
+  const lg = isValidRiskGrade(likelihood) ? likelihood : '중';
+  const sg = isValidRiskGrade(severity) ? severity : '중';
+  const ilg = deriveResidualLikelihood(lg);
+  return { likelihood: ilg, severity: sg, risk: calculateRiskGrade(ilg, sg) };
+}
+
+export function derivedResidualFields(likelihood?: string | null, severity?: string | null) {
+  const d = deriveResidualGrades(likelihood, severity);
+  return {
+    improved_likelihood_grade: d.likelihood,
+    improved_severity_grade: d.severity,
+    improved_risk_grade: d.risk,
+  };
+}
+
+/**
+ * Insert/fill default 하·하·하 is a placeholder, not a judged residual.
+ * Real 하 residual keeps 개선후 중대성 = 초기 중대성 (usually 하 already).
+ */
+export function isFlattenedResidualPlaceholder(row: {
+  likelihood_grade?: string | null;
+  severity_grade?: string | null;
+  risk_grade?: string | null;
+  improved_likelihood_grade?: string | null;
+  improved_severity_grade?: string | null;
+  improved_risk_grade?: string | null;
+}): boolean {
+  const ilg = String(row.improved_likelihood_grade || '').trim();
+  const isg = String(row.improved_severity_grade || '').trim();
+  const irg = String(row.improved_risk_grade || '').trim();
+  if (!ilg && !isg && !irg) return true;
+  const allLow = (ilg === '하' || !ilg) && (isg === '하' || !isg) && (irg === '하' || !irg);
+  if (!allLow) return false;
+  const sg = String(row.severity_grade || '').trim();
+  const rg = String(row.risk_grade || '').trim();
+  return sg === '상' || sg === '중' || rg === '상' || rg === '중';
+}
+
 export function isValidRiskGrade(v: unknown): v is RiskGrade {
   return v === '상' || v === '중' || v === '하';
 }

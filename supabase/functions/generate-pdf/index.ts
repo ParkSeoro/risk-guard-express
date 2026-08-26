@@ -326,7 +326,7 @@ Deno.serve(async (req) => {
 
     const [projectRes, itemsRes, participantsRes, feedbackRes, validationRes, approvalsRes, companyLinksRes, printFbItemsRes] = await Promise.all([
       supabase.from("projects").select("*").eq("id", run.project_id).single(),
-      supabase.from("risk_items").select("*").eq("run_id", runId).order("sort_order"),
+      supabase.from("risk_items").select("*").eq("run_id", runId).eq("is_deleted", false).order("sort_order"),
       supabase.from("assessment_run_participants").select("*").eq("run_id", runId),
       supabase.from("risk_item_feedback").select("*").eq("assessment_run_id", printFeedbackRunId),
       type === "validation"
@@ -338,12 +338,14 @@ Deno.serve(async (req) => {
         .eq("project_id", run.project_id)
         .eq("is_deleted", false),
       printFeedbackRunId !== runId
-        ? supabase.from("risk_items").select("*").eq("run_id", printFeedbackRunId)
+        ? supabase.from("risk_items").select("*").eq("run_id", printFeedbackRunId).eq("is_deleted", false)
         : Promise.resolve({ data: null }),
     ]);
 
     const project = projectRes.data;
-    const items = itemsRes.data || [];
+    const items = ((itemsRes.data || []) as any[]).filter(
+      (i: any) => !i?.is_deleted && !i?.is_excluded,
+    );
     const participants = participantsRes.data || [];
     const feedbackItems = feedbackRes.data || [];
     const feedbackLabelItems = printFeedbackRunId !== runId
@@ -528,7 +530,7 @@ Deno.serve(async (req) => {
     const itemRows = items.map((item: any, i: number) => `
       <tr>
         <td class="center">${i + 1}</td>
-        <td class="nowrap">${item.process || ""}</td>
+        <td>${item.process || ""}</td>
         <td>${item.sub_task || ""}</td>
         <td>${item.hazard || ""}</td>
         <td>${item.hazard_situation || ""}</td>
@@ -629,7 +631,7 @@ Deno.serve(async (req) => {
         <div class="page-break"></div>
         <div class="section-header">차주 고위험 관리대상 (조치 사진 없음)</div>
         <div class="summary-text">이번 회차에서 개선 후에도 위험도 '상'인 항목 (${managedItems.length}건). 조치 전후 사진은 금주 이행 확인(전회차) 섹션에만 있습니다.</div>
-        <table>
+        <table class="risk-grid">
           <thead><tr><th>No</th><th>공정</th><th>세부작업</th><th>위험요인</th><th>개선대책</th><th>위험도</th><th>부서</th><th>담당</th></tr></thead>
           <tbody>${managedRows}</tbody>
         </table>`;
@@ -737,12 +739,20 @@ th, td {
   vertical-align: top;
   word-break: break-word;
   overflow-wrap: anywhere;
+  overflow: hidden;
   hyphens: auto;
 }
 th { background: #1e293b; color: white; font-weight: 500; text-align: center; white-space: normal; font-size: 6.5pt; }
 .center { text-align: center; }
-.nowrap { white-space: nowrap; }
+.nowrap { white-space: normal; }
 .grade { font-weight: 600; text-align: center; }
+/* max-width:0 forces wrap inside table-layout:fixed so 공정 cannot paint over 세부작업 */
+.risk-grid td, .risk-grid th {
+  white-space: normal !important;
+  overflow: hidden;
+  max-width: 0;
+  line-height: 1.25;
+}
 
 .sig-table { width: auto; margin-top: 8pt; table-layout: auto; }
 .sig-table th { background: #475569; }
@@ -810,14 +820,14 @@ td, th { page-break-inside: auto; }
   <!-- Risk Assessment Table -->
   <div class="section-header">위험성평가 항목</div>
   <div class="table-container">
-  <table>
+  <table class="risk-grid">
     <thead>
       <tr>
-        <th style="width:3%">No</th><th style="width:6%">공정</th><th style="width:7%">세부작업</th><th style="width:7%">위험요인</th><th style="width:8%">위험발생상황</th>
+        <th style="width:3%">No</th><th style="width:10%">공정</th><th style="width:10%">세부작업</th><th style="width:8%">위험요인</th><th style="width:8%">위험발생상황</th>
         <th style="width:8%">기존대책</th><th style="width:8%">개선대책</th>
         <th style="width:3%">가능성</th><th style="width:3%">중대성</th><th style="width:3%">위험도</th>
         <th style="width:3%">가능성'</th><th style="width:3%">중대성'</th><th style="width:3%">위험도'</th>
-        <th style="width:4%">상태</th><th style="width:6%">PPE</th><th style="width:8%">법적근거</th><th style="width:5%">부서</th><th style="width:5%">담당</th>
+        <th style="width:4%">상태</th><th style="width:5%">PPE</th><th style="width:6%">법적근거</th><th style="width:4%">부서</th><th style="width:5%">담당</th>
       </tr>
     </thead>
     <tbody>

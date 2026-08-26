@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { getGradeClassName } from "@/lib/riskGrade";
+import { isActiveRiskItem } from "@/lib/riskItemVisibility";
 import {
   buildAttentionItems,
   countOnSite,
@@ -198,9 +199,10 @@ const Dashboard = () => {
       if (runIds.length) {
         const { data: riskItems } = await supabase
           .from("risk_items")
-          .select("id, process, sub_task, hazard, risk_grade, improved_risk_grade, status, department")
-          .in("run_id", runIds);
-        const items = riskItems || [];
+          .select("id, process, sub_task, hazard, risk_grade, improved_risk_grade, status, department, is_deleted, is_excluded")
+          .in("run_id", runIds)
+          .eq("is_deleted", false);
+        const items = (riskItems || []).filter((i) => isActiveRiskItem(i));
         totalItems = items.length;
         residualHigh = items.filter((i) => i.improved_risk_grade === "상").length;
         topRisks = [...items]

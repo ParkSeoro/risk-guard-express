@@ -112,11 +112,11 @@ function mapErrorMessage(rawMsg: string): string {
   if (/INVALID_KEY|api[_ ]?key|NVIDIA_API_KEY|DEEPSEEK_API_KEY|키가 유효하지/i.test(rawMsg)) {
     return 'AI API 키가 설정되지 않았거나 유효하지 않습니다. 마스터가 NVIDIA_API_KEY를 Supabase Edge Secrets에 등록해야 합니다. (설정 > AI 설정)';
   }
-  if (/redeploy in progress|재배포|재시작 중/i.test(rawMsg)) {
+  if (/redeploy in progress|WORKER failed to boot|BOOT_ERROR/i.test(rawMsg)) {
     return 'AI 서버가 재시작 중입니다. 1분 후 다시 시도해주세요.';
   }
   if (/RATE_LIMIT|429|503|529|too many|너무 많|과부하/i.test(rawMsg)) {
-    return 'AI 서버가 일시적으로 바쁩니다. 잠시 후 다시 시도해주세요.';
+    return 'AI가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해주세요.';
   }
   if (/TIMEOUT|중단되었|시간.?초과|WORKER_RESOURCE|compute resources|AbortError|504|Gateway Timeout|gateway/i.test(rawMsg)) {
     return 'AI 응답이 너무 오래 걸려 중단되었습니다. 공종을 하나만 넣고 다시 시도해주세요.';
@@ -400,7 +400,7 @@ export function toRiskFillDraft(
 /** After a failed batch, skip per-row Edge calls that will hit the same wall. */
 export function isNonRetryableFillError(err: unknown): boolean {
   const msg = String((err as { message?: string })?.message || err || '');
-  return /호출 상한|CALL_CAP|크레딧|CREDITS|할당량|QUOTA|INVALID_KEY|키가 유효하지|채울 초안|세부작업\(sub_task\)이 필요|redeploy in progress|재시작 중|일시적으로 바쁩니다|너무 오래 걸려|AI 서버 오류 \(503\)/i.test(
+  return /호출 상한|CALL_CAP|크레딧|CREDITS|할당량|QUOTA|INVALID_KEY|키가 유효하지|채울 초안|세부작업\(sub_task\)이 필요|redeploy in progress|재시작 중|일시적으로 바쁩니다|일시적으로 응답하지|너무 오래 걸려|AI 서버 오류 \(503\)/i.test(
     msg,
   );
 }

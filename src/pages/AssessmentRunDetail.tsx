@@ -708,7 +708,7 @@ const AssessmentRunDetail = () => {
         autoGenAckRef.current = `partial:${job.startedAt}`;
         toast({
           title: '일부 행 채움이 중단·실패했습니다.',
-          description: `채움 ${job.filledTotal ?? 0}행. 실패 행은 [재시도]하거나 다시 [나머지 채우기]하세요.`,
+          description: job.message || `채움 ${job.filledTotal ?? 0}행. 실패 행은 [재시도]하거나 다시 [나머지 채우기]하세요.`,
         });
         fetchAll();
         acknowledgeRiskAutoGenJob();
@@ -2211,7 +2211,7 @@ const AssessmentRunDetail = () => {
                     });
                     return;
                   }
-                  toast({ title: '나머지 채우기를 시작했습니다.', description: '대책·등급·보호구·법적근거를 배치로 채웁니다.' });
+                  toast({ title: '나머지 채우기를 시작했습니다.', description: '보호구·법적근거는 바로 채우고, 빈 대책만 AI로 채웁니다.' });
                 }}
                 disabled={isRiskAutoGenRunning()}
               >
@@ -2227,7 +2227,7 @@ const AssessmentRunDetail = () => {
       {autoGenJob.status !== 'awaiting_review' && autoGenJob.status !== 'running' && !isApproved && !isArchived && items.some((it) => isFillableRiskItem(it)) && (canEdit || canForceEdit) && (
         <div className="print:hidden sticky top-0 z-30 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm">빈 개선대책·보호구·법적근거가 있습니다. [나머지 채우기]로 행별로 채우세요. (품질 점검 자동보완은 쓰지 마세요)</p>
+            <p className="text-sm">빈 보호구·법적근거는 기준 데이터로 바로 채우고, 개선대책이 비어 있을 때만 AI를 씁니다. (품질 점검 자동보완은 쓰지 마세요)</p>
             <Button
               size="sm"
               onClick={() => {
@@ -3466,7 +3466,7 @@ const AssessmentRunDetail = () => {
                     const ok = continueRiskAutoGenFill(runId);
                     toast({
                       title: ok ? '나머지 채우기를 시작했습니다.' : '채움을 시작할 수 없습니다.',
-                      description: ok ? '행별 위험요인에 맞춰 개선대책·PPE·법규를 채웁니다.' : undefined,
+                      description: ok ? '보호구·법적근거는 바로, 빈 대책만 AI로 채웁니다.' : undefined,
                       variant: ok ? 'default' : 'destructive',
                     });
                   }} disabled={isRiskAutoGenRunning()}>

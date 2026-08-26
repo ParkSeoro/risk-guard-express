@@ -43,6 +43,7 @@ describe('isNonRetryableFillError', () => {
     expect(isNonRetryableFillError(new Error('generate-risk-ai redeploy in progress — retry in a minute'))).toBe(true);
     expect(isNonRetryableFillError(new Error('AI 서버가 재시작 중입니다. 1분 후 다시 시도해주세요.'))).toBe(true);
     expect(isNonRetryableFillError(new Error('AI 서버가 일시적으로 바쁩니다'))).toBe(true);
+    expect(isNonRetryableFillError(new Error('AI가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해주세요.'))).toBe(true);
   });
 });
 

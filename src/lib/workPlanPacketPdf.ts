@@ -188,73 +188,118 @@ export function a4SliceCount(contentHeightPx: number, pageHeightPx: number): num
   return Math.max(1, Math.ceil(Math.max(1, contentHeightPx) / pageHeightPx));
 }
 
-/** Exclusive Y to end a page: prefer a blank gap over cutting through a table/box. */
-export function findSliceBreakY(
-  startY: number,
-  pageHeight: number,
-  contentHeight: number,
-  isBlankRow: (y: number) => boolean,
-  opts?: { searchRatio?: number; minFillRatio?: number; blankRun?: number },
-): number {
-  const idealEnd = Math.min(startY + pageHeight, contentHeight);
-  if (idealEnd >= contentHeight) return contentHeight;
-  const searchRatio = opts?.searchRatio ?? 0.32;
-  const minFillRatio = opts?.minFillRatio ?? 0.55;
-  const blankRun = Math.max(3, opts?.blankRun ?? 8);
-  const minEnd = startY + Math.round(pageHeight * minFillRatio);
-  const searchFrom = Math.max(minEnd + blankRun, idealEnd - Math.round(pageHeight * searchRatio));
+export type KeepTogetherBlock = {
+  top: number;
+  bottom: number;
+  keepWithNext?: boolean;
+};
 
-  for (let end = idealEnd; end >= searchFrom; end--) {
-    let blank = true;
-    for (let y = end - blankRun; y < end; y++) {
-      if (!isBlankRow(y)) {
-        blank = false;
-        break;
-      }
-    }
-    if (blank) return end;
-  }
-  return idealEnd;
+export function elementBoxInRoot(el: HTMLElement, root: HTMLElement): { top: number; bottom: number } {
+  const rootRect = root.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const top = r.top - rootRect.top + root.scrollTop;
+  const bottom = r.bottom - rootRect.top + root.scrollTop;
+  return { top, bottom };
 }
 
-export function planA4SliceRanges(
-  contentHeight: number,
-  pageHeight: number,
-  isBlankRow: (y: number) => boolean,
-): { start: number; height: number }[] {
-  const out: { start: number; height: number }[] = [];
-  let y = 0;
-  while (y < contentHeight) {
-    const end = findSliceBreakY(y, pageHeight, contentHeight, isBlankRow);
-    const height = Math.max(1, end - y);
-    out.push({ start: y, height });
-    y = end;
-    let skipped = 0;
-    while (y < contentHeight && skipped < 12 && isBlankRow(y)) {
-      y += 1;
-      skipped += 1;
+const KEEP_TOGETHER_SEL = [
+  ".print-keep-together",
+  "table",
+  ".report-header",
+  ".sig-table",
+  'div[style*="border:2pt"]',
+  'div[style*="border: 2pt"]',
+  'div[style*="border:2px"]',
+].join(",");
+
+export function collectKeepTogetherBlocks(root: HTMLElement): KeepTogetherBlock[] {
+  const matched = Array.from(root.querySelectorAll(KEEP_TOGETHER_SEL)) as HTMLElement[];
+  const blocks: KeepTogetherBlock[] = [];
+  const used = new Set<HTMLElement>();
+  const add = (el: HTMLElement, keepWithNext = false) => {
+    if (used.has(el)) return;
+    if (matched.some((other) => other !== el && other.contains(el))) return;
+    const box = elementBoxInRoot(el, root);
+    if (!(box.bottom > box.top)) return;
+    used.add(el);
+    blocks.push({ ...box, keepWithNext });
+  };
+  for (const el of matched) add(el, false);
+  for (const el of Array.from(root.querySelectorAll(".section-header")) as HTMLElement[]) {
+    add(el, true);
+  }
+  blocks.sort((a, b) => a.top - b.top || a.bottom - b.bottom);
+  return blocks;
+}
+
+export function collectForcedPageStarts(root: HTMLElement): number[] {
+  return (Array.from(root.querySelectorAll(".page-break")) as HTMLElement[])
+    .map((el) => elementBoxInRoot(el, root).top)
+    .filter((y) => y > 1)
+    .sort((a, b) => a - b);
+}
+
+export function planPdfPageStarts(opts: {
+  contentH: number;
+  pageH: number;
+  blocks: KeepTogetherBlock[];
+  forcedStarts?: number[];
+}): number[] {
+  const contentH = Math.max(1, opts.contentH);
+  const pageH = Math.max(1, opts.pageH);
+  const starts = new Set<number>([0, ...(opts.forcedStarts || []).filter((y) => y > 0 && y < contentH)]);
+  let pageStart = 0;
+  const blocks = [...opts.blocks].sort((a, b) => a.top - b.top);
+
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (b.bottom <= pageStart + 1) continue;
+    if (b.bottom - pageStart <= pageH) continue;
+
+    let breakAt = b.top;
+    const prev = i > 0 ? blocks[i - 1] : null;
+    if (
+      prev?.keepWithNext &&
+      b.top - prev.bottom < 48 &&
+      b.bottom - prev.top <= pageH &&
+      prev.top > pageStart
+    ) {
+      breakAt = prev.top;
     }
-    if (out.length > 80) break;
+
+    if (breakAt <= pageStart + 8) {
+      while (pageStart + pageH < b.bottom && pageStart + pageH < contentH) {
+        pageStart += pageH;
+        starts.add(pageStart);
+      }
+      continue;
+    }
+
+    starts.add(Math.max(pageStart + 8, breakAt));
+    pageStart = Math.max(pageStart + 8, breakAt);
+  }
+
+  return [...starts].filter((y) => y < contentH).sort((a, b) => a - b);
+}
+
+export function rangesFromPageStarts(
+  starts: number[],
+  contentH: number,
+): { start: number; height: number }[] {
+  const uniq = [...new Set(starts)].filter((y) => y < contentH).sort((a, b) => a - b);
+  if (uniq.length === 0 || uniq[0] !== 0) uniq.unshift(0);
+  const out: { start: number; height: number }[] = [];
+  for (let i = 0; i < uniq.length; i++) {
+    const start = uniq[i];
+    const end = i + 1 < uniq.length ? uniq[i + 1] : contentH;
+    out.push({ start, height: Math.max(1, end - start) });
   }
   return out;
 }
 
-function canvasRowIsMostlyWhite(
-  ctx: CanvasRenderingContext2D,
-  y: number,
-  width: number,
-): boolean {
-  if (y < 0) return false;
-  const step = 6;
-  const data = ctx.getImageData(0, y, width, 1).data;
-  let white = 0;
-  let n = 0;
-  for (let x = 0; x < width; x += step) {
-    const i = x * 4;
-    n += 1;
-    if (data[i] >= 246 && data[i + 1] >= 246 && data[i + 2] >= 246) white += 1;
-  }
-  return n > 0 && white / n >= 0.94;
+function cssYToCanvasY(cssY: number, contentH: number, canvasH: number): number {
+  if (contentH <= 0) return cssY;
+  return Math.round((cssY * canvasH) / contentH);
 }
 
 function canvasToJpeg(canvas: HTMLCanvasElement, quality = 0.92): Promise<ArrayBuffer> {
@@ -310,6 +355,10 @@ export async function htmlToPdfBytes(html: string): Promise<Uint8Array> {
       1123,
     );
     iframe.style.height = `${contentH}px`;
+    idoc.querySelectorAll("div").forEach((div) => {
+      const style = div.getAttribute("style") || "";
+      if (/border\s*:\s*2pt/i.test(style)) div.classList.add("print-keep-together");
+    });
     const canvas = await html2canvas(idoc.body, {
       scale: 2,
       useCORS: true,
@@ -328,12 +377,16 @@ export async function htmlToPdfBytes(html: string): Promise<Uint8Array> {
     });
 
     const pageCssH = a4PortraitHeightPx(width);
-    const slicePx = Math.max(1, Math.round(pageCssH * (canvas.width / width)));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("본문 캔버스를 읽을 수 없습니다.");
-    const isBlankRow = (y: number) =>
-      y >= 0 && y < canvas.height && canvasRowIsMostlyWhite(ctx, y, canvas.width);
-    const ranges = planA4SliceRanges(canvas.height, slicePx, isBlankRow);
+    const blocks = collectKeepTogetherBlocks(idoc.body);
+    const forced = collectForcedPageStarts(idoc.body);
+    const startsCss = planPdfPageStarts({
+      contentH,
+      pageH: pageCssH,
+      blocks,
+      forcedStarts: forced,
+    });
+    const startsCanvas = startsCss.map((y) => cssYToCanvasY(y, contentH, canvas.height));
+    const ranges = rangesFromPageStarts(startsCanvas, canvas.height);
     const packet = await PDFDocument.create();
 
     for (const range of ranges) {

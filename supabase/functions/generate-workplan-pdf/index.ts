@@ -340,7 +340,8 @@ Deno.serve(async (req) => {
           <tr><td class="label">지반 지지력</td><td>${rigging.ground_bearing_capacity || ""} t/㎡</td><td class="label">아우트리거</td><td>${escapeHtml(rigging.outrigger_setup || "")}</td></tr>
           <tr><td class="label">풍속 등급</td><td>${escapeHtml(rigging.wind_speed_grade || "")}</td><td class="label">풍속 계수</td><td>${rigging.wind_speed_factor || ""}</td></tr>
         </tbody></table>
-        <div style="margin-top:8pt;padding:8pt;border:2pt solid ${sfColor};border-radius:4pt;text-align:center;">
+        <div class="print-keep-together">
+        <div class="print-keep-together-box" style="margin-top:8pt;padding:8pt;border:2pt solid ${sfColor};border-radius:4pt;text-align:center;">
           <span style="font-size:12pt;font-weight:700;color:${sfColor};">${sfLabel} — 안전율: ${sf.toFixed(2)} | 가동률: ${util.toFixed(1)}%</span>
         </div>
         ${rigging.equipment_ok || rigging.sling_ok || rigging.shackle_ok ? `
@@ -348,7 +349,8 @@ Deno.serve(async (req) => {
           <tr><td class="label">장비 판정</td><td>${escapeHtml(rigging.equipment_ok || "")}</td><td class="label">슬링 판정</td><td>${escapeHtml(rigging.sling_ok || "")}</td></tr>
           <tr><td class="label">샤클 판정</td><td colspan="3">${escapeHtml(rigging.shackle_ok || "")}</td></tr>
         </tbody></table>` : ""}
-        ${rigging.notes ? `<p style="font-size:8pt;margin-top:6pt;color:#475569;">비고: ${escapeHtml(rigging.notes)}</p>` : ""}`;
+        ${rigging.notes ? `<p style="font-size:8pt;margin-top:6pt;color:#475569;">비고: ${escapeHtml(rigging.notes)}</p>` : ""}
+        </div>`
     }
 
     const checklistSection = sections.find(s => s.key === "_checklist");
@@ -421,7 +423,11 @@ Deno.serve(async (req) => {
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif; font-size: 9pt; color: #1e293b; line-height: 1.5; }
 @page { size: A4 portrait; margin: 10mm; }
-.page-break { page-break-before: always; }
+.page-break { page-break-before: always; break-before: page; }
+.print-keep-together, .print-keep-together-box, table, .report-header, .sig-table {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
 
 .report-header {
   border: 2px solid #1e293b;

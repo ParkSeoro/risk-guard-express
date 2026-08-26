@@ -1,9 +1,10 @@
 /**
  * Module-level risk auto-gen job — survives dialog close / SPA remount in the same tab.
  *
- * Simple two-phase UX (AI path):
- *  A) scope_draft — 공종·세부작업·위험요인만 삽입 → awaiting_review (개수 자유)
- *  B) risk_fill two-stage — narrative(상황·대책) → meta(등급·PPE·법규)
+ * Simple two-phase UX:
+ *  A) scope_draft — 공종·세부작업·위험요인만 삽입 → awaiting_review
+ *  B) 나머지 채우기 — 상신 빈칸 완결. PPE·법적근거는 법령/기준으로 먼저,
+ *     상황·대책 문장이 비어 있을 때만 LLM.
  */
 import { supabase } from '@/integrations/supabase/client';
 import {
@@ -21,6 +22,7 @@ import {
   riskFillWorkKey,
   toRiskFillDraft,
   isNonRetryableFillError,
+  isBlankRiskList,
   pickLibraryFillMatch,
   RISK_FILL_CHUNK,
   type AIGenerateOptions,
@@ -38,6 +40,7 @@ import { enrichLegalBasis } from '@/lib/enrichLegalBasis';
 import { calculateRiskGrade, deriveResidualLikelihood } from '@/lib/riskGrade';
 import { canWriteRiskItems, riskItemsWriteDeniedMessage } from '@/lib/riskWriteAccess';
 import { formatAutoGenError } from '@/lib/staleChunkError';
+import { defaultPpeForHazard, needsLlmNarrativeFill, seedFillDetailFromRow } from '@/lib/riskFillComplete';
 
 const JOB_STORAGE_KEY = 'safenex.riskAutoGenJob.v1';
 
@@ -419,7 +422,10 @@ async function applyFilledDetail(
   const nextImprove = shouldReplaceRiskField(current?.improvement_measure, forceAll)
     ? (detail.improvement_measure || '')
     : (current?.improvement_measure || '');
-  const nextPpe = shouldReplaceRiskField(current?.ppe, forceAll) ? (detail.ppe || []) : (current?.ppe || []);
+  let nextPpe = shouldReplaceRiskField(current?.ppe, forceAll) ? (detail.ppe || []) : (current?.ppe || []);
+  if (isBlankRiskList(nextPpe)) {
+    nextPpe = defaultPpeForHazard(detail.hazard || rowHazard, nextSituation);
+  }
   const existingLegal = shouldReplaceRiskField(current?.legal_basis, forceAll)
     ? (detail.legal_basis || [])
     : (current?.legal_basis || []);
@@ -963,8 +969,10 @@ async function runJob(input: RiskAutoGenJobInput): Promise<void> {
 }
 
 /**
- * Phase B — batch-fill scope-draft rows (situation, measures, grades, PPE, legal).
- * Uses remaining [AI_SCOPE_DRAFT] rows for the run (respects user deletes).
+ * Phase B — complete submit gaps on fillable rows.
+ * Local first (PPE defaults + legal_references + library overlay), then LLM
+ * only for rows whose 발생상황·대책 are still empty. GPU 503 must not block
+ * 보호구·법적근거 — those are reference data, not generated prose.
  */
 export function continueRiskAutoGenFill(runId?: string): boolean {
   if (state.status === 'running') return false;
@@ -994,7 +1002,7 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
     runId: targetRunId,
     projectId: input.projectId,
     phase: 'filling',
-    message: '대책·등급·법적근거 채우는 중…',
+    message: '보호구·법적근거부터 채우는 중…',
     filledTotal: 0,
     receivedTotal: 0,
     startedAt: Date.now(),
@@ -1082,52 +1090,101 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
       return pool;
     };
 
-    const fillUnmatched = async (
-      row: (typeof rows)[number],
-      procName: string,
-      opts: AIGenerateOptions,
-      allowPerRowAi: boolean,
-    ): Promise<boolean> => {
+    const completeLocal = async (row: (typeof rows)[number], procName: string): Promise<boolean> => {
       const pool = await libraryPoolFor(procName);
       const lib = pickLibraryFillMatch(pool, row);
-      if (lib) {
-        const ok = await applyFilledDetail(
-          row.id,
-          procName,
-          row.sub_task || riskFillWorkKey(row),
-          row.hazard,
-          lib,
-          row,
-        );
-        if (ok) return true;
-      }
-      if (!allowPerRowAi) return false;
-      return fillOneRow(row, opts, rowFallbackBudget);
+      const seeded = seedFillDetailFromRow(row, lib);
+      const ok = await applyFilledDetail(
+        row.id,
+        procName,
+        row.sub_task || riskFillWorkKey(row),
+        row.hazard,
+        seeded,
+        row,
+      );
+      if (!ok) return false;
+      // applyFilledDetail clears [AI_SCOPE_DRAFT] / failed notes. Mirror that here so
+      // needsLlmNarrativeFill looks at remaining blank 상황·대책, not the old tag.
+      row.note = null;
+      row.hazard_situation = seeded.hazard_situation;
+      row.existing_measure = seeded.existing_measure;
+      row.improvement_measure = seeded.improvement_measure;
+      row.ppe = seeded.ppe;
+      row.legal_basis = seeded.legal_basis;
+      return true;
     };
+
+    /** LLM for empty 상황·대책 only. Never markRowFailed — local PPE/legal must survive 503. */
+    const fillNarrative = async (
+      row: (typeof rows)[number],
+      opts: AIGenerateOptions,
+    ): Promise<boolean> => {
+      const subTask = riskFillWorkKey(row);
+      const procName = row.process || opts.processName;
+      if (!subTask) return false;
+      try {
+        const detail = await fetchRiskRowDetailWithRetry(
+          { ...opts, processName: procName, subTask },
+          undefined,
+          rowFallbackBudget,
+        );
+        return await applyFilledDetail(row.id, procName, row.sub_task || subTask, row.hazard, detail, row);
+      } catch (err: any) {
+        lastError = String(err?.message || err || '');
+        console.warn('[AutoGenJob] narrative fill skipped (local PPE/legal kept):', lastError);
+        return false;
+      }
+    };
+
+    let narrativeFailed = 0;
 
     for (const [proc, procRows] of byProcess) {
       if (state.status !== 'running') return;
       const opts = buildOpts(input, proc);
+      const needAi: typeof procRows = [];
 
-      for (let offset = 0; offset < procRows.length; offset += RISK_FILL_CHUNK) {
+      for (const row of procRows) {
         if (cancelRequested || state.status !== 'running') return;
-        const chunk = procRows.slice(offset, offset + RISK_FILL_CHUNK);
         patch({
           currentProcess: proc,
-          message: `「${proc}」 ${filledTotal + failed}/${rows.length} · 배치 채움…`,
+          message: `「${proc}」 ${filledTotal + failed}/${rows.length} · 보호구·법적근거 채움…`,
         });
+        const ok = await completeLocal(row, proc);
+        if (ok) {
+          filledTotal += 1;
+          if (needsLlmNarrativeFill(row)) needAi.push(row);
+        } else {
+          failed += 1;
+        }
+        const idx = pending.indexOf(row.id);
+        if (idx >= 0) pending.splice(idx, 1);
+      }
 
+      patch({
+        filledTotal,
+        receivedTotal: filledTotal,
+        pendingIds: [...pending],
+        message:
+          needAi.length > 0
+            ? `「${proc}」 보호구·법규 반영 · 빈 대책 ${needAi.length}행 AI…`
+            : `${filledTotal}/${rows.length}행 채움${failed ? ` · 실패 ${failed}` : ''}`,
+      });
+
+      if (needAi.length === 0) continue;
+
+      for (let offset = 0; offset < needAi.length; offset += RISK_FILL_CHUNK) {
+        if (cancelRequested || state.status !== 'running') return;
+        const chunk = needAi.slice(offset, offset + RISK_FILL_CHUNK);
+        patch({
+          currentProcess: proc,
+          message: `「${proc}」 빈 대책 ${offset + 1}–${Math.min(offset + chunk.length, needAi.length)}/${needAi.length}행 AI…`,
+        });
         try {
-          patch({
-            message: `「${proc}」 ${filledTotal + failed}/${rows.length} · 대책·등급·법규 일괄 채움…`,
-          });
-          // One Edge call per chunk (fill_stage=all). Avoid narrative→meta double wait.
           const filled = await fetchRiskFillTwoStage({
             ...opts,
             draftItems: chunk.map((r) => toRiskFillDraft(r)),
           });
           const matched = matchFilledToDraft(filled, chunk);
-
           for (const row of chunk) {
             const detail = matched.get(row.id);
             let ok = false;
@@ -1141,34 +1198,19 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
                 row,
               );
             }
-            if (!ok) {
-              ok = await fillUnmatched(row, proc, opts, true);
-            }
-            if (ok) filledTotal += 1;
-            else failed += 1;
-            const idx = pending.indexOf(row.id);
-            if (idx >= 0) pending.splice(idx, 1);
+            if (!ok) ok = await fillNarrative(row, opts);
+            if (!ok) narrativeFailed += 1;
           }
         } catch (err: any) {
           lastError = String(err?.message || err || '');
-          console.warn('[AutoGenJob] risk_fill two-stage failed, library then per-row:', lastError);
+          console.warn('[AutoGenJob] risk_fill two-stage failed after local complete:', lastError);
           const allowPerRowAi = !isNonRetryableFillError(err);
           for (const row of chunk) {
             if (state.status !== 'running') return;
-            const ok = await fillUnmatched(row, proc, opts, allowPerRowAi);
-            if (ok) filledTotal += 1;
-            else failed += 1;
-            const idx = pending.indexOf(row.id);
-            if (idx >= 0) pending.splice(idx, 1);
+            const ok = allowPerRowAi ? await fillNarrative(row, opts) : false;
+            if (!ok) narrativeFailed += 1;
           }
         }
-
-        patch({
-          filledTotal,
-          receivedTotal: filledTotal,
-          pendingIds: [...pending],
-          message: `${filledTotal}/${rows.length}행 채움${failed ? ` · 실패 ${failed}` : ''}`,
-        });
       }
     }
 
@@ -1186,12 +1228,25 @@ export function continueRiskAutoGenFill(runId?: string): boolean {
     }
 
     const skipNote = skippedNoKey > 0 ? ` · 세부작업 없는 행 ${skippedNoKey}건 건너뜀` : '';
+    if (narrativeFailed > 0) {
+      patch({
+        status: 'partial',
+        message: `보호구·법적근거 ${filledTotal}행 반영. 대책 문장 ${narrativeFailed}행은 AI가 응답하지 않아 비었습니다.${skipNote}`,
+        filledTotal,
+        receivedTotal: filledTotal,
+        pendingIds: [],
+        phase: 'idle',
+        error: lastError || undefined,
+      });
+      return;
+    }
+
     patch({
       status: failed > 0 ? 'partial' : 'done',
       message:
         failed > 0
           ? `부분 완료 · ${filledTotal}/${rows.length}행 채움 (실패 행은 [재시도])${skipNote}`
-          : `${filledTotal}건 채움 완료 (대책·등급·법적근거)${skipNote}`,
+          : `${filledTotal}건 채움 완료 (보호구·법적근거·대책)${skipNote}`,
       filledTotal,
       receivedTotal: filledTotal,
       pendingIds: [],

@@ -280,6 +280,8 @@ describe('patrol log form pack', () => {
     expect(html).toContain('대기');
     expect(html).not.toContain('작성자 /');
     expect(html).toContain('결<br/>재');
+    expect(html).toContain('class="stamp-title">안전보건관리책임자</div>');
+    expect(html).not.toContain('안전보건관리책임자<br/>(현장소장)');
   });
 
   it('does not put 순회 구간 into 작업내용', () => {

@@ -7,6 +7,7 @@ import {
   buildPermitBriefingLlmPayload,
   extractPermitBriefingFacts,
   formatPermitBriefingDateKo,
+  normalizePermitBriefing,
 } from '@/lib/permitBriefing';
 
 describe('permit briefing facts', () => {
@@ -58,6 +59,64 @@ describe('permit briefing facts', () => {
     const payload = buildPermitBriefingLlmPayload(facts);
     expect(payload.hazards).toEqual([]);
     expect(JSON.stringify(payload)).not.toContain('추락');
+  });
+
+  it('does not treat 굴착·중장비 kind as both hazards', () => {
+    const empty = extractPermitBriefingFacts({
+      formData: { work_name: '크레인 양중' },
+      permitKinds: ['excavation'],
+      kindLabels: ['굴착·중장비'],
+    });
+    expect(empty.hazards).toEqual([]);
+    expect(empty.kindLabels).toEqual([]);
+
+    const heavyOnly = extractPermitBriefingFacts({
+      formData: { hz_heavy_equipment_name: '굴착기 0.7㎥' },
+      permitKinds: ['excavation'],
+      kindLabels: ['일반', '굴착·중장비'],
+    });
+    expect(heavyOnly.kindLabels).toEqual(['일반', '중장비']);
+    expect(heavyOnly.hazards.map((h) => h.label)).toEqual(['중장비']);
+    expect(heavyOnly.hazards.some((h) => h.label === '굴착')).toBe(false);
+
+    const digOnly = extractPermitBriefingFacts({
+      formData: {
+        ex_depth: '1.8',
+        ex_width: '0.8',
+        ex_method: '인력',
+        ex_underground: '가스관 확인',
+        ex_safety: { '굴착 기울기 준수(흙 1:1.0 등)': true, '중장비 안전점검표 확인': true },
+      },
+      permitKinds: ['excavation'],
+    });
+    expect(digOnly.kindLabels).toEqual(['굴착', '중장비']);
+    expect(digOnly.hazards.find((h) => h.label === '굴착')?.note).toContain('1.8');
+    expect(digOnly.hazards.find((h) => h.label === '굴착')?.measures).toContain('굴착 기울기 준수(흙 1:1.0 등)');
+    expect(digOnly.hazards.find((h) => h.label === '중장비')?.measures).toContain('중장비 안전점검표 확인');
+    expect(digOnly.excavation).toEqual({
+      depth: '1.8',
+      width: '0.8',
+      method: '인력',
+      underground: '가스관 확인',
+    });
+
+    const specOnly = extractPermitBriefingFacts({
+      formData: { ex_depth: '2.0' },
+      permitKinds: ['excavation'],
+    });
+    expect(specOnly.kindLabels).toEqual(['굴착']);
+    expect(specOnly.hazards.map((h) => h.label)).toEqual(['굴착']);
+    expect(buildPermitBriefingLlmPayload(specOnly).excavation).toEqual({ depth: '2.0' });
+  });
+
+  it('keeps 화기 equipment name from becoming a 중장비 hazard', () => {
+    const facts = extractPermitBriefingFacts({
+      formData: { hz_hot: true, hz_heavy_equipment_name: '용접기' },
+      permitKinds: ['hot_work'],
+    });
+    expect(facts.hazards.map((h) => h.label)).toEqual(['화기']);
+    expect(facts.equipment).toBe('용접기');
+    expect(facts.kindLabels).toEqual(['화기']);
   });
 });
 
@@ -127,5 +186,19 @@ describe('briefing prompt', () => {
     expect(PERMIT_BRIEFING_SYSTEM_PROMPT).not.toContain('누락 없이');
     expect(PERMIT_BRIEFING_SYSTEM_PROMPT).not.toContain('발생 가능한 위험');
     expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('업체명·날짜');
+    expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('굴착과 중장비는 서로 다른 위험이다');
+  });
+
+  it('uses recorded kinds, not the model bundled 굴착·중장비 label', () => {
+    const facts = extractPermitBriefingFacts({
+      formData: { hz_heavy_equipment_name: '덤프 15t' },
+      permitKinds: ['excavation'],
+    });
+    const briefing = normalizePermitBriefing({
+      work_overview: '양중 작업',
+      included_kinds: ['굴착·중장비'],
+      top_risks: ['굴착 붕괴'],
+    }, facts);
+    expect(briefing.included_kinds).toEqual(['중장비']);
   });
 });

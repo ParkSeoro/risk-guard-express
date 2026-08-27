@@ -20,7 +20,8 @@ export const PERMIT_BRIEFING_SYSTEM_PROMPT = `당신은 작업허가서 결재 �
 3) top_risks는 입력 hazards의 항목만. 없으면 빈 배열.
 4) required_controls는 입력 checklist·attachments·hazard measures만. 없으면 빈 배열.
 5) work_overview는 작업 내용 1~2문장. 업체명·날짜·"작업 사항으로"는 쓰지 않는다(시스템이 앞에 붙인다).
-6) 한국어 단정형. 번역투 금지.`;
+6) 한국어 단정형. 번역투 금지.
+7) 굴착과 중장비는 서로 다른 위험이다. permit_kinds 이름이나 양식명(굴착·중장비)만 보고 둘 다 넣지 않는다. hazards에 있는 쪽만 쓴다. equipment는 투입 장비명 참고이며, hazards에 중장비가 없으면 중장비·협착 위험을 만들지 않는다.`;
 
 const CHECKLIST_LABELS: Record<string, string> = {
   chk_education: '안전교육 이수',
@@ -53,16 +54,44 @@ const HAZARD_DEFS: Array<{
   { key: 'hz_confined', kind: 'confined_space', label: '밀폐공간', noteKey: 'hz_confined_note', detailKey: 'hz_confined_detail' },
   { key: 'hz_hot', kind: 'hot_work', label: '화기', noteKey: 'hz_hot_note', detailKey: 'hz_hot_detail' },
   { key: 'hz_loto', label: '정전(LOTO)', noteKey: 'hz_loto_note', detailKey: 'hz_loto_detail' },
-  { key: 'hz_excavation', kind: 'excavation', label: '굴착', noteKey: 'hz_excavation_note', detailKey: 'hz_excavation_detail' },
   { key: 'hz_radiation', label: '방사선', noteKey: 'hz_radiation_note', detailKey: 'hz_radiation_detail' },
   { key: 'hz_height', label: '고소', noteKey: 'hz_height_note', detailKey: 'hz_height_detail' },
-  { key: 'hz_heavy', label: '중장비', noteKey: 'hz_heavy_note', detailKey: 'hz_heavy_detail' },
 ];
+
+/** 굴착 시트 안전조치 중 굴착 쪽. 중장비 항목과 섞이지 않게 분리한다. */
+const EX_DIG_SAFETY = [
+  '굴착 전 지하매설물 도면 확인',
+  '지중탐사(GPR/탐침봉) 실시',
+  '굴착 기울기 준수(흙 1:1.0 등)',
+  '흙막이 / 지보공 설치',
+  '주변 침하·균열 점검',
+  '안전난간·덮개·표지 설치',
+  '굴착토 적치(굴착면 0.6m 이상 이격)',
+  '비상연락망 게시',
+  '우천/강풍 시 작업중지 기준',
+];
+
+const EX_HEAVY_SAFETY = [
+  '유도자/신호수 배치',
+  '작업반경 출입통제(휀스)',
+  '중장비 안전점검표 확인',
+  '중장비 면허·자격 확인',
+  '운전자 특별안전교육 실시',
+];
+
+const BUNDLED_KIND_LABELS = new Set(['굴착·중장비', '굴착', '중장비']);
 
 export type PermitBriefingHazard = {
   label: string;
   note: string;
   measures: string[];
+};
+
+export type PermitBriefingExcavation = {
+  depth?: string;
+  width?: string;
+  method?: string;
+  underground?: string;
 };
 
 export type PermitBriefingFacts = {
@@ -80,6 +109,7 @@ export type PermitBriefingFacts = {
   checklist: string[];
   attachments: string[];
   gas: { o2?: string; h2s?: string; co?: string; hc?: string };
+  excavation?: PermitBriefingExcavation;
 };
 
 function str(v: unknown): string {
@@ -120,9 +150,52 @@ function checkedDetailItems(detail: unknown): string[] {
     .filter(Boolean);
 }
 
-function kindLabelsOf(kinds: string[]): string[] {
-  const labels = kinds.map((k) => PERMIT_KIND_SHORT[k] || k).filter(Boolean);
-  return labels.length > 0 ? Array.from(new Set(labels)) : ['일반'];
+function checkedExSafety(detail: unknown, allowed: string[]): string[] {
+  const checked = new Set(checkedDetailItems(detail));
+  return allowed.filter((item) => checked.has(item));
+}
+
+function excavationSpec(d: Record<string, unknown>): PermitBriefingExcavation | undefined {
+  const spec: PermitBriefingExcavation = {
+    depth: str(d.ex_depth) || undefined,
+    width: str(d.ex_width) || undefined,
+    method: str(d.ex_method) || undefined,
+    underground: str(d.ex_underground) || undefined,
+  };
+  return Object.values(spec).some(Boolean) ? spec : undefined;
+}
+
+function excavationNote(d: Record<string, unknown>, spec?: PermitBriefingExcavation): string {
+  const parts: string[] = [];
+  if (spec?.depth || spec?.width || spec?.method) {
+    parts.push(`제원 깊이 ${spec?.depth || '-'}m · 폭 ${spec?.width || '-'}m · 공법 ${spec?.method || '-'}`);
+  }
+  if (spec?.underground) parts.push(`지하매설물 ${spec.underground}`);
+  const hzNote = str(d.hz_excavation_note);
+  if (hzNote) parts.push(hzNote);
+  return parts.join('. ');
+}
+
+function briefingKindLabels(
+  kinds: string[],
+  incoming: string[] | null | undefined,
+  hasDig: boolean,
+  hasHeavy: boolean,
+): string[] {
+  const source = (incoming && incoming.length > 0)
+    ? incoming.map(String)
+    : kinds.filter((k) => k !== 'excavation').map((k) => PERMIT_KIND_SHORT[k] || k);
+  const out: string[] = [];
+  for (const label of source) {
+    if (!label || BUNDLED_KIND_LABELS.has(label)) continue;
+    out.push(label);
+  }
+  if (hasDig) out.push('굴착');
+  if (hasHeavy) out.push('중장비');
+  const unique = Array.from(new Set(out));
+  if (unique.length > 0) return unique;
+  if (kinds.length === 0) return ['일반'];
+  return [];
 }
 
 export function extractPermitBriefingFacts(input: {
@@ -151,6 +224,26 @@ export function extractPermitBriefingFacts(input: {
     || datePart(input.permitDate)
     || datePart(str(d.permit_date));
 
+  const spec = excavationSpec(d);
+  const digMeasures = [
+    ...checkedDetailItems(d.hz_excavation_detail),
+    ...checkedExSafety(d.ex_safety, EX_DIG_SAFETY),
+  ];
+  const digNote = excavationNote(d, spec);
+  const hasDig = !!d.hz_excavation || !!digNote || digMeasures.length > 0;
+
+  const equipment = str(d.hz_heavy_equipment_name);
+  const heavyMeasures = [
+    ...checkedDetailItems(d.hz_heavy_detail),
+    ...checkedExSafety(d.ex_safety, EX_HEAVY_SAFETY),
+  ];
+  const heavyNote = str(d.hz_heavy_note);
+  const hasHeavy = !!d.hz_heavy
+    || !!heavyNote
+    || heavyMeasures.length > 0
+    || d.att_heavy_eq === true
+    || (kinds.includes('excavation') && !!equipment);
+
   const hazards: PermitBriefingHazard[] = [];
   for (const def of HAZARD_DEFS) {
     const flagged = !!d[def.key] || (def.kind ? kinds.includes(def.kind) : false);
@@ -159,6 +252,8 @@ export function extractPermitBriefingFacts(input: {
     if (!flagged && !note && measures.length === 0) continue;
     hazards.push({ label: def.label, note, measures });
   }
+  if (hasDig) hazards.push({ label: '굴착', note: digNote, measures: digMeasures });
+  if (hasHeavy) hazards.push({ label: '중장비', note: heavyNote, measures: heavyMeasures });
 
   const checklist: string[] = [];
   for (const [key, label] of Object.entries(CHECKLIST_LABELS)) {
@@ -187,14 +282,13 @@ export function extractPermitBriefingFacts(input: {
     workStart,
     workEnd,
     personnelCount: str(d.personnel_count),
-    equipment: str(d.hz_heavy_equipment_name),
-    kindLabels: (input.kindLabels && input.kindLabels.length > 0)
-      ? input.kindLabels.map(String)
-      : kindLabelsOf(kinds),
+    equipment,
+    kindLabels: briefingKindLabels(kinds, input.kindLabels, hasDig, hasHeavy),
     hazards,
     checklist,
     attachments,
     gas,
+    excavation: spec,
   };
 }
 
@@ -255,6 +349,7 @@ export function buildPermitBriefingLlmPayload(facts: PermitBriefingFacts) {
     checklist: facts.checklist,
     attachments: facts.attachments,
     gas: Object.keys(gas).length > 0 ? gas : undefined,
+    excavation: facts.excavation,
   };
 }
 
@@ -272,12 +367,9 @@ export function normalizePermitBriefing(raw: any, facts: PermitBriefingFacts): P
   const controls = Array.isArray(raw?.required_controls)
     ? raw.required_controls.map(String).filter(Boolean).slice(0, 6)
     : [];
-  const included = Array.isArray(raw?.included_kinds) && raw.included_kinds.length
-    ? raw.included_kinds.map(String)
-    : facts.kindLabels;
   return {
     work_overview: applyPermitBriefingLead(String(raw?.work_overview || ''), lead),
-    included_kinds: included,
+    included_kinds: facts.kindLabels,
     top_risks: top,
     required_controls: controls,
     generated_at: raw?.generated_at || new Date().toISOString(),

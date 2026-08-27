@@ -21,20 +21,18 @@ export {
 } from '../../supabase/functions/_shared/permitBriefing';
 
 function briefingFromServer(raw: any, facts: ReturnType<typeof extractPermitBriefingFacts>): PermitAiBriefing {
-  if (raw?.work_overview) {
-    return {
+  const base = raw?.work_overview
+    ? {
       work_overview: String(raw.work_overview),
-      included_kinds: Array.isArray(raw.included_kinds) && raw.included_kinds.length
-        ? raw.included_kinds.map(String)
-        : facts.kindLabels,
+      included_kinds: facts.kindLabels,
       top_risks: Array.isArray(raw.top_risks) ? raw.top_risks.map(String).filter(Boolean).slice(0, 3) : [],
       required_controls: Array.isArray(raw.required_controls)
         ? raw.required_controls.map(String).filter(Boolean).slice(0, 6)
         : [],
       generated_at: raw.generated_at || new Date().toISOString(),
-    };
-  }
-  return normalizePermitBriefing(raw, facts);
+    }
+    : normalizePermitBriefing(raw, facts);
+  return { ...base, included_kinds: facts.kindLabels };
 }
 
 export async function generatePermitAiBriefing(input: {

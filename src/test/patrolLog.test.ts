@@ -19,6 +19,7 @@ import {
   inspectorTitleFromMember,
   isPatrolInspection,
   joinPatrolRoute,
+  pickPatrolPrintStamps,
   resultLabelKo,
   weatherLabelFromSnapshots,
 } from '@/lib/legalForms/patrolLog';
@@ -68,6 +69,11 @@ describe('patrol log form pack', () => {
     ];
     expect(collectTodayPermitRoute(permits, '2026-08-19')).toBe('A동 3층 · B동 옥상');
     expect(collectTodayPermitWorks(permits, '2026-08-19')).toEqual(['폼그라스 설치작업', 'Pipe Rack 조립']);
+    expect(collectTodayPermitWorks([{
+      status: '승인완료',
+      permit_date: '2026-08-19',
+      form_data: { work_description: '배관 용접 및 비파괴검사' },
+    }], '2026-08-19')).toEqual(['배관 용접 및 비파괴검사']);
   });
 
   it('reads weather label from permit snapshots', () => {
@@ -107,6 +113,9 @@ describe('patrol log form pack', () => {
     expect(html).toContain('날씨 : 맑 음');
     expect(html).toContain('작 업 내 용');
     expect(html).toContain('폼그라스 하차및 인양작업');
+    expect(html).toContain('Pipe Rack 조립');
+    expect(html).toContain('colspan="5"');
+    expect(html).not.toContain('rowspan="1">- 폼그라스');
     expect(html).toContain('점 검 사 항');
     expect(html).toContain('지 적 사 항');
     expect(html).toContain(PATROL_WALK_PHOTO_LABEL);
@@ -121,7 +130,8 @@ describe('patrol log form pack', () => {
     expect(html).toContain('양호');
     expect(html).toContain('불량');
     expect(html).toContain('난간 미설치');
-    expect(html).toContain('김안전 / 안전관리자');
+    expect(html).toContain('미지정');
+    expect(html).not.toContain('김안전 / 안전관리자');
     expect(html).toContain('제18조제1항제5호');
     expect(html).toContain('3년간 보존');
     expect(html).not.toContain('산업안전보건법 기반 안전점검표');
@@ -177,6 +187,7 @@ describe('patrol log form pack', () => {
     expect(html).toContain('현장명 : GSC 여수 H2/LCO2 PJT');
     expect(html).not.toContain('GSC 여수 H2/LCO2 PJT / GSC 여수 H2/LCO2 PJT');
     expect(html).toContain('순회 구간 : GSC현장');
+    expect(html).toContain('당일 허가서 작업명이 없습니다.');
     expect(html).toContain('날씨 : 맑음');
     expect(html).toContain('안전모 미착용');
     expect(html).toContain('before.jpg');
@@ -233,5 +244,56 @@ describe('patrol log form pack', () => {
     expect(sheets[0].index).toBe(1);
     expect(sheets[0].findingUrls).toEqual(['https://example.test/p.jpg']);
     expect(sheets[0].actionUrls).toEqual(['https://example.test/fix.jpg']);
+  });
+
+  it('maps 결재선 to SM and 현장소장 stamp slots', () => {
+    const stamps = pickPatrolPrintStamps([
+      {
+        step: '안전관리자',
+        position: 'contractor_safety_manager',
+        approver_name: '박상우',
+        status: '승인',
+        approved_at: '2026-08-26T06:00:00.000Z',
+        step_order: 0,
+      },
+      {
+        step: '안전보건관리책임자(현장소장)',
+        position: 'contractor_site_director',
+        approver_name: '김소장',
+        status: '진행중',
+        step_order: 1,
+      },
+    ]);
+    expect(stamps.sm?.name).toBe('박상우');
+    expect(stamps.director?.name).toBe('김소장');
+    const html = buildPatrolLogHtml({
+      projectName: '현장',
+      inspectedAt: '2026-08-26T00:00:00.000Z',
+      inspectorName: '작성자',
+      location: '구간',
+      items: [],
+      actions: [],
+      stamps,
+    });
+    expect(html).toContain('박상우');
+    expect(html).toContain('김소장');
+    expect(html).toContain('대기');
+    expect(html).not.toContain('작성자 /');
+    expect(html).toContain('결<br/>재');
+  });
+
+  it('does not put 순회 구간 into 작업내용', () => {
+    const html = buildPatrolLogHtml({
+      projectName: '현장',
+      inspectedAt: '2026-08-26T00:00:00.000Z',
+      inspectorName: '작성자',
+      location: 'GSC 여수 H2 LCO2 토목 및 건축공사 현장',
+      workItems: [],
+      items: [],
+      actions: [],
+    });
+    const workCell = html.split('작 업 내 용')[1] || '';
+    expect(workCell).toContain('당일 허가서 작업명이 없습니다.');
+    expect(workCell.split('점 검 사 항')[0]).not.toContain('GSC 여수 H2 LCO2 토목 및 건축공사 현장');
   });
 });

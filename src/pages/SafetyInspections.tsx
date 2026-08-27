@@ -21,7 +21,7 @@ import MultiCompanyFilter from '@/components/MultiCompanyFilter';
 import AssigneeSelect from '@/components/AssigneeSelect';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 import { datePartFromDateTime } from '@/lib/permitWorkDate';
-import { fetchTodayPermitRoute, fetchPatrolPrintContext } from '@/lib/legalForms/fetchTodayPermitRoute';
+import { fetchTodayPermitRoute, fetchPatrolPrintContext, fetchPatrolPrintStamps } from '@/lib/legalForms/fetchTodayPermitRoute';
 import { closePendingInspectionAction, notifyInspectionFailSummary } from '@/lib/inspectionFailNotify';
 import {
   PATROL_INSPECTION_CATEGORY,
@@ -712,7 +712,10 @@ export default function SafetyInspections() {
         title = inspectorTitleFromMember({ position: (mem as any)?.position_new, role: (mem as any)?.role_new }) || title;
       }
       const day = datePartFromDateTime(src.inspected_at) || undefined;
-      const ctx = await fetchPatrolPrintContext(projectId, day, src.company_id);
+      const [ctx, stamps] = await Promise.all([
+        fetchPatrolPrintContext(projectId, day, src.company_id),
+        fetchPatrolPrintStamps(src.id),
+      ]);
       const p = projects.find((x) => x.id === projectId);
       win.document.write(buildPatrolLogHtml({
         projectName: p?.name || projectLabel || '현장',
@@ -731,6 +734,7 @@ export default function SafetyInspections() {
         actions,
         patrolPhotos: src.patrol_photos || patrolPhotos,
         directorItems: normalizeDirectorPatrolItems(src.director_items || directorItems),
+        stamps,
       }));
       win.document.close();
       setTimeout(() => win.print(), 400);

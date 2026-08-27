@@ -40,6 +40,7 @@ import {
   splitApprovalTimeline,
   currentTimelineSteps,
 } from "@/lib/permitPostApproval";
+import { loadPermitExtendReasons } from "@/lib/permitExtend";
 
 
 const ENTITY_LINK = desktopApprovalEntityPath;
@@ -97,6 +98,7 @@ const Approvals = () => {
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [tab, setTab] = useState('mine');
   const [entityPending, setEntityPending] = useState<any[]>([]);
+  const [extendReasons, setExtendReasons] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const fetchSeqRef = useRef(0);
   const [search, setSearch] = useState('');
@@ -118,7 +120,13 @@ const Approvals = () => {
     try { await (supabase as any).rpc('repair_stuck_permit_closure_sm'); } catch { /* ignore */ }
     try { await (supabase as any).rpc('promote_permits_to_closure_pending'); } catch { /* ignore */ }
     const { data } = await supabase.rpc('get_my_pending_entity_approvals');
-    setEntityPending((data as any[]) || []);
+    const rows = (data as any[]) || [];
+    setEntityPending(rows);
+    try {
+      setExtendReasons(await loadPermitExtendReasons(rows));
+    } catch {
+      setExtendReasons({});
+    }
   };
 
   const runEntityApproval = async (
@@ -145,6 +153,8 @@ const Approvals = () => {
         ? (action === 'approve' ? '작업 완료 및 종료 처리됨' : '종료 확인 반려')
         : stepKind === 'closure_supervisor'
           ? (action === 'approve' ? '관리감독자 완료 확인됨 → 발주처 SM 대기' : '완료 확인 반려')
+          : stepKind === 'extend_cm'
+            ? (action === 'approve' ? '발주처 CM 연장 검토 완료 → 발주처 SM 대기' : '연장 요청 반려')
           : stepKind === 'extend_sm'
             ? (action === 'approve' ? '연장 승인 완료' : '연장 요청 반려')
             : (action === 'approve' ? '승인 완료' : '반려 완료');
@@ -562,6 +572,9 @@ const Approvals = () => {
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate">{e.entity_title || '-'}</div>
                   <div className="text-xs text-muted-foreground">{formatPendingApprovalMeta(e)}</div>
+                  {extendReasons[e.entity_id] ? (
+                    <div className="text-xs text-amber-800 mt-0.5 line-clamp-2">사유: {extendReasons[e.entity_id]}</div>
+                  ) : null}
                 </div>
                 {e.entity_type && e.entity_id ? (
                     <Button

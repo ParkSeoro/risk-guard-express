@@ -24,9 +24,11 @@ describe("permitPostApproval timeline split", () => {
   it("classifies closure/extend positions as post-approval", () => {
     expect(isPostApprovalStep("closure_sm")).toBe(true);
     expect(isPostApprovalStep("closure_supervisor")).toBe(true);
+    expect(isPostApprovalStep("extend_cm")).toBe(true);
     expect(isPostApprovalStep("extend_sm")).toBe(true);
     expect(isPostApprovalStep("owner_sm")).toBe(false);
     expect(isPostApprovalStep({ step_position: "closure_sm" })).toBe(true);
+    expect(approvalStepPosition({ position: null, step_position: "extend_cm" })).toBe("extend_cm");
     expect(approvalStepPosition({ position: null, step_position: "extend_sm" })).toBe("extend_sm");
   });
 

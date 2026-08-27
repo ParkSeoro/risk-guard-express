@@ -6,12 +6,14 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { mapPermitExtendRequestError } from '@/lib/permitExtend';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock, Users, ClipboardList, UserCheck, Sparkles, CheckCircle2, RefreshCw } from 'lucide-react';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
@@ -111,6 +113,7 @@ export default function WorkPermitDetail() {
   const [approvalOpen, setApprovalOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
   const [extendUntil, setExtendUntil] = useState('');
+  const [extendReason, setExtendReason] = useState('');
   const [extending, setExtending] = useState(false);
   const [requestingClosure, setRequestingClosure] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -598,6 +601,11 @@ export default function WorkPermitDetail() {
       toast({ title: '연장 종료 시각을 선택하세요.', variant: 'destructive' });
       return;
     }
+    const reason = extendReason.trim();
+    if (!reason) {
+      toast({ title: '연장 사유를 입력하세요.', variant: 'destructive' });
+      return;
+    }
     const iso = toDbTimestamp(extendUntil);
     if (!iso) {
       toast({ title: '연장 시각 형식이 올바르지 않습니다.', variant: 'destructive' });
@@ -608,23 +616,18 @@ export default function WorkPermitDetail() {
       const { data: res, error } = await supabase.rpc('request_work_permit_extension' as any, {
         _permit_id: id,
         _extend_until: iso,
+        _reason: reason,
       });
       const r = res as any;
       if (error || r?.error) {
         const code = r?.error || error?.message || '';
-        const msg =
-          code === 'MUST_BE_AFTER_CURRENT_END' ? '현재 종료 시각보다 이후여야 합니다.'
-          : code === 'MUST_BE_FUTURE' ? '현재 시각보다 이후여야 합니다.'
-          : code === 'PENDING_POST_APPROVAL' ? '이미 종료/연장 결재가 진행 중입니다.'
-          : code === 'NO_SM' ? '발주처 SM을 찾을 수 없습니다.'
-          : code === 'NOT_APPROVED' ? '승인된 허가서만 연장할 수 있습니다.'
-          : String(code);
-        toast({ title: '연장 신청 실패', description: msg, variant: 'destructive' });
+        toast({ title: '연장 신청 실패', description: mapPermitExtendRequestError(String(code)), variant: 'destructive' });
         return;
       }
-      toast({ title: '연장 신청 완료', description: '발주처 SM에게 결재 요청이 전달되었습니다.' });
+      toast({ title: '연장 신청 완료', description: '발주처 CM → 발주처 SM 순으로 결재가 갑니다.' });
       setExtendOpen(false);
       setExtendUntil('');
+      setExtendReason('');
       await load();
     } finally {
       setExtending(false);
@@ -712,7 +715,7 @@ export default function WorkPermitDetail() {
             <Printer className="h-4 w-4 mr-1" />{canPrint ? '인쇄 / PDF' : '인쇄 불가'}
           </Button>
           {canRequestExtend && (
-            <Button size="sm" variant="outline" onClick={() => setExtendOpen(true)}>
+            <Button size="sm" variant="outline" onClick={() => { setExtendReason(''); setExtendUntil(''); setExtendOpen(true); }}>
               <Clock className="h-4 w-4 mr-1" />연장 작업
             </Button>
           )}
@@ -1091,14 +1094,14 @@ export default function WorkPermitDetail() {
         />
       )}
 
-      <Dialog open={extendOpen} onOpenChange={setExtendOpen}>
+      <Dialog open={extendOpen} onOpenChange={(v) => { setExtendOpen(v); if (!v) { setExtendUntil(''); setExtendReason(''); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>연장 작업</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              연장 종료 시각을 고른 뒤 신청하면 발주처 SM에게 결재가 갑니다. 승인되면 양식에 시간이 찍힙니다.
+              연장 종료 시각과 사유를 적으면 발주처 CM → 발주처 SM 순으로 결재가 갑니다. 양식에는 시간과 SM 승인만 찍힙니다.
             </p>
             <div>
               <Label>연장 종료 시각</Label>
@@ -1109,8 +1112,19 @@ export default function WorkPermitDetail() {
                 placeholder="연장 종료 일시 선택"
               />
             </div>
-            <Button className="w-full" onClick={requestExtend} disabled={extending || !extendUntil}>
-              {extending ? '신청 중…' : '발주처 SM에게 연장 결재 요청'}
+            <div>
+              <Label>연장 사유</Label>
+              <Textarea
+                className="mt-1"
+                rows={3}
+                maxLength={500}
+                value={extendReason}
+                onChange={(e) => setExtendReason(e.target.value)}
+                placeholder="결재자가 볼 연장 사유"
+              />
+            </div>
+            <Button className="w-full" onClick={requestExtend} disabled={extending || !extendUntil || !extendReason.trim()}>
+              {extending ? '신청 중…' : '발주처 CM에게 연장 결재 요청'}
             </Button>
           </div>
         </DialogContent>

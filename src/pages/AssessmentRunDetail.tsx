@@ -115,7 +115,7 @@ import {
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
 
 // All statuses where editing is allowed (everything except 승인완료 and 폐기)
-const EDITABLE_STATUSES = ['작성중', '제출됨', '검증중', '검증대기', '검토대기', '보완요청', '보완중', '반려', '검증완료', '결재진행'];
+const EDITABLE_STATUSES = ['작성중', '제출됨', '검증중', '검증대기', '검토대기', '보완요청', '보완중', '반려', '검증완료'];
 
 const STATUS_FLOW = {
   '작성중': { label: '작성중 (Draft)', color: 'bg-muted text-muted-foreground' },

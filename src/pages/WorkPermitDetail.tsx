@@ -249,11 +249,12 @@ export default function WorkPermitDetail() {
       setProjectName((proj as any)?.name || '');
     }
 
+    const editable = isPermitEditable((p as any).status);
+
     // Linked RAs = document snapshot (not viewer-permission rediscovery).
     // Draft with empty links: company-scoped date candidates only (for first attach).
     try {
       let runs = await fetchPermitLinkedAssessments(p as any);
-      const editable = isPermitEditable((p as any).status);
       if (editable && runs.length === 0 && (p as any).project_id && (p as any).permit_date) {
         runs = await discoverPermitDateValidRuns({
           projectId: (p as any).project_id,
@@ -290,6 +291,8 @@ export default function WorkPermitDetail() {
     setSignatures(mergeApprovalSignatures(baseSig, stampRows));
 
     // Autofill 안전관리자/관리감독자 연락처 from approver profiles (when empty)
+    // 상신 이후에는 작성 값을 덮어쓰지 않는다.
+    if (editable) {
     try {
       const ids = [...new Set(versioned.map((a: any) => a.approver_id).filter(Boolean))] as string[];
       if (ids.length) {
@@ -326,6 +329,7 @@ export default function WorkPermitDetail() {
         }));
       }
     } catch (e) { console.warn('company autofill failed', e); }
+    }
   };
 
   useEffect(() => { load(); }, [id]);

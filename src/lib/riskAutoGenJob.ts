@@ -214,7 +214,7 @@ export function getRiskAutoGenJob(): RiskAutoGenJobState {
 /** Approved / discarded runs must not resurrect the draft-review CTA. */
 export function isLockedAssessmentRunStatus(status?: string | null): boolean {
   const s = String(status || '').trim();
-  return s === '승인완료' || s === '폐기';
+  return s === '승인완료' || s === '폐기' || s === '결재진행';
 }
 
 /** Drop leftover awaiting_review for this run when it is locked. */

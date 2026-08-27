@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { ArrowLeft, CheckCircle2, XCircle, Loader2, FileText } from "lucide-react";
 import { toast } from "sonner";
-import PermitReadOnlyPreview from "@/components/permits/PermitReadOnlyPreview";
+import PermitExtendReasonBanner from "@/components/permits/PermitExtendReasonBanner";
 import type { PermitFormData, PermitSignatures } from "@/components/permits/DigPermitForm";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
 import { hydratePermitPreview } from "@/lib/permitPreviewHydrate";
@@ -20,7 +20,6 @@ import {
   permitPostStepBadge,
   permitPostStepApproveLabel,
 } from "@/lib/permitPostApproval";
-import { formatPermitStamp } from "@/lib/permitDateFormat";
 import { resolvePermitWorkDate } from "@/lib/permitWorkDate";
 import { formatPendingApprovalMeta, mapApprovalActionError } from "@/lib/approvalInboxMeta";
 
@@ -127,6 +126,8 @@ export default function MobileApprovalDetail() {
           ? action === "approve" ? "작업 완료 및 종료 처리됨" : "종료 확인이 반려되었습니다"
           : stepKind === "closure_supervisor"
             ? action === "approve" ? "관리감독자 완료 확인됨" : "완료 확인 반려"
+            : stepKind === "extend_cm"
+              ? action === "approve" ? "발주처 CM 연장 검토 완료 → 발주처 SM 대기" : "연장 요청 반려"
             : stepKind === "extend_sm"
               ? action === "approve" ? "연장 승인 완료" : "연장 요청 반려"
               : action === "approve" ? "승인 완료" : "반려 처리됨",
@@ -264,10 +265,11 @@ export default function MobileApprovalDetail() {
                 <div className="text-xs text-muted-foreground">
                   {formatPendingApprovalMeta(row) || (row.created_at ? `요청 ${new Date(row.created_at).toLocaleString("ko-KR")}` : "")}
                 </div>
-                {stepKind === "extend_sm" && extendUntil && (
-                  <div className="text-sm rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-                    연장 요청 시각: <strong>{formatPermitStamp(extendUntil)}</strong> 까지
-                  </div>
+                {(stepKind === "extend_sm" || stepKind === "extend_cm") && (
+                  <PermitExtendReasonBanner
+                    formData={(permitRow as any)?.form_data || formData}
+                    until={extendUntil}
+                  />
                 )}
 
                 <IMESafeTextarea

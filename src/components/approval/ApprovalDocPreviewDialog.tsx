@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import ZoomableDocumentPreview from "@/components/docs/ZoomableDocumentPreview";
 import AttachmentReviewPanel from "@/components/work-plan/AttachmentReviewPanel";
-import PermitReadOnlyPreview from "@/components/permits/PermitReadOnlyPreview";
+import PermitExtendReasonBanner from "@/components/permits/PermitExtendReasonBanner";
 import type { PermitFormData, PermitSignatures } from "@/components/permits/DigPermitForm";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
 import {
@@ -169,7 +169,11 @@ export default function ApprovalDocPreviewDialog({ open, onOpenChange, target }:
           )}
 
           {inlineOk && !loading && !error && isPermit && (
-            <div className="p-3 sm:p-4">
+            <div className="p-3 sm:p-4 space-y-3">
+              <PermitExtendReasonBanner
+                formData={permitForm as Record<string, unknown>}
+                until={String((permitForm as any)?.work_extend_requested_until || "") || null}
+              />
               <PermitReadOnlyPreview
                 formData={permitForm}
                 signatures={permitSigs}

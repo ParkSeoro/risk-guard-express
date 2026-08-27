@@ -28,6 +28,7 @@ import {
   currentTimelineSteps,
   isPostApprovalStep,
 } from "@/lib/permitPostApproval";
+import { loadPermitExtendReasons } from "@/lib/permitExtend";
 
 type TabKey = "mine" | "submitted" | "completed" | "rejected";
 
@@ -43,6 +44,7 @@ export default function MobileApprovals() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [extendReasons, setExtendReasons] = useState<Record<string, string>>({});
 
   const load = async () => {
     if (!user) return;
@@ -70,6 +72,11 @@ export default function MobileApprovals() {
       // Desktop parity: 상신(기안) 단계는 승인/반려 UI에 노출하지 않음
       setPendingRows(((pending as any[]) || []).filter((r) => !isSubmitterApprovalStep(r)));
       setHistoryRows((history as any[]) || []);
+      try {
+        setExtendReasons(await loadPermitExtendReasons(((pending as any[]) || [])));
+      } catch {
+        setExtendReasons({});
+      }
     } finally {
       setLoading(false);
     }
@@ -153,6 +160,8 @@ export default function MobileApprovals() {
           ? (action === "approve" ? "작업 완료 및 종료 처리됨" : "종료 확인 반려")
           : kind === "closure_supervisor"
             ? (action === "approve" ? "관리감독자 완료 확인됨" : "완료 확인 반려")
+            : kind === "extend_cm"
+              ? (action === "approve" ? "발주처 CM 연장 검토 완료 → 발주처 SM 대기" : "연장 요청 반려")
             : kind === "extend_sm"
               ? (action === "approve" ? "연장 승인 완료" : "연장 요청 반려")
               : (action === "approve" ? "승인 완료" : "반려 처리됨"),
@@ -199,6 +208,9 @@ export default function MobileApprovals() {
           <div className="text-xs text-muted-foreground">
             {formatPendingApprovalMeta(r) || (r.created_at ? `요청 ${new Date(r.created_at).toLocaleString("ko-KR")}` : "")}
           </div>
+          {extendReasons[r.entity_id] ? (
+            <div className="text-xs text-amber-800 whitespace-pre-wrap">사유: {extendReasons[r.entity_id]}</div>
+          ) : null}
 
           {openId === r.approval_id ? (
             <div className="space-y-2 pt-2 border-t">

@@ -14,6 +14,9 @@ export function approvalActionSuccessMessage(
   if (kind === "closure_supervisor") {
     return action === "approve" ? "관리감독자 완료 확인됨" : "완료 확인 반려";
   }
+  if (kind === "extend_cm") {
+    return action === "approve" ? "발주처 CM 연장 검토 완료 → 발주처 SM 대기" : "연장 요청 반려";
+  }
   if (kind === "extend_sm") {
     return action === "approve" ? "연장 승인 완료" : "연장 요청 반려";
   }

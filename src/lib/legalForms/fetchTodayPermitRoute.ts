@@ -8,11 +8,15 @@ import {
   TODAY_PATROL_PERMIT_STATUSES,
   collectTodayPermitRoute,
   collectTodayPermitWorks,
+  pickPatrolPrintStamps,
   weatherLabelFromSnapshots,
   type PatrolManpowerRow,
+  type PatrolPrintStamps,
   type PermitRouteRow,
 } from '@/lib/legalForms/patrolLog';
 import { resolvePermitWorkDate, todayKst } from '@/lib/permitWorkDate';
+import { buildAssessmentSignatureRows } from '@/lib/approvalSignatureRows';
+import { fetchDocumentApprovalDraft } from '@/lib/approvalPlatform/draftClient';
 
 export async function fetchTodayPermitRoute(projectId: string, day?: string): Promise<string> {
   if (!projectId) return '';
@@ -61,7 +65,16 @@ export async function fetchPatrolPrintContext(
   if (error) return empty;
   const rows = (permits as PermitRouteRow[]) || [];
   const route = collectTodayPermitRoute(rows, day);
-  const works = collectTodayPermitWorks(rows, day);
+  let works = collectTodayPermitWorks(rows, day);
+  if (!works.length && companyId) {
+    const { data: allPermits } = await supabase
+      .from('work_permits' as any)
+      .select('location, work_name, work_description, status, is_deleted, permit_date, work_start_at, form_data, weather_snapshot, contractor_company, personnel_count, company_id')
+      .eq('project_id', projectId)
+      .eq('is_deleted', false)
+      .limit(200);
+    works = collectTodayPermitWorks(((allPermits as PermitRouteRow[]) || []), day);
+  }
   const snaps = rows.map((p) => (p as { weather_snapshot?: unknown }).weather_snapshot).filter(Boolean);
   const weather = weatherLabelFromSnapshots(snaps);
 
@@ -135,4 +148,27 @@ export async function fetchPatrolPrintContext(
   }
 
   return { route, works, weather, manpower, tbmAttendees, tbmRate };
+}
+
+export async function fetchPatrolPrintStamps(entityId: string): Promise<PatrolPrintStamps> {
+  const empty: PatrolPrintStamps = { sm: null, director: null };
+  if (!entityId) return empty;
+  const { data: approvals } = await supabase
+    .from('approvals')
+    .select('step, step_order, position, approver_name, status, approved_at, approval_version')
+    .eq('entity_type', 'safety_inspection')
+    .eq('entity_id', entityId)
+    .neq('status', '취소');
+  let rows = buildAssessmentSignatureRows({ approvals: approvals || [] });
+  if (rows.length === 0) {
+    const draft = await fetchDocumentApprovalDraft('safety_inspection', entityId);
+    rows = buildAssessmentSignatureRows({ draftSteps: draft?.steps || [] });
+  }
+  return pickPatrolPrintStamps(rows.map((r) => ({
+    step: r.step,
+    position: r.position,
+    approver_name: r.approver_name,
+    status: r.status,
+    approved_at: r.approved_at,
+  })));
 }

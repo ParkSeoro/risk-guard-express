@@ -190,6 +190,7 @@ export type PermitRouteRow = {
   form_data?: {
     work_location?: string | null;
     work_name?: string | null;
+    work_description?: string | null;
     work_start?: string | null;
   } | null;
   weather_snapshot?: unknown;
@@ -226,7 +227,7 @@ export function collectTodayPermitWorks(
     if (!TODAY_PATROL_PERMIT_STATUSES.has(String(p.status || ''))) continue;
     if (resolvePermitWorkDate(p) !== today) continue;
     const fd = p.form_data || {};
-    const name = String(fd.work_name || p.work_name || p.work_description || '').replace(/\s+/g, ' ').trim();
+    const name = String(fd.work_name || p.work_name || fd.work_description || p.work_description || '').replace(/\s+/g, ' ').trim();
     if (!name || seen.has(name)) continue;
     seen.add(name);
     out.push(name);
@@ -288,9 +289,60 @@ export type PatrolLogFacts = {
   actions: PatrolLogAction[];
   patrolPhotos?: string[] | null;
   directorItems?: DirectorPatrolItem[] | null;
+  /** 인쇄 결재란. 없으면 smApproverName / directorApproverName 만 사용(점검자 폴백 없음). */
+  stamps?: PatrolPrintStamps | null;
   smApproverName?: string | null;
   directorApproverName?: string | null;
 };
+
+export type PatrolStampSlot = {
+  name: string;
+  status?: string | null;
+  approvedAt?: string | null;
+};
+
+export type PatrolPrintStamps = {
+  sm: PatrolStampSlot | null;
+  director: PatrolStampSlot | null;
+};
+
+export type PatrolStampRow = {
+  step?: string | null;
+  position?: string | null;
+  approver_name?: string | null;
+  status?: string | null;
+  approved_at?: string | null;
+  step_order?: number | null;
+};
+
+export function isPatrolDirectorStamp(step?: string | null, position?: string | null): boolean {
+  const s = `${step || ''} ${position || ''}`;
+  return /현장소장|안전보건관리책임자|site_director/i.test(s);
+}
+
+export function isPatrolSmStamp(step?: string | null, position?: string | null): boolean {
+  if (isPatrolDirectorStamp(step, position)) return false;
+  const s = `${step || ''} ${position || ''}`;
+  return /안전관리자|safety_manager/i.test(s);
+}
+
+export function pickPatrolPrintStamps(rows: PatrolStampRow[] | null | undefined): PatrolPrintStamps {
+  const list = [...(rows || [])].sort((a, b) => (a.step_order ?? 99) - (b.step_order ?? 99));
+  const toSlot = (row?: PatrolStampRow | null): PatrolStampSlot | null => {
+    if (!row) return null;
+    const name = String(row.approver_name || '').trim();
+    if (!name && !row.status) return null;
+    return {
+      name,
+      status: row.status || '',
+      approvedAt: row.approved_at || null,
+    };
+  };
+  return {
+    sm: toSlot(list.find((r) => isPatrolSmStamp(r.step, r.position)) || null),
+    director: toSlot(list.find((r) => isPatrolDirectorStamp(r.step, r.position)) || null),
+  };
+}
 
 export type DirectorPatrolResult = 'pass' | 'mid' | 'fail' | '';
 
@@ -369,6 +421,30 @@ function escapeHtml(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function stampStatusLine(slot: PatrolStampSlot | null): string {
+  if (!slot) return '';
+  if (slot.status === '승인' && slot.approvedAt) {
+    const d = new Date(slot.approvedAt);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+    }
+    return '승인';
+  }
+  if (slot.status === '반려') return '반려';
+  if (slot.name) return '대기';
+  return '';
+}
+
+function stampCellHtml(titleHtml: string, slot: PatrolStampSlot | null): string {
+  const name = String(slot?.name || '').trim();
+  const meta = stampStatusLine(slot);
+  return `<td class="stamp" rowspan="2">
+    <div class="stamp-title">${titleHtml}</div>
+    <div class="stamp-name">${escapeHtml(name || '미지정')}</div>
+    ${meta ? `<div class="stamp-meta">${escapeHtml(meta)}</div>` : ''}
+  </td>`;
 }
 
 function normalizePhotoUrls(urls?: string[] | null): string[] {
@@ -453,15 +529,17 @@ export function formatPatrolDateDot(iso: string): string {
 /** 엑셀「순회 안전점검일지」틀: 머리글·출력현황·13항목·사진 대지·관리책임자 3항목. 지적 사진은 2쪽. */
 export function buildPatrolLogHtml(facts: PatrolLogFacts): string {
   const inspector = formatInspectorLine(facts.inspectorName, facts.inspectorTitle);
-  const smStamp = facts.smApproverName || inspector;
-  const dirStamp = facts.directorApproverName || '';
+  const resolvedStamps: PatrolPrintStamps = facts.stamps || {
+    sm: facts.smApproverName ? { name: String(facts.smApproverName).trim(), status: '' } : null,
+    director: facts.directorApproverName ? { name: String(facts.directorApproverName).trim(), status: '' } : null,
+  };
   const site = formatSiteLabel(facts.projectName, facts.siteName) || facts.projectName;
   const dateDot = formatPatrolDateDot(facts.inspectedAt);
   const weather = String(facts.weather || '').trim();
-  const works = (facts.workItems || []).filter(Boolean);
+  const works = (facts.workItems || []).map((w) => String(w || '').trim()).filter(Boolean);
   const workHtml = works.length
     ? works.map((w) => `- ${escapeHtml(w)}`).join('<br/>')
-    : (facts.location ? `- ${escapeHtml(facts.location)}` : '');
+    : '<span class="muted">당일 허가서 작업명이 없습니다.</span>';
   const manpower = facts.manpower?.length
     ? facts.manpower
     : [{ group: '당 사', title: '관리', today: '', cumulative: '' }];
@@ -477,7 +555,6 @@ export function buildPatrolLogHtml(facts: PatrolLogFacts): string {
       <td class="c">${escapeHtml(String(row.cumulative ?? ''))}</td>
       <td class="c">${escapeHtml(tbm)}</td>
       <td class="c">${escapeHtml(rate)}</td>
-      ${i === 0 ? `<td class="work" rowspan="${manpower.length}">${workHtml}</td>` : ''}
     </tr>`;
   }).join('');
 
@@ -542,7 +619,12 @@ ${findingSheets.map((s) => `
   table.sheet th, table.sheet td{border:1px solid #111;padding:3px 5px;vertical-align:top}
   .title{font-size:20px;letter-spacing:6px;text-align:center;font-weight:bold;height:36px;vertical-align:middle}
   .site{text-align:left;font-weight:bold}
-  .stamp{text-align:center;height:46px;vertical-align:top}
+  .stamp{text-align:center;height:58px;vertical-align:middle;font-size:10px;line-height:1.35}
+  .stamp-label{text-align:center;vertical-align:middle;font-weight:bold;letter-spacing:2px;width:8%}
+  .stamp-title{font-weight:bold}
+  .stamp-name{margin-top:2px}
+  .stamp-meta{font-size:9px;color:#333;margin-top:2px}
+  .muted{color:#666}
   .c{text-align:center}
   .left{text-align:left}
   .grow{word-break:break-word}
@@ -564,22 +646,26 @@ ${findingSheets.map((s) => `
   .fine{font-size:9px;color:#333;margin-top:6px;line-height:1.4}
 </style></head><body>
 <table class="sheet">
-  <tr><td class="title" colspan="7">${escapeHtml(PATROL_LOG_PRINT_TITLE)}</td></tr>
+  <tr><td class="title" colspan="6">${escapeHtml(PATROL_LOG_PRINT_TITLE)}</td></tr>
   <tr>
-    <td class="site" colspan="4">현장명 : ${escapeHtml(site || '-')}${facts.location ? `<div style="font-weight:normal;font-size:10px">순회 구간 : ${escapeHtml(facts.location)}</div>` : ''}</td>
-    <td class="c" rowspan="2">결 재</td>
-    <td class="stamp" rowspan="2">안전관리자<br/><span style="font-size:10px">${escapeHtml(smStamp || '')}</span></td>
-    <td class="stamp" rowspan="2">안전보건관리책임자<br/>(현장소장)<br/><span style="font-size:10px">${escapeHtml(dirStamp)}</span></td>
+    <td class="site" colspan="3">현장명 : ${escapeHtml(site || '-')}${facts.location ? `<div style="font-weight:normal;font-size:10px">순회 구간 : ${escapeHtml(facts.location)}</div>` : ''}</td>
+    <td class="stamp-label" rowspan="2">결<br/>재</td>
+    ${stampCellHtml('안전관리자', resolvedStamps.sm)}
+    ${stampCellHtml('안전보건관리책임자<br/>(현장소장)', resolvedStamps.director)}
   </tr>
   <tr>
     <td colspan="2">${escapeHtml(dateDot)}</td>
-    <td colspan="2">날씨 : ${escapeHtml(weather)}</td>
+    <td>날씨 : ${escapeHtml(weather)}</td>
   </tr>
   <tr>
     <td class="c">구 분</td><td class="c">직 책</td><td class="c">금일</td><td class="c">누 계</td>
-    <td class="c">TBM 참석자</td><td class="c">참석률</td><td class="c">작 업 내 용</td>
+    <td class="c">TBM 참석자</td><td class="c">참석률</td>
   </tr>
   ${manRows}
+  <tr>
+    <td class="c">작 업 내 용</td>
+    <td class="work" colspan="5">${workHtml}</td>
+  </tr>
 </table>
 <table class="sheet" style="margin-top:6px">
   <colgroup>

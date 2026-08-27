@@ -65,9 +65,16 @@ Deno.serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceKey);
     const { data: permit } = await admin
       .from('work_permits')
-      .select('id, project_id, company_id, permit_type, permit_kinds, form_data, work_name, work_description, location, permit_date, contractor_company, work_start_at, work_end_at')
+      .select('id, project_id, company_id, permit_type, permit_kinds, form_data, work_name, work_description, location, permit_date, contractor_company, work_start_at, work_end_at, status')
       .eq('id', body.permit_id)
       .maybeSingle();
+
+    const permitStatus = String((permit as any)?.status || '');
+    if (permitStatus && !['작성중', '반려', '임시저장'].includes(permitStatus)) {
+      return new Response(JSON.stringify({ error: 'PERMIT_LOCKED', message: '결재 진행중/완료 허가서는 브리핑을 다시 만들 수 없습니다.' }), {
+        status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     const formData = { ...((permit as any)?.form_data || {}), ...(body.form_data || {}) };
     const kinds = (body.permit_kinds?.length

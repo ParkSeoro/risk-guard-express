@@ -325,6 +325,10 @@ const WorkPlanDetail = () => {
 
   const handleSaveRigging = async () => {
     if (!planId) return;
+    if (plan && !EDITABLE_PLAN_STATUSES.has(plan.status)) {
+      toast({ title: '수정 불가', description: '결재 진행중/완료 문서는 수정할 수 없습니다.', variant: 'destructive' });
+      return;
+    }
     if (!riggingRef.current) {
       setRigging({ work_plan_id: planId });
     }
@@ -974,7 +978,10 @@ const WorkPlanDetail = () => {
                 </CardHeader>
                 <CardContent>
                   <StructuredSectionForm key={`${planId}-${section.key}`} sectionKey={section.key} workType={plan.work_type}
-                    value={section.content || ''} onChange={content => handleSectionChange(section.key, content)} />
+                    value={section.content || ''} onChange={content => {
+                      if (!EDITABLE_PLAN_STATUSES.has(plan.status)) return;
+                      handleSectionChange(section.key, content);
+                    }} />
                 </CardContent>
               </Card>
             );
@@ -990,6 +997,7 @@ const WorkPlanDetail = () => {
               onDerivedPatch={handleRiggingDerivedPatch}
               onSave={handleSaveRigging}
               saving={saving}
+              readOnly={!EDITABLE_PLAN_STATUSES.has(plan.status)}
             />
           </TabsContent>
         )}
@@ -998,7 +1006,10 @@ const WorkPlanDetail = () => {
         <TabsContent value="equipment" className="space-y-3 mt-4">
           {plan?.project_id && (
             <EquipmentManager projectId={plan.project_id} companyId={plan.company_id} selectable
-              onSelect={(eq) => { if (rigging) handleRiggingChange('crane_model', eq.name); }} />
+              onSelect={(eq) => {
+                if (!EDITABLE_PLAN_STATUSES.has(plan.status)) return;
+                if (rigging) handleRiggingChange('crane_model', eq.name);
+              }} />
           )}
         </TabsContent>
 

@@ -38,11 +38,12 @@ interface RiggingPlanFormProps {
   onDerivedPatch?: (patch: Record<string, any>) => void;
   onSave: () => void;
   saving: boolean;
+  readOnly?: boolean;
 }
 
 const numVal = (v: any) => Number(v) || 0;
 
-export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onSave, saving }: RiggingPlanFormProps) {
+export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onSave, saving, readOnly }: RiggingPlanFormProps) {
   const [result, setResult] = useState<RiggingResult | null>(null);
   const [windInputMode, setWindInputMode] = useState<'select' | 'custom'>('select');
   const [customWindSpeed, setCustomWindSpeed] = useState('');
@@ -179,7 +180,7 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
   if (!rigging) return null;
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${readOnly ? 'pointer-events-none' : ''}`}>
       {/* 안전계수 */}
       <Card className="bg-muted/30">
         <CardContent className="py-3 px-4">
@@ -648,9 +649,11 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
         <Textarea value={rigging?.notes || ''} onChange={e => onChange('notes', e.target.value)} rows={3} className="text-sm" />
       </div>
 
-      <Button onClick={onSave} disabled={saving} className="w-full gap-1">
-        <Save className="h-3.5 w-3.5" /> 리깅플랜 저장
-      </Button>
+      {!readOnly && (
+        <Button onClick={onSave} disabled={saving} className="w-full gap-1 pointer-events-auto">
+          <Save className="h-3.5 w-3.5" /> 리깅플랜 저장
+        </Button>
+      )}
     </div>
   );
 }

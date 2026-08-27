@@ -651,7 +651,7 @@ ${findingSheets.map((s) => `
     <td class="site" colspan="3">현장명 : ${escapeHtml(site || '-')}${facts.location ? `<div style="font-weight:normal;font-size:10px">순회 구간 : ${escapeHtml(facts.location)}</div>` : ''}</td>
     <td class="stamp-label" rowspan="2">결<br/>재</td>
     ${stampCellHtml('안전관리자', resolvedStamps.sm)}
-    ${stampCellHtml('안전보건관리책임자<br/>(현장소장)', resolvedStamps.director)}
+    ${stampCellHtml('안전보건관리책임자', resolvedStamps.director)}
   </tr>
   <tr>
     <td colspan="2">${escapeHtml(dateDot)}</td>

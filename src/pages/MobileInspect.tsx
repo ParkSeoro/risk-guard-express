@@ -26,6 +26,7 @@ import {
   PATROL_LOG_DISCLAIMER,
   PATROL_LOG_TITLE,
   PATROL_PROCESS_CATEGORY,
+  PATROL_WALK_PHOTO_LABEL,
   formatInspectorLine,
   inspectorTitleFromMember,
   isPatrolInspection,
@@ -691,14 +692,14 @@ export default function MobileInspect() {
             {patrol && (
               <Card>
                 <CardContent className="pt-4 space-y-3">
-                  <Label>순회 모습 (2장)</Label>
+                  <Label>{PATROL_WALK_PHOTO_LABEL} (2장)</Label>
                   <div className="grid grid-cols-2 gap-2">
                     {[0, 1].map((slot) => (
                       <label key={slot} className="border rounded p-2 text-center text-xs">
                         {patrolPhotos[slot] ? (
                           <img src={patrolPhotos[slot]} className="h-24 w-full object-cover rounded mb-1" />
                         ) : (
-                          <div className="h-24 flex items-center justify-center text-muted-foreground">순회 {slot + 1}</div>
+                          <div className="h-24 flex items-center justify-center text-muted-foreground">{PATROL_WALK_PHOTO_LABEL} {slot + 1}</div>
                         )}
                         {!readOnly && (
                           <>

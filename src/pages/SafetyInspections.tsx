@@ -28,6 +28,7 @@ import {
   PATROL_LOG_DISCLAIMER,
   PATROL_LOG_TITLE,
   PATROL_PROCESS_CATEGORY,
+  PATROL_WALK_PHOTO_LABEL,
   buildPatrolLogHtml,
   emptyDirectorPatrolItems,
   formatInspectorLine,
@@ -1093,14 +1094,14 @@ export default function SafetyInspections() {
                     />
                   </div>
                   <div>
-                    <Label className="text-xs">순회 모습 (2장)</Label>
+                    <Label className="text-xs">{PATROL_WALK_PHOTO_LABEL} (2장)</Label>
                     <div className="flex gap-2 mt-1">
                       {[0, 1].map((slot) => (
                         <label key={slot} className={`flex-1 border rounded p-2 text-center text-xs ${isPatrolLogLocked(detail.status) ? 'opacity-60' : 'cursor-pointer hover:bg-accent'}`}>
                           {patrolPhotos[slot] ? (
-                            <img src={patrolPhotos[slot]} alt={`순회 모습 ${slot + 1}`} className="h-20 w-full object-cover rounded mb-1" />
+                            <img src={patrolPhotos[slot]} alt={`${PATROL_WALK_PHOTO_LABEL} ${slot + 1}`} className="h-20 w-full object-cover rounded mb-1" />
                           ) : (
-                            <div className="h-20 flex items-center justify-center text-muted-foreground">순회 모습 {slot + 1}</div>
+                            <div className="h-20 flex items-center justify-center text-muted-foreground">{PATROL_WALK_PHOTO_LABEL} {slot + 1}</div>
                           )}
                           <span className="inline-flex items-center gap-1"><Camera className="h-3 w-3" />첨부</span>
                           <input type="file" accept="image/*" capture="environment" className="hidden" disabled={isPatrolLogLocked(detail.status)} onChange={(e) => onPatrolPhoto(slot as 0 | 1, e.target.files)} />

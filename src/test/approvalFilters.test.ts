@@ -207,6 +207,7 @@ describe("approval timeline helpers — self-lock / sequential", () => {
     expect(isSubmitterApprovalStep({ step: "담당자(시공)" })).toBe(true);
     expect(isSubmitterApprovalStep({ step: "시공사 관리감독자 (상신)" })).toBe(true);
     expect(isSubmitterApprovalStep({ position: "owner_sm", step: "담당자(SM)" })).toBe(false);
+    expect(isSubmitterApprovalStep({ step: "작성자" })).toBe(true);
   });
 
   it("dedupeApprovalSteps keeps first of identical person+position", () => {
@@ -235,6 +236,7 @@ describe("approval timeline helpers — self-lock / sequential", () => {
     expect(entityTypeLabel("assessment_run")).toBe("위험성평가");
     expect(entityTypeLabel("work_permit")).toBe("작업허가서");
     expect(entityTypeLabel("work_plan")).toBe("작업계획서");
+    expect(entityTypeLabel("safety_cost")).toBe("산업안전보건관리비");
     expect(entityTypeLabel("")).toBe("문서");
     expect(entityTypeLabel("unknown_x")).toBe("unknown_x");
   });

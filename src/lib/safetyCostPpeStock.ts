@@ -113,6 +113,48 @@ export function canIssueFromStock(balance: number, issueQty: number) {
   };
 }
 
+export type PpeIssueChannel = 'manual' | 'app' | 'legacy';
+
+export function planPpeIssue(opts: {
+  quantity: number;
+  stockBalance: number;
+  signatureData?: string | null;
+  channel?: PpeIssueChannel;
+}) {
+  const qty = Math.abs(Number(opts.quantity) || 0);
+  const stock = canIssueFromStock(opts.stockBalance, qty);
+  const signature = String(opts.signatureData || '').trim();
+  const channel: PpeIssueChannel = opts.channel || (signature ? 'manual' : 'app');
+  const confirmed = channel === 'legacy' || Boolean(signature);
+  return {
+    ok: qty > 0 && stock.ok,
+    quantity: qty,
+    shortfall: stock.shortfall,
+    receipt_status: confirmed ? 'confirmed' : 'pending',
+    receipt_channel: channel,
+    writesStockOut: confirmed,
+  };
+}
+
+export function planPpeConfirm(entry: {
+  receipt_status?: string | null;
+  signature_data?: string | null;
+  stock_movement_id?: string | null;
+  is_deleted?: boolean | null;
+}) {
+  if (entry.is_deleted) return { ok: false, alreadyConfirmed: false, writesStockOut: false, reason: 'deleted' as const };
+  const signed = Boolean(String(entry.signature_data || '').trim()) || entry.receipt_status === 'confirmed';
+  if (signed) {
+    return {
+      ok: true,
+      alreadyConfirmed: true,
+      writesStockOut: !entry.stock_movement_id,
+      reason: 'already_confirmed' as const,
+    };
+  }
+  return { ok: true, alreadyConfirmed: false, writesStockOut: true, reason: 'confirm' as const };
+}
+
 /** 거래 항목이 보호구 입고 대상인지 */
 export function isPpeInboundItem(item: { category_code?: string | null; quantity?: number | string | null; item_name?: string }) {
   if (String(item.category_code || '') !== '3') return false;

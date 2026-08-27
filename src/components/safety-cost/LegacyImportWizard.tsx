@@ -6,14 +6,13 @@ import {
   buildCommitPreview,
   normalizeLegacyDraft,
   parseLegacyTextDraft,
+  planLegacyCommitMonths,
   validateLegacyDraft,
   type LegacyImportDraft,
+  type LegacyImportItem,
   type LegacyImportMonth,
 } from '@/lib/safetyCostLegacyImport';
-import { normalizePpeItemKey } from '@/lib/safetyCostPpeStock';
-import { formatKRW } from '@/lib/safetyCost';
-import { planCreateMonthlyReport } from '@/lib/safetyCostMonthly';
-import { softRestorePayload } from '@/lib/dataAccess';
+import { formatKRW, SAFETY_COST_CATEGORIES } from '@/lib/safetyCost';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,8 +29,10 @@ type Props = {
   companyId: string;
   constructionId: string;
   constructionName?: string;
+  constructionAmount?: number;
   safetyCostTotal?: number;
   existingApprovedTotal?: number;
+  liveReports?: Array<{ report_month?: string | null; status?: string | null; is_deleted?: boolean | null }>;
   userId?: string;
   onCommitted?: () => void;
 };
@@ -49,40 +50,9 @@ const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
   reader.readAsDataURL(file);
 });
 
-async function upsertSku(params: {
-  projectId: string;
-  companyId: string;
-  constructionId: string;
-  item_name: string;
-  specification?: string;
-  maker?: string;
-  unit?: string;
-}) {
-  const item_key = normalizePpeItemKey(params);
-  const { data: existing } = await supabase
-    .from('safety_cost_ppe_skus' as any)
-    .select('id')
-    .eq('construction_id', params.constructionId)
-    .eq('item_key', item_key)
-    .maybeSingle();
-  if (existing) return (existing as any).id as string;
-  const { data, error } = await supabase.from('safety_cost_ppe_skus' as any).insert({
-    project_id: params.projectId,
-    company_id: params.companyId,
-    construction_id: params.constructionId,
-    item_key,
-    item_name: params.item_name,
-    specification: params.specification || '',
-    maker: params.maker || '',
-    unit: params.unit || '개',
-  }).select('id').single();
-  if (error) throw error;
-  return (data as any).id as string;
-}
-
 export function LegacyImportWizard({
   projectId, companyId, constructionId, constructionName,
-  safetyCostTotal, existingApprovedTotal, userId, onCommitted,
+  constructionAmount, safetyCostTotal, existingApprovedTotal, liveReports, userId, onCommitted,
 }: Props) {
   const { toast } = useToast();
   const [step, setStep] = useState<'upload' | 'review'>('upload');
@@ -92,13 +62,35 @@ export function LegacyImportWizard({
   const [draft, setDraft] = useState<LegacyImportDraft | null>(null);
   const [reviewNotes, setReviewNotes] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
+  const [budgetConfirmed, setBudgetConfirmed] = useState(false);
 
   const validation = useMemo(
     () => (draft ? validateLegacyDraft(draft, { safetyCostTotal, existingApprovedTotal }) : null),
     [draft, safetyCostTotal, existingApprovedTotal],
   );
+  const commitPlan = useMemo(
+    () => (draft ? planLegacyCommitMonths(draft, liveReports || []) : null),
+    [draft, liveReports],
+  );
+  const extractedBudget = Number(draft?.construction?.safety_cost_total || 0);
+  const extractedContract = Number(draft?.construction?.construction_amount || 0);
+  const canCommit = Boolean(validation?.canCommit && commitPlan?.ok && budgetConfirmed);
   const preview = useMemo(() => (draft ? buildCommitPreview(draft) : null), [draft]);
   const activeMonth = draft?.months.find((m) => m.report_month === selectedMonth) || draft?.months[0];
+
+  function patchItem(reportMonth: string, index: number, patch: Partial<LegacyImportItem>) {
+    setDraft((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        months: prev.months.map((m) => {
+          if (m.report_month !== reportMonth) return m;
+          const items = m.items.map((it, i) => (i === index ? { ...it, ...patch } : it));
+          return { ...m, items };
+        }),
+      };
+    });
+  }
 
   function patchMonth(reportMonth: string, patch: Partial<LegacyImportMonth>) {
     setDraft((prev) => {
@@ -178,6 +170,7 @@ export function LegacyImportWizard({
       setBatchId((batch as any).id);
       setDraft(extracted);
       setSelectedMonth(extracted.months[0]?.report_month || '');
+      setBudgetConfirmed(false);
       setStep('review');
       toast({
         title: '이관 초안 생성',
@@ -198,242 +191,48 @@ export function LegacyImportWizard({
       validation: v,
       review_notes: reviewNotes,
       status: 'reviewing',
+      budget_confirmed: budgetConfirmed,
     }).eq('id', batchId);
     toast({ title: '초안 저장됨' });
   }
 
   async function commitImport() {
-    if (!draft || !batchId || !validation?.canCommit) return;
+    if (!draft || !batchId || !canCommit) return;
     if (!window.confirm('검수된 이관 초안을 승인 완료 월보로 확정합니다. 계속할까요?')) return;
     setCommitting(true);
     try {
-      const included = draft.months.filter((m) => m.included !== false);
-      for (const month of included) {
-        const reportMonth = `${month.report_month}-01`;
-        const lineTotal = month.items.reduce((s, it) => s + Number(it.amount || 0), 0);
-
-        const { data: existingRows } = await supabase
-          .from('safety_cost_monthly_reports' as any)
-          .select('id, status, is_deleted, created_at, approval_version')
-          .eq('construction_id', constructionId)
-          .eq('report_month', reportMonth);
-
-        const plan = planCreateMonthlyReport((existingRows || []) as any[]);
-        let reportId: string | undefined;
-        if (plan.action === 'open') {
-          reportId = plan.row.id;
-          if ((plan.row as any).status === 'approved') {
-            throw new Error(`${month.report_month}: 이미 승인된 월보가 있어 이관할 수 없습니다.`);
-          }
-        } else if (plan.action === 'restore') {
-          const { error: restoreError } = await supabase
-            .from('safety_cost_monthly_reports' as any)
-            .update(softRestorePayload())
-            .eq('id', plan.row.id);
-          if (restoreError) throw restoreError;
-          reportId = plan.row.id;
-        }
-
-        if (!reportId) {
-          const { data: created, error } = await supabase.from('safety_cost_monthly_reports' as any).insert({
-            construction_id: constructionId,
-            project_id: projectId,
-            company_id: companyId,
-            report_month: reportMonth,
-            title: month.title || `${month.report_month} 산업안전보건관리비 사용내역서(이관)`,
-            status: 'approved',
-            report_total: lineTotal,
-            source: 'legacy_import',
-            import_batch_id: batchId,
-            approved_at: new Date().toISOString(),
-            approved_by: userId || null,
-            created_by: userId || null,
-          }).select('id').single();
-          if (error) throw error;
-          reportId = (created as any).id;
-        } else {
-          const { error } = await supabase.from('safety_cost_monthly_reports' as any).update({
-            title: month.title || `${month.report_month} 산업안전보건관리비 사용내역서(이관)`,
-            status: 'approved',
-            report_total: lineTotal,
-            source: 'legacy_import',
-            import_batch_id: batchId,
-            approved_at: new Date().toISOString(),
-            approved_by: userId || null,
-          }).eq('id', reportId);
-          if (error) throw error;
-          await supabase.from('safety_cost_items' as any).update({ is_deleted: true, deleted_at: new Date().toISOString() }).eq('report_id', reportId);
-        }
-
-        const itemRows = month.items.map((row, idx) => ({
-          report_id: reportId,
-          construction_id: constructionId,
-          project_id: projectId,
-          company_id: companyId,
-          transaction_date: row.transaction_date || null,
-          usage_date: row.usage_date || row.transaction_date || null,
-          category_code: row.category_code || '',
-          category_name: row.category_name || '',
-          item_name: row.item_name,
-          specification: row.specification || '',
-          maker: row.maker || '',
-          quantity: row.quantity || 1,
-          unit: row.unit || '식',
-          unit_price: row.unit_price || 0,
-          supply_amount: row.supply_amount || row.amount,
-          vat_amount: row.vat_amount || 0,
-          amount: row.amount,
-          supplier_name: row.supplier_name || '',
-          classification_status: row.classification_status || 'review',
-          ai_confidence: row.ai_confidence ?? null,
-          ai_reason: row.ai_reason || '승인본 이관',
-          legal_basis: row.legal_basis || '건설업 산업안전보건관리비 계상 및 사용기준',
-          sort_order: idx,
-          created_by: userId || null,
-        }));
-
-        const { data: insertedItems, error: itemErr } = await supabase
-          .from('safety_cost_items' as any)
-          .insert(itemRows)
-          .select('id, category_code, item_name, specification, maker, quantity, unit, transaction_date');
-        if (itemErr) throw itemErr;
-
-        // 보호구 입고(수불)
-        for (const it of ((insertedItems as any[]) || [])) {
-          if (String(it.category_code) !== '3' || Number(it.quantity || 0) <= 0) continue;
-          const skuId = await upsertSku({
-            projectId, companyId, constructionId,
-            item_name: it.item_name,
-            specification: it.specification,
-            maker: it.maker,
-            unit: it.unit,
-          });
-          await supabase.from('safety_cost_ppe_stock_movements' as any).insert({
-            project_id: projectId,
-            company_id: companyId,
-            construction_id: constructionId,
-            sku_id: skuId,
-            movement_type: 'in',
-            quantity: Number(it.quantity),
-            movement_date: it.transaction_date || reportMonth,
-            source_type: 'import',
-            source_item_id: it.id,
-            import_batch_id: batchId,
-            report_id: reportId,
-            note: '승인본 이관 입고',
-            created_by: userId || null,
-          });
-        }
-
-        // 지급대장(스캔서명 이관) + 출고
-        if (month.ppe_issuances?.length) {
-          const { data: led, error: ledErr } = await supabase.from('safety_cost_ppe_ledgers' as any).upsert({
-            project_id: projectId,
-            company_id: companyId,
-            construction_id: constructionId,
-            report_id: reportId,
-            site_label: constructionName || '',
-            safety_manager_name: '',
-            notes: '승인본 이관(스캔서명)',
-            created_by: userId || null,
-            is_deleted: false,
-          }, { onConflict: 'report_id' }).select('id').single();
-          if (ledErr) throw ledErr;
-          const ledgerId = (led as any).id;
-          for (const [idx, iss] of month.ppe_issuances.entries()) {
-            const { data: entry, error: eErr } = await supabase.from('safety_cost_ppe_ledger_entries' as any).insert({
-              ledger_id: ledgerId,
-              project_id: projectId,
-              company_id: companyId,
-              issued_at: iss.issued_at || reportMonth,
-              worker_name: iss.worker_name,
-              item_name: iss.item_name,
-              quantity: iss.quantity || 1,
-              signature_data: iss.signature_note || 'legacy-scan',
-              signed_at: new Date().toISOString(),
-              sort_order: idx,
-            }).select('id').single();
-            if (eErr) throw eErr;
-            const skuId = await upsertSku({
-              projectId, companyId, constructionId,
-              item_name: iss.item_name,
-              unit: '개',
-            });
-            const { data: mov } = await supabase.from('safety_cost_ppe_stock_movements' as any).insert({
-              project_id: projectId,
-              company_id: companyId,
-              construction_id: constructionId,
-              sku_id: skuId,
-              movement_type: 'out',
-              quantity: iss.quantity || 1,
-              movement_date: iss.issued_at || reportMonth,
-              source_type: 'import',
-              source_issuance_id: (entry as any).id,
-              import_batch_id: batchId,
-              report_id: reportId,
-              note: '승인본 이관 지급출고',
-              created_by: userId || null,
-            }).select('id').single();
-            if (mov) {
-              await supabase.from('safety_cost_ppe_ledger_entries' as any)
-                .update({ stock_movement_id: (mov as any).id })
-                .eq('id', (entry as any).id);
-            }
-          }
-        }
-
-        // 원본 파일 증빙 연결
-        const { data: batchRow } = await supabase
-          .from('safety_cost_import_batches' as any)
-          .select('source_file_name, source_file_path, source_file_url, source_mime_type')
-          .eq('id', batchId)
-          .single();
-        if (batchRow) {
-          await supabase.from('safety_cost_evidence_files' as any).insert({
-            report_id: reportId,
-            construction_id: constructionId,
-            project_id: projectId,
-            company_id: companyId,
-            evidence_kind: 'legacy_pack',
-            file_name: (batchRow as any).source_file_name,
-            file_path: (batchRow as any).source_file_path,
-            file_url: (batchRow as any).source_file_url,
-            mime_type: (batchRow as any).source_mime_type || 'application/pdf',
-            uploaded_by: userId || null,
-            category_code: '',
-          });
-        }
-      }
-
       const v = validateLegacyDraft(draft, { safetyCostTotal, existingApprovedTotal });
-      await supabase.from('safety_cost_import_batches' as any).update({
-        status: 'committed',
+      const { error: saveErr } = await supabase.from('safety_cost_import_batches' as any).update({
         draft_payload: draft,
         validation: v,
         review_notes: reviewNotes,
-        committed_at: new Date().toISOString(),
-        committed_by: userId || null,
+        status: 'reviewing',
+        budget_confirmed: true,
       }).eq('id', batchId);
+      if (saveErr) throw saveErr;
 
-      await supabase.from('safety_cost_audit_logs' as any).insert({
-        project_id: projectId,
-        company_id: companyId,
-        construction_id: constructionId,
-        action: '승인본 이관 확정',
-        target_type: 'safety_cost_import_batch',
-        target_id: batchId,
-        after_data: { preview, months: included.map((m) => m.report_month) },
-        reason: reviewNotes || 'legacy_import',
-        user_id: userId || null,
+      const { data, error } = await supabase.rpc('commit_safety_cost_legacy_import', { _batch_id: batchId });
+      if (error) throw error;
+      const result = data as { ok?: boolean; month_count?: number; total?: number };
+
+      toast({
+        title: '이관 확정 완료',
+        description: `${result?.month_count ?? preview?.monthCount}개월 · ${formatKRW(result?.total ?? preview?.totalAmount ?? 0)}`,
       });
-
-      toast({ title: '이관 확정 완료', description: `${preview?.monthCount}개월 · ${formatKRW(preview?.totalAmount || 0)}` });
       setStep('upload');
       setDraft(null);
       setBatchId(null);
+      setBudgetConfirmed(false);
       onCommitted?.();
     } catch (e: any) {
-      toast({ title: '이관 확정 실패', description: e.message || String(e), variant: 'destructive' });
+      const msg = e.message || String(e);
+      const hint = /already_committed/i.test(msg) ? '이미 확정된 배치입니다.'
+        : /live_month_exists/i.test(msg) ? '이미 해당 월 내역서가 있습니다.'
+        : /over_budget/i.test(msg) ? '승인누계+이관금액이 계상액을 초과합니다.'
+        : /budget_not_confirmed/i.test(msg) ? '계상액 확인 후 확정하세요.'
+        : /insufficient_ppe_stock/i.test(msg) ? '보호구 재고가 부족합니다.'
+        : msg;
+      toast({ title: '이관 확정 실패', description: hint, variant: 'destructive' });
     } finally {
       setCommitting(false);
     }
@@ -549,8 +348,8 @@ export function LegacyImportWizard({
 
             {activeMonth && (
               <div className="space-y-2">
-                <p className="text-xs font-medium">{activeMonth.report_month} 항목 미리보기 (상위 30)</p>
-                <div className="overflow-auto rounded-md border max-h-64">
+                <p className="text-xs font-medium">{activeMonth.report_month} 항목 (금액·비목 수정)</p>
+                <div className="overflow-auto rounded-md border max-h-80">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -562,12 +361,32 @@ export function LegacyImportWizard({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {activeMonth.items.slice(0, 30).map((it, idx) => (
+                      {activeMonth.items.map((it, idx) => (
                         <TableRow key={`${it.item_name}-${idx}`}>
-                          <TableCell className="text-xs">{it.category_code || '—'}</TableCell>
-                          <TableCell className="text-sm">{it.item_name}</TableCell>
+                          <TableCell>
+                            <Input
+                              className="h-8 w-16"
+                              value={it.category_code || ''}
+                              onChange={(e) => patchItem(activeMonth.report_month, idx, { category_code: e.target.value })}
+                              placeholder="1-9"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Input
+                              className="h-8 min-w-[140px]"
+                              value={it.item_name}
+                              onChange={(e) => patchItem(activeMonth.report_month, idx, { item_name: e.target.value })}
+                            />
+                          </TableCell>
                           <TableCell className="text-xs">{it.quantity} {it.unit}</TableCell>
-                          <TableCell className="text-xs">{formatKRW(it.amount)}</TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              className="h-8 w-28"
+                              value={it.amount}
+                              onChange={(e) => patchItem(activeMonth.report_month, idx, { amount: Number(e.target.value || 0) })}
+                            />
+                          </TableCell>
                           <TableCell className="text-xs">{it.supplier_name || '—'}</TableCell>
                         </TableRow>
                       ))}
@@ -577,12 +396,13 @@ export function LegacyImportWizard({
                     </TableBody>
                   </Table>
                 </div>
+                <p className="text-[11px] text-muted-foreground">비목 코드 {SAFETY_COST_CATEGORIES.map((c) => c.code).join(', ')}</p>
               </div>
             )}
 
             <div className="space-y-2">
               <p className="text-xs font-medium">검수 이슈</p>
-              {validation.issues.length === 0 ? (
+              {validation.issues.length === 0 && commitPlan?.ok ? (
                 <div className="flex items-center gap-2 text-sm text-primary"><CheckCircle2 className="h-4 w-4" /> 확정 가능</div>
               ) : (
                 <ul className="space-y-1">
@@ -592,8 +412,31 @@ export function LegacyImportWizard({
                       <span>{iss.message}</span>
                     </li>
                   ))}
+                  {commitPlan?.blockers.map((b, i) => (
+                    <li key={`live-${i}`} className="text-xs flex gap-2 items-start">
+                      <Badge variant="destructive">error</Badge>
+                      <span>{b}</span>
+                    </li>
+                  ))}
                 </ul>
               )}
+            </div>
+
+            <div className="rounded-md border p-3 space-y-2">
+              <p className="text-xs font-medium">계상액 확인</p>
+              <div className="grid gap-2 md:grid-cols-2 text-xs">
+                <div>공사 등록 계상액: <b>{formatKRW(safetyCostTotal || 0)}</b></div>
+                <div>추출 계상액: <b>{extractedBudget ? formatKRW(extractedBudget) : '없음'}</b></div>
+                <div>공사금액(등록): {formatKRW(constructionAmount || 0)}</div>
+                <div>공사금액(추출): {extractedContract ? formatKRW(extractedContract) : '없음'}</div>
+              </div>
+              {extractedBudget > 0 && Math.abs(extractedBudget - Number(safetyCostTotal || 0)) > 1 && (
+                <p className="text-xs text-amber-700">추출 계상액과 등록 계상액이 다릅니다. 등록값을 기준으로 검사합니다.</p>
+              )}
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox checked={budgetConfirmed} onCheckedChange={(v) => setBudgetConfirmed(Boolean(v))} />
+                이 공사의 계상액이 맞음을 확인합니다.
+              </label>
             </div>
 
             <div className="space-y-1">
@@ -604,7 +447,7 @@ export function LegacyImportWizard({
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={saveDraft}>초안 저장</Button>
               <Button variant="outline" onClick={() => { setStep('upload'); setDraft(null); setBatchId(null); }}>다시 업로드</Button>
-              <Button onClick={commitImport} disabled={!validation.canCommit || committing} className="gap-1">
+              <Button onClick={commitImport} disabled={!canCommit || committing} className="gap-1">
                 {committing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 이관 확정
               </Button>

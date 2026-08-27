@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { aggregatePpeStock, normalizePpeItemKey, type PpeMovementType } from '@/lib/safetyCostPpeStock';
+import { aggregatePpeStock, canIssueFromStock, normalizePpeItemKey, type PpeMovementType } from '@/lib/safetyCostPpeStock';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -90,6 +90,18 @@ export function PpeStockPanel({ projectId, companyId, constructionId, userId }: 
     }
     try {
       const skuId = await upsertSku();
+      if (movementType === 'out' || movementType === 'dispose') {
+        const current = balances.find((b) => b.sku_id === skuId)?.balance ?? 0;
+        const stock = canIssueFromStock(current, Number(quantity));
+        if (!stock.ok) {
+          toast({
+            title: '재고가 부족합니다.',
+            description: `잔량 ${stock.balance}, 부족 ${stock.shortfall}`,
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
       const { error } = await supabase.from('safety_cost_ppe_stock_movements' as any).insert({
         project_id: projectId,
         company_id: companyId,
@@ -131,7 +143,7 @@ export function PpeStockPanel({ projectId, companyId, constructionId, userId }: 
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            영수증(비목 3) 등록 시 자동 입고됩니다. 지급대장 서명 시 출고됩니다. 구매 ≠ 지급입니다.
+            영수증(비목 3) 등록 시 자동 입고됩니다. 수기 서명 또는 앱 수령확인 시에 출고됩니다. 구매 ≠ 지급입니다.
           </p>
           <div className="overflow-auto rounded-md border">
             <Table>

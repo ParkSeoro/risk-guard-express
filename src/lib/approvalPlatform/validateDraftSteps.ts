@@ -1,4 +1,4 @@
-import { validateApprovalLinesSSOT, validateStepsHierarchy } from '@/lib/approvalRules';
+import { validateApprovalLinesSSOT, validateSafetyCostApprovalSteps, validateStepsHierarchy } from '@/lib/approvalRules';
 import { getEntityApprovalPolicy } from './entityPolicies';
 import type { ApprovalDraftStep } from './types';
 
@@ -58,16 +58,23 @@ export function validateDraftSteps(
     errors.push(`구형 단계 키: ${Array.from(new Set(ssot.invalid)).join(', ')}`);
   }
 
-  const hierarchy = validateStepsHierarchy(
-    steps.map((s) => ({
-      label: s.label,
-      position: s.position,
-      user_id: s.user_id,
-      user_name: s.user_name,
-      company_id: s.company_id,
-      company_name: s.company_name,
-    })),
-  );
+  const hierarchy = entityType === 'safety_cost'
+    ? validateSafetyCostApprovalSteps(
+        steps.map((s) => ({
+          label: s.label,
+          position: s.position,
+        })),
+      )
+    : validateStepsHierarchy(
+        steps.map((s) => ({
+          label: s.label,
+          position: s.position,
+          user_id: s.user_id,
+          user_name: s.user_name,
+          company_id: s.company_id,
+          company_name: s.company_name,
+        })),
+      );
   if (!hierarchy.ok && hierarchy.message) {
     errors.push(hierarchy.message);
   }

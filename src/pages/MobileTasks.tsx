@@ -3,7 +3,7 @@ import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { isManagerMobileRole } from "@/lib/mobileShell";
 import { usePreview } from "@/contexts/PreviewContext";
 import { Card, CardContent } from "@/components/ui/card";
-import { ChevronRight, ClipboardCheck, AlertOctagon, Users, Wrench, HeartPulse, CloudSun } from "lucide-react";
+import { ChevronRight, ClipboardCheck, AlertOctagon, Users, Wrench, HeartPulse, CloudSun, HardHat } from "lucide-react";
 
 export default function MobileTasks() {
   const { role, isMaster } = useMobileAccess();
@@ -19,6 +19,7 @@ export default function MobileTasks() {
     { label: "TBM 참여", sub: "오늘 브리핑·서명", to: "/app/worker/tbm", icon: Users },
     { label: "사고·아차사고 신고", sub: "즉시 보고", to: "/app/worker/incident", icon: AlertOctagon },
     { label: "건강로그", sub: "오늘 컨디션", to: "/app/worker/daily-health-log", icon: HeartPulse },
+    { label: "보호구 수령확인", sub: "서명·지급대장 기록", to: "/app/worker/ppe-receipt", icon: HardHat },
   ];
 
   const managerItems = [
@@ -29,6 +30,7 @@ export default function MobileTasks() {
     { label: "근로자·출입", sub: "명부·입퇴장", to: "/app/worker/workers", icon: Users },
     { label: "작업중지", sub: "접수·처리중 확인", to: "/app/worker/work-stop", icon: AlertOctagon },
     { label: "현장 일기예보", sub: "레이더·시간별·영향분석", to: "/app/worker/site-weather", icon: CloudSun },
+    { label: "보호구 수령확인", sub: "지급대기 서명", to: "/app/worker/ppe-receipt", icon: HardHat },
   ];
 
   const items = manager ? managerItems : workerItems;

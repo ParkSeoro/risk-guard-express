@@ -62,13 +62,34 @@ export function classifySafetyCostItem(name: string) {
   };
 }
 
-export function analyzeSafetyCostCompliance(items: Array<{ amount?: number | string | null; classification_status?: string | null; legal_basis?: string | null }>, totalBudget?: number | string | null) {
-  const total = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const warningCount = items.filter((item) => item.classification_status === 'warning').length;
-  const reviewCount = items.filter((item) => item.classification_status === 'review').length;
-  const missingBasisCount = items.filter((item) => !item.legal_basis).length;
+export function sumLiveSafetyCostAmounts(
+  items: Array<{ amount?: number | string | null; is_deleted?: boolean | null }>,
+) {
+  return items
+    .filter((item) => !item.is_deleted)
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+}
+
+export function isSafetyCostReportLocked(status?: string | null) {
+  const s = String(status || '');
+  return s === 'submitted' || s === 'approved';
+}
+
+/** 승인 누계 + 당월(라이브 항목) / 계상액. 상신·이관 게이트와 동일한 SSOT. */
+export function analyzeSafetyCostCompliance(
+  items: Array<{ amount?: number | string | null; classification_status?: string | null; legal_basis?: string | null; is_deleted?: boolean | null }>,
+  totalBudget?: number | string | null,
+  opts?: { approvedCumulative?: number | string | null },
+) {
+  const live = items.filter((item) => !item.is_deleted);
+  const total = live.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const warningCount = live.filter((item) => item.classification_status === 'warning').length;
+  const reviewCount = live.filter((item) => item.classification_status === 'review').length;
+  const missingBasisCount = live.filter((item) => !item.legal_basis).length;
   const budget = Number(totalBudget || 0);
-  const rate = budget > 0 ? Math.round((total / budget) * 100) : 0;
+  const approvedCumulative = Number(opts?.approvedCumulative || 0);
+  const cumulative = approvedCumulative + total;
+  const rate = budget > 0 ? Math.round((cumulative / budget) * 100) : 0;
   const issues = [
     warningCount > 0 && `사용 불가 가능 항목 ${warningCount}건`,
     reviewCount > 0 && `검토 필요 항목 ${reviewCount}건`,
@@ -77,7 +98,17 @@ export function analyzeSafetyCostCompliance(items: Array<{ amount?: number | str
     budget > 0 && rate > 100 && '계상된 산업안전보건관리비 초과',
   ].filter(Boolean) as string[];
 
-  return { total, rate, warningCount, reviewCount, missingBasisCount, issues, verdict: issues.length ? '검토 필요' : '적정' };
+  return {
+    total,
+    cumulative,
+    approvedCumulative,
+    rate,
+    warningCount,
+    reviewCount,
+    missingBasisCount,
+    issues,
+    verdict: issues.length ? '검토 필요' : '적정',
+  };
 }
 
 export function formatKRW(value: number | string | null | undefined) {

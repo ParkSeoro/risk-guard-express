@@ -49,10 +49,10 @@ export const ENTITY_APPROVAL_POLICIES: Record<ApprovalEntityType, EntityApproval
   },
   safety_cost: {
     usesPlatformDraft: false,
-    minSteps: 2,
-    requireOwnerClientStep: false,
+    minSteps: 3,
+    requireOwnerClientStep: true,
     allowOwnerSmOnly: true,
-    note: '산안비 전용 테이블 유지',
+    note: '산안비 — SubmitApprovalDialog + submit_approval. 작성자→검토(합의 옵션)→현장소장→발주처 SM',
   },
   incident: {
     usesPlatformDraft: false,

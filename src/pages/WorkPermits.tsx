@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useToast } from '@/hooks/use-toast';
 import { mapPermitExtendRequestError } from '@/lib/permitExtend';
 import { Plus, FileSignature, Pencil, Trash2, Users, Copy, Clock, Search } from 'lucide-react';
 import { useAuditLog } from '@/hooks/useAuditLog';

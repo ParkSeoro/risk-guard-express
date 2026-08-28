@@ -8,8 +8,9 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import ResponsiveSignaturePad, { type ResponsiveSignaturePadHandle } from '@/components/ResponsiveSignaturePad';
-import { normalizePpeItemKey } from '@/lib/safetyCostPpeStock';
+import { ADMIN_PROJECT_ROLES } from '@/lib/permissions';
 import { ClipboardList, Plus, Printer, Trash2 } from 'lucide-react';
 
 type Ledger = {
@@ -28,6 +29,18 @@ type Entry = {
   signature_data: string;
   signed_at: string | null;
   stock_movement_id?: string | null;
+  receipt_status?: string;
+  receipt_channel?: string;
+  specification?: string;
+  maker?: string;
+};
+
+type Recipient = {
+  key: string;
+  name: string;
+  role: 'worker' | 'manager';
+  workerId?: string | null;
+  userId?: string | null;
 };
 
 type Props = {
@@ -48,6 +61,7 @@ export function PpeLedgerPanel({
   const { toast } = useToast();
   const [ledger, setLedger] = useState<Ledger | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [loading, setLoading] = useState(true);
   const [siteLabel, setSiteLabel] = useState(constructionName || '');
   const [managerName, setManagerName] = useState('');
@@ -55,10 +69,14 @@ export function PpeLedgerPanel({
     (defaultItemNames?.length ? defaultItemNames : ['안전모', '안전화', '안전조끼']).join(', '),
   );
   const [signOpen, setSignOpen] = useState(false);
+  const [recipientKey, setRecipientKey] = useState('');
   const [workerName, setWorkerName] = useState('');
   const [issuedAt, setIssuedAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [itemName, setItemName] = useState('');
+  const [specification, setSpecification] = useState('');
+  const [maker, setMaker] = useState('');
   const [quantity, setQuantity] = useState('1');
+  const [saving, setSaving] = useState(false);
   const sigRef = useRef<ResponsiveSignaturePadHandle | null>(null);
 
   const itemColumns = useMemo(
@@ -66,7 +84,8 @@ export function PpeLedgerPanel({
     [itemColumnsText],
   );
 
-  const signedCount = entries.filter((e) => e.signature_data).length;
+  const signedCount = entries.filter((e) => e.signature_data || e.receipt_status === 'confirmed').length;
+  const selectedRecipient = recipients.find((r) => r.key === recipientKey);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,6 +123,10 @@ export function PpeLedgerPanel({
         signature_data: e.signature_data || '',
         signed_at: e.signed_at,
         stock_movement_id: e.stock_movement_id,
+        receipt_status: e.receipt_status,
+        receipt_channel: e.receipt_channel,
+        specification: e.specification,
+        maker: e.maker,
       })));
     } else {
       setLedger(null);
@@ -112,7 +135,35 @@ export function PpeLedgerPanel({
     setLoading(false);
   }, [reportId, constructionName]);
 
+  const loadRecipients = useCallback(async () => {
+    const [{ data: workers }, { data: members }] = await Promise.all([
+      supabase.from('workers').select('id, name, phone, job_type').eq('project_id', projectId).eq('is_active', true).order('name'),
+      supabase.from('project_members').select('user_id, role_new, company_id').eq('project_id', projectId).eq('company_id', companyId),
+    ]);
+    const list: Recipient[] = ((workers as any[]) || []).map((w) => ({
+      key: `w:${w.id}`,
+      name: w.name,
+      role: 'worker' as const,
+      workerId: w.id,
+    }));
+    const admins = ((members as any[]) || []).filter((m) => m.user_id && ADMIN_PROJECT_ROLES.includes(m.role_new));
+    if (admins.length) {
+      const { data: profiles } = await supabase.from('profiles').select('user_id, display_name').in('user_id', admins.map((m: any) => m.user_id));
+      for (const p of (profiles as any[]) || []) {
+        const role = admins.find((m: any) => m.user_id === p.user_id)?.role_new;
+        list.push({
+          key: `u:${p.user_id}`,
+          name: `${p.display_name || '관리자'} (${role === 'safety_manager' ? '안전관리자' : role === 'site_manager' ? '현장대리인' : '관리감독자'})`,
+          role: 'manager',
+          userId: p.user_id,
+        });
+      }
+    }
+    setRecipients(list);
+  }, [projectId, companyId]);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadRecipients(); }, [loadRecipients]);
 
   async function ensureLedger(): Promise<string | null> {
     if (ledger?.id) {
@@ -148,93 +199,70 @@ export function PpeLedgerPanel({
     onChanged?.();
   }
 
-  async function upsertSku(name: string) {
-    const item_key = normalizePpeItemKey({ item_name: name });
-    const { data: existing } = await supabase
-      .from('safety_cost_ppe_skus' as any)
-      .select('id')
-      .eq('construction_id', constructionId)
-      .eq('item_key', item_key)
-      .maybeSingle();
-    if (existing) return (existing as any).id as string;
-    const { data, error } = await supabase.from('safety_cost_ppe_skus' as any).insert({
-      project_id: projectId,
-      company_id: companyId,
-      construction_id: constructionId,
-      item_key,
-      item_name: name,
-      unit: '개',
-    }).select('id').single();
-    if (error) throw error;
-    return (data as any).id as string;
-  }
-
-  async function addSignedEntry() {
-    if (!workerName.trim() || !itemName.trim()) {
-      toast({ title: '근로자명과 품목을 입력하세요.', variant: 'destructive' });
+  async function issue(channel: 'manual' | 'app') {
+    const name = selectedRecipient?.name.replace(/\s*\(.*\)$/, '') || workerName.trim();
+    if (!name || !itemName.trim()) {
+      toast({ title: '수령자와 품목을 입력하세요.', variant: 'destructive' });
       return;
     }
-    if (sigRef.current?.isEmpty()) {
-      toast({ title: '수령 서명이 필요합니다.', variant: 'destructive' });
-      return;
+    let signature = '';
+    if (channel === 'manual') {
+      if (sigRef.current?.isEmpty()) {
+        toast({ title: '수령 서명이 필요합니다.', variant: 'destructive' });
+        return;
+      }
+      signature = sigRef.current!.toDataURL('image/png');
     }
     const qty = Math.max(1, Number(quantity) || 1);
     const ledgerId = await ensureLedger();
     if (!ledgerId) return;
-    const signature = sigRef.current!.toDataURL('image/png');
-    const { data: entry, error } = await supabase.from('safety_cost_ppe_ledger_entries' as any).insert({
-      ledger_id: ledgerId,
-      project_id: projectId,
-      company_id: companyId,
-      issued_at: issuedAt,
-      worker_name: workerName.trim(),
-      item_name: itemName.trim(),
-      quantity: qty,
-      signature_data: signature,
-      signed_at: new Date().toISOString(),
-      sort_order: entries.length,
-    }).select('id').single();
-    if (error) {
-      toast({ title: '저장 실패', description: error.message, variant: 'destructive' });
-      return;
-    }
+    setSaving(true);
     try {
-      const skuId = await upsertSku(itemName.trim());
-      const { data: mov } = await supabase.from('safety_cost_ppe_stock_movements' as any).insert({
-        project_id: projectId,
-        company_id: companyId,
-        construction_id: constructionId,
-        sku_id: skuId,
-        movement_type: 'out',
-        quantity: qty,
-        movement_date: issuedAt,
-        source_type: 'issuance',
-        source_issuance_id: (entry as any).id,
-        report_id: reportId,
-        note: `지급: ${workerName.trim()}`,
-        created_by: userId || null,
-      }).select('id').single();
-      if (mov) {
-        await supabase.from('safety_cost_ppe_ledger_entries' as any)
-          .update({ stock_movement_id: (mov as any).id })
-          .eq('id', (entry as any).id);
-      }
+      const { data, error } = await supabase.rpc('issue_ppe_entry', {
+        _ledger_id: ledgerId,
+        _issued_at: issuedAt,
+        _worker_name: name,
+        _item_name: itemName.trim(),
+        _quantity: qty,
+        _signature_data: signature,
+        _worker_id: selectedRecipient?.workerId || null,
+        _user_id: selectedRecipient?.userId || null,
+        _recipient_role: selectedRecipient?.role || 'worker',
+        _specification: specification.trim(),
+        _maker: maker.trim(),
+        _channel: channel,
+      });
+      if (error) throw error;
+      const status = (data as any)?.receipt_status;
+      toast({
+        title: status === 'pending' ? '앱 수령확인 요청됨' : '지급·서명 기록됨 (수불 출고)',
+        description: status === 'pending' ? '수령자가 앱에서 서명하면 지급대장·수불대장에 기록됩니다.' : undefined,
+      });
+      setSignOpen(false);
+      setWorkerName('');
+      setRecipientKey('');
+      setQuantity('1');
+      setSpecification('');
+      setMaker('');
+      sigRef.current?.clear();
+      await load();
+      onChanged?.();
     } catch (e: any) {
-      toast({ title: '지급은 저장됐으나 수불 출고 연동 실패', description: e.message, variant: 'destructive' });
+      const msg = e.message || String(e);
+      toast({
+        title: '지급 실패',
+        description: /insufficient_ppe_stock/i.test(msg) ? '재고가 부족합니다. 수불대장에서 입고를 확인하세요.' : msg,
+        variant: 'destructive',
+      });
+    } finally {
+      setSaving(false);
     }
-    toast({ title: '지급·서명 기록됨 (수불 출고)' });
-    setSignOpen(false);
-    setWorkerName('');
-    setQuantity('1');
-    sigRef.current?.clear();
-    await load();
-    onChanged?.();
   }
 
   async function removeEntry(id: string) {
     if (!window.confirm('이 지급 기록을 삭제할까요?')) return;
     const row = entries.find((e) => e.id === id);
-    await supabase.from('safety_cost_ppe_ledger_entries' as any).update({ is_deleted: true }).eq('id', id);
+    await supabase.from('safety_cost_ppe_ledger_entries' as any).update({ is_deleted: true, receipt_status: 'cancelled' }).eq('id', id);
     if (row?.stock_movement_id) {
       await supabase.from('safety_cost_ppe_stock_movements' as any)
         .update({ is_deleted: true })
@@ -255,7 +283,7 @@ export function PpeLedgerPanel({
         <td>${escape(e.worker_name)}</td>
         <td>${escape(e.item_name)}</td>
         <td>${e.quantity || 1}</td>
-        <td>${e.signature_data?.startsWith('data:') ? `<img src="${e.signature_data}" style="height:36px"/>` : escape(e.signature_data || '')}</td>
+        <td>${e.signature_data?.startsWith('data:') ? `<img src="${e.signature_data}" style="height:36px"/>` : escape(e.signature_data || e.receipt_status || '')}</td>
       </tr>`).join('');
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>보호구 지급대장</title>
       <style>body{font-family:'Malgun Gothic',sans-serif;padding:16px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #333;padding:6px;font-size:12px}th{background:#eef2f7}.meta{margin-bottom:12px;font-size:13px}.note{margin-top:16px;font-size:11px;line-height:1.5}</style></head>
@@ -292,7 +320,7 @@ export function PpeLedgerPanel({
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            보호구(3번)는 구매 증빙만으로는 부족합니다. 수령자 서명이 있는 지급대장이 있어야 상신할 수 있습니다.
+            작성자가 수기 서명하거나, 근로자·관리자가 앱에서 수령확인하면 지급대장과 수불대장에 서명·일시가 함께 기록됩니다.
           </p>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-1">
@@ -311,7 +339,7 @@ export function PpeLedgerPanel({
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={saveHeader}>헤더 저장</Button>
             <Button size="sm" onClick={() => { setItemName(itemColumns[0] || ''); setSignOpen(true); }} className="gap-1">
-              <Plus className="h-4 w-4" /> 지급·서명 추가
+              <Plus className="h-4 w-4" /> 지급 등록
             </Button>
             <Button size="sm" variant="outline" onClick={printLedger} disabled={!entries.length} className="gap-1">
               <Printer className="h-4 w-4" /> 인쇄
@@ -329,6 +357,7 @@ export function PpeLedgerPanel({
                 <TableHead>성명</TableHead>
                 <TableHead>품목</TableHead>
                 <TableHead>수량</TableHead>
+                <TableHead>상태</TableHead>
                 <TableHead>서명</TableHead>
                 <TableHead></TableHead>
               </TableRow>
@@ -338,8 +367,13 @@ export function PpeLedgerPanel({
                 <TableRow key={e.id}>
                   <TableCell className="text-xs">{e.issued_at}</TableCell>
                   <TableCell className="text-sm font-medium">{e.worker_name}</TableCell>
-                  <TableCell className="text-xs">{e.item_name}</TableCell>
+                  <TableCell className="text-xs">{e.item_name}{e.specification ? ` / ${e.specification}` : ''}</TableCell>
                   <TableCell className="text-xs">{e.quantity || 1}</TableCell>
+                  <TableCell>
+                    <Badge variant={e.receipt_status === 'confirmed' || e.signature_data ? 'default' : 'secondary'} className="text-[10px]">
+                      {e.receipt_status === 'pending' ? '앱 수령대기' : e.receipt_channel === 'legacy' ? '이관' : e.receipt_channel === 'app' ? '앱수령' : '수기'}
+                    </Badge>
+                  </TableCell>
                   <TableCell>
                     {e.signature_data?.startsWith('data:')
                       ? <img src={e.signature_data} alt="서명" className="h-8 max-w-[100px] object-contain" />
@@ -356,8 +390,8 @@ export function PpeLedgerPanel({
               ))}
               {entries.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground text-sm">
-                    아직 지급 기록이 없습니다. 「지급·서명 추가」로 시작하세요.
+                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground text-sm">
+                    아직 지급 기록이 없습니다. 「지급 등록」으로 시작하세요.
                   </TableCell>
                 </TableRow>
               )}
@@ -369,7 +403,7 @@ export function PpeLedgerPanel({
       <Dialog open={signOpen} onOpenChange={setSignOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>보호구 수령 서명</DialogTitle>
+            <DialogTitle>보호구 지급</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -388,25 +422,43 @@ export function PpeLedgerPanel({
                   {itemColumns.map((c) => <option key={c} value={c} />)}
                 </datalist>
               </div>
+              <div className="space-y-1">
+                <Label>규격</Label>
+                <Input value={specification} onChange={(e) => setSpecification(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label>메이커</Label>
+                <Input value={maker} onChange={(e) => setMaker(e.target.value)} />
+              </div>
             </div>
             <div className="space-y-1">
-              <Label>수령자 성명</Label>
-              <Input value={workerName} onChange={(e) => setWorkerName(e.target.value)} />
+              <Label>수령자 (근로자·관리자)</Label>
+              <Select value={recipientKey || undefined} onValueChange={(v) => {
+                setRecipientKey(v);
+                const r = recipients.find((x) => x.key === v);
+                if (r) setWorkerName(r.name.replace(/\s*\(.*\)$/, ''));
+              }}>
+                <SelectTrigger><SelectValue placeholder="명부에서 선택" /></SelectTrigger>
+                <SelectContent>
+                  {recipients.map((r) => (
+                    <SelectItem key={r.key} value={r.key}>{r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input className="mt-1" value={workerName} onChange={(e) => { setWorkerName(e.target.value); setRecipientKey(''); }} placeholder="또는 성명 직접 입력" />
             </div>
             <div className="space-y-1">
-              <Label>수령 서명</Label>
+              <Label>수기 서명 (앱 요청 시 생략)</Label>
               <div className="rounded-md border bg-background">
                 <ResponsiveSignaturePad ref={sigRef} height={140} />
               </div>
               <Button type="button" size="sm" variant="ghost" onClick={() => sigRef.current?.clear()}>서명 지우기</Button>
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              서명 시 보호구 착용·분실배상·미착용 조치에 동의하는 것으로 기록됩니다.
-            </p>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-wrap gap-2">
             <Button variant="outline" onClick={() => setSignOpen(false)}>취소</Button>
-            <Button onClick={addSignedEntry}>저장</Button>
+            <Button variant="secondary" disabled={saving} onClick={() => issue('app')}>앱 수령확인 요청</Button>
+            <Button disabled={saving} onClick={() => issue('manual')}>수기 서명 저장</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

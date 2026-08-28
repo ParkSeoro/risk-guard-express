@@ -52,4 +52,29 @@ describe('safetyCostExport', () => {
     expect(dataRow).toBeTruthy();
     expect(dataRow?.[12]).toBe(165000);
   });
+
+  it('does not add unapproved current month into cumulative column', () => {
+    const buf = readFileSync(resolve(process.cwd(), 'public/templates/safety-cost-template.xlsx'));
+    const input = {
+      companyName: '테스트건설',
+      constructionName: '여수공장 정비공사',
+      constructionAmount: 1_000_000_000,
+      safetyCostTotal: 30_000_000,
+      reportMonth: '2026-03-01',
+      writerName: '홍길동',
+      approvedCumulativeBeforeMonth: 5_000_000,
+      approvedByCategoryBefore: { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6': 0, '7': 0, '8': 0, '9': 0 },
+      items: [
+        { category_code: '3', amount: 165000, item_name: '안전모', classification_status: 'usable' },
+      ],
+      statusLabel: { usable: '사용 가능' },
+      getDisplayDate: () => '2026-03-05',
+    };
+    const pending = buildSafetyCostWorkbook(buf, input);
+    const approved = buildSafetyCostWorkbook(buf, { ...input, currentMonthApproved: true });
+    expect(pending.Sheets['1.총괄']['C15']?.v).toBe(5_000_000);
+    expect(pending.Sheets['1.총괄']['D15']?.v).toBe(165000);
+    expect(pending.Sheets['1.총괄']['E15']?.v).toBe(5_000_000);
+    expect(approved.Sheets['1.총괄']['E15']?.v).toBe(5_165_000);
+  });
 });

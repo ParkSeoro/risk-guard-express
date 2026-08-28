@@ -3,6 +3,7 @@ import {
   buildCommitPreview,
   normalizeLegacyDraft,
   parseLegacyTextDraft,
+  planLegacyCommitMonths,
   validateLegacyDraft,
 } from '@/lib/safetyCostLegacyImport';
 import {
@@ -10,6 +11,8 @@ import {
   canIssueFromStock,
   isPpeInboundItem,
   normalizePpeItemKey,
+  planPpeConfirm,
+  planPpeIssue,
 } from '@/lib/safetyCostPpeStock';
 
 describe('safetyCostLegacyImport', () => {
@@ -73,6 +76,36 @@ describe('safetyCostLegacyImport', () => {
     const v = validateLegacyDraft(draft, { safetyCostTotal: 100, existingApprovedTotal: 50 });
     expect(v.issues.some((i) => i.code === 'OVER_BUDGET')).toBe(true);
   });
+
+  it('rejects commit planner when a live month already exists', () => {
+    const draft = normalizeLegacyDraft({
+      months: [{
+        report_month: '2026-07',
+        declared_total: 100,
+        items: [{ item_name: '안전모', amount: 100, category_code: '3', quantity: 1 }],
+      }],
+    });
+    const plan = planLegacyCommitMonths(draft, [
+      { report_month: '2026-07-01', status: 'submitted', is_deleted: false },
+    ]);
+    expect(plan.ok).toBe(false);
+    expect(plan.plans[0].action).toBe('reject_live');
+  });
+
+  it('allows commit planner insert when the month is free', () => {
+    const draft = normalizeLegacyDraft({
+      months: [{
+        report_month: '2026-08',
+        declared_total: 100,
+        items: [{ item_name: '안전모', amount: 100, category_code: '3', quantity: 1 }],
+      }],
+    });
+    const plan = planLegacyCommitMonths(draft, [
+      { report_month: '2026-07-01', status: 'approved', is_deleted: false },
+    ]);
+    expect(plan.ok).toBe(true);
+    expect(plan.plans[0].action).toBe('insert');
+  });
 });
 
 describe('safetyCostPpeStock', () => {
@@ -98,5 +131,28 @@ describe('safetyCostPpeStock', () => {
   it('detects ppe inbound items', () => {
     expect(isPpeInboundItem({ category_code: '3', quantity: 2, item_name: '안전모' })).toBe(true);
     expect(isPpeInboundItem({ category_code: '5', quantity: 2, item_name: '교육' })).toBe(false);
+  });
+
+  it('uses name+spec+maker for issuance keys', () => {
+    expect(normalizePpeItemKey({ item_name: '안전모', specification: '백색', maker: 'A' }))
+      .not.toBe(normalizePpeItemKey({ item_name: '안전모' }));
+  });
+
+  it('plans pending app issue vs signed manual issue', () => {
+    const pending = planPpeIssue({ quantity: 2, stockBalance: 5 });
+    expect(pending.receipt_status).toBe('pending');
+    expect(pending.writesStockOut).toBe(false);
+    const signed = planPpeIssue({ quantity: 2, stockBalance: 5, signatureData: 'data:image/png;base64,xx' });
+    expect(signed.receipt_status).toBe('confirmed');
+    expect(signed.writesStockOut).toBe(true);
+    expect(planPpeIssue({ quantity: 6, stockBalance: 5 }).ok).toBe(false);
+  });
+
+  it('confirm is idempotent when already signed', () => {
+    const again = planPpeConfirm({ receipt_status: 'confirmed', signature_data: 'data:xx', stock_movement_id: 'm1' });
+    expect(again.alreadyConfirmed).toBe(true);
+    expect(again.writesStockOut).toBe(false);
+    const first = planPpeConfirm({ receipt_status: 'pending', signature_data: '' });
+    expect(first.writesStockOut).toBe(true);
   });
 });

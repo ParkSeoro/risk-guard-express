@@ -55,7 +55,8 @@ export type ApprovalPositionKey =
   | 'gc_pm'
   | 'owner_cm'
   | 'owner_sm'
-  | 'cooperator';
+  | 'cooperator'
+  | 'consent';
 
 export const POSITION_LABELS: Record<string, string> = {
   // Work-permit stamp vocabulary (DigPermitForm) — keep in sync with paper headers
@@ -68,6 +69,7 @@ export const POSITION_LABELS: Record<string, string> = {
   owner_cm: '담당자(CM)',
   owner_sm: '담당자(SM)',
   cooperator: '협조부서',
+  consent: '합의',
 
   // legacy — 옛 데이터가 남아있을 수 있어 라벨만 유지 (신규 사용 금지)
   project_admin: '프로젝트 관리자',
@@ -115,6 +117,8 @@ export function stepLabelForAuthor(
       return '담당자(SM)';
     case 'cooperator':
       return '협조부서';
+    case 'consent':
+      return '합의';
     default:
       return POSITION_LABELS[positionKey] || positionKey || '결재';
   }
@@ -147,13 +151,21 @@ export const WORK_PERMIT_APPROVAL_STEPS: DefaultStep[] = [
   { label: '담당자(SM)', position: 'owner_sm' },
 ];
 
+/** 산안비 기본선: 작성자 → 검토자 → 현장소장 → 발주처 SM (합의·CM은 작성자가 추가) */
+export const SAFETY_COST_APPROVAL_STEPS: DefaultStep[] = [
+  { label: '작성자', position: 'contractor_supervisor' },
+  { label: '검토자', position: 'contractor_safety_manager' },
+  { label: '현장소장', position: 'contractor_site_director' },
+  { label: '발주처 SM', position: 'owner_sm' },
+];
+
 /** 엔티티 → 기본 결재선 */
 export const DEFAULT_STEPS_BY_ENTITY: Record<ApprovalEntityType, DefaultStep[]> = {
   work_permit: WORK_PERMIT_APPROVAL_STEPS,
   work_plan: FIXED_APPROVAL_STEPS,
   assessment_run: FIXED_APPROVAL_STEPS,
   assessment_run_feedback: FIXED_APPROVAL_STEPS,
-  safety_cost: FIXED_APPROVAL_STEPS,
+  safety_cost: SAFETY_COST_APPROVAL_STEPS,
   incident: FIXED_APPROVAL_STEPS,
   emergency_drill: FIXED_APPROVAL_STEPS,
   tbm: FIXED_APPROVAL_STEPS,
@@ -198,7 +210,7 @@ export function buildDefaultStepsForAuthor(
     base = base.filter((s) => !['gc', 'gc_manager', 'gc_pm'].includes(s.position));
   }
   return base.map((s) => ({
-    label: stepLabelForAuthor(s.position, t),
+    label: entityType === 'safety_cost' ? s.label : stepLabelForAuthor(s.position, t),
     position: s.position,
     user_id: '',
     user_name: '',
@@ -242,6 +254,7 @@ export const SSOT_STEP_KEYS = new Set<string>([
   'owner_cm',
   'owner_sm',
   'cooperator',
+  'consent',
 ]);
 
 const CONTRACTOR_STEP_KEYS = new Set<string>([
@@ -330,6 +343,9 @@ export function remapLegacyStepKey(
       return 'owner_sm';
     case 'cooperator':
       return 'cooperator';
+    case 'consent':
+    case '합의':
+      return 'consent';
     default:
       return null;
   }
@@ -488,7 +504,7 @@ export function filterApproversForStep(
       return matchesStepPosition(a, key);
     }
 
-    if (key === 'cooperator') return true;
+    if (key === 'cooperator' || key === 'consent') return true;
     return false;
   });
 
@@ -689,6 +705,7 @@ export const POSITION_RANK: Record<string, number> = {
   gc_pm: 22,
   owner_cm: 30,
   owner_sm: 31,
+  consent: 11.5,
   cooperator: 40,
 };
 
@@ -737,6 +754,28 @@ export function validateStepsHierarchy<T extends { position?: string | null; lab
   return { ok: true };
 }
 
+/** 산안비: 작성자 순서 유지. 작성자·현장소장·발주처 SM 필수. 합의는 옵션. */
+export function validateSafetyCostApprovalSteps<
+  T extends { position?: string | null; label?: string | null },
+>(steps: T[]): { ok: boolean; message?: string } {
+  if (!steps.length) return { ok: false, message: '결재선을 1단계 이상 지정하세요.' };
+  const keys = steps.map((s) => (s.position || '').toLowerCase());
+  const ssot = validateApprovalLinesSSOT(steps.map((s) => ({ position: s.position })));
+  if (!ssot.ok) {
+    return { ok: false, message: `알 수 없는 결재 직책: ${Array.from(new Set(ssot.invalid)).join(', ')}` };
+  }
+  if (!keys.some((k) => k === 'contractor_supervisor' || k === 'contractor_pic')) {
+    return { ok: false, message: '작성자(상신) 단계가 필요합니다.' };
+  }
+  if (!keys.includes('contractor_site_director') && !keys.includes('site_director')) {
+    return { ok: false, message: '현장소장 단계가 필요합니다.' };
+  }
+  if (!keys.includes('owner_sm') && !keys.includes('sm')) {
+    return { ok: false, message: '발주처 SM 단계가 필요합니다.' };
+  }
+  return { ok: true };
+}
+
 /** 상신(기안) 단계 — 승인/반려 대상이 아님 */
 export function isSubmitterApprovalStep(step: {
   position?: string | null;
@@ -751,6 +790,7 @@ export function isSubmitterApprovalStep(step: {
   if (label.includes('상신')) return true;
   // Stamp-aligned default label (no longer contains 「상신」)
   if (label.includes('담당자(시공)')) return true;
+  if (label.includes('작성자')) return true;
   return false;
 }
 

@@ -310,6 +310,44 @@ export function validateLegacyDraft(
   };
 }
 
+export type LiveMonthRow = {
+  report_month?: string | null;
+  status?: string | null;
+  is_deleted?: boolean | null;
+};
+
+export type LegacyCommitMonthPlan = {
+  report_month: string;
+  action: 'insert' | 'reject_live';
+  liveStatus?: string | null;
+};
+
+/** 이관 확정 플래너: 이미 살아있는 월보는 덮어쓰지 않는다. */
+export function planLegacyCommitMonths(
+  draft: LegacyImportDraft,
+  liveRows: LiveMonthRow[],
+): { ok: boolean; blockers: string[]; plans: LegacyCommitMonthPlan[] } {
+  const included = draft.months.filter((m) => m.included !== false);
+  const liveByMonth = new Map<string, LiveMonthRow>();
+  for (const row of liveRows) {
+    if (row.is_deleted) continue;
+    const key = String(row.report_month || '').slice(0, 7);
+    if (key) liveByMonth.set(key, row);
+  }
+  const plans: LegacyCommitMonthPlan[] = [];
+  const blockers: string[] = [];
+  for (const month of included) {
+    const live = liveByMonth.get(month.report_month);
+    if (live) {
+      plans.push({ report_month: month.report_month, action: 'reject_live', liveStatus: live.status || null });
+      blockers.push(`${month.report_month}: 이미 ${live.status === 'approved' ? '승인된' : '작성 중인'} 월보가 있어 이관할 수 없습니다.`);
+    } else {
+      plans.push({ report_month: month.report_month, action: 'insert' });
+    }
+  }
+  return { ok: blockers.length === 0, blockers, plans };
+}
+
 export function buildCommitPreview(draft: LegacyImportDraft) {
   const included = draft.months.filter((m) => m.included !== false);
   return {

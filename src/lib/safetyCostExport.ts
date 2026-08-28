@@ -47,6 +47,8 @@ export type SafetyCostExportInput = {
   items: SafetyCostExportItem[];
   statusLabel: Record<string, string>;
   getDisplayDate: (item: SafetyCostExportItem) => string;
+  /** 당월이 승인된 경우에만 누계(E열)에 합산. 미승인은 금월 칸만. */
+  currentMonthApproved?: boolean;
 };
 
 function n(v: unknown) {
@@ -67,12 +69,15 @@ export function buildSafetyCostWorkbook(
     : templateBuf;
   const wb = XLSX.read(bytes, { type: 'array', cellStyles: true });
   const monthLabel = String(input.reportMonth).slice(0, 7);
-  const remain = Math.max(0, n(input.safetyCostTotal) - (n(input.approvedCumulativeBeforeMonth) + input.items.reduce((s, it) => s + n(it.amount), 0)));
-  // 누계집행율: 승인누계(전월) + 금월 항목 / 계상액 — 금월이 미승인이어도 작성 시점 기준으로 표기
   const monthTotal = input.items.reduce((s, it) => s + n(it.amount), 0);
-  const cumulAll = n(input.approvedCumulativeBeforeMonth) + monthTotal;
+  const prior = n(input.approvedCumulativeBeforeMonth);
+  const includeMonth = input.currentMonthApproved !== false && input.currentMonthApproved !== undefined
+    ? Boolean(input.currentMonthApproved)
+    : false;
+  const cumulApproved = prior + (includeMonth ? monthTotal : 0);
+  const remain = Math.max(0, n(input.safetyCostTotal) - cumulApproved);
   const execRate = n(input.safetyCostTotal) > 0
-    ? Math.round((cumulAll / n(input.safetyCostTotal)) * 1000) / 10
+    ? Math.round((cumulApproved / n(input.safetyCostTotal)) * 1000) / 10
     : 0;
 
   const byCatMonth: Record<string, number> = {};
@@ -99,16 +104,16 @@ export function buildSafetyCostWorkbook(
 
     // 계 row
     setCell(summary, 'B15', n(input.safetyCostTotal));
-    setCell(summary, 'C15', n(input.approvedCumulativeBeforeMonth));
+    setCell(summary, 'C15', prior);
     setCell(summary, 'D15', monthTotal);
-    setCell(summary, 'E15', cumulAll);
+    setCell(summary, 'E15', cumulApproved);
     setCell(summary, 'F15', execRate);
 
     SAFETY_COST_CATEGORIES.forEach((cat, idx) => {
       const r = 16 + idx;
       const prev = n(input.approvedByCategoryBefore[cat.code]);
       const cur = n(byCatMonth[cat.code]);
-      const cum = prev + cur;
+      const cum = prev + (includeMonth ? cur : 0);
       const rate = n(input.safetyCostTotal) > 0 ? Math.round((cum / n(input.safetyCostTotal)) * 1000) / 10 : 0;
       setCell(summary, `C${r}`, prev);
       setCell(summary, `D${r}`, cur);
@@ -159,7 +164,7 @@ export function buildSafetyCostWorkbook(
     setCell(sheet, 'B3', ''); // 계상액(계획) — 비목별 배분 없으면 공란
     setCell(sheet, 'D3', prev);
     setCell(sheet, 'F3', cur);
-    setCell(sheet, 'H3', prev + cur);
+    setCell(sheet, 'H3', prev + (includeMonth ? cur : 0));
 
     const catItems = input.items
       .filter((it) => it.category_code === cat.code || it.category_name === cat.name)

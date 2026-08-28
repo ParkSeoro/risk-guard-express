@@ -10205,6 +10205,39 @@ export type Database = {
         Args: { _report_id: string }
         Returns: Json
       }
+      issue_ppe_entry: {
+        Args: {
+          _ledger_id: string
+          _issued_at: string
+          _worker_name: string
+          _item_name: string
+          _quantity: number
+          _signature_data?: string
+          _worker_id?: string | null
+          _user_id?: string | null
+          _recipient_role?: string
+          _specification?: string
+          _maker?: string
+          _channel?: string
+        }
+        Returns: Json
+      }
+      confirm_ppe_receipt: {
+        Args: { _entry_id: string; _signature_data: string }
+        Returns: Json
+      }
+      list_my_pending_ppe_receipts: {
+        Args: never
+        Returns: Json
+      }
+      commit_safety_cost_legacy_import: {
+        Args: { _batch_id: string }
+        Returns: Json
+      }
+      assert_safety_cost_ready_to_submit: {
+        Args: { _report_id: string }
+        Returns: undefined
+      }
       verify_worker_otp: {
         Args: { _code: string; _phone: string }
         Returns: Json

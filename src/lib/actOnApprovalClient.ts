@@ -32,6 +32,37 @@ export function approvalRejectNotifyMessage(docTitle: string, comment?: string |
     : `${title}이(가) 반려되었습니다.`;
 }
 
+export type ApprovalResultNotifyRow = {
+  approver_id?: string | null;
+  status?: string | null;
+};
+
+/**
+ * 반려/최종승인 결과 알림 수신자. DB trg_approval_notify와 동일.
+ * 반려: 기안자 + 이미 승인한 앞단계. 대기(미도달) 윗단계는 제외.
+ * 최종승인: 취소가 아닌 결재선 + 기안자. 행위자 본인은 제외.
+ */
+export function approvalResultNotifyUserIds(opts: {
+  eventStatus: "반려" | "승인";
+  actorId?: string | null;
+  creatorId?: string | null;
+  line: ApprovalResultNotifyRow[];
+}): string[] {
+  const actor = opts.actorId || null;
+  const ids = new Set<string>();
+  if (opts.creatorId && opts.creatorId !== actor) ids.add(opts.creatorId);
+  for (const row of opts.line) {
+    const uid = row.approver_id;
+    if (!uid || uid === actor) continue;
+    if (opts.eventStatus === "반려") {
+      if (row.status === "승인") ids.add(uid);
+    } else if (row.status && row.status !== "취소") {
+      ids.add(uid);
+    }
+  }
+  return [...ids];
+}
+
 export async function submitApprovalAction(opts: {
   approvalId: string;
   action: "approve" | "reject";

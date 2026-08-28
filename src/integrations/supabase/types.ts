@@ -6179,6 +6179,9 @@ export type Database = {
           item_name: string
           legal_basis: string
           maker: string
+          ocr_confidence: number | null
+          ocr_raw_text: string
+          ocr_status: string | null
           project_id: string
           quantity: number
           report_id: string
@@ -6214,6 +6217,9 @@ export type Database = {
           item_name?: string
           legal_basis?: string
           maker?: string
+          ocr_confidence?: number | null
+          ocr_raw_text?: string
+          ocr_status?: string | null
           project_id: string
           quantity?: number
           report_id: string
@@ -6249,6 +6255,9 @@ export type Database = {
           item_name?: string
           legal_basis?: string
           maker?: string
+          ocr_confidence?: number | null
+          ocr_raw_text?: string
+          ocr_status?: string | null
           project_id?: string
           quantity?: number
           report_id?: string

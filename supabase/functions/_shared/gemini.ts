@@ -55,6 +55,8 @@ export class GeminiError extends Error {
 // Current default model is text-only. Flatten any multimodal blocks to text
 // so callers that used to pass images (e.g. permit template analysis) keep
 // working without a hard crash.
+// Safety-cost Korean OCR must NOT go through this path — use koreanOcr.ts
+// (Gemini 2.5 Flash vision with inline_data). Do not send images to NVIDIA.
 function flattenContent(content: OAIMessage["content"]): string {
   if (typeof content === "string") return content;
   return content

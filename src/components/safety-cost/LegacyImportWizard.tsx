@@ -13,6 +13,12 @@ import {
   type LegacyImportMonth,
 } from '@/lib/safetyCostLegacyImport';
 import { formatKRW, SAFETY_COST_CATEGORIES } from '@/lib/safetyCost';
+import {
+  ocrStatusBadge,
+  ocrStatusBadgeVariant,
+  ocrStatusLabel,
+  summarizeOcrItems,
+} from '@/lib/safetyCostOcr';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -77,15 +83,24 @@ export function LegacyImportWizard({
   const canCommit = Boolean(validation?.canCommit && commitPlan?.ok && budgetConfirmed);
   const preview = useMemo(() => (draft ? buildCommitPreview(draft) : null), [draft]);
   const activeMonth = draft?.months.find((m) => m.report_month === selectedMonth) || draft?.months[0];
+  const ocrSummary = useMemo(
+    () => summarizeOcrItems((draft?.months || []).flatMap((m) => m.items)),
+    [draft],
+  );
 
   function patchItem(reportMonth: string, index: number, patch: Partial<LegacyImportItem>) {
     setDraft((prev) => {
       if (!prev) return prev;
+      const touchesValue = patch.item_name != null || patch.amount != null || patch.supplier_name != null;
       return {
         ...prev,
         months: prev.months.map((m) => {
           if (m.report_month !== reportMonth) return m;
-          const items = m.items.map((it, i) => (i === index ? { ...it, ...patch } : it));
+          const items = m.items.map((it, i) => (
+            i === index
+              ? { ...it, ...patch, ...(touchesValue ? { ocr_status: 'user_edited' as const } : {}) }
+              : it
+          ));
           return { ...m, items };
         }),
       };
@@ -134,16 +149,23 @@ export function LegacyImportWizard({
           },
         });
         if (!error && data?.draft) {
-          extracted = normalizeLegacyDraft(data.draft);
+          extracted = normalizeLegacyDraft({
+            ...data.draft,
+            extraction_warning: [data.draft.extraction_warning, data.warning].filter(Boolean).join(' · ') || undefined,
+          });
           if (!extracted.months.length && text.trim()) {
             extracted = normalizeLegacyDraft({
               ...parseLegacyTextDraft(text),
               construction: extracted.construction,
               summary: { ...extracted.summary, notes: [...(extracted.summary?.notes || []), 'AI 월 추출 실패 → 텍스트 예비 추출 사용'] },
+              extraction_warning: [extracted.extraction_warning, data.warning].filter(Boolean).join(' · ') || undefined,
             });
           }
         } else if (text.trim()) {
-          extracted = normalizeLegacyDraft(parseLegacyTextDraft(text));
+          extracted = normalizeLegacyDraft({
+            ...parseLegacyTextDraft(text),
+            extraction_warning: [parseLegacyTextDraft(text).extraction_warning, data?.warning].filter(Boolean).join(' · ') || undefined,
+          });
         }
       } catch {
         if (text.trim()) extracted = normalizeLegacyDraft(parseLegacyTextDraft(text));
@@ -282,6 +304,10 @@ export function LegacyImportWizard({
                 {draft.extraction_warning}
               </div>
             )}
+            <p className="text-xs text-muted-foreground">
+              OCR 원문 {ocrSummary.rawChars}자 · 신뢰도 낮음 {ocrSummary.lowCount}건 · AI 보정 {ocrSummary.correctedCount}건
+              {ocrSummary.fallbackCount ? ` · 예비 추출 ${ocrSummary.fallbackCount}건` : ''}
+            </p>
 
             <div className="grid gap-2 md:grid-cols-4 text-sm">
               <div className="rounded-md border p-2"><p className="text-xs text-muted-foreground">포함 월</p><p className="font-semibold">{preview?.monthCount}개월</p></div>
@@ -358,11 +384,15 @@ export function LegacyImportWizard({
                         <TableHead>수량</TableHead>
                         <TableHead>금액</TableHead>
                         <TableHead>공급자</TableHead>
+                        <TableHead>판독</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {activeMonth.items.map((it, idx) => (
-                        <TableRow key={`${it.item_name}-${idx}`}>
+                        <TableRow
+                          key={`${it.item_name}-${idx}`}
+                          className={it.ocr_status === 'ocr_low' || it.ocr_status === 'no_vision' || it.ocr_status === 'rule_fallback' ? 'bg-amber-50/70 dark:bg-amber-950/20' : undefined}
+                        >
                           <TableCell>
                             <Input
                               className="h-8 w-16"
@@ -388,10 +418,15 @@ export function LegacyImportWizard({
                             />
                           </TableCell>
                           <TableCell className="text-xs">{it.supplier_name || '—'}</TableCell>
+                          <TableCell>
+                            <Badge variant={ocrStatusBadgeVariant(it.ocr_status)} title={ocrStatusLabel(it.ocr_status)}>
+                              {ocrStatusBadge(it.ocr_status) || '—'}
+                            </Badge>
+                          </TableCell>
                         </TableRow>
                       ))}
                       {activeMonth.items.length === 0 && (
-                        <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground py-6">항목 없음</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">항목 없음</TableCell></TableRow>
                       )}
                     </TableBody>
                   </Table>

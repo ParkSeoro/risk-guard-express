@@ -1,4 +1,5 @@
 import { SAFETY_COST_CATEGORIES, classifySafetyCostItem } from '@/lib/safetyCost';
+import { isSafetyCostOcrStatus, stampOcrOnItem, type SafetyCostOcrStatus } from '@/lib/safetyCostOcr';
 
 export type LegacyImportItem = {
   transaction_date?: string;
@@ -19,6 +20,9 @@ export type LegacyImportItem = {
   ai_confidence?: number;
   ai_reason?: string;
   legal_basis?: string;
+  ocr_status?: SafetyCostOcrStatus;
+  ocr_raw_text?: string;
+  ocr_confidence?: number;
 };
 
 export type LegacyImportPpeIssuance = {
@@ -110,7 +114,7 @@ export function normalizeLegacyItem(row: Partial<LegacyImportItem> & Record<stri
   const supplyAmount = supply || (unitPrice ? quantity * unitPrice : Math.max(amount - vat, 0));
   const code = String(row.category_code || fallback.category_code || '');
   const cat = SAFETY_COST_CATEGORIES.find((c) => c.code === code);
-  return {
+  const base = {
     transaction_date: String(row.transaction_date || row.usage_date || '') || undefined,
     usage_date: String(row.usage_date || row.transaction_date || '') || undefined,
     item_name: name,
@@ -129,7 +133,20 @@ export function normalizeLegacyItem(row: Partial<LegacyImportItem> & Record<stri
     ai_confidence: row.ai_confidence != null ? Number(row.ai_confidence) : undefined,
     ai_reason: String(row.ai_reason || fallback.ai_reason || ''),
     legal_basis: String(row.legal_basis || fallback.legal_basis || ''),
+    ocr_status: isSafetyCostOcrStatus(row.ocr_status) ? row.ocr_status : undefined,
+    ocr_raw_text: String(row.ocr_raw_text || '').slice(0, 2000) || undefined,
+    ocr_confidence: row.ocr_confidence != null && Number.isFinite(Number(row.ocr_confidence))
+      ? Number(row.ocr_confidence)
+      : undefined,
   };
+  return stampOcrOnItem(base, {
+    engine: base.ocr_status === 'rule_fallback' ? 'rule' : undefined,
+    confidence: base.ocr_confidence,
+    rawText: base.ocr_raw_text,
+    fieldsCorrected: base.ocr_status === 'ai_corrected' || row.fields_corrected === true,
+    noVision: base.ocr_status === 'no_vision',
+    userEdited: base.ocr_status === 'user_edited',
+  });
 }
 
 /** 텍스트/CSV에서 월·금액 라인을 예비 추출 (AI 없을 때·보조) */
@@ -173,7 +190,13 @@ export function parseLegacyTextDraft(text: string): LegacyImportDraft {
         included: true,
       });
     }
-    const item = normalizeLegacyItem({ item_name: name, amount });
+    const item = normalizeLegacyItem({
+      item_name: name,
+      amount,
+      ocr_status: 'rule_fallback',
+      ocr_raw_text: line,
+      ocr_confidence: 0.3,
+    });
     if (item) monthsMap.get(currentMonth)!.items.push(item);
   }
 
@@ -205,12 +228,21 @@ export function normalizeLegacyDraft(raw: unknown): LegacyImportDraft {
       }))
       .filter((p: LegacyImportPpeIssuance) => p.worker_name && p.item_name);
     const lineTotal = items.reduce((s, it) => s + Number(it.amount || 0), 0);
+    const declaredTotal = m.declared_total != null ? toNum(m.declared_total) : lineTotal;
+    const mismatch = Math.abs(lineTotal - declaredTotal) > 1;
+    const stampedItems = mismatch
+      ? items.map((it) => (
+        it.ocr_status === 'user_edited' || it.ocr_status === 'no_vision'
+          ? it
+          : { ...it, ocr_status: 'ocr_low' as const }
+      ))
+      : items;
     return {
       report_month,
       title: String(m.title || `${report_month} 산업안전보건관리비 사용내역서(이관)`),
-      declared_total: m.declared_total != null ? toNum(m.declared_total) : lineTotal,
+      declared_total: declaredTotal,
       category_totals: m.category_totals && typeof m.category_totals === 'object' ? m.category_totals : undefined,
-      items,
+      items: stampedItems,
       ppe_issuances: ppe,
       included: m.included !== false,
     };

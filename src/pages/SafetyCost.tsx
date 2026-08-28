@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { notifyProjectRoles } from '@/lib/notificationService';
 import { ADMIN_PROJECT_ROLES } from '@/lib/permissions';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
-import { SAFETY_COST_CATEGORIES, analyzeSafetyCostCompliance, classifySafetyCostItem, formatKRW, getSafetyCostStatusLabel, isSafetyCostReportLocked } from '@/lib/safetyCost';
+import { SAFETY_COST_CATEGORIES, analyzeSafetyCostCompliance, classifySafetyCostItem, formatKRW, getSafetyCostStatusLabel, isSafetyCostReportLocked, sumSafetyCostByCategory } from '@/lib/safetyCost';
 import { groupSafetyCostByCompany } from '@/lib/safetyCostScope';
 import { companyTypeLabel } from '@/lib/companyTypes';
 import {
@@ -138,6 +138,10 @@ const SafetyCost = () => {
   const selectedReport = reports.find((r) => r.id === selectedReportId);
   const approvedReports = reports.filter((r) => r.status === 'approved' && (!selectedConstructionId || r.construction_id === selectedConstructionId));
   const approvedTotal = useMemo(() => approvedReports.reduce((sum, r) => sum + Number(r.report_total || 0), 0), [approvedReports]);
+  const existingApprovedByCategory = useMemo(() => {
+    const ids = new Set(approvedReports.map((r) => r.id));
+    return sumSafetyCostByCategory(items.filter((it) => ids.has(it.report_id)));
+  }, [approvedReports, items]);
   const usageRate = selectedConstruction?.safety_cost_total ? Math.min(100, Math.round((approvedTotal / Number(selectedConstruction.safety_cost_total)) * 100)) : 0;
 
   const scopedCompanies = useMemo(() => {
@@ -882,12 +886,7 @@ const SafetyCost = () => {
       );
       const approvedCumulativeBeforeMonth = priorApproved.reduce((sum, r) => sum + Number(r.report_total || 0), 0);
       const priorIds = new Set(priorApproved.map((r) => r.id));
-      const approvedByCategoryBefore: Record<string, number> = {};
-      SAFETY_COST_CATEGORIES.forEach((c) => { approvedByCategoryBefore[c.code] = 0; });
-      items.filter((it) => priorIds.has(it.report_id)).forEach((it) => {
-        const code = String(it.category_code || '');
-        if (approvedByCategoryBefore[code] != null) approvedByCategoryBefore[code] += Number(it.amount || 0);
-      });
+      const approvedByCategoryBefore = sumSafetyCostByCategory(items.filter((it) => priorIds.has(it.report_id)));
 
       const wb = buildSafetyCostWorkbook(await res.arrayBuffer(), {
         companyName,
@@ -921,12 +920,7 @@ const SafetyCost = () => {
       && String(r.report_month).slice(0, 7) < monthKey,
     );
     const priorIds = new Set(priorApproved.map((r) => r.id));
-    const priorByCat: Record<string, number> = {};
-    SAFETY_COST_CATEGORIES.forEach((c) => { priorByCat[c.code] = 0; });
-    items.filter((it) => priorIds.has(it.report_id) && !it.is_deleted).forEach((it) => {
-      const code = String(it.category_code || '');
-      if (priorByCat[code] != null) priorByCat[code] += Number(it.amount || 0);
-    });
+    const priorByCat = sumSafetyCostByCategory(items.filter((it) => priorIds.has(it.report_id)));
     const priorTotal = priorApproved.reduce((sum, r) => sum + Number(r.report_total || 0), 0);
     const monthApproved = selectedReport.status === 'approved';
     const companyName = companies.find((c) => c.id === selectedConstruction.company_id)?.name || '';
@@ -1033,6 +1027,10 @@ const SafetyCost = () => {
             constructionId={selectedConstruction.id}
             userId={user?.id}
             files={evidence}
+            liveReports={filteredReports}
+            safetyCostTotal={Number(selectedConstruction.safety_cost_total || 0)}
+            existingApprovedTotal={approvedTotal}
+            existingApprovedByCategory={existingApprovedByCategory}
             onChanged={() => fetchAll()}
           />
         )}

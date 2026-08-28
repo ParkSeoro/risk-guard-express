@@ -3,6 +3,7 @@ import {
   analyzeSafetyCostCompliance,
   isSafetyCostReportLocked,
   sumLiveSafetyCostAmounts,
+  sumSafetyCostByCategory,
 } from '@/lib/safetyCost';
 import {
   buildDefaultStepsForAuthor,
@@ -48,6 +49,19 @@ describe('safetyCost money SSOT', () => {
     expect(isSafetyCostReportLocked('draft')).toBe(false);
     expect(isSafetyCostReportLocked('submitted')).toBe(true);
     expect(isSafetyCostReportLocked('approved')).toBe(true);
+  });
+
+  it('sums approved 이관 총괄 rows by 비목 for next-month 전월', () => {
+    const byCat = sumSafetyCostByCategory([
+      { category_code: '1', amount: 100000, report_id: 'jan' } as any,
+      { category_code: '3', amount: 50000 },
+      { category_code: '3', amount: 10000, is_deleted: true },
+      { category_name: '안전보건교육비 등', amount: 20000 },
+    ]);
+    expect(byCat['1']).toBe(100000);
+    expect(byCat['3']).toBe(50000);
+    expect(byCat['5']).toBe(20000);
+    expect(byCat['2']).toBe(0);
   });
 });
 

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import ZoomableDocumentPreview from "@/components/docs/ZoomableDocumentPreview";
 import AttachmentReviewPanel from "@/components/work-plan/AttachmentReviewPanel";
 import PermitExtendReasonBanner from "@/components/permits/PermitExtendReasonBanner";
+import PermitReadOnlyPreview from "@/components/permits/PermitReadOnlyPreview";
 import type { PermitFormData, PermitSignatures } from "@/components/permits/DigPermitForm";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
 import {

@@ -1,4 +1,9 @@
-import { SAFETY_COST_CATEGORIES, classifySafetyCostItem } from '@/lib/safetyCost';
+import {
+  SAFETY_COST_CATEGORIES,
+  classifySafetyCostItem,
+  emptySafetyCostByCategory,
+  sumSafetyCostByCategory,
+} from '@/lib/safetyCost';
 import { isSafetyCostOcrStatus, stampOcrOnItem, type SafetyCostOcrStatus } from '@/lib/safetyCostOcr';
 
 export type LegacyImportItem = {
@@ -107,7 +112,9 @@ export function normalizeLegacyItem(row: Partial<LegacyImportItem> & Record<stri
   const amount = toNum(row.amount ?? row['금액'] ?? row['합계']);
   if (!name || amount <= 0) return null;
   const fallback = classifySafetyCostItem(name);
-  const quantity = toNum(row.quantity ?? row['수량']) || 1;
+  const qtyRaw = row.quantity ?? row['수량'];
+  const parsedQty = qtyRaw === '' || qtyRaw == null ? NaN : toNum(qtyRaw);
+  const quantity = Number.isFinite(parsedQty) ? parsedQty : 1;
   const unitPrice = toNum(row.unit_price ?? row['단가']);
   const supply = toNum(row.supply_amount ?? row['공급가액']);
   const vat = toNum(row.vat_amount ?? row['부가세']);
@@ -392,4 +399,273 @@ export function buildCommitPreview(draft: LegacyImportDraft) {
     ),
     totalAmount: included.reduce((s, m) => s + m.items.reduce((a, it) => a + Number(it.amount || 0), 0), 0),
   };
+}
+
+export const emptyCategoryAmounts = emptySafetyCostByCategory;
+
+export function parseWonInput(raw: string | number | null | undefined) {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return Math.max(0, Math.round(raw));
+  const n = Number(String(raw ?? '').replace(/,/g, '').replace(/[^\d.-]/g, ''));
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.round(n));
+}
+
+export function shiftMonthKey(ym: string, delta: number) {
+  const m = String(ym || '').slice(0, 7).match(/^(\d{4})-(\d{2})$/);
+  if (!m) return '';
+  const d = new Date(Number(m[1]), Number(m[2]) - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export function previousCalendarMonth(now = new Date()) {
+  return shiftMonthKey(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`, -1);
+}
+
+/** 그리드에 넣을 다음 월. 기존 월보·이미 적힌 월은 건너뛴다. */
+export function suggestNextImportMonth(gridMonths: string[], liveMonths: string[] = [], now = new Date()) {
+  const taken = new Set(
+    [...gridMonths, ...liveMonths]
+      .map((m) => String(m || '').slice(0, 7))
+      .filter((k) => /^\d{4}-\d{2}$/.test(k)),
+  );
+  const prev = previousCalendarMonth(now);
+  const gridFilled = gridMonths.map((m) => String(m || '').slice(0, 7)).filter((k) => /^\d{4}-\d{2}$/.test(k)).sort();
+  if (!gridFilled.length) {
+    let candidate = prev;
+    for (let i = 0; i < 60; i += 1) {
+      if (!taken.has(candidate)) return candidate;
+      candidate = shiftMonthKey(candidate, -1);
+    }
+    return prev;
+  }
+  let candidate = shiftMonthKey(gridFilled[gridFilled.length - 1], 1);
+  for (let i = 0; i < 36; i += 1) {
+    if (!taken.has(candidate)) return candidate;
+    candidate = shiftMonthKey(candidate, 1);
+  }
+  return candidate;
+}
+
+export type LegacyCategoryGridRow = {
+  report_month: string;
+  amounts: Record<string, number>;
+  declared_total?: number | null;
+  included?: boolean;
+};
+
+export type CategoryGridMonthSummary = {
+  report_month: string;
+  monthTotal: number;
+  declared_total: number | null | undefined;
+  amounts: Record<string, number>;
+  categoryCumulatives: Record<string, number>;
+};
+
+export type CategoryGridSummary = {
+  monthRows: CategoryGridMonthSummary[];
+  importTotal: number;
+  importByCategory: Record<string, number>;
+  afterCumulatives: Record<string, number>;
+  afterGrand: number;
+};
+
+export function summarizeCategoryGrid(
+  rows: LegacyCategoryGridRow[],
+  existingByCategory?: Record<string, number>,
+): CategoryGridSummary {
+  const included = rows
+    .filter((r) => r.included !== false)
+    .slice()
+    .sort((a, b) => a.report_month.localeCompare(b.report_month));
+  const run = emptyCategoryAmounts();
+  SAFETY_COST_CATEGORIES.forEach((c) => {
+    run[c.code] = Number(existingByCategory?.[c.code] || 0);
+  });
+  const importByCategory = emptyCategoryAmounts();
+  const monthRows = included.map((r) => {
+    let monthTotal = 0;
+    SAFETY_COST_CATEGORIES.forEach((c) => {
+      const n = parseWonInput(r.amounts[c.code]);
+      monthTotal += n;
+      importByCategory[c.code] += n;
+      run[c.code] += n;
+    });
+    return {
+      report_month: r.report_month,
+      monthTotal,
+      declared_total: r.declared_total,
+      amounts: { ...emptyCategoryAmounts(), ...r.amounts },
+      categoryCumulatives: { ...run },
+    };
+  });
+  const importTotal = monthRows.reduce((s, m) => s + m.monthTotal, 0);
+  const afterGrand = SAFETY_COST_CATEGORIES.reduce((s, c) => s + run[c.code], 0);
+  return { monthRows, importTotal, importByCategory, afterCumulatives: { ...run }, afterGrand };
+}
+
+/** 비목 금월 금액 → 월보 항목. 수량 0이라 보호구 재고 입고가 생기지 않는다. */
+export function itemsFromCategoryAmounts(reportMonth: string, amounts: Record<string, number>): LegacyImportItem[] {
+  const monthKey = String(reportMonth || '').slice(0, 7);
+  const monthDate = /^\d{4}-\d{2}$/.test(monthKey) ? `${monthKey}-01` : '';
+  return SAFETY_COST_CATEGORIES.flatMap((cat) => {
+    const amount = parseWonInput(amounts[cat.code]);
+    if (amount <= 0) return [];
+    return [{
+      transaction_date: monthDate,
+      usage_date: monthDate,
+      item_name: `${cat.name} (이관 총괄)`,
+      specification: '승인본 총괄',
+      maker: '',
+      quantity: 0,
+      unit: '식',
+      unit_price: 0,
+      supply_amount: amount,
+      vat_amount: 0,
+      amount,
+      supplier_name: '',
+      category_code: cat.code,
+      category_name: cat.name,
+      classification_status: 'usable',
+      ai_reason: '승인본 총괄표 이관. 거래명세 단위가 아니라 비목 금월 금액이다.',
+      legal_basis: '건설업 산업안전보건관리비 계상 및 사용기준 제10조',
+      ocr_status: 'user_edited' as const,
+    }];
+  });
+}
+
+export function draftFromCategoryGrid(
+  rows: LegacyCategoryGridRow[],
+  construction?: LegacyImportConstructionMeta,
+  summary?: { declared_cumulative?: number | null },
+): LegacyImportDraft {
+  const months: LegacyImportMonth[] = rows
+    .filter((r) => r.included !== false)
+    .map((r) => {
+      const items = itemsFromCategoryAmounts(r.report_month, r.amounts);
+      const lineTotal = items.reduce((s, it) => s + Number(it.amount || 0), 0);
+      const declared = r.declared_total == null ? lineTotal : parseWonInput(r.declared_total);
+      return {
+        report_month: String(r.report_month || '').slice(0, 7),
+        title: `${String(r.report_month || '').slice(0, 7)} 산업안전보건관리비 사용내역서(이관)`,
+        declared_total: declared,
+        category_totals: { ...emptyCategoryAmounts(), ...r.amounts },
+        items,
+        ppe_issuances: [],
+        included: true,
+      };
+    });
+  const declaredCum = summary?.declared_cumulative;
+  return {
+    construction,
+    months,
+    summary: {
+      declared_cumulative: declaredCum == null ? undefined : parseWonInput(declaredCum),
+      notes: ['승인본 총괄 비목 금액 수기 이관'],
+    },
+  };
+}
+
+export type CategoryGridValidation = LegacyValidationResult & {
+  summary: CategoryGridSummary;
+  draft: LegacyImportDraft;
+  liveBlockers: string[];
+};
+
+export function validateCategoryGrid(
+  rows: LegacyCategoryGridRow[],
+  opts?: {
+    safetyCostTotal?: number;
+    existingApprovedTotal?: number;
+    existingApprovedByCategory?: Record<string, number>;
+    liveReports?: LiveMonthRow[];
+    declaredCumulative?: number | null;
+  },
+): CategoryGridValidation {
+  const issues: LegacyValidationIssue[] = [];
+  const included = rows.filter((r) => r.included !== false);
+  const seen = new Set<string>();
+  for (const row of included) {
+    const month = String(row.report_month || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      issues.push({
+        level: 'error',
+        code: 'INVALID_MONTH',
+        message: `작성월 형식이 아닙니다: ${month || '(빈 칸)'}`,
+        month,
+      });
+    } else if (seen.has(month)) {
+      issues.push({
+        level: 'error',
+        code: 'DUPLICATE_MONTH',
+        message: `${month}: 같은 월이 두 번 있습니다.`,
+        month,
+      });
+    }
+    seen.add(month);
+  }
+
+  const existingByCat = opts?.existingApprovedByCategory || emptyCategoryAmounts();
+  const priorCatSum = SAFETY_COST_CATEGORIES.reduce((s, c) => s + Number(existingByCat[c.code] || 0), 0);
+  const existingTotal = Number(opts?.existingApprovedTotal || 0);
+  if (existingTotal > 0 && Math.abs(priorCatSum - existingTotal) > AMOUNT_TOLERANCE) {
+    issues.push({
+      level: 'warning',
+      code: 'PRIOR_CATEGORY_GAP',
+      message: `기존 승인 누계(${existingTotal.toLocaleString()}원)와 비목 합(${priorCatSum.toLocaleString()}원)이 다릅니다. 비목이 없는 과거 월이 있으면 다음 달 총괄 전월 칸이 부족합니다.`,
+    });
+  }
+
+  const draft = draftFromCategoryGrid(included, { safety_cost_total: opts?.safetyCostTotal });
+  const base = validateLegacyDraft(draft, {
+    safetyCostTotal: opts?.safetyCostTotal,
+    existingApprovedTotal: opts?.existingApprovedTotal,
+  });
+  const plan = planLegacyCommitMonths(draft, opts?.liveReports || []);
+  const liveIssues: LegacyValidationIssue[] = plan.blockers.map((message) => ({
+    level: 'error' as const,
+    code: 'LIVE_MONTH',
+    message,
+  }));
+  const summary = summarizeCategoryGrid(included, existingByCat);
+  const afterApproved = existingTotal + summary.importTotal;
+  if (opts?.declaredCumulative != null && Math.abs(afterApproved - parseWonInput(opts.declaredCumulative)) > AMOUNT_TOLERANCE) {
+    issues.push({
+      level: 'error',
+      code: 'CUMULATIVE_MISMATCH',
+      message: `문서 최종 누계(${parseWonInput(opts.declaredCumulative).toLocaleString()}원)와 이관 후 승인 누계(${afterApproved.toLocaleString()}원)가 다릅니다.`,
+    });
+  }
+
+  const upgraded = [...issues, ...liveIssues, ...base.issues];
+  const hasError = upgraded.some((i) => i.level === 'error');
+  return {
+    ok: !hasError,
+    canCommit: !hasError && included.length > 0 && base.monthChecks.every((m) => m.itemCount > 0),
+    issues: upgraded,
+    monthChecks: base.monthChecks,
+    computedCumulative: base.computedCumulative,
+    summary,
+    draft,
+    liveBlockers: plan.blockers,
+  };
+}
+
+export function mapLegacyCommitError(message: string, hint?: string) {
+  const raw = String(message || '');
+  if (/live_month_exists/i.test(raw)) return `${hint || '해당 월'}에 이미 월보가 있어 이관할 수 없습니다.`;
+  if (/over_budget/i.test(raw)) return '이관 후 승인 누계가 계상총액을 초과합니다.';
+  if (/budget_not_confirmed/i.test(raw)) return '계상총액 대조를 확인하세요.';
+  if (/no_months/i.test(raw)) return '확정할 월이 없습니다.';
+  if (/already_committed/i.test(raw)) return '이미 확정된 이관입니다.';
+  if (/unauthenticated/i.test(raw)) return '로그인이 필요합니다.';
+  if (/forbidden/i.test(raw)) return '이관 권한이 없습니다.';
+  return raw;
+}
+
+/** 엑셀·인쇄 총괄 전월 칸과 동일한 비목 합. */
+export function approvedByCategoryFromItems(
+  items: Array<{ report_id?: string | null; category_code?: string | null; category_name?: string | null; amount?: number | string | null; is_deleted?: boolean | null }>,
+  priorReportIds: Set<string>,
+) {
+  return sumSafetyCostByCategory(items.filter((it) => it.report_id && priorReportIds.has(it.report_id)));
 }

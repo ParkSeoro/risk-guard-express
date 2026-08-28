@@ -10,6 +10,18 @@ export const SAFETY_COST_CATEGORIES = [
   { code: '9', name: '위험성평가 등에 따른 소요비용', keywords: ['위험성평가', '개선대책', '유해위험요인', '평가회의'] },
 ] as const;
 
+export const SAFETY_COST_CATEGORY_SHORT: Record<string, string> = {
+  '1': '인건비',
+  '2': '시설비',
+  '3': '보호구',
+  '4': '진단비',
+  '5': '교육비',
+  '6': '건강예방',
+  '7': '기술지도',
+  '8': '본사조직',
+  '9': '위험성평가',
+};
+
 const WARNING_KEYWORDS = ['일반공구', '공구', '소모품', '사무용품', '복리후생', '간식', '식대', '회식', '유류', '장비임대', '자재', '철근', '레미콘', '노무비', '청소', '폐기물', '통신비', '교통비'];
 const REVIEW_KEYWORDS = ['수리', '보수', '임대', '운반', '설치비', '철거', '혼합', '세트', '기타', '잡자재'];
 
@@ -68,6 +80,36 @@ export function sumLiveSafetyCostAmounts(
   return items
     .filter((item) => !item.is_deleted)
     .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+}
+
+export function emptySafetyCostByCategory(): Record<string, number> {
+  const out: Record<string, number> = {};
+  SAFETY_COST_CATEGORIES.forEach((c) => { out[c.code] = 0; });
+  return out;
+}
+
+/** 승인·이관·엑셀 총괄의 비목 누계 SSOT. 삭제 행은 제외. */
+export function sumSafetyCostByCategory(
+  items: Array<{
+    category_code?: string | null;
+    category_name?: string | null;
+    amount?: number | string | null;
+    is_deleted?: boolean | null;
+  }>,
+) {
+  const out = emptySafetyCostByCategory();
+  for (const it of items) {
+    if (it.is_deleted) continue;
+    const code = String(it.category_code || '');
+    const amount = Number(it.amount || 0);
+    if (out[code] != null) {
+      out[code] += amount;
+      continue;
+    }
+    const hit = SAFETY_COST_CATEGORIES.find((c) => c.name === it.category_name);
+    if (hit) out[hit.code] += amount;
+  }
+  return out;
 }
 
 export function isSafetyCostReportLocked(status?: string | null) {

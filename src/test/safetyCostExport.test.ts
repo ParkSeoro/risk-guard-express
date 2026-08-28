@@ -77,4 +77,52 @@ describe('safetyCostExport', () => {
     expect(pending.Sheets['1.총괄']['E15']?.v).toBe(5_000_000);
     expect(approved.Sheets['1.총괄']['E15']?.v).toBe(5_165_000);
   });
+
+  it('fills 전월/누계 from prior 이관 비목 금액 so next month 총괄 matches', () => {
+    const buf = readFileSync(resolve(process.cwd(), 'public/templates/safety-cost-template.xlsx'));
+    const wb = buildSafetyCostWorkbook(buf, {
+      companyName: '테스트건설',
+      constructionName: '여수공장 정비공사',
+      constructionAmount: 1_000_000_000,
+      safetyCostTotal: 30_000_000,
+      reportMonth: '2026-03-01',
+      writerName: '홍길동',
+      approvedCumulativeBeforeMonth: 1_500_000,
+      approvedByCategoryBefore: {
+        '1': 1_000_000, '2': 0, '3': 500_000, '4': 0, '5': 0, '6': 0, '7': 0, '8': 0, '9': 0,
+      },
+      items: [
+        { category_code: '3', amount: 100_000, item_name: '안전모', classification_status: 'usable' },
+      ],
+      statusLabel: { usable: '사용 가능' },
+      getDisplayDate: () => '2026-03-05',
+      currentMonthApproved: false,
+    });
+    const summary = wb.Sheets['1.총괄'];
+    expect(summary['C16']?.v).toBe(1_000_000);
+    expect(summary['D16']?.v).toBe(0);
+    expect(summary['E16']?.v).toBe(1_000_000);
+    expect(summary['C18']?.v).toBe(500_000);
+    expect(summary['D18']?.v).toBe(100_000);
+    expect(summary['E18']?.v).toBe(500_000);
+    const approved = buildSafetyCostWorkbook(buf, {
+      companyName: '테스트건설',
+      constructionName: '여수공장 정비공사',
+      constructionAmount: 1_000_000_000,
+      safetyCostTotal: 30_000_000,
+      reportMonth: '2026-03-01',
+      writerName: '홍길동',
+      approvedCumulativeBeforeMonth: 1_500_000,
+      approvedByCategoryBefore: {
+        '1': 1_000_000, '2': 0, '3': 500_000, '4': 0, '5': 0, '6': 0, '7': 0, '8': 0, '9': 0,
+      },
+      items: [
+        { category_code: '3', amount: 100_000, item_name: '안전모', classification_status: 'usable' },
+      ],
+      statusLabel: { usable: '사용 가능' },
+      getDisplayDate: () => '2026-03-05',
+      currentMonthApproved: true,
+    });
+    expect(approved.Sheets['1.총괄']['E18']?.v).toBe(600_000);
+  });
 });

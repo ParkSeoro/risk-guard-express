@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildCommitPreview,
+  draftFromCategoryGrid,
+  itemsFromCategoryAmounts,
   normalizeLegacyDraft,
+  normalizeLegacyItem,
   parseLegacyTextDraft,
   planLegacyCommitMonths,
+  suggestNextImportMonth,
+  summarizeCategoryGrid,
+  validateCategoryGrid,
   validateLegacyDraft,
 } from '@/lib/safetyCostLegacyImport';
 import {
@@ -105,6 +111,88 @@ describe('safetyCostLegacyImport', () => {
     ]);
     expect(plan.ok).toBe(true);
     expect(plan.plans[0].action).toBe('insert');
+  });
+
+  it('keeps quantity 0 so 이관 총괄 3번은 재고 입고가 아니다', () => {
+    const item = normalizeLegacyItem({
+      item_name: '보호구 등 (이관 총괄)',
+      amount: 100000,
+      category_code: '3',
+      quantity: 0,
+    });
+    expect(item?.quantity).toBe(0);
+    expect(isPpeInboundItem(item!)).toBe(false);
+  });
+});
+
+describe('safetyCost category grid import', () => {
+  const jan = {
+    report_month: '2026-01',
+    amounts: { '1': 100000, '2': 0, '3': 50000, '4': 0, '5': 20000, '6': 0, '7': 0, '8': 0, '9': 0 },
+    declared_total: 170000,
+  };
+  const feb = {
+    report_month: '2026-02',
+    amounts: { '1': 100000, '2': 30000, '3': 0, '4': 0, '5': 0, '6': 0, '7': 0, '8': 0, '9': 0 },
+    declared_total: 130000,
+  };
+
+  it('builds one usable row per positive 비목 and skips PPE inbound', () => {
+    const items = itemsFromCategoryAmounts('2026-01', jan.amounts);
+    expect(items.map((i) => i.category_code)).toEqual(['1', '3', '5']);
+    expect(items.every((i) => i.quantity === 0)).toBe(true);
+    expect(items.every((i) => i.classification_status === 'usable')).toBe(true);
+    expect(items.every((i) => i.ocr_status === 'user_edited')).toBe(true);
+    expect(items.filter((i) => i.category_code === '3').every((i) => !isPpeInboundItem(i))).toBe(true);
+    expect(buildCommitPreview(draftFromCategoryGrid([jan])).ppeInboundCount).toBe(0);
+    expect(buildCommitPreview(draftFromCategoryGrid([jan])).totalAmount).toBe(170000);
+  });
+
+  it('chains 비목 누계 across months', () => {
+    const s = summarizeCategoryGrid([jan, feb]);
+    expect(s.importTotal).toBe(300000);
+    expect(s.afterCumulatives['1']).toBe(200000);
+    expect(s.afterCumulatives['2']).toBe(30000);
+    expect(s.afterCumulatives['3']).toBe(50000);
+    expect(s.afterCumulatives['5']).toBe(20000);
+    expect(s.monthRows[1].categoryCumulatives['1']).toBe(200000);
+  });
+
+  it('adds existing approved 비목 into the next-month 전월 누계', () => {
+    const s = summarizeCategoryGrid([feb], { '1': 100000, '2': 0, '3': 50000, '4': 0, '5': 20000, '6': 0, '7': 0, '8': 0, '9': 0 });
+    expect(s.afterCumulatives['1']).toBe(200000);
+    expect(s.afterCumulatives['3']).toBe(50000);
+    expect(s.importTotal).toBe(130000);
+  });
+
+  it('blocks when 비목 합 ≠ 문서 금월계', () => {
+    const v = validateCategoryGrid([{ ...jan, declared_total: 999 }], { safetyCostTotal: 10_000_000 });
+    expect(v.canCommit).toBe(false);
+    expect(v.issues.some((i) => i.code === 'MONTH_TOTAL_MISMATCH')).toBe(true);
+  });
+
+  it('blocks duplicate months and live months', () => {
+    const dup = validateCategoryGrid([jan, { ...jan, declared_total: 170000 }]);
+    expect(dup.issues.some((i) => i.code === 'DUPLICATE_MONTH')).toBe(true);
+    const live = validateCategoryGrid([jan], {
+      safetyCostTotal: 10_000_000,
+      liveReports: [{ report_month: '2026-01-01', status: 'draft' }],
+    });
+    expect(live.canCommit).toBe(false);
+    expect(live.issues.some((i) => i.code === 'LIVE_MONTH')).toBe(true);
+  });
+
+  it('blocks over budget and 문서 최종 누계 mismatch', () => {
+    const over = validateCategoryGrid([jan], { safetyCostTotal: 100000, existingApprovedTotal: 50000 });
+    expect(over.issues.some((i) => i.code === 'OVER_BUDGET')).toBe(true);
+    const cum = validateCategoryGrid([jan], { safetyCostTotal: 10_000_000, declaredCumulative: 1 });
+    expect(cum.issues.some((i) => i.code === 'CUMULATIVE_MISMATCH')).toBe(true);
+    const ok = validateCategoryGrid([jan, feb], { safetyCostTotal: 10_000_000, declaredCumulative: 300000 });
+    expect(ok.canCommit).toBe(true);
+  });
+
+  it('suggests the next free month after grid rows', () => {
+    expect(suggestNextImportMonth(['2026-01'], ['2026-02'])).toBe('2026-03');
   });
 });
 

@@ -22,7 +22,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { FileText, Loader2, Plus, Trash2, Upload } from 'lucide-react';
 
 type ArchiveFile = {
@@ -82,7 +81,7 @@ function WonInput({
       disabled={disabled}
       value={value}
       onChange={(e) => onChange(e.target.value.replace(/[^\d,]/g, ''))}
-      className="h-8 w-[6.5rem] px-1.5 text-right text-xs tabular-nums"
+      className="h-8 w-full min-w-0 px-1.5 text-right text-xs tabular-nums"
       placeholder="0"
     />
   );
@@ -280,11 +279,15 @@ export function LegacyImportWizard({
           <Badge variant="secondary">총괄 비목 금액</Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          발주처 승인본은 보관하고, 1페이지 총괄표의 <b>금월</b> 칸을 비목 1~9에 그대로 적습니다.
-          비목 합이 그달 총액과 같아야 다음 달 총괄의 전월·누계가 맞습니다. 거래명세는 적지 않습니다.
-          확정하면 전자결재 없이 승인 월보가 됩니다. 보호구(3번)는 금액만 반영하고 재고·지급대장은 맞추지 않습니다.
+      <CardContent className="space-y-4 min-w-0">
+        <ol className="text-xs text-muted-foreground leading-relaxed list-decimal pl-4 space-y-1">
+          <li>발주처 승인본을 첨부해 보관합니다.</li>
+          <li><b>월 추가</b>로 이미 승인된 과거 월을 만듭니다. 아래 작성중인 당월은 넣지 마세요.</li>
+          <li>승인본 1페이지 총괄표의 <b>금월</b> 칸을 비목 1~9에 그대로 적습니다. 0원은 비웁니다.</li>
+          <li>금월 합이 승인본 그달 총액과 같은지 보고, 대조 체크 후 이관 확정합니다.</li>
+        </ol>
+        <p className="text-[11px] text-muted-foreground">
+          거래명세는 적지 않습니다. 확정하면 전자결재 없이 승인 누계·비목 누계에 반영됩니다. 보호구(3번)는 금액만 넣습니다.
         </p>
 
         <div className="space-y-2">
@@ -315,116 +318,107 @@ export function LegacyImportWizard({
           )}
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm font-medium">이관 총괄 입력</p>
-            <Button type="button" size="sm" variant="outline" className="gap-1" onClick={addMonth} disabled={committing}>
+            <Button type="button" size="sm" className="gap-1" onClick={addMonth} disabled={committing}>
               <Plus className="h-3.5 w-3.5" /> 월 추가
             </Button>
           </div>
           {Number(existingApprovedTotal || 0) > 0 && (
             <p className="text-[11px] text-muted-foreground">
               기존 승인 누계 {formatKRW(existingApprovedTotal || 0)}
-              {SAFETY_COST_CATEGORIES.some((c) => Number(priorByCat[c.code] || 0) > 0) ? ' · 비목 전월은 아래 누계 행에 포함됩니다.' : ''}
+              {SAFETY_COST_CATEGORIES.some((c) => Number(priorByCat[c.code] || 0) > 0) ? ' · 아래 비목 누계에 전월이 포함됩니다.' : ''}
             </p>
           )}
-          <div className="overflow-x-auto rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-[8.5rem]">작성월</TableHead>
-                  {SAFETY_COST_CATEGORIES.map((c) => (
-                    <TableHead key={c.code} className="text-right min-w-[7rem]" title={c.name}>
-                      {c.code}.{SAFETY_COST_CATEGORY_SHORT[c.code]}
-                    </TableHead>
-                  ))}
-                  <TableHead className="text-right min-w-[6.5rem]">금월 합</TableHead>
-                  <TableHead className="text-right min-w-[7rem]">문서 금월계</TableHead>
-                  <TableHead className="w-10" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {Number(existingApprovedTotal || 0) > 0 && (
-                  <TableRow className="bg-muted/40">
-                    <TableCell className="text-xs text-muted-foreground">기존 승인</TableCell>
-                    {SAFETY_COST_CATEGORIES.map((c) => (
-                      <TableCell key={c.code} className="text-right text-xs tabular-nums text-muted-foreground">
-                        {Number(priorByCat[c.code] || 0) ? Number(priorByCat[c.code]).toLocaleString() : '—'}
-                      </TableCell>
-                    ))}
-                    <TableCell className="text-right text-xs tabular-nums">{Number(existingApprovedTotal || 0).toLocaleString()}</TableCell>
-                    <TableCell />
-                    <TableCell />
-                  </TableRow>
-                )}
-                {rows.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={13} className="text-xs text-muted-foreground py-6 text-center">
-                      월 추가로 과거 승인월을 만들고, 승인본 총괄표 금월 칸을 적으세요.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {rows.map((row, idx) => {
-                  const parsed = parsedRows[idx];
-                  const monthTotal = parsed ? SAFETY_COST_CATEGORIES.reduce((s, c) => s + Number(parsed.amounts[c.code] || 0), 0) : 0;
-                  const declaredMismatch = parsed?.declared_total != null && Math.abs(monthTotal - parsed.declared_total) > 1;
-                  return (
-                    <TableRow key={row.key}>
-                      <TableCell>
+
+          {rows.length === 0 ? (
+            <div className="rounded-md border border-dashed p-5 text-center space-y-2">
+              <p className="text-sm">아직 넣을 월이 없습니다.</p>
+              <p className="text-xs text-muted-foreground">승인본 총괄표에 있는 과거 승인월부터 만드세요. 예: 7월 승인본이면 1~7월을 월마다 추가합니다.</p>
+              <Button type="button" size="sm" onClick={addMonth} disabled={committing}>
+                <Plus className="h-3.5 w-3.5 mr-1" /> 첫 월 추가
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {rows.map((row, idx) => {
+                const parsed = parsedRows[idx];
+                const monthTotal = parsed ? SAFETY_COST_CATEGORIES.reduce((s, c) => s + Number(parsed.amounts[c.code] || 0), 0) : 0;
+                const declaredMismatch = parsed?.declared_total != null && Math.abs(monthTotal - parsed.declared_total) > 1;
+                return (
+                  <div key={row.key} className="rounded-md border p-3 space-y-3">
+                    <div className="flex flex-wrap items-end justify-between gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">작성월</Label>
                         <Input
                           type="month"
                           value={row.report_month}
                           disabled={committing}
                           onChange={(e) => updateRow(row.key, { report_month: e.target.value })}
-                          className="h-8 w-[9.5rem]"
+                          className="h-8 w-[10.5rem]"
                           aria-label="이관 작성월"
                         />
-                      </TableCell>
+                      </div>
+                      <div className="text-sm">
+                        <span className="text-xs text-muted-foreground mr-1">금월 합</span>
+                        <span className={`font-semibold tabular-nums ${declaredMismatch ? 'text-destructive' : ''}`}>
+                          {formatKRW(monthTotal)}
+                        </span>
+                      </div>
+                      <Button type="button" size="icon" variant="ghost" className="h-8 w-8" disabled={committing} onClick={() => setRows((prev) => prev.filter((r) => r.key !== row.key))} aria-label="월 삭제">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
                       {SAFETY_COST_CATEGORIES.map((c) => (
-                        <TableCell key={c.code} className="p-1">
+                        <div key={c.code} className="space-y-1 min-w-0">
+                          <Label className="text-[11px] leading-tight" title={c.name}>
+                            {c.code}. {SAFETY_COST_CATEGORY_SHORT[c.code]}
+                          </Label>
                           <WonInput
                             value={row.amounts[c.code]}
                             disabled={committing}
                             aria-label={`${row.report_month} ${c.code} ${SAFETY_COST_CATEGORY_SHORT[c.code]}`}
                             onChange={(v) => updateAmount(row.key, c.code, v)}
                           />
-                        </TableCell>
+                        </div>
                       ))}
-                      <TableCell className={`text-right text-xs tabular-nums ${declaredMismatch ? 'text-destructive font-medium' : ''}`}>
-                        {monthTotal.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="p-1">
-                        <WonInput
-                          value={row.declaredTotal}
-                          disabled={committing}
-                          aria-label={`${row.report_month} 문서 금월계`}
-                          onChange={(v) => updateRow(row.key, { declaredTotal: v })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Button type="button" size="icon" variant="ghost" className="h-7 w-7" disabled={committing} onClick={() => setRows((prev) => prev.filter((r) => r.key !== row.key))} aria-label="월 삭제">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-                {rows.length > 0 && (
-                  <TableRow className="bg-muted/30 font-medium">
-                    <TableCell className="text-xs">이관 후 비목 누계</TableCell>
-                    {SAFETY_COST_CATEGORIES.map((c) => (
-                      <TableCell key={c.code} className="text-right text-xs tabular-nums">
-                        {Number(validation.summary.afterCumulatives[c.code] || 0).toLocaleString()}
-                      </TableCell>
-                    ))}
-                    <TableCell className="text-right text-xs tabular-nums">{validation.summary.importTotal.toLocaleString()}</TableCell>
-                    <TableCell />
-                    <TableCell />
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                    </div>
+                    <div className="max-w-[12rem] space-y-1">
+                      <Label className="text-[11px]">문서 금월계 (선택)</Label>
+                      <WonInput
+                        value={row.declaredTotal}
+                        disabled={committing}
+                        aria-label={`${row.report_month} 문서 금월계`}
+                        onChange={(v) => updateRow(row.key, { declaredTotal: v })}
+                      />
+                      {declaredMismatch && (
+                        <p className="text-[11px] text-destructive">비목 합과 문서 금월계가 다릅니다.</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              <Button type="button" size="sm" variant="outline" className="gap-1" onClick={addMonth} disabled={committing}>
+                <Plus className="h-3.5 w-3.5" /> 다음 월 추가
+              </Button>
+            </div>
+          )}
+
+          {rows.length > 0 && (
+            <div className="rounded-md border bg-muted/30 p-3">
+              <p className="text-xs font-medium mb-2">이관 후 비목 누계</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-3 gap-y-1 text-xs">
+                {SAFETY_COST_CATEGORIES.map((c) => (
+                  <div key={c.code} className="flex justify-between gap-2 min-w-0">
+                    <span className="truncate text-muted-foreground">{c.code}.{SAFETY_COST_CATEGORY_SHORT[c.code]}</span>
+                    <span className="tabular-nums shrink-0">{Number(validation.summary.afterCumulatives[c.code] || 0).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
@@ -461,7 +455,7 @@ export function LegacyImportWizard({
           </label>
         </div>
 
-        {errors.length > 0 && (
+        {rows.length > 0 && errors.length > 0 && (
           <Alert variant="destructive">
             <AlertTitle>확정 전에 고칠 항목</AlertTitle>
             <AlertDescription>

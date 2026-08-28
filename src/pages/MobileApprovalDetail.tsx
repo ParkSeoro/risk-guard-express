@@ -10,6 +10,7 @@ import IMESafeTextarea from "@/components/IMESafeTextarea";
 import { ArrowLeft, CheckCircle2, XCircle, Loader2, FileText } from "lucide-react";
 import { toast } from "sonner";
 import PermitExtendReasonBanner from "@/components/permits/PermitExtendReasonBanner";
+import PermitReadOnlyPreview from "@/components/permits/PermitReadOnlyPreview";
 import type { PermitFormData, PermitSignatures } from "@/components/permits/DigPermitForm";
 import type { PermitAiBriefing } from "@/lib/permitBriefing";
 import { hydratePermitPreview } from "@/lib/permitPreviewHydrate";

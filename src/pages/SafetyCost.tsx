@@ -961,7 +961,7 @@ const SafetyCost = () => {
     {activeTab === 'validation' ? (
       <SafetyCostValidationPanel focusReportId={selectedReportId || null} />
     ) : (
-    <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
       <div className="space-y-3">
         {access.seesAllCompanies && companyGroups.length > 1 && (
           <Select value={companyFilter} onValueChange={setCompanyFilter}>
@@ -1017,7 +1017,7 @@ const SafetyCost = () => {
         )}
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-4 min-w-0 overflow-x-auto">
         {selectedConstruction && <Card><CardHeader className="pb-2"><CardTitle className="text-sm flex items-center justify-between"><span>{selectedConstruction.construction_name}</span>{usageRate < 50 && <Badge variant="secondary" className="gap-1"><AlertTriangle className="h-3 w-3" /> 저사용 경고</Badge>}</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-4"><div><p className="text-xs text-muted-foreground">공사금액</p><p className="font-semibold">{formatKRW(selectedConstruction.construction_amount)}</p></div><div><p className="text-xs text-muted-foreground">산업안전보건관리비 총액</p><p className="font-semibold">{formatKRW(selectedConstruction.safety_cost_total)}</p></div><div><p className="text-xs text-muted-foreground">승인 누계</p><p className="font-semibold">{formatKRW(approvedTotal)}</p></div><div><p className="text-xs text-muted-foreground">잔여 금액</p><p className="font-semibold">{formatKRW(Number(selectedConstruction.safety_cost_total || 0) - approvedTotal)}</p></div></CardContent></Card>}
 
         {selectedConstruction && (

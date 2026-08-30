@@ -25,6 +25,20 @@ describe("tbmFromPermit", () => {
     expect(seed.special_notes).toMatch(/보호구/);
   });
 
+  it("does not seed 굴착 TBM hints from 굴착·중장비 kind plus 투입장비 only", () => {
+    const seed = buildTbmSeedFromPermit({
+      permit_date: "2026-08-03",
+      permit_kinds: ["general", "excavation"],
+      form_data: {
+        work_name: "자재 양중",
+        hz_heavy: true,
+        hz_heavy_equipment_name: "지게차 3t",
+      },
+    });
+    expect(seed.prohibited_actions).toMatch(/투입장비 지게차/);
+    expect(seed.prohibited_actions).not.toMatch(/굴착:/);
+  });
+
   it("builds template briefing", () => {
     const seed = buildTbmSeedFromPermit({
       permit_date: "2026-08-03",

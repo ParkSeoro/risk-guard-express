@@ -103,9 +103,9 @@ Deno.serve(async (req) => {
 
     const payload = buildPermitBriefingLlmPayload(facts);
     const schemaHint = `{
-  "work_overview": "작업 내용 1~2문장(업체명·날짜 제외)",
-  "included_kinds": ["일반","화기"],
-  "top_risks": ["입력 hazards에 있는 위험만"],
+  "work_overview": "작업 내용 1~2문장(업체명·날짜 제외). 투입장비가 있으면 장비명만 언급",
+  "included_kinds": ["일반","중장비"],
+  "top_risks": ["입력 hazards에 있는 위험만. 굴착은 has_excavation_work가 true일 때만"],
   "required_controls": ["입력 checklist·조치만"]
 }`;
 

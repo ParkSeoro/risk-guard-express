@@ -1,11 +1,11 @@
 import { supabase } from '@/integrations/supabase/client';
 import type { PermitKindId } from '@/lib/permitKinds';
-import { PERMIT_KIND_LABEL } from '@/lib/permitKinds';
 import {
   buildLocalPermitBriefingFromFacts,
   extractPermitBriefingFacts,
   normalizePermitBriefing,
   type PermitAiBriefing,
+  type PermitBriefingFacts,
 } from '../../supabase/functions/_shared/permitBriefing';
 
 export type { PermitAiBriefing };
@@ -20,19 +20,17 @@ export {
   normalizePermitBriefing,
 } from '../../supabase/functions/_shared/permitBriefing';
 
-function briefingFromServer(raw: any, facts: ReturnType<typeof extractPermitBriefingFacts>): PermitAiBriefing {
-  const base = raw?.work_overview
-    ? {
-      work_overview: String(raw.work_overview),
-      included_kinds: facts.kindLabels,
-      top_risks: Array.isArray(raw.top_risks) ? raw.top_risks.map(String).filter(Boolean).slice(0, 3) : [],
-      required_controls: Array.isArray(raw.required_controls)
-        ? raw.required_controls.map(String).filter(Boolean).slice(0, 6)
-        : [],
-      generated_at: raw.generated_at || new Date().toISOString(),
-    }
-    : normalizePermitBriefing(raw, facts);
-  return { ...base, included_kinds: facts.kindLabels };
+function briefingFromServer(raw: any, facts: PermitBriefingFacts): PermitAiBriefing {
+  return normalizePermitBriefing(raw, facts);
+}
+
+/** 저장된 브리핑도 투입장비·굴착 사실로 다시 걸러 보여 준다. */
+export function presentPermitBriefing(
+  raw: PermitAiBriefing | null | undefined,
+  input: Parameters<typeof extractPermitBriefingFacts>[0],
+): PermitAiBriefing | null {
+  if (!raw) return null;
+  return normalizePermitBriefing(raw, extractPermitBriefingFacts(input));
 }
 
 export async function generatePermitAiBriefing(input: {
@@ -53,8 +51,7 @@ export async function generatePermitAiBriefing(input: {
       permit_id: input.permitId,
       project_id: input.projectId || null,
       permit_kinds: kinds,
-      kind_labels: input.kindLabels
-        || kinds.map((k) => PERMIT_KIND_LABEL[k] || k),
+      kind_labels: input.kindLabels,
       work_name: input.workName || '',
       work_description: input.workDescription || '',
       work_location: input.workLocation || '',

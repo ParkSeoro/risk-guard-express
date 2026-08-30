@@ -1,7 +1,7 @@
 import type { PermitFormData, PermitSignatures } from "@/components/permits/DigPermitForm";
 import { permitRowToFormData } from "@/components/permits/PermitReadOnlyPreview";
 import { contactPhonesFromApprovals, mergeApprovalSignatures } from "@/lib/permitApprovalSignatures";
-import type { PermitAiBriefing } from "@/lib/permitBriefing";
+import { presentPermitBriefing, type PermitAiBriefing } from "@/lib/permitBriefing";
 import { supabase } from "@/integrations/supabase/client";
 
 /** Load stamps + phones for a read-only permit preview (문서보기 / 결재 상세). */
@@ -62,6 +62,17 @@ export async function hydratePermitPreview(p: any): Promise<{
   } catch {
     /* ignore phone autofill */
   }
+
+  briefing = presentPermitBriefing(briefing, {
+    formData: formData as Record<string, unknown>,
+    permitKinds: p?.permit_kinds,
+    workName: p?.work_name || formData.work_name,
+    workDescription: p?.work_description || formData.work_description,
+    workLocation: p?.location || formData.work_location,
+    permitDate: p?.permit_date,
+    contractorCompany: p?.contractor_company || formData.contractor_company,
+    workStartAt: p?.work_start_at,
+  });
 
   return { formData, signatures, briefing };
 }

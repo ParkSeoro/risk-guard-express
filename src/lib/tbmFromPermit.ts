@@ -3,6 +3,7 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 import { PERMIT_KIND_LABEL, normalizePermitKinds, type PermitKindId } from "@/lib/permitKinds";
+import { extractPermitBriefingFacts } from "@/lib/permitBriefing";
 import { syncPermitCrewToTbm } from "@/lib/syncPermitCrewToTbm";
 
 export type TbmFromPermitResult =
@@ -28,10 +29,22 @@ export function buildTbmSeedFromPermit(permit: any, projectName?: string) {
   const location = fd.work_location || permit.location || "";
   const company = fd.contractor_company || permit.contractor_company || "";
 
+  const facts = extractPermitBriefingFacts({
+    formData: fd,
+    permitKinds: kinds,
+    workName,
+    workDescription: workDesc,
+    workLocation: location,
+    contractorCompany: company,
+    permitDate: permit.permit_date,
+  });
   const kindHints: string[] = [];
   if (kinds.includes("confined_space")) kindHints.push("밀폐공간: 출입 전 가스측정·감시인 배치");
   if (kinds.includes("hot_work")) kindHints.push("화기작업: 소화기·불티비산 방지·화기감시");
-  if (kinds.includes("excavation")) kindHints.push("굴착: 사면·매설물·접근통제 확인");
+  if (facts.hazards.some((h) => h.label === "굴착")) kindHints.push("굴착: 사면·매설물·접근통제 확인");
+  if (facts.hazards.some((h) => h.label === "중장비")) {
+    kindHints.push(facts.equipment ? `중장비: 투입장비 ${facts.equipment}` : "중장비: 작업반경·유도자 확인");
+  }
 
   const prohibited =
     [kindHints.join("\n"), "무단 작업 금지", "보호구 미착용 작업 금지"].filter(Boolean).join("\n");

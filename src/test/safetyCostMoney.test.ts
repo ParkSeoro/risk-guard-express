@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   analyzeSafetyCostCompliance,
+  isSafetyCostLegacyImport,
   isSafetyCostReportLocked,
   sumLiveSafetyCostAmounts,
   sumSafetyCostByCategory,
@@ -49,6 +50,12 @@ describe('safetyCost money SSOT', () => {
     expect(isSafetyCostReportLocked('draft')).toBe(false);
     expect(isSafetyCostReportLocked('submitted')).toBe(true);
     expect(isSafetyCostReportLocked('approved')).toBe(true);
+  });
+
+  it('treats legacy_import as 이관 최초본', () => {
+    expect(isSafetyCostLegacyImport('legacy_import')).toBe(true);
+    expect(isSafetyCostLegacyImport('manual')).toBe(false);
+    expect(isSafetyCostLegacyImport(null)).toBe(false);
   });
 
   it('sums approved 이관 총괄 rows by 비목 for next-month 전월', () => {

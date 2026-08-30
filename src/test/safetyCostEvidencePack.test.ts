@@ -40,6 +40,32 @@ describe('safetyCostEvidencePack', () => {
     expect(result.ready).toBe(true);
   });
 
+  it('exempts legacy import months from the evidence gate', () => {
+    const result = evaluateEvidencePack({
+      items: [
+        { id: 'a', category_code: '1', amount: 4_166_670 },
+        { id: 'b', category_code: '2', amount: 10_682_000 },
+      ],
+      files: [],
+      ppeLedgerSignedCount: 0,
+      exempt: true,
+    });
+    expect(result.ready).toBe(true);
+    expect(result.exempt).toBe(true);
+    expect(result.hardMissing).toEqual([]);
+    expect(result.rows).toEqual([]);
+  });
+
+  it('still requires evidence when not exempt', () => {
+    const result = evaluateEvidencePack({
+      items: [{ id: 'a', category_code: '1', amount: 4_166_670 }],
+      files: [],
+    });
+    expect(result.ready).toBe(false);
+    expect(result.exempt).toBe(false);
+    expect(result.hardMissing.length).toBeGreaterThan(0);
+  });
+
   it('sums by category', () => {
     expect(sumByCategory([
       { id: '1', category_code: '2', amount: 100 },

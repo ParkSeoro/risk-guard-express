@@ -4,6 +4,17 @@
 
 Do **not** replay a long prior Cloud Agent thread. At the start of a new chat, read `.cursor/HANDOFF.md` (product decisions + what is on `main`) and handle **only** the issue in the user’s message. One issue per chat.
 
+## Approval before coding (default)
+
+This is the default for every chat. When the user reports a bug, asks for a fix, or requests development:
+
+1. Investigate enough to name the **cause**.
+2. Propose the **solution** (what will change, which files, what will not change).
+3. **Wait for explicit approval.** Do not write, edit, or generate application code before that.
+4. Only then implement.
+
+Presenting a plan is not implementation. “그냥 해 / 진행해 / 승인” in a later message approves that issue only — it is not a standing waiver.
+
 ## Cursor Cloud specific instructions
 
 ### Overview

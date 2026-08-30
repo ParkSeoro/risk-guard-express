@@ -221,7 +221,12 @@ export function evaluateEvidencePack(input: {
   files: EvidenceFileLike[];
   /** 시스템 보호구 지급대장에 서명된 수령 건수 */
   ppeLedgerSignedCount?: number;
-}): { rows: PackCheckRow[]; hardMissing: PackCheckRow[]; softMissing: PackCheckRow[]; ready: boolean } {
+  /** 승인본 이관 월 — 항목별 증빙 게이트 면제 */
+  exempt?: boolean;
+}): { rows: PackCheckRow[]; hardMissing: PackCheckRow[]; softMissing: PackCheckRow[]; ready: boolean; exempt: boolean } {
+  if (input.exempt) {
+    return { rows: [], hardMissing: [], softMissing: [], ready: true, exempt: true };
+  }
   const amounts = sumByCategory(input.items);
   const kindMap = countKindsByCategory(input.items, input.files);
   const rows: PackCheckRow[] = [];
@@ -248,7 +253,7 @@ export function evaluateEvidencePack(input: {
 
   const hardMissing = rows.filter((r) => r.requirement.hard && !r.ok);
   const softMissing = rows.filter((r) => !r.requirement.hard && !r.ok);
-  return { rows, hardMissing, softMissing, ready: hardMissing.length === 0 };
+  return { rows, hardMissing, softMissing, ready: hardMissing.length === 0, exempt: false };
 }
 
 export function getCategoryPack(code?: string | null): CategoryPack | null {

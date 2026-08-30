@@ -117,6 +117,11 @@ export function isSafetyCostReportLocked(status?: string | null) {
   return s === 'submitted' || s === 'approved';
 }
 
+/** 승인본 총괄 이관 월. 항목별 증빙·지급대장·OCR 게이트를 타지 않는다. */
+export function isSafetyCostLegacyImport(source?: string | null) {
+  return String(source || '') === 'legacy_import';
+}
+
 /** 승인 누계 + 당월(라이브 항목) / 계상액. 상신·이관 게이트와 동일한 SSOT. */
 export function analyzeSafetyCostCompliance(
   items: Array<{ amount?: number | string | null; classification_status?: string | null; legal_basis?: string | null; is_deleted?: boolean | null }>,

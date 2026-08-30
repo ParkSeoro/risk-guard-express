@@ -30,13 +30,15 @@ type Props = {
   userId?: string;
   onChanged: () => void;
   onOpenPpeLedger?: () => void;
+  /** 승인본 이관 월 — 항목별 증빙 업로드·게이트 없음 */
+  exempt?: boolean;
 };
 
 const KIND_OPTIONS = Object.entries(EVIDENCE_KIND_LABEL) as [EvidenceKind, string][];
 
 export function EvidencePackPanel({
   projectId, companyId, constructionId, reportId,
-  items, evidence, ppeLedgerSignedCount, userId, onChanged, onOpenPpeLedger,
+  items, evidence, ppeLedgerSignedCount, userId, onChanged, onOpenPpeLedger, exempt,
 }: Props) {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -45,9 +47,29 @@ export function EvidencePackPanel({
   const [uploading, setUploading] = useState(false);
 
   const pack = useMemo(
-    () => evaluateEvidencePack({ items, files: evidence, ppeLedgerSignedCount }),
-    [items, evidence, ppeLedgerSignedCount],
+    () => evaluateEvidencePack({ items, files: evidence, ppeLedgerSignedCount, exempt }),
+    [items, evidence, ppeLedgerSignedCount, exempt],
   );
+
+  if (exempt || pack.exempt) {
+    return (
+      <Card className="border-success/40">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-success" />
+              이관 월 증빙 면제
+            </CardTitle>
+            <Badge>이관 면제</Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>승인본 총괄 이관 월은 <span className="text-foreground">월×비목 금액</span>만 적재합니다. 항목별 거래명세·세금계산서·지급대장은 요구하지 않습니다.</p>
+          <p className="text-xs">최초본(이관)은 승인본 보관으로 충분합니다. 당월 신규 작성 내역서만 증빙 패키지를 맞춥니다.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const activeCats = useMemo(() => {
     const codes = new Set(items.filter((i) => Number(i.amount || 0) > 0).map((i) => String(i.category_code || '')));

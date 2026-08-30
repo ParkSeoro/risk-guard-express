@@ -21,7 +21,8 @@ export const PERMIT_BRIEFING_SYSTEM_PROMPT = `당신은 작업허가서 결재 �
 4) required_controls는 입력 checklist·attachments·hazard measures만. 없으면 빈 배열.
 5) work_overview는 작업 내용 1~2문장. 업체명·날짜·"작업 사항으로"는 쓰지 않는다(시스템이 앞에 붙인다).
 6) 한국어 단정형. 번역투 금지.
-7) 굴착과 중장비는 서로 다른 위험이다. permit_kinds 이름이나 양식명(굴착·중장비)만 보고 둘 다 넣지 않는다. hazards에 있는 쪽만 쓴다. equipment는 투입 장비명 참고이며, hazards에 중장비가 없으면 중장비·협착 위험을 만들지 않는다.`;
+7) 굴착과 중장비는 서로 다른 위험이다. 양식명·permit_kinds의 "굴착·중장비"만 보고 굴착을 넣지 않는다. hazards에 "굴착"이 있을 때만 굴착·붕괴·매설물을 쓴다.
+8) 투입장비는 일반 허가서 중장비 칸에 적힌 장비명이다. "굴착기"가 있어도 그건 장비이지 굴착 작업이 아니다. 중장비는 투입장비·작업반경·협착으로 요약한다.`;
 
 const CHECKLIST_LABELS: Record<string, string> = {
   chk_education: '안전교육 이수',
@@ -237,9 +238,10 @@ export function extractPermitBriefingFacts(input: {
     ...checkedDetailItems(d.hz_heavy_detail),
     ...checkedExSafety(d.ex_safety, EX_HEAVY_SAFETY),
   ];
-  const heavyNote = str(d.hz_heavy_note);
+  const heavyUserNote = str(d.hz_heavy_note);
+  const heavyNote = [equipment && `투입장비 ${equipment}`, heavyUserNote].filter(Boolean).join('. ');
   const hasHeavy = !!d.hz_heavy
-    || !!heavyNote
+    || !!heavyUserNote
     || heavyMeasures.length > 0
     || d.att_heavy_eq === true
     || (kinds.includes('excavation') && !!equipment);
@@ -288,7 +290,7 @@ export function extractPermitBriefingFacts(input: {
     checklist,
     attachments,
     gas,
-    excavation: spec,
+    excavation: hasDig ? spec : undefined,
   };
 }
 
@@ -343,13 +345,15 @@ export function buildPermitBriefingLlmPayload(facts: PermitBriefingFacts) {
     work_start: facts.workStart || undefined,
     work_end: facts.workEnd || undefined,
     personnel_count: facts.personnelCount || undefined,
-    equipment: facts.equipment || undefined,
+    투입장비: facts.equipment || undefined,
     permit_kinds: facts.kindLabels,
+    has_excavation_work: facts.hazards.some((h) => h.label === '굴착'),
+    has_heavy_equipment: facts.hazards.some((h) => h.label === '중장비'),
     hazards: facts.hazards,
     checklist: facts.checklist,
     attachments: facts.attachments,
     gas: Object.keys(gas).length > 0 ? gas : undefined,
-    excavation: facts.excavation,
+    excavation: facts.hazards.some((h) => h.label === '굴착') ? facts.excavation : undefined,
   };
 }
 
@@ -361,14 +365,47 @@ export type PermitAiBriefing = {
   generated_at?: string;
 };
 
+/** 굴착기(장비)는 허용. 양식명·굴착 작업·붕괴는 굴착 사실이 있을 때만. */
+const EXCAVATION_WORK_RE = /굴착(?!기)|사면|흙막이|지보공|지하매설물|굴착면|매몰|굴착·중장비/;
+
+function hasRecordedExcavation(facts: PermitBriefingFacts): boolean {
+  return facts.hazards.some((h) => h.label === '굴착');
+}
+
+function isInventedExcavationText(text: string, facts: PermitBriefingFacts): boolean {
+  if (hasRecordedExcavation(facts)) return false;
+  return EXCAVATION_WORK_RE.test(text);
+}
+
+function fallbackRisksFromFacts(facts: PermitBriefingFacts): string[] {
+  return facts.hazards.map((h) => {
+    const extra = [h.note, h.measures.slice(0, 3).join(', ')].filter(Boolean).join(' — ');
+    return extra ? `${h.label}: ${extra}` : `${h.label} 작업`;
+  }).slice(0, 3);
+}
+
+function sanitizeOverview(overview: string, facts: PermitBriefingFacts): string {
+  if (!overview || hasRecordedExcavation(facts)) return overview;
+  return overview
+    .split(/(?<=[.。])\s+/)
+    .filter((part) => !isInventedExcavationText(part, facts))
+    .join(' ')
+    .trim();
+}
+
 export function normalizePermitBriefing(raw: any, facts: PermitBriefingFacts): PermitAiBriefing {
   const lead = buildPermitBriefingLead(facts);
-  const top = Array.isArray(raw?.top_risks) ? raw.top_risks.map(String).filter(Boolean).slice(0, 3) : [];
-  const controls = Array.isArray(raw?.required_controls)
-    ? raw.required_controls.map(String).filter(Boolean).slice(0, 6)
+  let top = Array.isArray(raw?.top_risks) ? raw.top_risks.map(String).filter(Boolean) : [];
+  top = top.filter((r) => !isInventedExcavationText(r, facts)).slice(0, 3);
+  if (top.length === 0) top = fallbackRisksFromFacts(facts);
+
+  let controls = Array.isArray(raw?.required_controls)
+    ? raw.required_controls.map(String).filter(Boolean)
     : [];
+  controls = controls.filter((c) => !isInventedExcavationText(c, facts)).slice(0, 6);
+
   return {
-    work_overview: applyPermitBriefingLead(String(raw?.work_overview || ''), lead),
+    work_overview: applyPermitBriefingLead(sanitizeOverview(String(raw?.work_overview || ''), facts), lead),
     included_kinds: facts.kindLabels,
     top_risks: top,
     required_controls: controls,
@@ -379,7 +416,7 @@ export function normalizePermitBriefing(raw: any, facts: PermitBriefingFacts): P
 /** Offline / AI-failure fallback so submit is not blocked. Uses permit facts only. */
 export function buildLocalPermitBriefingFromFacts(facts: PermitBriefingFacts): PermitAiBriefing {
   const lead = buildPermitBriefingLead(facts);
-  const extra = [facts.workLocation && `장소 ${facts.workLocation}`, facts.equipment && `장비 ${facts.equipment}`]
+  const extra = [facts.workLocation && `장소 ${facts.workLocation}`, facts.equipment && `투입장비 ${facts.equipment}`]
     .filter(Boolean)
     .join('. ');
   const risks = facts.hazards.map((h) => {

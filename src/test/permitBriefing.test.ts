@@ -77,7 +77,11 @@ describe('permit briefing facts', () => {
     });
     expect(heavyOnly.kindLabels).toEqual(['일반', '중장비']);
     expect(heavyOnly.hazards.map((h) => h.label)).toEqual(['중장비']);
+    expect(heavyOnly.hazards[0].note).toContain('투입장비 굴착기 0.7㎥');
     expect(heavyOnly.hazards.some((h) => h.label === '굴착')).toBe(false);
+    expect(buildPermitBriefingLlmPayload(heavyOnly).has_excavation_work).toBe(false);
+    expect(buildPermitBriefingLlmPayload(heavyOnly).투입장비).toBe('굴착기 0.7㎥');
+    expect(buildPermitBriefingLlmPayload(heavyOnly).excavation).toBeUndefined();
 
     const digOnly = extractPermitBriefingFacts({
       formData: {
@@ -117,6 +121,22 @@ describe('permit briefing facts', () => {
     expect(facts.hazards.map((h) => h.label)).toEqual(['화기']);
     expect(facts.equipment).toBe('용접기');
     expect(facts.kindLabels).toEqual(['화기']);
+  });
+
+  it('summarizes 일반 허가서 투입장비 as 중장비, not 굴착', () => {
+    const facts = extractPermitBriefingFacts({
+      formData: {
+        hz_heavy: true,
+        hz_heavy_equipment_name: '지게차 3t',
+        hz_heavy_detail: { '유도자·신호수 배치': true },
+      },
+      permitKinds: ['general', 'excavation'],
+      kindLabels: ['일반', '굴착·중장비'],
+    });
+    expect(facts.kindLabels).toEqual(['일반', '중장비']);
+    expect(facts.hazards.map((h) => h.label)).toEqual(['중장비']);
+    expect(facts.hazards[0].note).toBe('투입장비 지게차 3t');
+    expect(JSON.stringify(buildPermitBriefingLlmPayload(facts))).not.toMatch(/굴착(?!기)/);
   });
 });
 
@@ -187,6 +207,7 @@ describe('briefing prompt', () => {
     expect(PERMIT_BRIEFING_SYSTEM_PROMPT).not.toContain('발생 가능한 위험');
     expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('업체명·날짜');
     expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('굴착과 중장비는 서로 다른 위험이다');
+    expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('투입장비는 일반 허가서 중장비 칸');
   });
 
   it('uses recorded kinds, not the model bundled 굴착·중장비 label', () => {
@@ -195,10 +216,16 @@ describe('briefing prompt', () => {
       permitKinds: ['excavation'],
     });
     const briefing = normalizePermitBriefing({
-      work_overview: '양중 작업',
+      work_overview: '굴착 사면 붕괴에 주의한다. 덤프 작업반경을 통제한다.',
       included_kinds: ['굴착·중장비'],
-      top_risks: ['굴착 붕괴'],
+      top_risks: ['굴착 붕괴', '중장비 협착'],
+      required_controls: ['흙막이 설치', '작업반경 출입통제'],
     }, facts);
     expect(briefing.included_kinds).toEqual(['중장비']);
+    expect(briefing.top_risks.join(' ')).not.toMatch(/굴착(?!기)/);
+    expect(briefing.top_risks.join(' ')).toContain('중장비');
+    expect(briefing.work_overview).not.toMatch(/사면/);
+    expect(briefing.work_overview).toContain('덤프');
+    expect(briefing.required_controls).toEqual(['작업반경 출입통제']);
   });
 });

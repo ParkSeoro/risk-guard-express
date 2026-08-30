@@ -39,7 +39,7 @@ import {
   PERMIT_KIND_LABEL,
   type PermitKindId,
 } from '@/lib/permitKinds';
-import type { PermitAiBriefing } from '@/lib/permitBriefing';
+import { presentPermitBriefing, type PermitAiBriefing } from '@/lib/permitBriefing';
 import { syncPermitAssessmentLinks, fetchPermitLinkedAssessments, discoverPermitDateValidRuns } from '@/lib/safetyWorkBundle';
 import { approvalsBackOr } from '@/lib/approvalInboxPreview';
 import { contactPhonesFromApprovals, mergeApprovalSignatures } from '@/lib/permitApprovalSignatures';
@@ -240,7 +240,16 @@ export default function WorkPermitDetail() {
     }
 
     const briefing = (p as any).ai_briefing || ((p as any).form_data || {}).ai_briefing || null;
-    setAiBriefing(briefing);
+    setAiBriefing(presentPermitBriefing(briefing, {
+      formData: (p as any).form_data,
+      permitKinds: kinds,
+      workName: (p as any).work_name,
+      workDescription: (p as any).work_description,
+      workLocation: (p as any).location,
+      permitDate: (p as any).permit_date,
+      contractorCompany: (p as any).contractor_company,
+      workStartAt: (p as any).work_start_at,
+    }));
 
     const baseSig: PermitSignatures = (p as any).signatures || {};
 

@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## New chat / handoff
+
+Do **not** replay a long prior Cloud Agent thread. At the start of a new chat, read `.cursor/HANDOFF.md` (product decisions + what is on `main`) and handle **only** the issue in the user’s message. One issue per chat.
+
 ## Cursor Cloud specific instructions
 
 ### Overview

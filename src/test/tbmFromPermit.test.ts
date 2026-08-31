@@ -39,6 +39,25 @@ describe("tbmFromPermit", () => {
     expect(seed.prohibited_actions).not.toMatch(/굴착:/);
   });
 
+  it("does not seed 굴착 TBM from 비상연락망·우천중지 checks", () => {
+    const seed = buildTbmSeedFromPermit({
+      permit_date: "2026-09-01",
+      permit_kinds: ["general", "hot_work", "excavation"],
+      form_data: {
+        work_name: "LCO2 TANK 설치 작업",
+        hz_heavy: true,
+        hz_heavy_equipment_name: "50톤 크레인, 7톤 지게차",
+        ex_safety: {
+          "비상연락망 게시": true,
+          "우천/강풍 시 작업중지 기준": true,
+          "유도자/신호수 배치": true,
+        },
+      },
+    });
+    expect(seed.prohibited_actions).toMatch(/중장비/);
+    expect(seed.prohibited_actions).not.toMatch(/굴착:/);
+  });
+
   it("builds template briefing", () => {
     const seed = buildTbmSeedFromPermit({
       permit_date: "2026-08-03",

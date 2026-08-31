@@ -210,6 +210,7 @@ export default function MobileMore() {
             : [
                 { label: "알림 내역", to: "/app/worker/alerts", icon: Inbox, badge: unread },
                 { label: "알림 · 알람 설정", to: "/app/worker/notifications", icon: Bell },
+                { label: "위치 · GPS", to: "/app/worker/location", icon: MapPin },
                 { label: "QR 스캔", to: "/app/worker/scan", icon: ScanLine },
                 { label: "계정 정보", to: "/app/worker/account", icon: User },
                 ...(!isNativeApp()

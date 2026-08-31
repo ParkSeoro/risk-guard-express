@@ -8691,10 +8691,12 @@ export type Database = {
           created_at: string
           hazard_description: string
           id: string
+          is_anonymous: boolean
           location: string | null
           photo_url: string | null
           project_id: string
           reporter_name: string
+          reporter_user_id: string | null
           resolution_note: string | null
           resumed_at: string | null
           resumed_by: string | null
@@ -8707,10 +8709,12 @@ export type Database = {
           created_at?: string
           hazard_description: string
           id?: string
+          is_anonymous?: boolean
           location?: string | null
           photo_url?: string | null
           project_id: string
           reporter_name: string
+          reporter_user_id?: string | null
           resolution_note?: string | null
           resumed_at?: string | null
           resumed_by?: string | null
@@ -8723,10 +8727,12 @@ export type Database = {
           created_at?: string
           hazard_description?: string
           id?: string
+          is_anonymous?: boolean
           location?: string | null
           photo_url?: string | null
           project_id?: string
           reporter_name?: string
+          reporter_user_id?: string | null
           resolution_note?: string | null
           resumed_at?: string | null
           resumed_by?: string | null

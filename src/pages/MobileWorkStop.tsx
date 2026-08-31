@@ -12,6 +12,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { usePreviewWriteBlock } from "@/contexts/PreviewContext";
 import { isManagerMobileRole } from "@/lib/mobileShell";
+import { lookupWorkerBanFields } from "@/lib/tracking/resolveBanSubject";
+import {
+  ANONYMOUS_REPORTER_LABEL,
+  WORK_STOP_LEGAL_CITE,
+  WORK_STOP_OPEN_STATUSES,
+  buildWorkStopInsert,
+  validateWorkStopForm,
+  workStopDisplayName,
+  type WorkStopIdentityMode,
+} from "@/lib/workStop";
 
 export default function MobileWorkStop() {
   const { user, profile } = useAuth();
@@ -19,6 +29,7 @@ export default function MobileWorkStop() {
   const blockWrite = usePreviewWriteBlock();
   const manager = isManagerMobileRole(role, isMaster);
 
+  const [identity, setIdentity] = useState<WorkStopIdentityMode>("named");
   const [form, setForm] = useState({
     reporter_name: profile?.display_name || "",
     location: "",
@@ -26,7 +37,9 @@ export default function MobileWorkStop() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [openStops, setOpenStops] = useState<any[]>([]);
+  const [openStops, setOpenStops] = useState<
+    { id: string; reporter_name: string; is_anonymous?: boolean; location: string | null; hazard_description: string; status: string }[]
+  >([]);
   const [loadingStops, setLoadingStops] = useState(false);
 
   useEffect(() => {
@@ -42,13 +55,13 @@ export default function MobileWorkStop() {
       setLoadingStops(true);
       const { data } = await supabase
         .from("work_stop_requests")
-        .select("id, reporter_name, location, hazard_description, status, created_at")
+        .select("id, reporter_name, is_anonymous, location, hazard_description, status, created_at")
         .eq("project_id", projectId)
-        .in("status", ["접수", "검토중", "pending", "reviewing"])
+        .in("status", [...WORK_STOP_OPEN_STATUSES])
         .order("created_at", { ascending: false })
         .limit(20);
       if (!cancelled) {
-        setOpenStops(data || []);
+        setOpenStops((data as typeof openStops) || []);
         setLoadingStops(false);
       }
     })();
@@ -62,29 +75,39 @@ export default function MobileWorkStop() {
       toast.message("프리뷰 모드에서는 데이터를 변경할 수 없습니다.");
       return;
     }
-    if (!projectId) {
-      toast.error("프로젝트 선택이 필요합니다");
-      return;
-    }
-    if (!form.reporter_name.trim() || !form.hazard_description.trim()) {
-      toast.error("보고자명·위험상황은 필수입니다");
+    const isAnonymous = identity === "anonymous";
+    const err = validateWorkStopForm({
+      projectId,
+      isAnonymous,
+      reporterName: form.reporter_name,
+      hazardDescription: form.hazard_description,
+    });
+    if (err) {
+      toast.error(err);
       return;
     }
     setSubmitting(true);
-    const { error } = await supabase.from("work_stop_requests").insert({
-      project_id: projectId,
-      reporter_name: form.reporter_name.trim(),
-      location: form.location || null,
-      hazard_description: form.hazard_description.trim(),
-      status: "접수",
-      reporter_user_id: user?.id || null,
-    } as any);
+    const matched = await lookupWorkerBanFields(projectId!, profile?.phone);
+    const payload = buildWorkStopInsert({
+      projectId: projectId!,
+      workerId: matched.worker_id,
+      reporterUserId: user?.id || null,
+      reporterName: form.reporter_name,
+      location: form.location,
+      hazardDescription: form.hazard_description,
+      isAnonymous,
+    });
+    const { error } = await supabase.from("work_stop_requests").insert(payload);
     setSubmitting(false);
     if (error) {
       toast.error(error.message);
       return;
     }
-    toast.success("작업중지 요청이 즉시 관리자에게 전달되었습니다");
+    toast.success(
+      isAnonymous
+        ? "익명으로 작업중지 요청이 전달되었습니다"
+        : "작업중지 요청이 즉시 관리자에게 전달되었습니다",
+    );
     setSubmitted(true);
   }
 
@@ -96,9 +119,13 @@ export default function MobileWorkStop() {
             <OctagonAlert className="size-12 text-destructive mx-auto" />
             <h2 className="text-lg font-bold">작업중지 요청 전송됨</h2>
             <p className="text-sm text-muted-foreground">
-              관리자가 즉시 확인합니다.
+              {identity === "anonymous"
+                ? "신고자 이름은 익명으로 전달되었습니다."
+                : "실명으로 전달되었습니다."}
               <br />
-              법적으로 보호되며, 어떠한 불이익도 받지 않습니다 (산안법 §54-2).
+              관리자·소속 회사·발주처에 즉시 알립니다.
+              <br />
+              법적으로 보호되며, 어떠한 불이익도 받지 않습니다 ({WORK_STOP_LEGAL_CITE}).
             </p>
             <Button
               onClick={() => {
@@ -120,7 +147,7 @@ export default function MobileWorkStop() {
         <OctagonAlert className="size-12 text-destructive mx-auto" />
         <h1 className="text-xl font-bold mt-2">작업중지권 행사</h1>
         <p className="text-xs text-muted-foreground mt-1">
-          산안법 §54 — 위험상황 발견 즉시 작업을 중지하고 보고하세요
+          {WORK_STOP_LEGAL_CITE} — 위험상황 발견 즉시 작업을 중지하고 보고하세요
         </p>
       </header>
 
@@ -138,7 +165,7 @@ export default function MobileWorkStop() {
               <div key={s.id} className="rounded-lg border p-2 text-xs space-y-1">
                 <div className="flex items-center gap-2">
                   <Badge variant="destructive">{s.status}</Badge>
-                  <span className="font-medium">{s.reporter_name}</span>
+                  <span className="font-medium">{workStopDisplayName(s)}</span>
                 </div>
                 <div className="text-muted-foreground">{s.location || "위치 미기재"}</div>
                 <div className="line-clamp-2">{s.hazard_description}</div>
@@ -154,12 +181,40 @@ export default function MobileWorkStop() {
       <Card>
         <CardContent className="p-4 space-y-3">
           <div>
-            <Label>보고자명 *</Label>
-            <Input
-              value={form.reporter_name}
-              onChange={(e) => setForm({ ...form, reporter_name: e.target.value })}
-            />
+            <Label>신고 방식 *</Label>
+            <div className="grid grid-cols-2 gap-2 mt-1.5" data-testid="work-stop-identity">
+              <Button
+                type="button"
+                variant={identity === "anonymous" ? "default" : "outline"}
+                className="h-11"
+                onClick={() => setIdentity("anonymous")}
+              >
+                익명
+              </Button>
+              <Button
+                type="button"
+                variant={identity === "named" ? "default" : "outline"}
+                className="h-11"
+                onClick={() => setIdentity("named")}
+              >
+                실명
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
+              {identity === "anonymous"
+                ? `관리자·알림에는 「${ANONYMOUS_REPORTER_LABEL}」로만 표시됩니다.`
+                : "이름과 함께 소속 회사·발주처 관리자에게 전달됩니다."}
+            </p>
           </div>
+          {identity === "named" && (
+            <div>
+              <Label>보고자명 *</Label>
+              <Input
+                value={form.reporter_name}
+                onChange={(e) => setForm({ ...form, reporter_name: e.target.value })}
+              />
+            </div>
+          )}
           <div>
             <Label>위치</Label>
             <Input
@@ -190,7 +245,7 @@ export default function MobileWorkStop() {
 
       <div className="text-xs text-muted-foreground p-1">
         사업주는 작업중지권 행사 근로자에게 해고·전보·임금삭감 등 어떠한 불리한 처우도 할 수
-        없습니다.
+        없습니다 ({WORK_STOP_LEGAL_CITE}).
       </div>
     </div>
   );

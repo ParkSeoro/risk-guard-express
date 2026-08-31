@@ -18,6 +18,7 @@ export default function MobileTasks() {
     { label: "내 조치사항", sub: "배정된 조치 완료", to: "/app/worker/actions", icon: Wrench },
     { label: "TBM 참여", sub: "오늘 브리핑·서명", to: "/app/worker/tbm", icon: Users },
     { label: "사고·아차사고 신고", sub: "즉시 보고", to: "/app/worker/incident", icon: AlertOctagon },
+    { label: "작업중지권", sub: "익명·실명 선택 신고", to: "/app/worker/work-stop", icon: AlertOctagon },
     { label: "건강로그", sub: "오늘 컨디션", to: "/app/worker/daily-health-log", icon: HeartPulse },
     { label: "보호구 수령확인", sub: "서명·지급대장 기록", to: "/app/worker/ppe-receipt", icon: HardHat },
   ];

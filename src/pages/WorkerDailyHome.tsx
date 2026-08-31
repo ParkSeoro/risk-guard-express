@@ -38,7 +38,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { HardHat, MapPin, LogIn, LogOut, FileSignature, ShieldCheck } from "lucide-react";
+import { HardHat, MapPin, LogIn, LogOut, FileSignature, ShieldCheck, OctagonAlert } from "lucide-react";
+import {
+  shouldShowHomeGpsCard,
+  shouldShowHomeWorkStopCard,
+  WORK_STOP_LEGAL_CITE,
+} from "@/lib/workStop";
 import { toast } from "sonner";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { readActiveProjectId } from "@/lib/activeProject";
@@ -57,7 +62,14 @@ type EntryLog = {
   no_accident_confirmed: boolean;
 };
 
-export default function WorkerDailyHome({ embedded = false }: { embedded?: boolean }) {
+export default function WorkerDailyHome({
+  embedded = false,
+  diagnosticsOnly = false,
+}: {
+  embedded?: boolean;
+  /** 더보기 → 위치·GPS: full diagnostic panel, no check-in chrome. */
+  diagnosticsOnly?: boolean;
+}) {
   const { user, profile } = useAuth();
   const { lastGpsFix, gpsTracking, gpsError, startGpsTracking, stopGpsTracking } = useSystemRealtime();
   const { projectId, setProjectId } = useActiveProject();
@@ -194,16 +206,18 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
 
   useEffect(() => {
     // Incomplete day: force signature before work continues
+    if (diagnosticsOnly) return;
     if (isCheckedIn && !ackDone) {
       setPendingEntry(false);
       setAckOpen(true);
     }
-  }, [isCheckedIn, ackDone]);
+  }, [isCheckedIn, ackDone, diagnosticsOnly]);
 
   // Fresh high-accuracy probe for check-in. Stale coarse GPS (60s cache) was
   // showing workers as outside while they stood on the pad. Watch briefly then stop.
   useEffect(() => {
-    if (!projectId || isCheckedIn || gpsTracking) return;
+    if (!projectId || gpsTracking) return;
+    if (!diagnosticsOnly && isCheckedIn) return;
     if (!("geolocation" in navigator)) return;
     let cancelled = false;
     let watchId: number | null = null;
@@ -240,7 +254,7 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
       if (watchId != null) navigator.geolocation.clearWatch(watchId);
       window.clearTimeout(stop);
     };
-  }, [projectId, isCheckedIn, gpsTracking, probeNonce]);
+  }, [projectId, isCheckedIn, gpsTracking, probeNonce, diagnosticsOnly]);
 
   const ensureConsentAndGps = async () => {
     const { setTrackingConsent } = await import("@/lib/tracking/locationTracker");
@@ -435,10 +449,12 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
       {!embedded && (
         <header className="bg-slate-900 text-white p-4 flex items-center gap-3">
           <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center">
-            <HardHat className="h-6 w-6" />
+            {diagnosticsOnly ? <MapPin className="h-6 w-6" /> : <HardHat className="h-6 w-6" />}
           </div>
           <div className="flex-1">
-            <div className="font-bold text-lg leading-tight">일일 안전 출퇴근</div>
+            <div className="font-bold text-lg leading-tight">
+              {diagnosticsOnly ? "위치 · GPS" : "일일 안전 출퇴근"}
+            </div>
             <div className="text-xs opacity-80">
               {profile?.display_name || "근로자"} · {projectName || "현장 미선택"}
             </div>
@@ -450,7 +466,7 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
       )}
 
       <main className={embedded ? "p-3 space-y-3" : "p-4 space-y-4 max-w-lg mx-auto"}>
-        {suspension && (
+        {suspension && !diagnosticsOnly && (
           <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             <div className="font-semibold">현장 출입 정지</div>
             <div className="text-xs mt-1 opacity-90">
@@ -461,89 +477,154 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
             </div>
           </div>
         )}
+
+        {!diagnosticsOnly && shouldShowHomeWorkStopCard(isCheckedIn) && (
+          <section
+            className="rounded-2xl border-2 border-destructive bg-destructive/10 p-4 space-y-2 shadow-sm"
+            data-testid="worker-home-work-stop"
+          >
+            <div className="flex items-start gap-2">
+              <OctagonAlert className="h-6 w-6 text-destructive shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <div className="text-base font-bold text-destructive leading-tight">
+                  위험하면 작업을 멈추세요
+                </div>
+                <p className="text-xs text-slate-700 mt-1 leading-relaxed">
+                  작업중지권·작업거부권. 익명 또는 실명으로 신고할 수 있습니다.
+                  <br />
+                  {WORK_STOP_LEGAL_CITE} · 불이익 금지
+                </p>
+              </div>
+            </div>
+            <Button
+              asChild
+              className="w-full h-12 bg-destructive hover:bg-destructive/90 text-destructive-foreground text-base font-semibold"
+            >
+              <Link to="/app/worker/work-stop">작업중지 요청</Link>
+            </Button>
+          </section>
+        )}
+
+        {(diagnosticsOnly || shouldShowHomeGpsCard(isCheckedIn)) && (
         <section className="rounded-2xl bg-white/80 backdrop-blur border border-slate-200 p-4 space-y-3 shadow-sm">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <MapPin className="h-4 w-4 text-emerald-600" />
-            GPS · 출근{" "}
+            {diagnosticsOnly ? "위치 · GPS" : "출근 위치"}
             {checkInFence
-              ? `${Math.round(checkInFence.radiusM)}m (${
-                  checkInFence.source === "site_map"
-                    ? "현장맵"
-                    : checkInFence.source === "site_union"
-                      ? "현장맵+주소"
-                      : "주소핀"
-                })`
-              : `${SITE_CHECKIN_MIN_M}m`}
+              ? ` · ${Math.round(checkInFence.radiusM)}m`
+              : ` · ${SITE_CHECKIN_MIN_M}m`}
           </div>
-          <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
-            <div>추적: {gpsTracking ? "ON" : "OFF"}</div>
-            <div>
-              거리:{" "}
-              {!checkInFence
-                ? "현장 좌표 미설정"
-                : !effectiveFix
-                  ? (gpsError ? "GPS 오류" : "GPS 대기…")
-                  : `${Math.round(distanceM!)}m`}
-            </div>
-            <div className="col-span-2">
-              좌표:{" "}
-              {effectiveFix
-                ? `${effectiveFix.lat.toFixed(5)}, ${effectiveFix.lng.toFixed(5)} (±${Math.round(effectiveFix.accuracy)}m)`
-                : "대기"}
-            </div>
-            <div className="col-span-2">
-              현장 기준:{" "}
-              {checkInFence
-                ? `${checkInFence.lat.toFixed(5)}, ${checkInFence.lng.toFixed(5)}`
-                : "현장맵 지오레프 또는 projects.site_lat/lng 필요"}
-            </div>
-            {gpsError && (
-              <div className="col-span-2 text-destructive">GPS: {gpsError}</div>
-            )}
-          </div>
-          <Badge variant={withinCheckIn ? "default" : "secondary"}>
-            {!checkInFence
-              ? "현장 좌표 없음 — 출근 불가"
-              : withinCheckIn
-                ? `반경 ${Math.round(checkInFence.radiusM)}m 이내 — 출근 가능`
-                : "반경 밖 — 출근 비활성"}
-          </Badge>
-          {!isCheckedIn && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                setProbeFix(null);
-                setProbeNonce((n) => n + 1);
-              }}
-            >
-              내 위치 다시 잡기
-            </Button>
-          )}
-          {!gpsTracking && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full"
-              onClick={async () => {
-                const { setTrackingConsent } = await import("@/lib/tracking/locationTracker");
-                setTrackingConsent(true);
-                try {
-                  window.dispatchEvent(new Event("mobile:resume-gps-tracking"));
-                } catch { /* ignore */ }
-              }}
-            >
-              GPS 추적 다시 평가
-            </Button>
-          )}
-          {!gpsTracking && (
-            <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
-              집·현장 밖에서는 추적이 켜지지 않습니다. 근로자는 출근 후, 관리자는 현장 펜스 안에서만 위험구역 알람이 동작합니다.
-            </p>
+          {diagnosticsOnly ? (
+            <>
+              <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                <div>추적: {gpsTracking ? "ON" : "OFF"}</div>
+                <div>
+                  거리:{" "}
+                  {!checkInFence
+                    ? "현장 좌표 미설정"
+                    : !effectiveFix
+                      ? (gpsError ? "GPS 오류" : "GPS 대기…")
+                      : `${Math.round(distanceM!)}m`}
+                </div>
+                <div className="col-span-2">
+                  좌표:{" "}
+                  {effectiveFix
+                    ? `${effectiveFix.lat.toFixed(5)}, ${effectiveFix.lng.toFixed(5)} (±${Math.round(effectiveFix.accuracy)}m)`
+                    : "대기"}
+                </div>
+                <div className="col-span-2">
+                  현장 기준:{" "}
+                  {checkInFence
+                    ? `${checkInFence.lat.toFixed(5)}, ${checkInFence.lng.toFixed(5)} (${
+                        checkInFence.source === "site_map"
+                          ? "현장맵"
+                          : checkInFence.source === "site_union"
+                            ? "현장맵+주소"
+                            : "주소핀"
+                      })`
+                    : "현장맵 지오레프 또는 projects.site_lat/lng 필요"}
+                </div>
+                {gpsError && (
+                  <div className="col-span-2 text-destructive">GPS: {gpsError}</div>
+                )}
+              </div>
+              <Badge variant={withinCheckIn ? "default" : "secondary"}>
+                {!checkInFence
+                  ? "현장 좌표 없음 — 출근 불가"
+                  : withinCheckIn
+                    ? `반경 ${Math.round(checkInFence.radiusM)}m 이내`
+                    : "반경 밖"}
+              </Badge>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setProbeFix(null);
+                  setProbeNonce((n) => n + 1);
+                }}
+              >
+                내 위치 다시 잡기
+              </Button>
+              {!gpsTracking && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={async () => {
+                    const { setTrackingConsent } = await import("@/lib/tracking/locationTracker");
+                    setTrackingConsent(true);
+                    try {
+                      window.dispatchEvent(new Event("mobile:resume-gps-tracking"));
+                    } catch { /* ignore */ }
+                  }}
+                >
+                  GPS 추적 다시 평가
+                </Button>
+              )}
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                출근 후에는 홈에서 GPS 카드를 숨깁니다. 추적은 백그라운드에서 유지됩니다.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <Badge variant={withinCheckIn ? "default" : "secondary"}>
+                  {!checkInFence
+                    ? "현장 좌표 없음 — 출근 불가"
+                    : !effectiveFix
+                      ? (gpsError ? "GPS 오류" : "위치 확인 중…")
+                      : withinCheckIn
+                        ? "반경 안 — 출근 가능"
+                        : "반경 밖 — 출근 불가"}
+                </Badge>
+                {effectiveFix && distanceM != null && checkInFence && (
+                  <span className="text-xs text-slate-500">{Math.round(distanceM)}m</span>
+                )}
+              </div>
+              {gpsError && (
+                <p className="text-xs text-destructive">GPS: {gpsError}</p>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setProbeFix(null);
+                  setProbeNonce((n) => n + 1);
+                }}
+              >
+                위치 다시 잡기
+              </Button>
+              <Button asChild size="sm" variant="ghost" className="w-full text-xs">
+                <Link to="/app/worker/location">위치·GPS 자세히</Link>
+              </Button>
+            </>
           )}
         </section>
+        )}
 
+        {!diagnosticsOnly && (
         <section className="rounded-2xl bg-white/80 border border-slate-200 p-4 space-y-3 shadow-sm">
           <div className="text-sm font-semibold text-slate-800">오늘 상태</div>
           <ol className="space-y-2 text-sm">
@@ -607,6 +688,7 @@ export default function WorkerDailyHome({ embedded = false }: { embedded?: boole
             )}
           </div>
         </section>
+        )}
       </main>
 
       <Dialog

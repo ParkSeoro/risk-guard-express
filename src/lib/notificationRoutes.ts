@@ -36,6 +36,7 @@ const ADMIN_ENTITY_ROUTES: Record<string, RouteFn> = {
   tbm: () => `${ADMIN}/tbm-logs`,
   todo: () => `${ADMIN}/todo`,
   work_stop: () => `${ADMIN}/work-stop`,
+  work_stop_request: () => `${ADMIN}/work-stop`,
   safety_cost_report: () => `${ADMIN}/safety-cost`,
   education: () => `${ADMIN}/worker-education`,
   worker: () => `${ADMIN}/workers`,
@@ -58,6 +59,7 @@ const MOBILE_ENTITY_ROUTES: Record<string, RouteFn> = {
   incident_report: () => `${WORKER}/incident`,
   tbm: () => `${WORKER}/tbm`,
   work_stop: () => `${WORKER}/work-stop`,
+  work_stop_request: () => `${WORKER}/work-stop`,
   // No dedicated mobile page yet → Today (avoid silent desktop jump)
   safety_cost: () => `${WORKER}/today`,
   safety_cost_report: () => `${WORKER}/today`,
@@ -108,6 +110,8 @@ const ADMIN_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
     n.related_id ? `${ADMIN}/announcements?id=${n.related_id}` : `${ADMIN}/announcements`,
   vision_safety_event: (n) =>
     n.related_id ? `${ADMIN}/vision-fleet?event=${n.related_id}` : `${ADMIN}/vision-fleet`,
+  work_stop: () => `${ADMIN}/work-stop`,
+  work_stop_request: () => `${ADMIN}/work-stop`,
 };
 
 const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
@@ -146,6 +150,8 @@ const MOBILE_TYPE_ROUTES: Record<string, (n: NotificationLike) => string> = {
     n.related_id ? `${WORKER}/announcements?id=${n.related_id}` : `${WORKER}/announcements`,
   vision_safety_event: (n) =>
     n.related_id ? `${WORKER}/vision-events?event=${n.related_id}` : `${WORKER}/vision-events`,
+  work_stop: () => `${WORKER}/work-stop`,
+  work_stop_request: () => `${WORKER}/work-stop`,
 };
 
 /** Map known admin paths into mobile equivalents when on phone shell. */

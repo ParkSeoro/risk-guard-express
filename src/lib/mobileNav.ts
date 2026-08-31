@@ -55,6 +55,7 @@ export function mobileEntityPath(
     case "tbm":
       return { path: `${WORKER}/tbm` };
     case "work_stop":
+    case "work_stop_request":
       return { path: `${WORKER}/work-stop` };
     case "todo":
     case "safety_cost":

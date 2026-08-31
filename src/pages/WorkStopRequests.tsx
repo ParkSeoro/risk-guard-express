@@ -12,9 +12,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { OctagonAlert, AlertTriangle, CheckCircle2, Clock, Search, Smartphone, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
+import { WORK_STOP_LEGAL_CITE, workStopDisplayName } from "@/lib/workStop";
 
 type Row = {
-  id: string; project_id: string; reporter_name: string; location: string | null;
+  id: string; project_id: string; reporter_name: string; is_anonymous?: boolean;
+  location: string | null;
   hazard_description: string; photo_url: string | null; status: string;
   resumed_at: string | null; resolution_note: string | null; created_at: string;
 };
@@ -64,7 +66,7 @@ export default function WorkStopRequests() {
     if (!q.trim()) return base;
     const key = q.trim().toLowerCase();
     return base.filter(r =>
-      r.reporter_name?.toLowerCase().includes(key) ||
+      workStopDisplayName(r).toLowerCase().includes(key) ||
       (r.location || '').toLowerCase().includes(key) ||
       r.hazard_description?.toLowerCase().includes(key)
     );
@@ -97,7 +99,7 @@ export default function WorkStopRequests() {
       <header className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2"><OctagonAlert className="text-destructive" /> 작업중지권 관리</h1>
-          <p className="text-sm text-muted-foreground">산안법 §54 — 근로자는 산업재해 발생 급박한 위험을 인지하면 즉시 작업중지권을 행사할 수 있으며, 사업주는 그를 이유로 불이익을 줄 수 없습니다.</p>
+          <p className="text-sm text-muted-foreground">{WORK_STOP_LEGAL_CITE} — 근로자는 산업재해 발생 급박한 위험을 인지하면 즉시 작업중지권을 행사할 수 있으며, 사업주는 그를 이유로 불이익을 줄 수 없습니다. 익명 신고는 이름이 표시되지 않습니다.</p>
         </div>
         <Button variant="outline" size="sm" asChild>
           <a href="/app/worker/work-stop" target="_blank" rel="noreferrer"><Smartphone className="size-4 mr-1"/> 모바일 신고 페이지</a>
@@ -148,7 +150,7 @@ export default function WorkStopRequests() {
                       {filtered.map(r => (
                         <tr key={r.id} className="border-t hover:bg-muted/30">
                           <td className="p-2 whitespace-nowrap text-xs">{new Date(r.created_at).toLocaleString('ko-KR')}</td>
-                          <td className="p-2">{r.reporter_name}</td>
+                          <td className="p-2">{workStopDisplayName(r)}</td>
                           <td className="p-2">{r.location || '-'}</td>
                           <td className="p-2 max-w-md truncate" title={r.hazard_description}>{r.hazard_description}</td>
                           <td className="p-2"><Badge variant={STATUS_VARIANT[r.status]}>{r.status}</Badge></td>
@@ -173,7 +175,7 @@ export default function WorkStopRequests() {
           {editing && (
             <div className="space-y-3">
               <div className="p-3 rounded bg-muted/50 text-sm">
-                <div className="font-medium">{editing.reporter_name} · {editing.location || '위치 미상'}</div>
+                <div className="font-medium">{workStopDisplayName(editing)} · {editing.location || '위치 미상'}</div>
                 <div className="text-muted-foreground mt-1">{editing.hazard_description}</div>
               </div>
               <div>
@@ -185,7 +187,7 @@ export default function WorkStopRequests() {
                 </select>
               </div>
               <div><Label>처리 내용</Label><Textarea rows={3} value={form.resolution_note} onChange={e => setForm({ ...form, resolution_note: e.target.value })} /></div>
-              <p className="text-xs text-destructive">⚠️ 작업중지권 행사 근로자에 대한 어떠한 불이익 처우도 금지됩니다 (산안법 §54-2).</p>
+              <p className="text-xs text-destructive">⚠️ 작업중지권 행사 근로자에 대한 어떠한 불이익 처우도 금지됩니다 ({WORK_STOP_LEGAL_CITE}).</p>
             </div>
           )}
           <DialogFooter>

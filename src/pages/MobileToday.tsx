@@ -150,7 +150,7 @@ function ManagerToday({
             .from("work_stop_requests" as any)
             .select("id", { count: "exact", head: true })
             .eq("project_id", projectId)
-            .in("status", ["접수", "검토중", "pending", "reviewing"])
+            .in("status", ["접수", "확인중"])
             .then((r) => r.count),
           supabase
             .from("v_worker_attendance_today" as any)

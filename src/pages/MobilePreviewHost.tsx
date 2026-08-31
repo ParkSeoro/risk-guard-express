@@ -67,6 +67,7 @@ function PreviewInnerRoutes() {
           <Route path="vision-events" element={<P.LazyMobileVisionEvents />} />
           <Route path="daily-health-log" element={<P.LazyMobileDailyHealthLog />} />
           <Route path="work-stop" element={<P.LazyMobileWorkStop />} />
+          <Route path="location" element={<P.LazyWorkerGpsLocation />} />
           <Route path="geofence-drop" element={<P.LazyMobileGeofenceDrop />} />
           <Route path="map-calibration" element={<P.LazyMobileMapCalibration />} />
           <Route path="site-weather" element={<P.LazyMobileSiteWeather />} />

@@ -55,9 +55,33 @@ export const CHAIN_SLING_LOAD: Record<number, number> = {
   6: 1.12, 8: 2.0, 10: 3.15, 13: 5.3, 16: 8.0, 20: 12.5, 22: 15.0, 26: 21.2,
 };
 
-// ============================================================
-// 슬링벨트/라운드슬링 각도 보정 계수
-// ============================================================
+/**
+ * 인양각도 = 줄과 수평면이 이루는 각 (현장·KOSHA 줄걸이 관례).
+ * 60° → 1/sin60° ≈ 1.16. 수직(90°) = 1.00.
+ */
+export const SLING_HORIZONTAL_RECOMMENDED_DEG = 60;
+export const SLING_HORIZONTAL_MIN_DEG = 30;
+
+export function slingHorizontalTensionFactor(horizontalDeg: number): number {
+  const deg = Number(horizontalDeg);
+  if (!Number.isFinite(deg) || deg <= 0) return Number.POSITIVE_INFINITY;
+  const s = Math.sin((deg * Math.PI) / 180);
+  if (s <= 1e-6) return Number.POSITIVE_INFINITY;
+  return 1 / s;
+}
+
+export function tensionPerSlingLeg(opts: {
+  slingLoadTon: number;
+  legCount: number;
+  horizontalDeg: number;
+}): number {
+  const n = opts.legCount > 0 ? opts.legCount : 2;
+  const k = slingHorizontalTensionFactor(opts.horizontalDeg);
+  if (!Number.isFinite(k)) return opts.slingLoadTon;
+  return (opts.slingLoadTon * k) / n;
+}
+
+/** @deprecated 장력식과 이중 적용하지 말 것. 호환용. */
 export const SLING_BELT_ANGLE_FACTOR: { maxAngle: number; factor: number }[] = [
   { maxAngle: 45, factor: 1.0 },
   { maxAngle: 60, factor: 0.8 },
@@ -70,9 +94,7 @@ export function getSlingBeltAngleFactor(angleDeg: number): number {
   return 0.6;
 }
 
-// ============================================================
-// 와이어로프 줄걸이 각도에 따른 장력 계수
-// ============================================================
+/** 수직에서 벌어진 각 기준 구표. 입력은 수평각을 쓴다. */
 export const SLING_ANGLE_FACTOR: Record<number, number> = {
   0: 1.00, 30: 1.16, 45: 1.41, 60: 2.00,
 };
@@ -85,21 +107,84 @@ export const TERMINAL_METHOD_EFFICIENCY: Record<string, number> = {
   '아이 스플라이스': 0.85, '클립 체결': 0.80,
 };
 
-// ============================================================
-// 풍속 계수
-// ============================================================
-export const WIND_SPEED_FACTORS: { label: string; range: string; factor: number }[] = [
-  { label: '정상', range: '0~5', factor: 1.0 },
-  { label: '인양능력 감소', range: '5~10', factor: 0.8 },
-  { label: '인양능력 감소', range: '10~15', factor: 0.6 },
-  { label: '작업 불가', range: '15~', factor: 0 },
+/**
+ * 풍속 — 법령에 「정격을 풍속으로 깎는」 동일 감률 표는 없음.
+ * 이동식: C-99 5~10m/s 인양하중표 20% 감, C-69·철골 제383조는 10m/s 이상 중지.
+ */
+export type WindRule = {
+  range: string;
+  label: string;
+  factor: number;
+  stopWork: boolean;
+  legal: string;
+};
+
+export const WIND_SPEED_BANDS: WindRule[] = [
+  {
+    range: "0~5",
+    label: "정상 · 정격 100%",
+    factor: 1,
+    stopWork: false,
+    legal: "규칙 제146조(정격하중 준수)",
+  },
+  {
+    range: "5~10",
+    label: "정격 80% (C-99)",
+    factor: 0.8,
+    stopWork: false,
+    legal: "KOSHA GUIDE C-99: 5~10m/s 인양하중표 20% 감",
+  },
+  {
+    range: "10~",
+    label: "작업 중지",
+    factor: 0,
+    stopWork: true,
+    legal: "KOSHA C-69 10m/s 중지 · 철골 시 규칙 제383조",
+  },
 ];
 
+export const WIND_SPEED_FACTORS = WIND_SPEED_BANDS.map((b) => ({
+  label: b.label,
+  range: b.range,
+  factor: b.factor,
+}));
+
+/** "8m/s", 숫자 입력, 구등급 10~15 등을 해석. */
+export function parseWindSpeedMs(grade?: string | null, speedMs?: number | null): number | null {
+  const speed = Number(speedMs);
+  if (Number.isFinite(speed) && speedMs != null && String(speedMs) !== "") return speed;
+  const g = String(grade || "").trim();
+  const m = g.match(/^(\d+(?:\.\d+)?)\s*m\/s/i);
+  if (m) return Number(m[1]);
+  return null;
+}
+
+export function resolveWindRule(opts: { grade?: string | null; speedMs?: number | null }): WindRule {
+  const speed = parseWindSpeedMs(opts.grade, opts.speedMs);
+  if (speed != null) {
+    if (speed < 5) return WIND_SPEED_BANDS[0];
+    if (speed < 10) return WIND_SPEED_BANDS[1];
+    return WIND_SPEED_BANDS[2];
+  }
+  const g = String(opts.grade || "0~5").trim();
+  if (g === "0~5") return WIND_SPEED_BANDS[0];
+  if (g === "5~10") return WIND_SPEED_BANDS[1];
+  if (g === "10~" || g === "10~15" || g === "15~" || g.startsWith("10") || g.startsWith("15")) {
+    return WIND_SPEED_BANDS[2];
+  }
+  return WIND_SPEED_BANDS[0];
+}
+
 export function getWindFactorBySpeed(speedMs: number): number {
-  if (speedMs <= 5) return 1.0;
-  if (speedMs <= 10) return 0.8;
-  if (speedMs <= 15) return 0.6;
-  return 0;
+  return resolveWindRule({ speedMs }).factor;
+}
+
+/** 선회·경사·주행은 법령 필수 감률이 아님. 해당할 때만 제조사 일반 80%(제147조). */
+export const CONDITION_DERATE = 0.8;
+
+export function isConditionDerated(v: unknown): boolean {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 && n < 0.999;
 }
 
 // 샤클 인치 표: src/lib/riggingHardwareCatalog.ts (Crosby G-2130)
@@ -268,6 +353,8 @@ export interface RiggingInput {
 
   // 장비 안전성 계수
   windSpeedFactor: number;
+  windSpeedGrade?: string | null;
+  windSpeedMs?: number | null;
   boomRotationFactor: number;
   groundInspectionFactor: number;
   loadProtrusionFactor: number;
@@ -281,6 +368,10 @@ export interface RiggingResult {
   equipmentWorkingLoad: number;
   equipmentOk: boolean;
   equipmentSafetyFactor: number;
+  windStop: boolean;
+  slingAngleFactor: number;
+  slingAngleWarn: boolean;
+  slingLoadTon: number;
 
   slingRatedLoad: number;
   slingSafeLoad: number;
@@ -306,27 +397,46 @@ export function calculateFullRigging(input: RiggingInput): RiggingResult {
 
   const totalWeightMax = input.loadWeight + input.hookWeight + input.shackleWeightVal + input.slingRiggingWeight;
   const totalWeightMin = input.loadWeightMin + input.hookWeightMin + input.shackleWeightMin + input.slingRiggingWeightMin;
+  /** 훅 블록은 줄 위 — 줄·샤클은 순하중+아래 줄걸이만 (규칙 제146조 정격은 크레인 총중량). */
+  const slingLoadTon = input.loadWeight + input.shackleWeightVal + input.slingRiggingWeight;
 
-  const angleRad = (input.slingAngleDeg * Math.PI) / 180;
-  const cosAngle = Math.cos(angleRad);
   const legCount = input.slingMaterialType === 'chain_sling' ? input.chainLegCount : input.slingCount;
   const effectiveLegCount = legCount > 0 ? legCount : 2;
-  const tensionPerLeg = cosAngle > 0 ? totalWeightMax / (effectiveLegCount * cosAngle) : totalWeightMax;
+  const horizontalDeg = input.slingAngleDeg || SLING_HORIZONTAL_RECOMMENDED_DEG;
+  const slingAngleFactor = slingHorizontalTensionFactor(horizontalDeg);
+  const slingAngleWarn = horizontalDeg < SLING_HORIZONTAL_RECOMMENDED_DEG;
+  const tensionPerLeg = tensionPerSlingLeg({
+    slingLoadTon,
+    legCount: effectiveLegCount,
+    horizontalDeg,
+  });
 
-  // Equipment safety
-  const equipmentWorkingLoad = input.liftingCapacity
-    * input.windSpeedFactor
-    * input.boomRotationFactor
-    * input.groundInspectionFactor
-    * input.loadProtrusionFactor;
+  const wind = resolveWindRule({
+    grade: input.windSpeedGrade,
+    speedMs: input.windSpeedMs,
+  });
+  /** 등급이 SSOT. 저장된 factor(구 1.0/0.6)는 법령 구간과 어긋날 수 있어 쓰지 않음. */
+  const windFactor = wind.factor;
+  const rot = Number(input.boomRotationFactor) || 1;
+  const ground = Number(input.groundInspectionFactor) || 1;
+  const travel = Number(input.loadProtrusionFactor) || 1;
 
-  const equipmentOk = equipmentWorkingLoad >= totalWeightMax;
+  const equipmentWorkingLoad = wind.stopWork
+    ? 0
+    : input.liftingCapacity * windFactor * rot * ground * travel;
+
+  const equipmentOk = !wind.stopWork && equipmentWorkingLoad >= totalWeightMax;
   const equipmentSafetyFactor = totalWeightMax > 0 ? equipmentWorkingLoad / totalWeightMax : 0;
-  if (!equipmentOk) {
-    messages.push(`⚠️ 장비 안전성 부적합: 작업하중 ${equipmentWorkingLoad.toFixed(1)}t < 총중량 ${totalWeightMax.toFixed(1)}t`);
+  if (wind.stopWork) {
+    messages.push(`⚠️ 풍속 작업 중지 — ${wind.legal}`);
+  } else if (!equipmentOk) {
+    messages.push(`⚠️ 장비 안전성 부적합: 적용 정격 ${equipmentWorkingLoad.toFixed(1)}t < 총중량 ${totalWeightMax.toFixed(1)}t (규칙 제146조)`);
   }
-  if (equipmentSafetyFactor > 0 && equipmentSafetyFactor < 1.25) {
-    messages.push(`⚠️ 장비 안전율 ${equipmentSafetyFactor.toFixed(2)} < 1.25 경고`);
+  if (!wind.stopWork && equipmentSafetyFactor > 0 && equipmentSafetyFactor < 1.25) {
+    messages.push(`⚠️ 여유율 ${equipmentSafetyFactor.toFixed(2)} < 1.25 (권고, 법령 필수 아님)`);
+  }
+  if (slingAngleWarn) {
+    messages.push(`⚠️ 인양각도(수평) ${horizontalDeg}° < 60° — 줄이 벌어져 장력이 커집니다. 60° 이상 권고`);
   }
 
   // Sling safety (per material)
@@ -345,38 +455,34 @@ export function calculateFullRigging(input: RiggingInput): RiggingResult {
     }
     case 'sling_belt': {
       slingRatedLoad = input.slingBeltRatedLoad || getSlingBeltRatedLoadByWidth(input.slingBeltWidthMm);
-      const beltFactor = getSlingBeltAngleFactor(input.slingAngleDeg);
-      slingSafeLoad = slingRatedLoad * beltFactor;
+      slingSafeLoad = slingRatedLoad;
       break;
     }
     case 'round_sling': {
       slingRatedLoad = input.roundSlingRatedLoad || getRoundSlingRatedLoadByColor(input.roundSlingColor);
-      const roundFactor = getSlingBeltAngleFactor(input.slingAngleDeg);
-      slingSafeLoad = slingRatedLoad * roundFactor;
+      slingSafeLoad = slingRatedLoad;
       break;
     }
     case 'chain_sling': {
       const chainLoadPerLeg = getChainSlingLoad(input.chainDiameterMm);
       slingRatedLoad = chainLoadPerLeg;
-      const chainFactor = getSlingBeltAngleFactor(input.slingAngleDeg);
-      slingSafeLoad = chainLoadPerLeg * chainFactor;
+      slingSafeLoad = chainLoadPerLeg;
       break;
     }
   }
 
   const slingOk = slingSafeLoad >= tensionPerLeg;
   if (!slingOk) {
-    messages.push(`⚠️ 줄걸이 안전성 부적합: 안전하중 ${slingSafeLoad.toFixed(1)}t < 장력 ${tensionPerLeg.toFixed(1)}t`);
+    messages.push(`⚠️ 줄걸이 안전성 부적합: 1줄 안전하중 ${slingSafeLoad.toFixed(1)}t < 1줄 장력 ${tensionPerLeg.toFixed(1)}t`);
   }
 
-  // Recommendations
   if (!slingOk) {
     if (input.slingMaterialType === 'sling_belt') {
-      const needed = SLING_BELT_BY_WIDTH.find(s => s.ratedLoad * getSlingBeltAngleFactor(input.slingAngleDeg) >= tensionPerLeg);
+      const needed = SLING_BELT_BY_WIDTH.find(s => s.ratedLoad >= tensionPerLeg);
       if (needed) recommendations.push(`슬링벨트 ${needed.widthMm}mm(${needed.ratedLoad}톤) 이상 필요`);
     }
     if (input.slingMaterialType === 'round_sling') {
-      const needed = ROUND_SLING_BY_COLOR.find(s => s.ratedLoad * getSlingBeltAngleFactor(input.slingAngleDeg) >= tensionPerLeg);
+      const needed = ROUND_SLING_BY_COLOR.find(s => s.ratedLoad >= tensionPerLeg);
       if (needed) recommendations.push(`라운드슬링 ${needed.label}(${needed.ratedLoad}톤) 이상 필요`);
     }
   }
@@ -398,6 +504,10 @@ export function calculateFullRigging(input: RiggingInput): RiggingResult {
   return {
     totalWeightMax, totalWeightMin, tensionPerLeg,
     equipmentWorkingLoad, equipmentOk, equipmentSafetyFactor,
+    windStop: wind.stopWork,
+    slingAngleFactor,
+    slingAngleWarn,
+    slingLoadTon,
     slingRatedLoad, slingSafeLoad, slingOk,
     shackleSafeLoad, shackleOk,
     wireBreakingLoad, wireSafeLoad,

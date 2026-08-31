@@ -8,6 +8,7 @@ import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Calculator, CheckCircle2, AlertTriangle, XCircle, Save, Lightbulb, Truck } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   calculateFullRigging,
   getWireBreakingLoad,
@@ -15,10 +16,12 @@ import {
   getSlingBeltRatedLoadByWidth,
   getRoundSlingRatedLoadByColor,
   getChainSlingLoad,
-  getWindFactorBySpeed,
   lookupCraneCapacity,
   mmToInch,
-  WIND_SPEED_FACTORS,
+  resolveWindRule,
+  isConditionDerated,
+  CONDITION_DERATE,
+  WIND_SPEED_BANDS,
   TERMINAL_METHOD_EFFICIENCY,
   SLING_MATERIAL_OPTIONS,
   SLING_BELT_BY_WIDTH,
@@ -70,12 +73,21 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
     // eslint-disable-next-line react-hooks/exhaustive-deps -- field deps below drive refresh
   }, [rigging, applyDerived]);
 
+  useEffect(() => {
+    const g = String(rigging?.wind_speed_grade || "");
+    const m = g.match(/^(\d+(?:\.\d+)?)\s*m\/s/i);
+    if (m) {
+      setWindInputMode("custom");
+      setCustomWindSpeed(m[1]);
+    }
+  }, [rigging?.wind_speed_grade]);
+
   useEffect(() => { recalc(); }, [
     rigging?.load_weight, rigging?.hook_weight, rigging?.shackle_weight_val, rigging?.sling_rigging_weight,
     rigging?.load_weight_min, rigging?.hook_weight_min, rigging?.shackle_weight_min, rigging?.sling_rigging_weight_min,
     rigging?.crane_capacity, rigging?.rated_capacity, rigging?.working_radius, rigging?.boom_length,
     rigging?.wire_diameter_mm, rigging?.sling_count, rigging?.sling_angle_deg, rigging?.wire_safety_coefficient,
-    rigging?.wind_speed_factor, rigging?.boom_rotation_factor, rigging?.ground_inspection_factor,
+    rigging?.wind_speed_factor, rigging?.wind_speed_grade, rigging?.boom_rotation_factor, rigging?.ground_inspection_factor,
     rigging?.load_protrusion_factor, rigging?.shackle_inch, rigging?.shackle_qty,
     rigging?.wire_terminal_method, rigging?.outrigger_distance,
     rigging?.sling_material_type, rigging?.sling_belt_color, rigging?.sling_belt_rated_load,
@@ -278,9 +290,12 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
             <div className="space-y-2">
               <h4 className="text-xs font-semibold text-muted-foreground">줄걸이 공통</h4>
               <div className="grid grid-cols-2 gap-2">
-                {field('인양각도', 'sling_angle_deg', 'number', { unit: '°' })}
+                {field('인양각도(수평면)', 'sling_angle_deg', 'number', { unit: '°' })}
                 {field('줄걸이 수', 'sling_count', 'number')}
               </div>
+              <p className="text-[9px] text-muted-foreground leading-relaxed">
+                줄과 수평면이 이루는 각. 60° 권고 · 장력계수 1/sinθ (수직 90°=1.00, 60°≈1.16)
+              </p>
             </div>
 
             {/* Material-specific */}
@@ -451,7 +466,9 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
           {result && result.tensionPerLeg > 0 && (
             <div className="mt-3 p-2 rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
               <p className="text-xs font-semibold">1줄당 장력 (T): <span className="text-amber-700 dark:text-amber-400 text-sm">{result.tensionPerLeg.toFixed(2)} 톤</span></p>
-              <p className="text-[10px] text-muted-foreground">T = 총중량 / (줄수({rigging.sling_count || 2}) × cos({rigging.sling_angle_deg || 60}°))</p>
+              <p className="text-[10px] text-muted-foreground">
+                T = 줄하중({result.slingLoadTon.toFixed(2)}t, 훅 제외) × (1/sin{rigging.sling_angle_deg || 60}°) / 줄수({rigging.sling_count || 2})
+              </p>
             </div>
           )}
         </CardContent>
@@ -466,33 +483,43 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-5 gap-px bg-border rounded overflow-hidden text-xs">
-            <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">풍속 (m/s)</div>
-            <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">봉대 회전</div>
-            <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">지반검사</div>
-            <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">주행(인양물돌기)</div>
+          {(() => {
+            const windRule = resolveWindRule({ grade: rigging.wind_speed_grade });
+            const listed = WIND_SPEED_BANDS.some((b) => b.range === (rigging.wind_speed_grade || '0~5'));
+            const selectGrade = listed ? (rigging.wind_speed_grade || '0~5') : windRule.range;
+            const customRule = resolveWindRule({ speedMs: Number(customWindSpeed) || 0 });
+            const toggleCond = (fieldName: string, on: boolean) => {
+              onChange(fieldName, on ? CONDITION_DERATE : 1);
+            };
+            return (
+          <>
+          <div className="grid grid-cols-2 gap-px bg-border rounded overflow-hidden text-xs">
+            <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">풍속</div>
             <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">판정</div>
 
             <div className="bg-card p-2">
               {windInputMode === 'select' ? (
                 <div className="space-y-1">
-                  <Select value={rigging.wind_speed_grade || '0~5'} onValueChange={v => {
+                  <Select value={selectGrade} onValueChange={v => {
                     if (v === 'custom') {
                       setWindInputMode('custom');
                       return;
                     }
-                    const wf = WIND_SPEED_FACTORS.find(w => w.range === v);
+                    const wf = WIND_SPEED_BANDS.find(w => w.range === v);
                     onChange('wind_speed_grade', v);
                     onChange('wind_speed_factor', wf?.factor ?? 1);
                   }}>
-                    <SelectTrigger className="h-7 text-[10px]"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-8 text-[10px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {WIND_SPEED_FACTORS.map(w => (
-                        <SelectItem key={w.range} value={w.range} className="text-xs">{w.range} m/s ({w.label})</SelectItem>
+                      {WIND_SPEED_BANDS.map(w => (
+                        <SelectItem key={w.range} value={w.range} className="text-xs">
+                          {w.range === '10~' ? '10m/s 이상' : `${w.range} m/s`} — {w.label}
+                        </SelectItem>
                       ))}
-                      <SelectItem value="custom" className="text-xs font-medium">직접 입력</SelectItem>
+                      <SelectItem value="custom" className="text-xs font-medium">직접 입력 (m/s)</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-[9px] text-muted-foreground leading-snug">{windRule.legal}</p>
                 </div>
               ) : (
                 <div className="space-y-1">
@@ -503,52 +530,90 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
                       value={customWindSpeed}
                       onChange={e => {
                         setCustomWindSpeed(e.target.value);
-                        const speed = Number(e.target.value) || 0;
-                        const factor = getWindFactorBySpeed(speed);
-                        onChange('wind_speed_factor', factor);
-                        onChange('wind_speed_grade', `${speed}m/s`);
+                        const speed = Number(e.target.value);
+                        const rule = resolveWindRule({ speedMs: Number.isFinite(speed) ? speed : 0 });
+                        onChange('wind_speed_factor', rule.factor);
+                        onChange('wind_speed_grade', Number.isFinite(speed) ? `${speed}m/s` : '0~5');
                       }}
                       className="h-7 text-[10px] w-16"
                     />
-                    <Button variant="ghost" size="sm" className="h-6 text-[9px] px-1" onClick={() => setWindInputMode('select')}>
+                    <Button variant="ghost" size="sm" className="h-6 text-[9px] px-1" onClick={() => {
+                      setWindInputMode('select');
+                      const rule = resolveWindRule({ speedMs: Number(customWindSpeed) || 0 });
+                      onChange('wind_speed_grade', rule.range);
+                      onChange('wind_speed_factor', rule.factor);
+                    }}>
                       목록
                     </Button>
                   </div>
-                  {Number(customWindSpeed) > 10 && (
-                    <p className="text-[9px] text-red-500 font-medium">⚠️ 풍속 {customWindSpeed}m/s - 안전율 감소</p>
-                  )}
-                  {Number(customWindSpeed) >= 15 && (
-                    <p className="text-[9px] text-red-600 font-bold">🚫 작업 불가 풍속!</p>
-                  )}
+                  <p className={`text-[9px] font-medium ${customRule.stopWork ? 'text-red-600' : customRule.factor < 1 ? 'text-amber-600' : 'text-muted-foreground'}`}>
+                    {customRule.stopWork
+                      ? `작업 중지 — ${customRule.legal}`
+                      : `${customRule.label} · ${customRule.legal}`}
+                  </p>
                 </div>
               )}
-            </div>
-            <div className="bg-card p-2">
-              <Input type="number" value={rigging.boom_rotation_factor ?? 0.8} onChange={e => onChange('boom_rotation_factor', e.target.value)} className="h-7 text-[10px] text-center" step="0.1" />
-            </div>
-            <div className="bg-card p-2">
-              <Input type="number" value={rigging.ground_inspection_factor ?? 0.8} onChange={e => onChange('ground_inspection_factor', e.target.value)} className="h-7 text-[10px] text-center" step="0.1" />
-            </div>
-            <div className="bg-card p-2">
-              <Input type="number" value={rigging.load_protrusion_factor ?? 0.8} onChange={e => onChange('load_protrusion_factor', e.target.value)} className="h-7 text-[10px] text-center" step="0.1" />
             </div>
             <div className="bg-card p-2 flex flex-col items-center justify-center">
               {okBadge(result?.equipmentOk)}
             </div>
           </div>
 
+          <div className="mt-3 space-y-2 rounded border p-2">
+            <p className="text-[10px] font-medium">해당할 때만 정격 80% (규칙 제147조 사용설명서)</p>
+            <div className="grid grid-cols-3 gap-2 text-[10px]">
+              <label className="flex items-start gap-1.5 cursor-pointer">
+                <Checkbox
+                  checked={isConditionDerated(rigging.boom_rotation_factor)}
+                  onCheckedChange={(c) => toggleCond('boom_rotation_factor', c === true)}
+                  className="mt-0.5"
+                />
+                <span>선회 인양 중<br /><span className="text-muted-foreground">×0.8</span></span>
+              </label>
+              <label className="flex items-start gap-1.5 cursor-pointer">
+                <Checkbox
+                  checked={isConditionDerated(rigging.ground_inspection_factor)}
+                  onCheckedChange={(c) => toggleCond('ground_inspection_factor', c === true)}
+                  className="mt-0.5"
+                />
+                <span>지반 경사<br /><span className="text-muted-foreground">×0.8</span></span>
+              </label>
+              <label className="flex items-start gap-1.5 cursor-pointer">
+                <Checkbox
+                  checked={isConditionDerated(rigging.load_protrusion_factor)}
+                  onCheckedChange={(c) => toggleCond('load_protrusion_factor', c === true)}
+                  className="mt-0.5"
+                />
+                <span>하중 주행<br /><span className="text-muted-foreground">×0.8</span></span>
+              </label>
+            </div>
+            <p className="text-[9px] text-muted-foreground leading-relaxed">
+              미해당(기본)은 정격 100%. 세 조건을 한꺼번에 깎지 않습니다.
+            </p>
+          </div>
+
           <div className="mt-3 grid grid-cols-3 gap-px bg-border rounded overflow-hidden text-xs">
-            <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">작업하중 (ton)</div>
+            <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">적용 정격 (ton)</div>
             <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">총중량 (ton)</div>
-            <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">안전율</div>
+            <div className="bg-blue-50 dark:bg-blue-950/20 p-2 text-center font-medium">여유율</div>
             <div className={`bg-card p-2 text-center font-bold ${result?.equipmentOk ? 'text-green-600' : 'text-red-600'}`}>
-              {result?.equipmentWorkingLoad?.toFixed(1) || '0'}
+              {result?.windStop ? '작업중지' : (result?.equipmentWorkingLoad?.toFixed(1) || '0')}
             </div>
             <div className="bg-card p-2 text-center font-bold">{result?.totalWeightMax?.toFixed(3) || '0'}</div>
-            <div className={`bg-card p-2 text-center font-bold ${(result?.equipmentSafetyFactor ?? 0) >= 1.25 ? 'text-green-600' : 'text-red-600'}`}>
-              {result?.equipmentSafetyFactor?.toFixed(2) || '0'}
+            <div className={`bg-card p-2 text-center font-bold ${
+              !result?.equipmentOk ? 'text-red-600'
+                : (result?.equipmentSafetyFactor ?? 0) >= 1.25 ? 'text-green-600' : 'text-amber-600'
+            }`}>
+              {result?.windStop ? '-' : (result?.equipmentSafetyFactor?.toFixed(2) || '0')}
             </div>
           </div>
+          <p className="text-[9px] text-muted-foreground mt-2 leading-relaxed">
+            판정: 적용 정격 ≥ 총중량 (규칙 제146조). 여유율 1.25는 권고이며 법령 필수 아님.
+            풍속 5~10m/s는 C-99 인양하중표 20% 감, 10m/s 이상은 C-69·철골 제383조 작업 중지.
+          </p>
+          </>
+            );
+          })()}
         </CardContent>
       </Card>
 
@@ -577,7 +642,7 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
             <div className="bg-card p-2 flex justify-center">{okBadge(result?.slingOk)}</div>
           </div>
           <p className="text-[9px] text-muted-foreground mt-2">
-            ※ 안전하중 ≥ 1줄당 장력이면 O.K | 장력 T = 총중량 / (줄수 × cosθ)
+            ※ 1줄 안전하중 ≥ 1줄 장력. T = 줄하중(훅 제외) × (1/sinθ) / 줄수. 각도 계수를 정격에 한 번 더 곱하지 않음.
           </p>
         </CardContent>
       </Card>
@@ -606,6 +671,9 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
             <div className="bg-card p-2 text-center font-bold">{result?.tensionPerLeg?.toFixed(2) || '-'}</div>
             <div className="bg-card p-2 flex justify-center">{okBadge(result?.shackleOk)}</div>
           </div>
+          <p className="text-[9px] text-muted-foreground mt-2">
+            ※ 샤클 1개 SWL ≥ 1줄 장력. 사용 갯수로 안전하중을 합산하지 않습니다.
+          </p>
         </CardContent>
       </Card>
 

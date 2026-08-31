@@ -9,7 +9,8 @@ export function isNativeApp(): boolean {
   }
 }
 
-const NATIVE_PERMS_KEY = "safenex.nativePermissions.v1";
+/** v2: location must actually be granted before this is marked done. */
+const NATIVE_PERMS_KEY = "safenex.nativePermissions.v2";
 
 export function hasCompletedNativePermissions(): boolean {
   try {

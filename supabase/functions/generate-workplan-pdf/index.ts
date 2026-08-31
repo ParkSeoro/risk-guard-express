@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { formatLegalCalcPrintHtml } from "../_shared/legalCalcPrint.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -265,6 +266,10 @@ Deno.serve(async (req) => {
           <tr><td class="label">응급처치</td><td colspan="3">${escapeHtml(data.first_aid || "")}</td></tr>
           <tr><td class="label">보고체계</td><td colspan="3">${escapeHtml(data.reporting_procedure || "")}</td></tr>
         </tbody></table>`;
+      }
+
+      if (section.key === "_legal_calc" || section.type === "calc") {
+        return formatLegalCalcPrintHtml(section.content, escapeHtml);
       }
 
       if (typeof section.content === "string" && section.content.trim()) {

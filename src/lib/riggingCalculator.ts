@@ -1,9 +1,26 @@
 /**
  * KOSHA 기준 리깅플랜 자동 계산 엔진
- * 
- * 지원 줄걸이 재료: 와이어로프, 슬링벨트(웹슬링), 라운드슬링, 체인슬링
- * 샤클: 인치 기준 안전하중 자동 매핑
+ *
+ * 줄걸이·샤클 표는 riggingHardwareCatalog (EN 1492-2 / Crosby G-2130).
  */
+
+import {
+  HEAVY_CRANE_CLASSES,
+  ROUND_SLING_BY_COLOR,
+  ROUND_SLING_OPTIONS,
+  SHACKLE_INCH_LOAD,
+  getRoundSlingRatedLoadByColor,
+  getShackleSafeLoadByInch,
+} from "@/lib/riggingHardwareCatalog";
+
+export {
+  ROUND_SLING_BY_COLOR,
+  ROUND_SLING_OPTIONS,
+  SHACKLE_INCH_LOAD,
+  getRoundSlingRatedLoadByColor,
+  getShackleSafeLoadByInch,
+  HEAVY_CRANE_CLASSES,
+};
 
 // ============================================================
 // 와이어로프 절단하중 테이블 (6×24, 6×37 기준) mm → ton
@@ -28,23 +45,8 @@ export const SLING_BELT_BY_WIDTH: { widthMm: number; ratedLoad: number }[] = [
   { widthMm: 150, ratedLoad: 6 },
 ];
 
-// ============================================================
-// 라운드슬링 색상별 정격하중 (ton)
-// ============================================================
-export const ROUND_SLING_BY_COLOR: { color: string; label: string; ratedLoad: number }[] = [
-  { color: 'purple', label: '보라', ratedLoad: 1 },
-  { color: 'green', label: '녹색', ratedLoad: 2 },
-  { color: 'yellow', label: '노랑', ratedLoad: 3 },
-  { color: 'gray', label: '회색', ratedLoad: 4 },
-  { color: 'red', label: '빨강', ratedLoad: 5 },
-  { color: 'brown', label: '갈색', ratedLoad: 6 },
-  { color: 'blue', label: '파랑', ratedLoad: 8 },
-  { color: 'orange', label: '주황', ratedLoad: 10 },
-];
-
 // Legacy alias for backward compatibility
 export const SLING_BELT_BY_COLOR = ROUND_SLING_BY_COLOR;
-export const ROUND_SLING_OPTIONS: number[] = [1, 2, 3, 5, 8, 10, 15, 20];
 
 // ============================================================
 // 체인슬링 규격별 허용하중 (mm → ton, 1줄 기준)
@@ -100,18 +102,7 @@ export function getWindFactorBySpeed(speedMs: number): number {
   return 0;
 }
 
-// ============================================================
-// 샤클 안전하중 - 인치 기준 (inch → ton)
-// ============================================================
-export const SHACKLE_INCH_LOAD: { inch: string; label: string; safeLoad: number }[] = [
-  { inch: '1/2', label: '1/2"', safeLoad: 2 },
-  { inch: '5/8', label: '5/8"', safeLoad: 3.25 },
-  { inch: '3/4', label: '3/4"', safeLoad: 4.75 },
-  { inch: '7/8', label: '7/8"', safeLoad: 6.5 },
-  { inch: '1', label: '1"', safeLoad: 8.5 },
-  { inch: '1-1/4', label: '1-1/4"', safeLoad: 12 },
-  { inch: '1-1/2', label: '1-1/2"', safeLoad: 17 },
-];
+// 샤클 인치 표: src/lib/riggingHardwareCatalog.ts (Crosby G-2130)
 
 // Legacy mm-based shackle (kept for backward compat)
 export const SHACKLE_SAFE_LOAD: Record<number, number> = {
@@ -129,101 +120,51 @@ export interface CranePreset {
   ratedCapacity: number;
   defaultBoomLength: number;
   defaultWorkingRadius: number;
+  defaultCapacityAtPoint?: number;
+  source?: string;
+  /** Only true when loadChart is a manufacturer table we may interpolate. */
+  chartVerified: boolean;
   loadChart: { boomLength: number; radius: number; capacity: number }[];
 }
 
+function tonClassOnly(id: string, name: string, ton: number): CranePreset {
+  return {
+    id,
+    name,
+    ratedCapacity: ton,
+    defaultBoomLength: 0,
+    defaultWorkingRadius: 0,
+    source: "정격하중만. 해당 반경 인양능력은 기종 제원표/LMI를 입력",
+    chartVerified: false,
+    loadChart: [],
+  };
+}
+
 export const CRANE_PRESETS: CranePreset[] = [
-  {
-    id: 'crane_25t', name: '25톤 크레인', ratedCapacity: 25,
-    defaultBoomLength: 30, defaultWorkingRadius: 10,
-    loadChart: [
-      { boomLength: 10, radius: 3, capacity: 25 },
-      { boomLength: 10, radius: 5, capacity: 18 },
-      { boomLength: 10, radius: 7, capacity: 12 },
-      { boomLength: 20, radius: 5, capacity: 15 },
-      { boomLength: 20, radius: 8, capacity: 10 },
-      { boomLength: 20, radius: 10, capacity: 7.5 },
-      { boomLength: 30, radius: 8, capacity: 8 },
-      { boomLength: 30, radius: 10, capacity: 6 },
-      { boomLength: 30, radius: 12, capacity: 4.5 },
-    ],
-  },
-  {
-    id: 'crane_50t', name: '50톤 크레인', ratedCapacity: 50,
-    defaultBoomLength: 40, defaultWorkingRadius: 12,
-    loadChart: [
-      { boomLength: 10, radius: 3, capacity: 50 },
-      { boomLength: 10, radius: 5, capacity: 38 },
-      { boomLength: 20, radius: 5, capacity: 32 },
-      { boomLength: 20, radius: 8, capacity: 22 },
-      { boomLength: 20, radius: 10, capacity: 16 },
-      { boomLength: 30, radius: 8, capacity: 18 },
-      { boomLength: 30, radius: 10, capacity: 13 },
-      { boomLength: 30, radius: 12, capacity: 10 },
-      { boomLength: 40, radius: 10, capacity: 10 },
-      { boomLength: 40, radius: 12, capacity: 8 },
-      { boomLength: 40, radius: 15, capacity: 5.5 },
-    ],
-  },
-  {
-    id: 'crane_100t', name: '100톤 크레인', ratedCapacity: 100,
-    defaultBoomLength: 50, defaultWorkingRadius: 15,
-    loadChart: [
-      { boomLength: 10, radius: 3, capacity: 100 },
-      { boomLength: 10, radius: 5, capacity: 75 },
-      { boomLength: 20, radius: 5, capacity: 65 },
-      { boomLength: 20, radius: 8, capacity: 45 },
-      { boomLength: 20, radius: 10, capacity: 35 },
-      { boomLength: 30, radius: 8, capacity: 38 },
-      { boomLength: 30, radius: 10, capacity: 28 },
-      { boomLength: 30, radius: 12, capacity: 22 },
-      { boomLength: 40, radius: 10, capacity: 22 },
-      { boomLength: 40, radius: 12, capacity: 17 },
-      { boomLength: 40, radius: 15, capacity: 12 },
-      { boomLength: 50, radius: 12, capacity: 14 },
-      { boomLength: 50, radius: 15, capacity: 10 },
-      { boomLength: 50, radius: 18, capacity: 7.5 },
-    ],
-  },
-  {
-    id: 'crane_200t', name: '200톤 크레인', ratedCapacity: 200,
-    defaultBoomLength: 60, defaultWorkingRadius: 18,
-    loadChart: [
-      { boomLength: 15, radius: 3, capacity: 200 },
-      { boomLength: 15, radius: 5, capacity: 150 },
-      { boomLength: 30, radius: 8, capacity: 75 },
-      { boomLength: 30, radius: 10, capacity: 55 },
-      { boomLength: 30, radius: 12, capacity: 42 },
-      { boomLength: 40, radius: 10, capacity: 45 },
-      { boomLength: 40, radius: 12, capacity: 35 },
-      { boomLength: 40, radius: 15, capacity: 25 },
-      { boomLength: 50, radius: 12, capacity: 28 },
-      { boomLength: 50, radius: 15, capacity: 20 },
-      { boomLength: 50, radius: 18, capacity: 15 },
-      { boomLength: 60, radius: 15, capacity: 16 },
-      { boomLength: 60, radius: 18, capacity: 12 },
-      { boomLength: 60, radius: 20, capacity: 9 },
-    ],
-  },
+  tonClassOnly("crane_25t", "25톤 크레인", 25),
+  tonClassOnly("crane_50t", "50톤 크레인", 50),
+  tonClassOnly("crane_100t", "100톤 크레인", 100),
+  tonClassOnly("crane_200t", "200톤 크레인", 200),
+  ...HEAVY_CRANE_CLASSES,
 ];
 
+/** Interpolates only verified manufacturer charts. Otherwise 0 (do not guess). */
 export function lookupCraneCapacity(preset: CranePreset, boomLength: number, radius: number): number {
-  // Find closest match from load chart
+  if (!preset.chartVerified || !preset.loadChart?.length) return 0;
   const matches = preset.loadChart
-    .filter(e => e.boomLength <= boomLength + 2 && e.radius <= radius + 1)
+    .filter((e) => e.boomLength <= boomLength + 2 && e.radius <= radius + 1)
     .sort((a, b) => {
       const da = Math.abs(a.boomLength - boomLength) + Math.abs(a.radius - radius);
       const db = Math.abs(b.boomLength - boomLength) + Math.abs(b.radius - radius);
       return da - db;
     });
   if (matches.length > 0) return matches[0].capacity;
-  // Fallback: find any entry at the closest boom length
-  const byBoom = preset.loadChart.filter(e => e.boomLength <= boomLength + 5);
+  const byBoom = preset.loadChart.filter((e) => e.boomLength <= boomLength + 5);
   if (byBoom.length > 0) {
     const closest = byBoom.sort((a, b) => Math.abs(a.radius - radius) - Math.abs(b.radius - radius));
     return closest[0].capacity;
   }
-  return preset.ratedCapacity;
+  return 0;
 }
 
 // ============================================================
@@ -260,10 +201,6 @@ export function getShackleSafeLoad(diameterMm: number): number {
   return interpolate(SHACKLE_SAFE_LOAD, diameterMm);
 }
 
-export function getShackleSafeLoadByInch(inch: string): number {
-  const found = SHACKLE_INCH_LOAD.find(s => s.inch === inch);
-  return found?.safeLoad ?? 0;
-}
 
 export function getChainSlingLoad(diameterMm: number): number {
   return interpolate(CHAIN_SLING_LOAD, diameterMm);
@@ -274,10 +211,6 @@ export function getSlingBeltRatedLoadByWidth(widthMm: number): number {
   return found?.ratedLoad ?? 0;
 }
 
-export function getRoundSlingRatedLoadByColor(color: string): number {
-  const found = ROUND_SLING_BY_COLOR.find(s => s.color === color || s.label === color);
-  return found?.ratedLoad ?? 0;
-}
 
 // Legacy alias
 export function getSlingBeltRatedLoad(color: string): number {

@@ -352,6 +352,24 @@ export const COMMON_CRANES: CraneSpec[] = [
       { radius: 60, capacity: 4, boomLength: 60 },
     ],
   },
+  {
+    model: 'Kobelco CKE2500-2 (250톤)',
+    maxCapacity: 250,
+    maxRadius: 91.4,
+    maxBoomLength: 91.4,
+    loadChart: [
+      { radius: 4.6, capacity: 250, boomLength: 15.2 },
+    ],
+  },
+  {
+    model: 'Liebherr LR 1300 (300톤)',
+    maxCapacity: 300,
+    maxRadius: 143,
+    maxBoomLength: 92,
+    loadChart: [
+      { radius: 4.3, capacity: 300, boomLength: 20 },
+    ],
+  },
 ];
 
 // 리깅플랜 계산 함수
@@ -369,6 +387,21 @@ export function calculateRigging(params: {
 } {
   const crane = COMMON_CRANES.find(c => c.model === params.craneModel);
   if (!crane) return { isValid: false, safetyFactor: 0, utilization: 0, requiredCapacity: params.loadWeight, availableCapacity: 0, message: '크레인 정보를 찾을 수 없습니다.' };
+
+  // Official max-point only (250/300): do not treat 4.6 m / 250 t as every radius.
+  if (crane.loadChart.length <= 2) {
+    const exact = crane.loadChart.find((e) => Math.abs(e.radius - params.workingRadius) <= 0.2);
+    if (!exact) {
+      return {
+        isValid: false,
+        safetyFactor: 0,
+        utilization: 0,
+        requiredCapacity: params.loadWeight,
+        availableCapacity: 0,
+        message: '해당 반경 인양능력은 기종 제원표/LMI를 직접 입력하세요. 최대점만 등록되어 있습니다.',
+      };
+    }
+  }
 
   // Find closest load chart entry
   const sortedChart = [...crane.loadChart].sort((a, b) => Math.abs(a.radius - params.workingRadius) - Math.abs(b.radius - params.workingRadius));

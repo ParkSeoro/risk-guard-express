@@ -22,7 +22,7 @@ export const PERMIT_BRIEFING_SYSTEM_PROMPT = `당신은 작업허가서 결재 �
 5) work_overview는 작업 내용 1~2문장. 업체명·날짜·"작업 사항으로"는 쓰지 않는다(시스템이 앞에 붙인다).
 6) 한국어 단정형. 번역투 금지.
 7) 굴착과 중장비는 서로 다른 위험이다. 양식명·permit_kinds의 "굴착·중장비"만 보고 굴착을 넣지 않는다. hazards에 "굴착"이 있을 때만 굴착·붕괴·매설물을 쓴다.
-8) 투입장비는 일반 허가서 중장비 칸에 적힌 장비명이다. "굴착기"가 있어도 그건 장비이지 굴착 작업이 아니다. 중장비는 투입장비·작업반경·협착으로 요약한다.`;
+8) 투입장비는 일반 허가서 중장비 칸에 적힌 장비명이다. "굴착기"가 있어도 그건 장비이지 굴착 작업이 아니다. 투입장비가 있으면 top_risks에 중장비와 그 장비명을 넣는다. 굴착은 hazards에 "굴착"이 있을 때만.`;
 
 const CHECKLIST_LABELS: Record<string, string> = {
   chk_education: '안전교육 이수',
@@ -391,11 +391,20 @@ function isInventedExcavationText(text: string, facts: PermitBriefingFacts): boo
   return EXCAVATION_WORK_RE.test(text);
 }
 
-function fallbackRisksFromFacts(facts: PermitBriefingFacts): string[] {
-  return facts.hazards.map((h) => {
-    const extra = [h.note, h.measures.slice(0, 3).join(', ')].filter(Boolean).join(' — ');
-    return extra ? `${h.label}: ${extra}` : `${h.label} 작업`;
-  }).slice(0, 3);
+function hazardRiskLine(h: PermitBriefingHazard): string {
+  const extra = [h.note, h.measures.slice(0, 3).join(', ')].filter(Boolean).join(' — ');
+  return extra ? `${h.label}: ${extra}` : `${h.label} 작업`;
+}
+
+/** AI가 굴착을 넣었거나 중장비를 빠뜨려도, 작성된 hazards로 Top 3를 채운다. */
+function fillTopRisksFromFacts(top: string[], facts: PermitBriefingFacts): string[] {
+  const out = [...top];
+  for (const h of facts.hazards) {
+    if (out.length >= 3) break;
+    if (out.some((r) => r.startsWith(h.label))) continue;
+    out.push(hazardRiskLine(h));
+  }
+  return out.slice(0, 3);
 }
 
 function sanitizeOverview(overview: string, facts: PermitBriefingFacts): string {
@@ -410,8 +419,10 @@ function sanitizeOverview(overview: string, facts: PermitBriefingFacts): string 
 export function normalizePermitBriefing(raw: any, facts: PermitBriefingFacts): PermitAiBriefing {
   const lead = buildPermitBriefingLead(facts);
   let top = Array.isArray(raw?.top_risks) ? raw.top_risks.map(String).filter(Boolean) : [];
-  top = top.filter((r) => !isInventedExcavationText(r, facts)).slice(0, 3);
-  if (top.length === 0) top = fallbackRisksFromFacts(facts);
+  top = fillTopRisksFromFacts(
+    top.filter((r) => !isInventedExcavationText(r, facts)).slice(0, 3),
+    facts,
+  );
 
   let controls = Array.isArray(raw?.required_controls)
     ? raw.required_controls.map(String).filter(Boolean)

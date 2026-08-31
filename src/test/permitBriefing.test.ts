@@ -152,8 +152,13 @@ describe('permit briefing facts', () => {
       required_controls: ['안전교육 이수', '보호구 착용 및 건강 상태 확인'],
     }, facts);
     expect(shown.included_kinds).toEqual(['일반', '화기', '중장비']);
+    expect(shown.top_risks).toHaveLength(3);
     expect(shown.top_risks.join(' ')).not.toMatch(/굴착(?!기)/);
-    expect(shown.top_risks).toHaveLength(2);
+    expect(shown.top_risks[0]).toContain('화기');
+    expect(shown.top_risks[1]).toContain('고소');
+    expect(shown.top_risks[2]).toContain('중장비');
+    expect(shown.top_risks[2]).toContain('50톤 크레인');
+    expect(shown.top_risks[2]).toContain('7톤 지게차');
   });
 
   it('still treats 기울기·굴착토 체크를 굴착 작업으로', () => {
@@ -267,7 +272,7 @@ describe('briefing prompt', () => {
     expect(PERMIT_BRIEFING_SYSTEM_PROMPT).not.toContain('발생 가능한 위험');
     expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('업체명·날짜');
     expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('굴착과 중장비는 서로 다른 위험이다');
-    expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('투입장비는 일반 허가서 중장비 칸');
+    expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('투입장비가 있으면 top_risks에 중장비와 그 장비명을 넣는다');
   });
 
   it('uses recorded kinds, not the model bundled 굴착·중장비 label', () => {

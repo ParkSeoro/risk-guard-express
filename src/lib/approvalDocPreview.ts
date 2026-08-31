@@ -77,28 +77,54 @@ html, body { width: ${pageWidthPx}px !important; min-width: ${pageWidthPx}px !im
   return `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">${inject}</head><body>${raw}</body></html>`;
 }
 
-function invokeErrorMessage(err: unknown, data: any): string {
-  if (data?.error) return String(data.error);
+const AUTH_EXPIRED_MSG =
+  "로그인 세션이 만료되었거나 인증에 실패했습니다. 다시 로그인해 주세요.";
+
+function friendlyPreviewError(msg: string, status?: number): string {
+  const s = String(msg || "").trim();
+  if (status === 401 || /invalid token|unauthorized/i.test(s)) return AUTH_EXPIRED_MSG;
+  if (/non-2xx/i.test(s)) return "문서를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
+  return s || "인쇄 문서를 만들지 못했습니다";
+}
+
+/** Exported for tests — supabase-js hides non-2xx bodies on FunctionsHttpError.context. */
+export async function invokeErrorMessage(err: unknown, data: any): Promise<string> {
+  if (data?.error) return friendlyPreviewError(String(data.error));
+  if (data?.message) return friendlyPreviewError(String(data.message));
+
   const ctx = err && typeof err === "object" ? (err as any).context : null;
   if (ctx && typeof ctx === "object") {
-    if (typeof ctx.status === "number" && ctx.status === 546) {
+    const status = typeof ctx.status === "number" ? ctx.status : undefined;
+    if (status === 546) {
       return "PDF 서버 제한(546)에 걸렸습니다. 잠시 후 다시 시도해 주세요.";
+    }
+    if (typeof ctx.json === "function") {
+      try {
+        const body =
+          typeof ctx.clone === "function" ? await ctx.clone().json() : await ctx.json();
+        const inner = body?.error || body?.message || body?.detail;
+        if (inner) return friendlyPreviewError(String(inner), status);
+      } catch {
+        /* ignore parse errors */
+      }
     }
     if (typeof ctx.body === "string" && ctx.body.trim()) {
       try {
         const parsed = JSON.parse(ctx.body);
-        if (parsed?.error) return String(parsed.error);
+        const inner = parsed?.error || parsed?.message;
+        if (inner) return friendlyPreviewError(String(inner), status);
       } catch {
         /* ignore */
       }
     }
+    if (status === 401) return AUTH_EXPIRED_MSG;
   }
+
   const msg =
     err && typeof err === "object" && "message" in err && (err as Error).message
       ? String((err as Error).message)
       : "";
-  if (msg) return msg;
-  return String(err || "인쇄 문서를 만들지 못했습니다");
+  return friendlyPreviewError(msg || String(err || "인쇄 문서를 만들지 못했습니다"));
 }
 
 export async function fetchAssessmentPrintHtml(runId: string): Promise<string> {
@@ -107,7 +133,7 @@ export async function fetchAssessmentPrintHtml(runId: string): Promise<string> {
   });
   const html = resp.data?.html;
   if (resp.error || !html || String(html).length < 100) {
-    throw new Error(invokeErrorMessage(resp.error, resp.data));
+    throw new Error(await invokeErrorMessage(resp.error, resp.data));
   }
   return preparePrintHtmlForPreview(String(html), A4_LANDSCAPE_PX);
 }
@@ -126,7 +152,7 @@ export async function fetchWorkPlanPrintHtml(planId: string): Promise<string> {
   });
   const html = resp.data?.html;
   if (resp.error || !html || String(html).length < 100) {
-    throw new Error(invokeErrorMessage(resp.error, resp.data));
+    throw new Error(await invokeErrorMessage(resp.error, resp.data));
   }
   return preparePrintHtmlForPreview(String(html), A4_PORTRAIT_PX);
 }

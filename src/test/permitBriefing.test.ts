@@ -113,6 +113,66 @@ describe('permit briefing facts', () => {
     expect(buildPermitBriefingLlmPayload(specOnly).excavation).toEqual({ depth: '2.0' });
   });
 
+  it('does not treat 비상연락망·우천중지 as excavation on a crane/forklift permit', () => {
+    const facts = extractPermitBriefingFacts({
+      formData: {
+        work_name: 'LCO2 TANK 설치 작업',
+        hz_hot: true,
+        hz_height: true,
+        hz_heavy: true,
+        hz_heavy_equipment_name: '50톤 크레인, 7톤 지게차',
+        ex_safety: {
+          '비상연락망 게시': true,
+          '유도자/신호수 배치': true,
+          '중장비 면허·자격 확인': true,
+          '중장비 안전점검표 확인': true,
+          '작업반경 출입통제(휀스)': true,
+          '운전자 특별안전교육 실시': true,
+          '우천/강풍 시 작업중지 기준': true,
+        },
+      },
+      permitKinds: ['general', 'hot_work', 'excavation'],
+      kindLabels: ['일반', '화기', '굴착·중장비'],
+    });
+    expect(facts.kindLabels).toEqual(['일반', '화기', '중장비']);
+    expect(facts.hazards.map((h) => h.label)).toEqual(['화기', '고소', '중장비']);
+    expect(facts.hazards.find((h) => h.label === '중장비')?.measures).toEqual(
+      expect.arrayContaining(['비상연락망 게시', '우천/강풍 시 작업중지 기준', '유도자/신호수 배치']),
+    );
+    expect(buildPermitBriefingLlmPayload(facts).has_excavation_work).toBe(false);
+
+    const shown = normalizePermitBriefing({
+      work_overview: 'LCO2 TANK 설치. 투입장비 50톤 크레인, 7톤 지게차.',
+      included_kinds: ['일반', '화기', '굴착', '중장비'],
+      top_risks: [
+        '화기: 소화기 비치, 불티방지포 설치, 화재감시자 배치',
+        '고소: 추락방지망, 사다리 사용 적정, 작업발판·안전난간',
+        '굴착: 비상연락망 게시, 우천/강풍 시 작업중지 기준',
+      ],
+      required_controls: ['안전교육 이수', '보호구 착용 및 건강 상태 확인'],
+    }, facts);
+    expect(shown.included_kinds).toEqual(['일반', '화기', '중장비']);
+    expect(shown.top_risks.join(' ')).not.toMatch(/굴착(?!기)/);
+    expect(shown.top_risks).toHaveLength(2);
+  });
+
+  it('still treats 기울기·굴착토 체크를 굴착 작업으로', () => {
+    const facts = extractPermitBriefingFacts({
+      formData: {
+        ex_safety: {
+          '굴착 기울기 준수(흙 1:1.0 등)': true,
+          '굴착토 적치(굴착면 0.6m 이상 이격)': true,
+          '비상연락망 게시': true,
+        },
+      },
+      permitKinds: ['excavation'],
+    });
+    expect(facts.kindLabels).toContain('굴착');
+    expect(facts.hazards.find((h) => h.label === '굴착')?.measures).toEqual(
+      expect.arrayContaining(['굴착 기울기 준수(흙 1:1.0 등)', '비상연락망 게시']),
+    );
+  });
+
   it('keeps 화기 equipment name from becoming a 중장비 hazard', () => {
     const facts = extractPermitBriefingFacts({
       formData: { hz_hot: true, hz_heavy_equipment_name: '용접기' },

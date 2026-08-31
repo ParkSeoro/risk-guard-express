@@ -59,18 +59,25 @@ const HAZARD_DEFS: Array<{
   { key: 'hz_height', label: '고소', noteKey: 'hz_height_note', detailKey: 'hz_height_detail' },
 ];
 
-/** 굴착 시트 안전조치 중 굴착 쪽. 중장비 항목과 섞이지 않게 분리한다. */
-const EX_DIG_SAFETY = [
+/** 굴착 작업임을 뒷받침하는 안전조치만. */
+const EX_DIG_EVIDENCE = [
   '굴착 전 지하매설물 도면 확인',
   '지중탐사(GPR/탐침봉) 실시',
   '굴착 기울기 준수(흙 1:1.0 등)',
   '흙막이 / 지보공 설치',
   '주변 침하·균열 점검',
-  '안전난간·덮개·표지 설치',
   '굴착토 적치(굴착면 0.6m 이상 이격)',
+];
+
+/** 굴착·중장비 양식 공통. 크레인·지게차에도 찍히므로 굴착 증거가 아니다. */
+const EX_SITE_SAFETY = [
+  '안전난간·덮개·표지 설치',
   '비상연락망 게시',
   '우천/강풍 시 작업중지 기준',
 ];
+
+/** 굴착 시트 안전조치 중 굴착 쪽. 중장비 항목과 섞이지 않게 분리한다. */
+const EX_DIG_SAFETY = [...EX_DIG_EVIDENCE, ...EX_SITE_SAFETY];
 
 const EX_HEAVY_SAFETY = [
   '유도자/신호수 배치',
@@ -226,17 +233,24 @@ export function extractPermitBriefingFacts(input: {
     || datePart(str(d.permit_date));
 
   const spec = excavationSpec(d);
-  const digMeasures = [
-    ...checkedDetailItems(d.hz_excavation_detail),
-    ...checkedExSafety(d.ex_safety, EX_DIG_SAFETY),
+  const digEvidence = [
+    ...checkedDetailItems(d.hz_excavation_detail).filter((item) =>
+      !EX_SITE_SAFETY.includes(item),
+    ),
+    ...checkedExSafety(d.ex_safety, EX_DIG_EVIDENCE),
   ];
+  const siteMeasures = checkedExSafety(d.ex_safety, EX_SITE_SAFETY);
   const digNote = excavationNote(d, spec);
-  const hasDig = !!d.hz_excavation || !!digNote || digMeasures.length > 0;
+  const hasDig = !!d.hz_excavation || !!spec || !!str(d.hz_excavation_note) || digEvidence.length > 0;
+  const digMeasures = hasDig
+    ? [...digEvidence, ...siteMeasures]
+    : [];
 
   const equipment = str(d.hz_heavy_equipment_name);
   const heavyMeasures = [
     ...checkedDetailItems(d.hz_heavy_detail),
     ...checkedExSafety(d.ex_safety, EX_HEAVY_SAFETY),
+    ...(!hasDig ? siteMeasures : []),
   ];
   const heavyUserNote = str(d.hz_heavy_note);
   const heavyNote = [equipment && `투입장비 ${equipment}`, heavyUserNote].filter(Boolean).join('. ');

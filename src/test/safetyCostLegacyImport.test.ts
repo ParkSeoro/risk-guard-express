@@ -7,6 +7,7 @@ import {
   normalizeLegacyItem,
   parseLegacyTextDraft,
   planLegacyCommitMonths,
+  shouldExpandLegacyImportWizard,
   suggestNextImportMonth,
   summarizeCategoryGrid,
   validateCategoryGrid,
@@ -242,5 +243,14 @@ describe('safetyCostPpeStock', () => {
     expect(again.writesStockOut).toBe(false);
     const first = planPpeConfirm({ receipt_status: 'pending', signature_data: '' });
     expect(first.writesStockOut).toBe(true);
+  });
+});
+
+describe('승인본 이관 패널은 최초만 펼친다', () => {
+  it('expands only when there is no approved total and no monthly report', () => {
+    expect(shouldExpandLegacyImportWizard({ approvedTotal: 0, liveReportCount: 0 })).toBe(true);
+    expect(shouldExpandLegacyImportWizard({ approvedTotal: 33624135, liveReportCount: 1 })).toBe(false);
+    expect(shouldExpandLegacyImportWizard({ approvedTotal: 0, liveReportCount: 2 })).toBe(false);
+    expect(shouldExpandLegacyImportWizard({ approvedTotal: 100, liveReportCount: 0 })).toBe(false);
   });
 });

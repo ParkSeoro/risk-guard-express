@@ -44,9 +44,15 @@ export function buildRiggingInputFromRow(rigging: RiggingPlanRow): RiggingInput 
     shackleWeightMin: n(rigging.shackle_weight_min),
     slingRiggingWeightMin: n(rigging.sling_rigging_weight_min),
     windSpeedFactor: n(rigging.wind_speed_factor) || 1,
-    boomRotationFactor: n(rigging.boom_rotation_factor) || 0.8,
-    groundInspectionFactor: n(rigging.ground_inspection_factor) || 0.8,
-    loadProtrusionFactor: n(rigging.load_protrusion_factor) || 0.8,
+    windSpeedGrade: rigging.wind_speed_grade == null ? "0~5" : String(rigging.wind_speed_grade),
+    windSpeedMs: (() => {
+      const g = String(rigging.wind_speed_grade || "");
+      const m = g.match(/^(\d+(?:\.\d+)?)\s*m\/s/i);
+      return m ? Number(m[1]) : null;
+    })(),
+    boomRotationFactor: n(rigging.boom_rotation_factor, 1) || 1,
+    groundInspectionFactor: n(rigging.ground_inspection_factor, 1) || 1,
+    loadProtrusionFactor: n(rigging.load_protrusion_factor, 1) || 1,
   };
 }
 

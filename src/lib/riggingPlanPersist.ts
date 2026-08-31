@@ -72,9 +72,9 @@ export function buildRiggingPlanPayload(
     total_weight_min: n(rigging.total_weight_min),
     wind_speed_grade: s(rigging.wind_speed_grade, "0~5"),
     wind_speed_factor: n(rigging.wind_speed_factor, 1),
-    boom_rotation_factor: n(rigging.boom_rotation_factor, 0.8),
-    ground_inspection_factor: n(rigging.ground_inspection_factor, 0.8),
-    load_protrusion_factor: n(rigging.load_protrusion_factor, 0.8),
+    boom_rotation_factor: n(rigging.boom_rotation_factor, 1),
+    ground_inspection_factor: n(rigging.ground_inspection_factor, 1),
+    load_protrusion_factor: n(rigging.load_protrusion_factor, 1),
     travel_load_factor: n(rigging.travel_load_factor, 1),
     equipment_working_load: n(rigging.equipment_working_load),
     equipment_ok: s(rigging.equipment_ok),
@@ -130,7 +130,8 @@ export function summarizeRiggingPlan(rigging: RiggingPlanRow | null | undefined)
     lines.push(`슬링 ${String(rigging.sling_type || rigging.sling_material_type)}`);
   }
   if (rigging.wind_speed_grade) {
-    lines.push(`풍속등급 ${String(rigging.wind_speed_grade)}`);
+    const grade = String(rigging.wind_speed_grade);
+    lines.push(`풍속 ${grade}${grade.includes("m/s") ? "" : " m/s"}`);
   }
   return lines;
 }

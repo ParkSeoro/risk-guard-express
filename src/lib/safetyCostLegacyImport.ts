@@ -446,6 +446,16 @@ export function suggestNextImportMonth(gridMonths: string[], liveMonths: string[
   return candidate;
 }
 
+/** 승인본 이관은 최초 1회용. 누계·월보가 있으면 접고, 둘 다 없을 때만 자동으로 연다. */
+export function shouldExpandLegacyImportWizard(opts: {
+  approvedTotal?: number | null;
+  liveReportCount?: number | null;
+}): boolean {
+  const approved = Number(opts.approvedTotal || 0);
+  const lives = Number(opts.liveReportCount || 0);
+  return approved <= 0 && lives <= 0;
+}
+
 export type LegacyCategoryGridRow = {
   report_month: string;
   amounts: Record<string, number>;

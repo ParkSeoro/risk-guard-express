@@ -11,6 +11,7 @@ import {
 import {
   mapLegacyCommitError,
   parseWonInput,
+  shouldExpandLegacyImportWizard,
   suggestNextImportMonth,
   validateCategoryGrid,
   type LiveMonthRow,
@@ -22,7 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { FileText, Loader2, Plus, Trash2, Upload } from 'lucide-react';
+import { ChevronDown, FileText, Loader2, Plus, Trash2, Upload } from 'lucide-react';
 
 type ArchiveFile = {
   id: string;
@@ -98,6 +99,10 @@ export function LegacyImportWizard({
   const [declaredCumulative, setDeclaredCumulative] = useState('');
   const seq = useRef(0);
   const [rows, setRows] = useState<FormRow[]>([]);
+  const [open, setOpen] = useState(() => shouldExpandLegacyImportWizard({
+    approvedTotal: existingApprovedTotal,
+    liveReportCount: (liveReports || []).filter((r) => !r.is_deleted).length,
+  }));
 
   const archives = (files || []).filter(
     (f) => f.construction_id === constructionId && f.evidence_kind === 'legacy_pack',
@@ -112,6 +117,10 @@ export function LegacyImportWizard({
     setRows([]);
     setBudgetChecked(false);
     setDeclaredCumulative('');
+    setOpen(shouldExpandLegacyImportWizard({
+      approvedTotal: existingApprovedTotal,
+      liveReportCount: (liveReports || []).filter((r) => !r.is_deleted).length,
+    }));
   }, [constructionId]);
 
   const parsedRows = useMemo(() => rows.map((row) => {
@@ -255,6 +264,7 @@ export function LegacyImportWizard({
       setRows([]);
       setBudgetChecked(false);
       setDeclaredCumulative('');
+      setOpen(false);
       onChanged?.();
     } catch (e: any) {
       if (batchId) {
@@ -270,15 +280,45 @@ export function LegacyImportWizard({
     }
   }
 
+  const hasHistory = Number(existingApprovedTotal || 0) > 0 || liveMonths.length > 0;
+
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm flex items-center gap-2">
-          <FileText className="h-4 w-4" />
-          승인본 이관
-          <Badge variant="secondary">총괄 비목 금액</Badge>
-        </CardTitle>
+      <CardHeader className="py-3">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-sm flex items-center gap-2 min-w-0">
+            <FileText className="h-4 w-4 shrink-0" />
+            <span className="shrink-0">승인본 이관</span>
+            <Badge variant="secondary" className="shrink-0">총괄 비목 금액</Badge>
+            {Number(existingApprovedTotal || 0) > 0 && (
+              <span className="text-xs font-normal text-muted-foreground truncate">
+                누계 {formatKRW(existingApprovedTotal || 0)}
+              </span>
+            )}
+            {archives.length > 0 && (
+              <span className="text-xs font-normal text-muted-foreground shrink-0">
+                승인본 {archives.length}건
+              </span>
+            )}
+            {hasHistory && !open && (
+              <Badge variant="outline" className="shrink-0 font-normal">최초 1회</Badge>
+            )}
+          </CardTitle>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-8 shrink-0 gap-1"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-label={open ? '승인본 이관 접기' : '승인본 이관 열기'}
+          >
+            {open ? '접기' : '열기'}
+            <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+          </Button>
+        </div>
       </CardHeader>
+      {open && (
       <CardContent className="space-y-4 min-w-0">
         <ol className="text-xs text-muted-foreground leading-relaxed list-decimal pl-4 space-y-1">
           <li>발주처 승인본을 첨부해 보관합니다.</li>
@@ -485,6 +525,7 @@ export function LegacyImportWizard({
           {committing ? '확정 중…' : '이관 확정 (승인 누계 반영)'}
         </Button>
       </CardContent>
+      )}
     </Card>
   );
 }

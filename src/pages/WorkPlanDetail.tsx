@@ -12,6 +12,16 @@ import RiggingPlanForm from '@/components/rigging/RiggingPlanForm';
 import { generateAttachments, type AttachmentItem } from '@/lib/attachmentTemplates';
 import StructuredSectionForm, { validateSection } from '@/components/work-plan/StructuredSectionForm';
 import {
+  evaluateWorkPlanApprovalGates,
+  extractLegalCalcSnapshot,
+  upsertLegalCalcSection,
+  workTypeUsesRiggingGate,
+  buildRiggingLegalCalcEntry,
+  LEGAL_CALC_SECTION_KEY,
+  type LegalCalcSnapshotEntry,
+} from '@/lib/workPlanLegalCalcGate';
+import { normalizeRiskToLegalSlots, usesFixedLegalRisk } from '@/lib/workPlanLegalRisk';
+import {
   fetchLatestApprovedRun,
   syncRaToWp,
   cloneAttachmentFiles,
@@ -49,10 +59,7 @@ import {
 } from 'lucide-react';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import { format, parseISO } from 'date-fns';
-import {
-  buildRiggingPlanPayload,
-  isRiggingPlanReady,
-} from '@/lib/riggingPlanPersist';
+import { buildRiggingPlanPayload } from '@/lib/riggingPlanPersist';
 import { refreshRiggingDerivedFields } from '@/lib/riggingDerived';
 import { appendTextToMethodSection } from '@/lib/workPlanMethodSection';
 import { approvalsBackOr } from '@/lib/approvalInboxPreview';
@@ -222,9 +229,23 @@ const WorkPlanDetail = () => {
   }, [isDirty, sections, attachments, rigging, checklist, startDate, endDate, saving]);
 
   const mergeSectionsForSave = (secs = sectionsRef.current, checks = checklistRef.current) => [
-    ...secs.filter(s => s.key !== '_checklist'),
+    ...secs.filter(s => s.key !== '_checklist' && s.key !== LEGAL_CALC_SECTION_KEY),
+    ...secs.filter(s => s.key === LEGAL_CALC_SECTION_KEY),
     { key: '_checklist', title: '체크리스트', type: 'checklist', content: JSON.stringify(checks) },
   ];
+
+  const persistLegalCalcEntries = (entries: LegalCalcSnapshotEntry[]) => {
+    setSections((prev) => {
+      const prevSnap = extractLegalCalcSnapshot(prev);
+      const byId: Record<string, LegalCalcSnapshotEntry> = {};
+      for (const e of prevSnap?.entries || []) byId[e.id] = e;
+      for (const e of entries) byId[e.id] = e;
+      const merged = Object.values(byId);
+      if (JSON.stringify(prevSnap?.entries || []) === JSON.stringify(merged)) return prev;
+      markDirty();
+      return upsertLegalCalcSection(prev, { updatedAt: new Date().toISOString(), entries: merged });
+    });
+  };
 
   const handleSectionChange = (key: string, content: string) => {
     setSections(prev => prev.map((s) => (s.key === key ? { ...s, content } : s)));
@@ -334,11 +355,14 @@ const WorkPlanDetail = () => {
     }
     setSaving(true);
     try {
-      const r = await persistRigging(riggingRef.current || { work_plan_id: planId });
+      const current = refreshRiggingDerivedFields(riggingRef.current || { work_plan_id: planId });
+      setRigging(current);
+      const r = await persistRigging(current);
       if (!r.ok) {
         toast({ title: '리깅플랜 저장 실패', description: r.error, variant: 'destructive' });
       } else {
-        toast({ title: '리깅플랜이 저장되었습니다.' });
+        persistLegalCalcEntries([buildRiggingLegalCalcEntry(current)]);
+        toast({ title: '리깅플랜이 저장되었습니다.', description: '법정계산 판정이 리깅 값으로 갱신되었습니다.' });
         setIsDirty(false);
         isDirtyRef.current = false;
       }
@@ -363,16 +387,22 @@ const WorkPlanDetail = () => {
     if (!section || !wpType) return;
     setAiLoading(section.key);
     try {
+      const overview = sections.find((s) => s.key === 'overview')?.content || '';
       const { data, error } = await supabase.functions.invoke('generate-risk-ai', {
         body: {
           process_name: wpType.name, equipment: '', work_description: section.title + ' 작성',
           work_location: '현장', work_environment: [], mode: 'work_plan_section',
           section_key: section.key, section_title: section.title,
+          work_type: wpType.id,
+          site_context: overview,
         },
       });
       if (error) throw error;
       if (data?.structured) {
-        handleSectionChange(section.key, JSON.stringify(data.structured));
+        const structured = usesFixedLegalRisk(wpType.id) && section.key === 'risk'
+          ? normalizeRiskToLegalSlots(data.structured)
+          : data.structured;
+        handleSectionChange(section.key, JSON.stringify(structured));
         toast({ title: 'AI 작성 완료' });
       } else if (data?.content) {
         handleSectionChange(section.key, data.content);
@@ -382,7 +412,12 @@ const WorkPlanDetail = () => {
           hazard: item.hazard || '', situation: item.hazard_situation || '',
           measure: item.improvement_measure || '', severity: item.likelihood_grade || '중',
         }));
-        handleSectionChange(section.key, JSON.stringify(risks));
+        handleSectionChange(
+          section.key,
+          JSON.stringify(usesFixedLegalRisk(wpType.id) && section.key === 'risk'
+            ? normalizeRiskToLegalSlots(risks)
+            : risks),
+        );
         toast({ title: 'AI 작성 완료' });
       }
     } catch (err: any) {
@@ -394,8 +429,8 @@ const WorkPlanDetail = () => {
     const errors: Record<string, string[]> = {};
     let hasError = false;
     sections.forEach(s => {
-      if (s.type === 'rigging') return;
-      const errs = validateSection(s.key, s.content || '');
+      if (s.type === 'rigging' || String(s.key || '').startsWith('_')) return;
+      const errs = validateSection(s.key, s.content || '', plan?.work_type);
       if (errs.length > 0) { errors[s.key] = errs; hasError = true; }
     });
     if (!startDate || !endDate) { errors['_dates'] = ['작업기간을 입력해주세요.']; hasError = true; }
@@ -413,15 +448,23 @@ const WorkPlanDetail = () => {
     if (wpTypeNow?.hasRiggingPlan) {
       readyRigging = refreshRiggingDerivedFields(rigging || { work_plan_id: planId });
       setRigging(readyRigging);
-      if (!isRiggingPlanReady(readyRigging)) {
-        setActiveTab('rigging');
-        toast({
-          title: '리깅플랜이 필요합니다',
-          description: '인양 중량·작업 반경·크레인·정격하중을 입력하고 안전율이 계산된 뒤 상신하세요.',
-          variant: 'destructive',
-        });
-        return;
-      }
+    }
+    const calcSnap = workTypeUsesRiggingGate(plan?.work_type) && readyRigging
+      ? { updatedAt: new Date().toISOString(), entries: [buildRiggingLegalCalcEntry(readyRigging)] }
+      : extractLegalCalcSnapshot(sections);
+    const gates = evaluateWorkPlanApprovalGates({
+      workType: plan?.work_type,
+      rigging: readyRigging,
+      snapshot: calcSnap,
+    });
+    if (gates.length > 0) {
+      setActiveTab(gates[0].tab);
+      toast({
+        title: gates[0].title,
+        description: gates[0].detail,
+        variant: 'destructive',
+      });
+      return;
     }
     // 필수 첨부(SSOT: work_plan_attachments.is_mandatory) — 누락 시 결재 차단
     const blockers = await getApprovalBlockers(planId!, plan.work_type);
@@ -957,7 +1000,7 @@ const WorkPlanDetail = () => {
 
         {/* Sections Tab */}
         <TabsContent value="sections" className="space-y-4 mt-4">
-          {sections.filter(s => s.key !== '_checklist').map((section) => {
+          {sections.filter(s => s.key !== '_checklist' && s.key !== LEGAL_CALC_SECTION_KEY).map((section) => {
             if (section.type === 'rigging') return null;
             const templateSection = wpType?.templateSections.find(ts => ts.key === section.key);
             const sectionErrors = validationErrors[section.key];
@@ -966,11 +1009,11 @@ const WorkPlanDetail = () => {
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-sm">{section.title}</CardTitle>
-                    {templateSection?.aiPrompt && (
+                    {(templateSection?.aiPrompt || (usesFixedLegalRisk(plan.work_type) && section.key === 'risk')) && (
                       <Button variant="outline" size="sm" className="h-7 text-xs gap-1"
                         onClick={() => handleAiGenerate(section.key)} disabled={aiLoading === section.key}>
                         {aiLoading === section.key ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                        AI 작성
+                        {usesFixedLegalRisk(plan.work_type) && section.key === 'risk' ? 'AI로 5대 대책 채우기' : 'AI 작성'}
                       </Button>
                     )}
                   </div>
@@ -1039,6 +1082,8 @@ const WorkPlanDetail = () => {
         <TabsContent value="calculator" className="space-y-4 mt-4">
           <LegalCalculatorPanel
             workType={plan.work_type}
+            rigging={rigging}
+            onPersistEntries={persistLegalCalcEntries}
             onAppendToMethod={(text) => {
               const idx = sections.findIndex(s => s.key === 'method');
               if (idx < 0) {

@@ -5,6 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2 } from 'lucide-react';
 import { methodStepsForPrint } from '@/lib/workPlanMethodSection';
+import {
+  HEAVY_LIFT_LEGAL_HAZARDS,
+  normalizeRiskToLegalSlots,
+  usesFixedLegalRisk,
+  validateHeavyLiftLegalRisk,
+  type LegalRiskRow,
+} from '@/lib/workPlanLegalRisk';
 
 interface StructuredSectionFormProps {
   sectionKey: string;
@@ -140,6 +147,53 @@ function MethodForm({ data, onChange }: { data: any; onChange: (d: any) => void 
       <Button variant="outline" size="sm" onClick={add} className="gap-1 text-xs">
         <Plus className="h-3 w-3" /> 단계 추가
       </Button>
+    </div>
+  );
+}
+
+function FixedLegalRiskForm({ data, onChange }: { data: any; onChange: (d: any) => void }) {
+  const items = normalizeRiskToLegalSlots(data);
+  const update = (idx: number, k: keyof LegalRiskRow, val: string) => {
+    const next = items.map((item, i) => (i === idx ? { ...item, [k]: val } : item));
+    onChange(next);
+  };
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] text-muted-foreground">
+        산안규칙 별표 4(중량물) 필수 다섯 칸입니다. 칸을 지우거나 이름을 바꿀 수 없습니다. AI 작성으로 대책을 채울 수 있습니다.
+      </p>
+      {items.map((item, idx) => {
+        const meta = HEAVY_LIFT_LEGAL_HAZARDS[idx];
+        return (
+          <div key={item.key} className="grid grid-cols-[88px_1fr_1fr_72px] gap-2 p-2 border rounded bg-muted/20 items-start">
+            <div className="space-y-1">
+              <Label className="text-[10px]">별표 4</Label>
+              <p className="h-8 flex items-center text-xs font-semibold">{item.hazard}</p>
+              <p className="text-[9px] text-muted-foreground leading-tight">{meta?.label}</p>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">발생상황</Label>
+              <Input value={item.situation} onChange={e => update(idx, 'situation', e.target.value)} placeholder="이 현장에서 어떻게 일어나는지" className="h-8 text-xs" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">안전대책 *</Label>
+              <Input value={item.measure} onChange={e => update(idx, 'measure', e.target.value)} placeholder="실행 가능한 구체 조치" className="h-8 text-xs" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">위험도</Label>
+              <Select value={item.severity} onValueChange={v => update(idx, 'severity', v)}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="상">상</SelectItem>
+                  <SelectItem value="중">중</SelectItem>
+                  <SelectItem value="하">하</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -379,6 +433,82 @@ const MONITORING_FIELDS = [
   { key: 'criteria', label: '관리 기준값', type: 'textarea' as const, rows: 2 },
 ];
 
+const ROUTE_FIELDS = [
+  { key: 'path', label: '운행 경로' },
+  { key: 'ground', label: '지반·경사 상태' },
+  { key: 'sight', label: '시야·교차 구간' },
+  { key: 'notes', label: '상세', type: 'textarea' as const, rows: 3 },
+];
+
+const COMMANDER_FIELDS = [
+  { key: 'name', label: '작업지휘자 성명' },
+  { key: 'qualification', label: '자격·직책' },
+  { key: 'placement', label: '배치 위치' },
+  { key: 'duties', label: '임무', type: 'textarea' as const, rows: 3 },
+];
+
+const CONTACT_FIELDS = [
+  { key: 'method', label: '연락 방법' },
+  { key: 'signal', label: '신호 방법' },
+  { key: 'radio', label: '무전/채널' },
+  { key: 'notes', label: '상세', type: 'textarea' as const, rows: 2 },
+];
+
+const SPOIL_FIELDS = [
+  { key: 'method', label: '반출 방법' },
+  { key: 'route', label: '반출 경로' },
+  { key: 'equipment', label: '운반 장비' },
+  { key: 'notes', label: '상세', type: 'textarea' as const, rows: 2 },
+];
+
+const CREW_FIELDS = [
+  { key: 'composition', label: '인원 구성' },
+  { key: 'roles', label: '역할 범위', type: 'textarea' as const, rows: 3 },
+];
+
+const ASSEMBLE_FIELDS = [
+  { key: 'kind', label: '작업 구분 (설치/상승/해체)' },
+  { key: 'sequence', label: '순서 및 안전조치', type: 'textarea' as const, rows: 5 },
+];
+
+const SUPPORT_FIELDS = [
+  { key: 'foundation', label: '기초' },
+  { key: 'wall_tie', label: '월타이/지지' },
+  { key: 'detail', label: '지지방법 상세', type: 'textarea' as const, rows: 3 },
+];
+
+const TOOLS_FIELDS = [
+  { key: 'tools', label: '작업도구·장비' },
+  { key: 'temporary', label: '가설설비' },
+  { key: 'guard', label: '방호설비', type: 'textarea' as const, rows: 2 },
+];
+
+const ISOLATION_FIELDS = [
+  { key: 'lockout', label: '차단(LOTO)' },
+  { key: 'purge', label: '퍼지·치환' },
+  { key: 'verify', label: '잔류 확인', type: 'textarea' as const, rows: 3 },
+];
+
+const APPROACH_FIELDS = [
+  { key: 'voltage', label: '전압 (kV)' },
+  { key: 'limit_cm', label: '접근한계 (cm)' },
+  { key: 'ppe', label: '절연 보호구' },
+  { key: 'notes', label: '상세', type: 'textarea' as const, rows: 2 },
+];
+
+const CONSULT_FIELDS = [
+  { key: 'party', label: '운행관계자' },
+  { key: 'window', label: '차단·협의 시간' },
+  { key: 'contact', label: '연락 수단' },
+  { key: 'notes', label: '협의 내용', type: 'textarea' as const, rows: 3 },
+];
+
+const STAFFING_FIELDS = [
+  { key: 'count', label: '작업 인원' },
+  { key: 'volume', label: '작업량' },
+  { key: 'sequence', label: '작업순서', type: 'textarea' as const, rows: 3 },
+];
+
 // Map section keys to specific structured form types
 const SECTION_FORM_MAP: Record<string, string> = {
   overview: 'overview',
@@ -397,6 +527,18 @@ const SECTION_FORM_MAP: Record<string, string> = {
   safety_zone: 'safety_zone',
   survey: 'survey',
   monitoring: 'monitoring',
+  route: 'route',
+  commander: 'commander',
+  contact: 'contact',
+  spoil: 'spoil',
+  crew: 'crew',
+  assemble: 'assemble',
+  support: 'support',
+  tools: 'tools',
+  isolation: 'isolation',
+  approach: 'approach',
+  consult: 'consult',
+  staffing: 'staffing',
 };
 
 export default function StructuredSectionForm({ sectionKey, workType, value, onChange }: StructuredSectionFormProps) {
@@ -420,7 +562,9 @@ export default function StructuredSectionForm({ sectionKey, workType, value, onC
         />
       );
     case 'risk':
-      return <RiskForm data={parsed} onChange={handleChange} />;
+      return usesFixedLegalRisk(workType)
+        ? <FixedLegalRiskForm data={parsed} onChange={handleChange} />
+        : <RiskForm data={parsed} onChange={handleChange} />;
     case 'signal':
       return <SignalForm data={parsed} onChange={handleChange} />;
     case 'emergency':
@@ -445,6 +589,30 @@ export default function StructuredSectionForm({ sectionKey, workType, value, onC
       return <GenericStructuredForm data={parsed} onChange={handleChange} fields={SURVEY_FIELDS} />;
     case 'monitoring':
       return <GenericStructuredForm data={parsed} onChange={handleChange} fields={MONITORING_FIELDS} />;
+    case 'route':
+      return <GenericStructuredForm data={parsed} onChange={handleChange} fields={ROUTE_FIELDS} />;
+    case 'commander':
+      return <GenericStructuredForm data={parsed} onChange={handleChange} fields={COMMANDER_FIELDS} />;
+    case 'contact':
+      return <GenericStructuredForm data={parsed} onChange={handleChange} fields={CONTACT_FIELDS} />;
+    case 'spoil':
+      return <GenericStructuredForm data={parsed} onChange={handleChange} fields={SPOIL_FIELDS} />;
+    case 'crew':
+      return <GenericStructuredForm data={parsed} onChange={handleChange} fields={CREW_FIELDS} />;
+    case 'assemble':
+      return <GenericStructuredForm data={parsed} onChange={handleChange} fields={ASSEMBLE_FIELDS} />;
+    case 'support':
+      return <GenericStructuredForm data={parsed} onChange={handleChange} fields={SUPPORT_FIELDS} />;
+    case 'tools':
+      return <GenericStructuredForm data={parsed} onChange={handleChange} fields={TOOLS_FIELDS} />;
+    case 'isolation':
+      return <GenericStructuredForm data={parsed} onChange={handleChange} fields={ISOLATION_FIELDS} />;
+    case 'approach':
+      return <GenericStructuredForm data={parsed} onChange={handleChange} fields={APPROACH_FIELDS} />;
+    case 'consult':
+      return <GenericStructuredForm data={parsed} onChange={handleChange} fields={CONSULT_FIELDS} />;
+    case 'staffing':
+      return <GenericStructuredForm data={parsed} onChange={handleChange} fields={STAFFING_FIELDS} />;
     default:
       // Fallback: plain textarea for unknown sections
       return (
@@ -460,7 +628,7 @@ export default function StructuredSectionForm({ sectionKey, workType, value, onC
 }
 
 // Validation: check required fields for a section
-export function validateSection(sectionKey: string, value: string): string[] {
+export function validateSection(sectionKey: string, value: string, workType?: string): string[] {
   const errors: string[] = [];
   const parsed = parseValue(value);
   if (!parsed && !value?.trim()) {
@@ -478,10 +646,19 @@ export function validateSection(sectionKey: string, value: string): string[] {
       if (Array.isArray(parsed) && parsed.some((e: any) => !e.name)) errors.push('장비명은 필수입니다.');
       break;
     case 'risk':
-      if (Array.isArray(parsed) && parsed.some((e: any) => !e.hazard || !e.measure)) errors.push('위험요인과 안전대책은 필수입니다.');
+      if (usesFixedLegalRisk(workType)) {
+        errors.push(...validateHeavyLiftLegalRisk(value));
+      } else if (Array.isArray(parsed) && parsed.some((e: any) => !e.hazard || !e.measure)) {
+        errors.push('위험요인과 안전대책은 필수입니다.');
+      }
       break;
     case 'emergency':
       if (!parsed?.emergency_contact) errors.push('비상연락처는 필수입니다.');
+      break;
+    case 'commander':
+      if (workType === 'excavation' || workType === 'vehicle_cargo') {
+        if (!parsed?.name) errors.push('작업지휘자 성명은 필수입니다.');
+      }
       break;
   }
   return errors;

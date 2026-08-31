@@ -94,6 +94,7 @@
 | 허가서 AI | `supabase/functions/_shared/permitBriefing.ts` |
 | 결재 상신 | `src/components/approval/SubmitApprovalDialog.tsx` |
 | 종류 SSOT | `src/lib/permitKinds.ts` (`excavation` 라벨 = 굴착·중장비) |
+| 리깅 규격 | `src/lib/riggingHardwareCatalog.ts` (EN 1492-2 라운드슬링, Crosby G-2130 샤클) |
 
 ## 하지 말 것
 
@@ -102,3 +103,4 @@
 - 승인본 이관에 OCR/항목별 증빙을 되살리지 말 것.
 - 허가서 요약에 일반 건설 위험(추락·감전 등)을 공종만 보고 넣지 말 것.
 - 전체 lint “통과”를 목표로 수천 개 any를 고치지 말 것.
+- 크레인 하중표를 추정·보간해 넣지 말 것. 제조사 제원표/LMI만.

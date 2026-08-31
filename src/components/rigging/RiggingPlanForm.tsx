@@ -29,6 +29,7 @@ import {
   type RiggingResult,
   type SlingMaterialType,
 } from '@/lib/riggingCalculator';
+import { roundSlingSwatch } from '@/lib/riggingHardwareCatalog';
 import { buildRiggingInputFromRow, riggingResultToPatch } from '@/lib/riggingDerived';
 
 interface RiggingPlanFormProps {
@@ -133,19 +134,24 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
     onChange('equipment_name', preset.name);
     onChange('crane_model', preset.name);
     onChange('rated_capacity', preset.ratedCapacity);
-    onChange('boom_length', preset.defaultBoomLength);
-    onChange('working_radius', preset.defaultWorkingRadius);
-    const cap = lookupCraneCapacity(preset, preset.defaultBoomLength, preset.defaultWorkingRadius);
-    onChange('crane_capacity', cap);
+    if (preset.defaultBoomLength > 0) onChange('boom_length', preset.defaultBoomLength);
+    if (preset.defaultWorkingRadius > 0) onChange('working_radius', preset.defaultWorkingRadius);
+    if (preset.chartVerified) {
+      const cap = lookupCraneCapacity(preset, preset.defaultBoomLength, preset.defaultWorkingRadius);
+      if (cap > 0) onChange('crane_capacity', cap);
+    } else if (preset.defaultCapacityAtPoint != null) {
+      onChange('crane_capacity', preset.defaultCapacityAtPoint);
+    }
   };
 
-  // Auto-lookup crane capacity from preset when boom/radius changes
+  // Verified manufacturer charts only — never interpolate invented tables.
   useEffect(() => {
     const presetName = rigging?.equipment_name || rigging?.crane_model || '';
     const preset = CRANE_PRESETS.find(p => p.name === presetName);
-    if (preset && rigging?.boom_length > 0 && rigging?.working_radius > 0) {
+    if (!preset?.chartVerified) return;
+    if (rigging?.boom_length > 0 && rigging?.working_radius > 0) {
       const cap = lookupCraneCapacity(preset, numVal(rigging.boom_length), numVal(rigging.working_radius));
-      if (cap !== numVal(rigging.crane_capacity)) {
+      if (cap > 0 && cap !== numVal(rigging.crane_capacity)) {
         onChange('crane_capacity', cap);
       }
     }
@@ -233,6 +239,10 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
                 </Button>
               ))}
             </div>
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              250/300톤은 제조사 최대점만 채웁니다(CKE2500-2: 250t×4.6m, LR 1300: 300t×4.3m).
+              다른 붐·반경의 인양능력은 제원표/LMI를 직접 입력하세요. 추정 보간하지 않습니다.
+            </p>
           </div>
 
           <div className="grid grid-cols-3 gap-px bg-border rounded overflow-hidden">
@@ -331,19 +341,19 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
               {materialType === 'round_sling' && (
                 <div className="space-y-2">
                   <div className="space-y-1">
-                    <Label className="text-[11px] text-muted-foreground">색상 (정격하중 자동)</Label>
+                    <Label className="text-[11px] text-muted-foreground">색상·정격하중 (EN 1492-2, 주황은 라벨 WLL)</Label>
                     <Select value={rigging.sling_belt_color || ''} onValueChange={v => {
                       onChange('sling_belt_color', v);
                       const rl = getRoundSlingRatedLoadByColor(v);
                       onChange('round_sling_rated_load', rl);
                     }}>
-                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="색상 선택" /></SelectTrigger>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="색상·톤수 선택" /></SelectTrigger>
                       <SelectContent>
                         {ROUND_SLING_BY_COLOR.map(s => (
-                          <SelectItem key={s.color} value={s.color} className="text-xs">
+                          <SelectItem key={s.id} value={s.id} className="text-xs">
                             <span className="flex items-center gap-2">
-                              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: s.color === 'purple' ? '#9b59b6' : s.color === 'brown' ? '#8B4513' : s.color }} />
-                              {s.label} ({s.ratedLoad}톤)
+                              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: roundSlingSwatch(s.color) }} />
+                              {s.label}
                             </span>
                           </SelectItem>
                         ))}
@@ -387,7 +397,7 @@ export default function RiggingPlanForm({ rigging, onChange, onDerivedPatch, onS
             <h4 className="text-xs font-semibold text-muted-foreground mb-2">체결 장구 (샤클)</h4>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1">
-                <Label className="text-[11px] text-muted-foreground">규격 (inch)</Label>
+                <Label className="text-[11px] text-muted-foreground">규격 (Crosby G-2130 WLL)</Label>
                 <Select value={rigging.shackle_inch || ''} onValueChange={v => onChange('shackle_inch', v)}>
                   <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="인치 선택" /></SelectTrigger>
                   <SelectContent>

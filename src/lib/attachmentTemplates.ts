@@ -134,6 +134,51 @@ const BASE_ATTACHMENTS: Record<string, AttachmentItem[]> = {
     { key: 'work_permit', name: '작업허가서', required: true, description: '위험작업 허가 서류', category: '인허가' },
     { key: 'equipment_check', name: '장비점검표', required: true, description: '사용 장비 점검기록', category: '점검' },
   ],
+  tower_crane: [
+    { key: 'crane_spec', name: '타워크레인 제원표', required: true, description: '형식·정격하중·지브 길이', category: '장비' },
+    { key: 'erect_procedure', name: '설치·해체 절차서', required: true, description: '설치·상승·해체 순서', category: '계획' },
+    { key: 'foundation_review', name: '기초 및 지지력 검토서', required: true, description: '기초·월타이 지지 검토', category: '구조' },
+    { key: 'erect_cert', name: '설치·해체 기능인력 자격증', required: true, description: '타워크레인 설치·해체 자격', category: '자격' },
+    { key: 'signal_designate', name: '신호수 지정서', required: true, description: '신호수 선임 서류', category: '안전' },
+  ],
+  vehicle_cargo: [
+    { key: 'vehicle_route', name: '운행경로도', required: true, description: '적재·하역 동선', category: '도면' },
+    { key: 'commander_designate', name: '작업지휘자 지정서', required: true, description: '제39조 작업지휘자', category: '안전' },
+    { key: 'control_plan', name: '통제계획서', required: true, description: '보행자·차량 출입통제', category: '안전' },
+  ],
+  chemical: [
+    { key: 'msds', name: 'MSDS', required: true, description: '취급 물질 안전보건자료', category: '인허가' },
+    { key: 'pid', name: '설비 계통도', required: true, description: 'P&ID 또는 계통도', category: '도면' },
+    { key: 'isolation_check', name: '차단·퍼지 체크리스트', required: true, description: 'LOTO·퍼지 확인', category: '점검' },
+    { key: 'work_permit', name: '작업허가서', required: true, description: '설비 개방·화기 등 허가', category: '인허가' },
+  ],
+  electrical: [
+    { key: 'one_line', name: '전기 단선도', required: true, description: '작업 대상 계통', category: '도면' },
+    { key: 'outage_permit', name: '정전작업 허가서', required: true, description: '정전·활선 구분 허가', category: '인허가' },
+    { key: 'grounding_record', name: '검전·접지 기록', required: true, description: '검전 및 접지 실시 기록', category: '점검' },
+    { key: 'elec_cert', name: '전기 자격증', required: true, description: '전기 작업 자격', category: '자격' },
+  ],
+  bridge: [
+    { key: 'bridge_drawing', name: '교량 일반도', required: true, description: '높이·지간 확인용', category: '도면' },
+    { key: 'falsework_plan', name: '가설 계획도', required: true, description: '가설재·동바리', category: '도면' },
+    { key: 'crane_layout', name: '크레인 배치도', required: true, description: '인양 장비 배치', category: '도면' },
+    { key: 'commander_designate', name: '작업지휘자 지정서', required: true, description: '제39조 작업지휘자', category: '안전' },
+  ],
+  quarry: [
+    { key: 'quarry_permit', name: '채석 허가/신고', required: true, description: '관할 인허가', category: '인허가' },
+    { key: 'flyrock_review', name: '비석 영향 검토', required: true, description: '비산 거리·방호', category: '조사' },
+    { key: 'evacuation_plan', name: '대피계획도', required: true, description: '경보 및 대피', category: '안전' },
+  ],
+  track: [
+    { key: 'train_consult', name: '운행관계자 협의서', required: true, description: '제38조④ 열차 운행 협의', category: '인허가' },
+    { key: 'track_drawing', name: '작업구간 도면', required: true, description: '궤도 구간', category: '도면' },
+    { key: 'alarm_plan', name: '신호·경보 체계', required: true, description: '열차 접근 경보', category: '안전' },
+  ],
+  shunting: [
+    { key: 'shunt_order', name: '입환 작업 지시서', required: true, description: '당일 입환 지시', category: '계획' },
+    { key: 'signal_system', name: '신호체계 안내', required: true, description: '연결·분리 신호', category: '안전' },
+    { key: 'crew_list', name: '작업인원 편성표', required: true, description: '별표 4 적정 인원', category: '계획' },
+  ],
 
 };
 
@@ -175,6 +220,7 @@ const CONDITIONAL_ATTACHMENTS: AttachmentCondition[] = [
 // 장비 사용 공종 (장비서류 필수)
 const EQUIPMENT_REQUIRED_TYPES = [
   'heavy_lifting', 'excavation', 'tunnel', 'steel', 'demolition', 'vehicle_equipment',
+  'tower_crane', 'vehicle_cargo', 'bridge', 'quarry',
 ];
 
 /**

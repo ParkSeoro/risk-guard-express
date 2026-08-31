@@ -6,11 +6,11 @@ import { useGlobalProjectAccess } from '@/components/AppLayout';
 import { useToast } from '@/hooks/use-toast';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
-import { WORK_PLAN_TYPES } from '@/lib/workPlanTemplates';
+import { WORK_PLAN_TYPES, getWorkPlanTypesGrouped } from '@/lib/workPlanTemplates';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
@@ -263,11 +263,18 @@ const WorkPlans = () => {
                 <DialogHeader><DialogTitle>작업계획서 생성</DialogTitle></DialogHeader>
                 <div className="space-y-4 py-2">
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-medium">공종 선택 (법정 대상)</Label>
+                    <Label className="text-xs font-medium">공종 선택</Label>
                     <Select value={newPlan.workType} onValueChange={v => setNewPlan(p => ({ ...p, workType: v }))}>
                       <SelectTrigger><SelectValue placeholder="공종을 선택하세요" /></SelectTrigger>
                       <SelectContent>
-                        {WORK_PLAN_TYPES.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                        <SelectGroup>
+                          <SelectLabel>제38조 법정 대상</SelectLabel>
+                          {getWorkPlanTypesGrouped().article38.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                        </SelectGroup>
+                        <SelectGroup>
+                          <SelectLabel>실무 확장</SelectLabel>
+                          {getWorkPlanTypesGrouped().practical.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                     {newPlan.workType && (

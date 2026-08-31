@@ -137,7 +137,7 @@ export const LEGAL_DUTY_TEMPLATES: LegalDutyTemplate[] = [
     name: '작업계획서 작성 및 승인',
     category: 'event',
     frequency: 'event',
-    legalBasis: '산업안전보건법 제36조, 산업안전보건기준에 관한 규칙',
+    legalBasis: '산업안전보건기준에 관한 규칙 제38조, 산업안전보건법 제38조(안전조치)',
     description: '법정 대상 공종 작업 시 작업계획서 작성 및 결재',
   },
   {

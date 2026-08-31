@@ -328,7 +328,7 @@ export function calcDemolitionZone(input: DemolitionInput): CalcResult {
       "방호선 이격": `${input.barrierDistanceM} m`,
       "인접시설 이격": `${input.adjacentDistanceM} m`,
     },
-    legalBasis: "산업안전보건기준에 관한 규칙 제207조, KOSHA C-43(해체공사)",
+    legalBasis: "산업안전보건기준에 관한 규칙 제87조~제92조, KOSHA C-43(해체공사)",
     recommendations: safe ? [] : [
       "방호선/보호울타리 외측 재배치",
       "발파·전도 공법 대신 기계식/압쇄 검토",

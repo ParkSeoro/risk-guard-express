@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,6 +15,11 @@ import {
   calcScaffoldLoad, calcVentilation, calcDemolitionZone, calcElectricalApproach,
   SOIL_STANDARD_SLOPE, type CalcResult,
 } from '@/lib/workPlanCalculators';
+import {
+  buildRiggingLegalCalcEntry,
+  type LegalCalcSnapshotEntry,
+} from '@/lib/workPlanLegalCalcGate';
+import { isRiggingPlanReady, type RiggingPlanRow } from '@/lib/riggingPlanPersist';
 
 /**
  * 필수 입력 검증 헬퍼.
@@ -79,8 +84,42 @@ function SaveButton({
 
 interface Props {
   workType: string;
+  rigging?: RiggingPlanRow | null;
   /** 계산 결과 텍스트를 method 섹션에 추가하기 위한 콜백 */
   onAppendToMethod?: (text: string) => void;
+  /** 완료된 법정계산 스냅샷 — 결재 게이트용 */
+  onPersistEntries?: (entries: LegalCalcSnapshotEntry[]) => void;
+}
+
+type CalcProps = {
+  onAppend: (t: string) => void;
+  onResult?: (entry: LegalCalcSnapshotEntry | null) => void;
+};
+
+function usePersistCalc(
+  id: string,
+  label: string,
+  missing: MissingField[],
+  result: CalcResult | null,
+  onResult?: (entry: LegalCalcSnapshotEntry | null) => void,
+) {
+  const onResultRef = useRef(onResult);
+  onResultRef.current = onResult;
+  const verdict = result?.verdict;
+  const conclusion = result?.conclusion;
+  const legalBasis = result?.legalBasis;
+  useEffect(() => {
+    const cb = onResultRef.current;
+    if (!cb) return;
+    if (missing.length > 0 || !verdict || !conclusion) return;
+    cb({
+      id,
+      label,
+      verdict,
+      conclusion,
+      legalBasis,
+    });
+  }, [id, label, missing.length, verdict, conclusion, legalBasis]);
 }
 
 function ResultBlock({ result }: { result: CalcResult | null }) {
@@ -131,8 +170,43 @@ function resultToText(title: string, r: CalcResult): string {
   return lines.join('\n');
 }
 
-/* ---------- Crane ---------- */
-function CraneCalc({ onAppend }: { onAppend: (t: string) => void }) {
+/* ---------- Crane from rigging (no re-entry) ---------- */
+function CraneFromRigging({ rigging, onAppend, onResult }: CalcProps & { rigging?: RiggingPlanRow | null }) {
+  const { toast } = useToast();
+  const ready = isRiggingPlanReady(rigging);
+  const entry = useMemo(() => (ready && rigging ? buildRiggingLegalCalcEntry(rigging) : null), [ready, rigging]);
+  const fakeResult: CalcResult | null = entry
+    ? { verdict: entry.verdict, conclusion: entry.conclusion, breakdown: {}, legalBasis: entry.legalBasis || '' }
+    : null;
+  usePersistCalc('rigging_overall', '리깅플랜 종합 안전성', ready ? [] : [{ label: '리깅플랜', hint: '리깅플랜 탭에서 인양 중량·반경·크레인을 입력하세요.' }], fakeResult, onResult);
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-muted-foreground">
+        크레인 숫자는 리깅플랜 탭이 원본입니다. 저장·상신 시 같은 값으로 자동 판정합니다. 여기에서는 다시 입력하지 않습니다.
+      </p>
+      {!ready && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle className="text-sm">리깅플랜을 먼저 입력하세요</AlertTitle>
+          <AlertDescription className="text-xs">인양 중량, 작업 반경, 크레인, 정격하중이 있어야 판정됩니다.</AlertDescription>
+        </Alert>
+      )}
+      {fakeResult && <ResultBlock result={fakeResult} />}
+      <SaveButton
+        missing={ready ? [] : [{ label: '리깅플랜', hint: '리깅플랜 탭에서 입력하세요.' }]}
+        onSave={() => {
+          if (!fakeResult) return;
+          onAppend(resultToText('리깅플랜 종합 안전성', fakeResult));
+          toast({ title: '작업방법 섹션에 추가됨' });
+        }}
+      />
+    </div>
+  );
+}
+
+/* ---------- Crane (manual — unused for 중량물/철골) ---------- */
+function CraneCalc({ onAppend, onResult }: CalcProps) {
   const { toast } = useToast();
   const [s, setS] = useState({ ratedCapacityTon: 0, loadTon: 0, riggingTon: 0, radiusM: 0, windMs: 0 });
   const r = useMemo(() => calcCraneLoad(s), [s]);
@@ -142,6 +216,7 @@ function CraneCalc({ onAppend }: { onAppend: (t: string) => void }) {
     s.radiusM <= 0 && { label: '작업반경(m)', hint: '실제 양중 위치의 반경을 m 단위로 입력하세요.' },
     s.loadTon <= 0 && { label: '인양물 무게(t)', hint: '시방서/도면 또는 실측치를 입력하세요.' },
   ].filter(Boolean) as MissingField[];
+  usePersistCalc('crane_load', '크레인 양중 안전율', missing, missing.length ? null : r, onResult);
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
@@ -159,7 +234,7 @@ function CraneCalc({ onAppend }: { onAppend: (t: string) => void }) {
 }
 
 /* ---------- Excavation ---------- */
-function ExcavationCalc({ onAppend }: { onAppend: (t: string) => void }) {
+function ExcavationCalc({ onAppend, onResult }: CalcProps) {
   const { toast } = useToast();
   const [s, setS] = useState({ soilType: '' as keyof typeof SOIL_STANDARD_SLOPE | '', depthM: 0, actualHorizontal: 0 });
   const r = useMemo(() => s.soilType ? calcExcavationSlope(s as any) : null, [s]);
@@ -168,6 +243,7 @@ function ExcavationCalc({ onAppend }: { onAppend: (t: string) => void }) {
     s.depthM <= 0 && { label: '굴착 깊이(m)', hint: '계획 또는 실제 굴착 깊이를 m 단위로 입력하세요.' },
     s.actualHorizontal <= 0 && { label: '실제 수평거리', hint: '1m 수직 기준 사면의 수평거리(m)를 입력하세요.' },
   ].filter(Boolean) as MissingField[];
+  usePersistCalc('excavation_slope', '굴착 사면 안전율', missing, missing.length ? null : r, onResult);
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -193,7 +269,7 @@ function ExcavationCalc({ onAppend }: { onAppend: (t: string) => void }) {
 }
 
 /* ---------- Fall Protection ---------- */
-function FallCalc({ onAppend }: { onAppend: (t: string) => void }) {
+function FallCalc({ onAppend, onResult }: CalcProps) {
   const { toast } = useToast();
   const [s, setS] = useState({ heightM: 0, hasRailing: false, hasNet: false, hasLifeline: false, anchorageStrengthKgf: 0 });
   const r = useMemo(() => calcFallProtection(s), [s]);
@@ -201,6 +277,7 @@ function FallCalc({ onAppend }: { onAppend: (t: string) => void }) {
     s.heightM <= 0 && { label: '작업 높이(m)', hint: '지표면 또는 추락기준점에서 작업면까지 높이를 입력하세요.', legalBasis: '산안기준규칙 제42조' },
     s.hasLifeline && s.anchorageStrengthKgf <= 0 && { label: '부착설비 강도(kgf)', hint: '안전대 부착설비 설계 강도를 kgf 단위로 입력하세요. 법정 최소 510kgf(5,000N).', legalBasis: '산안기준규칙 제44조' },
   ].filter(Boolean) as MissingField[];
+  usePersistCalc('fall_protection', '추락 방호조치', missing, missing.length ? null : r, onResult);
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -219,7 +296,7 @@ function FallCalc({ onAppend }: { onAppend: (t: string) => void }) {
 }
 
 /* ---------- Confined Space ---------- */
-function ConfinedCalc({ onAppend }: { onAppend: (t: string) => void }) {
+function ConfinedCalc({ onAppend, onResult }: CalcProps) {
   const { toast } = useToast();
   const [s, setS] = useState({ oxygenPct: 0, coPpm: -1, h2sPpm: -1, lelPct: -1 });
   const r = useMemo(() => calcConfinedSpaceAtmosphere(s), [s]);
@@ -229,6 +306,7 @@ function ConfinedCalc({ onAppend }: { onAppend: (t: string) => void }) {
     s.h2sPpm < 0 && { label: 'H2S 농도(ppm)', hint: '황화수소 실측치를 입력하세요.' },
     s.lelPct < 0 && { label: 'LEL(%)', hint: '폭발하한계 실측치를 입력하세요.' },
   ].filter(Boolean) as MissingField[];
+  usePersistCalc('confined_atmosphere', '밀폐공간 가스농도', missing, missing.length ? null : r, onResult);
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -245,7 +323,7 @@ function ConfinedCalc({ onAppend }: { onAppend: (t: string) => void }) {
 }
 
 /* ---------- Scaffold Load ---------- */
-function ScaffoldCalc({ onAppend }: { onAppend: (t: string) => void }) {
+function ScaffoldCalc({ onAppend, onResult }: CalcProps) {
   const { toast } = useToast();
   const [s, setS] = useState({ areaSqm: 0, workerCount: 0, materialKg: 0, workerWeightKg: 80 });
   const r = useMemo(() => calcScaffoldLoad(s), [s]);
@@ -253,6 +331,7 @@ function ScaffoldCalc({ onAppend }: { onAppend: (t: string) => void }) {
     s.areaSqm <= 0 && { label: '발판 면적(㎡)', hint: '작업발판 유효면적을 ㎡ 단위로 입력하세요.', legalBasis: 'KOSHA GUIDE C-30' },
     s.workerCount <= 0 && { label: '작업원 수', hint: '동시 작업 인원수를 입력하세요.' },
   ].filter(Boolean) as MissingField[];
+  usePersistCalc('scaffold_load', '비계 적재하중', missing, missing.length ? null : r, onResult);
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -269,7 +348,7 @@ function ScaffoldCalc({ onAppend }: { onAppend: (t: string) => void }) {
 }
 
 /* ---------- Ventilation ---------- */
-function VentilationCalc({ onAppend }: { onAppend: (t: string) => void }) {
+function VentilationCalc({ onAppend, onResult }: CalcProps) {
   const { toast } = useToast();
   const [s, setS] = useState({ workerCount: 0, perPerson: 3, machineCmm: 0, suppliedCmm: 0 });
   const r = useMemo(() => calcVentilation(s), [s]);
@@ -277,6 +356,7 @@ function VentilationCalc({ onAppend }: { onAppend: (t: string) => void }) {
     s.workerCount <= 0 && { label: '작업원 수', hint: '동시 작업 인원수를 입력하세요.', legalBasis: 'KOSHA GUIDE C-49' },
     s.perPerson <= 0 && { label: '1인당 풍량(㎥/min)', hint: '법정 기본값 3 ㎥/min 이상 입력하세요.' },
   ].filter(Boolean) as MissingField[];
+  usePersistCalc('ventilation', '환기 풍량', missing, missing.length ? null : r, onResult);
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -293,15 +373,16 @@ function VentilationCalc({ onAppend }: { onAppend: (t: string) => void }) {
 }
 
 /* ---------- Demolition ---------- */
-function DemolitionCalc({ onAppend }: { onAppend: (t: string) => void }) {
+function DemolitionCalc({ onAppend, onResult }: CalcProps) {
   const { toast } = useToast();
   const [s, setS] = useState({ structureHeightM: 0, barrierDistanceM: 0, adjacentDistanceM: 0, method: '기계식' as const });
   const r = useMemo(() => calcDemolitionZone(s), [s]);
   const missing: MissingField[] = [
-    s.structureHeightM <= 0 && { label: '구조물 높이(m)', hint: '해체 대상 구조물 최상부 높이를 입력하세요.', legalBasis: '산안기준규칙 제207조' },
+    s.structureHeightM <= 0 && { label: '구조물 높이(m)', hint: '해체 대상 구조물 최상부 높이를 입력하세요.', legalBasis: '산안기준규칙 제87조~제92조' },
     s.barrierDistanceM <= 0 && { label: '방호선 이격(m)', hint: '보호울타리/방호선 위치까지 거리(m)를 입력하세요.' },
     s.adjacentDistanceM <= 0 && { label: '인접시설 이격(m)', hint: '인접 시설/도로까지 최단거리(m)를 입력하세요.' },
   ].filter(Boolean) as MissingField[];
+  usePersistCalc('demolition_zone', '해체 영향권', missing, missing.length ? null : r, onResult);
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -326,7 +407,7 @@ function DemolitionCalc({ onAppend }: { onAppend: (t: string) => void }) {
 }
 
 /* ---------- Electrical ---------- */
-function ElectricalCalc({ onAppend }: { onAppend: (t: string) => void }) {
+function ElectricalCalc({ onAppend, onResult }: CalcProps) {
   const { toast } = useToast();
   const [s, setS] = useState({ voltageKv: 0, actualCm: 0, insulated: false });
   const r = useMemo(() => calcElectricalApproach(s), [s]);
@@ -334,6 +415,7 @@ function ElectricalCalc({ onAppend }: { onAppend: (t: string) => void }) {
     s.voltageKv <= 0 && { label: '전압(kV)', hint: '충전부 공칭 전압을 kV 단위로 입력하세요.', legalBasis: '산안기준규칙 제321조 별표 5' },
     s.actualCm <= 0 && { label: '실제 이격(cm)', hint: '작업자/장비와 충전부의 최단거리(cm)를 입력하세요.' },
   ].filter(Boolean) as MissingField[];
+  usePersistCalc('electrical_approach', '전기 접근한계거리', missing, missing.length ? null : r, onResult);
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -348,20 +430,34 @@ function ElectricalCalc({ onAppend }: { onAppend: (t: string) => void }) {
   );
 }
 
-export default function LegalCalculatorPanel({ workType, onAppendToMethod }: Props) {
-  const map: Record<string, { label: string; Comp: (p: { onAppend: (t: string) => void }) => JSX.Element }[]> = {
-    heavy_lifting: [{ label: '크레인 양중 안전율', Comp: CraneCalc }],
-    steel: [{ label: '크레인 양중 안전율', Comp: CraneCalc }, { label: '추락 방호조치', Comp: FallCalc }],
-    excavation: [{ label: '굴착 사면 안전율', Comp: ExcavationCalc }],
-    high_work: [{ label: '추락 방호조치', Comp: FallCalc }],
-    scaffold: [{ label: '비계 적재하중', Comp: ScaffoldCalc }, { label: '추락 방호조치', Comp: FallCalc }],
-    confined_space: [{ label: '밀폐공간 가스농도', Comp: ConfinedCalc }, { label: '환기 풍량', Comp: VentilationCalc }],
-    tunnel: [{ label: '환기 풍량', Comp: VentilationCalc }, { label: '밀폐공간 가스농도', Comp: ConfinedCalc }],
-    demolition: [{ label: '해체 영향권', Comp: DemolitionCalc }],
-    electrical: [{ label: '전기 접근한계거리', Comp: ElectricalCalc }],
+export default function LegalCalculatorPanel({ workType, rigging, onAppendToMethod, onPersistEntries }: Props) {
+  const map: Record<string, { id: string; label: string; Comp: (p: CalcProps) => JSX.Element }[]> = {
+    heavy_lifting: [{ id: 'rigging_overall', label: '리깅플랜 종합 안전성', Comp: (p) => <CraneFromRigging {...p} rigging={rigging} /> }],
+    steel: [
+      { id: 'rigging_overall', label: '리깅플랜 종합 안전성', Comp: (p) => <CraneFromRigging {...p} rigging={rigging} /> },
+      { id: 'fall_protection', label: '추락 방호조치', Comp: FallCalc },
+    ],
+    excavation: [{ id: 'excavation_slope', label: '굴착 사면 안전율', Comp: ExcavationCalc }],
+    high_work: [{ id: 'fall_protection', label: '추락 방호조치', Comp: FallCalc }],
+    scaffold: [{ id: 'scaffold_load', label: '비계 적재하중', Comp: ScaffoldCalc }, { id: 'fall_protection', label: '추락 방호조치', Comp: FallCalc }],
+    confined_space: [{ id: 'confined_atmosphere', label: '밀폐공간 가스농도', Comp: ConfinedCalc }, { id: 'ventilation', label: '환기 풍량', Comp: VentilationCalc }],
+    tunnel: [{ id: 'ventilation', label: '환기 풍량', Comp: VentilationCalc }, { id: 'confined_atmosphere', label: '밀폐공간 가스농도', Comp: ConfinedCalc }],
+    demolition: [{ id: 'demolition_zone', label: '해체 영향권', Comp: DemolitionCalc }],
+    electrical: [{ id: 'electrical_approach', label: '전기 접근한계거리', Comp: ElectricalCalc }],
+    bridge: [{ id: 'rigging_overall', label: '리깅플랜 종합 안전성', Comp: (p) => <CraneFromRigging {...p} rigging={rigging} /> }],
   };
   const list = map[workType] || [];
   const append = (t: string) => onAppendToMethod?.(t);
+  const entriesRef = useRef<Record<string, LegalCalcSnapshotEntry>>({});
+  const persistRef = useRef(onPersistEntries);
+  persistRef.current = onPersistEntries;
+
+  const handleResult = (id: string, entry: LegalCalcSnapshotEntry | null) => {
+    if (!entry) return;
+    const next = { ...entriesRef.current, [entry.id || id]: entry };
+    entriesRef.current = next;
+    persistRef.current?.(Object.values(next));
+  };
 
   if (list.length === 0) {
     return (
@@ -375,12 +471,14 @@ export default function LegalCalculatorPanel({ workType, onAppendToMethod }: Pro
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <Calculator className="h-3.5 w-3.5" />
-        계산값은 산업안전보건기준에 관한 규칙 및 KOSHA GUIDE를 따릅니다. 계산결과는 작업방법 섹션에 자동으로 추가할 수 있습니다.
+        계산값은 산업안전보건기준에 관한 규칙 및 KOSHA GUIDE를 따릅니다. 부적합이면 결재 상신이 차단됩니다.
       </div>
-      {list.map(({ label, Comp }, i) => (
-        <Card key={i}>
+      {list.map(({ id, label, Comp }) => (
+        <Card key={id}>
           <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><ClipboardCheck className="h-4 w-4 text-primary" />{label}<Badge variant="outline" className="text-[10px]">법정</Badge></CardTitle></CardHeader>
-          <CardContent><Comp onAppend={append} /></CardContent>
+          <CardContent>
+            <Comp onAppend={append} onResult={(e) => handleResult(id, e)} />
+          </CardContent>
         </Card>
       ))}
       <Separator />

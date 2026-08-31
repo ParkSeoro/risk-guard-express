@@ -1,6 +1,8 @@
 // 법정 작업계획서 대상 공종 및 템플릿 정의
 // 산업안전보건법, 산업안전보건기준에 관한 규칙, KOSHA GUIDE 기준
 
+export type WorkPlanLegalClass = 'article38' | 'practical';
+
 export interface WorkPlanType {
   id: string;
   name: string;
@@ -9,6 +11,27 @@ export interface WorkPlanType {
   hasRiggingPlan: boolean;
   templateSections: TemplateSection[];
   requiredAttachments: string[];
+}
+
+/** 산안규칙 제38조 13종. 나머지는 실무 확장 유형. */
+export const ARTICLE38_TYPE_IDS = new Set<string>([
+  'tower_crane',
+  'vehicle_cargo',
+  'vehicle_equipment',
+  'chemical',
+  'electrical',
+  'excavation',
+  'tunnel',
+  'bridge',
+  'quarry',
+  'demolition',
+  'heavy_lifting',
+  'track',
+  'shunting',
+]);
+
+export function workPlanLegalClass(id: string): WorkPlanLegalClass {
+  return ARTICLE38_TYPE_IDS.has(id) ? 'article38' : 'practical';
 }
 
 export interface TemplateSection {
@@ -30,7 +53,7 @@ export const WORK_PLAN_TYPES: WorkPlanType[] = [
       { key: 'overview', title: '작업 개요', type: 'text', placeholder: '작업명, 작업일시, 작업위치, 작업내용을 기재하세요.' },
       { key: 'equipment', title: '장비 정보', type: 'table', placeholder: '장비명, 규격, 정격하중, 검사일자 등' },
       { key: 'method', title: '작업 방법 및 절차', type: 'text', placeholder: '작업 순서, 신호수 배치, 안전조치 등을 기재하세요.', aiPrompt: '크레인을 이용한 중량물 양중 작업의 세부 작업절차와 안전조치를 작성해주세요.' },
-      { key: 'risk', title: '위험요인 및 안전대책', type: 'text', placeholder: '전도, 협착, 낙하 등 위험요인과 대책', aiPrompt: '크레인 양중작업 시 발생 가능한 위험요인과 안전대책을 작성해주세요.' },
+      { key: 'risk', title: '위험요인 및 안전대책 (별표 4)', type: 'text', placeholder: '추락·낙하·전도·협착·붕괴 다섯 가지 대책', aiPrompt: '별표 4 중량물 5대 위험(추락·낙하·전도·협착·붕괴) 대책을 작성해주세요.' },
       { key: 'rigging', title: '리깅플랜', type: 'rigging', placeholder: '하중계산, 장비선정, 인양방식 등' },
       { key: 'signal', title: '신호체계', type: 'text', placeholder: '신호수 배치, 신호방법, 무전기 채널 등' },
       { key: 'emergency', title: '비상시 조치계획', type: 'text', placeholder: '사고 발생 시 대응절차' },
@@ -55,6 +78,9 @@ export const WORK_PLAN_TYPES: WorkPlanType[] = [
       { key: 'geology', title: '지반조사 결과', type: 'text', placeholder: '지질조사보고서 요약, 지하수위, 토질 등' },
       { key: 'method', title: '굴착 방법 및 절차', type: 'text', placeholder: '굴착순서, 장비, 사면기울기 등', aiPrompt: '굴착 작업의 세부 절차와 안전조치를 작성해주세요.' },
       { key: 'shoring', title: '흙막이 공법', type: 'text', placeholder: '흙막이 종류, 설치방법, 계측계획 등' },
+      { key: 'spoil', title: '토사 반출 방법', type: 'text', placeholder: '반출 경로, 적치, 운반 장비', aiPrompt: '굴착 토사 반출 방법과 안전조치를 작성해주세요.' },
+      { key: 'contact', title: '연락·신호 방법', type: 'text', placeholder: '사업장 내 연락방법 및 신호방법' },
+      { key: 'commander', title: '작업지휘자 배치', type: 'text', placeholder: '작업지휘자 성명·자격·배치 위치·임무' },
       { key: 'risk', title: '위험요인 및 안전대책', type: 'text', placeholder: '붕괴, 매몰, 침수 등 위험요인과 대책', aiPrompt: '굴착작업 시 발생 가능한 위험요인과 안전대책을 작성해주세요.' },
       { key: 'emergency', title: '비상시 조치계획', type: 'text', placeholder: '붕괴, 침수 시 대피 및 구조절차' },
     ],
@@ -230,11 +256,12 @@ export const WORK_PLAN_TYPES: WorkPlanType[] = [
   {
     id: 'vehicle_equipment',
     name: '차량계 건설기계 작업',
-    legalBasis: '산업안전보건법 제38조, 산업안전보건기준에 관한 규칙 제38조·제98조~제103조·제196조~제214조',
-    description: '굴착기, 로더, 덤프트럭, 지게차, 불도저 등 차량계 건설기계·하역운반기계 사용 작업 (작업계획서 작성·게시 의무)',
+    legalBasis: '산업안전보건기준에 관한 규칙 제38조 제1항 제3호·별표 4, 제196조~제214조',
+    description: '굴착기, 로더, 불도저, 덤프트럭 등 차량계 건설기계 사용 작업 (지게차 등 하역운반기계는 별도 유형)',
     hasRiggingPlan: false,
     templateSections: [
       { key: 'overview', title: '작업 개요', type: 'text', placeholder: '작업명, 작업일시, 작업위치, 작업내용, 운행경로 등을 기재하세요.' },
+      { key: 'survey', title: '사전조사 (지형·지반)', type: 'text', placeholder: '굴러떨어짐·지반 붕괴 방지를 위한 지형 및 지반 상태' },
       { key: 'equipment', title: '사용 기계 정보', type: 'table', placeholder: '기계 종류·능력·규격, 등록번호, 운전자, 검사일자 등' },
       { key: 'route', title: '운행경로 및 작업장소', type: 'text', placeholder: '진입로, 운행구간, 작업반경, 지반 상태, 경사도 등', aiPrompt: '차량계 건설기계의 운행경로와 작업장소의 안전 조건을 작성해주세요.' },
       { key: 'method', title: '작업 방법 및 절차', type: 'text', placeholder: '작업순서, 신호수·유도자 배치, 후진경보, 출입통제 등', aiPrompt: '차량계 건설기계 작업의 세부 절차와 안전조치를 작성해주세요.' },
@@ -253,10 +280,184 @@ export const WORK_PLAN_TYPES: WorkPlanType[] = [
     ],
   },
   {
+    id: 'tower_crane',
+    name: '타워크레인 설치·조립·해체',
+    legalBasis: '산업안전보건기준에 관한 규칙 제38조 제1항 제1호·별표 4, 제142조',
+    description: '타워크레인을 설치·조립·해체하는 작업 (제38조 1호)',
+    hasRiggingPlan: false,
+    templateSections: [
+      { key: 'overview', title: '작업 개요', type: 'text', placeholder: '기종, 설치 위치, 일정, 작업 구분(설치/상승/해체)' },
+      { key: 'equipment', title: '타워크레인 종류 및 형식', type: 'table', placeholder: '형식, 정격하중, 지브 길이, 제작사' },
+      { key: 'assemble', title: '설치·조립·해체 순서', type: 'text', placeholder: '단계별 순서와 각 단계 안전조치', aiPrompt: '타워크레인 설치·조립·해체 순서를 단계별로 작성해주세요.' },
+      { key: 'tools', title: '작업도구·장비·가설·방호설비', type: 'text', placeholder: '유압장치, 와이어, 비계, 추락방호 등' },
+      { key: 'crew', title: '작업인원 구성 및 역할', type: 'text', placeholder: '작업지휘자, 설치팀, 신호수, 역할 범위' },
+      { key: 'support', title: '지지방법', type: 'text', placeholder: '기초, 월타이, 타이백, 지지 조건' },
+      { key: 'risk', title: '위험요인 및 안전대책', type: 'text', placeholder: '전도, 추락, 충돌, 인양 중 낙하', aiPrompt: '타워크레인 설치·해체 시 위험요인과 안전대책을 작성해주세요.' },
+      { key: 'emergency', title: '비상시 조치계획', type: 'text', placeholder: '전도·낙하 시 대피 및 보고' },
+    ],
+    requiredAttachments: [
+      '타워크레인 제원표',
+      '설치·해체 작업계획/절차서',
+      '기초 및 지지력 검토서',
+      '설치·해체 기능인력 자격증',
+      '신호수 지정서',
+    ],
+  },
+  {
+    id: 'vehicle_cargo',
+    name: '차량계 하역운반기계 작업',
+    legalBasis: '산업안전보건기준에 관한 규칙 제38조 제1항 제2호·별표 4, 제98조~제103조',
+    description: '지게차, 구내운반차, 화물자동차(도로 주행 제외) 등 하역운반기계 사용 작업',
+    hasRiggingPlan: false,
+    templateSections: [
+      { key: 'overview', title: '작업 개요', type: 'text', placeholder: '작업명, 일시, 위치, 취급 화물' },
+      { key: 'survey', title: '사전조사 (지형·지반)', type: 'text', placeholder: '굴러떨어짐·지반 붕괴 방지를 위한 장소 상태' },
+      { key: 'equipment', title: '기계 종류 및 성능', type: 'table', placeholder: '기종, 정격하중, 등록번호, 운전자' },
+      { key: 'route', title: '운행경로', type: 'text', placeholder: '진입·적재·하역 경로, 경사, 시야', aiPrompt: '지게차 등 하역운반기계 운행경로와 안전 조건을 작성해주세요.' },
+      { key: 'method', title: '작업 방법 및 절차', type: 'text', placeholder: '적재·하역 순서, 유도자, 출입통제', aiPrompt: '차량계 하역운반 작업 절차와 안전조치를 작성해주세요.' },
+      { key: 'commander', title: '작업지휘자 배치', type: 'text', placeholder: '제39조 작업지휘자 성명·배치' },
+      { key: 'risk', title: '위험요인 및 안전대책', type: 'text', placeholder: '전도, 협착, 충돌, 낙하', aiPrompt: '하역운반기계 사용 시 위험요인과 대책을 작성해주세요.' },
+      { key: 'emergency', title: '비상시 조치계획', type: 'text', placeholder: '전도·협착 시 대응' },
+    ],
+    requiredAttachments: [
+      '차량등록증',
+      '보험증권',
+      '검사증(안전검사)',
+      '운전면허증/자격증',
+      '운행경로도',
+      '작업지휘자 지정서',
+    ],
+  },
+  {
+    id: 'chemical',
+    name: '화학설비 작업',
+    legalBasis: '산업안전보건기준에 관한 규칙 제38조 제1항 제4호·별표 4, 제261조~제301조',
+    description: '화학설비와 그 부속설비를 사용하는 작업',
+    hasRiggingPlan: false,
+    templateSections: [
+      { key: 'overview', title: '작업 개요', type: 'text', placeholder: '설비명, 물질, 작업내용, 기간' },
+      { key: 'survey', title: '사전조사', type: 'text', placeholder: '물질 특성, MSDS, 인접 설비, 점화원' },
+      { key: 'isolation', title: '차단·퍼지·치환', type: 'text', placeholder: '밸브 차단, 퍼지, 잔류물 확인', aiPrompt: '화학설비 차단·퍼지·치환 절차를 작성해주세요.' },
+      { key: 'method', title: '작업 방법 및 절차', type: 'text', placeholder: '개방, 내부작업, 재가동 순서', aiPrompt: '화학설비 작업 절차와 안전조치를 작성해주세요.' },
+      { key: 'risk', title: '위험요인 및 안전대책', type: 'text', placeholder: '누출, 화재·폭발, 중독, 질식', aiPrompt: '화학설비 작업 위험요인과 대책을 작성해주세요.' },
+      { key: 'emergency', title: '비상시 조치계획', type: 'text', placeholder: '누출·화재 시 대피, 차단, 신고' },
+    ],
+    requiredAttachments: [
+      'MSDS',
+      '설비 계통도',
+      '차단·퍼지 체크리스트',
+      '작업허가서',
+      '호흡보호구 지급 기록',
+    ],
+  },
+  {
+    id: 'electrical',
+    name: '전기작업 (50V·250VA 초과)',
+    legalBasis: '산업안전보건기준에 관한 규칙 제38조 제1항 제5호·별표 4, 제318조·제321조 별표 5',
+    description: '전압 50볼트 초과 또는 전기에너지 250볼트암페어 초과 전기작업',
+    hasRiggingPlan: false,
+    templateSections: [
+      { key: 'overview', title: '작업 개요', type: 'text', placeholder: '전압, 작업 장소, 정전/활선 구분' },
+      { key: 'approach', title: '접근한계 및 절연', type: 'text', placeholder: '별표 5 이격거리, 절연용 보호구' },
+      { key: 'method', title: '작업 방법 및 절차', type: 'text', placeholder: '정전 확인, 검전, 접지, 감시인', aiPrompt: '전기작업 정전·활선 절차와 안전조치를 작성해주세요.' },
+      { key: 'risk', title: '위험요인 및 안전대책', type: 'text', placeholder: '감전, 아크, 화재', aiPrompt: '전기작업 위험요인과 대책을 작성해주세요.' },
+      { key: 'emergency', title: '비상시 조치계획', type: 'text', placeholder: '감전 시 전원 차단·구조·신고' },
+    ],
+    requiredAttachments: [
+      '전기 단선도/계통도',
+      '정전작업 허가서',
+      '검전·접지 기록',
+      '전기 자격증',
+      '절연용 보호구 점검표',
+    ],
+  },
+  {
+    id: 'bridge',
+    name: '교량 설치·해체·변경',
+    legalBasis: '산업안전보건기준에 관한 규칙 제38조 제1항 제8호·별표 4',
+    description: '상부구조가 금속 또는 콘크리트이며 높이 5m 이상 또는 최대 지간 30m 이상 교량',
+    hasRiggingPlan: true,
+    templateSections: [
+      { key: 'overview', title: '작업 개요', type: 'text', placeholder: '교량명, 높이, 지간, 공법' },
+      { key: 'survey', title: '사전조사', type: 'text', placeholder: '하부 공간, 교통, 하천, 지반' },
+      { key: 'method', title: '작업 방법 및 순서', type: 'text', placeholder: '가설·본설·해체 순서', aiPrompt: '교량 설치·해체 작업 순서와 안전조치를 작성해주세요.' },
+      { key: 'rigging', title: '리깅플랜', type: 'rigging', placeholder: '거더 등 중량 부재 인양' },
+      { key: 'risk', title: '위험요인 및 안전대책', type: 'text', placeholder: '추락, 전도, 낙하, 교통사고', aiPrompt: '교량 작업 위험요인과 대책을 작성해주세요.' },
+      { key: 'emergency', title: '비상시 조치계획', type: 'text', placeholder: '낙하·붕괴 시 교통통제 및 대피' },
+    ],
+    requiredAttachments: [
+      '교량 일반도',
+      '가설 계획도',
+      '크레인 배치도',
+      '작업지휘자 지정서',
+      '교통통제계획서',
+    ],
+  },
+  {
+    id: 'quarry',
+    name: '채석 작업',
+    legalBasis: '산업안전보건기준에 관한 규칙 제38조 제1항 제9호·별표 4',
+    description: '채석작업 (굴착·발파·운반이 수반되는 석산 등)',
+    hasRiggingPlan: false,
+    templateSections: [
+      { key: 'overview', title: '작업 개요', type: 'text', placeholder: '채석 위치, 규모, 공법' },
+      { key: 'survey', title: '사전조사', type: 'text', placeholder: '암반, 균열, 인접 시설, 비석 영향' },
+      { key: 'method', title: '채석 방법 및 절차', type: 'text', placeholder: '굴착·발파·적재 순서', aiPrompt: '채석 작업 절차와 붕괴·비석 방지 조치를 작성해주세요.' },
+      { key: 'safety_zone', title: '안전구역', type: 'text', placeholder: '비석 비산 거리, 대피, 경보' },
+      { key: 'risk', title: '위험요인 및 안전대책', type: 'text', placeholder: '붕괴, 비석, 분진, 장비 충돌', aiPrompt: '채석 작업 위험요인과 대책을 작성해주세요.' },
+      { key: 'emergency', title: '비상시 조치계획', type: 'text', placeholder: '붕괴·불발 시 대응' },
+    ],
+    requiredAttachments: [
+      '채석 허가/신고 서류',
+      '발파설계서(해당 시)',
+      '비석 영향 검토',
+      '대피계획도',
+    ],
+  },
+  {
+    id: 'track',
+    name: '궤도 보수·점검',
+    legalBasis: '산업안전보건기준에 관한 규칙 제38조 제1항 제12호·제4항·별표 4',
+    description: '궤도나 관련 설비의 보수·점검 (궤도작업차량 사용 시 열차 운행 협의)',
+    hasRiggingPlan: false,
+    templateSections: [
+      { key: 'overview', title: '작업 개요', type: 'text', placeholder: '구간, 작업 종류, 열차 운행 여부' },
+      { key: 'consult', title: '열차 운행 협의', type: 'text', placeholder: '운행관계자, 차단 시간, 연락 수단' },
+      { key: 'method', title: '작업 방법 및 절차', type: 'text', placeholder: '보수·점검 순서, 작업차량', aiPrompt: '궤도 보수·점검 절차와 열차 접근 시 조치를 작성해주세요.' },
+      { key: 'risk', title: '위험요인 및 안전대책', type: 'text', placeholder: '열차 충돌, 감전, 협착', aiPrompt: '궤도 작업 위험요인과 대책을 작성해주세요.' },
+      { key: 'emergency', title: '비상시 조치계획', type: 'text', placeholder: '열차 접근·감전 시 대응' },
+    ],
+    requiredAttachments: [
+      '운행관계자 협의서',
+      '작업구간 도면',
+      '작업차량 제원(해당 시)',
+      '신호·경보 체계',
+    ],
+  },
+  {
+    id: 'shunting',
+    name: '입환 작업',
+    legalBasis: '산업안전보건기준에 관한 규칙 제38조 제1항 제13호·별표 4',
+    description: '열차의 교환·연결 또는 분리 작업',
+    hasRiggingPlan: false,
+    templateSections: [
+      { key: 'overview', title: '작업 개요', type: 'text', placeholder: '장소, 열차 종류, 시간대' },
+      { key: 'staffing', title: '작업 인원 및 작업량', type: 'text', placeholder: '별표 4: 적절한 인원, 작업량' },
+      { key: 'method', title: '작업순서·방법', type: 'text', placeholder: '연결·분리 순서, 신호, 안전조치', aiPrompt: '입환 작업 순서와 위험요인 안전조치를 작성해주세요.' },
+      { key: 'risk', title: '위험요인 및 안전대책', type: 'text', placeholder: '협착, 충돌, 추락', aiPrompt: '입환 작업 위험요인과 대책을 작성해주세요.' },
+      { key: 'emergency', title: '비상시 조치계획', type: 'text', placeholder: '충돌·협착 시 대응' },
+    ],
+    requiredAttachments: [
+      '입환 작업 지시서',
+      '신호체계 안내',
+      '작업인원 편성표',
+    ],
+  },
+  {
     id: 'other_hazardous',
     name: '기타 위험 작업',
-    legalBasis: '산업안전보건법 제36조, 산업안전보건기준에 관한 규칙',
-    description: '전기작업, 용접작업, 도장작업 등 기타 위험작업',
+    legalBasis: '산업안전보건법 제38조(안전조치), 산업안전보건기준에 관한 규칙',
+    description: '용접·도장 등 제38조 13종·실무 전용 유형에 없는 위험작업',
     hasRiggingPlan: false,
     templateSections: [
       { key: 'overview', title: '작업 개요', type: 'text', placeholder: '작업명, 작업위치, 작업내용 등' },
@@ -274,6 +475,13 @@ export const WORK_PLAN_TYPES: WorkPlanType[] = [
 
 export function getWorkPlanType(id: string): WorkPlanType | undefined {
   return WORK_PLAN_TYPES.find(t => t.id === id);
+}
+
+export function getWorkPlanTypesGrouped(): { article38: WorkPlanType[]; practical: WorkPlanType[] } {
+  return {
+    article38: WORK_PLAN_TYPES.filter((t) => workPlanLegalClass(t.id) === 'article38'),
+    practical: WORK_PLAN_TYPES.filter((t) => workPlanLegalClass(t.id) === 'practical'),
+  };
 }
 
 // 크레인 제원 데이터 (리깅플랜 계산용)

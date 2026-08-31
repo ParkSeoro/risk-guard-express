@@ -551,6 +551,8 @@ serve(async (req) => {
       sub_task,
       draft_items,
       fill_stage,
+      work_type,
+      site_context,
     } = body;
 
     const detailLevel: "core" | "comprehensive" =
@@ -598,7 +600,9 @@ serve(async (req) => {
       const sectionPrompts: Record<string, string> = {
         overview: `다음 공종에 대한 작업 개요를 JSON으로 작성해라:\n공종: ${process_name}\n출력 형식: {"work_name":"","work_date":"","work_location":"","work_content":"상세 작업내용","supervisor":"","workers_count":""}`,
         method: `다음 공종의 작업 절차를 단계별로 JSON 배열로 작성해라:\n공종: ${process_name}\n각 단계에 안전조치를 반드시 포함해라.\n출력 형식: [{"order":1,"description":"작업단계","safety_measure":"안전조치"}]\n최소 5단계 이상 작성.`,
-        risk: `다음 공종의 위험요인과 안전대책을 JSON 배열로 작성해라:\n공종: ${process_name}\n위험요인은 "원인 + 사고결과" 구조로 작성. 안전대책은 실행 가능한 구체적 조치.\n출력 형식: [{"hazard":"위험요인","situation":"발생상황","measure":"안전대책","severity":"상/중/하"}]\n최소 8개 이상 작성.`,
+        risk: (work_type === "heavy_lifting")
+          ? `다음 중량물 취급 작업의 별표 4 필수 5대 대책을 JSON 배열로 작성해라.\n공종: ${process_name}\n현장 개요: ${site_context || work_description || ""}\n반드시 아래 5개 hazard만, 이 순서로 출력. 칸을 빼거나 이름을 바꾸지 마라.\n출력 형식: [{"key":"fall","hazard":"추락","situation":"이 현장 상황","measure":"실행 가능한 대책","severity":"상/중/하"},{"key":"drop","hazard":"낙하","situation":"","measure":"","severity":"중"},{"key":"tip","hazard":"전도","situation":"","measure":"","severity":"중"},{"key":"pinch","hazard":"협착","situation":"","measure":"","severity":"중"},{"key":"collapse","hazard":"붕괴","situation":"","measure":"","severity":"중"}]\n숫자는 창작하지 말고, 대책은 현장 절차로 구체적으로.`
+          : `다음 공종의 위험요인과 안전대책을 JSON 배열로 작성해라:\n공종: ${process_name}\n위험요인은 "원인 + 사고결과" 구조로 작성. 안전대책은 실행 가능한 구체적 조치.\n출력 형식: [{"hazard":"위험요인","situation":"발생상황","measure":"안전대책","severity":"상/중/하"}]\n최소 8개 이상 작성.`,
         signal: `다음 공종의 신호체계를 JSON으로 작성해라:\n공종: ${process_name}\n출력 형식: {"signal_person":"신호수 자격요건","signal_method":"무전기","radio_channel":"CH-5","hand_signals":"수신호 약속 상세","emergency_signal":"비상정지 신호"}`,
         emergency: `다음 공종의 비상시 조치계획을 JSON으로 작성해라:\n공종: ${process_name}\n출력 형식: {"emergency_contact":"119, 현장소장","hospital":"인근병원","evacuation_route":"대피경로","assembly_point":"집결장소","first_aid":"응급처치계획","reporting_procedure":"보고체계"}`,
         equipment: `다음 공종에 필요한 장비 목록을 JSON 배열로 작성해라:\n공종: ${process_name}\n출력 형식: [{"name":"장비명","model":"모델명","capacity":"정격하중/용량","manufacturer":"","inspection_date":""}]\n최소 3개 이상.`,

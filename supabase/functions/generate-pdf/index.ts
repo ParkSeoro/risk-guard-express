@@ -249,6 +249,19 @@ function localizePersonName(name?: string | null): string {
   });
 }
 
+function jwtSub(token: string): string | null {
+  try {
+    const seg = token.split(".")[1];
+    if (!seg) return null;
+    const pad = "=".repeat((4 - (seg.length % 4)) % 4);
+    const json = atob(seg.replace(/-/g, "+").replace(/_/g, "/") + pad);
+    const sub = JSON.parse(json)?.sub;
+    return typeof sub === "string" && sub ? sub : null;
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -257,7 +270,9 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization");
     const token = authHeader?.replace(/^Bearer\s+/i, "").trim() || "";
-    if (!token) {
+    // Gateway already verified JWT (verify_jwt). Do not call getUser/getClaims —
+    // those hit Auth/JWKS and can stall the worker (546/503), hanging desktop CORS.
+    if (!jwtSub(token)) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -266,16 +281,6 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-    // ES256 (asymmetric) access tokens fail Auth getUser with "Invalid token".
-    // getClaims() verifies locally via JWKS, matching generate-permit-briefing.
-    const claimsClient = createClient(supabaseUrl, supabaseAnonKey);
-    const { data: claimsData, error: authError } = await claimsClient.auth.getClaims(token);
-    if (authError || !claimsData?.claims?.sub) {
-      return new Response(JSON.stringify({ error: "Invalid token" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
 
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },

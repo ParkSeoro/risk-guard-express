@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   A4_LANDSCAPE_PX,
   A4_PORTRAIT_PX,
@@ -9,6 +10,7 @@ import {
   clampDocumentPan,
   fitWidthScale,
   previewFitScale,
+  invokeErrorMessage,
   isApprovedPublishStatus,
   isMobileDocReadable,
   preparePrintHtmlForPreview,
@@ -90,5 +92,35 @@ describe("approval document mobile preview helpers", () => {
     expect(cards).toHaveLength(1);
     expect(cards[0].hazard).toContain("화재");
     expect(cards[0].measure).toContain("소화기");
+  });
+
+  it("surfaces Invalid token from FunctionsHttpError as a Korean login hint", async () => {
+    const ctx = new Response(JSON.stringify({ error: "Invalid token" }), { status: 401 });
+    const msg = await invokeErrorMessage(
+      { message: "Edge Function returned a non-2xx status code", context: ctx },
+      null,
+    );
+    expect(msg).toContain("다시 로그인");
+    expect(msg).not.toMatch(/non-2xx/i);
+  });
+
+  it("does not leave a generic non-2xx when the body is missing", async () => {
+    const msg = await invokeErrorMessage(
+      { message: "Edge Function returned a non-2xx status code" },
+      null,
+    );
+    expect(msg).not.toMatch(/non-2xx/i);
+    expect(msg).toContain("문서를 만들지 못했습니다");
+  });
+
+  it("work-plan and assessment PDF edges verify JWT with getClaims, not getUser", () => {
+    for (const file of [
+      "supabase/functions/generate-workplan-pdf/index.ts",
+      "supabase/functions/generate-pdf/index.ts",
+    ]) {
+      const src = readFileSync(file, "utf8");
+      expect(src).toContain("getClaims");
+      expect(src).not.toMatch(/\.auth\.getUser\(\)/);
+    }
   });
 });

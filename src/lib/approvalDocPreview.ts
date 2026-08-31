@@ -83,6 +83,15 @@ const AUTH_EXPIRED_MSG =
 function friendlyPreviewError(msg: string, status?: number): string {
   const s = String(msg || "").trim();
   if (status === 401 || /invalid token|unauthorized/i.test(s)) return AUTH_EXPIRED_MSG;
+  if (status === 546 || /546/.test(s)) {
+    return "PDF 서버가 잠시 과부하입니다. 잠시 후 다시 열어 주세요.";
+  }
+  if (status === 503 || /503/.test(s)) {
+    return "문서 서버가 잠시 응답하지 않습니다. 잠시 후 다시 열어 주세요.";
+  }
+  if (/abort|timeout|timed out/i.test(s)) {
+    return "문서를 불러오는 데 시간이 너무 걸립니다. 잠시 후 다시 열어 주세요.";
+  }
   if (/non-2xx/i.test(s)) return "문서를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
   return s || "인쇄 문서를 만들지 못했습니다";
 }
@@ -96,7 +105,10 @@ export async function invokeErrorMessage(err: unknown, data: any): Promise<strin
   if (ctx && typeof ctx === "object") {
     const status = typeof ctx.status === "number" ? ctx.status : undefined;
     if (status === 546) {
-      return "PDF 서버 제한(546)에 걸렸습니다. 잠시 후 다시 시도해 주세요.";
+      return "PDF 서버가 잠시 과부하입니다. 잠시 후 다시 열어 주세요.";
+    }
+    if (status === 503) {
+      return "문서 서버가 잠시 응답하지 않습니다. 잠시 후 다시 열어 주세요.";
     }
     if (typeof ctx.json === "function") {
       try {
@@ -124,12 +136,19 @@ export async function invokeErrorMessage(err: unknown, data: any): Promise<strin
     err && typeof err === "object" && "message" in err && (err as Error).message
       ? String((err as Error).message)
       : "";
+  const name = err && typeof err === "object" && "name" in err ? String((err as any).name) : "";
+  if (name === "AbortError" || /abort|timeout/i.test(msg)) {
+    return "문서를 불러오는 데 시간이 너무 걸립니다. 잠시 후 다시 열어 주세요.";
+  }
   return friendlyPreviewError(msg || String(err || "인쇄 문서를 만들지 못했습니다"));
 }
+
+export const PRINT_INVOKE_TIMEOUT_MS = 25_000;
 
 export async function fetchAssessmentPrintHtml(runId: string): Promise<string> {
   const resp = await supabase.functions.invoke("generate-pdf", {
     body: { runId, type: "assessment" },
+    timeout: PRINT_INVOKE_TIMEOUT_MS,
   });
   const html = resp.data?.html;
   if (resp.error || !html || String(html).length < 100) {
@@ -149,6 +168,7 @@ export async function fetchWorkPlanPrintHtml(planId: string): Promise<string> {
       riskTable: payload.riskTable,
       skipAttachmentKeys: payload.skipAttachmentKeys,
     },
+    timeout: PRINT_INVOKE_TIMEOUT_MS,
   });
   const html = resp.data?.html;
   if (resp.error || !html || String(html).length < 100) {

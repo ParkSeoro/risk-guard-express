@@ -113,14 +113,28 @@ describe("approval document mobile preview helpers", () => {
     expect(msg).toContain("문서를 만들지 못했습니다");
   });
 
-  it("work-plan and assessment PDF edges verify JWT with getClaims, not getUser", () => {
+  it("surfaces AbortError as a timeout hint instead of spinning forever", async () => {
+    const err = Object.assign(new Error("The operation was aborted."), { name: "AbortError" });
+    const msg = await invokeErrorMessage(err, null);
+    expect(msg).toContain("시간이 너무 걸립니다");
+  });
+
+  it("surfaces 503/546 as retry hints", async () => {
+    const s503 = await invokeErrorMessage({ message: "Edge Function returned a non-2xx status code", context: { status: 503 } }, null);
+    expect(s503).toContain("다시 열어");
+    const s546 = await invokeErrorMessage({ message: "Edge Function returned a non-2xx status code", context: { status: 546 } }, null);
+    expect(s546).toContain("과부하");
+  });
+
+  it("work-plan and assessment PDF edges decode JWT locally (no Auth round-trip)", () => {
     for (const file of [
       "supabase/functions/generate-workplan-pdf/index.ts",
       "supabase/functions/generate-pdf/index.ts",
     ]) {
       const src = readFileSync(file, "utf8");
-      expect(src).toContain("getClaims");
-      expect(src).not.toMatch(/\.auth\.getUser\(\)/);
+      expect(src).toContain("function jwtSub");
+      expect(src).not.toMatch(/\.auth\.getClaims\(/);
+      expect(src).not.toMatch(/\.auth\.getUser\(/);
     }
   });
 });

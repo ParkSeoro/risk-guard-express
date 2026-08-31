@@ -34,14 +34,22 @@ export function isRiskAssessmentAttachment(a: {
   return false;
 }
 
+export const EXCEL_FETCH_TIMEOUT_MS = 8_000;
+export const RISK_TABLE_MAX_ROWS = 250;
+
 export async function fetchRiskTableFromExcelUrl(url: string): Promise<WorkPlanRiskPrintTable | null> {
   try {
-    const res = await fetch(url);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), EXCEL_FETCH_TIMEOUT_MS);
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
     if (!res.ok) return null;
     const buf = await res.arrayBuffer();
     const parsed = parseRiskAssessmentExcel(buf);
     const headers = pickRiskPrintHeaders(parsed.headers);
-    const rows = parsed.rows.map((row) => headers.map((h) => String(row[h] ?? "").trim()));
+    const rows = parsed.rows
+      .slice(0, RISK_TABLE_MAX_ROWS)
+      .map((row) => headers.map((h) => String(row[h] ?? "").trim()));
     return { source: "excel", headers, rows };
   } catch (e) {
     console.warn("[workPlanPrint] excel RA parse failed", e);

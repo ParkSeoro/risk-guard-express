@@ -1,11 +1,13 @@
 /**
  * First-run OS permission onboarding for the native shell.
  * Legal consent (/consent) must already be complete — this screen only
- * requests Location → Notifications → Camera, once, via explicit CTA.
+ * requests Location → Notifications → Battery (Android) → Camera.
+ * Location is a hard gate. Worker QR signup is already active (no admin wait).
  */
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
+import { App } from "@capacitor/app";
 import { Geolocation } from "@capacitor/geolocation";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { BarcodeScanner } from "@capacitor-mlkit/barcode-scanning";
@@ -19,13 +21,66 @@ import {
   isNativeApp,
   markNativePermissionsDone,
 } from "@/lib/native/isNativeApp";
+import {
+  BATTERY_UNRESTRICTED_STEPS_KO,
+  canMarkNativePermissionsDone,
+  isForegroundLocationGranted,
+  isPushGranted,
+} from "@/lib/native/nativePermissionGate";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Bell, Camera, CheckCircle2, MapPin, Shield } from "lucide-react";
+import { Battery, Bell, Camera, CheckCircle2, MapPin, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { readActiveProjectId, writeActiveProjectId } from "@/lib/activeProject";
 
-type Step = "location" | "notifications" | "camera" | "done";
+type Step = "location" | "notifications" | "battery" | "camera" | "done";
+
+function nextAfterNotifications(): Step {
+  return Capacitor.getPlatform() === "android" ? "battery" : "camera";
+}
+
+async function openAppSettings() {
+  try {
+    const BackgroundGeolocation = registerPlugin<{ openSettings: () => Promise<void> }>(
+      "BackgroundGeolocation",
+    );
+    if (BackgroundGeolocation?.openSettings) {
+      await BackgroundGeolocation.openSettings();
+      return;
+    }
+  } catch {
+    /* fall through */
+  }
+  toast.message("설정 → 앱 → SafeNex 에서 위치·알림·배터리를 바꿔 주세요.");
+}
+
+async function promptBackgroundLocation() {
+  if (Capacitor.getPlatform() !== "android") return;
+  try {
+    const BackgroundGeolocation = registerPlugin<{
+      addWatcher: (opts: Record<string, unknown>, cb: () => void) => Promise<string>;
+      removeWatcher: (opts: { id: string }) => Promise<void>;
+    }>("BackgroundGeolocation");
+    if (!BackgroundGeolocation?.addWatcher) return;
+    const id = await BackgroundGeolocation.addWatcher(
+      {
+        backgroundMessage: "위험구역 자동감지를 위해 위치를 추적합니다.",
+        backgroundTitle: "SafeNex 위치",
+        requestPermissions: true,
+        stale: true,
+        distanceFilter: 50,
+      },
+      () => {},
+    );
+    try {
+      await BackgroundGeolocation.removeWatcher({ id });
+    } catch {
+      /* ignore */
+    }
+  } catch (e) {
+    console.warn("[NativePermissions] background location prompt skipped", e);
+  }
+}
 
 async function ensureSelectedProject(userId: string, isMaster: boolean) {
   try {
@@ -64,12 +119,40 @@ export default function NativePermissionsOnboarding() {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("location");
   const [busy, setBusy] = useState(false);
+  const [locationDenied, setLocationDenied] = useState(false);
+  const [pushDenied, setPushDenied] = useState(false);
+  const isAndroid = Capacitor.getPlatform() === "android";
 
   useEffect(() => {
     if (!user || !isNativeApp()) return;
     const isMaster = roles.some((r) => r.toLowerCase() === "master");
     void ensureSelectedProject(user.id, isMaster);
   }, [user, roles]);
+
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    let handle: { remove: () => Promise<void> } | undefined;
+    void App.addListener("appStateChange", ({ isActive }) => {
+      if (!isActive) return;
+      void (async () => {
+        if (step === "location") {
+          const cur = await Geolocation.checkPermissions();
+          if (isForegroundLocationGranted(cur)) {
+            setLocationDenied(false);
+          }
+        }
+        if (step === "notifications") {
+          const cur = await PushNotifications.checkPermissions();
+          if (isPushGranted(cur)) setPushDenied(false);
+        }
+      })();
+    }).then((h) => {
+      handle = h;
+    });
+    return () => {
+      void handle?.remove();
+    };
+  }, [step]);
 
   if (isAuthLoading) {
     return (
@@ -88,50 +171,44 @@ export default function NativePermissionsOnboarding() {
     );
   }
 
-  const finish = () => {
-    markNativePermissionsDone();
-    navigate(postConsentHomePath(roles, { loginIntent: readLoginIntent() }), {
-      replace: true,
-    });
+  const finish = async () => {
+    setBusy(true);
+    try {
+      const cur = await Geolocation.checkPermissions();
+      if (!canMarkNativePermissionsDone({ locationGranted: isForegroundLocationGranted(cur) })) {
+        toast.error("위치 권한이 있어야 출근·금지구역이 동작합니다.");
+        setLocationDenied(true);
+        setStep("location");
+        return;
+      }
+      markNativePermissionsDone();
+      navigate(postConsentHomePath(roles, { loginIntent: readLoginIntent() }), {
+        replace: true,
+      });
+    } finally {
+      setBusy(false);
+    }
   };
 
   const requestLocation = async () => {
     setBusy(true);
     try {
       const cur = await Geolocation.checkPermissions();
-      if (cur.location !== "granted" && cur.coarseLocation !== "granted") {
+      if (!isForegroundLocationGranted(cur)) {
         await Geolocation.requestPermissions();
       }
-      // Android 10+: request "Always" via BackgroundGeolocation once (Play BG-location).
-      if (Capacitor.getPlatform() === "android") {
-        try {
-          const { registerPlugin } = await import("@capacitor/core");
-          const BackgroundGeolocation = registerPlugin<any>("BackgroundGeolocation");
-          if (BackgroundGeolocation?.addWatcher) {
-            const id = await BackgroundGeolocation.addWatcher(
-              {
-                backgroundMessage: "위험구역 자동감지를 위해 위치를 추적합니다.",
-                backgroundTitle: "SafeNex 위치",
-                requestPermissions: true,
-                stale: true,
-                distanceFilter: 50,
-              },
-              () => {},
-            );
-            try {
-              await BackgroundGeolocation.removeWatcher({ id });
-            } catch {
-              /* ignore */
-            }
-          }
-        } catch (e) {
-          console.warn("[NativePermissions] background location prompt skipped", e);
-        }
+      const after = await Geolocation.checkPermissions();
+      if (!isForegroundLocationGranted(after)) {
+        setLocationDenied(true);
+        toast.error("위치를 허용해야 출근과 금지구역 경보가 됩니다. 「항상 허용」을 선택해 주세요.");
+        return;
       }
+      setLocationDenied(false);
+      await promptBackgroundLocation();
       setStep("notifications");
     } catch (e: any) {
+      setLocationDenied(true);
       toast.error("위치 권한 요청 실패: " + (e?.message || "오류"));
-      setStep("notifications");
     } finally {
       setBusy(false);
     }
@@ -146,14 +223,18 @@ export default function NativePermissionsOnboarding() {
           await PushNotifications.requestPermissions();
         }
         const after = await PushNotifications.checkPermissions();
-        if (after.receive === "granted") {
-          await PushNotifications.register();
+        if (!isPushGranted(after)) {
+          setPushDenied(true);
+          toast.error("알림을 켜야 금지구역·결재 푸시를 받을 수 있습니다.");
+          return;
         }
+        setPushDenied(false);
+        await PushNotifications.register();
       }
-      setStep("camera");
+      setStep(nextAfterNotifications());
     } catch (e: any) {
+      setPushDenied(true);
       toast.error("알림 권한 요청 실패: " + (e?.message || "오류"));
-      setStep("camera");
     } finally {
       setBusy(false);
     }
@@ -181,7 +262,7 @@ export default function NativePermissionsOnboarding() {
         </div>
         <h1 className="mt-3 text-xl font-bold tracking-tight">앱 권한 설정</h1>
         <p className="mt-1 text-sm text-muted-foreground leading-relaxed">
-          현장 안전(금지구역·결재 알림·QR)을 위해 권한이 필요합니다. 한 번에 순서대로 허용해 주세요.
+          현장 안전(금지구역·출근·결재 알림)을 위해 권한이 필요합니다. 위치는 반드시 허용해 주세요.
         </p>
       </header>
 
@@ -191,15 +272,24 @@ export default function NativePermissionsOnboarding() {
           done={step !== "location"}
           icon={MapPin}
           title="위치"
-          desc="금지구역 자동 감지·출입 확인. 가능하면 「항상 허용」을 선택하세요."
+          desc="출근·금지구역. 「항상 허용」을 선택하세요."
         />
         <StepCard
           active={step === "notifications"}
-          done={step === "camera" || step === "done"}
+          done={step === "battery" || step === "camera" || step === "done"}
           icon={Bell}
           title="알림"
           desc="결재 요청·금지구역 경보 푸시"
         />
+        {isAndroid && (
+          <StepCard
+            active={step === "battery"}
+            done={step === "camera" || step === "done"}
+            icon={Battery}
+            title="배터리 제한 없음"
+            desc="삼성·샤오미가 백그라운드 GPS를 끄지 않게 합니다."
+          />
+        )}
         <StepCard
           active={step === "camera"}
           done={step === "done"}
@@ -211,14 +301,71 @@ export default function NativePermissionsOnboarding() {
 
       <footer className="px-5 pb-6 space-y-2">
         {step === "location" && (
-          <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void requestLocation()}>
-            위치 허용
-          </Button>
+          <>
+            {locationDenied && (
+              <p className="text-xs text-destructive leading-relaxed">
+                위치를 거부하면 출근을 찍을 수 없습니다. 앱 설정에서 위치를 「항상 허용」으로 바꾼 뒤 다시 눌러 주세요.
+              </p>
+            )}
+            <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void requestLocation()}>
+              위치 허용
+            </Button>
+            {locationDenied && (
+              <Button variant="outline" className="w-full" disabled={busy} onClick={() => void openAppSettings()}>
+                앱 설정 열기
+              </Button>
+            )}
+          </>
         )}
         {step === "notifications" && (
-          <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void requestNotifications()}>
-            알림 허용
-          </Button>
+          <>
+            {pushDenied && (
+              <p className="text-xs text-destructive leading-relaxed">
+                알림을 끄면 앱을 닫았을 때 금지구역 푸시를 받지 못합니다.
+              </p>
+            )}
+            <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void requestNotifications()}>
+              알림 허용
+            </Button>
+            {pushDenied && (
+              <>
+                <Button variant="outline" className="w-full" disabled={busy} onClick={() => void openAppSettings()}>
+                  앱 설정 열기
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full"
+                  disabled={busy}
+                  onClick={() => {
+                    toast.message("알림 없이 진행합니다. 나중에 설정에서 켤 수 있습니다.");
+                    setStep(nextAfterNotifications());
+                  }}
+                >
+                  나중에
+                </Button>
+              </>
+            )}
+          </>
+        )}
+        {step === "battery" && (
+          <>
+            <ul className="text-xs text-muted-foreground space-y-1.5 rounded-xl border bg-muted/40 p-3">
+              {BATTERY_UNRESTRICTED_STEPS_KO.map((line) => (
+                <li key={line}>· {line}</li>
+              ))}
+            </ul>
+            <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void openAppSettings()}>
+              앱 설정 열기
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full h-12 text-base"
+              disabled={busy}
+              onClick={() => setStep("camera")}
+            >
+              설정했습니다
+            </Button>
+          </>
         )}
         {step === "camera" && (
           <>
@@ -231,7 +378,7 @@ export default function NativePermissionsOnboarding() {
           </>
         )}
         {step === "done" && (
-          <Button className="w-full h-12 text-base gap-2" onClick={finish}>
+          <Button className="w-full h-12 text-base gap-2" disabled={busy} onClick={() => void finish()}>
             <CheckCircle2 className="h-5 w-5" />
             시작하기
           </Button>

@@ -86,6 +86,10 @@ describe("preview / print / save split contracts", () => {
     expect(mobile).toContain("fetchWorkPlanPrintHtml(planId)");
     expect(mobile).toContain("AttachmentReviewPanel");
     expect(mobile).not.toContain("onProgress");
+    const panel = readFileSync("src/components/work-plan/AttachmentReviewPanel.tsx", "utf8");
+    expect(panel).toContain("isNativeApp");
+    expect(panel).toContain("openAttachmentUrl");
+    expect(panel).toContain("기기 뷰어");
   });
 
   it("edge body HTML lists attachments but does not embed rasters", () => {

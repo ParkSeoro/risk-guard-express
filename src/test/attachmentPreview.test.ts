@@ -4,6 +4,7 @@ import {
   classifyAttachmentFile,
   hasUploadedFile,
   pdfEmbedSrc,
+  openAttachmentUrl,
 } from "@/lib/attachmentPreview";
 
 describe("classifyAttachmentFile", () => {
@@ -31,6 +32,29 @@ describe("hasUploadedFile", () => {
 describe("pdfEmbedSrc", () => {
   it("adds FitH for chrome viewer", () => {
     expect(pdfEmbedSrc("https://x/a.pdf")).toBe("https://x/a.pdf#view=FitH");
+  });
+});
+
+describe("openAttachmentUrl", () => {
+  it("no-ops on blank urls", () => {
+    expect(() => openAttachmentUrl("")).not.toThrow();
+    expect(() => openAttachmentUrl("   ")).not.toThrow();
+  });
+
+  it("synthesizes a blank-target link click", () => {
+    const hrefs: string[] = [];
+    const onClick = (e: Event) => {
+      const el = e.target as HTMLAnchorElement | null;
+      if (el?.getAttribute?.("href")) hrefs.push(el.getAttribute("href") || "");
+      e.preventDefault();
+    };
+    document.addEventListener("click", onClick, true);
+    try {
+      openAttachmentUrl("https://x/a.pdf");
+    } finally {
+      document.removeEventListener("click", onClick, true);
+    }
+    expect(hrefs.some((h) => h.includes("a.pdf"))).toBe(true);
   });
 });
 

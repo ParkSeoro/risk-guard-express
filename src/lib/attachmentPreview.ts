@@ -26,6 +26,23 @@ export function pdfEmbedSrc(url: string): string {
   return raw.includes("#") ? `${raw}&view=FitH` : `${raw}#view=FitH`;
 }
 
+/**
+ * Android/iOS WebView cannot render PDF in &lt;object&gt;/&lt;iframe&gt;.
+ * Open in the system browser / PDF viewer instead.
+ */
+export function openAttachmentUrl(url: string): void {
+  const raw = String(url || "").trim();
+  if (!raw || typeof document === "undefined") return;
+  const a = document.createElement("a");
+  a.href = raw;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 export function attachmentReviewEmptyState(opts: {
   error?: string | null;
   uploadedCount: number;

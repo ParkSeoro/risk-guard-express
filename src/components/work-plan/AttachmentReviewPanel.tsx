@@ -9,7 +9,9 @@ import {
   classifyAttachmentFile,
   hasUploadedFile,
   pdfEmbedSrc,
+  openAttachmentUrl,
 } from "@/lib/attachmentPreview";
+import { isNativeApp } from "@/lib/native/isNativeApp";
 
 type AttachmentRow = {
   id: string;
@@ -32,12 +34,28 @@ function FileViewer({ row }: { row: AttachmentRow }) {
   const url = row.file_url!;
   if (kind === "image") {
     return (
-      <a href={url} target="_blank" rel="noopener noreferrer" className="block">
+      <button
+        type="button"
+        className="block w-full"
+        onClick={() => openAttachmentUrl(url)}
+      >
         <img src={url} alt={row.name} className="max-h-[70vh] w-full object-contain rounded border bg-muted/30" />
-      </a>
+      </button>
     );
   }
   if (kind === "pdf") {
+    if (isNativeApp()) {
+      return (
+        <div className="rounded border bg-muted/30 p-6 text-sm text-center space-y-3">
+          <p className="text-muted-foreground">
+            앱 화면 안에서는 PDF를 바로 그릴 수 없습니다. 기기 뷰어로 열어 주세요.
+          </p>
+          <Button type="button" onClick={() => openAttachmentUrl(url)}>
+            <ExternalLink className="h-3.5 w-3.5 mr-1" /> 파일 열기
+          </Button>
+        </div>
+      );
+    }
     const src = pdfEmbedSrc(url);
     return (
       <object data={src} type="application/pdf" className="w-full h-[70vh] rounded border bg-white">
@@ -48,10 +66,8 @@ function FileViewer({ row }: { row: AttachmentRow }) {
   return (
     <div className="rounded border bg-muted/30 p-6 text-sm text-center space-y-2">
       <p className="text-muted-foreground">이 형식은 화면 안에 미리볼 수 없습니다.</p>
-      <Button asChild variant="outline" size="sm">
-        <a href={url} target="_blank" rel="noopener noreferrer">
-          <ExternalLink className="h-3.5 w-3.5 mr-1" /> 새 창에서 열기
-        </a>
+      <Button type="button" variant="outline" size="sm" onClick={() => openAttachmentUrl(url)}>
+        <ExternalLink className="h-3.5 w-3.5 mr-1" /> 새 창에서 열기
       </Button>
     </div>
   );
@@ -181,10 +197,8 @@ export default function AttachmentReviewPanel({ workPlanId }: { workPlanId: stri
                         <p className="text-[11px] text-muted-foreground">{selected.description}</p>
                       )}
                     </div>
-                    <Button asChild size="sm" variant="outline" className="shrink-0">
-                      <a href={selected.file_url!} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-3.5 w-3.5 mr-1" /> 새 창
-                      </a>
+                    <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={() => openAttachmentUrl(selected.file_url!)}>
+                      <ExternalLink className="h-3.5 w-3.5 mr-1" /> 새 창
                     </Button>
                   </div>
                   <FileViewer row={selected} />

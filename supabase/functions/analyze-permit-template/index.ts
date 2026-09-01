@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
 
     // NVIDIA NIM 어댑터로 직접 호출 (게이트웨이 우회)
     let raw = '{}';
-    let modelUsed = 'nvidia/llama-3.3-nemotron-super-49b-v1.5';
+    let modelUsed = 'meta/llama-3.3-70b-instruct';
     try {
       raw = await callAI(messages, { temperature: 0.1 });
       console.log(`[analyze-permit-template] model=${modelUsed} raw_len=${raw.length} preview=${raw.slice(0, 400)}`);

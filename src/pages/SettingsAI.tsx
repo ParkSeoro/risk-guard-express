@@ -340,7 +340,7 @@ const SettingsAI = () => {
                 <div>
                   <p className="text-sm font-medium">모델 자동 폴백</p>
                   <p className="text-xs text-muted-foreground">
-                    429·할당량·모델 미존재 시 다음 순위로 전환. 평소는 1순위만 사용.
+                    429·410(모델 종료)·할당량·모델 미존재 시 다음 순위로 전환. 평소는 1순위만 사용.
                   </p>
                 </div>
                 <Switch checked={failoverEnabled} onCheckedChange={setFailoverEnabled} />
@@ -352,7 +352,7 @@ const SettingsAI = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-base">NVIDIA 모델 순위</CardTitle>
               <CardDescription className="text-xs">
-                위쪽이 우선. 1순위 기본값은 위험성평가에 맞춰 둔 Nemotron Super입니다.
+                위쪽이 우선. 1순위 기본값은 Llama 3.3 70B입니다. Nemotron Super 49B는 NIM 호스팅이 종료되어 꺼 두세요.
                 {primaryId && (
                   <>
                     {' '}

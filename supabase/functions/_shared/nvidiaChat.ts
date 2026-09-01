@@ -2,9 +2,10 @@
  * Shared NVIDIA NIM chat client with ordered model failover.
  *
  * Same API key (NVIDIA_API_KEY). Different model IDs for per-model free-tier limits.
- * Primary default stays nvidia/llama-3.3-nemotron-super-49b-v1.5 (risk AI tuned).
+ * Hosted Nemotron Super 49B reached NIM EOL on 2026-08-26 (HTTP 410).
+ * Default primary is Llama 3.3 70B Instruct.
  *
- * Failover triggers: 429 / 503 / 529 / QUOTA / TIMEOUT / model-not-found.
+ * Failover triggers: 429 / 503 / 529 / 410 / QUOTA / TIMEOUT / model-not-found / EOL.
  * Does NOT failover on prompt/parse/400 (except missing model).
  *
  * Chain sources (priority):
@@ -15,16 +16,24 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  classifyNvidiaHttpError,
+  isFailoverHttp as isFailoverHttpImpl,
+} from "./nvidiaHttp.ts";
+
+export { isRetiredModelText, classifyNvidiaHttpError } from "./nvidiaHttp.ts";
 
 export const NVIDIA_ENDPOINT = "https://integrate.api.nvidia.com/v1/chat/completions";
 export const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
 
-/** Current production primary — do not change lightly (risk AI calibrated). */
-export const DEFAULT_PRIMARY_MODEL = "nvidia/llama-3.3-nemotron-super-49b-v1.5";
+/** Hosted NIM primary after Nemotron Super 49B EOL (2026-08-26). */
+export const DEFAULT_PRIMARY_MODEL = "meta/llama-3.3-70b-instruct";
+
+/** Retired on integrate.api.nvidia.com — keep listed only as disabled catalog leftover. */
+export const RETIRED_NEMOTRON_SUPER_49B = "nvidia/llama-3.3-nemotron-super-49b-v1.5";
 
 export const DEFAULT_MODEL_CHAIN: string[] = [
   DEFAULT_PRIMARY_MODEL,
-  "meta/llama-3.3-70b-instruct",
   "nvidia/llama-3.1-nemotron-70b-instruct",
   "mistralai/mistral-small-3.1-24b-instruct-2503",
 ];
@@ -38,7 +47,6 @@ export const DEFAULT_DRAFT_MODEL = "mistralai/mistral-small-3.1-24b-instruct-250
 
 export const DEFAULT_DRAFT_MODEL_CHAIN: string[] = [
   DEFAULT_DRAFT_MODEL,
-  "meta/llama-3.3-70b-instruct",
   DEFAULT_PRIMARY_MODEL,
 ];
 
@@ -209,48 +217,13 @@ export function resolveApiKey(): string {
 }
 
 export function isFailoverHttp(status: number, bodyText: string): boolean {
-  if (status === 429 || status === 503 || status === 529) return true;
-  if (status === 404) return true;
-  if (status === 401 || status === 403) {
-    if (/quota|exceed|exhausted|credit/i.test(bodyText)) return true;
-  }
-  if (status === 400 && /model|not found|does not exist|unknown model/i.test(bodyText)) {
-    return true;
-  }
-  return false;
+  return isFailoverHttpImpl(status, bodyText);
 }
 
 export function mapNvidiaHttpError(status: number, text: string, model?: string): never {
   console.error(`[NVIDIA] ${status} model=${model || "?"}:`, text.slice(0, 500));
-  if (status === 429) {
-    throw new NvidiaChatError("요청이 너무 많습니다. 잠시 후 다시 시도해주세요.", 429, "RATE_LIMIT", model);
-  }
-  if (status === 529 || status === 503) {
-    throw new NvidiaChatError(
-      "AI 서버가 일시적으로 과부하입니다. 잠시 후 다시 시도해주세요.",
-      status,
-      "RATE_LIMIT",
-      model,
-    );
-  }
-  if (status === 404 || (status === 400 && /model|not found|does not exist|unknown model/i.test(text))) {
-    throw new NvidiaChatError(`NVIDIA 모델을 찾을 수 없습니다: ${model || "?"}`, 404, "MODEL_NOT_FOUND", model);
-  }
-  if (status === 401 || status === 403) {
-    if (/quota|exceed|exhausted|credit/i.test(text)) {
-      throw new NvidiaChatError("NVIDIA API 할당량이 소진되었습니다. 사용량을 확인해주세요.", 402, "QUOTA_EXHAUSTED", model);
-    }
-    throw new NvidiaChatError(
-      "NVIDIA API 키가 유효하지 않습니다. NVIDIA_API_KEY(Supabase Edge Secrets)를 확인해주세요.",
-      403,
-      "INVALID_KEY",
-      model,
-    );
-  }
-  if (status === 400) {
-    throw new NvidiaChatError(`NVIDIA 요청 오류: ${text.slice(0, 200)}`, 400, "BAD_REQUEST", model);
-  }
-  throw new NvidiaChatError(`NVIDIA AI 서버 오류 (${status})`, status, "SERVER_ERROR", model);
+  const classified = classifyNvidiaHttpError(status, text, model);
+  throw new NvidiaChatError(classified.message, classified.status, classified.code, model);
 }
 
 function withTimeoutSignal(timeoutMs: number): { signal: AbortSignal; clear: () => void } {

@@ -69,35 +69,56 @@ export async function fetchApprovedLibraryRisks(
   return libraryRowsToRiskItems(data || [], processName);
 }
 
+/** assessment_accidents has accident_type, not title. */
+export function mapAssessmentAccidentRow(c: any): {
+  title: string;
+  occurrence_date: string;
+  location: string;
+  accident_summary: string;
+  cause: string;
+  result: string;
+  prevention: string;
+  source: "library";
+} {
+  return {
+    title: String(c?.accident_type || c?.title || c?.["사고명"] || "").trim() || "중대재해 사례",
+    occurrence_date: String(c?.occurrence_date || "").trim(),
+    location: String(c?.location || "").trim() || "국내 건설현장",
+    accident_summary: String(c?.accident_summary || c?.description || "").trim(),
+    cause: String(c?.cause || "").trim(),
+    result: String(c?.result || "").trim(),
+    prevention: String(c?.prevention || "").trim(),
+    source: "library",
+  };
+}
+
 export async function fetchApprovedAccidentCases(
   adminClient: any,
   processName: string,
   limit = 4,
 ): Promise<any[]> {
   if (!processName) return [];
-  // Reuse prior assessment_accidents as approved corpus when process matches
-  const { data, error } = await adminClient
-    .from("assessment_accidents")
-    .select("title, occurrence_date, location, accident_summary, cause, result, prevention, process")
-    .ilike("process", `%${processName}%`)
-    .order("created_at", { ascending: false })
-    .limit(limit * 3);
-  if (error) {
-    console.warn("[aiCache] accident library fetch failed", error.message);
+  try {
+    // Reuse prior assessment_accidents as approved corpus when process matches.
+    // Column is accident_type (not title) — a bad select must not abort AI generation.
+    const { data, error } = await adminClient
+      .from("assessment_accidents")
+      .select(
+        "accident_type, occurrence_date, location, accident_summary, cause, result, prevention, process, description",
+      )
+      .ilike("process", `%${processName}%`)
+      .order("created_at", { ascending: false })
+      .limit(limit * 3);
+    if (error) {
+      console.warn("[aiCache] accident library fetch failed", error.message);
+      return [];
+    }
+    return (data || [])
+      .map(mapAssessmentAccidentRow)
+      .filter((c: any) => c.title || c.accident_summary || c.cause)
+      .slice(0, limit);
+  } catch (e) {
+    console.warn("[aiCache] accident library fetch threw:", e);
     return [];
   }
-  const cases = (data || [])
-    .map((c: any) => ({
-      title: c.title || "중대재해 사례",
-      occurrence_date: c.occurrence_date || "",
-      location: c.location || "국내 건설현장",
-      accident_summary: c.accident_summary || "",
-      cause: c.cause || "",
-      result: c.result || "",
-      prevention: c.prevention || "",
-      source: "library",
-    }))
-    .filter((c: any) => c.title || c.accident_summary || c.cause)
-    .slice(0, limit);
-  return cases;
 }

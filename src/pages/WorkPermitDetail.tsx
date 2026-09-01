@@ -150,7 +150,7 @@ export default function WorkPermitDetail() {
   const fetchAssignedCrew = async (
     permitId: string,
     tbmSessionId?: string | null,
-    ctx?: { projectId?: string | null; workDate?: string | null },
+    ctx?: { projectId?: string | null; workDate?: string | null; syncTbm?: boolean },
   ) => {
     const { data: links } = await supabase
       .from('work_permit_workers' as any)
@@ -183,7 +183,7 @@ export default function WorkPermitDetail() {
     let tbmTitleNext: string | null = null;
     let tbmParts: TbmParticipantPrint[] = [];
     if (tbmSessionId) {
-      if (rows.length > 0) {
+      if (rows.length > 0 && ctx?.syncTbm !== false) {
         await syncPermitCrewToTbm({ permitId, tbmSessionId });
       }
       const [{ data: sess }, { data: parts }] = await Promise.all([
@@ -718,7 +718,7 @@ export default function WorkPermitDetail() {
       const crew = await fetchAssignedCrew(
         permit.id,
         permit.tbm_session_id,
-        crewCtxFromPermit(permit),
+        { ...crewCtxFromPermit(permit), syncTbm: false },
       );
       flushSync(() => applyAssignedCrew(crew));
     } catch (e) {

@@ -1,102 +1,5 @@
--- Daily ack / crew sync could not write tbm_participations (RLS had SELECT+DELETE only).
--- GPS exit discarded the signature pad. Workers could not see their own TBM row.
-
--- 1) Manager INSERT/UPDATE for unsigned crew sync; worker INSERT/UPDATE/SELECT for own phone.
-
-DROP POLICY IF EXISTS "Managers can insert tbm_participations" ON public.tbm_participations;
-CREATE POLICY "Managers can insert tbm_participations"
-ON public.tbm_participations
-FOR INSERT
-TO authenticated
-WITH CHECK (
-  EXISTS (
-    SELECT 1
-    FROM public.tbm_sessions s
-    WHERE s.id = tbm_participations.tbm_session_id
-      AND (
-        public.is_master(auth.uid())
-        OR EXISTS (
-          SELECT 1 FROM public.project_members pm
-          WHERE pm.user_id = auth.uid()
-            AND pm.project_id = s.project_id
-            AND pm.role_new IN (
-              'project_admin'::public.project_role,
-              'safety_manager'::public.project_role,
-              'site_manager'::public.project_role,
-              'site_supervisor'::public.project_role,
-              'supervisor'::public.project_role
-            )
-        )
-      )
-  )
-);
-
-DROP POLICY IF EXISTS "Managers can update tbm_participations" ON public.tbm_participations;
-CREATE POLICY "Managers can update tbm_participations"
-ON public.tbm_participations
-FOR UPDATE
-TO authenticated
-USING (
-  EXISTS (
-    SELECT 1
-    FROM public.tbm_sessions s
-    WHERE s.id = tbm_participations.tbm_session_id
-      AND (
-        public.is_master(auth.uid())
-        OR EXISTS (
-          SELECT 1 FROM public.project_members pm
-          WHERE pm.user_id = auth.uid()
-            AND pm.project_id = s.project_id
-            AND pm.role_new IN (
-              'project_admin'::public.project_role,
-              'safety_manager'::public.project_role,
-              'site_manager'::public.project_role,
-              'site_supervisor'::public.project_role,
-              'supervisor'::public.project_role
-            )
-        )
-      )
-  )
-)
-WITH CHECK (
-  EXISTS (
-    SELECT 1
-    FROM public.tbm_sessions s
-    WHERE s.id = tbm_participations.tbm_session_id
-      AND (
-        public.is_master(auth.uid())
-        OR EXISTS (
-          SELECT 1 FROM public.project_members pm
-          WHERE pm.user_id = auth.uid()
-            AND pm.project_id = s.project_id
-            AND pm.role_new IN (
-              'project_admin'::public.project_role,
-              'safety_manager'::public.project_role,
-              'site_manager'::public.project_role,
-              'site_supervisor'::public.project_role,
-              'supervisor'::public.project_role
-            )
-        )
-      )
-  )
-);
-
-DROP POLICY IF EXISTS "Workers can view own tbm_participations" ON public.tbm_participations;
-CREATE POLICY "Workers can view own tbm_participations"
-ON public.tbm_participations
-FOR SELECT
-TO authenticated
-USING (
-  public.normalize_phone_digits(tbm_participations.worker_phone) <> ''
-  AND public.normalize_phone_digits(tbm_participations.worker_phone) = (
-    SELECT public.normalize_phone_digits(p.phone)
-    FROM public.profiles p
-    WHERE p.user_id = auth.uid()
-    LIMIT 1
-  )
-);
-
--- 2) SECURITY DEFINER: copy daily-ack signature onto linked TBM rows.
+-- Compat: checkout must work without _signature (production app not yet shipped).
+-- Also harden TBM ack upsert against unique(tbm_session_id, worker_phone).
 
 CREATE OR REPLACE FUNCTION public.upsert_tbm_participation_from_ack(
   _tbm_session_id uuid,
@@ -215,8 +118,6 @@ REVOKE ALL ON FUNCTION public.upsert_tbm_participation_from_ack(uuid, uuid, text
 GRANT EXECUTE ON FUNCTION public.upsert_tbm_participation_from_ack(uuid, uuid, text) TO authenticated, service_role;
 
 -- 3) Persist GPS checkout signature (column already exists).
-
-DROP FUNCTION IF EXISTS public.worker_gps_daily_lifecycle(text, uuid, uuid, double precision, double precision, double precision);
 
 CREATE OR REPLACE FUNCTION public.worker_gps_daily_lifecycle(
   _action text,
@@ -435,35 +336,4 @@ GRANT EXECUTE ON FUNCTION public.worker_gps_daily_lifecycle(text, uuid, uuid, do
   TO authenticated, service_role;
 
 COMMENT ON FUNCTION public.worker_gps_daily_lifecycle(text, uuid, uuid, double precision, double precision, double precision, text)
-  IS 'Authenticated worker GPS check-in / daily ack / check-out. Exit stores _signature on worker_entry_logs.exit_signature_data.';
-
--- 4) Heal existing daily-ack signatures that never reached TBM (RLS blocked client upsert).
-
-INSERT INTO public.tbm_participations (
-  tbm_session_id, worker_id, worker_name, worker_phone, company_name,
-  briefing_confirmed, signature_data, participated_at
-)
-SELECT DISTINCT ON (p.tbm_session_id, public.normalize_phone_digits(COALESCE(w.phone, a.worker_phone)))
-  p.tbm_session_id,
-  a.worker_id,
-  COALESCE(NULLIF(trim(a.worker_name), ''), COALESCE(w.name, '근로자')),
-  COALESCE(NULLIF(trim(w.phone), ''), a.worker_phone),
-  COALESCE(w.company_name, ''),
-  true,
-  a.signature_data,
-  COALESCE(a.updated_at, a.created_at, now())
-FROM public.worker_daily_acks a
-JOIN public.work_permits p
-  ON p.id = ANY (a.permit_ids)
- AND p.tbm_session_id IS NOT NULL
- AND COALESCE(p.is_deleted, false) = false
-LEFT JOIN public.workers w ON w.id = a.worker_id
-WHERE length(COALESCE(a.signature_data, '')) >= 100
-  AND public.normalize_phone_digits(COALESCE(w.phone, a.worker_phone)) <> ''
-ORDER BY p.tbm_session_id, public.normalize_phone_digits(COALESCE(w.phone, a.worker_phone)), a.updated_at DESC NULLS LAST
-ON CONFLICT (tbm_session_id, worker_phone) DO UPDATE
-SET signature_data = EXCLUDED.signature_data,
-    briefing_confirmed = true,
-    worker_id = COALESCE(EXCLUDED.worker_id, public.tbm_participations.worker_id),
-    participated_at = COALESCE(public.tbm_participations.participated_at, EXCLUDED.participated_at)
-WHERE length(COALESCE(public.tbm_participations.signature_data, '')) < 100;
+  IS 'Authenticated worker GPS check-in / daily ack / check-out. Exit stores _signature when provided; older clients may omit it.';

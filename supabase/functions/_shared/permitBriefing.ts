@@ -17,7 +17,7 @@ export const PERMIT_BRIEFING_SYSTEM_PROMPT = `당신은 작업허가서 결재 �
 규칙:
 1) 반드시 JSON만 출력한다.
 2) 입력에 없는 위험·조치를 만들지 않는다. 일반 건설 위험(추락, 감전, 협착 등)을 공종만 보고 추가하지 않는다.
-3) top_risks는 입력 hazards의 항목만. 없으면 빈 배열.
+3) top_risks는 문자열 배열만. {label, note} 객체 금지. 입력 hazards의 항목만. 없으면 빈 배열.
 4) required_controls는 입력 checklist·attachments·hazard measures만. 없으면 빈 배열.
 5) work_overview는 작업 내용 1~2문장. 업체명·날짜·"작업 사항으로"는 쓰지 않는다(시스템이 앞에 붙인다).
 6) 한국어 단정형. 번역투 금지.
@@ -391,6 +391,28 @@ function isInventedExcavationText(text: string, facts: PermitBriefingFacts): boo
   return EXCAVATION_WORK_RE.test(text);
 }
 
+/** OpenAI often returns {label, note} instead of a string. String(obj) is "[object Object]". */
+export function formatBriefingLine(item: unknown): string {
+  if (item == null) return '';
+  if (typeof item === 'string') {
+    const t = item.trim();
+    return !t || t === '[object Object]' ? '' : t;
+  }
+  if (typeof item === 'number' || typeof item === 'boolean') return String(item);
+  if (typeof item === 'object') {
+    const o = item as Record<string, unknown>;
+    const label = [o.label, o.name, o.hazard, o.risk, o.title, o.text, o.item]
+      .map((v) => (typeof v === 'string' ? v.trim() : ''))
+      .find(Boolean);
+    const extra = [o.note, o.description, o.detail, o.reason, o.measure]
+      .map((v) => (typeof v === 'string' ? v.trim() : ''))
+      .find(Boolean);
+    if (label && extra) return `${label}: ${extra}`;
+    return label || extra || '';
+  }
+  return '';
+}
+
 function fallbackRisksFromFacts(facts: PermitBriefingFacts): string[] {
   return facts.hazards.map((h) => {
     const extra = [h.note, h.measures.slice(0, 3).join(', ')].filter(Boolean).join(' — ');
@@ -409,12 +431,12 @@ function sanitizeOverview(overview: string, facts: PermitBriefingFacts): string 
 
 export function normalizePermitBriefing(raw: any, facts: PermitBriefingFacts): PermitAiBriefing {
   const lead = buildPermitBriefingLead(facts);
-  let top = Array.isArray(raw?.top_risks) ? raw.top_risks.map(String).filter(Boolean) : [];
+  let top = Array.isArray(raw?.top_risks) ? raw.top_risks.map(formatBriefingLine).filter(Boolean) : [];
   top = top.filter((r) => !isInventedExcavationText(r, facts)).slice(0, 3);
   if (top.length === 0) top = fallbackRisksFromFacts(facts);
 
   let controls = Array.isArray(raw?.required_controls)
-    ? raw.required_controls.map(String).filter(Boolean)
+    ? raw.required_controls.map(formatBriefingLine).filter(Boolean)
     : [];
   controls = controls.filter((c) => !isInventedExcavationText(c, facts)).slice(0, 6);
 

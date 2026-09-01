@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
     const schemaHint = `{
   "work_overview": "작업 내용 1~2문장(업체명·날짜 제외). 투입장비가 있으면 장비명만 언급",
   "included_kinds": ["일반","중장비"],
-  "top_risks": ["화기: 소화기 비치", "고소: 안전대"] // 문자열만. 객체 금지. 입력 hazards만. 굴착은 has_excavation_work가 true일 때만
+  "top_risks": ["화기: 소화기 비치", "고소: 안전대"] // 문자열만. 작업명·작업내용 기준. permit_kinds로 굴착 넣지 말 것. 굴착은 has_excavation_work가 true일 때만
   "required_controls": ["입력 checklist·조치만"]
 }`;
 

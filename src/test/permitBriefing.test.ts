@@ -8,6 +8,7 @@ import {
   extractPermitBriefingFacts,
   formatPermitBriefingDateKo,
   normalizePermitBriefing,
+  workOverviewMentionsExcavation,
 } from '@/lib/permitBriefing';
 
 describe('permit briefing facts', () => {
@@ -153,7 +154,68 @@ describe('permit briefing facts', () => {
     }, facts);
     expect(shown.included_kinds).toEqual(['일반', '화기', '중장비']);
     expect(shown.top_risks.join(' ')).not.toMatch(/굴착(?!기)/);
-    expect(shown.top_risks).toHaveLength(2);
+    expect(shown.top_risks.join(' ')).toContain('중장비');
+    expect(shown.top_risks).toHaveLength(3);
+  });
+
+  it('picks fatal risks from 작업개요, not from 굴착·중장비 permit kind', () => {
+    const facts = extractPermitBriefingFacts({
+      formData: {
+        applicant_company: '청원산기(주)',
+        work_start: '2026-09-02T08:00',
+        work_name: '기계설치, 배관, 철골 작업',
+        work_description: '기계 치핑, PAD 설치, P/R 및 자재 양중/하역, 철골 조립 및 설치, 기계 설치',
+        hz_hot: true,
+        hz_hot_detail: { '소화기 비치': true, '불티방지포 설치': true, '화재감시자 배치': true },
+        hz_height: true,
+        hz_height_detail: { '추락방지망': true, '사다리 사용 적정': true, '개구부 덮개·표지': true },
+        hz_excavation: true,
+        hz_excavation_detail: { '주변 침하·균열 점검': true },
+        hz_heavy: true,
+        hz_heavy_equipment_name: '크레인',
+        ex_safety: {
+          '주변 침하·균열 점검': true,
+          '안전난간·덮개·표지 설치': true,
+          '비상연락망 게시': true,
+        },
+      },
+      permitKinds: ['general', 'hot_work', 'excavation'],
+      kindLabels: ['일반', '화기', '굴착·중장비'],
+    });
+    expect(facts.kindLabels).toEqual(['일반', '화기', '중장비']);
+    expect(facts.hazards.map((h) => h.label)).toEqual(['화기', '고소', '중장비']);
+    expect(buildPermitBriefingLlmPayload(facts).has_excavation_work).toBe(false);
+    expect(buildPermitBriefingLlmPayload(facts).pick_top_risks_from).toContain('work_name');
+
+    const shown = normalizePermitBriefing({
+      work_overview: '기계설치·배관·철골. 치핑, PAD, P/R 양중.',
+      included_kinds: ['일반', '화기', '굴착', '중장비'],
+      top_risks: [
+        '화기: 소화기 비치, 불티방지포 설치, 화재감시자 배치',
+        '고소: 추락방지망, 사다리 사용 적정, 개구부 덮개·표지',
+        '굴착: 주변 침하·균열 점검, 안전난간·덮개·표지 설치, 비상연락망 게시',
+      ],
+      required_controls: ['소화기 비치', '불티방지포 설치'],
+    }, facts);
+    expect(shown.included_kinds).not.toContain('굴착');
+    expect(shown.top_risks.join(' ')).not.toMatch(/굴착(?!기)/);
+    expect(shown.top_risks.join(' ')).toContain('중장비');
+  });
+
+  it('does not treat 굴착기 in the overview as excavation work', () => {
+    expect(workOverviewMentionsExcavation('굴착기 양중', '0.7㎥ 굴착기 하역')).toBe(false);
+    expect(workOverviewMentionsExcavation('기계설치, 배관, 철골 작업', 'PAD 설치, P/R 양중')).toBe(false);
+    expect(workOverviewMentionsExcavation('기초 터파기', '')).toBe(true);
+    expect(workOverviewMentionsExcavation('배관 굴착', '가스관 이설')).toBe(true);
+  });
+
+  it('treats 작업개요의 터파기 as excavation even without form specs', () => {
+    const facts = extractPermitBriefingFacts({
+      formData: { work_name: '기초 터파기 및 배관 매설', hz_excavation: true },
+      permitKinds: ['excavation'],
+    });
+    expect(facts.kindLabels).toContain('굴착');
+    expect(facts.hazards.some((h) => h.label === '굴착')).toBe(true);
   });
 
   it('still treats 기울기·굴착토 체크를 굴착 작업으로', () => {
@@ -268,6 +330,8 @@ describe('briefing prompt', () => {
     expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('업체명·날짜');
     expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('굴착과 중장비는 서로 다른 위험이다');
     expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('투입장비는 일반 허가서 중장비 칸');
+    expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('작업명·작업내용');
+    expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('permit_kinds·허가서 종류만 보고 넣지 않는다');
   });
 
   it('turns object top_risks into readable lines and ignores [object Object]', () => {

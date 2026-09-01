@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callGeminiChat, GeminiError } from "../_shared/gemini.ts";
+import { hasChatAiKey } from "../_shared/openaiChat.ts";
 import {
   geminiJsonFromText,
   OCR_STATUS_LABEL,
@@ -126,11 +127,11 @@ function stampLegacyDraft(
 }
 
 async function structureFromOcr(opts: {
-  nvidiaKey: string | undefined;
+  chatReady: boolean;
   geminiKey: string | undefined;
   prompt: string;
 }): Promise<{ parsed: Record<string, unknown> | null; warning?: string }> {
-  if (opts.nvidiaKey) {
+  if (opts.chatReady) {
     try {
       const aiJson = await callGeminiChat({
         model: "gemini-2.5-flash",
@@ -155,13 +156,13 @@ async function structureFromOcr(opts: {
         system: SYSTEM_PROMPT,
         prompt: opts.prompt,
       });
-      return { parsed: safeJsonParse(raw), warning: opts.nvidiaKey ? undefined : "NVIDIA 구조화 키가 없어 Gemini 텍스트로 분류했습니다." };
+      return { parsed: safeJsonParse(raw), warning: opts.chatReady ? undefined : "OPENAI_API_KEY가 없어 Gemini 텍스트로 분류했습니다." };
     } catch (e) {
       if (e instanceof GeminiError && (e.code === "RATE_LIMIT" || e.code === "QUOTA_EXHAUSTED")) throw e;
       return { parsed: null, warning: e instanceof Error ? e.message : String(e) };
     }
   }
-  return { parsed: null, warning: "NVIDIA_API_KEY·GEMINI_API_KEY가 없어 규칙 기반 예비 추출만 수행했습니다." };
+  return { parsed: null, warning: "OPENAI_API_KEY·GEMINI_API_KEY가 없어 규칙 기반 예비 추출만 수행했습니다." };
 }
 
 Deno.serve(async (req) => {
@@ -174,7 +175,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
-    const nvidiaKey = Deno.env.get("NVIDIA_API_KEY");
+    const chatReady = hasChatAiKey();
 
     const userClient = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: authHeader } } });
     const { data: { user }, error: authError } = await userClient.auth.getUser();
@@ -257,7 +258,7 @@ ${CATEGORY_GUIDE}
     let structured: { parsed: Record<string, unknown> | null; warning?: string };
     try {
       structured = await structureFromOcr({
-        nvidiaKey,
+        chatReady,
         geminiKey,
         prompt: isLegacy ? legacyPrompt : transactionPrompt,
       });

@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Sparkles, RefreshCw, AlertTriangle, CheckCircle2, X, CreditCard } from "lucide-react";
 
-const RECHARGE_URL = "https://aistudio.google.com/apikey";
+const RECHARGE_URL = "https://platform.openai.com/api-keys";
 
 type CreditStatus = "ok" | "rate_limited" | "exhausted" | "error" | "loading";
 
@@ -42,10 +42,10 @@ export function AICreditBanner() {
         type="button"
         onClick={check}
         className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-md bg-secondary text-secondary-foreground border text-[11px] hover:bg-muted transition"
-        title="Gemini API 키 상태 확인 (마스터 전용)"
+        title="OpenAI API 키 상태 확인 (마스터 전용)"
       >
         <Sparkles className="h-3 w-3" />
-        <span>Gemini API 상태 확인</span>
+        <span>OpenAI API 상태 확인</span>
       </button>
     );
   }
@@ -54,7 +54,7 @@ export function AICreditBanner() {
     return (
       <div className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted text-muted-foreground text-[11px]">
         <Sparkles className="h-3 w-3 animate-pulse" />
-        <span>Gemini API 상태 확인 중...</span>
+        <span>OpenAI API 상태 확인 중...</span>
       </div>
     );
   }
@@ -63,7 +63,7 @@ export function AICreditBanner() {
     return (
       <div className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px]">
         <CheckCircle2 className="h-3 w-3" />
-        <span>Gemini API 정상</span>
+        <span>OpenAI API 정상</span>
         <button
           type="button"
           onClick={check}
@@ -96,7 +96,7 @@ export function AICreditBanner() {
     <div className={`w-full px-4 py-2 border-b text-xs flex items-center justify-between gap-3 ${color}`}>
       <div className="flex items-center gap-2 min-w-0">
         <AlertTriangle className="h-4 w-4 shrink-0" />
-        <span className="font-medium shrink-0">Gemini API 상태 (마스터 전용):</span>
+        <span className="font-medium shrink-0">OpenAI API 상태 (마스터 전용):</span>
         <span className="truncate">{state.message}</span>
       </div>
       <div className="flex items-center gap-1">

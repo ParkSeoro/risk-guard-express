@@ -1,6 +1,5 @@
 /**
- * OpenAI ChatGPT client for risk draft/fill and NVIDIA-exhausted gemini paths
- * (사고사례·보건·허가서 브리핑). Dormant unless OPENAI_API_KEY is set.
+ * Primary OpenAI ChatGPT client (gpt-4o-mini). NVIDIA NIM is last resort.
  *
  * Env:
  *   OPENAI_API_KEY          — required to enable
@@ -10,14 +9,18 @@
  *   OPENAI_FILL_MODEL       — optional override for risk_fill
  *   RISK_AI_OPENAI_FALLBACK — default true when key present
  *   RISK_AI_DRAFT_PROVIDER  — openai | nvidia (default openai).
- *     openai: ChatGPT for risk + 사고사례/보건/허가서/도우미.
+ *     openai: ChatGPT for 작업계획서/위험성평가/사고사례/보건/허가서/교육/도우미.
  *     nvidia: only if explicitly set (hosted NIM models are largely EOL).
  *   OPENAI_TIMEOUT_MS       — default 45000
  */
 
+export type OpenAiChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 export type OpenAiChatMessage = {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | OpenAiChatContentPart[];
 };
 
 export class OpenAiChatError extends Error {

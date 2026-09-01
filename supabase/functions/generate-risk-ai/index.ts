@@ -615,37 +615,58 @@ serve(async (req) => {
       const sysPrompt =
         `너는 대한민국 건설현장 20년 경력의 안전관리 전문가다.\n산업안전보건법, KOSHA GUIDE 기준으로 실제 현장에서 사용 가능한 수준의 작업계획서를 작성한다.\n반드시 요청된 JSON 형식으로만 출력하라.`;
 
-      const response = await geminiChatFetch({
-        messages: [
-          { role: "system", content: sysPrompt },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.3,
-      });
+      const wpMessages = [
+        { role: "system" as const, content: sysPrompt },
+        { role: "user" as const, content: prompt },
+      ];
 
-      if (!response.ok) {
-        const status = response.status;
-        const text = await response.text();
-        if (status === 429) {
-          return new Response(JSON.stringify({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }), {
-            status: 429,
-            headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+      // 작업 방법·위험요인 등: OpenAI 직행. json:false — method/risk/equipment는 배열.
+      let rawContent = "";
+      if (isOpenAiFallbackEnabled()) {
+        try {
+          const oa = await callOpenAiChat({
+            messages: wpMessages,
+            temperature: 0.3,
+            max_tokens: 4096,
+            timeoutMs: 90_000,
+            json: false,
           });
+          rawContent = oa.content || "";
+        } catch (e) {
+          console.warn("[generate-risk-ai] work_plan_section OpenAI:", e);
         }
-        if (status === 402) {
-          return new Response(JSON.stringify({ error: "AI 크레딧이 부족합니다." }), {
-            status: 402,
-            headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-          });
-        }
-        return new Response(JSON.stringify({ error: "AI 생성 오류", detail: text }), {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-        });
       }
+      if (!rawContent.trim()) {
+        const response = await geminiChatFetch({
+          messages: wpMessages,
+          temperature: 0.3,
+          max_tokens: 4096,
+        });
 
-      const result = await response.json();
-      const rawContent = result.choices?.[0]?.message?.content || "";
+        if (!response.ok) {
+          const status = response.status;
+          const text = await response.text();
+          if (status === 429) {
+            return new Response(JSON.stringify({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해주세요." }), {
+              status: 429,
+              headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+            });
+          }
+          if (status === 402) {
+            return new Response(JSON.stringify({ error: "AI 크레딧이 부족합니다." }), {
+              status: 402,
+              headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+            });
+          }
+          return new Response(JSON.stringify({ error: "AI 생성 오류", detail: text }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+          });
+        }
+
+        const result = await response.json();
+        rawContent = result.choices?.[0]?.message?.content || "";
+      }
       const content = rawContent.replace(/```json/gi, "").replace(/```/g, "").trim();
 
       try {
@@ -739,10 +760,7 @@ serve(async (req) => {
       };
 
       try {
-        // Draft provider order:
-        // - RISK_AI_DRAFT_PROVIDER=openai → ChatGPT first (when key set), NVIDIA backup
-        // - default → NVIDIA first, ChatGPT last-resort
-        // Never use geminiChatFetch (same NIM, ~90s stall).
+        // Draft: OpenAI first unless RISK_AI_DRAFT_PROVIDER=nvidia. NVIDIA last resort.
         const draftModels = resolveDraftModelChain();
         const openaiFirst = preferOpenAiForDraft();
         const maxTok = detailLevel === "comprehensive" ? 1800 : 1200;
@@ -1451,7 +1469,7 @@ serve(async (req) => {
           (e instanceof DeepseekRiskError && e.code === "INVALID_KEY")
         ) {
           error =
-            "NVIDIA API 키가 유효하지 않습니다. NVIDIA_API_KEY(Supabase Edge Secrets)를 확인해야 합니다.";
+            "AI API 키가 유효하지 않습니다. 설정 → AI 설정에서 OPENAI_API_KEY를 확인하세요.";
         } else if (e instanceof DeepseekRiskError && e.code === "TIMEOUT") {
           error = e.message;
         }
@@ -1568,7 +1586,7 @@ serve(async (req) => {
             (e instanceof DeepseekRiskError && e.code === "INVALID_KEY")
           ) {
             error =
-              "NVIDIA API 키가 유효하지 않습니다. NVIDIA_API_KEY(Supabase Edge Secrets)를 확인해야 합니다.";
+              "AI API 키가 유효하지 않습니다. 설정 → AI 설정에서 OPENAI_API_KEY를 확인하세요.";
           } else if (e instanceof DeepseekRiskError && e.code === "TIMEOUT") {
             error = e.message;
           }
@@ -1602,7 +1620,7 @@ serve(async (req) => {
     }
     if (msg === "INVALID_KEY") {
       return new Response(
-        JSON.stringify({ error: "NVIDIA API 키가 유효하지 않습니다. NVIDIA_API_KEY(Supabase Edge Secrets)를 확인해야 합니다." }),
+        JSON.stringify({ error: "AI API 키가 유효하지 않습니다. 설정 → AI 설정에서 OPENAI_API_KEY를 확인하세요." }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" } },
       );
     }

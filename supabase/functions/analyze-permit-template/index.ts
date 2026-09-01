@@ -1,11 +1,11 @@
-// 허가서 양식 PDF를 Gemini(멀티모달)로 분석하여
+// 허가서 양식 PDF를 OpenAI gpt-4o-mini vision으로 분석하여
 // 입력란/체크박스/서명란의 라벨·위치를 자동 인식한다.
 // 요청: { templateId, pageImages: string[] (base64 data URL, 페이지 순) }
 // 응답: { result, layoutPatch, overlayPatch, signatureSlots, diagnostics }
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { callGeminiChat, GeminiError } from '../_shared/gemini.ts';
 
-// 통합 AI 호출 (NVIDIA NIM 어댑터 경유)
+// 통합 AI 호출 — OpenAI gpt-4o-mini vision (gemini.ts가 이미지 블록을 전달)
 async function callAI(
   messages: any[],
   opts: { temperature?: number } = {},
@@ -174,14 +174,13 @@ Deno.serve(async (req) => {
       { role: 'user', content },
     ];
 
-    // NVIDIA NIM 어댑터로 직접 호출 (게이트웨이 우회)
     let raw = '{}';
-    let modelUsed = 'meta/llama-3.3-70b-instruct';
+    let modelUsed = 'gpt-4o-mini';
     try {
       raw = await callAI(messages, { temperature: 0.1 });
       console.log(`[analyze-permit-template] model=${modelUsed} raw_len=${raw.length} preview=${raw.slice(0, 400)}`);
     } catch (e) {
-      console.error('[analyze-permit-template] NVIDIA 호출 실패:', e instanceof Error ? e.message : e);
+      console.error('[analyze-permit-template] OpenAI 호출 실패:', e instanceof Error ? e.message : e);
       throw e;
     }
 

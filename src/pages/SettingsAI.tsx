@@ -119,7 +119,7 @@ const SettingsAI = () => {
         if (toastOnResult) toast.success((data as any)?.provider === 'openai' ? 'OpenAI API 정상' : 'NVIDIA API 정상');
       } else if (/설정되지 않았|missing|INVALID_KEY/i.test(String((data as any)?.message || ''))) {
         setKeyStatus('missing');
-        if (toastOnResult) toast.error('NVIDIA_API_KEY가 Edge Secrets에 없습니다');
+        if (toastOnResult) toast.error('OPENAI_API_KEY가 Edge Secrets에 없습니다');
       } else {
         setKeyStatus('error');
         if (toastOnResult) toast.message((data as any)?.message || '응답 확인 필요');
@@ -272,10 +272,11 @@ const SettingsAI = () => {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">NVIDIA API 키</CardTitle>
+              <CardTitle className="text-base">OpenAI API 키</CardTitle>
               <CardDescription className="text-xs">
-                키는 브라우저/DB에 저장하지 않습니다. Supabase Edge Secrets의{' '}
-                <code className="text-[11px]">NVIDIA_API_KEY</code> 만 사용합니다.
+                키는 브라우저/DB에 저장하지 않습니다. 텍스트 생성은 Edge Secrets의{' '}
+                <code className="text-[11px]">OPENAI_API_KEY</code>를 사용합니다. OCR은{' '}
+                <code className="text-[11px]">GEMINI_API_KEY</code>, NVIDIA는 예비입니다.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -308,11 +309,11 @@ const SettingsAI = () => {
                 </Button>
                 <Button type="button" variant="ghost" size="sm" asChild>
                   <a
-                    href="https://build.nvidia.com/settings/api-keys"
+                    href="https://platform.openai.com/api-keys"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    NVIDIA 키 발급
+                    OpenAI 키 발급
                     <ExternalLink className="h-3.5 w-3.5 ml-1" />
                   </a>
                 </Button>
@@ -349,9 +350,9 @@ const SettingsAI = () => {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">NVIDIA 모델 순위</CardTitle>
+              <CardTitle className="text-base">예비 NVIDIA 모델 순위</CardTitle>
               <CardDescription className="text-xs">
-                위쪽이 우선. 1순위 기본값은 Llama 3.3 70B입니다. Nemotron Super 49B는 NIM 호스팅이 종료되어 꺼 두세요.
+                OpenAI가 실패할 때만 사용합니다. 위쪽이 우선. Nemotron Super 49B는 NIM 호스팅이 종료되어 꺼 두세요.
                 {primaryId && (
                   <>
                     {' '}

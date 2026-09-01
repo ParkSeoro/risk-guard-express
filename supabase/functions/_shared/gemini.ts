@@ -188,13 +188,19 @@ type OpenAiChatResultUsage = {
 };
 
 async function viaOpenAi(args: {
-  messages: { role: "system" | "user" | "assistant"; content: string }[];
+  messages: {
+    role: "system" | "user" | "assistant";
+    content: string | OAIMessage["content"];
+  }[];
   temperature: number;
   maxTokens: number;
   wantsJson: boolean;
 }): Promise<OAIResponse> {
   const result = await callOpenAiChat({
-    messages: args.messages,
+    messages: args.messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    })),
     temperature: args.temperature,
     max_tokens: args.maxTokens,
     json: args.wantsJson,
@@ -212,13 +218,16 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
   const imagePresent = hasImageInput(req.messages);
   const compact = !!req.compact;
 
+  const openaiOn = isOpenAiFallbackEnabled();
+  const openaiFirst = preferOpenAiForDraft();
+
   if (imagePresent) {
     const totalText = req.messages
       .filter((m) => m.role === "user")
       .map((m) => flattenContent(m.content).replace(/\[image omitted[^\]]*\]/g, "").trim())
       .join(" ")
       .trim();
-    if (totalText.length < 40) {
+    if (totalText.length < 40 && !(openaiOn && openaiFirst)) {
       throw new GeminiError(
         "현재 AI 모델은 이미지(사진) 분석을 지원하지 않습니다. 텍스트로 직접 입력해 주세요.",
         400,
@@ -232,10 +241,14 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
     role: m.role as "system" | "user" | "assistant",
     content: flattenContent(m.content),
   }));
+  const openaiMessages = imagePresent
+    ? preparedMessages.map((m) => ({
+        role: m.role as "system" | "user" | "assistant",
+        content: m.content,
+      }))
+    : messages;
   const temperature = typeof req.temperature === "number" ? req.temperature : 0;
   const maxTokens = typeof req.max_tokens === "number" ? req.max_tokens : 4096;
-  const openaiOn = isOpenAiFallbackEnabled();
-  const openaiFirst = preferOpenAiForDraft();
 
   const runNvidia = async (): Promise<OAIResponse> => {
     const result = await callNvidiaChat({
@@ -259,7 +272,7 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
 
   if (openaiOn && openaiFirst) {
     try {
-      return await viaOpenAi({ messages, temperature, maxTokens, wantsJson });
+      return await viaOpenAi({ messages: openaiMessages, temperature, maxTokens, wantsJson });
     } catch (oaErr) {
       console.warn("[gemini] OpenAI primary failed, NVIDIA last resort:", oaErr);
       try {
@@ -276,7 +289,7 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
     if (openaiOn) {
       try {
         console.warn("[gemini] NVIDIA failed, OpenAI fallback");
-        return await viaOpenAi({ messages, temperature, maxTokens, wantsJson });
+        return await viaOpenAi({ messages: openaiMessages, temperature, maxTokens, wantsJson });
       } catch (oaErr) {
         wrapNvidiaAsGemini(oaErr);
       }

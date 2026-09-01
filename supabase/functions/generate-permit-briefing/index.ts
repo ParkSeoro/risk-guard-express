@@ -1,6 +1,7 @@
 // Edge function: 작업허가서 상신 시 AI 결재 브리핑 생성 (모바일 UX)
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callGeminiChat, parseJsonLoose, GeminiError } from '../_shared/gemini.ts';
+import { hasChatAiKey } from '../_shared/openaiChat.ts';
 import {
   PERMIT_BRIEFING_SYSTEM_PROMPT,
   extractPermitBriefingFacts,
@@ -49,8 +50,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (!Deno.env.get('NVIDIA_API_KEY')) {
-      return new Response(JSON.stringify({ error: 'NVIDIA_API_KEY가 설정되지 않았습니다.' }), {
+    if (!hasChatAiKey()) {
+      return new Response(JSON.stringify({ error: 'OPENAI_API_KEY가 설정되지 않았습니다.' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

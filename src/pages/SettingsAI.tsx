@@ -1,7 +1,6 @@
 /**
- * 설정 > AI — NVIDIA NIM 모델 체인 / 자동 폴백.
- * API 키는 Supabase Edge Secrets(NVIDIA_API_KEY)만 사용. DB에 키를 저장하지 않음.
- * Lovable / OpenAI 레거시 UI 제거.
+ * 설정 > AI — 생성은 OpenAI(gpt-4o-mini). NVIDIA 체인은 예비.
+ * 키는 Supabase Edge Secrets(OPENAI_API_KEY / NVIDIA_API_KEY). DB에 키를 저장하지 않음.
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -117,7 +116,7 @@ const SettingsAI = () => {
       setKeyMessage((data as any)?.message || '');
       if (status === 'ok') {
         setKeyStatus('ok');
-        if (toastOnResult) toast.success('NVIDIA API 정상');
+        if (toastOnResult) toast.success((data as any)?.provider === 'openai' ? 'OpenAI API 정상' : 'NVIDIA API 정상');
       } else if (/설정되지 않았|missing|INVALID_KEY/i.test(String((data as any)?.message || ''))) {
         setKeyStatus('missing');
         if (toastOnResult) toast.error('NVIDIA_API_KEY가 Edge Secrets에 없습니다');
@@ -209,7 +208,7 @@ const SettingsAI = () => {
             <Bot className="h-5 w-5" /> AI 설정
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            NVIDIA NIM 모델 순위 · 한도 시 자동 폴백 (위험성평가 1순위 모델 유지)
+            생성은 OpenAI. 아래 NVIDIA 순위는 예비용입니다.
           </p>
         </div>
       </div>

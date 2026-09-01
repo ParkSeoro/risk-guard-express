@@ -1,6 +1,7 @@
 // Generate safety education material from a risk assessment run via Google Gemini.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 import { callGeminiChat, GeminiError } from "../_shared/gemini.ts";
+import { hasChatAiKey } from "../_shared/openaiChat.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -55,8 +56,8 @@ Deno.serve(async (req) => {
     }
 
 
-    if (!Deno.env.get("NVIDIA_API_KEY")) {
-      throw new Error("NVIDIA_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 등록해야 합니다.");
+    if (!hasChatAiKey()) {
+      throw new Error("OPENAI_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 등록해야 합니다.");
     }
 
 

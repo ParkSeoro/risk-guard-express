@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { formatLegalCalcPrintHtml } from "../_shared/legalCalcPrint.ts";
+import { formatSectionPrintHtml } from "../_shared/formatSectionContent.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -281,16 +282,8 @@ Deno.serve(async (req) => {
         return formatLegalCalcPrintHtml(section.content, escapeHtml);
       }
 
-      if (typeof section.content === "string" && section.content.trim()) {
-        return `<div class="text-block">${escapeHtml(section.content)}</div>`;
-      }
-      if (data && typeof data === "object") {
-        const rows = Object.entries(data).map(([k, v]) =>
-          `<tr><td class="label">${escapeHtml(k)}</td><td>${escapeHtml(String(v || ""))}</td></tr>`
-        ).join("");
-        return `<table class="info-table"><tbody>${rows}</tbody></table>`;
-      }
-      return "";
+      // Structured forms (geology/shoring/contact/…) are JSON. Never dump the raw string.
+      return formatSectionPrintHtml(data ?? section.content, escapeHtml, section.key);
     }
 
     const filteredSections = sections.filter(s => s.key !== "_checklist" && s.key !== "rigging");

@@ -14,6 +14,7 @@ export type CloneAssessmentRunSource = {
   opinion_required?: boolean | null;
   health_required?: boolean | null;
   author_user_id?: string | null;
+  previous_run_id?: string | null;
 };
 
 export type CloneAssessmentRunResult =
@@ -77,6 +78,7 @@ export async function cloneAssessmentRun(opts: {
     status: '작성중',
     created_by: userId,
     author_user_id: source.author_user_id || null,
+    previous_run_id: source.previous_run_id || null,
   }]).select('id').single();
 
   if (error || !newRun) {

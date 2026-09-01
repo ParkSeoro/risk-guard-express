@@ -388,6 +388,54 @@ export default function FeedbackPanel({
         {highRemainItems.length > 0 && ` 관리대상 상 ${highRemainItems.length}건 · 미등록 ${missingHighCount}건.`}
       </p>
 
+      {highRemainItems.length > 0 && (
+        <Card className="border-destructive/30">
+          <CardHeader className="py-2 px-3">
+            <CardTitle className="text-xs font-medium">
+              전회차 관리대상 {highRemainItems.length}건
+              {missingHighCount > 0 && (
+                <span className="text-muted-foreground font-normal"> · 피드백 미등록 {missingHighCount}건</span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="py-2 px-3 space-y-1">
+            {highRemainItems.map((item, idx) => {
+              const registered = coveredHighIds.has(item.id);
+              return (
+                <div key={item.id} className="flex items-start justify-between gap-2 rounded border px-2 py-1.5 text-xs">
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-muted-foreground">{idx + 1}.</span>
+                      <Badge variant="outline" className="text-[8px] text-destructive">상</Badge>
+                      <span className="font-medium truncate">{item.process}</span>
+                      {registered
+                        ? <Badge variant="outline" className="text-[8px]">피드백 있음</Badge>
+                        : <Badge variant="outline" className="text-[8px] text-warning">미등록</Badge>}
+                    </div>
+                    <p className="text-muted-foreground truncate">{item.sub_task || ''}{item.hazard ? ` · ${item.hazard}` : ''}</p>
+                  </div>
+                  {canEditFeedback && !registered && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-[10px] shrink-0"
+                      onClick={() => {
+                        resetForm();
+                        setEditingId(null);
+                        setFormRiskItemId(item.id);
+                        setShowAdd(true);
+                      }}
+                    >
+                      등록
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
       <SubmitApprovalDialog
         open={showFeedbackApproval}
         onOpenChange={setShowFeedbackApproval}
@@ -449,7 +497,11 @@ export default function FeedbackPanel({
       {loading ? (
         <p className="text-xs text-muted-foreground text-center py-4">로딩 중...</p>
       ) : feedbackList.length === 0 ? (
-        <p className="text-xs text-muted-foreground text-center py-6">등록된 피드백이 없습니다.</p>
+        <p className="text-xs text-muted-foreground text-center py-6">
+          {highRemainItems.length > 0
+            ? '위 관리대상에 대한 조치 전후 사진(피드백)이 아직 없습니다.'
+            : '등록된 피드백이 없습니다.'}
+        </p>
       ) : (
         <div className="space-y-2">
           {feedbackList.map(fb => (

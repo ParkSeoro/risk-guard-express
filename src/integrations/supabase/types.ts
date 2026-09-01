@@ -996,6 +996,7 @@ export type Database = {
           project_id: string
           start_date: string | null
           status: string
+          previous_run_id: string | null
           target_company_ids: string[] | null
           target_contractors: string[] | null
           target_processes: string[] | null
@@ -1024,6 +1025,7 @@ export type Database = {
           project_id: string
           start_date?: string | null
           status?: string
+          previous_run_id?: string | null
           target_company_ids?: string[] | null
           target_contractors?: string[] | null
           target_processes?: string[] | null
@@ -1052,6 +1054,7 @@ export type Database = {
           project_id?: string
           start_date?: string | null
           status?: string
+          previous_run_id?: string | null
           target_company_ids?: string[] | null
           target_contractors?: string[] | null
           target_processes?: string[] | null

@@ -106,11 +106,14 @@ import {
   WEEKLY_LINK_CANDIDATE_SELECT,
   executionFeedbackCount,
   isManagedResidualHigh,
+  listManualPreviousCandidates,
   pickPreviousApprovedRun,
   resolveExecutionFeedbackTarget,
+  resolvePreviousRun,
   unresolvedFeedback,
   type WeeklyLinkRun,
 } from '@/lib/weeklyAssessmentLink';
+import PreviousRunPicker, { AUTO_PREVIOUS_VALUE } from '@/components/assessment/PreviousRunPicker';
 
 type RiskItemRow = Database['public']['Tables']['risk_items']['Row'];
 
@@ -266,6 +269,9 @@ const AssessmentRunDetail = () => {
   const [previousFeedbackTotal, setPreviousFeedbackTotal] = useState(0);
   const [currentFeedbackTotal, setCurrentFeedbackTotal] = useState(0);
   const [previousRun, setPreviousRun] = useState<WeeklyLinkRun | null>(null);
+  const [previousRunAuto, setPreviousRunAuto] = useState<WeeklyLinkRun | null>(null);
+  const [previousRunCandidates, setPreviousRunCandidates] = useState<WeeklyLinkRun[]>([]);
+  const [previousManagedByRun, setPreviousManagedByRun] = useState<Record<string, number>>({});
   const [previousItems, setPreviousItems] = useState<RiskItemRow[]>([]);
   const [previousManagedCount, setPreviousManagedCount] = useState(0);
   const [batchDeptId, setBatchDeptId] = useState('');
@@ -570,24 +576,49 @@ const AssessmentRunDetail = () => {
         .from('assessment_runs')
         .select(WEEKLY_LINK_CANDIDATE_SELECT)
         .eq('project_id', run.project_id)
-        .eq('status', '승인완료')
+        .in('status', ['승인완료', '결재진행'])
         .eq('is_deleted', false)
         .neq('id', runId)
         .order('created_at', { ascending: false })
-        .limit(80);
+        .limit(120);
       if (cancelled) return;
       if (candErr) {
         console.warn('[weekly-link] previous-run lookup failed:', candErr.message);
       }
-      let previous = pickPreviousApprovedRun(run as WeeklyLinkRun, (candidates || []) as WeeklyLinkRun[]);
+      let rows = (candidates || []) as WeeklyLinkRun[];
+      const overrideId = String((run as any).previous_run_id || '').trim();
+      if (overrideId && overrideId !== runId && !rows.some((c) => c.id === overrideId)) {
+        const { data: extra } = await supabase
+          .from('assessment_runs')
+          .select(WEEKLY_LINK_CANDIDATE_SELECT)
+          .eq('id', overrideId)
+          .maybeSingle();
+        if (extra && extra.project_id === run.project_id && !extra.is_deleted) {
+          rows = [extra as WeeklyLinkRun, ...rows];
+        }
+      }
+      const auto = pickPreviousApprovedRun(run as WeeklyLinkRun, rows);
+      let previous = resolvePreviousRun(run as WeeklyLinkRun, rows, overrideId);
+      const pickerRows = listManualPreviousCandidates(run as WeeklyLinkRun, rows);
       const currentFbReq = supabase
         .from('risk_item_feedback' as any)
         .select('id, status')
         .eq('assessment_run_id', runId);
+      const countIds = [...new Set([auto?.id, previous?.id, ...pickerRows.slice(0, 24).map((c) => c.id)].filter(Boolean))] as string[];
+      const managedCountReq = countIds.length
+        ? supabase.from('risk_items').select('run_id, improved_risk_grade').in('run_id', countIds).eq('is_deleted', false)
+        : Promise.resolve({ data: [] as any[] });
       if (!previous) {
-        const { data: currentFb } = await currentFbReq;
+        const [{ data: currentFb }, managedRes] = await Promise.all([currentFbReq, managedCountReq]);
         if (cancelled) return;
+        const counts: Record<string, number> = {};
+        for (const row of (managedRes as any).data || []) {
+          if (row.improved_risk_grade === '상') counts[row.run_id] = (counts[row.run_id] || 0) + 1;
+        }
         setPreviousRun(null);
+        setPreviousRunAuto(auto);
+        setPreviousRunCandidates(pickerRows);
+        setPreviousManagedByRun(counts);
         setPreviousItems([]);
         setPreviousFeedback([]);
         setPreviousFeedbackTotal(0);
@@ -595,20 +626,29 @@ const AssessmentRunDetail = () => {
         setCurrentFeedbackTotal((currentFb || []).length);
         return;
       }
-      const [itemsRes, fbRes, statusRes, currentFbRes] = await Promise.all([
+      const [itemsRes, fbRes, statusRes, currentFbRes, managedRes] = await Promise.all([
         supabase.from('risk_items').select('*').eq('run_id', previous.id).eq('is_deleted', false).order('sort_order'),
         supabase.from('risk_item_feedback' as any).select('*').eq('assessment_run_id', previous.id),
         supabase.from('assessment_runs').select('feedback_status').eq('id', previous.id).maybeSingle(),
         currentFbReq,
+        managedCountReq,
       ]);
       if (cancelled) return;
-      const prevItems = (itemsRes.data || []) as RiskItemRow[];
+      const prevItems = ((itemsRes.data || []) as RiskItemRow[]).filter((i) => !(i as any).is_excluded);
       const prevFb = (fbRes.data || []) as any[];
       const prevStatus = (statusRes.data as { feedback_status?: string } | null)?.feedback_status;
       if (prevStatus) previous = { ...previous, feedback_status: prevStatus };
+      const counts: Record<string, number> = {};
+      for (const row of (managedRes as any).data || []) {
+        if (row.improved_risk_grade === '상') counts[row.run_id] = (counts[row.run_id] || 0) + 1;
+      }
+      counts[previous.id] = prevItems.filter((i) => isManagedResidualHigh(i)).length;
       setPreviousRun(previous);
+      setPreviousRunAuto(auto);
+      setPreviousRunCandidates(pickerRows);
+      setPreviousManagedByRun(counts);
       setPreviousItems(prevItems);
-      setPreviousManagedCount(prevItems.filter((i) => isManagedResidualHigh(i)).length);
+      setPreviousManagedCount(counts[previous.id] || 0);
       setPreviousFeedbackTotal(prevFb.length);
       setPreviousFeedback(unresolvedFeedback(prevFb));
       setCurrentFeedbackTotal((currentFbRes.data || []).length);
@@ -811,6 +851,33 @@ const AssessmentRunDetail = () => {
   const forecastItems = useMemo(
     () => activeItems.filter((i) => isManagedResidualHigh(i)),
     [activeItems],
+  );
+
+  const handlePreviousRunChange = async (value: string) => {
+    if (!runId) return;
+    const nextId = value === AUTO_PREVIOUS_VALUE ? null : value;
+    const { error } = await supabase
+      .from('assessment_runs')
+      .update({ previous_run_id: nextId } as any)
+      .eq('id', runId);
+    if (error) {
+      toast({ title: '전회차 연결 실패', description: error.message, variant: 'destructive' });
+      return;
+    }
+    setRun((prev: any) => (prev ? { ...prev, previous_run_id: nextId } : prev));
+    toast({
+      title: nextId ? '전회차를 지정했습니다.' : '전회차를 자동 연결로 되돌렸습니다.',
+    });
+  };
+
+  const renderPreviousPicker = () => (
+    <PreviousRunPicker
+      autoRun={previousRunAuto}
+      selectedId={(run as any)?.previous_run_id || null}
+      candidates={previousRunCandidates}
+      managedCounts={previousManagedByRun}
+      onChange={handlePreviousRunChange}
+    />
   );
 
   const filteredItems = useMemo(() => {
@@ -2718,7 +2785,8 @@ const AssessmentRunDetail = () => {
         <TabsContent value="assessment" className="space-y-4 mt-4">
       {previousRun && (
         <Card className="border-primary/30 print:hidden">
-          <CardContent className="py-3 space-y-1">
+          <CardContent className="py-3 space-y-2">
+            {renderPreviousPicker()}
             <div className="flex items-start justify-between gap-2 flex-wrap">
               <div className="text-sm">
                 <span className="font-medium">전회차 = 금주 작업분</span>
@@ -2740,12 +2808,15 @@ const AssessmentRunDetail = () => {
           </CardContent>
         </Card>
       )}
-      {!previousRun && !isApproved && (
+      {!previousRun && (
         <Card className="print:hidden">
-          <CardContent className="py-3">
-            <p className="text-[11px] text-muted-foreground">
-              같은 업체·같은 종류의 전회차(승인완료)가 없습니다. 이 회차가 첫 금주 작업분이 됩니다.
-            </p>
+          <CardContent className="py-3 space-y-2">
+            {renderPreviousPicker()}
+            {!isApproved && previousRunCandidates.length === 0 && (
+              <p className="text-[11px] text-muted-foreground">
+                같은 프로젝트에 고를 전회차가 없습니다. 이 회차가 첫 금주 작업분이 됩니다.
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -3160,7 +3231,12 @@ const AssessmentRunDetail = () => {
       )}
 
         </TabsContent>
-        <TabsContent value="execution" className="mt-4">
+        <TabsContent value="execution" className="mt-4 space-y-3">
+          <Card>
+            <CardContent className="py-3">
+              {renderPreviousPicker()}
+            </CardContent>
+          </Card>
           {executionRun ? (
             <FeedbackPanel
               runId={executionRun.id}
@@ -3174,7 +3250,7 @@ const AssessmentRunDetail = () => {
                 ? `금주 이행 확인 · 전회차 ${previousRun?.period_label || ''}`
                 : '금주 이행 확인'}
               helperText={executionIsPrevious
-                ? '※ 이 화면의 차주 회차가 아니라, 전회차(금주 작업분)에 조치 전후 사진이 저장됩니다.'
+                ? '※ 이 화면의 차주 회차가 아니라, 전회차(금주 작업분)에 조치 전후 사진이 저장됩니다. 아래 관리대상은 전회차에서 불러온 항목입니다.'
                 : '※ 이 회차가 금주 작업분입니다. 다음 회차 작성 시 전회차로 연결됩니다.'}
               feedbackStatus={executionFeedbackStatus || 'none'}
               submitterCompanyId={userCompanyId}
@@ -3189,7 +3265,7 @@ const AssessmentRunDetail = () => {
           ) : (
             <Card>
               <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                전회차가 없어 금주 이행 확인 대상이 없습니다. 이 회차가 승인되면 다음 회차에서 연결됩니다.
+                전회차가 없어 금주 이행 확인 대상이 없습니다. 위 목록에서 전회차를 고르거나, 이 회차가 승인되면 다음 회차에서 연결됩니다.
               </CardContent>
             </Card>
           )}

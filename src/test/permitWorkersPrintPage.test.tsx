@@ -40,6 +40,35 @@ describe("PermitWorkersPrintPage", () => {
     host.remove();
   });
 
+  it("renders clock-in signatures as images and leaves unsigned crew cells blank for handwriting", async () => {
+    const sig = `data:image/png;base64,${"A".repeat(80)}`;
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    await act(async () => {
+      root.render(
+        <PermitWorkersPrintPage
+          workers={[
+            { id: "w1", name: "정하윤", company_name: "A", signature_data: sig },
+            { id: "w2", name: "김지각", company_name: "A" },
+          ]}
+        />,
+      );
+    });
+
+    const imgs = host.querySelectorAll('[data-testid="permit-crew-sign-img"]');
+    expect(imgs).toHaveLength(1);
+    expect(imgs[0].getAttribute("src")).toBe(sig);
+    const cells = host.querySelectorAll(".permit-crew-sign");
+    expect(cells).toHaveLength(2);
+    expect(cells[1].querySelector("img")).toBeNull();
+
+    await act(async () => {
+      root.unmount();
+    });
+    host.remove();
+  });
+
   it("puts TBM on a second sheet without splitting crew into JS pages", async () => {
     const host = document.createElement("div");
     document.body.appendChild(host);

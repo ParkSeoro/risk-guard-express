@@ -2,8 +2,34 @@
  * Keep tbm_participations aligned with work_permit_workers for a linked TBM.
  * - Adds missing crew as unsigned participants
  * - Removes unsigned participants no longer on the crew (keeps signed rows)
+ * - Skips workers with no phone (unique on tbm_session_id, worker_phone)
  */
 import { supabase } from "@/integrations/supabase/client";
+
+export function phoneDigits(phone?: string | null): string {
+  return String(phone || "").replace(/\D/g, "");
+}
+
+export function selectTbmCrewInserts<
+  T extends { id: string; name?: string | null; phone?: string | null; company_name?: string | null },
+>(
+  crew: T[],
+  existing: Array<{ worker_id?: string | null; worker_phone?: string | null }>,
+): T[] {
+  const byPhone = new Set(existing.map((p) => phoneDigits(p.worker_phone)).filter(Boolean));
+  const byWorkerId = new Set(existing.map((p) => p.worker_id).filter(Boolean));
+  const seen = new Set(byPhone);
+  const out: T[] = [];
+  for (const w of crew) {
+    const digits = phoneDigits(w.phone);
+    if (!digits) continue;
+    if (byWorkerId.has(w.id)) continue;
+    if (seen.has(digits)) continue;
+    seen.add(digits);
+    out.push(w);
+  }
+  return out;
+}
 
 export async function syncPermitCrewToTbm(opts: {
   permitId: string;
@@ -43,15 +69,7 @@ export async function syncPermitCrewToTbm(opts: {
   if (eerr) return { ok: false, error: eerr.message };
 
   const parts = (existing as any[]) || [];
-  const byPhone = new Set(parts.map((p) => String(p.worker_phone || "").replace(/\D/g, "")).filter(Boolean));
-  const byWorkerId = new Set(parts.map((p) => p.worker_id).filter(Boolean));
-
-  const toAdd = crew.filter((w) => {
-    const digits = String(w.phone || "").replace(/\D/g, "");
-    if (byWorkerId.has(w.id)) return false;
-    if (digits && byPhone.has(digits)) return false;
-    return true;
-  });
+  const toAdd = selectTbmCrewInserts(crew, parts);
 
   let added = 0;
   if (toAdd.length > 0) {

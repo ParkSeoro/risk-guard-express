@@ -198,17 +198,19 @@ async function syncAckToTbm(payload: DailyAckPayload) {
     ),
   ] as string[];
   for (const tbmId of tbmIds) {
-    await supabase.from("tbm_participations" as any).upsert(
-      {
-        tbm_session_id: tbmId,
-        worker_id: payload.workerId,
-        worker_name: payload.workerName,
-        worker_phone: payload.workerPhone,
-        briefing_confirmed: true,
-        signature_data: payload.signatureData,
-      },
-      { onConflict: "tbm_session_id,worker_phone" },
-    );
+    const { data, error } = await supabase.rpc("upsert_tbm_participation_from_ack", {
+      _tbm_session_id: tbmId,
+      _worker_id: payload.workerId,
+      _signature_data: payload.signatureData,
+    });
+    if (error) {
+      console.warn("TBM 서명 동기화 실패", tbmId, error.message);
+      continue;
+    }
+    const rpcErr = (data as { error?: string; message?: string } | null)?.error;
+    if (rpcErr) {
+      console.warn("TBM 서명 동기화 실패", tbmId, rpcErr, (data as any)?.message);
+    }
   }
 }
 

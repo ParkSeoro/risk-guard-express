@@ -2,6 +2,7 @@
  * 작업허가서 상세 — 필요 종류 동적 선택, 단일 작업 묶음 결재, AI 브리핑, 연속 PDF 인쇄.
  */
 import { useEffect, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,6 +24,11 @@ import PermitWorkersPrintPage, {
   type TbmParticipantPrint,
 } from '@/components/permits/PermitWorkersPrintPage';
 import type { PermitWorkerRow } from '@/lib/permitWorkers';
+import {
+  attachCrewPrintSignatures,
+  fillMissingTbmSignatures,
+  type CrewAckSignature,
+} from '@/lib/permitCrewSignatures';
 import { canManagePermitCrew, ensureTbmForPermit } from '@/lib/tbmFromPermit';
 import { syncPermitCrewFromOnSite } from '@/lib/permitCrewSync';
 import { syncPermitCrewFromTbm } from '@/lib/syncPermitCrewFromTbm';
@@ -130,7 +136,22 @@ export default function WorkPermitDetail() {
   const [tbmBusy, setTbmBusy] = useState(false);
   const [crewBusy, setCrewBusy] = useState(false);
 
-  const loadAssignedCrew = async (permitId: string, tbmSessionId?: string | null) => {
+  const applyAssignedCrew = (next: {
+    workers: PermitWorkerRow[];
+    tbmTitle: string | null;
+    tbmParticipants: TbmParticipantPrint[];
+  }) => {
+    setAssignedWorkers(next.workers);
+    setTbmTitle(next.tbmTitle);
+    setTbmParticipants(next.tbmParticipants);
+  };
+
+  /** Live lookup: 늦게 출근 서명한 사람도 재조회·재인쇄 때 이미지로 남긴다(자료보존). */
+  const fetchAssignedCrew = async (
+    permitId: string,
+    tbmSessionId?: string | null,
+    ctx?: { projectId?: string | null; workDate?: string | null; syncTbm?: boolean },
+  ) => {
     const { data: links } = await supabase
       .from('work_permit_workers' as any)
       .select('worker_id')
@@ -158,27 +179,56 @@ export default function WorkPermitDetail() {
           company_name: w.company_name,
         }));
     }
-    setAssignedWorkers(rows);
 
+    let tbmTitleNext: string | null = null;
+    let tbmParts: TbmParticipantPrint[] = [];
     if (tbmSessionId) {
-      // Heal missing TBM participants when permit already has a crew
-      if (rows.length > 0) {
+      if (rows.length > 0 && ctx?.syncTbm !== false) {
         await syncPermitCrewToTbm({ permitId, tbmSessionId });
       }
       const [{ data: sess }, { data: parts }] = await Promise.all([
         supabase.from('tbm_sessions' as any).select('id, title').eq('id', tbmSessionId).maybeSingle(),
         supabase
           .from('tbm_participations' as any)
-          .select('id, worker_name, company_name, worker_phone, participated_at, signature_data')
+          .select('id, worker_id, worker_name, company_name, worker_phone, participated_at, signature_data')
           .eq('tbm_session_id', tbmSessionId)
           .order('participated_at'),
       ]);
-      setTbmTitle((sess as any)?.title || null);
-      setTbmParticipants(((parts as any[]) || []) as TbmParticipantPrint[]);
-    } else {
-      setTbmTitle(null);
-      setTbmParticipants([]);
+      tbmTitleNext = (sess as any)?.title || null;
+      tbmParts = ((parts as any[]) || []) as TbmParticipantPrint[];
     }
+
+    let dailyAcks: CrewAckSignature[] = [];
+    const projectId = ctx?.projectId;
+    const workDate = ctx?.workDate;
+    if (projectId && workDate && ids.length > 0) {
+      for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100);
+        const { data: acks } = await supabase
+          .from('worker_daily_acks' as any)
+          .select('worker_id, worker_phone, permit_ids, signature_data')
+          .eq('project_id', projectId)
+          .eq('ack_date', workDate)
+          .in('worker_id', chunk);
+        dailyAcks.push(...(((acks as any[]) || []) as CrewAckSignature[]));
+      }
+    }
+
+    rows = attachCrewPrintSignatures(rows, { permitId, dailyAcks, tbmParts });
+    return {
+      workers: rows,
+      tbmTitle: tbmTitleNext,
+      tbmParticipants: fillMissingTbmSignatures(tbmParts, dailyAcks, permitId),
+    };
+  };
+
+  const crewCtxFromPermit = (p: any) => ({
+    projectId: p?.project_id as string | null | undefined,
+    workDate: (resolvePermitWorkDate(p) || p?.permit_date || null) as string | null,
+  });
+
+  const loadAssignedCrew = async (permitId: string, tbmSessionId?: string | null, permitRow?: any) => {
+    applyAssignedCrew(await fetchAssignedCrew(permitId, tbmSessionId, crewCtxFromPermit(permitRow)));
   };
 
   const load = async () => {
@@ -206,7 +256,7 @@ export default function WorkPermitDetail() {
       work_end: ((p as any).form_data || {}).work_end || toLocalInput((p as any).work_end_at),
     });
 
-    await loadAssignedCrew((p as any).id, (p as any).tbm_session_id);
+    await loadAssignedCrew((p as any).id, (p as any).tbm_session_id, p);
 
     // Heal: already-issued permits without TBM get one on open (covers older docs / missed hooks)
     if (
@@ -231,7 +281,7 @@ export default function WorkPermitDetail() {
             .maybeSingle();
           if (refreshed) {
             setPermit(refreshed);
-            await loadAssignedCrew((refreshed as any).id, (refreshed as any).tbm_session_id);
+            await loadAssignedCrew((refreshed as any).id, (refreshed as any).tbm_session_id, refreshed);
           }
         }
       } catch (e) {
@@ -662,6 +712,18 @@ export default function WorkPermitDetail() {
       await (document as any).fonts?.load?.('16px "Noto Sans KR"');
       await (document as any).fonts?.ready;
     } catch { /* ignore */ }
+
+    // 인쇄 직전 재조회: 늦게 출근 등록한 전자서명이 자료에 남도록
+    try {
+      const crew = await fetchAssignedCrew(
+        permit.id,
+        permit.tbm_session_id,
+        { ...crewCtxFromPermit(permit), syncTbm: false },
+      );
+      flushSync(() => applyAssignedCrew(crew));
+    } catch (e) {
+      console.warn('print crew signature refresh', e);
+    }
 
     // Isolated iframe print — escapes AppLayout flex so page breaks work
     const res = await printPermitBundle({ title });

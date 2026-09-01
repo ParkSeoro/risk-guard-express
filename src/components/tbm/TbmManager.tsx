@@ -18,6 +18,7 @@ import { ensureTbmForPermit } from '@/lib/tbmFromPermit';
 import { closeExpiredTbmSessions } from '@/lib/tbmLifecycle';
 import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import { todayKst } from '@/lib/permitWorkDate';
+import { fillMissingTbmSignatures, isRenderableSignature } from '@/lib/permitCrewSignatures';
 import { useAuth } from '@/contexts/AuthContext';
 
 
@@ -424,11 +425,16 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
       .select('*').eq('tbm_session_id', s.id).order('participated_at');
     const { data: project } = await supabase.from('projects')
       .select('name, site_name').eq('id', projectId).single();
+    const { data: acks } = await supabase
+      .from('worker_daily_acks' as any)
+      .select('worker_id, worker_phone, permit_ids, signature_data')
+      .eq('project_id', projectId)
+      .eq('ack_date', s.tbm_date);
     const sAny = s as any;
     const risksRaw = sAny.briefing_risks;
     const risks: Array<{ hazard?: string; grade?: string; measure?: string }> =
       Array.isArray(risksRaw) ? risksRaw : (risksRaw ? (() => { try { return JSON.parse(risksRaw); } catch { return []; } })() : []);
-    const partsList = (parts as any[]) || [];
+    const partsList = fillMissingTbmSignatures((parts as any[]) || [], (acks as any[]) || []);
 
     const w = window.open('', '_blank');
     if (!w) { toast({ title: '팝업이 차단되었습니다.', variant: 'destructive' }); return; }
@@ -453,7 +459,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
           <td>${esc(p.worker_phone)}</td>
           <td>${esc(p.company_name || '-')}</td>
           <td class="center">${fmtDate(p.participated_at)}</td>
-          <td class="center">${p.signature_data ? `<img src="${esc(p.signature_data)}" />` : ''}</td>
+          <td class="center">${isRenderableSignature(p.signature_data) ? `<img src="${esc(p.signature_data)}" />` : ''}</td>
         </tr>`).join('');
 
     w.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"/>

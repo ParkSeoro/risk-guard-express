@@ -490,7 +490,7 @@ export default function WorkerDailyHome({
                   위험하면 작업을 멈추세요
                 </div>
                 <p className="text-xs text-slate-700 mt-1 leading-relaxed">
-                  작업중지권·작업거부권. 익명 또는 실명으로 신고할 수 있습니다.
+                  작업중지권·작업거부권. 현장 사진을 찍어 익명 또는 실명으로 신고하세요.
                   <br />
                   {WORK_STOP_LEGAL_CITE} · 불이익 금지
                 </p>

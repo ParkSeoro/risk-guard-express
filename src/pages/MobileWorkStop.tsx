@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,18 +6,23 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { OctagonAlert, Loader2 } from "lucide-react";
+import { Camera, ImagePlus, Loader2, OctagonAlert } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMobileAccess } from "@/hooks/useMobileAccess";
 import { usePreviewWriteBlock } from "@/contexts/PreviewContext";
 import { isManagerMobileRole } from "@/lib/mobileShell";
 import { lookupWorkerBanFields } from "@/lib/tracking/resolveBanSubject";
+import { buildProjectAttachmentPath, uploadAttachmentFile } from "@/lib/compressUploadFile";
+import { WorkStopPhotos } from "@/components/work-stop/WorkStopPhotos";
 import {
   ANONYMOUS_REPORTER_LABEL,
   WORK_STOP_LEGAL_CITE,
+  WORK_STOP_MAX_PHOTOS,
   WORK_STOP_OPEN_STATUSES,
   buildWorkStopInsert,
+  parseWorkStopPhotoUrls,
+  serializeWorkStopPhotos,
   validateWorkStopForm,
   workStopDisplayName,
   type WorkStopIdentityMode,
@@ -35,12 +40,25 @@ export default function MobileWorkStop() {
     location: "",
     hazard_description: "",
   });
+  const [photos, setPhotos] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const albumInputRef = useRef<HTMLInputElement>(null);
   const [openStops, setOpenStops] = useState<
-    { id: string; reporter_name: string; is_anonymous?: boolean; location: string | null; hazard_description: string; status: string }[]
+    {
+      id: string;
+      reporter_name: string;
+      is_anonymous?: boolean;
+      location: string | null;
+      hazard_description: string;
+      photo_url: string | null;
+      status: string;
+    }[]
   >([]);
   const [loadingStops, setLoadingStops] = useState(false);
+  const photoPreviews = useMemo(() => photos.map((f) => URL.createObjectURL(f)), [photos]);
+  useEffect(() => () => photoPreviews.forEach((u) => URL.revokeObjectURL(u)), [photoPreviews]);
 
   useEffect(() => {
     if (profile?.display_name) {
@@ -55,7 +73,7 @@ export default function MobileWorkStop() {
       setLoadingStops(true);
       const { data } = await supabase
         .from("work_stop_requests")
-        .select("id, reporter_name, is_anonymous, location, hazard_description, status, created_at")
+        .select("id, reporter_name, is_anonymous, location, hazard_description, photo_url, status, created_at")
         .eq("project_id", projectId)
         .in("status", [...WORK_STOP_OPEN_STATUSES])
         .order("created_at", { ascending: false })
@@ -70,6 +88,16 @@ export default function MobileWorkStop() {
     };
   }, [manager, projectId, submitted]);
 
+  function onPickPhotos(files: FileList | null) {
+    if (!files?.length) return;
+    const incoming = Array.from(files).filter((f) => f.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
+    if (!incoming.length) {
+      toast.error("이미지 파일만 첨부할 수 있습니다");
+      return;
+    }
+    setPhotos((prev) => [...prev, ...incoming].slice(0, WORK_STOP_MAX_PHOTOS));
+  }
+
   async function submit() {
     if (blockWrite()) {
       toast.message("프리뷰 모드에서는 데이터를 변경할 수 없습니다.");
@@ -81,27 +109,41 @@ export default function MobileWorkStop() {
       isAnonymous,
       reporterName: form.reporter_name,
       hazardDescription: form.hazard_description,
+      photoCount: photos.length,
     });
     if (err) {
       toast.error(err);
       return;
     }
     setSubmitting(true);
-    const matched = await lookupWorkerBanFields(projectId!, profile?.phone);
-    const payload = buildWorkStopInsert({
-      projectId: projectId!,
-      workerId: matched.worker_id,
-      reporterUserId: user?.id || null,
-      reporterName: form.reporter_name,
-      location: form.location,
-      hazardDescription: form.hazard_description,
-      isAnonymous,
-    });
-    const { error } = await supabase.from("work_stop_requests").insert(payload);
-    setSubmitting(false);
-    if (error) {
-      toast.error(error.message);
+    try {
+      const urls: string[] = [];
+      for (const file of photos) {
+        const path = buildProjectAttachmentPath(projectId!, "work-stop", file.name || "scene.jpg");
+        const uploaded = await uploadAttachmentFile(path, file);
+        urls.push(uploaded.publicUrl);
+      }
+      const matched = await lookupWorkerBanFields(projectId!, profile?.phone);
+      const payload = buildWorkStopInsert({
+        projectId: projectId!,
+        workerId: matched.worker_id,
+        reporterUserId: user?.id || null,
+        reporterName: form.reporter_name,
+        location: form.location,
+        hazardDescription: form.hazard_description,
+        isAnonymous,
+        photoUrl: serializeWorkStopPhotos(urls),
+      });
+      const { error } = await supabase.from("work_stop_requests").insert(payload);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "사진 업로드에 실패했습니다");
       return;
+    } finally {
+      setSubmitting(false);
     }
     toast.success(
       isAnonymous
@@ -130,6 +172,7 @@ export default function MobileWorkStop() {
             <Button
               onClick={() => {
                 setSubmitted(false);
+                setPhotos([]);
                 setForm((f) => ({ ...f, location: "", hazard_description: "" }));
               }}
             >
@@ -169,6 +212,7 @@ export default function MobileWorkStop() {
                 </div>
                 <div className="text-muted-foreground">{s.location || "위치 미기재"}</div>
                 <div className="line-clamp-2">{s.hazard_description}</div>
+                <WorkStopPhotos urls={parseWorkStopPhotoUrls(s.photo_url)} size="sm" />
               </div>
             ))}
             <p className="text-[10px] text-muted-foreground">
@@ -231,6 +275,73 @@ export default function MobileWorkStop() {
               onChange={(e) => setForm({ ...form, hazard_description: e.target.value })}
               placeholder="어떤 급박한 위험이 있는지 구체적으로 작성하세요"
             />
+          </div>
+          <div data-testid="work-stop-photo">
+            <Label>현장 사진 * ({photos.length}/{WORK_STOP_MAX_PHOTOS})</Label>
+            <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+              위험 현장을 찍으면 관리자가 바로 확인할 수 있습니다.
+            </p>
+            <div className="grid grid-cols-2 gap-2 mt-1.5">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11"
+                disabled={photos.length >= WORK_STOP_MAX_PHOTOS}
+                onClick={() => cameraInputRef.current?.click()}
+              >
+                <Camera className="h-4 w-4 mr-1.5" />
+                촬영
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11"
+                disabled={photos.length >= WORK_STOP_MAX_PHOTOS}
+                onClick={() => albumInputRef.current?.click()}
+              >
+                <ImagePlus className="h-4 w-4 mr-1.5" />
+                앨범
+              </Button>
+            </div>
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                onPickPhotos(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <input
+              ref={albumInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                onPickPhotos(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            {photos.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                {photoPreviews.map((src, i) => (
+                  <div key={`${photos[i]?.name}-${i}`} className="relative aspect-square">
+                    <img src={src} alt="" className="h-full w-full object-cover rounded border" />
+                    <button
+                      type="button"
+                      className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded-full h-5 w-5 text-xs leading-none"
+                      onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+                      aria-label="사진 삭제"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <Button
             onClick={submit}

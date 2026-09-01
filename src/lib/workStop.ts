@@ -6,6 +6,32 @@
 export const ANONYMOUS_REPORTER_LABEL = "익명 근로자";
 export const WORK_STOP_LEGAL_CITE = "산업안전보건법 제52조";
 export const WORK_STOP_OPEN_STATUSES = ["접수", "확인중"] as const;
+/** Workers attach scene photos so managers can see the hazard immediately. */
+export const WORK_STOP_MAX_PHOTOS = 3;
+
+/** One URL, or a JSON array of URLs, stored in work_stop_requests.photo_url. */
+export function parseWorkStopPhotoUrls(raw: string | null | undefined): string[] {
+  const s = String(raw || "").trim();
+  if (!s) return [];
+  if (s.startsWith("[")) {
+    try {
+      const arr = JSON.parse(s);
+      return Array.isArray(arr)
+        ? arr.map((u) => String(u || "").trim()).filter(Boolean)
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  return [s];
+}
+
+export function serializeWorkStopPhotos(urls: string[]): string | null {
+  const clean = urls.map((u) => String(u || "").trim()).filter(Boolean);
+  if (clean.length === 0) return null;
+  if (clean.length === 1) return clean[0];
+  return JSON.stringify(clean);
+}
 
 export type WorkStopIdentityMode = "anonymous" | "named";
 
@@ -36,11 +62,16 @@ export function validateWorkStopForm(opts: {
   isAnonymous: boolean;
   reporterName: string;
   hazardDescription: string;
+  photoCount?: number;
 }): string | null {
   if (!opts.projectId) return "프로젝트 선택이 필요합니다";
   if (!opts.hazardDescription.trim()) return "위험상황은 필수입니다";
   if (!opts.isAnonymous && !opts.reporterName.trim()) {
     return "실명 신고 시 보고자명이 필요합니다";
+  }
+  if ((opts.photoCount ?? 0) < 1) return "현장 사진을 첨부하세요";
+  if ((opts.photoCount ?? 0) > WORK_STOP_MAX_PHOTOS) {
+    return `현장 사진은 최대 ${WORK_STOP_MAX_PHOTOS}장입니다`;
   }
   return null;
 }
@@ -54,6 +85,7 @@ export function buildWorkStopInsert(opts: {
   location?: string | null;
   hazardDescription: string;
   isAnonymous: boolean;
+  photoUrl?: string | null;
 }): {
   project_id: string;
   worker_id: string | null;
@@ -62,6 +94,7 @@ export function buildWorkStopInsert(opts: {
   reporter_name: string;
   location: string | null;
   hazard_description: string;
+  photo_url: string | null;
   status: "접수";
 } {
   return {
@@ -74,6 +107,7 @@ export function buildWorkStopInsert(opts: {
       : opts.reporterName.trim(),
     location: (opts.location || "").trim() || null,
     hazard_description: opts.hazardDescription.trim(),
+    photo_url: opts.photoUrl?.trim() || null,
     status: "접수",
   };
 }

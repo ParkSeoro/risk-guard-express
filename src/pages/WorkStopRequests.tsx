@@ -12,7 +12,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { OctagonAlert, AlertTriangle, CheckCircle2, Clock, Search, Smartphone, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
-import { WORK_STOP_LEGAL_CITE, workStopDisplayName } from "@/lib/workStop";
+import { WorkStopPhotos } from "@/components/work-stop/WorkStopPhotos";
+import { parseWorkStopPhotoUrls, WORK_STOP_LEGAL_CITE, workStopDisplayName } from "@/lib/workStop";
 
 type Row = {
   id: string; project_id: string; reporter_name: string; is_anonymous?: boolean;
@@ -144,6 +145,7 @@ export default function WorkStopRequests() {
                     <thead className="bg-muted/50 sticky top-0"><tr className="text-left">
                       <th className="p-2">접수일시</th><th className="p-2">보고자</th>
                       <th className="p-2">위치</th><th className="p-2">위험상황</th>
+                      <th className="p-2">사진</th>
                       <th className="p-2">상태</th><th className="p-2">재개일시</th><th className="p-2"></th>
                     </tr></thead>
                     <tbody>
@@ -153,6 +155,14 @@ export default function WorkStopRequests() {
                           <td className="p-2">{workStopDisplayName(r)}</td>
                           <td className="p-2">{r.location || '-'}</td>
                           <td className="p-2 max-w-md truncate" title={r.hazard_description}>{r.hazard_description}</td>
+                          <td className="p-2">
+                            {(() => {
+                              const urls = parseWorkStopPhotoUrls(r.photo_url);
+                              return urls.length
+                                ? <WorkStopPhotos urls={urls.slice(0, 1)} size="sm" />
+                                : <span className="text-xs text-muted-foreground">없음</span>;
+                            })()}
+                          </td>
                           <td className="p-2"><Badge variant={STATUS_VARIANT[r.status]}>{r.status}</Badge></td>
                           <td className="p-2 whitespace-nowrap text-xs">{r.resumed_at ? new Date(r.resumed_at).toLocaleString('ko-KR') : <Clock className="size-3 inline text-muted-foreground"/>}</td>
                           <td className="p-2">
@@ -170,13 +180,14 @@ export default function WorkStopRequests() {
       </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader><DialogTitle>작업중지 처리</DialogTitle></DialogHeader>
           {editing && (
             <div className="space-y-3">
-              <div className="p-3 rounded bg-muted/50 text-sm">
+              <div className="p-3 rounded bg-muted/50 text-sm space-y-2">
                 <div className="font-medium">{workStopDisplayName(editing)} · {editing.location || '위치 미상'}</div>
-                <div className="text-muted-foreground mt-1">{editing.hazard_description}</div>
+                <div className="text-muted-foreground">{editing.hazard_description}</div>
+                <WorkStopPhotos urls={parseWorkStopPhotoUrls(editing.photo_url)} />
               </div>
               <div>
                 <Label>처리 상태</Label>

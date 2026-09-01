@@ -134,6 +134,7 @@ async function structureFromOcr(opts: {
   if (opts.chatReady) {
     try {
       const aiJson = await callGeminiChat({
+        purpose: "safety_cost",
         model: "gemini-2.5-flash",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },

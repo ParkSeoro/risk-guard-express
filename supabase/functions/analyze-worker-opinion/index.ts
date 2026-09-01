@@ -52,6 +52,7 @@ const ACCIDENT_PROMPT = `당신은 건설 안전 사고분석 전문가입니다
 async function callAI(systemPrompt: string, userPrompt: string, schema: any) {
   const schemaHint = `반드시 다음 JSON 스키마를 따르는 JSON 객체만 출력하세요 (마크다운 금지):\n${JSON.stringify(schema)}`;
   const data = await callGeminiChat({
+    purpose: 'health',
     model: 'gemini-2.5-flash',
     messages: [
       { role: 'system', content: `${systemPrompt}\n\n${schemaHint}` },
@@ -153,7 +154,7 @@ Deno.serve(async (req) => {
   if (auth instanceof Response) return auth;
   try {
     if (!hasChatAiKey()) {
-      throw new Error('OPENAI_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 등록해야 합니다.');
+      throw new Error('GEMINI_API_KEY 또는 OPENAI_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 등록해야 합니다.');
     }
     const body = (await req.json()) as RequestBody;
 

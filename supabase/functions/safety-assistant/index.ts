@@ -236,6 +236,7 @@ Deno.serve(async (req) => {
     messages.push({ role: 'user', content: message });
 
     const response = await geminiChatFetch({
+      purpose: 'assistant',
       model: 'gemini-2.5-flash',
       messages,
       max_tokens: 3000,

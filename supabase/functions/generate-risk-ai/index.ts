@@ -638,6 +638,7 @@ serve(async (req) => {
       }
       if (!rawContent.trim()) {
         const response = await geminiChatFetch({
+          purpose: "work_plan",
           messages: wpMessages,
           temperature: 0.3,
           max_tokens: 4096,

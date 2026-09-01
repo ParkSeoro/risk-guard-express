@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
 
 
     if (!hasChatAiKey()) {
-      throw new Error("OPENAI_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 등록해야 합니다.");
+      throw new Error("GEMINI_API_KEY 또는 OPENAI_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 등록해야 합니다.");
     }
 
 
@@ -159,6 +159,7 @@ Deno.serve(async (req) => {
     let result: any;
     try {
       const aiJson = await callGeminiChat({
+        purpose: "education",
         model: "gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },

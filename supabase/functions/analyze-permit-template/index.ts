@@ -1,4 +1,4 @@
-// 허가서 양식 PDF를 OpenAI gpt-4o-mini vision으로 분석하여
+// 허가서 양식 PDF를 Gemini vision(비용 레인)으로 분석하여
 // 입력란/체크박스/서명란의 라벨·위치를 자동 인식한다.
 // 요청: { templateId, pageImages: string[] (base64 data URL, 페이지 순) }
 // 응답: { result, layoutPatch, overlayPatch, signatureSlots, diagnostics }
@@ -11,6 +11,7 @@ async function callAI(
   opts: { temperature?: number } = {},
 ): Promise<string> {
   const r = await callGeminiChat({
+    purpose: 'permit_template',
     messages,
     temperature: opts.temperature ?? 0.1,
     response_format: { type: 'json_object' },

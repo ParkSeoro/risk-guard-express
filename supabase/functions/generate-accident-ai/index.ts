@@ -322,6 +322,7 @@ serve(async (req) => {
 
       try {
         for await (const chunk of streamGeminiChatText({
+          purpose: "accident",
           messages: [
             { role: "system", content: ACCIDENT_SYSTEM_PROMPT },
             { role: "user", content: userPrompt },

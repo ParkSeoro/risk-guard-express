@@ -115,6 +115,7 @@ Deno.serve(async (req) => {
     let briefing: any;
     try {
       const ai = await callGeminiChat({
+        purpose: 'permit_briefing',
         messages: [
           { role: 'system', content: PERMIT_BRIEFING_SYSTEM_PROMPT },
           { role: 'user', content: userText },

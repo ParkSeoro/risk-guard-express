@@ -1,6 +1,6 @@
 /**
- * 설정 > AI — 생성은 OpenAI(gpt-4o-mini). NVIDIA 체인은 예비.
- * 키는 Supabase Edge Secrets(OPENAI_API_KEY / NVIDIA_API_KEY). DB에 키를 저장하지 않음.
+ * 설정 > AI — JSON 핵심은 OpenAI, 장문·비전은 Gemini. NVIDIA는 예비.
+ * 키는 Supabase Edge Secrets. DB에 키를 저장하지 않음.
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -34,6 +34,7 @@ import {
   normalizeModelChain,
   type AiModelChainItem,
 } from '@/lib/aiNvidiaModels';
+import { AI_COST_LANES } from '@/lib/aiCostRoute';
 
 const SettingsAI = () => {
   const navigate = useNavigate();
@@ -208,7 +209,7 @@ const SettingsAI = () => {
             <Bot className="h-5 w-5" /> AI 설정
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            생성은 OpenAI. 아래 NVIDIA 순위는 예비용입니다.
+            작업계획서·위험성평가는 OpenAI, 교육·OCR·장문은 Gemini.
           </p>
         </div>
       </div>
@@ -274,9 +275,9 @@ const SettingsAI = () => {
             <CardHeader className="pb-3">
               <CardTitle className="text-base">OpenAI API 키</CardTitle>
               <CardDescription className="text-xs">
-                키는 브라우저/DB에 저장하지 않습니다. 텍스트 생성은 Edge Secrets의{' '}
-                <code className="text-[11px]">OPENAI_API_KEY</code>를 사용합니다. OCR은{' '}
-                <code className="text-[11px]">GEMINI_API_KEY</code>, NVIDIA는 예비입니다.
+                키는 브라우저/DB에 저장하지 않습니다. JSON 핵심 기능은{' '}
+                <code className="text-[11px]">OPENAI_API_KEY</code>, 장문·비전은{' '}
+                <code className="text-[11px]">GEMINI_API_KEY</code>입니다.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -318,6 +319,32 @@ const SettingsAI = () => {
                   </a>
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">비용 기준 모델 분리</CardTitle>
+              <CardDescription className="text-xs">
+                Gemini 2.5 Flash는 텍스트 단가가 gpt-4o-mini보다 비쌉니다. 장문·비전만 Flash-Lite/Flash를 쓰고,
+                짧은 JSON은 OpenAI에 둡니다. 레인은 Edge Secret <code className="text-[11px]">AI_ROUTE_education=openai</code> 로 덮어쓸 수 있습니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {AI_COST_LANES.map((lane) => (
+                <div
+                  key={lane.feature}
+                  className="flex items-start justify-between gap-3 rounded-md border border-border/60 px-2 py-1.5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{lane.feature}</p>
+                    <p className="text-[10px] text-muted-foreground">{lane.why}</p>
+                  </div>
+                  <Badge variant={lane.provider === 'OpenAI' ? 'default' : 'secondary'} className="shrink-0 text-[10px]">
+                    {lane.provider} · {lane.model}
+                  </Badge>
+                </div>
+              ))}
             </CardContent>
           </Card>
 

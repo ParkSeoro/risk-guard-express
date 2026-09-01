@@ -67,6 +67,7 @@ export const preferOpenAiForFill = preferOpenAiForDraft;
 export function hasChatAiKey(): boolean {
   return !!(
     resolveOpenAiApiKey() ||
+    Deno.env.get("GEMINI_API_KEY") ||
     Deno.env.get("NVIDIA_API_KEY") ||
     Deno.env.get("DEEPSEEK_API_KEY")
   );

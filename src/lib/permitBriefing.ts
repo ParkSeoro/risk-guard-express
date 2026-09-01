@@ -19,6 +19,7 @@ export {
   PERMIT_BRIEFING_SYSTEM_PROMPT,
   buildLocalPermitBriefingFromFacts,
   normalizePermitBriefing,
+  workOverviewMentionsExcavation,
 } from '../../supabase/functions/_shared/permitBriefing';
 
 function briefingFromServer(raw: any, facts: PermitBriefingFacts): PermitAiBriefing {

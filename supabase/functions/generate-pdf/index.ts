@@ -249,6 +249,14 @@ function localizePersonName(name?: string | null): string {
   });
 }
 
+function htmlEsc(s: unknown): string {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function jwtSub(token: string): string | null {
   try {
     const seg = token.split(".")[1];
@@ -333,7 +341,7 @@ Deno.serve(async (req) => {
     const printFeedbackRun = resolvePrintFeedbackRun(run, previousRun);
     const printFeedbackRunId = printFeedbackRun?.id || runId;
 
-    const [projectRes, itemsRes, participantsRes, feedbackRes, validationRes, approvalsRes, companyLinksRes, printFbItemsRes] = await Promise.all([
+    const [projectRes, itemsRes, participantsRes, feedbackRes, validationRes, approvalsRes, companyLinksRes, printFbItemsRes, opinionsRes, accidentsRes, healthRes] = await Promise.all([
       supabase.from("projects").select("*").eq("id", run.project_id).single(),
       supabase.from("risk_items").select("*").eq("run_id", runId).eq("is_deleted", false).order("sort_order"),
       supabase.from("assessment_run_participants").select("*").eq("run_id", runId),
@@ -349,6 +357,9 @@ Deno.serve(async (req) => {
       printFeedbackRunId !== runId
         ? supabase.from("risk_items").select("*").eq("run_id", printFeedbackRunId).eq("is_deleted", false)
         : Promise.resolve({ data: null }),
+      supabase.from("worker_opinions").select("*").eq("run_id", runId).order("created_at"),
+      supabase.from("assessment_accidents").select("*").eq("run_id", runId).order("created_at"),
+      supabase.from("health_hazards").select("*").eq("run_id", runId).order("created_at"),
     ]);
 
     const project = projectRes.data;
@@ -362,6 +373,9 @@ Deno.serve(async (req) => {
       : items;
     const validationResults = (validationRes as any).data || [];
     const approvals = approvalsRes.data || [];
+    const workerOpinions = (opinionsRes.data || []) as any[];
+    const assessmentAccidents = (accidentsRes.data || []) as any[];
+    const healthHazards = (healthRes.data || []) as any[];
     let projectCompanies = mapProjectCompanies(companyLinksRes.data || []);
     if (projectCompanies.length === 0) {
       const { data: legacyCos, error: legacyErr } = await supabase
@@ -662,6 +676,63 @@ Deno.serve(async (req) => {
         </div>`;
     }
 
+    const opinionRows = workerOpinions.map((o: any, i: number) => {
+      const who = [o.worker_name, o.worker_company, o.worker_position].filter(Boolean).join(" · ");
+      const sig = o.signature_url
+        ? `<img src="${htmlEsc(o.signature_url)}" alt="서명" style="height:22pt;max-width:80pt;object-fit:contain;" />`
+        : "";
+      return `<tr>
+        <td class="center">${i + 1}</td>
+        <td>${htmlEsc(who)}</td>
+        <td>${htmlEsc(o.opinion_text)}</td>
+        <td class="center">${sig}</td>
+      </tr>`;
+    }).join("");
+    const opinionSection = `
+      <div class="section-header">근로자 의견</div>
+      <table>
+        <thead><tr><th style="width:5%">No</th><th style="width:22%">참여자</th><th>의견</th><th style="width:14%">서명</th></tr></thead>
+        <tbody>${opinionRows || '<tr><td colspan="4" class="center">등록된 근로자 의견이 없습니다</td></tr>'}</tbody>
+      </table>`;
+
+    const accidentRows = assessmentAccidents.map((a: any, i: number) => `<tr>
+      <td class="center">${i + 1}</td>
+      <td>${htmlEsc(a.occurrence_date || "일자 미상")}<br/>${htmlEsc(a.location || "장소 미상")}</td>
+      <td>${htmlEsc(a.accident_type || "")}${a.process ? `<br/><span style="color:#64748b">${htmlEsc(a.process)}</span>` : ""}</td>
+      <td>${htmlEsc(a.accident_summary || a.description || "")}</td>
+      <td>${htmlEsc(a.cause || "")}</td>
+      <td>${htmlEsc(a.result || "")}</td>
+      <td>${htmlEsc(a.prevention || "")}</td>
+    </tr>`).join("");
+    const accidentSection = `
+      <div class="section-header">사고사례</div>
+      <table>
+        <thead><tr>
+          <th style="width:4%">No</th><th style="width:12%">발생</th><th style="width:10%">유형</th>
+          <th>개요</th><th style="width:14%">원인</th><th style="width:12%">결과</th><th style="width:16%">예방대책</th>
+        </tr></thead>
+        <tbody>${accidentRows || '<tr><td colspan="7" class="center">등록된 사고사례가 없습니다</td></tr>'}</tbody>
+      </table>`;
+
+    const healthRows = healthHazards.map((h: any, i: number) => `<tr>
+      <td class="center">${i + 1}</td>
+      <td>${htmlEsc(h.category || "")}</td>
+      <td>${htmlEsc(h.process || "")}</td>
+      <td>${htmlEsc(h.description || "")}</td>
+      <td class="center">${htmlEsc(h.exposure_level || "")}</td>
+      <td>${htmlEsc(h.countermeasure || "")}</td>
+      <td>${htmlEsc(h.legal_basis || "")}</td>
+    </tr>`).join("");
+    const healthSection = healthHazards.length > 0 ? `
+      <div class="section-header">보건·유해요인</div>
+      <table>
+        <thead><tr>
+          <th style="width:4%">No</th><th style="width:10%">분류</th><th style="width:12%">공정</th>
+          <th>내용</th><th style="width:8%">노출</th><th style="width:18%">대책</th><th style="width:14%">법적근거</th>
+        </tr></thead>
+        <tbody>${healthRows}</tbody>
+      </table>` : "";
+
     const docTitle = `위험성평가표 [${run.type}] ${run.period_label}`;
     const html = `<!DOCTYPE html>
 <html lang="ko">
@@ -849,6 +920,10 @@ td, th { page-break-inside: auto; }
 
   ${feedbackSection}
   ${validationSection}
+
+  ${opinionSection}
+  ${accidentSection}
+  ${healthSection}
 
   <!-- Worker Participation Signature Page (always separate page) -->
   <div class="page-break"></div>

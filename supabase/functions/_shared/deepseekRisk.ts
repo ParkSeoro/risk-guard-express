@@ -1,7 +1,8 @@
 /**
  * Risk-assessment AI client (NVIDIA NIM).
  * DeepSeek V4 Flash/Pro hosted endpoints were deprecated on NIM (2026-08-07);
- * risk generation uses Nemotron Super by default, with ordered model failover
+ * Nemotron Super 49B reached hosted NIM EOL on 2026-08-26 (HTTP 410).
+ * Risk generation uses Llama 3.3 70B by default, with ordered model failover
  * via nvidiaChat.ts (same API key, per-model free-tier limits).
  *
  * Filename/exports kept for import stability.

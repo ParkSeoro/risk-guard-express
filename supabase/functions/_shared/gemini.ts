@@ -1,7 +1,7 @@
 // Shared AI client — NVIDIA NIM (OpenAI-compatible) adapter.
 // Filename kept for backward compatibility. Uses nvidiaChat.ts for keyed
 // calls + ordered model failover (same API key, per-model free-tier limits).
-// Primary default remains Nemotron Super (reasoning off via /no_think).
+// Primary default is Llama 3.3 70B after Nemotron Super 49B NIM EOL (reasoning off via /no_think).
 
 import {
   callNvidiaChat,

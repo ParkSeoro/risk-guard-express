@@ -3,7 +3,10 @@
  * Keep in sync with supabase/functions/_shared/nvidiaChat.ts defaults.
  */
 
-export const DEFAULT_PRIMARY_MODEL = 'nvidia/llama-3.3-nemotron-super-49b-v1.5';
+export const DEFAULT_PRIMARY_MODEL = 'meta/llama-3.3-70b-instruct';
+
+/** Hosted NIM EOL 2026-08-26 — must stay disabled. */
+export const RETIRED_NEMOTRON_SUPER_49B = 'nvidia/llama-3.3-nemotron-super-49b-v1.5';
 
 export type AiModelChainItem = {
   id: string;
@@ -20,13 +23,8 @@ export type AiModelCatalogEntry = {
 export const NVIDIA_MODEL_CATALOG: AiModelCatalogEntry[] = [
   {
     id: DEFAULT_PRIMARY_MODEL,
-    label: 'Nemotron Super 49B (1순위 권장)',
-    note: '현재 위험성평가 기본 · 품질 검증됨',
-  },
-  {
-    id: 'meta/llama-3.3-70b-instruct',
-    label: 'Llama 3.3 70B Instruct',
-    note: '한도 분산용 폴백',
+    label: 'Llama 3.3 70B Instruct (1순위)',
+    note: 'Nemotron Super 49B 호스팅 종료(2026-08-26) 후 기본',
   },
   {
     id: 'nvidia/llama-3.1-nemotron-70b-instruct',
@@ -38,11 +36,16 @@ export const NVIDIA_MODEL_CATALOG: AiModelCatalogEntry[] = [
     label: 'Mistral Small 3.1 24B',
     note: '위험성평가 초안(scope_draft) 기본 · 속도 우선',
   },
+  {
+    id: RETIRED_NEMOTRON_SUPER_49B,
+    label: 'Nemotron Super 49B (종료됨)',
+    note: 'NIM 호스팅 종료 — 사용 금지 (HTTP 410)',
+  },
 ];
 
 export const DEFAULT_MODEL_CHAIN: AiModelChainItem[] = NVIDIA_MODEL_CATALOG.map((m) => ({
   id: m.id,
-  enabled: true,
+  enabled: m.id !== RETIRED_NEMOTRON_SUPER_49B,
 }));
 
 export function normalizeModelChain(raw: unknown): AiModelChainItem[] {

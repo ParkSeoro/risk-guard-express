@@ -14,6 +14,7 @@ export {
   buildPermitBriefingLead,
   buildPermitBriefingLlmPayload,
   extractPermitBriefingFacts,
+  formatBriefingLine,
   formatPermitBriefingDateKo,
   PERMIT_BRIEFING_SYSTEM_PROMPT,
   buildLocalPermitBriefingFromFacts,

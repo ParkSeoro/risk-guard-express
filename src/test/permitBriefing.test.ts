@@ -270,6 +270,28 @@ describe('briefing prompt', () => {
     expect(PERMIT_BRIEFING_SYSTEM_PROMPT).toContain('투입장비는 일반 허가서 중장비 칸');
   });
 
+  it('turns object top_risks into readable lines and ignores [object Object]', () => {
+    const facts = extractPermitBriefingFacts({
+      formData: { hz_hot: true, hz_hot_note: '플랜지 용접', hz_height: true },
+      permitKinds: ['hot_work'],
+    });
+    const fromObjects = normalizePermitBriefing({
+      work_overview: '배관 용접',
+      top_risks: [
+        { label: '화기', note: '소화기 비치' },
+        { hazard: '고소', description: '안전대' },
+      ],
+    }, facts);
+    expect(fromObjects.top_risks).toEqual(['화기: 소화기 비치', '고소: 안전대']);
+
+    const savedBroken = normalizePermitBriefing({
+      work_overview: '배관 용접',
+      top_risks: ['[object Object]', '[object Object]', '[object Object]'],
+    }, facts);
+    expect(savedBroken.top_risks.join(' ')).not.toContain('[object Object]');
+    expect(savedBroken.top_risks.join(' ')).toContain('화기');
+  });
+
   it('uses recorded kinds, not the model bundled 굴착·중장비 label', () => {
     const facts = extractPermitBriefingFacts({
       formData: { hz_heavy_equipment_name: '덤프 15t' },

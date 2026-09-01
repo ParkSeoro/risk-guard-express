@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Sparkles, AlertTriangle, ShieldCheck, FileStack } from 'lucide-react';
-import type { PermitAiBriefing } from '@/lib/permitBriefing';
+import { formatBriefingLine, type PermitAiBriefing } from '@/lib/permitBriefing';
 
 interface Props {
   briefing: PermitAiBriefing | null | undefined;
@@ -51,7 +51,7 @@ export default function PermitAiBriefingCard({ briefing, compact, className }: P
             {(briefing.top_risks || []).length === 0 ? (
               <li className="text-muted-foreground list-none">본문에 표시된 위험요인이 없습니다.</li>
             ) : (briefing.top_risks || []).slice(0, 3).map((r, i) => (
-              <li key={i} className="leading-snug">{r}</li>
+              <li key={i} className="leading-snug">{formatBriefingLine(r)}</li>
             ))}
           </ol>
         </section>
@@ -66,7 +66,7 @@ export default function PermitAiBriefingCard({ briefing, compact, className }: P
             ) : (briefing.required_controls || []).map((c, i) => (
               <li key={i} className="flex gap-2 leading-snug">
                 <span className="text-emerald-600 shrink-0">✓</span>
-                <span>{c}</span>
+                <span>{formatBriefingLine(c)}</span>
               </li>
             ))}
           </ul>

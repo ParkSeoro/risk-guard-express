@@ -3,10 +3,13 @@ import { resolveNotificationRoute } from "@/lib/notificationRoutes";
 import {
   ANONYMOUS_REPORTER_LABEL,
   WORK_STOP_LEGAL_CITE,
+  WORK_STOP_MAX_PHOTOS,
   WORK_STOP_OPEN_STATUSES,
   buildWorkStopInsert,
   isWorkStopNotifyRecipient,
   isWorkStopOpenStatus,
+  parseWorkStopPhotoUrls,
+  serializeWorkStopPhotos,
   shouldShowHomeGpsCard,
   shouldShowHomeWorkStopCard,
   validateWorkStopForm,
@@ -29,15 +32,18 @@ describe("work-stop identity", () => {
     expect(anon.reporter_name).toBe(ANONYMOUS_REPORTER_LABEL);
     expect(anon.worker_id).toBe("w1");
     expect(anon.reporter_user_id).toBe("u1");
+    expect(anon.photo_url).toBeNull();
 
     const named = buildWorkStopInsert({
       projectId: "p1",
       reporterName: " 홍길동 ",
       hazardDescription: "낙하 위험",
       isAnonymous: false,
+      photoUrl: "https://x/a.jpg",
     });
     expect(named.is_anonymous).toBe(false);
     expect(named.reporter_name).toBe("홍길동");
+    expect(named.photo_url).toBe("https://x/a.jpg");
     expect(workStopDisplayName(named)).toBe("홍길동");
   });
 
@@ -62,6 +68,7 @@ describe("work-stop identity", () => {
         isAnonymous: true,
         reporterName: "",
         hazardDescription: "위험",
+        photoCount: 1,
       }),
     ).toBeNull();
     expect(
@@ -70,6 +77,7 @@ describe("work-stop identity", () => {
         isAnonymous: false,
         reporterName: "",
         hazardDescription: "위험",
+        photoCount: 1,
       }),
     ).toMatch(/보고자명/);
     expect(
@@ -78,8 +86,30 @@ describe("work-stop identity", () => {
         isAnonymous: true,
         reporterName: "",
         hazardDescription: "위험",
+        photoCount: 1,
       }),
     ).toMatch(/프로젝트/);
+  });
+
+  it("requires a scene photo", () => {
+    expect(
+      validateWorkStopForm({
+        projectId: "p1",
+        isAnonymous: true,
+        reporterName: "",
+        hazardDescription: "위험",
+        photoCount: 0,
+      }),
+    ).toMatch(/사진/);
+    expect(
+      validateWorkStopForm({
+        projectId: "p1",
+        isAnonymous: true,
+        reporterName: "",
+        hazardDescription: "위험",
+        photoCount: 4,
+      }),
+    ).toMatch(/최대/);
   });
 
   it("cites 제52조 and treats 확인중 as open", () => {
@@ -87,6 +117,27 @@ describe("work-stop identity", () => {
     expect(WORK_STOP_OPEN_STATUSES).toEqual(["접수", "확인중"]);
     expect(isWorkStopOpenStatus("확인중")).toBe(true);
     expect(isWorkStopOpenStatus("검토중")).toBe(false);
+  });
+});
+
+describe("work-stop photos", () => {
+  it("stores one URL as-is and many as JSON", () => {
+    expect(serializeWorkStopPhotos([])).toBeNull();
+    expect(serializeWorkStopPhotos([" https://x/a.jpg "])).toBe("https://x/a.jpg");
+    expect(serializeWorkStopPhotos(["https://x/a.jpg", "https://x/b.jpg"])).toBe(
+      JSON.stringify(["https://x/a.jpg", "https://x/b.jpg"]),
+    );
+    expect(WORK_STOP_MAX_PHOTOS).toBe(3);
+  });
+
+  it("reads legacy single URLs and JSON arrays", () => {
+    expect(parseWorkStopPhotoUrls(null)).toEqual([]);
+    expect(parseWorkStopPhotoUrls("https://x/a.jpg")).toEqual(["https://x/a.jpg"]);
+    expect(parseWorkStopPhotoUrls(JSON.stringify(["https://x/a.jpg", "https://x/b.jpg"]))).toEqual([
+      "https://x/a.jpg",
+      "https://x/b.jpg",
+    ]);
+    expect(parseWorkStopPhotoUrls("[not-json")).toEqual([]);
   });
 });
 

@@ -17,12 +17,16 @@ export const PERMIT_BRIEFING_SYSTEM_PROMPT = `당신은 작업허가서 결재 �
 규칙:
 1) 반드시 JSON만 출력한다.
 2) 입력에 없는 위험·조치를 만들지 않는다. 일반 건설 위험(추락, 감전, 협착 등)을 공종만 보고 추가하지 않는다.
-3) top_risks는 문자열 배열만. {label, note} 객체 금지. 입력 hazards의 항목만. 없으면 빈 배열.
+3) top_risks는 작업명·작업내용(작업 개요)에 적힌 실제 작업의 치명 위험 Top 3. 문자열 배열만. {label, note} 금지.
+   permit_kinds·허가서 종류만 보고 넣지 않는다. 개요에 굴착·터파기·흙막이가 없으면 굴착을 넣지 않는다.
+   조치 문구는 입력 hazards의 해당 항목에서만 가져온다. 없으면 빈 배열.
 4) required_controls는 입력 checklist·attachments·hazard measures만. 없으면 빈 배열.
 5) work_overview는 작업 내용 1~2문장. 업체명·날짜·"작업 사항으로"는 쓰지 않는다(시스템이 앞에 붙인다).
 6) 한국어 단정형. 번역투 금지.
-7) 굴착과 중장비는 서로 다른 위험이다. 양식명·permit_kinds의 "굴착·중장비"만 보고 굴착을 넣지 않는다. hazards에 "굴착"이 있을 때만 굴착·붕괴·매설물을 쓴다.
-8) 투입장비는 일반 허가서 중장비 칸에 적힌 장비명이다. "굴착기"가 있어도 그건 장비이지 굴착 작업이 아니다. 중장비는 투입장비·작업반경·협착으로 요약한다.`;
+7) 굴착과 중장비는 서로 다른 위험이다. 양식명·permit_kinds의 "굴착·중장비"만 보고 굴착을 넣지 않는다.
+   작업 개요나 hazards에 굴착이 있을 때만 굴착·붕괴·매설물을 쓴다.
+8) 투입장비는 일반 허가서 중장비 칸에 적힌 장비명이다. "굴착기"가 있어도 그건 장비이지 굴착 작업이 아니다.
+   개요에 양중·하역·크레인·지게차가 있으면 중장비로 요약한다.`;
 
 const CHECKLIST_LABELS: Record<string, string> = {
   chk_education: '안전교육 이수',
@@ -59,22 +63,30 @@ const HAZARD_DEFS: Array<{
   { key: 'hz_height', label: '고소', noteKey: 'hz_height_note', detailKey: 'hz_height_detail' },
 ];
 
-/** 굴착 작업임을 뒷받침하는 안전조치만. */
+/** 굴착 작업임을 뒷받침하는 안전조치만. 기울기·흙막이·GPR·굴착토. */
 const EX_DIG_EVIDENCE = [
   '굴착 전 지하매설물 도면 확인',
   '지중탐사(GPR/탐침봉) 실시',
   '굴착 기울기 준수(흙 1:1.0 등)',
   '흙막이 / 지보공 설치',
-  '주변 침하·균열 점검',
   '굴착토 적치(굴착면 0.6m 이상 이격)',
 ];
 
-/** 굴착·중장비 양식 공통. 크레인·지게차에도 찍히므로 굴착 증거가 아니다. */
+/** 굴착·중장비 양식 공통. 크레인·PAD·양중에도 찍히므로 굴착 증거가 아니다. */
 const EX_SITE_SAFETY = [
+  '주변 침하·균열 점검',
   '안전난간·덮개·표지 설치',
   '비상연락망 게시',
   '우천/강풍 시 작업중지 기준',
 ];
+
+/** 작업명·작업내용에 실제 굴착이 적힌 경우. 굴착기(장비)는 제외. */
+const EXCAVATION_OVERVIEW_RE =
+  /굴착(?!기)|터파기|흙막이|지보공|트렌치|오픈\s*컷|open\s*cut|배관\s*굴착|기초\s*굴착|굴착면|지하매설물\s*굴착|사면\s*(굴착|붕괴)/i;
+
+export function workOverviewMentionsExcavation(workName?: string | null, workDescription?: string | null): boolean {
+  return EXCAVATION_OVERVIEW_RE.test(`${workName || ''} ${workDescription || ''}`);
+}
 
 /** 굴착 시트 안전조치 중 굴착 쪽. 중장비 항목과 섞이지 않게 분리한다. */
 const EX_DIG_SAFETY = [...EX_DIG_EVIDENCE, ...EX_SITE_SAFETY];
@@ -232,6 +244,10 @@ export function extractPermitBriefingFacts(input: {
     || datePart(input.permitDate)
     || datePart(str(d.permit_date));
 
+  const workName = str(input.workName) || str(d.work_name);
+  const workDescription = str(input.workDescription) || str(d.work_description);
+  const overviewSaysDig = workOverviewMentionsExcavation(workName, workDescription);
+
   const spec = excavationSpec(d);
   const digEvidence = [
     ...checkedDetailItems(d.hz_excavation_detail).filter((item) =>
@@ -241,7 +257,9 @@ export function extractPermitBriefingFacts(input: {
   ];
   const siteMeasures = checkedExSafety(d.ex_safety, EX_SITE_SAFETY);
   const digNote = excavationNote(d, spec);
-  const hasDig = !!d.hz_excavation || !!spec || !!str(d.hz_excavation_note) || digEvidence.length > 0;
+  const strongDig = !!spec || digEvidence.length > 0;
+  // 굴착 체크·주변 침하만으로는 굴착이 아니다. 작업개요 또는 제원·전용 조치가 있어야 한다.
+  const hasDig = strongDig || overviewSaysDig;
   const digMeasures = hasDig
     ? [...digEvidence, ...siteMeasures]
     : [];
@@ -292,8 +310,8 @@ export function extractPermitBriefingFacts(input: {
   return {
     company,
     workDate,
-    workName: str(input.workName) || str(d.work_name),
-    workDescription: str(input.workDescription) || str(d.work_description),
+    workName,
+    workDescription,
     workLocation: str(input.workLocation) || str(d.work_location) || str(d.location),
     workStart,
     workEnd,
@@ -360,7 +378,9 @@ export function buildPermitBriefingLlmPayload(facts: PermitBriefingFacts) {
     work_end: facts.workEnd || undefined,
     personnel_count: facts.personnelCount || undefined,
     투입장비: facts.equipment || undefined,
+    work_overview_source: [facts.workName, facts.workDescription].filter(Boolean).join(' / ') || undefined,
     permit_kinds: facts.kindLabels,
+    pick_top_risks_from: 'work_name and work_description, not permit_kinds',
     has_excavation_work: facts.hazards.some((h) => h.label === '굴착'),
     has_heavy_equipment: facts.hazards.some((h) => h.label === '중장비'),
     hazards: facts.hazards,
@@ -413,11 +433,20 @@ export function formatBriefingLine(item: unknown): string {
   return '';
 }
 
-function fallbackRisksFromFacts(facts: PermitBriefingFacts): string[] {
-  return facts.hazards.map((h) => {
-    const extra = [h.note, h.measures.slice(0, 3).join(', ')].filter(Boolean).join(' — ');
-    return extra ? `${h.label}: ${extra}` : `${h.label} 작업`;
-  }).slice(0, 3);
+function hazardRiskLine(h: PermitBriefingHazard): string {
+  const extra = [h.note, h.measures.slice(0, 3).join(', ')].filter(Boolean).join(' — ');
+  return extra ? `${h.label}: ${extra}` : `${h.label} 작업`;
+}
+
+/** AI가 굴착을 넣었거나 중장비를 빠뜨려도, 작성된 hazards로 Top 3를 채운다. */
+function fillTopRisksFromFacts(top: string[], facts: PermitBriefingFacts): string[] {
+  const out = [...top];
+  for (const h of facts.hazards) {
+    if (out.length >= 3) break;
+    if (out.some((r) => r.startsWith(h.label) || r.includes(`${h.label}:`))) continue;
+    out.push(hazardRiskLine(h));
+  }
+  return out.slice(0, 3);
 }
 
 function sanitizeOverview(overview: string, facts: PermitBriefingFacts): string {
@@ -432,8 +461,10 @@ function sanitizeOverview(overview: string, facts: PermitBriefingFacts): string 
 export function normalizePermitBriefing(raw: any, facts: PermitBriefingFacts): PermitAiBriefing {
   const lead = buildPermitBriefingLead(facts);
   let top = Array.isArray(raw?.top_risks) ? raw.top_risks.map(formatBriefingLine).filter(Boolean) : [];
-  top = top.filter((r) => !isInventedExcavationText(r, facts)).slice(0, 3);
-  if (top.length === 0) top = fallbackRisksFromFacts(facts);
+  top = fillTopRisksFromFacts(
+    top.filter((r) => !isInventedExcavationText(r, facts)).slice(0, 3),
+    facts,
+  );
 
   let controls = Array.isArray(raw?.required_controls)
     ? raw.required_controls.map(formatBriefingLine).filter(Boolean)

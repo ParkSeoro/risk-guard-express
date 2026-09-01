@@ -10107,6 +10107,15 @@ export type Database = {
           _lat?: number
           _lng?: number
           _accuracy?: number
+          _signature?: string
+        }
+        Returns: Json
+      }
+      upsert_tbm_participation_from_ack: {
+        Args: {
+          _tbm_session_id: string
+          _worker_id: string
+          _signature_data: string
         }
         Returns: Json
       }

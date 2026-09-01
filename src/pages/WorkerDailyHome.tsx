@@ -406,12 +406,18 @@ export default function WorkerDailyHome({
       return;
     }
     if (!todayLog || !workerId || !projectId) return;
+    const signatureData = exitSigRef.current.toDataURL("image/png");
+    if (!signatureData || signatureData.length < 100) {
+      toast.error("퇴근 서명이 유효하지 않습니다. 다시 서명해 주세요");
+      return;
+    }
     setBusy(true);
     try {
       const { data, error } = await supabase.rpc("worker_gps_daily_lifecycle", {
         _action: "exit",
         _worker_id: workerId,
         _project_id: projectId,
+        _signature: signatureData,
       });
       if (error) throw error;
       const res = data as any;

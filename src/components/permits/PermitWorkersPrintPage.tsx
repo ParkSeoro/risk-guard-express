@@ -10,9 +10,11 @@ import {
   formatWorkerPhone,
   type PermitWorkerRow,
 } from "@/lib/permitWorkers";
+import { isRenderableSignature } from "@/lib/permitCrewSignatures";
 
 export type TbmParticipantPrint = {
   id: string;
+  worker_id?: string | null;
   worker_name?: string | null;
   company_name?: string | null;
   worker_phone?: string | null;
@@ -153,7 +155,16 @@ export default function PermitWorkersPrintPage({
                   </td>
                   <td className="border p-1 permit-crew-company">{w.company_name || "-"}</td>
                   <td className="border p-1">{formatWorkerPhone(w.phone)}</td>
-                  <td className="border p-1 h-11 permit-crew-sign" />
+                  <td className="border p-1 h-11 permit-crew-sign text-center">
+                    {isRenderableSignature(w.signature_data) ? (
+                      <img
+                        src={w.signature_data!}
+                        alt={`${w.name} 서명`}
+                        className="inline-block h-8 max-w-full object-contain"
+                        data-testid="permit-crew-sign-img"
+                      />
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>

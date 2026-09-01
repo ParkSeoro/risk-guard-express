@@ -11,6 +11,8 @@ export type PermitWorkerRow = {
   company_id?: string | null;
   /** 을지 명단에서 관리자로 표시 */
   isManager?: boolean;
+  /** 출근 전자서명. 없으면 을지 인쇄 시 빈 칸(수기). */
+  signature_data?: string | null;
 };
 
 /**

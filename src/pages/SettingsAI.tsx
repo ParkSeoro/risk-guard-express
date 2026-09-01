@@ -1,7 +1,6 @@
 /**
- * 설정 > AI — NVIDIA NIM 모델 체인 / 자동 폴백.
- * API 키는 Supabase Edge Secrets(NVIDIA_API_KEY)만 사용. DB에 키를 저장하지 않음.
- * Lovable / OpenAI 레거시 UI 제거.
+ * 설정 > AI — JSON 핵심은 OpenAI, 장문·비전은 Gemini. NVIDIA는 예비.
+ * 키는 Supabase Edge Secrets. DB에 키를 저장하지 않음.
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -35,6 +34,7 @@ import {
   normalizeModelChain,
   type AiModelChainItem,
 } from '@/lib/aiNvidiaModels';
+import { AI_COST_LANES } from '@/lib/aiCostRoute';
 
 const SettingsAI = () => {
   const navigate = useNavigate();
@@ -117,10 +117,10 @@ const SettingsAI = () => {
       setKeyMessage((data as any)?.message || '');
       if (status === 'ok') {
         setKeyStatus('ok');
-        if (toastOnResult) toast.success('NVIDIA API 정상');
+        if (toastOnResult) toast.success((data as any)?.provider === 'openai' ? 'OpenAI API 정상' : 'NVIDIA API 정상');
       } else if (/설정되지 않았|missing|INVALID_KEY/i.test(String((data as any)?.message || ''))) {
         setKeyStatus('missing');
-        if (toastOnResult) toast.error('NVIDIA_API_KEY가 Edge Secrets에 없습니다');
+        if (toastOnResult) toast.error('OPENAI_API_KEY가 Edge Secrets에 없습니다');
       } else {
         setKeyStatus('error');
         if (toastOnResult) toast.message((data as any)?.message || '응답 확인 필요');
@@ -209,7 +209,7 @@ const SettingsAI = () => {
             <Bot className="h-5 w-5" /> AI 설정
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            NVIDIA NIM 모델 순위 · 한도 시 자동 폴백 (위험성평가 1순위 모델 유지)
+            작업계획서·위험성평가는 OpenAI, 교육·OCR·장문은 Gemini.
           </p>
         </div>
       </div>
@@ -273,10 +273,11 @@ const SettingsAI = () => {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">NVIDIA API 키</CardTitle>
+              <CardTitle className="text-base">OpenAI API 키</CardTitle>
               <CardDescription className="text-xs">
-                키는 브라우저/DB에 저장하지 않습니다. Supabase Edge Secrets의{' '}
-                <code className="text-[11px]">NVIDIA_API_KEY</code> 만 사용합니다.
+                키는 브라우저/DB에 저장하지 않습니다. JSON 핵심 기능은{' '}
+                <code className="text-[11px]">OPENAI_API_KEY</code>, 장문·비전은{' '}
+                <code className="text-[11px]">GEMINI_API_KEY</code>입니다.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -309,15 +310,41 @@ const SettingsAI = () => {
                 </Button>
                 <Button type="button" variant="ghost" size="sm" asChild>
                   <a
-                    href="https://build.nvidia.com/settings/api-keys"
+                    href="https://platform.openai.com/api-keys"
                     target="_blank"
                     rel="noreferrer"
                   >
-                    NVIDIA 키 발급
+                    OpenAI 키 발급
                     <ExternalLink className="h-3.5 w-3.5 ml-1" />
                   </a>
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">비용 기준 모델 분리</CardTitle>
+              <CardDescription className="text-xs">
+                Gemini 2.5 Flash는 텍스트 단가가 gpt-4o-mini보다 비쌉니다. 장문·비전만 Flash-Lite/Flash를 쓰고,
+                짧은 JSON은 OpenAI에 둡니다. 레인은 Edge Secret <code className="text-[11px]">AI_ROUTE_education=openai</code> 로 덮어쓸 수 있습니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {AI_COST_LANES.map((lane) => (
+                <div
+                  key={lane.feature}
+                  className="flex items-start justify-between gap-3 rounded-md border border-border/60 px-2 py-1.5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{lane.feature}</p>
+                    <p className="text-[10px] text-muted-foreground">{lane.why}</p>
+                  </div>
+                  <Badge variant={lane.provider === 'OpenAI' ? 'default' : 'secondary'} className="shrink-0 text-[10px]">
+                    {lane.provider} · {lane.model}
+                  </Badge>
+                </div>
+              ))}
             </CardContent>
           </Card>
 
@@ -350,9 +377,9 @@ const SettingsAI = () => {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">NVIDIA 모델 순위</CardTitle>
+              <CardTitle className="text-base">예비 NVIDIA 모델 순위</CardTitle>
               <CardDescription className="text-xs">
-                위쪽이 우선. 1순위 기본값은 Llama 3.3 70B입니다. Nemotron Super 49B는 NIM 호스팅이 종료되어 꺼 두세요.
+                OpenAI가 실패할 때만 사용합니다. 위쪽이 우선. Nemotron Super 49B는 NIM 호스팅이 종료되어 꺼 두세요.
                 {primaryId && (
                   <>
                     {' '}

@@ -224,11 +224,17 @@ serve(async (req) => {
       .maybeSingle();
     const cachedCases = (cached?.generated_cases as any[]) || [];
 
-    // 2) Approved corpus (assessment_accidents) — skip LLM when enough cases exist
-    const libraryCases =
-      cachedCases.length >= 3
-        ? []
-        : await fetchApprovedAccidentCases(adminClient, processName, 4);
+    // 2) Approved corpus (assessment_accidents) — skip LLM when enough cases exist.
+    // Library miss/error must never block NVIDIA/OpenAI generation.
+    let libraryCases: any[] = [];
+    if (cachedCases.length < 3) {
+      try {
+        libraryCases = await fetchApprovedAccidentCases(adminClient, processName, 4);
+      } catch (e) {
+        console.warn("[generate-accident-ai] library prefetch skipped:", e);
+        libraryCases = [];
+      }
+    }
 
     const emitCached = async (
       send: (payload: Record<string, unknown>) => void,
@@ -316,6 +322,7 @@ serve(async (req) => {
 
       try {
         for await (const chunk of streamGeminiChatText({
+          purpose: "accident",
           messages: [
             { role: "system", content: ACCIDENT_SYSTEM_PROMPT },
             { role: "user", content: userPrompt },

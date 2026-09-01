@@ -45,7 +45,7 @@ const settingsCards = [
   {
     id: 'ai',
     title: 'AI 설정',
-    description: 'NVIDIA 모델 순위·자동 폴백·AI 사용 여부를 설정합니다.',
+    description: 'OpenAI·Gemini 비용 분리·예비 NVIDIA·AI 사용 여부를 설정합니다.',
     icon: Bot,
     path: '/settings/ai',
     requires: 'master' as const,

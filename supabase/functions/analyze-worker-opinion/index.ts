@@ -3,6 +3,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callGeminiChat } from '../_shared/gemini.ts';
+import { hasChatAiKey } from '../_shared/openaiChat.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -51,6 +52,7 @@ const ACCIDENT_PROMPT = `당신은 건설 안전 사고분석 전문가입니다
 async function callAI(systemPrompt: string, userPrompt: string, schema: any) {
   const schemaHint = `반드시 다음 JSON 스키마를 따르는 JSON 객체만 출력하세요 (마크다운 금지):\n${JSON.stringify(schema)}`;
   const data = await callGeminiChat({
+    purpose: 'health',
     model: 'gemini-2.5-flash',
     messages: [
       { role: 'system', content: `${systemPrompt}\n\n${schemaHint}` },
@@ -151,9 +153,8 @@ Deno.serve(async (req) => {
   const auth = await requireUser(req);
   if (auth instanceof Response) return auth;
   try {
-    // AI key is validated inside callGeminiChat (NVIDIA_API_KEY)
-    if (!Deno.env.get('NVIDIA_API_KEY')) {
-      throw new Error('NVIDIA_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 등록해야 합니다.');
+    if (!hasChatAiKey()) {
+      throw new Error('GEMINI_API_KEY 또는 OPENAI_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 등록해야 합니다.');
     }
     const body = (await req.json()) as RequestBody;
 

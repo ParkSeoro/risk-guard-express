@@ -1,7 +1,5 @@
-// Shared AI client — NVIDIA NIM (OpenAI-compatible) adapter.
-// Filename kept for backward compatibility. Uses nvidiaChat.ts for keyed
-// calls + ordered model failover (same API key, per-model free-tier limits).
-// Primary default is Llama 3.3 70B after Nemotron Super 49B NIM EOL (reasoning off via /no_think).
+// Shared AI client. Cost lanes in aiRoute.ts pick OpenAI vs real Gemini.
+// NVIDIA NIM is last resort — hosted chain models are mostly 410/404 (2026-08+).
 
 import {
   callNvidiaChat,
@@ -9,6 +7,13 @@ import {
   peekPrimaryModelSync,
   NvidiaChatError,
 } from "./nvidiaChat.ts";
+import {
+  callOpenAiChat,
+  isOpenAiFallbackEnabled,
+  OpenAiChatError,
+} from "./openaiChat.ts";
+import { resolveAiProvider, hasGeminiApiKey, type AiPurpose } from "./aiRoute.ts";
+import { callGeminiNativeChat, GeminiNativeError } from "./geminiNative.ts";
 
 const NVIDIA_MODEL = peekPrimaryModelSync();
 
@@ -32,6 +37,8 @@ interface OAIRequest {
   response_format?: { type: "json_object" | "text" };
   /** Skip the long Korean style appendix when the caller already embeds full instructions. */
   compact?: boolean;
+  /** Cost lane — see aiRoute.ts */
+  purpose?: AiPurpose;
 }
 
 interface OAIResponse {
@@ -138,6 +145,16 @@ function injectSystemRules(messages: OAIMessage[], wantsJson: boolean, compact =
 
 function wrapNvidiaAsGemini(e: unknown): never {
   if (e instanceof GeminiError) throw e;
+  if (e instanceof OpenAiChatError) {
+    const code =
+      e.code === "TIMEOUT" || e.code === "DISABLED"
+        ? "SERVER_ERROR"
+        : (e.code as GeminiError["code"]);
+    throw new GeminiError(e.message, e.status, code);
+  }
+  if (e instanceof GeminiNativeError) {
+    throw new GeminiError(e.message, e.status, e.code);
+  }
   if (e instanceof NvidiaChatError) {
     const code =
       e.code === "MODEL_NOT_FOUND" || e.code === "DISABLED" || e.code === "TIMEOUT"
@@ -152,16 +169,66 @@ function wrapNvidiaAsGemini(e: unknown): never {
   );
 }
 
+function toOaiResponse(content: string, usage?: OpenAiChatResultUsage): OAIResponse {
+  return {
+    choices: [
+      {
+        message: { role: "assistant", content },
+        finish_reason: "stop",
+      },
+    ],
+    usage: usage
+      ? {
+          prompt_tokens: usage.prompt_tokens || 0,
+          completion_tokens: usage.completion_tokens || 0,
+          total_tokens: usage.total_tokens || 0,
+        }
+      : undefined,
+  };
+}
+
+type OpenAiChatResultUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+};
+
+async function viaOpenAi(args: {
+  messages: {
+    role: "system" | "user" | "assistant";
+    content: string | OAIMessage["content"];
+  }[];
+  temperature: number;
+  maxTokens: number;
+  wantsJson: boolean;
+}): Promise<OAIResponse> {
+  const result = await callOpenAiChat({
+    messages: args.messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    })),
+    temperature: args.temperature,
+    max_tokens: args.maxTokens,
+    json: args.wantsJson,
+  });
+  const content = args.wantsJson ? stripCodeFences(result.content) : result.content;
+  return toOaiResponse(content, result.usage);
+}
+
 /**
- * Call NVIDIA NIM using an OpenAI-style chat body.
- * Returns an OpenAI-style response object. Uses model-chain failover.
+ * Chat completion. Primary provider comes from aiRoute (cost lanes).
+ * Fallback: the other of OpenAI/Gemini, then NVIDIA last.
  */
 export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
   const wantsJson = req.response_format?.type === "json_object";
   const imagePresent = hasImageInput(req.messages);
   const compact = !!req.compact;
+  const purpose = req.purpose || (imagePresent ? "permit_template" : "default");
+  const primary = resolveAiProvider(purpose);
+  const openaiOn = isOpenAiFallbackEnabled();
+  const geminiOn = hasGeminiApiKey();
 
-  if (imagePresent) {
+  if (imagePresent && !geminiOn && !openaiOn) {
     const totalText = req.messages
       .filter((m) => m.role === "user")
       .map((m) => flattenContent(m.content).replace(/\[image omitted[^\]]*\]/g, "").trim())
@@ -181,15 +248,33 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
     role: m.role as "system" | "user" | "assistant",
     content: flattenContent(m.content),
   }));
+  const multimodal = imagePresent
+    ? preparedMessages.map((m) => ({
+        role: m.role as "system" | "user" | "assistant",
+        content: m.content,
+      }))
+    : messages;
+  const temperature = typeof req.temperature === "number" ? req.temperature : 0;
+  const maxTokens = typeof req.max_tokens === "number" ? req.max_tokens : 4096;
 
-  try {
+  const runOpenAi = () => viaOpenAi({ messages: multimodal, temperature, maxTokens, wantsJson });
+  const runGemini = async (): Promise<OAIResponse> => {
+    const result = await callGeminiNativeChat({
+      messages: multimodal,
+      temperature,
+      maxTokens,
+      json: wantsJson,
+    });
+    const content = wantsJson ? stripCodeFences(result.content) : result.content;
+    return toOaiResponse(content);
+  };
+  const runNvidia = async (): Promise<OAIResponse> => {
     const result = await callNvidiaChat({
       messages,
-      temperature: typeof req.temperature === "number" ? req.temperature : 0,
-      max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 4096,
+      temperature,
+      max_tokens: maxTokens,
       extraBody: { chat_template_kwargs: { enable_thinking: false } },
     });
-
     let rawContent = (result.content || "").trim();
     if (!rawContent && result.raw) {
       const msg = (result.raw as any)?.choices?.[0]?.message || {};
@@ -200,25 +285,31 @@ export async function callGeminiChat(req: OAIRequest): Promise<OAIResponse> {
       }
     }
     const content = wantsJson ? stripCodeFences(rawContent) : rawContent;
+    return toOaiResponse(content, result.usage);
+  };
 
-    return {
-      choices: [
-        {
-          message: { role: "assistant", content },
-          finish_reason: "stop",
-        },
-      ],
-      usage: result.usage
-        ? {
-            prompt_tokens: result.usage.prompt_tokens || 0,
-            completion_tokens: result.usage.completion_tokens || 0,
-            total_tokens: result.usage.total_tokens || 0,
-          }
-        : undefined,
-    };
-  } catch (e) {
-    wrapNvidiaAsGemini(e);
+  const order: Array<"openai" | "gemini" | "nvidia"> = [];
+  if (primary === "gemini") {
+    if (geminiOn) order.push("gemini");
+    if (openaiOn) order.push("openai");
+  } else {
+    if (openaiOn) order.push("openai");
+    if (geminiOn) order.push("gemini");
   }
+  order.push("nvidia");
+
+  let lastErr: unknown;
+  for (const step of order) {
+    try {
+      if (step === "openai") return await runOpenAi();
+      if (step === "gemini") return await runGemini();
+      return await runNvidia();
+    } catch (e) {
+      lastErr = e;
+      console.warn(`[gemini] ${step} failed (${purpose}), next lane:`, e);
+    }
+  }
+  wrapNvidiaAsGemini(lastErr);
 }
 
 /**
@@ -247,26 +338,70 @@ export async function geminiChatFetch(body: OAIRequest): Promise<Response> {
 }
 
 /**
- * Stream NVIDIA chat completions as UTF-8 text deltas (OpenAI SSE compatible).
- * Model-chain failover only on initial HTTP failure.
+ * Stream chat text. Same cost lanes as callGeminiChat (one-shot yield for OpenAI/Gemini).
  */
 export async function* streamGeminiChatText(req: OAIRequest): AsyncGenerator<string, void, unknown> {
   const wantsJson = req.response_format?.type === "json_object";
   const compact = !!req.compact;
+  const purpose = req.purpose || "default";
+  const primary = resolveAiProvider(purpose);
+  const openaiOn = isOpenAiFallbackEnabled();
+  const geminiOn = hasGeminiApiKey();
   const preparedMessages = injectSystemRules(req.messages, wantsJson, compact);
   const messages = preparedMessages.map((m) => ({
     role: m.role as "system" | "user" | "assistant",
     content: flattenContent(m.content),
   }));
+  const temperature = typeof req.temperature === "number" ? req.temperature : 0.35;
+  const maxTokens = typeof req.max_tokens === "number" ? req.max_tokens : 4096;
 
-  try {
-    yield* streamNvidiaChatText({
+  const yieldOpenAi = async function* () {
+    const result = await callOpenAiChat({
       messages,
-      temperature: typeof req.temperature === "number" ? req.temperature : 0.35,
-      max_tokens: typeof req.max_tokens === "number" ? req.max_tokens : 4096,
-      extraBody: { chat_template_kwargs: { enable_thinking: false } },
+      temperature,
+      max_tokens: maxTokens,
+      json: wantsJson,
     });
-  } catch (e) {
-    wrapNvidiaAsGemini(e);
+    const content = wantsJson ? stripCodeFences(result.content) : result.content;
+    if (content) yield content;
+  };
+  const yieldGemini = async function* () {
+    const result = await callGeminiNativeChat({
+      messages,
+      temperature,
+      maxTokens,
+      json: wantsJson,
+    });
+    const content = wantsJson ? stripCodeFences(result.content) : result.content;
+    if (content) yield content;
+  };
+
+  const order: Array<"openai" | "gemini" | "nvidia"> = [];
+  if (primary === "gemini") {
+    if (geminiOn) order.push("gemini");
+    if (openaiOn) order.push("openai");
+  } else {
+    if (openaiOn) order.push("openai");
+    if (geminiOn) order.push("gemini");
   }
+  order.push("nvidia");
+
+  let lastErr: unknown;
+  for (const step of order) {
+    try {
+      if (step === "openai") { yield* yieldOpenAi(); return; }
+      if (step === "gemini") { yield* yieldGemini(); return; }
+      yield* streamNvidiaChatText({
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        extraBody: { chat_template_kwargs: { enable_thinking: false } },
+      });
+      return;
+    } catch (e) {
+      lastErr = e;
+      console.warn(`[gemini stream] ${step} failed (${purpose}), next lane:`, e);
+    }
+  }
+  wrapNvidiaAsGemini(lastErr);
 }

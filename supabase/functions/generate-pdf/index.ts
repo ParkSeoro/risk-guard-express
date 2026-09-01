@@ -322,18 +322,21 @@ Deno.serve(async (req) => {
       .limit(80);
 
     let previousRun = pickPreviousApprovedRun(run, prevCandidates || []);
-    if (previousRunId && previousRunId !== runId) {
-      const hinted = (prevCandidates || []).find((c: any) => c.id === previousRunId)
-        || (previousRun?.id === previousRunId ? previousRun : null);
+    const overrideId = (previousRunId && previousRunId !== runId)
+      ? previousRunId
+      : (run.previous_run_id && run.previous_run_id !== runId ? run.previous_run_id : null);
+    if (overrideId) {
+      const hinted = (prevCandidates || []).find((c: any) => c.id === overrideId)
+        || (previousRun?.id === overrideId ? previousRun : null);
       if (hinted && hinted.project_id === run.project_id) {
         previousRun = hinted;
       } else {
         const { data: hintedRow } = await supabase
           .from("assessment_runs")
           .select("id, project_id, type, status, start_date, end_date, created_at, target_company_ids, period_label, is_deleted")
-          .eq("id", previousRunId)
+          .eq("id", overrideId)
           .maybeSingle();
-        if (hintedRow && hintedRow.project_id === run.project_id && hintedRow.status === "승인완료" && !hintedRow.is_deleted) {
+        if (hintedRow && hintedRow.project_id === run.project_id && !hintedRow.is_deleted) {
           previousRun = hintedRow;
         }
       }

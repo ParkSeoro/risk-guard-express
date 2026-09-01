@@ -3,9 +3,12 @@ import {
   WEEKLY_LINK_CANDIDATE_SELECT,
   companyTargetsOverlap,
   executionFeedbackCount,
+  formatPreviousRunOptionLabel,
   isManagedResidualHigh,
+  listManualPreviousCandidates,
   pickPreviousApprovedRun,
   resolveExecutionFeedbackTarget,
+  resolvePreviousRun,
   resolvePrintFeedbackRun,
   unresolvedFeedbackCount,
   type WeeklyLinkRun,
@@ -149,6 +152,84 @@ describe('pickPreviousApprovedRun', () => {
       target_company_ids: [],
     });
     expect(pickPreviousApprovedRun(week9, [week8Always, week8Susi])?.id).toBe('week8-susi');
+  });
+
+  it('falls back to another type when same-type approved runs are not earlier', () => {
+    const currentRegular = run({
+      id: '정기-next',
+      type: '정기',
+      status: '작성중',
+      start_date: '2026-09-07',
+      created_at: '2026-09-01T00:00:00Z',
+    });
+    const laterRegular = run({
+      id: '정기-later',
+      type: '정기',
+      start_date: '2026-09-14',
+      created_at: '2026-09-08T00:00:00Z',
+    });
+    const earlierAlways = run({
+      id: '상시-prev',
+      type: '상시',
+      start_date: '2026-08-31',
+      created_at: '2026-08-25T00:00:00Z',
+    });
+    expect(pickPreviousApprovedRun(currentRegular, [laterRegular, earlierAlways])?.id).toBe('상시-prev');
+  });
+});
+
+describe('resolvePreviousRun / listManualPreviousCandidates', () => {
+  const current = run({
+    id: 'next',
+    status: '작성중',
+    start_date: '2026-09-07',
+    created_at: '2026-09-01T00:00:00Z',
+    target_company_ids: ['co-hitech'],
+  });
+  const emptyApproved = run({
+    id: 'empty-approved',
+    start_date: '2026-08-31',
+    created_at: '2026-08-25T00:00:00Z',
+    target_company_ids: [],
+    period_label: '9월 1주차 공란',
+  });
+  const pending = run({
+    id: 'pending',
+    status: '결재진행',
+    start_date: '2026-08-31',
+    created_at: '2026-08-26T00:00:00Z',
+    period_label: '9월 1주차 결재중',
+  });
+  const matching = run({
+    id: 'match',
+    start_date: '2026-08-24',
+    created_at: '2026-08-20T00:00:00Z',
+    period_label: '8월 4주차',
+  });
+
+  it('does not auto-link empty-company 승인완료 to a filled-company draft', () => {
+    expect(pickPreviousApprovedRun(current, [emptyApproved, matching])?.id).toBe('match');
+    expect(pickPreviousApprovedRun(current, [emptyApproved])).toBeNull();
+  });
+
+  it('lets a manual override pick a company-mismatch or 결재진행 회차', () => {
+    expect(resolvePreviousRun(current, [emptyApproved, matching], emptyApproved.id)?.id).toBe('empty-approved');
+    expect(resolvePreviousRun(current, [pending, matching], pending.id)?.id).toBe('pending');
+  });
+
+  it('falls back to auto when override is missing or self', () => {
+    expect(resolvePreviousRun(current, [matching, emptyApproved], 'nope')?.id).toBe('match');
+    expect(resolvePreviousRun(current, [matching], current.id)?.id).toBe('match');
+  });
+
+  it('lists 결재진행 in the picker and prefers overlapping companies', () => {
+    const ids = listManualPreviousCandidates(current, [emptyApproved, pending, matching]).map((c) => c.id);
+    expect(ids).toEqual(['pending', 'match', 'empty-approved']);
+  });
+
+  it('labels include 관리대상 count', () => {
+    expect(formatPreviousRunOptionLabel(matching, 19)).toContain('관리대상 19건');
+    expect(formatPreviousRunOptionLabel(matching, 19)).toContain('8월 4주차');
   });
 });
 

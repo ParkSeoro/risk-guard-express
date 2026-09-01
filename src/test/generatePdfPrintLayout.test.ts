@@ -17,4 +17,9 @@ describe('generate-pdf RA table layout', () => {
     expect(src).toMatch(/\.eq\("is_deleted", false\)/);
     expect(src).toMatch(/!i\?\.is_excluded/);
   });
+
+  it('uses saved previous_run_id for 금주 이행 확인 when auto-link misses', () => {
+    expect(src).toMatch(/run\.previous_run_id/);
+    expect(src).toMatch(/overrideId/);
+  });
 });

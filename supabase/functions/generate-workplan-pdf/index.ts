@@ -56,8 +56,10 @@ function escapeHtml(s: string): string {
   return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function parseJsonSafe(val: string): any {
-  if (!val) return null;
+function parseJsonSafe(val: unknown): any {
+  if (val == null || val === "") return null;
+  if (typeof val === "object") return val;
+  if (typeof val !== "string") return null;
   try { return JSON.parse(val); } catch { return null; }
 }
 

@@ -46,6 +46,35 @@ describe("formatSectionContent", () => {
     expect(html).not.toContain("{");
     expect(html).not.toContain('"name"');
   });
+
+  it("uses section-scoped labels so method is not always 방법", () => {
+    const html = formatSectionPrintHtml(
+      JSON.stringify({ method: "급기식", air_volume: "30" }),
+      esc,
+      "ventilation",
+    );
+    expect(html).toContain("환기 방식");
+    expect(html).toContain("급기식");
+    expect(html).not.toContain("{");
+  });
+
+  it("renders the excavation preview payload from 사외배관 부지정지", () => {
+    const geology = formatSectionPrintHtml(
+      '{"soil_type":"","groundwater":"","rock_class":"","gas_present":""}',
+      esc,
+      "geology",
+    );
+    const contact = formatSectionPrintHtml(
+      '{"method":"무전기","signal":"무전","radio":"CH14"}',
+      esc,
+      "contact",
+    );
+    expect(geology).toContain("기재 없음");
+    expect(geology).not.toContain("soil_type");
+    expect(contact).toContain("연락 방법");
+    expect(contact).toContain("무전기");
+    expect(contact).not.toMatch(/\{"method"/);
+  });
 });
 
 describe("print edges never dump structured JSON", () => {

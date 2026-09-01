@@ -140,6 +140,94 @@ const SECTION_FIELD_LABELS: Record<string, Record<string, string>> = {
     manufacturer: "제조사",
     inspection_date: "검사일",
   },
+  ventilation: {
+    method: "환기 방식",
+    air_volume: "필요 풍량 (㎥/min)",
+    fan_spec: "환풍기 사양",
+    gas_monitoring: "가스 측정 계획",
+  },
+  structure: {
+    type: "구조물 종류",
+    spec: "규격",
+    height: "높이/단수",
+    detail: "구조 상세",
+  },
+  atmosphere: {
+    oxygen: "산소 농도 기준 (%)",
+    gas_types: "유해가스 종류",
+    measurement_freq: "측정 빈도",
+    equipment: "측정 장비",
+    plan: "측정 계획",
+  },
+  rescue: {
+    equipment: "구조 장비",
+    team: "구조팀 편성",
+    procedure: "구조 절차",
+  },
+  safety_zone: {
+    distance: "안전 거리 (m)",
+    boundary: "경계 구역",
+    alarm: "경보 체계",
+  },
+  survey: {
+    asbestos: "석면 조사 결과",
+    structural: "구조 안전 진단",
+    utilities: "매설물 확인",
+    summary: "조사 요약",
+  },
+  monitoring: {
+    convergence: "내공변위",
+    crown: "천단침하",
+    surface: "지표침하",
+    frequency: "계측 빈도",
+    criteria: "관리 기준값",
+  },
+  route: {
+    path: "운행 경로",
+    ground: "지반·경사 상태",
+    sight: "시야·교차 구간",
+    notes: "상세",
+  },
+  crew: {
+    composition: "인원 구성",
+    roles: "역할 범위",
+  },
+  assemble: {
+    kind: "작업 구분 (설치/상승/해체)",
+    sequence: "순서 및 안전조치",
+  },
+  support: {
+    foundation: "기초",
+    wall_tie: "월타이/지지",
+    detail: "지지방법 상세",
+  },
+  tools: {
+    tools: "작업도구·장비",
+    temporary: "가설설비",
+    guard: "방호설비",
+  },
+  isolation: {
+    lockout: "차단(LOTO)",
+    purge: "퍼지·치환",
+    verify: "잔류 확인",
+  },
+  approach: {
+    voltage: "전압 (kV)",
+    limit_cm: "접근한계 (cm)",
+    ppe: "절연 보호구",
+    notes: "상세",
+  },
+  consult: {
+    party: "운행관계자",
+    window: "차단·협의 시간",
+    contact: "연락 수단",
+    notes: "협의 내용",
+  },
+  staffing: {
+    count: "작업 인원",
+    volume: "작업량",
+    sequence: "작업순서",
+  },
 };
 
 function hasValue(val: unknown): boolean {

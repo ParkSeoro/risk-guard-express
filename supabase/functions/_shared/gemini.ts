@@ -1,7 +1,5 @@
-// Shared AI client — NVIDIA NIM adapter + OpenAI when configured.
-// Filename kept for backward compatibility.
-// Hosted NIM models in the old chain are mostly 410/404 (2026-08+).
-// RISK_AI_DRAFT_PROVIDER=openai → ChatGPT first for briefing/accident/health too.
+// Shared AI client. OpenAI (gpt-4o-mini) is the primary when OPENAI_API_KEY is set.
+// NVIDIA NIM is last resort — hosted chain models are mostly 410/404 (2026-08+).
 
 import {
   callNvidiaChat,

@@ -3,6 +3,7 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callGeminiChat } from '../_shared/gemini.ts';
+import { hasChatAiKey } from '../_shared/openaiChat.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -151,9 +152,8 @@ Deno.serve(async (req) => {
   const auth = await requireUser(req);
   if (auth instanceof Response) return auth;
   try {
-    // AI key is validated inside callGeminiChat (NVIDIA_API_KEY)
-    if (!Deno.env.get('NVIDIA_API_KEY')) {
-      throw new Error('NVIDIA_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 등록해야 합니다.');
+    if (!hasChatAiKey()) {
+      throw new Error('OPENAI_API_KEY가 설정되지 않았습니다. Supabase Edge Secrets에 등록해야 합니다.');
     }
     const body = (await req.json()) as RequestBody;
 

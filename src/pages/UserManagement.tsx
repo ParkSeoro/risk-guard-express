@@ -23,11 +23,13 @@ import {
 } from '@/lib/projectPositions';
 import { companyTypeLabel, normalizeCompanyType } from '@/lib/companyTypes';
 import {
-  classifyPermissionPersona,
   permissionPersonaLabel,
-  personaMatchesFilter,
   type PermissionPersonaFilter,
 } from '@/lib/permissions';
+import {
+  matchesManageableUserFilters,
+  personaOfUser,
+} from '@/lib/userManagementFilters';
 
 // === New permission model ===
 // Global role: only `master` is meaningful (system-wide admin).
@@ -504,34 +506,30 @@ const UserManagement = () => {
     setAssignSaving(false);
   };
 
-  const personaOf = (userId: string, globalRoles: string[]) => {
-    const mems = (userMemberships[userId] || []).filter(
-      (m: any) => filterProject === 'all' || m.project_id === filterProject,
-    );
-    return classifyPermissionPersona({
+  const personaOf = (userId: string, globalRoles: string[]) =>
+    personaOfUser({
+      userId,
       globalRoles,
-      projectRoles: mems.map((m: any) => m.role_new),
+      memberships: userMemberships[userId] || [],
+      filterProject,
     });
-  };
 
-  const filtered = users.filter(u => {
-    if (filterStatus !== 'all' && u.account_status !== filterStatus) return false;
-    if (filterProject !== 'all') {
-      const mems = userMemberships[u.user_id] || [];
-      if (!mems.some(m => m.project_id === filterProject)) return false;
-    }
-    if (!personaMatchesFilter(personaOf(u.user_id, u.roles), filterPersona)) return false;
-    if (search) {
-      const term = search.toLowerCase();
-      return (
-        u.display_name?.toLowerCase().includes(term) ||
-        u.company?.toLowerCase().includes(term) ||
-        u.phone?.toLowerCase().includes(term) ||
-        u.email?.toLowerCase().includes(term)
-      );
-    }
-    return true;
-  });
+  const filtered = users.filter((u) =>
+    matchesManageableUserFilters({
+      user: u,
+      memberships: userMemberships[u.user_id] || [],
+      filterStatus,
+      filterProject,
+      filterPersona,
+      search,
+    }),
+  );
+
+  const setStatusTab = (status: string) => {
+    setFilterStatus(status);
+    // 승인대기는 관리자/근로자 구분과 무관한 심사 큐. 기본 관리자 탭에 가려지지 않게 한다.
+    if (status === 'pending') setFilterPersona('all');
+  };
 
   const kpis = {
     total: users.length,
@@ -581,12 +579,12 @@ const UserManagement = () => {
       {/* KPI summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: '관리자', value: kpis.manager, icon: Shield, color: 'text-primary' },
-          { label: '근로자', value: kpis.worker, icon: HardHat, color: 'text-foreground' },
-          { label: '미배정', value: kpis.unassigned, icon: Users, color: 'text-muted-foreground' },
-          { label: '승인대기', value: kpis.pending, icon: Crown, color: 'text-warning' },
+          { label: '관리자', value: kpis.manager, icon: Shield, color: 'text-primary', onClick: () => { setFilterPersona('manager'); setFilterStatus('all'); } },
+          { label: '근로자', value: kpis.worker, icon: HardHat, color: 'text-foreground', onClick: () => { setFilterPersona('worker'); setFilterStatus('all'); } },
+          { label: '미배정', value: kpis.unassigned, icon: Users, color: 'text-muted-foreground', onClick: () => { setFilterPersona('unassigned'); setFilterStatus('all'); } },
+          { label: '승인대기', value: kpis.pending, icon: Crown, color: 'text-warning', onClick: () => setStatusTab('pending') },
         ].map(k => (
-          <Card key={k.label}>
+          <Card key={k.label} className="cursor-pointer hover:bg-muted/40" onClick={k.onClick}>
             <CardContent className="py-3 flex items-center justify-between">
               <div>
                 <div className="text-[11px] text-muted-foreground">{k.label}</div>
@@ -609,10 +607,11 @@ const UserManagement = () => {
       </Tabs>
       <p className="text-[11px] text-muted-foreground -mt-2">
         관리자: 마스터·안전관리자·현장소장·관리감독자·감리·열람자. 근로자: 현장 작업자. 겸임 계정은 양쪽 탭에 보입니다.
+        승인대기 탭은 관리자/근로자 구분 없이 가입 심사 대상 전원을 보여 줍니다.
       </p>
 
       {/* Status tabs */}
-      <Tabs value={filterStatus} onValueChange={setFilterStatus}>
+      <Tabs value={filterStatus} onValueChange={setStatusTab}>
         <TabsList>
           <TabsTrigger value="all" className="text-xs">전체 ({kpis.total})</TabsTrigger>
           <TabsTrigger value="pending" className="text-xs">승인대기 ({kpis.pending})</TabsTrigger>

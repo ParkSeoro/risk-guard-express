@@ -29,7 +29,9 @@ import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import { isPpeInboundItem, normalizePpeItemKey } from '@/lib/safetyCostPpeStock';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 import {
+  documentAnalysisToastCopy,
   ocrReviewGaps,
+  sanitizeOcrWarning,
   ocrStatusBadge,
   ocrStatusBadgeVariant,
   ocrStatusLabel,
@@ -727,7 +729,7 @@ const SafetyCost = () => {
       setAiSummary(data?.summary || null);
       const summary = summarizeOcrItems(data?.items || []);
       setOcrBanner({ warning: data?.warning, summary });
-      if (data?.warning) toast({ title: '판독 주의', description: data.warning });
+      if (data?.warning) toast({ title: '판독 주의', description: sanitizeOcrWarning(data.warning) });
       await insertItems(data?.items || []);
       setAiText('');
     } catch (e: any) {
@@ -778,13 +780,12 @@ const SafetyCost = () => {
       setOcrBanner({ warning: data?.warning, summary });
       await insertItems(data?.items || []);
       if (text.trim()) setAiText(text);
-      toast({
-        title: '거래명세표 자동분석 완료',
-        description: data?.warning
-          ? data.warning
-          : `${data?.items?.length || 0}개 항목을 인식했습니다.${summary.rawChars ? ` OCR 원문 ${summary.rawChars}자` : ''}`,
-        variant: data?.warning && (!data?.items?.length || summary.lowCount > 0) ? 'destructive' : 'default',
-      });
+      toast(documentAnalysisToastCopy({
+        itemCount: data?.items?.length || 0,
+        warning: data?.warning,
+        rawChars: summary.rawChars,
+        lowCount: summary.lowCount,
+      }));
       fetchAll();
     } catch (e: any) {
       toast({ title: '거래명세표 자동분석 실패', description: e.message || String(e), variant: 'destructive' });

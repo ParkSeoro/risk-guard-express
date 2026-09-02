@@ -115,6 +115,62 @@ export function stampOcrOnItem<T extends Record<string, unknown>>(
   };
 }
 
+export function mergeOcrWarnings(...parts: Array<string | undefined | null>): string {
+  const cleaned = parts.map((p) => String(p || '').trim()).filter(Boolean);
+  const uniq: string[] = [];
+  for (const part of cleaned) {
+    if (uniq.some((u) => u.includes(part))) continue;
+    const wider = uniq.findIndex((u) => part.includes(u));
+    if (wider >= 0) {
+      uniq[wider] = part;
+      continue;
+    }
+    uniq.push(part);
+  }
+  return uniq.join(' · ');
+}
+
+export function sanitizeOcrWarning(raw?: string | null): string {
+  let t = String(raw || '').trim();
+  if (!t) return '';
+  t = t.replace(/\s*\((?:API key not valid[^)]*|Please pass a valid API key[^)]*)\)\s*/gi, ' ').trim();
+  t = t.replace(/\s*API key not valid\. Please pass a valid API key\.?/gi, '').trim();
+  t = mergeOcrWarnings(...t.split(/\s*·\s*/));
+  if (/API key not valid|API_KEY_INVALID|INVALID_API_KEY|INVALID_KEY/i.test(t)) {
+    return `${OCR_STATUS_LABEL.no_vision} 이미지 판독 키가 만료되었거나 잘못되었습니다.`;
+  }
+  return t.replace(/\s{2,}/g, ' ').trim();
+}
+
+export function documentAnalysisToastCopy(opts: {
+  itemCount: number;
+  warning?: string | null;
+  rawChars?: number;
+  lowCount?: number;
+}): { title: string; description: string; variant: 'default' | 'destructive' } {
+  const warning = sanitizeOcrWarning(opts.warning);
+  if (warning && opts.itemCount === 0) {
+    return {
+      title: '거래명세표 자동분석 실패',
+      description: warning,
+      variant: 'destructive',
+    };
+  }
+  const countLine = `${opts.itemCount}개 항목을 인식했습니다.${opts.rawChars ? ` OCR 원문 ${opts.rawChars}자` : ''}`;
+  if (warning) {
+    return {
+      title: '거래명세표 자동분석 주의',
+      description: warning,
+      variant: (opts.lowCount || 0) > 0 ? 'destructive' : 'default',
+    };
+  }
+  return {
+    title: '거래명세표 자동분석 완료',
+    description: countLine,
+    variant: 'default',
+  };
+}
+
 export function summarizeOcrItems(
   items: Array<{ ocr_status?: string | null; ocr_raw_text?: string | null }>,
 ) {

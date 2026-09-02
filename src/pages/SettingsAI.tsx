@@ -209,7 +209,7 @@ const SettingsAI = () => {
             <Bot className="h-5 w-5" /> AI 설정
           </h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            작업계획서·위험성평가는 OpenAI, 교육·OCR·장문은 Gemini.
+            작업계획서·위험성평가는 OpenAI, 교육·장문은 Gemini. OCR은 Gemini 후 OpenAI 비전.
           </p>
         </div>
       </div>

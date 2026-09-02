@@ -3,6 +3,7 @@ import { callGeminiChat, GeminiError } from "../_shared/gemini.ts";
 import { hasChatAiKey } from "../_shared/openaiChat.ts";
 import {
   geminiJsonFromText,
+  mergeOcrWarnings,
   OCR_STATUS_LABEL,
   runKoreanOcr,
   stampStructuredItem,
@@ -39,8 +40,7 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 function mergeWarning(...parts: Array<string | undefined | null>) {
-  const uniq = [...new Set(parts.map((p) => String(p || "").trim()).filter(Boolean))];
-  return uniq.join(" · ");
+  return mergeOcrWarnings(...parts);
 }
 
 function fallbackParse(text: string) {

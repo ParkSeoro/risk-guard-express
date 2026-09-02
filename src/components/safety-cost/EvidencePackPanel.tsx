@@ -17,6 +17,7 @@ import {
   type EvidenceFileLike,
 } from '@/lib/safetyCostEvidencePack';
 import { formatKRW } from '@/lib/safetyCost';
+import { itemMissingDailyHard, resolvedFileCategory } from '@/lib/safetyCostItemEvidence';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 
 type Props = {
@@ -43,12 +44,22 @@ export function EvidencePackPanel({
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploadCat, setUploadCat] = useState('3');
-  const [uploadKind, setUploadKind] = useState<EvidenceKind>('transaction');
+  const [uploadKind, setUploadKind] = useState<EvidenceKind>('tax_invoice');
   const [uploading, setUploading] = useState(false);
 
   const pack = useMemo(
     () => evaluateEvidencePack({ items, files: evidence, ppeLedgerSignedCount, exempt }),
     [items, evidence, ppeLedgerSignedCount, exempt],
+  );
+
+  const activeCats = useMemo(() => {
+    const codes = new Set((pack.eligibleItems || []).map((i) => String(i.category_code || '')));
+    return CATEGORY_EVIDENCE_PACK.filter((p) => codes.has(p.code));
+  }, [pack.eligibleItems]);
+
+  const itemCat = useMemo(
+    () => new Map((pack.eligibleItems || []).map((i) => [i.id, String(i.category_code || '')])),
+    [pack.eligibleItems],
   );
 
   if (exempt || pack.exempt) {
@@ -70,11 +81,6 @@ export function EvidencePackPanel({
       </Card>
     );
   }
-
-  const activeCats = useMemo(() => {
-    const codes = new Set(items.filter((i) => Number(i.amount || 0) > 0).map((i) => String(i.category_code || '')));
-    return CATEGORY_EVIDENCE_PACK.filter((p) => codes.has(p.code));
-  }, [items]);
 
   async function handleUpload(files: FileList | null) {
     if (!files?.length || !userId) return;
@@ -149,7 +155,7 @@ export function EvidencePackPanel({
               {pack.ready
                 ? <CheckCircle2 className="h-4 w-4 text-success" />
                 : <AlertTriangle className="h-4 w-4 text-destructive" />}
-              법정·실무 필수 증빙 게이트
+              월말 상신 · 법정·실무 필수 증빙 게이트
             </CardTitle>
             <Badge variant={pack.ready ? 'default' : 'destructive'}>
               {pack.ready ? '상신 가능(증빙)' : `필수 누락 ${pack.hardMissing.length}건`}
@@ -169,6 +175,21 @@ export function EvidencePackPanel({
                     <p className="text-sm font-medium">{cat.code}. {cat.name}</p>
                     <span className="text-xs text-muted-foreground">{formatKRW(amount)}</span>
                   </div>
+                  {(() => {
+                    const recon = pack.reconcile.find((r) => r.code === cat.code);
+                    if (!recon) return null;
+                    return (
+                      <p className={`text-xs ${recon.ok ? 'text-muted-foreground' : 'text-destructive'}`}>
+                        대사: 사용 {formatKRW(recon.usableTotal)} · 명세연결 {formatKRW(recon.statementLinkedTotal)}
+                        {recon.ok ? ' · 일치' : ` · 차액 ${formatKRW(recon.difference)}`}
+                      </p>
+                    );
+                  })()}
+                  {items.filter((i) => String(i.category_code) === cat.code && itemMissingDailyHard(i, evidence)).map((i) => (
+                    <p key={i.id} className="text-[11px] text-destructive">
+                      {(i as { item_name?: string }).item_name || i.id} — 매일 증빙(명세·사진) 부족
+                    </p>
+                  ))}
                   <div className="grid gap-1.5">
                     {catRows.map((row) => (
                       <div key={`${row.code}-${row.requirement.kind}`} className="flex items-center justify-between gap-2 text-xs">
@@ -185,6 +206,23 @@ export function EvidencePackPanel({
                       </div>
                     ))}
                   </div>
+                  {(() => {
+                    const taxFiles = evidence.filter(
+                      (f) => f.evidence_kind === 'tax_invoice' && resolvedFileCategory(f, itemCat) === cat.code,
+                    );
+                    if (!taxFiles.length) {
+                      return <p className="text-[11px] text-muted-foreground">월말 세금계산서: 이 비목 대기</p>;
+                    }
+                    return (
+                      <ul className="text-[11px] text-muted-foreground space-y-0.5">
+                        {taxFiles.map((f, i) => (
+                          <li key={(f as { id?: string }).id || `${cat.code}-tax-${i}`}>
+                            세금계산서 {i + 1}: {(f as { file_name?: string }).file_name || '파일'}
+                          </li>
+                        ))}
+                      </ul>
+                    );
+                  })()}
                   {cat.code === '3' && (
                     <Button size="sm" variant="outline" className="mt-1" onClick={onOpenPpeLedger}>
                       보호구 지급대장 작성
@@ -243,8 +281,8 @@ export function EvidencePackPanel({
             />
           </div>
           <p className="text-[11px] text-muted-foreground">
-            팁: 거래명세·세금계산서는 종류를 구분해 올리면 게이트가 자동으로 충족됩니다.
-            보호구는 파일 지급대장 대신 아래 디지털 대장 서명을 권장합니다.
+            월말 세금계산서는 납품업체가 아니라 <span className="text-foreground">안관비 비목</span>에 올립니다.
+            비목 총액이 거래명세 연결 합과 맞는지만 대사합니다. 매일 명세·사진은 사용 항목 카드에서 붙입니다.
           </p>
         </CardContent>
       </Card>

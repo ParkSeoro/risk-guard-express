@@ -156,6 +156,37 @@ export function itemTransactionEvidenceRows(
   }));
 }
 
+export type SourceCategoryEvidenceFile = SourceTransactionFile & {
+  evidence_kind?: EvidenceKind;
+};
+
+/**
+ * 세금계산서 한 장을 여러 비목에 연결(물리 파일 1개, 행은 비목마다 1개).
+ * 일괄 발행 계산서에 1번 총액·2번 총액이 같이 있을 때 사용.
+ */
+export function cloneEvidenceToCategories(
+  source: SourceCategoryEvidenceFile,
+  categoryCodes: string[],
+) {
+  const kind = source.evidence_kind || 'tax_invoice';
+  const codes = [...new Set(categoryCodes.map((c) => String(c || '')).filter(Boolean))];
+  return codes.map((category_code) => ({
+    report_id: source.report_id,
+    construction_id: source.construction_id,
+    project_id: source.project_id,
+    company_id: source.company_id,
+    item_id: null,
+    category_code,
+    evidence_kind: kind,
+    file_name: source.file_name,
+    file_path: source.file_path,
+    file_url: source.file_url,
+    mime_type: source.mime_type,
+    file_size: source.file_size,
+    uploaded_by: source.uploaded_by,
+  }));
+}
+
 export function monthEndTaxLabel(ok: boolean) {
   return ok ? '월말 · 이 비목 첨부됨' : '월말 · 이 비목 대기';
 }

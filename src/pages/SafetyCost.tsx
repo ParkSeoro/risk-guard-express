@@ -19,7 +19,7 @@ import {
 import { softRestorePayload } from '@/lib/dataAccess';
 import { SAFETY_COST_TEMPLATE_PATH, buildSafetyCostWorkbook, downloadSafetyCostWorkbook } from '@/lib/safetyCostExport';
 import { getEvidenceGuide } from '@/lib/safetyCostEvidenceGuide';
-import { evaluateEvidencePack, type EvidenceKind } from '@/lib/safetyCostEvidencePack';
+import { evaluateEvidencePack, packGateSummary, type EvidenceKind } from '@/lib/safetyCostEvidencePack';
 import { itemMissingDailyHard, itemTransactionEvidenceRows, type SourceTransactionFile } from '@/lib/safetyCostItemEvidence';
 import { EvidencePackPanel } from '@/components/safety-cost/EvidencePackPanel';
 import { SafetyCostItemCards } from '@/components/safety-cost/SafetyCostItemCards';
@@ -200,13 +200,14 @@ const SafetyCost = () => {
     ppeLedgerSignedCount: ppeSignedCount,
     exempt: isLegacyImport,
   }), [filteredItems, reportEvidence, ppeSignedCount, isLegacyImport]);
+  const packGate = useMemo(() => packGateSummary(evidencePack), [evidencePack]);
   const auditChecklist = useMemo(() => {
     const hasCat3Spend = filteredItems.some((it) => it.category_code === '3' && Number(it.amount || 0) > 0);
     const ocrGaps = isLegacyImport ? 0 : ocrReviewGaps(filteredItems).length;
     return [
       { label: '월별 사용 항목 입력', ok: filteredItems.length > 0, detail: `${filteredItems.length}건`, tab: 'items' as const },
       { label: '항목별 매일 증빙', ok: isLegacyImport || (evidenceMissingCount === 0 && filteredItems.length > 0), detail: isLegacyImport ? '이관 면제' : (evidenceMissingCount ? `${evidenceMissingCount}건 누락` : '완료'), tab: 'items' as const },
-      { label: '비목별 필수 증빙 패키지', ok: evidencePack.ready && filteredItems.length > 0, detail: isLegacyImport ? '이관 면제' : (evidencePack.ready ? '완료' : `필수 ${evidencePack.hardMissing.length}건 누락`), tab: 'pack' as const },
+      { label: '비목별 필수 증빙 패키지', ok: evidencePack.ready && filteredItems.length > 0, detail: isLegacyImport ? '이관 면제' : (evidencePack.ready ? '완료' : packGate.label), tab: 'pack' as const },
       { label: '보호구 지급대장(3번)', ok: isLegacyImport || !hasCat3Spend || ppeSignedCount > 0, detail: isLegacyImport ? '이관 면제' : (ppeSignedCount > 0 ? `서명 ${ppeSignedCount}건` : (hasCat3Spend ? '서명 필요' : '해당 없음')), tab: 'ppe' as const },
       { label: '사용 불가 항목 제거', ok: compliance.warningCount === 0, detail: compliance.warningCount ? `${compliance.warningCount}건 경고` : '이상 없음', tab: 'audit' as const },
       { label: '검토 필요 항목 확인', ok: compliance.reviewCount === 0, detail: compliance.reviewCount ? `${compliance.reviewCount}건 검토` : '이상 없음', tab: 'audit' as const },
@@ -214,7 +215,7 @@ const SafetyCost = () => {
       { label: 'OCR 저신뢰도 검토', ok: ocrGaps === 0, detail: isLegacyImport ? '이관 면제' : (ocrGaps ? `${ocrGaps}건 사유 필요` : '완료'), tab: 'items' as const },
       { label: '계상금액 초과 여부', ok: Number(selectedConstruction?.safety_cost_total || 0) === 0 || compliance.rate <= 100, detail: `${compliance.rate}%`, tab: 'audit' as const },
     ];
-  }, [filteredItems, evidenceMissingCount, compliance, selectedConstruction?.safety_cost_total, evidencePack, ppeSignedCount, isLegacyImport]);
+  }, [filteredItems, evidenceMissingCount, compliance, selectedConstruction?.safety_cost_total, evidencePack, packGate, ppeSignedCount, isLegacyImport]);
   const firstFailingAudit = auditChecklist.find((item) => !item.ok) || null;
   const approvalReady = auditChecklist.every((item) => item.ok) && selectedReport?.status === 'draft';
 
@@ -883,8 +884,8 @@ const SafetyCost = () => {
     if (!selectedReport || !selectedConstruction || !user) return;
     if (!approvalReady) {
       const fail = firstFailingAudit;
-      const packHint = evidencePack.hardMissing.length
-        ? ` · 필수 증빙: ${evidencePack.hardMissing.slice(0, 2).map((r) => `${r.code}·${r.requirement.label}`).join(', ')}`
+      const packHint = !evidencePack.ready
+        ? ` · ${packGate.label}${evidencePack.hardMissing.length ? `: ${evidencePack.hardMissing.slice(0, 2).map((r) => `${r.code}·${r.requirement.label}`).join(', ')}` : ''}`
         : '';
       toast({
         title: fail ? `여기서 막힘: ${fail.label}` : '결재 상신 전 자동검토를 완료하세요.',
@@ -1075,7 +1076,7 @@ const SafetyCost = () => {
 
         <Card><CardHeader className="pb-2"><div className="flex items-center justify-between"><CardTitle className="text-sm">월별 사용내역서</CardTitle><Dialog open={reportOpen} onOpenChange={setReportOpen}><DialogTrigger asChild><Button size="sm" variant="outline" disabled={!selectedConstruction}>월별 작성</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>월별 사용내역서 생성</DialogTitle></DialogHeader><Label>작성월</Label><Input type="month" value={newReportMonth} onChange={(e) => setNewReportMonth(e.target.value)} />{existingLiveForNewMonth && <p className="text-sm text-muted-foreground">이미 해당 월 내역서가 있습니다. 생성을 누르면 기존 내역서를 엽니다.</p>}<DialogFooter><Button onClick={createReport} disabled={creatingReport}>{creatingReport ? '처리 중…' : '생성'}</Button></DialogFooter></DialogContent></Dialog></div></CardHeader><CardContent><div className="flex flex-wrap gap-2">{filteredReports.map((r) => <div key={r.id} className={`flex items-center rounded-md border ${r.id === selectedReportId ? 'border-primary bg-primary text-primary-foreground' : 'bg-card'}`}><button type="button" className="px-3 py-1.5 text-sm" onClick={() => setSelectedReportId(r.id)}>{String(r.report_month).slice(0, 7)} <Badge variant="secondary" className="ml-2">{getSafetyCostStatusLabel(r.status)}</Badge>{r.source === 'legacy_import' && <Badge variant="outline" className="ml-1">이관</Badge>}</button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => openReportEditor(r)} disabled={r.status === 'approved' || r.status === 'submitted'} aria-label="월별 사용내역서 수정"><Pencil className="h-3.5 w-3.5" /></Button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => deleteReport(r)} disabled={r.status === 'approved' || r.status === 'submitted'} aria-label="월별 사용내역서 삭제"><Trash2 className="h-3.5 w-3.5" /></Button></div>)}</div></CardContent></Card>
 
-        {selectedReport && <Tabs value={reportTab} onValueChange={setReportTab}><TabsList className="flex flex-wrap h-auto gap-1"><TabsTrigger value="items">사용 항목 <Badge variant="secondary" className="ml-2">{baseItems.length}</Badge></TabsTrigger><TabsTrigger value="pack">증빙패키지 {isLegacyImport ? <Badge variant="secondary" className="ml-2">면제</Badge> : (!evidencePack.ready && filteredItems.length > 0 && <Badge variant="destructive" className="ml-2">{evidencePack.hardMissing.length}</Badge>)}</TabsTrigger><TabsTrigger value="ppe-stock">보호구 수불</TabsTrigger><TabsTrigger value="ppe">보호구 지급대장 {ppeSignedCount > 0 && <Badge variant="secondary" className="ml-2">{ppeSignedCount}</Badge>}</TabsTrigger><TabsTrigger value="ai">AI 자동분석</TabsTrigger><TabsTrigger value="audit">자동검토 {(compliance.warningCount + evidenceMissingCount + evidencePack.hardMissing.length) > 0 && <Badge variant="destructive" className="ml-2">{compliance.warningCount + evidenceMissingCount + evidencePack.hardMissing.length}</Badge>}</TabsTrigger><TabsTrigger value="output">출력/결재</TabsTrigger></TabsList><TabsContent value="pack" className="space-y-3">
+        {selectedReport && <Tabs value={reportTab} onValueChange={setReportTab}><TabsList className="flex flex-wrap h-auto gap-1"><TabsTrigger value="items">사용 항목 <Badge variant="secondary" className="ml-2">{baseItems.length}</Badge></TabsTrigger><TabsTrigger value="pack">증빙패키지 {isLegacyImport ? <Badge variant="secondary" className="ml-2">면제</Badge> : (!evidencePack.ready && filteredItems.length > 0 && <Badge variant="destructive" className="ml-2">{packGate.issueCount}</Badge>)}</TabsTrigger><TabsTrigger value="ppe-stock">보호구 수불</TabsTrigger><TabsTrigger value="ppe">보호구 지급대장 {ppeSignedCount > 0 && <Badge variant="secondary" className="ml-2">{ppeSignedCount}</Badge>}</TabsTrigger><TabsTrigger value="ai">AI 자동분석</TabsTrigger><TabsTrigger value="audit">자동검토 {(compliance.warningCount + evidenceMissingCount + packGate.issueCount) > 0 && <Badge variant="destructive" className="ml-2">{compliance.warningCount + evidenceMissingCount + packGate.issueCount}</Badge>}</TabsTrigger><TabsTrigger value="output">출력/결재</TabsTrigger></TabsList><TabsContent value="pack" className="space-y-3">
           {selectedConstruction && selectedReport && (
             <EvidencePackPanel
               projectId={selectedConstruction.project_id}

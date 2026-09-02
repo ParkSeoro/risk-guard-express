@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { evaluateEvidencePack } from '@/lib/safetyCostEvidencePack';
+import { evaluateEvidencePack, packGateSummary } from '@/lib/safetyCostEvidencePack';
 import {
+  cloneEvidenceToCategories,
   countCategoryKind,
   countItemKind,
   itemDailyChecklist,
@@ -166,5 +167,61 @@ describe('safetyCostItemEvidence', () => {
       expect(itemDailyChecklist(it, files, 1).find((r) => r.kind === 'tax_invoice')?.ok).toBe(true);
     }
     expect(itemDailyChecklist(items[3], files, 0).find((r) => r.kind === 'tax_invoice')?.ok).toBe(false);
+  });
+
+  it('clones one tax invoice onto every selected category', () => {
+    const rows = cloneEvidenceToCategories(
+      {
+        report_id: 'r1',
+        construction_id: 'c1',
+        project_id: 'p1',
+        company_id: 'co1',
+        file_name: 'tax.pdf',
+        file_path: 'safety-cost/p/r/tax.pdf',
+        file_url: 'https://example/tax.pdf',
+        mime_type: 'application/pdf',
+        file_size: 20,
+        uploaded_by: 'u1',
+        evidence_kind: 'tax_invoice',
+      },
+      ['2', '3', '3'],
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.file_path.endsWith('tax.pdf') && r.item_id === null && r.evidence_kind === 'tax_invoice')).toBe(true);
+    expect(rows.map((r) => r.category_code).sort()).toEqual(['2', '3']);
+
+    const items = [
+      { id: 'a', category_code: '2', amount: 80000 },
+      { id: 'b', category_code: '3', amount: 50000 },
+    ];
+    expect(countCategoryKind(items, rows, '2', 'tax_invoice')).toBe(1);
+    expect(countCategoryKind(items, rows, '3', 'tax_invoice')).toBe(1);
+    const pack = evaluateEvidencePack({
+      items,
+      files: [
+        ...rows,
+        { item_id: 'a', evidence_kind: 'transaction', category_code: '2' },
+        { item_id: 'a', evidence_kind: 'site_photo', category_code: '2' },
+        { item_id: 'b', evidence_kind: 'transaction', category_code: '3' },
+        { item_id: 'b', evidence_kind: 'site_photo', category_code: '3' },
+      ],
+      ppeLedgerSignedCount: 1,
+    });
+    expect(pack.rows.filter((r) => r.requirement.kind === 'tax_invoice').every((r) => r.ok)).toBe(true);
+  });
+
+  it('labels a reconcile-only pack failure without saying 필수 0건', () => {
+    const pack = evaluateEvidencePack({
+      items: [{ id: 'a', category_code: '3', amount: 100000 }],
+      files: [
+        { item_id: 'a', evidence_kind: 'site_photo', category_code: '3' },
+        { item_id: null, evidence_kind: 'tax_invoice', category_code: '3' },
+      ],
+      ppeLedgerSignedCount: 2,
+    });
+    const summary = packGateSummary(pack);
+    expect(pack.ready).toBe(false);
+    expect(summary.label).toContain('대사');
+    expect(summary.issueCount).toBeGreaterThan(0);
   });
 });

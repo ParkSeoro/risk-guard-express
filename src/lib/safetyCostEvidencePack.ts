@@ -329,6 +329,25 @@ export function evaluateEvidencePack(input: {
   };
 }
 
+/** 상신 게이트 뱃지/문구. 파일 누락과 명세 대사를 구분한다. */
+export function packGateSummary(pack: {
+  ready: boolean;
+  hardMissing: PackCheckRow[];
+  reconcile: CategoryReconcile[];
+}) {
+  const reconFail = (pack.reconcile || []).filter((r) => !r.ok);
+  const hard = pack.hardMissing.length;
+  const issueCount = hard + reconFail.length;
+  if (pack.ready) return { ok: true, label: '상신 가능(증빙)', issueCount: 0 };
+  if (hard && reconFail.length) {
+    return { ok: false, label: `필수 ${hard}건 · 명세대사 ${reconFail.length}건`, issueCount };
+  }
+  if (reconFail.length) {
+    return { ok: false, label: `명세 대사 ${reconFail.length}건 불일치`, issueCount };
+  }
+  return { ok: false, label: `필수 누락 ${hard}건`, issueCount };
+}
+
 export function getCategoryPack(code?: string | null): CategoryPack | null {
   if (!code) return null;
   return CATEGORY_EVIDENCE_PACK.find((p) => p.code === String(code)) || null;

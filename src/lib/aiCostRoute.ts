@@ -15,5 +15,5 @@ export const AI_COST_LANES: AiCostLane[] = [
   { feature: "안전 도우미", provider: "Gemini", model: "flash-lite", why: "대화 히스토리·장문 답변" },
   { feature: "보건·근로자 의견", provider: "Gemini", model: "flash-lite", why: "짧은 분류, 단가 절감" },
   { feature: "안관비 분류", provider: "Gemini", model: "flash-lite", why: "OCR 원문이 수만 토큰" },
-  { feature: "OCR·양식 분석", provider: "Gemini", model: "2.5 Flash", why: "이미지는 제미나이 비전이 이미 동작" },
+  { feature: "OCR·양식 분석", provider: "Gemini", model: "2.5 Flash", why: "이미지 1순위 제미나이, 키 실패 시 OpenAI 비전" },
 ];

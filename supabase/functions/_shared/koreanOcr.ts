@@ -1,7 +1,9 @@
 /**
- * 한글 문서 OCR — Gemini 비전을 직접 호출한다.
+ * 한글 문서 OCR — Gemini 비전을 먼저 쓰고, 키 실패·비전 오류면 OpenAI 비전으로 폴백한다.
  * NVIDIA 텍스트 모델로는 이미지를 보내지 않는다.
  */
+
+import { callOpenAiChat, isOpenAiFallbackEnabled } from "./openaiChat.ts";
 
 export const OCR_STATUS_LABEL = {
   ocr_raw: 'OCR 원문입니다. 숫자·상호를 원본과 대조하세요.',
@@ -25,6 +27,38 @@ export type KoreanOcrResult = {
 
 const GEMINI_OCR_MODEL = 'gemini-2.5-flash';
 const LOW = 0.7;
+
+const OCR_PROMPT = `이것은 대한민국 건설현장 산업안전보건관리비 증빙(거래명세서·세금계산서·영수증·사용내역서)입니다.
+이미지/PDF에서 보이는 한글·숫자·표 내용을 읽기 순서대로 모두 옮기세요. 금액을 지어내지 마세요.
+읽기 어려운 칸은 [불명]으로 표시하세요.
+JSON만 반환: {"text":"전체 원문","confidence":0.0~1.0,"notes":"흐림·기울어짐·도장 가림 등"}`;
+
+export function mergeOcrWarnings(...parts: Array<string | undefined | null>): string {
+  const cleaned = parts.map((p) => String(p || "").trim()).filter(Boolean);
+  const uniq: string[] = [];
+  for (const part of cleaned) {
+    if (uniq.some((u) => u.includes(part))) continue;
+    const wider = uniq.findIndex((u) => part.includes(u));
+    if (wider >= 0) {
+      uniq[wider] = part;
+      continue;
+    }
+    uniq.push(part);
+  }
+  return uniq.join(" · ");
+}
+
+export function publicOcrFailureWarning(raw: string): string {
+  const msg = String(raw || "").trim();
+  if (!msg) return OCR_STATUS_LABEL.no_vision;
+  if (/API key not valid|API_KEY_INVALID|INVALID_API_KEY|INVALID_KEY|유효하지 않/i.test(msg)) {
+    return `${OCR_STATUS_LABEL.no_vision} 이미지 판독 키가 만료되었거나 잘못되었습니다.`;
+  }
+  const short = msg.replace(/\s+/g, " ").slice(0, 160);
+  if (!/[\uAC00-\uD7A3]/.test(short)) return OCR_STATUS_LABEL.no_vision;
+  if (short.includes(OCR_STATUS_LABEL.no_vision)) return short;
+  return `${OCR_STATUS_LABEL.no_vision} (${short})`;
+}
 
 function estimateConfidence(text: string, modelConfidence?: number | null) {
   const raw = String(text || '');
@@ -67,6 +101,26 @@ function isVisionMime(mime?: string) {
   return m.startsWith('image/') || m === 'application/pdf';
 }
 
+function visionSuccess(
+  text: string,
+  aux: string,
+  confidenceRaw: number | null,
+  engine: string,
+): KoreanOcrResult | null {
+  const merged = [text, aux].filter((s) => s && s.trim()).join('\n\n');
+  if (!merged.trim()) return null;
+  const confidence = estimateConfidence(merged, confidenceRaw);
+  const status: KoreanOcrStatus = confidence < LOW ? 'ocr_low' : 'ocr_raw';
+  return {
+    ok: true,
+    status,
+    text: merged,
+    confidence,
+    engine,
+    warning: status === 'ocr_low' ? OCR_STATUS_LABEL.ocr_low : undefined,
+  };
+}
+
 async function callGeminiVision(opts: {
   apiKey: string;
   mimeType: string;
@@ -74,10 +128,7 @@ async function callGeminiVision(opts: {
   hint: string;
 }): Promise<{ text: string; confidence: number | null }> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_OCR_MODEL}:generateContent?key=${encodeURIComponent(opts.apiKey)}`;
-  const prompt = `이것은 대한민국 건설현장 산업안전보건관리비 증빙(거래명세서·세금계산서·영수증·사용내역서)입니다.
-이미지/PDF에서 보이는 한글·숫자·표 내용을 읽기 순서대로 모두 옮기세요. 금액을 지어내지 마세요.
-읽기 어려운 칸은 [불명]으로 표시하세요.
-JSON만 반환: {"text":"전체 원문","confidence":0.0~1.0,"notes":"흐림·기울어짐·도장 가림 등"}
+  const prompt = `${OCR_PROMPT}
 보조 힌트:
 ${opts.hint.slice(0, 4000)}`;
 
@@ -107,6 +158,40 @@ ${opts.hint.slice(0, 4000)}`;
   const parts = body?.candidates?.[0]?.content?.parts || [];
   const text = parts.map((p: { text?: string }) => p.text || '').join('\n');
   return parseOcrJson(text);
+}
+
+async function callOpenAiVision(opts: {
+  mimeType: string;
+  base64: string;
+  hint: string;
+}): Promise<{ text: string; confidence: number | null }> {
+  const mime = String(opts.mimeType || 'image/jpeg').toLowerCase();
+  const dataUrl = `data:${mime};base64,${opts.base64}`;
+  const prompt = `${OCR_PROMPT}
+보조 힌트:
+${opts.hint.slice(0, 4000)}`;
+
+  const userContent = mime === 'application/pdf'
+    ? [
+      { type: 'text' as const, text: prompt },
+      { type: 'file' as const, file: { filename: 'statement.pdf', file_data: dataUrl } },
+    ]
+    : [
+      { type: 'text' as const, text: prompt },
+      { type: 'image_url' as const, image_url: { url: dataUrl } },
+    ];
+
+  const result = await callOpenAiChat({
+    messages: [
+      { role: 'system', content: '문서에서 보이는 한글·숫자만 JSON으로 옮긴다. 없는 금액을 만들지 마라.' },
+      { role: 'user', content: userContent },
+    ],
+    temperature: 0.1,
+    max_tokens: 8192,
+    json: true,
+    timeoutMs: 90_000,
+  });
+  return parseOcrJson(result.content);
 }
 
 export async function runKoreanOcr(opts: {
@@ -139,56 +224,49 @@ export async function runKoreanOcr(opts: {
     };
   }
 
-  if (!opts.geminiKey) {
-    return {
-      ok: false,
-      status: 'no_vision',
-      text: aux,
-      confidence: null,
-      engine: 'none',
-      warning: OCR_STATUS_LABEL.no_vision,
-    };
+  const errors: string[] = [];
+
+  if (opts.geminiKey) {
+    try {
+      const visionOut = await callGeminiVision({
+        apiKey: opts.geminiKey,
+        mimeType: String(opts.mimeType),
+        base64: String(opts.fileBase64),
+        hint: aux,
+      });
+      const ok = visionSuccess(visionOut.text, aux, visionOut.confidence, 'gemini-2.5-flash');
+      if (ok) return ok;
+      errors.push('Gemini 비전이 빈 원문을 반환했습니다.');
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e));
+      console.warn('[koreanOcr] Gemini vision failed, trying OpenAI:', errors[errors.length - 1]);
+    }
   }
 
-  try {
-    const visionOut = await callGeminiVision({
-      apiKey: opts.geminiKey,
-      mimeType: String(opts.mimeType),
-      base64: String(opts.fileBase64),
-      hint: aux,
-    });
-    const merged = [visionOut.text, aux].filter((s) => s && s.trim()).join('\n\n');
-    if (!merged.trim()) {
-      return {
-        ok: false,
-        status: 'no_vision',
-        text: '',
-        confidence: null,
-        engine: 'gemini-2.5-flash',
-        warning: OCR_STATUS_LABEL.no_vision,
-      };
+  if (isOpenAiFallbackEnabled()) {
+    try {
+      const visionOut = await callOpenAiVision({
+        mimeType: String(opts.mimeType),
+        base64: String(opts.fileBase64),
+        hint: aux,
+      });
+      const ok = visionSuccess(visionOut.text, aux, visionOut.confidence, 'gpt-4o-mini');
+      if (ok) return ok;
+      errors.push('OpenAI 비전이 빈 원문을 반환했습니다.');
+    } catch (e) {
+      errors.push(e instanceof Error ? e.message : String(e));
+      console.warn('[koreanOcr] OpenAI vision failed:', errors[errors.length - 1]);
     }
-    const confidence = estimateConfidence(merged, visionOut.confidence);
-    const status: KoreanOcrStatus = confidence < LOW ? 'ocr_low' : 'ocr_raw';
-    return {
-      ok: true,
-      status,
-      text: merged,
-      confidence,
-      engine: 'gemini-2.5-flash',
-      warning: status === 'ocr_low' ? OCR_STATUS_LABEL.ocr_low : undefined,
-    };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return {
-      ok: false,
-      status: 'no_vision',
-      text: aux,
-      confidence: null,
-      engine: 'gemini-failed',
-      warning: `${OCR_STATUS_LABEL.no_vision} (${msg})`,
-    };
   }
+
+  return {
+    ok: false,
+    status: 'no_vision',
+    text: aux,
+    confidence: null,
+    engine: errors.length ? 'vision-failed' : 'none',
+    warning: publicOcrFailureWarning(errors[0] || ''),
+  };
 }
 
 export async function geminiJsonFromText(opts: {

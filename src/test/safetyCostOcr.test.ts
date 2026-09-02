@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   OCR_STATUS_LABEL,
+  documentAnalysisToastCopy,
   estimateOcrConfidence,
+  mergeOcrWarnings,
   ocrReviewGaps,
   ocrStatusLabel,
   resolveOcrStatus,
+  sanitizeOcrWarning,
   stampOcrOnItem,
   summarizeOcrItems,
 } from '@/lib/safetyCostOcr';
@@ -66,6 +69,31 @@ describe('safetyCostOcr', () => {
     expect(s.lowCount).toBe(2);
     expect(s.correctedCount).toBe(1);
     expect(s.rawChars).toBe(6);
+  });
+
+  it('dedupes nested skip-vision warnings', () => {
+    const skip = OCR_STATUS_LABEL.no_vision;
+    const withKey = `${skip} (API key not valid. Please pass a valid API key.)`;
+    expect(mergeOcrWarnings(withKey, skip, skip)).toBe(withKey);
+  });
+
+  it('strips Google API-key English and does not repeat the skip sentence', () => {
+    const raw = `${OCR_STATUS_LABEL.no_vision} (API key not valid. Please pass a valid API key.) · ${OCR_STATUS_LABEL.no_vision}`;
+    const cleaned = sanitizeOcrWarning(raw);
+    expect(cleaned).toBe(OCR_STATUS_LABEL.no_vision);
+    expect(cleaned).not.toMatch(/API key/i);
+    expect(cleaned.split('이미지 판독을 건너뛰었습니다').length).toBe(2);
+  });
+
+  it('uses 실패 not 완료 when vision skipped and no items', () => {
+    const toast = documentAnalysisToastCopy({
+      itemCount: 0,
+      warning: `${OCR_STATUS_LABEL.no_vision} (API key not valid. Please pass a valid API key.) · ${OCR_STATUS_LABEL.no_vision}`,
+    });
+    expect(toast.title).toBe('거래명세표 자동분석 실패');
+    expect(toast.variant).toBe('destructive');
+    expect(toast.description).toBe(OCR_STATUS_LABEL.no_vision);
+    expect(toast.description).not.toContain(' · ');
   });
 
   it('blocks submit when low-confidence review rows lack a reason', () => {

@@ -59,4 +59,13 @@ describe("AI 비용 레인", () => {
     expect(src("src/pages/SettingsAI.tsx")).toContain("AI_COST_LANES");
     expect(src("src/pages/Settings.tsx")).toContain("OpenAI·Gemini 비용 분리");
   });
+
+  it("안관비 OCR은 Gemini 다음 OpenAI 비전으로 폴백한다", () => {
+    const ocr = src("supabase/functions/_shared/koreanOcr.ts");
+    expect(ocr).toContain("callOpenAiChat");
+    expect(ocr).toContain("isOpenAiFallbackEnabled");
+    expect(ocr).toContain("callOpenAiVision");
+    expect(ocr).not.toMatch(/if \(!opts\.geminiKey\) \{\s*return \{/);
+    expect(src("src/pages/SafetyCost.tsx")).toContain("documentAnalysisToastCopy");
+  });
 });

@@ -8,7 +8,7 @@ import { useAuditLog } from '@/hooks/useAuditLog';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { WORK_PLAN_TYPES, getWorkPlanTypesGrouped } from '@/lib/workPlanTemplates';
 import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
-import { defaultAuthorUserId, prefillOverviewSupervisor } from '@/lib/workPlanAuthor';
+import { defaultAuthorUserId, prefillOverviewSupervisor, workPlanAuthorCompanyIds } from '@/lib/workPlanAuthor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -345,6 +345,11 @@ const WorkPlans = () => {
                   </div>
                   <AssessmentAuthorPicker
                     projectId={access.selectedProject}
+                    companyIds={workPlanAuthorCompanyIds({
+                      userCompanyId: access.userCompanyId,
+                      selectedCompanyId: selectedCompany,
+                      seesAllCompanies: access.seesAllCompanies,
+                    })}
                     value={authorUserId}
                     onChange={(id) => {
                       setAuthorUserId(id);

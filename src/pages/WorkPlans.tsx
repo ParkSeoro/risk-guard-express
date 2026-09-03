@@ -353,6 +353,9 @@ const WorkPlans = () => {
                     required
                     error={authorError}
                   />
+                  <p className="text-[10px] text-muted-foreground -mt-2">
+                    입력은 누구나 할 수 있습니다. 인쇄·PDF에 이 관리감독자가 작성자로 표시됩니다.
+                  </p>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-medium">제목 (선택)</Label>
                     <Input value={newPlan.title} onChange={e => setNewPlan(p => ({ ...p, title: e.target.value }))} placeholder="미입력 시 자동 생성" className="h-9" />

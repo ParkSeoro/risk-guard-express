@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   canAssistWorkPlanWrite,
-  canSubmitWorkPlan,
   defaultAuthorUserId,
   hasWorkPlanLegalAuthor,
   isSiteSupervisorRole,
   prefillOverviewSupervisor,
-  workPlanAuthorSubmitMessage,
+  workPlanAuthorDisplayMessage,
 } from '@/lib/workPlanAuthor';
 import {
   preferredSubmitterUserId,
@@ -29,15 +28,11 @@ describe('workPlanAuthor', () => {
     expect(defaultAuthorUserId({ userId: 'sup-1', role: 'site_supervisor' })).toBe('sup-1');
   });
 
-  it('allows only the named supervisor to submit', () => {
-    expect(canSubmitWorkPlan({ userId: 'sm-1', authorUserId: 'sup-1' })).toBe(false);
-    expect(canSubmitWorkPlan({ userId: 'sup-1', authorUserId: 'sup-1' })).toBe(true);
+  it('requires an author only so the name can print — does not lock who writes', () => {
     expect(hasWorkPlanLegalAuthor(null)).toBe(false);
-    expect(workPlanAuthorSubmitMessage({
-      authorUserId: 'sup-1',
-      authorName: '김감독',
-      userId: 'sm-1',
-    })).toMatch(/김감독/);
+    expect(workPlanAuthorDisplayMessage(null)).toMatch(/인쇄·PDF/);
+    expect(workPlanAuthorDisplayMessage('sup-1')).toBeNull();
+    expect(canAssistWorkPlanWrite('safety_manager')).toBe(true);
   });
 
   it('prefills empty overview supervisor without overwriting', () => {

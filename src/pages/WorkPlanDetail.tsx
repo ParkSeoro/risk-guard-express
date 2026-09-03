@@ -61,10 +61,9 @@ import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
 import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
 import {
   canAssistWorkPlanWrite,
-  canSubmitWorkPlan,
   hasWorkPlanLegalAuthor,
   prefillOverviewSupervisor,
-  workPlanAuthorSubmitMessage,
+  workPlanAuthorDisplayMessage,
 } from '@/lib/workPlanAuthor';
 import { format, parseISO } from 'date-fns';
 import { buildRiggingPlanPayload } from '@/lib/riggingPlanPersist';
@@ -467,13 +466,9 @@ const WorkPlanDetail = () => {
   };
 
   const handleSubmitApproval = async () => {
-    const authorBlock = workPlanAuthorSubmitMessage({
-      authorUserId: plan?.author_user_id,
-      authorName,
-      userId: user?.id,
-    });
+    const authorBlock = workPlanAuthorDisplayMessage(plan?.author_user_id);
     if (authorBlock) {
-      toast({ title: '결재 상신이 차단되었습니다', description: authorBlock, variant: 'destructive' });
+      toast({ title: '작성 주체를 지정하세요', description: authorBlock, variant: 'destructive' });
       return;
     }
     if (!handleValidate()) {
@@ -528,8 +523,9 @@ const WorkPlanDetail = () => {
 
 
   const handlePrint = async () => {
-    if (!hasWorkPlanLegalAuthor(plan?.author_user_id)) {
-      toast({ title: '인쇄 불가', description: '작성 주체(관리감독자)를 지정한 뒤에만 인쇄할 수 있습니다.', variant: 'destructive' });
+    const authorBlock = workPlanAuthorDisplayMessage(plan?.author_user_id);
+    if (authorBlock) {
+      toast({ title: '작성 주체를 지정하세요', description: authorBlock, variant: 'destructive' });
       return;
     }
     if (!planId || pdfBusy) return;
@@ -580,8 +576,9 @@ const WorkPlanDetail = () => {
   };
 
   const handleSavePdf = async () => {
-    if (!hasWorkPlanLegalAuthor(plan?.author_user_id)) {
-      toast({ title: '인쇄 불가', description: '작성 주체(관리감독자)를 지정한 뒤에만 저장할 수 있습니다.', variant: 'destructive' });
+    const authorBlock = workPlanAuthorDisplayMessage(plan?.author_user_id);
+    if (authorBlock) {
+      toast({ title: '작성 주체를 지정하세요', description: authorBlock, variant: 'destructive' });
       return;
     }
     if (!planId || pdfBusy) return;
@@ -737,6 +734,9 @@ const WorkPlanDetail = () => {
             {plan.version > 1 && <Badge variant="outline" className="text-[9px] h-4">v{plan.version}</Badge>}
           </div>
           <h1 className="text-lg font-bold">{plan.title}</h1>
+          {authorName && (
+            <p className="text-xs text-muted-foreground">작성 관리감독자: {authorName}</p>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           {isDirty && <span className="text-[10px] text-muted-foreground">미저장</span>}
@@ -758,20 +758,19 @@ const WorkPlanDetail = () => {
         </Card>
       )}
 
-      {(!hasWorkPlanLegalAuthor(plan.author_user_id) || (canAssistWorkPlanWrite(userRole, false) && !canSubmitWorkPlan({ userId: user?.id, authorUserId: plan.author_user_id }))) && (
-        <Card className="border-warning/40 bg-warning/10">
+      {EDITABLE_PLAN_STATUSES.has(plan.status) && (
+        <Card className={hasWorkPlanLegalAuthor(plan.author_user_id) ? '' : 'border-warning/40 bg-warning/10'}>
           <CardContent className="p-3 text-xs space-y-2">
             <p className="font-medium">
               {hasWorkPlanLegalAuthor(plan.author_user_id)
-                ? `보좌 입력 — 작성 주체: ${authorName || '관리감독자'}. 상신은 관리감독자만 가능합니다.`
-                : '작성 주체(관리감독자)가 없습니다. 지정하기 전에는 상신·인쇄할 수 없습니다.'}
+                ? `작성은 누구나 할 수 있습니다. 인쇄·PDF에는 지정한 관리감독자(${authorName || '관리감독자'})가 표시됩니다.`
+                : '작성은 누구나 할 수 있습니다. 인쇄·PDF에 표시할 관리감독자를 지정하세요.'}
             </p>
-            {(EDITABLE_PLAN_STATUSES.has(plan.status) && (
-              isMaster
+            {(isMaster
               || canAssistWorkPlanWrite(userRole, !!isMaster)
               || userRole === 'site_supervisor'
               || plan.created_by === user?.id
-            )) && (
+            ) && (
               <AssessmentAuthorPicker
                 projectId={plan.project_id}
                 value={plan.author_user_id || ''}
@@ -876,16 +875,9 @@ const WorkPlanDetail = () => {
             variant="default"
             onClick={handleSubmitApproval}
             className="gap-1 ml-auto"
-            disabled={
-              (attProgress?.mandatoryMissing ?? 0) > 0
-              || !canSubmitWorkPlan({ userId: user?.id, authorUserId: plan.author_user_id })
-            }
+            disabled={(attProgress?.mandatoryMissing ?? 0) > 0}
             title={
-              workPlanAuthorSubmitMessage({
-                authorUserId: plan.author_user_id,
-                authorName,
-                userId: user?.id,
-              })
+              workPlanAuthorDisplayMessage(plan.author_user_id)
               || ((attProgress?.mandatoryMissing ?? 0) > 0
                 ? `필수 첨부 ${attProgress!.mandatoryMissing}건 누락`
                 : undefined)
@@ -1241,7 +1233,6 @@ const WorkPlanDetail = () => {
           entityId={plan.id}
           projectId={plan.project_id}
           submitterCompanyId={plan.company_id || access.userCompanyId || null}
-          authorUserId={plan.author_user_id || null}
           onSubmitted={handleApprovalSubmitted}
         />
       )}

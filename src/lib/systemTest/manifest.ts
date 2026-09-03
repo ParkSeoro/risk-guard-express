@@ -115,7 +115,7 @@ export const REQUIRED_COLUMNS: Record<string, string[]> = {
   ],
   // Version history lives on risk_item_versions (not a column on risk_items).
   risk_item_versions: ["id", "risk_item_id", "version_number", "data"],
-  work_plans: ["id", "project_id", "title", "work_type", "status", "version"],
+  work_plans: ["id", "project_id", "title", "work_type", "status", "version", "author_user_id"],
   work_permits: [
     "id",
     "project_id",

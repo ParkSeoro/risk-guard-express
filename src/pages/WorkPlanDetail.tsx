@@ -58,6 +58,14 @@ import {
   CalendarDays, MapPin, User, Shield, ClipboardList
 } from 'lucide-react';
 import SubmitApprovalDialog from '@/components/approval/SubmitApprovalDialog';
+import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
+import {
+  canAssistWorkPlanWrite,
+  canSubmitWorkPlan,
+  hasWorkPlanLegalAuthor,
+  prefillOverviewSupervisor,
+  workPlanAuthorSubmitMessage,
+} from '@/lib/workPlanAuthor';
 import { format, parseISO } from 'date-fns';
 import { buildRiggingPlanPayload } from '@/lib/riggingPlanPersist';
 import { refreshRiggingDerivedFields } from '@/lib/riggingDerived';
@@ -85,6 +93,7 @@ const WorkPlanDetail = () => {
   const listBackPath = approvalsBackOr('/work-plans', searchParams.get('from'));
   const { user } = useAuth();
   const access = useGlobalProjectAccess();
+  const { userRole, isMaster } = access;
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const [plan, setPlan] = useState<any>(null);
@@ -98,6 +107,7 @@ const WorkPlanDetail = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, string[]>>({});
   const [approvalDialogOpen, setApprovalDialogOpen] = useState(false);
+  const [authorName, setAuthorName] = useState('');
   // Basic info fields
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -153,7 +163,8 @@ const WorkPlanDetail = () => {
         return;
       }
       setPlan(data);
-      setSections(Array.isArray(data.sections) ? data.sections : []);
+      const loadedSections = Array.isArray(data.sections) ? data.sections : [];
+      setSections(loadedSections);
       setAttachments(Array.isArray(data.attachments) ? data.attachments : []);
       setStartDate(data.start_date || '');
       setEndDate(data.end_date || '');
@@ -200,6 +211,23 @@ const WorkPlanDetail = () => {
     })();
     return () => { cancelled = true; };
   }, [planId]);
+
+  useEffect(() => {
+    if (!plan?.author_user_id) {
+      setAuthorName('');
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('user_id', plan.author_user_id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setAuthorName(data?.display_name || '');
+      });
+    return () => { cancelled = true; };
+  }, [plan?.author_user_id]);
 
   useEffect(() => {
     if (activeTab !== 'preview' || !planId) return;
@@ -439,6 +467,15 @@ const WorkPlanDetail = () => {
   };
 
   const handleSubmitApproval = async () => {
+    const authorBlock = workPlanAuthorSubmitMessage({
+      authorUserId: plan?.author_user_id,
+      authorName,
+      userId: user?.id,
+    });
+    if (authorBlock) {
+      toast({ title: '결재 상신이 차단되었습니다', description: authorBlock, variant: 'destructive' });
+      return;
+    }
     if (!handleValidate()) {
       toast({ title: '필수 입력 항목을 확인해주세요.', variant: 'destructive' });
       return;
@@ -491,6 +528,10 @@ const WorkPlanDetail = () => {
 
 
   const handlePrint = async () => {
+    if (!hasWorkPlanLegalAuthor(plan?.author_user_id)) {
+      toast({ title: '인쇄 불가', description: '작성 주체(관리감독자)를 지정한 뒤에만 인쇄할 수 있습니다.', variant: 'destructive' });
+      return;
+    }
     if (!planId || pdfBusy) return;
     setPdfBusy(true);
     const progressToast = toast({
@@ -539,6 +580,10 @@ const WorkPlanDetail = () => {
   };
 
   const handleSavePdf = async () => {
+    if (!hasWorkPlanLegalAuthor(plan?.author_user_id)) {
+      toast({ title: '인쇄 불가', description: '작성 주체(관리감독자)를 지정한 뒤에만 저장할 수 있습니다.', variant: 'destructive' });
+      return;
+    }
     if (!planId || pdfBusy) return;
     setPdfBusy(true);
     const progressToast = toast({
@@ -593,6 +638,7 @@ const WorkPlanDetail = () => {
       sections: merged,
       attachments: [],
       created_by: user.id,
+      author_user_id: plan.author_user_id || null,
       parent_id: plan.id,
       version: (plan.version || 1) + 1,
       status: '작성중',
@@ -712,6 +758,47 @@ const WorkPlanDetail = () => {
         </Card>
       )}
 
+      {(!hasWorkPlanLegalAuthor(plan.author_user_id) || (canAssistWorkPlanWrite(userRole, false) && !canSubmitWorkPlan({ userId: user?.id, authorUserId: plan.author_user_id }))) && (
+        <Card className="border-warning/40 bg-warning/10">
+          <CardContent className="p-3 text-xs space-y-2">
+            <p className="font-medium">
+              {hasWorkPlanLegalAuthor(plan.author_user_id)
+                ? `보좌 입력 — 작성 주체: ${authorName || '관리감독자'}. 상신은 관리감독자만 가능합니다.`
+                : '작성 주체(관리감독자)가 없습니다. 지정하기 전에는 상신·인쇄할 수 없습니다.'}
+            </p>
+            {(EDITABLE_PLAN_STATUSES.has(plan.status) && (
+              isMaster
+              || canAssistWorkPlanWrite(userRole, !!isMaster)
+              || userRole === 'site_supervisor'
+              || plan.created_by === user?.id
+            )) && (
+              <AssessmentAuthorPicker
+                projectId={plan.project_id}
+                value={plan.author_user_id || ''}
+                onChange={async (id) => {
+                  const { error } = await supabase.from('work_plans').update({ author_user_id: id } as any).eq('id', planId);
+                  if (error) {
+                    toast({ title: '작성 주체 저장 실패', description: error.message, variant: 'destructive' });
+                    return;
+                  }
+                  setPlan((prev: any) => (prev ? { ...prev, author_user_id: id } : prev));
+                  const { data: prof } = await supabase.from('profiles').select('display_name').eq('user_id', id).maybeSingle();
+                  const name = prof?.display_name || '';
+                  setAuthorName(name);
+                  setSections((prev) => {
+                    const next = prefillOverviewSupervisor(prev, name);
+                    if (next !== prev) markDirty();
+                    return next;
+                  });
+                  toast({ title: '작성 주체(관리감독자)를 지정했습니다.' });
+                }}
+                required
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Action Bar */}
       <div className="flex items-center gap-2 flex-wrap">
         <Button
@@ -789,11 +876,19 @@ const WorkPlanDetail = () => {
             variant="default"
             onClick={handleSubmitApproval}
             className="gap-1 ml-auto"
-            disabled={(attProgress?.mandatoryMissing ?? 0) > 0}
-            title={
+            disabled={
               (attProgress?.mandatoryMissing ?? 0) > 0
+              || !canSubmitWorkPlan({ userId: user?.id, authorUserId: plan.author_user_id })
+            }
+            title={
+              workPlanAuthorSubmitMessage({
+                authorUserId: plan.author_user_id,
+                authorName,
+                userId: user?.id,
+              })
+              || ((attProgress?.mandatoryMissing ?? 0) > 0
                 ? `필수 첨부 ${attProgress!.mandatoryMissing}건 누락`
-                : undefined
+                : undefined)
             }
           >
             <SendHorizontal className="h-3.5 w-3.5" />
@@ -1146,6 +1241,7 @@ const WorkPlanDetail = () => {
           entityId={plan.id}
           projectId={plan.project_id}
           submitterCompanyId={plan.company_id || access.userCompanyId || null}
+          authorUserId={plan.author_user_id || null}
           onSubmitted={handleApprovalSubmitted}
         />
       )}

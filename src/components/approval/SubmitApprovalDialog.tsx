@@ -21,6 +21,9 @@ import {
   sortStepsByHierarchy,
   validateStepsHierarchy,
   validateSafetyCostApprovalSteps,
+  validateWorkPlanApprovalSteps,
+  usesAuthorComposedApproval,
+  WORK_PLAN_POSITION_OPTIONS,
   dedupeApprovalSteps,
   stepLabelForAuthor,
   type ApprovalEntityType as SSOTApprovalEntityType,
@@ -28,6 +31,7 @@ import {
 import { positionLabel } from '@/lib/projectPositions';
 import { normalizeCompanyType } from '@/lib/companyTypes';
 import { fetchEligibleApprovers, resolveSubmitterCompanyId } from '@/lib/eligibleApprovers';
+import { preferredSubmitterUserId, seedSubmitterStep } from '@/lib/approvalSubmitterSeed';
 import {
   generatePermitAiBriefing,
   buildLocalPermitBriefing,
@@ -81,6 +85,8 @@ interface Props {
   title?: string;
   /** 작업허가서 상신 시 AI 브리핑 생성용 컨텍스트 */
   permitBriefingContext?: PermitBriefingContext;
+  /** 법적 작성 주체(관리감독자). 있으면 상신 단계를 이 사용자로 시드 */
+  authorUserId?: string | null;
 }
 
 const POSITION_LABELS = SSOT_POSITION_LABELS;
@@ -97,6 +103,7 @@ const SAFETY_COST_POSITION_OPTIONS = [
 export default function SubmitApprovalDialog({
   open, onOpenChange, entityType, entityId, projectId, submitterCompanyId, onSubmitted, title,
   permitBriefingContext,
+  authorUserId,
 }: Props) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -113,8 +120,11 @@ export default function SubmitApprovalDialog({
     submitterCompanyId,
   );
   const [isResubmit, setIsResubmit] = useState(false);
-  const preserveAuthorOrder = entityType === 'safety_cost';
+  const preserveAuthorOrder = usesAuthorComposedApproval(entityType);
   const orderSteps = (raw: Step[]) => (preserveAuthorOrder ? raw : sortStepsByHierarchy(raw));
+  const composedPositionOptions = entityType === 'work_plan'
+    ? WORK_PLAN_POSITION_OPTIONS
+    : SAFETY_COST_POSITION_OPTIONS;
 
   useEffect(() => {
     if (!open) return;
@@ -173,8 +183,15 @@ export default function SubmitApprovalDialog({
           ? orderSteps(adaptStepsForAuthor(normalizeSteps(def.steps), authorType))
           : orderSteps(buildDefaultStepsForAuthor(entityType, authorType));
 
-        // 상신(관리감독자) 단계가 비어 있으면 현재 로그인 사용자를 자동 지정
-        nextSteps = seedSubmitterStep(nextSteps, approverList, uid || user?.id || null);
+        // 상신(관리감독자) 단계가 비어 있으면 법적 작성자 → 로그인 사용자 순으로 시드
+        nextSteps = seedSubmitterStep(
+          nextSteps,
+          approverList,
+          preferredSubmitterUserId({
+            authorUserId,
+            loggedInUserId: uid || user?.id || null,
+          }),
+        );
 
         if (def) setSelectedTemplateId(def.id);
         else setSelectedTemplateId('');
@@ -185,7 +202,7 @@ export default function SubmitApprovalDialog({
         setLoading(false);
       }
     })();
-  }, [open, projectId, entityType, entityId, submitterCompanyId]);
+  }, [open, projectId, entityType, entityId, submitterCompanyId, authorUserId]);
 
   const normalizeSteps = (raw: any): Step[] => {
     if (!Array.isArray(raw)) return [];
@@ -199,30 +216,6 @@ export default function SubmitApprovalDialog({
     }));
   };
 
-  /** Fill empty 상신(contractor_supervisor) step with the logged-in user when eligible. */
-  const seedSubmitterStep = (
-    rawSteps: Step[],
-    approverList: ApproverOption[],
-    uid: string | null,
-  ): Step[] => {
-    if (!uid) return rawSteps;
-    const idx = rawSteps.findIndex(
-      (s) => (s.position || '').toLowerCase() === 'contractor_supervisor',
-    );
-    if (idx < 0 || rawSteps[idx].user_id) return rawSteps;
-    const me = approverList.find((a) => a.out_user_id === uid);
-    if (!me) return rawSteps;
-    const next = [...rawSteps];
-    next[idx] = {
-      ...next[idx],
-      user_id: me.out_user_id,
-      user_name: me.out_display_name,
-      company_id: me.out_company_id,
-      company_name: me.out_company_name,
-    };
-    return next;
-  };
-
   const onPickTemplate = (id: string) => {
     setSelectedTemplateId(id);
     const t = templates.find((x) => x.id === id);
@@ -230,7 +223,11 @@ export default function SubmitApprovalDialog({
     const adapted = orderSteps(
       adaptStepsForAuthor(normalizeSteps(t.steps), authorCompanyType),
     );
-    setSteps(seedSubmitterStep(adapted, approvers, user?.id || null));
+    setSteps(seedSubmitterStep(
+      adapted,
+      approvers,
+      preferredSubmitterUserId({ authorUserId, loggedInUserId: user?.id || null }),
+    ));
   };
 
   const addStep = () =>
@@ -248,8 +245,17 @@ export default function SubmitApprovalDialog({
     });
   };
   const setStepPosition = (i: number, position: string) => {
+    const composedLabel = composedPositionOptions.find((o) => o.value === position)?.label;
     setSteps((arr) => arr.map((x, idx) => idx === i
-      ? { ...x, position, label: stepLabelForAuthor(position, authorCompanyType) || x.label, user_id: '', user_name: '', company_id: null, company_name: '' }
+      ? {
+        ...x,
+        position,
+        label: composedLabel || stepLabelForAuthor(position, authorCompanyType) || x.label,
+        user_id: '',
+        user_name: '',
+        company_id: null,
+        company_name: '',
+      }
       : x));
   };
 
@@ -305,9 +311,11 @@ export default function SubmitApprovalDialog({
     const orderedSteps = preserveAuthorOrder
       ? dedupeApprovalSteps(steps)
       : dedupeApprovalSteps(sortStepsByHierarchy(steps));
-    const v = preserveAuthorOrder
+    const v = entityType === 'safety_cost'
       ? validateSafetyCostApprovalSteps(orderedSteps)
-      : validateStepsHierarchy(orderedSteps);
+      : entityType === 'work_plan'
+        ? validateWorkPlanApprovalSteps(orderedSteps)
+        : validateStepsHierarchy(orderedSteps);
     if (!v.ok) return toast.error(v.message || '결재 단계 순서가 위계에 어긋납니다');
     // 정렬된 결과를 화면에도 반영하여 사용자에게 최종 순서를 보여준다.
     if (orderedSteps.some((s, i) => s !== steps[i]) || orderedSteps.length !== steps.length) {
@@ -463,6 +471,11 @@ export default function SubmitApprovalDialog({
                   <Plus className="h-3.5 w-3.5 mr-1" /> 단계 추가
                 </Button>
               </div>
+              {entityType === 'work_plan' && (
+                <p className="text-[11px] text-muted-foreground">
+                  작성자가 결재 인원을 정합니다. 발주처 CM·SM·현장소장은 필요할 때만 단계 추가로 넣으세요.
+                </p>
+              )}
               {steps.map((s, i) => (
                 <div key={i} className="border rounded p-2 space-y-2 bg-muted/30">
                   <div className="flex items-center gap-2">
@@ -477,7 +490,7 @@ export default function SubmitApprovalDialog({
                       <Select value={s.position || undefined} onValueChange={(v) => setStepPosition(i, v)}>
                         <SelectTrigger className="h-8 w-[140px]"><SelectValue placeholder="직책" /></SelectTrigger>
                         <SelectContent>
-                          {SAFETY_COST_POSITION_OPTIONS.map((opt) => (
+                          {composedPositionOptions.map((opt) => (
                             <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                           ))}
                         </SelectContent>

@@ -155,8 +155,9 @@ Deno.serve(async (req) => {
     const draftSteps = Array.isArray((draftRes as any)?.data?.steps) ? (draftRes as any).data.steps : [];
 
     let creatorName = "";
-    if (plan.created_by) {
-      const { data: prof } = await supabase.from("profiles").select("display_name").eq("user_id", plan.created_by).single();
+    const authorUserId = plan.author_user_id || plan.created_by;
+    if (authorUserId) {
+      const { data: prof } = await supabase.from("profiles").select("display_name").eq("user_id", authorUserId).single();
       creatorName = prof?.display_name || "";
     }
 
@@ -528,7 +529,7 @@ th { background: #f1f5f9; font-weight: 600; font-size: 7pt; text-align: center; 
     <div class="report-info-row">
       <div class="report-info-label">소속업체</div>
       <div class="report-info-value">${escapeHtml(companyName)}</div>
-      <div class="report-info-label">작성자</div>
+      <div class="report-info-label">작성 관리감독자</div>
       <div class="report-info-value">${escapeHtml(creatorName)}</div>
     </div>
     <div class="report-info-row">

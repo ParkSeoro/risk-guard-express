@@ -8567,6 +8567,7 @@ export type Database = {
         Row: {
           assessment_run_id: string | null
           attachments: Json
+          author_user_id: string | null
           auto_education_enabled: boolean
           company_id: string | null
           created_at: string
@@ -8590,6 +8591,7 @@ export type Database = {
         Insert: {
           assessment_run_id?: string | null
           attachments?: Json
+          author_user_id?: string | null
           auto_education_enabled?: boolean
           company_id?: string | null
           created_at?: string
@@ -8613,6 +8615,7 @@ export type Database = {
         Update: {
           assessment_run_id?: string | null
           attachments?: Json
+          author_user_id?: string | null
           auto_education_enabled?: boolean
           company_id?: string | null
           created_at?: string

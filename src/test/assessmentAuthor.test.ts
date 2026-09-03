@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   assessmentAuthorSubmitMessage,
+  authorPickerLoadState,
+  buildAssessmentAuthorCandidates,
   canAssistAssessmentWrite,
   canCreateAssessmentRun,
   canSubmitAssessmentRun,
@@ -57,5 +59,35 @@ describe('assessmentAuthor', () => {
       company_id: 'c1',
       company_name: '정원이엔씨',
     })).toBe('김재현 · 정원이엔씨');
+  });
+
+  it('maps member rows and skips duplicates', () => {
+    const rows = buildAssessmentAuthorCandidates(
+      [
+        { user_id: 'u2', company_id: 'c1' },
+        { user_id: 'u1', company_id: 'c1' },
+        { user_id: 'u1', company_id: 'c1' },
+        { user_id: null, company_id: 'c1' },
+      ],
+      [
+        { user_id: 'u1', display_name: '김감독' },
+        { user_id: 'u2', display_name: '박감독' },
+      ],
+      [{ id: 'c1', name: '정원' }],
+    );
+    expect(rows.map((r) => r.user_id)).toEqual(['u1', 'u2']);
+    expect(rows[0]).toMatchObject({ display_name: '김감독', company_name: '정원' });
+  });
+
+  it('does not fetch while company scope is pending, and empty company list is final', () => {
+    expect(authorPickerLoadState({ projectId: null })).toBe('idle');
+    expect(authorPickerLoadState({
+      projectId: 'p1',
+      companyIds: [],
+      companyFilterPending: true,
+    })).toBe('pending');
+    expect(authorPickerLoadState({ projectId: 'p1', companyIds: [] })).toBe('empty');
+    expect(authorPickerLoadState({ projectId: 'p1', companyIds: ['c1'] })).toBe('load');
+    expect(authorPickerLoadState({ projectId: 'p1', companyIds: null })).toBe('load');
   });
 });

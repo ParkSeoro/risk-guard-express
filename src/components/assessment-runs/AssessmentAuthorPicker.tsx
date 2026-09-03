@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
+  authorPickerLoadState,
   formatAssessmentAuthorLabel,
   type AssessmentAuthorCandidate,
 } from '@/lib/assessmentAuthor';
+import { fetchAssessmentAuthorCandidates } from '@/lib/assessmentAuthorQuery';
 
 type Props = {
   projectId: string | null;
@@ -16,6 +17,8 @@ type Props = {
   error?: string;
   /** Set to restrict the list to these companies. null/omit = project-wide (위험성평가). [] = none. */
   companyIds?: string[] | null;
+  /** Access/company scope is still resolving — keep showing 불러오는 중, do not treat [] as final. */
+  companyFilterPending?: boolean;
 };
 
 export default function AssessmentAuthorPicker({
@@ -26,73 +29,62 @@ export default function AssessmentAuthorPicker({
   required,
   error,
   companyIds,
+  companyFilterPending,
 }: Props) {
   const [candidates, setCandidates] = useState<AssessmentAuthorCandidate[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => authorPickerLoadState({
+    projectId,
+    companyIds,
+    companyFilterPending,
+  }) !== 'idle');
+  const companyKey = companyIds == null ? '*' : companyIds.join(',');
 
   useEffect(() => {
-    if (!projectId) {
+    let alive = true;
+    const state = authorPickerLoadState({ projectId, companyIds, companyFilterPending });
+
+    if (state === 'idle' || state === 'empty') {
       setCandidates([]);
-      return;
-    }
-    if (companyIds && companyIds.length === 0) {
-      setCandidates([]);
-      return;
-    }
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      let query = supabase
-        .from('project_members')
-        .select('user_id, company_id')
-        .eq('project_id', projectId)
-        .eq('role_new', 'site_supervisor');
-      if (companyIds && companyIds.length > 0) {
-        query = query.in('company_id', companyIds);
-      }
-      const { data: members } = await query;
-      const rows = members || [];
-      const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
-      const companyIds = [...new Set(rows.map((r) => r.company_id).filter(Boolean))] as string[];
-      const [{ data: profiles }, { data: companies }] = await Promise.all([
-        userIds.length
-          ? supabase.from('profiles').select('user_id, display_name').in('user_id', userIds)
-          : Promise.resolve({ data: [] as { user_id: string; display_name: string | null }[] }),
-        companyIds.length
-          ? supabase.from('companies').select('id, name').in('id', companyIds)
-          : Promise.resolve({ data: [] as { id: string; name: string }[] }),
-      ]);
-      if (cancelled) return;
-      const nameByUser = new Map((profiles || []).map((p) => [p.user_id, p.display_name || '']));
-      const nameByCo = new Map((companies || []).map((c) => [c.id, c.name]));
-      const seen = new Set<string>();
-      const next: AssessmentAuthorCandidate[] = [];
-      for (const row of rows) {
-        if (!row.user_id || seen.has(row.user_id)) continue;
-        seen.add(row.user_id);
-        next.push({
-          user_id: row.user_id,
-          display_name: nameByUser.get(row.user_id) || row.user_id.slice(0, 8),
-          company_id: row.company_id,
-          company_name: row.company_id ? (nameByCo.get(row.company_id) || '') : '',
-        });
-      }
-      next.sort((a, b) => a.display_name.localeCompare(b.display_name, 'ko'));
-      setCandidates(next);
       setLoading(false);
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, companyIds?.join(',')]);
+      return () => { alive = false; };
+    }
+    if (state === 'pending') {
+      setLoading(true);
+      return () => { alive = false; };
+    }
+
+    setLoading(true);
+    void fetchAssessmentAuthorCandidates(projectId as string, companyIds)
+      .then((next) => {
+        if (alive) setCandidates(next);
+      })
+      .catch(() => {
+        if (alive) setCandidates([]);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+
+    return () => { alive = false; };
+    // companyKey is the stable identity of companyIds (null → '*', else join).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, companyKey, companyFilterPending]);
+
+  const selected = candidates.find((c) => c.user_id === value);
+  const placeholder = loading
+    ? '불러오는 중...'
+    : candidates.length
+      ? '관리감독자를 선택하세요'
+      : '등록된 관리감독자가 없습니다';
 
   return (
     <div className="space-y-1">
       <Label className="text-xs">작성 주체 (관리감독자){required ? ' *' : ''}</Label>
       <Select value={value || undefined} onValueChange={onChange} disabled={disabled || loading || !projectId}>
         <SelectTrigger className="h-9">
-          <SelectValue placeholder={loading ? '불러오는 중...' : candidates.length ? '관리감독자를 선택하세요' : '등록된 관리감독자가 없습니다'} />
+          <SelectValue placeholder={placeholder}>
+            {selected ? formatAssessmentAuthorLabel(selected) : undefined}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {candidates.map((c) => (

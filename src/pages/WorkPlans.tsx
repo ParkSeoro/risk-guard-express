@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -52,6 +52,16 @@ const WorkPlans = () => {
   const [selectedCompany, setSelectedCompany] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [runs, setRuns] = useState<any[]>([]);
+  const createAuthorCompanyIds = useMemo(
+    () => workPlanAuthorCompanyIds({
+      userCompanyId: access.userCompanyId,
+      selectedCompanyId: selectedCompany,
+      seesAllCompanies: access.seesAllCompanies,
+    }),
+    [access.userCompanyId, selectedCompany, access.seesAllCompanies],
+  );
+  const createAuthorCompanyFilterPending =
+    access.scopeStatus !== 'ready' && !selectedCompany && !access.userCompanyId;
 
   useEffect(() => {
     if (access.scopeStatus !== 'ready') return;
@@ -345,11 +355,8 @@ const WorkPlans = () => {
                   </div>
                   <AssessmentAuthorPicker
                     projectId={access.selectedProject}
-                    companyIds={workPlanAuthorCompanyIds({
-                      userCompanyId: access.userCompanyId,
-                      selectedCompanyId: selectedCompany,
-                      seesAllCompanies: access.seesAllCompanies,
-                    })}
+                    companyIds={createAuthorCompanyIds}
+                    companyFilterPending={createAuthorCompanyFilterPending}
                     value={authorUserId}
                     onChange={(id) => {
                       setAuthorUserId(id);

@@ -7,6 +7,8 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuditLog } from '@/hooks/useAuditLog';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { WORK_PLAN_TYPES, getWorkPlanTypesGrouped } from '@/lib/workPlanTemplates';
+import AssessmentAuthorPicker from '@/components/assessment-runs/AssessmentAuthorPicker';
+import { defaultAuthorUserId, prefillOverviewSupervisor } from '@/lib/workPlanAuthor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -41,6 +43,8 @@ const WorkPlans = () => {
   const [plans, setPlans] = useState<any[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newPlan, setNewPlan] = useState({ workType: '', title: '', startDate: '', endDate: '', assessmentRunId: '' });
+  const [authorUserId, setAuthorUserId] = useState('');
+  const [authorError, setAuthorError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<any>(null);
   const [editTarget, setEditTarget] = useState<any>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -104,18 +108,35 @@ const WorkPlans = () => {
     setPlans(items);
   };
 
+  useEffect(() => {
+    if (!dialogOpen) return;
+    setAuthorUserId(defaultAuthorUserId({ userId: user?.id, role: access.userRole }));
+    setAuthorError('');
+  }, [dialogOpen, user?.id, access.userRole]);
+
   const handleCreate = async () => {
     if (!newPlan.workType || !access.selectedProject || !newPlan.startDate || !newPlan.endDate) {
       toast({ title: '작업기간을 입력해주세요.', variant: 'destructive' });
+      return;
+    }
+    if (!authorUserId) {
+      setAuthorError('작성 주체(관리감독자)를 선택해주세요.');
+      toast({ title: '작성 주체(관리감독자)를 선택해주세요.', variant: 'destructive' });
       return;
     }
     const wpType = WORK_PLAN_TYPES.find(t => t.id === newPlan.workType);
     if (!wpType) return;
 
     const title = newPlan.title || `${wpType.name} 작업계획서`;
-    const sections = wpType.templateSections.map(s => ({
+    let sections = wpType.templateSections.map(s => ({
       key: s.key, title: s.title, type: s.type, content: '', placeholder: s.placeholder,
     }));
+    const { data: authorProf } = await supabase
+      .from('profiles')
+      .select('display_name')
+      .eq('user_id', authorUserId)
+      .maybeSingle();
+    sections = prefillOverviewSupervisor(sections, authorProf?.display_name || '');
     const companyId = access.userCompanyId || selectedCompany || null;
 
     const { data, error } = await supabase.from('work_plans').insert({
@@ -126,6 +147,7 @@ const WorkPlans = () => {
       sections,
       attachments: [],
       created_by: user?.id,
+      author_user_id: authorUserId,
       start_date: newPlan.startDate,
       end_date: newPlan.endDate,
       assessment_run_id: newPlan.assessmentRunId || null,
@@ -152,6 +174,8 @@ const WorkPlans = () => {
       toast({ title: '작업계획서가 생성되었습니다.' });
       setDialogOpen(false);
       setNewPlan({ workType: '', title: '', startDate: '', endDate: '', assessmentRunId: '' });
+      setAuthorUserId('');
+      setAuthorError('');
       setSelectedCompany('');
       if (data) navigate(`/work-plan/${data.id}`);
     }
@@ -167,6 +191,7 @@ const WorkPlans = () => {
       sections: plan.sections,
       attachments: [],
       created_by: user.id,
+      author_user_id: plan.author_user_id || null,
       parent_id: plan.id,
       version: (plan.version || 1) + 1,
       status: '작성중',
@@ -318,11 +343,24 @@ const WorkPlans = () => {
                       </SelectContent>
                     </Select>
                   </div>
+                  <AssessmentAuthorPicker
+                    projectId={access.selectedProject}
+                    value={authorUserId}
+                    onChange={(id) => {
+                      setAuthorUserId(id);
+                      setAuthorError('');
+                    }}
+                    required
+                    error={authorError}
+                  />
+                  <p className="text-[10px] text-muted-foreground -mt-2">
+                    입력은 누구나 할 수 있습니다. 인쇄·PDF에 이 관리감독자가 작성자로 표시됩니다.
+                  </p>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-medium">제목 (선택)</Label>
                     <Input value={newPlan.title} onChange={e => setNewPlan(p => ({ ...p, title: e.target.value }))} placeholder="미입력 시 자동 생성" className="h-9" />
                   </div>
-                  <Button onClick={handleCreate} disabled={!newPlan.workType || !newPlan.startDate || !newPlan.endDate} className="w-full">생성</Button>
+                  <Button onClick={handleCreate} disabled={!newPlan.workType || !newPlan.startDate || !newPlan.endDate || !authorUserId} className="w-full">생성</Button>
                 </div>
               </DialogContent>
             </Dialog>

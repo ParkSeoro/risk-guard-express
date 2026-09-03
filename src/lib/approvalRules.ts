@@ -159,10 +159,29 @@ export const SAFETY_COST_APPROVAL_STEPS: DefaultStep[] = [
   { label: '발주처 SM', position: 'owner_sm' },
 ];
 
+/** 작업계획서: 작성자가 결재선을 구성. 기본은 작성자(상신)만. CM·SM·소장은 필요할 때 추가. */
+export const WORK_PLAN_APPROVAL_STEPS: DefaultStep[] = [
+  { label: '작성자', position: 'contractor_supervisor' },
+];
+
+export const WORK_PLAN_POSITION_OPTIONS = [
+  { value: 'contractor_supervisor', label: '작성자' },
+  { value: 'contractor_safety_manager', label: '담당자(안전)' },
+  { value: 'contractor_site_director', label: '현장소장' },
+  { value: 'gc_manager', label: '시공사 관리자' },
+  { value: 'owner_cm', label: '발주처 CM' },
+  { value: 'owner_sm', label: '발주처 SM' },
+  { value: 'consent', label: '합의' },
+] as const;
+
+export function usesAuthorComposedApproval(entityType: ApprovalEntityType): boolean {
+  return entityType === 'safety_cost' || entityType === 'work_plan';
+}
+
 /** 엔티티 → 기본 결재선 */
 export const DEFAULT_STEPS_BY_ENTITY: Record<ApprovalEntityType, DefaultStep[]> = {
   work_permit: WORK_PERMIT_APPROVAL_STEPS,
-  work_plan: FIXED_APPROVAL_STEPS,
+  work_plan: WORK_PLAN_APPROVAL_STEPS,
   assessment_run: FIXED_APPROVAL_STEPS,
   assessment_run_feedback: FIXED_APPROVAL_STEPS,
   safety_cost: SAFETY_COST_APPROVAL_STEPS,
@@ -210,7 +229,7 @@ export function buildDefaultStepsForAuthor(
     base = base.filter((s) => !['gc', 'gc_manager', 'gc_pm'].includes(s.position));
   }
   return base.map((s) => ({
-    label: entityType === 'safety_cost' ? s.label : stepLabelForAuthor(s.position, t),
+    label: usesAuthorComposedApproval(entityType) ? s.label : stepLabelForAuthor(s.position, t),
     position: s.position,
     user_id: '',
     user_name: '',
@@ -750,6 +769,22 @@ export function validateStepsHierarchy<T extends { position?: string | null; lab
       };
     }
     prev = r;
+  }
+  return { ok: true };
+}
+
+/** 작업계획서: 작성자 순서 유지. 작성자(상신)만 필수. CM·SM·소장 인원·포함 여부는 작성자 선택. */
+export function validateWorkPlanApprovalSteps<
+  T extends { position?: string | null; label?: string | null },
+>(steps: T[]): { ok: boolean; message?: string } {
+  if (!steps.length) return { ok: false, message: '결재선을 1단계 이상 지정하세요.' };
+  const keys = steps.map((s) => (s.position || '').toLowerCase());
+  const ssot = validateApprovalLinesSSOT(steps.map((s) => ({ position: s.position })));
+  if (!ssot.ok) {
+    return { ok: false, message: `알 수 없는 결재 직책: ${Array.from(new Set(ssot.invalid)).join(', ')}` };
+  }
+  if (!keys.some((k) => k === 'contractor_supervisor' || k === 'contractor_pic')) {
+    return { ok: false, message: '작성자(상신) 단계가 필요합니다.' };
   }
   return { ok: true };
 }

@@ -64,6 +64,7 @@ import {
   hasWorkPlanLegalAuthor,
   prefillOverviewSupervisor,
   workPlanAuthorDisplayMessage,
+  workPlanAuthorCompanyIds,
 } from '@/lib/workPlanAuthor';
 import { format, parseISO } from 'date-fns';
 import { buildRiggingPlanPayload } from '@/lib/riggingPlanPersist';
@@ -773,6 +774,11 @@ const WorkPlanDetail = () => {
             ) && (
               <AssessmentAuthorPicker
                 projectId={plan.project_id}
+                companyIds={workPlanAuthorCompanyIds({
+                  documentCompanyId: plan.company_id,
+                  userCompanyId: access.userCompanyId,
+                  seesAllCompanies: access.seesAllCompanies,
+                })}
                 value={plan.author_user_id || ''}
                 onChange={async (id) => {
                   const { error } = await supabase.from('work_plans').update({ author_user_id: id } as any).eq('id', planId);

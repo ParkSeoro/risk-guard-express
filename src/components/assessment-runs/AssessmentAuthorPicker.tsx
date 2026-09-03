@@ -14,6 +14,8 @@ type Props = {
   disabled?: boolean;
   required?: boolean;
   error?: string;
+  /** Set to restrict the list to these companies. null/omit = project-wide (위험성평가). [] = none. */
+  companyIds?: string[] | null;
 };
 
 export default function AssessmentAuthorPicker({
@@ -23,6 +25,7 @@ export default function AssessmentAuthorPicker({
   disabled,
   required,
   error,
+  companyIds,
 }: Props) {
   const [candidates, setCandidates] = useState<AssessmentAuthorCandidate[]>([]);
   const [loading, setLoading] = useState(false);
@@ -32,14 +35,22 @@ export default function AssessmentAuthorPicker({
       setCandidates([]);
       return;
     }
+    if (companyIds && companyIds.length === 0) {
+      setCandidates([]);
+      return;
+    }
     let cancelled = false;
     const load = async () => {
       setLoading(true);
-      const { data: members } = await supabase
+      let query = supabase
         .from('project_members')
         .select('user_id, company_id')
         .eq('project_id', projectId)
         .eq('role_new', 'site_supervisor');
+      if (companyIds && companyIds.length > 0) {
+        query = query.in('company_id', companyIds);
+      }
+      const { data: members } = await query;
       const rows = members || [];
       const userIds = [...new Set(rows.map((r) => r.user_id).filter(Boolean))];
       const companyIds = [...new Set(rows.map((r) => r.company_id).filter(Boolean))] as string[];
@@ -74,7 +85,7 @@ export default function AssessmentAuthorPicker({
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, companyIds?.join(',')]);
 
   return (
     <div className="space-y-1">
@@ -93,7 +104,11 @@ export default function AssessmentAuthorPicker({
       </Select>
       {error && <p className="text-xs text-destructive">{error}</p>}
       {!error && candidates.length === 0 && !loading && projectId && (
-        <p className="text-[10px] text-muted-foreground">프로젝트에 관리감독자를 먼저 등록하세요. 안전관리자는 작성 주체가 될 수 없습니다.</p>
+        <p className="text-[10px] text-muted-foreground">
+          {companyIds
+            ? '이 업체에 등록된 관리감독자가 없습니다. 다른 회사 명단은 보여 주지 않습니다.'
+            : '프로젝트에 관리감독자를 먼저 등록하세요. 안전관리자는 작성 주체가 될 수 없습니다.'}
+        </p>
       )}
     </div>
   );

@@ -6,6 +6,8 @@ import {
   isSiteSupervisorRole,
   prefillOverviewSupervisor,
   workPlanAuthorDisplayMessage,
+  workPlanAuthorCompanyIds,
+  filterMembersByCompanyIds,
 } from '@/lib/workPlanAuthor';
 import {
   preferredSubmitterUserId,
@@ -44,6 +46,24 @@ describe('workPlanAuthor', () => {
       '김감독',
     );
     expect(JSON.parse(kept[0].content).supervisor).toBe('박기사');
+  });
+
+  it('lists supervisors for the document/own company only — not the GC tree', () => {
+    expect(workPlanAuthorCompanyIds({
+      userCompanyId: 'gc-1',
+      selectedCompanyId: 'sub-9',
+    })).toEqual(['gc-1']);
+    expect(workPlanAuthorCompanyIds({
+      documentCompanyId: 'co-1',
+      userCompanyId: 'gc-1',
+    })).toEqual(['co-1']);
+    expect(filterMembersByCompanyIds(
+      [
+        { user_id: 'a', company_id: 'gc-1' },
+        { user_id: 'b', company_id: 'sub-9' },
+      ],
+      ['gc-1'],
+    ).map((r) => r.user_id)).toEqual(['a']);
   });
 
   it('does not copy a missing or blank name', () => {

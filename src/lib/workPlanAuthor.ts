@@ -20,6 +20,32 @@ export function workPlanAuthorDisplayMessage(authorUserId?: string | null): stri
   return '작성 주체(관리감독자)를 지정하세요. 인쇄·PDF에 이 이름이 표시됩니다.';
 }
 
+/**
+ * 작업계획서 작성자 후보는 문서(또는 로그인) 소속 업체만.
+ * 시공사 트리(하위 협력사)까지 열지 않는다.
+ * null = 프로젝트 전체(마스터·발주처가 업체를 고르기 전).
+ */
+export function workPlanAuthorCompanyIds(opts: {
+  documentCompanyId?: string | null;
+  userCompanyId?: string | null;
+  selectedCompanyId?: string | null;
+  seesAllCompanies?: boolean;
+}): string[] | null {
+  const id = opts.documentCompanyId || opts.userCompanyId || opts.selectedCompanyId || '';
+  if (id) return [id];
+  return opts.seesAllCompanies ? null : [];
+}
+
+export function filterMembersByCompanyIds<T extends { company_id?: string | null }>(
+  rows: T[],
+  companyIds?: string[] | null,
+): T[] {
+  if (companyIds == null) return rows;
+  const allow = new Set(companyIds.filter(Boolean));
+  if (allow.size === 0) return [];
+  return rows.filter((r) => !!r.company_id && allow.has(r.company_id));
+}
+
 type OverviewSection = {
   key?: string;
   content?: string;

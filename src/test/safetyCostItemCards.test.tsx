@@ -75,6 +75,8 @@ describe('SafetyCostItemCards', () => {
     expect(el.textContent).toContain('거래명세서 2장');
     expect(el.textContent).toContain('명세 추가');
     expect(el.textContent).toContain('촬영');
+    expect(el.textContent).toContain('수기 입력');
+    expect(el.textContent).toMatch(/수정/);
     expect(el.querySelector('input[capture="environment"]')).toBeTruthy();
   });
 });

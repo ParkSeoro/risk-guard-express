@@ -6055,6 +6055,7 @@ export type Database = {
           id: string
           item_id: string | null
           mime_type: string
+          note: string
           project_id: string
           report_id: string | null
           updated_at: string
@@ -6073,6 +6074,7 @@ export type Database = {
           id?: string
           item_id?: string | null
           mime_type?: string
+          note?: string
           project_id: string
           report_id?: string | null
           updated_at?: string
@@ -6091,6 +6093,7 @@ export type Database = {
           id?: string
           item_id?: string | null
           mime_type?: string
+          note?: string
           project_id?: string
           report_id?: string | null
           updated_at?: string

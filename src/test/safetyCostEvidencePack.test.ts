@@ -17,7 +17,7 @@ describe('safetyCostEvidencePack', () => {
       items: [{ id: 'a', category_code: '3', amount: 100000 }],
       files: [
         { item_id: 'a', evidence_kind: 'transaction' },
-        { item_id: 'a', evidence_kind: 'tax_invoice' },
+        { item_id: 'a', evidence_kind: 'tax_invoice', note: '총액 중 보호구 전액' },
         { item_id: 'a', evidence_kind: 'site_photo' },
       ],
       ppeLedgerSignedCount: 0,
@@ -31,7 +31,7 @@ describe('safetyCostEvidencePack', () => {
       items: [{ id: 'a', category_code: '3', amount: 100000 }],
       files: [
         { item_id: 'a', evidence_kind: 'transaction' },
-        { item_id: 'a', evidence_kind: 'tax_invoice' },
+        { item_id: 'a', evidence_kind: 'tax_invoice', note: '총액 중 보호구 전액' },
         { item_id: 'a', evidence_kind: 'site_photo' },
       ],
       ppeLedgerSignedCount: 2,

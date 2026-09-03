@@ -8,6 +8,7 @@ import {
   itemDailyChecklist,
   itemMissingDailyHard,
   itemTransactionEvidenceRows,
+  missingAllocationNotes,
   monthEndTaxLabel,
   reconcileCategoryTotals,
 } from '@/lib/safetyCostItemEvidence';
@@ -160,7 +161,7 @@ describe('safetyCostItemEvidence', () => {
       { id: 'c', category_code: '3', amount: 30000, supplier_name: '다른업체' },
       { id: 'd', category_code: '2', amount: 40000, supplier_name: '동일업체' },
     ];
-    const files = [{ item_id: null, evidence_kind: 'tax_invoice', category_code: '3' }];
+    const files = [{ item_id: null, evidence_kind: 'tax_invoice', category_code: '3', note: '총액 중 보호구 80,000원' }];
     expect(countCategoryKind(items, files, '3', 'tax_invoice')).toBe(1);
     expect(countCategoryKind(items, files, '2', 'tax_invoice')).toBe(0);
     for (const it of items.filter((i) => i.category_code === '3')) {
@@ -184,10 +185,15 @@ describe('safetyCostItemEvidence', () => {
         uploaded_by: 'u1',
         evidence_kind: 'tax_invoice',
       },
-      ['2', '3', '3'],
+      [
+        { category_code: '2', note: '총액 중 시설비 80,000원' },
+        { category_code: '3', note: '총액 중 보호구 50,000원' },
+        { category_code: '3', note: '중복' },
+      ],
     );
     expect(rows).toHaveLength(2);
     expect(rows.every((r) => r.file_path.endsWith('tax.pdf') && r.item_id === null && r.evidence_kind === 'tax_invoice')).toBe(true);
+    expect(rows.find((r) => r.category_code === '2')?.note).toBe('총액 중 시설비 80,000원');
     expect(rows.map((r) => r.category_code).sort()).toEqual(['2', '3']);
 
     const items = [
@@ -223,5 +229,24 @@ describe('safetyCostItemEvidence', () => {
     expect(pack.ready).toBe(false);
     expect(summary.label).toContain('대사');
     expect(summary.issueCount).toBeGreaterThan(0);
+  });
+
+  it('requires a per-category allocation note on a shared tax invoice', () => {
+    expect(missingAllocationNotes([
+      { category_code: '2', note: '' },
+      { category_code: '3', note: '총액 중 보호구 5만' },
+    ]).map((a) => a.category_code)).toEqual(['2']);
+    const items = [{ id: 'a', category_code: '3', amount: 50000 }];
+    const fileOnly = [{ item_id: null, evidence_kind: 'tax_invoice', category_code: '3' }];
+    expect(evaluateEvidencePack({
+      items,
+      files: [
+        ...fileOnly,
+        { item_id: 'a', evidence_kind: 'transaction', category_code: '3' },
+        { item_id: 'a', evidence_kind: 'site_photo', category_code: '3' },
+      ],
+      ppeLedgerSignedCount: 1,
+    }).rows.find((r) => r.requirement.kind === 'tax_invoice')?.ok).toBe(false);
+    expect(monthEndTaxLabel(false, true)).toBe('월말 · 이 비목 배분 메모 필요');
   });
 });

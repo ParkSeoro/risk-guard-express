@@ -9,6 +9,7 @@ import { Camera, ChevronDown, Eye, Paperclip, Pencil, Plus, Search, Trash2 } fro
 import { SAFETY_COST_CATEGORY_SHORT, formatKRW } from '@/lib/safetyCost';
 import type { EvidenceKind } from '@/lib/safetyCostEvidencePack';
 import {
+  categoryTaxAllocationNotes,
   countCategoryKind,
   filesForItem,
   itemDailyChecklist,
@@ -52,6 +53,7 @@ type Evidence = {
   category_code?: string | null;
   file_name?: string;
   file_url?: string;
+  note?: string | null;
 };
 
 type Props = {
@@ -70,6 +72,7 @@ type Props = {
   onLegal: (item: Item) => void;
   onOpenPpe?: () => void;
   onOpenPack?: () => void;
+  onOpenAi?: () => void;
   onUpload: (item: Item, files: FileList | null, kind: EvidenceKind) => void;
 };
 
@@ -145,6 +148,7 @@ export function SafetyCostItemCards({
   onLegal,
   onOpenPpe,
   onOpenPack,
+  onOpenAi,
   onUpload,
 }: Props) {
   const [showTable, setShowTable] = useState(false);
@@ -165,21 +169,37 @@ export function SafetyCostItemCards({
           <Input value={itemSearch} onChange={(e) => onItemSearch(e.target.value)} placeholder="품명·공급자·분류·메이커 검색" className="pl-8" />
         </div>
         <Button type="button" size="sm" variant="outline" className="gap-1" onClick={onAdd} disabled={reportLocked}>
-          <Plus className="h-3.5 w-3.5" /> 항목 추가
+          <Plus className="h-3.5 w-3.5" /> 수기 입력
         </Button>
+        {onOpenAi ? (
+          <Button type="button" size="sm" variant="ghost" className="gap-1" onClick={onOpenAi}>
+            AI 자동분석
+          </Button>
+        ) : null}
       </div>
 
       {items.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            {itemSearch ? '검색 결과가 없습니다.' : '항목이 없습니다. 항목 추가로 수기 입력하거나, 당월 거래명세는 AI 자동분석을 사용하세요.'}
+            {itemSearch ? '검색 결과가 없습니다.' : (
+              <div className="space-y-3">
+                <p>항목이 없습니다. OCR이 안 되면 수기로 넣고 명세·사진을 붙이세요.</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button type="button" size="sm" onClick={onAdd} disabled={reportLocked}>수기 입력</Button>
+                  {onOpenAi ? (
+                    <Button type="button" size="sm" variant="outline" onClick={onOpenAi}>AI 자동분석</Button>
+                  ) : null}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       ) : (
         <div className="grid gap-3">
           {items.map((it) => {
             const taxCount = countCategoryKind(items, evidence, String(it.category_code || ''), 'tax_invoice');
-            const checks = itemDailyChecklist(it, evidence, taxCount);
+            const taxNotes = categoryTaxAllocationNotes(items, evidence, String(it.category_code || ''));
+            const checks = itemDailyChecklist(it, evidence, taxCount, taxNotes.length > 0);
             const daily = checks.filter((c) => c.timing === 'daily');
             const monthEnd = checks.find((c) => c.timing === 'month_end');
             const txFiles = filesForItem(evidence, it.id).filter((f) => f.evidence_kind === 'transaction');
@@ -223,9 +243,12 @@ export function SafetyCostItemCards({
                           </span>
                         ))}
                         {monthEnd ? (
-                          <span className="text-muted-foreground">{monthEndTaxLabel(monthEnd.ok)}</span>
+                          <span className="text-muted-foreground">{monthEndTaxLabel(monthEnd.ok, taxCount > 0)}</span>
                         ) : null}
                       </div>
+                      {taxNotes.length ? (
+                        <p className="text-[11px] text-muted-foreground">계산서 배분: {taxNotes.join(' · ')}</p>
+                      ) : null}
                       <FileChips files={[...txFiles, ...photoFiles]} />
                       <div className="flex flex-wrap gap-1.5">
                         <KindUpload
@@ -265,8 +288,8 @@ export function SafetyCostItemCards({
                     <Button type="button" size="sm" variant="ghost" className="h-8 gap-1" onClick={() => onLegal(it)}>
                       <Eye className="h-3 w-3" /> 근거
                     </Button>
-                    <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => onEdit(it)} aria-label="항목 수정">
-                      <Pencil className="h-3.5 w-3.5" />
+                    <Button type="button" size="sm" variant="outline" className="h-8 gap-1" onClick={() => onEdit(it)} disabled={reportLocked} aria-label="항목 수정">
+                      <Pencil className="h-3.5 w-3.5" /> 수정
                     </Button>
                     <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => onDelete(it)} disabled={reportLocked} aria-label="항목 삭제">
                       <Trash2 className="h-3.5 w-3.5" />

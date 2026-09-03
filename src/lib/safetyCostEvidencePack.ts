@@ -166,6 +166,7 @@ export type EvidenceFileLike = {
   report_id?: string | null;
   evidence_kind?: string | null;
   category_code?: string | null;
+  note?: string | null;
 };
 
 export type ItemLike = {
@@ -304,12 +305,16 @@ export function evaluateEvidencePack(input: {
       if (req.kind === "ppe_ledger" && (input.ppeLedgerSignedCount || 0) > 0) {
         count = Math.max(count, input.ppeLedgerSignedCount || 0);
       }
+      let ok = count > 0;
+      if (req.kind === "tax_invoice") {
+        ok = categoryHasTaxAllocationNote(eligibleItems, input.files, pack.code);
+      }
       rows.push({
         code: pack.code,
         name: pack.name,
         amount,
         requirement: req,
-        ok: count > 0,
+        ok,
         count,
       });
     }
@@ -327,6 +332,21 @@ export function evaluateEvidencePack(input: {
     eligibleItems,
     reconcile,
   };
+}
+
+/** 세금계산서 파일이 있고, 총액 중 이 비목 금액 메모가 있는 경우만 충족. */
+export function categoryHasTaxAllocationNote(
+  items: ItemLike[],
+  files: EvidenceFileLike[],
+  categoryCode: string,
+) {
+  const itemCat = new Map(items.map((i) => [i.id, String(i.category_code || "")]));
+  return (files || []).some((f) => {
+    if (String(f.evidence_kind || "") !== "tax_invoice") return false;
+    let cat = String(f.category_code || "");
+    if (!cat && f.item_id) cat = itemCat.get(f.item_id) || "";
+    return cat === String(categoryCode) && String(f.note || "").trim().length > 0;
+  });
 }
 
 /** 상신 게이트 뱃지/문구. 파일 누락과 명세 대사를 구분한다. */

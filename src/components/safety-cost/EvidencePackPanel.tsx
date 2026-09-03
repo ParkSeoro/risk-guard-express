@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CheckCircle2, AlertTriangle, Upload, Paperclip, ListOrdered } from 'lucide-react';
 import {
@@ -19,7 +20,7 @@ import {
   type EvidenceFileLike,
 } from '@/lib/safetyCostEvidencePack';
 import { formatKRW } from '@/lib/safetyCost';
-import { cloneEvidenceToCategories, itemMissingDailyHard, resolvedFileCategory } from '@/lib/safetyCostItemEvidence';
+import { cloneEvidenceToCategories, itemMissingDailyHard, missingAllocationNotes, resolvedFileCategory } from '@/lib/safetyCostItemEvidence';
 import { uploadAttachmentFile } from '@/lib/compressUploadFile';
 
 type Props = {
@@ -28,7 +29,7 @@ type Props = {
   constructionId: string;
   reportId: string;
   items: ItemLike[];
-  evidence: Array<EvidenceFileLike & { id?: string; file_name?: string; file_url?: string }>;
+  evidence: Array<EvidenceFileLike & { id?: string; file_name?: string; file_url?: string; note?: string | null }>;
   ppeLedgerSignedCount: number;
   userId?: string;
   onChanged: () => void;
@@ -47,6 +48,7 @@ export function EvidencePackPanel({
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploadCat, setUploadCat] = useState('3');
   const [uploadCats, setUploadCats] = useState<string[]>([]);
+  const [allocNotes, setAllocNotes] = useState<Record<string, string>>({});
   const [uploadKind, setUploadKind] = useState<EvidenceKind>('tax_invoice');
   const [uploading, setUploading] = useState(false);
 
@@ -103,11 +105,16 @@ export function EvidencePackPanel({
 
   async function handleUpload(files: FileList | null) {
     if (!files?.length || !userId) return;
-    const targetCats = uploadKind === 'tax_invoice'
-      ? [...new Set(uploadCats.filter(Boolean))]
-      : [uploadCat];
+    const allocations = uploadKind === 'tax_invoice'
+      ? [...new Set(uploadCats.filter(Boolean))].map((code) => ({ category_code: code, note: allocNotes[code] || '' }))
+      : [{ category_code: uploadCat, note: '' }];
+    const targetCats = allocations.map((a) => a.category_code);
     if (!targetCats.length) {
       toast({ title: '세금계산서가 해당하는 비목을 선택하세요.', variant: 'destructive' });
+      return;
+    }
+    if (uploadKind === 'tax_invoice' && missingAllocationNotes(allocations).length) {
+      toast({ title: '비목마다 총액 중 이 비목 금액을 적어 주세요.', variant: 'destructive' });
       return;
     }
     setUploading(true);
@@ -138,7 +145,7 @@ export function EvidencePackPanel({
           evidence_kind: uploadKind,
         };
         if (uploadKind === 'tax_invoice') {
-          rows.push(...cloneEvidenceToCategories(source, targetCats));
+          rows.push(...cloneEvidenceToCategories(source, allocations));
         } else {
           rows.push({
             ...source,
@@ -247,10 +254,13 @@ export function EvidencePackPanel({
                       return <p className="text-[11px] text-muted-foreground">월말 세금계산서: 이 비목 대기</p>;
                     }
                     return (
-                      <ul className="text-[11px] text-muted-foreground space-y-0.5">
+                      <ul className="text-[11px] text-muted-foreground space-y-1">
                         {taxFiles.map((f, i) => (
                           <li key={(f as { id?: string }).id || `${cat.code}-tax-${i}`}>
-                            세금계산서 {i + 1}: {(f as { file_name?: string }).file_name || '파일'}
+                            <p>세금계산서 {i + 1}: {(f as { file_name?: string }).file_name || '파일'}</p>
+                            {String(f.note || '').trim()
+                              ? <p className="text-foreground">배분: {String(f.note).trim()}</p>
+                              : <p className="text-destructive">총액 중 이 비목 금액 메모가 없습니다.</p>}
                           </li>
                         ))}
                       </ul>
@@ -289,23 +299,33 @@ export function EvidencePackPanel({
               </Select>
             </div>
             {uploadKind === 'tax_invoice' ? (
-              <div className="space-y-2 sm:col-span-2">
+              <div className="space-y-3 sm:col-span-2">
                 <Label>이 계산서가 해당하는 비목 (여러 개 가능)</Label>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-3">
                   {taxTargetCats.map((c) => {
                     const checked = uploadCats.includes(c.code);
                     return (
-                      <label key={c.code} className="flex items-start gap-2 text-sm">
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={(v) => {
-                            setUploadCats((prev) => (v === true
-                              ? [...new Set([...prev, c.code])]
-                              : prev.filter((code) => code !== c.code)));
-                          }}
-                        />
-                        <span>{c.code}. {c.name}</span>
-                      </label>
+                      <div key={c.code} className="rounded-md border p-2 space-y-2">
+                        <label className="flex items-start gap-2 text-sm">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(v) => {
+                              setUploadCats((prev) => (v === true
+                                ? [...new Set([...prev, c.code])]
+                                : prev.filter((code) => code !== c.code)));
+                            }}
+                          />
+                          <span>{c.code}. {c.name}</span>
+                        </label>
+                        {checked ? (
+                          <Textarea
+                            rows={2}
+                            value={allocNotes[c.code] || ''}
+                            onChange={(e) => setAllocNotes((p) => ({ ...p, [c.code]: e.target.value }))}
+                            placeholder="예: 계산서 총액 5,000,000원 중 이 비목 2,000,000원"
+                          />
+                        ) : null}
+                      </div>
                     );
                   })}
                 </div>
@@ -338,8 +358,8 @@ export function EvidencePackPanel({
             />
           </div>
           <p className="text-[11px] text-muted-foreground">
-            세금계산서 한 장에 여러 비목 금액이 같이 있으면 해당 비목을 모두 고릅니다. 파일은 하나이고 비목마다 연결됩니다.
-            계산서 금액은 읽지 않습니다. 상신 대사는 <span className="text-foreground">사용 가능 합 ↔ 거래명세가 연결된 줄 합</span>입니다.
+            계산서 한 장을 해당 비목마다 붙여 넣고, 비목마다 총액 중 이 비목 금액을 적습니다. OCR은 하지 않습니다.
+            상신 대사는 <span className="text-foreground">사용 가능 합 ↔ 거래명세가 연결된 줄 합</span>입니다.
           </p>
         </CardContent>
       </Card>

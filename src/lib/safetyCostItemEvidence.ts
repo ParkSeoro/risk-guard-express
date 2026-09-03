@@ -87,9 +87,11 @@ export function itemDailyChecklist(
   item: PackEligibleItem,
   files: EvidenceFileLike[],
   categoryTaxCount: number,
+  taxNoted?: boolean,
 ): DailyCheckRow[] {
   const pack = getCategoryPack(item.category_code);
   if (!pack) return [];
+  const noted = taxNoted ?? categoryTaxAllocationNotes([item], files, String(item.category_code || '')).length > 0;
   const rows: DailyCheckRow[] = [];
   for (const req of pack.requirements) {
     if (isMonthEndEvidenceKind(req.kind)) {
@@ -97,7 +99,7 @@ export function itemDailyChecklist(
         kind: req.kind,
         label: req.label,
         count: categoryTaxCount,
-        ok: categoryTaxCount > 0,
+        ok: noted,
         timing: 'month_end',
       });
       continue;
@@ -164,13 +166,49 @@ export type SourceCategoryEvidenceFile = SourceTransactionFile & {
  * 세금계산서 한 장을 여러 비목에 연결(물리 파일 1개, 행은 비목마다 1개).
  * 일괄 발행 계산서에 1번 총액·2번 총액이 같이 있을 때 사용.
  */
+export type CategoryAllocation = { category_code: string; note?: string };
+
+export function evidenceNote(file?: { note?: string | null } | null) {
+  return String(file?.note || '').trim();
+}
+
+export function normalizeCategoryAllocations(
+  input: Array<string | CategoryAllocation>,
+): Array<{ category_code: string; note: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ category_code: string; note: string }> = [];
+  for (const entry of input) {
+    const category_code = String(typeof entry === 'string' ? entry : entry.category_code || '');
+    const note = typeof entry === 'string' ? '' : evidenceNote({ note: entry.note });
+    if (!category_code || seen.has(category_code)) continue;
+    seen.add(category_code);
+    out.push({ category_code, note });
+  }
+  return out;
+}
+
+export function missingAllocationNotes(input: Array<string | CategoryAllocation>) {
+  return normalizeCategoryAllocations(input).filter((a) => !a.note);
+}
+
+export function categoryTaxAllocationNotes(
+  items: ItemLike[],
+  files: EvidenceFileLike[],
+  categoryCode: string,
+) {
+  const itemCat = new Map(items.map((i) => [i.id, String(i.category_code || '')]));
+  return (files || [])
+    .filter((f) => String(f.evidence_kind || '') === 'tax_invoice' && resolvedFileCategory(f, itemCat) === String(categoryCode))
+    .map((f) => evidenceNote(f))
+    .filter(Boolean);
+}
+
 export function cloneEvidenceToCategories(
   source: SourceCategoryEvidenceFile,
-  categoryCodes: string[],
+  categoryCodes: Array<string | CategoryAllocation>,
 ) {
   const kind = source.evidence_kind || 'tax_invoice';
-  const codes = [...new Set(categoryCodes.map((c) => String(c || '')).filter(Boolean))];
-  return codes.map((category_code) => ({
+  return normalizeCategoryAllocations(categoryCodes).map(({ category_code, note }) => ({
     report_id: source.report_id,
     construction_id: source.construction_id,
     project_id: source.project_id,
@@ -178,6 +216,7 @@ export function cloneEvidenceToCategories(
     item_id: null,
     category_code,
     evidence_kind: kind,
+    note,
     file_name: source.file_name,
     file_path: source.file_path,
     file_url: source.file_url,
@@ -187,6 +226,8 @@ export function cloneEvidenceToCategories(
   }));
 }
 
-export function monthEndTaxLabel(ok: boolean) {
-  return ok ? '월말 · 이 비목 첨부됨' : '월말 · 이 비목 대기';
+export function monthEndTaxLabel(ok: boolean, hasFile = ok) {
+  if (ok) return '월말 · 이 비목 첨부됨';
+  if (hasFile) return '월말 · 이 비목 배분 메모 필요';
+  return '월말 · 이 비목 대기';
 }

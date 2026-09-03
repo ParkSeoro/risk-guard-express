@@ -227,3 +227,26 @@ export async function fetchTodayAck(
     .maybeSingle();
   return (data as any) || null;
 }
+
+/** Daily work/risk ack is done if today's ack row exists, or entry log already marked TBM-confirmed. */
+export function isDailyAckComplete(opts: {
+  hasAckRow?: boolean | null;
+  tbmConfirmed?: boolean | null;
+}): boolean {
+  return !!opts.hasAckRow || !!opts.tbmConfirmed;
+}
+
+/**
+ * Force-open the home signature dialog only after status is hydrated.
+ * Opening while ackDone is still the initial false (tab switch / app resume)
+ * re-shows a signed dialog and looks like TBM 서명이 반복된다.
+ */
+export function shouldForceDailyAckDialog(opts: {
+  hydrated: boolean;
+  diagnosticsOnly?: boolean;
+  checkedIn: boolean;
+  ackDone: boolean;
+}): boolean {
+  if (!opts.hydrated || opts.diagnosticsOnly) return false;
+  return opts.checkedIn && !opts.ackDone;
+}

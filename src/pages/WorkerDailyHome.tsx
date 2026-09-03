@@ -21,7 +21,10 @@ import {
   buildWorkSummary,
   fetchTodayAck,
   fetchWorkerDayPermits,
+  isDailyAckComplete,
   saveDailyWorkAck,
+  seoulDayRange,
+  shouldForceDailyAckDialog,
   type DailyPermitBrief,
 } from "@/lib/dailyWorkAck";
 import ResponsiveSignaturePad, {
@@ -82,6 +85,7 @@ export default function WorkerDailyHome({
   const [todayLog, setTodayLog] = useState<EntryLog | null>(null);
   const [ackOpen, setAckOpen] = useState(false);
   const [ackDone, setAckDone] = useState(false);
+  const [ackHydrated, setAckHydrated] = useState(false);
   const [dayPermits, setDayPermits] = useState<DailyPermitBrief[]>([]);
   const [workSummary, setWorkSummary] = useState("");
   const [riskSummary, setRiskSummary] = useState("");
@@ -129,8 +133,12 @@ export default function WorkerDailyHome({
   const refresh = useCallback(async () => {
     const pid = readActiveProjectId();
     setProjectId(pid);
-    if (!pid || !user) return;
+    if (!pid || !user) {
+      setAckHydrated(true);
+      return;
+    }
 
+    try {
     const { data: proj } = await supabase
       .from("projects")
       .select("id, name, site_lat, site_lng")
@@ -174,23 +182,28 @@ export default function WorkerDailyHome({
     }
 
     if (wid) {
-      const start = new Date();
-      start.setHours(0, 0, 0, 0);
-      const { data: logs } = await supabase
-        .from("worker_entry_logs")
-        .select("id, entry_at, exit_at, tbm_confirmed, no_accident_confirmed")
-        .eq("worker_id", wid)
-        .eq("project_id", pid)
-        .gte("entry_at", start.toISOString())
-        .order("entry_at", { ascending: false })
-        .limit(1);
-      setTodayLog((logs?.[0] as EntryLog) || null);
-      const ack = await fetchTodayAck(pid, wid);
-      setAckDone(!!ack || !!(logs?.[0] as EntryLog | undefined)?.tbm_confirmed);
-      const permits = await fetchWorkerDayPermits(pid, wid);
+      const day = seoulDayRange();
+      const [{ data: logs }, ack, permits] = await Promise.all([
+        supabase
+          .from("worker_entry_logs")
+          .select("id, entry_at, exit_at, tbm_confirmed, no_accident_confirmed")
+          .eq("worker_id", wid)
+          .eq("project_id", pid)
+          .gte("entry_at", day.start)
+          .lte("entry_at", day.end)
+          .order("entry_at", { ascending: false })
+          .limit(1),
+        fetchTodayAck(pid, wid),
+        fetchWorkerDayPermits(pid, wid),
+      ]);
+      const log = (logs?.[0] as EntryLog) || null;
+      const done = isDailyAckComplete({ hasAckRow: !!ack, tbmConfirmed: log?.tbm_confirmed });
+      setTodayLog(log);
+      setAckDone(done);
       setDayPermits(permits);
       setWorkSummary(buildWorkSummary(permits));
       setRiskSummary(await buildRiskSummary(permits));
+      if (done) setAckOpen(false);
     } else {
       setTodayLog(null);
       setAckDone(false);
@@ -198,6 +211,9 @@ export default function WorkerDailyHome({
     }
 
     // Full GPS is owned by WorkerGlobalGps (checked-in workers / on-site managers only).
+    } finally {
+      setAckHydrated(true);
+    }
   }, [user, profile]);
 
   useEffect(() => {
@@ -205,13 +221,19 @@ export default function WorkerDailyHome({
   }, [refresh]);
 
   useEffect(() => {
-    // Incomplete day: force signature before work continues
-    if (diagnosticsOnly) return;
-    if (isCheckedIn && !ackDone) {
+    // Incomplete day: force signature before work continues — only after status is loaded.
+    if (shouldForceDailyAckDialog({
+      hydrated: ackHydrated,
+      diagnosticsOnly,
+      checkedIn: isCheckedIn,
+      ackDone,
+    })) {
       setPendingEntry(false);
       setAckOpen(true);
+    } else if (ackDone) {
+      setAckOpen(false);
     }
-  }, [isCheckedIn, ackDone, diagnosticsOnly]);
+  }, [isCheckedIn, ackDone, diagnosticsOnly, ackHydrated]);
 
   // Fresh high-accuracy probe for check-in. Stale coarse GPS (60s cache) was
   // showing workers as outside while they stood on the pad. Watch briefly then stop.
@@ -711,7 +733,7 @@ export default function WorkerDailyHome({
           setAckOpen(open);
         }}
       >
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" hideClose={isCheckedIn && !ackDone}>
           <DialogHeader>
             <DialogTitle>{pendingEntry ? "출근 · 작업·위험 확인 서명" : "오늘 작업·위험 확인"}</DialogTitle>
             <DialogDescription>

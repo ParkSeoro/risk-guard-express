@@ -166,6 +166,7 @@ export type EvidenceFileLike = {
   report_id?: string | null;
   evidence_kind?: string | null;
   category_code?: string | null;
+  note?: string | null;
 };
 
 export type ItemLike = {
@@ -173,6 +174,8 @@ export type ItemLike = {
   category_code?: string | null;
   category_name?: string | null;
   amount?: number | string | null;
+  classification_status?: string | null;
+  item_name?: string | null;
 };
 
 export type PackCheckRow = {
@@ -216,6 +219,52 @@ export function countKindsByCategory(
   return out;
 }
 
+export type CategoryReconcile = {
+  code: string;
+  name: string;
+  usableTotal: number;
+  statementLinkedTotal: number;
+  difference: number;
+  ok: boolean;
+};
+
+export function isPackEligibleItem(item: ItemLike): boolean {
+  if (item.classification_status === "warning") return false;
+  return Number(item.amount || 0) > 0 && Boolean(String(item.category_code || ""));
+}
+
+export function itemHasEvidenceKind(files: EvidenceFileLike[], itemId: string, kind: string) {
+  return (files || []).some((f) => f.item_id === itemId && String(f.evidence_kind || "") === kind);
+}
+
+/** 비목 사용 가능 합 vs 거래명세가 연결된 줄 합. 1원 이내는 일치. */
+export function reconcileCategoryTotals(
+  items: ItemLike[],
+  files: EvidenceFileLike[],
+): CategoryReconcile[] {
+  const eligible = items.filter(isPackEligibleItem);
+  const out: CategoryReconcile[] = [];
+  for (const pack of CATEGORY_EVIDENCE_PACK) {
+    if (!pack.requirements.some((r) => r.kind === "transaction" && r.hard)) continue;
+    const rows = eligible.filter((it) => String(it.category_code) === pack.code);
+    const usableTotal = rows.reduce((s, it) => s + Number(it.amount || 0), 0);
+    if (usableTotal <= 0) continue;
+    const statementLinkedTotal = rows
+      .filter((it) => itemHasEvidenceKind(files, it.id, "transaction"))
+      .reduce((s, it) => s + Number(it.amount || 0), 0);
+    const difference = Math.round((usableTotal - statementLinkedTotal) * 100) / 100;
+    out.push({
+      code: pack.code,
+      name: pack.name,
+      usableTotal,
+      statementLinkedTotal,
+      difference,
+      ok: Math.abs(difference) <= 1,
+    });
+  }
+  return out;
+}
+
 export function evaluateEvidencePack(input: {
   items: ItemLike[];
   files: EvidenceFileLike[];
@@ -223,12 +272,29 @@ export function evaluateEvidencePack(input: {
   ppeLedgerSignedCount?: number;
   /** 승인본 이관 월 — 항목별 증빙 게이트 면제 */
   exempt?: boolean;
-}): { rows: PackCheckRow[]; hardMissing: PackCheckRow[]; softMissing: PackCheckRow[]; ready: boolean; exempt: boolean } {
+}): {
+  rows: PackCheckRow[];
+  hardMissing: PackCheckRow[];
+  softMissing: PackCheckRow[];
+  ready: boolean;
+  exempt: boolean;
+  eligibleItems: ItemLike[];
+  reconcile: CategoryReconcile[];
+} {
   if (input.exempt) {
-    return { rows: [], hardMissing: [], softMissing: [], ready: true, exempt: true };
+    return {
+      rows: [],
+      hardMissing: [],
+      softMissing: [],
+      ready: true,
+      exempt: true,
+      eligibleItems: [],
+      reconcile: [],
+    };
   }
-  const amounts = sumByCategory(input.items);
-  const kindMap = countKindsByCategory(input.items, input.files);
+  const eligibleItems = input.items.filter(isPackEligibleItem);
+  const amounts = sumByCategory(eligibleItems);
+  const kindMap = countKindsByCategory(eligibleItems, input.files);
   const rows: PackCheckRow[] = [];
 
   for (const pack of CATEGORY_EVIDENCE_PACK) {
@@ -236,16 +302,19 @@ export function evaluateEvidencePack(input: {
     if (amount <= 0) continue;
     for (const req of pack.requirements) {
       let count = kindMap[pack.code]?.[req.kind] || 0;
-      // 시스템 지급대장이 있으면 ppe_ledger 충족
-      if (req.kind === 'ppe_ledger' && (input.ppeLedgerSignedCount || 0) > 0) {
+      if (req.kind === "ppe_ledger" && (input.ppeLedgerSignedCount || 0) > 0) {
         count = Math.max(count, input.ppeLedgerSignedCount || 0);
+      }
+      let ok = count > 0;
+      if (req.kind === "tax_invoice") {
+        ok = categoryHasTaxAllocationNote(eligibleItems, input.files, pack.code);
       }
       rows.push({
         code: pack.code,
         name: pack.name,
         amount,
         requirement: req,
-        ok: count > 0,
+        ok,
         count,
       });
     }
@@ -253,7 +322,50 @@ export function evaluateEvidencePack(input: {
 
   const hardMissing = rows.filter((r) => r.requirement.hard && !r.ok);
   const softMissing = rows.filter((r) => !r.requirement.hard && !r.ok);
-  return { rows, hardMissing, softMissing, ready: hardMissing.length === 0, exempt: false };
+  const reconcile = reconcileCategoryTotals(eligibleItems, input.files);
+  return {
+    rows,
+    hardMissing,
+    softMissing,
+    ready: hardMissing.length === 0 && reconcile.every((r) => r.ok),
+    exempt: false,
+    eligibleItems,
+    reconcile,
+  };
+}
+
+/** 세금계산서 파일이 있고, 총액 중 이 비목 금액 메모가 있는 경우만 충족. */
+export function categoryHasTaxAllocationNote(
+  items: ItemLike[],
+  files: EvidenceFileLike[],
+  categoryCode: string,
+) {
+  const itemCat = new Map(items.map((i) => [i.id, String(i.category_code || "")]));
+  return (files || []).some((f) => {
+    if (String(f.evidence_kind || "") !== "tax_invoice") return false;
+    let cat = String(f.category_code || "");
+    if (!cat && f.item_id) cat = itemCat.get(f.item_id) || "";
+    return cat === String(categoryCode) && String(f.note || "").trim().length > 0;
+  });
+}
+
+/** 상신 게이트 뱃지/문구. 파일 누락과 명세 대사를 구분한다. */
+export function packGateSummary(pack: {
+  ready: boolean;
+  hardMissing: PackCheckRow[];
+  reconcile: CategoryReconcile[];
+}) {
+  const reconFail = (pack.reconcile || []).filter((r) => !r.ok);
+  const hard = pack.hardMissing.length;
+  const issueCount = hard + reconFail.length;
+  if (pack.ready) return { ok: true, label: '상신 가능(증빙)', issueCount: 0 };
+  if (hard && reconFail.length) {
+    return { ok: false, label: `필수 ${hard}건 · 명세대사 ${reconFail.length}건`, issueCount };
+  }
+  if (reconFail.length) {
+    return { ok: false, label: `명세 대사 ${reconFail.length}건 불일치`, issueCount };
+  }
+  return { ok: false, label: `필수 누락 ${hard}건`, issueCount };
 }
 
 export function getCategoryPack(code?: string | null): CategoryPack | null {

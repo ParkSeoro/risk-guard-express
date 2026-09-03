@@ -11,7 +11,7 @@ export const SAFETY_COST_CATEGORIES = [
 ] as const;
 
 export const SAFETY_COST_CATEGORY_SHORT: Record<string, string> = {
-  '1': '인건비',
+  '1': '임금',
   '2': '시설비',
   '3': '보호구',
   '4': '진단비',

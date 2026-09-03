@@ -19,8 +19,10 @@ import {
 import { softRestorePayload } from '@/lib/dataAccess';
 import { SAFETY_COST_TEMPLATE_PATH, buildSafetyCostWorkbook, downloadSafetyCostWorkbook } from '@/lib/safetyCostExport';
 import { getEvidenceGuide } from '@/lib/safetyCostEvidenceGuide';
-import { evaluateEvidencePack } from '@/lib/safetyCostEvidencePack';
+import { evaluateEvidencePack, packGateSummary, type EvidenceKind } from '@/lib/safetyCostEvidencePack';
+import { itemMissingDailyHard, itemTransactionEvidenceRows, type SourceTransactionFile } from '@/lib/safetyCostItemEvidence';
 import { EvidencePackPanel } from '@/components/safety-cost/EvidencePackPanel';
+import { SafetyCostItemCards } from '@/components/safety-cost/SafetyCostItemCards';
 import { LegacyImportWizard } from '@/components/safety-cost/LegacyImportWizard';
 import { PpeLedgerPanel } from '@/components/safety-cost/PpeLedgerPanel';
 import { PpeStockPanel } from '@/components/safety-cost/PpeStockPanel';
@@ -32,8 +34,6 @@ import {
   documentAnalysisToastCopy,
   ocrReviewGaps,
   sanitizeOcrWarning,
-  ocrStatusBadge,
-  ocrStatusBadgeVariant,
   ocrStatusLabel,
   stampOcrOnItem,
   summarizeOcrItems,
@@ -47,10 +47,9 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { AlertTriangle, Bot, CheckCircle2, ClipboardCheck, Eye, FileSpreadsheet, FileText, ListChecks, Paperclip, Pencil, Plus, Search, Send, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { AlertTriangle, Bot, CheckCircle2, ClipboardCheck, Eye, FileSpreadsheet, FileText, ListChecks, Paperclip, Pencil, Plus, Send, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 type Construction = any;
@@ -58,7 +57,6 @@ type Report = any;
 type Item = any;
 type Evidence = any;
 
-const statusVariant = (status: string) => status === 'usable' ? 'default' : status === 'warning' ? 'destructive' : 'secondary';
 const statusLabel: Record<string, string> = { usable: '사용 가능', warning: '사용 불가', review: '검토 필요' };
 const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] || ch));
 const sanitizeStorageFileName = (fileName: string) => {
@@ -135,6 +133,7 @@ const SafetyCost = () => {
   const [submitOpen, setSubmitOpen] = useState(false);
   const [editingItem, setEditingItem] = useState({ id: '', transaction_date: '', usage_date: '', category_code: '', category_name: '', item_name: '', specification: '', maker: '', quantity: '1', unit: '식', unit_price: '', supply_amount: '', vat_amount: '', amount: '', supplier_name: '', classification_status: 'review', ai_reason: '', legal_basis: '' });
   const [ocrBanner, setOcrBanner] = useState<{ warning?: string; summary?: ReturnType<typeof summarizeOcrItems> } | null>(null);
+  const [highlightedItemIds, setHighlightedItemIds] = useState<string[]>([]);
 
   const selectedConstruction = constructions.find((c) => c.id === selectedConstructionId);
   const selectedReport = reports.find((r) => r.id === selectedReportId);
@@ -184,26 +183,31 @@ const SafetyCost = () => {
   const isLegacyImport = isSafetyCostLegacyImport(selectedReport?.source);
   const evidenceMissingItems = isLegacyImport
     ? []
-    : filteredItems.filter((it) => !evidence.some((e) => e.item_id === it.id));
+    : filteredItems.filter((it) => itemMissingDailyHard(it, evidence));
   const evidenceMissingCount = evidenceMissingItems.length;
   const compliance = useMemo(
     () => analyzeSafetyCostCompliance(filteredItems, selectedConstruction?.safety_cost_total, { approvedCumulative: approvedTotal }),
     [filteredItems, selectedConstruction?.safety_cost_total, approvedTotal],
   );
   const reportLocked = isSafetyCostReportLocked(selectedReport?.status);
+  const reportEvidence = useMemo(
+    () => evidence.filter((e: any) => e.report_id === selectedReportId || filteredItems.some((it) => it.id === e.item_id)),
+    [evidence, selectedReportId, filteredItems],
+  );
   const evidencePack = useMemo(() => evaluateEvidencePack({
     items: filteredItems,
-    files: evidence.filter((e: any) => e.report_id === selectedReportId || filteredItems.some((it) => it.id === e.item_id)),
+    files: reportEvidence,
     ppeLedgerSignedCount: ppeSignedCount,
     exempt: isLegacyImport,
-  }), [filteredItems, evidence, selectedReportId, ppeSignedCount, isLegacyImport]);
+  }), [filteredItems, reportEvidence, ppeSignedCount, isLegacyImport]);
+  const packGate = useMemo(() => packGateSummary(evidencePack), [evidencePack]);
   const auditChecklist = useMemo(() => {
     const hasCat3Spend = filteredItems.some((it) => it.category_code === '3' && Number(it.amount || 0) > 0);
     const ocrGaps = isLegacyImport ? 0 : ocrReviewGaps(filteredItems).length;
     return [
       { label: '월별 사용 항목 입력', ok: filteredItems.length > 0, detail: `${filteredItems.length}건`, tab: 'items' as const },
-      { label: '항목별 파일 첨부', ok: isLegacyImport || (evidenceMissingCount === 0 && filteredItems.length > 0), detail: isLegacyImport ? '이관 면제' : (evidenceMissingCount ? `${evidenceMissingCount}건 누락` : '완료'), tab: 'items' as const },
-      { label: '비목별 필수 증빙 패키지', ok: evidencePack.ready && filteredItems.length > 0, detail: isLegacyImport ? '이관 면제' : (evidencePack.ready ? '완료' : `필수 ${evidencePack.hardMissing.length}건 누락`), tab: 'pack' as const },
+      { label: '항목별 매일 증빙', ok: isLegacyImport || (evidenceMissingCount === 0 && filteredItems.length > 0), detail: isLegacyImport ? '이관 면제' : (evidenceMissingCount ? `${evidenceMissingCount}건 누락` : '완료'), tab: 'items' as const },
+      { label: '비목별 필수 증빙 패키지', ok: evidencePack.ready && filteredItems.length > 0, detail: isLegacyImport ? '이관 면제' : (evidencePack.ready ? '완료' : packGate.label), tab: 'pack' as const },
       { label: '보호구 지급대장(3번)', ok: isLegacyImport || !hasCat3Spend || ppeSignedCount > 0, detail: isLegacyImport ? '이관 면제' : (ppeSignedCount > 0 ? `서명 ${ppeSignedCount}건` : (hasCat3Spend ? '서명 필요' : '해당 없음')), tab: 'ppe' as const },
       { label: '사용 불가 항목 제거', ok: compliance.warningCount === 0, detail: compliance.warningCount ? `${compliance.warningCount}건 경고` : '이상 없음', tab: 'audit' as const },
       { label: '검토 필요 항목 확인', ok: compliance.reviewCount === 0, detail: compliance.reviewCount ? `${compliance.reviewCount}건 검토` : '이상 없음', tab: 'audit' as const },
@@ -211,7 +215,7 @@ const SafetyCost = () => {
       { label: 'OCR 저신뢰도 검토', ok: ocrGaps === 0, detail: isLegacyImport ? '이관 면제' : (ocrGaps ? `${ocrGaps}건 사유 필요` : '완료'), tab: 'items' as const },
       { label: '계상금액 초과 여부', ok: Number(selectedConstruction?.safety_cost_total || 0) === 0 || compliance.rate <= 100, detail: `${compliance.rate}%`, tab: 'audit' as const },
     ];
-  }, [filteredItems, evidenceMissingCount, compliance, selectedConstruction?.safety_cost_total, evidencePack, ppeSignedCount, isLegacyImport]);
+  }, [filteredItems, evidenceMissingCount, compliance, selectedConstruction?.safety_cost_total, evidencePack, packGate, ppeSignedCount, isLegacyImport]);
   const firstFailingAudit = auditChecklist.find((item) => !item.ok) || null;
   const approvalReady = auditChecklist.every((item) => item.ok) && selectedReport?.status === 'draft';
 
@@ -473,11 +477,11 @@ const SafetyCost = () => {
     await supabase.from('safety_cost_monthly_reports' as any).update({ report_total: total }).eq('id', reportId);
   }
 
-  async function insertItems(rows: any[]) {
-    if (!selectedReport || !selectedConstruction || !user) return;
+  async function insertItems(rows: any[], opts?: { sourceTransaction?: SourceTransactionFile }): Promise<string[]> {
+    if (!selectedReport || !selectedConstruction || !user) return [];
     if (isSafetyCostReportLocked(selectedReport.status)) {
       toast({ title: '상신·승인된 내역서에는 항목을 추가할 수 없습니다.', variant: 'destructive' });
-      return;
+      return [];
     }
     const inserts = rows.map((row, idx) => {
       const fallback = classifySafetyCostItem(row.item_name || row['품목'] || row['사용 항목'] || '');
@@ -520,10 +524,18 @@ const SafetyCost = () => {
         }),
       };
     }).filter((r) => r.item_name && r.amount > 0);
-    if (!inserts.length) { toast({ title: '추가할 항목이 없습니다.', variant: 'destructive' }); return; }
+    if (!inserts.length) { toast({ title: '추가할 항목이 없습니다.', variant: 'destructive' }); return []; }
     const { data: inserted, error } = await supabase.from('safety_cost_items' as any).insert(inserts).select('id, category_code, item_name, specification, maker, quantity, unit, transaction_date, usage_date');
-    if (error) { toast({ title: '항목 추가 실패', description: error.message, variant: 'destructive' }); return; }
-    const ppeRows = ((inserted as any[]) || []).filter((it) => isPpeInboundItem(it));
+    if (error) { toast({ title: '항목 추가 실패', description: error.message, variant: 'destructive' }); return []; }
+    const insertedList = ((inserted as any[]) || []);
+    if (opts?.sourceTransaction && insertedList.length) {
+      const copies = itemTransactionEvidenceRows(opts.sourceTransaction, insertedList);
+      const { error: linkErr } = await supabase.from('safety_cost_evidence_files' as any).insert(copies);
+      if (linkErr) {
+        toast({ title: '거래명세표 항목 연결 실패', description: linkErr.message, variant: 'destructive' });
+      }
+    }
+    const ppeRows = insertedList.filter((it) => isPpeInboundItem(it));
     for (const it of ppeRows) {
       try {
         const item_key = normalizePpeItemKey(it);
@@ -565,6 +577,7 @@ const SafetyCost = () => {
     toast({ title: `${inserts.length}개 항목이 추가되었습니다.${ppeRows.length ? ` (보호구 입고 ${ppeRows.length})` : ''}` });
     await updateReportTotal(selectedReport.id);
     await fetchAll();
+    return insertedList.map((it) => String(it.id));
   }
 
   function openNewItem() {
@@ -627,12 +640,13 @@ const SafetyCost = () => {
   }
 
   async function updateItem() {
+    if (reportLocked) { toast({ title: '상신·승인된 내역서의 항목은 수정할 수 없습니다.', variant: 'destructive' }); return; }
     if (!editingItem.item_name.trim()) { toast({ title: '품목명을 입력하세요.', variant: 'destructive' }); return; }
     const selectedCategory = SAFETY_COST_CATEGORIES.find((c) => c.code === editingItem.category_code);
     const money = normalizeMoneyFields(editingItem);
     if (!editingItem.id) {
       if (money.amount <= 0) { toast({ title: '금액을 입력하세요.', variant: 'destructive' }); return; }
-      await insertItems([{
+      const ids = await insertItems([{
         ...editingItem,
         category_name: selectedCategory?.name || editingItem.category_name,
         quantity: money.quantity,
@@ -644,7 +658,11 @@ const SafetyCost = () => {
         legal_basis: editingItem.legal_basis.trim() || '건설업 산업안전보건관리비 계상 및 사용기준 확인 필요',
         ocr_status: 'user_edited',
       }]);
-      setItemEditOpen(false);
+      if (ids[0]) {
+        setHighlightedItemIds(ids);
+        setEditingItem((p) => ({ ...p, id: ids[0] }));
+        toast({ title: '수기 항목이 저장되었습니다. 아래에서 명세·사진을 붙이세요.' });
+      }
       return;
     }
     const before = items.find((it) => it.id === editingItem.id);
@@ -670,6 +688,11 @@ const SafetyCost = () => {
     };
     const { error } = await supabase.from('safety_cost_items' as any).update(payload).eq('id', editingItem.id);
     if (error) { toast({ title: '항목 수정 실패', description: error.message, variant: 'destructive' }); return; }
+    if (String(before?.category_code || '') !== String(payload.category_code || '')) {
+      await supabase.from('safety_cost_evidence_files' as any)
+        .update({ category_code: payload.category_code || '' })
+        .eq('item_id', editingItem.id);
+    }
     await supabase.from('safety_cost_audit_logs' as any).insert({
       project_id: before?.project_id || access.selectedProject,
       company_id: before?.company_id || selectedConstruction?.company_id,
@@ -732,6 +755,7 @@ const SafetyCost = () => {
       if (data?.warning) toast({ title: '판독 주의', description: sanitizeOcrWarning(data.warning) });
       await insertItems(data?.items || []);
       setAiText('');
+      setReportTab('items');
     } catch (e: any) {
       toast({ title: 'AI 분석 실패', description: e.message || String(e), variant: 'destructive' });
     } finally { setAiLoading(false); }
@@ -760,10 +784,10 @@ const SafetyCost = () => {
         toast({ title: '거래명세표 업로드 실패', description: e?.message || String(e), variant: 'destructive' });
         return;
       }
-      const { error: evidenceError } = await supabase.from('safety_cost_evidence_files' as any).insert({
+      const { data: evidenceRow, error: evidenceError } = await supabase.from('safety_cost_evidence_files' as any).insert({
         report_id: selectedReport.id, construction_id: selectedConstruction.id, project_id: selectedConstruction.project_id, company_id: selectedConstruction.company_id,
         evidence_kind: 'transaction', file_name: uploaded.file.name, file_path: uploaded.path, file_url: uploaded.publicUrl, mime_type: uploaded.file.type || 'application/octet-stream', file_size: uploaded.finalBytes, uploaded_by: user.id,
-      });
+      }).select('report_id, construction_id, project_id, company_id, file_name, file_path, file_url, mime_type, file_size, uploaded_by').single();
       if (evidenceError) { toast({ title: '거래명세표 기록 실패', description: evidenceError.message, variant: 'destructive' }); return; }
       const canAnalyzeFile = ext === 'pdf' || file.type.startsWith('image/') || uploaded.file.type.startsWith('image/');
       const { data, error } = await supabase.functions.invoke('analyze-safety-cost-document', {
@@ -778,21 +802,35 @@ const SafetyCost = () => {
       setAiSummary(data?.summary || null);
       const summary = summarizeOcrItems(data?.items || []);
       setOcrBanner({ warning: data?.warning, summary });
-      await insertItems(data?.items || []);
+      const ids = await insertItems(data?.items || [], {
+        sourceTransaction: evidenceRow ? {
+          report_id: evidenceRow.report_id,
+          construction_id: evidenceRow.construction_id,
+          project_id: evidenceRow.project_id,
+          company_id: evidenceRow.company_id,
+          file_name: evidenceRow.file_name,
+          file_path: evidenceRow.file_path,
+          file_url: evidenceRow.file_url,
+          mime_type: evidenceRow.mime_type,
+          file_size: Number(evidenceRow.file_size || 0),
+          uploaded_by: evidenceRow.uploaded_by || user.id,
+        } : undefined,
+      });
       if (text.trim()) setAiText(text);
+      setHighlightedItemIds(ids);
+      setReportTab('items');
       toast(documentAnalysisToastCopy({
         itemCount: data?.items?.length || 0,
         warning: data?.warning,
         rawChars: summary.rawChars,
         lowCount: summary.lowCount,
       }));
-      fetchAll();
     } catch (e: any) {
       toast({ title: '거래명세표 자동분석 실패', description: e.message || String(e), variant: 'destructive' });
     } finally { setAiLoading(false); }
   }
 
-  async function handleItemEvidenceUpload(item: Item, files: FileList | null) {
+  async function handleItemEvidenceUpload(item: Item, files: FileList | null, kind?: EvidenceKind) {
     if (isLegacyImport || reportLocked) return;
     if (!files || !selectedConstruction || !user) return;
     const rows = [];
@@ -805,8 +843,9 @@ const SafetyCost = () => {
         toast({ title: '증빙 업로드 실패', description: e?.message || String(e), variant: 'destructive' });
         continue;
       }
-      const kind = uploaded.file.type.startsWith('image/') || file.type.startsWith('image/') ? 'site_photo' : (file.name.includes('세금') || /tax/i.test(file.name) ? 'tax_invoice' : 'transaction');
-      rows.push({ report_id: item.report_id, item_id: item.id, construction_id: item.construction_id, project_id: item.project_id, company_id: item.company_id, category_code: item.category_code || '', evidence_kind: kind, file_name: uploaded.file.name, file_path: uploaded.path, file_url: uploaded.publicUrl, mime_type: uploaded.file.type, file_size: uploaded.finalBytes, uploaded_by: user.id });
+      const inferred = uploaded.file.type.startsWith('image/') || file.type.startsWith('image/') ? 'site_photo' : (file.name.includes('세금') || /tax/i.test(file.name) ? 'tax_invoice' : 'transaction');
+      const evidenceKind = kind || inferred;
+      rows.push({ report_id: item.report_id, item_id: item.id, construction_id: item.construction_id, project_id: item.project_id, company_id: item.company_id, category_code: item.category_code || '', evidence_kind: evidenceKind, file_name: uploaded.file.name, file_path: uploaded.path, file_url: uploaded.publicUrl, mime_type: uploaded.file.type, file_size: uploaded.finalBytes, uploaded_by: user.id });
     }
     if (rows.length) await supabase.from('safety_cost_evidence_files' as any).insert(rows);
     toast({ title: '항목별 증빙이 업로드되었습니다.' }); fetchAll();
@@ -855,8 +894,8 @@ const SafetyCost = () => {
     if (!selectedReport || !selectedConstruction || !user) return;
     if (!approvalReady) {
       const fail = firstFailingAudit;
-      const packHint = evidencePack.hardMissing.length
-        ? ` · 필수 증빙: ${evidencePack.hardMissing.slice(0, 2).map((r) => `${r.code}·${r.requirement.label}`).join(', ')}`
+      const packHint = !evidencePack.ready
+        ? ` · ${packGate.label}${evidencePack.hardMissing.length ? `: ${evidencePack.hardMissing.slice(0, 2).map((r) => `${r.code}·${r.requirement.label}`).join(', ')}` : ''}`
         : '';
       toast({
         title: fail ? `여기서 막힘: ${fail.label}` : '결재 상신 전 자동검토를 완료하세요.',
@@ -1047,7 +1086,7 @@ const SafetyCost = () => {
 
         <Card><CardHeader className="pb-2"><div className="flex items-center justify-between"><CardTitle className="text-sm">월별 사용내역서</CardTitle><Dialog open={reportOpen} onOpenChange={setReportOpen}><DialogTrigger asChild><Button size="sm" variant="outline" disabled={!selectedConstruction}>월별 작성</Button></DialogTrigger><DialogContent><DialogHeader><DialogTitle>월별 사용내역서 생성</DialogTitle></DialogHeader><Label>작성월</Label><Input type="month" value={newReportMonth} onChange={(e) => setNewReportMonth(e.target.value)} />{existingLiveForNewMonth && <p className="text-sm text-muted-foreground">이미 해당 월 내역서가 있습니다. 생성을 누르면 기존 내역서를 엽니다.</p>}<DialogFooter><Button onClick={createReport} disabled={creatingReport}>{creatingReport ? '처리 중…' : '생성'}</Button></DialogFooter></DialogContent></Dialog></div></CardHeader><CardContent><div className="flex flex-wrap gap-2">{filteredReports.map((r) => <div key={r.id} className={`flex items-center rounded-md border ${r.id === selectedReportId ? 'border-primary bg-primary text-primary-foreground' : 'bg-card'}`}><button type="button" className="px-3 py-1.5 text-sm" onClick={() => setSelectedReportId(r.id)}>{String(r.report_month).slice(0, 7)} <Badge variant="secondary" className="ml-2">{getSafetyCostStatusLabel(r.status)}</Badge>{r.source === 'legacy_import' && <Badge variant="outline" className="ml-1">이관</Badge>}</button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => openReportEditor(r)} disabled={r.status === 'approved' || r.status === 'submitted'} aria-label="월별 사용내역서 수정"><Pencil className="h-3.5 w-3.5" /></Button><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => deleteReport(r)} disabled={r.status === 'approved' || r.status === 'submitted'} aria-label="월별 사용내역서 삭제"><Trash2 className="h-3.5 w-3.5" /></Button></div>)}</div></CardContent></Card>
 
-        {selectedReport && <Tabs value={reportTab} onValueChange={setReportTab}><TabsList className="flex flex-wrap h-auto gap-1"><TabsTrigger value="items">사용 항목 <Badge variant="secondary" className="ml-2">{baseItems.length}</Badge></TabsTrigger><TabsTrigger value="pack">증빙패키지 {isLegacyImport ? <Badge variant="secondary" className="ml-2">면제</Badge> : (!evidencePack.ready && filteredItems.length > 0 && <Badge variant="destructive" className="ml-2">{evidencePack.hardMissing.length}</Badge>)}</TabsTrigger><TabsTrigger value="ppe-stock">보호구 수불</TabsTrigger><TabsTrigger value="ppe">보호구 지급대장 {ppeSignedCount > 0 && <Badge variant="secondary" className="ml-2">{ppeSignedCount}</Badge>}</TabsTrigger><TabsTrigger value="ai">AI 자동분석</TabsTrigger><TabsTrigger value="audit">자동검토 {(compliance.warningCount + evidenceMissingCount + evidencePack.hardMissing.length) > 0 && <Badge variant="destructive" className="ml-2">{compliance.warningCount + evidenceMissingCount + evidencePack.hardMissing.length}</Badge>}</TabsTrigger><TabsTrigger value="output">출력/결재</TabsTrigger></TabsList><TabsContent value="pack" className="space-y-3">
+        {selectedReport && <Tabs value={reportTab} onValueChange={setReportTab}><TabsList className="flex flex-wrap h-auto gap-1"><TabsTrigger value="items">사용 항목 <Badge variant="secondary" className="ml-2">{baseItems.length}</Badge></TabsTrigger><TabsTrigger value="pack">증빙패키지 {isLegacyImport ? <Badge variant="secondary" className="ml-2">면제</Badge> : (!evidencePack.ready && filteredItems.length > 0 && <Badge variant="destructive" className="ml-2">{packGate.issueCount}</Badge>)}</TabsTrigger><TabsTrigger value="ppe-stock">보호구 수불</TabsTrigger><TabsTrigger value="ppe">보호구 지급대장 {ppeSignedCount > 0 && <Badge variant="secondary" className="ml-2">{ppeSignedCount}</Badge>}</TabsTrigger><TabsTrigger value="ai">AI 자동분석</TabsTrigger><TabsTrigger value="audit">자동검토 {(compliance.warningCount + evidenceMissingCount + packGate.issueCount) > 0 && <Badge variant="destructive" className="ml-2">{compliance.warningCount + evidenceMissingCount + packGate.issueCount}</Badge>}</TabsTrigger><TabsTrigger value="output">출력/결재</TabsTrigger></TabsList><TabsContent value="pack" className="space-y-3">
           {selectedConstruction && selectedReport && (
             <EvidencePackPanel
               projectId={selectedConstruction.project_id}
@@ -1055,7 +1094,7 @@ const SafetyCost = () => {
               constructionId={selectedConstruction.id}
               reportId={selectedReport.id}
               items={filteredItems}
-              evidence={evidence as any}
+              evidence={reportEvidence as any}
               ppeLedgerSignedCount={ppeSignedCount}
               userId={user?.id}
               exempt={isLegacyImport}
@@ -1088,7 +1127,28 @@ const SafetyCost = () => {
             />
           )}
         </TabsContent>
-        <TabsContent value="items" className="space-y-3">{filteredItems.length > 0 && (() => { const s = summarizeOcrItems(filteredItems); if (!s.rawChars && !s.lowCount && !s.correctedCount && !s.fallbackCount) return null; return <p className="text-xs text-muted-foreground">OCR 원문 {s.rawChars}자 · 신뢰도 낮음 {s.lowCount}건 · AI 보정 {s.correctedCount}건{s.fallbackCount ? ` · 예비 추출 ${s.fallbackCount}건` : ''}</p>; })()}<div className="flex flex-wrap items-center gap-2"><div className="relative max-w-sm flex-1 min-w-[12rem]"><Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} placeholder="품명·공급자·분류·메이커 검색" className="pl-8" /></div><Button type="button" size="sm" variant="outline" className="gap-1" onClick={openNewItem} disabled={reportLocked}><Plus className="h-3.5 w-3.5" /> 항목 추가</Button></div><Card><CardContent className="p-0 overflow-auto"><Table><TableHeader><TableRow><TableHead>거래날짜</TableHead><TableHead>공급자</TableHead><TableHead>분류</TableHead><TableHead>품명/규격</TableHead><TableHead>메이커</TableHead><TableHead>수량</TableHead><TableHead>단가</TableHead><TableHead>공급가액</TableHead><TableHead>부가세</TableHead><TableHead>금액</TableHead><TableHead>판정</TableHead><TableHead>판독</TableHead><TableHead>법적 근거</TableHead><TableHead>증빙</TableHead><TableHead>관리</TableHead></TableRow></TableHeader><TableBody>{filteredItems.map((it) => <TableRow key={it.id} className={it.ocr_status === 'ocr_low' || it.ocr_status === 'no_vision' || it.ocr_status === 'rule_fallback' ? 'bg-amber-50/70 dark:bg-amber-950/20' : undefined}><TableCell className="text-xs">{getDisplayDate(it, selectedReport) || '—'}<div className="text-[10px] text-muted-foreground">{getDatePriorityLabel(it)}</div></TableCell><TableCell className="text-xs">{it.supplier_name || '—'}</TableCell><TableCell className="text-xs">{it.category_name}</TableCell><TableCell><div className="font-medium text-sm">{it.item_name}</div><div className="text-[11px] text-muted-foreground">{it.specification || it.ai_reason}</div></TableCell><TableCell className="text-xs">{it.maker || '—'}</TableCell><TableCell>{it.quantity} {it.unit}</TableCell><TableCell>{formatKRW(it.unit_price)}</TableCell><TableCell>{formatKRW(it.supply_amount || it.amount)}</TableCell><TableCell>{formatKRW(it.vat_amount || 0)}</TableCell><TableCell className="font-semibold">{formatKRW(it.amount)}</TableCell><TableCell><Badge variant={statusVariant(it.classification_status) as any}>{statusLabel[it.classification_status] || it.classification_status}</Badge></TableCell><TableCell><Badge variant={ocrStatusBadgeVariant(it.ocr_status)} title={ocrStatusLabel(it.ocr_status)}>{ocrStatusBadge(it.ocr_status) || '—'}</Badge></TableCell><TableCell><Button size="sm" variant="ghost" className="gap-1" onClick={() => setLegalBasisItem(it)}><Eye className="h-3 w-3" /> 열람</Button></TableCell><TableCell>{isLegacyImport ? <span className="text-xs text-muted-foreground">이관 면제</span> : <Label className="inline-flex items-center gap-1 cursor-pointer text-xs"><Paperclip className="h-3 w-3" /> {evidence.filter((e) => e.item_id === it.id).length}개<Input type="file" multiple className="hidden" disabled={reportLocked} onChange={(e) => handleItemEvidenceUpload(it, e.target.files)} /></Label>}</TableCell><TableCell><div className="flex items-center gap-1"><Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => openItemEditor(it)} aria-label="항목 수정"><Pencil className="h-3.5 w-3.5" /></Button><Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => deleteItem(it)} disabled={reportLocked} aria-label="항목 삭제"><Trash2 className="h-3.5 w-3.5" /></Button></div></TableCell></TableRow>)}{filteredItems.length === 0 && <TableRow><TableCell colSpan={15} className="py-10 text-center text-muted-foreground">{itemSearch ? '검색 결과가 없습니다.' : '항목이 없습니다. 항목 추가로 수기 입력하거나, 당월 거래명세는 AI 자동분석을 사용하세요.'}</TableCell></TableRow>}</TableBody></Table></CardContent></Card></TabsContent><TabsContent value="ai" className="space-y-3"><Card><CardHeader><CardTitle className="text-sm flex items-center gap-2"><Bot className="h-4 w-4" /> 대한민국 산업안전보건법 기준 AI 자동분석</CardTitle></CardHeader><CardContent className="space-y-3">{ocrBanner?.warning && <div className="rounded-md border border-amber-200 bg-amber-50/70 dark:bg-amber-950/20 p-2 text-xs flex gap-2"><AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" /><span>{ocrBanner.warning}{ocrBanner.summary ? ` OCR 원문 ${ocrBanner.summary.rawChars}자 · 신뢰도 낮음 ${ocrBanner.summary.lowCount}건 · AI 보정 ${ocrBanner.summary.correctedCount}건` : ''}</span></div>}<div className="flex gap-2"><Label className="inline-flex items-center gap-2"><Input type="file" accept=".xls,.xlsx,.csv,.txt,.pdf,image/*" onChange={(e) => e.target.files?.[0] && handleDocumentUpload(e.target.files[0])} /><Upload className="h-4 w-4" /></Label></div><Textarea rows={10} value={aiText} onChange={(e) => setAiText(e.target.value)} placeholder="거래명세서 텍스트를 붙여넣거나 엑셀/텍스트 파일을 업로드하세요." /><Button onClick={analyzeWithAI} disabled={aiLoading} className="gap-1"><Bot className="h-4 w-4" /> {aiLoading ? '분석 중...' : 'AI 자동분류 및 입력'}</Button>{aiSummary && <div className="rounded-md border bg-muted/40 p-3 space-y-2 text-sm"><p className="font-medium">AI 분석 요약</p><div className="grid gap-2 md:grid-cols-3 text-xs"><div>사용가능 합계: {formatKRW(aiSummary.usable_total || 0)}</div><div>사용불가 합계: {formatKRW(aiSummary.warning_total || 0)}</div><div>검토필요 합계: {formatKRW(aiSummary.review_total || 0)}</div></div>{Array.isArray(aiSummary.audit_notes) && aiSummary.audit_notes.length > 0 && <ul className="list-disc pl-4 text-xs text-muted-foreground space-y-0.5">{aiSummary.audit_notes.map((n: string, i: number) => <li key={i}>{n}</li>)}</ul>}</div>}<div className="grid gap-2 md:grid-cols-3">{SAFETY_COST_CATEGORIES.slice(0, 9).map((c) => { const g = getEvidenceGuide(c.code); return <div key={c.code} className="rounded-md border bg-muted/30 p-2 text-xs space-y-1"><b>{c.code}. {c.name}</b>{g && <p className="text-[10px] text-muted-foreground leading-snug">증빙: {g.requiredEvidence.slice(0, 2).join(' · ')}{g.requiredEvidence.length > 2 ? ' 등' : ''}</p>}</div>; })}</div></CardContent></Card></TabsContent><TabsContent value="audit" className="space-y-3"><Card><CardHeader><CardTitle className="text-sm flex items-center gap-2"><ClipboardCheck className="h-4 w-4" /> 산업안전보건관리비 자동검토</CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 md:grid-cols-4"><div><p className="text-xs text-muted-foreground">검토 결과</p><Badge variant={approvalReady ? 'default' : 'secondary'}>{approvalReady ? '상신 가능' : '보완 필요'}</Badge></div><div><p className="text-xs text-muted-foreground">검토 필요</p><p className="font-semibold">{compliance.reviewCount}건</p></div><div><p className="text-xs text-muted-foreground">사용 불가 경고</p><p className="font-semibold">{compliance.warningCount}건</p></div><div><p className="text-xs text-muted-foreground">증빙 누락</p><p className="font-semibold">{evidenceMissingCount}건</p></div></div><div className="rounded-md border bg-muted/30 p-3"><div className="flex items-center justify-between gap-2 mb-3"><p className="font-medium flex items-center gap-2"><ListChecks className="h-4 w-4" /> 감사대응 체크리스트</p><Button size="sm" variant="outline" onClick={requestMissingEvidence} disabled={requestingEvidence || evidenceMissingCount === 0} className="gap-1"><Send className="h-4 w-4" /> 증빙누락 자동요청</Button></div><div className="grid gap-2">{auditChecklist.map((item) => <div key={item.label} className="flex items-center justify-between gap-3 rounded-md border bg-card p-2 text-sm"><span className="flex items-center gap-2">{item.ok ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <AlertTriangle className="h-4 w-4 text-destructive" />}{item.label}</span><Badge variant={item.ok ? 'default' : 'secondary'}>{item.detail}</Badge></div>)}</div></div></CardContent></Card></TabsContent><TabsContent value="output" className="space-y-3"><Card><CardContent className="pt-6 flex flex-wrap gap-2"><Button variant="outline" onClick={exportExcel} className="gap-1"><FileSpreadsheet className="h-4 w-4" /> 엑셀 출력</Button><Button variant="outline" onClick={exportPDF} className="gap-1"><FileText className="h-4 w-4" /> PDF 출력</Button><Button onClick={openSubmitDialog} disabled={!approvalReady || reportLocked} className="gap-1"><ShieldCheck className="h-4 w-4" /> 결재 상신</Button><Button variant="outline" onClick={() => setReportTab('pack')} className="gap-1"><ClipboardCheck className="h-4 w-4" /> 증빙패키지</Button><Button variant="outline" onClick={() => setReportTab('ppe')} className="gap-1"><ClipboardCheck className="h-4 w-4" /> 지급대장</Button><Button variant="outline" onClick={() => setActiveTab('validation')} className="gap-1"><ClipboardCheck className="h-4 w-4" /> 법정 검증 탭</Button></CardContent></Card></TabsContent></Tabs>}
+        <TabsContent value="items" className="space-y-3">
+          <SafetyCostItemCards
+            items={filteredItems}
+            evidence={reportEvidence}
+            highlightedIds={highlightedItemIds}
+            reportLocked={reportLocked}
+            isLegacyImport={isLegacyImport}
+            itemSearch={itemSearch}
+            onItemSearch={setItemSearch}
+            displayDate={(it) => getDisplayDate(it, selectedReport)}
+            datePriorityLabel={getDatePriorityLabel}
+            onAdd={openNewItem}
+            onEdit={openItemEditor}
+            onDelete={deleteItem}
+            onLegal={setLegalBasisItem}
+            onOpenPpe={() => setReportTab('ppe')}
+            onOpenPack={() => setReportTab('pack')}
+            onOpenAi={() => setReportTab('ai')}
+            onUpload={handleItemEvidenceUpload}
+          />
+        </TabsContent>
+        <TabsContent value="ai" className="space-y-3"><Card><CardHeader><CardTitle className="text-sm flex items-center gap-2"><Bot className="h-4 w-4" /> 대한민국 산업안전보건법 기준 AI 자동분석</CardTitle></CardHeader><CardContent className="space-y-3">{ocrBanner?.warning && <div className="rounded-md border border-amber-200 bg-amber-50/70 dark:bg-amber-950/20 p-2 text-xs flex gap-2"><AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" /><span>{ocrBanner.warning}{ocrBanner.summary ? ` OCR 원문 ${ocrBanner.summary.rawChars}자 · 신뢰도 낮음 ${ocrBanner.summary.lowCount}건 · AI 보정 ${ocrBanner.summary.correctedCount}건` : ''}</span></div>}<div className="flex gap-2"><Label className="inline-flex items-center gap-2"><Input type="file" accept=".xls,.xlsx,.csv,.txt,.pdf,image/*" onChange={(e) => e.target.files?.[0] && handleDocumentUpload(e.target.files[0])} /><Upload className="h-4 w-4" /></Label></div><Textarea rows={10} value={aiText} onChange={(e) => setAiText(e.target.value)} placeholder="거래명세서 텍스트를 붙여넣거나 엑셀/텍스트 파일을 업로드하세요." /><Button onClick={analyzeWithAI} disabled={aiLoading} className="gap-1"><Bot className="h-4 w-4" /> {aiLoading ? '분석 중...' : 'AI 자동분류 및 입력'}</Button><Button type="button" variant="outline" onClick={() => { setReportTab('items'); openNewItem(); }}>OCR 안 되면 수기 입력</Button>{aiSummary && <div className="rounded-md border bg-muted/40 p-3 space-y-2 text-sm"><p className="font-medium">AI 분석 요약</p><div className="grid gap-2 md:grid-cols-3 text-xs"><div>사용가능 합계: {formatKRW(aiSummary.usable_total || 0)}</div><div>사용불가 합계: {formatKRW(aiSummary.warning_total || 0)}</div><div>검토필요 합계: {formatKRW(aiSummary.review_total || 0)}</div></div>{Array.isArray(aiSummary.audit_notes) && aiSummary.audit_notes.length > 0 && <ul className="list-disc pl-4 text-xs text-muted-foreground space-y-0.5">{aiSummary.audit_notes.map((n: string, i: number) => <li key={i}>{n}</li>)}</ul>}</div>}<div className="grid gap-2 md:grid-cols-3">{SAFETY_COST_CATEGORIES.slice(0, 9).map((c) => { const g = getEvidenceGuide(c.code); return <div key={c.code} className="rounded-md border bg-muted/30 p-2 text-xs space-y-1"><b>{c.code}. {c.name}</b>{g && <p className="text-[10px] text-muted-foreground leading-snug">증빙: {g.requiredEvidence.slice(0, 2).join(' · ')}{g.requiredEvidence.length > 2 ? ' 등' : ''}</p>}</div>; })}</div></CardContent></Card></TabsContent><TabsContent value="audit" className="space-y-3"><Card><CardHeader><CardTitle className="text-sm flex items-center gap-2"><ClipboardCheck className="h-4 w-4" /> 산업안전보건관리비 자동검토</CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 md:grid-cols-4"><div><p className="text-xs text-muted-foreground">검토 결과</p><Badge variant={approvalReady ? 'default' : 'secondary'}>{approvalReady ? '상신 가능' : '보완 필요'}</Badge></div><div><p className="text-xs text-muted-foreground">검토 필요</p><p className="font-semibold">{compliance.reviewCount}건</p></div><div><p className="text-xs text-muted-foreground">사용 불가 경고</p><p className="font-semibold">{compliance.warningCount}건</p></div><div><p className="text-xs text-muted-foreground">증빙 누락</p><p className="font-semibold">{evidenceMissingCount}건</p></div></div><div className="rounded-md border bg-muted/30 p-3"><div className="flex items-center justify-between gap-2 mb-3"><p className="font-medium flex items-center gap-2"><ListChecks className="h-4 w-4" /> 감사대응 체크리스트</p><Button size="sm" variant="outline" onClick={requestMissingEvidence} disabled={requestingEvidence || evidenceMissingCount === 0} className="gap-1"><Send className="h-4 w-4" /> 증빙누락 자동요청</Button></div><div className="grid gap-2">{auditChecklist.map((item) => <div key={item.label} className="flex items-center justify-between gap-3 rounded-md border bg-card p-2 text-sm"><span className="flex items-center gap-2">{item.ok ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <AlertTriangle className="h-4 w-4 text-destructive" />}{item.label}</span><Badge variant={item.ok ? 'default' : 'secondary'}>{item.detail}</Badge></div>)}</div></div></CardContent></Card></TabsContent><TabsContent value="output" className="space-y-3"><Card><CardContent className="pt-6 flex flex-wrap gap-2"><Button variant="outline" onClick={exportExcel} className="gap-1"><FileSpreadsheet className="h-4 w-4" /> 엑셀 출력</Button><Button variant="outline" onClick={exportPDF} className="gap-1"><FileText className="h-4 w-4" /> PDF 출력</Button><Button onClick={openSubmitDialog} disabled={!approvalReady || reportLocked} className="gap-1"><ShieldCheck className="h-4 w-4" /> 결재 상신</Button><Button variant="outline" onClick={() => setReportTab('pack')} className="gap-1"><ClipboardCheck className="h-4 w-4" /> 증빙패키지</Button><Button variant="outline" onClick={() => setReportTab('ppe')} className="gap-1"><ClipboardCheck className="h-4 w-4" /> 지급대장</Button><Button variant="outline" onClick={() => setActiveTab('validation')} className="gap-1"><ClipboardCheck className="h-4 w-4" /> 법정 검증 탭</Button></CardContent></Card></TabsContent></Tabs>}
       </div>
     </div>
     )}
@@ -1122,8 +1182,51 @@ const SafetyCost = () => {
           <div className="space-y-1"><Label>공급가액</Label><Input type="number" value={editingItem.supply_amount} onChange={(e) => updateEditingItemMoney('supply_amount', e.target.value)} /></div><div className="space-y-1"><Label>부가세</Label><Input type="number" value={editingItem.vat_amount} onChange={(e) => updateEditingItemMoney('vat_amount', e.target.value)} /></div><div className="space-y-1"><Label>금액</Label><Input type="number" value={editingItem.amount} readOnly className="bg-muted/40" /></div>
           <div className="space-y-1 md:col-span-2"><Label>판정 사유</Label><Textarea rows={3} value={editingItem.ai_reason} onChange={(e) => setEditingItem((p) => ({ ...p, ai_reason: e.target.value }))} /></div>
           <div className="space-y-1 md:col-span-2"><Label>법적 근거</Label><Textarea rows={3} value={editingItem.legal_basis} onChange={(e) => setEditingItem((p) => ({ ...p, legal_basis: e.target.value }))} /></div>
+          {isLegacyImport ? null : editingItem.id ? (
+            <div className="md:col-span-2 space-y-2 rounded-md border p-3">
+              <p className="text-sm font-medium">이 항목 증빙</p>
+              <p className="text-[11px] text-muted-foreground">AI가 잘못 읽었거나 수기 입력이면 명세·사진을 여기에 붙입니다. OCR이 안 되는 영수증도 같습니다.</p>
+              <div className="flex flex-wrap gap-2">
+                <Label className="inline-flex items-center gap-1 text-xs cursor-pointer">
+                  <Paperclip className="h-3 w-3" /> 명세/영수증
+                  <Input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.xlsx,.xls" className="hidden" disabled={reportLocked} onChange={(e) => {
+                    const live = items.find((it) => it.id === editingItem.id) || {
+                      ...editingItem,
+                      project_id: selectedConstruction?.project_id || selectedReport?.project_id,
+                      report_id: selectedReport?.id,
+                      construction_id: selectedConstruction?.id,
+                      company_id: selectedConstruction?.company_id,
+                    };
+                    handleItemEvidenceUpload(live, e.target.files, 'transaction');
+                    e.currentTarget.value = '';
+                  }} />
+                </Label>
+                <Label className="inline-flex items-center gap-1 text-xs cursor-pointer">
+                  <Paperclip className="h-3 w-3" /> 사진대지
+                  <Input type="file" multiple accept="image/*" className="hidden" disabled={reportLocked} onChange={(e) => {
+                    const live = items.find((it) => it.id === editingItem.id) || {
+                      ...editingItem,
+                      project_id: selectedConstruction?.project_id || selectedReport?.project_id,
+                      report_id: selectedReport?.id,
+                      construction_id: selectedConstruction?.id,
+                      company_id: selectedConstruction?.company_id,
+                    };
+                    handleItemEvidenceUpload(live, e.target.files, 'site_photo');
+                    e.currentTarget.value = '';
+                  }} />
+                </Label>
+              </div>
+              <ul className="text-[11px] text-muted-foreground space-y-0.5">
+                {reportEvidence.filter((e: any) => e.item_id === editingItem.id).map((e: any) => (
+                  <li key={e.id}>{e.evidence_kind === 'site_photo' ? '사진' : '명세'} · {e.file_name || '파일'}</li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="md:col-span-2 text-xs text-muted-foreground">먼저 저장하면 이 창에서 명세·사진을 붙일 수 있습니다. OCR이 안 되는 경우도 수기 입력 후 첨부합니다.</p>
+          )}
         </div>
-        <DialogFooter><Button variant="outline" onClick={() => setItemEditOpen(false)}>취소</Button><Button onClick={updateItem}>저장</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={() => setItemEditOpen(false)}>취소</Button><Button onClick={updateItem} disabled={reportLocked}>저장</Button></DialogFooter>
       </DialogContent>
     </Dialog>
     <Dialog open={constructionEditOpen} onOpenChange={setConstructionEditOpen}>

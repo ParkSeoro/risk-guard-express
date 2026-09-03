@@ -17,7 +17,7 @@ describe('safetyCostEvidencePack', () => {
       items: [{ id: 'a', category_code: '3', amount: 100000 }],
       files: [
         { item_id: 'a', evidence_kind: 'transaction' },
-        { item_id: 'a', evidence_kind: 'tax_invoice' },
+        { item_id: 'a', evidence_kind: 'tax_invoice', note: '총액 중 보호구 전액' },
         { item_id: 'a', evidence_kind: 'site_photo' },
       ],
       ppeLedgerSignedCount: 0,
@@ -31,7 +31,7 @@ describe('safetyCostEvidencePack', () => {
       items: [{ id: 'a', category_code: '3', amount: 100000 }],
       files: [
         { item_id: 'a', evidence_kind: 'transaction' },
-        { item_id: 'a', evidence_kind: 'tax_invoice' },
+        { item_id: 'a', evidence_kind: 'tax_invoice', note: '총액 중 보호구 전액' },
         { item_id: 'a', evidence_kind: 'site_photo' },
       ],
       ppeLedgerSignedCount: 2,
@@ -72,5 +72,13 @@ describe('safetyCostEvidencePack', () => {
       { id: '2', category_code: '2', amount: 50 },
       { id: '3', category_code: '5', amount: 20 },
     ])).toEqual({ '2': 150, '5': 20 });
+  });
+
+  it('ignores report-only statements without category when counting kinds', () => {
+    const result = evaluateEvidencePack({
+      items: [{ id: 'a', category_code: '3', amount: 100000 }],
+      files: [{ item_id: null, evidence_kind: 'transaction' }],
+    });
+    expect(result.rows.find((r) => r.requirement.kind === 'transaction')?.count).toBe(0);
   });
 });

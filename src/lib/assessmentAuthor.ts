@@ -77,3 +77,43 @@ export function pickAuthorCandidate(
   if (!authorUserId) return null;
   return candidates.find((c) => c.user_id === authorUserId) || null;
 }
+
+export type AuthorMemberRow = {
+  user_id?: string | null;
+  company_id?: string | null;
+};
+
+export function buildAssessmentAuthorCandidates(
+  rows: AuthorMemberRow[],
+  profiles: { user_id: string; display_name: string | null }[],
+  companies: { id: string; name: string }[],
+): AssessmentAuthorCandidate[] {
+  const nameByUser = new Map((profiles || []).map((p) => [p.user_id, p.display_name || '']));
+  const nameByCo = new Map((companies || []).map((c) => [c.id, c.name]));
+  const seen = new Set<string>();
+  const next: AssessmentAuthorCandidate[] = [];
+  for (const row of rows) {
+    if (!row.user_id || seen.has(row.user_id)) continue;
+    seen.add(row.user_id);
+    next.push({
+      user_id: row.user_id,
+      display_name: nameByUser.get(row.user_id) || row.user_id.slice(0, 8),
+      company_id: row.company_id ?? null,
+      company_name: row.company_id ? (nameByCo.get(row.company_id) || '') : '',
+    });
+  }
+  next.sort((a, b) => a.display_name.localeCompare(b.display_name, 'ko'));
+  return next;
+}
+
+/** Whether the picker should fetch, wait, or show empty. */
+export function authorPickerLoadState(opts: {
+  projectId?: string | null;
+  companyIds?: string[] | null;
+  companyFilterPending?: boolean;
+}): 'idle' | 'pending' | 'empty' | 'load' {
+  if (!opts.projectId) return 'idle';
+  if (opts.companyFilterPending) return 'pending';
+  if (opts.companyIds && opts.companyIds.length === 0) return 'empty';
+  return 'load';
+}

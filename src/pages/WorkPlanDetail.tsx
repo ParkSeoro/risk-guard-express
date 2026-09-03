@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -143,6 +143,16 @@ const WorkPlanDetail = () => {
   useEffect(() => { endDateRef.current = endDate; }, [endDate]);
   useEffect(() => { planRef.current = plan; }, [plan]);
   useEffect(() => { isDirtyRef.current = isDirty; }, [isDirty]);
+
+  const authorCompanyIds = useMemo(
+    () => workPlanAuthorCompanyIds({
+      documentCompanyId: plan?.company_id,
+      userCompanyId: access.userCompanyId,
+      seesAllCompanies: access.seesAllCompanies,
+    }),
+    [plan?.company_id, access.userCompanyId, access.seesAllCompanies],
+  );
+  const authorCompanyFilterPending = access.scopeStatus !== 'ready' && !plan?.company_id;
 
   const markDirty = () => {
     editEpochRef.current += 1;
@@ -774,11 +784,8 @@ const WorkPlanDetail = () => {
             ) && (
               <AssessmentAuthorPicker
                 projectId={plan.project_id}
-                companyIds={workPlanAuthorCompanyIds({
-                  documentCompanyId: plan.company_id,
-                  userCompanyId: access.userCompanyId,
-                  seesAllCompanies: access.seesAllCompanies,
-                })}
+                companyIds={authorCompanyIds}
+                companyFilterPending={authorCompanyFilterPending}
                 value={plan.author_user_id || ''}
                 onChange={async (id) => {
                   const { error } = await supabase.from('work_plans').update({ author_user_id: id } as any).eq('id', planId);

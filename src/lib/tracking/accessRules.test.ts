@@ -53,14 +53,17 @@ describe("zone whitelist / blacklist", () => {
 });
 
 describe("zone category enum", () => {
-  it("lists 공정(위험)구역 first as default", () => {
-    expect(ZONE_CATEGORY_OPTIONS[0].value).toBe("공정(위험)구역");
+  it("keeps danger default and accepts 일반/작업구역 for distribution", () => {
     expect(DEFAULT_ZONE_CATEGORY).toBe("공정(위험)구역");
+    expect(ZONE_CATEGORY_OPTIONS.some((o) => o.value === "일반")).toBe(true);
+    expect(ZONE_CATEGORY_OPTIONS.some((o) => o.value === "작업구역")).toBe(true);
   });
 
   it("accepts 공정(위험)구역 via Zod", () => {
     expect(zoneCategorySchema.safeParse("공정(위험)구역").success).toBe(true);
     expect(zoneCategorySchema.safeParse("추락위험").success).toBe(true);
+    expect(zoneCategorySchema.safeParse("일반").success).toBe(true);
+    expect(zoneCategorySchema.safeParse("작업구역").success).toBe(true);
     expect(zoneCategorySchema.safeParse("임의구역").success).toBe(false);
   });
 });

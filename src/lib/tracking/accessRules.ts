@@ -33,6 +33,8 @@ export type AccessSubject = {
 
 /** 구역 유형(SSOT) — 모달 Select / Zod / DB 허용 값 */
 export const ZONE_CATEGORY_OPTIONS = [
+  { value: "일반", label: "일반 (분포)" },
+  { value: "작업구역", label: "작업구역 (분포)" },
   { value: "공정(위험)구역", label: "공정(위험)구역" },
   { value: "추락위험", label: "추락위험" },
   { value: "화재위험", label: "화재위험" },
@@ -51,6 +53,13 @@ export const ZONE_CATEGORY_VALUES = ZONE_CATEGORY_OPTIONS.map((o) => o.value) as
 
 export const DEFAULT_ZONE_CATEGORY: ZoneCategory = "공정(위험)구역";
 
+/** 분포용. 출입 알람·고주기 GPS를 켜지 않는다. 근로자 개별 지정이 아니다. */
+export const PRESENCE_ZONE_CATEGORIES = ["일반", "작업구역"] as const;
+
+export function isPresenceZoneCategory(value: string | null | undefined): boolean {
+  return value === "일반" || value === "작업구역";
+}
+
 /** Zod: zone_category / 구역 유형 허용 enum */
 export const zoneCategorySchema = z.enum(ZONE_CATEGORY_VALUES, {
   errorMap: () => ({ message: "유효한 구역 유형을 선택하세요" }),
@@ -60,10 +69,17 @@ export function isZoneCategory(value: string | null | undefined): value is ZoneC
   return !!value && (ZONE_CATEGORY_VALUES as readonly string[]).includes(value);
 }
 
+export function defaultColorForZoneCategory(category: string | null | undefined): string {
+  if (category === "일반") return "#10b981";
+  if (category === "작업구역") return "#3b82f6";
+  return "#ef4444";
+}
+
 export const ZONE_COLOR_OPTIONS = [
+  { value: "#10b981", label: "초록", swatch: "bg-emerald-500" },
+  { value: "#3b82f6", label: "파랑", swatch: "bg-blue-500" },
   { value: "#ef4444", label: "빨강", swatch: "bg-red-500" },
   { value: "#eab308", label: "노랑", swatch: "bg-yellow-500" },
-  { value: "#3b82f6", label: "파랑", swatch: "bg-blue-500" },
 ] as const;
 
 export type ZoneColor = (typeof ZONE_COLOR_OPTIONS)[number]["value"];

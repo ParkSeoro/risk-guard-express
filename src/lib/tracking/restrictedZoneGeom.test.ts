@@ -41,6 +41,13 @@ describe("restrictedZoneGeom", () => {
     expect(hit?.id).toBe("z1");
   });
 
+  it("does not alarm or pull GPS rate for 작업구역", () => {
+    const work = { ...radiusZone, zone_category: "작업구역" };
+    expect(isSubjectBanned(work, { worker_id: "w1" })).toBe(false);
+    expect(findViolatingRestrictedZone(37.5001, 127.0001, [work], {})).toBeNull();
+    expect(minDistanceToRestrictedZoneEdge(37.5001, 127.0001, [work])).toBe(Number.POSITIVE_INFINITY);
+  });
+
   it("polygon intersect", () => {
     const poly = {
       ...radiusZone,

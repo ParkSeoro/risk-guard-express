@@ -59,6 +59,7 @@ import {
   ruleTypeLabel,
   ZONE_COLOR_OPTIONS,
   zoneCategorySchema,
+  isPresenceZoneCategory,
 } from "@/lib/tracking/accessRules";
 import type { DrawnShape, DrawTool } from "@/components/geofence/LeafletDrawControl";
 import { looksLikeWgs84, looksLikeWgs84Ring, GPS_COORDS_INVALID_MSG } from "@/lib/tracking/imageSpaceGeo";
@@ -767,7 +768,9 @@ export default function SiteControlMap() {
       toast.error("저장 실패: " + error.message);
       return;
     }
-    toast.success("위험 구역이 저장되었습니다");
+    toast.success(
+      isPresenceZoneCategory(catParsed.data) ? "분포 구역이 저장되었습니다" : "위험 구역이 저장되었습니다",
+    );
     setZoneModalOpen(false);
     setPendingShape(null);
     setEditingZone(null);
@@ -1014,7 +1017,7 @@ export default function SiteControlMap() {
                   [1] 도면 업로드
                 </TabsTrigger>
                 <TabsTrigger value="zones" className="text-[11px] px-1 py-2 whitespace-normal leading-tight">
-                  [2] 위험구역 설정
+                  [2] 구역 설정
                 </TabsTrigger>
               </TabsList>
 
@@ -1434,7 +1437,7 @@ export default function SiteControlMap() {
                 </label>
                 <label className="flex items-center justify-between gap-2 text-xs cursor-pointer">
                   <span className="flex items-center gap-1.5">
-                    <ShieldAlert className="h-3.5 w-3.5 text-muted-foreground" /> 위험구역
+                    <ShieldAlert className="h-3.5 w-3.5 text-muted-foreground" /> 구역
                   </span>
                   <Switch
                     checked={layers.zones}
@@ -1548,7 +1551,7 @@ export default function SiteControlMap() {
             <CardContent className="pt-0 space-y-2 max-h-[70vh] overflow-auto">
               {zones.length === 0 && (
                 <div className="text-muted-foreground text-center py-8 text-xs border rounded-md">
-                  등록된 위험구역이 없습니다.
+                  등록된 구역이 없습니다. 일반·작업구역은 분포용(알람 없음), 위험 유형은 출입 알람용입니다.
                 </div>
               )}
               {zones.map((z) => {

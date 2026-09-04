@@ -19,8 +19,9 @@
 
 관리자 PC 「현장 근로자 분포도」
        → supabase.rpc('get_worker_distribution_counts', { project_id })
+       → supabase.rpc('get_worker_distribution_positions', { project_id })
        → 오늘 미퇴근 출근자 회사×구역 집계 (12시간 내 GPS가 있으면 구역, 없으면 미지정)
-       → 사이트맵 위 숫자 / 구역별 인원 UI
+       → 보정된 사이트맵 위 GPS 점 + 구역 숫자 (site_zones 또는 restricted_zones)
 ```
 
 필요한 DB 객체:

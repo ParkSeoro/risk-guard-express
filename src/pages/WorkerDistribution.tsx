@@ -6,8 +6,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Users, MapPin, Building2, Activity, Radio, RefreshCw } from "lucide-react";
 import { isClientType } from "@/lib/companyTypes";
+import { loadCornersFromMap, type AnchorMap } from "@/lib/mapBounds";
+import { latLngToUv } from "@/lib/tracking/imageSpaceGeo";
+import {
+  distributionDotJitter,
+  distributionImagePoint,
+  zoneCategoryToType,
+} from "@/lib/workerDistribution";
 
-type SiteMap = { id: string; name: string; image_url: string | null };
+type SiteMap = AnchorMap & { id: string; name: string; image_url: string | null };
 type Zone = {
   id: string;
   site_map_id: string;
@@ -23,6 +30,14 @@ type DistRow = {
   headcount: number;
   stale_count: number;
 };
+type DistPos = {
+  company_id: string | null;
+  company_name: string | null;
+  lat: number;
+  lng: number;
+  accuracy_m: number | null;
+  updated_at: string;
+};
 
 const ZONE_COLOR: Record<Zone["zone_type"], string> = {
   normal: "#10b981",
@@ -36,6 +51,7 @@ const ZONE_LABEL: Record<Zone["zone_type"], string> = {
   restricted: "제한구역",
   danger: "위험구역",
 };
+const COMPANY_DOT = ["#0ea5e9", "#a855f7", "#f97316", "#14b8a6", "#e11d48", "#6366f1"];
 
 function formatAgo(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -64,6 +80,7 @@ export default function WorkerDistribution() {
   const [activeMap, setActiveMap] = useState<SiteMap | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [rows, setRows] = useState<DistRow[]>([]);
+  const [positions, setPositions] = useState<DistPos[]>([]);
   const [lastSource, setLastSource] = useState<"realtime" | "polling" | "init">("init");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [rtStatus, setRtStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
@@ -83,13 +100,17 @@ export default function WorkerDistribution() {
     if (!projectId) return;
     loadMaps();
     loadCounts("polling");
+    loadPositions();
     setRtStatus("connecting");
     const ch = supabase
       .channel(`wd:${projectId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "worker_last_positions", filter: `project_id=eq.${projectId}` },
-        () => loadCounts("realtime"),
+        () => {
+          loadCounts("realtime");
+          loadPositions();
+        },
       )
       .subscribe((status) => {
         if (status === "SUBSCRIBED") setRtStatus("connected");
@@ -97,7 +118,10 @@ export default function WorkerDistribution() {
           setRtStatus("disconnected");
         }
       });
-    const t = setInterval(() => loadCounts("polling"), 60000);
+    const t = setInterval(() => {
+      loadCounts("polling");
+      loadPositions();
+    }, 60000);
     const tick = setInterval(() => setNowTick(Date.now()), 1000);
     return () => {
       supabase.removeChannel(ch);
@@ -110,12 +134,39 @@ export default function WorkerDistribution() {
   const loadMaps = async () => {
     const { data } = await supabase
       .from("site_maps")
-      .select("id,name,image_url")
+      .select(
+        "id,name,image_url,geo_transform,geo_anchor_nw_lat,geo_anchor_nw_lng,geo_anchor_se_lat,geo_anchor_se_lng",
+      )
       .eq("project_id", projectId)
+      .eq("is_deleted", false)
       .order("created_at", { ascending: true });
     const list = (data || []) as SiteMap[];
     setMaps(list);
-    setActiveMap((prev) => (prev && list.find((m) => m.id === prev.id) ? prev : list[0] || null));
+    const georef = list.find((m) => loadCornersFromMap(m));
+    setActiveMap((prev) =>
+      prev && list.find((m) => m.id === prev.id) ? list.find((m) => m.id === prev.id)! : georef || list[0] || null,
+    );
+  };
+
+  const loadPositions = async () => {
+    if (!projectId) return;
+    const { data, error } = await supabase.rpc("get_worker_distribution_positions" as any, {
+      _project_id: projectId,
+    });
+    if (error) {
+      setPositions([]);
+      return;
+    }
+    setPositions(
+      ((data as any[]) || []).map((r) => ({
+        company_id: r.company_id,
+        company_name: r.company_name,
+        lat: Number(r.lat),
+        lng: Number(r.lng),
+        accuracy_m: r.accuracy_m == null ? null : Number(r.accuracy_m),
+        updated_at: r.updated_at,
+      })),
+    );
   };
 
   useEffect(() => {
@@ -123,12 +174,50 @@ export default function WorkerDistribution() {
       setZones([]);
       return;
     }
-    supabase
-      .from("site_zones")
-      .select("*")
-      .eq("site_map_id", activeMap.id)
-      .then(({ data }) => setZones((data || []) as any as Zone[]));
-  }, [activeMap]);
+    const corners = loadCornersFromMap(activeMap);
+    Promise.all([
+      supabase
+        .from("site_zones")
+        .select("id,site_map_id,name,zone_type,color,polygon")
+        .eq("site_map_id", activeMap.id)
+        .eq("is_deleted", false),
+      supabase
+        .from("restricted_zones")
+        .select("id,name,geo_polygon,zone_category,zone_color,is_active")
+        .eq("project_id", projectId)
+        .eq("is_deleted", false)
+        .eq("is_active", true),
+    ]).then(([legacy, unified]) => {
+      const fromSite = ((legacy.data || []) as any[]).map((z) => ({
+        id: z.id,
+        site_map_id: z.site_map_id,
+        name: z.name,
+        zone_type: (z.zone_type || "normal") as Zone["zone_type"],
+        color: z.color,
+        polygon: (z.polygon || []) as { x: number; y: number }[],
+      }));
+      const fromUnified: Zone[] = [];
+      if (corners) {
+        for (const z of (unified.data || []) as any[]) {
+          const ring = Array.isArray(z.geo_polygon) ? z.geo_polygon : null;
+          if (!ring || ring.length < 3) continue;
+          const polygon = ring.map((p: any) => {
+            const uv = latLngToUv({ lat: Number(p.lat), lng: Number(p.lng) }, corners);
+            return { x: uv.u, y: uv.v };
+          });
+          fromUnified.push({
+            id: z.id,
+            site_map_id: activeMap.id,
+            name: z.name,
+            zone_type: zoneCategoryToType(z.zone_category),
+            color: z.zone_color || null,
+            polygon,
+          });
+        }
+      }
+      setZones([...fromSite, ...fromUnified]);
+    });
+  }, [activeMap, projectId]);
 
   const loadCounts = async (source: "realtime" | "polling" = "polling") => {
     if (!projectId) return;
@@ -177,6 +266,34 @@ export default function WorkerDistribution() {
     };
   }, [rows]);
 
+  const corners = useMemo(() => (activeMap ? loadCornersFromMap(activeMap) : null), [activeMap]);
+
+  const dots = useMemo(() => {
+    if (!corners) return [];
+    const companyIndex = new Map<string, number>();
+    return positions
+      .map((p, i) => {
+        const pt = distributionImagePoint(p.lat, p.lng, corners);
+        if (!pt) return null;
+        const key = p.company_id || p.company_name || "?";
+        if (!companyIndex.has(key)) companyIndex.set(key, companyIndex.size);
+        const j = distributionDotJitter(i);
+        const stale =
+          !p.updated_at || Date.now() - new Date(p.updated_at).getTime() > 30 * 60 * 1000;
+        return {
+          ...pt,
+          x: pt.x + j.dx,
+          y: pt.y + j.dy,
+          company: p.company_name || "(미지정)",
+          color: COMPANY_DOT[companyIndex.get(key)! % COMPANY_DOT.length],
+          stale,
+          ago: p.updated_at ? formatAgo(Date.now() - new Date(p.updated_at).getTime()) : "",
+          key: `${p.lat}:${p.lng}:${p.updated_at}:${i}`,
+        };
+      })
+      .filter((d): d is NonNullable<typeof d> => d != null);
+  }, [positions, corners]);
+
   const zoneById = useMemo(() => Object.fromEntries(zones.map((z) => [z.id, z])), [zones]);
 
   const polyToPoints = (poly: { x: number; y: number }[]) =>
@@ -197,7 +314,7 @@ export default function WorkerDistribution() {
             <Users className="h-6 w-6 text-primary" /> 현장 근로자 분포도
           </h1>
           <p className="text-sm text-muted-foreground">
-            GPS가 있으면 구역, 없으면 미지정 · 회사/구역/인원만 표시 (개인정보 비노출)
+            오늘 출근자 집계 · GPS가 있으면 맵에 점 · 이름·전화 비노출
             {!canSeeFullSite && " · 접근 가능 회사 범위"}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -235,9 +352,12 @@ export default function WorkerDistribution() {
             >
               <SelectTrigger className="w-[200px]"><SelectValue placeholder="사이트맵 선택" /></SelectTrigger>
               <SelectContent>
-                {maps.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                ))}
+                  {maps.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
+                      {loadCornersFromMap(m) ? " · GPS보정" : ""}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           )}
@@ -297,9 +417,14 @@ export default function WorkerDistribution() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <SummaryCard icon={Users} label="현재 현장 체류" value={totalIn} tone="primary" />
-        <SummaryCard icon={MapPin} label="활성 구역" value={Object.keys(perZone).length} tone="info" />
+        <SummaryCard
+          icon={MapPin}
+          label="활성 구역"
+          value={Object.keys(perZone).filter((k) => k !== "unknown").length}
+          tone="info"
+        />
+        <SummaryCard icon={Activity} label="GPS 위치" value={dots.length} tone="info" />
         <SummaryCard icon={Building2} label="회사 수" value={companyCount} tone="muted" />
-        <SummaryCard icon={Activity} label="구역 집계 행" value={rows.length} tone="muted" />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-4">
@@ -351,12 +476,40 @@ export default function WorkerDistribution() {
                       </g>
                     );
                   })}
+                  {dots.map((d) => (
+                    <g key={d.key} opacity={d.stale ? 0.55 : 1}>
+                      <circle
+                        cx={d.x}
+                        cy={d.y}
+                        r={1.7}
+                        fill={d.color}
+                        stroke="#fff"
+                        strokeWidth={0.45}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                      <title>
+                        {d.company}
+                        {d.ago ? ` · ${d.ago} 전` : ""}
+                      </title>
+                    </g>
+                  ))}
                 </svg>
               </div>
             )}
-            {(perZone["unknown"] || 0) > 0 && (
+            {!corners && activeMap?.image_url && (
               <div className="mt-3 rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                출근 {totalIn}명 중 GPS 구역 미배정 {perZone["unknown"]}명 — 오른쪽 「미지정 구역」에서 확인
+                이 사이트맵은 GPS 보정이 없어 위치를 찍을 수 없습니다. 사이트맵에서 「GPS보정」이 붙은 맵을 선택하세요.
+              </div>
+            )}
+            {corners && (
+              <div className="mt-3 rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                GPS 위치 {dots.length}명 표시 (이름 비노출)
+                {(perZone["unknown"] || 0) > 0
+                  ? ` · 출근 ${totalIn}명 중 구역 미배정 ${perZone["unknown"]}명`
+                  : ""}
+                {zones.length === 0
+                  ? " · 활성 구역이 없습니다. 통합 관제맵에서 구역을 그리면 구역 숫자도 표시됩니다."
+                  : ""}
               </div>
             )}
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
@@ -375,7 +528,11 @@ export default function WorkerDistribution() {
             <CardTitle>구역별 인원</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 max-h-[520px] overflow-auto">
-            {zones.length === 0 && <div className="text-sm text-muted-foreground">등록된 구역이 없습니다.</div>}
+            {zones.length === 0 && (
+              <div className="text-sm text-muted-foreground">
+                활성 구역이 없습니다. 출근자는 아래 미지정으로 집계되고, GPS가 있으면 맵에 점으로 표시됩니다.
+              </div>
+            )}
             {zones.map((z) => {
               const count = perZone[z.id] || 0;
               const color = z.color || ZONE_COLOR[z.zone_type];

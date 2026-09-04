@@ -50,5 +50,22 @@ export function mapApprovalActionError(raw: unknown): string {
   if (code.includes("WORK_PERMIT_APPROVAL_RPC_REQUIRED")) {
     return "허가서 승인은 결재선으로만 처리할 수 있습니다. 결재상신을 이용하세요.";
   }
+  if (code.includes("submitted_document_locked")) {
+    return "이미 승인된 위험성평가 본문은 잠겨 있습니다. 조치 결재는 새로고침 후 다시 승인하세요.";
+  }
   return code || "처리에 실패했습니다.";
+}
+
+/** Grouped inbox card status. Feedback must not show the parent run's 승인완료. */
+export function groupedDocumentStatus(run: {
+  status?: string | null;
+} | null, steps: Array<{ entity_type?: string | null; status?: string | null }>): string | null {
+  if (!run) return null;
+  const type = steps[0]?.entity_type;
+  if (type === "assessment_run_feedback") {
+    if (steps.some((s) => s.status === "진행중" || s.status === "대기")) return "조치 결재중";
+    if (steps.length > 0 && steps.every((s) => s.status === "승인")) return "조치 결재완료";
+    return "조치 결재";
+  }
+  return run.status || null;
 }

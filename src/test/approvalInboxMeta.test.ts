@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle } from "@/lib/approvalInboxMeta";
+import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle, groupedDocumentStatus } from "@/lib/approvalInboxMeta";
 
 describe("formatPendingApprovalMeta", () => {
   it("distinguishes two same-title permits by company, crew, and resubmit", () => {
@@ -49,5 +49,29 @@ describe("mapApprovalActionError", () => {
   it("maps deleted-entity and direct-approve lock codes", () => {
     expect(mapApprovalActionError("ENTITY_DELETED")).toBe("삭제된 문서는 결재할 수 없습니다.");
     expect(mapApprovalActionError("WORK_PERMIT_APPROVAL_RPC_REQUIRED")).toContain("결재선");
+  });
+
+  it("maps submitted_document_locked to Korean", () => {
+    expect(mapApprovalActionError("submitted_document_locked")).toMatch(/잠겨/);
+  });
+});
+
+describe("groupedDocumentStatus", () => {
+  it("does not show parent 승인완료 while feedback SM is still open", () => {
+    expect(
+      groupedDocumentStatus({ status: "승인완료" }, [
+        { entity_type: "assessment_run_feedback", status: "승인" },
+        { entity_type: "assessment_run_feedback", status: "진행중" },
+      ]),
+    ).toBe("조치 결재중");
+    expect(
+      groupedDocumentStatus({ status: "승인완료" }, [
+        { entity_type: "assessment_run_feedback", status: "승인" },
+        { entity_type: "assessment_run_feedback", status: "승인" },
+      ]),
+    ).toBe("조치 결재완료");
+    expect(groupedDocumentStatus({ status: "승인완료" }, [{ entity_type: "assessment_run", status: "승인" }])).toBe(
+      "승인완료",
+    );
   });
 });

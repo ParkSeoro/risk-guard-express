@@ -24,7 +24,7 @@ import {
   sequentialDisplayStatus,
   type ApprovalEntityType,
 } from "@/lib/approvalRules";
-import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle } from "@/lib/approvalInboxMeta";
+import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle, groupedDocumentStatus } from "@/lib/approvalInboxMeta";
 import { filterRunsByCompanyScope } from "@/lib/companyDocScope";
 import { filterApprovalsKeepingFullDocumentTimeline } from "@/lib/approvalDocumentVisibility";
 import {
@@ -439,7 +439,7 @@ const Approvals = () => {
         : code === 'NOT_ACTIVE_STEP' ? '아직 결재 순번이 아닙니다.'
         : code === 'NOT_AUTHORIZED' ? '결재 권한이 없습니다.'
         : code === 'SUBMITTER_STEP_NO_SELF_APPROVE' ? '상신(기안) 단계는 승인/반려할 수 없습니다.'
-        : code;
+        : mapApprovalActionError(code);
       toast({ title: '처리 실패', description: msg, variant: 'destructive' });
       return;
     }
@@ -725,7 +725,11 @@ const Approvals = () => {
                           </Badge>
                           <h3 className="font-semibold">{cardTitle}</h3>
                         </div>
-                        {run && <p className="text-xs text-muted-foreground mt-0.5">상태: {run.status}</p>}
+                        {run && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            상태: {groupedDocumentStatus(run, activeSteps.length ? activeSteps : allSteps) || run.status}
+                          </p>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         {(() => {

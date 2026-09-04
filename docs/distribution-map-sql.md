@@ -10,12 +10,16 @@
 ## 데이터 흐름 (처음부터 끝까지)
 
 ```
+출근(worker_gps_daily_lifecycle entry)
+       → worker_entry_logs (오늘 미퇴근 = 현장 체류)
+       → upsert_worker_last_position_from_checkin (좌표가 있으면)
+
 폰 GPS → track-location Edge
        → worker_last_positions upsert (회사/구역/좌표, 개인식별 최소화)
 
 관리자 PC 「현장 근로자 분포도」
        → supabase.rpc('get_worker_distribution_counts', { project_id })
-       → 회사×구역 headcount 집계 (PII 없음)
+       → 오늘 미퇴근 출근자 회사×구역 집계 (12시간 내 GPS가 있으면 구역, 없으면 미지정)
        → 사이트맵 위 숫자 / 구역별 인원 UI
 ```
 
@@ -80,4 +84,4 @@
 3. 분포도 UI 오류 메시지에 `is_active` / `company_type` 별도 안내
 
 페이지 **새로고침** 하면 빨간 박스가 사라져야 합니다.  
-인원 0은 “오류 없음 + 최근 12시간 GPS 집계 없음”일 수 있습니다(근로자 앱 위치 추적·track-location 필요).
+인원 0은 “오늘 미퇴근 출근자가 없음”입니다. GPS가 없어도 출근자는 미지정 구역으로 집계됩니다.

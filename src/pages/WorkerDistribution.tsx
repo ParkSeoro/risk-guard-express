@@ -197,7 +197,7 @@ export default function WorkerDistribution() {
             <Users className="h-6 w-6 text-primary" /> 현장 근로자 분포도
           </h1>
           <p className="text-sm text-muted-foreground">
-            GPS 최근 위치 기반 · 회사/구역/인원만 표시 (개인정보 비노출)
+            GPS가 있으면 구역, 없으면 미지정 · 회사/구역/인원만 표시 (개인정보 비노출)
             {!canSeeFullSite && " · 접근 가능 회사 범위"}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -354,6 +354,11 @@ export default function WorkerDistribution() {
                 </svg>
               </div>
             )}
+            {(perZone["unknown"] || 0) > 0 && (
+              <div className="mt-3 rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                출근 {totalIn}명 중 GPS 구역 미배정 {perZone["unknown"]}명 — 오른쪽 「미지정 구역」에서 확인
+              </div>
+            )}
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
               {(["normal", "work", "restricted", "danger"] as const).map((t) => (
                 <span key={t} className="inline-flex items-center gap-1">
@@ -406,7 +411,7 @@ export default function WorkerDistribution() {
         <CardContent>
           {Object.keys(byCompany).length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              최근 12시간 내 GPS 위치가 없습니다. 앱에서 위치 추적이 켜진 근로자부터 집계됩니다.
+              오늘 미퇴근 출근자가 없습니다. GPS가 아직 안 올라온 출근자는 미지정 구역으로 집계됩니다.
             </div>
           ) : (
             <div className="overflow-x-auto">

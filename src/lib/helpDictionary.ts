@@ -46,9 +46,9 @@ export const HELP: Record<string, HelpEntry> = {
   "/tbm-logs": {
     title: "TBM 일지",
     steps: [
-      "당일 TBM 생성 → 자동 QR 발급",
-      "근로자가 QR 스캔하여 셀카 + 서명으로 참여",
-      "참여자 명단은 출력/엑셀로 다운로드 가능",
+      "허가서 발행 시 당일 TBM이 만들어지거나, 여기서 직접 생성",
+      "근로자 출근 서명이 TBM 참여 서명으로 붙음 (QR은 선택)",
+      "실시 사진을 올리고 일지를 인쇄",
     ],
   },
   "/safety-inspections": {

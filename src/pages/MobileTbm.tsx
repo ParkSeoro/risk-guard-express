@@ -30,6 +30,8 @@ import { z } from "zod";
 import { correctTerms } from "@/lib/termCorrection";
 import { todayKst } from "@/lib/permitWorkDate";
 import { closeExpiredTbmSessions } from "@/lib/tbmLifecycle";
+import { TbmSessionPhotos } from "@/components/tbm/TbmSessionPhotos";
+import { parseTbmPhotoUrls, tbmPhotoCountLabel } from "@/lib/tbmPhotos";
 
 const tbmSchema = z.object({
   title: z.string().trim().min(2, "TBM 제목을 2자 이상 입력하세요").max(200),
@@ -49,6 +51,7 @@ type TbmSession = {
   tbm_date?: string | null;
   is_active?: boolean | null;
   created_at?: string | null;
+  photo_urls?: unknown;
 };
 
 /** Mobile TBM — manager: list + create/QR; worker: today’s participate */
@@ -90,7 +93,7 @@ export default function MobileTbm() {
     await closeExpiredTbmSessions(projectId);
     let q: any = supabase
       .from("tbm_sessions" as any)
-      .select("id, title, location, briefing_summary, leader_name, qr_token, tbm_date, is_active, created_at")
+      .select("id, title, location, briefing_summary, leader_name, qr_token, tbm_date, is_active, created_at, photo_urls")
       .eq("project_id", projectId)
       .eq("tbm_date", selectedDate)
       .or("is_deleted.is.null,is_deleted.eq.false")
@@ -341,6 +344,20 @@ export default function MobileTbm() {
             </Card>
             <Card>
               <CardContent className="pt-4">
+                <TbmSessionPhotos
+                  projectId={projectId!}
+                  sessionId={session.id}
+                  urls={session.photo_urls}
+                  editable
+                  onUrlsChange={(next) => {
+                    setSession((cur) => (cur ? { ...cur, photo_urls: next } : cur));
+                    setSessions((prev) => prev.map((x) => (x.id === session.id ? { ...x, photo_urls: next } : x)));
+                  }}
+                />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4">
                 <div className="flex items-center gap-2 font-semibold">
                   <Users className="h-4 w-4" /> 참여자 ({participants.length})
                 </div>
@@ -396,6 +413,9 @@ export default function MobileTbm() {
                       <div className="font-semibold text-sm">{s.title}</div>
                       <div className="text-xs text-muted-foreground">
                         {s.location || "장소 미정"} · {s.leader_name || "—"}
+                        {tbmPhotoCountLabel(parseTbmPhotoUrls(s.photo_urls))
+                          ? ` · ${tbmPhotoCountLabel(parseTbmPhotoUrls(s.photo_urls))}`
+                          : ""}
                       </div>
                     </div>
                     <Badge variant={s.is_active === false ? "secondary" : "default"}>
@@ -461,6 +481,13 @@ export default function MobileTbm() {
                       <div className="text-xs bg-muted/40 rounded p-2 whitespace-pre-wrap line-clamp-3">
                         {s.briefing_summary}
                       </div>
+                    )}
+                    {parseTbmPhotoUrls(s.photo_urls).length > 0 && (
+                      <TbmSessionPhotos
+                        projectId={projectId!}
+                        sessionId={s.id}
+                        urls={s.photo_urls}
+                      />
                     )}
                     {viewingToday && (
                       <Button

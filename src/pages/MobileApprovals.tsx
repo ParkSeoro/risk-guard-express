@@ -19,7 +19,7 @@ import {
   entityTypeLabel,
   isSubmitterApprovalStep,
 } from "@/lib/approvalRules";
-import { formatPendingApprovalMeta, mapApprovalActionError } from "@/lib/approvalInboxMeta";
+import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle } from "@/lib/approvalInboxMeta";
 import {
   permitPostStepKind,
   permitPostStepBadge,
@@ -204,7 +204,7 @@ export default function MobileApprovals() {
             <Badge variant="outline" className="text-xs">{r.step || "결재"}</Badge>
             {r.step_order && <Badge variant="outline" className="text-xs">{r.step_order}단계</Badge>}
           </div>
-          <div className="font-medium text-sm">{r.entity_title || "(제목 없음)"}</div>
+          <div className="font-medium text-sm">{pendingInboxTitle(r)}</div>
           <div className="text-xs text-muted-foreground">
             {formatPendingApprovalMeta(r) || (r.created_at ? `요청 ${new Date(r.created_at).toLocaleString("ko-KR")}` : "")}
           </div>

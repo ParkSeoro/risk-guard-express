@@ -8,6 +8,17 @@ export type PendingApprovalRow = {
   approval_version?: number | null;
 };
 
+/** Inbox row title. Feedback RPC used to return '' → UI showed '-'. */
+export function pendingInboxTitle(e: {
+  entity_type?: string | null;
+  entity_title?: string | null;
+}): string {
+  const title = String(e.entity_title || "").trim();
+  if (title) return title;
+  if (e.entity_type === "assessment_run_feedback") return "위험성평가 피드백";
+  return "-";
+}
+
 /** Subtitle so two same-title permits (회사·인원·재상신) are distinguishable. */
 export function formatPendingApprovalMeta(e: PendingApprovalRow): string {
   const parts: string[] = [];

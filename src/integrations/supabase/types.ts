@@ -7518,6 +7518,7 @@ export type Database = {
           leader_name: string
           location: string
           process_category: string | null
+          photo_urls: Json
           prohibited_actions: string
           project_id: string
           qr_token: string
@@ -7546,6 +7547,7 @@ export type Database = {
           leader_name?: string
           location?: string
           process_category?: string | null
+          photo_urls?: Json
           prohibited_actions?: string
           project_id: string
           qr_token?: string
@@ -7574,6 +7576,7 @@ export type Database = {
           leader_name?: string
           location?: string
           process_category?: string | null
+          photo_urls?: Json
           prohibited_actions?: string
           project_id?: string
           qr_token?: string

@@ -185,18 +185,58 @@ export async function saveDailyWorkAck(payload: DailyAckPayload): Promise<{ id: 
   return { id: (data as any)?.id };
 }
 
-/** Reuse daily signature on linked TBM sessions (if any). */
+/**
+ * Check-in signature stamps the assigned permit TBM.
+ * If the worker is not on any permit crew, stamp the company's today's TBM instead.
+ * Never copies onto every same-day TBM when a linked permit TBM exists.
+ */
+export function pickAckTbmSessionIds(opts: {
+  assignedPermitTbmIds: Array<string | null | undefined>;
+  companyTodayTbmIds: Array<string | null | undefined>;
+}): string[] {
+  const assigned = [
+    ...new Set(opts.assignedPermitTbmIds.map((id) => String(id || "").trim()).filter(Boolean)),
+  ];
+  if (assigned.length > 0) return assigned;
+  return [...new Set(opts.companyTodayTbmIds.map((id) => String(id || "").trim()).filter(Boolean))];
+}
+
+async function resolveAckTbmSessionIds(payload: DailyAckPayload): Promise<string[]> {
+  let assignedPermitTbmIds: string[] = [];
+  if (payload.permitIds.length) {
+    const { data: permits } = await supabase
+      .from("work_permits" as any)
+      .select("tbm_session_id")
+      .in("id", payload.permitIds);
+    assignedPermitTbmIds = ((permits as any[]) || [])
+      .map((p) => p.tbm_session_id)
+      .filter(Boolean);
+  }
+
+  let companyTodayTbmIds: string[] = [];
+  const { data: worker } = await supabase
+    .from("workers")
+    .select("company_id")
+    .eq("id", payload.workerId)
+    .maybeSingle();
+  const companyId = (worker as any)?.company_id as string | null;
+  if (companyId) {
+    const { data: sessions } = await supabase
+      .from("tbm_sessions" as any)
+      .select("id")
+      .eq("project_id", payload.projectId)
+      .eq("company_id", companyId)
+      .eq("tbm_date", todaySeoulDate())
+      .or("is_deleted.is.null,is_deleted.eq.false");
+    companyTodayTbmIds = ((sessions as any[]) || []).map((s) => s.id).filter(Boolean);
+  }
+
+  return pickAckTbmSessionIds({ assignedPermitTbmIds, companyTodayTbmIds });
+}
+
+/** Reuse daily signature on the linked (or company-today fallback) TBM. */
 async function syncAckToTbm(payload: DailyAckPayload) {
-  if (!payload.permitIds.length) return;
-  const { data: permits } = await supabase
-    .from("work_permits" as any)
-    .select("tbm_session_id")
-    .in("id", payload.permitIds);
-  const tbmIds = [
-    ...new Set(
-      ((permits as any[]) || []).map((p) => p.tbm_session_id).filter(Boolean),
-    ),
-  ] as string[];
+  const tbmIds = await resolveAckTbmSessionIds(payload);
   for (const tbmId of tbmIds) {
     const { data, error } = await supabase.rpc("upsert_tbm_participation_from_ack", {
       _tbm_session_id: tbmId,

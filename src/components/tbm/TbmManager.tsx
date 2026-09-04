@@ -20,6 +20,8 @@ import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import { todayKst } from '@/lib/permitWorkDate';
 import { fillMissingTbmSignatures, isRenderableSignature } from '@/lib/permitCrewSignatures';
 import { useAuth } from '@/contexts/AuthContext';
+import { TbmSessionPhotos } from '@/components/tbm/TbmSessionPhotos';
+import { parseTbmPhotoUrls, tbmPhotoCountLabel } from '@/lib/tbmPhotos';
 
 
 interface Props {
@@ -34,6 +36,7 @@ type TbmSession = {
   qr_token: string; is_active: boolean; briefing_summary: string; briefing_risks: any;
   work_content?: string; work_steps?: string; special_notes?: string; prohibited_actions?: string;
   process_category?: string; company_id?: string; company_name?: string;
+  photo_urls?: unknown;
 };
 
 const BRIEFING_TEMPLATE = `■ 오늘 작업 설명:
@@ -130,6 +133,12 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     const cs = await fetchProjectCompanies(projectId);
     setCompanies(cs.map(c => ({ id: c.id, name: c.name, type: c.type })));
     setLoading(false);
+  };
+
+  const patchSessionPhotos = (sessionId: string, next: string[]) => {
+    setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, photo_urls: next } : s)));
+    setShowParts((cur) => (cur?.id === sessionId ? { ...cur, photo_urls: next } : cur));
+    setEditing((cur) => (cur?.id === sessionId ? { ...cur, photo_urls: next } : cur));
   };
 
 
@@ -435,6 +444,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
     const risks: Array<{ hazard?: string; grade?: string; measure?: string }> =
       Array.isArray(risksRaw) ? risksRaw : (risksRaw ? (() => { try { return JSON.parse(risksRaw); } catch { return []; } })() : []);
     const partsList = fillMissingTbmSignatures((parts as any[]) || [], (acks as any[]) || []);
+    const photoUrls = parseTbmPhotoUrls(sAny.photo_urls);
 
     const w = window.open('', '_blank');
     if (!w) { toast({ title: '팝업이 차단되었습니다.', variant: 'destructive' }); return; }
@@ -477,6 +487,8 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         .center { text-align: center; }
         .muted { color: #777; }
         td img { height: 14mm; max-width: 40mm; object-fit: contain; }
+        .photos { display: flex; gap: 3mm; flex-wrap: wrap; }
+        .photos img { height: 42mm; max-width: 62mm; object-fit: cover; border: 1px solid #333; }
         /* 서명표는 한 장에 맞추지 않고 인원 수만큼 다음 장으로 이어짐 */
         html, body { height: auto; overflow: visible; }
         table, thead, tbody { page-break-inside: auto; }
@@ -518,7 +530,12 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
         <tr><td style="white-space:pre-wrap;min-height:18mm">${esc(s.briefing_summary || '-')}</td></tr>
       </table>
 
-      <h2>8. 근로자 서명</h2>
+      <h2>8. 실시 사진</h2>
+      ${photoUrls.length === 0
+        ? `<p class="muted">첨부된 실시 사진 없음</p>`
+        : `<div class="photos">${photoUrls.map((u) => `<img src="${esc(u)}" alt="TBM 실시 사진"/>`).join('')}</div>`}
+
+      <h2>9. 근로자 서명</h2>
       <table>
         <thead><tr>
           <th style="width:8%" class="center">No</th>
@@ -550,7 +567,7 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <h3 className="font-semibold flex items-center gap-2"><QrCode className="h-4 w-4" /> TBM 세션 (QR 근로자 참여)</h3>
+        <h3 className="font-semibold flex items-center gap-2"><QrCode className="h-4 w-4" /> TBM 세션</h3>
         <div className="flex gap-2">
           <Button
             size="sm"
@@ -743,6 +760,11 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
                     {s.company_name && (
                       <Badge variant="outline" className="text-[10px]">{s.company_name}</Badge>
                     )}
+                    {tbmPhotoCountLabel(parseTbmPhotoUrls(s.photo_urls)) && (
+                      <Badge variant="outline" className="text-[10px]">
+                        {tbmPhotoCountLabel(parseTbmPhotoUrls(s.photo_urls))}
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">{s.tbm_date} · {s.location} · {s.leader_name}</p>
                 </div>
@@ -841,6 +863,19 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
               <Textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={8} placeholder={BRIEFING_TEMPLATE} />
             </section>
 
+            {editing && (
+              <section className="space-y-2 rounded-md border p-3">
+                <p className="text-xs font-semibold text-muted-foreground">⑥ 실시 사진</p>
+                <TbmSessionPhotos
+                  projectId={projectId}
+                  sessionId={editing.id}
+                  urls={editing.photo_urls}
+                  editable
+                  onUrlsChange={(next) => patchSessionPhotos(editing.id, next)}
+                />
+              </section>
+            )}
+
             <p className="text-xs text-warning">⚠ 회사 선택 필수: QR 스캔 시 해당 회사의 위험성평가만 매칭됩니다.</p>
             <Button onClick={save} className="w-full">{editing ? '수정' : '생성'}</Button>
           </div>
@@ -925,6 +960,15 @@ export default function TbmManager({ projectId, runId, defaultRisks = [] }: Prop
       <Dialog open={!!showParts} onOpenChange={(v) => !v && setShowParts(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>{showParts?.title} 참여자 ({participants.length}명)</DialogTitle></DialogHeader>
+          {showParts && (
+            <TbmSessionPhotos
+              projectId={projectId}
+              sessionId={showParts.id}
+              urls={showParts.photo_urls}
+              editable
+              onUrlsChange={(next) => patchSessionPhotos(showParts.id, next)}
+            />
+          )}
           <div className="max-h-[60vh] overflow-y-auto space-y-2">
             {participants.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">아직 참여자가 없습니다.</p>

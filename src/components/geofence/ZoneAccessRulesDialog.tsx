@@ -28,6 +28,8 @@ import {
   buildAccessRules,
   parseAccessRules,
   zoneCategorySchema,
+  isPresenceZoneCategory,
+  defaultColorForZoneCategory,
   type ZoneCategory,
 } from "@/lib/tracking/accessRules";
 import { jobCategoryEntries } from "@/lib/jobCategories";
@@ -116,19 +118,22 @@ export default function ZoneAccessRulesDialog({
     setJobTypes((prev) => (on ? [...new Set([...prev, job])] : prev.filter((x) => x !== job)));
   };
 
+  const presence = isPresenceZoneCategory(category);
   const hasTargets = companyIds.length > 0 || jobTypes.length > 0;
-  const canSave = (!!shape || !!editZone) && hasTargets;
+  const canSave = (!!shape || !!editZone) && (presence || hasTargets);
 
   const handleSave = async () => {
     if (!canSave) return;
     const catParsed = zoneCategorySchema.safeParse(category);
     if (!catParsed.success) return;
-    const access_rules = buildAccessRules(ruleType, companyIds, jobTypes);
+    const access_rules = presence
+      ? buildAccessRules("DENY", ["00000000-0000-0000-0000-000000000000"], [])
+      : buildAccessRules(ruleType, companyIds, jobTypes);
     await onSave({
-      name: name.trim() || "위험구역",
+      name: name.trim() || (presence ? category : "위험구역"),
       zone_category: catParsed.data,
       zone_color: zoneColor,
-      rule_type: ruleType,
+      rule_type: presence ? "DENY" : ruleType,
       access_rules,
       shape: shape,
       zoneId: editZone?.id,
@@ -148,7 +153,15 @@ export default function ZoneAccessRulesDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editZone ? "구역 통제 조건 수정" : "위험구역 속성 · 출입 통제"}</DialogTitle>
+          <DialogTitle>
+          {editZone
+            ? presence
+              ? "분포 구역 수정"
+              : "구역 통제 조건 수정"
+            : presence
+              ? "분포 구역 (일반·작업)"
+              : "위험구역 속성 · 출입 통제"}
+        </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 text-sm">
@@ -169,7 +182,15 @@ export default function ZoneAccessRulesDialog({
               value={category}
               onValueChange={(v) => {
                 const parsed = zoneCategorySchema.safeParse(v);
-                if (parsed.success) setCategory(parsed.data);
+                if (!parsed.success) return;
+                setCategory(parsed.data);
+                setZoneColor(defaultColorForZoneCategory(parsed.data));
+                if (parsed.data === "일반" && (name === "위험구역" || name === "작업구역")) {
+                  setName("일반구역");
+                }
+                if (parsed.data === "작업구역" && (name === "위험구역" || name === "일반구역")) {
+                  setName("작업구역");
+                }
               }}
             >
               <SelectTrigger>
@@ -203,7 +224,13 @@ export default function ZoneAccessRulesDialog({
             </div>
           </div>
 
-          <div className="space-y-2">
+          {presence && (
+            <p className="text-xs text-muted-foreground rounded-md bg-muted/50 px-2 py-1.5">
+              근로자마다 지정하지 않습니다. 이 폴리곤 안에 GPS가 들어오면 분포도에 자동으로 집계됩니다. 출입 알람은 없습니다.
+            </p>
+          )}
+
+          {!presence && <div className="space-y-2">
             <Label>통제 방식</Label>
             <div className="space-y-2 rounded-md border p-2.5">
               <label className="flex items-start gap-2.5 cursor-pointer">
@@ -257,8 +284,10 @@ export default function ZoneAccessRulesDialog({
                 경고를 받습니다. 특정 업체만 막을 때만 업체를 선택하세요.
               </p>
             )}
-          </div>
+          </div>}
 
+          {!presence && (
+            <>
           <div className="space-y-2">
             <Label>대상 지정 — 업체</Label>
             <div className="space-y-1 max-h-32 overflow-auto rounded-md border p-2">
@@ -296,8 +325,10 @@ export default function ZoneAccessRulesDialog({
               ))}
             </div>
           </div>
+            </>
+          )}
 
-          {!hasTargets && (
+          {!presence && !hasTargets && (
             <p className="text-[10px] text-amber-600">업체 또는 직종을 1개 이상 선택하세요.</p>
           )}
 

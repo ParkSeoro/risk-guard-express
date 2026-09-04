@@ -1,5 +1,5 @@
 import { pointInPolygon } from "./geofence";
-import { isAccessForbidden } from "./accessRules";
+import { isAccessForbidden, isPresenceZoneCategory } from "./accessRules";
 
 export type GeoPoint = { lat: number; lng: number };
 
@@ -97,6 +97,7 @@ export type BanSubject = {
  * ALLOW = whitelist, DENY = blacklist (see accessRules.ts).
  */
 export function isSubjectBanned(zone: RestrictedZoneGeom, subject: BanSubject): boolean {
+  if (isPresenceZoneCategory(zone.zone_category)) return false;
   return isAccessForbidden(zone.access_rules, subject, {
     banned_worker_ids: zone.banned_worker_ids,
     banned_company_ids: zone.banned_company_ids,
@@ -129,6 +130,7 @@ export function minDistanceToRestrictedZoneEdge(
   const here = { lat, lng };
   for (const z of zones) {
     if (z.is_active === false) continue;
+    if (isPresenceZoneCategory(z.zone_category)) continue;
     if (pointInRestrictedZone(lat, lng, z)) return 0;
     if (z.geometry_type === "radius" && z.center_lat != null && z.center_lng != null && z.radius_m) {
       const d =

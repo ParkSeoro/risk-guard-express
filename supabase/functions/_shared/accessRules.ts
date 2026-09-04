@@ -98,3 +98,8 @@ export function isAccessForbidden(
 
   return subjectMatchesTargets(rules, subject);
 }
+
+/** Keep in sync with src/lib/tracking/accessRules.ts */
+export function isPresenceZoneCategory(value: string | null | undefined): boolean {
+  return value === "일반" || value === "작업구역";
+}

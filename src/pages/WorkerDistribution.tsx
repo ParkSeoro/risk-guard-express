@@ -8,9 +8,11 @@ import { Users, MapPin, Building2, Activity, Radio, RefreshCw } from "lucide-rea
 import { isClientType } from "@/lib/companyTypes";
 import { loadCornersFromMap, type AnchorMap } from "@/lib/mapBounds";
 import { latLngToUv } from "@/lib/tracking/imageSpaceGeo";
+import type { RestrictedZoneGeom } from "@/lib/tracking/restrictedZoneGeom";
 import {
   distributionDotJitter,
   distributionImagePoint,
+  matchDistributionZone,
   zoneCategoryToType,
 } from "@/lib/workerDistribution";
 
@@ -79,6 +81,7 @@ export default function WorkerDistribution() {
   const [maps, setMaps] = useState<SiteMap[]>([]);
   const [activeMap, setActiveMap] = useState<SiteMap | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
+  const [geoZones, setGeoZones] = useState<RestrictedZoneGeom[]>([]);
   const [rows, setRows] = useState<DistRow[]>([]);
   const [positions, setPositions] = useState<DistPos[]>([]);
   const [lastSource, setLastSource] = useState<"realtime" | "polling" | "init">("init");
@@ -172,6 +175,7 @@ export default function WorkerDistribution() {
   useEffect(() => {
     if (!activeMap) {
       setZones([]);
+      setGeoZones([]);
       return;
     }
     const corners = loadCornersFromMap(activeMap);
@@ -183,7 +187,7 @@ export default function WorkerDistribution() {
         .eq("is_deleted", false),
       supabase
         .from("restricted_zones")
-        .select("id,name,geo_polygon,zone_category,zone_color,is_active")
+        .select("id,name,geometry_type,geo_polygon,center_lat,center_lng,radius_m,zone_category,zone_color,is_active")
         .eq("project_id", projectId)
         .eq("is_deleted", false)
         .eq("is_active", true),
@@ -197,11 +201,27 @@ export default function WorkerDistribution() {
         polygon: (z.polygon || []) as { x: number; y: number }[],
       }));
       const fromUnified: Zone[] = [];
+      const geo: RestrictedZoneGeom[] = ((unified.data || []) as any[]).map((z) => ({
+        id: z.id,
+        name: z.name,
+        geometry_type: z.geometry_type === "radius" ? "radius" : "polygon",
+        geo_polygon: Array.isArray(z.geo_polygon) ? z.geo_polygon : null,
+        center_lat: z.center_lat == null ? null : Number(z.center_lat),
+        center_lng: z.center_lng == null ? null : Number(z.center_lng),
+        radius_m: z.radius_m == null ? null : Number(z.radius_m),
+        banned_worker_ids: [],
+        banned_company_ids: [],
+        banned_job_types: [],
+        zone_category: z.zone_category,
+        zone_color: z.zone_color,
+        is_active: z.is_active !== false,
+      }));
+      setGeoZones(geo);
       if (corners) {
-        for (const z of (unified.data || []) as any[]) {
-          const ring = Array.isArray(z.geo_polygon) ? z.geo_polygon : null;
+        for (const z of geo) {
+          const ring = z.geo_polygon;
           if (!ring || ring.length < 3) continue;
-          const polygon = ring.map((p: any) => {
+          const polygon = ring.map((p) => {
             const uv = latLngToUv({ lat: Number(p.lat), lng: Number(p.lng) }, corners);
             return { x: uv.u, y: uv.v };
           });
@@ -244,27 +264,56 @@ export default function WorkerDistribution() {
   };
 
   const { perZone, byCompany, totalIn, companyCount } = useMemo(() => {
-    const perZone: Record<string, number> = {};
-    const byCompany: Record<string, { name: string; total: number; zones: { zoneId: string | null; count: number }[] }> = {};
+    const companyTotal: Record<string, { name: string; total: number }> = {};
     let totalIn = 0;
     for (const r of rows) {
       totalIn += r.headcount;
-      const zKey = r.zone_id || "unknown";
-      perZone[zKey] = (perZone[zKey] || 0) + r.headcount;
       const cKey = r.company_id || "unknown";
-      if (!byCompany[cKey]) {
-        byCompany[cKey] = { name: r.company_name || "(미지정)", total: 0, zones: [] };
+      if (!companyTotal[cKey]) {
+        companyTotal[cKey] = { name: r.company_name || "(미지정)", total: 0 };
       }
-      byCompany[cKey].total += r.headcount;
-      byCompany[cKey].zones.push({ zoneId: r.zone_id, count: r.headcount });
+      companyTotal[cKey].total += r.headcount;
     }
+
+    const perZone: Record<string, number> = {};
+    const byCompany: Record<string, { name: string; total: number; zones: { zoneId: string | null; count: number }[] }> = {};
+    const bump = (cKey: string, name: string, zoneId: string | null, n: number) => {
+      if (!byCompany[cKey]) byCompany[cKey] = { name, total: 0, zones: [] };
+      byCompany[cKey].total += n;
+      const row = byCompany[cKey].zones.find((z) => z.zoneId === zoneId);
+      if (row) row.count += n;
+      else byCompany[cKey].zones.push({ zoneId, count: n });
+      const zKey = zoneId || "unknown";
+      perZone[zKey] = (perZone[zKey] || 0) + n;
+    };
+
+    if (geoZones.length === 0) {
+      for (const r of rows) {
+        bump(r.company_id || "unknown", r.company_name || "(미지정)", r.zone_id, r.headcount);
+      }
+    } else {
+      const zonedByCompany: Record<string, number> = {};
+      for (const p of positions) {
+        const hit = matchDistributionZone(p.lat, p.lng, geoZones);
+        if (!hit) continue;
+        const cKey = p.company_id || "unknown";
+        zonedByCompany[cKey] = (zonedByCompany[cKey] || 0) + 1;
+        bump(cKey, p.company_name || companyTotal[cKey]?.name || "(미지정)", hit.id, 1);
+      }
+      for (const [cKey, info] of Object.entries(companyTotal)) {
+        const unknown = Math.max(0, info.total - (zonedByCompany[cKey] || 0));
+        if (unknown > 0) bump(cKey, info.name, null, unknown);
+        else if (!byCompany[cKey]) byCompany[cKey] = { name: info.name, total: info.total, zones: [] };
+      }
+    }
+
     return {
       perZone,
       byCompany,
       totalIn,
-      companyCount: Object.keys(byCompany).length,
+      companyCount: Object.keys(companyTotal).length || Object.keys(byCompany).length,
     };
-  }, [rows]);
+  }, [rows, positions, geoZones]);
 
   const corners = useMemo(() => (activeMap ? loadCornersFromMap(activeMap) : null), [activeMap]);
 
@@ -314,7 +363,7 @@ export default function WorkerDistribution() {
             <Users className="h-6 w-6 text-primary" /> 현장 근로자 분포도
           </h1>
           <p className="text-sm text-muted-foreground">
-            오늘 출근자 집계 · GPS가 있으면 맵에 점 · 이름·전화 비노출
+            오늘 출근자 집계 · 구역은 맵에 한 번만 그리면 GPS가 자동 배정 · 이름·전화 비노출
             {!canSeeFullSite && " · 접근 가능 회사 범위"}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -530,7 +579,7 @@ export default function WorkerDistribution() {
           <CardContent className="space-y-2 max-h-[520px] overflow-auto">
             {zones.length === 0 && (
               <div className="text-sm text-muted-foreground">
-                활성 구역이 없습니다. 출근자는 아래 미지정으로 집계되고, GPS가 있으면 맵에 점으로 표시됩니다.
+                활성 구역이 없습니다. 통합 관제맵에서 일반·작업구역을 그리면 GPS가 있는 출근자가 자동으로 들어갑니다. 근로자마다 지정할 필요는 없습니다.
               </div>
             )}
             {zones.map((z) => {

@@ -3,8 +3,10 @@ import {
   distributionDotJitter,
   distributionImagePoint,
   distributionZoneId,
+  matchDistributionZone,
   zoneCategoryToType,
 } from "@/lib/workerDistribution";
+import type { RestrictedZoneGeom } from "@/lib/tracking/restrictedZoneGeom";
 
 describe("distributionZoneId", () => {
   const now = new Date("2026-09-05T07:30:00+09:00");
@@ -55,7 +57,32 @@ describe("zoneCategoryToType / jitter", () => {
     expect(zoneCategoryToType("공정(위험)구역")).toBe("danger");
     expect(zoneCategoryToType("제한구역")).toBe("restricted");
     expect(zoneCategoryToType("작업구역")).toBe("work");
+    expect(zoneCategoryToType("일반")).toBe("normal");
     expect(zoneCategoryToType(null)).toBe("normal");
+  });
+
+  it("auto-assigns GPS to a drawn work zone (not per-worker)", () => {
+    const work: RestrictedZoneGeom = {
+      id: "work-1",
+      name: "작업구역",
+      geometry_type: "polygon",
+      geo_polygon: [
+        { lat: 34.8513, lng: 127.7003 },
+        { lat: 34.8513, lng: 127.7008 },
+        { lat: 34.8517, lng: 127.7008 },
+        { lat: 34.8517, lng: 127.7003 },
+      ],
+      center_lat: null,
+      center_lng: null,
+      radius_m: null,
+      banned_worker_ids: [],
+      banned_company_ids: [],
+      banned_job_types: [],
+      zone_category: "작업구역",
+      is_active: true,
+    };
+    expect(matchDistributionZone(34.8515221, 127.700508, [work])?.id).toBe("work-1");
+    expect(matchDistributionZone(37.5, 127.0, [work])).toBeNull();
   });
 
   it("jitters stacked dots away from the first", () => {

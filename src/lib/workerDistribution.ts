@@ -1,3 +1,5 @@
+import { isPresenceZoneCategory } from "@/lib/tracking/accessRules";
+import { pointInRestrictedZone, type RestrictedZoneGeom } from "@/lib/tracking/restrictedZoneGeom";
 import { latLngToUv } from "@/lib/tracking/imageSpaceGeo";
 
 type LatLng = { lat: number; lng: number };
@@ -42,11 +44,28 @@ export function distributionImagePoint(
 export function zoneCategoryToType(
   category?: string | null,
 ): "normal" | "work" | "restricted" | "danger" {
+  if (category === "일반") return "normal";
+  if (category === "작업구역") return "work";
   const c = (category || "").toLowerCase();
   if (/위험|밀폐|추락|danger/.test(c)) return "danger";
   if (/제한|restricted/.test(c)) return "restricted";
   if (/작업|work/.test(c)) return "work";
   return "normal";
+}
+
+/** GPS 점이 들어간 구역. 위험 > 작업구역 > 일반. 근로자 개별 지정 없음. */
+export function matchDistributionZone(
+  lat: number,
+  lng: number,
+  zones: RestrictedZoneGeom[],
+): RestrictedZoneGeom | null {
+  const hits = zones.filter((z) => z.is_active !== false && pointInRestrictedZone(lat, lng, z));
+  if (!hits.length) return null;
+  const rank = (z: RestrictedZoneGeom) => {
+    if (!isPresenceZoneCategory(z.zone_category)) return 2;
+    return z.zone_category === "작업구역" ? 1 : 0;
+  };
+  return [...hits].sort((a, b) => rank(b) - rank(a))[0];
 }
 
 /** Spread stacked GPS dots so a gate cluster is visible. */

@@ -4,7 +4,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { z } from "https://esm.sh/zod@3.23.8";
-import { isAccessForbidden } from "../_shared/accessRules.ts";
+import { isAccessForbidden, isPresenceZoneCategory } from "../_shared/accessRules.ts";
 import { applyGpsCalibration, parseGpsCalibration } from "../_shared/gpsCalibration.ts";
 import {
   digitsOnlyPhone,
@@ -112,12 +112,14 @@ function isBanned(
   zone: {
     access_rules?: unknown;
     rule_type?: string | null;
+    zone_category?: string | null;
     banned_worker_ids?: string[] | null;
     banned_company_ids?: string[] | null;
     banned_job_types?: string[] | null;
   },
   subject: { worker_id?: string | null; company_id?: string | null; job_type?: string | null }
 ) {
+  if (isPresenceZoneCategory(zone.zone_category)) return false;
   return isAccessForbidden(zone.access_rules, subject, {
     banned_worker_ids: zone.banned_worker_ids,
     banned_company_ids: zone.banned_company_ids,
@@ -299,22 +301,38 @@ Deno.serve(async (req) => {
       .eq("is_active", true);
 
     let matchedRestricted: any = null;
+    let matchedPresence: any = null;
+    const zoneInside = (z: any) => {
+      if (z.geometry_type === "radius") {
+        if (z.center_lat != null && z.center_lng != null && z.radius_m) {
+          return (
+            haversineM(body.lat, body.lng, Number(z.center_lat), Number(z.center_lng)) <=
+            Number(z.radius_m)
+          );
+        }
+        return false;
+      }
+      return z.geo_polygon ? pointInPolygon(body.lng, body.lat, z.geo_polygon as any) : false;
+    };
     if (body.restricted_zone_id) {
       matchedRestricted = (rZones || []).find((z: any) => z.id === body.restricted_zone_id) || null;
       if (matchedRestricted && !isBanned(matchedRestricted, subject)) matchedRestricted = null;
     } else {
       for (const z of rZones || []) {
-        let inside = false;
-        if (z.geometry_type === "radius") {
-          if (z.center_lat != null && z.center_lng != null && z.radius_m) {
-            inside =
-              haversineM(body.lat, body.lng, Number(z.center_lat), Number(z.center_lng)) <=
-              Number(z.radius_m);
-          }
-        } else if (z.geo_polygon) {
-          inside = pointInPolygon(body.lng, body.lat, z.geo_polygon as any);
+        if (!zoneInside(z)) continue;
+        if (!matchedPresence) matchedPresence = z;
+        else if (
+          isPresenceZoneCategory(matchedPresence.zone_category) &&
+          !isPresenceZoneCategory(z.zone_category)
+        ) {
+          matchedPresence = z;
+        } else if (
+          matchedPresence.zone_category === "일반" &&
+          z.zone_category === "작업구역"
+        ) {
+          matchedPresence = z;
         }
-        if (inside && isBanned(z, subject)) {
+        if (isBanned(z, subject)) {
           matchedRestricted = z;
           break;
         }
@@ -458,7 +476,7 @@ Deno.serve(async (req) => {
       const lastZone =
         eventType === "exit"
           ? null
-          : matchedZoneId ?? lastEvent?.zone_id ?? null;
+          : matchedRestricted?.id ?? matchedPresence?.id ?? matchedZoneId ?? lastEvent?.zone_id ?? null;
 
       let skipUpsert = false;
       if (!eventType) {
@@ -504,12 +522,16 @@ Deno.serve(async (req) => {
     // Insert failures are surfaced via event_insert_* + console.error only.
     return new Response(
       JSON.stringify({
-        zone_id: matchedZoneId,
+        zone_id: matchedRestricted?.id ?? matchedPresence?.id ?? matchedZoneId,
         restricted_zone_id: matchedRestricted?.id ?? null,
-        zone_name: matchedRestricted?.name || zoneMeta?.name || null,
+        zone_name: matchedRestricted?.name || matchedPresence?.name || zoneMeta?.name || null,
         zone_type: matchedRestricted
           ? "danger"
-          : zoneMeta?.zone_type || null,
+          : matchedPresence
+            ? matchedPresence.zone_category === "작업구역"
+              ? "work"
+              : "normal"
+            : zoneMeta?.zone_type || null,
         source,
         event_type: eventType,
         event_insert_ok: eventType ? eventInsertError == null : null,

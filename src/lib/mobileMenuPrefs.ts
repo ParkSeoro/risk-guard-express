@@ -5,7 +5,7 @@
 export type MobileTileKey =
   | "inspect" | "incident" | "tbm" | "scan" | "permits" | "actions"
   | "alerts" | "approvals" | "risk" | "work-plans" | "workers"
-  | "attendance" | "daily-health" | "manual";
+  | "attendance" | "daily-health" | "manual" | "distribution";
 
 export const ALL_TILES: { key: MobileTileKey; label: string }[] = [
   { key: "inspect", label: "안전점검" },
@@ -22,15 +22,16 @@ export const ALL_TILES: { key: MobileTileKey; label: string }[] = [
   { key: "attendance", label: "입퇴장 현황" },
   { key: "daily-health", label: "일일 건강로그" },
   { key: "manual", label: "사용 설명서" },
+  { key: "distribution", label: "근로자 분포" },
 ];
 
 const PRESETS: Record<string, MobileTileKey[]> = {
   // 일반 근로자 — 출퇴근/TBM/허가서 위주
   worker: ["scan", "tbm", "permits", "alerts", "daily-health", "manual"],
   // 현장 관리자 — 점검/TBM/허가서/근로자
-  supervisor: ["inspect", "tbm", "permits", "incident", "workers", "attendance", "alerts", "actions", "manual"],
+  supervisor: ["inspect", "tbm", "permits", "incident", "workers", "attendance", "distribution", "alerts", "actions", "manual"],
   // 안전관리자/마스터 — 전체
-  safety: ["inspect", "incident", "tbm", "scan", "permits", "actions", "alerts", "approvals", "risk", "work-plans", "workers", "attendance", "daily-health", "manual"],
+  safety: ["inspect", "incident", "tbm", "scan", "permits", "actions", "alerts", "approvals", "risk", "work-plans", "workers", "attendance", "distribution", "daily-health", "manual"],
 };
 
 const KEY = "mobile:tiles:v1";

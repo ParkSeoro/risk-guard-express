@@ -346,4 +346,5 @@ const TILE_DEFS: Record<MobileTileKey, { icon: any; label: string; sub: string; 
   attendance: { icon: HardHat, label: "입퇴장 현황", sub: "근로자 QR/명부", to: "/app/worker/workers" },
   "daily-health": { icon: HeartPulse, label: "일일 건강로그", sub: "오늘 컨디션", to: "/app/worker/daily-health-log" },
   manual: { icon: BookOpen, label: "사용 설명서", sub: "도움말", to: "/manual" },
+  distribution: { icon: MapPin, label: "근로자 분포", sub: "출근·구역", to: "/app/worker/distribution" },
 };

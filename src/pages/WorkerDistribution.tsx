@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useGlobalProjectAccess } from "@/components/AppLayout";
+import { useDistributionAccess } from "@/hooks/useDistributionAccess";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Users, MapPin, Building2, Activity, Radio, RefreshCw } from "lucide-react";
-import { isClientType } from "@/lib/companyTypes";
 import { loadCornersFromMap, type AnchorMap } from "@/lib/mapBounds";
 import { latLngToUv } from "@/lib/tracking/imageSpaceGeo";
 import type { RestrictedZoneGeom } from "@/lib/tracking/restrictedZoneGeom";
@@ -73,10 +72,10 @@ export default function WorkerDistribution() {
     projects,
     selectedProject,
     setSelectedProject,
-    isMaster,
-    userCompanyType,
-    userRole,
-  } = useGlobalProjectAccess();
+    canView,
+    scopeLabel,
+    compact,
+  } = useDistributionAccess();
   const projectId = selectedProject || "";
   const [maps, setMaps] = useState<SiteMap[]>([]);
   const [activeMap, setActiveMap] = useState<SiteMap | null>(null);
@@ -89,15 +88,6 @@ export default function WorkerDistribution() {
   const [rtStatus, setRtStatus] = useState<"connecting" | "connected" | "disconnected">("connecting");
   const [nowTick, setNowTick] = useState(Date.now());
   const [loadError, setLoadError] = useState<string | null>(null);
-
-  const canSeeFullSite =
-    isMaster ||
-    (isClientType(userCompanyType) &&
-      (userRole === "project_admin" ||
-        userRole === "safety_manager" ||
-        userRole === "site_manager" ||
-        userRole === "supervisor" ||
-        userRole === "site_supervisor"));
 
   useEffect(() => {
     if (!projectId) return;
@@ -355,16 +345,25 @@ export default function WorkerDistribution() {
     return { x: sx * 100, y: sy * 100 };
   };
 
+  if (!canView) {
+    return (
+      <div className="p-4 max-w-md mx-auto text-sm text-muted-foreground">
+        근로자 분포는 현장 관리자(마스터·프로젝트관리자·안전관리자·현장소장·감리·관리감독자)만 볼 수 있습니다.
+      </div>
+    );
+  }
+
   return (
-    <div className="container mx-auto p-4 md:p-6 space-y-4">
+    <div className={compact ? "p-3 space-y-3" : "container mx-auto p-4 md:p-6 space-y-4"}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className={`${compact ? "text-lg" : "text-2xl"} font-bold flex items-center gap-2`}>
             <Users className="h-6 w-6 text-primary" /> 현장 근로자 분포도
           </h1>
           <p className="text-sm text-muted-foreground">
             오늘 출근자 집계 · 구역은 맵에 한 번만 그리면 GPS가 자동 배정 · 이름·전화 비노출
-            {!canSeeFullSite && " · 접근 가능 회사 범위"}
+            {" · "}
+            {scopeLabel}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             <Badge
@@ -387,7 +386,7 @@ export default function WorkerDistribution() {
         </div>
         <div className="flex gap-2">
           <Select value={projectId} onValueChange={(v) => setSelectedProject(v)}>
-            <SelectTrigger className="w-[220px]"><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
+            <SelectTrigger className={compact ? "w-full min-w-[10rem]" : "w-[220px]"}><SelectValue placeholder="프로젝트 선택" /></SelectTrigger>
             <SelectContent>
               {projects.map((p) => (
                 <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>

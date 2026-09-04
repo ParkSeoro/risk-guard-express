@@ -220,7 +220,7 @@ function ManagerToday({
       title: "현재 현장 인원",
       value: onSite,
       icon: Users,
-      to: "/app/worker/workers?tab=attendance",
+      to: "/app/worker/distribution",
       tone: "text-emerald-600",
     },
   ];

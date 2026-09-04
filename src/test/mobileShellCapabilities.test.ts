@@ -44,6 +44,9 @@ describe("mobile shell role buckets", () => {
     expect(canMobileApprove("site_manager")).toBe(true);
     expect(mobileCapabilities("worker").has("check_in")).toBe(true);
     expect(mobileCapabilities("safety_manager").has("suspend_workers")).toBe(true);
+    expect(mobileCapabilities("worker").has("view_distribution")).toBe(false);
+    expect(mobileCapabilities("project_admin").has("view_distribution")).toBe(true);
+    expect(mobileCapabilities("master", true).has("view_distribution")).toBe(true);
   });
 
   it("preview modes map to mobile roles", () => {
@@ -57,3 +60,4 @@ describe("mobile shell role buckets", () => {
     expect(roleLabelKo("supervisor")).toBe("감리");
   });
 });
+

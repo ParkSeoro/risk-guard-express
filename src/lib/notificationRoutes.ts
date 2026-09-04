@@ -183,6 +183,7 @@ export function toMobileShellPath(path: string): string {
   if (p.startsWith("/tbm")) return `${WORKER}/tbm`;
   if (p.startsWith("/work-stop")) return `${WORKER}/work-stop`;
   if (p.startsWith("/workers")) return `${WORKER}/workers`;
+  if (p.startsWith("/worker-distribution")) return `${WORKER}/distribution`;
   if (p.startsWith("/announcements")) return `${WORKER}/announcements`;
   if (p.startsWith("/vision-fleet") || p.startsWith("/vision-events")) {
     const q = p.includes("?") ? p.slice(p.indexOf("?")) : "";

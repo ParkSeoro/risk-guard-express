@@ -14,7 +14,8 @@ export type MobileCapability =
   | "view_team_actions"
   | "submit_work_stop"
   | "submit_health"
-  | "check_in";
+  | "check_in"
+  | "view_distribution";
 
 export function mobileCapabilities(
   role: MobileRole | string,
@@ -34,6 +35,7 @@ export function mobileCapabilities(
   caps.add("inspect");
   caps.add("manage_workers");
   caps.add("suspend_workers");
+  caps.add("view_distribution");
   if (bucket === "master") {
     /* master gets manager set */
   }

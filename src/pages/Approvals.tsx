@@ -24,7 +24,7 @@ import {
   sequentialDisplayStatus,
   type ApprovalEntityType,
 } from "@/lib/approvalRules";
-import { formatPendingApprovalMeta, mapApprovalActionError } from "@/lib/approvalInboxMeta";
+import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle } from "@/lib/approvalInboxMeta";
 import { filterRunsByCompanyScope } from "@/lib/companyDocScope";
 import { filterApprovalsKeepingFullDocumentTimeline } from "@/lib/approvalDocumentVisibility";
 import {
@@ -570,7 +570,7 @@ const Approvals = () => {
                   </Badge>
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{e.entity_title || '-'}</div>
+                  <div className="text-sm font-medium truncate">{pendingInboxTitle(e)}</div>
                   <div className="text-xs text-muted-foreground">{formatPendingApprovalMeta(e)}</div>
                   {extendReasons[e.entity_id] ? (
                     <div className="text-xs text-amber-800 mt-0.5 line-clamp-2">사유: {extendReasons[e.entity_id]}</div>
@@ -580,7 +580,7 @@ const Approvals = () => {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => openDocPreview(e.entity_type, e.entity_id, e.entity_title)}
+                      onClick={() => openDocPreview(e.entity_type, e.entity_id, pendingInboxTitle(e))}
                     >
                       <Eye className="h-3 w-3 mr-1" />문서 보기
                     </Button>

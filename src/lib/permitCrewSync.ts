@@ -1,11 +1,7 @@
 /**
  * Sync work_permit_workers to today's on-site (checked-in) workers
  * scoped to the permit's company (never mix peer contractors).
- *
- * Policy:
- * - Early day: expected assignment on the permit is SSOT → keep TBM aligned via syncPermitCrewToTbm.
- * - When real check-ins exist: this replace is safe.
- * - Never wipe an existing crew when on-site (or company-scoped) count is 0.
+ * Kept for scripts; the permit detail UI no longer replaces expected crew from attendance.
  */
 import { supabase } from "@/integrations/supabase/client";
 import { buildPersonnelCountPatch, filterPermitAssignableWorkers } from "@/lib/permitWorkers";

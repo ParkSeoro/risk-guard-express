@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { parseTbmPhotoUrls } from '@/lib/tbmPhotos';
+import { WorkStopPhotos } from '@/components/work-stop/WorkStopPhotos';
 
 /**
  * Hidden on screen, visible on print.
@@ -55,6 +57,12 @@ export default function TbmPrintSection({ runId }: { runId: string }) {
             <strong>{session.title}</strong>
             <span>{session.tbm_date} · {session.location} · 주관: {session.leader_name}</span>
           </div>
+          {parseTbmPhotoUrls(session.photo_urls).length > 0 && (
+            <div className="mb-2">
+              <p className="text-xs font-semibold mb-1">실시 사진</p>
+              <WorkStopPhotos urls={parseTbmPhotoUrls(session.photo_urls)} size="sm" />
+            </div>
+          )}
           {participants.length === 0 ? (
             <p className="text-xs text-muted-foreground">참여자 없음</p>
           ) : (

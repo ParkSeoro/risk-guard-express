@@ -1,9 +1,6 @@
 /**
  * Align work_permit_workers to tbm_participations for a linked TBM.
- * Use when day-of TBM attendance is the source of truth
- * (after workers check in / sign TBM).
- *
- * Never clears the permit crew when TBM has zero participants.
+ * Kept for scripts; the permit detail UI no longer overwrites expected crew from TBM.
  */
 import { supabase } from "@/integrations/supabase/client";
 import { buildPersonnelCountPatch } from "@/lib/permitWorkers";

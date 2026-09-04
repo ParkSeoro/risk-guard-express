@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPendingApprovalMeta, mapApprovalActionError } from "@/lib/approvalInboxMeta";
+import { formatPendingApprovalMeta, mapApprovalActionError, pendingInboxTitle } from "@/lib/approvalInboxMeta";
 
 describe("formatPendingApprovalMeta", () => {
   it("distinguishes two same-title permits by company, crew, and resubmit", () => {
@@ -24,6 +24,24 @@ describe("formatPendingApprovalMeta", () => {
         resubmit_count: 0,
       }),
     ).toBe("2026-08-27 · 담당자(SM) · 정원이엔씨 · 인원 5명");
+  });
+});
+
+describe("pendingInboxTitle", () => {
+  it("uses period_label from RPC and does not show dash for blank feedback", () => {
+    expect(
+      pendingInboxTitle({
+        entity_type: "assessment_run_feedback",
+        entity_title: "2026-09 주간",
+      }),
+    ).toBe("2026-09 주간");
+    expect(
+      pendingInboxTitle({
+        entity_type: "assessment_run_feedback",
+        entity_title: "",
+      }),
+    ).toBe("위험성평가 피드백");
+    expect(pendingInboxTitle({ entity_type: "work_permit", entity_title: "" })).toBe("-");
   });
 });
 

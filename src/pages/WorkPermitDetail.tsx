@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock, Users, ClipboardList, UserCheck, Sparkles, CheckCircle2, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Printer, Save, FileSignature, ShieldCheck, Clock, Users, ClipboardList, Sparkles, CheckCircle2 } from 'lucide-react';
 import { DateTimePicker } from '@/components/ui/datetime-picker';
 import DigPermitForm, { PermitFormData, PermitSignatures, PermitType } from '@/components/permits/DigPermitForm';
 import StandardPermitSheet from '@/components/permits/StandardPermitSheet';
@@ -29,9 +29,7 @@ import {
   fillMissingTbmSignatures,
   type CrewAckSignature,
 } from '@/lib/permitCrewSignatures';
-import { canManagePermitCrew, ensureTbmForPermit } from '@/lib/tbmFromPermit';
-import { syncPermitCrewFromOnSite } from '@/lib/permitCrewSync';
-import { syncPermitCrewFromTbm } from '@/lib/syncPermitCrewFromTbm';
+import { ensureTbmForPermit } from '@/lib/tbmFromPermit';
 import { syncPermitCrewToTbm } from '@/lib/syncPermitCrewToTbm';
 import { printPermitBundle } from '@/lib/printPermitBundle';
 import type { StandardStyle, StandardLabels } from '@/lib/permitStandardStyle';
@@ -105,8 +103,7 @@ export default function WorkPermitDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user, profile } = useAuth();
-  const { userCompanyId, userRole, isMaster } = useGlobalProjectAccess();
-  const canEditCrew = canManagePermitCrew(userRole, isMaster);
+  const { userCompanyId } = useGlobalProjectAccess();
   const listBackPath = approvalsBackOr('/work-permits', searchParams.get('from'));
 
   const [permit, setPermit] = useState<any>(null);
@@ -134,7 +131,6 @@ export default function WorkPermitDetail() {
   const [tbmParticipants, setTbmParticipants] = useState<TbmParticipantPrint[]>([]);
   const [workersDialogOpen, setWorkersDialogOpen] = useState(false);
   const [tbmBusy, setTbmBusy] = useState(false);
-  const [crewBusy, setCrewBusy] = useState(false);
 
   const applyAssignedCrew = (next: {
     workers: PermitWorkerRow[];
@@ -850,93 +846,11 @@ export default function WorkPermitDetail() {
               <Button size="sm" variant="outline" onClick={() => setWorkersDialogOpen(true)}>
                 예상 인원 배정
               </Button>
-              {canEditCrew && permit?.tbm_session_id && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={crewBusy}
-                  title="연결된 TBM 참석자로 허가서 명단을 맞춥니다"
-                  onClick={async () => {
-                    if (!permit?.tbm_session_id) return;
-                    setCrewBusy(true);
-                    const res = await syncPermitCrewFromTbm({
-                      permitId: permit.id,
-                      projectId: permit.project_id,
-                      tbmSessionId: permit.tbm_session_id,
-                      formData: data as any,
-                    });
-                    setCrewBusy(false);
-                    if (!res.ok) {
-                      toast({ title: 'TBM→허가서 맞춤 실패', description: res.error, variant: 'destructive' });
-                      return;
-                    }
-                    toast({ title: `TBM 참석 ${res.count}명으로 허가서 맞춤` });
-                    setData((d) => ({ ...d, personnel_count: res.count }));
-                    await load();
-                  }}
-                >
-                  <RefreshCw className="h-4 w-4 mr-1" />
-                  TBM으로 맞추기
-                </Button>
-              )}
-              {canEditCrew && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={crewBusy}
-                  title="오늘 출근(미퇴근) 근로자로 명단을 갱신한 뒤 TBM과 맞춥니다. 출근 0명이면 기존 배정을 유지합니다."
-                  onClick={async () => {
-                    if (!permit) return;
-                    setCrewBusy(true);
-                    const res = await syncPermitCrewFromOnSite({
-                      permitId: permit.id,
-                      projectId: permit.project_id,
-                      formData: data as any,
-                    });
-                    if (!res.ok) {
-                      // Keep expected crew; still push permit → TBM so both stay aligned
-                      if (permit.tbm_session_id && assignedWorkers.length > 0) {
-                        await syncPermitCrewToTbm({
-                          permitId: permit.id,
-                          tbmSessionId: permit.tbm_session_id,
-                        });
-                      }
-                      setCrewBusy(false);
-                      toast({ title: '명단 유지', description: res.error });
-                      await load();
-                      return;
-                    }
-                    if (permit.tbm_session_id) {
-                      const tbmSync = await syncPermitCrewToTbm({
-                        permitId: permit.id,
-                        tbmSessionId: permit.tbm_session_id,
-                      });
-                      if (!tbmSync.ok) {
-                        setCrewBusy(false);
-                        toast({
-                          title: '출근 반영됨 · TBM 동기화 실패',
-                          description: tbmSync.error,
-                          variant: 'destructive',
-                        });
-                        await load();
-                        return;
-                      }
-                    }
-                    setCrewBusy(false);
-                    toast({ title: `실출근 ${res.count}명 · TBM과 맞춤` });
-                    setData((d) => ({ ...d, personnel_count: res.count }));
-                    await load();
-                  }}
-                >
-                  <UserCheck className="h-4 w-4 mr-1" />
-                  실출근으로 갱신
-                </Button>
-              )}
             </div>
           </div>
           {assignedWorkers.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              지금은 예상 배정 ↔ TBM을 맞춥니다. 출퇴근·TBM 참여가 쌓이면 「TBM으로 맞추기」또는 「실출근으로 갱신」으로 허가서를 맞추세요. 출근 0명이면 배정을 지우지 않습니다.
+              전날 계획한 예상 인원을 배정하세요. 발행 시 TBM 명단에 올라가고, 당일 출근 서명이 그 TBM에 서명으로 붙습니다.
             </p>
           ) : (
             <ul className="text-xs grid sm:grid-cols-2 gap-1">
@@ -1014,7 +928,7 @@ export default function WorkPermitDetail() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            1허가서 = 1 TBM. 배정 근로자는 TBM 참석자로 자동 연동됩니다. AI는 브리핑 초안만 채웁니다.
+            1허가서 = 1 TBM. 예상 배정은 TBM 명단(미서명)으로 들어가고, 출근 서명이 당일 TBM 서명입니다. QR은 선택입니다.
             {permit?.tbm_session_id && tbmTitle
               ? ` 현재: 「${tbmTitle}」 · 참여자 ${tbmParticipants.length}명 / 배정 ${assignedWorkers.length}명`
               : ''}

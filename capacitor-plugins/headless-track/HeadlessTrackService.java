@@ -86,6 +86,25 @@ public class HeadlessTrackService extends Service implements LocationListener {
     super.onDestroy();
   }
 
+  /**
+   * Recents swipe. Capacitor BridgeActivity has no onTaskRemoved; the service does.
+   * stopWithTask=false so we can restart the 3-minute heartbeat from prefs.
+   */
+  @Override
+  public void onTaskRemoved(Intent rootIntent) {
+    SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+    if (!p.getString("project_id", "").isEmpty()) {
+      Intent i = new Intent(this, HeadlessTrackService.class);
+      i.setAction(ACTION_START);
+      if (Build.VERSION.SDK_INT >= 26) {
+        startForegroundService(i);
+      } else {
+        startService(i);
+      }
+    }
+    super.onTaskRemoved(rootIntent);
+  }
+
   /** @return false if we must not keep the process alive */
   private boolean startAsForeground() {
     try {

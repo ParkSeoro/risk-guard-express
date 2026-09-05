@@ -43,12 +43,12 @@ describe("track power policy", () => {
     );
     expect(service).toContain("interval_ms\", 180_000");
     expect(service).toContain("watchMode ? 40f : 15f");
+    expect(service).toContain("public void onTaskRemoved");
     expect(plugin).toContain("public void arm(");
     expect(plugin).toContain("call.getBoolean(\"disarm\")");
-    expect(activity).toContain("onTaskRemoved");
-    expect(activity).toContain("HeadlessTrackService.ACTION_START");
+    expect(activity).not.toContain("onTaskRemoved");
     expect(tracker).toContain("TRACK_BG_HEARTBEAT_MS");
-    expect(tracker).toContain("armHeadlessCompanion");
+    expect(tracker).toContain("startHeadlessCompanion");
     expect(tracker).toContain("distanceFilter: TRACK_BG_DISTANCE_FILTER_M");
     expect(TRACK_BG_DISTANCE_FILTER_M).toBe(30);
   });

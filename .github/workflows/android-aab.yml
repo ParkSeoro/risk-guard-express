@@ -356,12 +356,14 @@ jobs:
             -H "X-OTA-Min-Native-Version: $VC" \
             -H "X-OTA-Channel: stable" \
             -H "Content-Type: application/json" \
-            --data '{}')
+            --data "{\"min_native_only\":true,\"min_native_version\":\"${VC}\",\"channel\":\"stable\"}")
           echo "HTTP $HTTP"
           cat /tmp/min-native.json || true
           if [ "$HTTP" != "200" ]; then
-            echo "::warning::min_native_version ${VC} 저장 실패 (HTTP $HTTP). 마스터가 설정 → 모바일 앱 릴리스에서 직접 넣으세요."
+            echo "::error::min_native_version ${VC} 자동 저장 실패 (HTTP $HTTP). publish-ota-release 배포·시크릿을 확인하세요."
+            exit 1
           fi
+          echo "→ min_native_version=${VC} saved"
 
       - name: Attach to GitHub Release (android-v* 태그)
         if: startsWith(github.ref, 'refs/tags/android-v')

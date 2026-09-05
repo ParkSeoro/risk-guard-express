@@ -17,6 +17,7 @@ import {
   setTrackingConsent,
 } from "@/lib/tracking/locationTracker";
 import { hasCompletedNativePermissions, isNativeApp } from "@/lib/native/isNativeApp";
+import { isForegroundLocationGranted } from "@/lib/native/nativePermissionGate";
 import {
   resolveSiteTrackingFence,
   isInsideResumeFence,
@@ -241,6 +242,20 @@ export default function WorkerGlobalGps() {
 
     const boot = async () => {
       clearResumePoll();
+      if (isNativeApp()) {
+        try {
+          const { Geolocation } = await import("@capacitor/geolocation");
+          const cur = await Geolocation.checkPermissions();
+          if (!isForegroundLocationGranted(cur)) {
+            setGpsBlockReason("no_permission");
+            stopGpsTracking();
+            lastKeyRef.current = null;
+            return;
+          }
+        } catch {
+          /* plugin missing — fall through */
+        }
+      }
       const projectId = await ensureProject();
       if (!projectId) {
         stopGpsTracking();

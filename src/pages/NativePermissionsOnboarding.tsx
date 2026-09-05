@@ -22,11 +22,14 @@ import {
   markNativePermissionsDone,
 } from "@/lib/native/isNativeApp";
 import {
+  ANDROID_LOCATION_TAP_STEPS_KO,
   BATTERY_UNRESTRICTED_STEPS_KO,
   canMarkNativePermissionsDone,
+  IOS_LOCATION_TAP_STEPS_KO,
   isForegroundLocationGranted,
   isPushGranted,
 } from "@/lib/native/nativePermissionGate";
+import { openNativeAppSettings } from "@/lib/native/openNativeAppSettings";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Battery, Bell, Camera, CheckCircle2, MapPin, Shield } from "lucide-react";
@@ -37,21 +40,6 @@ type Step = "location" | "notifications" | "battery" | "camera" | "done";
 
 function nextAfterNotifications(): Step {
   return Capacitor.getPlatform() === "android" ? "battery" : "camera";
-}
-
-async function openAppSettings() {
-  try {
-    const BackgroundGeolocation = registerPlugin<{ openSettings: () => Promise<void> }>(
-      "BackgroundGeolocation",
-    );
-    if (BackgroundGeolocation?.openSettings) {
-      await BackgroundGeolocation.openSettings();
-      return;
-    }
-  } catch {
-    /* fall through */
-  }
-  toast.message("설정 → 앱 → SafeNex 에서 위치·알림·배터리를 바꿔 주세요.");
 }
 
 async function promptBackgroundLocation() {
@@ -200,7 +188,7 @@ export default function NativePermissionsOnboarding() {
       const after = await Geolocation.checkPermissions();
       if (!isForegroundLocationGranted(after)) {
         setLocationDenied(true);
-        toast.error("위치를 허용해야 출근과 금지구역 경보가 됩니다. 「항상 허용」을 선택해 주세요.");
+        toast.error("「정확한 위치」와 「항상 허용」을 눌러야 출근·분포가 됩니다.");
         return;
       }
       setLocationDenied(false);
@@ -272,7 +260,7 @@ export default function NativePermissionsOnboarding() {
           done={step !== "location"}
           icon={MapPin}
           title="위치"
-          desc="출근·금지구역. 「항상 허용」을 선택하세요."
+          desc="출근·분포·금지구역. 「앱 사용 중」이 아니라 「항상 허용」."
         />
         <StepCard
           active={step === "notifications"}
@@ -302,16 +290,21 @@ export default function NativePermissionsOnboarding() {
       <footer className="px-5 pb-6 space-y-2">
         {step === "location" && (
           <>
+            <ul className="text-xs text-muted-foreground space-y-1.5 rounded-xl border bg-muted/40 p-3">
+              {(isAndroid ? ANDROID_LOCATION_TAP_STEPS_KO : IOS_LOCATION_TAP_STEPS_KO).map((line) => (
+                <li key={line}>· {line}</li>
+              ))}
+            </ul>
             {locationDenied && (
               <p className="text-xs text-destructive leading-relaxed">
-                위치를 거부하면 출근을 찍을 수 없습니다. 앱 설정에서 위치를 「항상 허용」으로 바꾼 뒤 다시 눌러 주세요.
+                위치를 거부하면 출근할 수 없습니다. 아래 설정에서 「항상 허용」으로 바꾼 뒤 다시 눌러 주세요.
               </p>
             )}
             <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void requestLocation()}>
               위치 허용
             </Button>
             {locationDenied && (
-              <Button variant="outline" className="w-full" disabled={busy} onClick={() => void openAppSettings()}>
+              <Button variant="outline" className="w-full" disabled={busy} onClick={() => void openNativeAppSettings()}>
                 앱 설정 열기
               </Button>
             )}
@@ -329,7 +322,7 @@ export default function NativePermissionsOnboarding() {
             </Button>
             {pushDenied && (
               <>
-                <Button variant="outline" className="w-full" disabled={busy} onClick={() => void openAppSettings()}>
+                <Button variant="outline" className="w-full" disabled={busy} onClick={() => void openNativeAppSettings()}>
                   앱 설정 열기
                 </Button>
                 <Button
@@ -354,7 +347,7 @@ export default function NativePermissionsOnboarding() {
                 <li key={line}>· {line}</li>
               ))}
             </ul>
-            <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void openAppSettings()}>
+            <Button className="w-full h-12 text-base" disabled={busy} onClick={() => void openNativeAppSettings()}>
               앱 설정 열기
             </Button>
             <Button

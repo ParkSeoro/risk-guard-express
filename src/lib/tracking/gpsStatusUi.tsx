@@ -23,7 +23,7 @@ export const GPS_BLOCK_CHIP: Record<Exclude<GpsBlockReason, null>, string> = {
 
 export const GPS_BLOCK_HINT: Record<Exclude<GpsBlockReason, null>, string> = {
   no_consent: "위치 동의가 필요합니다",
-  no_permission: "앱 위치 권한을 완료하세요",
+  no_permission: "위치는 「항상 허용」·정확한 위치",
   no_checkin: "출근 후 추적이 시작됩니다",
   fence_probe_failed: "현장 밖 · 복귀하면 자동 재개",
   identity_mismatch: "명부와 계정이 다릅니다. 관리자에게 문의하세요",

@@ -49,6 +49,8 @@ import {
 } from "@/lib/workStop";
 import { toast } from "sonner";
 import { isNativeApp } from "@/lib/native/isNativeApp";
+import { checkInBlockedByLocation } from "@/lib/native/nativePermissionGate";
+import GpsConsentCoach from "@/components/worker/GpsConsentCoach";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { readActiveProjectId } from "@/lib/activeProject";
 
@@ -100,6 +102,7 @@ export default function WorkerDailyHome({
   const [noAccident, setNoAccident] = useState(false);
   const [healthOk, setHealthOk] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [osLocationGranted, setOsLocationGranted] = useState<boolean | null>(null);
   const [suspension, setSuspension] = useState<{
     until: string;
     reason: string | null;
@@ -309,6 +312,27 @@ export default function WorkerDailyHome({
       toast.error(
         `출입 정지 상태입니다${suspension.reason ? ` · ${suspension.reason}` : ""}`,
       );
+      return;
+    }
+    let granted = osLocationGranted;
+    if (isNativeApp() && granted !== true) {
+      try {
+        const { Geolocation } = await import("@capacitor/geolocation");
+        const { isForegroundLocationGranted } = await import("@/lib/native/nativePermissionGate");
+        const after = await Geolocation.requestPermissions();
+        granted = isForegroundLocationGranted(after);
+        setOsLocationGranted(granted);
+        if (!granted) {
+          toast.error("위치 권한을 허용해야 출근할 수 있습니다. 「정확한 위치」와 「항상 허용」을 누르세요.");
+          return;
+        }
+      } catch {
+        toast.error("위치 권한을 확인할 수 없습니다. 앱 설정에서 「항상 허용」을 켜 주세요.");
+        return;
+      }
+    }
+    if (checkInBlockedByLocation({ osLocationGranted: granted, hasFix: !!effectiveFix }).reason === "os") {
+      toast.error("위치 권한을 허용해야 출근할 수 있습니다. 「정확한 위치」와 「항상 허용」을 누르세요.");
       return;
     }
     if (!withinCheckIn || !checkInFence) {
@@ -538,6 +562,14 @@ export default function WorkerDailyHome({
           </section>
         )}
 
+        {!diagnosticsOnly && (
+          <GpsConsentCoach
+            isCheckedIn={isCheckedIn}
+            hasFix={!!effectiveFix}
+            onOsLocationChange={setOsLocationGranted}
+          />
+        )}
+
         {(diagnosticsOnly || shouldShowHomeGpsCard(isCheckedIn)) && (
         <section className="rounded-2xl bg-white/80 backdrop-blur border border-slate-200 p-4 space-y-3 shadow-sm">
           <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
@@ -677,7 +709,13 @@ export default function WorkerDailyHome({
             {!isCheckedIn && !checkedOut && (
               <Button
                 className="h-12 gap-2"
-                disabled={!withinCheckIn || busy || !workerId || !!suspension}
+                disabled={
+                  !withinCheckIn ||
+                  busy ||
+                  !workerId ||
+                  !!suspension ||
+                  osLocationGranted === false
+                }
                 onClick={() => void handleCheckIn()}
               >
                 <LogIn className="h-4 w-4" />

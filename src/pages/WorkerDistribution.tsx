@@ -9,10 +9,14 @@ import { loadCornersFromMap, type AnchorMap } from "@/lib/mapBounds";
 import { latLngToUv } from "@/lib/tracking/imageSpaceGeo";
 import type { RestrictedZoneGeom } from "@/lib/tracking/restrictedZoneGeom";
 import {
+  classifyDistributionFix,
   distributionDotJitter,
+  distributionFixLabel,
   distributionImagePoint,
   matchDistributionZone,
+  summarizeDistributionFixes,
   zoneCategoryToType,
+  type DistributionFixKind,
 } from "@/lib/workerDistribution";
 
 type SiteMap = AnchorMap & { id: string; name: string; image_url: string | null };
@@ -38,6 +42,7 @@ type DistPos = {
   lng: number;
   accuracy_m: number | null;
   updated_at: string;
+  source: string | null;
 };
 
 const ZONE_COLOR: Record<Zone["zone_type"], string> = {
@@ -53,6 +58,12 @@ const ZONE_LABEL: Record<Zone["zone_type"], string> = {
   danger: "위험구역",
 };
 const COMPANY_DOT = ["#0ea5e9", "#a855f7", "#f97316", "#14b8a6", "#e11d48", "#6366f1"];
+const FIX_KIND_STROKE: Record<DistributionFixKind, string> = {
+  live: "#ffffff",
+  recent: "#e2e8f0",
+  checkin: "#f59e0b",
+  stale: "#94a3b8",
+};
 
 function formatAgo(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -158,6 +169,7 @@ export default function WorkerDistribution() {
         lng: Number(r.lng),
         accuracy_m: r.accuracy_m == null ? null : Number(r.accuracy_m),
         updated_at: r.updated_at,
+        source: r.source ?? null,
       })),
     );
   };
@@ -253,7 +265,7 @@ export default function WorkerDistribution() {
     setLastUpdated(new Date());
   };
 
-  const { perZone, byCompany, totalIn, companyCount } = useMemo(() => {
+  const { perZone, byCompany, totalIn } = useMemo(() => {
     const companyTotal: Record<string, { name: string; total: number }> = {};
     let totalIn = 0;
     for (const r of rows) {
@@ -301,7 +313,6 @@ export default function WorkerDistribution() {
       perZone,
       byCompany,
       totalIn,
-      companyCount: Object.keys(companyTotal).length || Object.keys(byCompany).length,
     };
   }, [rows, positions, geoZones]);
 
@@ -317,21 +328,30 @@ export default function WorkerDistribution() {
         const key = p.company_id || p.company_name || "?";
         if (!companyIndex.has(key)) companyIndex.set(key, companyIndex.size);
         const j = distributionDotJitter(i);
-        const stale =
-          !p.updated_at || Date.now() - new Date(p.updated_at).getTime() > 30 * 60 * 1000;
+        const kind = classifyDistributionFix({
+          source: p.source,
+          updatedAt: p.updated_at,
+          now: nowTick,
+        });
         return {
           ...pt,
           x: pt.x + j.dx,
           y: pt.y + j.dy,
           company: p.company_name || "(미지정)",
           color: COMPANY_DOT[companyIndex.get(key)! % COMPANY_DOT.length],
-          stale,
-          ago: p.updated_at ? formatAgo(Date.now() - new Date(p.updated_at).getTime()) : "",
+          kind,
+          stale: kind === "checkin" || kind === "stale",
+          ago: p.updated_at ? formatAgo(nowTick - new Date(p.updated_at).getTime()) : "",
           key: `${p.lat}:${p.lng}:${p.updated_at}:${i}`,
         };
       })
       .filter((d): d is NonNullable<typeof d> => d != null);
-  }, [positions, corners]);
+  }, [positions, corners, nowTick]);
+
+  const freshness = useMemo(
+    () => summarizeDistributionFixes(positions, nowTick, totalIn),
+    [positions, nowTick, totalIn],
+  );
 
   const zoneById = useMemo(() => Object.fromEntries(zones.map((z) => [z.id, z])), [zones]);
 
@@ -361,7 +381,7 @@ export default function WorkerDistribution() {
             <Users className="h-6 w-6 text-primary" /> 현장 근로자 분포도
           </h1>
           <p className="text-sm text-muted-foreground">
-            오늘 출근자 집계 · 구역은 맵에 한 번만 그리면 GPS가 자동 배정 · 이름·전화 비노출
+            오늘 출근자 집계 · 점은 실시간/출근 위치로 구분 · 이름·전화 비노출
             {" · "}
             {scopeLabel}
           </p>
@@ -465,15 +485,16 @@ export default function WorkerDistribution() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <SummaryCard icon={Users} label="현재 현장 체류" value={totalIn} tone="primary" />
-        <SummaryCard
-          icon={MapPin}
-          label="활성 구역"
-          value={Object.keys(perZone).filter((k) => k !== "unknown").length}
-          tone="info"
-        />
-        <SummaryCard icon={Activity} label="GPS 위치" value={dots.length} tone="info" />
-        <SummaryCard icon={Building2} label="회사 수" value={companyCount} tone="muted" />
+        <SummaryCard icon={Activity} label="실시간(5분)" value={freshness.live} tone="info" />
+        <SummaryCard icon={MapPin} label="출근 위치" value={freshness.checkin} tone="muted" />
+        <SummaryCard icon={Building2} label="위치 없음" value={freshness.missing} tone="muted" />
       </div>
+      {(freshness.checkin > 0 || freshness.stale > 0 || freshness.missing > 0) && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950 leading-relaxed">
+          맵의 점은 지금 위치가 아닐 수 있습니다. 실시간은 5분 이내 GPS, 노란 테두리는 출근 때 잡은 좌표입니다.
+          네이티브 앱은 배터리를 위해 백그라운드에서 3분마다 갱신하고, 브라우저/PWA는 앱을 켠 동안만 따라갑니다.
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-2">
@@ -525,18 +546,19 @@ export default function WorkerDistribution() {
                     );
                   })}
                   {dots.map((d) => (
-                    <g key={d.key} opacity={d.stale ? 0.55 : 1}>
+                    <g key={d.key} opacity={d.kind === "live" ? 1 : d.kind === "recent" ? 0.9 : 0.62}>
                       <circle
                         cx={d.x}
                         cy={d.y}
                         r={1.7}
                         fill={d.color}
-                        stroke="#fff"
-                        strokeWidth={0.45}
+                        stroke={FIX_KIND_STROKE[d.kind]}
+                        strokeWidth={d.kind === "checkin" || d.kind === "stale" ? 0.7 : 0.45}
                         vectorEffect="non-scaling-stroke"
                       />
                       <title>
                         {d.company}
+                        {` · ${distributionFixLabel(d.kind)}`}
                         {d.ago ? ` · ${d.ago} 전` : ""}
                       </title>
                     </g>
@@ -551,7 +573,10 @@ export default function WorkerDistribution() {
             )}
             {corners && (
               <div className="mt-3 rounded-md border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                GPS 위치 {dots.length}명 표시 (이름 비노출)
+                실시간 {freshness.live} · 최근 GPS {freshness.recent} · 출근 위치 {freshness.checkin}
+                {freshness.stale > 0 ? ` · 오래된 ${freshness.stale}` : ""}
+                {freshness.missing > 0 ? ` · 위치 없음 ${freshness.missing}` : ""}
+                {" "}(이름 비노출)
                 {(perZone["unknown"] || 0) > 0
                   ? ` · 출근 ${totalIn}명 중 구역 미배정 ${perZone["unknown"]}명`
                   : ""}
@@ -565,6 +590,15 @@ export default function WorkerDistribution() {
                 <span key={t} className="inline-flex items-center gap-1">
                   <span className="w-3 h-3 rounded" style={{ background: ZONE_COLOR[t], opacity: 0.6 }} />
                   {ZONE_LABEL[t]}
+                </span>
+              ))}
+              {(["live", "recent", "checkin", "stale"] as const).map((k) => (
+                <span key={k} className="inline-flex items-center gap-1">
+                  <span
+                    className="w-3 h-3 rounded-full"
+                    style={{ background: "#0ea5e9", border: `2px solid ${FIX_KIND_STROKE[k]}` }}
+                  />
+                  {distributionFixLabel(k)}
                 </span>
               ))}
             </div>

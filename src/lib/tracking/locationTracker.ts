@@ -8,7 +8,7 @@
 // background is a 3-minute last-position heartbeat (not 45s all day).
 
 import { supabase } from "@/integrations/supabase/client";
-import { armHeadlessTrack, isHeadlessTrackAvailable, startHeadlessTrack, stopHeadlessTrack } from "@/lib/native/headlessTrack";
+import { isHeadlessTrackAvailable, startHeadlessTrack, stopHeadlessTrack } from "@/lib/native/headlessTrack";
 import { androidGpsPipelineOwner } from "@/lib/tracking/androidGpsPipeline";
 import {
   applyGpsCalibration,
@@ -554,19 +554,10 @@ async function startHeadlessCompanion(opts: TrackerOptions): Promise<void> {
   }
 }
 
-async function armHeadlessCompanion(opts: TrackerOptions): Promise<void> {
-  try {
-    const next = await headlessCompanionOpts(opts);
-    if (!next) return;
-    await armHeadlessTrack(next);
-  } catch (e) {
-    if (import.meta.env.DEV) console.warn("[HeadlessTrack] arm skipped", e);
-  }
-}
-
 /**
- * Foreground: WebView / BackgroundGeolocation only.
- * Background: HeadlessTrack only. Overlap is allowed only at the switch.
+ * Start HeadlessTrack immediately so Service.onTaskRemoved can restart after a
+ * recents swipe. Foreground WebView still owns sirens; the 3-minute heartbeat
+ * stays up so JS dying does not stop last-position posts.
  */
 async function attachAndroidHeadlessGate(
   opts: TrackerOptions,
@@ -578,12 +569,11 @@ async function attachAndroidHeadlessGate(
 ): Promise<() => void> {
   if (!isHeadlessTrackAvailable()) return () => {};
 
-  void armHeadlessCompanion(opts);
+  void startHeadlessCompanion(opts);
 
   const apply = async (isActive: boolean) => {
     if (hooks.isStopped()) return;
     if (androidGpsPipelineOwner(isActive) === "webview") {
-      await stopHeadlessTrack();
       await hooks.resumeForeground();
     } else {
       await hooks.pauseForeground();

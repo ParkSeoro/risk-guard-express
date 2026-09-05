@@ -175,8 +175,8 @@ public class HeadlessTrackService extends Service implements LocationListener {
       SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
       long minTime = watchMode
           ? Math.max(30_000, p.getInt("resume_poll_ms", 300_000))
-          : Math.max(5_000, p.getInt("interval_ms", 45_000));
-      float minDist = watchMode ? 40f : 8f;
+          : Math.max(5_000, p.getInt("interval_ms", 180_000));
+      float minDist = watchMode ? 40f : 15f;
       // Never assume GPS exists — missing provider throws and START_STICKY loops
       // the process ("Safenex keeps stopping") on many Korean OEM phones.
       requestSafe(LocationManager.GPS_PROVIDER, minTime, minDist);
@@ -272,7 +272,7 @@ public class HeadlessTrackService extends Service implements LocationListener {
     }
 
     long now = System.currentTimeMillis();
-    int intervalMs = p.getInt("interval_ms", 45_000);
+    int intervalMs = p.getInt("interval_ms", 180_000);
     if (now - lastSentAt < intervalMs) return;
     lastSentAt = now;
 
@@ -404,7 +404,7 @@ public class HeadlessTrackService extends Service implements LocationListener {
     putStr(e, "worker_phone", cfg.optString("workerPhone", null));
     putStr(e, "company_id", cfg.optString("companyId", null));
     putStr(e, "worker_role", cfg.optString("workerRole", null));
-    e.putInt("interval_ms", cfg.optInt("intervalMs", 45_000));
+    e.putInt("interval_ms", cfg.optInt("intervalMs", 180_000));
     e.putInt("exit_streak", cfg.optInt("exitStreak", 5));
     e.putFloat("max_accuracy_m", (float) cfg.optDouble("maxAccuracyM", 55));
     e.putInt("resume_poll_ms", cfg.optInt("resumePollMs", 300_000));

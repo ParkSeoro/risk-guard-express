@@ -4,12 +4,16 @@ import {
   distributionScopeLabel,
 } from "@/hooks/useDistributionAccess";
 import {
+  classifyDistributionFix,
   distributionDotJitter,
+  distributionFixLabel,
   distributionImagePoint,
   distributionZoneId,
   matchDistributionZone,
+  summarizeDistributionFixes,
   zoneCategoryToType,
 } from "@/lib/workerDistribution";
+import { GPS_DELAYED_MS, GPS_LIVE_MS } from "@/lib/tracking/gpsTrackingHealth";
 import type { RestrictedZoneGeom } from "@/lib/tracking/restrictedZoneGeom";
 
 describe("distribution access", () => {
@@ -112,5 +116,59 @@ describe("zoneCategoryToType / jitter", () => {
   it("jitters stacked dots away from the first", () => {
     expect(distributionDotJitter(0)).toEqual({ dx: 0, dy: 0 });
     expect(distributionDotJitter(1).dx).not.toBe(0);
+  });
+});
+
+describe("classifyDistributionFix", () => {
+  const now = Date.parse("2026-09-05T09:30:00+09:00");
+
+  it("treats a fresh check-in as live, then as 출근 위치", () => {
+    expect(
+      classifyDistributionFix({
+        source: "checkin",
+        updatedAt: new Date(now - 2 * 60_000).toISOString(),
+        now,
+      }),
+    ).toBe("live");
+    expect(
+      classifyDistributionFix({
+        source: "checkin",
+        updatedAt: new Date(now - GPS_LIVE_MS - 1).toISOString(),
+        now,
+      }),
+    ).toBe("checkin");
+    expect(distributionFixLabel("checkin")).toBe("출근 위치");
+  });
+
+  it("keeps later GPS as recent until 30 minutes, then stale", () => {
+    expect(
+      classifyDistributionFix({
+        source: "gps",
+        updatedAt: new Date(now - 12 * 60_000).toISOString(),
+        now,
+      }),
+    ).toBe("recent");
+    expect(
+      classifyDistributionFix({
+        source: "gps",
+        updatedAt: new Date(now - GPS_DELAYED_MS - 1).toISOString(),
+        now,
+      }),
+    ).toBe("stale");
+  });
+
+  it("counts missing check-ins separately from plotted dots", () => {
+    const sum = summarizeDistributionFixes(
+      [
+        { source: "checkin", updated_at: new Date(now - 2 * 3600_000).toISOString() },
+        { source: "gps", updated_at: new Date(now - 60_000).toISOString() },
+      ],
+      now,
+      55,
+    );
+    expect(sum.live).toBe(1);
+    expect(sum.checkin).toBe(1);
+    expect(sum.plotted).toBe(2);
+    expect(sum.missing).toBe(53);
   });
 });

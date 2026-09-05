@@ -48,6 +48,7 @@ import {
   WORK_STOP_LEGAL_CITE,
 } from "@/lib/workStop";
 import { toast } from "sonner";
+import { isNativeApp } from "@/lib/native/isNativeApp";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { readActiveProjectId } from "@/lib/activeProject";
 
@@ -405,7 +406,11 @@ export default function WorkerDailyHome({
       } catch {
         /* ignore */
       }
-      toast.success("서명 확인 완료 — 출근이 기록되었습니다");
+      toast.success("서명 확인 완료 — 출근이 기록되었습니다", {
+        description: isNativeApp()
+          ? "분포 위치는 배터리를 위해 3분마다 갱신됩니다. 아이폰은 위치 권한을 '항상'으로 두세요."
+          : "브라우저/PWA는 앱을 켠 동안만 위치가 갱신됩니다. 실시간 분포는 네이티브 앱을 권장합니다.",
+      });
     } catch (e: any) {
       toast.error(e?.message || "서명·출근 저장 실패");
     } finally {

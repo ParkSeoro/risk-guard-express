@@ -4,10 +4,11 @@
 // Sends fixes to the `track-location` edge function, which performs the
 // authoritative geofence + Wi-Fi zone match server-side.
 //
-// Power policy: eco intervals far from danger zones; high-rate only near/inside.
+// Power policy: see trackPowerPolicy.ts — foreground adaptive; Android
+// background is a 3-minute last-position heartbeat (not 45s all day).
 
 import { supabase } from "@/integrations/supabase/client";
-import { isHeadlessTrackAvailable, startHeadlessTrack, stopHeadlessTrack } from "@/lib/native/headlessTrack";
+import { armHeadlessTrack, isHeadlessTrackAvailable, startHeadlessTrack, stopHeadlessTrack } from "@/lib/native/headlessTrack";
 import { androidGpsPipelineOwner } from "@/lib/tracking/androidGpsPipeline";
 import {
   applyGpsCalibration,
@@ -34,6 +35,11 @@ import {
   minDistanceToRestrictedZoneEdge,
   type RestrictedZoneGeom,
 } from "@/lib/tracking/restrictedZoneGeom";
+import {
+  defaultTrackerIntervals,
+  TRACK_BG_DISTANCE_FILTER_M,
+  TRACK_BG_HEARTBEAT_MS,
+} from "@/lib/tracking/trackPowerPolicy";
 
 export type TrackingIdentity = {
   worker_id?: string | null;
@@ -219,11 +225,8 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
     let zonesAt = Date.now();
 
     const intervals = {
-      moving: opts.intervals?.moving ?? 12_000,
-      idle: opts.intervals?.idle ?? 60_000,
-      danger: opts.intervals?.danger ?? 5_000,
-      ecoMoving: opts.intervals?.ecoMoving ?? 45_000,
-      ecoIdle: opts.intervals?.ecoIdle ?? 180_000,
+      ...defaultTrackerIntervals(),
+      ...opts.intervals,
     };
     let lastSentAt = 0;
     let motion = createMotionIdleState(Date.now());
@@ -420,7 +423,7 @@ async function tryNativeBackground(opts: TrackerOptions): Promise<null | (() => 
           backgroundTitle: "SafeNex 위치 추적",
           requestPermissions: false,
           stale: false,
-          distanceFilter: 15,
+          distanceFilter: TRACK_BG_DISTANCE_FILTER_M,
         },
         onLocation,
       );
@@ -514,34 +517,50 @@ async function getGeolocation(): Promise<{
   };
 }
 
+async function headlessCompanionOpts(opts: TrackerOptions): Promise<Parameters<typeof startHeadlessTrack>[0] | null> {
+  const { data } = await supabase.auth.getSession();
+  const session = data?.session;
+  if (!session?.access_token) return null;
+  const live = opts.getIdentity?.() ?? opts.identity;
+  const site = opts.siteCenter;
+  return {
+    projectId: live.project_id,
+    workerId: live.worker_id,
+    workerName: live.worker_name,
+    workerPhone: live.worker_phone,
+    companyId: live.company_id,
+    workerRole: live.worker_role,
+    accessToken: session.access_token,
+    refreshToken: session.refresh_token,
+    fenceLat: site?.lat ?? null,
+    fenceLng: site?.lng ?? null,
+    fenceRadiusM: site?.radiusM ?? null,
+    intervalMs: TRACK_BG_HEARTBEAT_MS,
+    exitStreak: SITE_EXIT_STREAK,
+    maxAccuracyM: SITE_EXIT_MAX_ACCURACY_M,
+    resumePollMs: SITE_RESUME_POLL_MS,
+    skipFence: !site || !!live.suppress_last_position,
+    suppressLastPosition: !!live.suppress_last_position,
+  };
+}
+
 async function startHeadlessCompanion(opts: TrackerOptions): Promise<void> {
   try {
-    const { data } = await supabase.auth.getSession();
-    const session = data?.session;
-    if (!session?.access_token) return;
-    const live = opts.getIdentity?.() ?? opts.identity;
-    const site = opts.siteCenter;
-    await startHeadlessTrack({
-      projectId: live.project_id,
-      workerId: live.worker_id,
-      workerName: live.worker_name,
-      workerPhone: live.worker_phone,
-      companyId: live.company_id,
-      workerRole: live.worker_role,
-      accessToken: session.access_token,
-      refreshToken: session.refresh_token,
-      fenceLat: site?.lat ?? null,
-      fenceLng: site?.lng ?? null,
-      fenceRadiusM: site?.radiusM ?? null,
-      intervalMs: 45_000,
-      exitStreak: SITE_EXIT_STREAK,
-      maxAccuracyM: SITE_EXIT_MAX_ACCURACY_M,
-      resumePollMs: SITE_RESUME_POLL_MS,
-      skipFence: !site || !!live.suppress_last_position,
-      suppressLastPosition: !!live.suppress_last_position,
-    });
+    const next = await headlessCompanionOpts(opts);
+    if (!next) return;
+    await startHeadlessTrack(next);
   } catch (e) {
     if (import.meta.env.DEV) console.warn("[HeadlessTrack] companion start skipped", e);
+  }
+}
+
+async function armHeadlessCompanion(opts: TrackerOptions): Promise<void> {
+  try {
+    const next = await headlessCompanionOpts(opts);
+    if (!next) return;
+    await armHeadlessTrack(next);
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn("[HeadlessTrack] arm skipped", e);
   }
 }
 
@@ -558,6 +577,8 @@ async function attachAndroidHeadlessGate(
   },
 ): Promise<() => void> {
   if (!isHeadlessTrackAvailable()) return () => {};
+
+  void armHeadlessCompanion(opts);
 
   const apply = async (isActive: boolean) => {
     if (hooks.isStopped()) return;
@@ -585,18 +606,15 @@ async function attachAndroidHeadlessGate(
 
   return () => {
     remove?.();
-    void stopHeadlessTrack();
+    void stopHeadlessTrack({ disarm: true });
   };
 }
 
 export async function startTracking(opts: TrackerOptions): Promise<() => void> {
   const { identity, onError } = opts;
   const intervals = {
-    moving: opts.intervals?.moving ?? 12_000,
-    idle: opts.intervals?.idle ?? 60_000,
-    danger: opts.intervals?.danger ?? 5_000,
-    ecoMoving: opts.intervals?.ecoMoving ?? 45_000,
-    ecoIdle: opts.intervals?.ecoIdle ?? 180_000,
+    ...defaultTrackerIntervals(),
+    ...opts.intervals,
   };
   const idleAfterMs = opts.idleAfterMs ?? 2 * 60_000;
   const movementThresholdM = opts.movementThresholdM ?? 12;

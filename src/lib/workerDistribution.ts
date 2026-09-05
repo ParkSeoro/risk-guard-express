@@ -1,4 +1,5 @@
 import { isPresenceZoneCategory } from "@/lib/tracking/accessRules";
+import { GPS_DELAYED_MS, GPS_LIVE_MS } from "@/lib/tracking/gpsTrackingHealth";
 import { pointInRestrictedZone, type RestrictedZoneGeom } from "@/lib/tracking/restrictedZoneGeom";
 import { latLngToUv } from "@/lib/tracking/imageSpaceGeo";
 
@@ -73,4 +74,60 @@ export function distributionDotJitter(index: number, radius = 1.15): { dx: numbe
   if (index <= 0) return { dx: 0, dy: 0 };
   const a = index * 2.39996;
   return { dx: Math.cos(a) * radius, dy: Math.sin(a) * radius };
+}
+
+/** How honest the distribution map should be about a plotted point. */
+export type DistributionFixKind = "live" | "recent" | "checkin" | "stale";
+
+export function classifyDistributionFix(opts: {
+  source?: string | null;
+  updatedAt?: string | Date | null;
+  now?: number;
+}): DistributionFixKind {
+  const now = opts.now ?? Date.now();
+  const at = opts.updatedAt
+    ? opts.updatedAt instanceof Date
+      ? opts.updatedAt.getTime()
+      : Date.parse(String(opts.updatedAt))
+    : NaN;
+  if (!Number.isFinite(at)) return "stale";
+  const age = now - at;
+  if (age <= GPS_LIVE_MS) return "live";
+  const source = String(opts.source || "").toLowerCase();
+  if (source === "checkin") return "checkin";
+  if (age <= GPS_DELAYED_MS) return "recent";
+  return "stale";
+}
+
+export function distributionFixLabel(kind: DistributionFixKind): string {
+  if (kind === "live") return "실시간";
+  if (kind === "recent") return "최근 GPS";
+  if (kind === "checkin") return "출근 위치";
+  return "오래된 위치";
+}
+
+export function summarizeDistributionFixes(
+  positions: Array<{ source?: string | null; updated_at?: string | Date | null }>,
+  now = Date.now(),
+  checkedIn = positions.length,
+): { live: number; recent: number; checkin: number; stale: number; missing: number; plotted: number } {
+  let live = 0;
+  let recent = 0;
+  let checkin = 0;
+  let stale = 0;
+  for (const p of positions) {
+    const kind = classifyDistributionFix({ source: p.source, updatedAt: p.updated_at, now });
+    if (kind === "live") live += 1;
+    else if (kind === "recent") recent += 1;
+    else if (kind === "checkin") checkin += 1;
+    else stale += 1;
+  }
+  return {
+    live,
+    recent,
+    checkin,
+    stale,
+    plotted: positions.length,
+    missing: Math.max(0, checkedIn - positions.length),
+  };
 }

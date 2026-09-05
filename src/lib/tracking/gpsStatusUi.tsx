@@ -79,7 +79,7 @@ export function GpsStatusChip({
         className="shrink-0 rounded-full bg-emerald-400/25 text-primary-foreground px-2 py-0.5 text-[10px] font-semibold leading-tight"
         data-testid="gps-tracking-on"
         data-gps="on"
-        title="홈으로 나가도 유지됩니다. 최근 목록에서 앱을 지우면 알람이 멈춥니다."
+        title="출근 후 Android는 화면을 꺼도 3분 간격으로 위치를 올립니다. 아이폰은 위치를 '항상'으로 두세요. 브라우저는 앱을 켠 동안만 추적됩니다."
         role="status"
       >
         GPS 현장

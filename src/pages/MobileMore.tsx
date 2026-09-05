@@ -142,7 +142,7 @@ export default function MobileMore() {
 
       {gpsUi.tracking && (
         <p className="text-[11px] text-muted-foreground leading-relaxed px-0.5">
-          GPS는 홈으로 나가도 유지됩니다. 최근 목록에서 앱을 지우면 추적·알람이 멈춥니다.
+          Android는 최근 목록에서 지워도 3분 간격으로 위치를 올립니다. 아이폰은 위치를 '항상'으로 두세요. 브라우저는 앱을 켠 동안만 추적됩니다.
         </p>
       )}
 

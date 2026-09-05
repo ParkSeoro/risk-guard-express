@@ -5,7 +5,9 @@
  * flicker, worker_last_positions writes amplify.
  *
  * Owner while the activity is in the foreground: WebView / BG plugin.
- * Owner after appStateChange isActive=false (includes recents swipe): headless.
+ * Owner after appStateChange isActive=false (includes recents swipe): headless
+ * at TRACK_BG_HEARTBEAT_MS (3 min). Prefs stay armed so onTaskRemoved can
+ * restart after a recents swipe without a second JS start.
  *
  * HeadlessTrackService must never crash the process: START_STICKY + an uncaught
  * GPS_PROVIDER / startForeground exception is the Android "keeps stopping" loop.

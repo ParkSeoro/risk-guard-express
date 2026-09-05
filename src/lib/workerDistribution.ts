@@ -69,6 +69,63 @@ export function matchDistributionZone(
   return [...hits].sort((a, b) => rank(b) - rank(a))[0];
 }
 
+/** 현장 맵의 기본 구역. 출근 = 현장에 있음 = 일반. */
+export function defaultGeneralZone<T extends { zone_category?: string | null; is_active?: boolean }>(
+  zones: T[],
+): T | null {
+  return zones.find((z) => z.is_active !== false && z.zone_category === "일반") ?? null;
+}
+
+/**
+ * 작업·위험 폴리곤 안이면 그 구역, 아니면 일반.
+ * 현장 맵 전체가 일반 구역이므로 폴리곤 밖 출근 GPS도 미지정이 아니다.
+ */
+export function resolveDistributionZone(
+  lat: number,
+  lng: number,
+  zones: RestrictedZoneGeom[],
+): RestrictedZoneGeom | null {
+  const hit = matchDistributionZone(lat, lng, zones);
+  if (hit && (hit.zone_category === "작업구역" || !isPresenceZoneCategory(hit.zone_category))) {
+    return hit;
+  }
+  return defaultGeneralZone(zones) ?? hit;
+}
+
+export function assignCheckedInDistribution(opts: {
+  companyTotals: Array<{ companyId: string; name: string; total: number }>;
+  positions: Array<{ company_id: string | null; company_name?: string | null; lat: number; lng: number }>;
+  zones: RestrictedZoneGeom[];
+}): Array<{ companyId: string; name: string; zoneId: string | null; count: number }> {
+  const general = defaultGeneralZone(opts.zones);
+  const assigned: Record<string, number> = {};
+  const rows: Array<{ companyId: string; name: string; zoneId: string | null; count: number }> = [];
+  const bump = (companyId: string, name: string, zoneId: string | null, n: number) => {
+    if (n <= 0) return;
+    const existing = rows.find((r) => r.companyId === companyId && r.zoneId === zoneId);
+    if (existing) existing.count += n;
+    else rows.push({ companyId, name, zoneId, count: n });
+  };
+
+  for (const p of opts.positions) {
+    const hit = resolveDistributionZone(p.lat, p.lng, opts.zones);
+    if (!hit) continue;
+    const companyId = p.company_id || "unknown";
+    assigned[companyId] = (assigned[companyId] || 0) + 1;
+    const name =
+      opts.companyTotals.find((c) => c.companyId === companyId)?.name ||
+      p.company_name ||
+      "(미지정)";
+    bump(companyId, name, hit.id, 1);
+  }
+
+  for (const c of opts.companyTotals) {
+    const leftover = Math.max(0, c.total - (assigned[c.companyId] || 0));
+    bump(c.companyId, c.name, general?.id ?? null, leftover);
+  }
+  return rows;
+}
+
 /** Spread stacked GPS dots so a gate cluster is visible. */
 export function distributionDotJitter(index: number, radius = 1.15): { dx: number; dy: number } {
   if (index <= 0) return { dx: 0, dy: 0 };

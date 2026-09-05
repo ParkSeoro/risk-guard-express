@@ -4,12 +4,15 @@ import {
   distributionScopeLabel,
 } from "@/hooks/useDistributionAccess";
 import {
+  assignCheckedInDistribution,
   classifyDistributionFix,
+  defaultGeneralZone,
   distributionDotJitter,
   distributionFixLabel,
   distributionImagePoint,
   distributionZoneId,
   matchDistributionZone,
+  resolveDistributionZone,
   summarizeDistributionFixes,
   zoneCategoryToType,
 } from "@/lib/workerDistribution";
@@ -111,6 +114,58 @@ describe("zoneCategoryToType / jitter", () => {
     };
     expect(matchDistributionZone(34.8515221, 127.700508, [work])?.id).toBe("work-1");
     expect(matchDistributionZone(37.5, 127.0, [work])).toBeNull();
+  });
+
+  it("treats the whole sitemap as 일반 — check-in GPS outside the drawn box is not 미지정", () => {
+    const general: RestrictedZoneGeom = {
+      id: "gen-1",
+      name: "일반구역",
+      geometry_type: "polygon",
+      geo_polygon: [
+        { lat: 34.8522, lng: 127.7006 },
+        { lat: 34.8522, lng: 127.7012 },
+        { lat: 34.8528, lng: 127.7012 },
+        { lat: 34.8528, lng: 127.7006 },
+      ],
+      center_lat: null,
+      center_lng: null,
+      radius_m: null,
+      banned_worker_ids: [],
+      banned_company_ids: [],
+      banned_job_types: [],
+      zone_category: "일반",
+      is_active: true,
+    };
+    const work: RestrictedZoneGeom = {
+      ...general,
+      id: "work-1",
+      name: "작업구역",
+      zone_category: "작업구역",
+      geo_polygon: [
+        { lat: 34.8513, lng: 127.7003 },
+        { lat: 34.8513, lng: 127.7008 },
+        { lat: 34.8517, lng: 127.7008 },
+        { lat: 34.8517, lng: 127.7003 },
+      ],
+    };
+    expect(defaultGeneralZone([work, general])?.id).toBe("gen-1");
+    expect(resolveDistributionZone(34.85145, 127.70045, [general, work])?.id).toBe("work-1");
+    expect(resolveDistributionZone(34.85145, 127.70045, [general])?.id).toBe("gen-1");
+    const rows = assignCheckedInDistribution({
+      companyTotals: [
+        { companyId: "c1", name: "A", total: 50 },
+        { companyId: "c2", name: "B", total: 5 },
+      ],
+      positions: [
+        { company_id: "c1", lat: 34.85145, lng: 127.70045 },
+        { company_id: "c1", lat: 37.5, lng: 127.0 },
+      ],
+      zones: [general, work],
+    });
+    expect(rows.find((r) => r.zoneId === "work-1")?.count).toBe(1);
+    expect(rows.find((r) => r.companyId === "c1" && r.zoneId === "gen-1")?.count).toBe(49);
+    expect(rows.find((r) => r.companyId === "c2" && r.zoneId === "gen-1")?.count).toBe(5);
+    expect(rows.some((r) => r.zoneId == null)).toBe(false);
   });
 
   it("jitters stacked dots away from the first", () => {

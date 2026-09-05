@@ -9,11 +9,11 @@ import { loadCornersFromMap, type AnchorMap } from "@/lib/mapBounds";
 import { latLngToUv } from "@/lib/tracking/imageSpaceGeo";
 import type { RestrictedZoneGeom } from "@/lib/tracking/restrictedZoneGeom";
 import {
+  assignCheckedInDistribution,
   classifyDistributionFix,
   distributionDotJitter,
   distributionFixLabel,
   distributionImagePoint,
-  matchDistributionZone,
   summarizeDistributionFixes,
   zoneCategoryToType,
   type DistributionFixKind,
@@ -279,34 +279,31 @@ export default function WorkerDistribution() {
 
     const perZone: Record<string, number> = {};
     const byCompany: Record<string, { name: string; total: number; zones: { zoneId: string | null; count: number }[] }> = {};
-    const bump = (cKey: string, name: string, zoneId: string | null, n: number) => {
-      if (!byCompany[cKey]) byCompany[cKey] = { name, total: 0, zones: [] };
-      byCompany[cKey].total += n;
-      const row = byCompany[cKey].zones.find((z) => z.zoneId === zoneId);
-      if (row) row.count += n;
-      else byCompany[cKey].zones.push({ zoneId, count: n });
-      const zKey = zoneId || "unknown";
-      perZone[zKey] = (perZone[zKey] || 0) + n;
-    };
-
-    if (geoZones.length === 0) {
-      for (const r of rows) {
-        bump(r.company_id || "unknown", r.company_name || "(미지정)", r.zone_id, r.headcount);
-      }
-    } else {
-      const zonedByCompany: Record<string, number> = {};
-      for (const p of positions) {
-        const hit = matchDistributionZone(p.lat, p.lng, geoZones);
-        if (!hit) continue;
-        const cKey = p.company_id || "unknown";
-        zonedByCompany[cKey] = (zonedByCompany[cKey] || 0) + 1;
-        bump(cKey, p.company_name || companyTotal[cKey]?.name || "(미지정)", hit.id, 1);
-      }
-      for (const [cKey, info] of Object.entries(companyTotal)) {
-        const unknown = Math.max(0, info.total - (zonedByCompany[cKey] || 0));
-        if (unknown > 0) bump(cKey, info.name, null, unknown);
-        else if (!byCompany[cKey]) byCompany[cKey] = { name: info.name, total: info.total, zones: [] };
-      }
+    const assigned =
+      geoZones.length > 0
+        ? assignCheckedInDistribution({
+            companyTotals: Object.entries(companyTotal).map(([companyId, info]) => ({
+              companyId,
+              name: info.name,
+              total: info.total,
+            })),
+            positions,
+            zones: geoZones,
+          })
+        : rows.map((r) => ({
+            companyId: r.company_id || "unknown",
+            name: r.company_name || "(미지정)",
+            zoneId: r.zone_id,
+            count: r.headcount,
+          }));
+    for (const a of assigned) {
+      if (!byCompany[a.companyId]) byCompany[a.companyId] = { name: a.name, total: 0, zones: [] };
+      byCompany[a.companyId].total += a.count;
+      const row = byCompany[a.companyId].zones.find((z) => z.zoneId === a.zoneId);
+      if (row) row.count += a.count;
+      else byCompany[a.companyId].zones.push({ zoneId: a.zoneId, count: a.count });
+      const zKey = a.zoneId || "unknown";
+      perZone[zKey] = (perZone[zKey] || 0) + a.count;
     }
 
     return {
@@ -577,12 +574,9 @@ export default function WorkerDistribution() {
                 {freshness.stale > 0 ? ` · 오래된 ${freshness.stale}` : ""}
                 {freshness.missing > 0 ? ` · 위치 없음 ${freshness.missing}` : ""}
                 {" "}(이름 비노출)
-                {(perZone["unknown"] || 0) > 0
-                  ? ` · 출근 ${totalIn}명 중 구역 미배정 ${perZone["unknown"]}명`
-                  : ""}
                 {zones.length === 0
                   ? " · 활성 구역이 없습니다. 통합 관제맵에서 구역을 그리면 구역 숫자도 표시됩니다."
-                  : ""}
+                  : " · 출근자는 일반 구역, 작업·위험 폴리곤 안이면 그 구역"}
               </div>
             )}
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
@@ -612,7 +606,7 @@ export default function WorkerDistribution() {
           <CardContent className="space-y-2 max-h-[520px] overflow-auto">
             {zones.length === 0 && (
               <div className="text-sm text-muted-foreground">
-                활성 구역이 없습니다. 통합 관제맵에서 일반·작업구역을 그리면 GPS가 있는 출근자가 자동으로 들어갑니다. 근로자마다 지정할 필요는 없습니다.
+                활성 구역이 없습니다. 현장 맵에 일반 구역이 있으면 오늘 출근자 전원이 그쪽으로 집계됩니다.
               </div>
             )}
             {zones.map((z) => {
@@ -650,7 +644,7 @@ export default function WorkerDistribution() {
         <CardContent>
           {Object.keys(byCompany).length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              오늘 미퇴근 출근자가 없습니다. GPS가 아직 안 올라온 출근자는 미지정 구역으로 집계됩니다.
+              오늘 미퇴근 출근자가 없습니다.
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -671,7 +665,7 @@ export default function WorkerDistribution() {
                         .map((z, i) => (
                           <tr key={`${c.name}-${z.zoneId}-${i}`} className="border-t">
                             <td className="p-2 font-medium">{c.name}</td>
-                            <td className="p-2">{z.zoneId ? (zoneById[z.zoneId]?.name || "기타") : "미지정"}</td>
+                            <td className="p-2">{z.zoneId ? (zoneById[z.zoneId]?.name || "일반") : "일반"}</td>
                             <td className="p-2 text-right">{z.count}</td>
                           </tr>
                         )),

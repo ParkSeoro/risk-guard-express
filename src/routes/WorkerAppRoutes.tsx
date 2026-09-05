@@ -71,6 +71,7 @@ export default function WorkerAppRoutes() {
               <Route path="approvals" element={<P.LazyMobileApprovals />} />
               <Route path="approvals/:approvalId" element={<P.LazyMobileApprovalDetail />} />
               <Route path="workers" element={<P.LazyMobileWorkers />} />
+              <Route path="distribution" element={<P.LazyWorkerDistribution />} />
               <Route path="risk-assessment" element={<P.LazyMobileRiskAssessment />} />
               <Route path="risk-assessment/:runId" element={<P.LazyMobileAssessmentViewer />} />
               <Route path="work-plans" element={<P.LazyMobileWorkPlans />} />

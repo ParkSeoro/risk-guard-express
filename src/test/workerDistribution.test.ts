@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  canViewWorkerDistribution,
+  distributionScopeLabel,
+} from "@/hooks/useDistributionAccess";
+import {
   distributionDotJitter,
   distributionImagePoint,
   distributionZoneId,
@@ -7,6 +11,26 @@ import {
   zoneCategoryToType,
 } from "@/lib/workerDistribution";
 import type { RestrictedZoneGeom } from "@/lib/tracking/restrictedZoneGeom";
+
+describe("distribution access", () => {
+  it("hides the map from field workers", () => {
+    expect(canViewWorkerDistribution("worker")).toBe(false);
+    expect(canViewWorkerDistribution("contractor")).toBe(false);
+    expect(canViewWorkerDistribution("project_admin")).toBe(true);
+    expect(canViewWorkerDistribution("safety_manager")).toBe(true);
+    expect(canViewWorkerDistribution("site_supervisor")).toBe(true);
+    expect(canViewWorkerDistribution("viewer", true)).toBe(true);
+  });
+
+  it("labels company scope", () => {
+    expect(distributionScopeLabel({ isMaster: true })).toBe("전체 현장");
+    expect(
+      distributionScopeLabel({ role: "project_admin", companyType: "client", seesAll: true }),
+    ).toBe("전체 현장");
+    expect(distributionScopeLabel({ role: "project_admin", companyType: "gc" })).toBe("자사·협력사");
+    expect(distributionScopeLabel({ role: "site_manager", companyType: "contractor" })).toBe("자사만");
+  });
+});
 
 describe("distributionZoneId", () => {
   const now = new Date("2026-09-05T07:30:00+09:00");

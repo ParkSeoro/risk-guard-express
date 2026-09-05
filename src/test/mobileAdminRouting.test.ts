@@ -112,6 +112,9 @@ describe("notification + entity mobile routes", () => {
     expect(canonicalizeAppPath("/approvals", { mobileShell: true })).toBe("/app/worker/approvals");
     expect(canonicalizeAppPath("/m", { mobileShell: true })).toBe("/app/worker/today");
     expect(canonicalizeAppPath("/m/inspect", { mobileShell: true })).toBe("/app/worker/inspect");
+    expect(canonicalizeAppPath("/worker-distribution", { mobileShell: true })).toBe(
+      "/app/worker/distribution",
+    );
   });
 
   it("toMobileShellPath maps assessment and work plan deep links", () => {

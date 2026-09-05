@@ -202,6 +202,7 @@ export default function MobileMore() {
                 { label: "QR 스캔", to: "/app/worker/scan", icon: ScanLine },
                 { label: "비전 관제", to: "/app/worker/vision-events", icon: Video },
                 { label: "근로자·출입", to: "/app/worker/workers", icon: QrCode },
+                { label: "근로자 분포", to: "/app/worker/distribution", icon: MapPin },
                 { label: "계정 정보", to: "/app/worker/account", icon: User },
                 ...(!isNativeApp()
                   ? [{ label: "사용 설명서", to: "/manual", icon: BookOpen }]

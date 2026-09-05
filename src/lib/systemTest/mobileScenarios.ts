@@ -30,6 +30,7 @@ export const MOBILE_ROUTES: Array<{
   { path: "/app/worker/actions", label: "조치 관리", requires: { kind: "table", name: "safety_inspection_actions", project_scoped: true } },
   { path: "/app/worker/approvals", label: "전자결재", requires: { kind: "table", name: "approvals" } },
   { path: "/app/worker/workers", label: "근로자 QR", requires: { kind: "table", name: "workers", project_scoped: true } },
+  { path: "/app/worker/distribution", label: "근로자 분포", requires: { kind: "table", name: "worker_entry_logs", project_scoped: true } },
   { path: "/app/worker/risk-assessment", label: "위험성평가", requires: { kind: "table", name: "assessment_runs", project_scoped: true } },
   { path: "/app/worker/work-plans", label: "작업계획", requires: { kind: "table", name: "work_plans", project_scoped: true } },
   { path: "/app/worker/tbm", label: "TBM", requires: { kind: "table", name: "tbm_sessions", project_scoped: true } },

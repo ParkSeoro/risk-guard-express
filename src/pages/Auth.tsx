@@ -25,6 +25,8 @@ import {
   workerPhoneSchema,
   workerPinSchema,
 } from '@/lib/workerAuth';
+import { rememberWorkerLoginOnDevice, workerLoginPrefill, loadWorkerLoginMemory } from '@/lib/workerLoginMemory';
+import { Checkbox } from '@/components/ui/checkbox';
 import { writeLoginIntent } from '@/components/AuthGuard';
 import { isNativeApp } from '@/lib/native/isNativeApp';
 import { openPlayStore } from '@/lib/playStore';
@@ -84,15 +86,16 @@ const Auth = () => {
     workerQrContext || isNativeApp() ? 'worker' : 'manager',
   );
   const [loginAudience, setLoginAudience] = useState<Audience>(() =>
-    isNativeApp() || workerQrContext ? 'worker' : 'manager',
+    isNativeApp() || workerQrContext || !!loadWorkerLoginMemory()?.phone ? 'worker' : 'manager',
   );
   const [signupMethod, setSignupMethod] = useState<SignupMethod>('directory');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [pin, setPin] = useState('');
+  const [phone, setPhone] = useState(() => workerLoginPrefill().phone);
+  const [pin, setPin] = useState(() => workerLoginPrefill().pin);
+  const [rememberWorkerLogin, setRememberWorkerLogin] = useState(() => workerLoginPrefill().rememberPin);
   const [inviteCode, setInviteCode] = useState(inviteParam);
   const [invitePreview, setInvitePreview] = useState<InvitePreview | null>(null);
   const [validatingCode, setValidatingCode] = useState(false);
@@ -262,7 +265,9 @@ const Auth = () => {
             description: authBannedErrorMessage(error.message) || error.message,
             variant: 'destructive',
           });
+          return;
         }
+        rememberWorkerLoginOnDevice(phone, pin, rememberWorkerLogin);
         // AuthRoute waits for rolesReady then routes to /app/worker/*
         return;
       }
@@ -385,13 +390,14 @@ const Auth = () => {
         }
       }
 
+      rememberWorkerLoginOnDevice(digits, pinParsed.data, true);
       toast({
         title: '근로자 가입 완료',
         description: '바로 전화번호와 PIN으로 로그인하세요. 관리자 승인은 필요 없습니다.',
       });
       setMode('login');
       setLoginAudience('worker');
-      setPin('');
+      setRememberWorkerLogin(true);
     } finally {
       setLoading(false);
     }
@@ -857,21 +863,28 @@ const Auth = () => {
             {mode === 'login' && loginAudience === 'worker' && (
               <>
                 <div className="space-y-1.5">
-                  <Label>전화번호</Label>
+                  <Label htmlFor="worker-login-phone">전화번호</Label>
                   <Input
+                    id="worker-login-phone"
+                    name="username"
+                    type="tel"
                     className="h-12 text-lg tracking-wide"
                     value={phone}
                     onChange={(e) => setPhone(formatPhoneMask(e.target.value))}
                     placeholder="전화번호 (예: 01012345678)"
                     inputMode="numeric"
-                    autoComplete="tel"
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
                     required
                   />
                   <p className="text-[10px] text-muted-foreground">숫자만 입력됩니다. 로그인 시 자동으로 계정에 연결됩니다.</p>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>PIN 비밀번호 (숫자 4~6자리)</Label>
+                  <Label htmlFor="worker-login-pin">PIN 비밀번호 (숫자 4~6자리)</Label>
                   <Input
+                    id="worker-login-pin"
+                    name="password"
                     className="h-12 text-lg tracking-[0.3em]"
                     type="password"
                     inputMode="numeric"
@@ -884,6 +897,23 @@ const Auth = () => {
                     required
                   />
                 </div>
+                <label className="flex items-start gap-2 rounded-md border border-border/80 bg-muted/30 px-3 py-2.5">
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={rememberWorkerLogin}
+                    onCheckedChange={(v) => {
+                      const on = v === true;
+                      setRememberWorkerLogin(on);
+                      if (!on) rememberWorkerLoginOnDevice(phone, pin, false);
+                    }}
+                  />
+                  <span className="text-sm leading-snug">
+                    이 기기에서 전화번호·PIN 저장
+                    <span className="block text-[11px] text-muted-foreground mt-0.5">
+                      한 번 로그인하면 다음에 자동으로 채워집니다. 공용 휴대폰이면 끄세요.
+                    </span>
+                  </span>
+                </label>
               </>
             )}
 
@@ -891,22 +921,28 @@ const Auth = () => {
             {mode === 'login' && loginAudience === 'manager' && (
               <>
                 <div className="space-y-1.5">
-                  <Label>이메일</Label>
+                  <Label htmlFor="manager-login-email">이메일</Label>
                   <Input
+                    id="manager-login-email"
+                    name="username"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="user@company.com"
+                    autoComplete="username"
                     required
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>비밀번호</Label>
+                  <Label htmlFor="manager-login-password">비밀번호</Label>
                   <Input
+                    id="manager-login-password"
+                    name="password"
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
+                    autoComplete="current-password"
                     required
                     minLength={8}
                   />

@@ -19,7 +19,9 @@ export function pendingInboxTitle(e: {
   return "-";
 }
 
-/** Subtitle so two same-title permits (회사·인원·재상신) are distinguishable. */
+/** Subtitle so two same-title permits (작성회사·인원·재상신) are distinguishable.
+ *  `company_name` is the document author company from get_my_pending_entity_approvals,
+ *  not the current approver (발주처 SM) company. */
 export function formatPendingApprovalMeta(e: PendingApprovalRow): string {
   const parts: string[] = [];
   if (e.entity_date) parts.push(String(e.entity_date));

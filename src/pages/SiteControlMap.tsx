@@ -25,7 +25,7 @@ import {
 import {
   Map, Upload, Save, Loader2, Layers, Satellite, Image as ImageIcon, ShieldAlert, Trash2, Pencil,
   RotateCcw, RotateCw, Move, ZoomIn, ZoomOut, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
-  Square, Pentagon, Circle as CircleIcon, Crosshair, MapPin, PencilRuler,
+  Square, Pentagon, Circle as CircleIcon, Crosshair, MapPin, PencilRuler, Maximize2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -69,14 +69,21 @@ import {
   bottomRight,
   cornersCenter,
   cornersToLeafletBounds,
+  cornersEqual,
   cornersToPersistPayload,
+  georefCornersKey,
   loadCornersFromMap,
+  mergeViewIntoGeoTransform,
   parseGeoTransform,
+  parseSiteMapView,
   rotateCorners,
   scaleCorners,
   translateCorners,
   viewportCenterCorners,
+  viewsEqual,
   type GeoCorners,
+  type GeoTransformSource,
+  type SiteMapView,
 } from "@/lib/mapBounds";
 
 type SiteMap = {
@@ -172,20 +179,29 @@ function FitToTargets({
   zones,
   enabled,
   token,
+  savedView,
 }: {
   imageBounds: L.LatLngBoundsExpression | null;
   zones: Zone[];
   enabled: boolean;
   token: string;
+  savedView: SiteMapView | null;
 }) {
   const map = useMap();
   const imageRef = useRef(imageBounds);
   const zonesRef = useRef(zones);
+  const viewRef = useRef(savedView);
   imageRef.current = imageBounds;
   zonesRef.current = zones;
+  viewRef.current = savedView;
 
   useEffect(() => {
     if (!enabled) return;
+    const view = viewRef.current;
+    if (view) {
+      map.setView([view.lat, view.lng], view.zoom, { animate: false });
+      return;
+    }
     const parts: L.LatLngBoundsExpression[] = [];
     if (imageRef.current) parts.push(imageRef.current);
     for (const z of zonesRef.current) {
@@ -205,6 +221,28 @@ function FitToTargets({
       map.fitBounds(union, { padding: [40, 40], maxZoom: 19 });
     }
   }, [map, enabled, token]);
+  return null;
+}
+
+function MapViewSync({
+  enabled,
+  onView,
+}: {
+  enabled: boolean;
+  onView: (view: SiteMapView) => void;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (!enabled) return;
+    const handler = () => {
+      const c = map.getCenter();
+      onView({ lat: c.lat, lng: c.lng, zoom: map.getZoom() });
+    };
+    map.on("moveend", handler);
+    return () => {
+      map.off("moveend", handler);
+    };
+  }, [map, enabled, onView]);
   return null;
 }
 
@@ -342,7 +380,15 @@ export default function SiteControlMap() {
   });
   const [fitToken, setFitToken] = useState("init");
   const [seedRequest, setSeedRequest] = useState(0);
+  const [restoredView, setRestoredView] = useState<SiteMapView | null>(null);
+  const [overlayDirty, setOverlayDirty] = useState(false);
+  const [persistStatus, setPersistStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const mapRef = useRef<L.Map | null>(null);
+  const activeMapRef = useRef<SiteMap | null>(null);
+  const draftCornersRef = useRef<GeoCorners | null>(null);
+  const opacityRef = useRef(0.85);
+  const overlayDirtyRef = useRef(false);
+  const viewSaveTimer = useRef<number | null>(null);
   const [myGps, setMyGps] = useState<{
     lat: number;
     lng: number;
@@ -363,6 +409,11 @@ export default function SiteControlMap() {
       .eq("is_deleted", false)
       .then(({ data }) => setProjects(data || []));
   }, []);
+
+  activeMapRef.current = activeMap;
+  draftCornersRef.current = draftCorners;
+  opacityRef.current = opacity;
+  overlayDirtyRef.current = overlayDirty;
 
   useEffect(() => {
     if (!projectId) return;
@@ -392,24 +443,174 @@ export default function SiteControlMap() {
       setFocusZoneId(null);
       setGeometryEditZoneId(null);
       setRedrawZoneId(null);
+      const id = window.setTimeout(() => mapRef.current?.invalidateSize(), 50);
+      return () => window.clearTimeout(id);
     }
   }, [panelTab]);
 
+  const applyLocalMapRow = useCallback((next: SiteMap) => {
+    activeMapRef.current = next;
+    setActiveMap(next);
+    setMaps((list) => list.map((m) => (m.id === next.id ? { ...m, ...next } : m)));
+  }, []);
+
+  const persistViewNow = useCallback(async (view: SiteMapView) => {
+    const mapRow = activeMapRef.current;
+    if (!mapRow) return;
+    if (viewsEqual(view, parseSiteMapView(mapRow.geo_transform))) return;
+    const geo_transform = mergeViewIntoGeoTransform(mapRow.geo_transform, view);
+    const { error } = await supabase
+      .from("site_maps")
+      .update({ geo_transform } as any)
+      .eq("id", mapRow.id);
+    if (error) {
+      console.warn("[site-control-map] view persist failed", error);
+      return;
+    }
+    applyLocalMapRow({ ...mapRow, geo_transform });
+  }, [applyLocalMapRow]);
+
+  const persistGeorefNow = useCallback(async (opts: {
+    silent?: boolean;
+    source?: GeoTransformSource;
+  } = {}) => {
+    const mapRow = activeMapRef.current;
+    const corners = draftCornersRef.current;
+    if (!mapRow || !corners) return;
+    const nextOpacity = opacityRef.current;
+    const leaflet = mapRef.current;
+    const view =
+      leaflet && leaflet.getSize().x > 0
+        ? { lat: leaflet.getCenter().lat, lng: leaflet.getCenter().lng, zoom: leaflet.getZoom() }
+        : parseSiteMapView(mapRow.geo_transform);
+    const prevTf = parseGeoTransform(mapRow.geo_transform);
+    const prevCorners = loadCornersFromMap(mapRow);
+    const cornersChanged = !cornersEqual(prevCorners, corners);
+    const opacityChanged = (prevTf?.opacity ?? 0.85) !== nextOpacity;
+    if (
+      !cornersChanged &&
+      !opacityChanged &&
+      viewsEqual(view, prevTf?.view ?? parseSiteMapView(mapRow.geo_transform))
+    ) {
+      overlayDirtyRef.current = false;
+      setOverlayDirty(false);
+      return;
+    }
+    setSavingBounds(true);
+    setPersistStatus("saving");
+    const source: GeoTransformSource =
+      opts.source ??
+      (prevTf?.source === "walk" && cornersChanged
+        ? "pc-satellite"
+        : prevTf?.source ?? (prevCorners ? "pc-satellite" : "seed"));
+    const payload = cornersToPersistPayload(corners, nextOpacity, { view, source });
+    const { error } = await supabase.from("site_maps").update(payload as any).eq("id", mapRow.id);
+    if (error) {
+      setSavingBounds(false);
+      setPersistStatus("error");
+      if (!opts.silent) {
+        toast.error("저장 실패: " + error.message + " (geo_transform 마이그레이션 적용 여부 확인)");
+      }
+      return;
+    }
+    // Replacing a saved georef invalidates residual phone bias — avoid double-shift.
+    if (cornersChanged && prevCorners && projectId) {
+      const { error: clearErr } = await supabase
+        .from("projects")
+        .update({ gps_calibration: null as any })
+        .eq("id", projectId);
+      if (!clearErr) await notifyGpsCalibrationChanged(projectId);
+    }
+    setSavingBounds(false);
+    overlayDirtyRef.current = false;
+    setOverlayDirty(false);
+    setPersistStatus("saved");
+    applyLocalMapRow({ ...mapRow, ...payload });
+    if (!opts.silent) {
+      toast.success("도면 정렬이 저장되었습니다", {
+        description:
+          cornersChanged && zones.length > 0
+            ? `위성·워킹·현장사진과 같은 좌표입니다. 위험구역 ${zones.length}개는 좌표가 어긋날 수 있어 다시 그려 주세요.`
+            : "위성·워킹·현장사진·관제맵이 같은 geo_transform 좌표를 씁니다.",
+        duration: 7000,
+      });
+    }
+  }, [applyLocalMapRow, projectId, zones.length]);
+
+  const onMapViewChange = useCallback((view: SiteMapView) => {
+    if (viewSaveTimer.current != null) window.clearTimeout(viewSaveTimer.current);
+    viewSaveTimer.current = window.setTimeout(() => {
+      void persistViewNow(view);
+    }, 800);
+  }, [persistViewNow]);
+
+  const markOverlayDirty = useCallback((next: GeoCorners) => {
+    setDraftCorners(next);
+    overlayDirtyRef.current = true;
+    setOverlayDirty(true);
+    setPersistStatus("idle");
+  }, []);
+
+  // Tab switch: map tools vs zone tools — keep shared map/layer state, toggle tool visibility only
+  useEffect(() => {
+    if (panelTab === "zones") {
+      void persistGeorefNow({ silent: true });
+    }
+  }, [panelTab, persistGeorefNow]);
+
+  useEffect(() => {
+    if (!overlayDirty || !draftCorners || !activeMap) return;
+    const t = window.setTimeout(() => {
+      void persistGeorefNow({ silent: true });
+    }, 1200);
+    return () => window.clearTimeout(t);
+  }, [overlayDirty, draftCorners, opacity, activeMap?.id, persistGeorefNow]);
+
+  useEffect(() => {
+    const onLeave = (e: BeforeUnloadEvent) => {
+      if (!overlayDirtyRef.current) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onLeave);
+    return () => window.removeEventListener("beforeunload", onLeave);
+  }, []);
+
+  const persistGeorefNowRef = useRef(persistGeorefNow);
+  persistGeorefNowRef.current = persistGeorefNow;
+  const loadedMapIdRef = useRef<string | null>(null);
+
+  useEffect(
+    () => () => {
+      if (viewSaveTimer.current != null) window.clearTimeout(viewSaveTimer.current);
+      if (overlayDirtyRef.current) void persistGeorefNowRef.current({ silent: true });
+    },
+    [],
+  );
+
   const activeMapGeorefKey = activeMap
-    ? `${activeMap.id}:${JSON.stringify(activeMap.geo_transform ?? null)}:${activeMap.geo_anchor_nw_lat}:${activeMap.geo_anchor_nw_lng}:${activeMap.geo_anchor_se_lat}:${activeMap.geo_anchor_se_lng}`
+    ? `${activeMap.id}:${georefCornersKey(activeMap)}`
     : "";
 
   useEffect(() => {
     if (!activeMap) {
       setDraftCorners(null);
+      setRestoredView(null);
+      loadedMapIdRef.current = null;
       return;
     }
+    const mapChanged = loadedMapIdRef.current !== activeMap.id;
+    loadedMapIdRef.current = activeMap.id;
     const existing = loadCornersFromMap(activeMap);
     const tf = parseGeoTransform(activeMap.geo_transform);
-    if (tf?.opacity != null) setOpacity(tf.opacity);
+    const view = parseSiteMapView(activeMap.geo_transform);
+    setRestoredView(view);
     if (existing) {
-      setDraftCorners(existing);
-      setFitToken(`map-${activeMap.id}-${Date.now()}`);
+      if (mapChanged || !overlayDirtyRef.current) {
+        setDraftCorners(existing);
+        if (tf?.opacity != null) setOpacity(tf.opacity);
+      }
+      setFitToken(`map-${activeMap.id}`);
     } else if (activeMap.image_url) {
       setSeedRequest((n) => n + 1);
     } else {
@@ -454,7 +655,6 @@ export default function SiteControlMap() {
       .order("created_at", { ascending: false });
     const list = (data || []) as unknown as Zone[];
     setZones(list);
-    if (list.length) setFitToken(`zones-${Date.now()}`);
     void retireLegacySiteDangerZones(projectId);
   };
 
@@ -469,7 +669,18 @@ export default function SiteControlMap() {
 
   const onSeedCorners = useCallback((c: GeoCorners) => {
     setDraftCorners(c);
-    setFitToken(`seed-${Date.now()}`);
+    overlayDirtyRef.current = true;
+    setOverlayDirty(true);
+    setPersistStatus("idle");
+    const mapId = activeMapRef.current?.id;
+    setFitToken((prev) => (mapId && prev === `map-${mapId}` ? prev : `seed-${mapId ?? "new"}`));
+  }, []);
+
+  const fitOverlayNow = useCallback(() => {
+    const map = mapRef.current;
+    const corners = draftCornersRef.current;
+    if (!map || !corners) return;
+    map.fitBounds(cornersToLeafletBounds(corners), { padding: [40, 40], maxZoom: 19 });
   }, []);
 
   const onUploadDrone = async (file: File) => {
@@ -518,34 +729,7 @@ export default function SiteControlMap() {
   };
 
   const saveBounds = async () => {
-    if (!activeMap || !draftCorners) return;
-    setSavingBounds(true);
-    const payload = cornersToPersistPayload(draftCorners, opacity);
-    const { error } = await supabase.from("site_maps").update(payload as any).eq("id", activeMap.id);
-    if (error) {
-      setSavingBounds(false);
-      toast.error("저장 실패: " + error.message + " (geo_transform 마이그레이션 적용 여부 확인)");
-      return;
-    }
-    // Georef change invalidates residual phone bias — clear so GPS isn't double-shifted.
-    if (projectId) {
-      const { error: clearErr } = await supabase
-        .from("projects")
-        .update({ gps_calibration: null as any })
-        .eq("id", projectId);
-      if (!clearErr) await notifyGpsCalibrationChanged(projectId);
-    }
-    setSavingBounds(false);
-    toast.success("위성 정렬(고급)이 저장되었습니다", {
-      description:
-        zones.length > 0
-          ? `1점 GPS 보정 초기화 · 위험구역 ${zones.length}개는 좌표가 어긋날 수 있어 다시 그려 주세요.`
-          : "1점 GPS 보정은 초기화했습니다. 잔여 오차는 모바일 1점 보정으로.",
-      duration: 8000,
-    });
-    setActiveMap({ ...activeMap, ...payload });
-    setFitToken(`saved-${Date.now()}`);
-    void loadMaps();
+    await persistGeorefNow({ silent: false });
   };
 
   const updateZoneGeometry = useCallback(
@@ -939,7 +1123,7 @@ export default function SiteControlMap() {
       }
       // Snap to the marker the operator sees (calibrated WGS84). Using raw while
       // the blue marker shows corrected coords was shifting the drone off satellite.
-      setDraftCorners({
+      markOverlayDirty({
         ...draftCorners,
         [key]: { lat: myGps.lat, lng: myGps.lng },
       });
@@ -948,7 +1132,7 @@ export default function SiteControlMap() {
         `${label}을 현재 표시 위치로 찍었습니다${myGps.calibrated ? " (맵 정렬 보정 적용)" : ""}`,
       );
     },
-    [myGps, draftCorners, locateOnce],
+    [myGps, draftCorners, locateOnce, markOverlayDirty],
   );
 
   const center: [number, number] = draftCorners
@@ -967,8 +1151,8 @@ export default function SiteControlMap() {
             통합 현장 관제맵
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            현장 도면을 업로드한 뒤 모바일 워킹 보정으로 좌표를 맞춥니다. 위성 TL/TR/BL 정렬은
-            선택(고급)입니다.
+            현장 도면·위성·워킹 보정은 같은 좌표(geo_transform)를 씁니다. 도면 크기·지도 확대는
+            자동 저장됩니다.
           </p>
           {gpsCal && (
             <div className="mt-2">
@@ -1064,6 +1248,49 @@ export default function SiteControlMap() {
                   </div>
                 )}
 
+                {draftCorners && activeMap?.image_url && (
+                  <div className="rounded-md border bg-muted/30 p-2.5 space-y-2">
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      축소/확대·회전·지도 줌은 <b>같은 현장 좌표</b>로 자동 저장됩니다.
+                      구역 설정 탭을 다녀와도 유지됩니다.
+                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-muted-foreground">
+                        {savingBounds || persistStatus === "saving"
+                          ? "저장 중…"
+                          : persistStatus === "error"
+                            ? "저장 실패 — 다시 저장하세요"
+                            : persistStatus === "saved"
+                              ? "자동 저장됨"
+                              : overlayDirty
+                                ? "저장 대기 중"
+                                : "저장됨"}
+                      </span>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="flex-1 h-8"
+                        onClick={fitOverlayNow}
+                      >
+                        <Maximize2 className="h-3.5 w-3.5 mr-1" /> 전체 보기
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="flex-1 h-8"
+                        onClick={() => void saveBounds()}
+                        disabled={savingBounds}
+                      >
+                        {savingBounds ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                        지금 저장
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {draftCorners && activeMap?.image_url ? (
                   <Accordion type="single" collapsible className="rounded-md border bg-muted/40 px-2.5">
                     <AccordionItem value="advanced-sat" className="border-0">
@@ -1151,11 +1378,11 @@ export default function SiteControlMap() {
                       </div>
                       <div className="flex gap-1">
                         <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
-                          onClick={() => setDraftCorners(rotateCorners(draftCorners, -rotateStep))}>
+                          onClick={() => markOverlayDirty(rotateCorners(draftCorners, -rotateStep))}>
                           <RotateCcw className="h-3.5 w-3.5 mr-1" /> 반시계
                         </Button>
                         <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
-                          onClick={() => setDraftCorners(rotateCorners(draftCorners, rotateStep))}>
+                          onClick={() => markOverlayDirty(rotateCorners(draftCorners, rotateStep))}>
                           <RotateCw className="h-3.5 w-3.5 mr-1" /> 시계
                         </Button>
                       </div>
@@ -1170,20 +1397,20 @@ export default function SiteControlMap() {
                       <div className="grid grid-cols-3 gap-1 w-28 mx-auto">
                         <span />
                         <Button type="button" size="icon" variant="outline" className="h-8 w-8"
-                          onClick={() => setDraftCorners(translateCorners(draftCorners, nudgeStep, 0))}>
+                          onClick={() => markOverlayDirty(translateCorners(draftCorners, nudgeStep, 0))}>
                           <ArrowUp className="h-3.5 w-3.5" />
                         </Button>
                         <span />
                         <Button type="button" size="icon" variant="outline" className="h-8 w-8"
-                          onClick={() => setDraftCorners(translateCorners(draftCorners, 0, -nudgeStep))}>
+                          onClick={() => markOverlayDirty(translateCorners(draftCorners, 0, -nudgeStep))}>
                           <ArrowLeft className="h-3.5 w-3.5" />
                         </Button>
                         <Button type="button" size="icon" variant="outline" className="h-8 w-8"
-                          onClick={() => setDraftCorners(translateCorners(draftCorners, -nudgeStep, 0))}>
+                          onClick={() => markOverlayDirty(translateCorners(draftCorners, -nudgeStep, 0))}>
                           <ArrowDown className="h-3.5 w-3.5" />
                         </Button>
                         <Button type="button" size="icon" variant="outline" className="h-8 w-8"
-                          onClick={() => setDraftCorners(translateCorners(draftCorners, 0, nudgeStep))}>
+                          onClick={() => markOverlayDirty(translateCorners(draftCorners, 0, nudgeStep))}>
                           <ArrowRight className="h-3.5 w-3.5" />
                         </Button>
                       </div>
@@ -1191,11 +1418,11 @@ export default function SiteControlMap() {
 
                     <div className="flex gap-1">
                       <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
-                        onClick={() => setDraftCorners(scaleCorners(draftCorners, 0.97))}>
+                        onClick={() => markOverlayDirty(scaleCorners(draftCorners, 0.97))}>
                         <ZoomOut className="h-3.5 w-3.5 mr-1" /> 축소
                       </Button>
                       <Button type="button" size="sm" variant="outline" className="flex-1 h-8"
-                        onClick={() => setDraftCorners(scaleCorners(draftCorners, 1.03))}>
+                        onClick={() => markOverlayDirty(scaleCorners(draftCorners, 1.03))}>
                         <ZoomIn className="h-3.5 w-3.5 mr-1" /> 확대
                       </Button>
                     </div>
@@ -1203,12 +1430,17 @@ export default function SiteControlMap() {
                     <div className="space-y-1">
                       <Label className="text-xs">투명도 {Math.round(opacity * 100)}%</Label>
                       <Slider value={[opacity]} min={0.2} max={1} step={0.05}
-                        onValueChange={(v) => setOpacity(v[0] ?? 0.85)} />
+                        onValueChange={(v) => {
+                          setOpacity(v[0] ?? 0.85);
+                          overlayDirtyRef.current = true;
+                          setOverlayDirty(true);
+                          setPersistStatus("idle");
+                        }} />
                     </div>
 
                     <Button className="w-full" size="sm" onClick={() => void saveBounds()} disabled={savingBounds}>
                       {savingBounds ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-                      위성 정렬 저장 (고급)
+                      도면 정렬 저장
                     </Button>
                       </AccordionContent>
                     </AccordionItem>
@@ -1381,8 +1613,8 @@ export default function SiteControlMap() {
         </Card>
 
         <Card className="overflow-hidden">
-          <CardContent className="p-0">
-            {panelTab === "zones" && activeMap?.image_url && draftCorners ? (
+          <CardContent className="p-0 relative">
+            {panelTab === "zones" && activeMap?.image_url && draftCorners && (
               <OrthogonalZoneCanvas
                 className="h-[70vh] min-h-[420px] w-full"
                 imageUrl={activeMap.image_url}
@@ -1400,8 +1632,12 @@ export default function SiteControlMap() {
                 editCommitToken={editCommitToken}
                 onGeoShapeEdited={onGeoShapeEdited}
               />
-            ) : (
-            <div className="h-[70vh] min-h-[420px] w-full relative z-0">
+            )}
+            <div
+              className={`h-[70vh] min-h-[420px] w-full relative z-0${
+                panelTab === "zones" && activeMap?.image_url && draftCorners ? " hidden" : ""
+              }`}
+            >
               {panelTab === "zones" && (
                 <div className="absolute inset-0 z-[900] flex items-center justify-center bg-muted/80 p-6 text-center text-sm text-muted-foreground">
                   {activeMap?.image_url
@@ -1450,6 +1686,7 @@ export default function SiteControlMap() {
                 <VWorldBasemap satellite={layers.satellite} />
 
                 <MapBridge onMap={onMapReady} seedRequest={seedRequest} onSeedCorners={onSeedCorners} />
+                <MapViewSync enabled={panelTab === "mapping"} onView={onMapViewChange} />
 
                 {layers.drone && activeMap?.image_url && draftCorners && (
                   <RotatedImageOverlay
@@ -1462,7 +1699,7 @@ export default function SiteControlMap() {
                 {layers.drone && draftCorners && activeMap?.image_url && panelTab === "mapping" && (
                   <VisualCornerMarkers
                     corners={draftCorners}
-                    onChange={setDraftCorners}
+                    onChange={markOverlayDirty}
                     visible
                   />
                 )}
@@ -1488,6 +1725,7 @@ export default function SiteControlMap() {
                   zones={layers.zones ? zones.filter((z) => z.is_active !== false) : []}
                   enabled
                   token={fitToken}
+                  savedView={restoredView}
                 />
 
                 {layers.zones && pendingShape?.kind === "polygon" && (
@@ -1536,7 +1774,6 @@ export default function SiteControlMap() {
                 </div>
               )}
             </div>
-            )}
           </CardContent>
         </Card>
 

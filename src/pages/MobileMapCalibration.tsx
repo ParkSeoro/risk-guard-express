@@ -25,7 +25,7 @@ import {
   Footprints,
 } from "lucide-react";
 import { toast } from "sonner";
-import { cornersToPersistPayload, loadCornersFromMap } from "@/lib/mapBounds";
+import { cornersToPersistPayload, loadCornersFromMap, parseSiteMapView } from "@/lib/mapBounds";
 import { latLngToUv, uvToLatLng } from "@/lib/tracking/imageSpaceGeo";
 import ZoomableSiteMapImage, {
   type MapMarker,
@@ -606,7 +606,10 @@ export default function MobileMapCalibration() {
         toast.error(fit.error);
         return;
       }
-      const payload = cornersToPersistPayload(fit.corners, 0.85);
+      const payload = cornersToPersistPayload(fit.corners, 0.85, {
+        view: parseSiteMapView(active.geo_transform),
+        source: "walk",
+      });
       const { error } = await supabase
         .from("site_maps")
         .update({
